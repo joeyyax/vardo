@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import { createServer, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { checkServiceByName, probeErrorText, sanitizeError, SERVICE_PROBES } from "@/lib/config/health";
+import { CORE_SERVICE_NAMES } from "@/lib/infra/core-services";
 
 // ---------------------------------------------------------------------------
 // sanitizeError — strips sensitive internals from library error messages
@@ -168,6 +169,63 @@ describe("SERVICE_PROBES", () => {
   it("points cAdvisor and Loki at their own app logs", () => {
     expect(SERVICE_PROBES.find((p) => p.name === "cAdvisor")?.logsApp).toBe("cadvisor");
     expect(SERVICE_PROBES.find((p) => p.name === "Loki")?.logsApp).toBe("loki");
+  });
+
+  it("covers every core service, so none can die unwatched", () => {
+    const watched = SERVICE_PROBES.map((p) => p.logsApp).filter(Boolean);
+    expect([...watched].sort()).toEqual([...CORE_SERVICE_NAMES].sort());
+  });
+
+  it("gates every core service on the flag that provisions it", () => {
+    for (const name of CORE_SERVICE_NAMES) {
+      const probe = SERVICE_PROBES.find((p) => p.logsApp === name);
+      expect(probe?.applies, `${name} has no applies gate`).toBeDefined();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Feature gating — a service that was never installed is not a broken one
+// ---------------------------------------------------------------------------
+
+describe("probes for disabled features", () => {
+  const touched = [
+    "VARDO_FEATURE_METRICS",
+    "VARDO_FEATURE_LOGGING",
+    "VARDO_FEATURE_ERROR_TRACKING",
+    "CADVISOR_URL",
+  ];
+
+  afterEach(() => {
+    for (const key of touched) delete process.env[key];
+  });
+
+  it("reports nothing for a core service whose flag is off", async () => {
+    process.env.VARDO_FEATURE_METRICS = "false";
+    await expect(checkServiceByName("cAdvisor")).resolves.toBeNull();
+  });
+
+  it("still probes the same service once the flag is on", async () => {
+    const server = await listen((res) => res.end("ok"));
+    process.env.VARDO_FEATURE_METRICS = "true";
+    process.env.CADVISOR_URL = urlOf(server);
+
+    await expect(checkServiceByName("cAdvisor")).resolves.toMatchObject({
+      name: "cAdvisor",
+      status: "healthy",
+    });
+
+    await close(server);
+  });
+
+  it("reports nothing for the log shipper when logging is off", async () => {
+    process.env.VARDO_FEATURE_LOGGING = "false";
+    await expect(checkServiceByName("Promtail")).resolves.toBeNull();
+  });
+
+  it("reports nothing for error tracking when its flag is off", async () => {
+    process.env.VARDO_FEATURE_ERROR_TRACKING = "false";
+    await expect(checkServiceByName("GlitchTip")).resolves.toBeNull();
   });
 });
 
