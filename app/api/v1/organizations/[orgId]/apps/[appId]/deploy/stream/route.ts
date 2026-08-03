@@ -5,6 +5,7 @@ import { apps, deployments } from "@/lib/db/schema";
 import { eq, and, desc } from "drizzle-orm";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { readStream } from "@/lib/stream/consumer";
+import { isTerminalStageEvent } from "@/lib/docker/deploy-logger";
 import { deployStream } from "@/lib/stream/keys";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { closeOnShutdown } from "@/lib/shutdown";
@@ -174,7 +175,7 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
                 });
 
                 // Auto-close on terminal states
-                if (fields.status === "success" || fields.status === "failed" || fields.status === "cancelled") {
+                if (isTerminalStageEvent(fields.stage, fields.status)) {
                   sendEvent("done", {
                     deploymentId,
                     success: fields.status === "success",

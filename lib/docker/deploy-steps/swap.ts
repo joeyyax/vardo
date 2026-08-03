@@ -261,7 +261,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
       const { stdout, stderr } = await execFileAsync(
         "docker",
         ["compose", "--progress=plain", ...composeFileArgs, "-p", newProjectName, "build"],
-        { cwd: slotDir, timeout: COMPOSE_BUILD_UP_TIMEOUT, maxBuffer: EXEC_MAX_BUFFER }
+        { cwd: slotDir, timeout: COMPOSE_BUILD_UP_TIMEOUT, maxBuffer: EXEC_MAX_BUFFER, signal: ctx.signal }
       );
       for (const line of stdout.split(/\r?\n|\r/).filter(Boolean)) {
         logs.push(`[deploy][build] ${line.trim()}`);
@@ -275,7 +275,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
       const { stdout, stderr } = await execFileAsync(
         "docker",
         ["compose", ...composeFileArgs, "-p", newProjectName, "pull", ...pullServices],
-        { cwd: slotDir, timeout: COMPOSE_UP_TIMEOUT, maxBuffer: EXEC_MAX_BUFFER }
+        { cwd: slotDir, timeout: COMPOSE_UP_TIMEOUT, maxBuffer: EXEC_MAX_BUFFER, signal: ctx.signal }
       );
       for (const line of stdout.split(/\r?\n|\r/).filter(Boolean)) {
         logs.push(`[deploy][pull] ${line.trim()}`);
@@ -290,6 +290,12 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
       `Pre-build/pre-pull for ${newSlot} failed (old slot unaffected): ${message}`
     );
   }
+
+  // Every image this deploy needs now exists locally. Nothing serving has been
+  // touched yet, so this is the last point at which a cancel is free.
+  ctx.checkAbort();
+  ctx.stage("build", "success");
+  ctx.stage("deploy", "running");
 
   // Step 6b: NOW stop old-slot services. Images are already local,
   // so the window where the old slot is down is as short as possible.

@@ -18,6 +18,7 @@ const log = logger.child("deploy-logger");
 export type DeployStage =
   | "queued"
   | "clone"
+  | "compose"
   | "build"
   | "deploy"
   | "healthcheck"
@@ -26,6 +27,15 @@ export type DeployStage =
   | "done";
 
 export type DeployStatus = "running" | "success" | "failed" | "skipped" | "cancelled";
+
+/**
+ * Whether a stage event ends the deploy, and with it the stream.
+ * Success is terminal only on `done` — every stage reports success of its own.
+ */
+export function isTerminalStageEvent(stage?: string, status?: string): boolean {
+  if (status === "failed" || status === "cancelled") return true;
+  return stage === "done" && status === "success";
+}
 
 /** Secret patterns to strip from log output. */
 const SECRET_PATTERNS = [
