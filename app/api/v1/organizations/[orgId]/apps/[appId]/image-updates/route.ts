@@ -22,6 +22,8 @@ const applySchema = z
       .regex(/^[\w][\w.-]*$/, "Invalid tag"),
     /** Required to cross a major on an image whose data dir is version-locked. */
     acknowledgeMigration: z.boolean().optional(),
+    /** Pinning one of the two majors a stopped deploy reported. */
+    majorGate: z.boolean().optional(),
   })
   .strict();
 
@@ -60,6 +62,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       service: parsed.data.service,
       tag: parsed.data.tag,
       acknowledgeMigration: parsed.data.acknowledgeMigration,
+      majorGate: parsed.data.majorGate,
     });
 
     if (!outcome.ok) {

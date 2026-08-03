@@ -31,6 +31,8 @@ import {
   pruneBuildCache,
 } from "../client";
 import { syncComposeServices } from "../compose-sync";
+import { observedMajors } from "./major-gate";
+import { clearMajorGateBlock } from "../image-updates/major-gate-store";
 import { isDeployQueueDrained, releaseConcurrencySlot } from "../deploy-concurrency";
 import { acquireLock, releaseLock } from "@/lib/redis-lock";
 import { addEvent } from "@/lib/stream/producer";
@@ -365,6 +367,11 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
       ? await inspectImageDigest(app.imageName)
       : null;
 
+  // Engine majors for the deploy gate's baseline, and the block it may have
+  // written last time — this deploy is the answer to it.
+  const imageMajors = await observedMajors(ctx).catch(() => ({}));
+  await clearMajorGateBlock(ctx.appId);
+
   const configSnapshot: ConfigSnapshot = {
     cpuLimit: app.cpuLimit,
     memoryLimit: app.memoryLimit,
@@ -379,6 +386,7 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
     backendProtocol: narrowBackendProtocol(app.backendProtocol),
     composeContent: app.composeContent,
     imageDigest,
+    imageMajors,
   };
 
   const durationMs = Date.now() - ctx.startTime;
