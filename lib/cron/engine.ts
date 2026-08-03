@@ -4,7 +4,8 @@ import { and, eq, lt } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { execFile } from "child_process";
 import { promisify } from "util";
-import { listContainers } from "@/lib/docker/client";
+import { listContainers, type ContainerInfo } from "@/lib/docker/client";
+import { matchContainers, type ReconcilableApp } from "@/lib/docker/status-reconcile";
 import { shouldRunNow } from "./parse";
 import { acquireLock } from "@/lib/redis-lock";
 import { logger } from "@/lib/logger";
@@ -13,19 +14,39 @@ const log = logger.child("cron");
 
 const execFileAsync = promisify(execFile);
 
+/** An app a cron job can target, plus the stack it belongs to. */
+export type CronTargetApp = ReconcilableApp & {
+  parentApp?: { name: string } | null;
+};
+
+/** Project label the target's containers carry. Stack children carry the parent's. */
+export function cronContainerScope(app: CronTargetApp): string {
+  return app.parentApp?.name ?? app.name;
+}
+
+/**
+ * Running container a cron job execs into. A stack child shares the parent's
+ * project label, so it is narrowed by compose service rather than app name.
+ */
+export function selectCronContainer(
+  app: CronTargetApp,
+  containers: ContainerInfo[],
+): ContainerInfo | null {
+  return matchContainers(app, containers).find((c) => c.state === "running") ?? null;
+}
+
 /**
  * Run a command inside an app's container.
  * Returns { success, log, durationMs }.
  */
 async function executeInContainer(
-  appName: string,
+  app: CronTargetApp,
   command: string,
 ): Promise<{ success: boolean; log: string; durationMs: number }> {
   const startTime = Date.now();
 
-  // Find a running container for this app
-  const containers = await listContainers(appName);
-  const running = containers.find(c => c.state === "running");
+  const containers = await listContainers(cronContainerScope(app));
+  const running = selectCronContainer(app, containers);
 
   if (!running) {
     return {
@@ -102,7 +123,18 @@ export async function tickCronJobs(): Promise<void> {
     where: eq(cronJobs.enabled, true),
     with: {
       app: {
-        columns: { id: true, name: true, status: true, organizationId: true, displayName: true },
+        columns: {
+          id: true,
+          name: true,
+          status: true,
+          organizationId: true,
+          displayName: true,
+          parentAppId: true,
+          composeService: true,
+          containerName: true,
+          importedContainerId: true,
+        },
+        with: { parentApp: { columns: { name: true } } },
       },
     },
   });
@@ -134,7 +166,7 @@ export async function tickCronJobs(): Promise<void> {
     try {
       result = job.type === "url"
         ? await fetchUrl(job.command)
-        : await executeInContainer(job.app.name, job.command);
+        : await executeInContainer(job.app, job.command);
     } catch (err) {
       result = {
         success: false,
