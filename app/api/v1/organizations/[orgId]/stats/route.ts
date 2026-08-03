@@ -7,6 +7,7 @@ import { fetchAllMetrics } from "@/lib/metrics/provider";
 import { groupMetricsByApp } from "@/lib/metrics/app-match";
 import { METRICS_APP_COLUMNS } from "@/lib/metrics/app-columns";
 import { queryMetrics, queryMetricsPoints } from "@/lib/metrics/store";
+import { appSeriesScope } from "@/lib/metrics/series-scope";
 import type { MetricsPoint } from "@/lib/metrics/types";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 type RouteParams = {
@@ -39,6 +40,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       const perProject = searchParams.get("perProject") === "true";
 
       const activeApps = orgApps.filter((p) => p.status === "active");
+      const nameById = new Map(orgApps.map((p) => [p.id, p.name]));
+      const scopeOf = (app: (typeof orgApps)[number]) =>
+        appSeriesScope({
+          ...app,
+          parentApp: app.parentAppId ? { name: nameById.get(app.parentAppId) ?? app.name } : null,
+        });
 
       if (perProject) {
         const metricFilter = searchParams.get("metric");
@@ -46,17 +53,18 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
         await Promise.allSettled(
           activeApps.map(async (p) => {
+            const { project, service } = scopeOf(p);
             if (metricFilter === "cpu") {
               // Fast path: only fetch CPU for sparklines
-              const cpu = await queryMetrics(p.name, "cpu", fromMs, toMs, { type: "avg", bucketMs });
+              const cpu = await queryMetrics(project, "cpu", fromMs, toMs, { type: "avg", bucketMs }, service);
               result[p.id] = { cpu };
             } else {
               const [cpu, memory, networkRx, networkTx, disk] = await Promise.all([
-                queryMetrics(p.name, "cpu", fromMs, toMs, { type: "avg", bucketMs }),
-                queryMetrics(p.name, "memory", fromMs, toMs, { type: "avg", bucketMs }),
-                queryMetrics(p.name, "networkRx", fromMs, toMs, { type: "sum", bucketMs }),
-                queryMetrics(p.name, "networkTx", fromMs, toMs, { type: "sum", bucketMs }),
-                queryMetrics(p.name, "disk", fromMs, toMs, { type: "avg", bucketMs }),
+                queryMetrics(project, "cpu", fromMs, toMs, { type: "avg", bucketMs }, service),
+                queryMetrics(project, "memory", fromMs, toMs, { type: "avg", bucketMs }, service),
+                queryMetrics(project, "networkRx", fromMs, toMs, { type: "sum", bucketMs }, service),
+                queryMetrics(project, "networkTx", fromMs, toMs, { type: "sum", bucketMs }, service),
+                queryMetrics(project, "disk", fromMs, toMs, { type: "avg", bucketMs }, service),
               ]);
               result[p.id] = { cpu, memory, networkRx, networkTx, disk };
             }
@@ -66,9 +74,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         return NextResponse.json({ apps: result });
       }
 
-      // Aggregate across all projects
+      // Aggregate across all projects — stack children share their parent's series.
       const perAppPoints = await Promise.all(
-        activeApps.map((app) => queryMetricsPoints(app.name, fromMs, toMs, bucketMs, app.gpuEnabled))
+        activeApps
+          .filter((app) => !app.parentAppId)
+          .map((app) => queryMetricsPoints(app.name, fromMs, toMs, bucketMs, app.gpuEnabled))
       );
       // Merge all apps' points by timestamp
       const pointMap = new Map<number, MetricsPoint>();
