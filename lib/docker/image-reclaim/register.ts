@@ -27,17 +27,32 @@ export async function runScheduledSweep(): Promise<void> {
   const { executeReclaimPlan } = await import("./run");
 
   const plan = await buildReclaimPlan(config.idleDays);
-  if (plan.candidates.length === 0) return;
+  if (plan.candidates.length > 0) {
+    const result = await executeReclaimPlan(plan, { dryRun: false });
+    const freed = result.reclaimed.filter((r) => r.freedLayers).length;
 
-  const result = await executeReclaimPlan(plan, { dryRun: false });
-  const freed = result.reclaimed.filter((r) => r.freedLayers).length;
+    const { recordLastRun } = await import("./settings");
+    await recordLastRun(result);
 
-  const { recordLastRun } = await import("./settings");
-  await recordLastRun(result);
+    log.info(
+      `Sweep removed ${freed} image(s) from ${result.appsAffected} idle app(s), ` +
+        `up to ${formatBytes(result.estimatedBytesFreed)}; ${result.failed.length} could not be removed`,
+    );
+  }
+
+  if (!config.slots) return;
+
+  const { buildSlotReclaimPlan } = await import("./slot-plan");
+  const slotPlan = await buildSlotReclaimPlan();
+  if (slotPlan.candidates.length === 0) return;
+
+  const slotResult = await executeReclaimPlan(slotPlan, { dryRun: false });
+  const slotFreed = slotResult.reclaimed.filter((r) => r.freedLayers).length;
 
   log.info(
-    `Sweep removed ${freed} image(s) from ${result.appsAffected} idle app(s), ` +
-      `up to ${formatBytes(result.estimatedBytesFreed)}; ${result.failed.length} could not be removed`,
+    `Sweep removed ${slotFreed} image(s) from ${slotPlan.candidates.length} superseded slot ` +
+      `generation(s), up to ${formatBytes(slotResult.estimatedBytesFreed)}; ` +
+      `${slotResult.failed.length} could not be removed`,
   );
 }
 
