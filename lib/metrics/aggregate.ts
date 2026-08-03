@@ -34,6 +34,7 @@ export function containerToPoint(m: ContainerMetrics): ContainerPoint {
   return {
     containerId: m.containerId,
     containerName: m.containerName,
+    composeService: m.labels["com.docker.compose.service"] ?? null,
     cpuPercent: m.cpuPercent,
     memoryUsage: m.memoryUsage,
     memoryLimit: m.memoryLimit,

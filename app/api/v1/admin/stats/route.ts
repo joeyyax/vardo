@@ -3,6 +3,8 @@ import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
 import { fetchAllMetrics } from "@/lib/metrics/provider";
+import { groupMetricsByApp } from "@/lib/metrics/app-match";
+import { METRICS_APP_COLUMNS } from "@/lib/metrics/app-columns";
 import { queryAllPoints } from "@/lib/metrics/store";
 import { isMetricsEnabled } from "@/lib/metrics/config";
 import { requireAppAdmin } from "@/lib/auth/admin";
@@ -36,57 +38,28 @@ export async function GET(request: NextRequest) {
     // Live snapshot
     const [allApps, allMetrics] = await Promise.all([
       db.query.apps.findMany({
-        columns: { id: true, name: true, displayName: true, status: true, organizationId: true },
+        columns: { ...METRICS_APP_COLUMNS, displayName: true },
       }),
       // Only fetch fast data synchronously — disk and system info are slow (3s+)
       // and will arrive via the SSE stream instead
       fetchAllMetrics(),
     ]);
 
-    // Index metrics by projectName to avoid O(apps * metrics) nested scans
-    const metricsByProject = new Map<string, typeof allMetrics>();
-    for (const m of allMetrics) {
-      const existing = metricsByProject.get(m.projectName);
-      if (existing) {
-        existing.push(m);
-      } else {
-        metricsByProject.set(m.projectName, [m]);
-      }
-    }
+    const byApp = groupMetricsByApp(allApps, allMetrics);
 
-    // Group containers by app
-    const appStats = allApps.map((app) => {
-      const prefix = `${app.name}-`;
-      const containers: {
-        containerId: string;
-        containerName: string;
-        cpuPercent: number;
-        memoryUsage: number;
-        memoryLimit: number;
-        memoryPercent: number;
-        networkRx: number;
-        networkTx: number;
-      }[] = [];
-
-      for (const [key, metrics] of metricsByProject) {
-        if (key === app.name || key.startsWith(prefix)) {
-          for (const m of metrics) {
-            containers.push({
-              containerId: m.containerId,
-              containerName: m.containerName,
-              cpuPercent: m.cpuPercent,
-              memoryUsage: m.memoryUsage,
-              memoryLimit: m.memoryLimit,
-              memoryPercent: m.memoryPercent,
-              networkRx: m.networkRxBytes,
-              networkTx: m.networkTxBytes,
-            });
-          }
-        }
-      }
-
-      return { ...app, containers };
-    });
+    const appStats = allApps.map((app) => ({
+      ...app,
+      containers: (byApp.get(app.id) ?? []).map((m) => ({
+        containerId: m.containerId,
+        containerName: m.containerName,
+        cpuPercent: m.cpuPercent,
+        memoryUsage: m.memoryUsage,
+        memoryLimit: m.memoryLimit,
+        memoryPercent: m.memoryPercent,
+        networkRx: m.networkRxBytes,
+        networkTx: m.networkTxBytes,
+      })),
+    }));
 
     return NextResponse.json({
       apps: appStats,

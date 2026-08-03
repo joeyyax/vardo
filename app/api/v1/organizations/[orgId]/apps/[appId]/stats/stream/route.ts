@@ -7,6 +7,8 @@ import { createSSEResponse } from "@/lib/api/sse";
 import { isMetricsEnabled } from "@/lib/metrics/config";
 import { subscribe } from "@/lib/metrics/broadcast";
 import { aggregateContainers, containerToPoint } from "@/lib/metrics/aggregate";
+import { matchAppMetrics, filterByEnvironment } from "@/lib/metrics/app-match";
+import { METRICS_APP_COLUMNS } from "@/lib/metrics/app-columns";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 
 type RouteParams = {
@@ -29,7 +31,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         eq(apps.id, appId),
         eq(apps.organizationId, orgId)
       ),
-      columns: { id: true, name: true },
+      columns: METRICS_APP_COLUMNS,
     });
 
     if (!app) {
@@ -40,17 +42,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     return createSSEResponse(request, async (sendEvent) => {
       const unsubscribe = subscribe((allMetrics) => {
-        // Filter to this app's containers
-        let containers = allMetrics.filter(
-          (m) => m.projectName === app.name || m.projectName.startsWith(`${app.name}-`)
-        );
-
-        if (environment) {
-          const envPrefix = `${app.name}-${environment}-`;
-          containers = containers.filter(
-            (m) => m.containerName.startsWith(envPrefix) || m.projectName.startsWith(envPrefix)
-          );
-        }
+        const matched = matchAppMetrics(app, allMetrics);
+        const containers = environment ? filterByEnvironment(matched, environment) : matched;
 
         const point = aggregateContainers(containers);
         sendEvent("point", {

@@ -11,9 +11,11 @@ import type { ContainerMetrics } from "@/lib/metrics/types";
 function makeContainer(overrides: Partial<ContainerMetrics> = {}): ContainerMetrics {
   return {
     containerId: "abc123",
+    containerIdFull: "abc123",
     containerName: "test",
     projectName: "myapp",
     organizationId: null,
+    labels: {},
     cpuPercent: 0,
     memoryUsage: 0,
     memoryLimit: 0,

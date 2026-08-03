@@ -1,8 +1,13 @@
 export type ContainerMetrics = {
+  /** 12-char id — the form metric keys are stored under. */
   containerId: string;
+  /** Full 64-char Docker id, empty when the cgroup path carries none. */
+  containerIdFull: string;
   containerName: string;
   projectName: string;
   organizationId: string | null;
+  /** Vardo, host and compose labels — what app matching joins on. */
+  labels: Record<string, string>;
   cpuPercent: number;
   memoryUsage: number;
   memoryLimit: number;
@@ -38,6 +43,8 @@ export type MetricsPoint = {
 export type ContainerPoint = {
   containerId: string;
   containerName: string;
+  /** Compose service, when the container carries the label. */
+  composeService: string | null;
   cpuPercent: number;
   memoryUsage: number;
   memoryLimit: number;
