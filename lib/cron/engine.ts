@@ -4,7 +4,7 @@ import { and, eq, lt } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { execFile } from "child_process";
 import { promisify } from "util";
-import { listContainers, type ContainerInfo } from "@/lib/docker/client";
+import { listContainers, type ContainerInfo, type ContainerScope } from "@/lib/docker/client";
 import { matchContainers, type ReconcilableApp } from "@/lib/docker/status-reconcile";
 import { shouldRunNow } from "./parse";
 import { acquireLock } from "@/lib/redis-lock";
@@ -19,9 +19,12 @@ export type CronTargetApp = ReconcilableApp & {
   parentApp?: { name: string } | null;
 };
 
-/** Project label the target's containers carry. Stack children carry the parent's. */
-export function cronContainerScope(app: CronTargetApp): string {
-  return app.parentApp?.name ?? app.name;
+/** App whose containers the target's live under. Stack children carry the parent's labels. */
+export function cronContainerScope(app: CronTargetApp): ContainerScope {
+  return {
+    id: app.parentAppId ?? app.id,
+    name: app.parentApp?.name ?? app.name,
+  };
 }
 
 /**

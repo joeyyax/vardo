@@ -168,7 +168,12 @@ export async function performRollback(opts: PerformRollbackOpts): Promise<boolea
   // Step 3b: Update container name in DB (for logs/UI — not routing).
   // Traefik discovers the restored containers via their Docker labels automatically.
   try {
-    const containers = await listContainers(prevProjectName);
+    // vardo.project is the app name, never the slot's compose project, so the
+    // restored slot is picked out by com.docker.compose.project.
+    const envContainers = await listContainers({ id: appId, name: appName }, envName);
+    const containers = envContainers.filter(
+      (c) => c.labels["com.docker.compose.project"] === prevProjectName,
+    );
     if (containers.length > 0) {
       await db
         .update(apps)
