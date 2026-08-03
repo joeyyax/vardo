@@ -56,6 +56,15 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
         });
       }
       deploymentId = latest.id;
+    } else {
+      // A caller-supplied id must belong to this app.
+      const owned = await db.query.deployments.findFirst({
+        where: and(eq(deployments.id, deploymentId), eq(deployments.appId, appId)),
+        columns: { id: true },
+      });
+      if (!owned) {
+        return new Response("Not found", { status: 404 });
+      }
     }
 
     // Check if stream exists; if not, fall back to DB log for historical deploys
