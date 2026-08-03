@@ -67,6 +67,7 @@ export function filterApps<T extends FilterableApp>(apps: T[], query: string): T
 
 export type SortableApp = {
   status: string;
+  parked?: boolean | null;
   conditions?: AppCondition[] | null;
   deployments?: { startedAt: Date | string }[];
 };
@@ -82,11 +83,13 @@ const ATTENTION_NONE = 2;
 
 /**
  * Lower sorts first: crashes, then warnings, then everything quiet. A stopped
- * app is a deliberate state, not something to answer for.
+ * app is a deliberate state, not something to answer for, and a parked one is
+ * that said out loud — nothing it does raises the card it sits on.
  */
 export function attentionRank(card: SortableCard): number {
   let rank = ATTENTION_NONE;
   for (const app of card.apps) {
+    if (app.parked) continue;
     if (app.status === "error") return ATTENTION_CRITICAL;
     for (const condition of app.conditions ?? []) {
       if (condition.severity === "critical") return ATTENTION_CRITICAL;

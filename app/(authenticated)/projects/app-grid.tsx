@@ -56,6 +56,7 @@ type AppWithRelations = {
   gpuEnabled: boolean | null;
   priority: "critical" | "standard" | "disposable" | null;
   status: string;
+  parked: boolean;
   containerStartedAt: Date | null;
   containerMemoryLimit: number | null;
   needsRedeploy: boolean | null;
@@ -322,7 +323,7 @@ function ProjectCard({
             {[...projectApps]
               .sort(
                 (x, y) =>
-                  statusRank(x.status) - statusRank(y.status) ||
+                  statusRank(x.status, !!x.parked) - statusRank(y.status, !!y.parked) ||
                   Number(y.priority === "critical") - Number(x.priority === "critical") ||
                   (updatesByApp.get(y.id) ?? 0) - (updatesByApp.get(x.id) ?? 0) ||
                   x.displayName.localeCompare(y.displayName),

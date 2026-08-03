@@ -88,6 +88,7 @@ async function loadStatusSubjects(orgId: string) {
       displayName: apps.displayName,
       status: apps.status,
       statusChangedAt: apps.statusChangedAt,
+      parked: apps.parked,
       parentAppId: apps.parentAppId,
       conditions: apps.conditions,
       isSystemManaged: apps.isSystemManaged,
