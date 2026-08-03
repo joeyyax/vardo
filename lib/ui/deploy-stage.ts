@@ -20,6 +20,22 @@ export const DEPLOY_STAGE_KEYS = ["clone", "compose", "build", "deploy", "health
 /** An auto-rollback restores a built slot, so it reports its own phases. */
 export const ROLLBACK_STAGE_KEYS = ["stop", "restore", "route", "verify"];
 
+/**
+ * Position of a run through its phase list — "3 of 7". Reads the phase in
+ * flight, falling back to how many have resolved once none is.
+ */
+export function stageProgress(
+  stages: Record<string, string> | undefined,
+  keys: string[],
+): { position: number; total: number } {
+  if (!stages) return { position: 0, total: keys.length };
+  const active = keys.findIndex((s) => stages[s] === "running" || stages[s] === "failed");
+  return {
+    position: active >= 0 ? active + 1 : keys.filter((s) => stages[s]).length,
+    total: keys.length,
+  };
+}
+
 /** The phase a run is in right now, or null before the first stage event lands. */
 export function currentStageLabel(stages: Record<string, string> | undefined): string | null {
   if (!stages) return null;
