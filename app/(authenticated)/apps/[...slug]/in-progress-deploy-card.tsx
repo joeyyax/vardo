@@ -6,26 +6,12 @@ import { Button } from "@/components/ui/button";
 import { TerminalOutput, highlightLogLine, detectLogLevel } from "@/components/log-viewer";
 import { formatDuration } from "@/components/app-status";
 import { Timer } from "./timer";
+import {
+  DEPLOY_STAGE_KEYS,
+  ROLLBACK_STAGE_KEYS,
+  STAGE_LABELS,
+} from "@/lib/ui/deploy-stage";
 import type { StageTiming } from "./hooks/use-deploy";
-
-const STAGE_LABELS: Record<string, string> = {
-  clone: "Clone",
-  compose: "Compose",
-  build: "Build",
-  deploy: "Deploy",
-  healthcheck: "Health",
-  routing: "Route",
-  cleanup: "Cleanup",
-  stop: "Stop",
-  restore: "Restore",
-  route: "Route",
-  verify: "Verify",
-};
-
-const DEPLOY_STAGE_KEYS = ["clone", "compose", "build", "deploy", "healthcheck", "routing", "cleanup"];
-
-/** An auto-rollback restores a built slot, so it reports its own phases. */
-const ROLLBACK_STAGE_KEYS = ["stop", "restore", "route", "verify"];
 
 export function InProgressDeployCard({
   stages,
