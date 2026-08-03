@@ -35,6 +35,7 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
         imageName: apps.imageName,
         composeContent: apps.composeContent,
         composeService: apps.composeService,
+        isSystemManaged: apps.isSystemManaged,
       })
       .from(apps)
       .where(and(eq(apps.organizationId, orgId), isNull(apps.parentAppId)));
