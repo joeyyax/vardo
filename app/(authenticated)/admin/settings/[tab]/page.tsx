@@ -8,6 +8,7 @@ import { GeneralSettings } from "../general-settings";
 import { EmailSettings } from "@/components/notifications/settings";
 import { AuthSettings } from "../auth-settings";
 import { FeatureFlagsSettings } from "../feature-flags-settings";
+import { CoreServicesSettings } from "../core-services-settings";
 import { BackupSettings } from "@/components/backups/settings";
 import { GitHubSettings } from "@/components/git-integration/settings";
 import { DomainSettings } from "@/components/ssl/domain-settings";
@@ -33,6 +34,7 @@ const TABS: Record<string, TabEntry> = {
   email:              { component: EmailSettings, gate: "notifications" },
   authentication:     { component: AuthSettings },
   "feature-flags":    { component: FeatureFlagsSettings },
+  "core-services":    { component: CoreServicesSettings },
   backup:             { component: BackupSettings, gate: "backups" },
   github:             { component: GitHubSettings, gate: "git-integration" },
   domain:             { component: DomainSettings, gate: "ssl" },
