@@ -19,6 +19,16 @@ export function isInstanceInfraApp(name: string | null | undefined): boolean {
 }
 
 /**
+ * Whose containers these are, stamped as `vardo.scope` at deploy time. Promtail
+ * reads it to keep the platform's own logs out of an organization's tenant.
+ */
+export type AppScope = "instance" | "app";
+
+export function appScope(name: string | null | undefined): AppScope {
+  return isInstanceInfraApp(name) ? "instance" : "app";
+}
+
+/**
  * True for anything Vardo pins itself. The flag catches the compose children of
  * a decomposed core service, whose names carry no instance-infra prefix.
  */

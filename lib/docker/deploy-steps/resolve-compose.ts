@@ -28,6 +28,7 @@ import { apps } from "@/lib/db/schema";
 import { and, eq } from "drizzle-orm";
 import type { DeployContext } from "../deploy-context";
 import type { ServiceConfigOverride } from "../compose-types";
+import { appScope } from "@/lib/infra/instance-apps";
 
 const NETWORK_NAME = VARDO_NETWORK;
 
@@ -271,6 +272,13 @@ export async function resolveCompose(ctx: DeployContext): Promise<DeployContext>
   }
 
   // Step 3: Add app labels
+  //
+  // vardo.scope separates the platform's own containers from a tenant's. Log
+  // shipping reads it to keep instance infrastructure out of an organization's
+  // tenant — Promtail and Loki quote other organizations' stream labels in
+  // their errors, and an org tenant is the wrong place for that.
+  const scope = appScope(app.name);
+
   for (const [svcName, svc] of Object.entries(compose.services)) {
     compose.services[svcName] = {
       ...svc,
@@ -282,6 +290,7 @@ export async function resolveCompose(ctx: DeployContext): Promise<DeployContext>
         "vardo.deployment.id": ctx.deploymentId,
         "vardo.environment": ctx.envName,
         "vardo.managed": "true",
+        "vardo.scope": scope,
       },
     };
   }
