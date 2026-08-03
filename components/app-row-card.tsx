@@ -1,8 +1,8 @@
-import { formatDistanceToNowStrict } from "date-fns";
 import { CircleDashed, Cpu, Package, ShieldCheck, type LucideIcon } from "lucide-react";
 
 import { formatBytes, formatCores } from "@/lib/metrics/format";
-import { readingLabel } from "@/lib/ui/app-row";
+import { compactUptime, readingLabel } from "@/lib/ui/app-row";
+import { formatRelativeTime, formatSpan } from "@/lib/ui/relative-time";
 import { statusDotColor } from "@/lib/ui/status-colors";
 import { conditionLabel, conditionTone } from "@/lib/ui/conditions";
 import type { AppCondition } from "@/lib/docker/conditions";
@@ -100,7 +100,7 @@ export function AppRowCard({
                 {conditionLabel(c)}
               </span>
               <span className="min-w-0 truncate text-right text-muted-foreground">
-                {formatDistanceToNowStrict(new Date(c.since))}
+                {formatSpan(c.since)}
               </span>
             </li>
           ))}
@@ -117,8 +117,9 @@ export function AppRowCard({
 
       <dl className="space-y-1 border-t pt-2">
         {app.imageName && <Row label="Image">{app.imageName}</Row>}
+        {/* Same reading as the row this card explains. */}
         {app.containerStartedAt && (
-          <Row label="Uptime">{formatDistanceToNowStrict(new Date(app.containerStartedAt))}</Row>
+          <Row label="Uptime">{compactUptime(app.containerStartedAt)}</Row>
         )}
         {running && (
           <Row label="Usage">
@@ -129,7 +130,7 @@ export function AppRowCard({
         <Row label="Memory">{memoryLimitLabel(app.containerMemoryLimit)}</Row>
         {deploy && (
           <Row label="Deployed">
-            {formatDistanceToNowStrict(new Date(deploy.startedAt), { addSuffix: true })}
+            {formatRelativeTime(deploy.startedAt)}
             {deploy.status === "failed" && <span className="text-status-error"> · failed</span>}
           </Row>
         )}

@@ -24,6 +24,18 @@ export function toDate(input: DateInput): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+function bucket(seconds: number): string {
+  const unit = UNITS.find((u) => seconds < u.limit) ?? UNITS[UNITS.length - 1];
+  return `${Math.max(1, Math.floor(seconds / unit.div))}${unit.label}`;
+}
+
+/** Compact "3m" / "6w" span, no direction. Em dash for a missing or invalid date. */
+export function formatSpan(input: DateInput, now: Date = new Date()): string {
+  const date = toDate(input);
+  if (!date) return "—";
+  return bucket(Math.round(Math.abs(date.getTime() - now.getTime()) / 1000));
+}
+
 /** Compact "3m ago" / "in 3m" text. Em dash for a missing or invalid date. */
 export function formatRelativeTime(input: DateInput, now: Date = new Date()): string {
   const date = toDate(input);
@@ -33,10 +45,7 @@ export function formatRelativeTime(input: DateInput, now: Date = new Date()): st
   const seconds = Math.round(Math.abs(diffMs) / 1000);
   if (seconds < 10) return "just now";
 
-  const unit = UNITS.find((u) => seconds < u.limit) ?? UNITS[UNITS.length - 1];
-  const value = Math.max(1, Math.floor(seconds / unit.div));
-
-  return diffMs < 0 ? `${value}${unit.label} ago` : `in ${value}${unit.label}`;
+  return diffMs < 0 ? `${bucket(seconds)} ago` : `in ${bucket(seconds)}`;
 }
 
 /** Exact local date and time, for the hover state. Em dash for a missing or invalid date. */

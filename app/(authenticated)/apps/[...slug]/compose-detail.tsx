@@ -80,7 +80,7 @@ import { SystemBadge } from "@/components/system-badge";
 import { statusDotColor } from "@/lib/ui/status-colors";
 import { crashSummary, extractDeployError } from "@/lib/ui/deploy-error";
 import { currentStageLabel } from "@/lib/ui/deploy-stage";
-import { rollupHealth } from "@/lib/ui/health-rollup";
+import { rollupHealth, rollupUptimeSince } from "@/lib/ui/health-rollup";
 import { tabPanelSurface } from "@/lib/ui/tab-panel";
 import { cn } from "@/lib/utils";
 
@@ -1113,6 +1113,7 @@ export function ComposeDetail({
         siblings={siblings}
         onNavigate={setActiveTabAndUrl}
         stack={rollupHealth(services)}
+        stackUptimeSince={rollupUptimeSince(services)}
         deployStage={currentStageLabel(deploy.deployStages)}
         stabilityIncidents={stabilityIncidents}
       />
