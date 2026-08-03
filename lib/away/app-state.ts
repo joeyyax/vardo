@@ -18,6 +18,7 @@ export type AwayAppRow = {
   name: string;
   displayName: string;
   status: string;
+  parked: boolean;
   containerStartedAt: Date | null;
   updatedAt: Date;
 };
@@ -71,7 +72,9 @@ export function deriveAppStateFacts(
     const down = DOWN_STATUSES.has(app.status);
     const stopped = app.status === "stopped";
 
-    if ((down || stopped) && app.updatedAt >= since) {
+    // A parked app being off is the declaration working, not a fact. Its
+    // restart branch below still fires — coming back up is the surprising part.
+    if ((down || stopped) && !app.parked && app.updatedAt >= since) {
       // A failed deploy already reports itself — don't say it twice.
       if (latest?.status === "failed") continue;
 

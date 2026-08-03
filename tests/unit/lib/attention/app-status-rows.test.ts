@@ -17,6 +17,7 @@ function app(overrides: Partial<StatusSubject> & { name: string }): StatusSubjec
     displayName: overrides.name,
     status: "active",
     statusChangedAt: null,
+    parked: false,
     parentAppId: null,
     ...overrides,
   };
@@ -51,8 +52,22 @@ describe("appStatusRows", () => {
     expect(row.items[0].detail).toBe("Container failed");
   });
 
-  it("stays quiet on an app that has never transitioned", () => {
-    expect(rows([app({ name: "lonvr", status: "missing", statusChangedAt: null })])).toEqual([]);
+  it("reports an app that has never transitioned, without inventing a duration", () => {
+    const [row] = rows([app({ name: "hub", status: "missing", statusChangedAt: null })]);
+
+    expect(row.items).toHaveLength(1);
+    expect(row.items[0].detail).toBe("No container on the host");
+    expect(row.items[0].since).toBeUndefined();
+  });
+
+  it("stays quiet on a parked app however broken it reads", () => {
+    expect(
+      rows([
+        app({ name: "lonvr", status: "missing", statusChangedAt: justNow, parked: true }),
+        app({ name: "encoder", status: "error", statusChangedAt: justNow, parked: true }),
+        app({ name: "jellyfin", status: "missing", statusChangedAt: null, parked: true }),
+      ]),
+    ).toEqual([]);
   });
 
   it("stays quiet once a transition ages out of the window", () => {
@@ -221,6 +236,84 @@ describe("appStoppedRows", () => {
 
   it("stays quiet when nothing is stopped", () => {
     expect(appStoppedRows([app({ name: "hub", status: "active" })])).toEqual([]);
+  });
+
+  it("says a parked app is parked rather than dropping it from the inventory", () => {
+    const [row] = appStoppedRows([
+      app({ name: "lonvr", displayName: "Lonvr", status: "stopped", parked: true }),
+    ]);
+
+    expect(row.items[0]).toMatchObject({ name: "Lonvr", detail: "parked" });
+  });
+
+  it("reads parked alongside the service count on a collapsed stack", () => {
+    const [row] = appStoppedRows(
+      stack("agents", "Agents", ["postgres", "redis", "worker", "web", "api"]).map((a) => ({
+        ...a,
+        parked: true,
+      })),
+    );
+
+    expect(row.items).toHaveLength(1);
+    expect(row.items[0].detail).toBe("parked · 5 services");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The board on the day the flag lands.
+//
+// Every app already off on purpose has a null stamp, which is the only reason
+// the App-down row is quiet about it today. That accident is now the flag's
+// job, and these hold the two to the same answer.
+// ---------------------------------------------------------------------------
+describe("day one", () => {
+  const shelved = [
+    app({ name: "lonvr", displayName: "Reeve NVR", status: "missing", parked: true }),
+    app({ name: "encoder", displayName: "Encoder", status: "missing", parked: true }),
+    app({ name: "jellyfin", displayName: "Jellyfin", status: "missing", parked: true }),
+  ];
+  const agents = app({ name: "agents", displayName: "Agents", status: "stopped", parked: true });
+  const agentServices = ["bot", "dashboard", "postgres", "redis", "worker"].map((service) =>
+    app({
+      name: `agents-${service}`,
+      displayName: service,
+      status: "stopped",
+      parked: true,
+      parentAppId: agents.id,
+    }),
+  );
+  // Genuinely broken, an hour ago, and nobody has declared anything about it.
+  const glitchtip = app({
+    name: "glitchtip",
+    displayName: "GlitchTip",
+    status: "missing",
+    statusChangedAt: justNow,
+  });
+  const board = [...shelved, agents, ...agentServices, glitchtip];
+
+  it("says nothing new about a shelved stack", () => {
+    const [row] = rows(board);
+
+    expect(row.items.map((i) => i.name)).toEqual(["GlitchTip"]);
+  });
+
+  it("keeps the shelved stack in the inventory, now saying why", () => {
+    const [row] = appStoppedRows(board);
+
+    expect(row.items).toHaveLength(1);
+    expect(row.items[0]).toMatchObject({ name: "Agents", detail: "parked · 5 services" });
+    expect(row.items[0].since).toBeUndefined();
+  });
+
+  it("would have gone loud on all three had they not been parked", () => {
+    const [row] = rows(board.map((a) => ({ ...a, parked: false })));
+
+    expect(row.items.map((i) => i.name).sort()).toEqual([
+      "Encoder",
+      "GlitchTip",
+      "Jellyfin",
+      "Reeve NVR",
+    ]);
   });
 });
 

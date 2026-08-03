@@ -123,6 +123,7 @@ export default async function AppDetailPage({ params }: PageProps) {
         displayName: true,
         composeService: true,
         status: true,
+        parked: true,
         imageName: true,
         containerStartedAt: true,
         containerPort: true,

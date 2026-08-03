@@ -7,6 +7,7 @@
 
 import { db } from "@/lib/db";
 import { statusChange } from "@/lib/db/app-status";
+import { setParked } from "@/lib/db/app-parked";
 import { deployments, apps, volumes } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
@@ -377,6 +378,9 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
     .update(apps)
     .set({ ...statusChange("active"), needsRedeploy: false })
     .where(eq(apps.id, ctx.appId));
+
+  // A deploy that landed is a decision to run this, so it stops being parked.
+  await setParked(ctx.appId, false);
 
   // Snapshot current config onto deployment record for rollback
   let envSnapshot: string | null = null;

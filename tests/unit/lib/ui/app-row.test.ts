@@ -115,6 +115,13 @@ describe("statusWord", () => {
     expect(statusWord("unknown")).toBeNull();
   });
 
+  it("says parked over whichever shape of off it is", () => {
+    expect(statusWord("stopped", null, true)).toBe("parked");
+    expect(statusWord("missing", null, true)).toBe("parked");
+    expect(statusWord("missing", "missing", true)).toBe("parked");
+    expect(statusWord("active", null, true)).toBeNull();
+  });
+
   it("tones the word by state", () => {
     expect(statusWordTone("error")).toBe("text-status-error");
     expect(statusWordTone("stopped")).toBe("text-muted-foreground");
@@ -129,6 +136,10 @@ describe("statusRank", () => {
 
   it("puts an unknown status with the idle ones", () => {
     expect(statusRank("weird")).toBe(statusRank("stopped"));
+  });
+
+  it("sorts a parked row below a running one", () => {
+    expect(statusRank("active")).toBeLessThan(statusRank("error", true));
   });
 });
 
