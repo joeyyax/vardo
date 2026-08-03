@@ -35,6 +35,8 @@ import { partitionBySlot, sharedProjectName, slotScopeArgs } from "../slot-parti
 import { isSelfApp } from "../self-env";
 import { clearCutoverPin, guardCutover, type CutoverGuard } from "../traefik-cutover";
 import { projectScopedNetworkNames } from "../shared-networks";
+import { overlapFitsNow } from "../memory-headroom";
+import { reportOomDuringDeploy } from "../deploy-oom";
 
 const execFileAsync = promisify(execFile);
 const NETWORK_NAME = VARDO_NETWORK;
@@ -225,7 +227,10 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
   // process, so stopping it here kills the deploy before it records itself.
   // The stop is deferred to the end of post-deploy, once every write is durable.
   const deferStopToPostDeploy = deferSlotStop(canOverlapSlots, app.name);
-  const pinCutover = canPinCutover(canOverlapSlots);
+  let pinCutover = canPinCutover(canOverlapSlots);
+
+  // Bounds the window an OOM kill has to land in to belong to this deploy.
+  const swapStartedAt = new Date();
 
   // A pin from a deploy that was killed mid-cutover would hold this app on a
   // slot this deploy is about to replace.
@@ -373,23 +378,31 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
       }
     };
 
-    if (!pinCutover) {
+    if (pinCutover) {
+      await drainThenStop(
+        () =>
+          guardCutover({
+            appName: app.name,
+            envName: ctx.envName,
+            compose,
+            slotted,
+            newProjectName,
+            oldProjectName,
+            log,
+          }),
+        stop,
+      );
+    } else {
       await stop();
-      return;
     }
 
-    await drainThenStop(
-      () =>
-        guardCutover({
-          appName: app.name,
-          envName: ctx.envName,
-          compose,
-          slotted,
-          newProjectName,
-          oldProjectName,
-          log,
-        }),
-      stop,
+    // While both slots are up the kernel can pick either. A kill that lands on
+    // the one already going away is indistinguishable from this teardown.
+    await reportOomDuringDeploy(
+      { organizationId: ctx.organizationId, appId: ctx.appId, appName: app.displayName || app.name },
+      oldProjectName,
+      swapStartedAt,
+      log,
     );
   };
 
@@ -404,10 +417,20 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
       ? await oldSlotRuns(sharedNames)
       : false;
 
-  if (stopOldBeforeUp || oldSlotHoldsShared) {
+  // The overlap holds two copies of this app's memory. Read here, after the
+  // build, so it describes the host the new slot is about to start on. Vardo
+  // deploying itself is exempt — its old slot is running this process.
+  const overlapFitsMemory =
+    canOverlapSlots && !deferStopToPostDeploy && !oldSlotHoldsShared
+      ? await overlapFitsNow(ctx.organizationId, ctx.appId, log)
+      : true;
+
+  if (stopOldBeforeUp || oldSlotHoldsShared || !overlapFitsMemory) {
     if (oldSlotHoldsShared) {
       log(`[deploy] Old slot still runs ${sharedNames.join(", ")} — stopping it before the shared project starts`);
     }
+    // Nothing overlaps now, so there is no proven second backend to pin to.
+    if (!overlapFitsMemory) pinCutover = false;
     await stopOldSlot();
   } else if (canOverlapSlots) {
     log(`[deploy] No published host ports — ${activeSlot} keeps serving until ${newSlot} is healthy`);
