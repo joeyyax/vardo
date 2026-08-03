@@ -188,12 +188,30 @@ export function DeploymentStatusBadge({ status }: { status: "queued" | "running"
     case "rolled_back":
       return <Badge variant="warning">Rolled back</Badge>;
     case "cancelled":
-      return <Badge variant="secondary">Cancelled</Badge>;
+      return <Badge variant="neutral">Cancelled</Badge>;
     case "superseded":
-      return <Badge variant="secondary">Superseded</Badge>;
+      return <Badge variant="neutral">Superseded</Badge>;
+    case "queued":
+      return <Badge variant="info">Queued</Badge>;
     default:
-      return <Badge variant="secondary">Queued</Badge>;
+      return <Badge variant="neutral">{status}</Badge>;
   }
+}
+
+// ---------------------------------------------------------------------------
+// LiveBadge — the deployment currently serving traffic
+// ---------------------------------------------------------------------------
+
+export function LiveBadge({ label = "Live" }: { label?: string }) {
+  return (
+    <Badge variant="success" className="shrink-0">
+      <span
+        aria-hidden="true"
+        className="mr-1.5 size-1.5 rounded-full bg-status-success animate-pulse"
+      />
+      {label}
+    </Badge>
+  );
 }
 
 // ---------------------------------------------------------------------------
