@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { getSession } from "@/lib/auth/session";
 import { startGateway } from "@/lib/sse/gateway";
+import { closeOnShutdown } from "@/lib/shutdown";
 
 // GET /api/v1/sse?org={orgId}&deploy={deployId}&lastEventId=&lastDeployId=&lastToastId=
 //
@@ -67,9 +68,11 @@ export async function GET(request: NextRequest) {
           clearInterval(keepalive);
           clearTimeout(timeout);
           abortController.abort();
+          unregister();
           try { controller.close(); } catch { /* already closed */ }
         }
 
+        const unregister = closeOnShutdown(cleanup);
         request.signal.addEventListener("abort", cleanup);
 
         // Start the gateway — reads from multiple streams, dispatches via send()

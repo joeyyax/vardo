@@ -10,6 +10,7 @@ import net from "node:net";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
+import { closeOnShutdown } from "@/lib/shutdown";
 
 // ---------------------------------------------------------------------------
 // Session store — maps sessionId to exec socket and metadata
@@ -166,16 +167,20 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           sessions.delete(sessionId);
         });
 
-        // Clean up when client disconnects
-        request.signal.addEventListener("abort", () => {
+        function closeSession() {
           socket.destroy();
           sessions.delete(sessionId);
+          unregister();
           try {
             controller.close();
           } catch {
             // Already closed
           }
-        });
+        }
+
+        const unregister = closeOnShutdown(closeSession);
+        // Clean up when client disconnects
+        request.signal.addEventListener("abort", closeSession);
       },
     });
 

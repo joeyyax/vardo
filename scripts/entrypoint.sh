@@ -31,5 +31,9 @@ TRAEFIK_DYNAMIC_DIR="${TRAEFIK_DYNAMIC_DIR:-/etc/traefik/dynamic}"
 mkdir -p "$TRAEFIK_DYNAMIC_DIR"
 chown -R nextjs:nodejs "$TRAEFIK_DYNAMIC_DIR"
 
-# Drop to nextjs user, run migrations, start the app
-exec gosu nextjs sh -c "node scripts/migrate.mjs && npx next start"
+# Run migrations as the app user.
+gosu nextjs node scripts/migrate.mjs
+
+# Start the server as PID 1. A `sh -c` or npx wrapper here leaves Node as a
+# child and SIGTERM never reaches it, so the container gets SIGKILLed instead.
+exec gosu nextjs node node_modules/next/dist/bin/next start
