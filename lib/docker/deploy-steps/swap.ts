@@ -34,6 +34,7 @@ import { publishesHostPorts } from "../host-ports";
 import { partitionBySlot, sharedProjectName, slotScopeArgs } from "../slot-partition";
 import { isSelfApp } from "../self-env";
 import { clearCutoverPin, guardCutover, type CutoverGuard } from "../traefik-cutover";
+import { projectScopedNetworkNames } from "../shared-networks";
 
 const execFileAsync = promisify(execFile);
 const NETWORK_NAME = VARDO_NETWORK;
@@ -412,6 +413,28 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
     log(`[deploy] No published host ports — ${activeSlot} keeps serving until ${newSlot} is healthy`);
   }
 
+  // The old slot's compose predates the externalized network and still names
+  // the one its own project created. Its services come back there, so the
+  // shared containers have to join it or the restored web half has no database.
+  // Only after a transition deploy fails — every later slot names the external
+  // network itself.
+  const rejoinOldSlotNetworks = async () => {
+    if (!oldProjectName) return;
+    const networks = projectScopedNetworkNames(compose, oldProjectName);
+    if (networks.length === 0) return;
+    for (const name of sharedNames) {
+      const container = shared[name].container_name ?? `${sharedProject}-${name}-1`;
+      for (const network of networks) {
+        await execFileAsync(
+          "docker",
+          ["network", "connect", "--alias", name, network, container],
+          { timeout: COMPOSE_QUERY_TIMEOUT },
+        ).catch(() => { /* already attached, or the network is gone with the slot */ });
+      }
+    }
+    log(`[deploy] Reattached ${sharedNames.join(", ")} to ${networks.join(", ")}`);
+  };
+
   // Local helper — restart any old-slot services we stopped, so the old slot
   // keeps serving if the new slot cutover fails. Best-effort; logs but never
   // throws, because we're already in the failure path.
@@ -433,6 +456,8 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
     log(`[deploy] Restoring old-slot services after ${reason}: ${serviceNames.length > 0 ? serviceNames.join(", ") : "all"}`);
     try {
       const oldComposeFileArgs = await getOldComposeFileArgs();
+      // Ahead of the up, so the database answers by the time anything asks.
+      if (oldSlotHoldsShared) await rejoinOldSlotNetworks();
       await execFileAsync(
         "docker",
         [

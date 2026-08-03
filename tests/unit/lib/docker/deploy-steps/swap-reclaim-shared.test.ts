@@ -61,6 +61,9 @@ function indexOf(match: (a: string[]) => boolean): number {
 const isOldSlotStop = (a: string[]) => a.includes("app-production-blue") && a.includes("stop");
 const isSharedUp = (a: string[]) => a.includes("app-production-shared") && a.includes("up");
 const isNewSlotUp = (a: string[]) => a.includes("app-production-green") && a.includes("up");
+const isNetworkConnect = (a: string[]) => a[0] === "network" && a[1] === "connect";
+const isOldSlotRestore = (a: string[]) =>
+  a.includes("app-production-blue") && a.includes("up") && a.includes("--no-recreate");
 
 /** The GlitchTip shape: an unmarked postgres on a top-level named volume. */
 function composeFile(): ComposeFile {
@@ -108,7 +111,7 @@ function context(overrides: { compose?: ComposeFile; activeSlot?: "blue" | null 
  * Docker answers healthy, and `ps -q` reports whether the old slot still holds
  * the database — the one thing that decides the ordering under test.
  */
-function dockerWith(opts: { oldSlotHoldsPostgres: boolean }) {
+function dockerWith(opts: { oldSlotHoldsPostgres: boolean; newSlotHealthy?: boolean }) {
   execFileAsyncMock.mockImplementation(async (_cmd: string, args: string[]) => {
     if (args.includes("ps") && args.includes("-q")) {
       return { stdout: opts.oldSlotHoldsPostgres ? "abc123\n" : "", stderr: "" };
@@ -118,8 +121,8 @@ function dockerWith(opts: { oldSlotHoldsPostgres: boolean }) {
         stdout: JSON.stringify({
           Service: "web",
           Name: "app-production-green-web-1",
-          State: "running",
-          Health: "healthy",
+          State: opts.newSlotHealthy === false ? "exited" : "running",
+          Health: opts.newSlotHealthy === false ? "" : "healthy",
         }),
         stderr: "",
       };
@@ -162,6 +165,25 @@ describe("swap — an app still running its database in the old slot", () => {
     await swap(context({ activeSlot: null }));
 
     expect(indexOf(isOldSlotStop)).toBe(-1);
+  });
+
+  it("reattaches the database to the old slot's network when the transition deploy fails", async () => {
+    dockerWith({ oldSlotHoldsPostgres: true, newSlotHealthy: false });
+    await expect(swap(context())).rejects.toThrow();
+
+    const connect = indexOf(isNetworkConnect);
+    expect(calls()[connect]).toEqual([
+      "network", "connect", "--alias", "postgres",
+      "app-production-blue_default", "app-production-shared-postgres-1",
+    ]);
+    expect(connect).toBeLessThan(indexOf(isOldSlotRestore));
+  });
+
+  it("leaves the network alone when the old slot never held the database", async () => {
+    dockerWith({ oldSlotHoldsPostgres: false, newSlotHealthy: false });
+    await expect(swap(context())).rejects.toThrow();
+
+    expect(indexOf(isNetworkConnect)).toBe(-1);
   });
 
   it("leaves an app with nothing shared on the single-project path", async () => {
