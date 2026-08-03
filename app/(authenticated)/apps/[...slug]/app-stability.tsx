@@ -1,9 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Activity, ShieldAlert, TrendingDown, TrendingUp } from "lucide-react";
+import { Activity, TrendingDown, TrendingUp } from "lucide-react";
 
-import { EmptyState } from "@/components/ui/empty-state";
 import { RelativeTime } from "@/components/relative-time";
 import { HeaderStat } from "@/components/entity-header";
 import type { AppCondition } from "@/lib/docker/conditions";
@@ -14,6 +13,7 @@ import {
   incidentTone,
   isFault,
   restartCaption,
+  restartTone,
   stabilitySurface,
   stabilityTone,
   stabilityTrend,
@@ -21,9 +21,9 @@ import {
   trendTone,
   TREND_WINDOW_MS,
   type Incident,
-  type RestartReading,
   type StabilityTrend,
 } from "@/lib/ui/stability";
+import { useRestartReading } from "./use-restarts";
 
 export type StabilityApp = {
   id: string;
@@ -44,24 +44,6 @@ function useNow(): number {
     return () => clearInterval(id);
   }, []);
   return now;
-}
-
-/** Live restart counter for the app's containers, or null while it is unread. */
-function useRestartReading(orgId: string, appId: string) {
-  const [restarts, setRestarts] = useState<RestartReading | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetch(`/api/v1/organizations/${orgId}/apps/${appId}/stability`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data: { restarts: RestartReading | null } | null) => {
-        if (!cancelled && data) setRestarts(data.restarts);
-      })
-      .catch(() => { /* best-effort — the caption says when it is missing */ });
-    return () => { cancelled = true; };
-  }, [orgId, appId]);
-
-  return restarts;
 }
 
 /**
@@ -90,6 +72,7 @@ export function AppStability({
     exitReason: app.exitReason,
     incidents,
     trend,
+    restarts,
   });
   const held = heldFor(app.statusChangedAt, now);
   const faults = incidents.filter((i) => isFault(i.kind));
@@ -109,9 +92,9 @@ export function AppStability({
       <dl className="flex flex-wrap gap-x-10 gap-y-4">
         <HeaderStat
           label="Restarts"
-          hint="Docker's counter for the containers running now. Not history — replacing a container resets it to zero, so a deploy erases it."
+          hint="Docker's counter for the containers running now. Not history — replacing a container resets it to zero, so a deploy erases it. A count this container is still carrying keeps the verdict off Stable."
         >
-          <span className="tabular-nums">{restarts ? restarts.count : "—"}</span>
+          <span className={`tabular-nums ${restartTone(restarts)}`}>{restarts ? restarts.count : "—"}</span>
         </HeaderStat>
         <HeaderStat
           label={`Incidents · ${TREND_DAYS}d`}
@@ -131,19 +114,17 @@ export function AppStability({
         </HeaderStat>
       </dl>
 
+      {/* The trend label only earns a line when it says more than the zeros above. */}
       <p className="text-xs text-muted-foreground">
-        {restartCaption(restarts, now)}. {trend.label}.
+        {restartCaption(restarts, now)}.{trend.direction === "quiet" ? "" : ` ${trend.label}.`}
       </p>
 
       <div>
         <h3 className="type-label text-muted-foreground/60">History</h3>
         {incidents.length === 0 ? (
-          <EmptyState
-            className="mt-3 p-8"
-            icon={ShieldAlert}
-            title="Nothing recorded"
-            body="No crash, deploy failure or rollback has been recorded for this app. History starts when Vardo first saw it, not when the container was built."
-          />
+          <p className="mt-3 text-sm text-muted-foreground">
+            Nothing recorded. History starts when Vardo first saw this app, not when the container was built.
+          </p>
         ) : (
           <ul className="mt-3 divide-y rounded-lg border">
             {incidents.map((incident) => (

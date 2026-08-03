@@ -11,6 +11,10 @@
 // reported with the point it resets from and never as a trend. The trend is
 // computed only from rows that survive a deploy — activity events and
 // deployment history.
+//
+// Not durable is not the same as not evidence. A live count is true of the
+// container running now whatever a deploy later erases, so it withholds
+// "Stable" without ever being counted as history — watch at most, never worse.
 // ---------------------------------------------------------------------------
 
 import type { AppCondition } from "@/lib/docker/conditions";
@@ -159,6 +163,60 @@ export function buildIncidents(
 }
 
 // ---------------------------------------------------------------------------
+// Restart count
+// ---------------------------------------------------------------------------
+
+export type RestartReading = {
+  /** Docker RestartCount summed across the app's containers. */
+  count: number;
+  /** Creation time of the oldest of those containers — where the count restarts from. */
+  since: string | null;
+};
+
+/** Restarts one container absorbs without meaning anything: a host reboot, a daemon upgrade. */
+export const RESTART_ORDINARY = 2;
+
+/** Whether the live count is high enough to withhold a clean verdict. */
+export function restartsElevated(reading: RestartReading | null): reading is RestartReading {
+  return reading !== null && reading.count > RESTART_ORDINARY;
+}
+
+/** The restart figure's hue. Ordinary counts stay in the body colour. */
+export function restartTone(reading: RestartReading | null): string {
+  return restartsElevated(reading) ? "text-status-warning" : "text-foreground";
+}
+
+/** Shape a ledger row's condition column takes. Matches AppRow's `note` prop. */
+export type RestartCue = { label: string; tone: string; title: string };
+
+/** Row-width cue for a container that has been restarting, or null when it has not. */
+export function restartCue(reading: RestartReading | null): RestartCue | null {
+  if (!restartsElevated(reading)) return null;
+  return {
+    label: plural(reading.count, "restart"),
+    tone: "text-status-warning",
+    title: "Docker's counter for the container running now. Replacing the container resets it to zero.",
+  };
+}
+
+/**
+ * The restart figure and the sentence that stops it being read as history.
+ * Docker zeroes RestartCount on a new container, so every deploy erases it.
+ */
+export function restartCaption(reading: RestartReading | null, now: number): string {
+  if (!reading) return "Docker was not reachable";
+  const since = toDate(reading.since);
+  if (!since) return "Since the container was created. A deploy replaces it and the count restarts at zero";
+  return `Since this container was created ${containerAge(since, now)}. A deploy replaces it and the count restarts at zero`;
+}
+
+/** Container age in days, the unit the rest of the page uses. formatRelativeTime floors 48d to "1mo". */
+function containerAge(since: Date, now: number): string {
+  const days = Math.floor((now - since.getTime()) / 86_400_000);
+  return days < 1 ? formatRelativeTime(since, new Date(now)) : `${days}d ago`;
+}
+
+// ---------------------------------------------------------------------------
 // Trend
 // ---------------------------------------------------------------------------
 
@@ -221,6 +279,20 @@ export function trendBadge(trend: StabilityTrend, windowMs: number = TREND_WINDO
   return `${trend.recent} in ${days}d${trend.direction === "worsening" ? ", up" : ""}`;
 }
 
+/**
+ * What qualifies the verdict in the width a header stat has. Durable incidents
+ * win; the live restart count speaks only when they have nothing to say.
+ */
+export function stabilityCue(
+  trend: StabilityTrend,
+  restarts: RestartReading | null,
+  windowMs: number = TREND_WINDOW_MS,
+): string | null {
+  const badge = trendBadge(trend, windowMs);
+  if (badge) return badge;
+  return restartsElevated(restarts) ? plural(restarts.count, "restart") : null;
+}
+
 /** Worsening is the only direction that carries a state hue. */
 export function trendTone(direction: TrendDirection): string {
   if (direction === "worsening") return "text-status-warning";
@@ -254,6 +326,8 @@ export type VerdictInput = {
   /** Newest first, as buildIncidents returns them. */
   incidents: Incident[];
   trend: StabilityTrend;
+  /** Docker's live counter, or null when it could not be read. */
+  restarts: RestartReading | null;
 };
 
 /** Conditions that mean the app is failing even while Docker calls it running. */
@@ -296,17 +370,29 @@ export function stabilityVerdict(input: VerdictInput): StabilityVerdict {
       detail: `${incidentLabel(lastFault.kind).toLowerCase()} ${formatRelativeTime(lastFault.at, new Date(input.now))}`,
     };
   }
+  const restarting = restartsElevated(input.restarts) ? input.restarts : null;
+
   if (input.trend.recent > 0) {
-    return { level: "watch", headline: "Running", detail: `${input.trend.label} — clean right now` };
+    return {
+      level: "watch",
+      headline: "Running",
+      detail: restarting
+        ? `${input.trend.label}, ${plural(restarting.count, "restart")} on this container`
+        : `${input.trend.label} — clean right now`,
+    };
+  }
+  // Nothing durable to go on, but the container running now has been restarting.
+  // Enough to withhold "Stable", never enough to claim more than watch.
+  if (restarting) {
+    return {
+      level: "watch",
+      headline: "Running",
+      detail: `${plural(restarting.count, "restart")} on the container running now, none recorded as incidents`,
+    };
   }
 
-  return {
-    level: "stable",
-    headline: "Stable",
-    detail: lastFault
-      ? `Last incident ${formatRelativeTime(lastFault.at, new Date(input.now))}`
-      : "No incidents on record",
-  };
+  // The stats below carry the last incident date; repeating it here says nothing.
+  return { level: "stable", headline: "Stable", detail: null };
 }
 
 const LEVEL_TONE: Record<StabilityLevel, string> = {
@@ -332,28 +418,6 @@ const LEVEL_SURFACE: Record<StabilityLevel, string> = {
 
 export function stabilitySurface(level: StabilityLevel): string {
   return LEVEL_SURFACE[level];
-}
-
-// ---------------------------------------------------------------------------
-// Restart count
-// ---------------------------------------------------------------------------
-
-export type RestartReading = {
-  /** Docker RestartCount summed across the app's containers. */
-  count: number;
-  /** Creation time of the oldest of those containers — where the count restarts from. */
-  since: string | null;
-};
-
-/**
- * The restart figure and the sentence that stops it being read as history.
- * Docker zeroes RestartCount on a new container, so every deploy erases it.
- */
-export function restartCaption(reading: RestartReading | null, now: number): string {
-  if (!reading) return "Docker was not reachable";
-  const since = toDate(reading.since);
-  if (!since) return "Since the container was created. A deploy replaces it and the count restarts at zero";
-  return `Since this container was created ${formatRelativeTime(since, new Date(now))}. A deploy replaces it and the count restarts at zero`;
 }
 
 // ---------------------------------------------------------------------------
