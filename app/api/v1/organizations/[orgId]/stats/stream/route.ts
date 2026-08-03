@@ -29,11 +29,14 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return new Response(null, { status: 204 });
     }
 
-    const orgApps = await db.query.apps.findMany({
-      where: eq(apps.organizationId, orgId),
-      columns: { ...METRICS_APP_COLUMNS, displayName: true, projectId: true },
-    });
-    const projectCount = new Set(orgApps.map((a) => a.projectId).filter(Boolean)).size;
+    async function loadApps() {
+      return db.query.apps.findMany({
+        where: eq(apps.organizationId, orgId),
+        columns: { ...METRICS_APP_COLUMNS, displayName: true, projectId: true },
+      });
+    }
+
+    let orgApps = await loadApps();
 
     // Denominator for the CPU figure — container percentages sum past 100 on a
     // multi-core host.
@@ -68,6 +71,14 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         } catch { /* skip */ }
       }
 
+      // App rows carry status, so a connection held open for hours would
+      // otherwise render whatever the statuses were when it opened.
+      async function refreshApps() {
+        try {
+          orgApps = await loadApps();
+        } catch { /* skip */ }
+      }
+
       // Start app disk fetch in background
       refreshAppDisk();
 
@@ -77,6 +88,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         const allOrgContainers = dedupeMetrics(byApp.values());
         const orgDiskTotal = Object.values(cachedAppDisk).reduce((s, v) => s + v, 0);
         const point = aggregateContainers(allOrgContainers, orgDiskTotal);
+        const projectCount = new Set(orgApps.map((a) => a.projectId).filter(Boolean)).size;
 
         sendEvent("point", {
           ...point,
@@ -91,6 +103,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         });
 
         tickCount++;
+        if (tickCount % 10 === 0) {
+          refreshApps();
+        }
         if (tickCount % 60 === 0) {
           refreshAppDisk();
         }

@@ -439,10 +439,13 @@ export function AppGrid({
     [updates],
   );
 
+  // Bus events drive this list. This is the backstop for container state that
+  // changed outside Vardo — the reconciler discovers it on a 60s poll and emits
+  // nothing, so there is no point refreshing faster than that.
   useEffect(() => {
     const interval = setInterval(() => {
       if (document.visibilityState === "visible") router.refresh();
-    }, 30000);
+    }, 60000);
     return () => clearInterval(interval);
   }, [router]);
 

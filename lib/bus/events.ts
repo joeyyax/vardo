@@ -228,14 +228,17 @@ export type DigestWeeklyEvent = {
 // Operational events (real-time UI updates, not notification-worthy)
 // ---------------------------------------------------------------------------
 
-/** Lightweight deploy status change for real-time UI (deployments list, logs page). */
+/**
+ * Lightweight deploy status change for real-time UI (deployments list, logs page).
+ * `running` marks the start of a deploy and is not sent to notification channels.
+ */
 export type DeployStatusEvent = {
   type: "deploy.status";
   title: string;
   message: string;
   appId: string;
   deploymentId: string;
-  status: "active" | "error" | "cancelled" | "superseded";
+  status: "running" | "active" | "error" | "cancelled" | "superseded";
   success: boolean;
   durationMs?: number;
   supersededBy?: string;

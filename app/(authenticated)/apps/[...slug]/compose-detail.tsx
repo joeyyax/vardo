@@ -52,6 +52,9 @@ import { pendingImageChange, type PendingImage } from "@/lib/docker/image-update
 import { AppHeader } from "./app-header";
 import { SectionNav, type SectionGroup } from "@/components/section-nav";
 import { isOrgAdmin } from "@/lib/auth/permissions";
+import { useAppEvents } from "@/hooks/use-app-events";
+import { isRefreshEvent } from "@/lib/bus/refresh";
+import type { BusEvent } from "@/lib/bus/events";
 import type { App, ChildApp, Tag } from "./types";
 import type { FeatureFlags } from "@/lib/config/features";
 import { ComposeReview } from "@/components/compose-review";
@@ -711,33 +714,18 @@ export function ComposeDetail({
     [app.name],
   );
 
-  // Real-time updates via SSE, poll fallback
-  useEffect(() => {
-    const eventsUrl = `/api/v1/organizations/${orgId}/apps/${app.id}/events`;
-    let es: EventSource | null = null;
-    let fallbackInterval: ReturnType<typeof setInterval> | null = null;
-
-    try {
-      es = new EventSource(eventsUrl);
-      es.addEventListener("deploy:complete", () => router.refresh());
-      es.addEventListener("deploy:rolled_back", () => router.refresh());
-      es.onerror = () => {
-        es?.close();
-        es = null;
-        if (!fallbackInterval) {
-          fallbackInterval = setInterval(() => router.refresh(), 10000);
-        }
-      };
-    } catch {
-      fallbackInterval = setInterval(() => router.refresh(), 10000);
-    }
-
-    return () => {
-      es?.close();
-      if (fallbackInterval) clearInterval(fallbackInterval);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [app.id, orgId]);
+  // Real-time updates from the app's event stream, with a polling fallback
+  useAppEvents({
+    orgId,
+    appId: app.id,
+    onEvent: useCallback(
+      (event: BusEvent) => {
+        if (isRefreshEvent(event.type)) router.refresh();
+      },
+      [router],
+    ),
+    onFallback: useCallback(() => router.refresh(), [router]),
+  });
 
   const serverRunningDeploy =
     app.deployments.find((d) => d.status === "running" || d.status === "queued") ?? null;
