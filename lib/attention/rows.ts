@@ -12,6 +12,7 @@ import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { isVardoManagedApp } from "@/lib/infra/instance-apps";
 import { getVersionData } from "@/lib/version";
 import { activityRows, getFleetActivity } from "./activity";
+import { APP_DOWN_WINDOW_HOURS, appStatusRows, withParentNames } from "./app-status-rows";
 import { getFleetAttention } from "./fleet";
 
 /** A failure older than this is history, not something to act on now. */
@@ -68,6 +69,27 @@ async function loadExitReasons(orgId: string) {
   return rows.filter((a) => !isVardoManagedApp(a));
 }
 
+/**
+ * Every app, children included. A compose child holds its own status and
+ * conditions — a stack whose database is down still reads active on the parent.
+ */
+async function loadStatusSubjects(orgId: string) {
+  const rows = await db
+    .select({
+      id: apps.id,
+      name: apps.name,
+      displayName: apps.displayName,
+      status: apps.status,
+      statusChangedAt: apps.statusChangedAt,
+      parentAppId: apps.parentAppId,
+      conditions: apps.conditions,
+      isSystemManaged: apps.isSystemManaged,
+    })
+    .from(apps)
+    .where(eq(apps.organizationId, orgId));
+  return rows.filter((a) => !isVardoManagedApp(a));
+}
+
 type BuildOptions = {
   /** Release availability is admin business — non-admins never see the row. */
   isAppAdmin: boolean;
@@ -108,16 +130,18 @@ export async function buildAttentionRows(
 
   const appIds = appRows.map((a) => a.id);
 
-  const [fleet, updates, version, failedBackups, activity, exited] = await Promise.all([
+  const [fleet, updates, version, failedBackups, activity, exited, subjects] = await Promise.all([
     getFleetAttention(orgId),
     getCooldownUntil().then((cooldown) => getAggregateUpdateStatus(orgId, appRows, cooldown)),
     isAppAdmin ? getVersionData().catch(() => null) : null,
     loadFailedBackups(appIds),
     getFleetActivity(appIds),
     loadExitReasons(orgId),
+    loadStatusSubjects(orgId),
   ]);
 
-  const rows = conditionRows(appRows);
+  const rows = conditionRows(withParentNames(subjects));
+  rows.push(...appStatusRows(subjects, Date.now(), APP_DOWN_WINDOW_HOURS * 3_600_000));
   rows.push(...oomRows(exited, Date.now(), OOM_WINDOW_HOURS * 3_600_000));
 
   if (fleet.unreachableDomains.length > 0) {
