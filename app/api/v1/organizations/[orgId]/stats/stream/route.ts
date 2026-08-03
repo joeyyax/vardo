@@ -10,6 +10,8 @@ import { createSSEResponse } from "@/lib/api/sse";
 import { isMetricsEnabled } from "@/lib/metrics/config";
 import { subscribe } from "@/lib/metrics/broadcast";
 import { aggregateContainers, containerToPoint } from "@/lib/metrics/aggregate";
+import { groupMetricsByApp, dedupeMetrics } from "@/lib/metrics/app-match";
+import { METRICS_APP_COLUMNS } from "@/lib/metrics/app-columns";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 
 type RouteParams = {
@@ -29,7 +31,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     const orgApps = await db.query.apps.findMany({
       where: eq(apps.organizationId, orgId),
-      columns: { id: true, name: true, displayName: true, status: true, projectId: true, parentAppId: true },
+      columns: { ...METRICS_APP_COLUMNS, displayName: true, projectId: true },
     });
     const projectCount = new Set(orgApps.map((a) => a.projectId).filter(Boolean)).size;
 
@@ -70,17 +72,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       refreshAppDisk();
 
       const unsubscribe = subscribe((allMetrics) => {
-        const byApp: Record<string, typeof allMetrics> = {};
-        for (const m of allMetrics) {
-          const matched = orgApps.find(
-            (p) => m.projectName === p.name || m.projectName.startsWith(`${p.name}-`)
-          );
-          if (!matched) continue;
-          if (!byApp[matched.id]) byApp[matched.id] = [];
-          byApp[matched.id].push(m);
-        }
+        const byApp = groupMetricsByApp(orgApps, allMetrics);
 
-        const allOrgContainers = Object.values(byApp).flat();
+        const allOrgContainers = dedupeMetrics(byApp.values());
         const orgDiskTotal = Object.values(cachedAppDisk).reduce((s, v) => s + v, 0);
         const point = aggregateContainers(allOrgContainers, orgDiskTotal);
 
@@ -92,7 +86,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           apps: orgApps.map((p) => ({
             ...p,
             diskUsage: cachedAppDisk[p.id] || 0,
-            containers: (byApp[p.id] || []).map(containerToPoint),
+            containers: (byApp.get(p.id) ?? []).map(containerToPoint),
           })),
         });
 

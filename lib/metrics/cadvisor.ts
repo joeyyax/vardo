@@ -50,9 +50,29 @@ const specsCacheByUrl = new Map<string, { specs: Record<string, V2SpecEntry>; ca
  * last path segment yields "docker-abcde" on any modern host.
  */
 export function parseContainerId(cgroupPath: string): string {
-  const hex = cgroupPath.match(/([0-9a-f]{64})/i)?.[1];
+  const hex = parseFullContainerId(cgroupPath);
   if (hex) return hex.slice(0, 12);
   return cgroupPath.split("/").pop()?.replace(/^docker[-/]/, "").slice(0, 12) ?? "";
+}
+
+/** Full 64-char container id from a cAdvisor cgroup path; empty when it carries none. */
+export function parseFullContainerId(cgroupPath: string): string {
+  return cgroupPath.match(/([0-9a-f]{64})/i)?.[1] ?? "";
+}
+
+/**
+ * Label prefixes app matching reads. cAdvisor's spec endpoint returns every
+ * Docker label; Traefik rules and OCI annotations are dropped here so the
+ * snapshot held in memory stays small.
+ */
+const IDENTITY_LABEL_PREFIXES = ["vardo.", "host.", "com.docker.compose."];
+
+function identityLabels(labels: Record<string, string> | undefined): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(labels ?? {})) {
+    if (IDENTITY_LABEL_PREFIXES.some((prefix) => key.startsWith(prefix))) out[key] = value;
+  }
+  return out;
 }
 
 /**
@@ -164,9 +184,11 @@ export async function fetchAllContainerMetrics(baseUrl = CADVISOR_URL): Promise<
 
     metrics.push({
       containerId,
+      containerIdFull: parseFullContainerId(key),
       containerName,
       projectName,
       organizationId,
+      labels: identityLabels(spec.labels),
       cpuPercent: Math.round(cpuPercent * 100) / 100,
       memoryUsage,
       memoryLimit,
@@ -188,30 +210,6 @@ export async function fetchAllContainerMetrics(baseUrl = CADVISOR_URL): Promise<
 }
 
 /**
- * Fetch metrics for containers belonging to a specific project.
- */
-export async function fetchProjectMetrics(
-  projectName: string,
-  environmentName?: string,
-  baseUrl = CADVISOR_URL,
-): Promise<ContainerMetrics[]> {
-  const all = await fetchAllContainerMetrics(baseUrl);
-  // Container names follow: {project}-{env}-{slot}-{service}-{n}
-  // Match by project name prefix, then optionally filter by environment
-  const projectContainers = all.filter(
-    (m) =>
-      m.projectName === projectName ||
-      m.projectName.startsWith(`${projectName}-`)
-  );
-  if (!environmentName) return projectContainers;
-  // Filter to containers whose compose project matches {project}-{env}-*
-  const envPrefix = `${projectName}-${environmentName}-`;
-  return projectContainers.filter(
-    (m) => m.containerName.startsWith(envPrefix) || m.projectName.startsWith(envPrefix)
-  );
-}
-
-/**
  * cAdvisor metrics provider — implements MetricsProvider interface.
  * Optionally accepts a URL override (for integration-configured instances).
  */
@@ -224,9 +222,5 @@ export class CadvisorProvider implements MetricsProvider {
 
   async fetchAll(): Promise<ContainerMetrics[]> {
     return fetchAllContainerMetrics(this.url);
-  }
-
-  async fetchByProject(projectName: string, environmentName?: string): Promise<ContainerMetrics[]> {
-    return fetchProjectMetrics(projectName, environmentName, this.url);
   }
 }
