@@ -10,7 +10,7 @@
 // re-opens cross-organization deletion.
 // ---------------------------------------------------------------------------
 
-import { access, readdir } from "fs/promises";
+import { access, readdir, rm } from "fs/promises";
 import { constants } from "fs";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
@@ -128,6 +128,56 @@ export async function assertAppDirOwnership(opts: {
       return;
     }
   }
+}
+
+/** Outcome of removing an app's base directory. */
+export type AppDirRemoval = {
+  removed: boolean;
+  /** Why the directory survived. */
+  reason?: string;
+};
+
+/**
+ * Remove an app's base directory and drop its ownership record.
+ *
+ * Guarded by assertAppDirOwnership, which throws when the directory belongs to
+ * another app. A directory this process cannot remove is reported rather than
+ * thrown — Vardo runs unprivileged and many app directories are owned by another
+ * uid, so a surviving directory must not fail an otherwise complete delete.
+ *
+ * The record is dropped either way. It names an app that no longer exists, and
+ * keeping it would refuse every later use of the name.
+ *
+ * Call before the app row is deleted — the guard adopts an unmarked directory by
+ * resolving the name against the database.
+ */
+export async function removeAppDir(opts: {
+  appId: string;
+  appName: string;
+}): Promise<AppDirRemoval> {
+  const { appId, appName } = opts;
+  if (isSelfApp(appName)) return { removed: false, reason: "Vardo's own directory" };
+
+  await assertAppDirOwnership({ appId, appName, operation: "delete" });
+
+  let removed = true;
+  let reason: string | undefined;
+  try {
+    await rm(appBaseDir(appName), { recursive: true, force: true });
+  } catch (err) {
+    removed = false;
+    reason = errText(err);
+    // A surviving marker would keep the name claimed by a deleted app.
+    await rm(appOwnerFile(appName), { force: true }).catch(() => {});
+  }
+
+  try {
+    await removeAppDirOwner(appName);
+  } catch (err) {
+    log.warn(`Could not drop the ownership record for ${appName}:`, err);
+  }
+
+  return removed ? { removed } : { removed, reason };
 }
 
 /**
