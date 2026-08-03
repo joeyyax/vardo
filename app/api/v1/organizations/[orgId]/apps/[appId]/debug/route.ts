@@ -119,7 +119,7 @@ async function handler(_request: NextRequest, { params }: RouteParams) {
     // secrets that are encrypted at rest in the database.
     let containers: unknown[] = [];
     try {
-      const containerList = await listContainers(app.name);
+      const containerList = await listContainers(app);
       const inspectResults = await Promise.allSettled(
         containerList.map((c) => inspectContainer(c.id)),
       );

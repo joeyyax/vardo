@@ -60,12 +60,12 @@ const stackContainers = [
 ];
 
 describe("cronContainerScope", () => {
-  it("uses the app's own name for a plain app", () => {
-    expect(cronContainerScope(app())).toBe("paperless");
+  it("uses the app's own id and name for a plain app", () => {
+    expect(cronContainerScope(app())).toEqual({ id: "app-1", name: "paperless" });
   });
 
-  it("uses the parent's name for a stack child", () => {
-    expect(cronContainerScope(stackChild)).toBe("immich");
+  it("uses the parent's id and name for a stack child", () => {
+    expect(cronContainerScope(stackChild)).toEqual({ id: "parent-immich", name: "immich" });
   });
 });
 

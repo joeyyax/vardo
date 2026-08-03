@@ -73,7 +73,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     const dockerVolumes: VolumeInfo[] = [];
     const seenMounts = new Set<string>();
     try {
-      const containers = await listContainers(app.name);
+      const containers = await listContainers(app);
       for (const container of containers) {
         try {
           const info = await inspectContainer(container.id);
