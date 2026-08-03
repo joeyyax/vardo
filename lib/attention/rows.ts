@@ -242,7 +242,7 @@ export async function buildAttentionRows(
           since: b.startedAt.toISOString(),
         };
       }),
-      footer: `${failedBackups.length} failed in the last ${BACKUP_FAILURE_WINDOW_HOURS} hours.`,
+      footer: `${failedBackups.length} app${failedBackups.length === 1 ? "" : "s"} failed a backup in the last ${BACKUP_FAILURE_WINDOW_HOURS} hours. Each row is its most recent failure.`,
     });
   }
 
