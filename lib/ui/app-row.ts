@@ -7,6 +7,7 @@
 // ---------------------------------------------------------------------------
 
 import { worstCondition, type AppCondition } from "@/lib/docker/conditions";
+import { conditionLabel, conditionTone } from "@/lib/ui/conditions";
 
 /** How loud a row is allowed to be. Only warning and critical earn a rail. */
 export type RowSeverity = "none" | "info" | "warning" | "critical";
@@ -152,4 +153,119 @@ export function readingLabel(
 export function tagLabels(names: string[], max = 2): { shown: string[]; overflow: number } {
   const clean = names.map((n) => n.trim().toLowerCase()).filter(Boolean);
   return { shown: clean.slice(0, max), overflow: Math.max(0, clean.length - max) };
+}
+
+// ---------------------------------------------------------------------------
+// The note beside the name
+// ---------------------------------------------------------------------------
+
+/** The one thing worth saying about a row beyond its status. */
+export type RowNote = { label: string; tone: string; detail?: string };
+
+/**
+ * Worst condition first, then pending config, then whatever the caller offers.
+ * The row and its hover card read this so the two never disagree.
+ */
+export function rowNote(
+  conditions?: AppCondition[] | null,
+  needsRedeploy?: boolean | null,
+  fallback?: RowNote | null,
+): RowNote | null {
+  const worst = worstCondition(conditions ?? []);
+  if (worst) {
+    return { label: conditionLabel(worst), tone: conditionTone(worst.severity), detail: worst.detail };
+  }
+  if (needsRedeploy) {
+    return {
+      label: "restart needed",
+      tone: "text-status-warning",
+      detail: "Config changed since the last deploy",
+    };
+  }
+  return fallback ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// Middle columns
+// ---------------------------------------------------------------------------
+
+/**
+ * What the row runs: the image without its registry host, or the git repo.
+ * Also what tells a compose parent apart from the child that shares its name.
+ */
+export function sourceRef(app: {
+  imageName?: string | null;
+  gitUrl?: string | null;
+}): string | null {
+  const image = app.imageName?.trim();
+  if (image) {
+    const parts = image.split("/");
+    // A first segment carrying a dot or a port is a registry host, not a namespace.
+    if (parts.length > 1 && /[.:]/.test(parts[0])) parts.shift();
+    return parts.join("/") || null;
+  }
+  const git = app.gitUrl?.trim();
+  if (!git) return null;
+  return (
+    git
+      .replace(/^git@[^:]+:/, "")
+      .replace(/^[a-z+]+:\/\/[^/]+\//i, "")
+      .replace(/\.git$/, "") || null
+  );
+}
+
+/** Where the row answers. The primary domain, else the first one it has. */
+export function primaryDomain(
+  domains?: { domain: string; isPrimary?: boolean | null }[] | null,
+): string | null {
+  if (!domains || domains.length === 0) return null;
+  return (domains.find((d) => d.isPrimary) ?? domains[0]).domain ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// Truncation order
+//
+// A row that runs out of width must destroy its columns in order of least
+// worth, and the name is worth the most. CSS decides that by flex-shrink x
+// flex-basis, which is why `flex-1` (basis 0) on a neighbour is a trap: it
+// weighs nothing, absorbs no shrinkage, and leaves the name to take all of it.
+// ---------------------------------------------------------------------------
+
+/** Cell classes, shared with the component so the order below is the real one. */
+export const ROW_NAME_CELL = "min-w-0 shrink truncate";
+export const ROW_NOTE_CELL = "min-w-0 shrink-[9999] truncate";
+export const ROW_SOURCE_CELL = "min-w-0 w-44 shrink-[9999] truncate";
+export const ROW_DOMAIN_CELL = "min-w-0 w-52 shrink-[9999] truncate";
+/**
+ * Holds the fixed columns. No min-w-0: min-content is the width of its own
+ * shrink-0 children, so it squeezes the middle columns flat, freezes there, and
+ * only then does the name start losing characters.
+ */
+export const ROW_TRAILING_CELL = "ml-auto flex shrink-[9999] items-center gap-2.5";
+
+const SPACING_PX = 4;
+
+/** flex-shrink x flex-basis, the factor CSS shares shrinkage out by. */
+export function shrinkWeight(className: string, contentWidth = 100): number {
+  let shrink = 1;
+  let basis: number | null = null;
+  for (const name of className.split(/\s+/)) {
+    if (name === "shrink-0" || name === "flex-none") shrink = 0;
+    else if (name === "shrink") shrink = 1;
+    else if (name.startsWith("shrink-[")) shrink = Number(name.slice(8, -1)) || 0;
+    else if (name === "flex-1" || name === "basis-0") basis = 0;
+    else if (name === "flex-auto" || name === "basis-auto") basis = null;
+    else if (/^w-\d+(\.\d+)?$/.test(name)) basis = Number(name.slice(2)) * SPACING_PX;
+  }
+  return shrink * (basis ?? contentWidth);
+}
+
+export type RowCell = { id: string; className: string; width?: number };
+
+/** Which cells give up width first. Heaviest first; the last one truncates last. */
+export function truncationOrder(cells: RowCell[]): string[] {
+  return cells
+    .map((cell, index) => ({ ...cell, index, weight: shrinkWeight(cell.className, cell.width) }))
+    .sort((a, b) => b.weight - a.weight || a.index - b.index)
+    .map((cell) => cell.id);
 }

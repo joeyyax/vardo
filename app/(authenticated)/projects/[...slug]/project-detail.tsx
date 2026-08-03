@@ -178,38 +178,47 @@ function AppLedgerRow({
   usage,
   updateCount = 0,
   statusOverride,
+  sharedStatus,
   related = false,
+  indented = false,
   onHoverStart,
   onHoverEnd,
 }: {
-  app: ProjectApp;
+  app: ProjectApp | ComposeChildApp;
   href: string;
   series?: number[];
   usage?: AppMetricsSample;
   updateCount?: number;
   statusOverride?: string;
+  sharedStatus?: string | null;
   related?: boolean;
-  onHoverStart: () => void;
-  onHoverEnd: () => void;
+  indented?: boolean;
+  onHoverStart?: () => void;
+  onHoverEnd?: () => void;
 }) {
   const withStatus = { ...app, status: statusOverride ?? app.status };
+  const tags = "appTags" in app ? app.appTags.map((t) => t.tag.name) : [];
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <AppRow
-          app={{ ...withStatus, tags: app.appTags.map((t) => t.tag.name) }}
+          app={{ ...withStatus, tags }}
           href={href}
           series={series}
           updateCount={updateCount}
+          sharedStatus={sharedStatus}
           related={related}
+          indented={indented}
           onMouseEnter={onHoverStart}
           onMouseLeave={onHoverEnd}
         />
       </TooltipTrigger>
       <TooltipContent
-        side="right"
+        /* Anchored under the row: side="right" collided and flipped onto the nav rail. */
+        side="bottom"
         align="start"
-        sideOffset={6}
+        sideOffset={4}
+        collisionPadding={12}
         className="bg-popover text-popover-foreground border shadow-card-hover px-3 py-2.5 [&>span]:hidden"
       >
         <AppRowCard app={withStatus} updateCount={updateCount} usage={usage} />
@@ -1130,11 +1139,12 @@ export function ProjectDetail({
                     .map((child) => (
                       /* A stopped stack cascades to every child. The parent row
                          states it; a child only speaks when it differs. */
-                      <AppRow
+                      <AppLedgerRow
                         key={child.id}
                         app={child}
                         href={`/apps/${child.name}`}
                         series={history.get(child.id)?.cpu}
+                        usage={metrics.get(child.id)}
                         sharedStatus={app.status}
                         indented
                       />

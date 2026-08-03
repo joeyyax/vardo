@@ -154,6 +154,7 @@ function StatCell({
   sub,
   data,
   meter,
+  className,
 }: {
   label: string;
   value: string;
@@ -161,10 +162,12 @@ function StatCell({
   data?: number[];
   /** 0–1 fill fraction. Takes the trend strip's place when set. */
   meter?: number;
+  /** The cell's own edges — they move when the band reflows to two columns. */
+  className?: string;
 }) {
   const trend = meter === undefined && data && data.length > 1 && data.some((v) => v > 0);
   return (
-    <div className="min-w-0 px-3 py-2 first:pl-5 last:pr-5">
+    <div className={`min-w-0 border-border/40 px-3 py-2 first:pl-5 last:pr-5 ${className ?? ""}`}>
       <div className="text-[9px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
         {label}
       </div>
@@ -225,7 +228,8 @@ export function MetricsBand({
   const disk = last(history?.disk) ?? metrics?.diskUsage ?? 0;
   const net = metrics ? metrics.networkRx + metrics.networkTx : last(history?.network);
   return (
-    <div className="grid grid-cols-4 divide-x divide-border/40 border-t">
+    /* Two up until four cells can hold a figure without clipping it. */
+    <div className="grid grid-cols-2 border-t @[22rem]:grid-cols-4">
       <StatCell label="CPU" value={formatCores(cpu)} data={history?.cpu} />
       <StatCell
         label="Memory"
@@ -233,9 +237,20 @@ export function MetricsBand({
         sub={memoryLimit > 0 ? `/ ${formatBytes(memoryLimit)}` : undefined}
         meter={memoryLimit > 0 && mem !== undefined ? mem / memoryLimit : undefined}
         data={history?.memory}
+        className="border-l"
       />
-      <StatCell label="Disk" value={disk > 0 ? formatBytes(disk) : "—"} data={history?.disk} />
-      <StatCell label="Network" value={net !== undefined ? formatBytes(net) : "—"} data={history?.network} />
+      <StatCell
+        label="Disk"
+        value={disk > 0 ? formatBytes(disk) : "—"}
+        data={history?.disk}
+        className="border-t @[22rem]:border-l @[22rem]:border-t-0"
+      />
+      <StatCell
+        label="Network"
+        value={net !== undefined ? formatBytes(net) : "—"}
+        data={history?.network}
+        className="border-l border-t @[22rem]:border-t-0"
+      />
     </div>
   );
 }
