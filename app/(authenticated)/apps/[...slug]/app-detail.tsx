@@ -35,6 +35,7 @@ import { statusDotColor, envTypeDotColor } from "@/lib/ui/status-colors";
 import { AppMetrics } from "./app-metrics";
 import { AppBackupHistory } from "@/components/backups/app-backup-history";
 import { AppErrors } from "./app-errors";
+import { AppStability } from "./app-stability";
 
 const AppTerminal = dynamic(
   () => import("./app-terminal").then((m) => m.AppTerminal),
@@ -90,7 +91,7 @@ function buildAppPath(appName: string, environments: Environment[], envId: strin
   return tab && tab !== "deployments" ? `${base}/${tab}` : base;
 }
 
-export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = [], allAppNames = [], orgVarKeys = [], siblings = [], initialTab = "deployments", initialEnv, initialSubView, featureFlags, parentApp = null }: AppDetailProps) {
+export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = [], allAppNames = [], orgVarKeys = [], siblings = [], stabilityIncidents = [], initialTab = "deployments", initialEnv, initialSubView, featureFlags, parentApp = null }: AppDetailProps) {
   const router = useRouter();
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteEnvOpen, setDeleteEnvOpen] = useState(false);
@@ -319,6 +320,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         featureFlags={featureFlags}
         allTags={allTags}
         siblings={siblings}
+        stabilityIncidents={stabilityIncidents}
         allParentApps={allParentApps}
       />
     );
@@ -725,6 +727,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         siblings={siblings}
         onNavigate={setActiveTab}
         deployStage={currentStageLabel(deploy.deployStages)}
+        stabilityIncidents={stabilityIncidents}
       />
 
 
@@ -762,6 +765,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
                 {
                   label: "Observe",
                   items: [
+                    { value: "stability", label: "Stability" },
                     ...(featureFlags?.logging !== false ? [{ value: "logs", label: "Logs" }] : []),
                     ...(featureFlags?.metrics !== false ? [{ value: "metrics", label: "Metrics" }] : []),
                     ...(featureFlags?.errorTracking !== false ? [{ value: "errors", label: "Errors" }] : []),
@@ -798,6 +802,10 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
             deploying={deploy.deploying}
             deployed={{ [app.composeService ?? ""]: app.imageName }}
           />
+        </TabsContent>
+
+        <TabsContent value="stability">
+          <AppStability orgId={orgId} app={app} incidents={stabilityIncidents} />
         </TabsContent>
 
         <TabsContent value="deployments">

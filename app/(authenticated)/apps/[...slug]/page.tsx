@@ -7,6 +7,7 @@ import { nanoid } from "nanoid";
 import { AppDetail } from "./app-detail";
 import { getFeatureFlags } from "@/lib/config/features";
 import { sharedServiceNames } from "@/lib/docker/compose";
+import { loadStabilityHistory } from "@/lib/docker/stability-history";
 
 import { isOrgAdmin } from "@/lib/auth/permissions";
 import {
@@ -254,6 +255,8 @@ export default async function AppDetailPage({ params }: PageProps) {
   };
   const effectiveTab = resolveAppTab(tab, tabContext);
 
+  const stabilityIncidents = await loadStabilityHistory(app.id);
+
   // Which services a deploy leaves running, for the Services tab to mark.
   const shared = new Set(app.composeContent ? sharedServiceNames(app.composeContent) : []);
   const childApps = app.childApps?.map((child) => ({
@@ -278,6 +281,7 @@ export default async function AppDetailPage({ params }: PageProps) {
       allAppNames={allApps.map((a) => a.name)}
       orgVarKeys={orgVars.map((v) => v.key)}
       siblings={siblings}
+      stabilityIncidents={stabilityIncidents}
       initialTab={effectiveTab}
       initialEnv={envSegment}
       initialSubView={subSegment}

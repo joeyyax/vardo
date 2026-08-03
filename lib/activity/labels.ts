@@ -32,6 +32,9 @@ const PHRASES: Record<string, Phrase> = {
   "app.image_updated": { text: "updated the image for" },
   "app.image_update_ignored": { text: "ignored image updates for" },
   "app.image_update_unignored": { text: "stopped ignoring image updates for" },
+  "app.crashed": { text: "detected a crash on" },
+  "app.crash_looping": { text: "detected a crash loop on" },
+  "app.recovered": { text: "confirmed recovery of" },
 
   "volume.sync": { text: "synced volumes on" },
   "volume.drift_detected": { text: "detected volume drift on" },
