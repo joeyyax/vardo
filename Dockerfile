@@ -1,11 +1,15 @@
 FROM node:22-slim AS base
-RUN corepack enable
+# Keep in sync with packageManager in package.json — a mismatch makes corepack
+# re-download pnpm on every stage that runs it.
+ARG PNPM_VERSION=10.28.2
+RUN corepack enable && corepack install -g pnpm@${PNPM_VERSION}
 
 # Dependencies
 FROM base AS deps
 WORKDIR /app
 COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile
+RUN --mount=type=cache,target=/pnpm/store \
+    pnpm install --frozen-lockfile --store-dir /pnpm/store
 
 # Build
 FROM base AS builder
@@ -32,6 +36,11 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
+# Pinned so two builds of the same commit produce the same toolchain.
+ARG NIXPACKS_VERSION=1.41.0
+ARG RAILPACK_VERSION=v0.35.0
+ARG COMPOSE_VERSION=v5.3.1
+
 # Runtime dependencies — git for cloning, docker-cli for orchestrating builds/deploys
 # Install Docker CLI from official Docker repo (docker.io from apt is too old for modern daemons)
 RUN apt-get update -qq && \
@@ -41,15 +50,14 @@ RUN apt-get update -qq && \
     echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian bookworm stable" > /etc/apt/sources.list.d/docker.list && \
     apt-get update -qq && \
     apt-get install -y --no-install-recommends docker-ce-cli docker-buildx-plugin iproute2 gosu && \
-    curl -sSL https://nixpacks.com/install.sh | bash && \
+    curl -sSL https://nixpacks.com/install.sh | NIXPACKS_VERSION=${NIXPACKS_VERSION} bash && \
     ARCH=$(uname -m) && \
     if [ "$ARCH" = "aarch64" ]; then RAILPACK_ARCH="arm64"; else RAILPACK_ARCH="x86_64"; fi && \
-    RAILPACK_VERSION=$(curl -sSL https://api.github.com/repos/railwayapp/railpack/releases/latest | grep '"tag_name"' | cut -d'"' -f4) && \
     curl -sSL "https://github.com/railwayapp/railpack/releases/download/${RAILPACK_VERSION}/railpack-${RAILPACK_VERSION}-${RAILPACK_ARCH}-unknown-linux-musl.tar.gz" \
       | tar xz -C /usr/local/bin railpack && \
     chmod +x /usr/local/bin/railpack && \
     mkdir -p /usr/local/lib/docker/cli-plugins && \
-    curl -sSL "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-$(uname -m)" -o /usr/local/lib/docker/cli-plugins/docker-compose && \
+    curl -sSL "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-linux-$(uname -m)" -o /usr/local/lib/docker/cli-plugins/docker-compose && \
     chmod +x /usr/local/lib/docker/cli-plugins/docker-compose && \
     apt-get clean && rm -rf /var/lib/apt/lists/* && \
     groupadd --system --gid 1001 nodejs && \

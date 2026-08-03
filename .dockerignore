@@ -16,4 +16,12 @@ apps
 images
 .host
 *.md
+# Not in the image, and their churn would otherwise invalidate `COPY . .`.
+# Trade: tests leave the build's type check. `pnpm typecheck` still covers them.
+tests
+playwright.config.ts
+vitest.config.ts
+install.sh
+update.sh
+**/*.tsbuildinfo
 !drizzle/**

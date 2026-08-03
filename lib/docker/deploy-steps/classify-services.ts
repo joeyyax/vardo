@@ -1,4 +1,5 @@
 import type { ComposeFile } from "../compose-types";
+import { isSharedService } from "../slot-partition";
 
 /**
  * Split compose services into those that build locally (have a `build:`
@@ -14,6 +15,10 @@ import type { ComposeFile } from "../compose-types";
  * `host/<app>:<sha>` from a Dockerfile/Nixpacks/Railpack build). They exist
  * only in the local daemon, referenced via `image:` with no `build:`, so they
  * must be excluded from the pull set — pulling them 404s and aborts the deploy.
+ *
+ * Services marked `x-vardo-shared` are excluded too. They are brought up with
+ * `--no-recreate`, so a freshly pulled image is never used, and a missing one
+ * is still pulled by that `up`.
  */
 export function classifyComposeServices(
   services: ComposeFile["services"],
@@ -24,7 +29,10 @@ export function classifyComposeServices(
     .filter(([, svc]) => svc.build)
     .map(([name]) => name);
   const pullServices = Object.entries(services)
-    .filter(([, svc]) => svc.image && !svc.build && !builtLocally.has(svc.image))
+    .filter(
+      ([, svc]) =>
+        svc.image && !svc.build && !builtLocally.has(svc.image) && !isSharedService(svc),
+    )
     .map(([name]) => name);
   return { buildServices, pullServices };
 }
