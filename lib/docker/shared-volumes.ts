@@ -1,5 +1,5 @@
-import { partitionBySlot } from "./slot-partition";
-import type { ComposeFile } from "./compose-types";
+import { isSharedService } from "./slot-partition";
+import type { ComposeFile, ComposeService } from "./compose-types";
 
 /** Strip the container path and mode, leaving the volume name. */
 function volumeSource(mount: string): string {
@@ -40,7 +40,15 @@ export function crossBoundaryVolumeName(
   return `${prefix}_${volName}`;
 }
 
-/** Volumes mounted by a shared service, split by whether anything rotating also mounts them. */
+/**
+ * Volumes mounted by a shared service, split by whether anything rotating also
+ * mounts them.
+ *
+ * Reads the marker alone, not the full partition. A service detection promoted
+ * was rotating on the last deploy, so its data already sits under the
+ * externalized name — claiming it here would point the database at an empty
+ * volume. Naming stays exactly where it was before detection existed.
+ */
 export function volumesByOwner(compose: ComposeFile): {
   sharedOnly: Set<string>;
   crossBoundary: Set<string>;
@@ -49,17 +57,21 @@ export function volumesByOwner(compose: ComposeFile): {
   const declared = new Set(Object.keys(compose.volumes ?? {}));
   if (declared.size === 0) return empty;
 
-  const { shared, slotted } = partitionBySlot(compose);
-  if (Object.keys(shared).length === 0) return empty;
+  const shared: ComposeService[] = [];
+  const slotted: ComposeService[] = [];
+  for (const service of Object.values(compose.services ?? {})) {
+    (isSharedService(service) ? shared : slotted).push(service);
+  }
+  if (shared.length === 0) return empty;
 
   const usedBySlotted = new Set<string>();
-  for (const service of Object.values(slotted)) {
+  for (const service of slotted) {
     for (const mount of service.volumes ?? []) usedBySlotted.add(volumeSource(mount));
   }
 
   const sharedOnly = new Set<string>();
   const crossBoundary = new Set<string>();
-  for (const service of Object.values(shared)) {
+  for (const service of shared) {
     for (const mount of service.volumes ?? []) {
       const name = volumeSource(mount);
       if (!declared.has(name)) continue;

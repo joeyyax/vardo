@@ -329,8 +329,26 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
   // stop, which runs after the demote and can fail on its own.
   let demotedOldSlot = false;
 
+  /** Whether the old slot still runs any of these services. */
+  const oldSlotRuns = async (names: string[]): Promise<boolean> => {
+    if (!oldSlotDir || !oldProjectName) return false;
+    try {
+      const { stdout } = await execFileAsync(
+        "docker",
+        ["compose", ...(await getOldComposeFileArgs()), "-p", oldProjectName, "ps", "-q", ...names],
+        { cwd: oldSlotDir, timeout: COMPOSE_QUERY_TIMEOUT },
+      );
+      return stdout.trim().length > 0;
+    } catch {
+      return false;
+    }
+  };
+
+  let stoppedOldSlot = false;
+
   const stopOldSlot = async () => {
-    if (!oldSlotDir || !oldProjectName) return;
+    if (!oldSlotDir || !oldProjectName || stoppedOldSlot) return;
+    stoppedOldSlot = true;
     const oldComposeFileArgs = await getOldComposeFileArgs();
     log(`[deploy] Stopping old slot (${activeSlot})...`);
 
@@ -374,7 +392,21 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
     );
   };
 
-  if (stopOldBeforeUp) {
+  // An app last deployed before a service stopped rotating still runs it in the
+  // old slot, on the volume the shared project is about to claim. Nothing may
+  // overlap that, so the old slot goes down first — the same order a published
+  // host port forces. Only ever the first deploy after the service left the
+  // rotation; Vardo's own shared services carry container_name and have never
+  // been in a slot project, so the deferred self-deploy is left alone.
+  const oldSlotHoldsShared =
+    mustStopOldSlot && !deferStopToPostDeploy && sharedNames.length > 0
+      ? await oldSlotRuns(sharedNames)
+      : false;
+
+  if (stopOldBeforeUp || oldSlotHoldsShared) {
+    if (oldSlotHoldsShared) {
+      log(`[deploy] Old slot still runs ${sharedNames.join(", ")} — stopping it before the shared project starts`);
+    }
     await stopOldSlot();
   } else if (canOverlapSlots) {
     log(`[deploy] No published host ports — ${activeSlot} keeps serving until ${newSlot} is healthy`);
