@@ -7,7 +7,8 @@ export type AttentionTone = "error" | "warning" | "neutral" | "activity";
 export type AttentionItem = {
   id: string;
   name: string;
-  href: string;
+  /** Omitted when the viewer has no route to the subject — the line still renders. */
+  href?: string;
   /** What is wrong with this subject. */
   detail?: string;
   /** ISO timestamp of first confirmation, rendered as "for 5 hours". */
@@ -36,6 +37,32 @@ export function presentRows(rows: AttentionRow[]): AttentionRow[] {
     .filter((r) => r.items.length > 0)
     .map((r) => ({ ...r, items: [...r.items].sort((a, b) => a.name.localeCompare(b.name)) }))
     .sort((a, b) => TONE_RANK[a.tone] - TONE_RANK[b.tone] || a.label.localeCompare(b.label));
+}
+
+/**
+ * Instance rows first, then org rows with any subject the instance already
+ * reported removed. The two sources are built not to overlap; this is the
+ * guarantee that a change to either one cannot start showing an event twice.
+ */
+export function mergeAttentionRows(
+  instanceRows: AttentionRow[],
+  orgRows: AttentionRow[],
+): AttentionRow[] {
+  const claimed = new Set(instanceRows.flatMap((r) => r.items.map((i) => i.id)));
+  const deduped = orgRows
+    .map((row) => ({ ...row, items: row.items.filter((i) => !claimed.has(i.id)) }))
+    .filter((row) => row.items.length > 0);
+  return [...instanceRows, ...deduped];
+}
+
+/** One sentence per row for a screen reader, or empty when there is nothing to say. */
+export function announceAttention(rows: AttentionRow[]): string {
+  return presentRows(rows)
+    .map((row) => {
+      const names = row.items.map((i) => i.name).join(", ");
+      return names ? `${row.label}: ${names}.` : `${row.label}.`;
+    })
+    .join(" ");
 }
 
 /** Only error and warning rows are faults — neutral facts and activity are listed but not counted. */
