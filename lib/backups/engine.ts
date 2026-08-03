@@ -45,6 +45,12 @@ const BACKUPS_DIR = resolve(
 /** skipped — the source is real but the engine cannot capture it (bind mount). */
 export type BackupOutcome = "success" | "failed" | "skipped";
 
+/** Archive format. Fixed when the archive is written; restore must not re-derive it. */
+export type ArchiveStrategy = "tar" | "dump";
+
+/** A backup row still `running` after this long is abandoned, not in flight. */
+export const STALE_RUN_MS = 60 * 60 * 1000;
+
 export type BackupResult = {
   backupId: string;
   appId: string;
@@ -97,6 +103,13 @@ async function checksumFile(filePath: string): Promise<string> {
   });
 }
 
+/** Archive format encoded in the storage key. Fallback for rows written before `backup.strategy`. */
+export function strategyFromStoragePath(storagePath: string): ArchiveStrategy | null {
+  if (storagePath.endsWith(".dump.gz")) return "dump";
+  if (storagePath.endsWith(".tar.gz")) return "tar";
+  return null;
+}
+
 const MIN_VALID_GZIP_BYTES = 100; // gzip header alone is 10 bytes; a real dump is several KB
 
 /**
@@ -121,6 +134,31 @@ async function verifyArchive(filePath: string, label: string): Promise<number> {
   }
 
   return info.size;
+}
+
+const RESTORE_STAGE_DIR = ".vardo-restore-staging";
+
+/**
+ * Shell script for a tar restore: extract into a staging dir inside the volume,
+ * and only swap it over the live data once tar has fully succeeded.
+ *
+ * WARNING: the removal of live data must stay after the extract. Moving it
+ * earlier (or back to a plain `rm -rf /data/*` before `tar xzf`) empties the
+ * volume whenever the archive is unreadable or the wrong format.
+ *
+ * Paths are parameterized so tests can drive the real script against temp dirs.
+ */
+export function buildTarRestoreScript(dataDir = "/data", backupDir = "/backup"): string {
+  return [
+    "set -e",
+    `stage="${dataDir}/${RESTORE_STAGE_DIR}"`,
+    'rm -rf "$stage"',
+    'mkdir "$stage"',
+    `if ! tar xzf "${backupDir}/volume.tar.gz" -C "$stage"; then rm -rf "$stage"; echo "restore: archive could not be extracted" >&2; exit 1; fi`,
+    `find "${dataDir}" -mindepth 1 -maxdepth 1 ! -name ${RESTORE_STAGE_DIR} -exec rm -rf {} ';'`,
+    `find "$stage" -mindepth 1 -maxdepth 1 -exec mv {} "${dataDir}/" ';'`,
+    'rmdir "$stage"',
+  ].join("\n");
 }
 
 // ---------------------------------------------------------------------------
@@ -217,9 +255,10 @@ async function backupVolumeDump(
  * Persistent volumes are **env-scoped** (`${app}-${env}_${vol}`) and declared
  * `external: true` so they're shared across blue/green slots and survive swaps —
  * they are NOT slot-scoped. Resolution order (#756):
- *   1. **Inspect the app's running container(s)** and return the volume actually
- *      mounted at `mountPath`. Authoritative and naming-agnostic — backs up the
- *      volume Docker is really using, not a guessed name.
+ *   1. **Inspect the app's running container(s) in this environment** and return
+ *      the volume actually mounted at `mountPath`. Authoritative and
+ *      naming-agnostic — backs up the volume Docker is really using, not a
+ *      guessed name.
  *   2. **Derive the env-scoped name** `${app}-${env}_${vol}` (default env
  *      "production") and confirm it exists — covers a stopped app / fresh
  *      restore where there's no container to inspect.
@@ -236,10 +275,14 @@ export async function resolveDockerVolume(
   assertSafeName(appName);
   assertSafeName(volumeName);
 
+  // Every environment and slot shares `vardo.project`; `vardo.environment` is
+  // what separates them. Resolve it once and scope both lookups below by it.
+  const env = appId ? await resolveDefaultEnv(appId) : null;
+
   // 1. Authoritative: the volume Docker actually has mounted at mountPath.
   if (mountPath) {
     try {
-      const containers = await listContainers(appName);
+      const containers = await listContainers(appName, env?.name);
       for (const c of containers) {
         const info = await inspectContainer(c.id);
         const mount = info.mounts.find(
@@ -259,8 +302,7 @@ export async function resolveDockerVolume(
 
   // 2 + 3. Name-derived candidates, env-scoped first, slot names last.
   const candidates: string[] = [];
-  if (appId) {
-    const env = await resolveDefaultEnv(appId);
+  if (env) {
     candidates.push(`${appName}-${env.name}_${volumeName}`);
   }
   candidates.push(`${appName}-blue_${volumeName}`, `${appName}-green_${volumeName}`);
@@ -439,7 +481,8 @@ export async function runBackup(
     }
 
     // Determine storage key based on context
-    const ext = vol.backupStrategy === "dump" ? "dump.gz" : "tar.gz";
+    const strategy: ArchiveStrategy = vol.backupStrategy === "dump" ? "dump" : "tar";
+    const ext = strategy === "dump" ? "dump.gz" : "tar.gz";
     const storageKey = vol.appName && vol.orgSlug
       ? `${vol.orgSlug}/${vol.appName}/${vol.name}/${ts}.${ext}`
       : `vardo-system/${vol.name}/${ts}.${ext}`;
@@ -452,15 +495,16 @@ export async function runBackup(
       targetId: job.target.id,
       status: "running",
       volumeName: vol.name,
+      strategy,
       startedAt,
     });
 
     try {
-      log(`Backing up volume ${vol.name} (strategy: ${vol.backupStrategy})`);
+      log(`Backing up volume ${vol.name} (strategy: ${strategy})`);
 
       let result: { sizeBytes: number; checksum: string };
 
-      if (vol.backupStrategy === "dump") {
+      if (strategy === "dump") {
         if (!vol.backupMeta?.dumpCmd) {
           throw new Error(`Dump strategy requires a dumpCmd (volume: ${vol.name})`);
         }
@@ -535,11 +579,12 @@ export async function runBackup(
   }
 
   // lastRunAt feeds the stale-backup deploy condition, so only a run covering
-  // the whole job may refresh it.
+  // the whole job AND capturing at least one archive may refresh it.
   const coveredWholeJob =
     jobApps.length === job.backupJobApps.length &&
     jobVolumes.length === job.backupJobVolumes.length;
-  if (coveredWholeJob) {
+  const capturedSomething = results.some((r) => r.outcome === "success");
+  if (coveredWholeJob && capturedSomething) {
     const finishedRunAt = new Date();
     await db
       .update(backupJobs)
@@ -813,7 +858,19 @@ export async function restoreBackup(
     throw new Error("Backup has no volume name");
   }
 
-  // Look up the volume to determine its backup strategy
+  // The archive format is whatever was written, not whatever the volume is
+  // configured for now — that row may have been edited, renamed or deleted
+  // since. Guessing it wrong restores a dump as a tar and empties the volume.
+  const strategy: ArchiveStrategy | null =
+    (backup.strategy as ArchiveStrategy | null) ?? strategyFromStoragePath(backup.storagePath);
+
+  if (strategy !== "tar" && strategy !== "dump") {
+    throw new Error(
+      `Cannot determine the archive format of backup ${backupId} (storage path: ${backup.storagePath}) — refusing to restore`,
+    );
+  }
+
+  // Restore commands and mount paths are live config, read from the volume row.
   const vol = backup.appId
     ? await db.query.volumes.findFirst({
         where: and(eq(volumes.appId, backup.appId), eq(volumes.name, backup.volumeName)),
@@ -821,8 +878,6 @@ export async function restoreBackup(
     : await db.query.volumes.findFirst({
         where: and(isNull(volumes.appId), eq(volumes.name, backup.volumeName)),
       });
-
-  const strategy = vol?.backupStrategy || "tar";
 
   const { executeHooks } = await import("@/lib/hooks/execute");
   const restoreHookResult = await executeHooks("before.backup.restore", {
@@ -904,7 +959,7 @@ export async function restoreBackup(
       log(`Restoring to volume ${dockerVolumeName}`);
       await execFileAsync(
         "docker",
-        ["run", "--rm", "-v", `${dockerVolumeName}:/data`, "-v", `${tmpDir}:/backup`, "alpine", "sh", "-c", "rm -rf /data/* /data/.[!.]* 2>/dev/null; tar xzf /backup/volume.tar.gz -C /data"],
+        ["run", "--rm", "-v", `${dockerVolumeName}:/data`, "-v", `${tmpDir}:/backup`, "alpine", "sh", "-c", buildTarRestoreScript()],
         { timeout: 600_000 },
       );
     }

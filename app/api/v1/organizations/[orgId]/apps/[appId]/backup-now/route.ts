@@ -7,7 +7,7 @@ import { and, eq, gt, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
-import { runBackup } from "@/lib/backups/engine";
+import { runBackup, STALE_RUN_MS } from "@/lib/backups/engine";
 import { ensureAutoBackupJob, resolveBackupTarget } from "@/lib/backups/auto-backup";
 import { assessPreMigrationBackup } from "@/lib/backups/pre-migration";
 import { logger } from "@/lib/logger";
@@ -24,10 +24,6 @@ const bodySchema = z
     force: z.boolean().default(false),
   })
   .strict();
-
-// A run whose backup row is older than this is treated as abandoned. The engine
-// caps tar and dump at 10 minutes each, so an hour clears any real run.
-const STALE_RUN_MS = 60 * 60 * 1000;
 
 function fail(code: string, error: string, status: number, extra?: Record<string, unknown>) {
   return NextResponse.json({ error, code, ...extra }, { status });
