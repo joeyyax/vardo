@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { statusChange } from "@/lib/db/app-status";
 import { deployments } from "@/lib/db/schema/apps";
 import { apps } from "@/lib/db/schema/apps";
 import { environments } from "@/lib/db/schema/environments";
@@ -267,7 +268,7 @@ export async function sweepStuckDeployments(): Promise<void> {
         // Reset the app status if it's still "deploying"
         await db
           .update(apps)
-          .set({ status: "stopped", updatedAt: now })
+          .set(statusChange("stopped", now))
           .where(
             and(eq(apps.id, deploy.appId), eq(apps.status, "deploying")),
           );

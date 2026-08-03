@@ -10,6 +10,7 @@
 // ---------------------------------------------------------------------------
 
 import { db } from "@/lib/db";
+import { statusChange } from "@/lib/db/app-status";
 import { deployments, apps } from "@/lib/db/schema";
 import { eq, and, desc } from "drizzle-orm";
 import { execFile } from "child_process";
@@ -148,7 +149,7 @@ export async function performRollback(opts: PerformRollbackOpts): Promise<boolea
     // Guarded so a deploy that claimed the app in the meantime keeps ownership.
     await db
       .update(apps)
-      .set({ status: appStatus, updatedAt: new Date() })
+      .set(statusChange(appStatus))
       .where(and(eq(apps.id, appId), eq(apps.status, "deploying")));
 
     await streamLogger.flush();
@@ -187,7 +188,7 @@ export async function performRollback(opts: PerformRollbackOpts): Promise<boolea
     // the row — if this process dies mid-swap.
     await db
       .update(apps)
-      .set({ status: "deploying", updatedAt: new Date() })
+      .set(statusChange("deploying"))
       .where(eq(apps.id, appId));
 
     rollbackLog(`[rollback] ${appName} stopped inside its grace period — restoring ${previousSlot}`);

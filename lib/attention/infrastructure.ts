@@ -32,6 +32,7 @@ export async function getInfrastructureSnapshot(now = new Date()): Promise<Infra
       name: apps.name,
       displayName: apps.displayName,
       status: apps.status,
+      statusChangedAt: apps.statusChangedAt,
       parentAppId: apps.parentAppId,
       conditions: apps.conditions,
     })

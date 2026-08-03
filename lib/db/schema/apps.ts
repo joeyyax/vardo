@@ -77,6 +77,10 @@ export const apps = pgTable(
     templateName: text("template_name"),
     templateVersion: text("template_version"),
     status: appStatusEnum("status").notNull().default("stopped"),
+    // When status last became what it is now. Written only by statusChange(),
+    // never by an ordinary write — unlike updatedAt. Null until the first
+    // transition, which reads as "how long is unknown".
+    statusChangedAt: timestamp("status_changed_at"),
     // Container State.StartedAt, written by the status reconciler. Null when nothing is running.
     containerStartedAt: timestamp("container_started_at"),
     // Running container's cgroup memory limit in bytes. 0 means unlimited.

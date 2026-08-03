@@ -9,6 +9,7 @@
 // ---------------------------------------------------------------------------
 
 import { db } from "@/lib/db";
+import { statusChange } from "@/lib/db/app-status";
 import { apps } from "@/lib/db/schema";
 import { eq, and, sql, inArray } from "drizzle-orm";
 import { nanoid } from "nanoid";
@@ -137,7 +138,7 @@ export async function syncComposeServices(opts: {
         for (const child of existingChildren) {
           await tx
             .update(apps)
-            .set({ status: "stopped", updatedAt: new Date() })
+            .set(statusChange("stopped"))
             .where(eq(apps.id, child.id));
           result.removed.push(child.composeService || child.name);
         }
@@ -227,7 +228,7 @@ export async function syncComposeServices(opts: {
       await db
         .update(apps)
         .set({
-          status: "active",
+          ...statusChange("active"),
           displayName,
           containerName,
           imageName: svc.image || null,
@@ -242,7 +243,6 @@ export async function syncComposeServices(opts: {
           parentAppId, // Re-parent if it was orphaned
           composeService: serviceName, // Set if it was missing
           isSystemManaged,
-          updatedAt: new Date(),
         })
         .where(eq(apps.id, existing.id));
 
@@ -292,7 +292,7 @@ export async function syncComposeServices(opts: {
   for (const [, { serviceName, child }] of orphanedById) {
     await db
       .update(apps)
-      .set({ status: "stopped", updatedAt: new Date() })
+      .set(statusChange("stopped"))
       .where(eq(apps.id, child.id));
     result.removed.push(child.composeService || serviceName);
   }

@@ -34,6 +34,8 @@ export type InfraApp = {
   name: string;
   displayName: string;
   status: string;
+  /** When the status last changed. Null on a row that predates the column. */
+  statusChangedAt: Date | null;
   /** Set on a compose child. Its parent's row is a separate subject. */
   parentAppId: string | null;
   conditions: AppCondition[] | null;
@@ -229,9 +231,18 @@ function appIssue(app: InfraApp, { name, core }: { name: string; core: boolean }
     };
   }
 
+  // A null stamp says no duration at all. updatedAt is the wrong clock — a
+  // compose refresh bumps it and would report a long outage as minutes old.
   const detail = STATUS_DETAIL[app.status];
   if (detail) {
-    return { id: app.id, name, detail, tone: "error", core };
+    return {
+      id: app.id,
+      name,
+      detail,
+      since: app.statusChangedAt?.toISOString(),
+      tone: "error",
+      core,
+    };
   }
 
   return null;
