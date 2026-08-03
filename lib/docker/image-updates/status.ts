@@ -3,6 +3,8 @@ import { appImages, type UpdatableApp } from "./compose-images";
 import { readCachedChecks, CHECK_TTL_MS } from "./check";
 import { indexRules, silencedBy, type IgnoreRule } from "./ignore";
 import { readIgnoreRules } from "./read-ignores";
+import { readMajorGateBlock } from "./major-gate-store";
+import type { MajorGateBlock } from "./major-gate";
 import type { BumpSeverity } from "./tag-version";
 import type { CheckStatus } from "./check";
 
@@ -47,6 +49,8 @@ export interface AppUpdateStatus {
   hasUnknown: boolean;
   /** Actionable updates withheld by an ignore rule. */
   ignored: IgnoredUpdate[];
+  /** A deploy the major gate stopped, still waiting on a decision. */
+  blockedMigration: MajorGateBlock | null;
 }
 
 const SEVERITY_RANK: Record<BumpSeverity, number> = {
@@ -114,7 +118,7 @@ function partition(
 
 function rollUp(
   services: ServiceUpdateStatus[],
-): Omit<AppUpdateStatus, "services" | "ignored"> {
+): Omit<AppUpdateStatus, "services" | "ignored" | "blockedMigration"> {
   let highest: BumpSeverity | null = null;
   let updateCount = 0;
   let hasUnknown = false;
@@ -130,15 +134,32 @@ function rollUp(
   return { updateCount, highestSeverity: highest, hasUnknown };
 }
 
+/**
+ * The gate's block, narrowed to what this app owns. A child service reads the
+ * parent's block — the deploy that was stopped ran against the parent.
+ */
+async function blockFor(app: UpdatableApp & { id?: string; composeOwnerId?: string }) {
+  const owner = app.composeOwnerId ?? app.id;
+  if (!owner) return null;
+  const block = await readMajorGateBlock(owner);
+  if (!block || !app.composeService) return block;
+
+  const services = block.services.filter((entry) => entry.service === app.composeService);
+  return services.length > 0 ? { ...block, services } : null;
+}
+
 export async function getAppUpdateStatus(
-  app: UpdatableApp & { id?: string },
+  app: UpdatableApp & { id?: string; composeOwnerId?: string },
   rules: IgnoreRule[] = [],
 ): Promise<AppUpdateStatus> {
   const entries = appImages(app);
-  const cached = await readCachedChecks(entries.map((entry) => refCacheKey(entry.ref)));
+  const [cached, blockedMigration] = await Promise.all([
+    readCachedChecks(entries.map((entry) => refCacheKey(entry.ref))),
+    blockFor(app),
+  ]);
   const all = buildServices(app, cached, Date.now() - CHECK_TTL_MS);
   const { services, ignored } = partition(all, app.id, indexRules(rules), Date.now());
-  return { services, ignored, ...rollUp(services) };
+  return { services, ignored, ...rollUp(services), blockedMigration };
 }
 
 export interface AggregateUpdateStatus {

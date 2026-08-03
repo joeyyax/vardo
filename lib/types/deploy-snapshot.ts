@@ -19,4 +19,9 @@ export type ConfigSnapshot = {
   composeContent?: string | null;
   /** Pinned `repo@sha256:...` ref for image apps, so rollback restores the exact image. */
   imageDigest?: string | null;
+  /**
+   * Engine major each major-locked service ran, keyed by compose service ("" when
+   * single-image). The deploy gate's baseline when the old image is no longer local.
+   */
+  imageMajors?: Record<string, number>;
 };
