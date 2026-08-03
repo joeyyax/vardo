@@ -14,6 +14,14 @@ export const DEFAULT_CONTAINER_PORT = 3000;
 /** Docker network shared by all deployed apps and Traefik. */
 export const NETWORK_NAME = "vardo-network";
 
+/**
+ * Ceiling the build cache is pruned back to after every deploy. Set it below
+ * one build's worth of cache per locally-built app and they evict each other.
+ */
+const configuredCacheGb = Number(process.env.VARDO_BUILD_CACHE_MAX_GB);
+export const BUILD_CACHE_MAX_BYTES =
+  (Number.isFinite(configuredCacheGb) && configuredCacheGb > 0 ? configuredCacheGb : 10) * 1024 ** 3;
+
 // ---------------------------------------------------------------------------
 // Timeouts (milliseconds)
 // ---------------------------------------------------------------------------
