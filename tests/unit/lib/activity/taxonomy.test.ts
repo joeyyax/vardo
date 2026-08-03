@@ -93,6 +93,12 @@ describe("outcomeFor", () => {
     expect(outcomeFor("volume.drift_detected")).toBe("failure");
   });
 
+  it("sorts the stability events its suffixes would get wrong", () => {
+    expect(outcomeFor("app.crashed")).toBe("failure");
+    expect(outcomeFor("app.crash_looping")).toBe("failure");
+    expect(outcomeFor("app.recovered")).toBe("success");
+  });
+
   it("defaults to neutral", () => {
     expect(outcomeFor("app.created")).toBe("neutral");
   });

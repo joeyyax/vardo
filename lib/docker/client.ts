@@ -84,6 +84,8 @@ export type ContainerInspect = {
   };
   /** Times Docker has restarted this container since it was created. */
   restartCount: number;
+  /** When the container was created. restartCount counts from here and no earlier. */
+  createdAt: string;
   image: string;
   ports: { internal: number; external?: number; protocol: string }[];
   exposedPorts: number[];
@@ -403,6 +405,7 @@ export async function inspectContainer(id: string): Promise<ContainerInspect> {
   const data = await dockerRequest<{
     Id: string;
     Name: string;
+    Created?: string;
     RestartCount?: number;
     State: {
       Running: boolean;
@@ -467,6 +470,7 @@ export async function inspectContainer(id: string): Promise<ContainerInspect> {
     id: data.Id,
     name: data.Name.replace(/^\//, ""),
     restartCount: data.RestartCount ?? 0,
+    createdAt: data.Created ?? "",
     state: {
       running: data.State.Running,
       status: data.State.Status,

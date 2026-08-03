@@ -1,6 +1,7 @@
 import type { AppCondition } from "@/lib/docker/conditions";
 import type { ExitReason } from "@/lib/docker/exit-reason";
 import type { FeatureFlags } from "@/lib/config/features";
+import type { Incident } from "@/lib/ui/stability";
 
 export type Deployment = {
   id: string;
@@ -141,6 +142,8 @@ export type App = {
   cloneStrategy: string | null;
   dependsOn: string[] | null;
   status: "active" | "stopped" | "error" | "deploying" | "missing";
+  /** Null until the app's first transition — render no duration rather than a wrong one. */
+  statusChangedAt: Date | null;
   needsRedeploy: boolean | null;
   importedContainerId: string | null;
   isSystemManaged: boolean;
@@ -165,6 +168,8 @@ export type AppDetailProps = {
   allAppNames?: string[];
   orgVarKeys?: string[];
   siblings?: { id: string; name: string; displayName: string; status: string; dependsOn: string[] | null }[];
+  /** Durable stability history, newest first. */
+  stabilityIncidents?: Incident[];
   initialTab?: string;
   initialEnv?: string;
   initialSubView?: string;

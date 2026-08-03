@@ -39,6 +39,10 @@ const FAMILY_BY_PREFIX: Array<[string, ActivityFamily]> = [
 /** Outcomes that the action suffix alone would get wrong. */
 const OUTCOME_OVERRIDES: Record<string, ActivityOutcome> = {
   "volume.drift_detected": "failure",
+  // The durable half of the stability timeline — Docker's own counters reset.
+  "app.crashed": "failure",
+  "app.crash_looping": "failure",
+  "app.recovered": "success",
   "transfer.rejected": "failure",
   "transfer.accepted": "success",
   // Automatic rollback means the deploy broke; the manual one is a choice.

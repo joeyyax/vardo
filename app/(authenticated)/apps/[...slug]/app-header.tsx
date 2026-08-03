@@ -18,6 +18,13 @@ import { HeaderStat, PriorityCue, RollupStatus } from "@/components/entity-heade
 import { useAppMetrics } from "@/components/app-metrics-card";
 import { formatBytes } from "@/lib/metrics/format";
 import type { HealthRollup } from "@/lib/ui/health-rollup";
+import {
+  stabilityTone,
+  stabilityTrend,
+  stabilityVerdict,
+  trendBadge,
+  type Incident,
+} from "@/lib/ui/stability";
 import { DependencySelector } from "./dependency-selector";
 import { AppUpdateStat } from "./app-updates";
 import type { App, Deployment, SlotStatus, Tag } from "./types";
@@ -59,6 +66,7 @@ export function AppHeader({
   onNavigate,
   stack,
   deployStage,
+  stabilityIncidents = [],
 }: {
   app: App;
   orgId: string;
@@ -66,6 +74,8 @@ export function AppHeader({
   /** Deployments filtered to the selected environment. */
   deployments: Deployment[];
   allTags: Tag[];
+  /** Durable stability history, newest first. */
+  stabilityIncidents?: Incident[];
   siblings: { id: string; name: string; displayName: string; status: string; dependsOn: string[] | null }[];
   onNavigate: (tab: string) => void;
   /** Compose parent: the service roll-up replaces the single-container status. */
@@ -125,6 +135,18 @@ export function AppHeader({
       .catch(() => { /* best-effort */ });
     return () => { cancelled = true; };
   }, [orgId, app.id, isChildService, latestDeployId]);
+
+  const now = Date.now();
+  const trend = stabilityTrend(stabilityIncidents, now, app.createdAt);
+  const verdict = stabilityVerdict({
+    now,
+    status: app.status,
+    conditions: app.conditions,
+    exitReason: app.exitReason,
+    incidents: stabilityIncidents,
+    trend,
+  });
+  const badge = trendBadge(trend);
 
   const status = STATUS_META[app.status] ?? { label: app.status, className: "text-muted-foreground" };
   const isRunning = app.status === "active";
@@ -303,6 +325,21 @@ export function AppHeader({
               {status.label}
             </span>
           )}
+        </HeaderStat>
+        {/* Status says what Docker is doing now; this says whether that has
+            been holding. Two apps both "Running" separate here. */}
+        <HeaderStat
+          label="Stability"
+          hint="Crashes, crash loops, failed deploys and rollbacks recorded for this app, against the period before. Container restart counts are not history — Docker resets them when a container is replaced."
+        >
+          <button
+            type="button"
+            onClick={() => onNavigate("stability")}
+            className={`flex items-center gap-1.5 text-left transition-colors hover:opacity-80 ${stabilityTone(verdict.level)}`}
+          >
+            {verdict.headline}
+            {badge && <span className="text-muted-foreground">· {badge}</span>}
+          </button>
         </HeaderStat>
         {isRunning && lastSuccess && (
           <HeaderStat label="Uptime">

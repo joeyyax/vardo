@@ -14,6 +14,7 @@ import { eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { statusChange } from "@/lib/db/app-status";
 import { apps } from "@/lib/db/schema";
+import { recordActivity } from "@/lib/activity/record";
 import { listAllContainers, inspectContainer, type ContainerInfo } from "./client";
 import { logger } from "@/lib/logger";
 import { memoryLimitDrifted } from "./limit-drift";
@@ -84,6 +85,52 @@ export function deriveStatus(
   if (reason?.kind === "signal") return "stopped";
   if (containers.some((c) => (parseExitCode(c.status) ?? 0) !== 0)) return "error";
   return "stopped";
+}
+
+/**
+ * The durable stability event a status transition earns, or null when it earns
+ * none. apps.status only ever holds the current value and Docker's restart
+ * counter resets with the container, so a crash leaves no trace unless it is
+ * written to the activity log as it happens.
+ */
+export function stabilityTransition(opts: {
+  from: string;
+  to: ObservedStatus;
+  reason: ExitReason | null;
+  /** How long the previous status had held, for the recovery summary. */
+  heldMs: number | null;
+}): { action: "app.crashed" | "app.recovered"; summary: string } | null {
+  if (opts.to === "error" && opts.from !== "error") {
+    return { action: "app.crashed", summary: crashSummary(opts.reason) };
+  }
+  if (opts.to === "active" && opts.from === "error") {
+    const down = opts.heldMs !== null && opts.heldMs > 0 ? ` after ${formatSpan(opts.heldMs)} down` : "";
+    return { action: "app.recovered", summary: `Running again${down}` };
+  }
+  return null;
+}
+
+function crashSummary(reason: ExitReason | null): string {
+  if (!reason) return "Container is restarting or dead";
+  switch (reason.kind) {
+    case "oom-host":
+      return "Killed by the host's OOM killer";
+    case "oom-limit":
+      return "Killed at its own memory limit";
+    case "signal":
+      return `Took ${reason.signal} and exited ${reason.exitCode}`;
+    case "failed":
+      return `Exited with code ${reason.exitCode}`;
+  }
+}
+
+/** Coarse span for a summary sentence — minutes up to a day, then days. */
+function formatSpan(ms: number): string {
+  const minutes = Math.max(1, Math.round(ms / 60_000));
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  return `${Math.round(hours / 24)}d`;
 }
 
 /** Whether the stored reason still describes what Docker reports, so a settled app skips its write. */
@@ -188,6 +235,7 @@ export async function tickStatusReconcile(): Promise<void> {
       composeService: true,
       containerName: true,
       importedContainerId: true,
+      statusChangedAt: true,
       containerStartedAt: true,
       lastRunningAt: true,
       containerMemoryLimit: true,
@@ -261,6 +309,14 @@ export async function tickStatusReconcile(): Promise<void> {
           needsRedeploy,
           exitReason,
           running: observed === "active",
+          stability: unchanged
+            ? null
+            : stabilityTransition({
+                from: app.status,
+                to: observed,
+                reason: exitReason,
+                heldMs: app.statusChangedAt ? now.getTime() - app.statusChangedAt.getTime() : null,
+              }),
           // A kill already reported is not news on every tick that follows it.
           oomFirstSeen: isOomKill(exitReason) && !exitReasonsEqual(exitReason, app.exitReason),
         };
@@ -287,6 +343,19 @@ export async function tickStatusReconcile(): Promise<void> {
         statusCheckedAt: now,
       })
       .where(eq(apps.id, u.id));
+
+    if (u.stability) {
+      try {
+        await recordActivity({
+          organizationId: u.organizationId,
+          appId: u.id,
+          action: u.stability.action,
+          metadata: { summary: u.stability.summary, status: u.observed },
+        });
+      } catch (err) {
+        log.error(`Failed to record ${u.stability.action} for ${u.id}:`, err);
+      }
+    }
   }
 
   const touchedRunning = touched.filter((u) => u.running).map((u) => u.id);
