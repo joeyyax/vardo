@@ -264,7 +264,7 @@ export function OrgDomainEditor({
                       {domain.verified ? (
                         <Badge
                           variant="outline"
-                          className="shrink-0 text-status-success border-status-success/30"
+                          className="shrink-0 text-status-success border-status-success-edge"
                         >
                           <CheckCircle2 className="size-3 mr-1" />
                           Verified
@@ -272,7 +272,7 @@ export function OrgDomainEditor({
                       ) : (
                         <Badge
                           variant="outline"
-                          className="shrink-0 text-status-warning border-status-warning/30"
+                          className="shrink-0 text-status-warning border-status-warning-edge"
                         >
                           <AlertCircle className="size-3 mr-1" />
                           Unverified
