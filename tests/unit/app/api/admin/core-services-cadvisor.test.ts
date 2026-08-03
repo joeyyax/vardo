@@ -119,7 +119,7 @@ describe("POST /api/v1/admin/core-services/cadvisor-disk-metrics", () => {
     const body = await res.json();
 
     const composeContent = mockUpdateSet.mock.calls[0][0].composeContent as string;
-    expect(composeContent).toContain("--disable_metrics=udp,percpu,disk,diskIO");
+    expect(composeContent).toContain("--disable_metrics=advtcp,cpu_topology,cpuset,hugetlb,memory_numa,percpu,process,referenced_memory,resctrl,sched,tcp,udp,disk,diskIO");
     expect(composeContent).toContain("mem_limit: 256m");
     expect(mockUpdateSet.mock.calls[0][0].needsRedeploy).toBe(true);
     expect(mockRequestDeploy).toHaveBeenCalledWith(
