@@ -47,10 +47,15 @@ export async function setCadvisorConfig(config: CadvisorConfig): Promise<void> {
 // operator reads back never contradicts what it's actually running.
 // ---------------------------------------------------------------------------
 
-const COMMAND_ON = `      # disk and diskIO drive per-container filesystem usage and write rates.
-      - --disable_metrics=udp,percpu`;
+/** Kept in step with templates/cadvisor.yaml — both markers below embed it. */
+const DISABLED_METRICS =
+  "advtcp,cpu_topology,cpuset,hugetlb,memory_numa,percpu,process,referenced_memory,resctrl,sched,tcp,udp";
+
+const COMMAND_ON = `      # cAdvisor's own default disable list plus percpu. Setting this flag
+      # replaces that default, so the expensive /proc scanners must be named.
+      - --disable_metrics=${DISABLED_METRICS}`;
 const COMMAND_OFF = `      # disk and diskIO off — toggled from Core services.
-      - --disable_metrics=udp,percpu,disk,diskIO`;
+      - --disable_metrics=${DISABLED_METRICS},disk,diskIO`;
 
 const MEM_ON = `    # Disk metrics walk every container's filesystem, so this is not 256m.
     mem_limit: 512m`;

@@ -109,7 +109,7 @@ describe("ensureInfraServices — cAdvisor disk metrics setting", () => {
     await ensureInfraServices();
 
     expect(insertedRows[0].composeContent).toBe(TEMPLATE_COMPOSE);
-    expect(insertedRows[0].composeContent).toContain("--disable_metrics=udp,percpu\n");
+    expect(insertedRows[0].composeContent).toContain("--disable_metrics=advtcp,cpu_topology,cpuset,hugetlb,memory_numa,percpu,process,referenced_memory,resctrl,sched,tcp,udp\n");
     expect(insertedRows[0].composeContent).toContain("mem_limit: 512m");
   });
 
@@ -120,7 +120,7 @@ describe("ensureInfraServices — cAdvisor disk metrics setting", () => {
     await ensureInfraServices();
 
     const composeContent = insertedRows[0].composeContent as string;
-    expect(composeContent).toContain("--disable_metrics=udp,percpu,disk,diskIO");
+    expect(composeContent).toContain("--disable_metrics=advtcp,cpu_topology,cpuset,hugetlb,memory_numa,percpu,process,referenced_memory,resctrl,sched,tcp,udp,disk,diskIO");
     expect(composeContent).toContain("mem_limit: 256m");
     expect(composeContent).not.toContain("mem_limit: 512m");
   });
