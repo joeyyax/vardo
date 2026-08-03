@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
 import nextPkg from "next/package.json";
 import { getAuthMethodStates } from "@/lib/config/auth-methods";
+import { CORE_SERVICE_FEATURES } from "@/lib/infra/core-services";
 import { formatDuration } from "@/lib/ui/service-health";
 
 // ---------------------------------------------------------------------------
@@ -152,6 +153,28 @@ async function httpProbe(url: string, timeoutMs: number): Promise<void> {
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
 }
 
+/** Feature flag behind each core service, keyed by app name. */
+const CORE_SERVICE_FLAG_BY_APP = new Map(
+  CORE_SERVICE_FEATURES.flatMap((f) => f.services.map((s) => [s.name, f.flag] as const)),
+);
+
+/**
+ * A probe for an instance-level core service. Gated on the flag that provisions
+ * it, so a service the operator never installed reads as absent, not broken.
+ */
+function coreServiceProbe(app: string, probe: Omit<Probe, "logsApp" | "applies">): Probe {
+  const flag = CORE_SERVICE_FLAG_BY_APP.get(app);
+  if (!flag) throw new Error(`No core service feature flag for "${app}"`);
+  return {
+    ...probe,
+    logsApp: app,
+    applies: async () => {
+      const { isFeatureEnabledAsync } = await import("@/lib/config/features");
+      return isFeatureEnabledAsync(flag);
+    },
+  };
+}
+
 export const SERVICE_PROBES: Probe[] = [
   {
     name: "PostgreSQL",
@@ -186,22 +209,45 @@ export const SERVICE_PROBES: Probe[] = [
       if (!ok) throw new Error("unreachable");
     },
   },
-  {
+  coreServiceProbe("cadvisor", {
     name: "cAdvisor",
     description: "Container metrics",
     timeoutMs: 2000,
-    logsApp: "cadvisor",
     run: (timeoutMs) =>
       httpProbe(`${process.env.CADVISOR_URL || "http://localhost:7300"}/healthz`, timeoutMs),
-  },
-  {
+  }),
+  coreServiceProbe("loki", {
     name: "Loki",
     description: "Log aggregation",
     timeoutMs: 2000,
-    logsApp: "loki",
     run: (timeoutMs) =>
       httpProbe(`${process.env.LOKI_URL || "http://localhost:7400"}/ready`, timeoutMs),
-  },
+  }),
+  coreServiceProbe("promtail", {
+    name: "Promtail",
+    description: "Log shipper",
+    timeoutMs: 5000,
+    // Promtail's HTTP server never joins vardo-network, so there is nothing to
+    // call. A running container is the only signal reachable from here.
+    run: async () => {
+      const { listContainers } = await import("@/lib/docker/client");
+      const running = await listContainers("promtail");
+      if (running.length === 0) throw new Error("not running");
+    },
+  }),
+  coreServiceProbe("glitchtip", {
+    name: "GlitchTip",
+    description: "Error tracking",
+    timeoutMs: 2000,
+    // The URL and endpoint the error-tracking client uses, so the dot and the
+    // Errors tab agree. GLITCHTIP_URL applies only when nothing is configured.
+    run: async (timeoutMs) => {
+      const { getErrorTrackingConfig } = await import("@/lib/system-settings");
+      const config = await getErrorTrackingConfig().catch(() => null);
+      const url = config?.url || process.env.GLITCHTIP_URL || "http://glitchtip:8000";
+      await httpProbe(`${url}/api/0/`, timeoutMs);
+    },
+  }),
   {
     name: "Traefik",
     description: "Reverse proxy and SSL",
@@ -267,6 +313,12 @@ async function runProbe(probe: Probe): Promise<ServiceStatus> {
   }
 }
 
+/** Whether a probe runs. An unreadable flag still probes — unknown is not absent. */
+async function probeApplies(probe: Probe): Promise<boolean> {
+  if (!probe.applies) return true;
+  return probe.applies().catch(() => true);
+}
+
 /**
  * Re-probe a single service by name. Returns null when the name is unknown or
  * the service does not apply to this instance.
@@ -274,15 +326,16 @@ async function runProbe(probe: Probe): Promise<ServiceStatus> {
 export async function checkServiceByName(name: string): Promise<ServiceStatus | null> {
   const probe = SERVICE_PROBES.find((p) => p.name.toLowerCase() === name.toLowerCase());
   if (!probe) return null;
-  if (probe.applies && !(await probe.applies())) return null;
+  if (!(await probeApplies(probe))) return null;
 
   const [status, logsHrefs] = await Promise.all([runProbe(probe), resolveLogsHrefs()]);
   return { ...status, logsHref: logsHrefs.get(probe.name) };
 }
 
 /**
- * Logs pages for services Vardo runs as system-managed apps. Only offered when
- * the logs tab is reachable and the app belongs to the viewer's current org.
+ * Logs pages for services Vardo runs as system-managed apps. These are
+ * instance-level singletons living in the Vardo system org, so the lookup spans
+ * every org and app-admin is the gate rather than the viewer's active org.
  */
 async function resolveLogsHrefs(): Promise<Map<string, string>> {
   const hrefs = new Map<string, string>();
@@ -297,24 +350,17 @@ async function resolveLogsHrefs(): Promise<Map<string, string>> {
     ]);
     if (!logging || !selfManagement) return hrefs;
 
-    // Scoped to the viewer's current org, not to any org. The route resolves a
-    // slug within the active org, so an app owned by another one links to a 404.
-    const { getCurrentOrg } = await import("@/lib/auth/session");
-    const orgData = await getCurrentOrg();
-    if (!orgData) return hrefs;
+    const { isAppAdmin } = await import("@/lib/auth/admin");
+    if (!(await isAppAdmin())) return hrefs;
 
+    // Core service names are unique instance-wide, so no org filter — scoping
+    // to the viewer's active org hid the link from every admin but one.
     const { apps } = await import("@/lib/db/schema");
     const { and, eq, inArray } = await import("drizzle-orm");
     const rows = await db
       .select({ name: apps.name })
       .from(apps)
-      .where(
-        and(
-          inArray(apps.name, slugs),
-          eq(apps.isSystemManaged, true),
-          eq(apps.organizationId, orgData.organization.id),
-        ),
-      );
+      .where(and(inArray(apps.name, slugs), eq(apps.isSystemManaged, true)));
 
     const present = new Set(rows.map((r) => r.name));
     for (const probe of SERVICE_PROBES) {
@@ -423,7 +469,7 @@ export async function getSystemHealth(): Promise<SystemHealth> {
   const [services, resources, logsHrefs] = await Promise.all([
     Promise.all(
       SERVICE_PROBES.map(async (probe) => {
-        if (probe.applies && !(await probe.applies())) return null;
+        if (!(await probeApplies(probe))) return null;
         return runProbe(probe);
       }),
     ),
