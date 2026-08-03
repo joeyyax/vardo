@@ -151,6 +151,27 @@ describe("buildVardoOverlay — self-routed services", () => {
   });
 });
 
+describe("buildVardoOverlay — restart policy", () => {
+  it("carries the resolved restart policy into the overlay", () => {
+    const compose = selfRoutedCompose();
+    compose.services.web.restart = "unless-stopped";
+    compose.services.worker.restart = "on-failure";
+
+    const overlay = buildVardoOverlay({ fullCompose: compose, networkName: NETWORK });
+
+    expect(overlay.services.web.restart).toBe("unless-stopped");
+    expect(overlay.services.worker.restart).toBe("on-failure");
+  });
+
+  it("omits restart when the compose carries none", () => {
+    const overlay = buildVardoOverlay({
+      fullCompose: selfRoutedCompose(),
+      networkName: NETWORK,
+    });
+    expect(overlay.services.web.restart).toBeUndefined();
+  });
+});
+
 describe("applyDeployTransforms — a self-routed app with a domain", () => {
   it("keeps the declared routers and adds none", () => {
     const result = applyDeployTransforms(selfRoutedCompose(), {
