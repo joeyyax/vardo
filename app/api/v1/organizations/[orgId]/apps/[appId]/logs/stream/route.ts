@@ -53,10 +53,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       });
 
       return createSSEResponse(request, async (sendEvent) => {
-        await sendInit(sendEvent, "loki", scope, environmentName, search, tail);
+        await sendInit(sendEvent, "loki", orgId, scope, environmentName, search, tail);
 
         await tailLogs(
-          { query, start: String(Date.now() * 1_000_000), delayFor: 2 },
+          { query, organizationId: orgId, start: String(Date.now() * 1_000_000), delayFor: 2 },
           (entry) => sendEvent("logs", [{
             text: entry.line,
             service: scope.prefixed ? entry.labels.service : undefined,
@@ -110,7 +110,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         proc.kill();
       });
 
-      await sendInit(sendEvent, "docker", scope, environmentName, search, tail);
+      await sendInit(sendEvent, "docker", orgId, scope, environmentName, search, tail);
       live = true;
       if (pending.length > 0) sendEvent("logs", pending.splice(0));
 
@@ -130,6 +130,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 async function sendInit(
   sendEvent: SendEvent,
   source: "loki" | "docker",
+  organizationId: string,
   scope: LogScope,
   environment: string,
   search: string | undefined,
@@ -139,6 +140,7 @@ async function sendInit(
   try {
     const history = await readLogHistory({
       project: scope.project,
+      organizationId,
       environment,
       service: scope.service,
       prefixed: scope.prefixed,

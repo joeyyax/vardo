@@ -2,10 +2,9 @@
 // Core service provisioning
 //
 // cAdvisor, Loki and Promtail get one row each, in the Vardo system org, shared
-// by every organization — see core-services.ts for which of them are
-// singletons by nature and which only until aliases are namespaced. The lookup
-// is by app name across the whole instance, so an existing row is adopted
-// wherever it already lives instead of being duplicated or skipped.
+// by every organization — see core-services.ts for why each is instance-wide.
+// The lookup is by app name across the whole instance, so an existing row is
+// adopted wherever it already lives instead of being duplicated or skipped.
 //
 // Called at startup (instrumentation.ts) and on feature flag toggle.
 // ---------------------------------------------------------------------------
