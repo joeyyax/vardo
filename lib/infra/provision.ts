@@ -1,8 +1,9 @@
 // ---------------------------------------------------------------------------
 // Core service provisioning
 //
-// cAdvisor, Loki, Promtail and GlitchTip are instance-level singletons — one
-// row each, in the Vardo system org, shared by every organization. The lookup
+// cAdvisor, Loki, Promtail and GlitchTip get one row each, in the Vardo system
+// org, shared by every organization — see core-services.ts for which of them are
+// singletons by nature and which only until aliases are namespaced. The lookup
 // is by app name across the whole instance, so an existing row is adopted
 // wherever it already lives instead of being duplicated or skipped.
 //
@@ -226,7 +227,13 @@ async function ensureAppDeployed(
 ): Promise<Outcome> {
   const existing = await db.query.apps.findFirst({
     where: and(eq(apps.name, template.name), isNull(apps.parentAppId)),
-    columns: { id: true, status: true, organizationId: true, isSystemManaged: true },
+    columns: {
+      id: true,
+      status: true,
+      organizationId: true,
+      isSystemManaged: true,
+      composeContent: true,
+    },
   });
 
   if (existing && !existing.isSystemManaged) {
@@ -247,11 +254,29 @@ async function ensureAppDeployed(
       if (hasGpu) log.info(`cAdvisor: GPU detected, enabled GPU metrics`);
     }
 
+    // The template is the only source of truth for a core service — the app
+    // API refuses edits to a system-managed row. Without this, a template fix
+    // reaches new installs only and every existing instance stays broken.
+    const composeStale =
+      !!template.composeContent && existing.composeContent !== template.composeContent;
+    if (composeStale) {
+      await db
+        .update(apps)
+        .set({
+          composeContent: template.composeContent,
+          needsRedeploy: true,
+          updatedAt: new Date(),
+        })
+        .where(eq(apps.id, existing.id));
+      log.info(`Core service "${template.name}": compose refreshed from template`);
+    }
+
     // Existence was the only check, so a core service whose container went away
     // stayed dead forever — the feature reads as enabled and silently does
     // nothing. Redeploy it instead.
-    if (existing.status === "missing" || existing.status === "error") {
-      log.info(`Core service "${template.name}" is ${existing.status} — redeploying`);
+    if (composeStale || existing.status === "missing" || existing.status === "error") {
+      const reason = composeStale ? "compose changed" : `is ${existing.status}`;
+      log.info(`Core service "${template.name}" ${reason} — redeploying`);
       let ok = false;
       try {
         const result = await requestDeploy({
@@ -268,7 +293,7 @@ async function ensureAppDeployed(
         state: ok ? "provisioned" : "failed",
         appId: existing.id,
         organizationId: existing.organizationId,
-        detail: ok ? null : `${template.displayName} was ${existing.status} and its redeploy failed.`,
+        detail: ok ? null : `${template.displayName} ${reason} and its redeploy failed.`,
         created: false,
       };
     }

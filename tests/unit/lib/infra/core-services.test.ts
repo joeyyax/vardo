@@ -131,6 +131,7 @@ describe("core service provisioning", () => {
       status: "running",
       organizationId: "vardo-org",
       isSystemManaged: true,
+      composeContent: "services: {}",
     });
 
     await provisionForFlag("error-tracking", true);
@@ -146,6 +147,7 @@ describe("core service provisioning", () => {
       status: "running",
       organizationId: "some-other-org",
       isSystemManaged: true,
+      composeContent: "services: {}",
     });
 
     await provisionForFlag("error-tracking", true);
@@ -179,6 +181,7 @@ describe("core service provisioning", () => {
       status: "missing",
       organizationId: "some-other-org",
       isSystemManaged: true,
+      composeContent: "services: {}",
     });
 
     await provisionForFlag("error-tracking", true);
@@ -194,6 +197,7 @@ describe("core service provisioning", () => {
       status: "running",
       organizationId: "vardo-org",
       isSystemManaged: true,
+      composeContent: "services: {}",
     });
 
     await ensureInfraServices();

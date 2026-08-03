@@ -12,7 +12,6 @@ composeContent: |
   services:
     glitchtip:
       image: glitchtip/glitchtip:latest
-      container_name: vardo-glitchtip
       depends_on:
         - postgres
         - redis
@@ -20,10 +19,16 @@ composeContent: |
         - .env
       volumes:
         - uploads:/code/uploads
+      # Vardo reaches this at http://glitchtip:8000, where the hostname is the
+      # compose service name. Without the shared network nothing resolves it and
+      # error tracking silently mints no DSN. Keep `default` — postgres and redis
+      # stay project-private, and dropping it would cut this service off from them.
+      networks:
+        - default
+        - vardo-network
 
     worker:
       image: glitchtip/glitchtip:latest
-      container_name: vardo-glitchtip-worker
       command: ./bin/run-celery-with-beat.sh
       depends_on:
         - postgres
@@ -35,7 +40,6 @@ composeContent: |
 
     postgres:
       image: postgres:17
-      container_name: vardo-glitchtip-postgres
       env_file:
         - .env
       volumes:
@@ -43,7 +47,6 @@ composeContent: |
 
     redis:
       image: redis:7-alpine
-      container_name: vardo-glitchtip-redis
       volumes:
         - redis-data:/data
 
@@ -51,6 +54,10 @@ composeContent: |
     uploads: {}
     postgres-data: {}
     redis-data: {}
+
+  networks:
+    vardo-network:
+      external: true
 
 envVars:
   - key: DATABASE_URL
