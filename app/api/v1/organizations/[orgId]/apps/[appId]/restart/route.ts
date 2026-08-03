@@ -53,10 +53,13 @@ async function handlePost(_request: NextRequest, { params }: RouteParams) {
     }
 
     // Callers render `error`; without it the reason never reaches the operator.
+    // `observed` is what Docker reported once the command returned — compose can
+    // exit clean and leave the app crashed.
     return NextResponse.json({
       success: result.success,
       log: result.log,
       action: result.action,
+      observed: result.observed ?? null,
       ...(result.success ? {} : { error: result.log }),
     });
   } catch (error) {
