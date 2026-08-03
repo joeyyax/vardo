@@ -29,7 +29,12 @@ import { detectActiveSlot } from "../slots";
 import { crossBoundaryVolumeName, volumesByOwner } from "../shared-volumes";
 import { isSelfApp, seedSelfEnv } from "../self-env";
 import { resolveServiceDSNs, DSN_ENV_KEY } from "@/lib/error-tracking/inject";
-import { networkCreateArgs, sharedNetworkName, sharedNetworks } from "../shared-networks";
+import {
+  DEFAULT_NETWORK,
+  networkCreateArgs,
+  sharedNetworkName,
+  sharedNetworks,
+} from "../shared-networks";
 
 const execFileAsync = promisify(execFile);
 const NETWORK_NAME = VARDO_NETWORK;
@@ -141,9 +146,11 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
 
   // Step 5a2: Externalize networks a shared service attaches to, so the shared
   // and slot projects join one network instead of each declaring their own.
-  if (compose.networks) {
-    const shared = sharedNetworks(compose);
-    for (const netName of shared) {
+  const sharedNets = sharedNetworks(compose);
+  if (sharedNets.size > 0) {
+    compose.networks ??= {};
+    ctx.bareCompose.networks ??= {};
+    for (const netName of sharedNets) {
       const externalName = sharedNetworkName(compose, netName, stableVolumePrefix);
       try {
         await execFileAsync(
@@ -157,13 +164,12 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
       // The bare file is written separately and would otherwise still declare
       // the network, so compose creates a second one and a pinned subnet clashes.
       // Key presence, not truthiness: `internal:` with no config parses to null.
-      if (ctx.bareCompose.networks && netName in ctx.bareCompose.networks) {
+      // The implicit default is never a key, and is the one both projects need.
+      if (netName === DEFAULT_NETWORK || netName in ctx.bareCompose.networks) {
         ctx.bareCompose.networks[netName] = external;
       }
     }
-    if (shared.size > 0) {
-      log(`[deploy] Shared network(s): ${[...shared].join(", ")}`);
-    }
+    log(`[deploy] Shared network(s): ${[...sharedNets].join(", ")}`);
   }
 
   // Step 5b: Write the two physical compose files
