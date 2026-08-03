@@ -7,7 +7,7 @@ import YAML from "yaml";
 import type { ComposeFile, ComposeService, ValidateOptions } from "./compose-types";
 import { dependsOnKeys } from "./compose-types";
 import { SHARED_MARKER, isSharedService, nonRotatingServices } from "./slot-partition";
-import { sharedVolumeMounts, volumeSharedServices } from "./volume-shared";
+import { slotIndependentMounts, volumeSharedServices } from "./volume-shared";
 import { getTraefikRoutedServices } from "./compose-inject";
 import { selectRoutedService } from "./routed-service";
 
@@ -428,7 +428,7 @@ export function unmarkedSharedVolumeWarnings(compose: ComposeFile): string[] {
   for (const name of volumeSharedServices(compose)) {
     const svc = compose.services[name];
     if (isSharedService(svc)) continue;
-    const mounts = sharedVolumeMounts(svc.volumes, declared).map((v) => `"${v}"`).join(", ");
+    const mounts = slotIndependentMounts(svc.volumes, declared).map((v) => `"${v}"`).join(", ");
     const head = `Service "${name}" runs ${svc.image} and mounts ${mounts}, which both slots address.`;
 
     // Dropped by nonRotatingServices — it depends on a rotating service, or is
