@@ -19,6 +19,7 @@ import { isUncapturedSource, uncapturedReason } from "./coverage";
 import { listContainers, inspectContainer } from "@/lib/docker/client";
 import { resolveDefaultEnv } from "@/lib/docker/resolve-env";
 import { logger } from "@/lib/logger";
+import type { BusEvent } from "@/lib/bus/events";
 
 const log = logger.child("backup");
 
@@ -73,6 +74,8 @@ type VolumeToBackup = {
   mountPath: string | null;
   appId: string | null;
   appName: string | null;
+  /** Owning org, so an instance-level job reports progress to each app's org. */
+  orgId: string | null;
   orgSlug: string | null;
   type: "named" | "bind";
   source: string | null;
@@ -417,6 +420,7 @@ export async function runBackup(
         mountPath: vol.mountPath,
         appId: app.id,
         appName: app.name,
+        orgId: app.organizationId,
         orgSlug,
         type: vol.type,
         source: vol.source,
@@ -435,6 +439,7 @@ export async function runBackup(
       mountPath: vol.mountPath,
       appId: vol.appId,
       appName: null,
+      orgId: null,
       orgSlug: null,
       type: vol.type,
       source: vol.source,
@@ -447,10 +452,44 @@ export async function runBackup(
     return [];
   }
 
+  // Live progress for the backups UI. Best-effort throughout: the import, the
+  // emit and anything they throw are contained so a bus fault cannot abort a run.
+  const totalSources = volumesToBackup.length;
+  let emitEvent: ((orgId: string, event: BusEvent) => void) | null = null;
+  try {
+    ({ emit: emitEvent } = await import("@/lib/notifications/dispatch"));
+  } catch (err) {
+    log.warn("progress bus unavailable:", err);
+  }
+
+  function publishProgress(vol: VolumeToBackup, index: number): void {
+    try {
+      const progressOrgId = vol.orgId ?? job!.organizationId;
+      if (!emitEvent || !progressOrgId) return;
+      const appName = vol.appName ?? vol.name;
+      emitEvent(progressOrgId, {
+        type: "backup.progress",
+        title: `Backing up ${appName}`,
+        message: `${appName} (${index} of ${totalSources})`,
+        jobId: job!.id,
+        jobName: job!.name,
+        appId: vol.appId,
+        appName,
+        volumeName: vol.name,
+        index,
+        total: totalSources,
+      });
+    } catch (err) {
+      log.warn("progress emit failed:", err);
+    }
+  }
+
   // Back up each volume
   const results: BackupResult[] = [];
+  let sourceIndex = 0;
 
   for (const vol of volumesToBackup) {
+    publishProgress(vol, ++sourceIndex);
     const backupId = nanoid();
     const startedAt = new Date();
     const logLines: string[] = [];

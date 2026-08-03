@@ -58,6 +58,15 @@ export type RecentBackup = {
   app: App;
 };
 
+/** Where a live run has got to, from the latest backup.progress event. */
+export type RunProgress = {
+  jobId: string;
+  appName: string;
+  volumeName: string;
+  index: number;
+  total: number;
+};
+
 export type TargetType = "s3" | "r2" | "b2" | "ssh" | "local";
 
 export type TargetWithJobs = BackupTarget & {

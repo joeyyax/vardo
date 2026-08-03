@@ -2,7 +2,7 @@ import { db } from "@/lib/db";
 import { memberships, userNotificationPreferences } from "@/lib/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import type { BusEventType } from "@/lib/bus";
-import { CHANNEL_TYPE_DEFAULTS, CRITICAL_EVENT_TYPES } from "./channel-defaults";
+import { CHANNEL_TYPE_DEFAULTS, CRITICAL_EVENT_TYPES, SILENT_EVENT_TYPES } from "./channel-defaults";
 
 /**
  * Fetch all member user IDs for an org. Called once per dispatch, outside the
@@ -50,6 +50,7 @@ export async function fetchEventPrefs(
  * of the per-channel loop. No DB calls are made here.
  *
  * Rules:
+ * - Live-UI-only events never send.
  * - Critical events always send, bypassing all preferences.
  * - For each org member: check their preference for this channel+event.
  *   If no row exists, fall back to the channel-type default.
@@ -63,6 +64,10 @@ export function resolveRecipients(
   members: Array<{ userId: string }>,
   prefs: EventPref[],
 ): { shouldSend: boolean } {
+  if (SILENT_EVENT_TYPES.has(eventType)) {
+    return { shouldSend: false };
+  }
+
   if (CRITICAL_EVENT_TYPES.has(eventType)) {
     return { shouldSend: true };
   }
