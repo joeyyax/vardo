@@ -85,6 +85,10 @@ export const apps = pgTable(
     containerStartedAt: timestamp("container_started_at"),
     // Running container's cgroup memory limit in bytes. 0 means unlimited.
     containerMemoryLimit: bigint("container_memory_limit", { mode: "number" }),
+    // Docker's RestartCount across this app's containers, written by the status
+    // reconciler. Null means there was no counter to read — no container, or one
+    // Docker would not answer for. Zero means it was read and is zero.
+    containerRestartCount: integer("container_restart_count"),
     // Last time the reconciler compared this app against Docker.
     statusCheckedAt: timestamp("status_checked_at"),
     // Last tick the reconciler observed this app running. Never cleared, so it
