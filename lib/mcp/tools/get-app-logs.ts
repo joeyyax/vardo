@@ -90,7 +90,7 @@ export function registerGetAppLogs(
       }
 
       // Docker direct fallback
-      const containers = await listContainers(app.name);
+      const containers = await listContainers(app);
 
       if (containers.length === 0) {
         return {

@@ -181,7 +181,7 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
 
   // Auto-detect persistent volumes from running containers
   try {
-    const runningContainers = await listContainers(app.name);
+    const runningContainers = await listContainers({ id: ctx.appId, name: app.name });
     const detectedVolumes: { name: string; mountPath: string }[] = [];
     const seen = new Set<string>();
 
@@ -230,7 +230,7 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
 
     if (anyLimited) {
       const { formatBytes } = await import("@/lib/metrics/format");
-      const runningContainers = await listContainers(app.name);
+      const runningContainers = await listContainers({ id: ctx.appId, name: app.name });
 
       const volEntries: { volName: string; displayName: string }[] = [];
       for (const c of runningContainers) {
