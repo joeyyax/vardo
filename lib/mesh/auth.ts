@@ -20,8 +20,28 @@ export function hashMeshToken(raw: string): string {
 }
 
 /**
+ * How long a dev peer's token stays valid without the peer being seen.
+ * Dev instances are ephemeral; an abandoned one should not keep mesh access.
+ */
+export const DEV_PEER_MAX_IDLE_MS =
+  parseInt(process.env.VARDO_MESH_DEV_PEER_MAX_IDLE_DAYS || "30", 10) * 86_400_000;
+
+/** A dev peer that has not been seen inside the idle window is expired. */
+export function isPeerTokenExpired(
+  peer: { type: string; lastSeenAt: Date | null; createdAt: Date },
+  now: Date = new Date(),
+): boolean {
+  if (peer.type !== "dev") return false;
+  const lastActive = peer.lastSeenAt ?? peer.createdAt;
+  return now.getTime() - lastActive.getTime() > DEV_PEER_MAX_IDLE_MS;
+}
+
+/**
  * Authenticate a mesh peer request via Bearer token.
  * Returns the peer record if valid, throws otherwise.
+ *
+ * Rejects peers we have no tunnel to and dev peers that have gone idle past
+ * the expiry window. Deleting a peer revokes its token immediately.
  */
 export async function requireMeshPeer(request: NextRequest) {
   const authHeader = request.headers.get("authorization");
@@ -41,6 +61,15 @@ export async function requireMeshPeer(request: NextRequest) {
   });
 
   if (!peer) {
+    throw new Error("Unauthorized");
+  }
+
+  // Visible peers are hub-reported entries, not paired instances.
+  if (peer.connectionType !== "direct") {
+    throw new Error("Unauthorized");
+  }
+
+  if (isPeerTokenExpired(peer)) {
     throw new Error("Unauthorized");
   }
 
