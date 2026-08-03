@@ -13,6 +13,7 @@ import { emit } from "@/lib/notifications/dispatch";
 import type { BusEvent } from "@/lib/bus";
 import { dockerRequest, listAllContainers, restartContainer } from "./client";
 import { logger } from "@/lib/logger";
+import { closeOnShutdown } from "@/lib/shutdown";
 
 const log = logger.child("traefik-drift");
 
@@ -365,12 +366,11 @@ export async function tickTraefikDrift(): Promise<void> {
 
 let interval: NodeJS.Timeout | null = null;
 let ticking = false;
-let signalsInstalled = false;
+let unregisterShutdown: (() => void) | null = null;
 
 export function startTraefikDriftMonitor(): void {
   if (interval) return;
 
-  installSignalHandlers();
   log.info(`Monitor started (${POLL_INTERVAL_MS / 1000}s interval)`);
   interval = setInterval(async () => {
     if (ticking) return;
@@ -383,27 +383,18 @@ export function startTraefikDriftMonitor(): void {
       ticking = false;
     }
   }, POLL_INTERVAL_MS);
+
+  // Registered from the start function, not at module scope — importing this
+  // module must not wire a shutdown for a monitor that was never started.
+  unregisterShutdown = closeOnShutdown(stopTraefikDriftMonitor);
 }
 
 export function stopTraefikDriftMonitor(): void {
+  unregisterShutdown?.();
+  unregisterShutdown = null;
   if (interval) {
     clearInterval(interval);
     interval = null;
     log.info("Monitor stopped");
   }
-}
-
-function onShutdown(signal: string) {
-  log.info(`Received ${signal} — stopping monitor`);
-  stopTraefikDriftMonitor();
-}
-
-// Installed from the start function, not at module scope — traefik-cutover
-// imports this module for its helpers and must not add listeners.
-function installSignalHandlers(): void {
-  if (signalsInstalled) return;
-  signalsInstalled = true;
-  process.once("SIGTERM", () => onShutdown("SIGTERM"));
-  process.once("SIGINT", () => onShutdown("SIGINT"));
-  process.once("exit", () => stopTraefikDriftMonitor());
 }
