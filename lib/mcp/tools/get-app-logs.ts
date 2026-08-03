@@ -117,10 +117,14 @@ export function registerGetAppLogs(
         };
       }
 
+      const window = dockerSince(since);
       const allLogs: string[] = [];
       for (const container of containers) {
         try {
-          const log = await getContainerLogs(container.id, { tail: lines });
+          const log = await getContainerLogs(container.id, {
+            tail: lines,
+            since: window.seconds,
+          });
           allLogs.push(`── ${container.name} ──`);
           allLogs.push(log || "(no output)");
           allLogs.push("");
@@ -141,6 +145,7 @@ export function registerGetAppLogs(
               {
                 source: "docker",
                 app: app.name,
+                since: window.since,
                 containerCount: containers.length,
                 logs: allLogs.join("\n"),
               },
@@ -169,9 +174,30 @@ export const MAX_SINCE_MS = Math.max(...LOOKBACK_MS);
 /** The window a request actually covers, and whether that is less than it asked for. */
 export type SinceWindow = { start: string; since: string; clamped: boolean };
 
-export function resolveSince(duration: string, now: number = Date.now()): SinceWindow {
+/** Requested span in ms. An unparseable duration falls back to an hour. */
+function parseSince(duration: string): number {
   const match = duration.match(/^(\d+)(s|m|h|d)$/);
-  const requested = match ? parseInt(match[1]) * UNIT_MS[match[2]] : DEFAULT_SINCE_MS;
+  return match ? parseInt(match[1]) * UNIT_MS[match[2]] : DEFAULT_SINCE_MS;
+}
+
+/**
+ * The same window for the Docker fallback, as the Unix seconds the daemon takes.
+ * Nothing caps it — Docker serves whatever it still holds, so the answer covers
+ * the window asked for or stops where the container's retained log does.
+ */
+export function dockerSince(
+  duration: string,
+  now: number = Date.now()
+): { seconds: string; since: string } {
+  const requested = parseSince(duration);
+  return {
+    seconds: String(Math.floor((now - requested) / 1000)),
+    since: formatDuration(requested),
+  };
+}
+
+export function resolveSince(duration: string, now: number = Date.now()): SinceWindow {
+  const requested = parseSince(duration);
   const covered = Math.min(requested, MAX_SINCE_MS);
 
   return {

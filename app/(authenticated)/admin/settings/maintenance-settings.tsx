@@ -102,7 +102,7 @@ const NOTABLE_SKIPS = new Set([
 type OwnerGap = {
   appName: string;
   dir: string;
-  reason: "unreadable" | "orphaned" | "ambiguous" | "failed";
+  reason: "unreadable" | "orphaned" | "ambiguous" | "unwritable" | "failed";
   detail: string;
 };
 
@@ -119,6 +119,7 @@ const GAP_LABELS: Record<OwnerGap["reason"], string> = {
   unreadable: "Marker could not be read",
   orphaned: "No app owns this directory",
   ambiguous: "More than one app claims the name",
+  unwritable: "Marker could not be written",
   failed: "Could not be checked",
 };
 
@@ -871,20 +872,28 @@ export function MaintenanceSettings() {
                 {owners.exempt > 0 && (
                   <span className="text-muted-foreground">, {owners.exempt} exempt</span>
                 )}
+                {owners.gaps.length > 0 && (
+                  <span className="text-muted-foreground">, {owners.gaps.length} without one</span>
+                )}
                 .
               </p>
 
               {owners.gaps.length > 0 && (
-                <ul className="divide-y rounded-md border">
-                  {owners.gaps.map((g) => (
-                    <li key={g.dir} className="px-3 py-2 space-y-0.5">
-                      <p className="text-sm font-medium">{g.appName}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {GAP_LABELS[g.reason]} — {g.detail}
-                      </p>
-                    </li>
-                  ))}
-                </ul>
+                <div className="space-y-1.5">
+                  <p id="owner-gaps" className="text-xs font-medium">
+                    Without an owner
+                  </p>
+                  <ul aria-labelledby="owner-gaps" className="divide-y rounded-md border">
+                    {owners.gaps.map((g) => (
+                      <li key={g.dir} className="px-3 py-2 space-y-0.5">
+                        <p className="text-sm font-medium">{g.appName}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {GAP_LABELS[g.reason]} — {g.detail}
+                        </p>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               )}
             </div>
           )}
