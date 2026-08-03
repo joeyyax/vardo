@@ -319,7 +319,7 @@ export function TwoFactorAuth() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             {isEnabled ? (
-              <ShieldCheck className="size-5 text-green-500" />
+              <ShieldCheck className="size-5 text-status-success" />
             ) : (
               <Shield className="size-5 text-muted-foreground" />
             )}
@@ -986,7 +986,7 @@ export function ApiTokens({ orgId }: { orgId: string }) {
       <CardContent>
         {/* Created token display */}
         {createdToken && (
-          <div className="rounded-lg border border-green-500/30 bg-green-500/5 p-4 space-y-2">
+          <div className="rounded-lg border border-status-success/30 bg-status-success/5 p-4 space-y-2">
             <p className="text-sm font-medium">
               Token created. Copy it now -- it won&apos;t be shown again.
             </p>

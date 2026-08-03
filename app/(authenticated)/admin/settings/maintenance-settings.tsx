@@ -546,7 +546,7 @@ export function MaintenanceSettings() {
             The current session will be interrupted while the container restarts.
           </p>
           {!loadingStatus && !status?.hasVardoDir && (
-            <div className="flex items-start gap-2 text-sm text-amber-600 dark:text-amber-400">
+            <div className="flex items-start gap-2 text-sm text-status-warning">
               <AlertCircle className="size-4 shrink-0 mt-0.5" aria-hidden="true" />
               <span>
                 <code className="text-xs font-mono">VARDO_HOME_DIR</code> is not set. Update requires
@@ -612,7 +612,7 @@ export function MaintenanceSettings() {
               Checking reclaimable space...
             </div>
           ) : buildCache?.reclaimable === null || buildCache?.reclaimable === undefined ? (
-            <div className="flex items-center gap-2 text-sm text-amber-600 dark:text-amber-400">
+            <div className="flex items-center gap-2 text-sm text-status-warning">
               <AlertCircle className="size-4 shrink-0" aria-hidden="true" />
               Reclaimable space is unknown — Docker did not report build cache usage.
             </div>
@@ -719,7 +719,7 @@ export function MaintenanceSettings() {
               Checking which apps are idle...
             </div>
           ) : !images?.plan ? (
-            <div className="flex items-center gap-2 text-sm text-amber-600 dark:text-amber-400">
+            <div className="flex items-center gap-2 text-sm text-status-warning">
               <AlertCircle className="size-4 shrink-0" aria-hidden="true" />
               Could not read the image list — the plan is unavailable.
             </div>
@@ -856,7 +856,7 @@ export function MaintenanceSettings() {
               Checking coverage...
             </div>
           ) : !owners ? (
-            <div className="flex items-center gap-2 text-sm text-amber-600 dark:text-amber-400">
+            <div className="flex items-center gap-2 text-sm text-status-warning">
               <AlertCircle className="size-4 shrink-0" aria-hidden="true" />
               Could not read the app directory — coverage is unknown.
             </div>

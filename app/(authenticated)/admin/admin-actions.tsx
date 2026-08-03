@@ -192,8 +192,8 @@ export function UserManagement() {
         </form>
 
         {inviteMessage && (
-          <div className="rounded-lg border border-green-500/30 bg-green-500/5 p-4">
-            <p className="text-sm text-green-400">{inviteMessage}</p>
+          <div className="rounded-lg border border-status-success/30 bg-status-success/5 p-4">
+            <p className="text-sm text-status-success">{inviteMessage}</p>
           </div>
         )}
       </div>
@@ -212,7 +212,7 @@ export function UserManagement() {
             >
               <div className="flex items-center gap-3 min-w-0">
                 {u.isAppAdmin ? (
-                  <ShieldCheck className="size-4 shrink-0 text-amber-500" />
+                  <ShieldCheck className="size-4 shrink-0 text-foreground" />
                 ) : (
                   <Shield className="size-4 shrink-0 text-muted-foreground" />
                 )}

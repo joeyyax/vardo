@@ -241,10 +241,7 @@ export function TeamMembers({ members: initialMembers, orgId, orgName, currentRo
                 </div>
 
                 <div className="flex items-center gap-3 shrink-0">
-                  <Badge
-                    variant={isOwner ? "default" : "secondary"}
-                    className={isOwner ? "bg-amber-500/10 text-amber-600 border-amber-500/20" : ""}
-                  >
+                  <Badge variant={isOwner ? "default" : "secondary"}>
                     {isOwner && <Crown className="mr-1 size-3" />}
                     {ROLE_LABELS[member.role] || member.role}
                   </Badge>

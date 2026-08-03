@@ -245,10 +245,10 @@ export function InvitationsPanel({
                     </Badge>
 
                     <Badge
-                      variant={isAccepted ? "default" : isExpired ? "outline" : "secondary"}
+                      variant={isAccepted || isExpired ? "outline" : "secondary"}
                       className={
                         isAccepted
-                          ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20"
+                          ? "text-status-success border-status-success/30"
                           : isExpired
                           ? "text-muted-foreground"
                           : ""
