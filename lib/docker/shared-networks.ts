@@ -1,9 +1,18 @@
 import { partitionBySlot } from "./slot-partition";
-import type { ComposeFile } from "./compose-types";
+import type { ComposeFile, ComposeService } from "./compose-types";
+
+/** Compose's implicit network, joined by any service that names none. */
+export const DEFAULT_NETWORK = "default";
 
 /** A network the compose declares itself, rather than referencing one that exists. */
 function isProjectScoped(config: unknown): boolean {
   return !(config && typeof config === "object" && (config as { external?: unknown }).external);
+}
+
+/** Networks a service joins. An empty `networks:` is the implicit default. */
+function serviceNetworks(service: ComposeService): string[] {
+  if (service.network_mode) return [];
+  return service.networks?.length ? service.networks : [DEFAULT_NETWORK];
 }
 
 /**
@@ -13,21 +22,23 @@ function isProjectScoped(config: unknown): boolean {
  * projects would each create their own — and a network with a fixed subnet
  * fails outright with "pool overlaps with other one on this address space".
  * These have to become external, under one name both projects reference.
+ *
+ * The implicit default counts. A compose file that declares no networks at all
+ * still puts every service on it, so leaving it out strands a shared database
+ * on a network nothing looking for `postgres:5432` can reach.
  */
 export function sharedNetworks(compose: ComposeFile): Set<string> {
-  const declared = Object.entries(compose.networks ?? {})
-    .filter(([, config]) => isProjectScoped(config))
-    .map(([name]) => name);
-  if (declared.length === 0) return new Set();
-
   const { shared } = partitionBySlot(compose);
   if (Object.keys(shared).length === 0) return new Set();
 
-  const declaredSet = new Set(declared);
+  const declared = (compose.networks ?? {}) as Record<string, unknown>;
+  const claimable = (net: string) =>
+    net in declared ? isProjectScoped(declared[net]) : net === DEFAULT_NETWORK;
+
   const used = new Set<string>();
   for (const service of Object.values(shared)) {
-    for (const net of service.networks ?? []) {
-      if (declaredSet.has(net)) used.add(net);
+    for (const net of serviceNetworks(service)) {
+      if (claimable(net)) used.add(net);
     }
   }
   return used;
