@@ -1,4 +1,5 @@
 import { dependsOnKeys, type ComposeFile, type ComposeService } from "./compose-types";
+import { volumeSharedServices } from "./volume-shared";
 
 /**
  * Compose extension field marking a service as exempt from blue/green.
@@ -14,6 +15,41 @@ export function isSharedService(service: ComposeService | undefined): boolean {
   return service?.[SHARED_MARKER] === true;
 }
 
+/**
+ * Services a deploy must not rotate: the marked ones, plus the ones detection
+ * caught holding a volume both slots address.
+ *
+ * A detected service is dropped again when promoting it would leave nothing to
+ * deploy, or when it depends on something that still rotates. The marked form
+ * rejects both outright, but a compose file that never claimed to be shared
+ * should not start failing to deploy.
+ */
+export function nonRotatingServices(compose: ComposeFile): Set<string> {
+  const services = compose.services ?? {};
+  const marked = new Set(Object.keys(services).filter((n) => isSharedService(services[n])));
+
+  const detected = [...volumeSharedServices(compose)].filter((n) => !marked.has(n));
+  if (detected.length === 0) return marked;
+
+  const shared = new Set([...marked, ...detected]);
+  if (shared.size === Object.keys(services).length) return marked;
+
+  // Repeated to a fixpoint: dropping one candidate can leave another depending
+  // on a service that now rotates.
+  for (let changed = true; changed; ) {
+    changed = false;
+    for (const name of detected) {
+      if (!shared.has(name)) continue;
+      const deps = dependsOnKeys(services[name].depends_on ?? []);
+      if (deps.some((dep) => dep in services && !shared.has(dep))) {
+        shared.delete(name);
+        changed = true;
+      }
+    }
+  }
+  return shared;
+}
+
 export type SlotPartition = {
   /** Services deployed once and left alone across swaps. */
   shared: Record<string, ComposeService>;
@@ -25,6 +61,7 @@ export class SlotPartitionError extends Error {}
 
 /**
  * Split a compose file into the services that rotate and the ones that persist.
+ * Membership is `nonRotatingServices`: the marker, plus detection.
  *
  * `depends_on` pointing from a slotted service at a shared one is dropped:
  * the two end up in different compose projects, where the dependency cannot be
@@ -39,9 +76,10 @@ export function partitionBySlot(compose: ComposeFile): SlotPartition {
   const services = compose.services ?? {};
   const shared: Record<string, ComposeService> = {};
   const slotted: Record<string, ComposeService> = {};
+  const nonRotating = nonRotatingServices(compose);
 
   for (const [name, service] of Object.entries(services)) {
-    (isSharedService(service) ? shared : slotted)[name] = service;
+    (nonRotating.has(name) ? shared : slotted)[name] = service;
   }
 
   if (Object.keys(shared).length === 0) return { shared, slotted };
@@ -152,7 +190,7 @@ export function composeProjectEnvironment(project: string): string | null {
 
 /** Whether this app needs the two-project deploy at all. */
 export function hasSharedServices(compose: ComposeFile): boolean {
-  return Object.values(compose.services ?? {}).some(isSharedService);
+  return nonRotatingServices(compose).size > 0;
 }
 
 /**
