@@ -5,6 +5,7 @@ import { apps as appsTable } from "@/lib/db/schema";
 import { listContainers, inspectContainer, restartContainer } from "./client";
 import { fetchAllMetrics } from "@/lib/metrics/provider";
 import { emit } from "@/lib/notifications/dispatch";
+import { recordActivity } from "@/lib/activity/record";
 import {
   evaluateConditions,
   conditionsEqual,
@@ -228,7 +229,7 @@ export async function tickHealthMonitor(): Promise<void> {
     }
 
     if (info.state.health?.status === "healthy") everHealthy.add(c.id);
-    checkCrashLoop(c, info.restartCount, app, now);
+    await checkCrashLoop(c, info.restartCount, app, now);
 
     noteSignal(app.id, {
       health: normalizeHealth(info.state.health?.status),
@@ -457,12 +458,12 @@ async function persistConditions(
  * healthy. Alerts at most once per RESTART_WINDOW_MS, then rebaselines so a
  * container that is still looping alerts again next window.
  */
-function checkCrashLoop(
+async function checkCrashLoop(
   c: { id: string; name: string },
   restartCount: number,
   app: { id: string; name: string; displayName: string | null; organizationId: string },
   now: number,
-): void {
+): Promise<void> {
   const baseline = restartBaseline.get(c.id);
   if (!baseline || restartCount < baseline.count) {
     // First sighting, or the container was recreated and the counter reset.
@@ -492,6 +493,25 @@ function checkCrashLoop(
     `CRASH LOOP: ${c.name} (app ${appName}) restarted ${delta} time(s) in ${Math.round((now - baseline.at) / 60000)}m ` +
       `(~${perHour}/hr, ${restartCount} total) and has never reported healthy — it is dying before its healthcheck can fail`,
   );
+
+  // The notification is read once and gone; this is what the stability
+  // timeline still has after the container is replaced and Docker's count
+  // starts over at zero.
+  try {
+    await recordActivity({
+      organizationId: app.organizationId,
+      appId: app.id,
+      action: "app.crash_looping",
+      metadata: {
+        summary: `${c.name} restarted ${delta} time(s) in ${Math.round((now - baseline.at) / 60000)}m without ever reaching healthy`,
+        containerName: c.name,
+        restarts: delta,
+        windowMs: now - baseline.at,
+      },
+    });
+  } catch (err) {
+    log.error(`Failed to record crash loop for ${c.name}:`, err);
+  }
 
   emit(app.organizationId, {
     type: "app.auto-restarted",

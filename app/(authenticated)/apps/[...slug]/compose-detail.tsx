@@ -53,6 +53,8 @@ import { AppDeployPanel } from "./app-deploy-panel";
 import { AppNetworking } from "./app-networking";
 import { AppSecurity } from "./app-security";
 import { AppErrors } from "./app-errors";
+import { AppStability } from "./app-stability";
+import type { Incident } from "@/lib/ui/stability";
 import { CronManager } from "./app-cron";
 import { AppDebug } from "./app-debug";
 import { AppSettingsPanel } from "./app-settings-panel";
@@ -683,6 +685,7 @@ export function ComposeDetail({
   featureFlags,
   allTags = [],
   siblings = [],
+  stabilityIncidents = [],
   allParentApps = [],
 }: {
   app: App & { childApps: NonNullable<App["childApps"]> };
@@ -693,6 +696,8 @@ export function ComposeDetail({
   featureFlags: FeatureFlags;
   allTags?: Tag[];
   siblings?: { id: string; name: string; displayName: string; status: string; dependsOn: string[] | null }[];
+  /** Durable stability history, newest first. */
+  stabilityIncidents?: Incident[];
   allParentApps?: { id: string; name: string; color: string }[];
 }) {
   const router = useRouter();
@@ -1117,6 +1122,7 @@ export function ComposeDetail({
         onNavigate={setActiveTabAndUrl}
         stack={rollupHealth(services)}
         deployStage={currentStageLabel(deploy.deployStages)}
+        stabilityIncidents={stabilityIncidents}
       />
 
 
@@ -1151,6 +1157,7 @@ export function ComposeDetail({
                 {
                   label: "Observe",
                   items: [
+                    { value: "stability", label: "Stability" },
                     ...(featureFlags?.logging !== false ? [{ value: "logs", label: "Logs" }] : []),
                     ...(featureFlags?.metrics !== false ? [{ value: "metrics", label: "Metrics" }] : []),
                     ...(featureFlags?.errorTracking !== false ? [{ value: "errors", label: "Errors" }] : []),
@@ -1248,6 +1255,10 @@ export function ComposeDetail({
             handleDeploy={handleDeployClick}
             isComposeParent
           />
+        </TabsContent>
+
+        <TabsContent value="stability">
+          <AppStability orgId={orgId} app={app} incidents={stabilityIncidents} />
         </TabsContent>
 
         {featureFlags?.logging !== false && (
