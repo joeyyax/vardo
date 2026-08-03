@@ -17,6 +17,7 @@ const { logMock, dockerMock, storeMock, providerMock, businessMock } = vi.hoiste
     storeDiskWrite: vi.fn().mockResolvedValue(undefined),
     storeGpuMetrics: vi.fn().mockResolvedValue(undefined),
     storeProjectDisk: vi.fn().mockResolvedValue(undefined),
+    pruneStaleGpuSeries: vi.fn().mockResolvedValue(0),
   };
   const providerMock = { fetchAllMetrics: vi.fn().mockResolvedValue([]) };
   const businessMock = { collectBusinessMetrics: vi.fn().mockResolvedValue(undefined) };

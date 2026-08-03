@@ -28,6 +28,13 @@ const STATUS_LABEL: Record<string, string> = {
   missing: "No container",
 };
 
+/** Memory row label. null = never observed. 0 = observed and uncapped. */
+export function memoryLimitLabel(containerMemoryLimit: number | null): string {
+  if (containerMemoryLimit == null) return "Unknown";
+  if (containerMemoryLimit === 0) return "No limit";
+  return `${formatBytes(containerMemoryLimit)} limit`;
+}
+
 /** `icon` mirrors the glyph on the app row, so this doubles as its legend. */
 function Row({
   label,
@@ -86,9 +93,7 @@ export function AppRowCard({ app, updateCount }: { app: AppRowCardApp; updateCou
         {app.containerStartedAt && (
           <Row label="Uptime">{formatDistanceToNowStrict(new Date(app.containerStartedAt))}</Row>
         )}
-        <Row label="Memory">
-          {app.containerMemoryLimit ? `${formatBytes(app.containerMemoryLimit)} limit` : "No limit"}
-        </Row>
+        <Row label="Memory">{memoryLimitLabel(app.containerMemoryLimit)}</Row>
         {deploy && (
           <Row label="Deployed">
             {formatDistanceToNowStrict(new Date(deploy.startedAt), { addSuffix: true })}
