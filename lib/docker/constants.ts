@@ -84,9 +84,20 @@ const execFileAsyncInternal = promisify(execFile);
 /**
  * Create a directory and ensure the app user can write to it.
  * If the dir exists but is root-owned, fix ownership via docker.
+ *
+ * Every path that creates an app directory lands here, so this is also where
+ * the ownership marker gets stamped.
  */
 export async function ensureWritableDir(dir: string): Promise<void> {
   await mkdir(dir, { recursive: true });
+  // Dynamic import: app-dir-owner pulls in the db and self-env, which import
+  // this module back.
+  try {
+    const { stampAppDirOwner } = await import("./app-dir-owner");
+    await stampAppDirOwner(dir);
+  } catch {
+    // Never block directory creation on the marker.
+  }
   try {
     const probe = join(dir, `.write-probe-${process.pid}`);
     await writeFile(probe, "");
