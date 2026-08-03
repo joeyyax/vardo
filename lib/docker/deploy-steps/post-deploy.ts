@@ -6,6 +6,7 @@
 // ---------------------------------------------------------------------------
 
 import { db } from "@/lib/db";
+import { statusChange } from "@/lib/db/app-status";
 import { deployments, apps, volumes } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
@@ -363,7 +364,7 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
   // Mark app as active
   await db
     .update(apps)
-    .set({ status: "active", needsRedeploy: false, updatedAt: new Date() })
+    .set({ ...statusChange("active"), needsRedeploy: false })
     .where(eq(apps.id, ctx.appId));
 
   // Snapshot current config onto deployment record for rollback
