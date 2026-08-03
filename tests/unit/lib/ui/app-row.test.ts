@@ -231,7 +231,7 @@ describe("restartNote", () => {
     const note = restartNote(12);
     expect(note?.label).toBe("12 restarts");
     expect(note?.tone).toBe("text-status-warning");
-    expect(note?.detail).toContain("resets it to zero");
+    expect(note?.detail).toContain("resets its count to zero");
   });
 
   it("says nothing for an ordinary count", () => {
