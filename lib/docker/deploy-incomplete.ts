@@ -5,6 +5,9 @@
 // serving, but something behind it — a hook, a notification, the old slot's
 // stop — did not complete. The row keeps `status: "success"` so it stays the
 // live release and a valid rollback target, and carries what was left undone.
+//
+// Never cleared. The field is what that deploy left behind; the next deploy
+// writes its own row, clean.
 // ---------------------------------------------------------------------------
 
 import { db } from "@/lib/db";

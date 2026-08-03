@@ -95,6 +95,9 @@ vi.mock("child_process", () => ({
 import { postDeploy } from "@/lib/docker/deploy-steps/post-deploy";
 import type { DeployContext } from "@/lib/docker/deploy-context";
 import { deployments } from "@/lib/db/schema";
+import { addEvent } from "@/lib/stream/producer";
+import { recordActivity } from "@/lib/activity";
+import { sendDeployNotification } from "@/lib/docker/deploy";
 
 function makeContext(overrides: Partial<DeployContext> = {}): DeployContext {
   const logLines: string[] = [];
@@ -190,9 +193,43 @@ describe("postDeploy tail work", () => {
     expect(unfinishedReasons()[0]).toContain("cutover guard timed out");
   });
 
+  it("reports a deferred stop that came back as failed", async () => {
+    const stopOldSlot = vi
+      .fn()
+      .mockResolvedValue({ ok: false, message: "docker daemon unreachable" });
+
+    await postDeploy(makeContext({ activeSlot: "green", stopOldSlot }));
+
+    expect(unfinishedReasons()[0]).toContain("still running");
+    expect(unfinishedReasons()[0]).toContain("docker daemon unreachable");
+  });
+
+  it("carries a stop the swap could not finish onto the row, behind the success", async () => {
+    const ctx = makeContext({
+      unfinished: ["the old slot (green) is still running — docker daemon unreachable"],
+    });
+
+    await postDeploy(ctx);
+
+    const success = writes.findIndex((w) => w.table === deployments && w.values.status === "success");
+    const noted = writes.findIndex((w) => w.table === deployments && "postDeployError" in w.values);
+    expect(unfinishedReasons()[0]).toContain("still running");
+    expect(noted).toBeGreaterThan(success);
+  });
+
+  it("stays silent when the tail's announcements fail", async () => {
+    vi.mocked(addEvent).mockRejectedValueOnce(new Error("redis down"));
+    vi.mocked(recordActivity).mockRejectedValueOnce(new Error("insert failed"));
+    vi.mocked(sendDeployNotification).mockRejectedValueOnce(new Error("smtp unreachable"));
+
+    await expect(postDeploy(makeContext())).resolves.toBeTruthy();
+
+    expect(unfinishedReasons()).toEqual([]);
+  });
+
   it("still stops the old slot when the queue check throws", async () => {
     queueDrained.mockRejectedValue(new Error("redis down"));
-    const stopOldSlot = vi.fn().mockResolvedValue(undefined);
+    const stopOldSlot = vi.fn().mockResolvedValue({ ok: true });
 
     await postDeploy(makeContext({ activeSlot: "green", stopOldSlot }));
 
