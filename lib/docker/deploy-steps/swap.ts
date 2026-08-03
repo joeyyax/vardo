@@ -429,8 +429,10 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
     if (oldSlotHoldsShared) {
       log(`[deploy] Old slot still runs ${sharedNames.join(", ")} — stopping it before the shared project starts`);
     }
-    // Nothing overlaps now, so there is no proven second backend to pin to.
-    if (!overlapFitsMemory) pinCutover = false;
+    // Every branch here stops the old slot before the new one starts, so there
+    // is no proven second backend to pin to and guardCutover would only burn
+    // PIN_CONFIRM_TIMEOUT waiting for one.
+    pinCutover = false;
     await stopOldSlot();
   } else if (canOverlapSlots) {
     log(`[deploy] No published host ports — ${activeSlot} keeps serving until ${newSlot} is healthy`);
