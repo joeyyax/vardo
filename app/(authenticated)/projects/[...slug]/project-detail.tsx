@@ -959,8 +959,8 @@ export function ProjectDetail({
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button size="sm" className={anyNeedsRedeploy
-                            ? "bg-status-warning-muted text-status-warning hover:bg-status-warning/20"
-                            : "bg-status-success-muted text-status-success hover:bg-status-success/20"
+                            ? "bg-status-warning-muted text-status-warning hover:ring-1 hover:ring-inset hover:ring-status-warning/40"
+                            : "bg-status-success-muted text-status-success hover:ring-1 hover:ring-inset hover:ring-status-success/40"
                           }>
                             {anyNeedsRedeploy ? (
                               <><RotateCcw className="mr-1.5 size-3.5" />Restart Needed</>
