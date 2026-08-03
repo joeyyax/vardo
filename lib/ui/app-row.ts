@@ -247,14 +247,42 @@ export function primaryDomain(
 /** Cell classes, shared with the component so the order below is the real one. */
 export const ROW_NAME_CELL = "min-w-0 shrink truncate";
 export const ROW_NOTE_CELL = "min-w-0 shrink-[9999] truncate";
-export const ROW_SOURCE_CELL = "min-w-0 w-44 shrink-[9999] truncate";
-export const ROW_DOMAIN_CELL = "min-w-0 w-52 shrink-[9999] truncate";
+export const ROW_SOURCE_CELL = "min-w-0 w-44 shrink-[9999] truncate hidden @[40rem]:block";
+export const ROW_DOMAIN_CELL = "min-w-0 w-52 shrink-[9999] truncate hidden @[52rem]:block";
+export const ROW_TAGS_CELL = "hidden max-w-32 truncate text-muted-foreground/60 @[34rem]:inline";
+export const ROW_UPTIME_CELL = "w-9 shrink-0 text-right tabular-nums";
+export const ROW_SPARKLINE_CELL =
+  "hidden h-[18px] w-16 shrink-0 items-center justify-end @[26rem]:flex";
+export const ROW_ICONS_CELL = "flex shrink-0 items-center justify-end gap-1.5 @[26rem]:w-14";
 /**
  * Holds the fixed columns. No min-w-0: min-content is the width of its own
  * shrink-0 children, so it squeezes the middle columns flat, freezes there, and
  * only then does the name start losing characters.
  */
 export const ROW_TRAILING_CELL = "ml-auto flex shrink-[9999] items-center gap-2.5";
+
+// ---------------------------------------------------------------------------
+// Column gates
+//
+// The container is the ledger card, not the viewport, and the page caps it: a
+// 1280px shell less 80px of gutter, a 192px rail, a 32px gap and 12px of card
+// padding leave 964px however wide the display is. A gate above that never opens.
+// ---------------------------------------------------------------------------
+
+/** Widest the card's content box ever gets, in px. */
+export const LEDGER_CARD_MAX_PX = 964;
+
+/** The @[…rem] width a cell waits for, in px. Null when it never hides. */
+export function containerGatePx(className: string, rootFontSize = 16): number | null {
+  let smallest: number | null = null;
+  for (const name of className.split(/\s+/)) {
+    const match = /^@\[(\d+(?:\.\d+)?)rem\]:/.exec(name);
+    if (!match) continue;
+    const px = Number(match[1]) * rootFontSize;
+    if (smallest === null || px < smallest) smallest = px;
+  }
+  return smallest;
+}
 
 const SPACING_PX = 4;
 
