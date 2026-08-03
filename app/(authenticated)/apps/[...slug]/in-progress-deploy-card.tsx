@@ -16,9 +16,16 @@ const STAGE_LABELS: Record<string, string> = {
   healthcheck: "Health",
   routing: "Route",
   cleanup: "Cleanup",
+  stop: "Stop",
+  restore: "Restore",
+  route: "Route",
+  verify: "Verify",
 };
 
-const STAGE_KEYS = ["clone", "compose", "build", "deploy", "healthcheck", "routing", "cleanup"] as const;
+const DEPLOY_STAGE_KEYS = ["clone", "compose", "build", "deploy", "healthcheck", "routing", "cleanup"];
+
+/** An auto-rollback restores a built slot, so it reports its own phases. */
+const ROLLBACK_STAGE_KEYS = ["stop", "restore", "route", "verify"];
 
 export function InProgressDeployCard({
   stages,
@@ -49,17 +56,21 @@ export function InProgressDeployCard({
 }) {
   // Build a screen-reader announcement for the current deploy state
   const hasStages = Object.keys(stages).length > 0;
-  const runningStage = STAGE_KEYS.find((s) => stages[s] === "running");
-  const failedStage = STAGE_KEYS.find((s) => stages[s] === "failed");
-  const allDone = hasStages && STAGE_KEYS.filter((s) => stages[s]).every((s) => stages[s] === "success" || stages[s] === "skipped");
+  // The phases in the stream name the run: only a rollback reports rollback phases.
+  const isRollback = ROLLBACK_STAGE_KEYS.some((s) => stages[s]);
+  const stageKeys = isRollback ? ROLLBACK_STAGE_KEYS : DEPLOY_STAGE_KEYS;
+  const noun = isRollback ? "Rollback" : "Deployment";
+  const runningStage = stageKeys.find((s) => stages[s] === "running");
+  const failedStage = stageKeys.find((s) => stages[s] === "failed");
+  const allDone = hasStages && stageKeys.filter((s) => stages[s]).every((s) => stages[s] === "success" || stages[s] === "skipped");
   // Only announce once a stage has actually transitioned — empty string on
   // initial mount so the assertive live region doesn't interrupt immediately.
   const liveAnnouncement = failedStage
-    ? `Deployment failed at ${STAGE_LABELS[failedStage]} stage`
+    ? `${noun} failed at ${STAGE_LABELS[failedStage]} stage`
     : allDone
-      ? "Deployment completed successfully"
+      ? `${noun} completed successfully`
       : runningStage
-        ? `Deploying: ${STAGE_LABELS[runningStage]} in progress`
+        ? `${isRollback ? "Rolling back" : "Deploying"}: ${STAGE_LABELS[runningStage]} in progress`
         : "";
 
   return (
@@ -75,10 +86,10 @@ export function InProgressDeployCard({
         <div className="flex items-center gap-3 min-w-0">
           <Badge variant="outline" className="animate-pulse shrink-0">
             <Loader2 className="mr-1 size-3 animate-spin" />
-            {cancelling ? "Cancelling" : "Deploying"}
+            {cancelling ? "Cancelling" : isRollback ? "Rolling back" : "Deploying"}
           </Badge>
           <div className="flex items-center gap-1.5 flex-wrap">
-            {STAGE_KEYS.map((s, i) => {
+            {stageKeys.map((s, i) => {
               const status = stages[s];
               const timing = stageTimes?.[s];
               return (
