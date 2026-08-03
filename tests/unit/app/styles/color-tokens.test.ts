@@ -497,6 +497,21 @@ describe("status surfaces at the call sites", () => {
     expect(offenders).toEqual([]);
   });
 
+  it("gives a status-toned button the variant that lets it own its hover", () => {
+    // The other variants set their own hover:bg-*, which no status class
+    // conflicts with, so it survives the merge and repaints on hover.
+    const offenders: string[] = [];
+    for (const file of files) {
+      for (const tag of readFileSync(file, "utf8").matchAll(/<Button\b[\s\S]*?>/g)) {
+        if (!/bg-status-[a-z]+-muted/.test(tag[0])) continue;
+        // A ternary variant is fine as long as "status" is one of its arms.
+        if (/variant=[^>]*"status"/.test(tag[0])) continue;
+        offenders.push(`${path.relative(ROOT, file)}: ${tag[0].replace(/\s+/g, " ").slice(0, 90)}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
   it("never paints a chip from outside the token set", () => {
     const PALETTE =
       /\b(?:bg|text|border|ring|from|to|via)-(?:(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-\d{2,3}|white|black)\b/;
