@@ -348,7 +348,10 @@ describe("#756 — volume resolution targets the real env-scoped volume", () => 
 
     await restoreBackup("bk-1");
 
-    expect(listContainersMock).toHaveBeenCalledWith("myapp", "staging");
+    expect(listContainersMock).toHaveBeenCalledWith(
+      { id: "app-1", name: "myapp" },
+      "staging",
+    );
   });
 
   it("ignores a container mount at a different path", async () => {

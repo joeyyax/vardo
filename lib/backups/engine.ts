@@ -282,7 +282,10 @@ export async function resolveDockerVolume(
   // 1. Authoritative: the volume Docker actually has mounted at mountPath.
   if (mountPath) {
     try {
-      const containers = await listContainers(appName, env?.name);
+      const containers = await listContainers(
+        appId ? { id: appId, name: appName } : appName,
+        env?.name,
+      );
       for (const c of containers) {
         const info = await inspectContainer(c.id);
         const mount = info.mounts.find(
