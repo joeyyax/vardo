@@ -9,9 +9,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // so a process killed mid-deploy leaves something behind.
 // ---------------------------------------------------------------------------
 
-const { dbMock, events, hooksMock } = vi.hoisted(() => {
+const { dbMock, events, hooksMock, dockerCalls } = vi.hoisted(() => {
   type Event = { kind: "stage" | "log-flush" | "row"; detail: string };
   const events: Event[] = [];
+  const dockerCalls: string[] = [];
 
   const appRow = {
     id: "app-1",
@@ -55,7 +56,7 @@ const { dbMock, events, hooksMock } = vi.hoisted(() => {
 
   const hooksMock = vi.fn().mockResolvedValue({ allowed: true });
 
-  return { dbMock, events, hooksMock };
+  return { dbMock, events, hooksMock, dockerCalls };
 });
 
 vi.mock("@/lib/db", () => ({ db: dbMock }));
@@ -93,9 +94,19 @@ vi.mock("@/lib/docker/rollback-target", () => ({
   applyRollbackEnv: vi.fn(),
 }));
 vi.mock("@/lib/notifications/dispatch", () => ({ emit: vi.fn() }));
+vi.mock("child_process", () => ({
+  execFile: (cmd: string, args: string[], _opts: unknown, cb: (err: unknown) => void) => {
+    dockerCalls.push([cmd, ...args].join(" "));
+    cb(null);
+  },
+}));
+vi.mock("@/lib/docker/compose", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/docker/compose")>()),
+  slotComposeFiles: vi.fn(async () => ["-f", "docker-compose.yml"]),
+}));
 
 import { runDeployment } from "@/lib/docker/deploy";
-import { build, prepareRepo } from "@/lib/docker/deploy-steps";
+import { build, prepareRepo, swap, postDeploy } from "@/lib/docker/deploy-steps";
 
 const OPTS = {
   appId: "app-1",
@@ -246,5 +257,39 @@ describe("runDeployment open stages", () => {
     const opened = calls.findIndex(([s, status]) => s === "deploy" && status === "running");
     expect(closed).toBeGreaterThanOrEqual(0);
     expect(closed).toBeLessThan(opened);
+  });
+});
+
+describe("runDeployment failures between phases", () => {
+  // Swap ends on routing, postDeploy opens cleanup — a throw in that gap has no
+  // phase in flight to blame.
+  beforeEach(() => {
+    dockerCalls.length = 0;
+    onStage.mockClear();
+    hooksMock.mockResolvedValue({ allowed: true });
+    vi.mocked(prepareRepo).mockImplementation(async (ctx) => ctx);
+    vi.mocked(build).mockImplementation(async (ctx) => ctx);
+    vi.mocked(swap).mockImplementation(async (ctx) => {
+      ctx.slotDir = "/srv/vardo/app/blue";
+      ctx.newProjectName = "app-prod-blue";
+      ctx.stage("routing", "running");
+      ctx.stage("routing", "success");
+      return ctx;
+    });
+    vi.mocked(postDeploy).mockRejectedValue(new Error("died before cleanup"));
+  });
+
+  it("leaves the succeeded phase alone and blames the one that never ran", async () => {
+    const result = await runDeployment("dep-1", { ...OPTS, onStage });
+
+    expect(stageCalls()).not.toContainEqual(["routing", "failed"]);
+    expect(stageCalls().at(-1)).toEqual(["cleanup", "failed"]);
+    expect(result.status).toBe("failed");
+  });
+
+  it("still tears down the containers the deploy started", async () => {
+    await runDeployment("dep-1", { ...OPTS, onStage });
+
+    expect(dockerCalls.some((c) => c.includes("-p app-prod-blue down"))).toBe(true);
   });
 });
