@@ -34,7 +34,7 @@ export function InProgressDeployCard({
   canAbort,
   cancelling,
   trigger,
-  typicalDurationMs,
+  typicalElapsedMs,
 }: {
   stages: Record<string, "running" | "success" | "failed" | "skipped">;
   stageTimes?: Record<string, StageTiming>;
@@ -47,8 +47,8 @@ export function InProgressDeployCard({
   /** A cancel has been signalled and the engine is finishing its current phase. */
   cancelling?: boolean;
   trigger?: string;
-  /** Duration of this app's last successful deploy, for comparison. */
-  typicalDurationMs?: number | null;
+  /** End-to-end time of this app's last successful deploy, for comparison. */
+  typicalElapsedMs?: number | null;
 }) {
   // Build a screen-reader announcement for the current deploy state
   const hasStages = Object.keys(stages).length > 0;
@@ -125,7 +125,7 @@ export function InProgressDeployCard({
             <span className="text-xs text-foreground/50 tabular-nums">
               {progress.position > 0 ? `${progress.position} of ${progress.total} · ` : ""}
               <Timer since={startTime} />
-              {typicalDurationMs ? ` / usually ${formatDuration(typicalDurationMs)}` : ""}
+              {typicalElapsedMs ? ` / usually ${formatDuration(typicalElapsedMs)}` : ""}
             </span>
           )}
           {canAbort && onAbort && (
