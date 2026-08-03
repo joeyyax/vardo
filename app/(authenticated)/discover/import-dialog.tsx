@@ -402,8 +402,8 @@ export function ImportDialog({
                             </span>
                             {isBind ? (
                               <Badge
-                                variant="outline"
-                                className="text-[10px] px-1.5 py-0 h-4 border-status-warning-edge text-status-warning shrink-0"
+                                variant="warning"
+                                className="text-[10px] px-1.5 py-0 h-4 shrink-0"
                               >
                                 bind
                               </Badge>

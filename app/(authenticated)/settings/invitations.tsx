@@ -244,16 +244,7 @@ export function InvitationsPanel({
                       {ROLE_LABELS[invitation.role] || invitation.role}
                     </Badge>
 
-                    <Badge
-                      variant={isAccepted || isExpired ? "outline" : "secondary"}
-                      className={
-                        isAccepted
-                          ? "text-status-success border-status-success-edge"
-                          : isExpired
-                          ? "text-muted-foreground"
-                          : ""
-                      }
-                    >
+                    <Badge variant={isAccepted ? "success" : isExpired ? "neutral" : "info"}>
                       {isAccepted && <CheckCircle2 className="mr-1 size-3" />}
                       {STATUS_LABELS[invitation.status]}
                     </Badge>
