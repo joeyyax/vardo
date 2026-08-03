@@ -744,7 +744,7 @@ export function VolumesPanel({ appId, orgId }: Props) {
                               Persistent
                             </Badge>
                           ) : (
-                            <Badge variant="outline" className="text-xs shrink-0">
+                            <Badge variant="neutral" className="text-xs shrink-0">
                               <Clock className="mr-1 size-3" />
                               Ephemeral
                             </Badge>

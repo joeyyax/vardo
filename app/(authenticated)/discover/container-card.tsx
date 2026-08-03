@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Globe, HardDrive, Cpu } from "lucide-react";
 import type { DiscoveredContainer } from "@/lib/docker/discover";
+import { containerStateVariant } from "@/lib/ui/container-state";
 
 type ContainerCardProps = {
   container: DiscoveredContainer;
@@ -11,15 +12,13 @@ type ContainerCardProps = {
 };
 
 export function ContainerCard({ container, onImport }: ContainerCardProps) {
-  const isRunning = container.state === "running";
-
   return (
     <div className="squircle border bg-card p-4 space-y-3">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-medium text-sm truncate">{container.name}</span>
-            <Badge variant={isRunning ? "default" : "secondary"} className="shrink-0">
+            <Badge variant={containerStateVariant(container.state)} className="shrink-0">
               {container.state}
             </Badge>
             {container.composeProject && (

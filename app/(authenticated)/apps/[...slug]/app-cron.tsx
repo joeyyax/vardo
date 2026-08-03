@@ -288,7 +288,7 @@ export function CronManager({ appId, orgId }: Props) {
                           Active
                         </Badge>
                       ) : (
-                        <Badge variant="secondary" className="text-xs">
+                        <Badge variant="neutral" className="text-xs">
                           Paused
                         </Badge>
                       )}
