@@ -8,6 +8,7 @@ import { emit, onEmit } from "@/lib/bus";
 import type { BusEvent, BusEventType } from "@/lib/bus";
 import { logger } from "@/lib/logger";
 import { fetchOrgMembers, fetchEventPrefs, resolveRecipients } from "./resolve-recipients";
+import { isUiOnlyEvent } from "./ui-only";
 
 const log = logger.child("notifications");
 
@@ -78,6 +79,8 @@ async function handleChannelFailure(
  * Dispatch a bus event to all matching notification channels for an org.
  */
 function dispatchToChannels(orgId: string, event: BusEvent): void {
+  if (isUiOnlyEvent(event)) return;
+
   Promise.resolve().then(async () => {
     try {
       const channels = await db.query.notificationChannels.findMany({
