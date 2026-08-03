@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 
 import {
   compactUptime,
+  containerGatePx,
   primaryDomain,
   railClass,
   readingLabel,
@@ -17,11 +18,16 @@ import {
   statusWordTone,
   tagLabels,
   truncationOrder,
+  LEDGER_CARD_MAX_PX,
   ROW_DOMAIN_CELL,
+  ROW_ICONS_CELL,
   ROW_NAME_CELL,
   ROW_NOTE_CELL,
   ROW_SOURCE_CELL,
+  ROW_SPARKLINE_CELL,
+  ROW_TAGS_CELL,
   ROW_TRAILING_CELL,
+  ROW_UPTIME_CELL,
 } from "@/lib/ui/app-row";
 import type { AppCondition } from "@/lib/docker/conditions";
 import { formatBytes } from "@/lib/metrics/format";
@@ -309,6 +315,39 @@ describe("shrinkWeight", () => {
   });
 });
 
+describe("containerGatePx", () => {
+  it("reads the width a cell waits for", () => {
+    expect(containerGatePx("hidden @[52rem]:block")).toBe(832);
+    expect(containerGatePx("min-w-0 truncate")).toBeNull();
+  });
+
+  // Measured in Chromium against the compiled sheet: 964px of card at every
+  // viewport from 1280 up, because the shell stops growing there.
+  it("keeps every column inside the width the card can reach", () => {
+    for (const className of [
+      ROW_SOURCE_CELL,
+      ROW_DOMAIN_CELL,
+      ROW_TAGS_CELL,
+      ROW_SPARKLINE_CELL,
+      ROW_ICONS_CELL,
+    ]) {
+      expect(containerGatePx(className)).toBeLessThanOrEqual(LEDGER_CARD_MAX_PX);
+    }
+  });
+
+  it("would fail on the gate that shipped -- a column no display could open", () => {
+    // Interpolated so the scanner does not ship a utility nothing renders.
+    expect(containerGatePx(`hidden @[${68}rem]:block`)).toBeGreaterThan(LEDGER_CARD_MAX_PX);
+  });
+
+  it("opens the columns in order of worth", () => {
+    const gate = (className: string) => containerGatePx(className) ?? 0;
+    expect(gate(ROW_SPARKLINE_CELL)).toBeLessThanOrEqual(gate(ROW_TAGS_CELL));
+    expect(gate(ROW_TAGS_CELL)).toBeLessThanOrEqual(gate(ROW_SOURCE_CELL));
+    expect(gate(ROW_SOURCE_CELL)).toBeLessThanOrEqual(gate(ROW_DOMAIN_CELL));
+  });
+});
+
 describe("truncationOrder", () => {
   // The row's own children, then the children of the column group inside it.
   const row = [
@@ -319,9 +358,9 @@ describe("truncationOrder", () => {
   const columns = [
     { id: "source", className: ROW_SOURCE_CELL },
     { id: "domain", className: ROW_DOMAIN_CELL },
-    { id: "uptime", className: "w-9 shrink-0" },
-    { id: "sparkline", className: "w-16 shrink-0" },
-    { id: "icons", className: "shrink-0", width: 56 },
+    { id: "uptime", className: ROW_UPTIME_CELL },
+    { id: "sparkline", className: ROW_SPARKLINE_CELL },
+    { id: "icons", className: ROW_ICONS_CELL, width: 56 },
   ];
 
   it("destroys the name last", () => {
