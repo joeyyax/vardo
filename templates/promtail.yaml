@@ -96,15 +96,16 @@ composeContent: |
               - source_labels: ["__meta_docker_container_name"]
                 regex: "/(.*)"
                 target_label: container
-              # Promtail's errors quote the rejected streams of other
-              # organizations, so its own output stays at instance level. An
-              # empty replacement deletes the label, leaving the client default.
-              - source_labels: ["project"]
-                regex: "promtail"
+              # Vardo's own containers, which the deploy path marks. Their logs
+              # quote other organizations' stream labels and tenant ids, so they
+              # go to the instance tenant rather than the org that deploys them.
+              # An empty replacement deletes the label, leaving the client default.
+              - source_labels: ["__meta_docker_container_label_vardo_scope"]
+                regex: "instance"
                 target_label: scope
                 replacement: instance
-              - source_labels: ["project"]
-                regex: "promtail"
+              - source_labels: ["__meta_docker_container_label_vardo_scope"]
+                regex: "instance"
                 target_label: organization
                 replacement: ""
             # Loki is tenanted by organization. A relabel to __tenant_id__ would
