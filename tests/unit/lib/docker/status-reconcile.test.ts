@@ -3,10 +3,12 @@ import {
   deriveStatus,
   deployHoldsStatus,
   parseExitCode,
+  stabilityTransition,
   DEPLOYING_HOLD_MS,
 } from "@/lib/docker/status-reconcile";
 import { matchContainers, type ReconcilableApp } from "@/lib/docker/container-match";
 import type { ContainerInfo } from "@/lib/docker/client";
+import type { ExitReason } from "@/lib/docker/exit-reason";
 
 function container(over: Partial<ContainerInfo> = {}): ContainerInfo {
   return {
@@ -336,5 +338,75 @@ describe("deployHoldsStatus", () => {
   it("does not hold any other status", () => {
     expect(deployHoldsStatus({ status: "active", updatedAt: minutesAgo(1) }, now)).toBe(false);
     expect(deployHoldsStatus({ status: "error", updatedAt: minutesAgo(1) }, now)).toBe(false);
+  });
+});
+
+describe("stabilityTransition", () => {
+  const reason = (over: Partial<ExitReason> = {}): ExitReason => ({
+    kind: "failed",
+    exitCode: 1,
+    containerId: "c1",
+    containerName: "app-1",
+    at: new Date().toISOString(),
+    ...over,
+  });
+
+  it("records a crash the first time a status turns error", () => {
+    expect(
+      stabilityTransition({ from: "active", to: "error", reason: reason(), heldMs: null }),
+    ).toEqual({ action: "app.crashed", summary: "Exited with code 1" });
+  });
+
+  it("does not record a second crash while the app stays error", () => {
+    expect(
+      stabilityTransition({ from: "error", to: "error", reason: reason(), heldMs: null }),
+    ).toBeNull();
+  });
+
+  it("separates the two OOM causes in the summary", () => {
+    expect(
+      stabilityTransition({ from: "active", to: "error", reason: reason({ kind: "oom-host" }), heldMs: null })
+        ?.summary,
+    ).toContain("host's OOM killer");
+    expect(
+      stabilityTransition({ from: "active", to: "error", reason: reason({ kind: "oom-limit" }), heldMs: null })
+        ?.summary,
+    ).toContain("own memory limit");
+  });
+
+  it("falls back when Docker offered no reason", () => {
+    expect(
+      stabilityTransition({ from: "active", to: "error", reason: null, heldMs: null })?.summary,
+    ).toBe("Container is restarting or dead");
+  });
+
+  it("records a recovery with how long it was down", () => {
+    expect(
+      stabilityTransition({ from: "error", to: "active", reason: null, heldMs: 25 * 60_000 }),
+    ).toEqual({ action: "app.recovered", summary: "Running again after 25m down" });
+  });
+
+  it("leaves the duration out when nothing stamped the transition", () => {
+    expect(
+      stabilityTransition({ from: "error", to: "active", reason: null, heldMs: null })?.summary,
+    ).toBe("Running again");
+  });
+
+  it("reads a long outage in hours and days", () => {
+    expect(
+      stabilityTransition({ from: "error", to: "active", reason: null, heldMs: 5 * 3_600_000 })?.summary,
+    ).toBe("Running again after 5h down");
+    expect(
+      stabilityTransition({ from: "error", to: "active", reason: null, heldMs: 3 * 86_400_000 })?.summary,
+    ).toBe("Running again after 3d down");
+  });
+
+  it("records nothing for a deliberate stop or a start from stopped", () => {
+    expect(stabilityTransition({ from: "active", to: "stopped", reason: null, heldMs: null })).toBeNull();
+    expect(stabilityTransition({ from: "stopped", to: "active", reason: null, heldMs: null })).toBeNull();
+  });
+
+  it("records nothing when a container simply goes missing", () => {
+    expect(stabilityTransition({ from: "active", to: "missing", reason: null, heldMs: null })).toBeNull();
   });
 });
