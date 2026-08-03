@@ -58,6 +58,7 @@ import type { Incident } from "@/lib/ui/stability";
 import { CronManager } from "./app-cron";
 import { AppDebug } from "./app-debug";
 import { AppSettingsPanel } from "./app-settings-panel";
+import { DangerZone, DangerZoneRow } from "@/components/danger-zone";
 import { VolumesPanel } from "@/components/volumes-panel";
 import { useDeploy } from "./hooks/use-deploy";
 import { useCancelDeploy, useSlotStatus } from "./hooks/use-app-actions";
@@ -859,6 +860,10 @@ export function ComposeDetail({
   // Set when the API would 403 the stop, so the menu offers it disabled with the reason.
   const stopRefusal = systemManagedRefusal(app, "stop");
 
+  // Same for delete, which the Danger Zone states rather than offering a button
+  // that fails.
+  const deleteRefusal = systemManagedRefusal(app, "delete");
+
   // Newest success other than the one serving — what a rollback would restore.
   const rollbackTargetId =
     app.deployments.filter((d) => d.status === "success")[1]?.id ?? null;
@@ -999,24 +1004,6 @@ export function ComposeDetail({
                 </DropdownMenuContent>
               </DropdownMenu>
             )}
-            {!app.isSystemManaged && canDelete && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button size="icon-sm" variant="outline">
-                    <EllipsisVertical className="size-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem
-                    className="text-destructive focus:text-destructive"
-                    onClick={() => setDeleteOpen(true)}
-                  >
-                    <Trash2 className="mr-2 size-4" />
-                    Delete app
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
           </div>
         }
       >
@@ -1150,6 +1137,8 @@ export function ComposeDetail({
                     { value: "variables", label: "Variables", count: app.envVars.length },
                     { value: "networking", label: "Networking" },
                     { value: "compose", label: "Compose" },
+                    { value: "build", label: "Build" },
+                    { value: "resources", label: "Resources" },
                     ...(featureFlags?.cron !== false ? [{ value: "cron", label: "Cron" }] : []),
                     { value: "settings", label: "Settings" },
                   ],
@@ -1244,9 +1233,20 @@ export function ComposeDetail({
             activeTab={activeTab}
             initialSubView={activeTab === "networking" ? initialSubView : undefined}
           />
+          <div className="border-t pt-6">
+            <AppSettingsPanel
+              app={app}
+              orgId={orgId}
+              userRole={userRole}
+              allParentApps={allParentApps}
+              handleDeploy={handleDeployClick}
+              isComposeParent
+              page="networking"
+            />
+          </div>
         </TabsContent>
 
-        <TabsContent value="settings" className={tabPanelSurface}>
+        <TabsContent value="build" className={tabPanelSurface}>
           <AppSettingsPanel
             app={app}
             orgId={orgId}
@@ -1254,7 +1254,55 @@ export function ComposeDetail({
             allParentApps={allParentApps}
             handleDeploy={handleDeployClick}
             isComposeParent
+            page="build"
           />
+        </TabsContent>
+
+        <TabsContent value="resources" className={tabPanelSurface}>
+          <AppSettingsPanel
+            app={app}
+            orgId={orgId}
+            userRole={userRole}
+            allParentApps={allParentApps}
+            handleDeploy={handleDeployClick}
+            isComposeParent
+            page="resources"
+          />
+        </TabsContent>
+
+        <TabsContent value="settings" className="space-y-6">
+          <div className={tabPanelSurface}>
+            <AppSettingsPanel
+              app={app}
+              orgId={orgId}
+              userRole={userRole}
+              allParentApps={allParentApps}
+              handleDeploy={handleDeployClick}
+              isComposeParent
+            />
+          </div>
+          {canDelete && (
+            <DangerZone>
+              <DangerZoneRow
+                title="Delete stack"
+                description={
+                  deleteRefusal ??
+                  `Stops and removes all ${services.length} service${services.length === 1 ? "" : "s"} and their data. This cannot be undone.`
+                }
+                action={
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    disabled={deleteRefusal !== null}
+                    onClick={() => setDeleteOpen(true)}
+                  >
+                    <Trash2 className="mr-1.5 size-4" />
+                    Delete stack
+                  </Button>
+                }
+              />
+            </DangerZone>
+          )}
         </TabsContent>
 
         <TabsContent value="stability">
