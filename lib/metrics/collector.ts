@@ -85,6 +85,8 @@ async function collect() {
     setLatestSnapshot(metrics);
     const results = await Promise.allSettled(
       metrics.flatMap((m) => {
+        // Stack children share the parent's project label; the service tells them apart.
+        const service = m.labels["com.docker.compose.service"] ?? null;
         const ops = [
           storeMetrics(m.projectName, m.containerId, m.containerName, m.timestamp, {
             cpuPercent: m.cpuPercent,
@@ -92,8 +94,8 @@ async function collect() {
             memoryLimit: m.memoryLimit,
             networkRxBytes: m.networkRxBytes,
             networkTxBytes: m.networkTxBytes,
-          }, m.organizationId),
-          storeDiskWrite(m.projectName, m.containerId, m.containerName, m.timestamp, m.diskWriteBytes, m.organizationId),
+          }, m.organizationId, service),
+          storeDiskWrite(m.projectName, m.containerId, m.containerName, m.timestamp, m.diskWriteBytes, m.organizationId, service),
         ];
         // Only store GPU metrics when a GPU is present for this container
         if (m.gpuMemoryTotal > 0) {
@@ -102,7 +104,7 @@ async function collect() {
             gpuMemoryUsed: m.gpuMemoryUsed,
             gpuMemoryTotal: m.gpuMemoryTotal,
             gpuTemperature: m.gpuTemperature,
-          }, m.organizationId));
+          }, m.organizationId, service));
         }
         return ops;
       })
@@ -128,6 +130,11 @@ async function collect() {
         setGpuSnapshot(gpuMetrics);
         const ts = Date.now();
 
+        // The GPU resolver doesn't read Docker labels; take the service off the cAdvisor row.
+        const serviceByContainer = new Map(
+          metrics.map((m) => [m.containerId, m.labels["com.docker.compose.service"] ?? null]),
+        );
+
         const gpuOps = gpuMetrics
           .filter((gm) => !containersWithGpu.has(gm.containerId))
           .map((gm) =>
@@ -136,7 +143,7 @@ async function collect() {
               gpuMemoryUsed: gm.gpuMemoryUsed,
               gpuMemoryTotal: gm.gpuMemoryTotal,
               gpuTemperature: gm.gpuTemperature,
-            }, gm.organizationId),
+            }, gm.organizationId, serviceByContainer.get(gm.containerId) ?? null),
           );
 
         if (gpuOps.length > 0) {
