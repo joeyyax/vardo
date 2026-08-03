@@ -54,11 +54,12 @@ export function deferSlotStop(canOverlapSlots: boolean, appName: string): boolea
  * Whether the old slot can be routed away from before it stops.
  *
  * Only when both slots are up, so there is a proven backend to hand the traffic
- * to. The deferred self-deploy is excluded: the old slot runs the deploy, so the
- * process dies inside the stop and would never unpin.
+ * to. The deferred self-deploy pins too: its stop kills this process before the
+ * release, leaving the pin behind on the slot that is now serving. Every deploy
+ * clears it on the way in, and an instant rollback clears it before flipping.
  */
-export function canPinCutover(canOverlapSlots: boolean, deferStop: boolean): boolean {
-  return canOverlapSlots && !deferStop;
+export function canPinCutover(canOverlapSlots: boolean): boolean {
+  return canOverlapSlots;
 }
 
 /**
@@ -222,7 +223,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
   // process, so stopping it here kills the deploy before it records itself.
   // The stop is deferred to the end of post-deploy, once every write is durable.
   const deferStopToPostDeploy = deferSlotStop(canOverlapSlots, app.name);
-  const pinCutover = canPinCutover(canOverlapSlots, deferStopToPostDeploy);
+  const pinCutover = canPinCutover(canOverlapSlots);
 
   // A pin from a deploy that was killed mid-cutover would hold this app on a
   // slot this deploy is about to replace.
@@ -308,6 +309,10 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
   // them if the new slot fails to come up.
   const stoppedOldServices: string[] = [];
 
+  // Whether the old slot was pinned to `restart: no`. Tracked apart from the
+  // stop, which runs after the demote and can fail on its own.
+  let demotedOldSlot = false;
+
   const stopOldSlot = async () => {
     if (!oldSlotDir || !oldProjectName) return;
     const oldComposeFileArgs = await getOldComposeFileArgs();
@@ -316,7 +321,8 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
     const stop = async () => {
       try {
         // Demote before stopping, not after — when the old slot is running this
-        // process there is no "after".
+        // process there is no "after". Never move this below the stop.
+        demotedOldSlot = true;
         await demoteStandbyRestart(oldComposeFileArgs, oldProjectName, oldSlotDir);
         // `stop`, not `down` — the old slot stays as a warm standby, keeping its
         // containers and their logs for rollback. It is removed by the pre-clean
@@ -370,8 +376,11 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
   // recreate missing containers from the already-present compose files
   // while leaving anything currently running untouched — strict superset
   // of `start` semantics for this use case.
+  //
+  // Reached whenever the old slot was demoted, not only when it was stopped.
   const restoreOldSlot = async (reason: string) => {
-    if (stoppedOldServices.length === 0 || !oldSlotDir || !oldProjectName) return;
+    if (!oldSlotDir || !oldProjectName) return;
+    if (stoppedOldServices.length === 0 && !demotedOldSlot) return;
     const serviceNames = stoppedOldServices.filter((s) => s !== "__all__");
     log(`[deploy] Restoring old-slot services after ${reason}: ${serviceNames.length > 0 ? serviceNames.join(", ") : "all"}`);
     try {
