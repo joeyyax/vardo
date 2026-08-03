@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/select";
 import { BranchSelect } from "@/components/branch-select";
 import { systemManagedRefusal } from "@/lib/api/system-managed";
+import { appSettingsFields } from "@/lib/ui/app-settings-fields";
 
 import type { App } from "./types";
 
@@ -33,12 +34,15 @@ export function AppSettingsPanel({
   userRole,
   allParentApps,
   handleDeploy,
+  isComposeParent = false,
 }: {
   app: App;
   orgId: string;
   userRole: string;
   allParentApps: { id: string; name: string; color: string }[];
   handleDeploy: () => void;
+  /** Renders the stack's settings: no per-container fields, stack-wide wording. */
+  isComposeParent?: boolean;
 }) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
@@ -83,68 +87,77 @@ export function AppSettingsPanel({
   const [autoRollback, setAutoRollback] = useState(app.autoRollback ?? false);
   const [rollbackGracePeriod, setRollbackGracePeriod] = useState(app.rollbackGracePeriod?.toString() || "60");
 
+  const fields = appSettingsFields({
+    isComposeParent,
+    isChildService,
+    deployType: editDeployType,
+    storedDeployType: app.deployType,
+    source: app.source,
+  });
+
   const canUseGpu = userRole === "owner" || userRole === "admin";
 
   async function handleSave() {
     setSaving(true);
     try {
+      // Only fields the panel showed are written — a hidden one would send back
+      // whatever it was seeded with.
       const body: Record<string, unknown> = {
         displayName: displayName.trim(),
         description: description.trim() || null,
-        autoDeploy,
+        restartPolicy,
+        cpuLimit: cpuLimit ? parseFloat(cpuLimit) : null,
+        memoryLimit: memoryLimit ? parseInt(memoryLimit, 10) : null,
+        priority: priority === "inherit" ? null : priority,
+        gpuEnabled,
+        healthCheckTimeout: healthCheckTimeout ? parseInt(healthCheckTimeout, 10) : null,
+        projectId: editParentId || null,
       };
-      if (containerPort) {
-        body.containerPort = parseInt(containerPort, 10);
-      } else {
-        body.containerPort = null;
+      if (fields.containerPort) {
+        body.containerPort = containerPort ? parseInt(containerPort, 10) : null;
       }
-      body.deployType = editDeployType;
-      if (editDeployType === "compose") {
+      if (fields.deployType) body.deployType = editDeployType;
+      if (fields.composeFilePath) {
         body.composeFilePath = editComposeFilePath || "docker-compose.yml";
       }
-      if (editDeployType === "dockerfile") {
+      if (fields.dockerfilePath) {
         body.dockerfilePath = editDockerfilePath || "Dockerfile";
       }
-      if (app.source === "git") {
+      if (fields.gitSource) {
         body.gitBranch = gitBranch;
+        body.rootDirectory = rootDirectory.trim() || null;
       }
-      if (rootDirectory.trim()) {
-        body.rootDirectory = rootDirectory.trim();
-      } else {
-        body.rootDirectory = null;
+      if (fields.image && editImageName.trim()) body.imageName = editImageName.trim();
+      if (fields.backendProtocol) {
+        body.backendProtocol = backendProtocol === "auto" ? null : backendProtocol;
       }
-      if (editImageName.trim()) body.imageName = editImageName.trim();
-      body.restartPolicy = restartPolicy;
-      body.cpuLimit = cpuLimit ? parseFloat(cpuLimit) : null;
-      body.memoryLimit = memoryLimit ? parseInt(memoryLimit, 10) : null;
-      body.priority = priority === "inherit" ? null : priority;
-      body.gpuEnabled = gpuEnabled;
-      body.backendProtocol = backendProtocol === "auto" ? null : backendProtocol;
-      body.diskWriteAlertThreshold = diskWriteAlertThreshold ? Math.round(parseFloat(diskWriteAlertThreshold) * 1_073_741_824) : null;
-      body.healthCheckTimeout = healthCheckTimeout ? parseInt(healthCheckTimeout, 10) : null;
-      body.autoRollback = autoRollback;
-      body.rollbackGracePeriod = rollbackGracePeriod ? parseInt(rollbackGracePeriod, 10) : 60;
-      if (editParentId) {
-        body.projectId = editParentId;
-      } else {
-        body.projectId = null;
+      if (fields.diskWriteAlert) {
+        body.diskWriteAlertThreshold = diskWriteAlertThreshold
+          ? Math.round(parseFloat(diskWriteAlertThreshold) * 1_073_741_824)
+          : null;
+      }
+      if (fields.autoDeploy) body.autoDeploy = autoDeploy;
+      if (fields.autoRollback) {
+        body.autoRollback = autoRollback;
+        body.rollbackGracePeriod = rollbackGracePeriod ? parseInt(rollbackGracePeriod, 10) : 60;
       }
 
       // Detect whether any redeploy-required fields changed. Resource limits,
       // GPU and priority reach the container through the compose overlay, so
       // they only apply when it is recreated.
+      const changed = (key: string, stored: unknown) => key in body && body[key] !== stored;
       const redeployFieldChanged = (
-        (body.deployType !== app.deployType) ||
-        (body.gitBranch !== undefined && body.gitBranch !== (app.gitBranch || "")) ||
-        (body.imageName !== undefined && body.imageName !== (app.imageName || "")) ||
-        (body.containerPort !== app.containerPort) ||
-        (body.restartPolicy !== (app.restartPolicy || "unless-stopped")) ||
-        (body.rootDirectory !== (app.rootDirectory || null)) ||
-        (body.cpuLimit !== app.cpuLimit) ||
-        (body.memoryLimit !== app.memoryLimit) ||
-        (body.priority !== app.priority) ||
-        (body.gpuEnabled !== (app.gpuEnabled ?? false)) ||
-        ((backendProtocol === "auto" ? null : backendProtocol) !== (app.backendProtocol ?? null))
+        changed("deployType", app.deployType) ||
+        changed("gitBranch", app.gitBranch || "") ||
+        changed("imageName", app.imageName || "") ||
+        changed("containerPort", app.containerPort) ||
+        changed("restartPolicy", app.restartPolicy || "unless-stopped") ||
+        changed("rootDirectory", app.rootDirectory || null) ||
+        changed("cpuLimit", app.cpuLimit) ||
+        changed("memoryLimit", app.memoryLimit) ||
+        changed("priority", app.priority) ||
+        changed("gpuEnabled", app.gpuEnabled ?? false) ||
+        changed("backendProtocol", app.backendProtocol ?? null)
       );
 
       const res = await fetch(
@@ -212,54 +225,54 @@ export function AppSettingsPanel({
         </div>
       </div>
 
-      {/* Parent-controlled settings — hidden on a decomposed service app,
-          which inherits build, deploy type, port and protocol from its
-          compose parent (#745). */}
-      {!isChildService && (
-        <>
-          {/* Image */}
-          {app.deployType === "image" && (
-            <div className="grid gap-2">
-              <Label htmlFor="edit-image">Image</Label>
-              <Input
-                id="edit-image"
-                placeholder="postgres:16"
-                value={editImageName}
-                onChange={(e) => setEditImageName(e.target.value)}
-                className="font-mono"
-              />
-              <p className="text-xs text-muted-foreground">{REDEPLOY_NOTE}</p>
-            </div>
-          )}
+      {/* A child service hides what its parent stack controls (#745); a compose
+          parent hides what only a single container has (#87). */}
 
-          {/* Source settings */}
-          {app.source === "git" && (
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="grid gap-2">
-                <Label>Branch</Label>
-                <BranchSelect
-                  value={gitBranch}
-                  onChange={setGitBranch}
-                  appId={app.id}
-                  orgId={orgId}
-                />
-                <p className="text-xs text-muted-foreground">{REDEPLOY_NOTE}</p>
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="edit-root-directory">Root Directory</Label>
-                <Input
-                  id="edit-root-directory"
-                  placeholder="./"
-                  value={rootDirectory}
-                  onChange={(e) => setRootDirectory(e.target.value)}
-                />
-                <p className="text-xs text-muted-foreground">{REDEPLOY_NOTE}</p>
-              </div>
-            </div>
-          )}
+      {/* Image */}
+      {fields.image && (
+        <div className="grid gap-2">
+          <Label htmlFor="edit-image">Image</Label>
+          <Input
+            id="edit-image"
+            placeholder="postgres:16"
+            value={editImageName}
+            onChange={(e) => setEditImageName(e.target.value)}
+            className="font-mono"
+          />
+          <p className="text-xs text-muted-foreground">{REDEPLOY_NOTE}</p>
+        </div>
+      )}
 
-          {/* Deploy Type */}
-          <div className="grid gap-4">
+      {/* Source settings */}
+      {fields.gitSource && (
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-2">
+            <Label>Branch</Label>
+            <BranchSelect
+              value={gitBranch}
+              onChange={setGitBranch}
+              appId={app.id}
+              orgId={orgId}
+            />
+            <p className="text-xs text-muted-foreground">{REDEPLOY_NOTE}</p>
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="edit-root-directory">Root Directory</Label>
+            <Input
+              id="edit-root-directory"
+              placeholder="./"
+              value={rootDirectory}
+              onChange={(e) => setRootDirectory(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">{REDEPLOY_NOTE}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Deploy Type */}
+      {(fields.deployType || fields.composeFilePath || fields.dockerfilePath) && (
+        <div className="grid gap-4">
+          {fields.deployType && (
             <div className="grid gap-2 sm:w-1/2">
               <Label>Deploy Type</Label>
               <Select value={editDeployType} onValueChange={(v) => setEditDeployType(v as typeof editDeployType)}>
@@ -277,80 +290,94 @@ export function AppSettingsPanel({
               </Select>
               <p className="text-xs text-muted-foreground">{REDEPLOY_NOTE}</p>
             </div>
-            {editDeployType === "compose" && (
-              <div className="grid gap-2 sm:w-1/2">
-                <Label htmlFor="edit-compose-file-path">Compose File</Label>
-                <Input
-                  id="edit-compose-file-path"
-                  placeholder="docker-compose.yml"
-                  value={editComposeFilePath}
-                  onChange={(e) => setEditComposeFilePath(e.target.value)}
-                  className="font-mono text-sm"
-                />
-              </div>
-            )}
-            {editDeployType === "dockerfile" && (
-              <div className="grid gap-2 sm:w-1/2">
-                <Label htmlFor="edit-dockerfile-path">Dockerfile</Label>
-                <Input
-                  id="edit-dockerfile-path"
-                  placeholder="Dockerfile"
-                  value={editDockerfilePath}
-                  onChange={(e) => setEditDockerfilePath(e.target.value)}
-                  className="font-mono text-sm"
-                />
-              </div>
-            )}
-          </div>
-
-          {/* Port */}
-          <div className="grid gap-2 sm:w-1/2">
-            <Label>Container Port</Label>
-            <div className="flex items-center gap-3">
-              <Switch
-                id="edit-auto-port"
-                checked={autoPort}
-                onCheckedChange={(checked) => {
-                  setAutoPort(checked);
-                  if (checked) setContainerPort("");
-                }}
+          )}
+          {fields.composeFilePath && (
+            <div className="grid gap-2 sm:w-1/2">
+              <Label htmlFor="edit-compose-file-path">Compose File</Label>
+              <Input
+                id="edit-compose-file-path"
+                placeholder="docker-compose.yml"
+                value={editComposeFilePath}
+                onChange={(e) => setEditComposeFilePath(e.target.value)}
+                className="font-mono text-sm"
               />
-              <Label htmlFor="edit-auto-port" className="text-sm font-normal text-muted-foreground">
-                Auto-detect
-              </Label>
-              {!autoPort && (
-                <Input
-                  id="edit-container-port"
-                  type="number"
-                  placeholder="3000"
-                  className="w-24"
-                  value={containerPort}
-                  onChange={(e) => setContainerPort(e.target.value)}
-                />
+              {isComposeParent && (
+                <p className="text-xs text-muted-foreground">
+                  File the stack&apos;s services are read from. {REDEPLOY_NOTE}
+                </p>
               )}
             </div>
-            <p className="text-xs text-muted-foreground">{REDEPLOY_NOTE}</p>
-          </div>
+          )}
+          {fields.dockerfilePath && (
+            <div className="grid gap-2 sm:w-1/2">
+              <Label htmlFor="edit-dockerfile-path">Dockerfile</Label>
+              <Input
+                id="edit-dockerfile-path"
+                placeholder="Dockerfile"
+                value={editDockerfilePath}
+                onChange={(e) => setEditDockerfilePath(e.target.value)}
+                className="font-mono text-sm"
+              />
+            </div>
+          )}
+        </div>
+      )}
 
-          {/* Backend Protocol */}
-          <div className="grid gap-2 sm:w-1/2">
-            <Label>Backend Protocol</Label>
-            <Select value={backendProtocol} onValueChange={(v) => setBackendProtocol(v as "auto" | "http" | "https")}>
-              <SelectTrigger>
-                <SelectValue placeholder="Auto-detect" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="auto">Auto-detect</SelectItem>
-                <SelectItem value="http">HTTP</SelectItem>
-                <SelectItem value="https">HTTPS</SelectItem>
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-muted-foreground">
-              Protocol Traefik uses to reach the container. Auto-detect defaults to HTTPS when port is 443 or 8443. Use HTTPS for apps like Kasm that serve TLS internally.
-            </p>
-            <p className="text-xs text-muted-foreground">{REDEPLOY_NOTE}</p>
+      {/* Port */}
+      {fields.containerPort && (
+        <div className="grid gap-2 sm:w-1/2">
+          <Label>Container Port</Label>
+          <div className="flex items-center gap-3">
+            <Switch
+              id="edit-auto-port"
+              checked={autoPort}
+              onCheckedChange={(checked) => {
+                setAutoPort(checked);
+                if (checked) setContainerPort("");
+              }}
+            />
+            <Label htmlFor="edit-auto-port" className="text-sm font-normal text-muted-foreground">
+              Auto-detect
+            </Label>
+            {!autoPort && (
+              <Input
+                id="edit-container-port"
+                type="number"
+                placeholder="3000"
+                className="w-24"
+                value={containerPort}
+                onChange={(e) => setContainerPort(e.target.value)}
+              />
+            )}
           </div>
-        </>
+          {isComposeParent && (
+            <p className="text-xs text-muted-foreground">
+              Port a domain routes to when it names none, which also picks the service that serves it.
+            </p>
+          )}
+          <p className="text-xs text-muted-foreground">{REDEPLOY_NOTE}</p>
+        </div>
+      )}
+
+      {/* Backend Protocol */}
+      {fields.backendProtocol && (
+        <div className="grid gap-2 sm:w-1/2">
+          <Label>Backend Protocol</Label>
+          <Select value={backendProtocol} onValueChange={(v) => setBackendProtocol(v as "auto" | "http" | "https")}>
+            <SelectTrigger>
+              <SelectValue placeholder="Auto-detect" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="auto">Auto-detect</SelectItem>
+              <SelectItem value="http">HTTP</SelectItem>
+              <SelectItem value="https">HTTPS</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            Protocol Traefik uses to reach {isComposeParent ? "a routed service" : "the container"}. Auto-detect defaults to HTTPS when port is 443 or 8443. Use HTTPS for apps like Kasm that serve TLS internally.
+          </p>
+          <p className="text-xs text-muted-foreground">{REDEPLOY_NOTE}</p>
+        </div>
       )}
 
       {/* Restart policy */}
@@ -372,7 +399,7 @@ export function AppSettingsPanel({
 
       {/* Resource Limits */}
       <div className="grid gap-2">
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className={fields.diskWriteAlert ? "grid gap-4 sm:grid-cols-3" : "grid gap-4 sm:grid-cols-2"}>
           <div className="grid gap-2">
             <Label htmlFor="edit-cpu-limit">CPU Limit (cores)</Label>
             <Input id="edit-cpu-limit" type="number" step="0.1" min="0.1" placeholder="No limit" value={cpuLimit} onChange={(e) => setCpuLimit(e.target.value)} />
@@ -383,16 +410,20 @@ export function AppSettingsPanel({
             <Input id="edit-memory-limit" type="number" step="64" min="64" placeholder="No limit" value={memoryLimit} onChange={(e) => setMemoryLimit(e.target.value)} />
             <p className="text-xs text-muted-foreground">{memoryLimit ? memoryLimit + " MB" : "No limit"}</p>
           </div>
-          <div className="grid gap-2">
-            <Label htmlFor="edit-disk-write-threshold">Disk Write Alert (GB/hr)</Label>
-            <Input id="edit-disk-write-threshold" type="number" step="0.5" min="0.1" placeholder="Default: 1 GB" value={diskWriteAlertThreshold} onChange={(e) => setDiskWriteAlertThreshold(e.target.value)} />
-            <p className="text-xs text-muted-foreground">{diskWriteAlertThreshold ? diskWriteAlertThreshold + " GB/hr" : "Default: 1 GB/hr"}</p>
-          </div>
+          {fields.diskWriteAlert && (
+            <div className="grid gap-2">
+              <Label htmlFor="edit-disk-write-threshold">Disk Write Alert (GB/hr)</Label>
+              <Input id="edit-disk-write-threshold" type="number" step="0.5" min="0.1" placeholder="Default: 1 GB" value={diskWriteAlertThreshold} onChange={(e) => setDiskWriteAlertThreshold(e.target.value)} />
+              <p className="text-xs text-muted-foreground">{diskWriteAlertThreshold ? diskWriteAlertThreshold + " GB/hr" : "Default: 1 GB/hr"}</p>
+            </div>
+          )}
         </div>
         {/* Docker sets a cgroup limit when the container is created; there is no
             path that changes it on a running one. */}
         <p className="text-xs text-muted-foreground">
-          CPU and memory limits are written into the compose overlay. {REDEPLOY_NOTE}
+          {isComposeParent
+            ? <>Each service gets these limits, unless it sets its own in Services. {REDEPLOY_NOTE}</>
+            : <>CPU and memory limits are written into the compose overlay. {REDEPLOY_NOTE}</>}
         </p>
       </div>
 
@@ -404,7 +435,7 @@ export function AppSettingsPanel({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {isChildService && <SelectItem value="inherit">Inherit (parent)</SelectItem>}
+            {fields.priorityInherit && <SelectItem value="inherit">Inherit (parent)</SelectItem>}
             <SelectItem value="critical">Critical</SelectItem>
             <SelectItem value="standard">Standard</SelectItem>
             <SelectItem value="disposable">Disposable</SelectItem>
@@ -419,6 +450,11 @@ export function AppSettingsPanel({
                 ? "Killed first under memory pressure and given the smallest CPU share."
                 : "Default eviction priority and CPU share."}
         </p>
+        {isComposeParent && (
+          <p className="text-xs text-muted-foreground">
+            Every service inherits this tier, unless it sets its own in Services.
+          </p>
+        )}
         <p className="text-xs text-muted-foreground">{REDEPLOY_NOTE}</p>
       </div>
 
@@ -442,7 +478,7 @@ export function AppSettingsPanel({
 
       {/* Toggles */}
       <div className="grid gap-3">
-        {!isChildService && (
+        {fields.autoDeploy && (
           <div className="flex items-center gap-3">
             <Switch
               id="edit-auto-deploy"
@@ -452,7 +488,7 @@ export function AppSettingsPanel({
             <Label htmlFor="edit-auto-deploy">Auto Deploy</Label>
           </div>
         )}
-        {!isChildService && (
+        {fields.autoRollback && (
           <div className="flex items-center gap-3">
             <Switch
               id="edit-auto-rollback"
@@ -473,12 +509,12 @@ export function AppSettingsPanel({
             <Label htmlFor="edit-gpu-enabled">GPU Access</Label>
             <p className="text-xs text-muted-foreground">
               {canUseGpu
-                ? <>Pass all NVIDIA GPUs through to the container via <span className="font-mono">deploy.resources.reservations.devices</span>. Requires the NVIDIA Container Toolkit on the host. {REDEPLOY_NOTE}</>
+                ? <>Pass all NVIDIA GPUs through to {isComposeParent ? "every service that has no named volume" : "the container"} via <span className="font-mono">deploy.resources.reservations.devices</span>. Requires the NVIDIA Container Toolkit on the host. {REDEPLOY_NOTE}</>
                 : "Only owners and admins can enable GPU access."}
             </p>
           </div>
         </div>
-        {!isChildService && autoRollback && (
+        {fields.autoRollback && autoRollback && (
           <div className="grid gap-2 pl-10">
             <Label htmlFor="edit-rollback-grace">Grace Period (seconds)</Label>
             <Input
