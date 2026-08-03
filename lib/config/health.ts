@@ -239,13 +239,11 @@ export const SERVICE_PROBES: Probe[] = [
     name: "GlitchTip",
     description: "Error tracking",
     timeoutMs: 2000,
-    // The URL and endpoint the error-tracking client uses, so the dot and the
-    // Errors tab agree. GLITCHTIP_URL applies only when nothing is configured.
+    // The error-tracking client's own probe, so the dot and the Errors tab
+    // agree. GLITCHTIP_URL applies only when nothing is configured.
     run: async (timeoutMs) => {
-      const { getErrorTrackingConfig } = await import("@/lib/system-settings");
-      const config = await getErrorTrackingConfig().catch(() => null);
-      const url = config?.url || process.env.GLITCHTIP_URL || "http://glitchtip:8000";
-      await httpProbe(`${url}/api/0/`, timeoutMs);
+      const { probeGlitchTip } = await import("@/lib/error-tracking/client");
+      await probeGlitchTip(timeoutMs);
     },
   }),
   {
