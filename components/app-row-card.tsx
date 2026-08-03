@@ -1,5 +1,5 @@
 import { formatDistanceToNowStrict } from "date-fns";
-import { Cpu, Package, ShieldCheck, Trash2, type LucideIcon } from "lucide-react";
+import { CircleDashed, Cpu, Package, ShieldCheck, type LucideIcon } from "lucide-react";
 
 import { formatBytes, formatCores } from "@/lib/metrics/format";
 import { readingLabel } from "@/lib/ui/app-row";
@@ -12,13 +12,13 @@ export type AppRowCardApp = {
   status: string;
   imageName: string | null;
   containerStartedAt: Date | null;
-  containerMemoryLimit: number | null;
-  priority: "critical" | "standard" | "disposable" | null;
+  containerMemoryLimit?: number | null;
+  priority?: "critical" | "standard" | "disposable" | null;
   gpuEnabled: boolean | null;
   needsRedeploy: boolean | null;
   conditions: AppCondition[] | null;
-  domains: { domain: string; isPrimary: boolean | null }[];
-  deployments: { status: string; startedAt: Date }[];
+  domains?: { domain: string; isPrimary: boolean | null }[];
+  deployments?: { status: string; startedAt: Date }[];
   appTags?: { tag: { name: string } }[];
   dependsOn?: string[] | null;
 };
@@ -35,7 +35,7 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 /** Memory row label. null = never observed. 0 = observed and uncapped. */
-export function memoryLimitLabel(containerMemoryLimit: number | null): string {
+export function memoryLimitLabel(containerMemoryLimit: number | null | undefined): string {
   if (containerMemoryLimit == null) return "Unknown";
   if (containerMemoryLimit === 0) return "No limit";
   return `${formatBytes(containerMemoryLimit)} limit`;
@@ -74,8 +74,9 @@ export function AppRowCard({
   updateCount: number;
   usage?: AppRowCardUsage;
 }) {
-  const deploy = app.deployments[0];
+  const deploy = app.deployments?.[0];
   const conditions = app.conditions ?? [];
+  const domains = app.domains ?? [];
   const running = app.status === "active";
   const tags = (app.appTags ?? []).map((t) => t.tag.name.toLowerCase());
 
@@ -89,7 +90,9 @@ export function AppRowCard({
         </span>
       </div>
 
-      {conditions.length > 0 && (
+      {/* The row's note, restated first — a card leading with a green Running
+          while the row says restart needed reads as a contradiction. */}
+      {(conditions.length > 0 || app.needsRedeploy) && (
         <ul className="space-y-1 border-t pt-2">
           {conditions.map((c) => (
             <li key={c.kind} className="flex items-baseline justify-between gap-3">
@@ -101,6 +104,14 @@ export function AppRowCard({
               </span>
             </li>
           ))}
+          {app.needsRedeploy && (
+            <li className="flex items-baseline justify-between gap-3">
+              <span className="shrink-0 font-medium text-status-warning">restart needed</span>
+              <span className="min-w-0 truncate text-right text-muted-foreground">
+                config changed
+              </span>
+            </li>
+          )}
         </ul>
       )}
 
@@ -122,35 +133,32 @@ export function AppRowCard({
             {deploy.status === "failed" && <span className="text-status-error"> · failed</span>}
           </Row>
         )}
-        {app.domains.length > 0 && (
-          <Row label="Domains">{app.domains.map((d) => d.domain).join(", ")}</Row>
-        )}
+        {domains.length > 0 && <Row label="Domains">{domains.map((d) => d.domain).join(", ")}</Row>}
         {/* The row hides these on narrow containers; the card always carries them. */}
         {tags.length > 0 && <Row label="Tags">{tags.join(", ")}</Row>}
         {(app.dependsOn?.length ?? 0) > 0 && (
           <Row label="Depends">{app.dependsOn?.join(", ")}</Row>
         )}
         {updateCount > 0 && (
-          <Row label="Updates" icon={Package}>
+          <Row label="Updates" icon={Package} iconClass="text-status-update">
             {updateCount === 1 ? "1 image update" : `${updateCount} image updates`}
           </Row>
         )}
         {app.priority === "critical" && (
-          <Row label="Priority" icon={ShieldCheck} iconClass="text-status-warning">
+          <Row label="Priority" icon={ShieldCheck}>
             Critical
           </Row>
         )}
         {app.priority === "disposable" && (
-          <Row label="Priority" icon={Trash2} iconClass="text-muted-foreground/50">
+          <Row label="Priority" icon={CircleDashed}>
             Disposable
           </Row>
         )}
         {app.gpuEnabled && (
-          <Row label="GPU" icon={Cpu} iconClass="text-muted-foreground/50">
+          <Row label="GPU" icon={Cpu}>
             Passthrough enabled
           </Row>
         )}
-        {app.needsRedeploy && <Row label="Config">Changed since last deploy</Row>}
       </dl>
     </div>
   );
