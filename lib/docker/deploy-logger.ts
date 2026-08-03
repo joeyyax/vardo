@@ -26,6 +26,15 @@ export type DeployStage =
   | "cleanup"
   | "done";
 
+/**
+ * Phases of an auto-rollback, named for the steps performRollback runs.
+ * A rollback restores an already-built slot, so it shares no phase with a deploy.
+ */
+export type RollbackStage = "stop" | "restore" | "route" | "verify" | "done";
+
+/** Any phase that can appear on a deploy stream. */
+export type StreamStage = DeployStage | RollbackStage;
+
 export type DeployStatus = "running" | "success" | "failed" | "skipped" | "cancelled";
 
 /**
@@ -60,7 +69,7 @@ function sanitize(line: string): string {
  * live SSE consumers and history views both read from it.
  */
 export function createDeployLogger(deployId: string) {
-  let currentStage: DeployStage = "queued";
+  let currentStage: StreamStage = "queued";
   let lastWrite: Promise<string> = Promise.resolve("");
 
   /**
@@ -89,7 +98,7 @@ export function createDeployLogger(deployId: string) {
    * the SSE endpoint sees the "done" event before the connection closes.
    * Non-terminal states are fire-and-forget.
    */
-  function setStage(stage: DeployStage, status: DeployStatus): void {
+  function setStage(stage: StreamStage, status: DeployStatus): void {
     currentStage = stage;
 
     const isTerminal = status === "success" || status === "failed" || status === "cancelled";
@@ -110,7 +119,7 @@ export function createDeployLogger(deployId: string) {
   }
 
   /** Get the current stage (for error handler context). */
-  function getStage(): DeployStage {
+  function getStage(): StreamStage {
     return currentStage;
   }
 

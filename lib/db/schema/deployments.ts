@@ -41,6 +41,8 @@ export const deployments = pgTable("deployment", {
   // Snapshot fields — captured on successful deploy for rollback
   envSnapshot: text("env_snapshot"), // Encrypted env blob at deploy time (AES-256-GCM)
   configSnapshot: jsonb("config_snapshot").$type<ConfigSnapshot>(),
+  // On an auto-rollback, the deploy that crashed. On a manual or instant
+  // rollback, the deploy whose version was restored.
   rollbackFromId: text("rollback_from_id"),
   slot: text("slot"),
   // ID of the deployment that superseded this one (set when status = "superseded")

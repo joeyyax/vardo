@@ -20,6 +20,8 @@ export type WatchCandidate = {
   appName: string;
   /** apps.status at read time. */
   appStatus: string;
+  /** deployment.trigger. */
+  trigger: string;
   /** deployment.slot — "local" and null are not blue-green. */
   slot: string | null;
   finishedAt: Date | null;
@@ -45,6 +47,9 @@ export function evaluateWatch(c: WatchCandidate, now: number): WatchVerdict {
   // The watch would run inside the container a rollback tears down, and cannot
   // observe its own death. Reported at deploy time, never armed.
   if (isSelfApp(c.appName)) return { watch: false, reason: "self-deploy" };
+
+  // Rolling back a rollback flips to the version that was just abandoned.
+  if (c.trigger === "rollback") return { watch: false, reason: "rollback deploy" };
 
   if (c.slot !== "blue" && c.slot !== "green") {
     return { watch: false, reason: "not a blue-green deploy" };
