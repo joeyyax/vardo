@@ -258,7 +258,7 @@ describe("stabilityVerdict", () => {
   it("dates the last incident on an app that has been clean since", () => {
     const result = verdict({ incidents: [fault(20)] });
     expect(result.level).toBe("stable");
-    expect(result.detail).toBe("Last incident 20d ago");
+    expect(result.detail).toBe("Last incident 2w ago");
   });
 });
 
