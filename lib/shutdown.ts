@@ -59,12 +59,12 @@ function shutdown(signal: string) {
 
   log.info(`${signal} received, draining (${DRAIN_MS}ms max)`);
 
-  // SSE streams never end on their own — cut them instead of holding the
-  // listener open until the deadline.
+  // Nothing registered here ends on its own — SSE streams hold the listener
+  // open and monitor intervals keep ticking until they are told to stop.
   const pending = state.closers.size;
   for (const closer of [...state.closers]) runCloser(closer);
   state.closers.clear();
-  if (pending > 0) log.info(`Closed ${pending} stream(s)`);
+  if (pending > 0) log.info(`Closed ${pending} registered resource(s)`);
 
   // Backstop. Next closes the listener and exits 0 once in-flight requests finish.
   const deadline = setTimeout(() => {
