@@ -8,6 +8,7 @@ const {
   deleteWhereMock,
   stopProjectMock,
   assertOwnershipMock,
+  removeAppDirMock,
 } = vi.hoisted(() => {
   const deleteWhere = vi.fn().mockResolvedValue(undefined);
   return {
@@ -18,6 +19,7 @@ const {
     deleteWhereMock: deleteWhere,
     stopProjectMock: vi.fn().mockResolvedValue({ success: true, log: "" }),
     assertOwnershipMock: vi.fn().mockResolvedValue(undefined),
+    removeAppDirMock: vi.fn().mockResolvedValue({ removed: true }),
   };
 });
 
@@ -41,7 +43,11 @@ vi.mock("@/lib/docker/app-dir-owner", async () => {
   const actual = await vi.importActual<typeof import("@/lib/docker/app-dir-owner")>(
     "@/lib/docker/app-dir-owner",
   );
-  return { ...actual, assertAppDirOwnership: assertOwnershipMock };
+  return {
+    ...actual,
+    assertAppDirOwnership: assertOwnershipMock,
+    removeAppDir: removeAppDirMock,
+  };
 });
 
 import { deleteApp } from "@/lib/docker/delete-app";
@@ -62,6 +68,7 @@ beforeEach(() => {
   findManyMock.mockResolvedValue([]);
   stopProjectMock.mockResolvedValue({ success: true, log: "" });
   assertOwnershipMock.mockResolvedValue(undefined);
+  removeAppDirMock.mockResolvedValue({ removed: true });
 });
 
 describe("deleteApp ownership guard", () => {
@@ -75,6 +82,7 @@ describe("deleteApp ownership guard", () => {
     ).rejects.toThrow(AppDirOwnershipError);
 
     expect(stopProjectMock).not.toHaveBeenCalled();
+    expect(removeAppDirMock).not.toHaveBeenCalled();
     expect(deleteMock).not.toHaveBeenCalled();
     expect(deleteWhereMock).not.toHaveBeenCalled();
   });
@@ -89,5 +97,44 @@ describe("deleteApp ownership guard", () => {
     });
     expect(stopProjectMock).toHaveBeenCalled();
     expect(result.deleted).toBe(true);
+  });
+});
+
+describe("deleteApp directory removal", () => {
+  it("removes the app directory before the row is deleted", async () => {
+    const result = await deleteApp({ appId: "app-1", organizationId: "org-1" });
+
+    expect(removeAppDirMock).toHaveBeenCalledWith({ appId: "app-1", appName: "api" });
+    expect(removeAppDirMock.mock.invocationCallOrder[0]).toBeLessThan(
+      deleteMock.mock.invocationCallOrder[0],
+    );
+    expect(result.removedAppDir).toBe(true);
+  });
+
+  it("still deletes the app when the directory cannot be removed", async () => {
+    removeAppDirMock.mockResolvedValue({
+      removed: false,
+      reason: "EACCES: permission denied",
+    });
+
+    const result = await deleteApp({ appId: "app-1", organizationId: "org-1" });
+
+    expect(result.deleted).toBe(true);
+    expect(result.removedAppDir).toBe(false);
+    expect(result.log).toContain("EACCES: permission denied");
+    expect(deleteWhereMock).toHaveBeenCalled();
+  });
+
+  it("leaves the directory alone when deleting a compose child", async () => {
+    findFirstMock.mockResolvedValue({ ...APP, id: "child-1", parentAppId: "app-1" });
+
+    const result = await deleteApp({
+      appId: "child-1",
+      organizationId: "org-1",
+      allowChildDelete: true,
+    });
+
+    expect(removeAppDirMock).not.toHaveBeenCalled();
+    expect(result.removedAppDir).toBe(false);
   });
 });
