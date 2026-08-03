@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
-import { backupJobs, backupJobApps } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { apps, backupJobs, backupJobApps, backupTargets } from "@/lib/db/schema";
+import { eq, and, or, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { requirePlugin } from "@/lib/api/require-plugin";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
@@ -89,6 +89,43 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
 
     const { appIds, ...updateData } = parsed.data;
 
+    // Every app must belong to this org — ids come straight from the request body.
+    const uniqueAppIds = appIds ? [...new Set(appIds)] : undefined;
+    if (uniqueAppIds && uniqueAppIds.length > 0) {
+      const ownedApps = await db.query.apps.findMany({
+        where: and(inArray(apps.id, uniqueAppIds), eq(apps.organizationId, orgId)),
+        columns: { id: true },
+      });
+
+      if (ownedApps.length !== uniqueAppIds.length) {
+        return NextResponse.json(
+          { error: "One or more apps not found" },
+          { status: 404 }
+        );
+      }
+    }
+
+    // Same for the target — org-owned or instance-level only.
+    if (updateData.targetId) {
+      const target = await db.query.backupTargets.findFirst({
+        where: and(
+          eq(backupTargets.id, updateData.targetId),
+          or(
+            eq(backupTargets.organizationId, orgId),
+            isNull(backupTargets.organizationId),
+          ),
+        ),
+        columns: { id: true },
+      });
+
+      if (!target) {
+        return NextResponse.json(
+          { error: "Backup target not found" },
+          { status: 404 }
+        );
+      }
+    }
+
     const [updated] = await db
       .update(backupJobs)
       .set({ ...updateData, updatedAt: new Date() })
@@ -102,16 +139,16 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
     }
 
     // Update app associations if provided
-    if (appIds) {
+    if (uniqueAppIds) {
       // Remove existing
       await db
         .delete(backupJobApps)
         .where(eq(backupJobApps.backupJobId, jobId));
 
       // Insert new
-      if (appIds.length > 0) {
+      if (uniqueAppIds.length > 0) {
         await db.insert(backupJobApps).values(
-          appIds.map((appId) => ({
+          uniqueAppIds.map((appId) => ({
             backupJobId: jobId,
             appId,
           }))
