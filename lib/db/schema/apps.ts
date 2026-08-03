@@ -82,6 +82,18 @@ export const apps = pgTable(
     containerMemoryLimit: bigint("container_memory_limit", { mode: "number" }),
     // Last time the reconciler compared this app against Docker.
     statusCheckedAt: timestamp("status_checked_at"),
+    // Last tick the reconciler observed this app running. Never cleared, so it
+    // survives the container going away — unlike containerStartedAt.
+    lastRunningAt: timestamp("last_running_at"),
+    // Image reclamation for idle apps. "never" pins the app; "always" opts a
+    // floating tag in, accepting that the next start pulls whatever it resolves to.
+    imageReclaimPolicy: text("image_reclaim_policy", {
+      enum: ["auto", "never", "always"],
+    })
+      .notNull()
+      .default("auto"),
+    // Days idle before this app's images may be reclaimed. Null uses the instance default.
+    imageReclaimIdleDays: integer("image_reclaim_idle_days"),
     // How a running app is behaving, written by the health monitor. Separate
     // from status, which only records what Docker did with the container.
     conditions: jsonb("conditions").$type<AppCondition[]>(),

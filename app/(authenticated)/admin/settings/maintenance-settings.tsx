@@ -25,6 +25,7 @@ import {
   Server,
   AlertCircle,
   Trash2,
+  PackageX,
 } from "lucide-react";
 import { toast } from "@/lib/messenger";
 import { formatBytes } from "@/lib/metrics/format";
@@ -48,6 +49,53 @@ type BuildCacheStatus = {
 };
 
 type MountPair = { source: string; destination: string };
+
+type PlannedImage = { image: string; safety: string; bytes: number; present: boolean };
+
+type ReclaimCandidate = {
+  appId: string;
+  appName: string;
+  displayName: string;
+  idleDays: number;
+  thresholdDays: number;
+  images: PlannedImage[];
+  estimatedBytes: number;
+};
+
+type ReclaimSkip = {
+  appId: string;
+  appName: string;
+  displayName: string;
+  reason: string;
+  explanation: string;
+  image?: string;
+};
+
+type ReclaimState = {
+  config: { enabled: boolean; idleDays: number };
+  lastRun: {
+    finishedAt: string;
+    imagesRemoved: number;
+    appsAffected: number;
+    estimatedBytesFreed: number;
+    failures: number;
+    apps: string[];
+  } | null;
+  plan: {
+    defaultIdleDays: number;
+    candidates: ReclaimCandidate[];
+    skipped: ReclaimSkip[];
+    estimatedBytes: number;
+  } | null;
+};
+
+/** Exclusions worth showing by default — the rest are routine. */
+const NOTABLE_SKIPS = new Set([
+  "stateful-floating",
+  "floating-tag",
+  "builds-locally",
+  "compose-unavailable",
+]);
 
 type MountsConfig = {
   vardoData: MountPair;
@@ -87,11 +135,18 @@ export function MaintenanceSettings() {
   const [buildCache, setBuildCache] = useState<BuildCacheStatus | null>(null);
   const [loadingBuildCache, setLoadingBuildCache] = useState(true);
   const [reclaiming, setReclaiming] = useState(false);
+  const [images, setImages] = useState<ReclaimState | null>(null);
+  const [loadingImages, setLoadingImages] = useState(true);
+  const [idleDaysInput, setIdleDaysInput] = useState("30");
+  const [savingImages, setSavingImages] = useState(false);
+  const [reclaimingImages, setReclaimingImages] = useState(false);
+  const [showAllSkips, setShowAllSkips] = useState(false);
 
   useEffect(() => {
     void fetchStatus();
     void fetchMounts();
     void fetchBuildCache();
+    void fetchImages();
   }, []);
 
   async function fetchStatus() {
@@ -154,6 +209,73 @@ export function MaintenanceSettings() {
       toast.error("Failed to reclaim build cache");
     } finally {
       setReclaiming(false);
+    }
+  }
+
+  async function fetchImages() {
+    try {
+      const res = await fetch("/api/v1/admin/maintenance/image-reclaim");
+      if (res.ok) {
+        const data: ReclaimState = await res.json();
+        setImages(data);
+        setIdleDaysInput(String(data.config.idleDays));
+      }
+    } catch {
+      // leave images null — the card shows that the plan is unavailable
+    } finally {
+      setLoadingImages(false);
+    }
+  }
+
+  async function handleSaveImageConfig(enabled: boolean) {
+    setSavingImages(true);
+    try {
+      const idleDays = Number(idleDaysInput);
+      if (!Number.isInteger(idleDays) || idleDays < 1 || idleDays > 3650) {
+        toast.error("Idle threshold must be between 1 and 3650 days");
+        return;
+      }
+      const res = await fetch("/api/v1/admin/maintenance/image-reclaim", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled, idleDays }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        toast.error(data.error ?? "Failed to save");
+        return;
+      }
+      toast.success(enabled ? "Scheduled reclamation on" : "Scheduled reclamation off");
+      void fetchImages();
+    } catch {
+      toast.error("Failed to save reclamation settings");
+    } finally {
+      setSavingImages(false);
+    }
+  }
+
+  async function handleReclaimImages() {
+    setReclaimingImages(true);
+    try {
+      const res = await fetch("/api/v1/admin/maintenance/image-reclaim", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dryRun: false }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error ?? "Failed to reclaim images");
+        return;
+      }
+      const freed = data.result.reclaimed.filter((r: { freedLayers: boolean }) => r.freedLayers).length;
+      toast.success(`Removed ${freed} image${freed === 1 ? "" : "s"}`, {
+        description: `Up to ${formatBytes(data.result.estimatedBytesFreed)} freed. Volumes were not touched.`,
+      });
+      void fetchImages();
+    } catch {
+      toast.error("Failed to reclaim images");
+    } finally {
+      setReclaimingImages(false);
     }
   }
 
@@ -469,6 +591,176 @@ export function MaintenanceSettings() {
               <AlertDialogFooter>
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
                 <AlertDialogAction onClick={() => void handleReclaimBuildCache()}>
+                  Reclaim
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </CardContent>
+      </Card>
+
+      {/* Idle app images */}
+      <Card className="squircle">
+        <CardHeader>
+          <CardTitle className="text-sm font-medium flex items-center gap-2">
+            <PackageX className="size-4" aria-hidden="true" />
+            Idle App Images
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Removes the images of apps that have not run for a while. Each app pulls its
+            image again the next time it starts. Volumes are never touched.
+          </p>
+
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="reclaim-idle-days" className="text-xs text-muted-foreground">
+                Idle for at least (days)
+              </Label>
+              <Input
+                id="reclaim-idle-days"
+                type="number"
+                min={1}
+                max={3650}
+                value={idleDaysInput}
+                onChange={(e) => setIdleDaysInput(e.target.value)}
+                className="w-28 font-mono text-sm"
+              />
+            </div>
+            <Button
+              variant="outline"
+              disabled={savingImages || loadingImages}
+              onClick={() => void handleSaveImageConfig(images?.config.enabled ?? false)}
+            >
+              {savingImages && (
+                <Loader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+              )}
+              Save threshold
+            </Button>
+            <Button
+              variant={images?.config.enabled ? "secondary" : "outline"}
+              disabled={savingImages || loadingImages}
+              onClick={() => void handleSaveImageConfig(!(images?.config.enabled ?? false))}
+            >
+              {images?.config.enabled ? "Daily sweep: on" : "Daily sweep: off"}
+            </Button>
+          </div>
+
+          {loadingImages ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+              Checking which apps are idle...
+            </div>
+          ) : !images?.plan ? (
+            <div className="flex items-center gap-2 text-sm text-amber-600 dark:text-amber-400">
+              <AlertCircle className="size-4 shrink-0" aria-hidden="true" />
+              Could not read the image list — the plan is unavailable.
+            </div>
+          ) : images.plan.candidates.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Nothing is eligible right now.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              <p className="text-sm">
+                <span className="font-medium">{images.plan.candidates.length}</span>{" "}
+                <span className="text-muted-foreground">
+                  app{images.plan.candidates.length === 1 ? "" : "s"} eligible, up to{" "}
+                </span>
+                <span className="font-medium">{formatBytes(images.plan.estimatedBytes)}</span>
+                <span className="text-muted-foreground">
+                  {" "}
+                  — an upper bound, since images share layers.
+                </span>
+              </p>
+              <ul className="divide-y rounded-md border">
+                {images.plan.candidates.map((c) => (
+                  <li key={c.appId} className="flex items-start justify-between gap-4 px-3 py-2">
+                    <div className="min-w-0 space-y-0.5">
+                      <p className="text-sm font-medium">{c.displayName}</p>
+                      <p className="text-xs text-muted-foreground truncate">
+                        {c.images.filter((i) => i.present).map((i) => i.image).join(", ")}
+                      </p>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <p className="text-xs font-mono">{formatBytes(c.estimatedBytes)}</p>
+                      <p className="text-xs text-muted-foreground">idle {c.idleDays}d</p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {images?.plan && images.plan.skipped.length > 0 && (
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={() => setShowAllSkips((v) => !v)}
+                className="text-xs text-muted-foreground underline underline-offset-2"
+              >
+                {showAllSkips ? "Hide" : "Show"} {images.plan.skipped.length} excluded app
+                {images.plan.skipped.length === 1 ? "" : "s"}
+              </button>
+              <ul className="space-y-1">
+                {images.plan.skipped
+                  .filter((s) => showAllSkips || NOTABLE_SKIPS.has(s.reason))
+                  .map((s) => (
+                    <li key={s.appId} className="text-xs text-muted-foreground">
+                      <span className="font-medium text-foreground">{s.displayName}</span>{" "}
+                      — {s.explanation}
+                      {s.image && <span className="font-mono"> ({s.image})</span>}
+                    </li>
+                  ))}
+              </ul>
+            </div>
+          )}
+
+          {images?.lastRun && (
+            <p className="text-xs text-muted-foreground">
+              Last run {new Date(images.lastRun.finishedAt).toLocaleString()} — removed{" "}
+              {images.lastRun.imagesRemoved} image
+              {images.lastRun.imagesRemoved === 1 ? "" : "s"} from {images.lastRun.appsAffected} app
+              {images.lastRun.appsAffected === 1 ? "" : "s"}, up to{" "}
+              {formatBytes(images.lastRun.estimatedBytesFreed)}
+              {images.lastRun.failures > 0 && `, ${images.lastRun.failures} could not be removed`}.
+            </p>
+          )}
+
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="outline"
+                disabled={
+                  reclaimingImages || loadingImages || !images?.plan?.candidates.length
+                }
+              >
+                {reclaimingImages ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+                    Reclaiming...
+                  </>
+                ) : (
+                  <>
+                    <PackageX className="size-4" aria-hidden="true" />
+                    Reclaim now
+                  </>
+                )}
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent size="sm">
+              <AlertDialogHeader>
+                <AlertDialogTitle>Reclaim images for idle apps?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  {images?.plan
+                    ? `This removes the images of ${images.plan.candidates.length} idle app(s), freeing up to ${formatBytes(images.plan.estimatedBytes)}. Volumes are not touched, and each app pulls its image again on next start.`
+                    : "This removes the images of idle apps. Volumes are not touched."}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={() => void handleReclaimImages()}>
                   Reclaim
                 </AlertDialogAction>
               </AlertDialogFooter>
