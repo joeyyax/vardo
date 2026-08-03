@@ -1,5 +1,5 @@
-import YAML from "yaml";
 import { parseImageRef, type ImageRef } from "./image-ref";
+import { parseComposeYaml } from "../compose-validate";
 
 export interface ServiceImage {
   /** Compose service name. Null for single-image apps. */
@@ -17,7 +17,7 @@ export interface ServiceImage {
 export function extractComposeImages(yamlContent: string): ServiceImage[] {
   let root: unknown;
   try {
-    root = YAML.parse(yamlContent, { maxAliasCount: 100 });
+    root = parseComposeYaml(yamlContent);
   } catch {
     return [];
   }
