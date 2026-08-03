@@ -93,15 +93,16 @@ secrets:
       parseComposeYaml(`services:
   promtail:
     image: grafana/promtail:3.4
-    mem_limit: 128m
-    read_only: true
+    logging:
+      driver: none
+    profiles: [debug]
   api:
     image: nginx
 `),
     );
     expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toContain('"mem_limit"');
-    expect(warnings[0]).toContain('"read_only"');
+    expect(warnings[0]).toContain('"logging"');
+    expect(warnings[0]).toContain('"profiles"');
     expect(warnings[0]).toContain('Service "promtail"');
   });
 

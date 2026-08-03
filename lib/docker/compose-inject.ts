@@ -467,8 +467,16 @@ export function buildVardoOverlay(opts: {
     const effGpuEnabled = cfg ? cfg.gpuEnabled : gpuEnabled;
     const effPriority = cfg ? cfg.priority : priority;
     const tier = effPriority ?? "standard";
-    // No explicit limit falls back to the tier default rather than unlimited.
-    const effMemoryLimit = explicitMemoryLimit ?? defaultMemoryLimitMb(tier);
+    // Memory precedence: the app's own limit, then one the compose file declares
+    // (parseCompose folds mem_limit into this field), then the tier default.
+    // An explicit 0 means no cap.
+    const declaredMemory = svc.deploy?.resources?.limits?.memory;
+    const effMemory =
+      explicitMemoryLimit == null
+        ? declaredMemory ?? `${defaultMemoryLimitMb(tier)}M`
+        : explicitMemoryLimit > 0
+          ? `${explicitMemoryLimit}M`
+          : undefined;
 
     if (vardoLabels && Object.keys(vardoLabels).length > 0) {
       overlayService.labels = vardoLabels;
@@ -478,10 +486,10 @@ export function buildVardoOverlay(opts: {
     }
 
     // App-level resource limits set via Vardo UI (not from the user's compose)
-    if (effCpuLimit || effMemoryLimit) {
+    if (effCpuLimit || effMemory) {
       const limits: ResourceLimits = {};
       if (effCpuLimit) limits.cpus = String(effCpuLimit);
-      if (effMemoryLimit) limits.memory = `${effMemoryLimit}M`;
+      if (effMemory) limits.memory = effMemory;
       overlayService.deploy = {
         ...(overlayService.deploy ?? {}),
         resources: {
