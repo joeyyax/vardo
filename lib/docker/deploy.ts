@@ -125,6 +125,23 @@ export async function runDeployment(
       .set({ status: "running" })
       .where(eq(deployments.id, deploymentId));
 
+    // The deploy owns the app status until it exits. The reconciler yields to
+    // it, and the sweeper resets it if this process dies mid-deploy.
+    await db
+      .update(apps)
+      .set({ status: "deploying", updatedAt: new Date() })
+      .where(eq(apps.id, opts.appId));
+
+    addEvent(opts.organizationId, {
+      type: "deploy.status",
+      title: "Deploy started",
+      message: `Deployment ${deploymentId} started`,
+      appId: opts.appId,
+      deploymentId,
+      status: "running",
+      success: false,
+    }).catch(() => {});
+
     recordActivity({
       organizationId: opts.organizationId,
       action: "deployment.started",
@@ -376,6 +393,7 @@ export async function runDeployment(
       const supersededById = reason?.supersededBy;
 
       if (supersededById) {
+        // The superseding deploy already owns apps.status — leave it alone.
         log(`[deploy] Superseded by deployment ${supersededById}`);
         await db
           .update(deployments)
@@ -413,6 +431,14 @@ export async function runDeployment(
             finishedAt: new Date(),
           })
           .where(eq(deployments.id, deploymentId));
+
+        // Release the app status. Guarded so a deploy that started in the
+        // meantime keeps ownership; the reconciler corrects "stopped" from
+        // Docker on its next pass.
+        await db
+          .update(apps)
+          .set({ status: "stopped", updatedAt: new Date() })
+          .where(and(eq(apps.id, opts.appId), eq(apps.status, "deploying")));
 
         addEvent(opts.organizationId, {
           type: "deploy.status",
