@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from "vitest";
-import { chmod, mkdir, rm, readFile, writeFile } from "fs/promises";
+import { access, chmod, mkdir, rm, readFile, writeFile } from "fs/promises";
 import { constants } from "fs";
 import { join } from "path";
 
@@ -31,6 +31,10 @@ vi.mock("fs/promises", async (importOriginal) => {
         : (real.writeFile as (...a: unknown[]) => Promise<void>)(p, ...rest),
     access: (p: Parameters<typeof real.access>[0], mode?: number) =>
       mode === constants.W_OK && isDenied(p) ? Promise.reject(eacces(p)) : real.access(p, mode),
+    rm: (p: Parameters<typeof real.rm>[0], ...rest: unknown[]) =>
+      isDenied(p)
+        ? Promise.reject(eacces(p))
+        : (real.rm as (...a: unknown[]) => Promise<void>)(p, ...rest),
   };
 });
 
@@ -42,6 +46,7 @@ vi.mock("@/lib/logger", () => ({
 import {
   assertAppDirOwnership,
   describeAppDirOwnerGaps,
+  removeAppDir,
   stampAppDirOwner,
   stampAllAppDirOwners,
   summarizeAppDirOwners,
@@ -78,6 +83,13 @@ async function registerOwner(name: string, appId: string): Promise<void> {
 
 async function hasMarker(name: string): Promise<boolean> {
   return readFile(appOwnerFile(name), "utf8").then(
+    () => true,
+    () => false,
+  );
+}
+
+async function exists(path: string): Promise<boolean> {
+  return access(path).then(
     () => true,
     () => false,
   );
@@ -223,6 +235,78 @@ describe("assertAppDirOwnership", () => {
       assertAppDirOwnership({ appId: "vardo-app-id", appName: "vardo", operation: "stop" }),
     ).resolves.toBeUndefined();
     expect(findManyMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("removeAppDir", () => {
+  it("removes the directory and its registry record", async () => {
+    await makeAppDir("api");
+    await registerOwner("api", "app-1");
+    await writeFile(join(appBaseDir("api"), "docker-compose.yml"), "services: {}");
+
+    await expect(removeAppDir({ appId: "app-1", appName: "api" })).resolves.toEqual({
+      removed: true,
+    });
+    expect(await exists(appBaseDir("api"))).toBe(false);
+    expect(await exists(appOwnerRegistryFile("api")!)).toBe(false);
+  });
+
+  it("succeeds when there is no directory", async () => {
+    await expect(removeAppDir({ appId: "app-1", appName: "api" })).resolves.toEqual({
+      removed: true,
+    });
+  });
+
+  it("refuses a directory owned by another app and leaves it in place", async () => {
+    await markOwner("api", "app-1");
+
+    await expect(removeAppDir({ appId: "app-2", appName: "api" })).rejects.toThrow(
+      AppDirOwnershipError,
+    );
+    expect(await exists(appBaseDir("api"))).toBe(true);
+    expect(await hasMarker("api")).toBe(true);
+  });
+
+  it("refuses when two apps claim the name", async () => {
+    await makeAppDir("api");
+    claimedBy("app-1", "app-2");
+
+    await expect(removeAppDir({ appId: "app-1", appName: "api" })).rejects.toThrow(
+      AppDirOwnershipError,
+    );
+    expect(await exists(appBaseDir("api"))).toBe(true);
+  });
+
+  it("reports a directory it cannot remove instead of throwing", async () => {
+    await makeAppDir("api");
+    await registerOwner("api", "app-1");
+    denied.add(appBaseDir("api"));
+
+    const result = await removeAppDir({ appId: "app-1", appName: "api" });
+
+    expect(result.removed).toBe(false);
+    expect(result.reason).toContain("EACCES");
+    expect(await exists(appBaseDir("api"))).toBe(true);
+  });
+
+  it("drops the ownership record even when the directory survives", async () => {
+    await makeAppDir("api");
+    await registerOwner("api", "app-1");
+    denied.add(appBaseDir("api"));
+
+    await removeAppDir({ appId: "app-1", appName: "api" });
+
+    expect(await exists(appOwnerRegistryFile("api")!)).toBe(false);
+  });
+
+  it("leaves Vardo's own directory alone", async () => {
+    await makeAppDir("vardo");
+
+    await expect(removeAppDir({ appId: "app-1", appName: "vardo" })).resolves.toEqual({
+      removed: false,
+      reason: "Vardo's own directory",
+    });
+    expect(await exists(appBaseDir("vardo"))).toBe(true);
   });
 });
 

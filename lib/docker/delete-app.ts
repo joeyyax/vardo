@@ -2,8 +2,9 @@ import { db } from "@/lib/db";
 import { apps, projects, volumes } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { stopProject } from "./deploy";
-import { assertAppDirOwnership } from "./app-dir-owner";
+import { assertAppDirOwnership, removeAppDir } from "./app-dir-owner";
 import { listVolumes, removeVolume, stripDockerProjectPrefix } from "./client";
+import { appBaseDir } from "@/lib/paths";
 import { recordActivity } from "@/lib/activity";
 
 export type DeleteAppResult = {
@@ -19,6 +20,8 @@ export type DeleteAppResult = {
   skippedVolumes: string[];
   /** Child app records removed alongside a parent compose app. */
   removedChildApps: string[];
+  /** Whether the app's directory under PROJECTS_DIR was removed. */
+  removedAppDir: boolean;
   log: string;
 };
 
@@ -191,6 +194,18 @@ export async function deleteApp(opts: {
     }
   }
 
+  // A decomposed child has no directory of its own — the parent owns it.
+  let removedAppDir = false;
+  if (!app.parentAppId) {
+    const removal = await removeAppDir({ appId, appName: app.name });
+    removedAppDir = removal.removed;
+    logs.push(
+      removal.removed
+        ? `Removed ${appBaseDir(app.name)}`
+        : `Kept ${appBaseDir(app.name)} (removal failed: ${removal.reason})`,
+    );
+  }
+
   // Remove child app records when deleting a parent compose app, then the app.
   // The parent_app_id FK cascades too — this runs first only so the deleted
   // service names can be reported. Do not rely on it as the sole cleanup.
@@ -230,6 +245,7 @@ export async function deleteApp(opts: {
       removedVolumes,
       keptVolumes,
       removedChildApps,
+      removedAppDir,
     },
   });
 
@@ -242,6 +258,7 @@ export async function deleteApp(opts: {
     keptVolumes,
     skippedVolumes,
     removedChildApps,
+    removedAppDir,
     log: logs.join("\n"),
   };
 }
