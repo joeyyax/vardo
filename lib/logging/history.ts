@@ -85,7 +85,7 @@ export async function readComposeHistory(
 }
 
 /** Windows tried in turn — an idle service has nothing to say in the last hour. */
-const LOOKBACK_MS = [3_600_000, 86_400_000, 7 * 86_400_000, 30 * 86_400_000];
+export const LOOKBACK_MS = [3_600_000, 86_400_000, 7 * 86_400_000, 30 * 86_400_000];
 
 /** Read the tail of an app's logs from Loki, widening the window until something turns up. */
 export async function readLokiHistory(opts: {
