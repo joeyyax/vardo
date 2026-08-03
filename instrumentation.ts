@@ -111,6 +111,7 @@ export async function register() {
       ["logging", async () => { const m = await import("./lib/logging/register"); await m.registerLoggingFeature(); }],
       ["error-tracking", async () => { const m = await import("./lib/error-tracking/register"); await m.registerErrorTrackingPlugin(); }],
       ["image-updates", async () => { const m = await import("./lib/docker/image-updates/register"); await m.registerImageUpdatesPlugin(); }],
+      ["image-reclaim", async () => { const m = await import("./lib/docker/image-reclaim/register"); await m.registerImageReclaimPlugin(); }],
     ];
 
     for (const [label, register] of features) {

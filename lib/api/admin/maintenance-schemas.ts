@@ -68,3 +68,20 @@ export const mountsSchema = z.object({
   vardoMount1: mountPairField,
   vardoMount2: mountPairField,
 });
+
+// Idle image reclamation. idleDays is bounded so a typo cannot set a threshold
+// that makes every app eligible on the next sweep.
+export const imageReclaimConfigSchema = z.object({
+  enabled: z.boolean(),
+  idleDays: z.number().int().min(1).max(3650),
+});
+
+export const imageReclaimRunSchema = z.object({
+  dryRun: z.boolean().optional().default(false),
+});
+
+export const imageReclaimAppSchema = z.object({
+  appId: z.string().min(1),
+  policy: z.enum(["auto", "never", "always"]).optional(),
+  idleDays: z.number().int().min(1).max(3650).nullable().optional(),
+});
