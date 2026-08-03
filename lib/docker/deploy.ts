@@ -105,8 +105,6 @@ export async function runDeployment(
     return sanitized;
   }
 
-  let currentStage: DeployStage = "clone";
-
   // Serialized so a slow write can't land after a later one and shorten the log.
   let logFlush: Promise<unknown> = Promise.resolve();
 
@@ -143,8 +141,22 @@ export async function runDeployment(
         if (stageStatus.get(earlier) === "running") emitStage(earlier, "success");
       }
     }
-    currentStage = s;
     emitStage(s, status);
+  }
+
+  /** The phase in flight, or null in the gap between one closing and the next opening. */
+  function runningStage(): DeployStage | null {
+    return DEPLOY_STAGE_ORDER.findLast((s) => stageStatus.get(s) === "running") ?? null;
+  }
+
+  /** How far the deploy got, whatever each phase reported. */
+  function reachedStage(): DeployStage {
+    return DEPLOY_STAGE_ORDER.findLast((s) => stageStatus.has(s)) ?? "queued";
+  }
+
+  /** The phase the deploy was about to enter. */
+  function pendingStage(): DeployStage {
+    return DEPLOY_STAGE_ORDER.at(DEPLOY_STAGE_ORDER.indexOf(reachedStage()) + 1) ?? "done";
   }
 
   function checkAbort() {
@@ -427,7 +439,9 @@ export async function runDeployment(
 
     // Every exit from here is terminal, and each one closes the stream with a
     // failed stage — without it the UI waits out its timeout with nothing to show.
-    const fail = () => stage(currentStage, "failed");
+    // The failure belongs to the phase in flight, or to the one that never opened.
+    const blamed = runningStage() ?? pendingStage();
+    const fail = () => stage(blamed, "failed");
 
     // Check if this deploy was aborted — either superseded by a newer one or killed by the user.
     if (opts.signal?.aborted) {
@@ -514,7 +528,7 @@ export async function runDeployment(
     const CONTAINER_STAGES: Set<DeployStage> = new Set(["deploy", "healthcheck", "routing", "cleanup", "done"]);
     const slotDir = ctx?.slotDir;
     const newProjectName = ctx?.newProjectName;
-    if (CONTAINER_STAGES.has(currentStage) && slotDir && newProjectName) {
+    if (CONTAINER_STAGES.has(reachedStage()) && slotDir && newProjectName) {
       try {
         const cleanupComposeArgs = await slotComposeFiles(slotDir);
         await execFileAsync(
