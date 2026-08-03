@@ -159,6 +159,12 @@ export async function register() {
         .then(({ ensureVardoProject }) => ensureVardoProject())
         .then(() => log.info("Vardo self-registration complete"))
         .catch((err) => log.warn("Vardo self-registration skipped:", err)),
+
+      // App directory ownership — directories only stay attributable while
+      // top-level app names are globally unique, so stamp them while they are.
+      import("./lib/docker/app-dir-owner")
+        .then(({ stampAppDirOwnersAtStartup }) => stampAppDirOwnersAtStartup())
+        .catch((err) => log.warn("App directory ownership pass skipped:", err)),
     );
 
     const results = await Promise.allSettled(tasks);
