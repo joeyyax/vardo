@@ -1,16 +1,14 @@
 // ---------------------------------------------------------------------------
 // Core services
 //
-// One row each, in the Vardo system org, shared by every organization. Two
+// One row each, in the Vardo system org, running for every organization. Two
 // different reasons land them here:
 //
 //   host-agent — cAdvisor and Promtail read the whole host (privileged, /rootfs,
 //     the Docker socket), so a second copy duplicates every sample and log line.
-//     Singleton is a property of what they do.
-//   app — Loki is an ordinary stack that receives pushes. One instance is the
-//     current limit, not a property: it is addressed by a fixed DNS alias that a
-//     second instance would collide with. Per-org instances need app-name
-//     namespacing that does not exist yet.
+//   app — Loki is an ordinary stack that receives pushes. It runs with
+//     auth_enabled, so one instance holds a separate tenant per organization
+//     and a second would buy nothing.
 // ---------------------------------------------------------------------------
 
 import type { FeatureFlag } from "@/lib/config/features";
@@ -23,13 +21,12 @@ export const CORE_SERVICES_STATUS_KEY = "core_services_status";
 
 /**
  * A feature flag and the core services it turns on. The flag governs both
- * provisioning the shared service and every org's access to it — with one
- * instance of each service there is nothing to separate.
+ * provisioning the shared service and every org's access to it.
  */
 /**
  * Why a service is instance-wide: "host-agent" reads the whole host and a
- * second copy would duplicate its data; "app" is an ordinary stack that is
- * single only until aliases are namespaced per instance.
+ * second copy would duplicate its data; "app" is an ordinary stack that
+ * separates organizations inside one instance.
  */
 export type CoreServiceKind = "host-agent" | "app";
 

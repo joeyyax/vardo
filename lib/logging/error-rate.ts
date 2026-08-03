@@ -35,21 +35,20 @@ type SampledApp = {
 };
 
 /**
- * One tick: count matching and total lines across the fleet, write a sample per
+ * One tick: count matching and total lines per organization, write a sample per
  * running app, then cache which apps have stepped up.
  *
- * Every running app gets a sample even when Loki reported nothing for it, so a
- * quiet app builds a real baseline of zeros. An app that is not running gets
- * none, which is what keeps its last rate from reading as the current one.
+ * Loki is tenanted by organization, so the fleet takes one pair of queries per
+ * organization. An organization whose queries fail is skipped rather than
+ * sampled at zero, which would read as a quiet app instead of a missing one.
+ *
+ * Every running app in an organization that answered gets a sample even when
+ * Loki reported nothing for it, so a quiet app builds a real baseline of zeros.
+ * An app that is not running gets none, which is what keeps its last rate from
+ * reading as the current one.
  */
 export async function collectErrorRates(): Promise<number> {
   if (!(await isLokiAvailable())) return 0;
-
-  const seconds = Math.round(SAMPLE_MS / 1000);
-  const [errors, lines] = await Promise.all([
-    queryInstant(errorCountQuery(seconds)),
-    queryInstant(lineCountQuery(seconds)),
-  ]);
 
   const running = await db
     .select({
@@ -64,14 +63,32 @@ export async function collectErrorRates(): Promise<number> {
 
   if (running.length === 0) return 0;
 
-  const errorCounts = attributeCounts(errors, running);
-  const lineCounts = attributeCounts(lines, running);
+  const seconds = Math.round(SAMPLE_MS / 1000);
+  const sampled: SampledApp[] = [];
+  const errorCounts = new Map<string, number>();
+  const lineCounts = new Map<string, number>();
+
+  for (const [organizationId, orgApps] of groupByOrganization(running)) {
+    try {
+      const [errors, lines] = await Promise.all([
+        queryInstant(errorCountQuery(seconds), organizationId),
+        queryInstant(lineCountQuery(seconds), organizationId),
+      ]);
+      for (const [id, count] of attributeCounts(errors, orgApps)) errorCounts.set(id, count);
+      for (const [id, count] of attributeCounts(lines, orgApps)) lineCounts.set(id, count);
+      sampled.push(...orgApps);
+    } catch (err) {
+      log.error(`Log counts failed for organization ${organizationId}:`, err);
+    }
+  }
+
+  if (sampled.length === 0) return 0;
 
   // One grid for every app, so windows line up and gaps are visible as gaps.
   const at = Math.floor(Date.now() / SAMPLE_MS) * SAMPLE_MS;
 
   const results = await Promise.allSettled(
-    running.map((app) =>
+    sampled.map((app) =>
       storeLogCounts(
         app.id,
         at,
@@ -83,11 +100,22 @@ export async function collectErrorRates(): Promise<number> {
 
   const failed = results.filter((r) => r.status === "rejected").length;
   if (failed > 0) {
-    log.error(`${running.length - failed} samples stored, ${failed} failed`);
+    log.error(`${sampled.length - failed} samples stored, ${failed} failed`);
   }
 
-  await cacheElevated(running, at);
-  return running.length - failed;
+  await cacheElevated(sampled, at);
+  return sampled.length - failed;
+}
+
+/** Running apps keyed by the tenant their logs live in. */
+function groupByOrganization(running: SampledApp[]): Map<string, SampledApp[]> {
+  const byOrg = new Map<string, SampledApp[]>();
+  for (const app of running) {
+    const list = byOrg.get(app.organizationId) ?? [];
+    list.push(app);
+    byOrg.set(app.organizationId, list);
+  }
+  return byOrg;
 }
 
 /** Deploys and container restarts that make a window unjudgeable, per app. */

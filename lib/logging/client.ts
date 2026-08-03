@@ -1,8 +1,38 @@
 // ---------------------------------------------------------------------------
 // Loki HTTP client — queries persistent container logs
+//
+// Loki runs with auth_enabled, so a tenant is one organization and every read
+// names the organization it is asking for. A read with no organization throws.
 // ---------------------------------------------------------------------------
 
-const LOKI_URL = process.env.LOKI_URL || "http://loki:3100";
+function lokiUrl(): string {
+  return process.env.LOKI_URL || "http://loki:3100";
+}
+
+// ---------------------------------------------------------------------------
+// Tenancy
+// ---------------------------------------------------------------------------
+
+const TENANT_HEADER = "X-Scope-OrgID";
+
+/**
+ * Tenant holding logs from containers with no owning organization. Contains a
+ * dot, which the organization id alphabet does not, so no organization can
+ * ever address it.
+ */
+export const UNASSIGNED_TENANT = "vardo.unassigned";
+
+/** The tenant a read is scoped to. Throws rather than letting a blank one read every tenant. */
+export function requireTenant(organizationId: string): string {
+  const tenant = organizationId?.trim();
+  if (!tenant) throw new Error("Loki read requires an organization id");
+  return tenant;
+}
+
+/** Header naming the organization whose logs a request covers. */
+export function tenantHeaders(organizationId: string): Record<string, string> {
+  return { [TENANT_HEADER]: requireTenant(organizationId) };
+}
 
 // ---------------------------------------------------------------------------
 // Availability check
@@ -16,7 +46,7 @@ export async function isLokiAvailable(): Promise<boolean> {
   const now = Date.now();
   if (lokiReady !== null && now - lastCheck < 30_000) return lokiReady;
   try {
-    const res = await fetch(`${LOKI_URL}/ready`, { signal: AbortSignal.timeout(2000) });
+    const res = await fetch(`${lokiUrl()}/ready`, { signal: AbortSignal.timeout(2000) });
     lokiReady = res.ok;
   } catch {
     lokiReady = false;
@@ -54,6 +84,8 @@ type LokiQueryResponse = {
 
 export type QueryRangeOptions = {
   query: string;
+  /** Organization whose logs this covers. */
+  organizationId: string;
   start?: string; // RFC3339 or nanosecond timestamp
   end?: string;
   limit?: number;
@@ -65,6 +97,7 @@ export type QueryRangeOptions = {
  * Returns entries sorted by the requested direction.
  */
 export async function queryRange(opts: QueryRangeOptions): Promise<LogEntry[]> {
+  const headers = tenantHeaders(opts.organizationId);
   const params = new URLSearchParams({
     query: opts.query,
     limit: String(opts.limit ?? 500),
@@ -74,7 +107,8 @@ export async function queryRange(opts: QueryRangeOptions): Promise<LogEntry[]> {
   if (opts.start) params.set("start", opts.start);
   if (opts.end) params.set("end", opts.end);
 
-  const res = await fetch(`${LOKI_URL}/loki/api/v1/query_range?${params}`, {
+  const res = await fetch(`${lokiUrl()}/loki/api/v1/query_range?${params}`, {
+    headers,
     signal: AbortSignal.timeout(10_000),
   });
 
@@ -97,11 +131,16 @@ type LokiVectorResponse = {
   data: { result: { metric: Record<string, string>; value: [number, string] }[] };
 };
 
-/** Run a LogQL metric query at a single instant. One call covers the whole fleet. */
-export async function queryInstant(query: string): Promise<LokiVectorEntry[]> {
+/** Run a LogQL metric query at a single instant. One call covers one organization. */
+export async function queryInstant(
+  query: string,
+  organizationId: string,
+): Promise<LokiVectorEntry[]> {
+  const headers = tenantHeaders(organizationId);
   const params = new URLSearchParams({ query });
 
-  const res = await fetch(`${LOKI_URL}/loki/api/v1/query?${params}`, {
+  const res = await fetch(`${lokiUrl()}/loki/api/v1/query?${params}`, {
+    headers,
     signal: AbortSignal.timeout(30_000),
   });
 
@@ -122,10 +161,18 @@ export async function queryInstant(query: string): Promise<LokiVectorEntry[]> {
 
 export type TailOptions = {
   query: string;
+  /** Organization whose logs this covers. */
+  organizationId: string;
   /** Seconds to wait for late-arriving logs (default 2) */
   delayFor?: number;
   start?: string;
 };
+
+/** Undici's WebSocket takes request headers; the DOM type it is declared as does not. */
+type WebSocketWithHeaders = new (
+  url: string,
+  init: { headers: Record<string, string> },
+) => WebSocket;
 
 /**
  * Stream live logs from Loki via WebSocket.
@@ -137,7 +184,8 @@ export async function tailLogs(
   onEntry: (entry: LogEntry) => void,
   signal: AbortSignal,
 ): Promise<void> {
-  const wsUrl = LOKI_URL.replace(/^http/, "ws");
+  const headers = tenantHeaders(opts.organizationId);
+  const wsUrl = lokiUrl().replace(/^http/, "ws");
   const params = new URLSearchParams({
     query: opts.query,
     delay_for: String(opts.delayFor ?? 2),
@@ -145,7 +193,10 @@ export async function tailLogs(
   if (opts.start) params.set("start", opts.start);
 
   return new Promise<void>((resolve) => {
-    const ws = new WebSocket(`${wsUrl}/loki/api/v1/tail?${params}`);
+    const ws = new (WebSocket as unknown as WebSocketWithHeaders)(
+      `${wsUrl}/loki/api/v1/tail?${params}`,
+      { headers },
+    );
 
     ws.addEventListener("message", (event) => {
       try {
