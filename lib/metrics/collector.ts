@@ -15,7 +15,12 @@ let started = false;
 let tickCount = 0;
 let consecutiveFailures = 0;
 let disabled = false;
+let diskConsecutiveFailures = 0;
+let projectDiskConsecutiveFailures = 0;
 const DEGRADED_THRESHOLD = 3; // mark integration degraded after 3 consecutive failures
+
+/** Once a disk-collection failure persists, only re-log it this often (in disk-check cycles). */
+const DISK_ERROR_LOG_EVERY = 20;
 
 const FAST_INTERVAL_MS = 5000;   // First 20 ticks: every 5s
 const NORMAL_INTERVAL_MS = 30000; // After warmup: every 30s
@@ -40,6 +45,15 @@ export function nextInterval(opts: { tickCount: number; consecutiveFailures: num
 }
 
 /**
+ * Whether a persistent sub-collection failure (disk usage, per-project disk)
+ * should be logged this cycle: the first occurrence, then every `every` cycles
+ * while it keeps failing, instead of on every single cycle.
+ */
+export function shouldLogPersistentFailure(consecutiveFailures: number, every = DISK_ERROR_LOG_EVERY): boolean {
+  return consecutiveFailures === 1 || consecutiveFailures % every === 0;
+}
+
+/**
  * Start the metrics collector.
  * Starts fast (every 5s for the first 20 ticks) then settles to every 30s.
  */
@@ -57,6 +71,8 @@ export async function startCollector() {
   started = true;
   tickCount = 0;
   consecutiveFailures = 0;
+  diskConsecutiveFailures = 0;
+  projectDiskConsecutiveFailures = 0;
   disabled = false;
   log.info("Starting metrics collection (fast warmup: 5s × 20, then 30s)");
 
@@ -198,8 +214,18 @@ async function collect() {
         buildCache: diskUsage.buildCache.totalSize,
         total: diskUsage.total,
       });
+      if (diskConsecutiveFailures > 0) {
+        log.info(`Disk usage recovered after ${diskConsecutiveFailures} failed collection(s)`);
+      }
+      diskConsecutiveFailures = 0;
     } catch (err) {
-      log.error("Disk error:", (err as Error).message);
+      diskConsecutiveFailures++;
+      // Docker's /system/df can 404 on dangling containerd snapshots. Leave
+      // disk usage unset (reported as unavailable, not zero) and don't spam
+      // the log every cycle while it persists.
+      if (shouldLogPersistentFailure(diskConsecutiveFailures)) {
+        log.error(`Disk error (unavailable, ${diskConsecutiveFailures}x):`, (err as Error).message);
+      }
     }
 
     try {
@@ -210,8 +236,15 @@ async function collect() {
           storeProjectDisk(name, ts, size)
         )
       );
+      if (projectDiskConsecutiveFailures > 0) {
+        log.info(`Per-project disk usage recovered after ${projectDiskConsecutiveFailures} failed collection(s)`);
+      }
+      projectDiskConsecutiveFailures = 0;
     } catch (err) {
-      log.error("Per-project disk error:", (err as Error).message);
+      projectDiskConsecutiveFailures++;
+      if (shouldLogPersistentFailure(projectDiskConsecutiveFailures)) {
+        log.error(`Per-project disk error (unavailable, ${projectDiskConsecutiveFailures}x):`, (err as Error).message);
+      }
     }
 
     // Business metrics (entity counts)
@@ -230,6 +263,8 @@ export function stopCollector() {
   }
   started = false;
   disabled = false;
+  diskConsecutiveFailures = 0;
+  projectDiskConsecutiveFailures = 0;
 }
 
 /** True when the collector shut itself off after repeated provider failures. */
