@@ -258,7 +258,6 @@ async function handleDelete(_request: NextRequest, { params }: RouteParams) {
 
     // Clean up empty projects — if this was the last app, delete the project
     if (app.projectId) {
-      const { projects } = await import("@/lib/db/schema");
       const remaining = await db.query.apps.findFirst({
         where: eq(apps.projectId, app.projectId),
         columns: { id: true },
