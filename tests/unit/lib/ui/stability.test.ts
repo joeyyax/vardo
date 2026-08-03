@@ -367,9 +367,16 @@ describe("restartCaption", () => {
     expect(restartCaption(null, NOW)).toBe("Docker was not reachable");
   });
 
-  it("keeps the age in days, where the Created date beside it can check it", () => {
-    expect(restartCaption(restarts(12, 47), NOW)).toContain("created 47d ago");
-    expect(restartCaption(restarts(7, 412), NOW)).toContain("created 412d ago");
+  // One instant must not read two ways: the deployment row and the ledger hover
+  // card render this same timestamp through formatRelativeTime.
+  it("reads the age through the shared formatter", () => {
+    expect(restartCaption(restarts(12, 47), NOW)).toContain("created 6w ago");
+    expect(restartCaption(restarts(7, 412), NOW)).toContain("created 1y ago");
+  });
+
+  it("never claims a single container, since a stack sums its services", () => {
+    expect(restartCaption(restarts(12, 47), NOW)).not.toMatch(/\bthis container\b/);
+    expect(restartCaption({ count: 4, since: null }, NOW)).not.toMatch(/\bthe container\b/);
   });
 
   it("drops below a day rather than rounding an hours-old container up", () => {
