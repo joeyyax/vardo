@@ -6,6 +6,8 @@ import { eq, and } from "drizzle-orm";
 import { restartContainers, createDeployment } from "@/lib/docker/deploy";
 import { resolveDefaultEnv } from "@/lib/docker/resolve-env";
 import { slidingWindowRateLimit } from "@/lib/api/rate-limit";
+import { recordLifecycle } from "@/lib/activity/lifecycle";
+import { reconcileAppNow } from "@/lib/docker/status-reconcile";
 import type { McpAuthContext } from "../auth";
 import { accessDenied, canAccessOrg } from "../scope";
 
@@ -156,6 +158,18 @@ export function registerRestartApp(
         env.name,
         app.parentAppId ? app.composeService ?? undefined : undefined
       );
+
+      // The fall-through path above is a deploy and records itself as one.
+      if (result.success) {
+        await reconcileAppNow(app.id);
+        await recordLifecycle({
+          organizationId: app.organizationId,
+          app,
+          kind: "restarted",
+          userId: context.userId,
+          trigger: "mcp",
+        });
+      }
 
       return {
         content: [
