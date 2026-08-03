@@ -55,6 +55,7 @@ import { AppSecurity } from "./app-security";
 import { AppErrors } from "./app-errors";
 import { CronManager } from "./app-cron";
 import { AppDebug } from "./app-debug";
+import { AppSettingsPanel } from "./app-settings-panel";
 import { VolumesPanel } from "@/components/volumes-panel";
 import { useDeploy } from "./hooks/use-deploy";
 import { useCancelDeploy, useSlotStatus } from "./hooks/use-app-actions";
@@ -682,6 +683,7 @@ export function ComposeDetail({
   featureFlags,
   allTags = [],
   siblings = [],
+  allParentApps = [],
 }: {
   app: App & { childApps: NonNullable<App["childApps"]> };
   orgId: string;
@@ -691,6 +693,7 @@ export function ComposeDetail({
   featureFlags: FeatureFlags;
   allTags?: Tag[];
   siblings?: { id: string; name: string; displayName: string; status: string; dependsOn: string[] | null }[];
+  allParentApps?: { id: string; name: string; color: string }[];
 }) {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState(initialTab);
@@ -1142,6 +1145,7 @@ export function ComposeDetail({
                     { value: "networking", label: "Networking" },
                     { value: "compose", label: "Compose" },
                     ...(featureFlags?.cron !== false ? [{ value: "cron", label: "Cron" }] : []),
+                    { value: "settings", label: "Settings" },
                   ],
                 },
                 {
@@ -1232,6 +1236,17 @@ export function ComposeDetail({
             orgId={orgId}
             activeTab={activeTab}
             initialSubView={activeTab === "networking" ? initialSubView : undefined}
+          />
+        </TabsContent>
+
+        <TabsContent value="settings" className={tabPanelSurface}>
+          <AppSettingsPanel
+            app={app}
+            orgId={orgId}
+            userRole={userRole}
+            allParentApps={allParentApps}
+            handleDeploy={handleDeployClick}
+            isComposeParent
           />
         </TabsContent>
 

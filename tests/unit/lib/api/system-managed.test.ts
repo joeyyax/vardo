@@ -61,6 +61,12 @@ describe("systemManagedRefusal", () => {
     expect(systemManagedRefusal({ isSystemManaged: false, name: "vardose" }, "stop")).toBeNull();
   });
 
+  it("refuses edit on a compose parent, which locks its settings section", () => {
+    // Several core services are stacks; the guard reads the flag, not the shape.
+    expect(systemManagedRefusal(vardo, "edit")).toMatch(/rewrites the record/);
+    expect(systemManagedRefusal(vardoChild, "edit")).toMatch(/rewrites the record/);
+  });
+
   it("explains that Vardo rewrites the record rather than just refusing", () => {
     expect(systemManagedRefusal(vardo, "edit")).toMatch(/rewrites the record/);
     expect(systemManagedRefusal(vardo, "delete")).toMatch(/recreates it/);
