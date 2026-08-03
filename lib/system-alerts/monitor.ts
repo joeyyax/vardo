@@ -390,9 +390,12 @@ export async function tickSystemAlerts(): Promise<void> {
 
 let interval: NodeJS.Timeout | null = null;
 let ticking = false;
+let signalsInstalled = false;
 
 export function startSystemAlertMonitor(): void {
   if (interval) return;
+
+  installSignalHandlers();
 
   // Load persisted alert state from DB before the first tick so rate-limit
   // windows survive process restarts. Defer the initial tick by 10s to let
@@ -447,6 +450,12 @@ function onShutdown(signal: string) {
   stopSystemAlertMonitor();
 }
 
-process.once("SIGTERM", () => onShutdown("SIGTERM"));
-process.once("SIGINT", () => onShutdown("SIGINT"));
-process.once("exit", () => stopSystemAlertMonitor());
+// Installed from the start function, not at module scope — importing this
+// module must not add listeners or log a shutdown for a monitor never started.
+function installSignalHandlers(): void {
+  if (signalsInstalled) return;
+  signalsInstalled = true;
+  process.once("SIGTERM", () => onShutdown("SIGTERM"));
+  process.once("SIGINT", () => onShutdown("SIGINT"));
+  process.once("exit", () => stopSystemAlertMonitor());
+}
