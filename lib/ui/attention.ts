@@ -1,5 +1,7 @@
 import type { AppCondition } from "@/lib/docker/conditions";
+import type { ExitReason } from "@/lib/docker/exit-reason";
 import { conditionKindLabel } from "@/lib/ui/conditions";
+import { exitReasonShort } from "@/lib/ui/exit-reason";
 
 /** "activity" is routine — something running right now, not a problem. */
 export type AttentionTone = "error" | "warning" | "neutral" | "activity";
@@ -147,4 +149,62 @@ export function conditionRows(apps: ConditionSubject[]): AttentionRow[] {
   }
 
   return [...byKind.values()];
+}
+
+type ExitSubject = {
+  id: string;
+  name: string;
+  displayName: string;
+  exitReason: ExitReason | null;
+};
+
+/**
+ * Apps the kernel killed for memory. Two rows, not one: a host kill is capacity
+ * and a cgroup kill is a limit set too low, and the fix differs.
+ *
+ * Nothing else that stops reaches here. A container that exits 137 from a stop
+ * that outran its grace period is indistinguishable by exit code and is not an
+ * incident, so only Docker's own OOMKilled flag counts.
+ */
+export function oomRows(apps: ExitSubject[], now: number, windowMs: number): AttentionRow[] {
+  const host: AttentionItem[] = [];
+  const limit: AttentionItem[] = [];
+
+  for (const app of apps) {
+    const reason = app.exitReason;
+    if (!reason) continue;
+    if (reason.kind !== "oom-host" && reason.kind !== "oom-limit") continue;
+    if (now - Date.parse(reason.at) > windowMs) continue;
+
+    (reason.kind === "oom-host" ? host : limit).push({
+      id: app.id,
+      name: app.displayName,
+      href: `/apps/${app.name}`,
+      detail: `${reason.containerName} · ${exitReasonShort(reason)}`,
+      since: reason.at,
+    });
+  }
+
+  const rows: AttentionRow[] = [];
+  if (host.length > 0) {
+    rows.push({
+      key: "oom-host",
+      label: "Killed for host memory",
+      tone: "error",
+      items: host,
+      footer:
+        "The host ran out and the kernel chose these. None of them has a memory limit, so nothing bounded what they took.",
+      action: { label: "Review host memory", href: "/metrics" },
+    });
+  }
+  if (limit.length > 0) {
+    rows.push({
+      key: "oom-limit",
+      label: "Killed at memory limit",
+      tone: "error",
+      items: limit,
+      footer: "These hit their own cgroup limit. Raise it, or find what is using more than it was given.",
+    });
+  }
+  return rows;
 }

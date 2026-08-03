@@ -72,7 +72,11 @@ export type ContainerInspect = {
     running: boolean;
     status: string;
     startedAt: string;
+    /** Zero-valued ("0001-01-01T00:00:00Z") on a container that has never stopped. */
+    finishedAt: string;
     exitCode: number;
+    /** The kernel killed this container for memory, either at its cgroup limit or host-wide. */
+    oomKilled: boolean;
     // Health probe state from the container's healthcheck, or null when no
     // healthcheck is configured. status is one of "starting" | "healthy" |
     // "unhealthy". failingStreak is the count of consecutive failing probes.
@@ -404,7 +408,9 @@ export async function inspectContainer(id: string): Promise<ContainerInspect> {
       Running: boolean;
       Status: string;
       StartedAt: string;
+      FinishedAt?: string;
       ExitCode?: number;
+      OOMKilled?: boolean;
       Health?: { Status?: string; FailingStreak?: number } | null;
     };
     Config: {
@@ -465,7 +471,9 @@ export async function inspectContainer(id: string): Promise<ContainerInspect> {
       running: data.State.Running,
       status: data.State.Status,
       startedAt: data.State.StartedAt,
+      finishedAt: data.State.FinishedAt ?? "",
       exitCode: data.State.ExitCode ?? 0,
+      oomKilled: data.State.OOMKilled ?? false,
       health: data.State.Health?.Status
         ? {
             status: data.State.Health.Status,
