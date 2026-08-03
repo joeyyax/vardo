@@ -145,19 +145,25 @@ export async function fetchAllContainerMetrics(baseUrl = CADVISOR_URL): Promise<
       }
     }
 
-    // Filesystem
-    let diskUsage = 0;
-    let diskLimit = 0;
-    if (curr.filesystem) {
+    // Filesystem. Null, not zero, when cAdvisor runs without per-container
+    // filesystem accounting — a container using no disk and a host not
+    // measuring disk are different answers.
+    let diskUsage: number | null = null;
+    let diskLimit: number | null = null;
+    if (curr.has_filesystem && curr.filesystem && curr.filesystem.length > 0) {
+      diskUsage = 0;
+      diskLimit = 0;
       for (const fs of curr.filesystem) {
         diskUsage += fs.usage || 0;
         diskLimit += fs.capacity || 0;
       }
     }
 
-    // Disk I/O writes (cumulative)
-    let diskWriteBytes = 0;
-    if (curr.diskio?.io_service_bytes) {
+    // Cumulative block I/O writes. Null when the diskio block carries no
+    // io_service_bytes, which is every container on a cgroup v2 host.
+    let diskWriteBytes: number | null = null;
+    if (curr.diskio?.io_service_bytes && curr.diskio.io_service_bytes.length > 0) {
+      diskWriteBytes = 0;
       for (const dev of curr.diskio.io_service_bytes) {
         diskWriteBytes += dev.stats?.Write || 0;
       }
