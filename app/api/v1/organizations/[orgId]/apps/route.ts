@@ -9,8 +9,8 @@ import { db } from "@/lib/db";
 import { apps, projects, domains, organizations, environments, volumes } from "@/lib/db/schema";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
-import { z } from "zod";
-import { generateSubdomain } from "@/lib/domain-monitoring/auto-domain";
+import { createAppSchema } from "@/lib/api/create-app-schema";
+import { getBaseDomain } from "@/lib/domain-monitoring/auto-domain";
 import { allocatePorts } from "@/lib/docker/ports";
 import { sharedMarkerTypeErrors } from "@/lib/docker/compose";
 import { recordActivity } from "@/lib/activity";
@@ -23,58 +23,6 @@ import { withRateLimit } from "@/lib/api/with-rate-limit";
 type RouteParams = {
   params: Promise<{ orgId: string }>;
 };
-
-const createAppSchema = z
-  .object({
-    displayName: z.string().min(1, "Display name is required"),
-    name: z
-      .string()
-      .min(1, "Name is required")
-      .regex(/^[a-z0-9-]+$/, "Name must be lowercase alphanumeric with hyphens"),
-    description: z.string().optional(),
-    source: z.enum(["git", "direct"]),
-    deployType: z.enum(["compose", "dockerfile", "image", "static", "nixpacks", "railpack"]),
-    gitUrl: z.string().url().refine((url) => url.startsWith("https://"), { message: "Only HTTPS git URLs are allowed" }).optional(),
-    gitBranch: z.string().regex(/^[a-zA-Z0-9._\-/]+$/, "Invalid branch name").optional(),
-    imageName: z.string().optional(),
-    composeContent: z.string().max(512000).optional(),
-    composeFilePath: z.string().regex(/^[a-zA-Z0-9._-][a-zA-Z0-9._\-/]*$/, "Invalid file path").optional(),
-    dockerfilePath: z.string().regex(/^[a-zA-Z0-9._-][a-zA-Z0-9._\-/]*$/, "Invalid file path").optional(),
-    rootDirectory: z.string().optional(),
-    containerPort: z.number().int().positive().optional(),
-    autoTraefikLabels: z.boolean().default(false),
-    autoDeploy: z.boolean().default(false),
-    generateDomain: z.boolean().default(true),
-    persistentVolumes: z.array(z.object({
-      name: z.string(),
-      mountPath: z.string(),
-    })).optional(),
-    exposedPorts: z.array(z.object({
-      internal: z.number(),
-      external: z.number().optional(),
-      protocol: z.string().optional(),
-      description: z.string().optional(),
-    })).optional(),
-    connectionInfo: z.array(z.object({
-      label: z.string(),
-      value: z.string(),
-      copyRef: z.string().optional(),
-    })).optional(),
-    cpuLimit: z.number().positive().max(64).nullable().optional(),
-    memoryLimit: z.number().int().min(64).max(65536).nullable().optional(),
-    diskWriteAlertThreshold: z.number().int().min(0).nullable().optional(),
-    projectId: z.string().min(1, "Project is required"),
-  })
-  .refine(
-    (data) => {
-      if (data.source === "git") return !!data.gitUrl;
-      if (data.deployType === "image") return !!data.imageName;
-      return true;
-    },
-    {
-      message: "Required fields missing for the selected configuration",
-    }
-  );
 
 // GET /api/v1/organizations/[orgId]/apps?limit=50&offset=0
 export async function GET(request: NextRequest, { params }: RouteParams) {
@@ -176,6 +124,24 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       columns: { slug: true, baseDomain: true },
     });
 
+    // The slug is the subdomain, so what the form previewed is what gets created.
+    const autoDomain = data.generateDomain
+      ? `${data.name}.${getBaseDomain(orgRecord?.baseDomain)}`
+      : null;
+
+    if (autoDomain) {
+      const domainTaken = await db.query.domains.findFirst({
+        where: eq(domains.domain, autoDomain),
+        columns: { id: true },
+      });
+      if (domainTaken) {
+        return NextResponse.json(
+          { error: `${autoDomain} is already in use. Choose a different slug.` },
+          { status: 409 }
+        );
+      }
+    }
+
     const appId = nanoid();
 
     // Validate projectId — must exist in same org
@@ -207,6 +173,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
         composeFilePath: data.composeFilePath || "docker-compose.yml",
         dockerfilePath: data.dockerfilePath || "Dockerfile",
         rootDirectory: data.rootDirectory,
+        templateName: data.templateName,
         containerPort: data.containerPort,
         autoTraefikLabels: data.autoTraefikLabels,
         autoDeploy: data.autoDeploy,
@@ -255,9 +222,8 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     }
 
     // Auto-create domain if requested
-    if (data.generateDomain) {
+    if (autoDomain) {
       const sslConfig = await getSslConfig();
-      const autoDomain = generateSubdomain(data.name, orgRecord?.baseDomain);
       await db.insert(domains).values({
         id: nanoid(),
         appId,
