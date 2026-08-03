@@ -337,6 +337,13 @@
       "when": 1785717175805,
       "tag": "0047_amused_omega_sentinel",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1785717619013,
+      "tag": "0048_fearless_night_thrasher",
+      "breakpoints": true
     }
   ]
 }

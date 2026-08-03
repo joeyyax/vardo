@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "app_top_level_name_uniq" ON "app" USING btree ("name") WHERE parent_app_id is null;
