@@ -7,7 +7,7 @@ import { apps, backups } from "@/lib/db/schema";
 import { defaultMemoryLimitMb, type QosTier } from "@/lib/docker/compose-inject";
 import { getCooldownUntil } from "@/lib/docker/image-updates/check";
 import { getAggregateUpdateStatus } from "@/lib/docker/image-updates/status";
-import { conditionRows, oomRows, type AttentionRow } from "@/lib/ui/attention";
+import { conditionRows, hadRecentHostOom, oomRows, type AttentionRow } from "@/lib/ui/attention";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { isVardoManagedApp } from "@/lib/infra/instance-apps";
 import { getVersionData } from "@/lib/version";
@@ -19,6 +19,9 @@ const BACKUP_FAILURE_WINDOW_HOURS = 48;
 
 /** An OOM kill older than this is history too, even if the app is still down. */
 const OOM_WINDOW_HOURS = 7 * 24;
+
+/** How long a host kill keeps the unlimited-containers row above neutral. */
+const HOST_OOM_PROMOTE_HOURS = 24;
 
 function formatMb(mb: number): string {
   return mb >= 1024 ? `${(mb / 1024).toFixed(mb % 1024 === 0 ? 0 : 1)} GB` : `${mb} MB`;
@@ -136,15 +139,17 @@ export async function buildAttentionRows(
   // a JVM in one sizes its heap from the hypervisor's RAM, not the guest's.
   //
   // Neutral, not a fault: every app deployed before limits were injected lands
-  // here, so counting them buries the handful of things actually broken.
+  // here, so counting them buries the handful of things actually broken. A
+  // recent host kill promotes it — the kernel picks its victim from this pool.
   const unlimited = appRows.filter(
     (a) => a.status === "active" && a.containerMemoryLimit === 0,
   );
+  const hostOom = hadRecentHostOom(exited, Date.now(), HOST_OOM_PROMOTE_HOURS * 3_600_000);
   if (unlimited.length > 0) {
     rows.push({
       key: "no-memory-limit",
       label: "No memory limit",
-      tone: "neutral",
+      tone: hostOom ? "warning" : "neutral",
       items: unlimited
         .map((a) => {
           const tier = (a.priority ?? "standard") as QosTier;
@@ -155,8 +160,9 @@ export async function buildAttentionRows(
             detail: `${tier} · would cap at ${formatMb(defaultMemoryLimitMb(tier))}`,
           };
         }),
-      footer:
-        "Redeploying applies the tier cap shown. Set an explicit limit first on anything that needs more than its cap.",
+      footer: hostOom
+        ? "The host ran out of memory recently and the kernel chose from this list. Redeploying applies the tier cap shown. Set an explicit limit first on anything that needs more than its cap."
+        : "Redeploying applies the tier cap shown. Set an explicit limit first on anything that needs more than its cap.",
     });
   }
 

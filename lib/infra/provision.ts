@@ -31,6 +31,9 @@ import { logger } from "@/lib/logger";
 
 const log = logger.child("infra");
 
+/** Statuses that mean an enabled core service is not running. */
+const DOWN_STATUSES = ["missing", "error", "stopped"];
+
 /** What one service ended up as, and enough context to report or undo it. */
 type Outcome = {
   state: CoreServiceState;
@@ -273,8 +276,9 @@ async function ensureAppDeployed(
 
     // Existence was the only check, so a core service whose container went away
     // stayed dead forever — the feature reads as enabled and silently does
-    // nothing. Redeploy it instead.
-    if (composeStale || existing.status === "missing" || existing.status === "error") {
+    // nothing. Redeploy it instead. "stopped" counts: a disabled feature never
+    // reaches here, so a stopped core service is one the flag still wants up.
+    if (composeStale || DOWN_STATUSES.includes(existing.status)) {
       const reason = composeStale ? "compose changed" : `is ${existing.status}`;
       log.info(`Core service "${template.name}" ${reason} — redeploying`);
       let ok = false;
