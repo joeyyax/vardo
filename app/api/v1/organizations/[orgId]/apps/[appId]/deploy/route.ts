@@ -101,6 +101,7 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ org
         durationMs: result.durationMs,
         status: result.status,
         error: result.error,
+        postDeployError: result.postDeployError,
       });
     });
   } catch (error) {

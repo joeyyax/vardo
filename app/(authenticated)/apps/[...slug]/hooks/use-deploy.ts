@@ -26,6 +26,18 @@ export function terminalMessage(status?: string, error?: string): string {
   return error || (status ? TERMINAL_MESSAGES[status] : undefined) || "Deployment failed";
 }
 
+/** A deploy that landed. Warns instead of celebrating when its tail did not finish. */
+function toastDeployed(durationMs?: number | null, postDeployError?: string | null) {
+  const text = durationMs ? `Deployed in ${formatDuration(durationMs)}` : "Deployed";
+  if (!postDeployError) {
+    toast.success(text);
+    return;
+  }
+  toast.warning(text, {
+    description: `Post-deploy work unfinished: ${postDeployError.split("\n").join(" · ")}`,
+  });
+}
+
 export function useDeploy({
   orgId,
   appId,
@@ -110,7 +122,7 @@ export function useDeploy({
         const data = JSON.parse(event.data);
         finished = true;
         if (data.success) {
-          toast.success(data.durationMs ? `Deployed in ${formatDuration(data.durationMs)}` : "Deployed");
+          toastDeployed(data.durationMs, data.postDeployError);
           announce("Deployment succeeded.");
         } else {
           const message = terminalMessage(data.status, data.error);
@@ -158,7 +170,7 @@ export function useDeploy({
             }
             if (dep?.status && dep.status !== "running" && dep.status !== "queued") {
               if (dep.status === "success") {
-                toast.success(dep.durationMs ? `Deployed in ${formatDuration(dep.durationMs)}` : "Deployed");
+                toastDeployed(dep.durationMs, dep.postDeployError);
               } else if (dep.status !== "failed") {
                 const message = terminalMessage(dep.status);
                 if (NOT_A_FAULT.has(dep.status)) toast.info(message);
@@ -246,9 +258,9 @@ export function useDeploy({
               const { stage, status } = data as { stage: string; status: StageStatus };
               recordStage(stage, status);
             } else if (eventType === "done") {
-              const result = data as { deploymentId: string; success: boolean; durationMs: number; status?: string; error?: string };
+              const result = data as { deploymentId: string; success: boolean; durationMs: number; status?: string; error?: string; postDeployError?: string };
               if (result.success) {
-                toast.success(`Deployed in ${formatDuration(result.durationMs)}`);
+                toastDeployed(result.durationMs, result.postDeployError);
                 announce("Deployment succeeded.");
               } else {
                 const message = terminalMessage(result.status, result.error);

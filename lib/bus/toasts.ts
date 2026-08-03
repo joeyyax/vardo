@@ -1,6 +1,6 @@
 import type { BusEvent, BusEventType } from "./events";
 
-export type ToastSeverity = "success" | "error" | "info";
+export type ToastSeverity = "success" | "error" | "warning" | "info";
 
 /**
  * Event types that auto-toast. Low-signal events (digests, invitations,
@@ -10,6 +10,7 @@ export type ToastSeverity = "success" | "error" | "info";
 export const TOAST_EVENTS: Partial<Record<BusEventType, ToastSeverity>> = {
   "deploy.success": "success",
   "deploy.failed": "error",
+  "deploy.incomplete": "warning",
   "deploy.rollback": "error",
   "app.auto-restarted": "info",
   "backup.success": "success",

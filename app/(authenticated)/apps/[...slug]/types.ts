@@ -14,6 +14,8 @@ export type Deployment = {
   environmentId: string | null;
   configSnapshot: Record<string, unknown> | null;
   rollbackFromId: string | null;
+  /** Post-deploy work a successful deploy did not finish. */
+  postDeployError: string | null;
   slot: string | null;
   startedAt: Date;
   finishedAt: Date | null;

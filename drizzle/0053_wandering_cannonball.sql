@@ -1,0 +1,1 @@
+ALTER TABLE "deployment" ADD COLUMN "post_deploy_error" text;

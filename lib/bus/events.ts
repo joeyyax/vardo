@@ -11,7 +11,7 @@
 // ---------------------------------------------------------------------------
 
 export const EVENT_CATEGORIES = {
-  deploy: ["deploy.success", "deploy.failed", "deploy.rollback", "deploy.status"],
+  deploy: ["deploy.success", "deploy.failed", "deploy.incomplete", "deploy.rollback", "deploy.status"],
   app: ["app.state-changed", "app.auto-restarted"],
   backup: ["backup.success", "backup.failed"],
   cron: ["cron.failed"],
@@ -61,6 +61,17 @@ export type DeployFailedEvent = {
   gitMessage?: string;
   triggeredBy?: string;
   errorMessage?: string;
+};
+
+/** The release is live and serving; post-deploy work behind it did not finish. */
+export type DeployIncompleteEvent = {
+  type: "deploy.incomplete";
+  title: string;
+  message: string;
+  projectName: string;
+  appId: string;
+  deploymentId: string;
+  reason: string;
 };
 
 export type DeployRollbackEvent = {
@@ -297,6 +308,7 @@ export type AppAutoRestartedEvent = {
 export type BusEvent =
   | DeploySuccessEvent
   | DeployFailedEvent
+  | DeployIncompleteEvent
   | DeployRollbackEvent
   | BackupSuccessEvent
   | BackupFailedEvent
