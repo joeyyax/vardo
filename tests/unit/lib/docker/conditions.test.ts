@@ -6,6 +6,7 @@ import {
   CERT_OBSERVATION_STALE_MS,
   HYSTERESIS,
   MEMORY_PRESSURE_RATIO,
+  MEMORY_PRESSURE_SUSTAINED_MS,
   type AppCondition,
   type ConditionInput,
   type ConditionStreaks,
@@ -37,11 +38,24 @@ function cert(days: number, checkedAt = NOW): NonNullable<ConditionInput["cert"]
   return { domain: "app.example.com", expiresAt: NOW + days * DAY, checkedAt };
 }
 
-/** Run the evaluator n times over the same input, threading state through. */
-function settle(i: ConditionInput, n: number, prev: AppCondition[] = [], streaks: ConditionStreaks = {}) {
-  let out = { conditions: prev, streaks };
-  for (let k = 0; k < n; k++) out = evaluateConditions(i, out.conditions, out.streaks);
-  return out;
+/** The health monitor's poll interval — what a "tick" is worth in wall clock. */
+const TICK = 30_000;
+
+type State = { conditions: AppCondition[]; streaks: ConditionStreaks };
+
+/** Tick `overrides` n times from `start`, one TICK apart, threading state through. */
+function run(
+  overrides: Partial<ConditionInput>,
+  n: number,
+  start: number,
+  state: State = { conditions: [], streaks: {} },
+): State & { now: number } {
+  let now = start;
+  for (let k = 0; k < n; k++) {
+    now = start + k * TICK;
+    state = evaluateConditions(input({ ...overrides, now }), state.conditions, state.streaks);
+  }
+  return { ...state, now };
 }
 
 describe("discrete conditions", () => {
@@ -74,41 +88,71 @@ describe("discrete conditions", () => {
   });
 });
 
-describe("memory pressure hysteresis", () => {
-  const over = input({ memory: { usage: 95, limit: 100 } });
-  const under = input({ memory: { usage: 10, limit: 100 } });
+describe("memory pressure", () => {
+  const over = { memory: { usage: 95, limit: 100 } };
+  const under = { memory: { usage: 37, limit: 100 } };
   const gate = HYSTERESIS["memory-pressure"]!;
+  /** Ticks that span the sustained window, plus the one that opened it. */
+  const sustained = MEMORY_PRESSURE_SUSTAINED_MS / TICK + 1;
 
   it("does not fire on a single sample over the threshold", () => {
-    expect(evaluateConditions(over, [], {}).conditions).toEqual([]);
+    expect(run(over, 1, NOW).conditions).toEqual([]);
   });
 
-  it("fires once the enter streak is met", () => {
-    const { conditions } = settle(over, gate.enter);
+  it("ignores a spike shorter than the sustained window", () => {
+    const spike = run(over, sustained - 1, NOW);
+    expect(spike.conditions).toEqual([]);
+  });
+
+  it("fires once the overage has held for the sustained window", () => {
+    const { conditions } = run(over, sustained, NOW);
     expect(conditions.map((c) => c.kind)).toEqual(["memory-pressure"]);
     expect(conditions[0].detail).toBe("95% of memory limit");
   });
 
+  it("dates the condition from the crossing, so the duration is the overage", () => {
+    const { conditions } = run(over, sustained, NOW);
+    expect(conditions[0].since).toBe(new Date(NOW).toISOString());
+  });
+
+  it("restarts the window after the reading drops back under", () => {
+    const on = run(over, sustained - 1, NOW);
+    const dip = run(under, 1, on.now + TICK, on);
+    const again = run(over, sustained - 1, dip.now + TICK, dip);
+    expect(again.conditions).toEqual([]);
+  });
+
+  it("reports the current reading while hysteresis holds it open", () => {
+    const on = run(over, sustained, NOW);
+    const easing = run(under, gate.clear - 1, on.now + TICK, on);
+    expect(easing.conditions[0].detail).toBe("37% of memory limit, easing");
+  });
+
   it("holds through a dip shorter than the clear streak", () => {
-    const on = settle(over, gate.enter);
-    const dipping = settle(under, gate.clear - 1, on.conditions, on.streaks);
+    const on = run(over, sustained, NOW);
+    const dipping = run(under, gate.clear - 1, on.now + TICK, on);
     expect(dipping.conditions.map((c) => c.kind)).toEqual(["memory-pressure"]);
   });
 
   it("clears once the dip reaches the clear streak", () => {
-    const on = settle(over, gate.enter);
-    const cleared = settle(under, gate.clear, on.conditions, on.streaks);
+    const on = run(over, sustained, NOW);
+    const cleared = run(under, gate.clear, on.now + TICK, on);
     expect(cleared.conditions).toEqual([]);
   });
 
+  it("clears when the reading goes away entirely", () => {
+    const on = run(over, sustained, NOW);
+    const gone = run({ memory: null }, gate.clear, on.now + TICK, on);
+    expect(gone.conditions).toEqual([]);
+  });
+
   it("ignores an unlimited container, where a ratio is meaningless", () => {
-    const unlimited = input({ memory: { usage: 8e9, limit: 0 } });
-    expect(settle(unlimited, gate.enter + 2).conditions).toEqual([]);
+    expect(run({ memory: { usage: 8e9, limit: 0 } }, sustained, NOW).conditions).toEqual([]);
   });
 
   it("fires exactly at the threshold", () => {
-    const atLimit = input({ memory: { usage: MEMORY_PRESSURE_RATIO * 100, limit: 100 } });
-    expect(settle(atLimit, gate.enter).conditions).toHaveLength(1);
+    const atLimit = { memory: { usage: MEMORY_PRESSURE_RATIO * 100, limit: 100 } };
+    expect(run(atLimit, sustained, NOW).conditions).toHaveLength(1);
   });
 });
 
@@ -136,21 +180,19 @@ describe("since", () => {
 });
 
 describe("multiple conditions", () => {
+  const both = {
+    crashLoop: { restarts: 5, windowMs: 300_000 },
+    memory: { usage: 99, limit: 100 },
+  };
+  const sustained = MEMORY_PRESSURE_SUSTAINED_MS / TICK + 1;
+
   it("reports crash-looping and memory pressure together, critical first", () => {
-    const both = input({
-      crashLoop: { restarts: 5, windowMs: 300_000 },
-      memory: { usage: 99, limit: 100 },
-    });
-    const { conditions } = settle(both, HYSTERESIS["memory-pressure"]!.enter);
+    const { conditions } = run(both, sustained, NOW);
     expect(conditions.map((c) => c.kind)).toEqual(["crash-looping", "memory-pressure"]);
   });
 
   it("worstCondition picks the highest severity", () => {
-    const both = input({
-      crashLoop: { restarts: 5, windowMs: 300_000 },
-      memory: { usage: 99, limit: 100 },
-    });
-    const { conditions } = settle(both, HYSTERESIS["memory-pressure"]!.enter);
+    const { conditions } = run(both, sustained, NOW);
     expect(worstCondition(conditions)?.kind).toBe("crash-looping");
   });
 
