@@ -3,7 +3,7 @@
 import { useMemo, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Plus, Cpu, ShieldCheck, Trash2, Package, Search } from "lucide-react";
+import { Plus, Package, Search } from "lucide-react";
 import { EndpointsPopover } from "@/components/endpoints-popover";
 import { Input } from "@/components/ui/input";
 import {
@@ -23,11 +23,13 @@ import {
 } from "@/lib/ui/app-filter";
 import { RelativeTime } from "@/components/relative-time";
 import { detectAppType } from "@/lib/ui/app-type";
-import { statusDotColor, uniformStatus } from "@/lib/ui/status-colors";
-import { conditionLabel, conditionTone, countNeedingAttention } from "@/lib/ui/conditions";
+import { uniformStatus } from "@/lib/ui/status-colors";
+import { statusRank } from "@/lib/ui/app-row";
+import { countNeedingAttention } from "@/lib/ui/conditions";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
+import { AppRow } from "@/components/app-row";
 import { AppRowCard } from "@/components/app-row-card";
-import { worstCondition, type AppCondition } from "@/lib/docker/conditions";
+import { type AppCondition } from "@/lib/docker/conditions";
 import { StatusIndicator } from "@/components/app-status";
 import { SystemBadge } from "@/components/system-badge";
 import { useImageUpdates } from "./updates-banner";
@@ -87,29 +89,6 @@ type AppGridProps = {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-// App list: healthy is quiet, deviation is tinted and worded, problems sort first.
-const STATUS_RANK: Record<string, number> = {
-  error: 0,
-  missing: 1,
-  deploying: 2,
-  stopped: 3,
-  active: 4,
-};
-
-const STATUS_WORD: Record<string, string> = {
-  error: "crashed",
-  missing: "no container",
-  deploying: "deploying",
-  stopped: "stopped",
-};
-
-const STATUS_WORD_TONE: Record<string, string> = {
-  error: "text-status-error",
-  missing: "text-status-warning",
-  deploying: "text-status-info",
-  stopped: "text-muted-foreground",
-};
 
 // ---------------------------------------------------------------------------
 // Sub-components
@@ -340,11 +319,11 @@ function ProjectCard({
         ) : (
           /* One app per row: two columns halved the width available to a name,
              its status word and its badges, which is what truncated first. */
-          <div className="grid content-start">
+          <div className="@container grid content-start">
             {[...projectApps]
               .sort(
                 (x, y) =>
-                  (STATUS_RANK[x.status] ?? 3) - (STATUS_RANK[y.status] ?? 3) ||
+                  statusRank(x.status) - statusRank(y.status) ||
                   Number(y.priority === "critical") - Number(x.priority === "critical") ||
                   (updatesByApp.get(y.id) ?? 0) - (updatesByApp.get(x.id) ?? 0) ||
                   x.displayName.localeCompare(y.displayName),
@@ -352,45 +331,13 @@ function ProjectCard({
               .map((a) => (
                 <Tooltip key={a.id}>
                 <TooltipTrigger asChild>
-                <Link
+                <AppRow
+                  app={{ ...a, tags: a.appTags.map((t) => t.tag.name) }}
                   href={`/apps/${a.name}`}
-                  className="relative z-10 flex min-w-0 items-center gap-2 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors cursor-pointer hover:bg-card"
-                >
-                  <span aria-hidden="true" className={`size-1.5 shrink-0 rounded-full ${statusDotColor(a.status)}`} />
-                  <span className="truncate">{a.displayName}</span>
-                  {STATUS_WORD[a.status] && a.status !== sharedStatus && (
-                    <span className={`shrink-0 font-normal ${STATUS_WORD_TONE[a.status]}`}>
-                      {STATUS_WORD[a.status]}
-                    </span>
-                  )}
-                  {(() => {
-                    const worst = worstCondition(a.conditions ?? []);
-                    if (!worst) return null;
-                    return (
-                      <span
-                        className={`shrink-0 font-normal ${conditionTone(worst.severity)}`}
-                        title={worst.detail}
-                      >
-                        {conditionLabel(worst)}
-                      </span>
-                    );
-                  })()}
-                  {a.status === "active" && <span className="sr-only">, Running</span>}
-                  <span className="ml-auto flex shrink-0 items-center gap-1.5">
-                    {(updatesByApp.get(a.id) ?? 0) > 0 && (
-                      <Package className="size-3 text-muted-foreground/70" aria-label="Update available" />
-                    )}
-                    {a.priority === "critical" && (
-                      <ShieldCheck className="size-3 text-status-warning" aria-label="Critical priority" />
-                    )}
-                    {a.priority === "disposable" && (
-                      <Trash2 className="size-3 text-muted-foreground/50" aria-label="Disposable priority" />
-                    )}
-                    {a.gpuEnabled && (
-                      <Cpu className="size-3 text-muted-foreground/50" aria-label="GPU passthrough enabled" />
-                    )}
-                  </span>
-                </Link>
+                  series={history.get(a.id)?.cpu}
+                  updateCount={updatesByApp.get(a.id) ?? 0}
+                  sharedStatus={sharedStatus}
+                />
                 </TooltipTrigger>
                 <TooltipContent
                   side="right"
@@ -398,7 +345,11 @@ function ProjectCard({
                   sideOffset={6}
                   className="bg-popover text-popover-foreground border shadow-card-hover px-3 py-2.5 [&>span]:hidden"
                 >
-                  <AppRowCard app={a} updateCount={updatesByApp.get(a.id) ?? 0} />
+                  <AppRowCard
+                    app={a}
+                    updateCount={updatesByApp.get(a.id) ?? 0}
+                    usage={metrics.get(a.id)}
+                  />
                 </TooltipContent>
                 </Tooltip>
               ))}
