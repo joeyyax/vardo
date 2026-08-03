@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { requireAppAdmin } from "@/lib/auth/admin";
 import { db } from "@/lib/db";
-import { user, apps, deployments } from "@/lib/db/schema";
-import { sql } from "drizzle-orm";
+import { user, apps, deployments, organizations } from "@/lib/db/schema";
+import { eq, sql } from "drizzle-orm";
 import { loadTemplates } from "@/lib/templates/load";
 import { getSystemHealth } from "@/lib/config/health";
 
@@ -20,12 +20,16 @@ export async function GET() {
       sparklines,
     ] = await Promise.all([
       db.select({ userCount: sql<number>`count(*)` }).from(user),
+      // Vardo's own stack and the core services live in the system org. Counting
+      // them here put this tile 15 apps above the same fleet on /metrics.
       db
         .select({
           appCount: sql<number>`count(*)`,
           composeServiceCount: sql<number>`count(*) filter (where ${apps.parentAppId} is not null)`,
         })
-        .from(apps),
+        .from(apps)
+        .innerJoin(organizations, eq(apps.organizationId, organizations.id))
+        .where(eq(organizations.isSystemManaged, false)),
       db.select({ deploymentCount: sql<number>`count(*)` }).from(deployments),
       loadTemplates(),
       buildSparklines(30),
@@ -70,7 +74,9 @@ async function buildSparklines(days: number): Promise<Record<string, [number, nu
     FROM days d
     UNION ALL
     SELECT 'apps', d.day,
-      (SELECT COUNT(*) FROM "app" WHERE created_at <= d.day + '1 day'::interval)
+      (SELECT COUNT(*) FROM "app" a
+        JOIN "organization" o ON o.id = a.organization_id
+        WHERE o.is_system_managed = false AND a.created_at <= d.day + '1 day'::interval)
     FROM days d
     UNION ALL
     SELECT 'deployments', d.day,

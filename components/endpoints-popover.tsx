@@ -17,6 +17,12 @@ type Endpoint = {
   domain: string;
 };
 
+// inline-flex, not the inline default an <a> takes: vertical margins are
+// ignored on an inline box, so the -m-2 would not cancel the p-2 and the
+// header row would grow by the padding.
+const TRIGGER =
+  "-m-2 inline-flex shrink-0 items-center p-2 text-muted-foreground transition-colors hover:text-foreground";
+
 export function EndpointsPopover({ endpoints }: { endpoints: Endpoint[] }) {
   if (endpoints.length === 0) return null;
 
@@ -30,7 +36,7 @@ export function EndpointsPopover({ endpoints }: { endpoints: Endpoint[] }) {
             rel="noopener noreferrer"
             onClick={(e) => e.stopPropagation()}
             aria-label={`Open ${endpoints[0].domain}`}
-            className="-m-2 shrink-0 p-2 text-muted-foreground transition-colors hover:text-foreground"
+            className={TRIGGER}
           >
             <Globe className="size-3.5" />
           </a>
@@ -49,7 +55,7 @@ export function EndpointsPopover({ endpoints }: { endpoints: Endpoint[] }) {
           type="button"
           onClick={(e) => e.preventDefault()}
           aria-label={`${endpoints.length} endpoints`}
-          className="-m-2 shrink-0 p-2 text-muted-foreground transition-colors hover:text-foreground"
+          className={TRIGGER}
         >
           <Globe className="size-3.5" />
         </button>
