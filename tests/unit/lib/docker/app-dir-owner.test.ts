@@ -1,14 +1,37 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from "vitest";
-import { mkdir, rm, readFile, writeFile } from "fs/promises";
+import { chmod, mkdir, rm, readFile, writeFile } from "fs/promises";
+import { constants } from "fs";
 import { join } from "path";
 
 // PROJECTS_DIR is resolved when @/lib/paths loads, so the home override has to
 // be in place before the imports below run.
-const { HOME, findManyMock } = vi.hoisted(() => {
+const { HOME, findManyMock, denied } = vi.hoisted(() => {
   const base = (process.env.TMPDIR || "/tmp").replace(/\/+$/, "");
   const home = `${base}/vardo-owner-test-${process.pid}`;
   process.env.VARDO_HOME_DIR = home;
-  return { HOME: home, findManyMock: vi.fn() };
+  return { HOME: home, findManyMock: vi.fn(), denied: new Set<string>() };
+});
+
+// Denies writes under any path added to `denied`, the way an app directory
+// owned by another uid does: mkdir on an existing directory still succeeds,
+// the write into it fails EACCES. Tests run as any uid.
+vi.mock("fs/promises", async (importOriginal) => {
+  const real = await importOriginal<typeof import("fs/promises")>();
+  const isDenied = (p: unknown) =>
+    typeof p === "string" && [...denied].some((d) => p === d || p.startsWith(`${d}/`));
+  const eacces = (p: unknown) =>
+    Object.assign(new Error(`EACCES: permission denied, open '${String(p)}'`), { code: "EACCES" });
+
+  return {
+    ...real,
+    default: real,
+    writeFile: (p: Parameters<typeof real.writeFile>[0], ...rest: unknown[]) =>
+      isDenied(p)
+        ? Promise.reject(eacces(p))
+        : (real.writeFile as (...a: unknown[]) => Promise<void>)(p, ...rest),
+    access: (p: Parameters<typeof real.access>[0], mode?: number) =>
+      mode === constants.W_OK && isDenied(p) ? Promise.reject(eacces(p)) : real.access(p, mode),
+  };
 });
 
 vi.mock("@/lib/db", () => ({ db: { query: { apps: { findMany: findManyMock } } } }));
@@ -18,12 +41,20 @@ vi.mock("@/lib/logger", () => ({
 
 import {
   assertAppDirOwnership,
+  describeAppDirOwnerGaps,
   stampAppDirOwner,
   stampAllAppDirOwners,
   summarizeAppDirOwners,
   AppDirOwnershipError,
 } from "@/lib/docker/app-dir-owner";
-import { APP_OWNER_FILE, PROJECTS_DIR, appBaseDir, appOwnerFile } from "@/lib/paths";
+import {
+  APP_OWNERS_DIR,
+  APP_OWNER_FILE,
+  PROJECTS_DIR,
+  appBaseDir,
+  appOwnerFile,
+  appOwnerRegistryFile,
+} from "@/lib/paths";
 
 const APPS = join(HOME, "apps");
 
@@ -33,9 +64,27 @@ async function makeAppDir(name: string): Promise<string> {
   return dir;
 }
 
+/** Write the in-directory marker, the record that travels with the directory. */
 async function markOwner(name: string, appId: string): Promise<void> {
   await makeAppDir(name);
   await writeFile(appOwnerFile(name), JSON.stringify({ appId, appName: name }));
+}
+
+/** Write the registry record, the one the process always owns. */
+async function registerOwner(name: string, appId: string): Promise<void> {
+  await mkdir(APP_OWNERS_DIR, { recursive: true });
+  await writeFile(appOwnerRegistryFile(name)!, JSON.stringify({ appId, appName: name }));
+}
+
+async function hasMarker(name: string): Promise<boolean> {
+  return readFile(appOwnerFile(name), "utf8").then(
+    () => true,
+    () => false,
+  );
+}
+
+async function registryOwnerOf(name: string): Promise<string> {
+  return JSON.parse(await readFile(appOwnerRegistryFile(name)!, "utf8")).appId;
 }
 
 /** Apps in the database claiming a name. */
@@ -60,7 +109,9 @@ function claimsByName(claims: Record<string, string[]>) {
 beforeEach(async () => {
   findManyMock.mockReset();
   claimedBy();
+  denied.clear();
   await rm(APPS, { recursive: true, force: true });
+  await rm(APP_OWNERS_DIR, { recursive: true, force: true });
   await mkdir(APPS, { recursive: true });
 });
 
@@ -375,5 +426,217 @@ describe("stampAllAppDirOwners", () => {
     expect(summary).toBe(
       "2 of 4 app directories name an owner (1 stamped, 1 already marked); 1 exempt, 1 unresolved",
     );
+  });
+});
+
+// The case production hit: the process runs unprivileged and the app directory
+// belongs to another uid, so nothing can be written inside it.
+describe("app directories the process cannot write", () => {
+  it("still records an owner, in the registry rather than the directory", async () => {
+    await makeAppDir("plex");
+    denied.add(appBaseDir("plex"));
+    claimsByName({ plex: ["app-1"] });
+
+    const report = await stampAllAppDirOwners();
+
+    expect(report).toMatchObject({ total: 1, stamped: 1, gaps: [] });
+    expect(report.unmirrored).toEqual(["plex"]);
+    expect(await registryOwnerOf("plex")).toBe("app-1");
+    expect(await hasMarker("plex")).toBe(false);
+  });
+
+  it("does not report the directory as failed", async () => {
+    await makeAppDir("plex");
+    denied.add(appBaseDir("plex"));
+    claimsByName({ plex: ["app-1"] });
+
+    const report = await stampAllAppDirOwners();
+
+    expect(report.gaps).toEqual([]);
+  });
+
+  it("enforces ownership from the registry alone", async () => {
+    await makeAppDir("plex");
+    denied.add(appBaseDir("plex"));
+    claimsByName({ plex: ["app-1"] });
+    await stampAllAppDirOwners();
+    findManyMock.mockClear();
+
+    await expect(
+      assertAppDirOwnership({ appId: "app-1", appName: "plex", operation: "delete" }),
+    ).resolves.toBeUndefined();
+    await expect(
+      assertAppDirOwnership({ appId: "app-2", appName: "plex", operation: "delete" }),
+    ).rejects.toThrow(/owned by app app-1/);
+    // The record answers it — no fallback to the name index.
+    expect(findManyMock).not.toHaveBeenCalled();
+  });
+
+  it("adopts an unwritable directory on the destructive path and records it", async () => {
+    await makeAppDir("plex");
+    denied.add(appBaseDir("plex"));
+    claimedBy("app-1");
+
+    await assertAppDirOwnership({ appId: "app-1", appName: "plex", operation: "delete" });
+
+    expect(await registryOwnerOf("plex")).toBe("app-1");
+  });
+
+  it("counts them as owned rather than unresolved in the summary", async () => {
+    await makeAppDir("plex");
+    await makeAppDir("kroki");
+    denied.add(appBaseDir("plex"));
+    claimsByName({ plex: ["app-1"], kroki: ["app-2"] });
+
+    const summary = summarizeAppDirOwners(await stampAllAppDirOwners());
+
+    expect(summary).toBe("2 of 2 app directories name an owner (2 stamped, 0 already marked)");
+  });
+
+  it("keeps reporting them as unmirrored on later passes, not just the first", async () => {
+    await makeAppDir("plex");
+    denied.add(appBaseDir("plex"));
+    claimsByName({ plex: ["app-1"] });
+
+    await stampAllAppDirOwners();
+    const second = await stampAllAppDirOwners();
+
+    expect(second).toMatchObject({ stamped: 0, alreadyOwned: 1, gaps: [] });
+    expect(second.unmirrored).toEqual(["plex"]);
+  });
+
+  it("writes the marker on a later pass once the directory becomes writable", async () => {
+    await makeAppDir("plex");
+    denied.add(appBaseDir("plex"));
+    claimsByName({ plex: ["app-1"] });
+    await stampAllAppDirOwners();
+
+    denied.clear();
+    const healed = await stampAllAppDirOwners();
+
+    expect(healed.unmirrored).toEqual([]);
+    expect(JSON.parse(await readFile(appOwnerFile("plex"), "utf8")).appId).toBe("app-1");
+  });
+
+  it("reports what it would stamp on a dry run without writing anything", async () => {
+    await makeAppDir("plex");
+    denied.add(appBaseDir("plex"));
+    claimsByName({ plex: ["app-1"] });
+
+    const report = await stampAllAppDirOwners({ dryRun: true });
+
+    expect(report).toMatchObject({ total: 1, stamped: 1, gaps: [] });
+    expect(report.unmirrored).toEqual(["plex"]);
+    await expect(readFile(appOwnerRegistryFile("plex")!, "utf8")).rejects.toThrow();
+  });
+
+  // The mocked denial above models EACCES; this one is the kernel's. Root
+  // ignores the mode bits, so it can only run unprivileged.
+  const asRoot = typeof process.getuid === "function" && process.getuid() === 0;
+  it.skipIf(asRoot)("behaves the same against a genuinely read-only directory", async () => {
+    const dir = await makeAppDir("plex");
+    await chmod(dir, 0o555);
+    claimsByName({ plex: ["app-1"] });
+
+    try {
+      const report = await stampAllAppDirOwners();
+
+      expect(report).toMatchObject({ total: 1, stamped: 1, gaps: [] });
+      expect(report.unmirrored).toEqual(["plex"]);
+      expect(await registryOwnerOf("plex")).toBe("app-1");
+      expect(await hasMarker("plex")).toBe(false);
+      await expect(
+        assertAppDirOwnership({ appId: "app-2", appName: "plex", operation: "delete" }),
+      ).rejects.toThrow(/owned by app app-1/);
+    } finally {
+      await chmod(dir, 0o755);
+    }
+  });
+
+  it("names the registry as unwritable, not failed, when it cannot be written either", async () => {
+    await makeAppDir("plex");
+    denied.add(APP_OWNERS_DIR);
+    claimsByName({ plex: ["app-1"] });
+
+    const report = await stampAllAppDirOwners();
+
+    expect(report.stamped).toBe(0);
+    expect(report.gaps).toHaveLength(1);
+    expect(report.gaps[0]).toMatchObject({ appName: "plex", reason: "unwritable" });
+    expect(describeAppDirOwnerGaps(report)[0]).toContain(`run chown -R 1001:1001 ${APP_OWNERS_DIR}`);
+  });
+
+  it("prefers the in-directory marker when it disagrees with the registry", async () => {
+    await markOwner("plex", "app-marker");
+    await registerOwner("plex", "app-registry");
+
+    await expect(
+      assertAppDirOwnership({ appId: "app-registry", appName: "plex", operation: "delete" }),
+    ).rejects.toThrow(/owned by app app-marker/);
+  });
+});
+
+describe("registry pruning", () => {
+  it("drops records for directories that are gone", async () => {
+    await makeAppDir("api");
+    await registerOwner("removed", "app-9");
+    claimsByName({ api: ["app-1"] });
+
+    const report = await stampAllAppDirOwners();
+
+    expect(report.pruned).toBe(1);
+    await expect(readFile(appOwnerRegistryFile("removed")!, "utf8")).rejects.toThrow();
+  });
+
+  it("keeps records on a dry run", async () => {
+    await makeAppDir("api");
+    await registerOwner("removed", "app-9");
+    claimsByName({ api: ["app-1"] });
+
+    const report = await stampAllAppDirOwners({ dryRun: true });
+
+    expect(report.pruned).toBe(1);
+    expect(await registryOwnerOf("removed")).toBe("app-9");
+  });
+
+  it("keeps every record when the apps directory reads empty", async () => {
+    await rm(APPS, { recursive: true, force: true });
+    await registerOwner("api", "app-1");
+
+    const report = await stampAllAppDirOwners();
+
+    expect(report.pruned).toBe(0);
+    expect(await registryOwnerOf("api")).toBe("app-1");
+  });
+});
+
+describe("describeAppDirOwnerGaps", () => {
+  it("gives one line per reason, each naming what would resolve it", async () => {
+    await makeAppDir("adguard");
+    await makeAppDir("kasm");
+    await makeAppDir("shared");
+    claimsByName({ shared: ["app-1", "app-2"] });
+
+    const lines = describeAppDirOwnerGaps(await stampAllAppDirOwners());
+
+    expect(lines).toHaveLength(2);
+    expect(lines).toContainEqual(
+      "2 orphaned: adguard, kasm — no app in the database claims them; delete the directory or recreate the app",
+    );
+    expect(lines).toContainEqual(
+      "1 ambiguous: shared — rename the duplicate apps so one app owns each directory",
+    );
+  });
+
+  it("collapses a long list rather than printing every name", async () => {
+    const names = Array.from({ length: 25 }, (_, i) => `orphan-${String(i).padStart(2, "0")}`);
+    for (const name of names) await makeAppDir(name);
+    claimsByName({});
+
+    const [line] = describeAppDirOwnerGaps(await stampAllAppDirOwners());
+
+    expect(line).toContain("25 orphaned:");
+    expect(line).toContain("and 15 more");
+    expect(line).not.toContain("orphan-10");
   });
 });
