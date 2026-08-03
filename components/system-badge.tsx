@@ -8,13 +8,13 @@ type SystemBadgeProps = {
 };
 
 /**
- * Amber badge used to identify system-managed projects and apps. Appears in
- * project cards, project detail headers, and app detail headers.
+ * Marks a project, stack or app that Vardo manages itself. Appears in project
+ * cards, project headers and app headers — one label everywhere.
  *
  * Thin wrapper around Badge using status-warning design tokens for consistency
  * with the rest of the status color system.
  */
-export function SystemBadge({ label = "System", compact = false, className }: SystemBadgeProps) {
+export function SystemBadge({ label = "System Managed", compact = false, className }: SystemBadgeProps) {
   return (
     <Badge
       className={cn(
