@@ -811,23 +811,35 @@ export async function pruneBackups(jobId: string): Promise<number> {
   // Delete from storage, then mark as pruned
   const storage = createBackupStorage(job.target);
 
+  // Only rows whose object is really gone may be marked pruned — otherwise the
+  // DB claims an object was deleted while it still exists and is still billed.
+  const pruneIds: string[] = [];
+  let undeleted = 0;
+
   for (const backup of toPrune) {
     if (backup.storagePath) {
       try {
         await storage.delete(backup.storagePath);
       } catch (err) {
-        log.warn(`Failed to delete ${backup.storagePath} from storage: ${err}`);
-        // Continue pruning other backups
+        const reason = err instanceof Error ? err.message : String(err);
+        log.warn(`Failed to delete ${backup.storagePath} from storage: ${reason}`);
+        undeleted++;
+        continue;
       }
     }
+    pruneIds.push(backup.id);
   }
 
-  // Bulk-update status to "pruned"
-  const pruneIds = toPrune.map((b) => b.id);
-  await db
-    .update(backups)
-    .set({ status: "pruned" })
-    .where(inArray(backups.id, pruneIds));
+  if (pruneIds.length > 0) {
+    await db
+      .update(backups)
+      .set({ status: "pruned" })
+      .where(inArray(backups.id, pruneIds));
+  }
+
+  if (undeleted > 0) {
+    log.warn(`${undeleted} backup(s) left in storage for job ${job.name} — delete failed, rows kept`);
+  }
 
   log.info(`Pruned ${pruneIds.length} backup(s) for job ${job.name}`);
   return pruneIds.length;
