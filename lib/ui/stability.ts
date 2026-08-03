@@ -195,7 +195,7 @@ export function restartCue(reading: RestartReading | null): RestartCue | null {
   return {
     label: plural(reading.count, "restart"),
     tone: "text-status-warning",
-    title: "Docker's counter for the container running now. Replacing the container resets it to zero.",
+    title: "Docker's counter for the containers running now. Replacing a container resets its count to zero.",
   };
 }
 

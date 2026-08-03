@@ -324,6 +324,14 @@ describe("restart count", () => {
     expect(restartCue(null)).toBeNull();
     expect(restartCue(restarts(12))).toMatchObject({ label: "12 restarts", tone: "text-status-warning" });
   });
+
+  // A compose parent sums the count over its services, so a title naming one
+  // container is wrong for every stack.
+  it("titles the count without claiming a single container", () => {
+    const title = restartCue(restarts(12))!.title;
+    expect(title).toContain("containers running now");
+    expect(title).not.toMatch(/\bthe container running now\b/);
+  });
 });
 
 describe("stabilityCue", () => {
