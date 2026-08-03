@@ -2,11 +2,10 @@ import { describe, it, expect } from "vitest";
 import {
   deriveStatus,
   deployHoldsStatus,
-  matchContainers,
   parseExitCode,
   DEPLOYING_HOLD_MS,
-  type ReconcilableApp,
 } from "@/lib/docker/status-reconcile";
+import { matchContainers, type ReconcilableApp } from "@/lib/docker/container-match";
 import type { ContainerInfo } from "@/lib/docker/client";
 
 function container(over: Partial<ContainerInfo> = {}): ContainerInfo {

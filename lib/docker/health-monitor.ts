@@ -25,6 +25,7 @@ import {
   recordRestart,
 } from "./self-heal-store";
 import { logger } from "@/lib/logger";
+import { closeOnShutdown } from "@/lib/shutdown";
 
 export { RESTART_WINDOW_MS };
 
@@ -529,12 +530,11 @@ export function forgetConditionStreaks(appIds: Set<string>): void {
 
 let interval: NodeJS.Timeout | null = null;
 let ticking = false;
-let signalsInstalled = false;
+let unregisterShutdown: (() => void) | null = null;
 
 export function startHealthMonitor(): void {
   if (interval) return;
 
-  installSignalHandlers();
   log.info(`Monitor started (${POLL_INTERVAL_MS / 1000}s interval)`);
   interval = setInterval(async () => {
     if (ticking) {
@@ -550,27 +550,18 @@ export function startHealthMonitor(): void {
       ticking = false;
     }
   }, POLL_INTERVAL_MS);
+
+  // Registered from the start function, not at module scope — importing this
+  // module must not wire a shutdown for a monitor that was never started.
+  unregisterShutdown = closeOnShutdown(stopHealthMonitor);
 }
 
 export function stopHealthMonitor(): void {
+  unregisterShutdown?.();
+  unregisterShutdown = null;
   if (interval) {
     clearInterval(interval);
     interval = null;
     log.info("Monitor stopped");
   }
-}
-
-function onShutdown(signal: string) {
-  log.info(`Received ${signal} — stopping monitor`);
-  stopHealthMonitor();
-}
-
-// Installed from the start function, not at module scope — importing this
-// module must not add listeners or log a shutdown for a monitor never started.
-function installSignalHandlers(): void {
-  if (signalsInstalled) return;
-  signalsInstalled = true;
-  process.once("SIGTERM", () => onShutdown("SIGTERM"));
-  process.once("SIGINT", () => onShutdown("SIGINT"));
-  process.once("exit", () => stopHealthMonitor());
 }
