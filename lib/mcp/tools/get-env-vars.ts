@@ -2,10 +2,11 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { decryptOrFallback, encrypt } from "@/lib/crypto/encrypt";
 import { systemManagedRefusal } from "@/lib/api/system-managed";
 import type { McpAuthContext } from "../auth";
+import { accessDenied, canAccessOrg } from "../scope";
 
 export function registerGetEnvVars(
   server: McpServer,
@@ -19,23 +20,18 @@ export function registerGetEnvVars(
     },
     async ({ appId }) => {
       const app = await db.query.apps.findFirst({
-        where: and(
-          eq(apps.id, appId),
-          eq(apps.organizationId, context.organizationId)
-        ),
-        columns: { id: true, name: true, isSystemManaged: true, envContent: true },
+        where: eq(apps.id, appId),
+        columns: {
+          id: true,
+          name: true,
+          organizationId: true,
+          isSystemManaged: true,
+          envContent: true,
+        },
       });
 
-      if (!app) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({ error: "App not found or access denied" }),
-            },
-          ],
-          isError: true,
-        };
+      if (!app || !(await canAccessOrg(context, app.organizationId))) {
+        return accessDenied("App");
       }
 
       const refused = systemManagedRefusal(app, "env-vars");
@@ -57,9 +53,10 @@ export function registerGetEnvVars(
         };
       }
 
+      // Env content is encrypted with the owning app's org as the key context.
       const { content: decrypted, wasEncrypted } = decryptOrFallback(
         app.envContent,
-        context.organizationId
+        app.organizationId
       );
 
       if (!decrypted && !wasEncrypted) {
@@ -79,7 +76,7 @@ export function registerGetEnvVars(
 
       // If data was plaintext (unmigrated), encrypt it on read
       if (!wasEncrypted && decrypted) {
-        const encrypted = encrypt(decrypted, context.organizationId);
+        const encrypted = encrypt(decrypted, app.organizationId);
         await db.update(apps).set({ envContent: encrypted }).where(eq(apps.id, appId));
       }
 

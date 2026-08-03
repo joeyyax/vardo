@@ -20,6 +20,7 @@ import { readFile } from "fs/promises";
 import { resolve, basename } from "path";
 import { slugify } from "@/lib/ui/slugify";
 import type { McpAuthContext } from "../auth";
+import { resolveProjectOrg, resolveTargetOrg } from "../scope";
 
 export function registerAdoptApp(
   server: McpServer,
@@ -57,6 +58,12 @@ export function registerAdoptApp(
         .string()
         .optional()
         .describe("Create a new project with this name"),
+      organizationId: z
+        .string()
+        .optional()
+        .describe(
+          "Organization to adopt into when creating a new project (default: the token's own organization). Ignored when projectId is given — the project's own organization wins."
+        ),
       domain: z
         .string()
         .optional()
@@ -75,6 +82,7 @@ export function registerAdoptApp(
       environmentType,
       projectId,
       newProjectName,
+      organizationId,
       domain,
       containerPort,
     }) => {
@@ -82,6 +90,24 @@ export function registerAdoptApp(
       if (!projectId && !newProjectName) {
         return {
           content: [{ type: "text" as const, text: JSON.stringify({ error: "Either projectId or newProjectName is required" }) }],
+          isError: true,
+        };
+      }
+
+      // An existing project pins the org; otherwise fall back to the requested
+      // (membership-checked) org. Never trusts a caller-supplied id on its own.
+      const orgId = projectId
+        ? await resolveProjectOrg(context, projectId)
+        : await resolveTargetOrg(context, organizationId);
+
+      if (!orgId) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: "Project not found or access denied" }),
+            },
+          ],
           isError: true,
         };
       }
@@ -116,7 +142,7 @@ export function registerAdoptApp(
       // Check for duplicate slug
       const existing = await db.query.apps.findFirst({
         where: and(
-          eq(apps.organizationId, context.organizationId),
+          eq(apps.organizationId, orgId),
           eq(apps.name, effectiveName)
         ),
         columns: { id: true },
@@ -179,7 +205,7 @@ export function registerAdoptApp(
       const result = await db.transaction(async (tx) => {
         const resolvedProjectId = await resolveProjectForImport(
           tx,
-          context.organizationId,
+          orgId,
           projectId ?? null,
           newProjectName
         );
@@ -189,7 +215,7 @@ export function registerAdoptApp(
           .insert(apps)
           .values({
             id: appId,
-            organizationId: context.organizationId,
+            organizationId: orgId,
             name: effectiveName,
             displayName: effectiveDisplayName,
             source: "direct",
@@ -224,7 +250,7 @@ export function registerAdoptApp(
       });
 
       recordActivity({
-        organizationId: context.organizationId,
+        organizationId: orgId,
         action: "app.adopted",
         appId: result.app.id,
         userId: context.userId,

@@ -2,8 +2,9 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
-import { desc, eq } from "drizzle-orm";
+import { desc } from "drizzle-orm";
 import type { McpAuthContext } from "../auth";
+import { accessibleOrgIds, orgFilter, orgLabels } from "../scope";
 
 export function registerListApps(
   server: McpServer,
@@ -11,7 +12,7 @@ export function registerListApps(
 ) {
   server.tool(
     "vardo_list_apps",
-    "List all apps in the organization. Returns app name, status, deploy type, project, and latest deployment info.",
+    "List all apps in the organization. Returns app name, status, deploy type, project, and latest deployment info. A cross-org token lists apps across every organization its user belongs to, each labeled with the organization it lives in.",
     {
       limit: z
         .number()
@@ -28,8 +29,10 @@ export function registerListApps(
         .describe("Offset for pagination"),
     },
     async ({ limit, offset }) => {
+      const orgIds = await accessibleOrgIds(context);
+
       const appList = await db.query.apps.findMany({
-        where: eq(apps.organizationId, context.organizationId),
+        where: orgFilter(apps.organizationId, orgIds),
         with: {
           deployments: {
             columns: { id: true, status: true, startedAt: true },
@@ -47,6 +50,7 @@ export function registerListApps(
           status: true,
           deployType: true,
           source: true,
+          organizationId: true,
           createdAt: true,
           updatedAt: true,
         },
@@ -55,11 +59,18 @@ export function registerListApps(
         offset,
       });
 
+      // Single-org tokens see the shape they always have; aggregated results
+      // are labeled, because an unlabeled cross-org list is ambiguous.
+      const labels = context.crossOrg ? await orgLabels(orgIds) : null;
+      const result = appList.map(({ organizationId, ...app }) =>
+        labels ? { ...app, organization: labels.get(organizationId) ?? { id: organizationId } } : app
+      );
+
       return {
         content: [
           {
             type: "text" as const,
-            text: JSON.stringify({ apps: appList, count: appList.length }, null, 2),
+            text: JSON.stringify({ apps: result, count: result.length }, null, 2),
           },
         ],
       };

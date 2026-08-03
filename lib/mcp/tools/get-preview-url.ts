@@ -2,8 +2,9 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { groupEnvironments, environments, apps, projects } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import type { McpAuthContext } from "../auth";
+import { canAccessOrg } from "../scope";
 import { previewNotFound } from "./preview-helpers";
 
 export function registerGetPreviewUrl(
@@ -19,11 +20,12 @@ export function registerGetPreviewUrl(
         .describe("The preview environment ID (returned by vardo_create_preview)"),
     },
     async ({ preview_id }) => {
-      // Single query: verify org ownership and fetch environment URLs in one JOIN.
-      // LEFT JOINs on environments/apps so a preview with no environments still
-      // resolves rather than returning not-found.
+      // Single query: resolve the owning org and fetch environment URLs in one
+      // JOIN. LEFT JOINs on environments/apps so a preview with no environments
+      // still resolves rather than returning not-found.
       const rows = await db
         .select({
+          organizationId: projects.organizationId,
           envId: environments.id,
           envName: environments.name,
           domain: environments.domain,
@@ -38,14 +40,11 @@ export function registerGetPreviewUrl(
           eq(environments.groupEnvironmentId, groupEnvironments.id)
         )
         .leftJoin(apps, eq(environments.appId, apps.id))
-        .where(
-          and(
-            eq(groupEnvironments.id, preview_id),
-            eq(projects.organizationId, context.organizationId)
-          )
-        );
+        .where(eq(groupEnvironments.id, preview_id));
 
-      if (rows.length === 0) return previewNotFound();
+      if (!rows[0] || !(await canAccessOrg(context, rows[0].organizationId))) {
+        return previewNotFound();
+      }
 
       const urls = rows
         .filter((r) => r.envId != null && r.domain != null)

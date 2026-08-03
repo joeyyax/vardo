@@ -2,11 +2,12 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { createPreview } from "@/lib/docker/preview";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { slidingWindowRateLimit } from "@/lib/api/rate-limit";
 import type { McpAuthContext } from "../auth";
+import { canAccessOrg } from "../scope";
 
 // 5 preview deployments per 10 minutes per user/org pair.
 // Each call spins up Docker containers — this caps resource exhaustion.
@@ -83,24 +84,50 @@ export function registerCreatePreview(
         };
       }
 
-      // Verify this org has an app tracking the given repo
+      // Verify the token reaches an app tracking the given repo
       const gitUrl = `https://github.com/${repo}.git`;
 
-      const orgApp = await db.query.apps.findFirst({
-        where: and(
-          eq(apps.gitUrl, gitUrl),
-          eq(apps.organizationId, context.organizationId)
-        ),
-        columns: { id: true },
+      const matching = await db.query.apps.findMany({
+        where: eq(apps.gitUrl, gitUrl),
+        columns: { id: true, organizationId: true, projectId: true },
       });
 
-      if (!orgApp) {
+      const reach = await Promise.all(
+        matching.map((a) => canAccessOrg(context, a.organizationId))
+      );
+
+      if (!reach.some(Boolean)) {
         return {
           content: [
             {
               type: "text" as const,
               text: JSON.stringify({
                 error: `No app found for repo ${repo} in this organization`,
+              }),
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      // createPreview re-resolves the repo with no org filter, so refuse
+      // anything it could resolve outside this token's reach or across orgs.
+      const candidateOrgs = [
+        ...new Set(
+          matching.filter((a) => a.projectId).map((a) => a.organizationId)
+        ),
+      ];
+      const candidateReach = await Promise.all(
+        candidateOrgs.map((id) => canAccessOrg(context, id))
+      );
+
+      if (candidateOrgs.length > 1 || candidateReach.some((ok) => !ok)) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                error: `Repo ${repo} maps to apps in more than one organization — refusing to guess which preview to create`,
               }),
             },
           ],
