@@ -112,6 +112,41 @@ describe("startOrRestartApp — running app", () => {
     );
   });
 
+  it("records what Docker reported and how long the restart took", async () => {
+    await start();
+
+    expect(recordLifecycleMock).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "active", durationMs: expect.any(Number) }),
+    );
+  });
+
+  it("records the crash a restart came back to rather than a bare restart", async () => {
+    reconcileAppNowMock.mockResolvedValue("error");
+
+    const result = await start();
+
+    expect(result).toMatchObject({ success: true, observed: "error" });
+    expect(recordLifecycleMock).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "restarted", status: "error" }),
+    );
+  });
+
+  it("claims no outcome when Docker could not be read", async () => {
+    reconcileAppNowMock.mockResolvedValue(null);
+
+    await start();
+
+    expect(recordLifecycleMock.mock.calls[0][0].status).toBeNull();
+  });
+
+  it("passes the pending config through to the row", async () => {
+    await start({ needsRedeploy: true });
+
+    expect(recordLifecycleMock).toHaveBeenCalledWith(
+      expect.objectContaining({ app: expect.objectContaining({ needsRedeploy: true }) }),
+    );
+  });
+
   it("restarts a crashed app rather than bringing it up — its containers exist", async () => {
     await start({ status: "error" });
 
