@@ -167,12 +167,19 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
     try {
       const res = await fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/restart`, { method: "POST" });
       const data = await res.json();
-      data.success ? toast.success("Restarted") : toast.error(data.error || "Restart failed");
+      if (!data.success) {
+        toast.error(data.error || "Restart failed");
+      } else if (app.needsRedeploy) {
+        // The containers are the same ones; the pending config is still pending.
+        toast.success("Restarted", { description: "Config changed since the last deploy — deploy to apply it." });
+      } else {
+        toast.success("Restarted");
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Restart failed");
     }
     router.refresh();
-  }, [orgId, app.id, router]);
+  }, [orgId, app.id, app.needsRedeploy, router]);
 
   // Same endpoint as Restart: the route reads the app's status and brings a
   // stopped one up rather than restarting nothing.
@@ -373,7 +380,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
           ? "bg-status-warning-muted text-status-warning hover:ring-1 hover:ring-inset hover:ring-status-warning/40"
           : "bg-status-success-muted text-status-success hover:ring-1 hover:ring-inset hover:ring-status-success/40",
         content: app.needsRedeploy ? (
-          <><AlertTriangle className="mr-1.5 size-3.5" />Restart needed</>
+          <><AlertTriangle className="mr-1.5 size-3.5" />Deploy needed</>
         ) : (
           <>
             <span className="mr-1.5 size-2 rounded-full bg-status-success animate-pulse" />
