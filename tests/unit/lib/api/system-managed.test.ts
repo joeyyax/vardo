@@ -16,6 +16,9 @@ const LIFECYCLE: SystemManagedAction[] = [
 
 const vardo = { isSystemManaged: true, name: "vardo" };
 const vardoChild = { isSystemManaged: true, name: "vardo-postgres" };
+// Decomposition created child rows without the parent's flag; migration 0050
+// backfills them, but the guard must not depend on that having run.
+const unflaggedVardoChild = { isSystemManaged: false, name: "vardo-frontend" };
 const infra = { isSystemManaged: true, name: "cadvisor" };
 const userApp = { isSystemManaged: false, name: "my-app" };
 
@@ -48,6 +51,14 @@ describe("systemManagedRefusal", () => {
   it("refuses stop on Vardo's own stack and its compose children", () => {
     expect(systemManagedRefusal(vardo, "stop")).toMatch(/take down the API/);
     expect(systemManagedRefusal(vardoChild, "stop")).toMatch(/take down the API/);
+  });
+
+  it("refuses stop on a Vardo child whose own system-managed flag is false", () => {
+    expect(systemManagedRefusal(unflaggedVardoChild, "stop")).toMatch(/take down the API/);
+  });
+
+  it("still allows stop on an app that only looks like a Vardo child", () => {
+    expect(systemManagedRefusal({ isSystemManaged: false, name: "vardose" }, "stop")).toBeNull();
   });
 
   it("explains that Vardo rewrites the record rather than just refusing", () => {

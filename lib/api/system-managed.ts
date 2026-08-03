@@ -35,6 +35,10 @@ const DEFINITION_REFUSALS: Partial<Record<SystemManagedAction, string>> = {
     "Domains for Vardo-managed apps come from docker-compose.yml and are rewritten on every restart.",
 };
 
+/** Stopping Vardo's own stack takes down the API you would call to start it again. */
+export const VARDO_STOP_REFUSAL =
+  "Stopping Vardo would take down the API you need to start it again. Run `docker compose stop` on the host instead.";
+
 /** True for Vardo's own compose project and the child apps inside it. */
 export function isVardoStack(name: string | null | undefined): boolean {
   if (!name) return false;
@@ -48,17 +52,15 @@ export function systemManagedRefusal(
   target: Guarded,
   action: SystemManagedAction,
 ): string | null {
-  if (!target.isSystemManaged) return null;
-
-  const refusal = DEFINITION_REFUSALS[action];
-  if (refusal) return refusal;
-
-  // Stopping Vardo's own stack takes down the API you would call to start it again.
+  // Checked before the flag: compose children of the Vardo stack carry their
+  // own is_system_managed, and a false one there would unlock the stop.
   if (action === "stop" && isVardoStack(target.name)) {
-    return "Stopping Vardo would take down the API you need to start it again. Run `docker compose stop` on the host instead.";
+    return VARDO_STOP_REFUSAL;
   }
 
-  return null;
+  if (!target.isSystemManaged) return null;
+
+  return DEFINITION_REFUSALS[action] ?? null;
 }
 
 /** 403 response when `action` is refused, or null to let the route continue. */
