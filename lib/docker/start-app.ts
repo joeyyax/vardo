@@ -39,6 +39,8 @@ export type StartApp = {
   status: string;
   parentAppId: string | null;
   composeService: string | null;
+  /** Recorded on the lifecycle row: neither command applies pending config. */
+  needsRedeploy?: boolean | null;
 };
 
 export type StartResult = {
@@ -170,12 +172,14 @@ export async function startOrRestartApp(opts: {
   const env = await resolveDefaultEnv(ownerId);
 
   const off = wasOff(app.status);
+  const startedAt = Date.now();
   const result = off
     ? await upActiveSlot(project, env.name, service)
     : {
         ...(await restartContainers(project, env.name, service)),
         failure: "compose" as StartFailure,
       };
+  const durationMs = Date.now() - startedAt;
 
   if (!result.success) {
     return { success: false, action: "none", failure: result.failure, log: result.log };
@@ -202,6 +206,8 @@ export async function startOrRestartApp(opts: {
     kind: off ? "started" : "restarted",
     userId: opts.userId,
     trigger: opts.trigger,
+    status: observed,
+    durationMs,
   });
 
   return {

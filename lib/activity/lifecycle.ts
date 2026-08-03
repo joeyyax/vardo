@@ -20,6 +20,7 @@ import {
   type LifecycleEvent,
   type LifecycleKind,
   type LifecycleScope,
+  type LifecycleStatus,
   type LifecycleTrigger,
 } from "@/lib/ui/lifecycle";
 
@@ -42,6 +43,8 @@ export type LifecycleApp = {
   id: string;
   parentAppId?: string | null;
   composeService?: string | null;
+  /** Config waiting on a deploy when the action ran. None of these apply it. */
+  needsRedeploy?: boolean | null;
 };
 
 /**
@@ -71,6 +74,10 @@ export async function recordLifecycle(opts: {
   kind: LifecycleKind;
   userId?: string;
   trigger?: LifecycleTrigger;
+  /** What Docker reported once the command returned, when it could be read. */
+  status?: LifecycleStatus | null;
+  /** How long the command took. */
+  durationMs?: number;
 }): Promise<void> {
   try {
     const { scope, service } = await resolveLifecycleScope(opts.app);
@@ -83,6 +90,9 @@ export async function recordLifecycle(opts: {
         scope,
         ...(service ? { service } : {}),
         ...(opts.trigger ? { trigger: opts.trigger } : {}),
+        ...(opts.status ? { status: opts.status } : {}),
+        ...(opts.app.needsRedeploy ? { needsRedeploy: true } : {}),
+        ...(opts.durationMs !== undefined ? { durationMs: opts.durationMs } : {}),
       },
     });
   } catch (err) {
