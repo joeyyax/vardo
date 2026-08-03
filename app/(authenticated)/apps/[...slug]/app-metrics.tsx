@@ -7,10 +7,12 @@ import {
 import { Activity, AlertTriangle, Container, Cpu, Microchip, MemoryStick, Network, Loader2, RefreshCw, Thermometer } from "lucide-react";
 import { ChartCard } from "@/components/app-status";
 import { EmptyState } from "@/components/ui/empty-state";
-import { cpuDisplay, formatBytes, formatBytesShort, formatCores, formatCoresShort, formatMemLimit, formatBytesRate, formatTime, type CpuCeiling } from "@/lib/metrics/format";
+import { cpuDisplay, formatBytes, formatBytesShort, formatCores, formatCoresShort, formatMemLimit, formatTime, type CpuCeiling } from "@/lib/metrics/format";
 import { CHART_COLORS, chartTickStyle, TIME_RANGES, type TimeRange } from "@/lib/metrics/constants";
 import { networkRates } from "@/lib/metrics/rates";
+import { networkBarPoint, type NetworkBarPoint } from "@/lib/metrics/network-chart";
 import { MetricsTooltip } from "@/components/metrics-chart";
+import { NetworkChart } from "@/components/network-chart";
 import type { ContainerPoint } from "@/lib/metrics/types";
 import { useMetricsStream } from "@/hooks/use-metrics-stream";
 
@@ -27,7 +29,7 @@ type AppMetricsProps = {
   cpuLimit?: number | null;
 };
 
-type ChartPoint = {
+type ChartPoint = NetworkBarPoint & {
   time: string;
   timestamp: number;
   cpu: number;
@@ -35,8 +37,6 @@ type ChartPoint = {
   memoryLimit: number;
   networkRx: number;
   networkTx: number;
-  networkRxRate: number | null;
-  networkTxRate: number | null;
   gpuUtilization: number;
   gpuMemoryUsed: number;
   gpuMemoryTotal: number;
@@ -61,16 +61,6 @@ function MemTooltip(props: { active?: boolean; payload?: Array<{ dataKey?: strin
       {...props}
       valueFormatter={(v) => formatBytes(v)}
       categoryLabels={{ memory: "Memory" }}
-    />
-  );
-}
-
-function NetTooltip(props: { active?: boolean; payload?: Array<{ dataKey?: string; name?: string; value?: number; color?: string }>; label?: string }) {
-  return (
-    <MetricsTooltip
-      {...props}
-      valueFormatter={(v) => formatBytesRate(v)}
-      categoryLabels={{ networkRxRate: "RX", networkTxRate: "TX" }}
     />
   );
 }
@@ -151,8 +141,8 @@ function ContainerTable({ containers }: { containers: ContainerPoint[] }) {
             <th className="text-right font-normal px-4 py-2">CPU</th>
             <th className="text-right font-normal px-4 py-2">Memory</th>
             <th className="text-right font-normal px-4 py-2">Limit</th>
-            <th className="text-right font-normal px-4 py-2">Net In</th>
-            <th className="text-right font-normal px-4 py-2">Net Out</th>
+            <th className="text-right font-normal px-4 py-2">Received</th>
+            <th className="text-right font-normal px-4 py-2">Sent</th>
           </tr>
         </thead>
         <tbody className="divide-y">
@@ -197,8 +187,7 @@ export function AppMetrics({ orgId, appId, environmentName, gpuEnabled, cpuLimit
       memoryLimit: p.memoryLimit,
       networkRx: p.networkRx,
       networkTx: p.networkTx,
-      networkRxRate: rates[i].networkRxRate,
-      networkTxRate: rates[i].networkTxRate,
+      ...networkBarPoint(rates[i]),
       gpuUtilization: p.gpuUtilization,
       gpuMemoryUsed: p.gpuMemoryUsed,
       gpuMemoryTotal: p.gpuMemoryTotal,
@@ -370,29 +359,10 @@ export function AppMetrics({ orgId, appId, environmentName, gpuEnabled, cpuLimit
       <ChartCard
         title="Network I/O"
         icon={Network}
-        value={headerValue(`↓ ${formatBytes(latest.networkRx)} · ↑ ${formatBytes(latest.networkTx)}`)}
+        value={headerValue(`↑ ${formatBytes(latest.networkTx)} · ↓ ${formatBytes(latest.networkRx)}`)}
       >
         {sparse ? <Collecting count={chartData.length} /> : noSamples ? <NoSamples /> : (
-        <ResponsiveContainer width="100%" height={CHART_HEIGHT}>
-          <AreaChart data={chartData}>
-            <defs>
-              <linearGradient id="appNetRxGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={CHART_COLORS.networkRx} stopOpacity={0.3} />
-                <stop offset="100%" stopColor={CHART_COLORS.networkRx} stopOpacity={0.02} />
-              </linearGradient>
-              <linearGradient id="appNetTxGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={CHART_COLORS.networkTx} stopOpacity={0.3} />
-                <stop offset="100%" stopColor={CHART_COLORS.networkTx} stopOpacity={0.02} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
-            <XAxis dataKey="time" tick={chartTickStyle} />
-            <YAxis width={75} tickFormatter={(v) => `${formatBytesShort(v)}/s`} tick={chartTickStyle} domain={[0, "auto"]} />
-            <Tooltip content={<NetTooltip />} />
-            <Area isAnimationActive={false} connectNulls={false} type="monotone" dataKey="networkRxRate" stroke={CHART_COLORS.networkRx} fill="url(#appNetRxGradient)" />
-            <Area isAnimationActive={false} connectNulls={false} type="monotone" dataKey="networkTxRate" stroke={CHART_COLORS.networkTx} fill="url(#appNetTxGradient)" />
-          </AreaChart>
-        </ResponsiveContainer>
+          <NetworkChart data={chartData} height={CHART_HEIGHT} />
         )}
       </ChartCard>
 

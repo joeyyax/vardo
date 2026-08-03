@@ -11,6 +11,9 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { formatBytes, formatBytesShort, formatCores, formatCoresShort, formatTime } from "@/lib/metrics/format";
 import { CHART_COLORS, chartTickStyle, TIME_RANGES, type TimeRange } from "@/lib/metrics/constants";
 import { MetricsTooltip } from "@/components/metrics-chart";
+import { NetworkChart } from "@/components/network-chart";
+import { networkBarPoint } from "@/lib/metrics/network-chart";
+import { networkRates } from "@/lib/metrics/rates";
 import { useMetricsStream } from "@/hooks/use-metrics-stream";
 
 type AppInfo = {
@@ -45,16 +48,6 @@ function MemTooltip(props: { active?: boolean; payload?: Array<{ dataKey?: strin
   );
 }
 
-function NetTooltip(props: { active?: boolean; payload?: Array<{ dataKey?: string; name?: string; value?: number; color?: string }>; label?: string }) {
-  return (
-    <MetricsTooltip
-      {...props}
-      valueFormatter={(v) => `${formatBytesShort(v)}/s`}
-      categoryLabels={{ networkRxRate: "Received", networkTxRate: "Sent" }}
-    />
-  );
-}
-
 export function ProjectMetrics({ orgId, projectId, apps }: ProjectMetricsProps) {
   const [timeRange, setTimeRange] = useState<TimeRange>("1h");
 
@@ -64,31 +57,15 @@ export function ProjectMetrics({ orgId, projectId, apps }: ProjectMetricsProps) 
     timeRange,
   });
 
-  // Compute network rates (delta per second) instead of cumulative totals
-  const chartPoints = useMemo(
-    () =>
-      points.map((p, i) => {
-        let networkRxRate = 0;
-        let networkTxRate = 0;
-        if (i > 0) {
-          const prev = points[i - 1];
-          const dtSec = (p.timestamp - prev.timestamp) / 1000;
-          if (dtSec > 0) {
-            const rxDelta = p.networkRx - prev.networkRx;
-            const txDelta = p.networkTx - prev.networkTx;
-            networkRxRate = Math.max(0, rxDelta / dtSec);
-            networkTxRate = Math.max(0, txDelta / dtSec);
-          }
-        }
-        return {
-          ...p,
-          time: formatTime(p.timestamp),
-          networkRxRate,
-          networkTxRate,
-        };
-      }),
-    [points],
-  );
+  // Cumulative counters become per-second rates; a counter reset reads as unknown.
+  const chartPoints = useMemo(() => {
+    const rates = networkRates(points);
+    return points.map((p, i) => ({
+      ...p,
+      time: formatTime(p.timestamp),
+      ...networkBarPoint(rates[i]),
+    }));
+  }, [points]);
 
   if (error && !connected && !loading && points.length === 0) {
     return (
@@ -167,26 +144,7 @@ export function ProjectMetrics({ orgId, projectId, apps }: ProjectMetricsProps) 
       </ChartCard>
 
       <ChartCard title="Network" icon={Network}>
-        <ResponsiveContainer width="100%" height={200}>
-          <AreaChart data={chartPoints}>
-            <defs>
-              <linearGradient id="projNetRxGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={CHART_COLORS.networkRx} stopOpacity={0.3} />
-                <stop offset="100%" stopColor={CHART_COLORS.networkRx} stopOpacity={0.02} />
-              </linearGradient>
-              <linearGradient id="projNetTxGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={CHART_COLORS.networkTx} stopOpacity={0.3} />
-                <stop offset="100%" stopColor={CHART_COLORS.networkTx} stopOpacity={0.02} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
-            <XAxis dataKey="time" tick={chartTickStyle} />
-            <YAxis width={65} tickFormatter={(v) => `${formatBytesShort(v)}/s`} tick={chartTickStyle} />
-            <Tooltip content={<NetTooltip />} />
-            <Area isAnimationActive={false} type="monotone" dataKey="networkRxRate" stroke={CHART_COLORS.networkRx} fill="url(#projNetRxGradient)" />
-            <Area isAnimationActive={false} type="monotone" dataKey="networkTxRate" stroke={CHART_COLORS.networkTx} fill="url(#projNetTxGradient)" />
-          </AreaChart>
-        </ResponsiveContainer>
+        <NetworkChart data={chartPoints} />
       </ChartCard>
     </div>
   );
