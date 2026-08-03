@@ -1325,6 +1325,7 @@ export function ComposeDetail({
                 <LogViewer
                   key={`logs-${service.id}`}
                   streamUrl={`/api/v1/organizations/${orgId}/apps/${service.id}/logs/stream`}
+                  initialLevels={initialSubView === "errors" ? ["error"] : undefined}
                 />
               )}
             </PerService>
@@ -1342,7 +1343,7 @@ export function ComposeDetail({
         )}
 
         <TabsContent value="errors" className={cn(tabPanelSurface, "space-y-4")}>
-          <AppErrors />
+          <AppErrors appName={app.name} appId={app.id} orgId={orgId} />
         </TabsContent>
 
         {featureFlags?.cron !== false && (

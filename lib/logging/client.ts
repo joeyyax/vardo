@@ -88,6 +88,35 @@ export async function queryRange(opts: QueryRangeOptions): Promise<LogEntry[]> {
 }
 
 // ---------------------------------------------------------------------------
+// Instant metric queries
+// ---------------------------------------------------------------------------
+
+export type LokiVectorEntry = { labels: Record<string, string>; value: number };
+
+type LokiVectorResponse = {
+  data: { result: { metric: Record<string, string>; value: [number, string] }[] };
+};
+
+/** Run a LogQL metric query at a single instant. One call covers the whole fleet. */
+export async function queryInstant(query: string): Promise<LokiVectorEntry[]> {
+  const params = new URLSearchParams({ query });
+
+  const res = await fetch(`${LOKI_URL}/loki/api/v1/query?${params}`, {
+    signal: AbortSignal.timeout(30_000),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Loki query failed (${res.status}): ${await res.text()}`);
+  }
+
+  const body = (await res.json()) as LokiVectorResponse;
+  return (body.data?.result ?? []).map((r) => ({
+    labels: r.metric,
+    value: parseFloat(r.value[1]),
+  }));
+}
+
+// ---------------------------------------------------------------------------
 // Tail (WebSocket) — streams new entries via Loki's /tail endpoint
 // ---------------------------------------------------------------------------
 

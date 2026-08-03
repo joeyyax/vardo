@@ -11,8 +11,10 @@ import { conditionRows, hadRecentHostOom, oomRows, type AttentionRow } from "@/l
 import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { isVardoManagedApp } from "@/lib/infra/instance-apps";
 import { getVersionData } from "@/lib/version";
+import { getElevatedApps } from "@/lib/logging/error-rate";
 import { activityRows, getFleetActivity } from "./activity";
 import { APP_DOWN_WINDOW_HOURS, appStatusRows, withParentNames } from "./app-status-rows";
+import { errorRateRows } from "./error-rate-rows";
 import { getFleetAttention } from "./fleet";
 
 /** A failure older than this is history, not something to act on now. */
@@ -130,7 +132,7 @@ export async function buildAttentionRows(
 
   const appIds = appRows.map((a) => a.id);
 
-  const [fleet, updates, version, failedBackups, activity, exited, subjects] = await Promise.all([
+  const [fleet, updates, version, failedBackups, activity, exited, subjects, elevated] = await Promise.all([
     getFleetAttention(orgId),
     getCooldownUntil().then((cooldown) => getAggregateUpdateStatus(orgId, appRows, cooldown)),
     isAppAdmin ? getVersionData().catch(() => null) : null,
@@ -138,11 +140,13 @@ export async function buildAttentionRows(
     getFleetActivity(appIds),
     loadExitReasons(orgId),
     loadStatusSubjects(orgId),
+    getElevatedApps(),
   ]);
 
   const rows = conditionRows(withParentNames(subjects));
   rows.push(...appStatusRows(subjects, Date.now(), APP_DOWN_WINDOW_HOURS * 3_600_000));
   rows.push(...oomRows(exited, Date.now(), OOM_WINDOW_HOURS * 3_600_000));
+  rows.push(...errorRateRows(appRows, elevated));
 
   if (fleet.unreachableDomains.length > 0) {
     rows.push({
