@@ -111,8 +111,8 @@ function volume(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function jobApp(id: string) {
-  return { app: { id, name: id, organization: { slug: "acme" } } };
+function jobApp(id: string, organizationId = "org-1") {
+  return { app: { id, name: id, organizationId, organization: { slug: "acme" } } };
 }
 
 function job(overrides: Record<string, unknown> = {}) {
@@ -300,5 +300,32 @@ describe("runBackup — app scoping", () => {
     await runBackup("job-1");
 
     expect(updated.some((u) => u.table === backupJobs)).toBe(false);
+  });
+});
+
+describe("runBackup — cross-org links", () => {
+  it("skips an app that does not belong to the job's org", async () => {
+    backupJobsFindFirst.mockResolvedValue(
+      job({ backupJobApps: [jobApp("app-a"), jobApp("app-b", "org-2")] }),
+    );
+    volumesPerApp([{ id: "v1", name: "data", mountPath: "/data", persistent: true }], []);
+
+    await runBackup("job-1");
+
+    const runs = dockerRuns();
+    expect(runs.some((r) => r.join(" ").includes("app-b"))).toBe(false);
+  });
+
+  it("keeps every app for an instance-level job, which legitimately spans orgs", async () => {
+    backupJobsFindFirst.mockResolvedValue(
+      job({ organizationId: null, backupJobApps: [jobApp("app-a", "org-1"), jobApp("app-b", "org-2")] }),
+    );
+    volumesPerApp(
+      [{ id: "v1", name: "data", mountPath: "/data", persistent: true }],
+      [{ id: "v2", name: "data", mountPath: "/data", persistent: true }],
+    );
+
+    const results = await runBackup("job-1");
+    expect(results).toHaveLength(2);
   });
 });

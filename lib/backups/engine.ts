@@ -362,10 +362,14 @@ export async function runBackup(
     throw new Error(`Backup job not found: ${jobId}`);
   }
 
-  const scope = options.appIds ? new Set(options.appIds) : null;
-  const scoped = scope
-    ? job.backupJobApps.filter((bja) => scope.has(bja.app.id))
+  // Defense in depth against a link written before the routes were scoped.
+  // An instance-level job has no org and legitimately spans them.
+  const owned = job.organizationId
+    ? job.backupJobApps.filter((bja) => bja.app.organizationId === job.organizationId)
     : job.backupJobApps;
+
+  const scope = options.appIds ? new Set(options.appIds) : null;
+  const scoped = scope ? owned.filter((bja) => scope.has(bja.app.id)) : owned;
   // A retired app's volumes are empty or gone, so a scheduled run against it
   // fails every night with nothing to fix. An explicit request still runs.
   const jobApps = options.appIds
