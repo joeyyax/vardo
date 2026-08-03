@@ -12,15 +12,22 @@ composeContent: |
   services:
     loki:
       image: grafana/loki:3.4
-      container_name: vardo-loki
       restart: unless-stopped
       command: -config.file=/etc/loki/local-config.yaml
       volumes:
         - loki-data:/loki
       mem_limit: 512m
+      # Vardo queries this at http://loki:3100 and Promtail pushes to it there.
+      # Without joining the shared network both silently get nothing.
+      networks:
+        - vardo-network
 
   volumes:
     loki-data: {}
+
+  networks:
+    vardo-network:
+      external: true
 
 volumes:
   - name: loki-data

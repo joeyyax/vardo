@@ -1,10 +1,16 @@
 // ---------------------------------------------------------------------------
 // Core services
 //
-// cAdvisor, Loki, Promtail and GlitchTip are instance-level singletons, not
-// per-organization apps: each scrapes or receives from every container on the
-// host and is reached at a fixed hostname. One row each, in the Vardo system
-// org, shared by every organization.
+// One row each, in the Vardo system org, shared by every organization. Two
+// different reasons land them here:
+//
+//   host-agent — cAdvisor and Promtail read the whole host (privileged, /rootfs,
+//     the Docker socket), so a second copy duplicates every sample and log line.
+//     Singleton is a property of what they do.
+//   app — Loki and GlitchTip are ordinary stacks that receive pushes. One
+//     instance is the current limit, not a property: both are addressed by a
+//     fixed DNS alias that a second instance would collide with. Per-org
+//     instances need app-name namespacing that does not exist yet.
 // ---------------------------------------------------------------------------
 
 import type { FeatureFlag } from "@/lib/config/features";
@@ -20,10 +26,17 @@ export const CORE_SERVICES_STATUS_KEY = "core_services_status";
  * provisioning the shared service and every org's access to it — with one
  * instance of each service there is nothing to separate.
  */
+/**
+ * Why a service is instance-wide: "host-agent" reads the whole host and a
+ * second copy would duplicate its data; "app" is an ordinary stack that is
+ * single only until aliases are namespaced per instance.
+ */
+export type CoreServiceKind = "host-agent" | "app";
+
 export type CoreServiceFeature = {
   flag: FeatureFlag;
   /** Template and app name of each service, in deploy order. */
-  services: { name: string; displayName: string }[];
+  services: { name: string; displayName: string; kind: CoreServiceKind }[];
   project: { name: string; displayName: string };
   /** Per-template app settings, e.g. Traefik labels for user-facing services. */
   appOverrides?: Partial<{ autoTraefikLabels: boolean }>;
@@ -32,20 +45,20 @@ export type CoreServiceFeature = {
 export const CORE_SERVICE_FEATURES: CoreServiceFeature[] = [
   {
     flag: "metrics",
-    services: [{ name: "cadvisor", displayName: "cAdvisor" }],
+    services: [{ name: "cadvisor", displayName: "cAdvisor", kind: "host-agent" }],
     project: { name: "metrics", displayName: "Metrics" },
   },
   {
     flag: "logging",
     services: [
-      { name: "loki", displayName: "Loki" },
-      { name: "promtail", displayName: "Promtail" },
+      { name: "loki", displayName: "Loki", kind: "app" },
+      { name: "promtail", displayName: "Promtail", kind: "host-agent" },
     ],
     project: { name: "logs", displayName: "Logs" },
   },
   {
     flag: "error-tracking",
-    services: [{ name: "glitchtip", displayName: "GlitchTip" }],
+    services: [{ name: "glitchtip", displayName: "GlitchTip", kind: "app" }],
     project: { name: "error-tracking", displayName: "Error Tracking" },
     appOverrides: { autoTraefikLabels: true },
   },
