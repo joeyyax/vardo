@@ -5,15 +5,13 @@ import { handleRouteError } from "@/lib/api/error-response";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { db } from "@/lib/db";
+import { restartReading } from "@/lib/db/app-restarts";
 import { apps } from "@/lib/db/schema";
-import { listAllContainers, inspectContainer } from "@/lib/docker/client";
-import { matchContainers, type ReconcilableApp } from "@/lib/docker/container-match";
-import type { RestartReading } from "@/lib/ui/stability";
 
 /**
- * The one stability figure that has to come from Docker rather than the
- * database. The timeline is durable and rendered from the page's own query;
- * this counter lives on the container and dies with it.
+ * The restart counter as the status reconciler last read it, with the point it
+ * counts from. The same stored figure the list rows carry — an inspect here
+ * would give the same app two answers, and null is not zero in either.
  */
 async function handler(
   _request: NextRequest,
@@ -26,47 +24,15 @@ async function handler(
 
     const app = await db.query.apps.findFirst({
       where: and(eq(apps.id, appId), eq(apps.organizationId, orgId)),
-      columns: {
-        id: true,
-        name: true,
-        status: true,
-        parentAppId: true,
-        composeService: true,
-        containerName: true,
-        importedContainerId: true,
-      },
+      columns: { containerRestartCount: true, containerRestartSince: true },
     });
     if (!app) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-    const res = NextResponse.json({ restarts: await readRestarts(app) });
+    const res = NextResponse.json({ restarts: restartReading(app) });
     res.headers.set("Cache-Control", "private, max-age=15");
     return res;
   } catch (error) {
     return handleRouteError(error, "Error reading container restarts");
-  }
-}
-
-/**
- * Docker's restart counter across the app's containers, with the oldest of
- * their creation times — the point the count last reset to zero. Null when
- * Docker cannot be read, so the caller shows nothing rather than a false zero.
- */
-async function readRestarts(app: ReconcilableApp): Promise<RestartReading | null> {
-  try {
-    const matched = matchContainers(app, await listAllContainers());
-    if (matched.length === 0) return { count: 0, since: null };
-
-    let count = 0;
-    let oldest: number | null = null;
-    for (const c of matched) {
-      const info = await inspectContainer(c.id);
-      count += info.restartCount;
-      const created = Date.parse(info.createdAt);
-      if (!isNaN(created) && (oldest === null || created < oldest)) oldest = created;
-    }
-    return { count, since: oldest === null ? null : new Date(oldest).toISOString() };
-  } catch {
-    return null;
   }
 }
 

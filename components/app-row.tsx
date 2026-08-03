@@ -10,6 +10,7 @@ import {
   compactUptime,
   primaryDomain,
   railClass,
+  restartNote,
   rowNote,
   rowSeverity,
   sourceRef,
@@ -32,6 +33,8 @@ export type AppRowApp = {
   conditions?: AppCondition[] | null;
   containerStartedAt?: Date | string | null;
   needsRedeploy?: boolean | null;
+  /** Restarts the reconciler last counted, null when there was nothing to read. */
+  restartCount?: number | null;
   priority?: "critical" | "standard" | "disposable" | null;
   gpuEnabled?: boolean | null;
   imageName?: string | null;
@@ -113,7 +116,13 @@ export function AppRow({
   const word = statusWord(app.status, sharedStatus);
   const running = app.status === "active";
 
-  const shownNote = rowNote(app.conditions, app.needsRedeploy, note);
+  // Restarts sit under both live signals and above the caller's own note: the
+  // weakest thing a row can say, and never in place of what is wrong now.
+  const shownNote = rowNote(
+    app.conditions,
+    app.needsRedeploy,
+    restartNote(app.restartCount) ?? note,
+  );
   const source = sourceRef(app);
   const domain = primaryDomain(app.domains);
   const tags = tagLabels(app.tags ?? []);

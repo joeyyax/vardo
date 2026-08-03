@@ -59,6 +59,7 @@ type AppWithRelations = {
   containerStartedAt: Date | null;
   containerMemoryLimit: number | null;
   needsRedeploy: boolean | null;
+  restartCount: number | null;
   conditions: AppCondition[] | null;
   createdAt: Date;
   updatedAt: Date;

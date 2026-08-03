@@ -89,6 +89,9 @@ export const apps = pgTable(
     // reconciler. Null means there was no counter to read — no container, or one
     // Docker would not answer for. Zero means it was read and is zero.
     containerRestartCount: integer("container_restart_count"),
+    // Creation time of the oldest container the count covers — the point Docker
+    // last reset it from. Null when there was no container to read.
+    containerRestartSince: timestamp("container_restart_since"),
     // Last time the reconciler compared this app against Docker.
     statusCheckedAt: timestamp("status_checked_at"),
     // Last tick the reconciler observed this app running. Never cleared, so it

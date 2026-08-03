@@ -145,21 +145,33 @@ export function exitReasonsEqual(a: ExitReason | null, b: ExitReason | null | un
   return a.kind === b.kind && a.exitCode === b.exitCode && a.containerName === b.containerName;
 }
 
+/** One container's restart counter and when it was created. */
+export type ContainerRestart = { count: number | null; createdAt: Date | null };
+
+/** The figure a row carries and the point it counts from. */
+export type StoredRestarts = { count: number | null; since: Date | null };
+
 /**
  * The restart figure a row should carry, from one reading per container and the
  * figure already stored. Null when the app has no containers: there is no
  * counter to read, and null must never be read back as zero restarts.
  *
  * A container that did not answer keeps the stored figure rather than reporting
- * a total that is missing one of its parts.
+ * a total that is missing one of its parts. `since` is the oldest creation time
+ * the total covers — Docker resets the counter from there.
  */
-export function restartCountFor(
-  counts: (number | null)[],
-  stored: number | null,
-): number | null {
-  if (counts.length === 0) return null;
-  if (counts.some((c) => c === null)) return stored;
-  return counts.reduce<number>((total, c) => total + (c ?? 0), 0);
+export function restartsFor(
+  reads: ContainerRestart[],
+  stored: StoredRestarts,
+): StoredRestarts {
+  if (reads.length === 0) return { count: null, since: null };
+  if (reads.some((r) => r.count === null)) return stored;
+
+  const created = reads.flatMap((r) => (r.createdAt ? [r.createdAt.getTime()] : []));
+  return {
+    count: reads.reduce((total, r) => total + (r.count ?? 0), 0),
+    since: created.length === 0 ? null : new Date(Math.min(...created)),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -184,17 +196,22 @@ function inspectCache(): InspectCache {
   };
 }
 
-/** Docker's restart counter per container, null for one that did not answer. */
-function readRestartCounts(
+/** Docker's counter and creation time per container, null for one that did not answer. */
+function readRestarts(
   matched: ContainerInfo[],
   inspect: InspectCache,
-): Promise<(number | null)[]> {
+): Promise<ContainerRestart[]> {
   return Promise.all(
     matched.map(async (c) => {
       try {
-        return (await inspect(c.id)).restartCount;
+        const info = await inspect(c.id);
+        const created = new Date(info.createdAt);
+        return {
+          count: info.restartCount,
+          createdAt: isNaN(created.getTime()) ? null : created,
+        };
       } catch {
-        return null;
+        return { count: null, createdAt: null };
       }
     }),
   );
@@ -288,6 +305,7 @@ const RECONCILE_COLUMNS = {
   lastRunningAt: true,
   containerMemoryLimit: true,
   containerRestartCount: true,
+  containerRestartSince: true,
   memoryLimit: true,
   needsRedeploy: true,
   exitReason: true,
@@ -316,10 +334,10 @@ async function computeAppUpdate(
 
   // Counted from the containers this row matches: its own service for a
   // compose child, every service under it for the parent.
-  const restartCount = restartCountFor(
-    await readRestartCounts(matched, inspect),
-    app.containerRestartCount,
-  );
+  const restarts = restartsFor(await readRestarts(matched, inspect), {
+    count: app.containerRestartCount,
+    since: app.containerRestartSince,
+  });
 
   let startedAt: Date | null = null;
   let memoryLimit: number | null = null;
@@ -366,7 +384,8 @@ async function computeAppUpdate(
     observed === app.status &&
     startedAt?.getTime() === app.containerStartedAt?.getTime() &&
     memoryLimit === app.containerMemoryLimit &&
-    restartCount === app.containerRestartCount &&
+    restarts.count === app.containerRestartCount &&
+    restarts.since?.getTime() === app.containerRestartSince?.getTime() &&
     needsRedeploy === !!app.needsRedeploy &&
     exitReasonsEqual(exitReason, app.exitReason);
 
@@ -380,7 +399,7 @@ async function computeAppUpdate(
     observed,
     startedAt,
     memoryLimit,
-    restartCount,
+    restarts,
     needsRedeploy,
     exitReason,
     running: observed === "active",
@@ -408,7 +427,8 @@ async function applyAppUpdate(u: AppUpdate, now: Date): Promise<void> {
       ...statusChange(u.observed, now),
       containerStartedAt: u.startedAt,
       containerMemoryLimit: u.memoryLimit,
-      containerRestartCount: u.restartCount,
+      containerRestartCount: u.restarts.count,
+      containerRestartSince: u.restarts.since,
       needsRedeploy: u.needsRedeploy,
       exitReason: u.exitReason,
       // Stamped only while running and never cleared, so it survives the

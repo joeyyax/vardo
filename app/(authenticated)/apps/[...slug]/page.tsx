@@ -1,5 +1,6 @@
 import { redirect, notFound } from "next/navigation";
 import { db } from "@/lib/db";
+import { restartCountsByApp } from "@/lib/db/app-restarts";
 import { apps, projects, tags, orgEnvVars, environments } from "@/lib/db/schema";
 import { getCurrentOrg } from "@/lib/auth/session";
 import { eq, and, asc, desc, or, type AnyColumn } from "drizzle-orm";
@@ -263,9 +264,11 @@ export default async function AppDetailPage({ params }: PageProps) {
 
   // Which services a deploy leaves running, for the Services tab to mark.
   const shared = new Set(app.composeContent ? sharedServiceNames(app.composeContent) : []);
+  const restarts = await restartCountsByApp((app.childApps ?? []).map((c) => c.id));
   const childApps = app.childApps?.map((child) => ({
     ...child,
     isShared: shared.has(child.composeService ?? child.name),
+    restartCount: restarts.get(child.id) ?? null,
   }));
 
   // Fell back to the default — put that in the URL.
