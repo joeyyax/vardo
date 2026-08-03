@@ -130,6 +130,26 @@ function isOwnEnvironment(envName: string): boolean {
   return !envName.startsWith("pr-");
 }
 
+/**
+ * The `-<env>-<slot>` tail every generated compose project name carries.
+ * `pr-<n>` is spelled out because it is the one env name with a hyphen.
+ */
+const PROJECT_SUFFIX = /-(pr-\d+|[^-]+)-(blue|green|shared)$/;
+
+/**
+ * App a compose project belongs to: paperless-staging-green → paperless.
+ * A name with no suffix comes back unchanged — an adopted stack, or a shared
+ * project taking its name from the compose file's top-level `name:`.
+ */
+export function composeProjectApp(project: string): string {
+  return project.replace(PROJECT_SUFFIX, "");
+}
+
+/** Environment a compose project belongs to: paperless-pr-7-shared → pr-7. Null when the name carries none. */
+export function composeProjectEnvironment(project: string): string | null {
+  return PROJECT_SUFFIX.exec(project)?.[1] ?? null;
+}
+
 /** Whether this app needs the two-project deploy at all. */
 export function hasSharedServices(compose: ComposeFile): boolean {
   return Object.values(compose.services ?? {}).some(isSharedService);

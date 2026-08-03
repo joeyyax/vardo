@@ -16,6 +16,7 @@ import { apps } from "@/lib/db/schema";
 import { listAllContainers, inspectContainer, type ContainerInfo } from "./client";
 import { logger } from "@/lib/logger";
 import { memoryLimitDrifted } from "./limit-drift";
+import { composeProjectApp } from "./slot-partition";
 
 const log = logger.child("status-reconcile");
 
@@ -44,13 +45,10 @@ function label(c: ContainerInfo, key: string): string | undefined {
   return c.labels[`vardo.${key}`] ?? c.labels[`host.${key}`];
 }
 
-/**
- * Compose project minus the `-<env>-<slot>` suffix: paperless-staging-green → paperless.
- * `pr-<n>` is spelled out because it is the one generated env name with a hyphen.
- */
-function composeProjectApp(c: ContainerInfo): string | undefined {
+/** App the container's compose project belongs to: paperless-staging-green → paperless. */
+function projectApp(c: ContainerInfo): string | undefined {
   const project = c.labels["com.docker.compose.project"];
-  return project?.replace(/-(pr-\d+|[^-]+)-(blue|green|shared)$/, "");
+  return project === undefined ? undefined : composeProjectApp(project);
 }
 
 /**
@@ -88,8 +86,8 @@ export function matchContainers(app: ReconcilableApp, containers: ContainerInfo[
     const scoped = byService.filter(
       (c) =>
         label(c, "project") === app.name ||
-        composeProjectApp(c) === app.name ||
-        `${composeProjectApp(c)}-${app.composeService}` === app.name,
+        projectApp(c) === app.name ||
+        `${projectApp(c)}-${app.composeService}` === app.name,
     );
     if (scoped.length > 0) return scoped;
   }
@@ -103,7 +101,7 @@ export function matchContainers(app: ReconcilableApp, containers: ContainerInfo[
     (c) =>
       label(c, "project") === app.name ||
       c.labels["com.docker.compose.project"] === app.name ||
-      composeProjectApp(c) === app.name,
+      projectApp(c) === app.name,
   );
   return byProject;
 }
