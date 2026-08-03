@@ -34,7 +34,6 @@ composeContent: |
 
   configs:
     loki-config:
-      # Everything below schema_config matches the image's own local-config.yaml.
       # Changing schema_config on a running instance orphans the existing index.
       content: |
         # One tenant per organization. Every push and every query carries
@@ -70,6 +69,21 @@ composeContent: |
               index:
                 prefix: index_
                 period: 24h
+
+        # 31 days, covering the log viewer's widest lookback of 30 days.
+        # Shortening this deletes entries the viewer still asks for.
+        limits_config:
+          retention_period: 744h
+          reject_old_samples: true
+          reject_old_samples_max_age: 744h
+
+        # retention_period alone deletes nothing — the compactor applies it.
+        compactor:
+          working_directory: /loki/compactor
+          compaction_interval: 10m
+          retention_enabled: true
+          retention_delete_delay: 2h
+          delete_request_store: filesystem
 
         ruler:
           alertmanager_url: http://localhost:9093

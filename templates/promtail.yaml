@@ -20,12 +20,18 @@ composeContent: |
       volumes:
         - /var/run/docker.sock:/var/run/docker.sock:ro
         - /var/lib/docker/containers:/var/lib/docker/containers:ro
+        # Holds how far Promtail read each container. In the writable layer it
+        # dies with the container and every redeploy re-ships the whole history.
+        - promtail-positions:/var/lib/promtail
       # Scales with the number of containers discovered on the host.
       mem_limit: 256m
       # Promtail pushes to http://loki:3100 and Loki lives in its own compose
       # project. Without the shared network the push has nowhere to land.
       networks:
         - vardo-network
+
+  volumes:
+    promtail-positions: {}
 
   networks:
     vardo-network:
@@ -37,7 +43,7 @@ composeContent: |
         server:
           http_listen_port: 9080
         positions:
-          filename: /tmp/positions.yaml
+          filename: /var/lib/promtail/positions.yaml
         clients:
           - url: http://loki:3100/loki/api/v1/push
             # Tenant for a container with no owning organization, which no
@@ -55,9 +61,16 @@ composeContent: |
               - source_labels: ["__meta_docker_container_label_vardo_managed"]
                 regex: "(.+)"
                 target_label: __tmp_managed
+              # No keep or drop here — the docker target ships the entry either
+              # way and a dropped target arrives with every label stripped.
+              # Unmanaged containers are instance infrastructure; with no
+              # organization they stay in the unassigned tenant.
+              - target_label: scope
+                replacement: instance
               - source_labels: ["__tmp_managed"]
                 regex: "true"
-                action: keep
+                target_label: scope
+                replacement: app
               - source_labels: ["__meta_docker_container_label_host_organization"]
                 target_label: organization
               - source_labels: ["__meta_docker_container_label_vardo_organization"]
