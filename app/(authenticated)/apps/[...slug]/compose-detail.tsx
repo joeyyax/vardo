@@ -16,6 +16,7 @@ import {
   Square,
   EllipsisVertical,
   AlertTriangle,
+  Check,
   Play,
   ScrollText,
   Undo2,
@@ -69,6 +70,11 @@ import type { BusEvent } from "@/lib/bus/events";
 import type { App, ChildApp, Tag } from "./types";
 import type { FeatureFlags } from "@/lib/config/features";
 import { ComposeReview } from "@/components/compose-review";
+import { SystemBadge } from "@/components/system-badge";
+import { statusDotColor } from "@/lib/ui/status-colors";
+import { crashSummary, extractDeployError } from "@/lib/ui/deploy-error";
+import { currentStageLabel } from "@/lib/ui/deploy-stage";
+import { rollupHealth } from "@/lib/ui/health-rollup";
 import { tabPanelSurface } from "@/lib/ui/tab-panel";
 import { cn } from "@/lib/utils";
 
@@ -1034,12 +1040,86 @@ export function ComposeDetail({
               {app.project.displayName}
             </Link>
             <span className="text-muted-foreground/40 text-xl">›</span>
-            <h1 className="type-h1">{app.displayName}</h1>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="gap-1.5">
+                  <span className={`size-2 rounded-full ${statusDotColor(app.status)}`} />
+                  {app.displayName}
+                  <ChevronDown className="size-3.5 opacity-60" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start">
+                <DropdownMenuItem disabled>
+                  <span className={`mr-2 size-2 rounded-full ${statusDotColor(app.status)}`} />
+                  {app.displayName}
+                  <Check className="ml-auto size-3.5" />
+                </DropdownMenuItem>
+                {siblings.map((sibling) => (
+                  <DropdownMenuItem key={sibling.name} asChild>
+                    <Link href={`/apps/${sibling.name}`} className="flex items-center gap-2">
+                      <span className={`mr-2 size-2 rounded-full ${statusDotColor(sibling.status)}`} />
+                      {sibling.displayName}
+                    </Link>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </>
         ) : (
           <h1 className="type-h1">{app.displayName}</h1>
         )}
+        {app.isSystemManaged && <SystemBadge />}
       </PageToolbar>
+
+      {/* Failure detail — the stack's own deploy log when it failed, otherwise
+          the services that are actually down, each linked to its page. */}
+      {app.status === "error" && (() => {
+        const failedDeploy = app.deployments.find((d) => d.status === "failed");
+        const crash = crashSummary(services);
+        const message =
+          extractDeployError(failedDeploy?.log) ||
+          crash?.message ||
+          "Stack crashed — check the service logs for details";
+        return (
+          <div className="flex items-start gap-2 rounded-lg bg-status-error-muted px-4 py-2.5 text-sm text-status-error">
+            <X className="size-4 shrink-0 mt-0.5" />
+            <span
+              className="flex-1 line-clamp-3 break-words font-mono text-xs leading-relaxed"
+              title={message}
+            >
+              {message}
+            </span>
+            <div className="flex items-center gap-2 shrink-0 mt-0.5">
+              {crash?.crashed.slice(0, 2).map((service) => (
+                <Link
+                  key={service.id}
+                  href={`/apps/${service.name}/logs`}
+                  className="text-xs underline underline-offset-2 opacity-80 hover:opacity-100"
+                >
+                  {service.displayName}
+                </Link>
+              ))}
+              {failedDeploy && (
+                <button
+                  type="button"
+                  onClick={() => { setActiveTabAndUrl("deployments"); deploy.setViewingLogId(failedDeploy.id); }}
+                  className="text-xs underline underline-offset-2 opacity-80 hover:opacity-100"
+                >
+                  View log
+                </button>
+              )}
+              <button
+                type="button"
+                disabled={deploy.deploying}
+                onClick={handleDeployClick}
+                className="text-xs underline underline-offset-2 opacity-80 hover:opacity-100"
+              >
+                Retry
+              </button>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Same shell as a single-service app: identity header + section rail.
           A stack is an app page identified as a stack, not a different page. */}
@@ -1051,11 +1131,8 @@ export function ComposeDetail({
         allTags={allTags}
         siblings={siblings}
         onNavigate={setActiveTabAndUrl}
-        stack={{
-          total: services.length,
-          active: services.filter((s) => s.status === "active").length,
-          errors: services.filter((s) => s.status === "error").length,
-        }}
+        stack={rollupHealth(services)}
+        deployStage={currentStageLabel(deploy.deployStages)}
       />
 
 
