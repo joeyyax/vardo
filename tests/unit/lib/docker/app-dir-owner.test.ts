@@ -257,12 +257,13 @@ describe("removeAppDir", () => {
     });
   });
 
+  // Reported, not thrown: the app is still deleted, only its directory stays.
   it("refuses a directory owned by another app and leaves it in place", async () => {
     await markOwner("api", "app-1");
 
-    await expect(removeAppDir({ appId: "app-2", appName: "api" })).rejects.toThrow(
-      AppDirOwnershipError,
-    );
+    const result = await removeAppDir({ appId: "app-2", appName: "api" });
+    expect(result.removed).toBe(false);
+    expect(result.reason).toMatch(/Refusing to delete/);
     expect(await exists(appBaseDir("api"))).toBe(true);
     expect(await hasMarker("api")).toBe(true);
   });
@@ -271,9 +272,8 @@ describe("removeAppDir", () => {
     await makeAppDir("api");
     claimedBy("app-1", "app-2");
 
-    await expect(removeAppDir({ appId: "app-1", appName: "api" })).rejects.toThrow(
-      AppDirOwnershipError,
-    );
+    const result = await removeAppDir({ appId: "app-1", appName: "api" });
+    expect(result.removed).toBe(false);
     expect(await exists(appBaseDir("api"))).toBe(true);
   });
 

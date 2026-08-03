@@ -158,7 +158,13 @@ export async function removeAppDir(opts: {
   const { appId, appName } = opts;
   if (isSelfApp(appName)) return { removed: false, reason: "Vardo's own directory" };
 
-  await assertAppDirOwnership({ appId, appName, operation: "delete" });
+  // A directory this app cannot prove it owns is left alone, but the app is
+  // still deleted — an ambiguous name must not make the app undeletable.
+  try {
+    await assertAppDirOwnership({ appId, appName, operation: "delete" });
+  } catch (err) {
+    return { removed: false, reason: errText(err) };
+  }
 
   let removed = true;
   let reason: string | undefined;
