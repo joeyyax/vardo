@@ -13,6 +13,7 @@ import type {
 import {
   ALLOWED_RUNTIMES,
   normalizeNamedNetworkModes,
+  parseComposeYaml,
 } from "./compose-validate";
 import { SHARED_MARKER } from "./slot-partition";
 
@@ -44,7 +45,7 @@ export function composeToYaml(compose: ComposeFile): string {
  * Parse a YAML string into a ComposeFile.
  */
 export function parseCompose(yamlString: string): ComposeFile {
-  const parsed = YAML.parse(yamlString);
+  const parsed = parseComposeYaml(yamlString);
 
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
     throw new Error("Invalid compose file: root must be a YAML mapping");

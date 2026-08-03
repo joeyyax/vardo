@@ -18,6 +18,24 @@ export const ALLOWED_NETWORK_MODES = ["host", "bridge", "none", "service", "cont
 export const ALLOWED_RUNTIMES = ["runc", "nvidia", "sysbox"];
 
 /**
+ * Parse compose YAML with merge keys resolved, the way Docker Compose reads it.
+ *
+ * Under YAML 1.2 `<<` is an ordinary key, so `<<: *anchor` leaves the anchor's
+ * keys nested under `"<<"` where nothing downstream looks. Docker's Go parser
+ * merges them, so an unresolved `<<` hides settings Docker is applying — a
+ * service reading as shared to Docker and rotating to Vardo.
+ *
+ * Throws on unresolvable merge sources, which Docker rejects too.
+ */
+export function parseComposeYaml(yamlText: string): unknown {
+  // Merge resolution skips the alias-expansion guard, so a few hundred bytes of
+  // nested `<<` can pin the event loop. The merge-free parse still counts the
+  // aliases and throws first.
+  YAML.parse(yamlText);
+  return YAML.parse(yamlText, { merge: true });
+}
+
+/**
  * Whether network_mode names a namespace Docker understands.
  *
  * Anything else is a network *name*. Docker accepts it without complaint and
@@ -37,7 +55,7 @@ export function findNamedNetworkModes(
 ): { service: string; networkMode: string }[] {
   let root: unknown;
   try {
-    root = YAML.parse(yamlText);
+    root = parseComposeYaml(yamlText);
   } catch {
     return [];
   }
@@ -232,7 +250,7 @@ function sharedServiceErrors(compose: ComposeFile): string[] {
 export function sharedServiceNames(yamlText: string): string[] {
   let root: unknown;
   try {
-    root = YAML.parse(yamlText);
+    root = parseComposeYaml(yamlText);
   } catch {
     return [];
   }
@@ -278,7 +296,7 @@ export function sharedMarkerIsHazardous(value: unknown): boolean {
 export function findMistypedSharedMarkers(yamlText: string): MistypedSharedMarker[] {
   let root: unknown;
   try {
-    root = YAML.parse(yamlText);
+    root = parseComposeYaml(yamlText);
   } catch {
     return [];
   }
