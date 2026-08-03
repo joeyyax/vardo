@@ -9,7 +9,7 @@ import { getCooldownUntil } from "@/lib/docker/image-updates/check";
 import { getAggregateUpdateStatus } from "@/lib/docker/image-updates/status";
 import { conditionRows, type AttentionRow } from "@/lib/ui/attention";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
-import { isInstanceInfraApp } from "@/lib/infra/instance-apps";
+import { isVardoManagedApp } from "@/lib/infra/instance-apps";
 import { getVersionData } from "@/lib/version";
 import { activityRows, getFleetActivity } from "./activity";
 import { getFleetAttention } from "./fleet";
@@ -71,13 +71,14 @@ export async function buildAttentionRows(
       imageName: apps.imageName,
       composeContent: apps.composeContent,
       composeService: apps.composeService,
+      isSystemManaged: apps.isSystemManaged,
     })
     .from(apps)
     .where(and(eq(apps.organizationId, orgId), isNull(apps.parentAppId)));
 
   // Vardo's own stack and the core services report at instance level, to every
   // session. Leaving them here too would give the Vardo org two rows per event.
-  const appRows = orgApps.filter((a) => !isInstanceInfraApp(a.name));
+  const appRows = orgApps.filter((a) => !isVardoManagedApp(a));
 
   const imageUpdatesEnabled = await isFeatureEnabledAsync("image-updates");
 
