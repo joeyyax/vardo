@@ -17,7 +17,11 @@ import {
 } from "@/components/ui/select";
 import { BranchSelect } from "@/components/branch-select";
 import { systemManagedRefusal } from "@/lib/api/system-managed";
-import { appSettingsFields } from "@/lib/ui/app-settings-fields";
+import {
+  appSettingsPageFields,
+  APP_SETTINGS_REDEPLOY_KEYS,
+  type AppSettingsPage,
+} from "@/lib/ui/app-settings-fields";
 
 import type { App } from "./types";
 
@@ -25,8 +29,8 @@ import type { App } from "./types";
 const REDEPLOY_NOTE = "Requires a redeploy to take effect.";
 
 /**
- * Every app setting that is not a resource of its own, in the section rail. The
- * only writer of these fields — the header's Edit button navigates here.
+ * The app's settings fields, one page of them at a time. The only writer of
+ * these fields — a page is a subset of the same form, never a copy of it.
  */
 export function AppSettingsPanel({
   app,
@@ -35,6 +39,7 @@ export function AppSettingsPanel({
   allParentApps,
   handleDeploy,
   isComposeParent = false,
+  page = "settings",
 }: {
   app: App;
   orgId: string;
@@ -43,6 +48,8 @@ export function AppSettingsPanel({
   handleDeploy: () => void;
   /** Renders the stack's settings: no per-container fields, stack-wide wording. */
   isComposeParent?: boolean;
+  /** Which section rail entry this instance is rendering. */
+  page?: AppSettingsPage;
 }) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
@@ -87,7 +94,7 @@ export function AppSettingsPanel({
   const [autoRollback, setAutoRollback] = useState(app.autoRollback ?? false);
   const [rollbackGracePeriod, setRollbackGracePeriod] = useState(app.rollbackGracePeriod?.toString() || "60");
 
-  const fields = appSettingsFields({
+  const fields = appSettingsPageFields(page, {
     isComposeParent,
     isChildService,
     deployType: editDeployType,
@@ -101,18 +108,23 @@ export function AppSettingsPanel({
     setSaving(true);
     try {
       // Only fields the panel showed are written — a hidden one would send back
-      // whatever it was seeded with.
-      const body: Record<string, unknown> = {
-        displayName: displayName.trim(),
-        description: description.trim() || null,
-        restartPolicy,
-        cpuLimit: cpuLimit ? parseFloat(cpuLimit) : null,
-        memoryLimit: memoryLimit ? parseInt(memoryLimit, 10) : null,
-        priority: priority === "inherit" ? null : priority,
-        gpuEnabled,
-        healthCheckTimeout: healthCheckTimeout ? parseInt(healthCheckTimeout, 10) : null,
-        projectId: editParentId || null,
-      };
+      // whatever it was seeded with, and each page hides the other pages'.
+      const body: Record<string, unknown> = {};
+      if (fields.identity) {
+        body.displayName = displayName.trim();
+        body.description = description.trim() || null;
+      }
+      if (fields.restartPolicy) body.restartPolicy = restartPolicy;
+      if (fields.resourceLimits) {
+        body.cpuLimit = cpuLimit ? parseFloat(cpuLimit) : null;
+        body.memoryLimit = memoryLimit ? parseInt(memoryLimit, 10) : null;
+      }
+      if (fields.priority) body.priority = priority === "inherit" ? null : priority;
+      if (fields.gpu) body.gpuEnabled = gpuEnabled;
+      if (fields.healthCheckTimeout) {
+        body.healthCheckTimeout = healthCheckTimeout ? parseInt(healthCheckTimeout, 10) : null;
+      }
+      if (fields.project) body.projectId = editParentId || null;
       if (fields.containerPort) {
         body.containerPort = containerPort ? parseInt(containerPort, 10) : null;
       }
@@ -142,22 +154,23 @@ export function AppSettingsPanel({
         body.rollbackGracePeriod = rollbackGracePeriod ? parseInt(rollbackGracePeriod, 10) : 60;
       }
 
-      // Detect whether any redeploy-required fields changed. Resource limits,
-      // GPU and priority reach the container through the compose overlay, so
-      // they only apply when it is recreated.
-      const changed = (key: string, stored: unknown) => key in body && body[key] !== stored;
-      const redeployFieldChanged = (
-        changed("deployType", app.deployType) ||
-        changed("gitBranch", app.gitBranch || "") ||
-        changed("imageName", app.imageName || "") ||
-        changed("containerPort", app.containerPort) ||
-        changed("restartPolicy", app.restartPolicy || "unless-stopped") ||
-        changed("rootDirectory", app.rootDirectory || null) ||
-        changed("cpuLimit", app.cpuLimit) ||
-        changed("memoryLimit", app.memoryLimit) ||
-        changed("priority", app.priority) ||
-        changed("gpuEnabled", app.gpuEnabled ?? false) ||
-        changed("backendProtocol", app.backendProtocol ?? null)
+      // Resource limits, GPU and priority reach the container through the
+      // compose overlay, so they only apply when it is recreated.
+      const stored: Record<string, unknown> = {
+        deployType: app.deployType,
+        gitBranch: app.gitBranch || "",
+        imageName: app.imageName || "",
+        rootDirectory: app.rootDirectory || null,
+        containerPort: app.containerPort,
+        backendProtocol: app.backendProtocol ?? null,
+        restartPolicy: app.restartPolicy || "unless-stopped",
+        cpuLimit: app.cpuLimit,
+        memoryLimit: app.memoryLimit,
+        priority: app.priority,
+        gpuEnabled: app.gpuEnabled ?? false,
+      };
+      const redeployFieldChanged = APP_SETTINGS_REDEPLOY_KEYS.some(
+        (key) => key in body && body[key] !== stored[key],
       );
 
       const res = await fetch(
@@ -204,26 +217,38 @@ export function AppSettingsPanel({
         </p>
       )}
 
+      {/* Resources is nearly all redeploy-required, so the page says it once
+          instead of repeating it under five fields. */}
+      {page === "resources" && (
+        <p className="text-sm text-muted-foreground">
+          Restart policy, limits, priority and GPU are written into the compose
+          overlay — save here, then redeploy. The alert threshold and health check
+          timeout apply on save.
+        </p>
+      )}
+
       {/* Name + Description */}
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="grid gap-2">
-          <Label htmlFor="edit-display-name">Display Name</Label>
-          <Input
-            id="edit-display-name"
-            value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
-          />
+      {fields.identity && (
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-2">
+            <Label htmlFor="edit-display-name">Display Name</Label>
+            <Input
+              id="edit-display-name"
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="edit-description">Description</Label>
+            <Input
+              id="edit-description"
+              placeholder="Optional"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+            />
+          </div>
         </div>
-        <div className="grid gap-2">
-          <Label htmlFor="edit-description">Description</Label>
-          <Input
-            id="edit-description"
-            placeholder="Optional"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-          />
-        </div>
-      </div>
+      )}
 
       {/* A child service hides what its parent stack controls (#745); a compose
           parent hides what only a single container has (#87). */}
@@ -381,190 +406,200 @@ export function AppSettingsPanel({
       )}
 
       {/* Restart policy */}
-      <div className="grid gap-2 sm:w-1/2">
-        <Label>Restart Policy</Label>
-        <Select value={restartPolicy} onValueChange={setRestartPolicy}>
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="unless-stopped">Unless Stopped</SelectItem>
-            <SelectItem value="always">Always</SelectItem>
-            <SelectItem value="on-failure">On Failure</SelectItem>
-            <SelectItem value="no">Never</SelectItem>
-          </SelectContent>
-        </Select>
-        <p className="text-xs text-muted-foreground">{REDEPLOY_NOTE}</p>
-      </div>
+      {fields.restartPolicy && (
+        <div className="grid gap-2 sm:w-1/2">
+          <Label>Restart Policy</Label>
+          <Select value={restartPolicy} onValueChange={setRestartPolicy}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="unless-stopped">Unless Stopped</SelectItem>
+              <SelectItem value="always">Always</SelectItem>
+              <SelectItem value="on-failure">On Failure</SelectItem>
+              <SelectItem value="no">Never</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      )}
 
       {/* Resource Limits */}
-      <div className="grid gap-2">
-        <div className={fields.diskWriteAlert ? "grid gap-4 sm:grid-cols-3" : "grid gap-4 sm:grid-cols-2"}>
-          <div className="grid gap-2">
-            <Label htmlFor="edit-cpu-limit">CPU Limit (cores)</Label>
-            <Input id="edit-cpu-limit" type="number" step="0.1" min="0.1" placeholder="No limit" value={cpuLimit} onChange={(e) => setCpuLimit(e.target.value)} />
-            <p className="text-xs text-muted-foreground">{cpuLimit ? cpuLimit + " CPU core(s)" : "No limit"}</p>
-          </div>
-          <div className="grid gap-2">
-            <Label htmlFor="edit-memory-limit">Memory Limit (MB)</Label>
-            <Input id="edit-memory-limit" type="number" step="64" min="64" placeholder="No limit" value={memoryLimit} onChange={(e) => setMemoryLimit(e.target.value)} />
-            <p className="text-xs text-muted-foreground">{memoryLimit ? memoryLimit + " MB" : "No limit"}</p>
-          </div>
-          {fields.diskWriteAlert && (
+      {fields.resourceLimits && (
+        <div className="grid gap-2">
+          <div className={fields.diskWriteAlert ? "grid gap-4 sm:grid-cols-3" : "grid gap-4 sm:grid-cols-2"}>
             <div className="grid gap-2">
-              <Label htmlFor="edit-disk-write-threshold">Disk Write Alert (GB/hr)</Label>
-              <Input id="edit-disk-write-threshold" type="number" step="0.5" min="0.1" placeholder="Default: 1 GB" value={diskWriteAlertThreshold} onChange={(e) => setDiskWriteAlertThreshold(e.target.value)} />
-              <p className="text-xs text-muted-foreground">{diskWriteAlertThreshold ? diskWriteAlertThreshold + " GB/hr" : "Default: 1 GB/hr"}</p>
+              <Label htmlFor="edit-cpu-limit">CPU Limit (cores)</Label>
+              <Input id="edit-cpu-limit" type="number" step="0.1" min="0.1" placeholder="No limit" value={cpuLimit} onChange={(e) => setCpuLimit(e.target.value)} />
+              <p className="text-xs text-muted-foreground">{cpuLimit ? cpuLimit + " CPU core(s)" : "No limit"}</p>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="edit-memory-limit">Memory Limit (MB)</Label>
+              <Input id="edit-memory-limit" type="number" step="64" min="64" placeholder="No limit" value={memoryLimit} onChange={(e) => setMemoryLimit(e.target.value)} />
+              <p className="text-xs text-muted-foreground">{memoryLimit ? memoryLimit + " MB" : "No limit"}</p>
+            </div>
+            {fields.diskWriteAlert && (
+              <div className="grid gap-2">
+                <Label htmlFor="edit-disk-write-threshold">Disk Write Alert (GB/hr)</Label>
+                <Input id="edit-disk-write-threshold" type="number" step="0.5" min="0.1" placeholder="Default: 1 GB" value={diskWriteAlertThreshold} onChange={(e) => setDiskWriteAlertThreshold(e.target.value)} />
+                <p className="text-xs text-muted-foreground">{diskWriteAlertThreshold ? diskWriteAlertThreshold + " GB/hr" : "Default: 1 GB/hr"}</p>
+              </div>
+            )}
+          </div>
+          {isComposeParent && (
+            <p className="text-xs text-muted-foreground">
+              Each service gets these limits, unless it sets its own in Services.
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Priority (QoS tier) */}
+      {fields.priority && (
+        <div className="grid gap-2 sm:w-1/2">
+          <Label htmlFor="edit-priority">Priority</Label>
+          <Select value={priority} onValueChange={(v) => setPriority(v as "critical" | "standard" | "disposable" | "inherit")}>
+            <SelectTrigger id="edit-priority">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {fields.priorityInherit && <SelectItem value="inherit">Inherit (parent)</SelectItem>}
+              <SelectItem value="critical">Critical</SelectItem>
+              <SelectItem value="standard">Standard</SelectItem>
+              <SelectItem value="disposable">Disposable</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            {priority === "inherit"
+              ? "Uses the parent stack's priority for this service."
+              : priority === "critical"
+                ? "Protected from the OOM killer and given the largest CPU share. Requires a memory limit."
+                : priority === "disposable"
+                  ? "Killed first under memory pressure and given the smallest CPU share."
+                  : "Default eviction priority and CPU share."}
+          </p>
+          {isComposeParent && (
+            <p className="text-xs text-muted-foreground">
+              Every service inherits this tier, unless it sets its own in Services.
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Health Check Timeout */}
+      {fields.healthCheckTimeout && (
+        <div className="grid gap-2 sm:w-1/2">
+          <Label htmlFor="edit-health-timeout">Health Check Timeout (seconds)</Label>
+          <Input
+            id="edit-health-timeout"
+            type="number"
+            step="10"
+            min="10"
+            max="600"
+            placeholder="60"
+            value={healthCheckTimeout}
+            onChange={(e) => setHealthCheckTimeout(e.target.value)}
+          />
+          <p className="text-xs text-muted-foreground">
+            How long to wait for all containers to be healthy after deploy. Increase for services with slow startup like VPN tunnels.
+          </p>
+        </div>
+      )}
+
+      {/* Toggles */}
+      {(fields.autoDeploy || fields.autoRollback || fields.gpu) && (
+        <div className="grid gap-3">
+          {fields.autoDeploy && (
+            <div className="flex items-center gap-3">
+              <Switch
+                id="edit-auto-deploy"
+                checked={autoDeploy}
+                onCheckedChange={setAutoDeploy}
+              />
+              <Label htmlFor="edit-auto-deploy">Auto Deploy</Label>
+            </div>
+          )}
+          {fields.autoRollback && (
+            <div className="flex items-center gap-3">
+              <Switch
+                id="edit-auto-rollback"
+                checked={autoRollback}
+                onCheckedChange={setAutoRollback}
+              />
+              <Label htmlFor="edit-auto-rollback">Auto Rollback</Label>
+            </div>
+          )}
+          {fields.gpu && (
+            <div className="flex items-center gap-3">
+              <Switch
+                id="edit-gpu-enabled"
+                checked={gpuEnabled}
+                onCheckedChange={setGpuEnabled}
+                disabled={!canUseGpu}
+              />
+              <div className="grid gap-0.5">
+                <Label htmlFor="edit-gpu-enabled">GPU Access</Label>
+                <p className="text-xs text-muted-foreground">
+                  {canUseGpu
+                    ? <>Pass all NVIDIA GPUs through to {isComposeParent ? "every service that has no named volume" : "the container"} via <span className="font-mono">deploy.resources.reservations.devices</span>. Requires the NVIDIA Container Toolkit on the host.</>
+                    : "Only owners and admins can enable GPU access."}
+                </p>
+              </div>
+            </div>
+          )}
+          {fields.autoRollback && autoRollback && (
+            <div className="grid gap-2 pl-10">
+              <Label htmlFor="edit-rollback-grace">Grace Period (seconds)</Label>
+              <Input
+                id="edit-rollback-grace"
+                type="number"
+                step="10"
+                min="10"
+                max="600"
+                value={rollbackGracePeriod}
+                onChange={(e) => setRollbackGracePeriod(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Monitor for container crashes for this duration after deploy. If a crash is detected, automatically roll back to the previous version.
+              </p>
             </div>
           )}
         </div>
-        {/* Docker sets a cgroup limit when the container is created; there is no
-            path that changes it on a running one. */}
-        <p className="text-xs text-muted-foreground">
-          {isComposeParent
-            ? <>Each service gets these limits, unless it sets its own in Services. {REDEPLOY_NOTE}</>
-            : <>CPU and memory limits are written into the compose overlay. {REDEPLOY_NOTE}</>}
-        </p>
-      </div>
-
-      {/* Priority (QoS tier) */}
-      <div className="grid gap-2 sm:w-1/2">
-        <Label htmlFor="edit-priority">Priority</Label>
-        <Select value={priority} onValueChange={(v) => setPriority(v as "critical" | "standard" | "disposable" | "inherit")}>
-          <SelectTrigger id="edit-priority">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {fields.priorityInherit && <SelectItem value="inherit">Inherit (parent)</SelectItem>}
-            <SelectItem value="critical">Critical</SelectItem>
-            <SelectItem value="standard">Standard</SelectItem>
-            <SelectItem value="disposable">Disposable</SelectItem>
-          </SelectContent>
-        </Select>
-        <p className="text-xs text-muted-foreground">
-          {priority === "inherit"
-            ? "Uses the parent stack's priority for this service."
-            : priority === "critical"
-              ? "Protected from the OOM killer and given the largest CPU share. Requires a memory limit."
-              : priority === "disposable"
-                ? "Killed first under memory pressure and given the smallest CPU share."
-                : "Default eviction priority and CPU share."}
-        </p>
-        {isComposeParent && (
-          <p className="text-xs text-muted-foreground">
-            Every service inherits this tier, unless it sets its own in Services.
-          </p>
-        )}
-        <p className="text-xs text-muted-foreground">{REDEPLOY_NOTE}</p>
-      </div>
-
-      {/* Health Check Timeout */}
-      <div className="grid gap-2 sm:w-1/2">
-        <Label htmlFor="edit-health-timeout">Health Check Timeout (seconds)</Label>
-        <Input
-          id="edit-health-timeout"
-          type="number"
-          step="10"
-          min="10"
-          max="600"
-          placeholder="60"
-          value={healthCheckTimeout}
-          onChange={(e) => setHealthCheckTimeout(e.target.value)}
-        />
-        <p className="text-xs text-muted-foreground">
-          How long to wait for all containers to be healthy after deploy. Increase for services with slow startup like VPN tunnels.
-        </p>
-      </div>
-
-      {/* Toggles */}
-      <div className="grid gap-3">
-        {fields.autoDeploy && (
-          <div className="flex items-center gap-3">
-            <Switch
-              id="edit-auto-deploy"
-              checked={autoDeploy}
-              onCheckedChange={setAutoDeploy}
-            />
-            <Label htmlFor="edit-auto-deploy">Auto Deploy</Label>
-          </div>
-        )}
-        {fields.autoRollback && (
-          <div className="flex items-center gap-3">
-            <Switch
-              id="edit-auto-rollback"
-              checked={autoRollback}
-              onCheckedChange={setAutoRollback}
-            />
-            <Label htmlFor="edit-auto-rollback">Auto Rollback</Label>
-          </div>
-        )}
-        <div className="flex items-center gap-3">
-          <Switch
-            id="edit-gpu-enabled"
-            checked={gpuEnabled}
-            onCheckedChange={setGpuEnabled}
-            disabled={!canUseGpu}
-          />
-          <div className="grid gap-0.5">
-            <Label htmlFor="edit-gpu-enabled">GPU Access</Label>
-            <p className="text-xs text-muted-foreground">
-              {canUseGpu
-                ? <>Pass all NVIDIA GPUs through to {isComposeParent ? "every service that has no named volume" : "the container"} via <span className="font-mono">deploy.resources.reservations.devices</span>. Requires the NVIDIA Container Toolkit on the host. {REDEPLOY_NOTE}</>
-                : "Only owners and admins can enable GPU access."}
-            </p>
-          </div>
-        </div>
-        {fields.autoRollback && autoRollback && (
-          <div className="grid gap-2 pl-10">
-            <Label htmlFor="edit-rollback-grace">Grace Period (seconds)</Label>
-            <Input
-              id="edit-rollback-grace"
-              type="number"
-              step="10"
-              min="10"
-              max="600"
-              value={rollbackGracePeriod}
-              onChange={(e) => setRollbackGracePeriod(e.target.value)}
-            />
-            <p className="text-xs text-muted-foreground">
-              Monitor for container crashes for this duration after deploy. If a crash is detected, automatically roll back to the previous version.
-            </p>
-          </div>
-        )}
-      </div>
+      )}
 
       {/* Project */}
-      <div className="grid gap-2">
-        <Label>Project</Label>
-        <Select
-          value={editParentId ?? ""}
-          onValueChange={setEditParentId}
-        >
-          <SelectTrigger>
-            <SelectValue placeholder="Select a project" />
-          </SelectTrigger>
-          <SelectContent>
-            {allParentApps.map((p) => (
-              <SelectItem key={p.id} value={p.id}>
-                <span className="flex items-center gap-2">
-                  <span
-                    className="size-2 rounded-full"
-                    style={{ backgroundColor: p.color }}
-                  />
-                  {p.name}
-                </span>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <p className="text-xs text-muted-foreground">
-          Group this app under a project for organization.
-        </p>
-      </div>
+      {fields.project && (
+        <div className="grid gap-2">
+          <Label>Project</Label>
+          <Select
+            value={editParentId ?? ""}
+            onValueChange={setEditParentId}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select a project" />
+            </SelectTrigger>
+            <SelectContent>
+              {allParentApps.map((p) => (
+                <SelectItem key={p.id} value={p.id}>
+                  <span className="flex items-center gap-2">
+                    <span
+                      className="size-2 rounded-full"
+                      style={{ backgroundColor: p.color }}
+                    />
+                    {p.name}
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            Group this app under a project for organization.
+          </p>
+        </div>
+      )}
 
       {!locked && (
         <div className="flex justify-end border-t pt-4">
-          <Button onClick={handleSave} disabled={saving || !displayName.trim()}>
+          <Button onClick={handleSave} disabled={saving || (fields.identity && !displayName.trim())}>
             {saving ? (
               <>
                 <Loader2 className="mr-2 size-4 animate-spin" />
