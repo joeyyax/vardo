@@ -44,12 +44,12 @@ export function registerDestroyPreview(
         };
       }
 
-      const preview = await resolveOrgPreview(preview_id, context.organizationId);
+      const preview = await resolveOrgPreview(preview_id, context);
       if (!preview) return previewNotFound();
 
       const result = await destroyGroupEnvironment(
         preview_id,
-        context.organizationId
+        preview.organizationId
       );
 
       return {

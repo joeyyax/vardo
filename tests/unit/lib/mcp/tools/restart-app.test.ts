@@ -1,10 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const findFirst = vi.fn();
+const membershipFindFirst = vi.fn();
 const restartContainers = vi.fn();
 const resolveDefaultEnv = vi.fn();
 
-vi.mock("@/lib/db", () => ({ db: { query: { apps: { findFirst: (...a: unknown[]) => findFirst(...a) } } } }));
+vi.mock("@/lib/db", () => ({
+  db: {
+    query: {
+      apps: { findFirst: (...a: unknown[]) => findFirst(...a) },
+      memberships: { findFirst: (...a: unknown[]) => membershipFindFirst(...a) },
+    },
+  },
+}));
 vi.mock("@/lib/docker/deploy", () => ({
   restartContainers: (...a: unknown[]) => restartContainers(...a),
   createDeployment: vi.fn(),
@@ -29,6 +37,7 @@ async function handler(): Promise<Handler> {
   registerRestartApp(server as never, {
     userId: "u1",
     organizationId: "org1",
+    crossOrg: false,
   } as never);
   return captured!;
 }
@@ -36,6 +45,7 @@ async function handler(): Promise<Handler> {
 beforeEach(() => {
   vi.clearAllMocks();
   restartContainers.mockResolvedValue({ success: true, log: "ok" });
+  membershipFindFirst.mockResolvedValue({ id: "m1" });
 });
 
 describe("vardo_restart_app — environment scoping", () => {
@@ -44,6 +54,7 @@ describe("vardo_restart_app — environment scoping", () => {
       id: "a1",
       name: "paperless",
       status: "active",
+      organizationId: "org1",
       parentAppId: null,
       composeService: null,
     });
@@ -61,6 +72,7 @@ describe("vardo_restart_app — environment scoping", () => {
         id: "c1",
         name: "paperless-db",
         status: "active",
+        organizationId: "org1",
         parentAppId: "a1",
         composeService: "db",
       })

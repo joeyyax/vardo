@@ -6,7 +6,10 @@ import { isFeatureEnabledAsync } from "@/lib/config/features";
 
 export type McpAuthContext = {
   userId: string;
+  /** The organization the token was minted for. */
   organizationId: string;
+  /** Opt-in widening to every organization the token's user belongs to. */
+  crossOrg: boolean;
 };
 
 /**
@@ -33,7 +36,7 @@ export async function authenticateRequest(
 
   const token = await db.query.apiTokens.findFirst({
     where: eq(apiTokens.tokenHash, tokenHash),
-    columns: { id: true, userId: true, organizationId: true },
+    columns: { id: true, userId: true, organizationId: true, crossOrg: true },
   });
 
   if (!token) return null;
@@ -55,5 +58,6 @@ export async function authenticateRequest(
   return {
     userId: token.userId,
     organizationId: token.organizationId,
+    crossOrg: token.crossOrg,
   };
 }

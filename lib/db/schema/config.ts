@@ -1,4 +1,5 @@
 import {
+  boolean,
   index,
   integer,
   pgTable,
@@ -35,6 +36,10 @@ export const apiTokens = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     tokenHash: text("token_hash").notNull(),
+    // Lets the token act on any organization its user is a member of, checked
+    // per request. Must stay false by default — flipping the default widens
+    // every existing token at once.
+    crossOrg: boolean("cross_org").default(false).notNull(),
     lastUsedAt: timestamp("last_used_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
