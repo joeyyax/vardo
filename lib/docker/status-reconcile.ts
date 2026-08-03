@@ -20,6 +20,7 @@ import { matchContainers } from "./container-match";
 import {
   exitCandidates,
   exitReasonFor,
+  isOomKill,
   parseExitCode,
   reasonSurvivesRestart,
   worstExitReason,
@@ -65,11 +66,21 @@ export function deployHoldsStatus(
 /**
  * Observed status for one app's containers.
  * "restarting" reads as error — a container flapping is not running.
+ *
+ * Without a reason the exit code decides, which reads every 137 as a crash.
+ * Pass the reason resolved from the same inspect to tell a stop apart from one.
  */
-export function deriveStatus(containers: ContainerInfo[]): ObservedStatus {
+export function deriveStatus(
+  containers: ContainerInfo[],
+  reason?: ExitReason | null,
+): ObservedStatus {
   if (containers.length === 0) return "missing";
   if (containers.some((c) => c.state === "restarting" || c.state === "dead")) return "error";
   if (containers.some((c) => c.state === "running")) return "active";
+  // A signal exit is a stop that took SIGTERM or outran its grace period. An
+  // OOM kill also arrives as a signal and is not one.
+  if (isOomKill(reason)) return "error";
+  if (reason?.kind === "signal") return "stopped";
   if (containers.some((c) => (parseExitCode(c.status) ?? 0) !== 0)) return "error";
   return "stopped";
 }
@@ -88,6 +99,10 @@ export function exitReasonsEqual(a: ExitReason | null, b: ExitReason | null | un
  * Why this app's containers are down. Only containers that ended badly are
  * inspected — State.OOMKilled is the one field that tells an OOM kill apart
  * from an ordinary stop, and the list API does not carry it.
+ *
+ * Docker clears State.OOMKilled when a container starts, so a poller that
+ * watches running containers can never read it. This reconciler lists stopped
+ * ones, which is why the signal lives here and not in the health monitor.
  */
 async function resolveExitReason(
   matched: ContainerInfo[],
@@ -116,6 +131,42 @@ async function resolveExitReason(
   return worstExitReason(reasons);
 }
 
+type OomSubject = {
+  id: string;
+  organizationId: string;
+  appName: string;
+  exitReason: ExitReason | null;
+  oomFirstSeen: boolean;
+};
+
+/** One notification per kill. This is the only poller that can see an OOM at all. */
+async function reportOomKills(subjects: OomSubject[]): Promise<void> {
+  const killed = subjects.flatMap((s) =>
+    s.oomFirstSeen && s.exitReason ? [{ ...s, reason: s.exitReason }] : [],
+  );
+  if (killed.length === 0) return;
+
+  const { emit } = await import("@/lib/notifications/dispatch");
+  for (const { reason, ...s } of killed) {
+    const host = reason.kind === "oom-host";
+    log.error(`OOM kill: ${reason.containerName} (app ${s.appName}, ${reason.kind})`);
+    emit(s.organizationId, {
+      type: "app.oom-killed",
+      title: host ? `Killed for host memory: ${s.appName}` : `Killed at memory limit: ${s.appName}`,
+      message: host
+        ? `The host ran out of memory and the kernel killed ${reason.containerName}, which has no memory limit of its own. Free memory on the host, or give this app a limit so it is not the kernel's choice next time.`
+        : `${reason.containerName} was killed at its own memory limit. Raise the limit, or find out what is using more than it was given.`,
+      appId: s.id,
+      appName: s.appName,
+      containerName: reason.containerName,
+      containerId: reason.containerId,
+      kind: host ? "oom-host" : "oom-limit",
+      exitCode: reason.exitCode,
+      at: reason.at,
+    });
+  }
+}
+
 export async function tickStatusReconcile(): Promise<void> {
   let containers: ContainerInfo[];
   try {
@@ -129,6 +180,8 @@ export async function tickStatusReconcile(): Promise<void> {
     columns: {
       id: true,
       name: true,
+      displayName: true,
+      organizationId: true,
       status: true,
       parentAppId: true,
       composeService: true,
@@ -156,7 +209,7 @@ export async function tickStatusReconcile(): Promise<void> {
         if (deployHoldsStatus(app, now)) return null;
 
         const matched = matchContainers(app, containers);
-        const observed = deriveStatus(matched);
+        let observed = deriveStatus(matched);
 
         let startedAt: Date | null = null;
         let memoryLimit: number | null = null;
@@ -178,6 +231,9 @@ export async function tickStatusReconcile(): Promise<void> {
           }
         } else {
           exitReason = await resolveExitReason(matched, now);
+          // Re-read with the reason the same inspect produced: a deliberate
+          // stop is not a crash, and only the reason can say which this was.
+          observed = deriveStatus(matched, exitReason);
         }
 
         if (observed === "missing" && app.status !== "missing") missing.push(app.name);
@@ -195,6 +251,8 @@ export async function tickStatusReconcile(): Promise<void> {
           exitReasonsEqual(exitReason, app.exitReason);
         return {
           id: app.id,
+          organizationId: app.organizationId,
+          appName: app.displayName || app.name,
           touchOnly: unchanged,
           observed,
           startedAt,
@@ -202,6 +260,8 @@ export async function tickStatusReconcile(): Promise<void> {
           needsRedeploy,
           exitReason,
           running: observed === "active",
+          // A kill already reported is not news on every tick that follows it.
+          oomFirstSeen: isOomKill(exitReason) && !exitReasonsEqual(exitReason, app.exitReason),
         };
       }),
     ),
@@ -241,6 +301,8 @@ export async function tickStatusReconcile(): Promise<void> {
   if (touchedIdle.length > 0) {
     await db.update(apps).set({ statusCheckedAt: now }).where(inArray(apps.id, touchedIdle));
   }
+
+  await reportOomKills(changed);
 
   if (missing.length > 0) {
     log.error(
