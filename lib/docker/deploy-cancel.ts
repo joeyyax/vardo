@@ -17,8 +17,11 @@
 // The active-deploy state is kept in both an in-process Map (for AbortController
 // and the "done" promise) AND in Redis (for cross-process visibility).
 //
-//   deploy:active:{appId}   — JSON: { deploymentId, stage }  TTL: 30 min
+//   deploy:active:{appId}   — JSON: { deploymentId, stage }  lease: 30 s
 //   deploy:cancel:{appId}   — JSON: { supersededBy }         TTL: 60 s
+//
+// The active entry is a lease the owning process renews while it runs, not a
+// fixed TTL — it must not outlive the process holding it.
 //
 // When a new deploy arrives and finds a Redis entry owned by another process it
 // writes deploy:cancel:{appId} and polls until the entry clears (up to 2 min).
@@ -51,8 +54,16 @@ const ACTIVE_KEY = (appId: string) => `deploy:active:${appId}`;
 const CANCEL_KEY = (appId: string) => `deploy:cancel:${appId}`;
 const KILL_KEY = (deploymentId: string) => `deploy:kill:${deploymentId}`;
 
-/** TTL for the active-deploy registry entry — acts as a safety-net expiry. */
-const ACTIVE_TTL_MS = 30 * 60 * 1000; // 30 minutes
+/**
+ * Lease on the active-deploy entry, renewed by the owning process while it
+ * runs. A process that dies mid-deploy — a self-deploy stops its own container
+ * before the release below can run — drops the entry within the lease instead
+ * of holding the app for the length of a fixed TTL.
+ */
+export const ACTIVE_TTL_MS = 30 * 1000;
+
+/** Renewal interval. Three beats fit inside the lease, so two may be missed. */
+export const ACTIVE_HEARTBEAT_MS = 10 * 1000;
 
 /** TTL for the cancel signal — consumed quickly by the target process. */
 const CANCEL_TTL_MS = 60 * 1000; // 60 seconds
@@ -107,7 +118,7 @@ async function setActiveInRedis(
   }
 }
 
-async function updateStageInRedis(
+export async function renewActiveLease(
   appId: string,
   deploymentId: string,
   stage: DeployStage
@@ -213,7 +224,7 @@ async function clearKillSignal(deploymentId: string): Promise<void> {
  * TTL for the kill signal. It outlives any single phase — a cold build holds one
  * stage for minutes, and at 60s the signal expired before it could be read.
  */
-const KILL_TTL_MS = ACTIVE_TTL_MS;
+const KILL_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
 /** How often a running deploy re-reads its kill key between stage transitions. */
 const KILL_POLL_MS = 3000;
@@ -282,7 +293,9 @@ export async function requestDeploy(opts: DeployOpts): Promise<DeployResult> {
         await writeCancelSignal(appId, newDeploymentId);
       }
 
-      // Poll until the foreign deploy clears (or times out)
+      // Poll until the foreign deploy clears (or times out). Its lease is
+      // renewed only while its process lives, so a dead owner clears itself.
+      opts.onLog?.("[queue] Waiting for the deploy already running for this app");
       const deadline = Date.now() + WAIT_TIMEOUT_MS;
       while (Date.now() < deadline) {
         const still = await getActiveFromRedis(appId);
@@ -309,6 +322,13 @@ export async function requestDeploy(opts: DeployOpts): Promise<DeployResult> {
   };
   localRegistry.set(appId, active);
   await setActiveInRedis(appId, newDeploymentId, "clone");
+
+  // Stage transitions are minutes apart during a build, so they cannot carry
+  // the lease on their own.
+  const leaseRenew = setInterval(() => {
+    renewActiveLease(appId, newDeploymentId, active.stage).catch(() => {});
+  }, ACTIVE_HEARTBEAT_MS);
+  leaseRenew.unref?.();
 
   // Stage transitions are minutes apart during a build, so the kill key is also
   // polled. Only while nothing is serving from this deploy — past that point the
@@ -352,8 +372,7 @@ export async function requestDeploy(opts: DeployOpts): Promise<DeployResult> {
       onStage: async (stage, status) => {
         // Keep local registry up to date
         active.stage = stage;
-        // Mirror stage to Redis
-        await updateStageInRedis(appId, newDeploymentId, stage);
+        await renewActiveLease(appId, newDeploymentId, stage);
 
         // Check for a user-initiated kill signal (cancel running deployment via API)
         if (!controller.signal.aborted) {
@@ -403,6 +422,7 @@ export async function requestDeploy(opts: DeployOpts): Promise<DeployResult> {
     throw err;
   } finally {
     clearInterval(killPoll);
+    clearInterval(leaseRenew);
     await clearKillSignal(newDeploymentId);
     if (concurrencySlotHeld) {
       await releaseConcurrencySlot(newDeploymentId);
