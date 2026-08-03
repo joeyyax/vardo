@@ -16,6 +16,7 @@ import {
   type ServiceUpdate,
 } from "@/components/image-updates/update-row";
 import { IgnoreMenu, type IgnoreChoice } from "@/components/image-updates/ignore-menu";
+import { SelfManagedUpdates } from "@/components/image-updates/self-managed-updates";
 import { toast } from "@/lib/messenger";
 import { requiresMigration, type MigrationPlan } from "@/lib/docker/image-updates/migration-path";
 import { describeRule } from "@/lib/docker/image-updates/ignore";
@@ -76,6 +77,10 @@ export function AppUpdateStat({ orgId, appId }: { orgId: string; appId: string }
   if (loading) return <span className="text-muted-foreground/50">—</span>;
   if (!data || data.services.length === 0) {
     return <span className="text-muted-foreground/50">—</span>;
+  }
+
+  if (data.selfManaged) {
+    return <span className="text-muted-foreground">Moves with Vardo</span>;
   }
 
   if (data.updateCount === 0) {
@@ -196,6 +201,15 @@ export function AppUpdatesPanel({
   ) : null;
 
   if (loading || !data) return null;
+
+  if (data.selfManaged) {
+    return (
+      <div className="space-y-3">
+        {blocked && <BlockedDeployNote block={blocked} />}
+        <SelfManagedUpdates title="Image updates" services={data.services} />
+      </div>
+    );
+  }
 
   // Its own tab, so it answers rather than disappears when there is no work.
   if (actionable.length === 0 && unverified.length === 0 && ignored.length === 0) {
@@ -385,7 +399,8 @@ function BlockedDeployNote({
   onReview,
 }: {
   block: MajorGateBlock;
-  onReview: () => void;
+  /** Omit where the pin would be refused — the note is then a statement, not an offer. */
+  onReview?: () => void;
 }) {
   const entry = block.services[0];
   const label = entry.service ? `${entry.service} (${entry.image})` : entry.image;
@@ -397,9 +412,11 @@ function BlockedDeployNote({
         Deploy stopped — {label} moved from major {entry.from} to {entry.to}. {block.appName} is
         still serving {entry.from}.
       </span>
-      <Button size="sm" variant="outline" className="ml-auto" onClick={onReview}>
-        Review migration
-      </Button>
+      {onReview && (
+        <Button size="sm" variant="outline" className="ml-auto" onClick={onReview}>
+          Review migration
+        </Button>
+      )}
     </div>
   );
 }

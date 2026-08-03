@@ -21,9 +21,14 @@ export type SystemManagedAction =
   | "edit"
   | "delete"
   | "env-vars"
-  | "domains";
+  | "domains"
+  | "image-update";
 
 type Guarded = { isSystemManaged: boolean | null; name?: string | null };
+
+/** Core service image tags come from files Vardo ships, so they move when Vardo does. */
+export const IMAGE_UPDATE_REFUSAL =
+  "Vardo pins this image in docker-compose.yml or a service template and rewrites it on every restart. It moves with the next Vardo release.";
 
 // Verbs that rewrite the record. Vardo owns those fields.
 const DEFINITION_REFUSALS: Partial<Record<SystemManagedAction, string>> = {
@@ -33,6 +38,7 @@ const DEFINITION_REFUSALS: Partial<Record<SystemManagedAction, string>> = {
     "Env vars for Vardo-managed apps come from docker-compose.yml and the host environment, and are rewritten on every restart.",
   domains:
     "Domains for Vardo-managed apps come from docker-compose.yml and are rewritten on every restart.",
+  "image-update": IMAGE_UPDATE_REFUSAL,
 };
 
 /** Stopping Vardo's own stack takes down the API you would call to start it again. */

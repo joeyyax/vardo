@@ -10,6 +10,7 @@ import {
   type MigrationPrompt,
 } from "@/components/image-updates/migration-dialog";
 import { IgnoreMenu, type IgnoreChoice } from "@/components/image-updates/ignore-menu";
+import { SelfManagedUpdates } from "@/components/image-updates/self-managed-updates";
 import {
   UpdateRow,
   UpdateRowHeader,
@@ -302,7 +303,7 @@ export function FleetUpdates({ orgId }: { orgId: string }) {
 
       {report && <BatchOutcome report={report} />}
 
-      {data.apps.length === 0 ? (
+      {data.apps.length === 0 && data.selfManaged.length === 0 ? (
         <section className="squircle rounded-lg border bg-card px-4 py-10 text-center">
           <CircleCheck className="mx-auto size-6 text-status-success" aria-hidden="true" />
           <p className="type-body mt-2 text-muted-foreground">
@@ -370,6 +371,10 @@ export function FleetUpdates({ orgId }: { orgId: string }) {
           </section>
         ))
       )}
+
+      {data.selfManaged.map((app) => (
+        <SelfManagedUpdates key={app.appId} title={app.displayName} services={app.services} />
+      ))}
 
       {data.ignored.length > 0 && <IgnoredList entries={data.ignored} onRestore={unignore} />}
 

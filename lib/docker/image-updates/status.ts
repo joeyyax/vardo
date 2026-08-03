@@ -1,3 +1,4 @@
+import { isVardoManagedApp } from "@/lib/infra/instance-apps";
 import { refCacheKey } from "./image-ref";
 import { appImages, type UpdatableApp } from "./compose-images";
 import { readCachedChecks, CHECK_TTL_MS } from "./check";
@@ -11,7 +12,14 @@ import type { CheckStatus } from "./check";
 /**
  * Read-only view over the cache. Page loads call this and never touch a
  * registry, so rendering an app costs nothing against the pull budget.
+ *
+ * Vardo's own stack and the core services are still checked — a maintainer
+ * wants to know when Vardo has fallen behind upstream — but they are split out
+ * of every actionable count, because only a Vardo release can move those tags.
  */
+
+/** Name and flag needed to tell a Vardo-pinned app from a tenant's. */
+type Identity = { name?: string | null; isSystemManaged?: boolean | null };
 
 export interface ServiceUpdateStatus {
   service: string | null;
@@ -51,6 +59,8 @@ export interface AppUpdateStatus {
   ignored: IgnoredUpdate[];
   /** A deploy the major gate stopped, still waiting on a decision. */
   blockedMigration: MajorGateBlock | null;
+  /** Vardo pins these tags; the apply path refuses them. Counts stay at zero. */
+  selfManaged: boolean;
 }
 
 const SEVERITY_RANK: Record<BumpSeverity, number> = {
@@ -118,7 +128,7 @@ function partition(
 
 function rollUp(
   services: ServiceUpdateStatus[],
-): Omit<AppUpdateStatus, "services" | "ignored" | "blockedMigration"> {
+): Omit<AppUpdateStatus, "services" | "ignored" | "blockedMigration" | "selfManaged"> {
   let highest: BumpSeverity | null = null;
   let updateCount = 0;
   let hasUnknown = false;
@@ -149,7 +159,7 @@ async function blockFor(app: UpdatableApp & { id?: string; composeOwnerId?: stri
 }
 
 export async function getAppUpdateStatus(
-  app: UpdatableApp & { id?: string; composeOwnerId?: string },
+  app: UpdatableApp & Identity & { id?: string; composeOwnerId?: string },
   rules: IgnoreRule[] = [],
 ): Promise<AppUpdateStatus> {
   const entries = appImages(app);
@@ -158,8 +168,24 @@ export async function getAppUpdateStatus(
     blockFor(app),
   ]);
   const all = buildServices(app, cached, Date.now() - CHECK_TTL_MS);
+  const selfManaged = isVardoManagedApp(app);
+
+  // Rows stay so the tab can show how far behind upstream it is; the roll-up
+  // does not, so nothing offers an action the apply path refuses.
+  if (selfManaged) {
+    return {
+      services: all,
+      ignored: [],
+      updateCount: 0,
+      highestSeverity: null,
+      hasUnknown: false,
+      blockedMigration,
+      selfManaged,
+    };
+  }
+
   const { services, ignored } = partition(all, app.id, indexRules(rules), Date.now());
-  return { services, ignored, ...rollUp(services), blockedMigration };
+  return { services, ignored, ...rollUp(services), blockedMigration, selfManaged };
 }
 
 export interface AggregateUpdateStatus {
@@ -170,7 +196,8 @@ export interface AggregateUpdateStatus {
   cooldownUntil: string | null;
 }
 
-type AggregateApp = UpdatableApp & { id: string; name: string; displayName: string };
+type AggregateApp = UpdatableApp &
+  Identity & { id: string; name: string; displayName: string };
 
 export interface FleetAppUpdates {
   appId: string;
@@ -196,6 +223,8 @@ export interface FleetUpdateStatus {
   cooldownUntil: string | null;
   /** Updates a rule is hiding, so the list stays reversible. */
   ignored: FleetIgnoredUpdate[];
+  /** Vardo-pinned apps that are behind upstream. Reported, never offered. */
+  selfManaged: FleetAppUpdates[];
 }
 
 /**
@@ -218,12 +247,31 @@ export async function getFleetUpdateStatus(
   const ruleIndex = indexRules(rules);
 
   const apps: FleetAppUpdates[] = [];
+  const selfManaged: FleetAppUpdates[] = [];
   const ignoredAll: FleetIgnoredUpdate[] = [];
   let totalUpdates = 0;
   let unknownCount = 0;
 
   for (const app of appRows) {
     const all = buildServices(app, cached, cutoff);
+
+    // Listed on their own, out of the totals and out of the ignore machinery —
+    // an ignore rule on a tag nobody can pin is noise.
+    if (isVardoManagedApp(app)) {
+      const behind = all.filter(isActionable);
+      if (behind.length > 0) {
+        selfManaged.push({
+          appId: app.id,
+          name: app.name,
+          displayName: app.displayName,
+          services: behind,
+          updateCount: behind.length,
+          highestSeverity: rollUp(behind).highestSeverity,
+        });
+      }
+      continue;
+    }
+
     const { services, ignored } = partition(all, app.id, ruleIndex, now);
     const { updateCount, highestSeverity, hasUnknown } = rollUp(services);
 
@@ -251,11 +299,12 @@ export async function getFleetUpdateStatus(
     totalUpdates += updateCount;
   }
 
-  apps.sort(
-    (a, b) =>
-      SEVERITY_RANK[b.highestSeverity ?? "unknown"] - SEVERITY_RANK[a.highestSeverity ?? "unknown"] ||
-      a.displayName.localeCompare(b.displayName),
-  );
+  const bySeverity = (a: FleetAppUpdates, b: FleetAppUpdates) =>
+    SEVERITY_RANK[b.highestSeverity ?? "unknown"] - SEVERITY_RANK[a.highestSeverity ?? "unknown"] ||
+    a.displayName.localeCompare(b.displayName);
+
+  apps.sort(bySeverity);
+  selfManaged.sort(bySeverity);
   ignoredAll.sort((a, b) => a.displayName.localeCompare(b.displayName));
 
   return {
@@ -263,6 +312,7 @@ export async function getFleetUpdateStatus(
     totalUpdates,
     unknownCount,
     ignored: ignoredAll,
+    selfManaged,
     cooldownUntil: cooldownUntil > now ? new Date(cooldownUntil).toISOString() : null,
   };
 }
