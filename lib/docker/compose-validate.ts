@@ -354,6 +354,63 @@ export function sharedMarkerWarnings(yamlText: string): string[] {
 }
 
 /**
+ * Service keys parseCompose carries through. Anything outside this set is
+ * dropped on the way to the generated compose file.
+ */
+const PARSED_SERVICE_KEYS = new Set([
+  "image", "build", "restart", "ports", "expose", "environment", "env_file",
+  "volumes", "labels", "networks", "depends_on", "network_mode", "runtime",
+  "deploy", "oom_score_adj", "mem_reservation", "cpu_shares", "cap_add",
+  "cap_drop", "devices", "privileged", "security_opt", "shm_size", "init",
+  "extra_hosts", "healthcheck", "ulimits", "hostname", "user", "stop_signal",
+  "entrypoint", "command", "tmpfs", "group_add", "container_name", "configs",
+  "secrets", SHARED_MARKER,
+]);
+
+/**
+ * Valid Compose service keys Vardo drops. Docker would honor every one of
+ * these, so a silent drop changes behavior with nothing in the log to say so.
+ */
+const DROPPED_SERVICE_KEYS = new Set([
+  "mem_limit", "cpus", "cpu_count", "cpu_percent", "cpuset", "memswap_limit",
+  "mem_swappiness", "pids_limit", "blkio_config", "device_cgroup_rules",
+  "logging", "profiles", "pull_policy", "platform", "working_dir", "domainname",
+  "stdin_open", "tty", "stop_grace_period", "dns", "dns_search", "dns_opt",
+  "sysctls", "userns_mode", "ipc", "pid", "uts", "cgroup", "cgroup_parent",
+  "isolation", "read_only", "storage_opt", "annotations", "attach", "links",
+  "external_links", "volumes_from", "label_file", "post_start", "pre_stop",
+  "credential_spec", "scale", "develop", "provider", "extends",
+]);
+
+/**
+ * Report Compose keys that Docker honors and Vardo drops.
+ *
+ * WARNING: adding a key to the parser without removing it here leaves a
+ * warning that contradicts the behavior.
+ */
+export function droppedKeyWarnings(compose: unknown): string[] {
+  if (typeof compose !== "object" || compose === null || Array.isArray(compose)) return [];
+  const root = compose as Record<string, unknown>;
+  const services = root.services;
+  if (typeof services !== "object" || services === null || Array.isArray(services)) return [];
+
+  const warnings: string[] = [];
+  for (const [name, raw] of Object.entries(services as Record<string, unknown>)) {
+    if (typeof raw !== "object" || raw === null || Array.isArray(raw)) continue;
+    const dropped = Object.keys(raw as Record<string, unknown>).filter(
+      (key) => !PARSED_SERVICE_KEYS.has(key) && DROPPED_SERVICE_KEYS.has(key),
+    );
+    if (dropped.length > 0) {
+      warnings.push(
+        `Service "${name}" sets ${dropped.map((k) => `"${k}"`).join(", ")}, which Vardo does not apply. ` +
+          `Docker would honor ${dropped.length === 1 ? "it" : "them"} — the deployed container will not.`,
+      );
+    }
+  }
+  return warnings;
+}
+
+/**
  * Basic validation of a ComposeFile structure.
  */
 export function validateCompose(compose: ComposeFile, opts?: ValidateOptions): {
