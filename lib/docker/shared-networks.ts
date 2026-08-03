@@ -56,6 +56,19 @@ export function sharedNetworkName(
   return `${compose.name ?? fallbackPrefix}_${netName}`;
 }
 
+/**
+ * Docker names for those same networks as a single compose project scopes them.
+ *
+ * A slot deployed before the externalization created them under its own project
+ * prefix, and its compose file on disk still names them that way.
+ */
+export function projectScopedNetworkNames(
+  compose: ComposeFile,
+  projectName: string,
+): string[] {
+  return [...sharedNetworks(compose)].map((net) => `${projectName}_${net}`);
+}
+
 /** `docker network create` arguments carrying any subnet the compose pinned. */
 export function networkCreateArgs(config: unknown, name: string): string[] {
   const args = ["network", "create"];
