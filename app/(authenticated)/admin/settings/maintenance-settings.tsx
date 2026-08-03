@@ -26,6 +26,7 @@ import {
   AlertCircle,
   Trash2,
   PackageX,
+  FileCheck,
 } from "lucide-react";
 import { toast } from "@/lib/messenger";
 import { formatBytes } from "@/lib/metrics/format";
@@ -97,6 +98,29 @@ const NOTABLE_SKIPS = new Set([
   "compose-unavailable",
 ]);
 
+type OwnerGap = {
+  appName: string;
+  dir: string;
+  reason: "unreadable" | "orphaned" | "ambiguous" | "failed";
+  detail: string;
+};
+
+type OwnerReport = {
+  total: number;
+  stamped: number;
+  alreadyOwned: number;
+  exempt: number;
+  gaps: OwnerGap[];
+  dryRun: boolean;
+};
+
+const GAP_LABELS: Record<OwnerGap["reason"], string> = {
+  unreadable: "Marker could not be read",
+  orphaned: "No app owns this directory",
+  ambiguous: "More than one app claims the name",
+  failed: "Could not be checked",
+};
+
 type MountsConfig = {
   vardoData: MountPair;
   vardoProjects: MountPair;
@@ -141,12 +165,16 @@ export function MaintenanceSettings() {
   const [savingImages, setSavingImages] = useState(false);
   const [reclaimingImages, setReclaimingImages] = useState(false);
   const [showAllSkips, setShowAllSkips] = useState(false);
+  const [owners, setOwners] = useState<OwnerReport | null>(null);
+  const [loadingOwners, setLoadingOwners] = useState(true);
+  const [stampingOwners, setStampingOwners] = useState(false);
 
   useEffect(() => {
     void fetchStatus();
     void fetchMounts();
     void fetchBuildCache();
     void fetchImages();
+    void fetchOwners();
   }, []);
 
   async function fetchStatus() {
@@ -276,6 +304,44 @@ export function MaintenanceSettings() {
       toast.error("Failed to reclaim images");
     } finally {
       setReclaimingImages(false);
+    }
+  }
+
+  async function fetchOwners() {
+    try {
+      const res = await fetch("/api/v1/admin/maintenance/app-dir-owners");
+      if (res.ok) {
+        setOwners(await res.json());
+      }
+    } catch {
+      // leave owners null — the card shows that coverage is unknown
+    } finally {
+      setLoadingOwners(false);
+    }
+  }
+
+  async function handleStampOwners() {
+    setStampingOwners(true);
+    try {
+      const res = await fetch("/api/v1/admin/maintenance/app-dir-owners", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error ?? "Failed to stamp app directories");
+        return;
+      }
+      const report: OwnerReport = data;
+      const owned = report.stamped + report.alreadyOwned;
+      toast.success(`${owned} of ${report.total} directories own a marker`, {
+        description:
+          report.gaps.length > 0
+            ? `${report.stamped} stamped. ${report.gaps.length} still need attention.`
+            : `${report.stamped} stamped.`,
+      });
+      setOwners(report);
+    } catch {
+      toast.error("Failed to stamp app directories");
+    } finally {
+      setStampingOwners(false);
     }
   }
 
@@ -766,6 +832,86 @@ export function MaintenanceSettings() {
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
+        </CardContent>
+      </Card>
+
+      {/* App directory ownership */}
+      <Card className="squircle">
+        <CardHeader>
+          <CardTitle className="text-sm font-medium flex items-center gap-2">
+            <FileCheck className="size-4" aria-hidden="true" />
+            App Directory Ownership
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Each app directory carries a marker naming the app that owns it, so a destructive
+            operation can never hit another app&apos;s files. Directories created before markers
+            existed are matched by name and stamped.
+          </p>
+
+          {loadingOwners ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+              Checking coverage...
+            </div>
+          ) : !owners ? (
+            <div className="flex items-center gap-2 text-sm text-amber-600 dark:text-amber-400">
+              <AlertCircle className="size-4 shrink-0" aria-hidden="true" />
+              Could not read the app directory — coverage is unknown.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <p className="text-sm">
+                <span className="font-medium">
+                  {(owners.dryRun ? owners.alreadyOwned : owners.stamped + owners.alreadyOwned)} of{" "}
+                  {owners.total}
+                </span>{" "}
+                <span className="text-muted-foreground">
+                  director{owners.total === 1 ? "y" : "ies"} own a marker
+                </span>
+                {owners.dryRun && owners.stamped > 0 && (
+                  <span className="text-muted-foreground">, {owners.stamped} ready to stamp</span>
+                )}
+                {owners.exempt > 0 && (
+                  <span className="text-muted-foreground">, {owners.exempt} exempt</span>
+                )}
+                .
+              </p>
+
+              {owners.gaps.length > 0 && (
+                <ul className="divide-y rounded-md border">
+                  {owners.gaps.map((g) => (
+                    <li key={g.dir} className="px-3 py-2 space-y-0.5">
+                      <p className="text-sm font-medium">{g.appName}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {GAP_LABELS[g.reason]} — {g.detail}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+
+          <Button
+            variant="outline"
+            className="squircle"
+            disabled={stampingOwners || loadingOwners}
+            onClick={() => void handleStampOwners()}
+          >
+            {stampingOwners ? (
+              <>
+                <Loader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+                Stamping...
+              </>
+            ) : (
+              <>
+                <FileCheck className="size-4" aria-hidden="true" />
+                Stamp directories
+              </>
+            )}
+          </Button>
         </CardContent>
       </Card>
 

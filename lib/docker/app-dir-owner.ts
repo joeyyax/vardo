@@ -10,11 +10,13 @@
 // re-opens cross-organization deletion.
 // ---------------------------------------------------------------------------
 
+import { readdir } from "fs/promises";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
 import { logger } from "@/lib/logger";
 import {
+  PROJECTS_DIR,
   appBaseDir,
   appNameFromPath,
   appOwnerFile,
@@ -129,4 +131,159 @@ export async function stampAppDirOwner(dir: string): Promise<void> {
   const ids = await claimants(appName);
   if (ids.length !== 1) return;
   await writeAppDirOwner(appName, ids[0]);
+}
+
+// ---------------------------------------------------------------------------
+// Fleet-wide stamping pass
+//
+// Stamps every app directory and reports coverage. Adoption resolves a name
+// against the database, so it only works while top-level names are unique.
+// ---------------------------------------------------------------------------
+
+/** Why a directory could not be given an owner. Each needs a hand to resolve. */
+export type AppDirOwnerGapReason =
+  /** Marker present but unparseable. */
+  | "unreadable"
+  /** No app in the database claims the name — an orphaned directory on disk. */
+  | "orphaned"
+  /** More than one app claims the name. */
+  | "ambiguous"
+  /** Read or write failed. */
+  | "failed";
+
+export type AppDirOwnerGap = {
+  appName: string;
+  dir: string;
+  reason: AppDirOwnerGapReason;
+  detail: string;
+};
+
+export type AppDirOwnerReport = {
+  /** App directories found on disk. */
+  total: number;
+  /** Markers written, or writable when `dryRun`. */
+  stamped: number;
+  /** Directories that already named an owner. */
+  alreadyOwned: number;
+  /** Vardo's own directory, whose marker can never be authoritative. */
+  exempt: number;
+  /** Directories left without an owner, each named with its reason. */
+  gaps: AppDirOwnerGap[];
+  dryRun: boolean;
+};
+
+function errText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * Directory names directly under PROJECTS_DIR. Empty on a fresh install.
+ * Symlinks are included so a linked app directory is never silently skipped.
+ */
+async function appDirNames(): Promise<string[]> {
+  try {
+    const entries = await readdir(PROJECTS_DIR, { withFileTypes: true });
+    return entries
+      .filter((e) => e.isDirectory() || e.isSymbolicLink())
+      .map((e) => e.name)
+      .sort();
+  } catch (err) {
+    if (err && typeof err === "object" && (err as { code?: string }).code === "ENOENT") return [];
+    throw err;
+  }
+}
+
+/**
+ * Stamp every unmarked app directory with the app that claims its name.
+ *
+ * `dryRun` surveys without writing. `total` always equals
+ * `stamped + alreadyOwned + exempt + gaps.length`.
+ */
+export async function stampAllAppDirOwners(
+  opts: { dryRun?: boolean } = {},
+): Promise<AppDirOwnerReport> {
+  const dryRun = opts.dryRun ?? false;
+  const names = await appDirNames();
+  const report: AppDirOwnerReport = {
+    total: names.length,
+    stamped: 0,
+    alreadyOwned: 0,
+    exempt: 0,
+    gaps: [],
+    dryRun,
+  };
+
+  for (const appName of names) {
+    const dir = appBaseDir(appName);
+    const gap = (reason: AppDirOwnerGapReason, detail: string) =>
+      report.gaps.push({ appName, dir, reason, detail });
+
+    if (isSelfApp(appName)) {
+      report.exempt++;
+      continue;
+    }
+
+    try {
+      const owner = await readAppDirOwner(appName);
+      if (owner.state === "owned") {
+        report.alreadyOwned++;
+        continue;
+      }
+      if (owner.state === "unreadable") {
+        gap("unreadable", owner.reason);
+        continue;
+      }
+      if (owner.state === "missing") {
+        gap("failed", "directory disappeared during the pass");
+        continue;
+      }
+
+      const ids = await claimants(appName);
+      if (ids.length === 0) {
+        gap("orphaned", "no app in the database claims this name");
+        continue;
+      }
+      if (ids.length > 1) {
+        gap("ambiguous", `${ids.length} apps claim this name: ${ids.join(", ")}`);
+        continue;
+      }
+
+      if (!dryRun) await writeAppDirOwner(appName, ids[0]);
+      report.stamped++;
+    } catch (err) {
+      gap("failed", errText(err));
+    }
+  }
+
+  return report;
+}
+
+/** One-line coverage summary — the number that gates dropping the name index. */
+export function summarizeAppDirOwners(report: AppDirOwnerReport): string {
+  const owned = report.stamped + report.alreadyOwned;
+  const noun = report.total === 1 ? "directory" : "directories";
+  const head = report.dryRun
+    ? `${owned} of ${report.total} app ${noun} can name an owner (${report.stamped} to stamp, ${report.alreadyOwned} already marked)`
+    : `${owned} of ${report.total} app ${noun} name an owner (${report.stamped} stamped, ${report.alreadyOwned} already marked)`;
+
+  const tail: string[] = [];
+  if (report.exempt > 0) tail.push(`${report.exempt} exempt`);
+  if (report.gaps.length > 0) tail.push(`${report.gaps.length} unresolved`);
+  return tail.length > 0 ? `${head}; ${tail.join(", ")}` : head;
+}
+
+/**
+ * Startup pass. Idempotent and near-free once complete — unmarked directories
+ * are the only ones that reach the database.
+ */
+export async function stampAppDirOwnersAtStartup(): Promise<void> {
+  const report = await stampAllAppDirOwners();
+  if (report.total === 0) return;
+
+  log.info(summarizeAppDirOwners(report));
+  if (report.gaps.length > 0) {
+    log.warn(
+      `Unowned app directories: ${report.gaps.map((g) => `${g.appName} (${g.reason})`).join(", ")}`,
+    );
+  }
 }
