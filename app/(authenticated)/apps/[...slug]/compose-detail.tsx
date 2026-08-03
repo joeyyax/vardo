@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect, useMemo } from "react";
+import { Fragment, useState, useCallback, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import Link from "next/link";
@@ -15,6 +15,13 @@ import {
   Trash2,
   Square,
   EllipsisVertical,
+  AlertTriangle,
+  Play,
+  ScrollText,
+  Undo2,
+  X,
+  Zap,
+  type LucideIcon,
 } from "lucide-react";
 import { toast } from "@/lib/messenger";
 import { PageToolbar } from "@/components/page-toolbar";
@@ -26,6 +33,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -47,6 +55,9 @@ import { CronManager } from "./app-cron";
 import { AppDebug } from "./app-debug";
 import { VolumesPanel } from "@/components/volumes-panel";
 import { useDeploy } from "./hooks/use-deploy";
+import { useCancelDeploy, useSlotStatus } from "./hooks/use-app-actions";
+import { appActionMenu, type AppAction, type AppActionItem } from "@/lib/ui/app-actions";
+import { systemManagedRefusal } from "@/lib/api/system-managed";
 import { AppUpdatesPanel, useImageUpdates } from "./app-updates";
 import { pendingImageChange, type PendingImage } from "@/lib/docker/image-updates/pending";
 import { AppHeader } from "./app-header";
@@ -167,25 +178,83 @@ function matchServiceContainers(containers: ContainerPoint[], service: ChildApp)
   );
 }
 
+// A service has no compose project of its own: restart names it inside the
+// parent's, and everything else on the stack belongs to the parent.
+function ServiceMenu({ service, orgId }: { service: ChildApp; orgId: string }) {
+  const router = useRouter();
+  const [restarting, setRestarting] = useState(false);
+
+  async function handleRestart() {
+    setRestarting(true);
+    try {
+      const res = await fetch(`/api/v1/organizations/${orgId}/apps/${service.id}/restart`, {
+        method: "POST",
+      });
+      const data = await res.json();
+      if (data.success) toast.success(`Restarted ${service.displayName}`);
+      else toast.error(data.error || "Restart failed");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Restart failed");
+    } finally {
+      setRestarting(false);
+    }
+    router.refresh();
+  }
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          aria-label={`Actions for ${service.displayName}`}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <EllipsisVertical className="size-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+        <DropdownMenuItem disabled={restarting} onClick={handleRestart}>
+          <RotateCcw className="mr-2 size-4" />
+          Restart
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link href={`/apps/${service.name}/logs`}>
+            <ScrollText className="mr-2 size-4" />
+            View logs
+          </Link>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 function ServiceCard({
   service,
   stats,
   cpuHistory,
   pending,
+  orgId,
 }: {
   service: ChildApp;
   stats?: { cpuPercent: number; memoryUsage: number };
   cpuHistory?: number[];
   pending?: PendingImage | null;
+  orgId: string;
 }) {
   const primaryDomain = service.domains.find((d) => d.isPrimary) || service.domains[0];
   const running = service.status === "active";
   const ports = formatPorts(service);
   return (
-    <Link
-      href={`/apps/${service.name}`}
-      className="squircle relative flex flex-col rounded-lg bg-card shadow-card dark:border transition-shadow duration-200 hover:shadow-card-hover overflow-hidden cursor-pointer"
-    >
+    <div className="squircle relative flex flex-col rounded-lg bg-card shadow-card dark:border transition-shadow duration-200 hover:shadow-card-hover overflow-hidden">
+      {/* Covers the card so the whole surface opens the service, leaving the
+          action menu above it clickable. */}
+      <Link
+        href={`/apps/${service.name}`}
+        aria-label={`Open ${service.displayName}`}
+        className="absolute inset-0 z-10"
+      />
+
       {/* Raised panel: identity */}
       <div className="relative flex-1 p-4">
         {running && cpuHistory && cpuHistory.length > 1 && (
@@ -206,10 +275,13 @@ function ServiceCard({
               {service.isShared && <SharedBadge />}
             </div>
           </div>
-          <StatusIndicator
-            status={service.status}
-            needsRedeploy={!!service.needsRedeploy || !!pending}
-          />
+          <div className="relative z-20 flex items-center gap-1">
+            <StatusIndicator
+              status={service.status}
+              needsRedeploy={!!service.needsRedeploy || !!pending}
+            />
+            <ServiceMenu service={service} orgId={orgId} />
+          </div>
         </div>
 
         <div className="relative mt-2 space-y-1">
@@ -240,7 +312,7 @@ function ServiceCard({
         </Stat>
         <Stat label="Port">{ports ?? "—"}</Stat>
       </div>
-    </Link>
+    </div>
   );
 }
 
@@ -311,6 +383,7 @@ function ComposeServices({
         <ServiceCard
           key={service.id}
           service={service}
+          orgId={orgId}
           stats={stats.get(service.id)}
           cpuHistory={histories.get(service.id)}
           pending={pendingImageChange(
@@ -637,6 +710,8 @@ export function ComposeDetail({
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [stopOpen, setStopOpen] = useState(false);
+  const [rollbackOpen, setRollbackOpen] = useState(false);
+  const [rollingBack, setRollingBack] = useState(false);
 
   const canDelete = isOrgAdmin(userRole);
 
@@ -651,13 +726,48 @@ export function ComposeDetail({
     router.refresh();
   }, [orgId, app.id, router]);
 
+  // Same endpoint as Restart: compose restarts stopped services back up.
+  const handleStart = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/restart`, { method: "POST" });
+      const data = await res.json();
+      if (data.success) toast.success("Stack started");
+      else toast.error(data.error || "Start failed");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Start failed");
+    }
+    router.refresh();
+  }, [orgId, app.id, router]);
+
   const handleRecreate = useCallback(async () => {
     try {
       const res = await fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/recreate`, { method: "POST" });
       const data = await res.json();
-      data.success ? toast.success("Stack rebuilt") : toast.error(data.error || "Rebuild failed");
+      data.success ? toast.success("Stack recreated") : toast.error(data.error || "Recreate failed");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Rebuild failed");
+      toast.error(err instanceof Error ? err.message : "Recreate failed");
+    }
+    router.refresh();
+  }, [orgId, app.id, router]);
+
+  const { cancelling, cancelDeploy } = useCancelDeploy(orgId, app.id);
+  const slotStatus = useSlotStatus(orgId, app.id, { refreshKey: app.status });
+
+  const handleInstantRollback = useCallback(async () => {
+    setRollbackOpen(false);
+    setRollingBack(true);
+    try {
+      const res = await fetch(
+        `/api/v1/organizations/${orgId}/apps/${app.id}/instant-rollback`,
+        { method: "POST" },
+      );
+      const data = await res.json();
+      if (res.ok) toast.success("Rolled back to the standby release");
+      else toast.error(data.error || "Instant rollback failed");
+    } catch {
+      toast.error("Instant rollback failed");
+    } finally {
+      setRollingBack(false);
     }
     router.refresh();
   }, [orgId, app.id, router]);
@@ -751,6 +861,118 @@ export function ComposeDetail({
 
   const totalDeployments = app.deployments.length;
 
+  // Set when the API would 403 the stop, so the menu offers it disabled with the reason.
+  const stopRefusal = systemManagedRefusal(app, "stop");
+
+  // Newest success other than the one serving — what a rollback would restore.
+  const rollbackTargetId =
+    app.deployments.filter((d) => d.status === "success")[1]?.id ?? null;
+
+  const actions = appActionMenu({
+    status: app.status,
+    isChildService: false,
+    deploying: deploy.deploying,
+    standbyAvailable: !!slotStatus?.standbyAvailable,
+    hasDeployed: totalDeployments > 0,
+    rollbackTarget: !!rollbackTargetId,
+    stopRefusal,
+  });
+
+  const statusTrigger = (() => {
+    if (deploy.deploying || app.status === "deploying") {
+      return {
+        className: "bg-status-info-muted text-status-info hover:bg-status-info/20",
+        content: <><Loader2 className="mr-1.5 size-3.5 animate-spin" />Deploying</>,
+      };
+    }
+    if (app.status === "active") {
+      return {
+        className: app.needsRedeploy
+          ? "bg-status-warning-muted text-status-warning hover:bg-status-warning/20"
+          : "bg-status-success-muted text-status-success hover:bg-status-success/20",
+        content: app.needsRedeploy ? (
+          <><RotateCcw className="mr-1.5 size-3.5" />Restart needed</>
+        ) : (
+          <><span className="mr-1.5 size-2 rounded-full bg-status-success animate-pulse" />Running</>
+        ),
+      };
+    }
+    if (app.status === "stopped") {
+      return {
+        className: "bg-status-neutral-muted text-status-neutral hover:bg-status-neutral/20",
+        content: <><Square className="mr-1.5 size-3.5" />Stopped</>,
+      };
+    }
+    if (app.status === "missing") {
+      return {
+        className: "bg-status-warning-muted text-status-warning hover:bg-status-warning/20",
+        content: <><AlertTriangle className="mr-1.5 size-3.5" />No containers</>,
+      };
+    }
+    return {
+      className: "bg-status-error-muted text-status-error hover:bg-status-error/20",
+      content: <><X className="mr-1.5 size-3.5" />Crashed</>,
+    };
+  })();
+
+  // Opens the rebuild-from-a-deployment sheet, which lives in the Deployments
+  // section alongside the rest of the history.
+  function handleRollback() {
+    if (!rollbackTargetId) return;
+    setActiveTabAndUrl("deployments");
+    deploy.handleRollbackPreview(rollbackTargetId);
+  }
+
+  const ACTION_LABEL: Record<AppAction, { icon: LucideIcon; label: string }> = {
+    "cancel-deploy": { icon: X, label: "Cancel deploy" },
+    deploy: { icon: Rocket, label: app.status === "error" ? "Retry deploy" : "Redeploy stack" },
+    start: { icon: Play, label: "Start stack" },
+    restart: { icon: RotateCcw, label: "Restart stack" },
+    recreate: { icon: RefreshCw, label: "Recreate stack" },
+    "instant-rollback": { icon: Zap, label: "Roll back to standby" },
+    rollback: { icon: Undo2, label: "Roll back to a previous deploy" },
+    logs: { icon: ScrollText, label: "View logs" },
+    stop: { icon: Square, label: "Stop stack" },
+  };
+
+  const ACTION_HANDLER: Record<AppAction, () => void> = {
+    "cancel-deploy": () => { void cancelDeploy(); },
+    deploy: handleDeployClick,
+    start: handleStart,
+    restart: handleRestart,
+    recreate: handleRecreate,
+    "instant-rollback": () => setRollbackOpen(true),
+    rollback: handleRollback,
+    logs: () => setActiveTabAndUrl("logs"),
+    stop: () => setStopOpen(true),
+  };
+
+  function renderAction(item: AppActionItem, index: number) {
+    const { action, disabled } = item;
+    const { icon: Icon, label } = ACTION_LABEL[action];
+    // One reason under a run of rows sharing it, rather than the same
+    // sentence repeated three times.
+    const showReason = !!disabled && actions[index + 1]?.disabled !== disabled;
+    return (
+      <Fragment key={action}>
+        {action === "stop" && <DropdownMenuSeparator />}
+        <DropdownMenuItem
+          disabled={!!disabled || (action === "cancel-deploy" && cancelling) || (action === "instant-rollback" && rollingBack)}
+          className={action === "stop" && !disabled ? "text-destructive focus:text-destructive" : undefined}
+          onClick={disabled ? undefined : ACTION_HANDLER[action]}
+        >
+          <Icon className="mr-2 size-4" />
+          {label}
+        </DropdownMenuItem>
+        {showReason && (
+          <DropdownMenuLabel className="max-w-72 pt-0 type-body-sm font-normal whitespace-normal text-muted-foreground">
+            {disabled}
+          </DropdownMenuLabel>
+        )}
+      </Fragment>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <span className="sr-only" aria-live="assertive" aria-atomic="true">
@@ -760,49 +982,8 @@ export function ComposeDetail({
       <PageToolbar
         actions={
           <div className="flex items-center gap-2">
-            {app.status === "active" ? (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    size="sm"
-                    className={
-                      app.needsRedeploy
-                        ? "bg-status-warning-muted text-status-warning hover:bg-status-warning/20"
-                        : "bg-status-success-muted text-status-success hover:bg-status-success/20"
-                    }
-                  >
-                    {app.needsRedeploy ? (
-                      <><RotateCcw className="mr-1.5 size-3.5" />Restart needed</>
-                    ) : (
-                      <><span className="mr-1.5 size-2 rounded-full bg-status-success animate-pulse" />Running</>
-                    )}
-                    <ChevronDown className="ml-1.5 size-3.5" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem disabled={deploy.deploying} onClick={handleDeployClick}>
-                    <Rocket className="mr-2 size-4" />
-                    Redeploy stack
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={handleRestart}>
-                    <RotateCcw className="mr-2 size-4" />
-                    Restart stack
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={handleRecreate}>
-                    <RefreshCw className="mr-2 size-4" />
-                    Rebuild stack
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    className="text-destructive focus:text-destructive"
-                    onClick={() => setStopOpen(true)}
-                  >
-                    <Square className="mr-2 size-4" />
-                    Stop stack
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            ) : (
+            {/* One action for a never-deployed stack is a button, not a menu. */}
+            {actions.length === 1 && actions[0].action === "deploy" ? (
               <Button size="sm" disabled={deploy.deploying} onClick={handleDeployClick}>
                 {deploy.deploying ? (
                   <><Loader2 className="mr-1.5 size-4 animate-spin" />Deploying...</>
@@ -810,6 +991,18 @@ export function ComposeDetail({
                   <><Rocket className="mr-1.5 size-4" />Deploy stack</>
                 )}
               </Button>
+            ) : (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button size="sm" className={statusTrigger.className}>
+                    {statusTrigger.content}
+                    <ChevronDown className="ml-1.5 size-3.5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {actions.map(renderAction)}
+                </DropdownMenuContent>
+              </DropdownMenu>
             )}
             {!app.isSystemManaged && canDelete && (
               <DropdownMenu>
@@ -1091,6 +1284,18 @@ export function ComposeDetail({
         description={`Are you sure you want to stop all services in "${app.displayName}"?`}
         confirmLabel="Stop"
         onConfirm={handleStop}
+      />
+
+      <ConfirmDeleteDialog
+        open={rollbackOpen}
+        onOpenChange={setRollbackOpen}
+        title="Roll back to standby"
+        description="Swaps live traffic to the standby slot, which is still running the previous release. The current release becomes the standby."
+        confirmLabel="Roll back"
+        loadingLabel="Rolling back..."
+        variant="default"
+        loading={rollingBack}
+        onConfirm={handleInstantRollback}
       />
 
       <ConfirmDeleteDialog
