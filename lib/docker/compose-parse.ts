@@ -5,6 +5,7 @@
 import YAML from "yaml";
 import type {
   ComposeFile,
+  ComposeFileRef,
   ComposeService,
   ComposeDependsOnCondition,
   HealthCheck,
@@ -37,8 +38,38 @@ export function composeToYaml(compose: ComposeFile): string {
   if (compose.volumes && Object.keys(compose.volumes).length > 0) {
     doc.volumes = compose.volumes;
   }
+  if (compose.configs && Object.keys(compose.configs).length > 0) {
+    doc.configs = compose.configs;
+  }
+  if (compose.secrets && Object.keys(compose.secrets).length > 0) {
+    doc.secrets = compose.secrets;
+  }
 
   return YAML.stringify(doc);
+}
+
+/**
+ * Normalize a service's `configs:`/`secrets:` list. Entries without a `source`
+ * are dropped — they reference nothing.
+ */
+function parseFileRefs(raw: unknown): ComposeFileRef[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const refs: ComposeFileRef[] = [];
+  for (const entry of raw) {
+    if (typeof entry === "string") {
+      refs.push(entry);
+    } else if (entry && typeof entry === "object" && !Array.isArray(entry)) {
+      const obj = entry as Record<string, unknown>;
+      if (typeof obj.source !== "string" || !obj.source) continue;
+      const ref: Exclude<ComposeFileRef, string> = { source: obj.source };
+      if (typeof obj.target === "string") ref.target = obj.target;
+      if (typeof obj.uid === "string") ref.uid = obj.uid;
+      if (typeof obj.gid === "string") ref.gid = obj.gid;
+      if (typeof obj.mode === "number") ref.mode = obj.mode;
+      refs.push(ref);
+    }
+  }
+  return refs.length > 0 ? refs : undefined;
 }
 
 /**
@@ -177,6 +208,12 @@ export function parseCompose(yamlString: string): ComposeFile {
     if (Array.isArray(raw.tmpfs)) svc.tmpfs = raw.tmpfs.map(String);
     else if (typeof raw.tmpfs === "string") svc.tmpfs = [raw.tmpfs];
     if (Array.isArray(raw.group_add)) svc.group_add = raw.group_add.map(String);
+    // Both reference a top-level block carried through below. Dropping either
+    // leaves the service pointing at a file that never gets mounted.
+    const configs = parseFileRefs(raw.configs);
+    if (configs) svc.configs = configs;
+    const secrets = parseFileRefs(raw.secrets);
+    if (secrets) svc.secrets = secrets;
 
     // Carried through by hand — the field list above drops unknown keys, and
     // the deploy pipeline reads the blue/green opt-out off the parsed compose.
@@ -198,6 +235,12 @@ export function parseCompose(yamlString: string): ComposeFile {
   }
   if (root.volumes && typeof root.volumes === "object") {
     result.volumes = root.volumes as Record<string, unknown>;
+  }
+  if (root.configs && typeof root.configs === "object" && !Array.isArray(root.configs)) {
+    result.configs = root.configs as Record<string, unknown>;
+  }
+  if (root.secrets && typeof root.secrets === "object" && !Array.isArray(root.secrets)) {
+    result.secrets = root.secrets as Record<string, unknown>;
   }
 
   // Docker accepts network_mode with a network name and ignores it, so the

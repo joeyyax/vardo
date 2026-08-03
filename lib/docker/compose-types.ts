@@ -24,6 +24,20 @@ export type HealthCheck = {
 
 export type Ulimits = Record<string, number | { soft: number; hard: number }>;
 
+/**
+ * A service's reference to a top-level `configs:`/`secrets:` entry. Short form
+ * is the entry name; long form retargets it inside the container.
+ */
+export type ComposeFileRef =
+  | string
+  | {
+      source: string;
+      target?: string;
+      uid?: string;
+      gid?: string;
+      mode?: number;
+    };
+
 export type ComposeDependsOnCondition =
   | "service_started"
   | "service_healthy"
@@ -104,6 +118,10 @@ export type ComposeService = {
    * both hold one name, so it is dropped for anything that rotates.
    */
   container_name?: string;
+  /** Config files mounted into the container, defined under top-level `configs:`. */
+  configs?: ComposeFileRef[];
+  /** Secret files mounted into the container, defined under top-level `secrets:`. */
+  secrets?: ComposeFileRef[];
   /** Opt this service out of blue/green — see lib/docker/slot-partition.ts. */
   "x-vardo-shared"?: boolean;
 };
@@ -114,6 +132,8 @@ export type ComposeFile = {
   services: Record<string, ComposeService>;
   networks?: Record<string, unknown>;
   volumes?: Record<string, unknown>;
+  configs?: Record<string, unknown>;
+  secrets?: Record<string, unknown>;
 };
 
 export type PortMapping = {
