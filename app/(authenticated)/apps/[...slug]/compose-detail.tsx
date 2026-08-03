@@ -42,6 +42,8 @@ import { formatBytes } from "@/lib/metrics/format";
 import { AppDeployPanel } from "./app-deploy-panel";
 import { AppNetworking } from "./app-networking";
 import { AppSecurity } from "./app-security";
+import { AppErrors } from "./app-errors";
+import { CronManager } from "./app-cron";
 import { AppDebug } from "./app-debug";
 import { VolumesPanel } from "@/components/volumes-panel";
 import { useDeploy } from "./hooks/use-deploy";
@@ -347,52 +349,37 @@ function ServiceSelector({
 }
 
 // ---------------------------------------------------------------------------
-// Logs tab with per-service selector
+// Per-service tabs — one service at a time, picked from a selector
 // ---------------------------------------------------------------------------
 
-function ComposeLogs({ services, orgId }: { services: ChildApp[]; orgId: string }) {
+// For concepts that only exist per container. Aggregating them across a stack
+// would misattribute the result to services it did not come from.
+function PerService({
+  services,
+  emptyMessage,
+  className = "space-y-4",
+  children,
+}: {
+  services: ChildApp[];
+  emptyMessage: string;
+  className?: string;
+  children: (service: ChildApp) => React.ReactNode;
+}) {
   const [selectedId, setSelectedId] = useState<string>(services[0]?.id || "");
   const selected = services.find((s) => s.id === selectedId) || services[0];
 
   if (!selected) {
     return (
       <div className="squircle lining flex flex-col items-center justify-center gap-4 rounded-lg border bg-card p-12">
-        <p className="text-sm text-muted-foreground">No services to show logs for.</p>
+        <p className="text-sm text-muted-foreground">{emptyMessage}</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-3">
+    <div className={className}>
       <ServiceSelector services={services} selectedId={selectedId} onSelect={setSelectedId} />
-      <LogViewer
-        key={`logs-${selected.id}`}
-        streamUrl={`/api/v1/organizations/${orgId}/apps/${selected.id}/logs/stream`}
-      />
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Metrics tab with per-service selector
-// ---------------------------------------------------------------------------
-
-function ComposeMetrics({ services, orgId }: { services: ChildApp[]; orgId: string }) {
-  const [selectedId, setSelectedId] = useState<string>(services[0]?.id || "");
-  const selected = services.find((s) => s.id === selectedId) || services[0];
-
-  if (!selected) {
-    return (
-      <div className="squircle lining flex flex-col items-center justify-center gap-4 rounded-lg border bg-card p-12">
-        <p className="text-sm text-muted-foreground">No services to show metrics for.</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-4">
-      <ServiceSelector services={services} selectedId={selectedId} onSelect={setSelectedId} />
-      <AppMetrics key={`metrics-${selected.id}`} orgId={orgId} appId={selected.id} />
+      {children(selected)}
     </div>
   );
 }
@@ -450,6 +437,56 @@ function ComposeNetworking({
                 <span className="truncate font-mono text-sm font-medium">{domain}</span>
                 <span className="shrink-0 text-xs text-muted-foreground">
                   {service.displayName}
+                </span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Security tab — stack scan, plus where each service's own scan lives
+// ---------------------------------------------------------------------------
+
+// A scan checks one app's own domain and ports, so services holding their own
+// domain are scanned on their own page rather than by the stack's scan.
+function ComposeSecurity({
+  app,
+  services,
+  orgId,
+}: {
+  app: App;
+  services: ChildApp[];
+  orgId: string;
+}) {
+  const scannedElsewhere = services.filter((s) => s.domains.length > 0);
+
+  return (
+    <div className="space-y-8">
+      <AppSecurity appId={app.id} orgId={orgId} />
+
+      {scannedElsewhere.length > 0 && (
+        <div className="space-y-4">
+          <div>
+            <h3 className="text-sm font-medium">Service scans</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              This scan covers the stack&apos;s own domain and ports. Services with their own domain
+              are scanned separately.
+            </p>
+          </div>
+          <div className="space-y-2">
+            {scannedElsewhere.map((service) => (
+              <Link
+                key={service.id}
+                href={`/apps/${service.name}/security`}
+                className="squircle flex items-center justify-between gap-4 rounded-lg border bg-background-deep p-4 transition-colors hover:bg-accent"
+              >
+                <span className="truncate text-sm font-medium">{service.displayName}</span>
+                <span className="shrink-0 font-mono text-xs text-muted-foreground">
+                  {(service.domains.find((d) => d.isPrimary) ?? service.domains[0]).domain}
                 </span>
               </Link>
             ))}
@@ -859,6 +896,7 @@ export function ComposeDetail({
                     { value: "variables", label: "Variables", count: app.envVars.length },
                     { value: "networking", label: "Networking" },
                     { value: "compose", label: "Compose" },
+                    ...(featureFlags?.cron !== false ? [{ value: "cron", label: "Cron" }] : []),
                   ],
                 },
                 {
@@ -866,6 +904,7 @@ export function ComposeDetail({
                   items: [
                     ...(featureFlags?.logging !== false ? [{ value: "logs", label: "Logs" }] : []),
                     ...(featureFlags?.metrics !== false ? [{ value: "metrics", label: "Metrics" }] : []),
+                    ...(featureFlags?.errorTracking !== false ? [{ value: "errors", label: "Errors" }] : []),
                     { value: "security", label: "Security" },
                   ],
                 },
@@ -953,13 +992,51 @@ export function ComposeDetail({
 
         {featureFlags?.logging !== false && (
           <TabsContent value="logs">
-            <ComposeLogs services={services} orgId={orgId} />
+            <PerService
+              services={services}
+              emptyMessage="No services to show logs for."
+              className="space-y-3"
+            >
+              {(service) => (
+                <LogViewer
+                  key={`logs-${service.id}`}
+                  streamUrl={`/api/v1/organizations/${orgId}/apps/${service.id}/logs/stream`}
+                />
+              )}
+            </PerService>
           </TabsContent>
         )}
 
         {featureFlags?.metrics !== false && (
           <TabsContent value="metrics">
-            <ComposeMetrics services={services} orgId={orgId} />
+            <PerService services={services} emptyMessage="No services to show metrics for.">
+              {(service) => (
+                <AppMetrics key={`metrics-${service.id}`} orgId={orgId} appId={service.id} />
+              )}
+            </PerService>
+          </TabsContent>
+        )}
+
+        {featureFlags?.errorTracking !== false && (
+          <TabsContent value="errors" className={cn(tabPanelSurface, "space-y-4")}>
+            <PerService services={services} emptyMessage="No services to show errors for.">
+              {(service) => (
+                <AppErrors key={`errors-${service.id}`} orgId={orgId} appId={service.id} />
+              )}
+            </PerService>
+          </TabsContent>
+        )}
+
+        {featureFlags?.cron !== false && (
+          <TabsContent value="cron" className={cn(tabPanelSurface, "space-y-4")}>
+            <p className="text-sm text-muted-foreground">
+              Scheduled commands run inside the service you pick here, not across the stack.
+            </p>
+            <PerService services={services} emptyMessage="No services to schedule jobs for.">
+              {(service) => (
+                <CronManager key={`cron-${service.id}`} orgId={orgId} appId={service.id} />
+              )}
+            </PerService>
           </TabsContent>
         )}
 
@@ -984,7 +1061,7 @@ export function ComposeDetail({
         )}
 
         <TabsContent value="security" className={tabPanelSurface}>
-          <AppSecurity appId={app.id} orgId={orgId} />
+          <ComposeSecurity app={app} services={services} orgId={orgId} />
         </TabsContent>
 
         <TabsContent value="volumes" className={tabPanelSurface}>

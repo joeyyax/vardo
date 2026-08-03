@@ -43,8 +43,10 @@ describe("availableAppTabs", () => {
       "variables",
       "networking",
       "compose",
+      "cron",
       "logs",
       "metrics",
+      "errors",
       "security",
       "volumes",
       "backups",
@@ -53,11 +55,26 @@ describe("availableAppTabs", () => {
     ]);
   });
 
-  it("withholds per-container sections from a compose parent", () => {
+  it("gives a compose parent the per-service sections it can scope", () => {
     const tabs = availableAppTabs(composeParent);
+    expect(tabs).toContain("cron");
+    expect(tabs).toContain("errors");
+  });
+
+  it("withholds connect from a compose parent", () => {
+    // Connection info is published per service, never by the stack.
+    expect(availableAppTabs(composeParent)).not.toContain("connect");
+  });
+
+  it("drops a compose parent's per-service tabs behind disabled flags", () => {
+    const tabs = availableAppTabs(
+      context({
+        isComposeParent: true,
+        features: { ...allFeatures, cron: false, errorTracking: false },
+      }),
+    );
     expect(tabs).not.toContain("cron");
     expect(tabs).not.toContain("errors");
-    expect(tabs).not.toContain("connect");
   });
 
   it("drops parent tabs behind disabled feature flags", () => {
@@ -155,10 +172,14 @@ describe("resolveAppTab", () => {
     expect(resolveAppTab("security", composeParent)).toBe("security");
   });
 
+  it("keeps a compose parent on its per-service tabs", () => {
+    expect(resolveAppTab("cron", composeParent)).toBe("cron");
+    expect(resolveAppTab("errors", composeParent)).toBe("errors");
+  });
+
   it("falls back when the tab isn't available for this app", () => {
     // The blank-column case: valid route segments the compose shell never renders.
-    expect(resolveAppTab("cron", composeParent)).toBe("services");
-    expect(resolveAppTab("errors", composeParent)).toBe("services");
+    expect(resolveAppTab("connect", composeParent)).toBe("services");
     expect(resolveAppTab("compose", plainApp)).toBe("deployments");
     expect(resolveAppTab("services", plainApp)).toBe("deployments");
     expect(resolveAppTab("compose", childService)).toBe("logs");
