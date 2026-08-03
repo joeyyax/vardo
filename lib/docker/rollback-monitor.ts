@@ -1,3 +1,10 @@
+// ---------------------------------------------------------------------------
+// Auto-rollback action.
+//
+// The grace period itself is reconciled by the deploy sweeper against live
+// state; this module only inspects a slot and performs the swap back.
+// ---------------------------------------------------------------------------
+
 import { db } from "@/lib/db";
 import { deployments, apps } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
@@ -6,10 +13,12 @@ import { promisify } from "util";
 import { join } from "path";
 import { appEnvDir } from "@/lib/paths";
 import { rm, symlink, rename } from "fs/promises";
-import { listContainers, inspectContainer } from "./client";
+import { listContainers } from "./client";
 import { slotComposeFiles } from "./compose";
 import { slotScopeArgs } from "./slot-partition";
 import { readSlotPartition } from "./shared-project";
+import { demoteStandbyRestart, restoreSlotRestart } from "./restart-policy";
+import { COMPOSE_DOWN_TIMEOUT, COMPOSE_UP_TIMEOUT, COMPOSE_QUERY_TIMEOUT } from "./constants";
 import { addEvent, addDeployLog } from "@/lib/stream/producer";
 import { recordActivity } from "@/lib/activity";
 import { logger } from "@/lib/logger";
@@ -17,156 +26,63 @@ import { logger } from "@/lib/logger";
 const log = logger.child("rollback-monitor");
 
 const execFileAsync = promisify(execFile);
-const POLL_INTERVAL_MS = 5000;
-
-/** In-memory set of app IDs currently being monitored. Prevents concurrent monitors. */
-const activeMonitors = new Set<string>();
-
-type RollbackMonitorOpts = {
-  appId: string;
-  appName: string;
-  organizationId: string;
-  deploymentId: string;
-  gracePeriodSeconds: number;
-  /** The slot that was just deployed (blue or green) */
-  currentSlot: "blue" | "green";
-  /** The slot that was active before this deploy (null if first deploy) */
-  previousSlot: "blue" | "green" | null;
-  /** Environment name for directory resolution */
-  envName: string;
-};
 
 /**
- * Start a background monitor that watches a freshly deployed container
- * for crashes within the grace period. If a crash is detected, the
- * monitor swaps back to the previous blue-green slot and marks the
- * deployment as rolled_back.
- *
- * This function returns immediately -- monitoring runs in the background.
- * It never throws to the caller.
+ * Container ids belonging to a compose project. `all` includes stopped ones.
+ * Returns null when Docker could not be reached — never an empty list, so a
+ * socket blip can't read as "the slot is gone".
  */
-export function startRollbackMonitor(opts: RollbackMonitorOpts): void {
-  // No previous slot means first deploy -- nothing to roll back to
-  if (!opts.previousSlot) return;
-
-  // Guard: skip if this app is already being monitored (e.g. rapid re-deploy)
-  if (activeMonitors.has(opts.appId)) {
-    log.info(
-      `Monitor already active for ${opts.appName}, skipping`
-    );
-    return;
-  }
-
-  const {
-    appId,
-    appName,
-    organizationId,
-    deploymentId,
-    gracePeriodSeconds,
-    currentSlot,
-    previousSlot,
-    envName,
-  } = opts;
-
-  activeMonitors.add(appId);
-  const deadline = Date.now() + gracePeriodSeconds * 1000;
-
-  // The compose project name that Docker labels containers with
-  const slotProjectName = `${appName}-${envName}-${currentSlot}`;
-
-  // Fire-and-forget async loop
-  (async () => {
-    try {
-      while (Date.now() < deadline) {
-        await sleep(POLL_INTERVAL_MS);
-
-        // Check if containers for the current slot are still running
-        const crashed = await isContainerCrashed(appName, envName, slotProjectName);
-
-        if (crashed) {
-          log.info(
-            `Container crashed within grace period for ${appName}, rolling back`
-          );
-
-          await performRollback({
-            appId,
-            appName,
-            organizationId,
-            deploymentId,
-            currentSlot,
-            previousSlot,
-            envName,
-          });
-          return; // Done -- rollback performed
-        }
-      }
-
-      // Grace period passed without crash -- deploy is stable
-      log.info(
-        `Grace period passed for ${appName} -- deploy is stable`
-      );
-    } catch (err) {
-      // Monitor itself failed -- log but never crash the process
-      log.error(
-        `Monitor error for ${appName}:`,
-        err instanceof Error ? err.message : err
-      );
-    } finally {
-      activeMonitors.delete(appId);
-    }
-  })();
-}
-
-/**
- * Check whether any container for the current deploy slot has exited or is restarting.
- * Filters by the compose project name to only check containers belonging to the
- * deployed slot (blue or green), not the previous slot's containers.
- */
-async function isContainerCrashed(
-  appName: string,
-  _envName: string,
-  slotProjectName: string,
-): Promise<boolean> {
+export async function slotContainerIds(
+  projectName: string,
+  all: boolean,
+): Promise<string[] | null> {
   try {
-    const containers = await listContainers(appName);
-
-    // Filter to only containers belonging to the current slot's compose project
-    const slotContainers = containers.filter(
-      (c) => c.labels["com.docker.compose.project"] === slotProjectName
+    const { stdout } = await execFileAsync(
+      "docker",
+      [
+        "ps",
+        ...(all ? ["-a"] : []),
+        "-q",
+        "--filter",
+        `label=com.docker.compose.project=${projectName}`,
+      ],
+      { timeout: COMPOSE_QUERY_TIMEOUT },
     );
-
-    if (slotContainers.length === 0) {
-      // No containers found for this slot -- treat as crashed
-      return true;
-    }
-
-    for (const c of slotContainers) {
-      const info = await inspectContainer(c.id);
-      const status = info.state.status.toLowerCase();
-      if (status === "exited" || status === "dead" || status === "restarting") {
-        return true;
-      }
-    }
-
-    return false;
-  } catch {
-    // If we can't reach Docker, don't trigger a rollback -- that would be
-    // dangerous on a transient Docker socket error.
-    return false;
+    return stdout.trim().split("\n").filter(Boolean);
+  } catch (err) {
+    log.warn(`Could not list containers for ${projectName}:`, err instanceof Error ? err.message : err);
+    return null;
   }
 }
 
-type PerformRollbackOpts = {
+/**
+ * Whether a slot has stopped serving. Null when Docker is unreachable, which
+ * callers must treat as "unknown" rather than as a crash.
+ */
+export async function slotIsDown(projectName: string): Promise<boolean | null> {
+  const ids = await slotContainerIds(projectName, false);
+  if (ids === null) return null;
+  return ids.length === 0;
+}
+
+export type PerformRollbackOpts = {
   appId: string;
   appName: string;
   organizationId: string;
   deploymentId: string;
+  /** The slot that crashed. */
   currentSlot: "blue" | "green";
+  /** The slot to restore. */
   previousSlot: "blue" | "green";
   envName: string;
 };
 
-async function performRollback(opts: PerformRollbackOpts): Promise<void> {
+/**
+ * Swap a crashed slot back to its predecessor and mark the deployment
+ * rolled_back. Returns false when the previous slot could not be restored — in
+ * that case the crashed slot is put back and no bookkeeping is written.
+ */
+export async function performRollback(opts: PerformRollbackOpts): Promise<boolean> {
   const {
     appId,
     appName,
@@ -179,52 +95,61 @@ async function performRollback(opts: PerformRollbackOpts): Promise<void> {
 
   const appDir = appEnvDir(appName, envName);
 
-  // Step 1: Tear down the crashing slot
   const crashedSlotDir = join(appDir, currentSlot);
   const crashedProjectName = `${appName}-${envName}-${currentSlot}`;
   const crashedComposeFileArgs = await slotComposeFiles(crashedSlotDir);
 
-  try {
-    await execFileAsync(
-      "docker",
-      ["compose", ...crashedComposeFileArgs, "-p", crashedProjectName, "down", "--remove-orphans"],
-      { cwd: crashedSlotDir, timeout: 30000 }
-    );
-  } catch (err) {
-    log.error(
-      "Failed to tear down crashing slot:",
-      err instanceof Error ? err.message : err
-    );
-  }
-
-  // Step 2: Bring the previous slot back up, naming the rotating set only —
-  // an unqualified `up` would start a second copy of the shared services here.
   const prevSlotDir = join(appDir, previousSlot);
   const prevProjectName = `${appName}-${envName}-${previousSlot}`;
   const prevComposeFileArgs = await slotComposeFiles(prevSlotDir);
   const prevPartition = await readSlotPartition(prevSlotDir);
 
+  // Step 1: Stop the crashing slot so its restart policy can't reclaim a host
+  // port while the previous slot binds it. Reversible — the containers stay.
+  try {
+    await execFileAsync(
+      "docker",
+      ["compose", ...crashedComposeFileArgs, "-p", crashedProjectName, "stop"],
+      { cwd: crashedSlotDir, timeout: COMPOSE_DOWN_TIMEOUT },
+    );
+  } catch (err) {
+    log.warn("Could not stop the crashing slot:", err instanceof Error ? err.message : err);
+  }
+
+  // Step 2: Bring the previous slot back up, naming the rotating set only —
+  // an unqualified `up` would start a second copy of the shared services here.
   try {
     await execFileAsync(
       "docker",
       [
-        "compose", ...prevComposeFileArgs, "-p", prevProjectName, "up", "-d",
+        "compose", ...prevComposeFileArgs, "-p", prevProjectName,
+        "up", "-d", "--no-recreate", "--pull", "never",
         ...(prevPartition ? slotScopeArgs(prevPartition) : []),
       ],
-      { cwd: prevSlotDir, timeout: 60000 }
+      { cwd: prevSlotDir, timeout: COMPOSE_UP_TIMEOUT },
     );
+    await restoreSlotRestart(prevComposeFileArgs, prevProjectName, prevSlotDir);
   } catch (err) {
-    // Previous slot also failed -- just alert, don't recurse
     log.error(
-      "Failed to restore previous slot -- manual intervention required:",
-      err instanceof Error ? err.message : err
+      "Failed to restore previous slot — putting the crashed slot back:",
+      err instanceof Error ? err.message : err,
     );
+
+    // Nothing is serving right now. Undo step 1 rather than leave the app dark.
+    await execFileAsync(
+      "docker",
+      [
+        "compose", ...crashedComposeFileArgs, "-p", crashedProjectName,
+        "up", "-d", "--no-recreate", "--pull", "never",
+      ],
+      { cwd: crashedSlotDir, timeout: COMPOSE_UP_TIMEOUT },
+    ).catch(() => {});
 
     await sendRollbackNotification(organizationId, appId, appName, false);
-    return;
+    return false;
   }
 
-  // Step 3: Atomic symlink swap back to previous slot
+  // Step 3: Atomic symlink swap back to the previous slot
   const currentSymlinkPath = join(appDir, "current");
   const tmpSymlinkPath = join(appDir, "current.tmp");
   try {
@@ -236,7 +161,11 @@ async function performRollback(opts: PerformRollbackOpts): Promise<void> {
     log.warn(`[rollback] Failed to create 'current' symlink: ${err instanceof Error ? err.message : err}`);
   }
 
-  // Step 3a: Update container name in DB (for logs/UI — not routing).
+  // Step 3a: The crashed slot is the standby now, so it must not come back on a
+  // daemon restart.
+  await demoteStandbyRestart(crashedComposeFileArgs, crashedProjectName, crashedSlotDir);
+
+  // Step 3b: Update container name in DB (for logs/UI — not routing).
   // Traefik discovers the restored containers via their Docker labels automatically.
   try {
     const containers = await listContainers(prevProjectName);
@@ -264,7 +193,7 @@ async function performRollback(opts: PerformRollbackOpts): Promise<void> {
 
   // Step 6: Write to deploy stream + org event stream for real-time UI
   addDeployLog(deploymentId, {
-    line: "Container crashed within grace period, rolled back to previous version",
+    line: "Containers stopped within grace period, rolled back to previous version",
     stage: "rollback",
     status: "failed",
   }).catch(() => {});
@@ -272,7 +201,7 @@ async function performRollback(opts: PerformRollbackOpts): Promise<void> {
   addEvent(organizationId, {
     type: "deploy.status",
     title: "Deploy rolled back",
-    message: "Container crashed within grace period, rolled back to previous version",
+    message: "Containers stopped within grace period, rolled back to previous version",
     appId,
     deploymentId,
     status: "error",
@@ -286,20 +215,22 @@ async function performRollback(opts: PerformRollbackOpts): Promise<void> {
     appId,
     metadata: {
       deploymentId,
-      reason: "Container crashed within grace period",
+      reason: "Containers stopped within grace period",
       rolledBackTo: previousSlot,
     },
   }).catch(() => {});
 
   // Step 8: Notify
   await sendRollbackNotification(organizationId, appId, appName, true);
+  return true;
 }
 
-async function sendRollbackNotification(
+export async function sendRollbackNotification(
   organizationId: string,
   appId: string,
   appName: string,
-  success: boolean
+  success: boolean,
+  message?: string,
 ): Promise<void> {
   try {
     const { emit } = await import("@/lib/notifications/dispatch");
@@ -308,9 +239,11 @@ async function sendRollbackNotification(
       title: success
         ? `Auto-rollback: ${appName}`
         : `Auto-rollback failed: ${appName}`,
-      message: success
-        ? `Container crashed after deploy. Rolled back to previous version.`
-        : `Container crashed after deploy and rollback to previous version also failed. Manual intervention required.`,
+      message:
+        message ??
+        (success
+          ? `Containers stopped after deploy. Rolled back to previous version.`
+          : `Containers stopped after deploy and the previous version could not be restored. Manual intervention required.`),
       projectName: appName,
       appId,
       rollbackSuccess: success,
@@ -318,8 +251,4 @@ async function sendRollbackNotification(
   } catch (err) {
     log.error("Notification error:", err);
   }
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
