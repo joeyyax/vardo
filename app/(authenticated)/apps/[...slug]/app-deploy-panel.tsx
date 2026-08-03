@@ -339,7 +339,7 @@ export function AppDeployPanel({
       : variant === "live"
       ? isLive ? "bg-status-success-muted" : isStopped ? "bg-status-neutral-muted" : isErrored ? "bg-status-error-muted" : "bg-card"
       : variant === "rollback"
-      ? "bg-amber-500/5 border-amber-500/20"
+      ? "bg-status-warning-muted border-status-warning-edge"
       : ({
           success: "bg-card",
           failed: "bg-status-error-muted",
@@ -451,7 +451,7 @@ export function AppDeployPanel({
                 <Button
                   variant="default"
                   size="sm"
-                  className="h-7 px-3 text-xs gap-1.5 bg-amber-700 hover:bg-amber-800 text-white"
+                  className="h-7 px-3 text-xs gap-1.5"
                   disabled={instantRollingBack}
                   aria-label={`Roll back to ${label}`}
                   onClick={() => setConfirmRollbackOpen(true)}
@@ -695,10 +695,7 @@ export function AppDeployPanel({
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleInstantRollback}
-              className="bg-amber-700 hover:bg-amber-800 text-white"
-            >
+            <AlertDialogAction onClick={handleInstantRollback}>
               <Zap className="size-4 mr-2" />
               Roll back now
             </AlertDialogAction>
@@ -786,7 +783,7 @@ export function AppDeployPanel({
                         )}
                         {rollbackPreview.envKeyChanges.changed.length > 0 && (
                           <div>
-                            <span className="text-amber-500 font-medium">Changed: </span>
+                            <span className="text-status-warning font-medium">Changed: </span>
                             {rollbackPreview.envKeyChanges.changed.join(", ")}
                           </div>
                         )}
