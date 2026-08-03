@@ -292,7 +292,7 @@ export function ExternalRoutesSettings() {
                         </Badge>
                       )}
                       {route.insecureSkipVerify && (
-                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-status-warning border-status-warning/30">
+                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-status-warning border-status-warning-edge">
                           skip verify
                         </Badge>
                       )}

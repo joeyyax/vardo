@@ -15,6 +15,18 @@ const badgeVariants = cva(
         destructive:
           "border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/80",
         outline: "text-foreground",
+
+        // Status chips. The edge carries the shape — on a hovered row or a bare
+        // page the fill matches the ground and only the hairline reads.
+        success:
+          "border-status-success-edge bg-status-success-muted text-status-success",
+        warning:
+          "border-status-warning-edge bg-status-warning-muted text-status-warning",
+        error:
+          "border-status-error-edge bg-status-error-muted text-status-error",
+        info: "border-status-info-edge bg-status-info-muted text-status-info",
+        neutral:
+          "border-status-neutral-edge bg-status-neutral-muted text-status-neutral",
       },
     },
     defaultVariants: {

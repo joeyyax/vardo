@@ -62,15 +62,15 @@ function formatRelativeTime(dateStr: string): string {
 
 function StatusBadge({ status }: { status: "healthy" | "unhealthy" | "unconfigured" | "ok" | "warning" | "critical" }) {
   if (status === "healthy" || status === "ok") {
-    return <Badge variant="outline" className="text-status-success border-status-success/30">OK</Badge>;
+    return <Badge variant="outline" className="text-status-success border-status-success-edge">OK</Badge>;
   }
   if (status === "unconfigured") {
     return <Badge variant="outline" className="text-muted-foreground">Not configured</Badge>;
   }
   if (status === "warning") {
-    return <Badge variant="outline" className="text-status-warning border-status-warning/30">Warning</Badge>;
+    return <Badge variant="outline" className="text-status-warning border-status-warning-edge">Warning</Badge>;
   }
-  return <Badge variant="outline" className="text-status-error border-status-error/30">Unhealthy</Badge>;
+  return <Badge variant="outline" className="text-status-error border-status-error-edge">Unhealthy</Badge>;
 }
 
 export function SystemAlertsPanel() {
