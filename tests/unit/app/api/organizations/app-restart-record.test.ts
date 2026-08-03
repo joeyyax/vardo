@@ -1,34 +1,24 @@
 // POST /api/v1/organizations/[orgId]/apps/[appId]/restart
 //
-// The click was correctly wired and still read as a no-op: nothing was written,
-// so the page showed the container that had just been replaced and no record
-// existed anywhere afterwards. Both halves are asserted here.
+// The UI's Start and Restart buttons both post here. The route only wires the
+// request up — which command runs, and what gets recorded, is startOrRestartApp
+// (tests/unit/lib/docker/start-app.test.ts).
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
-const {
-  mockVerifyOrgAccess,
-  mockRestartContainers,
-  mockResolveDefaultEnv,
-  mockReconcileAppNow,
-  mockRecordLifecycle,
-  appsFindFirst,
-} = vi.hoisted(() => ({
-  mockVerifyOrgAccess: vi.fn(),
-  mockRestartContainers: vi.fn(),
-  mockResolveDefaultEnv: vi.fn(),
-  mockReconcileAppNow: vi.fn(),
-  mockRecordLifecycle: vi.fn(),
-  appsFindFirst: vi.fn(),
-}));
+const { mockVerifyOrgAccess, mockStartOrRestartApp, mockRefuseSystemManaged, appsFindFirst } =
+  vi.hoisted(() => ({
+    mockVerifyOrgAccess: vi.fn(),
+    mockStartOrRestartApp: vi.fn(),
+    mockRefuseSystemManaged: vi.fn(),
+    appsFindFirst: vi.fn(),
+  }));
 
 vi.mock("@/lib/api/verify-access", () => ({ verifyOrgAccess: mockVerifyOrgAccess }));
+vi.mock("@/lib/api/system-managed", () => ({ refuseSystemManaged: mockRefuseSystemManaged }));
 vi.mock("@/lib/api/rate-limit", () => ({ rateLimit: vi.fn().mockResolvedValue(null) }));
-vi.mock("@/lib/docker/deploy", () => ({ restartContainers: mockRestartContainers }));
-vi.mock("@/lib/docker/resolve-env", () => ({ resolveDefaultEnv: mockResolveDefaultEnv }));
-vi.mock("@/lib/docker/status-reconcile", () => ({ reconcileAppNow: mockReconcileAppNow }));
-vi.mock("@/lib/activity/lifecycle", () => ({ recordLifecycle: mockRecordLifecycle }));
+vi.mock("@/lib/docker/start-app", () => ({ startOrRestartApp: mockStartOrRestartApp }));
 vi.mock("@/lib/db", () => ({ db: { query: { apps: { findFirst: appsFindFirst } } } }));
 
 const { POST } = await import(
@@ -64,44 +54,24 @@ beforeEach(() => {
     membership: { role: "owner" },
     session: { user: { id: "u1" }, authMethod: "session" },
   });
-  mockResolveDefaultEnv.mockResolvedValue({ name: "production" });
-  mockRestartContainers.mockResolvedValue({ success: true, log: "ok" });
+  mockStartOrRestartApp.mockResolvedValue({ success: true, action: "restarted", log: "ok" });
+  mockRefuseSystemManaged.mockReturnValue(null);
   appsFindFirst.mockResolvedValue(app());
 });
 
 describe("restart route", () => {
-  it("refreshes the row and records the restart", async () => {
-    await POST(request(), params);
+  it("hands the app to the shared start path and reports what it did", async () => {
+    const res = await POST(request(), params);
 
-    expect(mockReconcileAppNow).toHaveBeenCalledWith(APP_ID);
-    expect(mockRecordLifecycle).toHaveBeenCalledWith(
-      expect.objectContaining({ kind: "restarted", userId: "u1", organizationId: ORG_ID }),
+    expect(mockStartOrRestartApp).toHaveBeenCalledWith(
+      expect.objectContaining({ organizationId: ORG_ID, userId: "u1" }),
     );
-  });
-
-  it("calls it a start when the app was off — the button posts here too", async () => {
-    appsFindFirst.mockResolvedValue(app({ status: "stopped" }));
-    mockReconcileAppNow.mockResolvedValue("active");
-
-    await POST(request(), params);
-
-    expect(mockRecordLifecycle).toHaveBeenCalledWith(
-      expect.objectContaining({ kind: "started" }),
-    );
-  });
-
-  it("claims no start when compose exited clean but nothing came up", async () => {
-    appsFindFirst.mockResolvedValue(app({ status: "stopped" }));
-    mockReconcileAppNow.mockResolvedValue("missing");
-
-    await POST(request(), params);
-
-    expect(mockRecordLifecycle).not.toHaveBeenCalled();
+    await expect(res.json()).resolves.toMatchObject({ success: true, action: "restarted" });
   });
 
   it("marks the trigger only when the caller used a token", async () => {
     await POST(request(), params);
-    expect(mockRecordLifecycle.mock.calls[0][0].trigger).toBeUndefined();
+    expect(mockStartOrRestartApp.mock.calls[0][0].trigger).toBeUndefined();
 
     mockVerifyOrgAccess.mockResolvedValue({
       organization: { id: ORG_ID },
@@ -109,26 +79,56 @@ describe("restart route", () => {
       session: { user: { id: "u1" }, authMethod: "token" },
     });
     await POST(request(), params);
-    expect(mockRecordLifecycle.mock.calls[1][0].trigger).toBe("api");
+    expect(mockStartOrRestartApp.mock.calls[1][0].trigger).toBe("api");
   });
 
-  it("writes nothing when the restart failed", async () => {
-    mockRestartContainers.mockResolvedValue({ success: false, log: "no slot dir" });
+  it("passes the reason back as `error` — that is the key the toast reads", async () => {
+    mockStartOrRestartApp.mockResolvedValue({
+      success: false,
+      action: "none",
+      failure: "no-slot",
+      log: "No deployed compose project found for it-tools. Deploy the app to bring it up.",
+    });
 
-    await POST(request(), params);
+    const res = await POST(request(), params);
 
-    expect(mockReconcileAppNow).not.toHaveBeenCalled();
-    expect(mockRecordLifecycle).not.toHaveBeenCalled();
+    await expect(res.json()).resolves.toMatchObject({
+      success: false,
+      error: expect.stringContaining("Deploy the app to bring it up"),
+    });
   });
 
-  it("writes nothing for an app that is not there", async () => {
+  it("404s when the child's parent is gone", async () => {
+    appsFindFirst.mockResolvedValue(app({ parentAppId: "p1", composeService: "db" }));
+    mockStartOrRestartApp.mockResolvedValue({
+      success: false,
+      action: "none",
+      failure: "no-parent",
+      log: "no parent",
+    });
+
+    const res = await POST(request(), params);
+
+    expect(res.status).toBe(404);
+  });
+
+  it("honors a system-managed refusal before touching anything", async () => {
+    mockRefuseSystemManaged.mockReturnValue(
+      NextResponse.json({ error: "refused" }, { status: 403 }),
+    );
+
+    const res = await POST(request(), params);
+
+    expect(res.status).toBe(403);
+    expect(mockStartOrRestartApp).not.toHaveBeenCalled();
+  });
+
+  it("does nothing for an app that is not there", async () => {
     appsFindFirst.mockResolvedValue(undefined);
 
     const res = await POST(request(), params);
 
     expect(res.status).toBe(404);
-    expect(mockRestartContainers).not.toHaveBeenCalled();
-    expect(mockReconcileAppNow).not.toHaveBeenCalled();
-    expect(mockRecordLifecycle).not.toHaveBeenCalled();
+    expect(mockStartOrRestartApp).not.toHaveBeenCalled();
   });
 });

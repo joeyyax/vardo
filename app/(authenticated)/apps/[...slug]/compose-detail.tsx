@@ -726,7 +726,8 @@ export function ComposeDetail({
     router.refresh();
   }, [orgId, app.id, router]);
 
-  // Same endpoint as Restart: compose restarts stopped services back up.
+  // Same endpoint as Restart: the route reads the app's status and brings a
+  // stopped one up rather than restarting nothing.
   const handleStart = useCallback(async () => {
     try {
       const res = await fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/restart`, { method: "POST" });
