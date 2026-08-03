@@ -4,7 +4,7 @@ import { apps } from "@/lib/db/schema";
 import { recordActivity } from "@/lib/activity";
 import { planMigration, requiresMigration, type MigrationPlan } from "./migration-path";
 import { setImageRefTag, setServiceImageTag } from "./apply";
-import { getAppUpdateStatus } from "./status";
+import { getAppUpdateStatus, type AppUpdateStatus } from "./status";
 import { resolveUpdatableApp } from "./resolve-app";
 
 export interface ApplyRequest {
@@ -15,6 +15,8 @@ export interface ApplyRequest {
   service?: string | null;
   tag: string;
   acknowledgeMigration?: boolean;
+  /** Resolving a deploy the major gate stopped, which verified both majors itself. */
+  majorGate?: boolean;
 }
 
 export type ApplyOutcome =
@@ -54,6 +56,7 @@ export async function applyImageUpdate({
   service: requestedService,
   tag,
   acknowledgeMigration,
+  majorGate,
 }: ApplyRequest): Promise<ApplyOutcome> {
   const app = await resolveUpdatableApp(orgId, appId);
   if (!app) {
@@ -84,8 +87,29 @@ export async function applyImageUpdate({
       (t): t is string => t !== null,
     ),
   );
-  if (!offered.has(tag)) {
+  // The gate read both majors off real local images, so its two are verified in
+  // the same sense a registry check's are — and they are the only way out of a
+  // floating tag, which no check ever offers a tag for.
+  const gated = majorGate ? gateChoice(status.blockedMigration, service, tag) : null;
+
+  if (!offered.has(tag) && !gated) {
     return fail(identity, 409, `No verified update to ${tag}. Re-run the check first.`);
+  }
+
+  // Pinning the major the gate stopped on is the same data migration, and the
+  // tag it moves from names no version for `requiresMigration` to read.
+  if (gated === "forward" && !acknowledgeMigration) {
+    const blocked = status.blockedMigration!.services.find((entry) => entry.service === service)!;
+    return {
+      ...identity,
+      ok: false,
+      status: 409,
+      error: `${target.image} stores data in a format tied to its major version. Pinning ${tag} means migrating the data directory written by major ${blocked.from} — back up first, then confirm.`,
+      requiresMigration: true,
+      from: String(blocked.from),
+      to: tag,
+      plan: blocked.plan,
+    };
   }
 
   // A major bump on a major-locked image cannot start against the existing
@@ -140,6 +164,22 @@ export async function applyImageUpdate({
     previousImage: change.previousImage,
     newImage: change.newImage,
   };
+}
+
+/**
+ * Which side of a stopped deploy this tag is: the major the app is running, or
+ * the one the pull moved to. Null when the tag is neither.
+ */
+function gateChoice(
+  block: AppUpdateStatus["blockedMigration"],
+  service: string | null,
+  tag: string,
+): "back" | "forward" | null {
+  const entry = block?.services.find((s) => s.service === service);
+  if (!entry) return null;
+  if (tag === String(entry.from)) return "back";
+  if (tag === String(entry.to)) return "forward";
+  return null;
 }
 
 type Identity = {
