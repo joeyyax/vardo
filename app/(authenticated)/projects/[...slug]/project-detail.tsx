@@ -53,7 +53,7 @@ import { statusRank } from "@/lib/ui/app-row";
 import { appStatusFromEvent } from "@/lib/bus/refresh";
 import type { BusEvent } from "@/lib/bus/events";
 import type { AppCondition } from "@/lib/docker/conditions";
-import { Uptime, DeploymentStatusBadge, formatDuration } from "@/components/app-status";
+import { Uptime, DeploymentStatusBadge, LiveBadge, formatDuration } from "@/components/app-status";
 import { AppRow } from "@/components/app-row";
 import { AppRowCard } from "@/components/app-row-card";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
@@ -287,10 +287,7 @@ function ProjectDeployments({ apps, color }: { apps: ProjectApp[]; color: string
               >
                 <div className="flex items-center gap-3 min-w-0">
                   {isLive ? (
-                    <Badge className="border-transparent bg-status-success text-white shrink-0">
-                      <span className="mr-1.5 size-1.5 rounded-full bg-white animate-pulse" />
-                      Live
-                    </Badge>
+                    <LiveBadge />
                   ) : isStopped ? (
                     <Badge variant="neutral" className="shrink-0">
                       Stopped

@@ -81,7 +81,7 @@ export function InProgressDeployCard({
         className="flex items-center justify-between gap-4 p-4 w-full text-left hover:bg-accent/50 transition-colors cursor-pointer"
       >
         <div className="flex items-center gap-3 min-w-0">
-          <Badge variant="outline" className="animate-pulse shrink-0">
+          <Badge variant="info" className="animate-pulse shrink-0">
             <Loader2 className="mr-1 size-3 animate-spin" />
             {cancelling ? "Cancelling" : isRollback ? "Rolling back" : "Deploying"}
           </Badge>

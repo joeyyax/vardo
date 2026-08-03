@@ -41,7 +41,7 @@ import {
   BottomSheetDescription,
 } from "@/components/ui/bottom-sheet";
 import { DeploymentLog } from "@/components/log-viewer";
-import { DeploymentStatusBadge, formatDuration } from "@/components/app-status";
+import { DeploymentStatusBadge, LiveBadge, formatDuration } from "@/components/app-status";
 import { toast } from "@/lib/messenger";
 import { RelativeTime } from "@/components/relative-time";
 import { Uptime } from "./timer";
@@ -378,10 +378,7 @@ export function AppDeployPanel({
           <div className="flex items-center gap-3 min-w-0">
             {variant === "live" ? (
               isLive ? (
-                <Badge className="border-transparent bg-status-success text-white shrink-0">
-                  <span className="mr-1.5 size-1.5 rounded-full bg-white animate-pulse" />
-                  {isDeploying ? "Live · still serving" : "Live"}
-                </Badge>
+                <LiveBadge label={isDeploying ? "Live · still serving" : "Live"} />
               ) : isStopped ? (
                 <Badge variant="neutral" className="shrink-0">
                   Stopped
@@ -394,7 +391,8 @@ export function AppDeployPanel({
                 <DeploymentStatusBadge status={deployment.status} />
               )
             ) : variant === "rollback" ? (
-              <Badge className="border-transparent bg-amber-500/15 text-amber-700 dark:text-amber-500 shrink-0 gap-1">
+              // Names the standby slot, not a state — no status hue.
+              <Badge variant="outline" className="shrink-0 gap-1">
                 <Zap className="size-3" />
                 Instant rollback
               </Badge>

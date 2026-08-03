@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 import { toast } from "@/lib/messenger";
 import { formatBytes } from "@/lib/metrics/format";
+import { containerStateVariant } from "@/lib/ui/container-state";
 
 type ServiceStatus = {
   name: string;
@@ -127,12 +128,6 @@ type MountsConfig = {
   vardoMount1: MountPair;
   vardoMount2: MountPair;
 };
-
-function stateVariant(state: string): "default" | "secondary" | "destructive" | "outline" {
-  if (state === "running") return "default";
-  if (state === "exited" || state === "dead") return "destructive";
-  return "secondary";
-}
 
 function stateLabel(state: string): string {
   if (state === "running") return "Running";
@@ -507,7 +502,7 @@ export function MaintenanceSettings() {
                     <p className="text-xs text-muted-foreground truncate">{svc.status}</p>
                   </div>
                   <div className="flex items-center gap-3 shrink-0 ml-4">
-                    <Badge variant={stateVariant(svc.state)} className="text-xs">
+                    <Badge variant={containerStateVariant(svc.state)} className="text-xs">
                       {stateLabel(svc.state)}
                     </Badge>
                     <Button
