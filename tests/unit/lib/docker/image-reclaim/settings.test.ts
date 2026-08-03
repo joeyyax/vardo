@@ -9,6 +9,10 @@ describe("image reclaim settings", () => {
     expect(DEFAULT_CONFIG.idleDays).toBe(DEFAULT_IDLE_DAYS);
   });
 
+  it("keeps the slot sweep off until someone turns it on", () => {
+    expect(DEFAULT_CONFIG.slots).toBe(false);
+  });
+
   it("clamps the threshold into range", () => {
     expect(clampIdleDays(0)).toBe(1);
     expect(clampIdleDays(-1)).toBe(1);

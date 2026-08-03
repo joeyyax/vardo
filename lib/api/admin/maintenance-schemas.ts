@@ -74,10 +74,13 @@ export const mountsSchema = z.object({
 export const imageReclaimConfigSchema = z.object({
   enabled: z.boolean(),
   idleDays: z.number().int().min(1).max(3650),
+  slots: z.boolean().optional().default(false),
 });
 
 export const imageReclaimRunSchema = z.object({
   dryRun: z.boolean().optional().default(false),
+  /** Also sweep superseded blue-green slot generations. Asked for explicitly. */
+  slots: z.boolean().optional().default(false),
 });
 
 export const imageReclaimAppSchema = z.object({
