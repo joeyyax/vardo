@@ -13,6 +13,9 @@ import type { DeployStage } from "./deploy-logger";
 
 export type DeployStatus = "running" | "success" | "failed" | "skipped";
 
+/** Result of stopping the old slot. `ok: false` means its containers are still up. */
+export type SlotStopOutcome = { ok: true } | { ok: false; message: string };
+
 /**
  * The app record shape as returned by the db query in runDeployment.
  * Uses `with: { domains: true }` so domains is always present.
@@ -186,7 +189,13 @@ export type DeployContext = {
    * Set when the old slot must be stopped after post-deploy rather than during
    * the swap, because it is running this process. Vardo deploying Vardo.
    */
-  stopOldSlot?: () => Promise<void>;
+  stopOldSlot?: () => Promise<SlotStopOutcome>;
+
+  /**
+   * Post-deploy work an earlier step could not finish. Drained by post-deploy
+   * onto the deployment row once the deploy commits.
+   */
+  unfinished?: string[];
 
   /** Set once the deploy records success — from here the new slot is live, not disposable. */
   succeeded?: boolean;
