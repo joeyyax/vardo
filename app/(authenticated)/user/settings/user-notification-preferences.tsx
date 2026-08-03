@@ -44,6 +44,7 @@ const EVENT_LABELS: Record<BusEventType, string> = {
   "app.auto-restarted": "Container auto-restarted",
   "backup.success": "Backup succeeded",
   "backup.failed": "Backup failed",
+  "backup.progress": "Backup progress",
   "cron.failed": "Cron job failed",
   "volume.drift": "Volume drift detected",
   "disk.write-alert": "High disk writes",
