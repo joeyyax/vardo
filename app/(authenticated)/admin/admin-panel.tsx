@@ -8,7 +8,7 @@ import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { SectionNav, type SectionGroup } from "@/components/section-nav";
 import { PageToolbar } from "@/components/page-toolbar";
 import { FeatureDisabled } from "@/components/feature-disabled";
-import { DockerPrune, UserManagement } from "./admin-actions";
+import { UserManagement } from "./admin-actions";
 import { AdminOverview } from "./admin-overview";
 import { AdminOrganizations } from "./admin-organizations";
 import { AdminMetrics } from "./admin-metrics";
@@ -64,10 +64,7 @@ export function AdminPanel({ activeTab, orgId, metricsEnabled, metricsFlag }: Ad
                 },
                 {
                   label: "Operate",
-                  items: [
-                    { value: "maintenance", label: "Maintenance" },
-                    { value: "metrics", label: "Metrics" },
-                  ],
+                  items: [{ value: "metrics", label: "Metrics" }],
                 },
               ] satisfies SectionGroup[]}
             />
@@ -86,10 +83,6 @@ export function AdminPanel({ activeTab, orgId, metricsEnabled, metricsFlag }: Ad
 
         <TabsContent value="users">
           <UserManagement />
-        </TabsContent>
-
-        <TabsContent value="maintenance" className="space-y-4">
-          <DockerPrune />
         </TabsContent>
 
         <TabsContent value="metrics">
