@@ -293,3 +293,35 @@ describe("runDeployment failures between phases", () => {
     expect(dockerCalls.some((c) => c.includes("-p app-prod-blue down"))).toBe(true);
   });
 });
+
+describe("runDeployment failures after the deploy reported success", () => {
+  // postDeploy keeps working past `done: success` — events, notifications. The
+  // app has cut over by then, so a throw in that tail owns none of its containers.
+  beforeEach(() => {
+    dockerCalls.length = 0;
+    onStage.mockClear();
+    hooksMock.mockResolvedValue({ allowed: true });
+    vi.mocked(prepareRepo).mockImplementation(async (ctx) => ctx);
+    vi.mocked(build).mockImplementation(async (ctx) => ctx);
+    vi.mocked(swap).mockImplementation(async (ctx) => {
+      ctx.slotDir = "/srv/vardo/app/blue";
+      ctx.newProjectName = "app-prod-blue";
+      ctx.stage("routing", "running");
+      ctx.stage("routing", "success");
+      return ctx;
+    });
+    vi.mocked(postDeploy).mockImplementation(async (ctx) => {
+      ctx.stage("cleanup", "success");
+      ctx.succeeded = true;
+      ctx.stage("done", "success");
+      throw new Error("notification dispatch failed");
+    });
+  });
+
+  it("leaves the containers serving traffic alone", async () => {
+    await runDeployment("dep-1", { ...OPTS, onStage });
+
+    expect(stageCalls()).toContainEqual(["done", "success"]);
+    expect(dockerCalls.some((c) => c.includes("down"))).toBe(false);
+  });
+});
