@@ -2,10 +2,10 @@ import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
 import { createServer, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 
-// The core service probes reach past the process: GlitchTip over HTTP, Promtail
-// over the Docker socket, and the logs links through the apps table. Each of
-// those is stubbed so the probe's own decisions are what's under test. Feature
-// flags come from the environment, which resolves ahead of any settings read.
+// The core service probes reach past the process: Loki over HTTP, Promtail over
+// the Docker socket, and the logs links through the apps table. Each of those is
+// stubbed so the probe's own decisions are what's under test. Feature flags come
+// from the environment, which resolves ahead of any settings read.
 
 const state = vi.hoisted(() => ({
   admin: true,
@@ -39,7 +39,6 @@ import { checkServiceByName } from "@/lib/config/health";
 const FLAG_VARS = [
   "VARDO_FEATURE_LOGGING",
   "VARDO_FEATURE_METRICS",
-  "VARDO_FEATURE_ERROR_TRACKING",
   "VARDO_FEATURE_SELF_MANAGEMENT",
 ];
 
@@ -66,34 +65,34 @@ beforeEach(() => {
 
 afterEach(() => {
   for (const key of FLAG_VARS) delete process.env[key];
-  delete process.env.GLITCHTIP_URL;
+  delete process.env.LOKI_URL;
 });
 
 // ---------------------------------------------------------------------------
-// GlitchTip
+// Loki
 // ---------------------------------------------------------------------------
 
-describe("GlitchTip probe", () => {
+describe("Loki probe", () => {
   it("reports healthy when the API answers", async () => {
-    const server = await listen((res) => res.end("{}"));
-    process.env.GLITCHTIP_URL = urlOf(server);
+    const server = await listen((res) => res.end("ready"));
+    process.env.LOKI_URL = urlOf(server);
 
-    await expect(checkServiceByName("GlitchTip")).resolves.toMatchObject({
-      name: "GlitchTip",
+    await expect(checkServiceByName("Loki")).resolves.toMatchObject({
+      name: "Loki",
       status: "healthy",
     });
 
     await close(server);
   });
 
-  it("catches a GlitchTip that is up but erroring", async () => {
+  it("catches a Loki that is up but erroring", async () => {
     const server = await listen((res) => {
       res.statusCode = 502;
       res.end();
     });
-    process.env.GLITCHTIP_URL = urlOf(server);
+    process.env.LOKI_URL = urlOf(server);
 
-    await expect(checkServiceByName("GlitchTip")).resolves.toMatchObject({
+    await expect(checkServiceByName("Loki")).resolves.toMatchObject({
       status: "unhealthy",
       error: "HTTP 502",
     });
@@ -101,13 +100,13 @@ describe("GlitchTip probe", () => {
     await close(server);
   });
 
-  it("catches a GlitchTip that is gone", async () => {
-    const server = await listen((res) => res.end("{}"));
+  it("catches a Loki that is gone", async () => {
+    const server = await listen((res) => res.end("ready"));
     const url = urlOf(server);
     await close(server);
-    process.env.GLITCHTIP_URL = url;
+    process.env.LOKI_URL = url;
 
-    const status = await checkServiceByName("GlitchTip");
+    const status = await checkServiceByName("Loki");
     expect(status?.status).toBe("unhealthy");
     expect(status?.error).toBeTruthy();
   });
@@ -117,13 +116,13 @@ describe("GlitchTip probe", () => {
       res.statusCode = 503;
       res.end();
     });
-    process.env.GLITCHTIP_URL = urlOf(down);
-    expect((await checkServiceByName("GlitchTip"))?.status).toBe("unhealthy");
+    process.env.LOKI_URL = urlOf(down);
+    expect((await checkServiceByName("Loki"))?.status).toBe("unhealthy");
     await close(down);
 
-    const up = await listen((res) => res.end("{}"));
-    process.env.GLITCHTIP_URL = urlOf(up);
-    expect((await checkServiceByName("GlitchTip"))?.status).toBe("healthy");
+    const up = await listen((res) => res.end("ready"));
+    process.env.LOKI_URL = urlOf(up);
+    expect((await checkServiceByName("Loki"))?.status).toBe("healthy");
     await close(up);
   });
 });

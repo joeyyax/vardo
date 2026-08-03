@@ -140,7 +140,6 @@ describe("teams flag", () => {
 
 describe("featureFlagEnvVar", () => {
   it("upper-snake-cases kebab and camelCase names alike", () => {
-    expect(featureFlagEnvVar("error-tracking")).toBe("VARDO_FEATURE_ERROR_TRACKING");
     expect(featureFlagEnvVar("domain-monitoring")).toBe("VARDO_FEATURE_DOMAIN_MONITORING");
     expect(featureFlagEnvVar("bindMounts")).toBe("VARDO_FEATURE_BIND_MOUNTS");
     expect(featureFlagEnvVar("selfManagement")).toBe("VARDO_FEATURE_SELF_MANAGEMENT");

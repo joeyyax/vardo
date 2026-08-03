@@ -167,7 +167,7 @@ export function templateEnvContent(template: Template): string {
   return lines.join("\n");
 }
 
-// Prefixed keys are matched by suffix so GLITCHTIP_DOMAIN resolves like DOMAIN.
+// Prefixed keys are matched by suffix so GITEA_DOMAIN resolves like DOMAIN.
 // Bare `_url` and `_host` are left out: DATABASE_URL and WORDPRESS_DB_HOST point
 // at compose services, not at the app.
 const URL_KEYS = ["url", "base_url", "app_url", "site_url", "public_url", "nextauth_url"];

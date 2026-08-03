@@ -13,7 +13,6 @@ const allFeatures = {
   terminal: true,
   cron: true,
   backups: true,
-  errorTracking: true,
   metrics: true,
   logging: true,
   imageUpdates: true,
@@ -71,11 +70,16 @@ describe("availableAppTabs", () => {
     const tabs = availableAppTabs(
       context({
         isComposeParent: true,
-        features: { ...allFeatures, cron: false, errorTracking: false },
+        features: { ...allFeatures, cron: false, logging: false },
       }),
     );
     expect(tabs).not.toContain("cron");
-    expect(tabs).not.toContain("errors");
+    expect(tabs).not.toContain("logs");
+  });
+
+  it("keeps errors on a compose parent — no flag gates it", () => {
+    const tabs = availableAppTabs(context({ isComposeParent: true, features: allFeatures }));
+    expect(tabs).toContain("errors");
   });
 
   it("drops parent tabs behind disabled feature flags", () => {

@@ -7,10 +7,10 @@
 //   host-agent — cAdvisor and Promtail read the whole host (privileged, /rootfs,
 //     the Docker socket), so a second copy duplicates every sample and log line.
 //     Singleton is a property of what they do.
-//   app — Loki and GlitchTip are ordinary stacks that receive pushes. One
-//     instance is the current limit, not a property: both are addressed by a
-//     fixed DNS alias that a second instance would collide with. Per-org
-//     instances need app-name namespacing that does not exist yet.
+//   app — Loki is an ordinary stack that receives pushes. One instance is the
+//     current limit, not a property: it is addressed by a fixed DNS alias that a
+//     second instance would collide with. Per-org instances need app-name
+//     namespacing that does not exist yet.
 // ---------------------------------------------------------------------------
 
 import type { FeatureFlag } from "@/lib/config/features";
@@ -38,8 +38,6 @@ export type CoreServiceFeature = {
   /** Template and app name of each service, in deploy order. */
   services: { name: string; displayName: string; kind: CoreServiceKind }[];
   project: { name: string; displayName: string };
-  /** Per-template app settings, e.g. Traefik labels for user-facing services. */
-  appOverrides?: Partial<{ autoTraefikLabels: boolean }>;
 };
 
 export const CORE_SERVICE_FEATURES: CoreServiceFeature[] = [
@@ -55,12 +53,6 @@ export const CORE_SERVICE_FEATURES: CoreServiceFeature[] = [
       { name: "promtail", displayName: "Promtail", kind: "host-agent" },
     ],
     project: { name: "logs", displayName: "Logs" },
-  },
-  {
-    flag: "error-tracking",
-    services: [{ name: "glitchtip", displayName: "GlitchTip", kind: "app" }],
-    project: { name: "error-tracking", displayName: "Error Tracking" },
-    appOverrides: { autoTraefikLabels: true },
   },
 ];
 
@@ -184,6 +176,3 @@ export function summarizeCoreServices(
     }),
   );
 }
-
-// A privileged deep link into the full GlitchTip suite would attach to the
-// glitchtip entry here; it needs an agreed auth model before it can be built.

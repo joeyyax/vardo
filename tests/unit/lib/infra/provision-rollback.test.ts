@@ -49,7 +49,7 @@ const {
     dbMock,
     requestDeployMock: vi.fn(),
     deleteAppMock: vi.fn().mockResolvedValue({ deleted: true }),
-    loadTemplatesMock: vi.fn(async () => [template("glitchtip"), template("loki"), template("promtail")]),
+    loadTemplatesMock: vi.fn(async () => [template("loki"), template("promtail")]),
     ensureVardoOrgMock: vi.fn(async () => ({ id: "org-1" })),
   };
 });
@@ -77,14 +77,14 @@ describe("provisionForFlag — install rollback (#741)", () => {
   it("does not roll back when the first deploy succeeds", async () => {
     requestDeployMock.mockResolvedValue({ deploymentId: "d1", success: true, log: "", durationMs: 1 });
 
-    await expect(provisionForFlag("error-tracking", true)).resolves.toBeUndefined();
+    await expect(provisionForFlag("logging", true)).resolves.toBeUndefined();
     expect(deleteAppMock).not.toHaveBeenCalled();
   });
 
   it("rolls back the app and throws when the first deploy fails", async () => {
     requestDeployMock.mockResolvedValue({ deploymentId: "d1", success: false, log: "boom", durationMs: 1 });
 
-    await expect(provisionForFlag("error-tracking", true)).rejects.toThrow(/failed to deploy/i);
+    await expect(provisionForFlag("logging", true)).rejects.toThrow(/failed to deploy/i);
     expect(deleteAppMock).toHaveBeenCalledTimes(1);
     expect(deleteAppMock).toHaveBeenCalledWith(
       expect.objectContaining({ organizationId: "org-1", allowSystemManaged: true }),
@@ -94,7 +94,7 @@ describe("provisionForFlag — install rollback (#741)", () => {
   it("rolls back a deploy that throws outright", async () => {
     requestDeployMock.mockRejectedValue(new Error("queue exploded"));
 
-    await expect(provisionForFlag("error-tracking", true)).rejects.toThrow(/failed to deploy/i);
+    await expect(provisionForFlag("logging", true)).rejects.toThrow(/failed to deploy/i);
     expect(deleteAppMock).toHaveBeenCalledTimes(1);
   });
 
@@ -110,7 +110,7 @@ describe("provisionForFlag — install rollback (#741)", () => {
   });
 
   it("is a no-op for a disabled flag (containers keep running)", async () => {
-    await expect(provisionForFlag("error-tracking", false)).resolves.toBeUndefined();
+    await expect(provisionForFlag("logging", false)).resolves.toBeUndefined();
     expect(requestDeployMock).not.toHaveBeenCalled();
     expect(deleteAppMock).not.toHaveBeenCalled();
   });

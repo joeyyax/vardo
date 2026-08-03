@@ -28,7 +28,6 @@ import type { DeployContext } from "../deploy-context";
 import { detectActiveSlot } from "../slots";
 import { crossBoundaryVolumeName, volumesByOwner } from "../shared-volumes";
 import { isSelfApp, seedSelfEnv } from "../self-env";
-import { resolveServiceDSNs, DSN_ENV_KEY } from "@/lib/error-tracking/inject";
 import {
   DEFAULT_NETWORK,
   networkCreateArgs,
@@ -222,19 +221,16 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
   // decomposed child apps. Resolved during env resolution and folded into the
   // overlay below. Empty for non-decomposed apps → no behavior change.
   const serviceEnvRaw: Record<string, Record<string, string>> = {};
-  // Compose service → child app name, so error tracking can key a project per child.
-  const serviceAppNames: Record<string, string> = {};
   if (Object.keys(compose.services).length > 1) {
     const childApps = await db.query.apps.findMany({
       where: and(
         eq(apps.parentAppId, app.id),
         eq(apps.organizationId, ctx.organizationId),
       ),
-      columns: { composeService: true, exposedPorts: true, envContent: true, name: true },
+      columns: { composeService: true, exposedPorts: true, envContent: true },
     });
     for (const child of childApps) {
       if (!child.composeService) continue;
-      serviceAppNames[child.composeService] = child.name;
       if (child.exposedPorts) {
         const ports = child.exposedPorts as { internal: number; external?: number; protocol?: string }[];
         if (ports.length > 0) {
@@ -411,24 +407,6 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
     log(`[deploy] Seeded slot .env from ${seededEnv}`);
   } else if (isSelfApp(app.name)) {
     log(`[deploy] Warning: no .env found to seed — compose defaults would apply`);
-  }
-
-  // Error tracking: one GlitchTip project per app row, so a decomposed child's
-  // errors land where its own Errors tab looks for them. Operator-set DSNs win,
-  // and GlitchTip being absent or down just means no DSN.
-  const injectedDSNs = await resolveServiceDSNs({
-    appName: app.name,
-    services: compose.services,
-    serviceAppNames,
-    appEnv: envMap,
-    serviceEnv: serviceEnvRaw,
-  });
-  const dsnServices = Object.keys(injectedDSNs);
-  if (dsnServices.length > 0) {
-    for (const service of dsnServices) {
-      resolvedServiceEnv[service] = { ...resolvedServiceEnv[service], [DSN_ENV_KEY]: injectedDSNs[service] };
-    }
-    log(`[deploy] Error tracking: ${DSN_ENV_KEY} set for ${dsnServices.length} service(s)`);
   }
 
   const overlayCompose = buildVardoOverlay({

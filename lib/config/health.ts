@@ -235,17 +235,6 @@ export const SERVICE_PROBES: Probe[] = [
       if (running.length === 0) throw new Error("not running");
     },
   }),
-  coreServiceProbe("glitchtip", {
-    name: "GlitchTip",
-    description: "Error tracking",
-    timeoutMs: 2000,
-    // The error-tracking client's own probe, so the dot and the Errors tab
-    // agree. GLITCHTIP_URL applies only when nothing is configured.
-    run: async (timeoutMs) => {
-      const { probeGlitchTip } = await import("@/lib/error-tracking/client");
-      await probeGlitchTip(timeoutMs);
-    },
-  }),
   {
     name: "Traefik",
     description: "Reverse proxy and SSL",
