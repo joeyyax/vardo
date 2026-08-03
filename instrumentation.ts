@@ -5,7 +5,8 @@ const log = logger.child("init");
 const globalForInit = globalThis as unknown as { __vardo_initialized?: boolean };
 
 export async function register() {
-  // Only run on the server, not during build
+  // Node runtime only — instrumentation also loads in the Edge runtime.
+  // Next never calls register() during a build, so no build guard is needed here.
   if (process.env.NEXT_RUNTIME === "nodejs") {
     // Dedup guard — prevents duplicate schedulers on hot reload
     if (globalForInit.__vardo_initialized) return;
