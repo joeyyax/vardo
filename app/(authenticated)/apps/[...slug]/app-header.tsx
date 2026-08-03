@@ -19,12 +19,13 @@ import { useAppMetrics } from "@/components/app-metrics-card";
 import { formatBytes } from "@/lib/metrics/format";
 import type { HealthRollup } from "@/lib/ui/health-rollup";
 import {
+  stabilityCue,
   stabilityTone,
   stabilityTrend,
   stabilityVerdict,
-  trendBadge,
   type Incident,
 } from "@/lib/ui/stability";
+import { useRestartReading } from "./use-restarts";
 import { DependencySelector } from "./dependency-selector";
 import { AppUpdateStat } from "./app-updates";
 import type { App, Deployment, SlotStatus, Tag } from "./types";
@@ -137,6 +138,7 @@ export function AppHeader({
   }, [orgId, app.id, isChildService, latestDeployId]);
 
   const now = Date.now();
+  const restarts = useRestartReading(orgId, app.id);
   const trend = stabilityTrend(stabilityIncidents, now, app.createdAt);
   const verdict = stabilityVerdict({
     now,
@@ -145,8 +147,9 @@ export function AppHeader({
     exitReason: app.exitReason,
     incidents: stabilityIncidents,
     trend,
+    restarts,
   });
-  const badge = trendBadge(trend);
+  const cue = stabilityCue(trend, restarts);
 
   const status = STATUS_META[app.status] ?? { label: app.status, className: "text-muted-foreground" };
   const isRunning = app.status === "active";
@@ -330,7 +333,7 @@ export function AppHeader({
             been holding. Two apps both "Running" separate here. */}
         <HeaderStat
           label="Stability"
-          hint="Crashes, crash loops, failed deploys and rollbacks recorded for this app, against the period before. Container restart counts are not history — Docker resets them when a container is replaced."
+          hint="Crashes, crash loops, failed deploys and rollbacks recorded for this app, against the period before. Docker's restart count is not history — a new container resets it — but a count the live container is still carrying holds the verdict off Stable."
         >
           <button
             type="button"
@@ -338,7 +341,7 @@ export function AppHeader({
             className={`flex items-center gap-1.5 text-left transition-colors hover:opacity-80 ${stabilityTone(verdict.level)}`}
           >
             {verdict.headline}
-            {badge && <span className="text-muted-foreground">· {badge}</span>}
+            {cue && <span className="text-muted-foreground">· {cue}</span>}
           </button>
         </HeaderStat>
         {isRunning && lastSuccess && (
