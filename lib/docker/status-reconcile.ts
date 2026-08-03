@@ -166,6 +166,7 @@ export async function tickStatusReconcile(): Promise<void> {
       containerName: true,
       importedContainerId: true,
       containerStartedAt: true,
+      lastRunningAt: true,
       containerMemoryLimit: true,
       memoryLimit: true,
       needsRedeploy: true,
@@ -217,14 +218,22 @@ export async function tickStatusReconcile(): Promise<void> {
           startedAt?.getTime() === app.containerStartedAt?.getTime() &&
           memoryLimit === app.containerMemoryLimit &&
           needsRedeploy === !!app.needsRedeploy;
-        return { id: app.id, touchOnly: unchanged, observed, startedAt, memoryLimit, needsRedeploy };
+        return {
+          id: app.id,
+          touchOnly: unchanged,
+          observed,
+          startedAt,
+          memoryLimit,
+          needsRedeploy,
+          running: observed === "active",
+        };
       }),
     ),
   );
 
   const settled = updates.filter((u) => u !== null);
   const changed = settled.filter((u) => !u.touchOnly);
-  const touched = settled.filter((u) => u.touchOnly).map((u) => u.id);
+  const touched = settled.filter((u) => u.touchOnly);
 
   for (const u of changed) {
     await db
@@ -234,14 +243,26 @@ export async function tickStatusReconcile(): Promise<void> {
         containerStartedAt: u.startedAt,
         containerMemoryLimit: u.memoryLimit,
         needsRedeploy: u.needsRedeploy,
+        // Stamped only while running and never cleared, so it survives the
+        // container going away. Idle age is measured from this.
+        ...(u.running ? { lastRunningAt: now } : {}),
         statusCheckedAt: now,
         updatedAt: now,
       })
       .where(eq(apps.id, u.id));
   }
 
-  if (touched.length > 0) {
-    await db.update(apps).set({ statusCheckedAt: now }).where(inArray(apps.id, touched));
+  const touchedRunning = touched.filter((u) => u.running).map((u) => u.id);
+  const touchedIdle = touched.filter((u) => !u.running).map((u) => u.id);
+
+  if (touchedRunning.length > 0) {
+    await db
+      .update(apps)
+      .set({ statusCheckedAt: now, lastRunningAt: now })
+      .where(inArray(apps.id, touchedRunning));
+  }
+  if (touchedIdle.length > 0) {
+    await db.update(apps).set({ statusCheckedAt: now }).where(inArray(apps.id, touchedIdle));
   }
 
   if (missing.length > 0) {

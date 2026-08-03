@@ -917,9 +917,26 @@ export async function inspectImageDigest(imageRef: string): Promise<string | nul
   }
 }
 
-export async function removeImage(nameOrId: string, opts?: { force?: boolean }): Promise<void> {
+export type ImageRemoveResult = {
+  /** Tags removed. A tag other than the last one only untags. */
+  untagged: string[];
+  /** Layer sets actually freed. Empty means nothing was reclaimed. */
+  deleted: string[];
+};
+
+export async function removeImage(
+  nameOrId: string,
+  opts?: { force?: boolean },
+): Promise<ImageRemoveResult> {
   const query = opts?.force ? "?force=true" : "";
-  await dockerRequest("DELETE", `/images/${encodeURIComponent(nameOrId)}${query}`);
+  const result = await dockerRequest<{ Untagged?: string; Deleted?: string }[]>(
+    "DELETE",
+    `/images/${encodeURIComponent(nameOrId)}${query}`,
+  );
+  return {
+    untagged: (result ?? []).map((r) => r.Untagged).filter((v): v is string => !!v),
+    deleted: (result ?? []).map((r) => r.Deleted).filter((v): v is string => !!v),
+  };
 }
 
 export async function pruneImages(filters?: Record<string, string[]>): Promise<{ spaceReclaimed: number; count: number }> {

@@ -7,8 +7,10 @@
 // offered as the default candidate.
 // ---------------------------------------------------------------------------
 
+// `pgvecto` covers pgvector and pgvecto-rs, both Postgres distributions whose
+// data directory is tied to the bundled PG major.
 const MAJOR_LOCKED =
-  /^(?:.*\/)?(postgres|postgis|timescaledb?|pgvector|mysql|mariadb|percona|mongo|influxdb|elasticsearch|opensearch)\b/i;
+  /^(?:.*\/)?(postgres|postgis|timescaledb?|pgvecto(?:r|-rs)?|mysql|mariadb|percona|mongo|influxdb|elasticsearch|opensearch)\b/i;
 
 /** Whether a major bump of this image requires migrating its data directory. */
 export function isMajorLocked(image: string): boolean {
