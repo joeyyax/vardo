@@ -27,10 +27,10 @@ describe("applyCadvisorDiskMetrics", () => {
     const content = await cadvisorComposeContent();
     const result = applyCadvisorDiskMetrics(content, false);
 
-    expect(result).toContain("--disable_metrics=udp,percpu,disk,diskIO");
+    expect(result).toContain("--disable_metrics=advtcp,cpu_topology,cpuset,hugetlb,memory_numa,percpu,process,referenced_memory,resctrl,sched,tcp,udp,disk,diskIO");
     expect(result).toContain("mem_limit: 256m");
     expect(result).not.toContain("mem_limit: 512m");
-    expect(result).not.toContain("--disable_metrics=udp,percpu\n");
+    expect(result).not.toContain("--disable_metrics=advtcp,cpu_topology,cpuset,hugetlb,memory_numa,percpu,process,referenced_memory,resctrl,sched,tcp,udp\n");
   });
 
   it("falls back to the input unchanged when the expected markers are missing", () => {
