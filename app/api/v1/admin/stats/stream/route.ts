@@ -10,6 +10,8 @@ import { createSSEResponse } from "@/lib/api/sse";
 import { isMetricsEnabled } from "@/lib/metrics/config";
 import { subscribe } from "@/lib/metrics/broadcast";
 import { aggregateContainers, containerToPoint } from "@/lib/metrics/aggregate";
+import { groupMetricsByApp } from "@/lib/metrics/app-match";
+import { METRICS_APP_COLUMNS } from "@/lib/metrics/app-columns";
 
 // GET /api/v1/admin/stats/stream
 export async function GET(request: NextRequest) {
@@ -28,7 +30,7 @@ export async function GET(request: NextRequest) {
     }
 
     const allApps = await db.query.apps.findMany({
-      columns: { id: true, name: true, displayName: true, status: true, organizationId: true, projectId: true, parentAppId: true },
+      columns: { ...METRICS_APP_COLUMNS, displayName: true, projectId: true },
     });
     const projectCount = new Set(allApps.map((a) => a.projectId).filter(Boolean)).size;
 
@@ -56,15 +58,7 @@ export async function GET(request: NextRequest) {
       refreshSlowData();
 
       const unsubscribe = subscribe((allMetrics) => {
-        const byApp: Record<string, typeof allMetrics> = {};
-        for (const m of allMetrics) {
-          const matched = allApps.find(
-            (app) => m.projectName === app.name || m.projectName.startsWith(`${app.name}-`)
-          );
-          if (!matched) continue;
-          if (!byApp[matched.id]) byApp[matched.id] = [];
-          byApp[matched.id].push(m);
-        }
+        const byApp = groupMetricsByApp(allApps, allMetrics);
 
         const diskTotal = (cachedDisk as Record<string, unknown> | null)?.total as number ?? 0;
         const point = aggregateContainers(allMetrics, diskTotal);
@@ -80,7 +74,7 @@ export async function GET(request: NextRequest) {
             organizationId: app.organizationId,
             parentAppId: app.parentAppId,
             diskUsage: 0,
-            containers: (byApp[app.id] || []).map(containerToPoint),
+            containers: (byApp.get(app.id) ?? []).map(containerToPoint),
           })),
         };
 

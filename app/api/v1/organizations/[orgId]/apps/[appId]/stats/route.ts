@@ -3,7 +3,9 @@ import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
-import { fetchProjectMetrics } from "@/lib/metrics/provider";
+import { fetchAppMetrics } from "@/lib/metrics/provider";
+import { filterByEnvironment } from "@/lib/metrics/app-match";
+import { METRICS_APP_COLUMNS } from "@/lib/metrics/app-columns";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
@@ -21,15 +23,16 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
         eq(apps.id, appId),
         eq(apps.organizationId, orgId)
       ),
-      columns: { id: true, name: true },
+      columns: METRICS_APP_COLUMNS,
     });
 
     if (!app) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    const environment = _request.nextUrl.searchParams.get("environment") || undefined;
-    const metrics = await fetchProjectMetrics(app.name, environment);
+    const environment = _request.nextUrl.searchParams.get("environment");
+    const matched = await fetchAppMetrics(app);
+    const metrics = environment ? filterByEnvironment(matched, environment) : matched;
 
     return NextResponse.json({
       containers: metrics.map((m) => ({
