@@ -773,6 +773,11 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], baseDom
                 {!slugTaken && generateDomain && name && isReservedSlug(name) && (
                   <p className="text-xs text-destructive">&quot;{name}&quot; is reserved</p>
                 )}
+                {!slugTaken && (
+                  <p className="text-xs text-muted-foreground">
+                    Must be unique across the whole instance, not just this organization.
+                  </p>
+                )}
               </div>
             </div>
 

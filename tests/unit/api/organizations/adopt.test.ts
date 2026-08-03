@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { z } from "zod";
+import { APP_NAME_TAKEN_ERROR } from "@/lib/db/app-name";
 
 // ---------------------------------------------------------------------------
 // POST /api/v1/organizations/[orgId]/adopt — request schema validation
@@ -344,18 +345,19 @@ describe("POST /adopt — duplicate slug handling", () => {
   it("simulates duplicate slug detection returning 409 with appId", () => {
     // The route handler returns:
     //   return NextResponse.json(
-    //     { error: "An app with this slug already exists in this organization", appId: existingBySlug.id },
+    //     { error: APP_NAME_TAKEN_ERROR, appId: existingBySlug.id },
     //     { status: 409 }
     //   );
     const existingAppId = "app-existing123";
     const response = {
-      error: "An app with this slug already exists in this organization",
+      error: APP_NAME_TAKEN_ERROR,
       appId: existingAppId,
     };
     expect(response).toMatchObject({
       error: expect.any(String),
       appId: expect.any(String),
     });
+    expect(response.error).not.toMatch(/in this organization/i);
   });
 });
 

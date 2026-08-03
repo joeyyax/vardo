@@ -19,7 +19,8 @@ import {
   resolveProjectForImport,
   runAsyncContainerMigration,
 } from "@/lib/docker/import";
-import { isUniqueViolation } from "@/lib/api/error-response";
+import { getPgConstraint, isUniqueViolation } from "@/lib/api/error-response";
+import { APP_NAME_TAKEN_ERROR, isTopLevelAppNameTaken } from "@/lib/db/app-name";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
@@ -99,6 +100,10 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
         { error: "Container already imported", appId: existing.id },
         { status: 409 }
       );
+    }
+
+    if (await isTopLevelAppNameTaken(data.name)) {
+      return NextResponse.json({ error: APP_NAME_TAKEN_ERROR }, { status: 409 });
     }
 
     // Inspect container server-side
@@ -342,26 +347,13 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ app, warnings, deploymentId, migrated: false }, { status: 201 });
   } catch (error) {
     if (isUniqueViolation(error)) {
-      const rawConstraint =
-        error instanceof Error && "constraint" in error
-          ? (error as { constraint: unknown }).constraint
-          : error instanceof Error &&
-              error.cause &&
-              typeof error.cause === "object" &&
-              "constraint" in error.cause
-            ? (error.cause as { constraint: unknown }).constraint
-            : null;
-      const constraintName = typeof rawConstraint === "string" ? rawConstraint : null;
-      if (constraintName === "app_imported_container_uniq") {
+      if (getPgConstraint(error) === "app_imported_container_uniq") {
         return NextResponse.json(
           { error: "This container has already been imported" },
           { status: 409 }
         );
       }
-      return NextResponse.json(
-        { error: "An app with this slug already exists in this organization" },
-        { status: 409 }
-      );
+      return NextResponse.json({ error: APP_NAME_TAKEN_ERROR }, { status: 409 });
     }
     return handleRouteError(error, "Error importing container");
   }
