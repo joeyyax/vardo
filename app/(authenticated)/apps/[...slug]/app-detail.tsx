@@ -167,11 +167,17 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
     try {
       const res = await fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/restart`, { method: "POST" });
       const data = await res.json();
+      // Compose can exit clean and leave the app crashed, and a restart never
+      // applies pending config. Either one makes a bare "Restarted" a lie.
+      const notes = [
+        data.observed && data.observed !== "active" ? `Docker reports it ${data.observed}.` : null,
+        app.needsRedeploy ? "Config changed since the last deploy — deploy to apply it." : null,
+      ].filter(Boolean);
+
       if (!data.success) {
         toast.error(data.error || "Restart failed");
-      } else if (app.needsRedeploy) {
-        // The containers are the same ones; the pending config is still pending.
-        toast.success("Restarted", { description: "Config changed since the last deploy — deploy to apply it." });
+      } else if (notes.length > 0) {
+        toast.warning("Restarted", { description: notes.join(" ") });
       } else {
         toast.success("Restarted");
       }
@@ -187,8 +193,10 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
     try {
       const res = await fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/restart`, { method: "POST" });
       const data = await res.json();
-      if (data.success) toast.success("Started");
-      else toast.error(data.error || "Start failed");
+      if (!data.success) toast.error(data.error || "Start failed");
+      else if (data.observed && data.observed !== "active") {
+        toast.warning("Started", { description: `Docker reports it ${data.observed}.` });
+      } else toast.success("Started");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Start failed");
     }
