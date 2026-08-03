@@ -19,14 +19,23 @@ export const SELF_DEPLOY_ROW_KEY = "vardo-self-deploy";
 /** Runtime conditions worth interrupting every page for. The rest are app-level detail. */
 const REPORTED_CONDITIONS: ConditionKind[] = ["crash-looping", "unhealthy", "self-heal-exhausted"];
 
-/** App statuses that mean the container is not doing its job. */
-const BROKEN_STATUSES = ["error", "missing"];
+/**
+ * Statuses that mean the container is not doing its job, and how each reads.
+ * A core service is only stopped on purpose by turning its feature off.
+ */
+const STATUS_DETAIL: Record<string, string> = {
+  error: "Container failed",
+  missing: "No container on the host",
+  stopped: "Container stopped",
+};
 
 export type InfraApp = {
   id: string;
   name: string;
   displayName: string;
   status: string;
+  /** Set on a compose child. Its parent's row is a separate subject. */
+  parentAppId: string | null;
   conditions: AppCondition[] | null;
 };
 
@@ -41,6 +50,8 @@ export type InfrastructureSnapshot = {
   apps: InfraApp[];
   deployments: InfraDeployment[];
   servicesDown: ServiceDown[];
+  /** Core service app names whose feature flag is off. */
+  disabledCoreServices: string[];
 };
 
 export type InfrastructureOptions = {
@@ -70,8 +81,10 @@ export function infrastructureRows(
   snapshot: InfrastructureSnapshot,
   { canLinkToAdmin }: InfrastructureOptions,
 ): AttentionRow[] {
-  const byId = new Map(snapshot.apps.map((a) => [a.id, a]));
-  const byName = new Map(snapshot.apps.map((a) => [a.name, a]));
+  const off = new Set(snapshot.disabledCoreServices);
+  const apps = enabledApps(snapshot.apps, off);
+  const byId = new Map(apps.map((a) => [a.id, a]));
+  const byName = new Map(apps.map((a) => [a.name, a]));
   const adminHref = canLinkToAdmin ? "/admin" : undefined;
   const coreHref = canLinkToAdmin ? "/admin/settings/core-services" : undefined;
 
@@ -87,8 +100,12 @@ export function infrastructureRows(
   for (const deployment of latestPerApp(snapshot.deployments)) {
     const app = byId.get(deployment.appId);
     if (!app) continue;
-    for (const other of snapshot.apps) {
-      if (other.id === app.id || (isVardoStack(app.name) && isVardoStack(other.name))) {
+    for (const other of apps) {
+      if (
+        other.id === app.id ||
+        other.parentAppId === app.id ||
+        (isVardoStack(app.name) && isVardoStack(other.name))
+      ) {
         deploying.add(other.id);
       }
     }
@@ -128,6 +145,7 @@ export function infrastructureRows(
 
   for (const service of snapshot.servicesDown) {
     const appName = probeAppName(service.name);
+    if (appName && off.has(appName)) continue;
     const app = appName ? byName.get(appName) : undefined;
     if (app && deploying.has(app.id)) continue;
     issues.set(app?.id ?? service.id, {
@@ -140,10 +158,20 @@ export function infrastructureRows(
     });
   }
 
-  for (const app of snapshot.apps) {
+  for (const app of apps) {
     if (deploying.has(app.id) || issues.has(app.id)) continue;
-    const issue = appIssue(app);
+    const parent = app.parentAppId ? byId.get(app.parentAppId) : undefined;
+    const issue = appIssue(app, {
+      name: parent ? `${parent.displayName} · ${app.displayName}` : app.displayName,
+      core: isCoreServiceApp(parent?.name ?? app.name),
+    });
     if (issue) issues.set(app.id, issue);
+  }
+
+  // Stopping a stack cascades to every service in it, and a probe failure
+  // already names the stack. One subject, not six.
+  for (const app of apps) {
+    if (app.parentAppId && issues.has(app.parentAppId)) issues.delete(app.id);
   }
 
   const grouped = [...issues.values()];
@@ -175,9 +203,17 @@ function latestPerApp(deployments: InfraDeployment[]): InfraDeployment[] {
   return [...latest.values()];
 }
 
-function appIssue(app: InfraApp): Issue | null {
-  const core = isCoreServiceApp(app.name);
+/**
+ * Snapshot apps minus the core services whose feature flag is off, children
+ * included. Provisioning skips a disabled feature before it looks at status.
+ */
+function enabledApps(all: InfraApp[], off: Set<string>): InfraApp[] {
+  if (off.size === 0) return all;
+  const names = new Map(all.map((a) => [a.id, a.name]));
+  return all.filter((a) => !off.has((a.parentAppId ? names.get(a.parentAppId) : a.name) ?? a.name));
+}
 
+function appIssue(app: InfraApp, { name, core }: { name: string; core: boolean }): Issue | null {
   const condition = (app.conditions ?? [])
     .filter((c) => REPORTED_CONDITIONS.includes(c.kind))
     .sort((a, b) => severityRank(a) - severityRank(b))[0];
@@ -185,7 +221,7 @@ function appIssue(app: InfraApp): Issue | null {
   if (condition) {
     return {
       id: app.id,
-      name: app.displayName,
+      name,
       detail: condition.detail,
       since: condition.since,
       tone: condition.severity === "critical" ? "error" : "warning",
@@ -193,14 +229,9 @@ function appIssue(app: InfraApp): Issue | null {
     };
   }
 
-  if (BROKEN_STATUSES.includes(app.status)) {
-    return {
-      id: app.id,
-      name: app.displayName,
-      detail: app.status === "missing" ? "No container on the host" : "Container failed",
-      tone: "error",
-      core,
-    };
+  const detail = STATUS_DETAIL[app.status];
+  if (detail) {
+    return { id: app.id, name, detail, tone: "error", core };
   }
 
   return null;
