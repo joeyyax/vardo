@@ -6,7 +6,7 @@ import { getFlagConfig, isFeatureEnabledAsync } from "@/lib/config/features";
 import { eq } from "drizzle-orm";
 import { AdminPanel } from "../admin-panel";
 
-const VALID_TABS = ["overview", "organizations", "users", "maintenance", "metrics"] as const;
+const VALID_TABS = ["overview", "organizations", "users", "metrics"] as const;
 type ValidTab = (typeof VALID_TABS)[number];
 
 type PageProps = {
@@ -15,6 +15,11 @@ type PageProps = {
 
 export default async function AdminPage({ params }: PageProps) {
   const { slug } = await params;
+
+  // Maintenance lives under system settings — the tab here only ever held the
+  // Docker prune button.
+  if (slug?.[0] === "maintenance") redirect("/admin/settings/maintenance");
+
   const activeTab: ValidTab = (slug?.[0] && VALID_TABS.includes(slug[0] as ValidTab))
     ? slug[0] as ValidTab
     : "overview";
