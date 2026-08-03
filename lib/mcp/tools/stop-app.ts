@@ -2,11 +2,12 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { stopProject } from "@/lib/docker/deploy";
 import { slidingWindowRateLimit } from "@/lib/api/rate-limit";
 import { systemManagedRefusal } from "@/lib/api/system-managed";
 import type { McpAuthContext } from "../auth";
+import { accessDenied, canAccessOrg } from "../scope";
 
 // 10 stops per 10 minutes per user/org pair.
 const STOP_RATE_LIMIT = 10;
@@ -44,23 +45,17 @@ export function registerStopApp(
       }
 
       const app = await db.query.apps.findFirst({
-        where: and(
-          eq(apps.id, appId),
-          eq(apps.organizationId, context.organizationId)
-        ),
-        columns: { id: true, name: true, isSystemManaged: true },
+        where: eq(apps.id, appId),
+        columns: {
+          id: true,
+          name: true,
+          organizationId: true,
+          isSystemManaged: true,
+        },
       });
 
-      if (!app) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({ error: "App not found or access denied" }),
-            },
-          ],
-          isError: true,
-        };
+      if (!app || !(await canAccessOrg(context, app.organizationId))) {
+        return accessDenied("App");
       }
 
       const refused = systemManagedRefusal(app, "stop");

@@ -1,13 +1,14 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { apps, projects, environments } from "@/lib/db/schema";
+import { apps, environments } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { encrypt } from "@/lib/crypto/encrypt";
 import { recordActivity } from "@/lib/activity";
 import { slidingWindowRateLimit } from "@/lib/api/rate-limit";
 import type { McpAuthContext } from "../auth";
+import { resolveProjectOrg } from "../scope";
 
 // 5 app creations per 10 minutes per user/org pair.
 const CREATE_RATE_LIMIT = 5;
@@ -106,15 +107,9 @@ export function registerCreateApp(
         };
       }
 
-      // Project must exist in this org.
-      const project = await db.query.projects.findFirst({
-        where: and(
-          eq(projects.id, projectId),
-          eq(projects.organizationId, context.organizationId)
-        ),
-        columns: { id: true },
-      });
-      if (!project) {
+      // The app is created in whichever org owns the project.
+      const orgId = await resolveProjectOrg(context, projectId);
+      if (!orgId) {
         return {
           content: [
             {
@@ -128,10 +123,7 @@ export function registerCreateApp(
 
       // Reject duplicate slugs up front for a clean error (the DB also enforces it).
       const existing = await db.query.apps.findFirst({
-        where: and(
-          eq(apps.organizationId, context.organizationId),
-          eq(apps.name, name)
-        ),
+        where: and(eq(apps.organizationId, orgId), eq(apps.name, name)),
         columns: { id: true },
       });
       if (existing) {
@@ -154,7 +146,7 @@ export function registerCreateApp(
             Object.entries(env)
               .map(([k, v]) => `${k}=${v}`)
               .join("\n"),
-            context.organizationId
+            orgId
           )
         : null;
 
@@ -165,7 +157,7 @@ export function registerCreateApp(
           .insert(apps)
           .values({
             id: appId,
-            organizationId: context.organizationId,
+            organizationId: orgId,
             projectId,
             name,
             displayName: displayName ?? name,
@@ -193,7 +185,7 @@ export function registerCreateApp(
       });
 
       recordActivity({
-        organizationId: context.organizationId,
+        organizationId: orgId,
         action: "app.created",
         appId,
         userId: context.userId,
