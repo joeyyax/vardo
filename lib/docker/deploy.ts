@@ -1,5 +1,4 @@
 import { db } from "@/lib/db";
-import { redis } from "@/lib/redis";
 import { deployments, apps, organizations, environments, projects, domains } from "@/lib/db/schema";
 import { decryptOrFallback } from "@/lib/crypto/encrypt";
 import { parseEnvToMap } from "@/lib/env/parse-env";
@@ -129,7 +128,6 @@ export async function runDeployment(
     opts.onStage?.(s, status);
     streamLogger.stage(s, status);
     flushLog();
-    redis.set(`deploy:stage:${opts.appId}`, s, "EX", 660).catch(() => {});
   }
 
   function stage(s: DeployStage, status: StageStatus) {
@@ -524,11 +522,12 @@ export async function runDeployment(
 
     log(`[deploy] ERROR: ${message}`);
 
-    // If we got past the deploy stage, containers may be running — tear them down.
+    // If we got past the deploy stage, containers may be running — tear them
+    // down, unless the deploy recorded success and they are serving traffic.
     const CONTAINER_STAGES: Set<DeployStage> = new Set(["deploy", "healthcheck", "routing", "cleanup", "done"]);
     const slotDir = ctx?.slotDir;
     const newProjectName = ctx?.newProjectName;
-    if (CONTAINER_STAGES.has(reachedStage()) && slotDir && newProjectName) {
+    if (!ctx?.succeeded && CONTAINER_STAGES.has(reachedStage()) && slotDir && newProjectName) {
       try {
         const cleanupComposeArgs = await slotComposeFiles(slotDir);
         await execFileAsync(
@@ -578,8 +577,6 @@ export async function runDeployment(
 
     await streamLogger.flush();
     return { deploymentId, success: false, log: logLines.join("\n"), durationMs, status: "failed", error: message };
-  } finally {
-    redis.del(`deploy:stage:${opts.appId}`).catch(() => {});
   }
 }
 
