@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import {
   APP_DOWN_WINDOW_HOURS,
   appStatusRows,
+  appStoppedRows,
   withParentNames,
   type StatusSubject,
 } from "@/lib/attention/app-status-rows";
@@ -136,6 +137,90 @@ describe("appStatusRows", () => {
     ]);
 
     expect(row.items.map((i) => i.name)).toEqual(["GlitchTip · Web"]);
+  });
+});
+
+describe("appStoppedRows", () => {
+  function stack(name: string, displayName: string, services: string[]) {
+    const parent = app({ name, displayName, status: "stopped", statusChangedAt: justNow });
+    return [
+      parent,
+      ...services.map((service) =>
+        app({
+          name: `${name}-${service}`,
+          displayName: service,
+          status: "stopped",
+          statusChangedAt: justNow,
+          parentAppId: parent.id,
+        }),
+      ),
+    ];
+  }
+
+  it("reports a stopped app with no window to age out of", () => {
+    const [row] = appStoppedRows([
+      app({ name: "jellyfin", displayName: "Jellyfin", status: "stopped", statusChangedAt: longAgo }),
+    ]);
+
+    expect(row).toMatchObject({ key: "app-stopped", label: "Stopped", tone: "neutral" });
+    expect(row.items).toEqual([
+      {
+        id: "app-jellyfin",
+        name: "Jellyfin",
+        href: "/apps/jellyfin",
+        since: longAgo.toISOString(),
+      },
+    ]);
+  });
+
+  it("collapses a stopped stack to one row carrying the service count", () => {
+    const [row] = appStoppedRows(stack("agents", "Agents", ["postgres", "redis", "worker", "web", "api"]));
+
+    expect(row.items).toHaveLength(1);
+    expect(row.items[0]).toMatchObject({ name: "Agents", href: "/apps/agents", detail: "5 services" });
+  });
+
+  it("counts a single collapsed service in the singular", () => {
+    const [row] = appStoppedRows(stack("encoder", "Encoder", ["worker"]));
+
+    expect(row.items[0].detail).toBe("1 service");
+  });
+
+  it("leaves a standalone app without a service count", () => {
+    const [row] = appStoppedRows([app({ name: "lonvr", displayName: "Lonvr", status: "stopped" })]);
+
+    expect(row.items[0].detail).toBeUndefined();
+  });
+
+  it("keeps a stopped service named under its running parent", () => {
+    const parent = app({ name: "agents", displayName: "Agents", status: "active" });
+    const [row] = appStoppedRows([
+      parent,
+      app({ name: "agents-worker", displayName: "Worker", status: "stopped", parentAppId: parent.id }),
+    ]);
+
+    expect(row.items.map((i) => i.name)).toEqual(["Agents · Worker"]);
+  });
+
+  it("stays quiet on a child while its parent is deploying", () => {
+    const parent = app({ name: "agents", displayName: "Agents", status: "deploying" });
+
+    expect(
+      appStoppedRows([
+        parent,
+        app({ name: "agents-web", status: "stopped", parentAppId: parent.id }),
+      ]),
+    ).toEqual([]);
+  });
+
+  it("omits a stamp the app has never had", () => {
+    const [row] = appStoppedRows([app({ name: "lonvr", status: "stopped", statusChangedAt: null })]);
+
+    expect(row.items[0].since).toBeUndefined();
+  });
+
+  it("stays quiet when nothing is stopped", () => {
+    expect(appStoppedRows([app({ name: "hub", status: "active" })])).toEqual([]);
   });
 });
 

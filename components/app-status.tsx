@@ -84,7 +84,13 @@ export function StatusIndicator({
     </span>
   );
   if (status === "deploying") return <span className="text-sm text-status-info animate-pulse shrink-0">Deploying</span>;
-  return <span className="text-sm text-status-neutral shrink-0">Stopped</span>;
+  // Dotless, this sat half a dot's width left of every other status on the page.
+  return (
+    <span className="flex items-center gap-1.5 text-sm text-status-neutral shrink-0">
+      <span aria-hidden="true" className="size-2 rounded-full bg-status-neutral" />
+      Stopped
+    </span>
+  );
 }
 
 // ---------------------------------------------------------------------------

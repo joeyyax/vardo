@@ -48,7 +48,7 @@ import {
   BottomSheetDescription,
 } from "@/components/ui/bottom-sheet";
 import { summarizeBulkResult, type BulkOutcome } from "@/lib/ui/bulk-result";
-import { envTypeDotColor, uniformStatus } from "@/lib/ui/status-colors";
+import { envTypeDotColor } from "@/lib/ui/status-colors";
 import { statusRank } from "@/lib/ui/app-row";
 import { appStatusFromEvent } from "@/lib/bus/refresh";
 import type { BusEvent } from "@/lib/bus/events";
@@ -177,7 +177,6 @@ function AppLedgerRow({
   series,
   usage,
   updateCount = 0,
-  sharedStatus,
   statusOverride,
   related = false,
   onHoverStart,
@@ -188,7 +187,6 @@ function AppLedgerRow({
   series?: number[];
   usage?: AppMetricsSample;
   updateCount?: number;
-  sharedStatus?: string | null;
   statusOverride?: string;
   related?: boolean;
   onHoverStart: () => void;
@@ -203,7 +201,6 @@ function AppLedgerRow({
           href={href}
           series={series}
           updateCount={updateCount}
-          sharedStatus={sharedStatus}
           related={related}
           onMouseEnter={onHoverStart}
           onMouseLeave={onHoverEnd}
@@ -610,12 +607,6 @@ export function ProjectDetail({
           Number(y.priority === "critical") - Number(x.priority === "critical") ||
           x.displayName.localeCompare(y.displayName),
       ),
-    [topLevelApps],
-  );
-
-  // The toolbar already states a status every app shares; rows suppress it.
-  const sharedStatus = useMemo(
-    () => uniformStatus(topLevelApps.map((a) => a.status)),
     [topLevelApps],
   );
 
@@ -1125,7 +1116,6 @@ export function ProjectDetail({
                     series={history.get(app.id)?.cpu}
                     usage={metrics.get(app.id)}
                     updateCount={updatesByApp.get(app.id) ?? 0}
-                    sharedStatus={sharedStatus}
                     statusOverride={appStatusOverrides.get(app.id)}
                     related={isRelated(app.name)}
                     onHoverStart={() => setHoveredAppName(app.name)}
@@ -1138,11 +1128,14 @@ export function ProjectDetail({
                         x.displayName.localeCompare(y.displayName),
                     )
                     .map((child) => (
+                      /* A stopped stack cascades to every child. The parent row
+                         states it; a child only speaks when it differs. */
                       <AppRow
                         key={child.id}
                         app={child}
                         href={`/apps/${child.name}`}
                         series={history.get(child.id)?.cpu}
+                        sharedStatus={app.status}
                         indented
                       />
                     ))}

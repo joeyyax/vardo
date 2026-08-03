@@ -23,7 +23,6 @@ import {
 } from "@/lib/ui/app-filter";
 import { RelativeTime } from "@/components/relative-time";
 import { detectAppType } from "@/lib/ui/app-type";
-import { uniformStatus } from "@/lib/ui/status-colors";
 import { statusRank } from "@/lib/ui/app-row";
 import { countNeedingAttention } from "@/lib/ui/conditions";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
@@ -127,8 +126,6 @@ function ProjectCard({
   const idleStatus = anyMissing ? "missing" : anyDeploying ? "deploying" : "stopped";
   const attention = countNeedingAttention(projectApps);
   const attentionCount = attention.critical + attention.warning;
-
-  const sharedStatus = uniformStatus(projectApps.map((a) => a.status));
 
   // Per-metric history summed across apps
   const aggregatedHistory = useMemo(() => {
@@ -336,7 +333,6 @@ function ProjectCard({
                   href={`/apps/${a.name}`}
                   series={history.get(a.id)?.cpu}
                   updateCount={updatesByApp.get(a.id) ?? 0}
-                  sharedStatus={sharedStatus}
                 />
                 </TooltipTrigger>
                 <TooltipContent
@@ -357,12 +353,14 @@ function ProjectCard({
         )}
       </div>
 
-      {/* Aggregate resource footer — space is held while stats stream in */}
-      {activeCount > 0 && (
+      {/* Aggregate resource footer — space is held while stats stream in, and a
+          card with nothing running says so rather than ending mid-air */}
+      {projectApps.length > 0 && (
         <MetricsBand
           metrics={anyMetrics ? agg : undefined}
           history={aggregatedHistory}
           memoryLimit={memoryLimitTotal}
+          running={activeCount > 0}
         />
       )}
     </div>
