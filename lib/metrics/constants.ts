@@ -24,18 +24,35 @@ export const TIME_RANGES: { label: string; value: TimeRange }[] = [
   { label: "7d", value: "7d" },
 ];
 
+/**
+ * Series identity, not state. Values are theme tokens so every series has a
+ * light and a dark counterpart; definitions live in app/styles/tokens.css.
+ * Only legible where a legend, axis or card title names the series.
+ */
 export const CHART_COLORS = {
-  cpu: "oklch(0.65 0.19 255)",
-  memory: "oklch(0.72 0.17 150)",
-  networkRx: "oklch(0.70 0.15 200)",
-  networkTx: "oklch(0.75 0.15 75)",
-  memoryLimit: "oklch(0.65 0.22 25)",
-  disk: "oklch(0.65 0.1 30)",
-  gpuUtilization: "oklch(0.68 0.20 320)",
-  gpuMemory: "oklch(0.70 0.18 290)",
-  gpuTemperature: "oklch(0.72 0.20 40)",
-  grid: "oklch(0.30 0.006 285.75 / 40%)",
-  tick: "oklch(0.55 0.006 285.75)",
+  cpu: "var(--chart-cpu)",
+  memory: "var(--chart-memory)",
+  networkRx: "var(--chart-network-rx)",
+  networkTx: "var(--chart-network-tx)",
+  disk: "var(--chart-disk)",
+  // GPU borrows the hue of the thing it measures — blue is utilization,
+  // green is memory, whichever device is reporting.
+  gpuUtilization: "var(--chart-cpu)",
+  gpuMemory: "var(--chart-memory)",
+  gpuTemperature: "var(--chart-gpu-temperature)",
+  /** Limits and thresholds. Neutral — a ceiling is not an error. */
+  reference: "var(--chart-reference)",
+  /** Alias of `reference`, kept for existing call sites. */
+  memoryLimit: "var(--chart-reference)",
+  grid: "var(--chart-grid)",
+  tick: "var(--muted-foreground)",
+};
+
+/** Recharts props for a limit or threshold rule — dashed neutral, no hue. */
+export const chartReferenceLine = {
+  stroke: CHART_COLORS.reference,
+  strokeDasharray: "4 4",
+  strokeWidth: 1,
 };
 
 export const chartTickStyle = { fontSize: 10, fill: CHART_COLORS.tick };

@@ -1,6 +1,25 @@
 /* Role tokens. Warm achromatic chrome — color belongs to state, never to
    chrome. Status hues carry meaning; brass is trim (hairlines, focus, labels,
-   the mark), never meaning. Contrast verified: scratchpad/contrast.mjs. */
+   the mark), never meaning. Contrast verified: scratchpad/contrast.mjs.
+
+   One hue ladder, eight stops ~45° apart, serves every axis:
+   25 error · 70 warning · 110 env-tier · 155 success · 200 disposable ·
+   240 info · 288 update · 336 critical.
+
+   Three axes draw from it. State answers "is this healthy, broken, urgent" and
+   owns all eight stops. Classification (environment tier) is permanent, not a
+   signal, and gets stop 110 to itself. Series identity names a line inside a
+   chart and reuses the ladder minus the two alarm stops — no chart series is
+   ever error or critical red.
+
+   The rule that keeps them apart is placement, not hue: a series color is only
+   legible where a legend, axis or card title names it. Outside that, marks are
+   neutral or state-colored. Sparklines therefore stay neutral until the state
+   is abnormal.
+
+   Chroma is clamped to 95% of the sRGB maximum at each lightness and hue, so
+   what ships is what is written here rather than whatever the browser gamut
+   maps it to. Verified in tests/unit/app/styles/color-tokens.test.ts. */
 
 :root {
   color-scheme: light;
@@ -81,6 +100,35 @@
   --status-info-muted: oklch(45% 0.14 240 / 10%);
   --status-neutral: oklch(45% 0.012 78);
   --status-neutral-muted: oklch(45% 0.012 78 / 10%);
+  /* Teal is the shallowest stop in sRGB — 0.078 is the ceiling at this L. */
+  --status-disposable: oklch(48% 0.078 200);
+  --status-disposable-muted: oklch(48% 0.078 200 / 10%);
+  --status-update: oklch(48% 0.16 288);
+  --status-update-muted: oklch(48% 0.16 288 / 10%);
+  --status-critical: oklch(48% 0.18 336);
+  --status-critical-muted: oklch(48% 0.18 336 / 10%);
+
+  /* Environment tier — a permanent classification, never a health signal.
+     One hue; production, staging, preview and local separate by depth. */
+  --env-tier: oklch(48% 0.1 110);
+  --env-tier-muted: oklch(48% 0.1 110 / 10%);
+
+  /* Chart series identity. Two lightness tiers inside the state band: the two
+     headline metrics sit deeper, the rest one step up, so hue-adjacent pairs
+     also separate on lightness and survive red-green colour vision deficiency. */
+  --chart-cpu: oklch(45% 0.099 240);
+  --chart-memory: oklch(45% 0.106 155);
+  --chart-network-rx: oklch(52% 0.13 288);
+  --chart-network-tx: oklch(52% 0.084 200);
+  --chart-disk: oklch(52% 0.108 110);
+  /* The one series where hue tracks the quantity — heat reads warm. */
+  --chart-gpu-temperature: oklch(52% 0.108 70);
+
+  /* A limit or threshold is a reference, not data and not an alarm. Quieter
+     than any series, dashed at the call site, no hue. Also labels the limit at
+     10px, so it holds 4.5 rather than the 3 a rule alone would need. */
+  --chart-reference: oklch(55% 0.01 78);
+  --chart-grid: oklch(72% 0.006 82 / 55%);
 
   /* magicui rainbow-button palette */
   --color-1: oklch(66.2% 0.225 25.9);
@@ -142,8 +190,28 @@
   --status-warning-muted: oklch(75% 0.12 70 / 12%);
   --status-info: oklch(70% 0.12 240);
   --status-info-muted: oklch(70% 0.12 240 / 12%);
-  --status-neutral: oklch(45% 0.008 78);
-  --status-neutral-muted: oklch(45% 0.008 78 / 12%);
+  /* 58%: at 45% a stopped-app dot measured 2.18 on the card and vanished. */
+  --status-neutral: oklch(58% 0.008 78);
+  --status-neutral-muted: oklch(58% 0.008 78 / 12%);
+  --status-disposable: oklch(72% 0.116 200);
+  --status-disposable-muted: oklch(72% 0.116 200 / 12%);
+  --status-update: oklch(72% 0.13 288);
+  --status-update-muted: oklch(72% 0.13 288 / 12%);
+  --status-critical: oklch(72% 0.14 336);
+  --status-critical-muted: oklch(72% 0.14 336 / 12%);
+
+  --env-tier: oklch(72% 0.13 110);
+  --env-tier-muted: oklch(72% 0.13 110 / 12%);
+
+  --chart-cpu: oklch(70% 0.13 240);
+  --chart-memory: oklch(70% 0.13 155);
+  --chart-network-rx: oklch(75% 0.13 288);
+  --chart-network-tx: oklch(75% 0.121 200);
+  --chart-disk: oklch(75% 0.13 110);
+  --chart-gpu-temperature: oklch(75% 0.13 70);
+
+  --chart-reference: oklch(64% 0.01 78);
+  --chart-grid: oklch(48% 0.008 82 / 55%);
 
   --color-1: oklch(66.2% 0.225 25.9);
   --color-2: oklch(60.4% 0.26 302);

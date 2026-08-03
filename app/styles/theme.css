@@ -55,6 +55,15 @@
   --color-status-info-muted: var(--status-info-muted);
   --color-status-neutral: var(--status-neutral);
   --color-status-neutral-muted: var(--status-neutral-muted);
+  --color-status-disposable: var(--status-disposable);
+  --color-status-disposable-muted: var(--status-disposable-muted);
+  --color-status-update: var(--status-update);
+  --color-status-update-muted: var(--status-update-muted);
+  --color-status-critical: var(--status-critical);
+  --color-status-critical-muted: var(--status-critical-muted);
+
+  --color-env-tier: var(--env-tier);
+  --color-env-tier-muted: var(--env-tier-muted);
 
   --color-color-1: var(--color-1);
   --color-color-2: var(--color-2);
