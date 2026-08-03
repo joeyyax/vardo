@@ -1,12 +1,21 @@
 export type DateInput = Date | string | number | null | undefined;
 
+const MINUTE = 60;
+const HOUR = 60 * MINUTE;
+const DAY = 24 * HOUR;
+const WEEK = 7 * DAY;
+const YEAR = 365 * DAY;
+const MONTH = YEAR / 12;
+
+/** Each unit runs until the next one reads as at least two of itself. */
 const UNITS: { limit: number; div: number; label: string }[] = [
-  { limit: 60, div: 1, label: "s" },
-  { limit: 3600, div: 60, label: "m" },
-  { limit: 86_400, div: 3600, label: "h" },
-  { limit: 2_592_000, div: 86_400, label: "d" },
-  { limit: 31_536_000, div: 2_592_000, label: "mo" },
-  { limit: Infinity, div: 31_536_000, label: "y" },
+  { limit: MINUTE, div: 1, label: "s" },
+  { limit: HOUR, div: MINUTE, label: "m" },
+  { limit: DAY, div: HOUR, label: "h" },
+  { limit: 2 * WEEK, div: DAY, label: "d" },
+  { limit: 2 * MONTH, div: WEEK, label: "w" },
+  { limit: YEAR, div: MONTH, label: "mo" },
+  { limit: Infinity, div: YEAR, label: "y" },
 ];
 
 export function toDate(input: DateInput): Date | null {
