@@ -45,6 +45,7 @@ describe("availableAppTabs", () => {
       "compose",
       "cron",
       "settings",
+      "stability",
       "logs",
       "metrics",
       "errors",
