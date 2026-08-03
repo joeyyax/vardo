@@ -13,6 +13,7 @@ import { nanoid } from "nanoid";
 
 import { db } from "@/lib/db";
 import { apps, environments, projects } from "@/lib/db/schema";
+import { isAppNameViolation, isTopLevelAppNameTaken } from "@/lib/db/app-name";
 import { isFeatureEnabledAsync, type FeatureFlag } from "@/lib/config/features";
 import { loadTemplates, type Template } from "@/lib/templates/load";
 import { requestDeploy } from "@/lib/docker/deploy-cancel";
@@ -201,6 +202,15 @@ async function ensureAppDeployed(
     return null;
   }
 
+  // Infra app names are top-level, so another org holding this one blocks it
+  // instance-wide. Skip rather than crash startup provisioning.
+  if (await isTopLevelAppNameTaken(template.name)) {
+    log.warn(
+      `Infra app "${template.name}" not provisioned — the name is already taken instance-wide`
+    );
+    return null;
+  }
+
   // Create the app from the template. Wrapped in try/catch for the unique
   // constraint — concurrent calls (startup + flag toggle) could both pass the
   // findFirst check above.
@@ -230,7 +240,7 @@ async function ensureAppDeployed(
     });
   } catch (err) {
     // Unique constraint violation — another call already created it
-    if (err instanceof Error && err.message.includes("unique")) {
+    if (isAppNameViolation(err) || (err instanceof Error && err.message.includes("unique"))) {
       log.info(`Infra app "${template.name}" already created by concurrent call`);
       return null;
     }

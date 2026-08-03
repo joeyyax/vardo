@@ -47,6 +47,26 @@ export function getPgErrorCode(error: unknown): string | null {
 }
 
 /**
+ * Extract the violated constraint name from an unknown thrown value.
+ * Checks both the error itself and `error.cause` for the `constraint` property.
+ */
+export function getPgConstraint(error: unknown): string | null {
+  if (!(error instanceof Error)) return null;
+  const direct =
+    "constraint" in error ? (error as { constraint: unknown }).constraint : null;
+  if (typeof direct === "string") return direct;
+  if (
+    error.cause &&
+    typeof error.cause === "object" &&
+    "constraint" in error.cause
+  ) {
+    const fromCause = (error.cause as { constraint: unknown }).constraint;
+    if (typeof fromCause === "string") return fromCause;
+  }
+  return null;
+}
+
+/**
  * Check if an error is a Postgres unique violation (23505).
  */
 export function isUniqueViolation(error: unknown): boolean {

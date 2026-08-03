@@ -109,6 +109,9 @@ export const apps = pgTable(
   },
   (t) => [
     unique("app_org_name_uniq").on(t.organizationId, t.name),
+    // A top-level app's name is its on-disk directory and compose project, so it
+    // must be unique instance-wide. Do not scope this to the organization.
+    uniqueIndex("app_top_level_name_uniq").on(t.name).where(sql`parent_app_id is null`),
     unique("app_imported_container_uniq").on(t.organizationId, t.importedContainerId),
     unique("app_imported_compose_project_uniq").on(t.organizationId, t.importedComposeProject),
     index("app_org_id_idx").on(t.organizationId),
