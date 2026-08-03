@@ -22,42 +22,6 @@ type SyncResult = {
 };
 
 /**
- * Parse resource limits from a compose service's deploy.resources.limits.
- * Returns { cpuLimit, memoryLimit } in the same units as the apps table.
- */
-function parseResourceLimits(svc: ComposeService): {
-  cpuLimit: number | null;
-  memoryLimit: number | null;
-} {
-  const limits = svc.deploy?.resources?.limits;
-  if (!limits) return { cpuLimit: null, memoryLimit: null };
-
-  let cpuLimit: number | null = null;
-  if (limits.cpus) {
-    const parsed = parseFloat(limits.cpus);
-    if (!isNaN(parsed)) cpuLimit = parsed;
-  }
-
-  let memoryLimit: number | null = null;
-  if (limits.memory) {
-    const mem = limits.memory.trim().toLowerCase();
-    if (mem.endsWith("g")) {
-      memoryLimit = parseFloat(mem) * 1024;
-    } else if (mem.endsWith("m")) {
-      memoryLimit = parseFloat(mem);
-    } else if (mem.endsWith("k")) {
-      memoryLimit = Math.round(parseFloat(mem) / 1024);
-    } else {
-      // Assume bytes
-      const bytes = parseInt(mem, 10);
-      if (!isNaN(bytes)) memoryLimit = Math.round(bytes / (1024 * 1024));
-    }
-  }
-
-  return { cpuLimit, memoryLimit };
-}
-
-/**
  * Extract volume declarations from a compose service.
  * Returns in the same format as apps.persistentVolumes.
  */
@@ -243,7 +207,6 @@ export async function syncComposeServices(opts: {
     const childName = `${parentAppName}-${serviceName}`;
     const containerName = `${parentAppName}-${serviceName}-1`;
     const displayName = humanizeServiceName(serviceName);
-    const { cpuLimit, memoryLimit } = parseResourceLimits(svc);
     const volumes = parseServiceVolumes(svc);
     const servicePorts = parseServicePorts(svc);
 
@@ -268,8 +231,8 @@ export async function syncComposeServices(opts: {
           displayName,
           containerName,
           imageName: svc.image || null,
-          cpuLimit,
-          memoryLimit,
+          // cpuLimit/memoryLimit: UI-set overrides, same as the parent app. Sync
+          // never writes them; buildVardoOverlay reads the compose limit directly.
           persistentVolumes: volumes.length > 0 ? volumes : null,
           // Only overwrite exposedPorts if compose defines ports for this service.
           // This preserves ports set via the UI when compose has no port directives.
@@ -306,7 +269,7 @@ export async function syncComposeServices(opts: {
           ${id}, ${organizationId}, ${childName}, ${displayName}, ${`Compose service: ${serviceName}`},
           ${"direct"}, ${"compose"}, ${svc.image || null}, ${"active"},
           ${parentAppId}, ${serviceName}, ${containerName}, ${projectId},
-          ${cpuLimit}, ${memoryLimit}, ${null}, ${volsJson}, ${portsJson}, ${depsJson}, ${0},
+          ${null}, ${null}, ${null}, ${volsJson}, ${portsJson}, ${depsJson}, ${0},
           ${isSystemManaged}, ${now}, ${now}
         )
       `);
