@@ -167,22 +167,33 @@ export function ipsOf(containers: LiveContainer[]): Set<string> {
   return new Set(containers.flatMap((c) => c.ips));
 }
 
-async function fetchTraefikServices(): Promise<TraefikService[] | null> {
+/** Read a Traefik API collection, or null when Traefik can't be reached. */
+async function fetchTraefik<T>(path: string): Promise<T[] | null> {
   try {
-    const res = await fetch(`${apiUrl()}/api/http/services`, {
+    const res = await fetch(`${apiUrl()}${path}`, {
       // Next patches global fetch; a cached routing table would defeat the check.
       cache: "no-store",
       signal: AbortSignal.timeout(5_000),
     });
     if (!res.ok) {
-      log.warn(`Traefik API returned ${res.status}`);
+      log.warn(`Traefik API returned ${res.status} for ${path}`);
       return null;
     }
-    return (await res.json()) as TraefikService[];
+    return (await res.json()) as T[];
   } catch (err) {
     log.warn("Traefik API unreachable:", err instanceof Error ? err.message : err);
     return null;
   }
+}
+
+export function fetchTraefikServices(): Promise<TraefikService[] | null> {
+  return fetchTraefik<TraefikService>("/api/http/services");
+}
+
+export type TraefikRouter = { name?: string; status?: string; provider?: string };
+
+export function fetchTraefikRouters(): Promise<TraefikRouter[] | null> {
+  return fetchTraefik<TraefikRouter>("/api/http/routers");
 }
 
 /** The running Traefik container. Override the name with VARDO_TRAEFIK_CONTAINER. */

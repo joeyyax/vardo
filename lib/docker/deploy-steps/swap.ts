@@ -32,11 +32,15 @@ import { classifyComposeServices } from "./classify-services";
 import { publishesHostPorts } from "../host-ports";
 import { partitionBySlot, sharedProjectName, slotScopeArgs } from "../slot-partition";
 import { isSelfApp } from "../self-env";
+import { clearCutoverPin, guardCutover, type CutoverGuard } from "../traefik-cutover";
 
 const execFileAsync = promisify(execFile);
 const NETWORK_NAME = VARDO_NETWORK;
 const DEFAULT_HEALTH_CHECK_TIMEOUT_MS = DEFAULT_HEALTH_CHECK_TIMEOUT;
 const HEALTH_CHECK_INTERVAL_MS = 2000;
+
+/** Node kills the child once a stream passes this. A cold build's log is well over the 1MB default. */
+const EXEC_MAX_BUFFER = 10 * 1024 * 1024;
 
 /**
  * Whether the old slot's stop must wait until every deploy record is written.
@@ -44,6 +48,35 @@ const HEALTH_CHECK_INTERVAL_MS = 2000;
  */
 export function deferSlotStop(canOverlapSlots: boolean, appName: string): boolean {
   return canOverlapSlots && isSelfApp(appName);
+}
+
+/**
+ * Whether the old slot can be routed away from before it stops.
+ *
+ * Only when both slots are up, so there is a proven backend to hand the traffic
+ * to. The deferred self-deploy is excluded: the old slot runs the deploy, so the
+ * process dies inside the stop and would never unpin.
+ */
+export function canPinCutover(canOverlapSlots: boolean, deferStop: boolean): boolean {
+  return canOverlapSlots && !deferStop;
+}
+
+/**
+ * Take the old slot out of Traefik, stop it, then hand routing back.
+ *
+ * The pin is confirmed live before the stop is issued and released after it
+ * returns, so no request is ever addressed to a slot that has already gone.
+ */
+export async function drainThenStop(
+  drain: () => Promise<CutoverGuard>,
+  stop: () => Promise<void>,
+): Promise<void> {
+  const guard = await drain();
+  try {
+    await stop();
+  } finally {
+    await guard.release();
+  }
 }
 
 /**
@@ -185,6 +218,16 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
   const canOverlapSlots = mustStopOldSlot && !publishesHostPorts(slotted);
   const stopOldBeforeUp = mustStopOldSlot && !canOverlapSlots;
 
+  // Vardo deploying Vardo is the exception: the old slot is running this
+  // process, so stopping it here kills the deploy before it records itself.
+  // The stop is deferred to the end of post-deploy, once every write is durable.
+  const deferStopToPostDeploy = deferSlotStop(canOverlapSlots, app.name);
+  const pinCutover = canPinCutover(canOverlapSlots, deferStopToPostDeploy);
+
+  // A pin from a deploy that was killed mid-cutover would hold this app on a
+  // slot this deploy is about to replace.
+  await clearCutoverPin(app.name, ctx.envName).catch(() => {});
+
   // Pre-clean the new slot to remove orphaned containers from any previous
   // failed deploy that didn't fully clean up (process crash, timeout, etc.).
   try {
@@ -217,7 +260,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
       const { stdout, stderr } = await execFileAsync(
         "docker",
         ["compose", "--progress=plain", ...composeFileArgs, "-p", newProjectName, "build"],
-        { cwd: slotDir, timeout: COMPOSE_BUILD_UP_TIMEOUT }
+        { cwd: slotDir, timeout: COMPOSE_BUILD_UP_TIMEOUT, maxBuffer: EXEC_MAX_BUFFER }
       );
       for (const line of stdout.split(/\r?\n|\r/).filter(Boolean)) {
         logs.push(`[deploy][build] ${line.trim()}`);
@@ -231,7 +274,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
       const { stdout, stderr } = await execFileAsync(
         "docker",
         ["compose", ...composeFileArgs, "-p", newProjectName, "pull", ...pullServices],
-        { cwd: slotDir, timeout: COMPOSE_UP_TIMEOUT }
+        { cwd: slotDir, timeout: COMPOSE_UP_TIMEOUT, maxBuffer: EXEC_MAX_BUFFER }
       );
       for (const line of stdout.split(/\r?\n|\r/).filter(Boolean)) {
         logs.push(`[deploy][pull] ${line.trim()}`);
@@ -269,22 +312,44 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
     if (!oldSlotDir || !oldProjectName) return;
     const oldComposeFileArgs = await getOldComposeFileArgs();
     log(`[deploy] Stopping old slot (${activeSlot})...`);
-    try {
-      // Demote before stopping, not after — when the old slot is running this
-      // process there is no "after".
-      await demoteStandbyRestart(oldComposeFileArgs, oldProjectName, oldSlotDir);
-      // `stop`, not `down` — the old slot stays as a warm standby, keeping its
-      // containers and their logs for rollback. It is removed by the pre-clean
-      // above on the next deploy that reuses this slot dir.
-      await execFileAsync(
-        "docker",
-        ["compose", ...oldComposeFileArgs, "-p", oldProjectName, "stop"],
-        { cwd: oldSlotDir, timeout: COMPOSE_DOWN_TIMEOUT }
-      );
-      stoppedOldServices.push("__all__");
-    } catch (err) {
-      log(`[deploy] Warning: could not stop old slot — ${err instanceof Error ? err.message : err}`);
+
+    const stop = async () => {
+      try {
+        // Demote before stopping, not after — when the old slot is running this
+        // process there is no "after".
+        await demoteStandbyRestart(oldComposeFileArgs, oldProjectName, oldSlotDir);
+        // `stop`, not `down` — the old slot stays as a warm standby, keeping its
+        // containers and their logs for rollback. It is removed by the pre-clean
+        // above on the next deploy that reuses this slot dir.
+        await execFileAsync(
+          "docker",
+          ["compose", ...oldComposeFileArgs, "-p", oldProjectName, "stop"],
+          { cwd: oldSlotDir, timeout: COMPOSE_DOWN_TIMEOUT }
+        );
+        stoppedOldServices.push("__all__");
+      } catch (err) {
+        log(`[deploy] Warning: could not stop old slot — ${err instanceof Error ? err.message : err}`);
+      }
+    };
+
+    if (!pinCutover) {
+      await stop();
+      return;
     }
+
+    await drainThenStop(
+      () =>
+        guardCutover({
+          appName: app.name,
+          envName: ctx.envName,
+          compose,
+          slotted,
+          newProjectName,
+          oldProjectName,
+          log,
+        }),
+      stop,
+    );
   };
 
   if (stopOldBeforeUp) {
@@ -351,7 +416,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
           "--no-deps",
           ...sharedNames,
         ],
-        { cwd: slotDir, timeout: COMPOSE_UP_TIMEOUT }
+        { cwd: slotDir, timeout: COMPOSE_UP_TIMEOUT, maxBuffer: EXEC_MAX_BUFFER }
       );
       for (const line of `${stdout}\n${stderr}`.split(/\r?\n|\r/).filter(Boolean)) {
         logs.push(`[deploy][shared] ${line.trim()}`);
@@ -376,7 +441,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
     const { stdout, stderr } = await execFileAsync(
       "docker",
       ["compose", ...composeFileArgs, "-p", newProjectName, "up", "-d", "--pull", "never", ...onlySlotted],
-      { cwd: slotDir, timeout: composeUpTimeout }
+      { cwd: slotDir, timeout: composeUpTimeout, maxBuffer: EXEC_MAX_BUFFER }
     );
     for (const line of stdout.split(/\r?\n|\r/).filter(Boolean)) {
       logs.push(`[deploy][compose] ${line.trim()}`);
@@ -437,7 +502,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
       const { stdout } = await execFileAsync(
         "docker",
         ["compose", ...composeFileArgs, "-p", newProjectName, "logs", "--tail", "30"],
-        { cwd: slotDir, timeout: COMPOSE_QUERY_TIMEOUT }
+        { cwd: slotDir, timeout: COMPOSE_QUERY_TIMEOUT, maxBuffer: EXEC_MAX_BUFFER }
       );
       if (stdout.trim()) {
         for (const line of stdout.trim().split("\n")) {
@@ -461,11 +526,6 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
 
   // Both slots have been serving since the new one came up. Drop the old one
   // now that the new one is proven, so the cutover never leaves a gap.
-  //
-  // Vardo deploying Vardo is the exception: the old slot is running this
-  // process, so stopping it here kills the deploy before it records itself.
-  // The stop is deferred to the end of post-deploy, once every write is durable.
-  const deferStopToPostDeploy = deferSlotStop(canOverlapSlots, app.name);
   if (canOverlapSlots && !deferStopToPostDeploy) {
     await stopOldSlot();
   }
