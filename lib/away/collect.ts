@@ -116,6 +116,7 @@ export async function collectAway(opts: CollectOptions): Promise<AwayInput> {
           name: true,
           displayName: true,
           status: true,
+          parked: true,
           containerStartedAt: true,
           updatedAt: true,
         },

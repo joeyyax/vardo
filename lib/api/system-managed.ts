@@ -19,6 +19,7 @@ export type SystemManagedAction =
   | "recreate"
   | "stop"
   | "edit"
+  | "park"
   | "delete"
   | "env-vars"
   | "domains"
@@ -39,6 +40,7 @@ const DEFINITION_REFUSALS: Partial<Record<SystemManagedAction, string>> = {
   domains:
     "Domains for Vardo-managed apps come from docker-compose.yml and are rewritten on every restart.",
   "image-update": IMAGE_UPDATE_REFUSAL,
+  park: "Vardo manages this. Parking it would silence nothing — its rows are already kept off the board.",
 };
 
 /** Stopping Vardo's own stack takes down the API you would call to start it again. */

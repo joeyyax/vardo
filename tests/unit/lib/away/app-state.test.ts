@@ -17,6 +17,7 @@ function app(overrides: Partial<AwayAppRow> = {}): AwayAppRow {
     name: "paperless",
     displayName: "Paperless",
     status: "active",
+    parked: false,
     containerStartedAt: null,
     updatedAt: BEFORE,
     ...overrides,
@@ -55,6 +56,28 @@ describe("deriveAppStateFacts — unexplained state", () => {
       SINCE,
     );
     expect(facts[0].kind).toBe("app.stopped-unexplained");
+  });
+
+  it("says nothing about a parked app being off", () => {
+    expect(
+      deriveAppStateFacts(
+        [
+          app({ status: "stopped", parked: true, updatedAt: DURING }),
+          app({ id: "app-2", status: "missing", parked: true, updatedAt: DURING }),
+        ],
+        [],
+        SINCE,
+      ),
+    ).toEqual([]);
+  });
+
+  it("still reports a parked app coming back up on its own", () => {
+    const facts = deriveAppStateFacts(
+      [app({ status: "active", parked: true, containerStartedAt: DURING })],
+      [],
+      SINCE,
+    );
+    expect(facts[0].kind).toBe("app.restarted-unexplained");
   });
 
   it("ignores a bad state that predates the window", () => {
