@@ -72,6 +72,12 @@ type FlagConfig = {
   configOnly?: boolean;
   /** Flag this one can't work without. When it's off, this one reads as unavailable. */
   dependsOn?: FeatureFlag;
+  /**
+   * Turns on a core service shared by the whole instance rather than a per-org
+   * capability. One container, one app row, every organization reading it — so
+   * the flag governs both provisioning the service and access to it.
+   */
+  sharedService?: boolean;
 };
 
 const FLAG_CONFIG: Record<FeatureFlag, FlagConfig> = {
@@ -154,13 +160,17 @@ const FLAG_CONFIG: Record<FeatureFlag, FlagConfig> = {
   },
   metrics: {
     label: "Metrics",
-    description: "Container resource metrics via cAdvisor.",
+    description:
+      "Container resource metrics via cAdvisor. One cAdvisor scrapes every container on the host and every organization reads it.",
     group: "observability",
+    sharedService: true,
   },
   logging: {
     label: "Logging",
-    description: "Centralized log aggregation via Loki.",
+    description:
+      "Centralized log aggregation via Loki. One Loki and one Promtail ship every container's logs and every organization reads them.",
     group: "observability",
+    sharedService: true,
   },
   "git-integration": {
     label: "Git integration",
@@ -213,8 +223,10 @@ const FLAG_CONFIG: Record<FeatureFlag, FlagConfig> = {
   },
   "error-tracking": {
     label: "Error tracking",
-    description: "Automatic error tracking via GlitchTip (Sentry-compatible).",
+    description:
+      "Automatic error tracking via GlitchTip (Sentry-compatible). One GlitchTip holds a project per app and every organization reads it.",
     group: "observability",
+    sharedService: true,
   },
   teams: {
     label: "Teams",
@@ -383,7 +395,14 @@ export type FeatureFlagInfo = {
   unavailable: boolean;
   /** The dependency and its label, for explaining an unavailable flag. */
   dependsOn?: { flag: FeatureFlag; label: string };
+  /** True when this flag turns on a core service shared by every organization. */
+  sharedService: boolean;
 };
+
+/** Flags whose service is a single instance-wide install, not a per-org one. */
+export const SHARED_SERVICE_FLAGS = (Object.entries(FLAG_CONFIG) as [FeatureFlag, FlagConfig][])
+  .filter(([, config]) => config.sharedService)
+  .map(([flag]) => flag);
 
 /** Resolve a flag's value and the layer it came from. */
 export function resolveFeatureFlag(
@@ -422,6 +441,7 @@ export async function getAllFeatureFlags(): Promise<FeatureFlagInfo[]> {
       envVar: featureFlagEnvVar(flag),
       unavailable: dependency ? !resolveFeatureFlag(dependency, layers).enabled : false,
       dependsOn: dependency ? { flag: dependency, label: FLAG_CONFIG[dependency].label } : undefined,
+      sharedService: config.sharedService ?? false,
     };
   });
 }

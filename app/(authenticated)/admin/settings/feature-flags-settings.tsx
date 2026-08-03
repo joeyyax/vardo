@@ -2,10 +2,11 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Lock } from "lucide-react";
+import { Globe, Loader2, Lock } from "lucide-react";
 import { toast } from "@/lib/messenger";
 
 type FlagState = {
@@ -19,6 +20,7 @@ type FlagState = {
   envVar: string;
   unavailable: boolean;
   dependsOn?: { flag: string; label: string };
+  sharedService?: boolean;
 };
 
 type FlagGroup = {
@@ -163,8 +165,24 @@ export function FeatureFlagsSettings() {
                           {pinnedBy(f)}
                         </Badge>
                       )}
+                      {f.sharedService && (
+                        <Badge variant="outline" className="gap-1 text-muted-foreground">
+                          <Globe className="size-3" />
+                          Shared service
+                        </Badge>
+                      )}
                     </div>
                     <div className="text-xs text-muted-foreground">{f.description}</div>
+                    {f.sharedService && (
+                      <div className="text-xs text-muted-foreground">
+                        Installs one service for the whole instance, not a copy per organization.
+                        See{" "}
+                        <Link href="/admin/settings/core-services" className="underline underline-offset-4">
+                          Core services
+                        </Link>{" "}
+                        for what it installed.
+                      </div>
+                    )}
                     {f.unavailable && f.dependsOn && (
                       <div className="text-xs text-muted-foreground">
                         Needs {f.dependsOn.label}, which is off. Turn that on first.

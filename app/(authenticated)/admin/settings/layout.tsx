@@ -24,6 +24,7 @@ const ALL_NAV_ITEMS: NavItem[] = [
   { label: "Email", href: "/admin/settings/email", order: 5, gate: "notifications" },
   { label: "Authentication", href: "/admin/settings/authentication", order: 10 },
   { label: "Feature flags", href: "/admin/settings/feature-flags", order: 20 },
+  { label: "Core services", href: "/admin/settings/core-services", order: 25 },
   { label: "Backups", href: "/admin/settings/backup", order: 30, gate: "backups" },
   { label: "GitHub App", href: "/admin/settings/github", order: 40, gate: "git-integration" },
   { label: "Domain & SSL", href: "/admin/settings/domain", order: 50, gate: "ssl" },
