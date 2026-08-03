@@ -340,8 +340,8 @@ function ComposeServices({
     return { stats, histories };
   }, [snapshots, services]);
 
-  // One line per service, problems first. The image tag takes the tag column,
-  // and everything the card carried moves to the hover card.
+  // One line per service, problems first. The row carries the image reference
+  // itself; everything else the card carried moves to the hover card.
   return (
     <div className="@container squircle rounded-lg bg-card p-1.5 shadow-card dark:border">
       {[...services]
@@ -355,9 +355,7 @@ function ComposeServices({
             service.imageName,
             pinned.get(service.composeService ?? null) ?? null,
           );
-          const tags = [imageTag(service.imageName), service.isShared ? "shared" : null].filter(
-            (t): t is string => !!t,
-          );
+          const tags = service.isShared ? ["shared"] : [];
           return (
             <Tooltip key={service.id}>
               <TooltipTrigger asChild>
@@ -370,9 +368,11 @@ function ComposeServices({
                 />
               </TooltipTrigger>
               <TooltipContent
-                side="right"
+                /* Anchored under the row: side="right" collided and flipped onto the nav rail. */
+                side="bottom"
                 align="start"
-                sideOffset={6}
+                sideOffset={4}
+                collisionPadding={12}
                 className="bg-popover text-popover-foreground border shadow-card-hover px-3 py-2.5 [&>span]:hidden"
               >
                 <ServiceRowCard
