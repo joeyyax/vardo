@@ -27,6 +27,8 @@ export const deployments = pgTable("deployment", {
   gitSha: text("git_sha"),
   gitMessage: text("git_message"),
   log: text("log"),
+  // Execution time only, clocked from the moment runDeployment starts. Always
+  // shorter than finishedAt - startedAt, which also covers the queue wait.
   durationMs: integer("duration_ms"),
   environmentId: text("environment_id").references(() => environments.id, {
     onDelete: "set null",
@@ -52,6 +54,8 @@ export const deployments = pgTable("deployment", {
   supersededBy: text("superseded_by").references((): AnyPgColumn => deployments.id, {
     onDelete: "set null",
   }),
+  // Stamped at INSERT while the row is still queued, and never re-stamped, so
+  // this is enqueue time rather than the moment execution began.
   startedAt: timestamp("started_at").defaultNow().notNull(),
   finishedAt: timestamp("finished_at"),
 },

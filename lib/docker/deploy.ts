@@ -95,6 +95,8 @@ export async function runDeployment(
   deploymentId: string,
   opts: DeployOpts
 ): Promise<DeployResult> {
+  // Execution clock, and the source of durationMs. The row was inserted earlier
+  // by createDeployment, so everything before this point is queue wait.
   const startTime = Date.now();
   const logLines: string[] = [];
 
