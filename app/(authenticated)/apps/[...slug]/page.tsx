@@ -1,6 +1,6 @@
 import { redirect, notFound } from "next/navigation";
 import { db } from "@/lib/db";
-import { restartCountsByApp } from "@/lib/db/app-restarts";
+import { restartCountsByApp, restartReading } from "@/lib/db/app-restarts";
 import { apps, projects, tags, orgEnvVars, environments } from "@/lib/db/schema";
 import { getCurrentOrg } from "@/lib/auth/session";
 import { eq, and, asc, desc, or, type AnyColumn } from "drizzle-orm";
@@ -289,6 +289,7 @@ export default async function AppDetailPage({ params }: PageProps) {
       allAppNames={allApps.map((a) => a.name)}
       orgVarKeys={orgVars.map((v) => v.key)}
       siblings={siblings}
+      restarts={restartReading(app)}
       stabilityIncidents={stabilityIncidents}
       lifecycleEvents={lifecycleEvents}
       initialTab={effectiveTab}

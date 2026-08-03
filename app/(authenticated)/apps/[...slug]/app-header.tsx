@@ -24,8 +24,8 @@ import {
   stabilityTrend,
   stabilityVerdict,
   type Incident,
+  type RestartReading,
 } from "@/lib/ui/stability";
-import { useRestartReading } from "./use-restarts";
 import { DependencySelector } from "./dependency-selector";
 import { AppUpdateStat } from "./app-updates";
 import type { App, Deployment, SlotStatus, Tag } from "./types";
@@ -69,6 +69,7 @@ export function AppHeader({
   stackUptimeSince,
   deployStage,
   stabilityIncidents = [],
+  restarts = null,
 }: {
   app: App;
   orgId: string;
@@ -78,6 +79,8 @@ export function AppHeader({
   allTags: Tag[];
   /** Durable stability history, newest first. */
   stabilityIncidents?: Incident[];
+  /** The stored restart counter, null when there was nothing to read. */
+  restarts?: RestartReading | null;
   siblings: { id: string; name: string; displayName: string; status: string; dependsOn: string[] | null }[];
   onNavigate: (tab: string) => void;
   /** Compose parent: the service roll-up replaces the single-container status. */
@@ -141,7 +144,6 @@ export function AppHeader({
   }, [orgId, app.id, isChildService, latestDeployId]);
 
   const now = Date.now();
-  const restarts = useRestartReading(orgId, app.id);
   const trend = stabilityTrend(stabilityIncidents, now, app.createdAt);
   const verdict = stabilityVerdict({
     now,

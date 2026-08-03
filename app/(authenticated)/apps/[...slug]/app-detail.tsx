@@ -91,7 +91,7 @@ function buildAppPath(appName: string, environments: Environment[], envId: strin
   return tab && tab !== "deployments" ? `${base}/${tab}` : base;
 }
 
-export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = [], allAppNames = [], orgVarKeys = [], siblings = [], stabilityIncidents = [], lifecycleEvents = [], initialTab = "deployments", initialEnv, initialSubView, featureFlags, parentApp = null }: AppDetailProps) {
+export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = [], allAppNames = [], orgVarKeys = [], siblings = [], stabilityIncidents = [], restarts = null, lifecycleEvents = [], initialTab = "deployments", initialEnv, initialSubView, featureFlags, parentApp = null }: AppDetailProps) {
   const router = useRouter();
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteEnvOpen, setDeleteEnvOpen] = useState(false);
@@ -347,6 +347,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         allTags={allTags}
         siblings={siblings}
         stabilityIncidents={stabilityIncidents}
+        restarts={restarts}
         lifecycleEvents={lifecycleEvents}
         allParentApps={allParentApps}
       />
@@ -701,6 +702,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         onNavigate={setActiveTab}
         deployStage={currentStageLabel(deploy.deployStages)}
         stabilityIncidents={stabilityIncidents}
+        restarts={restarts}
       />
 
 
@@ -782,7 +784,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         </TabsContent>
 
         <TabsContent value="stability">
-          <AppStability orgId={orgId} app={app} incidents={stabilityIncidents} />
+          <AppStability app={app} incidents={stabilityIncidents} restarts={restarts} />
         </TabsContent>
 
         <TabsContent value="deployments">
