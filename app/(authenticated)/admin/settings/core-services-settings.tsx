@@ -29,11 +29,14 @@ const STATE_LABEL: Record<CoreServiceState, string> = {
   failed: "Failed",
 };
 
-function stateVariant(state: CoreServiceState) {
-  if (state === "provisioned") return "default" as const;
-  if (state === "off") return "outline" as const;
-  return "destructive" as const;
-}
+const STATE_VARIANT: Record<CoreServiceState, "success" | "warning" | "error" | "neutral"> = {
+  provisioned: "success",
+  off: "neutral",
+  // Blocked by an app the admin owns, so it is theirs to clear.
+  conflict: "warning",
+  "missing-template": "error",
+  failed: "error",
+};
 
 export function CoreServicesSettings() {
   const [loading, setLoading] = useState(true);
@@ -146,10 +149,7 @@ export function CoreServicesSettings() {
             <div className="space-y-1">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-sm font-medium">{service.displayName}</span>
-                <Badge
-                  variant={stateVariant(service.state)}
-                  className={service.state === "off" ? "text-muted-foreground" : ""}
-                >
+                <Badge variant={STATE_VARIANT[service.state]}>
                   {STATE_LABEL[service.state]}
                 </Badge>
               </div>

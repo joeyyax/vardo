@@ -105,7 +105,7 @@ export function JobCard({
                 Active
               </Badge>
             ) : (
-              <Badge variant="secondary" className="text-xs">
+              <Badge variant="neutral" className="text-xs">
                 <PowerOff className="mr-1 size-3" aria-hidden="true" />
                 Paused
               </Badge>

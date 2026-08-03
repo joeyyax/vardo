@@ -53,15 +53,15 @@ function alertTypeLabel(type: string): string {
 
 function StatusBadge({ status }: { status: "healthy" | "unhealthy" | "unconfigured" | "ok" | "warning" | "critical" }) {
   if (status === "healthy" || status === "ok") {
-    return <Badge variant="outline" className="text-status-success border-status-success-edge">OK</Badge>;
+    return <Badge variant="success">OK</Badge>;
   }
   if (status === "unconfigured") {
-    return <Badge variant="outline" className="text-muted-foreground">Not configured</Badge>;
+    return <Badge variant="neutral">Not configured</Badge>;
   }
   if (status === "warning") {
-    return <Badge variant="outline" className="text-status-warning border-status-warning-edge">Warning</Badge>;
+    return <Badge variant="warning">Warning</Badge>;
   }
-  return <Badge variant="outline" className="text-status-error border-status-error-edge">Unhealthy</Badge>;
+  return <Badge variant="error">Unhealthy</Badge>;
 }
 
 export function SystemAlertsPanel() {

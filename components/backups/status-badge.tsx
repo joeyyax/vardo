@@ -12,7 +12,7 @@ export function StatusBadge({ status }: { status: string }) {
       );
     case "running":
       return (
-        <Badge variant="warning">
+        <Badge variant="info">
           <Loader2 className="mr-1 size-3 animate-spin" aria-hidden="true" />
           Running
         </Badge>
@@ -33,12 +33,12 @@ export function StatusBadge({ status }: { status: string }) {
       );
     case "pending":
       return (
-        <Badge variant="outline">
+        <Badge variant="info">
           <Clock className="mr-1 size-3" aria-hidden="true" />
           Pending
         </Badge>
       );
     default:
-      return <Badge variant="secondary">{status}</Badge>;
+      return <Badge variant="neutral">{status}</Badge>;
   }
 }
