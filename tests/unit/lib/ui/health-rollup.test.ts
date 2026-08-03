@@ -116,6 +116,10 @@ describe("rollupLabel", () => {
     expect(rollupLabel(rollupHealth([app("active")]), "app")).toBe("1/1 app");
   });
 
+  it("names a fully stopped group rather than counting zero", () => {
+    expect(rollupLabel(rollupHealth([app("stopped"), app("stopped")]), "service")).toBe("Stopped");
+  });
+
   it("handles an empty group", () => {
     expect(rollupLabel(rollupHealth([]), "app")).toBe("No apps");
   });

@@ -16,7 +16,7 @@ export const APP_DOWN_WINDOW_HOURS = 48;
 /**
  * Statuses that mean the container is not doing its job, and how each reads.
  * "stopped" is absent: deriveStatus routes every broken shape to one of these,
- * so a stopped app was stopped on purpose.
+ * so a stopped app was stopped on purpose. It gets its own neutral row below.
  */
 const STATUS_DETAIL: Record<string, string> = {
   error: "Container failed",
@@ -83,6 +83,56 @@ export function appStatusRows(
       tone: "error",
       items: [...items.values()],
       footer: `Each of these changed in the last ${APP_DOWN_WINDOW_HOURS} hours. One left down on purpose drops off this list on its own.`,
+    },
+  ];
+}
+
+/**
+ * Apps that are not running. Neutral, and deliberately unbounded by time: this
+ * is an inventory rather than an alert, and a stack shelved in March is exactly
+ * the one that would otherwise be impossible to find from the board.
+ */
+export function appStoppedRows(apps: StatusSubject[]): AttentionRow[] {
+  const byId = new Map(apps.map((a) => [a.id, a]));
+  const items = new Map<string, AttentionItem>();
+
+  for (const app of apps) {
+    if (app.status !== "stopped") continue;
+
+    const parent = app.parentAppId ? byId.get(app.parentAppId) : undefined;
+    if (parent?.status === "deploying") continue;
+
+    items.set(app.id, {
+      id: app.id,
+      name: parent ? `${parent.displayName} · ${app.displayName}` : app.displayName,
+      href: `/apps/${app.name}`,
+      since: app.statusChangedAt?.toISOString(),
+    });
+  }
+
+  // stopApp writes stopped to the parent and then every child. One subject, not
+  // six — the parent keeps the count of what came down with it.
+  const services = new Map<string, number>();
+  for (const app of apps) {
+    if (!app.parentAppId || !items.has(app.parentAppId)) continue;
+    if (items.delete(app.id)) {
+      services.set(app.parentAppId, (services.get(app.parentAppId) ?? 0) + 1);
+    }
+  }
+  for (const [parentId, count] of services) {
+    const item = items.get(parentId);
+    if (item) item.detail = `${count} service${count === 1 ? "" : "s"}`;
+  }
+
+  if (items.size === 0) return [];
+
+  return [
+    {
+      key: "app-stopped",
+      label: "Stopped",
+      tone: "neutral",
+      items: [...items.values()],
+      footer: "None of these is running. A whole stack counts once, on its parent.",
     },
   ];
 }
