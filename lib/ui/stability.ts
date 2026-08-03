@@ -33,6 +33,7 @@ export type IncidentKind =
   | "crashed"
   | "crash-looping"
   | "recovered"
+  | "self-healed"
   | "deploy-failed"
   | "rolled-back"
   | "deploy-incomplete";
@@ -44,15 +45,21 @@ export type Incident = {
   detail: string;
 };
 
-/** A recovery closes an incident rather than being one. Everything else counts. */
+/**
+ * A recovery closes an incident and a self-heal answers one; counting either
+ * would double the fault it followed. Everything else counts.
+ */
+const NON_FAULTS = new Set<IncidentKind>(["recovered", "self-healed"]);
+
 export function isFault(kind: IncidentKind): boolean {
-  return kind !== "recovered";
+  return !NON_FAULTS.has(kind);
 }
 
 const INCIDENT_LABELS: Record<IncidentKind, string> = {
   crashed: "Crashed",
   "crash-looping": "Crash loop",
   recovered: "Recovered",
+  "self-healed": "Self-healed",
   "deploy-failed": "Deploy failed",
   "rolled-back": "Rolled back",
   "deploy-incomplete": "Deploy incomplete",
@@ -62,13 +69,22 @@ export function incidentLabel(kind: IncidentKind): string {
   return INCIDENT_LABELS[kind];
 }
 
-/** A recovery is good news; every fault reads in the error hue. */
+/**
+ * A recovery is good news and every fault reads in the error hue. A self-heal
+ * is neither — it is what Vardo did between the two, so it stays unpainted.
+ */
 export function incidentTone(kind: IncidentKind): string {
+  if (kind === "self-healed") return "text-muted-foreground";
   return kind === "recovered" ? "text-status-success" : "text-status-error";
 }
 
 /** Activity rows the stability timeline is built from. */
-export const STABILITY_ACTIONS = ["app.crashed", "app.crash_looping", "app.recovered"] as const;
+export const STABILITY_ACTIONS = [
+  "app.crashed",
+  "app.crash_looping",
+  "app.recovered",
+  "app.self_healed",
+] as const;
 
 export type StabilityActivityRow = {
   action: string;
@@ -104,6 +120,8 @@ function fromActivity(row: StabilityActivityRow): Incident | null {
       return { kind: "crash-looping", at, detail: summary ?? "Restarting without ever reaching healthy" };
     case "app.recovered":
       return { kind: "recovered", at, detail: summary ?? "Running again" };
+    case "app.self_healed":
+      return { kind: "self-healed", at, detail: summary ?? "Vardo restarted an unhealthy container" };
     default:
       return null;
   }

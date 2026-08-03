@@ -99,6 +99,13 @@ describe("outcomeFor", () => {
     expect(outcomeFor("app.recovered")).toBe("success");
   });
 
+  it("keeps a lifecycle action neutral — none of them is a verdict", () => {
+    for (const action of ["app.restarted", "app.stopped", "app.started", "app.self_healed"]) {
+      expect(outcomeFor(action)).toBe("neutral");
+      expect(familyFor(action)).toBe("app");
+    }
+  });
+
   it("defaults to neutral", () => {
     expect(outcomeFor("app.created")).toBe("neutral");
   });

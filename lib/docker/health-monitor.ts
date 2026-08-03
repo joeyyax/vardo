@@ -307,6 +307,25 @@ export async function tickHealthMonitor(): Promise<void> {
     const spent = await recordRestart(app.id, c.id, now);
     unhealthyStreak.delete(c.id);
 
+    // The notification is read once and gone. This is what the stability
+    // timeline still has when someone asks why the app recovered.
+    if (ok) {
+      try {
+        await recordActivity({
+          organizationId: app.organizationId,
+          appId: app.id,
+          action: "app.self_healed",
+          metadata: {
+            summary: `${c.name} was unhealthy and Vardo restarted it (${spent.length}/${MAX_RESTARTS_PER_WINDOW} this hour)`,
+            containerName: c.name,
+            restartsThisWindow: spent.length,
+          },
+        });
+      } catch (err) {
+        log.error(`Failed to record self-heal for ${c.name}:`, err);
+      }
+    }
+
     emit(app.organizationId, {
       type: "app.auto-restarted",
       title: ok ? `Auto-restarted: ${appName}` : `Auto-restart failed: ${appName}`,

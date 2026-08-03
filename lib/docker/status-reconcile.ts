@@ -9,7 +9,7 @@
 // ---------------------------------------------------------------------------
 
 import pLimit from "p-limit";
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, or, type SQL } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { statusChange } from "@/lib/db/app-status";
@@ -216,6 +216,183 @@ async function reportOomKills(subjects: OomSubject[]): Promise<void> {
   }
 }
 
+const RECONCILE_COLUMNS = {
+  id: true,
+  name: true,
+  displayName: true,
+  organizationId: true,
+  status: true,
+  parentAppId: true,
+  composeService: true,
+  containerName: true,
+  importedContainerId: true,
+  statusChangedAt: true,
+  containerStartedAt: true,
+  lastRunningAt: true,
+  containerMemoryLimit: true,
+  memoryLimit: true,
+  needsRedeploy: true,
+  exitReason: true,
+  updatedAt: true,
+} as const;
+
+function loadReconcileRows(where?: SQL) {
+  return db.query.apps.findMany({ columns: RECONCILE_COLUMNS, where });
+}
+
+type ReconcileApp = Awaited<ReturnType<typeof loadReconcileRows>>[number];
+
+/** What one app's row should say, measured against what Docker reports. */
+async function computeAppUpdate(app: ReconcileApp, containers: ContainerInfo[], now: Date) {
+  // A deploy in flight owns the status until it finishes, or until the
+  // hold expires — a stranded "deploying" must not be permanent.
+  if (deployHoldsStatus(app, now)) return null;
+
+  const matched = matchContainers(app, containers);
+  let observed = deriveStatus(matched);
+
+  let startedAt: Date | null = null;
+  let memoryLimit: number | null = null;
+  let exitReason: ExitReason | null = null;
+  let oomSubject: OomWatchSubject | null = null;
+  if (observed === "active") {
+    const running = matched.find((c) => c.state === "running");
+    if (running) {
+      try {
+        const info = await inspectContainer(running.id);
+        const parsed = new Date(info.state.startedAt);
+        if (!isNaN(parsed.getTime())) startedAt = parsed;
+        memoryLimit = info.memoryBytes;
+      } catch {
+        // Container went away between list and inspect — keep the old values.
+        startedAt = app.containerStartedAt;
+        memoryLimit = app.containerMemoryLimit;
+      }
+      exitReason = reasonSurvivesRestart(app.exitReason, { id: running.id, startedAt }, now);
+      // A running container's cgroup counter is the only record of a kill
+      // inside it — nothing else here inspects one that has not ended.
+      oomSubject = {
+        organizationId: app.organizationId,
+        appId: app.id,
+        appName: app.displayName || app.name,
+        containerId: running.id,
+        containerName: running.name,
+        memoryLimit: memoryLimit ?? 0,
+      };
+    }
+  } else {
+    exitReason = await resolveExitReason(matched, now);
+    // Re-read with the reason the same inspect produced: a deliberate
+    // stop is not a crash, and only the reason can say which this was.
+    observed = deriveStatus(matched, exitReason);
+  }
+
+  // A configured limit the container is not running is a redeploy away
+  // from being real, and nothing else notices the difference.
+  const drifted = memoryLimitDrifted(app.memoryLimit, memoryLimit);
+  const needsRedeploy = drifted || !!app.needsRedeploy;
+
+  const unchanged =
+    observed === app.status &&
+    startedAt?.getTime() === app.containerStartedAt?.getTime() &&
+    memoryLimit === app.containerMemoryLimit &&
+    needsRedeploy === !!app.needsRedeploy &&
+    exitReasonsEqual(exitReason, app.exitReason);
+
+  return {
+    id: app.id,
+    name: app.name,
+    organizationId: app.organizationId,
+    appName: app.displayName || app.name,
+    touchOnly: unchanged,
+    becameMissing: observed === "missing" && app.status !== "missing",
+    observed,
+    startedAt,
+    memoryLimit,
+    needsRedeploy,
+    exitReason,
+    running: observed === "active",
+    stability: unchanged
+      ? null
+      : stabilityTransition({
+          from: app.status,
+          to: observed,
+          reason: exitReason,
+          heldMs: app.statusChangedAt ? now.getTime() - app.statusChangedAt.getTime() : null,
+        }),
+    // A kill already reported is not news on every tick that follows it.
+    oomFirstSeen: isOomKill(exitReason) && !exitReasonsEqual(exitReason, app.exitReason),
+    oomSubject,
+  };
+}
+
+type AppUpdate = NonNullable<Awaited<ReturnType<typeof computeAppUpdate>>>;
+
+/** The only place an observed status reaches the row. */
+async function applyAppUpdate(u: AppUpdate, now: Date): Promise<void> {
+  await db
+    .update(apps)
+    .set({
+      ...statusChange(u.observed, now),
+      containerStartedAt: u.startedAt,
+      containerMemoryLimit: u.memoryLimit,
+      needsRedeploy: u.needsRedeploy,
+      exitReason: u.exitReason,
+      // Stamped only while running and never cleared, so it survives the
+      // container going away. Idle age is measured from this.
+      ...(u.running ? { lastRunningAt: now } : {}),
+      statusCheckedAt: now,
+    })
+    .where(eq(apps.id, u.id));
+
+  if (u.stability) {
+    try {
+      await recordActivity({
+        organizationId: u.organizationId,
+        appId: u.id,
+        action: u.stability.action,
+        metadata: { summary: u.stability.summary, status: u.observed },
+      });
+    } catch (err) {
+      log.error(`Failed to record ${u.stability.action} for ${u.id}:`, err);
+    }
+  }
+}
+
+/**
+ * Re-read one app and its compose children from Docker now, instead of leaving
+ * the row describing containers that have already been replaced.
+ *
+ * Restart and recreate change nothing the row records, so until this runs the
+ * page shows the old start time and the action reads as a no-op. Bringing a
+ * stopped app back up is worse — the badge still says stopped. Routes call this
+ * rather than writing the row themselves, so status keeps one writer.
+ *
+ * Returns what Docker says the app is now, or null when it could not be read.
+ */
+export async function reconcileAppNow(appId: string): Promise<ObservedStatus | null> {
+  try {
+    const containers = await listAllContainers();
+    const rows = await loadReconcileRows(
+      or(eq(apps.id, appId), eq(apps.parentAppId, appId)),
+    );
+
+    const now = new Date();
+    let observed: ObservedStatus | null = null;
+    for (const app of rows) {
+      const update = await computeAppUpdate(app, containers, now);
+      if (!update) continue;
+      if (app.id === appId) observed = update.observed;
+      if (!update.touchOnly) await applyAppUpdate(update, now);
+    }
+    return observed;
+  } catch (err) {
+    // Best-effort: the periodic tick still corrects the row within the minute.
+    log.error(`Failed to reconcile ${appId} on demand:`, err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
 export async function tickStatusReconcile(): Promise<void> {
   let containers: ContainerInfo[];
   try {
@@ -225,150 +402,22 @@ export async function tickStatusReconcile(): Promise<void> {
     return;
   }
 
-  const rows = await db.query.apps.findMany({
-    columns: {
-      id: true,
-      name: true,
-      displayName: true,
-      organizationId: true,
-      status: true,
-      parentAppId: true,
-      composeService: true,
-      containerName: true,
-      importedContainerId: true,
-      statusChangedAt: true,
-      containerStartedAt: true,
-      lastRunningAt: true,
-      containerMemoryLimit: true,
-      memoryLimit: true,
-      needsRedeploy: true,
-      exitReason: true,
-      updatedAt: true,
-    },
-  });
+  const rows = await loadReconcileRows();
 
   const now = new Date();
   const limit = pLimit(INSPECT_CONCURRENCY);
-  const missing: string[] = [];
 
   const updates = await Promise.all(
-    rows.map((app) =>
-      limit(async () => {
-        // A deploy in flight owns the status until it finishes, or until the
-        // hold expires — a stranded "deploying" must not be permanent.
-        if (deployHoldsStatus(app, now)) return null;
-
-        const matched = matchContainers(app, containers);
-        let observed = deriveStatus(matched);
-
-        let startedAt: Date | null = null;
-        let memoryLimit: number | null = null;
-        let exitReason: ExitReason | null = null;
-        let oomSubject: OomWatchSubject | null = null;
-        if (observed === "active") {
-          const running = matched.find((c) => c.state === "running");
-          if (running) {
-            try {
-              const info = await inspectContainer(running.id);
-              const parsed = new Date(info.state.startedAt);
-              if (!isNaN(parsed.getTime())) startedAt = parsed;
-              memoryLimit = info.memoryBytes;
-            } catch {
-              // Container went away between list and inspect — keep the old values.
-              startedAt = app.containerStartedAt;
-              memoryLimit = app.containerMemoryLimit;
-            }
-            exitReason = reasonSurvivesRestart(app.exitReason, { id: running.id, startedAt }, now);
-            // A running container's cgroup counter is the only record of a kill
-            // inside it — nothing else here inspects one that has not ended.
-            oomSubject = {
-              organizationId: app.organizationId,
-              appId: app.id,
-              appName: app.displayName || app.name,
-              containerId: running.id,
-              containerName: running.name,
-              memoryLimit: memoryLimit ?? 0,
-            };
-          }
-        } else {
-          exitReason = await resolveExitReason(matched, now);
-          // Re-read with the reason the same inspect produced: a deliberate
-          // stop is not a crash, and only the reason can say which this was.
-          observed = deriveStatus(matched, exitReason);
-        }
-
-        if (observed === "missing" && app.status !== "missing") missing.push(app.name);
-
-        // A configured limit the container is not running is a redeploy away
-        // from being real, and nothing else notices the difference.
-        const drifted = memoryLimitDrifted(app.memoryLimit, memoryLimit);
-        const needsRedeploy = drifted || !!app.needsRedeploy;
-
-        const unchanged =
-          observed === app.status &&
-          startedAt?.getTime() === app.containerStartedAt?.getTime() &&
-          memoryLimit === app.containerMemoryLimit &&
-          needsRedeploy === !!app.needsRedeploy &&
-          exitReasonsEqual(exitReason, app.exitReason);
-        return {
-          id: app.id,
-          organizationId: app.organizationId,
-          appName: app.displayName || app.name,
-          touchOnly: unchanged,
-          observed,
-          startedAt,
-          memoryLimit,
-          needsRedeploy,
-          exitReason,
-          oomSubject,
-          running: observed === "active",
-          stability: unchanged
-            ? null
-            : stabilityTransition({
-                from: app.status,
-                to: observed,
-                reason: exitReason,
-                heldMs: app.statusChangedAt ? now.getTime() - app.statusChangedAt.getTime() : null,
-              }),
-          // A kill already reported is not news on every tick that follows it.
-          oomFirstSeen: isOomKill(exitReason) && !exitReasonsEqual(exitReason, app.exitReason),
-        };
-      }),
-    ),
+    rows.map((app) => limit(() => computeAppUpdate(app, containers, now))),
   );
 
   const settled = updates.filter((u) => u !== null);
   const changed = settled.filter((u) => !u.touchOnly);
   const touched = settled.filter((u) => u.touchOnly);
+  const missing = settled.filter((u) => u.becameMissing).map((u) => u.name);
 
   for (const u of changed) {
-    await db
-      .update(apps)
-      .set({
-        ...statusChange(u.observed, now),
-        containerStartedAt: u.startedAt,
-        containerMemoryLimit: u.memoryLimit,
-        needsRedeploy: u.needsRedeploy,
-        exitReason: u.exitReason,
-        // Stamped only while running and never cleared, so it survives the
-        // container going away. Idle age is measured from this.
-        ...(u.running ? { lastRunningAt: now } : {}),
-        statusCheckedAt: now,
-      })
-      .where(eq(apps.id, u.id));
-
-    if (u.stability) {
-      try {
-        await recordActivity({
-          organizationId: u.organizationId,
-          appId: u.id,
-          action: u.stability.action,
-          metadata: { summary: u.stability.summary, status: u.observed },
-        });
-      } catch (err) {
-        log.error(`Failed to record ${u.stability.action} for ${u.id}:`, err);
-      }
-    }
+    await applyAppUpdate(u, now);
   }
 
   const touchedRunning = touched.filter((u) => u.running).map((u) => u.id);

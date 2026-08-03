@@ -32,9 +32,13 @@ const PHRASES: Record<string, Phrase> = {
   "app.image_updated": { text: "updated the image for" },
   "app.image_update_ignored": { text: "ignored image updates for" },
   "app.image_update_unignored": { text: "stopped ignoring image updates for" },
+  "app.restarted": { text: "restarted" },
+  "app.stopped": { text: "stopped" },
+  "app.started": { text: "started" },
   "app.crashed": { text: "detected a crash on" },
   "app.crash_looping": { text: "detected a crash loop on" },
   "app.recovered": { text: "confirmed recovery of" },
+  "app.self_healed": { text: "restarted an unhealthy container on" },
 
   "volume.sync": { text: "synced volumes on" },
   "volume.drift_detected": { text: "detected volume drift on" },
@@ -87,9 +91,11 @@ export function formatDuration(ms: number): string {
   return `${minutes}m ${seconds % 60}s`;
 }
 
+const TRIGGER_ACRONYMS: Record<string, string> = { api: "API", mcp: "MCP" };
+
 /** Acronyms keep their casing; everything else reads as written. */
 function triggerLabel(trigger: string): string {
-  return trigger === "api" ? "API" : trigger;
+  return TRIGGER_ACRONYMS[trigger] ?? trigger;
 }
 
 /**

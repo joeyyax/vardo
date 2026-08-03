@@ -91,7 +91,7 @@ function buildAppPath(appName: string, environments: Environment[], envId: strin
   return tab && tab !== "deployments" ? `${base}/${tab}` : base;
 }
 
-export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = [], allAppNames = [], orgVarKeys = [], siblings = [], stabilityIncidents = [], initialTab = "deployments", initialEnv, initialSubView, featureFlags, parentApp = null }: AppDetailProps) {
+export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = [], allAppNames = [], orgVarKeys = [], siblings = [], stabilityIncidents = [], lifecycleEvents = [], initialTab = "deployments", initialEnv, initialSubView, featureFlags, parentApp = null }: AppDetailProps) {
   const router = useRouter();
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteEnvOpen, setDeleteEnvOpen] = useState(false);
@@ -331,6 +331,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         allTags={allTags}
         siblings={siblings}
         stabilityIncidents={stabilityIncidents}
+        lifecycleEvents={lifecycleEvents}
         allParentApps={allParentApps}
       />
     );
@@ -781,6 +782,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
             deploy={deploy}
             onDeploy={handleDeploy}
             deployActionLabel={app.status === "error" ? "Retry" : "Deploy"}
+            lifecycleEvents={lifecycleEvents}
           />
         </TabsContent>
 
