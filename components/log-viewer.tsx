@@ -71,6 +71,8 @@ type TerminalOutputProps = {
   /** Grow the pane to the bottom of the viewport instead of a fixed height. */
   fill?: boolean;
   showFilters?: boolean;
+  /** Level chips lit on mount. The viewer owns them from then on. */
+  initialLevels?: readonly LogLevel[];
   onLoadOlder?: () => Promise<void>;
   hasOlder?: boolean;
   className?: string;
@@ -81,6 +83,7 @@ export function TerminalOutput({
   height = "min-h-40 max-h-[500px]",
   fill = false,
   showFilters = true,
+  initialLevels,
   onLoadOlder,
   hasOlder = false,
   className,
@@ -90,7 +93,7 @@ export function TerminalOutput({
   const searchRef = useRef<HTMLInputElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
   const userScrolledRef = useRef(false);
-  const [activeFilters, setActiveFilters] = useState<Set<LogLevel>>(new Set());
+  const [activeFilters, setActiveFilters] = useState<Set<LogLevel>>(() => new Set(initialLevels));
   const [query, setQuery] = useState("");
   const [onlyMatches, setOnlyMatches] = useState(false);
   const [activeMatch, setActiveMatch] = useState(-1);
@@ -501,9 +504,11 @@ type InitEvent = {
 type LogViewerProps = {
   streamUrl: string;
   maxLines?: number;
+  /** Level chips lit on mount, for a link that names what it wants to show. */
+  initialLevels?: readonly LogLevel[];
 };
 
-export function LogViewer({ streamUrl, maxLines = DEFAULT_SCROLLBACK }: LogViewerProps) {
+export function LogViewer({ streamUrl, maxLines = DEFAULT_SCROLLBACK, initialLevels }: LogViewerProps) {
   const [lines, setLines] = useState<ViewLine[]>([]);
   const [connected, setConnected] = useState(false);
   const [timedOut, setTimedOut] = useState(false);
@@ -703,7 +708,7 @@ export function LogViewer({ streamUrl, maxLines = DEFAULT_SCROLLBACK }: LogViewe
           </div>
         </div>
       ) : (
-        <TerminalOutput lines={lines} fill onLoadOlder={loadOlder} hasOlder={hasOlder} />
+        <TerminalOutput lines={lines} fill initialLevels={initialLevels} onLoadOlder={loadOlder} hasOlder={hasOlder} />
       )}
     </div>
   );

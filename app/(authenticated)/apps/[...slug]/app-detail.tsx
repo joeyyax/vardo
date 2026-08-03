@@ -851,6 +851,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
             <LogViewer
               key={`logs-${selectedEnvId}`}
               streamUrl={`/api/v1/organizations/${orgId}/apps/${app.id}/logs/stream${selectedEnv ? `?environment=${selectedEnv.name}` : ""}`}
+              initialLevels={initialSubView === "errors" ? ["error"] : undefined}
             />
           </TabsContent>
         )}
@@ -966,7 +967,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         </TabsContent>
 
         <TabsContent value="errors" className={cn(tabPanelSurface, "space-y-4")}>
-          <AppErrors />
+          <AppErrors appName={app.name} appId={app.id} orgId={orgId} />
         </TabsContent>
 
         {isOrgAdmin(userRole) && (
