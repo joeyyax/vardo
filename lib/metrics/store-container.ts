@@ -1,5 +1,5 @@
 import { seriesToPoints } from "./aggregate";
-import { tsRedis, tsKey, ensureTimeSeries } from "./ts-client";
+import { tsRedis, tsKey, ensureTimeSeries, touchRetention, forgetKey, RETENTION_MS } from "./ts-client";
 import { queryDiskHistory } from "./store-disk";
 import type { MetricsPoint } from "./types";
 
@@ -35,7 +35,10 @@ async function storeContainerSeries(
 
   const ts = timestamp.toString();
   await Promise.all(
-    entries.map(([, value], i) => tsRedis.call("TS.ADD", keys[i], ts, value.toString()))
+    entries.map(async ([, value], i) => {
+      await tsRedis.call("TS.ADD", keys[i], ts, value.toString());
+      await touchRetention(keys[i]);
+    })
   );
 }
 
@@ -89,6 +92,7 @@ export async function storeDiskWrite(
   if (composeService) labels.service = composeService;
   await ensureTimeSeries(key, labels);
   await tsRedis.call("TS.ADD", key, timestamp.toString(), writeBytes.toString());
+  await touchRetention(key);
 }
 
 /**
@@ -115,6 +119,52 @@ export async function storeGpuMetrics(
     gpuMemoryTotal: values.gpuMemoryTotal,
     gpuTemperature: values.gpuTemperature,
   }, organizationId, composeService);
+}
+
+const GPU_METRIC_NAMES = ["gpuUtilization", "gpuMemoryUsed", "gpuMemoryTotal", "gpuTemperature"] as const;
+
+/**
+ * Delete GPU series whose last sample is older than retention.
+ * Returns the number of containers pruned.
+ */
+export async function pruneStaleGpuSeries(): Promise<number> {
+  const now = Date.now();
+  let pruned = 0;
+  let cursor = "0";
+
+  do {
+    const [next, keys] = (await tsRedis.call(
+      "SCAN", cursor, "MATCH", "metrics:*:gpuUtilization:*", "COUNT", "200",
+    )) as [string, string[]];
+    cursor = next;
+
+    for (const key of keys) {
+      // metrics:{project}:{metric}:{container}. Split from the end --
+      // container is never ':'-delimited, project may be.
+      const parts = key.split(":");
+      const containerId = parts[parts.length - 1];
+      const projectName = parts.slice(1, parts.length - 2).join(":");
+      if (!containerId || !projectName) continue;
+
+      try {
+        const last = (await tsRedis.call("TS.GET", key)) as [string, string] | null;
+        if (last && now - parseInt(last[0], 10) <= RETENTION_MS) continue;
+
+        await Promise.all(
+          GPU_METRIC_NAMES.map(async (metric) => {
+            const gpuKey = tsKey(projectName, metric, containerId);
+            await tsRedis.call("DEL", gpuKey).catch(() => {});
+            forgetKey(gpuKey);
+          }),
+        );
+        pruned++;
+      } catch {
+        // Best-effort -- leave the key for the next sweep.
+      }
+    }
+  } while (cursor !== "0");
+
+  return pruned;
 }
 
 /**

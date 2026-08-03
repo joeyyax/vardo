@@ -76,3 +76,13 @@ export async function ensureTimeSeries(
 
   createdKeys.add(key);
 }
+
+/** Refresh a series' Redis key TTL to the retention window. Call after every write. */
+export async function touchRetention(key: string): Promise<void> {
+  await tsRedis.call("PEXPIRE", key, RETENTION_MS.toString());
+}
+
+/** Drop a key from the created-keys cache after deleting it out of band (pruning). */
+export function forgetKey(key: string): void {
+  createdKeys.delete(key);
+}
