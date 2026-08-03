@@ -31,6 +31,7 @@ const CATEGORY_LABELS: Record<EventCategory, string> = {
 const EVENT_LABELS: Record<BusEventType, string> = {
   "deploy.success": "Deploy succeeded",
   "deploy.failed": "Deploy failed",
+  "deploy.incomplete": "Post-deploy work unfinished",
   "deploy.rollback": "Auto-rollback",
   "deploy.status": "Deploy status changed",
   "app.state-changed": "App state changed",

@@ -78,6 +78,9 @@ export function appStatusFromEvent(event: BusEvent): string | null {
       return "active";
     case "deploy.failed":
       return "error";
+    // Unfinished tail work, but the release cut over and is serving.
+    case "deploy.incomplete":
+      return "active";
     case "deploy.status":
       if (event.status === "running") return null;
       if (event.status === "active") return "active";
