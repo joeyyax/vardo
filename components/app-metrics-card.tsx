@@ -299,7 +299,7 @@ export function MetricsLine({
         </MetricChip>
       )}
       {(metrics.networkRx > 0 || metrics.networkTx > 0) && (
-        <MetricChip label={`\u2193 ${formatBytes(metrics.networkRx)} \u2191 ${formatBytes(metrics.networkTx)}`} metric="network">
+        <MetricChip label={`\u2191 Sent ${formatBytes(metrics.networkTx)} \u00b7 \u2193 Received ${formatBytes(metrics.networkRx)}`} metric="network">
           <Network className="size-3" />
           {formatBytes(metrics.networkRx + metrics.networkTx)}
         </MetricChip>

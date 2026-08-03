@@ -6,10 +6,6 @@ import { CHART_COLORS } from "@/lib/metrics/constants";
 const SWATCH_COLORS: Record<string, string> = {
   cpu: CHART_COLORS.cpu,
   memory: CHART_COLORS.memory,
-  networkRx: CHART_COLORS.networkRx,
-  networkTx: CHART_COLORS.networkTx,
-  networkRxRate: CHART_COLORS.networkRx,
-  networkTxRate: CHART_COLORS.networkTx,
   memoryLimit: CHART_COLORS.memoryLimit,
   diskTotal: CHART_COLORS.disk,
 };
@@ -30,18 +26,16 @@ type MetricsTooltipProps = {
 };
 
 /**
- * Custom dark-themed tooltip for Recharts area charts.
+ * Dark-themed tooltip shell shared by every metrics chart.
  * oklch-based background, border, and text colors for dark UI consistency.
  */
-export function MetricsTooltip({
-  payload,
-  active,
+export function TooltipFrame({
   label,
-  valueFormatter,
-  categoryLabels,
-}: MetricsTooltipProps) {
-  if (!active || !payload || payload.length === 0) return null;
-
+  children,
+}: {
+  label?: React.ReactNode;
+  children: React.ReactNode;
+}) {
   return (
     <div
       className="rounded-lg border px-3 py-2 text-xs shadow-md"
@@ -57,6 +51,47 @@ export function MetricsTooltip({
       >
         {label}
       </p>
+      {children}
+    </div>
+  );
+}
+
+/** One swatch-and-value line inside a tooltip. */
+export function TooltipRow({
+  color,
+  label,
+  value,
+}: {
+  color: string;
+  label: React.ReactNode;
+  value: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <span className="flex items-center gap-1.5">
+        <span
+          className="size-2 rounded-full shrink-0"
+          style={{ backgroundColor: color }}
+        />
+        {label}
+      </span>
+      <span className="tabular-nums font-medium">{value}</span>
+    </div>
+  );
+}
+
+/** Custom tooltip for Recharts area charts. */
+export function MetricsTooltip({
+  payload,
+  active,
+  label,
+  valueFormatter,
+  categoryLabels,
+}: MetricsTooltipProps) {
+  if (!active || !payload || payload.length === 0) return null;
+
+  return (
+    <TooltipFrame label={label}>
       {payload.map((entry) => {
         const category = String(entry.dataKey ?? entry.name ?? "");
         const displayName = categoryLabels?.[category] ?? category;
@@ -71,18 +106,9 @@ export function MetricsTooltip({
         const swatchColor = SWATCH_COLORS[category] ?? entry.color ?? "#888";
 
         return (
-          <div key={category} className="flex items-center justify-between gap-4">
-            <span className="flex items-center gap-1.5">
-              <span
-                className="size-2 rounded-full shrink-0"
-                style={{ backgroundColor: swatchColor }}
-              />
-              {displayName}
-            </span>
-            <span className="tabular-nums font-medium">{value}</span>
-          </div>
+          <TooltipRow key={category} color={swatchColor} label={displayName} value={value} />
         );
       })}
-    </div>
+    </TooltipFrame>
   );
 }
