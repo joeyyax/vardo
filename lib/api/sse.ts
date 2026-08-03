@@ -1,4 +1,5 @@
 import type { NextRequest } from "next/server";
+import { closeOnShutdown } from "@/lib/shutdown";
 
 /** Default SSE idle timeout: 10 minutes */
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
@@ -57,8 +58,15 @@ export function createSSEResponse(
         } catch { /* stream closed */ }
       }
 
+      const unregister = closeOnShutdown(() => {
+        sendEvent("shutdown", { message: "Server shutting down, reconnect to resume" });
+        cleanup();
+        try { controller.close(); } catch { /* already closed */ }
+      });
+
       function cleanup() {
         if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+        unregister();
       }
 
       // Auto-close after timeout
