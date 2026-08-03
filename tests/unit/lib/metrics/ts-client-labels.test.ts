@@ -18,7 +18,7 @@ vi.mock("ioredis", () => ({
   },
 }));
 
-import { ensureTimeSeries } from "@/lib/metrics/ts-client";
+import { ensureTimeSeries, touchRetention, forgetKey, RETENTION_MS } from "@/lib/metrics/ts-client";
 
 describe("ensureTimeSeries", () => {
   beforeEach(() => {
@@ -40,5 +40,29 @@ describe("ensureTimeSeries", () => {
 
     const alter = calls.recorded.find((c) => c[0] === "TS.ALTER");
     expect(alter).toEqual(["TS.ALTER", "metrics:a:cpu:c2", "LABELS", "project", "a", "service", "web"]);
+  });
+});
+
+describe("touchRetention", () => {
+  beforeEach(() => {
+    calls.recorded.length = 0;
+  });
+
+  it("sets a real Redis TTL matching the retention window", async () => {
+    await touchRetention("metrics:a:gpuUtilization:c1");
+
+    expect(calls.recorded).toContainEqual(["PEXPIRE", "metrics:a:gpuUtilization:c1", RETENTION_MS.toString()]);
+  });
+});
+
+describe("forgetKey", () => {
+  it("lets a pruned key be recreated with TS.CREATE instead of skipped", async () => {
+    await ensureTimeSeries("metrics:a:cpu:c3", { project: "a" });
+    calls.recorded.length = 0;
+
+    forgetKey("metrics:a:cpu:c3");
+    await ensureTimeSeries("metrics:a:cpu:c3", { project: "a" });
+
+    expect(calls.recorded.some((c) => c[0] === "TS.CREATE")).toBe(true);
   });
 });

@@ -7,6 +7,7 @@ export {
   storeMetrics,
   storeDiskWrite,
   storeGpuMetrics,
+  pruneStaleGpuSeries,
   queryDiskWriteRange,
   queryMetrics,
   queryByOrg,
