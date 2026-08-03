@@ -127,6 +127,9 @@ export const backups = pgTable("backup", {
   volumeName: text("volume_name"),
   sizeBytes: bigint("size_bytes", { mode: "number" }),
   storagePath: text("storage_path"),
+  // Archive format as written ("tar" | "dump"). Restore reads this, never the
+  // volume's current config — that can change after the archive exists.
+  strategy: text("strategy"),
   checksum: text("checksum"), // sha256 hash of the archive before upload
   log: text("log"),
   startedAt: timestamp("started_at").defaultNow().notNull(),

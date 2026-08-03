@@ -5,9 +5,11 @@
 // strategy, with docker/bash/storage/db mocked.
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync } from "fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync } from "fs";
 import { copyFile } from "fs/promises";
+import { spawnSync } from "child_process";
 import { createHash } from "crypto";
+import { gzipSync } from "zlib";
 import { tmpdir } from "os";
 import { join } from "path";
 
@@ -53,7 +55,11 @@ const execSuccess = (...args: unknown[]) => {
 vi.mock("@/lib/db", () => ({
   db: { query: { backups: { findFirst: backupsFindFirst }, volumes: { findFirst: volumesFindFirst } } },
 }));
-vi.mock("child_process", () => ({ execFile: execFileMock }));
+// Only execFile is stubbed — the swap tests run the real restore script via spawnSync.
+vi.mock("child_process", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("child_process")>()),
+  execFile: execFileMock,
+}));
 vi.mock("@/lib/hooks/execute", () => ({ executeHooks: executeHooksMock }));
 vi.mock("@/lib/docker/client", () => ({
   listContainers: listContainersMock,
@@ -74,7 +80,7 @@ vi.mock("@/lib/backups/storage-factory", () => ({
   }),
 }));
 
-import { restoreBackup } from "@/lib/backups/engine";
+import { restoreBackup, buildTarRestoreScript } from "@/lib/backups/engine";
 
 function backupRow(overrides: Record<string, unknown> = {}) {
   return {
@@ -82,6 +88,7 @@ function backupRow(overrides: Record<string, unknown> = {}) {
     appId: "app-1",
     volumeName: "data",
     storagePath: "org/app/data/backup.tar.gz",
+    strategy: "tar",
     checksum: REAL_CHECKSUM,
     target: { organizationId: "org-1" },
     app: { name: "myapp" },
@@ -133,13 +140,15 @@ describe("restoreBackup — volume (tar) round-trip", () => {
       ([file, args]) => file === "docker" && (args as string[]).includes("run"),
     );
     expect(tarCall).toBeDefined();
-    expect((tarCall![1] as string[]).join(" ")).toMatch(/tar xzf \/backup\/volume\.tar\.gz -C \/data/);
+    expect((tarCall![1] as string[]).join(" ")).toMatch(/tar xzf "\/backup\/volume\.tar\.gz"/);
   });
 });
 
 describe("restoreBackup — database (dump) round-trip", () => {
   it("verifies the checksum and pipes the gunzipped dump into the restore command", async () => {
-    backupsFindFirst.mockResolvedValue(backupRow());
+    backupsFindFirst.mockResolvedValue(
+      backupRow({ strategy: "dump", storagePath: "org/app/data/backup.dump.gz" }),
+    );
     volumesFindFirst.mockResolvedValue({
       backupStrategy: "dump",
       backupMeta: { dumpCmd: "pg_dump -U u db", restoreCmd: "docker exec -i pg psql -U u db" },
@@ -177,6 +186,124 @@ describe("restoreBackup — corrupted/mismatched archive is rejected", () => {
   });
 });
 
+// The archive format is fixed when the archive is written. Re-deriving it from
+// the volume row at restore time flips the strategy whenever that row was
+// edited, renamed or deleted since — and restoring a dump as a tar wipes the
+// live volume before failing.
+describe("restore strategy comes from the backup record, not current volume config", () => {
+  it("restores a dump archive as a dump even when the volume row now says tar", async () => {
+    backupsFindFirst.mockResolvedValue(
+      backupRow({ strategy: "dump", storagePath: "org/app/data/backup.dump.gz" }),
+    );
+    volumesFindFirst.mockResolvedValue({
+      backupStrategy: "tar",
+      backupMeta: { dumpCmd: "pg_dump -U u db", restoreCmd: "docker exec -i pg psql -U u db" },
+    });
+
+    const result = await restoreBackup("bk-1");
+
+    expect(result.success).toBe(true);
+    const bashCall = execFileMock.mock.calls.find(([file]) => file === "bash");
+    expect((bashCall![1] as string[]).join(" ")).toMatch(/gunzip -c .* \| docker exec -i pg psql/);
+    // Never touched the volume.
+    expect(execFileMock.mock.calls.some(([file, args]) =>
+      file === "docker" && (args as string[]).includes("run"))).toBe(false);
+  });
+
+  it("falls back to the storage path extension for rows written before the column", async () => {
+    backupsFindFirst.mockResolvedValue(
+      backupRow({ strategy: null, storagePath: "org/app/data/backup.dump.gz" }),
+    );
+    volumesFindFirst.mockResolvedValue({
+      backupStrategy: "tar",
+      backupMeta: { dumpCmd: "pg_dump -U u db", restoreCmd: "docker exec -i pg psql -U u db" },
+    });
+
+    const result = await restoreBackup("bk-1");
+
+    expect(result.success).toBe(true);
+    expect(execFileMock.mock.calls.some(([file]) => file === "bash")).toBe(true);
+  });
+
+  it("does not wipe the volume when the volume row was deleted after the dump was taken", async () => {
+    backupsFindFirst.mockResolvedValue(
+      backupRow({ strategy: null, storagePath: "org/app/data/backup.dump.gz" }),
+    );
+    volumesFindFirst.mockResolvedValue(undefined); // row is gone
+
+    const result = await restoreBackup("bk-1");
+
+    // No restoreCmd to run, so it fails — but it must fail without destroying anything.
+    expect(result.success).toBe(false);
+    expect(result.log).toMatch(/restoreCmd/);
+    expect(restoreCommandRan()).toBe(false);
+  });
+
+  it("refuses to restore an archive whose format cannot be determined", async () => {
+    backupsFindFirst.mockResolvedValue(
+      backupRow({ strategy: null, storagePath: "org/app/data/backup.bin" }),
+    );
+    volumesFindFirst.mockResolvedValue({ backupStrategy: "tar", backupMeta: null });
+
+    await expect(restoreBackup("bk-1")).rejects.toThrow(/determine the archive format/i);
+    expect(restoreCommandRan()).toBe(false);
+  });
+});
+
+// The tar restore used to run `rm -rf /data/*` and the extract in one shell, so
+// an unreadable or wrong-format archive emptied the live volume and then failed.
+// These drive the real script against temp dirs standing in for the mounts.
+describe("tar restore leaves the volume intact unless the extract succeeds", () => {
+  function makeVolume(): { dataDir: string; backupDir: string } {
+    const root = mkdtempSync(join(BACKUPS_ROOT, "swap-"));
+    const dataDir = join(root, "data");
+    const backupDir = join(root, "backup");
+    mkdirSync(join(dataDir, "nested"), { recursive: true });
+    mkdirSync(backupDir, { recursive: true });
+    writeFileSync(join(dataDir, "live.txt"), "irreplaceable");
+    writeFileSync(join(dataDir, ".hidden"), "also irreplaceable");
+    writeFileSync(join(dataDir, "nested", "deep.txt"), "nested data");
+    return { dataDir, backupDir };
+  }
+
+  function runScript(dataDir: string, backupDir: string) {
+    return spawnSync("sh", ["-c", buildTarRestoreScript(dataDir, backupDir)], { encoding: "utf8" });
+  }
+
+  it("keeps every existing file when the archive is not a readable tar", () => {
+    const { dataDir, backupDir } = makeVolume();
+    // A valid gzip stream that is a pg dump, not a tar — exactly the wrong-strategy case.
+    writeFileSync(join(backupDir, "volume.tar.gz"), gzipSync(Buffer.from("-- PostgreSQL dump\n")));
+
+    const proc = runScript(dataDir, backupDir);
+
+    expect(proc.status).not.toBe(0);
+    expect(readFileSync(join(dataDir, "live.txt"), "utf8")).toBe("irreplaceable");
+    expect(readFileSync(join(dataDir, ".hidden"), "utf8")).toBe("also irreplaceable");
+    expect(readFileSync(join(dataDir, "nested", "deep.txt"), "utf8")).toBe("nested data");
+    // No staging litter left behind.
+    expect(readdirSync(dataDir).sort()).toEqual([".hidden", "live.txt", "nested"]);
+  });
+
+  it("replaces the volume contents with the archive when the extract succeeds", () => {
+    const { dataDir, backupDir } = makeVolume();
+    const src = mkdtempSync(join(BACKUPS_ROOT, "src-"));
+    writeFileSync(join(src, "restored.txt"), "from backup");
+    writeFileSync(join(src, ".dotfile"), "hidden from backup");
+    expect(
+      spawnSync("tar", ["czf", join(backupDir, "volume.tar.gz"), "-C", src, "."]).status,
+    ).toBe(0);
+
+    const proc = runScript(dataDir, backupDir);
+
+    expect(proc.status).toBe(0);
+    expect(readFileSync(join(dataDir, "restored.txt"), "utf8")).toBe("from backup");
+    expect(readFileSync(join(dataDir, ".dotfile"), "utf8")).toBe("hidden from backup");
+    // Files absent from the archive are gone, staging dir included.
+    expect(readdirSync(dataDir).sort()).toEqual([".dotfile", "restored.txt"]);
+  });
+});
+
 // #756: persistent volumes are env-scoped (`${app}-${env}_${vol}`), shared
 // across blue/green slots. The resolver must target the volume the app actually
 // uses — never a blue/green slot name the app would never mount.
@@ -205,6 +332,23 @@ describe("#756 — volume resolution targets the real env-scoped volume", () => 
     expect((runCall![1] as string[]).join(" ")).toContain("myapp-production_data:/data");
     // The data-integrity guarantee: never touch a blue/green slot volume.
     expect(allDockerArgs().some((a) => /-blue_|-green_/.test(a))).toBe(false);
+  });
+
+  // `vardo.project` is the app name for every environment and slot; only
+  // `vardo.environment` separates them. An unscoped lookup lets a running
+  // staging or preview container hand back its volume for a production restore.
+  it("only inspects containers in the app's own environment", async () => {
+    backupsFindFirst.mockResolvedValue(backupRow({ appId: "app-1", volumeName: "data" }));
+    volumesFindFirst.mockResolvedValue({ backupStrategy: "tar", backupMeta: null, mountPath: "/app/data" });
+    resolveDefaultEnvMock.mockResolvedValue({ name: "staging", type: "staging", id: "env-2" });
+    listContainersMock.mockResolvedValue([{ id: "c1" }]);
+    inspectContainerMock.mockResolvedValue({
+      mounts: [{ type: "volume", name: "myapp-staging_data", destination: "/app/data", source: "" }],
+    });
+
+    await restoreBackup("bk-1");
+
+    expect(listContainersMock).toHaveBeenCalledWith("myapp", "staging");
   });
 
   it("ignores a container mount at a different path", async () => {

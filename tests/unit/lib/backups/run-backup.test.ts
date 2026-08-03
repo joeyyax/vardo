@@ -277,4 +277,28 @@ describe("runBackup — app scoping", () => {
 
     expect(updated.some((u) => u.table === backupJobs && u.set.lastRunAt instanceof Date)).toBe(true);
   });
+
+  // lastRunAt feeds backup-stale. A run that archived nothing must not silence it.
+  it("leaves lastRunAt alone when the run captured nothing", async () => {
+    backupJobsFindFirst.mockResolvedValue(job());
+    volumesPerApp([volume({ name: "a-data" })]);
+    execFileMock.mockImplementation((...args: unknown[]) => {
+      const cb = args[args.length - 1] as (e: unknown, r: unknown) => void;
+      cb(new Error("docker run failed"), null);
+    });
+
+    const results = await runBackup("job-1");
+
+    expect(results.some((r) => r.outcome === "success")).toBe(false);
+    expect(updated.some((u) => u.table === backupJobs)).toBe(false);
+  });
+
+  it("leaves lastRunAt alone when every source was skipped", async () => {
+    backupJobsFindFirst.mockResolvedValue(job());
+    volumesPerApp([volume({ type: "bind", source: "/srv/app-a/data" })]);
+
+    await runBackup("job-1");
+
+    expect(updated.some((u) => u.table === backupJobs)).toBe(false);
+  });
 });
