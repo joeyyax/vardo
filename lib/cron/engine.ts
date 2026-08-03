@@ -5,7 +5,7 @@ import { nanoid } from "nanoid";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { listContainers, type ContainerInfo, type ContainerScope } from "@/lib/docker/client";
-import { matchContainers, type ReconcilableApp } from "@/lib/docker/status-reconcile";
+import { matchContainers, type ReconcilableApp } from "@/lib/docker/container-match";
 import { shouldRunNow } from "./parse";
 import { acquireLock } from "@/lib/redis-lock";
 import { logger } from "@/lib/logger";

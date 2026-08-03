@@ -6,6 +6,7 @@ import Redis from "ioredis";
 import { redis } from "@/lib/redis";
 import type { StreamEntry, ReadStreamOptions, ConsumeGroupOptions } from "./types";
 import { logger } from "@/lib/logger";
+import { closeOnShutdown } from "@/lib/shutdown";
 
 const log = logger.child("stream");
 
@@ -34,7 +35,8 @@ export function isValidStreamId(id: string | null | undefined): boolean {
 // Each blocking reader gets a dedicated connection from this pool.
 // ---------------------------------------------------------------------------
 
-const blockingClients: Redis[] = [];
+/** Live blocking connections, each mapped to its shutdown unregister. */
+const blockingClients = new Map<Redis, () => void>();
 
 function getBlockingClient(): Redis {
   const url = process.env.REDIS_URL || "redis://localhost:7200";
@@ -42,19 +44,18 @@ function getBlockingClient(): Redis {
     maxRetriesPerRequest: 3,
     lazyConnect: true,
   });
-  blockingClients.push(client);
+  // Registered per client, not at module scope — importing this module for its
+  // helpers must not wire a shutdown for a pool that is never built.
+  blockingClients.set(client, closeOnShutdown(() => releaseBlockingClient(client)));
   return client;
 }
 
-// Cleanup on shutdown
-function cleanupBlockingClients() {
-  for (const client of blockingClients) {
-    client.disconnect();
-  }
-  blockingClients.length = 0;
+/** Disconnect a blocking client and drop it from the shutdown registry. */
+function releaseBlockingClient(client: Redis): void {
+  blockingClients.get(client)?.();
+  blockingClients.delete(client);
+  client.disconnect();
 }
-process.once("SIGTERM", cleanupBlockingClients);
-process.once("SIGINT", cleanupBlockingClients);
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -191,7 +192,7 @@ export async function* readStream(
       }
     }
   } finally {
-    blockClient.disconnect();
+    releaseBlockingClient(blockClient);
   }
 }
 
@@ -283,7 +284,7 @@ export async function consumeGroup(opts: ConsumeGroupOptions): Promise<() => Pro
         }
       }
     } finally {
-      blockClient.disconnect();
+      releaseBlockingClient(blockClient);
     }
   })();
 
