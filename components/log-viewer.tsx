@@ -17,6 +17,7 @@ import { findMatches, matchedLines, filterToMatches, stepMatch } from "@/lib/log
 import {
   capLines, mergeOlder, historyUrlFor, SCROLLBACK_OPTIONS, DEFAULT_SCROLLBACK,
 } from "@/lib/logging/buffer";
+import "./surface-terminal.css";
 
 export { detectLevel as detectLogLevel };
 
@@ -55,11 +56,11 @@ const LEVEL_LABELS: Record<LogLevel, string> = {
 };
 
 const LEVEL_COLORS: Record<LogLevel, string> = {
-  error: "text-red-400",
-  warn: "text-yellow-400",
-  info: "text-blue-400",
-  debug: "text-zinc-500",
-  other: "text-zinc-400",
+  error: "text-status-error",
+  warn: "text-status-warning",
+  info: "text-status-info",
+  debug: "text-muted-foreground",
+  other: "text-foreground",
 };
 
 const CHIP_ORDER: LogLevel[] = ["error", "warn", "info", "debug", "other"];
@@ -256,32 +257,32 @@ export function TerminalOutput({
   return (
     <div
       onKeyDown={onKeyDown}
-      className={cn("rounded-lg border border-zinc-800 bg-zinc-950 overflow-hidden", className)}
+      className={cn("surface-terminal rounded-lg border bg-background overflow-hidden", className)}
     >
       {/* Control bar */}
       {showFilters && (
-        <div ref={headerRef} className="border-b border-zinc-800 bg-zinc-900/50">
+        <div ref={headerRef} className="border-b bg-card/50">
           <div className="flex items-center gap-2 px-3 py-1.5">
             <div className="relative flex-1 min-w-32 max-w-md">
-              <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3 text-zinc-500" />
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3 text-muted-foreground" />
               <input
                 ref={searchRef}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Find in logs"
                 aria-label="Find in logs"
-                className="w-full rounded bg-zinc-950 border border-zinc-800 pl-7 pr-2 py-1 text-xs font-mono text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-600"
+                className="w-full rounded bg-background border pl-7 pr-2 py-1 text-xs font-mono text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-ring"
               />
             </div>
             {query && (
               <div className="flex items-center gap-1">
-                <span className="text-xs text-zinc-500 tabular-nums" aria-live="polite">
+                <span className="text-xs text-muted-foreground tabular-nums" aria-live="polite">
                   {matches.length === 0 ? "No matches" : `${activeMatch + 1} of ${matches.length}`}
                 </span>
                 <button
                   onClick={() => step(-1)}
                   disabled={matches.length === 0}
-                  className="text-zinc-500 hover:text-zinc-200 disabled:opacity-40 p-0.5"
+                  className="text-muted-foreground hover:text-foreground disabled:opacity-40 p-0.5"
                   title="Previous match (N)"
                 >
                   <ChevronUp className="size-3.5" />
@@ -289,7 +290,7 @@ export function TerminalOutput({
                 <button
                   onClick={() => step(1)}
                   disabled={matches.length === 0}
-                  className="text-zinc-500 hover:text-zinc-200 disabled:opacity-40 p-0.5"
+                  className="text-muted-foreground hover:text-foreground disabled:opacity-40 p-0.5"
                   title="Next match (n)"
                 >
                   <ChevronDown className="size-3.5" />
@@ -298,7 +299,7 @@ export function TerminalOutput({
                   onClick={() => setOnlyMatches((v) => !v)}
                   className={cn(
                     "rounded px-1.5 py-0.5 text-xs transition-colors",
-                    onlyMatches ? "bg-zinc-700 text-zinc-100" : "text-zinc-500 hover:bg-zinc-800",
+                    onlyMatches ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-muted",
                   )}
                   title="Hide lines without a match"
                 >
@@ -306,7 +307,7 @@ export function TerminalOutput({
                 </button>
                 <button
                   onClick={() => setQuery("")}
-                  className="text-zinc-500 hover:text-zinc-300 p-0.5"
+                  className="text-muted-foreground hover:text-foreground p-0.5"
                   title="Clear search"
                 >
                   <X className="size-3" />
@@ -328,7 +329,7 @@ export function TerminalOutput({
                     aria-pressed={isActive}
                     className={cn(
                       "inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-xs font-medium transition-colors",
-                      isActive ? "bg-zinc-700 text-zinc-100" : `${LEVEL_COLORS[level]} hover:bg-zinc-800`,
+                      isActive ? "bg-accent text-accent-foreground" : `${LEVEL_COLORS[level]} hover:bg-muted`,
                     )}
                   >
                     {LEVEL_LABELS[level]}
@@ -341,7 +342,7 @@ export function TerminalOutput({
               {activeFilters.size > 0 && (
                 <button
                   onClick={() => setActiveFilters(new Set())}
-                  className="text-zinc-500 hover:text-zinc-300 ml-1 p-0.5"
+                  className="text-muted-foreground hover:text-foreground ml-1 p-0.5"
                   title="Clear filters"
                 >
                   <X className="size-3" />
@@ -349,21 +350,21 @@ export function TerminalOutput({
               )}
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-xs text-zinc-500 tabular-nums whitespace-nowrap">
+              <span className="text-xs text-muted-foreground tabular-nums whitespace-nowrap">
                 {filtering
                   ? `${visibleLines.length.toLocaleString()} / ${lines.length.toLocaleString()}`
                   : lines.length.toLocaleString()} lines
               </span>
               <button
                 onClick={copyToClipboard}
-                className="text-zinc-500 hover:text-zinc-300 p-0.5 transition-colors"
+                className="text-muted-foreground hover:text-foreground p-0.5 transition-colors"
                 title="Copy to clipboard"
               >
                 {copied ? <Check className="size-3.5 text-status-success" /> : <Copy className="size-3.5" />}
               </button>
               <button
                 onClick={download}
-                className="text-zinc-500 hover:text-zinc-300 p-0.5 transition-colors"
+                className="text-muted-foreground hover:text-foreground p-0.5 transition-colors"
                 title="Download"
               >
                 <Download className="size-3.5" />
@@ -410,7 +411,7 @@ export function TerminalOutput({
             <button
               onClick={loadOlder}
               disabled={loadingOlder}
-              className="w-full mb-2 flex items-center justify-center gap-1.5 rounded border border-dashed border-zinc-800 py-1 text-xs text-zinc-500 hover:text-zinc-300 hover:border-zinc-700 transition-colors"
+              className="w-full mb-2 flex items-center justify-center gap-1.5 rounded border border-dashed py-1 text-xs text-muted-foreground hover:text-foreground hover:border-accent transition-colors"
             >
               {loadingOlder
                 ? <><Loader2 className="size-3 animate-spin" />Loading</>
@@ -418,7 +419,7 @@ export function TerminalOutput({
             </button>
           )}
           {visibleLines.length === 0 ? (
-            <div className="text-zinc-500">
+            <div className="text-muted-foreground">
               {lines.length === 0 ? "No output." : "No lines match the current filter."}
             </div>
           ) : (
@@ -428,7 +429,7 @@ export function TerminalOutput({
                 data-line={i}
                 data-raw={line.service ? `${line.service} | ${line.text}` : line.text}
                 className={cn(
-                  "flex gap-2 text-zinc-300 hover:bg-white/5 px-1 -mx-1 rounded",
+                  "flex gap-2 text-foreground hover:bg-white/5 px-1 -mx-1 rounded",
                   active?.line === i && "bg-white/5",
                 )}
               >
@@ -454,7 +455,7 @@ export function TerminalOutput({
         {!autoScroll && (
           <button
             onClick={scrollToBottom}
-            className="absolute bottom-3 right-3 flex items-center gap-1.5 rounded-md bg-zinc-800 border border-zinc-700 px-2.5 py-1.5 text-xs text-zinc-300 hover:bg-zinc-700 transition-colors shadow-lg"
+            className="absolute bottom-3 right-3 flex items-center gap-1.5 rounded-md bg-muted border border-accent px-2.5 py-1.5 text-xs text-foreground hover:bg-accent transition-colors shadow-lg"
           >
             <ArrowDown className="size-3" />
             Bottom
@@ -625,7 +626,7 @@ export function LogViewer({ streamUrl, maxLines = DEFAULT_SCROLLBACK }: LogViewe
             {connected ? "Streaming" : timedOut ? "Paused" : lines.length > 0 ? "Reconnecting..." : "Disconnected"}
           </span>
           {logSource && (
-            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground border border-zinc-800 rounded px-1.5 py-0.5">
+            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground border rounded px-1.5 py-0.5">
               {logSource === "loki" ? (
                 <><Database className="size-3" />Loki</>
               ) : (
@@ -691,12 +692,12 @@ export function LogViewer({ streamUrl, maxLines = DEFAULT_SCROLLBACK }: LogViewe
 
       {/* Terminal output */}
       {lines.length === 0 && !connected ? (
-        <div className="rounded-lg border border-zinc-800 bg-zinc-950 p-4">
-          <p className="text-xs text-zinc-500 font-mono">No logs available. Is the project running?</p>
+        <div className="surface-terminal rounded-lg border bg-background p-4">
+          <p className="text-xs text-muted-foreground font-mono">No logs available. Is the project running?</p>
         </div>
       ) : lines.length === 0 && connected ? (
-        <div className="rounded-lg border border-zinc-800 bg-zinc-950 p-4">
-          <div className="flex items-center gap-2 text-zinc-500 text-xs font-mono">
+        <div className="surface-terminal rounded-lg border bg-background p-4">
+          <div className="flex items-center gap-2 text-muted-foreground text-xs font-mono">
             <Loader2 className="size-3.5 animate-spin" />
             Waiting for output...
           </div>

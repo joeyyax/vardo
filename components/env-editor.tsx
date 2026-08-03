@@ -15,6 +15,7 @@ import {
 } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
 import { createTheme } from "@uiw/codemirror-themes";
+import "./surface-terminal.css";
 
 // ---------------------------------------------------------------------------
 // Clipboard toast helper
@@ -66,27 +67,27 @@ const envParser: StreamParser<{ inValue: boolean }> = {
 const envLang = new LanguageSupport(StreamLanguage.define(envParser));
 
 // ---------------------------------------------------------------------------
-// CodeMirror theme (matches the dark zinc editor)
+// CodeMirror theme — reads the surface-terminal scope on the container below.
 // ---------------------------------------------------------------------------
 
 const envTheme = createTheme({
   theme: "dark",
   settings: {
-    background: "rgb(9 9 11)", // zinc-950
-    foreground: "rgb(228 228 231)", // zinc-200
-    caret: "rgb(161 161 170)", // zinc-400
-    selection: "rgba(63 63 70 / 0.5)", // zinc-700/50
-    selectionMatch: "rgba(63 63 70 / 0.3)",
-    lineHighlight: "rgba(39 39 42 / 0.5)", // zinc-800/50
+    background: "var(--background)",
+    foreground: "var(--foreground)",
+    caret: "var(--foreground)",
+    selection: "color-mix(in oklch, var(--accent) 50%, transparent)",
+    selectionMatch: "color-mix(in oklch, var(--accent) 30%, transparent)",
+    lineHighlight: "color-mix(in oklch, var(--muted) 50%, transparent)",
     gutterBackground: "transparent",
-    gutterForeground: "rgb(82 82 91)", // zinc-600
+    gutterForeground: "var(--muted-foreground)",
   },
   styles: [
-    { tag: tags.comment, color: "rgb(113 113 122)" }, // zinc-500
-    { tag: tags.propertyName, color: "rgb(251 191 36)" }, // amber-400
-    { tag: tags.operator, color: "rgb(113 113 122)" }, // zinc-500
-    { tag: tags.string, color: "rgb(228 228 231)" }, // zinc-200
-    { tag: tags.variableName, color: "rgb(34 211 238)" }, // cyan-400
+    { tag: tags.comment, color: "var(--muted-foreground)" },
+    { tag: tags.propertyName, color: "var(--terminal-key)" },
+    { tag: tags.operator, color: "var(--muted-foreground)" },
+    { tag: tags.string, color: "var(--foreground)" },
+    { tag: tags.variableName, color: "var(--terminal-variable)" },
   ],
 });
 
@@ -297,7 +298,7 @@ export function EnvEditor(props: EnvEditorProps) {
       </div>
     );
   }
-  const btnClass = "px-2 py-0.5 rounded border border-zinc-700 bg-zinc-800/80 text-[10px] font-mono text-zinc-400 hover:text-zinc-200 hover:border-zinc-600 hover:bg-zinc-700 transition-colors";
+  const btnClass = "px-2 py-0.5 rounded border border-accent bg-muted/80 text-[10px] font-mono text-muted-foreground hover:text-foreground hover:border-ring hover:bg-accent transition-colors";
 
   function renderCopyChips() {
     // Multi-line selection mode
@@ -325,7 +326,7 @@ export function EnvEditor(props: EnvEditorProps) {
           className="absolute right-3 flex items-center gap-1.5 h-6 pointer-events-auto z-10"
           style={{ top }}
         >
-          <span className="text-[10px] font-mono text-zinc-600">copy {count} vars</span>
+          <span className="text-[10px] font-mono text-muted-foreground">copy {count} vars</span>
           <button type="button" className={btnClass} onClick={() => copyToast(keys.join("\n"))}>keys</button>
           <button type="button" className={btnClass} onClick={() => copyToast(values.join("\n"))}>values</button>
           <button type="button" className={btnClass} onClick={() => copyToast(selected.join("\n"))}>pairs</button>
@@ -359,7 +360,7 @@ export function EnvEditor(props: EnvEditorProps) {
         className="absolute right-3 flex items-center gap-1.5 h-6 pointer-events-auto z-10"
         style={{ top }}
       >
-        <span className="text-[10px] font-mono text-zinc-600">copy</span>
+        <span className="text-[10px] font-mono text-muted-foreground">copy</span>
         <button type="button" className={btnClass} onClick={() => copyToast(line)}>pair</button>
         <button type="button" className={btnClass} onClick={() => copyToast(key)}>key</button>
         <button type="button" className={btnClass} onClick={() => copyToast(value)}>value</button>
@@ -411,7 +412,7 @@ export function EnvEditor(props: EnvEditorProps) {
 
       <div
         ref={containerRef}
-        className="relative rounded-lg border bg-zinc-950 overflow-hidden"
+        className="surface-terminal relative rounded-lg border bg-background overflow-hidden"
         onMouseMove={handleMouseMove}
         onMouseLeave={() => { hoveredLineRef.current = -1; setHoveredLine(-1); }}
       >
