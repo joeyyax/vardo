@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { queryMetricsPoints } from "@/lib/metrics/store";
+import { appSeriesScope } from "@/lib/metrics/series-scope";
 import { isMetricsEnabled } from "@/lib/metrics/config";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 type RouteParams = {
@@ -27,7 +28,14 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         eq(apps.id, appId),
         eq(apps.organizationId, orgId)
       ),
-      columns: { id: true, name: true, gpuEnabled: true },
+      columns: {
+        id: true,
+        name: true,
+        gpuEnabled: true,
+        parentAppId: true,
+        composeService: true,
+      },
+      with: { parentApp: { columns: { name: true } } },
     });
 
     if (!app) {
@@ -40,7 +48,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const to = parseInt(searchParams.get("to") || String(now));
     const bucketMs = parseInt(searchParams.get("bucket") || "30000"); // default 30s
 
-    const points = await queryMetricsPoints(app.name, from, to, bucketMs, app.gpuEnabled);
+    const scope = appSeriesScope(app);
+    const points = await queryMetricsPoints(scope.project, from, to, bucketMs, app.gpuEnabled, scope.service);
 
     return NextResponse.json({ points });
   } catch (error) {

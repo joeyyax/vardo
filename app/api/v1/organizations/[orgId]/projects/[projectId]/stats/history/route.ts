@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { apps, projects } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, isNull } from "drizzle-orm";
 import { queryMetricsPoints } from "@/lib/metrics/store";
 import type { MetricsPoint } from "@/lib/metrics/types";
 import { isMetricsEnabled } from "@/lib/metrics/config";
@@ -31,8 +31,13 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
+    // Stack children read under their parent's series, so summing both counts them twice.
     const projectApps = await db.query.apps.findMany({
-      where: and(eq(apps.projectId, projectId), eq(apps.organizationId, orgId)),
+      where: and(
+        eq(apps.projectId, projectId),
+        eq(apps.organizationId, orgId),
+        isNull(apps.parentAppId),
+      ),
       columns: { id: true, name: true, gpuEnabled: true },
     });
 

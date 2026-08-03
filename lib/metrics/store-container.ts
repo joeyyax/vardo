@@ -16,6 +16,7 @@ async function storeContainerSeries(
   timestamp: number,
   metrics: Record<string, number>,
   organizationId?: string | null,
+  composeService?: string | null,
 ) {
   const baseLabels: Record<string, string> = {
     project: projectName,
@@ -23,6 +24,7 @@ async function storeContainerSeries(
     containerName,
   };
   if (organizationId) baseLabels.organization = organizationId;
+  if (composeService) baseLabels.service = composeService;
 
   const entries = Object.entries(metrics);
   const keys = entries.map(([name]) => tsKey(projectName, name, containerId));
@@ -53,6 +55,7 @@ export async function storeMetrics(
     networkTxBytes: number;
   },
   organizationId?: string | null,
+  composeService?: string | null,
 ) {
   await storeContainerSeries(projectName, containerId, containerName, timestamp, {
     cpu: values.cpuPercent,
@@ -60,7 +63,7 @@ export async function storeMetrics(
     memoryLimit: values.memoryLimit,
     networkRx: values.networkRxBytes,
     networkTx: values.networkTxBytes,
-  }, organizationId);
+  }, organizationId, composeService);
 }
 
 /**
@@ -73,6 +76,7 @@ export async function storeDiskWrite(
   timestamp: number,
   writeBytes: number,
   organizationId?: string | null,
+  composeService?: string | null,
 ) {
   const key = tsKey(projectName, "diskWrite", containerId);
   const labels: Record<string, string> = {
@@ -82,6 +86,7 @@ export async function storeDiskWrite(
     metric: "diskWrite",
   };
   if (organizationId) labels.organization = organizationId;
+  if (composeService) labels.service = composeService;
   await ensureTimeSeries(key, labels);
   await tsRedis.call("TS.ADD", key, timestamp.toString(), writeBytes.toString());
 }
@@ -102,13 +107,14 @@ export async function storeGpuMetrics(
     gpuTemperature: number;
   },
   organizationId?: string | null,
+  composeService?: string | null,
 ) {
   await storeContainerSeries(projectName, containerId, containerName, timestamp, {
     gpuUtilization: values.gpuUtilization,
     gpuMemoryUsed: values.gpuMemoryUsed,
     gpuMemoryTotal: values.gpuMemoryTotal,
     gpuTemperature: values.gpuTemperature,
-  }, organizationId);
+  }, organizationId, composeService);
 }
 
 /**
@@ -141,6 +147,7 @@ type Aggregation = { type: "avg" | "max" | "min" | "sum"; bucketMs: number };
 
 /**
  * Query historical metrics for a project.
+ * `composeService` narrows a decomposed stack to one service's containers.
  */
 export async function queryMetrics(
   projectName: string,
@@ -148,8 +155,11 @@ export async function queryMetrics(
   fromMs: number,
   toMs: number,
   aggregation?: Aggregation,
+  composeService?: string | null,
 ): Promise<TimeSeriesPoint[]> {
-  return mrangeQuery(metric, fromMs, toMs, aggregation, [`project=${projectName}`]);
+  const filters = [`project=${projectName}`];
+  if (composeService) filters.push(`service=${composeService}`);
+  return mrangeQuery(metric, fromMs, toMs, aggregation, filters);
 }
 
 /**
@@ -244,26 +254,30 @@ async function mrangeQueryImpl(
 // Unified MetricsPoint[] query helpers
 // ---------------------------------------------------------------------------
 
-/** Query historical metrics for a project, returns unified MetricsPoint[] */
+/**
+ * Query historical metrics for a project, returns unified MetricsPoint[].
+ * `composeService` narrows a decomposed stack to one service's containers.
+ */
 export async function queryMetricsPoints(
   projectName: string,
   fromMs: number,
   toMs: number,
   bucketMs: number,
   includeGpu = false,
+  composeService?: string | null,
 ): Promise<MetricsPoint[]> {
   const [cpu, memory, memoryLimit, networkRx, networkTx, disk, gpuUtilization, gpuMemoryUsed, gpuMemoryTotal, gpuTemperature] = await Promise.all([
-    queryMetrics(projectName, "cpu", fromMs, toMs, { type: "avg", bucketMs }),
-    queryMetrics(projectName, "memory", fromMs, toMs, { type: "avg", bucketMs }),
-    queryMetrics(projectName, "memoryLimit", fromMs, toMs, { type: "max", bucketMs }),
-    queryMetrics(projectName, "networkRx", fromMs, toMs, { type: "sum", bucketMs }),
-    queryMetrics(projectName, "networkTx", fromMs, toMs, { type: "sum", bucketMs }),
-    queryMetrics(projectName, "disk", fromMs, toMs, { type: "max", bucketMs }),
+    queryMetrics(projectName, "cpu", fromMs, toMs, { type: "avg", bucketMs }, composeService),
+    queryMetrics(projectName, "memory", fromMs, toMs, { type: "avg", bucketMs }, composeService),
+    queryMetrics(projectName, "memoryLimit", fromMs, toMs, { type: "max", bucketMs }, composeService),
+    queryMetrics(projectName, "networkRx", fromMs, toMs, { type: "sum", bucketMs }, composeService),
+    queryMetrics(projectName, "networkTx", fromMs, toMs, { type: "sum", bucketMs }, composeService),
+    queryMetrics(projectName, "disk", fromMs, toMs, { type: "max", bucketMs }, composeService),
     ...(includeGpu ? [
-      queryMetrics(projectName, "gpuUtilization", fromMs, toMs, { type: "avg", bucketMs }),
-      queryMetrics(projectName, "gpuMemoryUsed", fromMs, toMs, { type: "avg", bucketMs }),
-      queryMetrics(projectName, "gpuMemoryTotal", fromMs, toMs, { type: "max", bucketMs }),
-      queryMetrics(projectName, "gpuTemperature", fromMs, toMs, { type: "avg", bucketMs }),
+      queryMetrics(projectName, "gpuUtilization", fromMs, toMs, { type: "avg", bucketMs }, composeService),
+      queryMetrics(projectName, "gpuMemoryUsed", fromMs, toMs, { type: "avg", bucketMs }, composeService),
+      queryMetrics(projectName, "gpuMemoryTotal", fromMs, toMs, { type: "max", bucketMs }, composeService),
+      queryMetrics(projectName, "gpuTemperature", fromMs, toMs, { type: "avg", bucketMs }, composeService),
     ] : []),
   ]);
 

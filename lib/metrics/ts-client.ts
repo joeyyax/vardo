@@ -42,6 +42,7 @@ const createdKeys = new Set<string>();
 /**
  * Ensure a time-series key exists with the correct retention and labels.
  * Skips the TS.CREATE call if the key was already created in this process.
+ * A key written before a label was introduced is altered to carry it.
  */
 export async function ensureTimeSeries(
   key: string,
@@ -49,8 +50,9 @@ export async function ensureTimeSeries(
 ) {
   if (createdKeys.has(key)) return;
 
+  const labelArgs = Object.entries(labels).flat();
+
   try {
-    const labelArgs = Object.entries(labels).flat();
     await tsRedis.call(
       "TS.CREATE",
       key,
@@ -62,9 +64,13 @@ export async function ensureTimeSeries(
       ...labelArgs
     );
   } catch (err: unknown) {
-    // Key already exists -- that's fine
     if (err instanceof Error && !err.message.includes("already exists")) {
       throw err;
+    }
+    try {
+      await tsRedis.call("TS.ALTER", key, "LABELS", ...labelArgs);
+    } catch {
+      // Best effort — a stale label set still serves the existing queries.
     }
   }
 
