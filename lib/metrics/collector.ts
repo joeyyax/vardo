@@ -133,8 +133,12 @@ async function collect() {
             networkRxBytes: m.networkRxBytes,
             networkTxBytes: m.networkTxBytes,
           }, m.organizationId, service),
-          storeDiskWrite(m.projectName, m.containerId, m.containerName, m.timestamp, m.diskWriteBytes, m.organizationId, service),
         ];
+        // Writing an unreported counter as 0 is what made "no disk I/O data"
+        // read as "wrote nothing".
+        if (m.diskWriteBytes !== null) {
+          ops.push(storeDiskWrite(m.projectName, m.containerId, m.containerName, m.timestamp, m.diskWriteBytes, m.organizationId, service));
+        }
         // Only store GPU metrics when a GPU is present for this container
         if (m.gpuMemoryTotal > 0) {
           ops.push(storeGpuMetrics(m.projectName, m.containerId, m.containerName, m.timestamp, {

@@ -14,9 +14,11 @@ export type ContainerMetrics = {
   memoryPercent: number;
   networkRxBytes: number;
   networkTxBytes: number;
-  diskUsage: number;
-  diskLimit: number;
-  diskWriteBytes: number; // cumulative block I/O writes
+  /** Container filesystem bytes. Null when cAdvisor reports no filesystem stats. */
+  diskUsage: number | null;
+  diskLimit: number | null;
+  /** Cumulative block I/O writes. Null when cAdvisor reports no io_service_bytes. */
+  diskWriteBytes: number | null;
   gpuUtilization: number; // percent (summed duty_cycle across accelerators)
   gpuMemoryUsed: number; // bytes
   gpuMemoryTotal: number; // bytes
