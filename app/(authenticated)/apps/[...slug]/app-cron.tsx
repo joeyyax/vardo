@@ -284,10 +284,7 @@ export function CronManager({ appId, orgId }: Props) {
                       <StatusIcon status={job.lastStatus} />
                       <p className="text-sm font-medium">{job.name}</p>
                       {job.enabled ? (
-                        <Badge
-                          variant="outline"
-                          className="text-xs border-transparent bg-status-success-muted text-status-success"
-                        >
+                        <Badge variant="success" className="text-xs">
                           Active
                         </Badge>
                       ) : (
