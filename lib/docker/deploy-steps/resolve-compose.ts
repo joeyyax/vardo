@@ -72,7 +72,10 @@ export async function resolveCompose(ctx: DeployContext): Promise<DeployContext>
   // removed" line in the deploy log. Slot cutover already tears down the old
   // slot before starting the new one, so a kept host port never collides
   // between blue/green.
-  const normalized = normalizeCompose(compose, { keepHostPorts: true });
+  const normalized = normalizeCompose(compose, {
+    keepHostPorts: true,
+    restartPolicy: app.restartPolicy,
+  });
   compose = normalized.compose;
   for (const change of normalized.changes) {
     log(`[deploy] Normalize: ${change.service}.${change.field} ${change.action}${change.before ? ` (was: ${change.before})` : ""} — ${change.reason}`);
