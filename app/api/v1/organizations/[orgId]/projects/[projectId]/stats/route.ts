@@ -4,6 +4,8 @@ import { db } from "@/lib/db";
 import { apps, projects } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { fetchAllMetrics } from "@/lib/metrics/provider";
+import { groupMetricsByApp } from "@/lib/metrics/app-match";
+import { METRICS_APP_COLUMNS } from "@/lib/metrics/app-columns";
 import { isMetricsEnabled } from "@/lib/metrics/config";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 type RouteParams = {
@@ -31,15 +33,13 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     const projectApps = await db.query.apps.findMany({
       where: and(eq(apps.projectId, projectId), eq(apps.organizationId, orgId)),
-      columns: { id: true, name: true, displayName: true, status: true },
+      columns: { ...METRICS_APP_COLUMNS, displayName: true },
     });
 
-    const allMetrics = await fetchAllMetrics();
-    const appNames = new Set(projectApps.map((a) => a.name));
+    const byApp = groupMetricsByApp(projectApps, await fetchAllMetrics());
 
     const appStats = projectApps.map((app) => {
-      const containers = allMetrics
-        .filter((m) => m.projectName === app.name || m.projectName.startsWith(`${app.name}-`))
+      const containers = (byApp.get(app.id) ?? [])
         .map((m) => ({
           containerId: m.containerId,
           containerName: m.containerName,

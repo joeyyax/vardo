@@ -1,3 +1,4 @@
+import { matchAppMetrics, type MetricsApp } from "./app-match";
 import type { ContainerMetrics } from "./types";
 
 /**
@@ -7,9 +8,6 @@ import type { ContainerMetrics } from "./types";
 export interface MetricsProvider {
   /** Fetch metrics for all Docker containers. */
   fetchAll(): Promise<ContainerMetrics[]>;
-
-  /** Fetch metrics for containers belonging to a specific project. */
-  fetchByProject(projectName: string, environmentName?: string): Promise<ContainerMetrics[]>;
 }
 
 // ---------------------------------------------------------------------------
@@ -40,14 +38,9 @@ export async function fetchAllMetrics(): Promise<ContainerMetrics[]> {
 }
 
 /**
- * Convenience: fetch project-scoped metrics from the active provider.
+ * Convenience: fetch the metrics belonging to one app.
  * Returns empty array if no provider is configured.
  */
-export async function fetchProjectMetrics(
-  projectName: string,
-  environmentName?: string,
-): Promise<ContainerMetrics[]> {
-  const p = getMetricsProvider();
-  if (!p) return [];
-  return p.fetchByProject(projectName, environmentName);
+export async function fetchAppMetrics(app: MetricsApp): Promise<ContainerMetrics[]> {
+  return matchAppMetrics(app, await fetchAllMetrics());
 }

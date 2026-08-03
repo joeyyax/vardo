@@ -144,8 +144,14 @@ function formatPorts(service: ChildApp): string | null {
 }
 
 // Stack containers are labeled with the parent app's name, so per-service
-// metrics come from the parent stream's container breakdown, matched by name.
+// metrics come from the parent stream's container breakdown, narrowed by
+// compose service. Containers with no service label fall back to the name.
 function matchServiceContainers(containers: ContainerPoint[], service: ChildApp): ContainerPoint[] {
+  if (service.composeService) {
+    const labeled = containers.filter((c) => c.composeService === service.composeService);
+    if (labeled.length > 0) return labeled;
+  }
+
   const candidates = [service.composeService, service.name].filter(
     (c): c is string => !!c,
   );
