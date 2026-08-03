@@ -3,7 +3,7 @@ import { meshPeers } from "@/lib/db/schema";
 import { nanoid } from "nanoid";
 import { allocateIp, toCidr } from "./ip-allocator";
 import { generateMeshToken } from "./auth";
-import { rebuildAndSync, isWireguardRunning } from "./wireguard";
+import { rebuildAndSync, isWireguardRunning, getHubAddress } from "./wireguard";
 import { CONSOLE_PORT } from "./constants";
 import { logger } from "@/lib/logger";
 
@@ -24,11 +24,13 @@ interface RegisterPeerResult {
 export async function registerPeer(
   input: RegisterPeerInput
 ): Promise<RegisterPeerResult> {
-  // Allocate a tunnel IP
+  // Allocate a tunnel IP from the local peer table plus our own address.
+  // Only authoritative on the hub — a spoke can hand out an IP already assigned.
   const allPeers = await db.query.meshPeers.findMany({
     columns: { internalIp: true },
   });
-  const internalIp = allocateIp(allPeers.map((p) => p.internalIp));
+  const ownIp = await getHubAddress();
+  const internalIp = allocateIp([...allPeers.map((p) => p.internalIp), ownIp]);
 
   // Generate a service-to-service token
   const { raw: token, hash: tokenHash } = generateMeshToken();
