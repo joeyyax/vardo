@@ -4,6 +4,8 @@ import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { fetchAllMetrics } from "@/lib/metrics/provider";
+import { groupMetricsByApp } from "@/lib/metrics/app-match";
+import { METRICS_APP_COLUMNS } from "@/lib/metrics/app-columns";
 import { queryMetrics, queryMetricsPoints } from "@/lib/metrics/store";
 import type { MetricsPoint } from "@/lib/metrics/types";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
@@ -21,7 +23,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     const orgApps = await db.query.apps.findMany({
       where: eq(apps.organizationId, orgId),
-      columns: { id: true, name: true, displayName: true, status: true, gpuEnabled: true },
+      columns: { ...METRICS_APP_COLUMNS, displayName: true, gpuEnabled: true },
     });
 
     const searchParams = request.nextUrl.searchParams;
@@ -92,25 +94,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     // Live snapshot
     try {
-      const allMetrics = await fetchAllMetrics();
-      const appNames = new Set(orgApps.map((p) => p.name));
-
-      // Group by project
-      const byApp: Record<string, typeof allMetrics> = {};
-      for (const m of allMetrics) {
-        // Match project name (handles blue/green slots like "redis-blue")
-        const matchedApp = orgApps.find(
-          (p) => m.projectName === p.name || m.projectName.startsWith(`${p.name}-`)
-        );
-        if (!matchedApp) continue;
-        if (!byApp[matchedApp.id]) byApp[matchedApp.id] = [];
-        byApp[matchedApp.id].push(m);
-      }
+      const byApp = groupMetricsByApp(orgApps, await fetchAllMetrics());
 
       return NextResponse.json({
         projects: orgApps.map((p) => ({
           ...p,
-          containers: byApp[p.id] || [],
+          containers: byApp.get(p.id) ?? [],
         })),
         timestamp: new Date().toISOString(),
       });

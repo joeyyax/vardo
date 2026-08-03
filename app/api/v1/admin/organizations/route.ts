@@ -5,7 +5,8 @@ import { db } from "@/lib/db";
 import { apps, organizations, memberships, deployments } from "@/lib/db/schema";
 import { eq, sql, asc, desc } from "drizzle-orm";
 import { fetchAllMetrics } from "@/lib/metrics/provider";
-import type { ContainerMetrics } from "@/lib/metrics/types";
+import { groupMetricsByApp, dedupeMetrics } from "@/lib/metrics/app-match";
+import { METRICS_APP_COLUMNS } from "@/lib/metrics/app-columns";
 import { isMetricsEnabled } from "@/lib/metrics/config";
 
 // GET /api/v1/admin/organizations
@@ -19,7 +20,7 @@ export async function GET() {
       }),
       db.query.apps.findMany({
         orderBy: [asc(apps.sortOrder), desc(apps.createdAt)],
-        columns: { id: true, name: true, displayName: true, status: true, organizationId: true },
+        columns: { ...METRICS_APP_COLUMNS, displayName: true },
       }),
       db.select({
         organizationId: memberships.organizationId,
@@ -37,30 +38,20 @@ export async function GET() {
     const memberCountMap = new Map(memberCounts.map((r) => [r.organizationId, Number(r.count)]));
     const deploymentCountMap = new Map(deploymentCounts.map((r) => [r.organizationId, Number(r.count)]));
 
-    // Map metrics to apps
-    const metricsByApp = new Map<string, ContainerMetrics[]>();
-    for (const m of metrics) {
-      const matched = allApps.find(
-        (a) => m.projectName === a.name || m.projectName.startsWith(`${a.name}-`)
-      );
-      if (!matched) continue;
-      if (!metricsByApp.has(matched.id)) metricsByApp.set(matched.id, []);
-      metricsByApp.get(matched.id)!.push(m);
-    }
+    const metricsByApp = groupMetricsByApp(allApps, metrics);
 
     const result = allOrgs.map((org) => {
       const orgApps = allApps.filter((a) => a.organizationId === org.id);
+      // A stack child's containers are a subset of its parent's — dedupe or the
+      // org total counts them twice.
+      const orgMetrics = dedupeMetrics(orgApps.map((a) => metricsByApp.get(a.id) ?? []));
       let cpu = 0, memory = 0, networkRx = 0, networkTx = 0, containers = 0;
-      for (const a of orgApps) {
-        const appMetrics = metricsByApp.get(a.id);
-        if (!appMetrics) continue;
-        for (const m of appMetrics) {
-          cpu += m.cpuPercent;
-          memory += m.memoryUsage;
-          networkRx += m.networkRxBytes;
-          networkTx += m.networkTxBytes;
-          containers++;
-        }
+      for (const m of orgMetrics) {
+        cpu += m.cpuPercent;
+        memory += m.memoryUsage;
+        networkRx += m.networkRxBytes;
+        networkTx += m.networkTxBytes;
+        containers++;
       }
       return {
         id: org.id,
