@@ -68,8 +68,6 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
   await ensureWritableDir(slotDir);
 
   ctx.checkAbort();
-  ctx.stage("build", "success");
-  ctx.stage("deploy", "running");
   log(`[deploy] Active slot: ${activeSlot || "none"}, deploying to: ${newSlot}`);
 
   // Step 5: Write compose file
@@ -445,6 +443,12 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
   await writeFile(overridePath, composeToYaml(overlayCompose), "utf-8");
 
   ctx.composeFileArgs = ["-f", bareComposePath, "-f", overridePath];
+
+  // The repo-build path already closed compose and opened build in prepare-repo.
+  if (!ctx.builtLocally) {
+    ctx.stage("compose", "success");
+    ctx.stage("build", "running");
+  }
 
   return ctx;
 }

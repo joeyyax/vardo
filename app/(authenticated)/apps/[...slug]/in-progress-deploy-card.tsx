@@ -1,49 +1,65 @@
 "use client";
 
-import { Loader2, Check, X, ChevronDown } from "lucide-react";
+import { Loader2, Check, X, ChevronDown, Minus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { TerminalOutput, highlightLogLine, detectLogLevel } from "@/components/log-viewer";
+import { formatDuration } from "@/components/app-status";
 import { Timer } from "./timer";
+import type { StageTiming } from "./hooks/use-deploy";
+
+const STAGE_LABELS: Record<string, string> = {
+  clone: "Clone",
+  compose: "Compose",
+  build: "Build",
+  deploy: "Deploy",
+  healthcheck: "Health",
+  routing: "Route",
+  cleanup: "Cleanup",
+};
+
+const STAGE_KEYS = ["clone", "compose", "build", "deploy", "healthcheck", "routing", "cleanup"] as const;
 
 export function InProgressDeployCard({
   stages,
+  stageTimes,
   log,
   startTime,
   expanded,
   onToggleExpand,
   onAbort,
   canAbort,
+  cancelling,
   trigger,
+  typicalDurationMs,
 }: {
   stages: Record<string, "running" | "success" | "failed" | "skipped">;
+  stageTimes?: Record<string, StageTiming>;
   log: string[];
   startTime: number | null;
   expanded: boolean;
   onToggleExpand: () => void;
   onAbort?: () => void;
   canAbort?: boolean;
+  /** A cancel has been signalled and the engine is finishing its current phase. */
+  cancelling?: boolean;
   trigger?: string;
+  /** Duration of this app's last successful deploy, for comparison. */
+  typicalDurationMs?: number | null;
 }) {
-  const stageLabels: Record<string, string> = {
-    clone: "Clone", build: "Build", deploy: "Deploy",
-    healthcheck: "Health", routing: "Route", cleanup: "Cleanup",
-  };
-  const stageKeys = ["clone", "build", "deploy", "healthcheck", "routing", "cleanup"] as const;
-  const hasStages = Object.keys(stages).length > 0;
-
   // Build a screen-reader announcement for the current deploy state
-  const runningStage = stageKeys.find((s) => stages[s] === "running");
-  const anyFailed = stageKeys.some((s) => stages[s] === "failed");
-  const allDone = hasStages && stageKeys.filter((s) => stages[s]).every((s) => stages[s] === "success" || stages[s] === "skipped");
+  const hasStages = Object.keys(stages).length > 0;
+  const runningStage = STAGE_KEYS.find((s) => stages[s] === "running");
+  const failedStage = STAGE_KEYS.find((s) => stages[s] === "failed");
+  const allDone = hasStages && STAGE_KEYS.filter((s) => stages[s]).every((s) => stages[s] === "success" || stages[s] === "skipped");
   // Only announce once a stage has actually transitioned — empty string on
   // initial mount so the assertive live region doesn't interrupt immediately.
-  const liveAnnouncement = anyFailed
-    ? `Deployment failed at ${stageLabels[stageKeys.find((s) => stages[s] === "failed")!] ?? "unknown"} stage`
+  const liveAnnouncement = failedStage
+    ? `Deployment failed at ${STAGE_LABELS[failedStage]} stage`
     : allDone
       ? "Deployment completed successfully"
       : runningStage
-        ? `Deploying: ${stageLabels[runningStage]} in progress`
+        ? `Deploying: ${STAGE_LABELS[runningStage]} in progress`
         : "";
 
   return (
@@ -59,48 +75,60 @@ export function InProgressDeployCard({
         <div className="flex items-center gap-3 min-w-0">
           <Badge variant="outline" className="animate-pulse shrink-0">
             <Loader2 className="mr-1 size-3 animate-spin" />
-            Deploying
+            {cancelling ? "Cancelling" : "Deploying"}
           </Badge>
-          {hasStages ? (
-            <div className="flex items-center gap-1.5 flex-wrap">
-              {stageKeys.map((s, i) => {
-                const status = stages[s];
-                if (!status) return null;
-                return (
-                  <div key={s} className="flex items-center gap-1">
-                    {i > 0 && status && <span className="text-muted-foreground/30 text-xs">›</span>}
-                    {status === "running" && <Loader2 className="size-3 animate-spin text-status-info" />}
-                    {status === "success" && <Check className="size-3 text-status-success" />}
-                    {status === "failed" && <X className="size-3 text-status-error" />}
-                    {status === "skipped" && <span className="text-muted-foreground text-xs">-</span>}
-                    <span className={`text-xs ${
-                      status === "running" ? "text-status-info" :
-                      status === "success" ? "text-status-success" :
-                      status === "failed" ? "text-status-error" :
-                      "text-muted-foreground"
-                    }`}>
-                      {stageLabels[s]}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {STAGE_KEYS.map((s, i) => {
+              const status = stages[s];
+              const timing = stageTimes?.[s];
+              return (
+                <div key={s} className="flex items-center gap-1">
+                  {i > 0 && <span className="text-muted-foreground/30 text-xs">›</span>}
+                  {!status && <span className="size-1.5 rounded-full bg-muted-foreground/30" />}
+                  {status === "running" && <Loader2 className="size-3 animate-spin text-status-info" />}
+                  {status === "success" && <Check className="size-3 text-status-success" />}
+                  {status === "failed" && <X className="size-3 text-status-error" />}
+                  {status === "skipped" && <Minus className="size-3 text-muted-foreground/60" />}
+                  <span className={`text-xs transition-colors duration-300 ${
+                    status === "running" ? "text-status-info" :
+                    status === "success" ? "text-status-success" :
+                    status === "failed" ? "text-status-error" :
+                    status === "skipped" ? "text-muted-foreground/60 line-through" :
+                    "text-muted-foreground/40"
+                  }`}>
+                    {STAGE_LABELS[s]}
+                  </span>
+                  {timing && status !== "skipped" && (
+                    <span className="text-[10px] text-muted-foreground tabular-nums">
+                      {timing.endedAt
+                        ? formatDuration(timing.endedAt - timing.startedAt)
+                        : <Timer since={timing.startedAt} />}
                     </span>
-                  </div>
-                );
-              })}
-            </div>
-          ) : trigger && (
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          {!hasStages && trigger && (
             <span className="text-xs text-foreground/60 capitalize">{trigger} deploy in progress...</span>
           )}
         </div>
         <div className="flex items-center gap-3 shrink-0">
           {startTime && (
-            <Timer since={startTime} className="text-xs text-foreground/50" />
+            <span className="text-xs text-foreground/50">
+              <Timer since={startTime} />
+              {typicalDurationMs ? ` / usually ${formatDuration(typicalDurationMs)}` : ""}
+            </span>
           )}
           {canAbort && onAbort && (
             <Button
               size="sm"
               variant="destructive"
+              disabled={cancelling}
               onClick={(e) => { e.stopPropagation(); onAbort(); }}
             >
               <X className="mr-1 size-3" />
-              Abort
+              {cancelling ? "Cancelling..." : "Abort"}
             </Button>
           )}
           {log.length > 0 && (
@@ -108,6 +136,11 @@ export function InProgressDeployCard({
           )}
         </div>
       </div>
+      {cancelling && (
+        <p className="px-4 pb-3 -mt-1 text-xs text-muted-foreground">
+          Cancelling — the deploy will stop after the current phase.
+        </p>
+      )}
       {expanded && log.length > 0 && (
         <div className="border-t">
           <TerminalOutput

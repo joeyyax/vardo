@@ -122,11 +122,11 @@ export function AppDeployPanel({
   const {
     deploying,
     deployStages,
+    deployStageTimes,
     deployLog,
     deployStartTime,
     expandedDeployLog,
     setExpandedDeployLog,
-    deployAbort,
     viewingLogId,
     setViewingLogId,
     handleRollbackPreview,
@@ -143,6 +143,7 @@ export function AppDeployPanel({
   const [expandedServerDeploy, setExpandedServerDeploy] = useState(false);
   const [cancellingIds, setCancellingIds] = useState<Set<string>>(new Set());
   const [abortingDeploy, setAbortingDeploy] = useState(false);
+  const [cancelRequested, setCancelRequested] = useState(false);
   const [showInfra, setShowInfra] = useState(false);
   const [slotStatus, setSlotStatus] = useState<SlotStatus | null>(null);
   const [instantRollingBack, setInstantRollingBack] = useState(false);
@@ -155,6 +156,7 @@ export function AppDeployPanel({
     const wasDeploying = prevDeploying.current;
     prevDeploying.current = deploying;
     if (deploying) return;
+    setCancelRequested(false);
 
     let cancelled = false;
     async function fetchSlotStatus() {
@@ -219,15 +221,17 @@ export function AppDeployPanel({
         toast.error(data.error || "Failed to cancel deployment");
         return;
       }
-      deployAbort?.abort();
-      toast.success("Deployment cancelled");
+      // The stream stays open: the engine reports the cancel when it stops, and
+      // closing here is what made a cancel that never landed look successful.
+      setCancelRequested(true);
+      toast.info("Cancelling — the deploy will stop after the current phase");
       router.refresh();
     } catch {
       toast.error("Failed to cancel deployment");
     } finally {
       setAbortingDeploy(false);
     }
-  }, [orgId, appId, deployAbort, router]);
+  }, [orgId, appId, router]);
 
   const handleCancelQueued = useCallback(async (deploymentId: string) => {
     setCancellingIds((prev) => new Set(prev).add(deploymentId));
@@ -264,6 +268,10 @@ export function AppDeployPanel({
 
   const completedDeployments = filteredDeployments
     .filter((d) => d.status !== "queued" && d.status !== "running");
+
+  // What this app's last green deploy took — the yardstick for the live timer.
+  const typicalDurationMs =
+    completedDeployments.find((d) => d.status === "success" && d.durationMs)?.durationMs ?? null;
 
   // "deploying" is included: the old slot serves throughout a deploy and through
   // a failed one's rollback, so hiding this card is what made a failure read as
@@ -511,12 +519,15 @@ export function AppDeployPanel({
               {deploying && (
                 <InProgressDeployCard
                   stages={deployStages}
+                  stageTimes={deployStageTimes}
                   log={deployLog}
                   startTime={deployStartTime}
                   expanded={expandedDeployLog}
                   onToggleExpand={() => setExpandedDeployLog(!expandedDeployLog)}
                   onAbort={() => handleAbortDeploy()}
                   canAbort={!abortingDeploy}
+                  cancelling={cancelRequested}
+                  typicalDurationMs={typicalDurationMs}
                 />
               )}
               {!deploying && serverRunningDeploy && serverRunningDeploy.status === "running" && (
@@ -528,7 +539,9 @@ export function AppDeployPanel({
                   onToggleExpand={() => setExpandedServerDeploy((prev) => !prev)}
                   onAbort={() => handleAbortDeploy(serverRunningDeploy.id)}
                   canAbort={!abortingDeploy}
+                  cancelling={cancelRequested}
                   trigger={serverRunningDeploy.trigger}
+                  typicalDurationMs={typicalDurationMs}
                 />
               )}
 

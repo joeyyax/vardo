@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { deployments, apps } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
-import { publishKillSignal, clearActiveInRedis } from "@/lib/docker/deploy-cancel";
+import { publishKillSignal, clearActiveInRedis, deployRegistration } from "@/lib/docker/deploy-cancel";
 import { addEvent } from "@/lib/stream/producer";
 import { releaseConcurrencySlot, removeFromQueue } from "@/lib/docker/deploy-concurrency";
 // Container cleanup for force-cancelled deploys is handled by the sweeper
@@ -16,14 +16,20 @@ type RouteParams = {
   params: Promise<{ orgId: string; appId: string; deploymentId: string }>;
 };
 
+/** How long a signalled deploy has to write its own cancelled row before we do. */
+const UNRESPONSIVE_GRACE_MS = 60_000;
+
 /**
- * After publishing a kill signal, wait briefly for the deploy process to
- * self-cancel. If it doesn't respond (crashed process, stuck subprocess),
- * force-mark the deployment as cancelled, stop any running containers,
- * and update the UI.
+ * Last resort for a deploy whose process died holding the record.
+ *
+ * A live engine finishes the phase it is in and writes the row itself, which can
+ * take minutes on a build — so this only fires once the registry no longer names
+ * the deploy, meaning nothing is running it.
  */
 async function forceCancel(deploymentId: string, appId: string, orgId: string): Promise<void> {
-  await new Promise((r) => setTimeout(r, 5_000));
+  await new Promise((r) => setTimeout(r, UNRESPONSIVE_GRACE_MS));
+
+  if ((await deployRegistration(appId, deploymentId)) !== "gone") return;
 
   const deploy = await db.query.deployments.findFirst({
     where: and(eq(deployments.id, deploymentId), eq(deployments.status, "running")),
@@ -104,12 +110,12 @@ async function handleDelete(_request: NextRequest, { params }: RouteParams) {
     }
 
     if (deployment.status === "running") {
-      // Signal the running deploy process to abort at the next stage boundary.
+      // The engine stops at the end of the phase it is in and writes the row
+      // itself. Marking it cancelled here is what let a later success overwrite
+      // the cancel and made the button lie.
       await publishKillSignal(deploymentId);
-      // If the deploy process doesn't respond within 5s (crashed, stuck subprocess),
-      // force-mark it as cancelled so the UI isn't stuck forever.
       forceCancel(deploymentId, appId, orgId).catch(() => {});
-      return NextResponse.json({ ok: true });
+      return NextResponse.json({ ok: true, cancelling: true });
     }
 
     // Queued deployments have not started yet — update the DB directly.

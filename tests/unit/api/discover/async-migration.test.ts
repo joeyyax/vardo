@@ -154,6 +154,7 @@ describe("runAsyncContainerMigration — bailOnFirstStopFailure", () => {
       deploymentId: BASE_PARAMS.deploymentId,
       log: "",
       durationMs: 0,
+      status: "success",
     });
 
     const chain = makeUpdateChain();
