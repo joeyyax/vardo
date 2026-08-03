@@ -236,6 +236,20 @@ export function counterRateSeries(
 }
 
 /**
+ * Whether every in-scope sample is zero.
+ *
+ * A cumulative counter pinned at zero for a whole window was not counting.
+ * cAdvisor runs with `--disable_metrics=diskIO`, and the collector stored that
+ * as a literal 0 until it was taught not to, so a week of zeros outlives the
+ * fix and would otherwise render as "wrote nothing".
+ */
+export function allZero(all: LabeledSeries[] | undefined, scope: ResourceScope): boolean {
+  const scoped = seriesInScope(all, scope);
+  if (scoped.length === 0) return false;
+  return scoped.every((s) => s.points.every(([, value]) => value === 0));
+}
+
+/**
  * How many in-scope containers report a non-zero memory limit, against how many
  * report at all. `enforced` needs every one of them capped.
  */

@@ -280,6 +280,32 @@ describe("absent metrics", () => {
     expect(snap.extras.diskWrite.absence).toBe("not-collected");
   });
 
+  // cAdvisor runs with --disable_metrics=diskIO and the collector stored the
+  // resulting nothing as 0 for seven days. Those stale zeros must not read as
+  // "wrote nothing" once the collector stops writing them.
+  it("reports a counter flat at zero all window as not collected", () => {
+    const zeros: Spec[] = [
+      ...STACK,
+      { project: "paperless", service: "paperless-db", container: "c-db", metric: "diskWrite", points: [[NOW - 30_000, 0], [NOW, 0]] },
+      { project: "paperless", service: "webserver", container: "c-web", metric: "diskWrite", points: [[NOW - 30_000, 0], [NOW, 0]] },
+    ];
+    const snap = snapshotFor(PARENT, zeros);
+
+    expect(snap.extras.diskWrite.usage).toBeNull();
+    expect(snap.extras.diskWrite.absence).toBe("not-collected");
+  });
+
+  it("reports a real idle counter as zero once any container is counting", () => {
+    const counting: Spec[] = [
+      ...STACK,
+      { project: "paperless", service: "paperless-db", container: "c-db", metric: "diskWrite", points: [[NOW - 30_000, 4096], [NOW, 4096]] },
+    ];
+    const snap = snapshotFor(PARENT, counting);
+
+    expect(snap.extras.diskWrite.usage).toBe(0);
+    expect(snap.extras.diskWrite.absence).toBeNull();
+  });
+
   it("keeps a genuinely idle container at zero rather than absent", () => {
     const idle: Spec[] = [
       { project: "ntfy", service: null, container: "c-ntfy", metric: "cpu", points: [[NOW, 0]] },
