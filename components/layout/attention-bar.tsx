@@ -13,12 +13,14 @@ const ACCENT: Record<AttentionTone, string> = {
   error: "text-status-error",
   warning: "text-status-warning",
   neutral: "text-muted-foreground",
+  activity: "text-status-info",
 };
 
 const DOT: Record<AttentionTone, string> = {
   error: "bg-status-error",
   warning: "bg-status-warning",
   neutral: "bg-muted-foreground/50",
+  activity: "bg-status-info",
 };
 
 /**

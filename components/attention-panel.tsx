@@ -10,12 +10,14 @@ const DOT: Record<AttentionTone, string> = {
   error: "bg-status-error",
   warning: "bg-status-warning",
   neutral: "bg-muted-foreground/40",
+  activity: "bg-status-info",
 };
 
 const LABEL: Record<AttentionTone, string> = {
   error: "text-status-error",
   warning: "text-status-warning",
   neutral: "text-foreground",
+  activity: "text-status-info",
 };
 
 /** Kind column, wide enough for the longest label. Subjects stack under it on phones. */
