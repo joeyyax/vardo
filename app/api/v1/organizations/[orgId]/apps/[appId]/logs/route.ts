@@ -40,6 +40,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const scope = await resolveLogScope(app, { allServices });
     const history = await readLogHistory({
       project: scope.project,
+      organizationId: orgId,
       environment,
       service: scope.service,
       prefixed: scope.prefixed,
