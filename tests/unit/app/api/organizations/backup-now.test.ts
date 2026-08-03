@@ -34,7 +34,11 @@ const {
 vi.mock("@/lib/api/verify-access", () => ({ verifyOrgAccess: mockVerifyOrgAccess }));
 vi.mock("@/lib/api/require-plugin", () => ({ requirePlugin: mockRequirePlugin }));
 vi.mock("@/lib/api/rate-limit", () => ({ rateLimit: vi.fn().mockResolvedValue(null) }));
-vi.mock("@/lib/backups/engine", () => ({ runBackup: mockRunBackup }));
+// Only runBackup is stubbed — the route shares STALE_RUN_MS with the scheduler.
+vi.mock("@/lib/backups/engine", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/backups/engine")>()),
+  runBackup: mockRunBackup,
+}));
 vi.mock("@/lib/backups/auto-backup", () => ({
   ensureAutoBackupJob: mockEnsureAutoBackupJob,
   resolveBackupTarget: mockResolveBackupTarget,

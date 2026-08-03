@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { backupJobs, backups } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
-import { runBackup } from "./engine";
+import { eq, and, gt, inArray } from "drizzle-orm";
+import { runBackup, STALE_RUN_MS } from "./engine";
 import { shouldRunNow } from "@/lib/cron/parse";
 import { acquireLock } from "@/lib/redis-lock";
 import { logger } from "@/lib/logger";
@@ -33,9 +33,16 @@ export async function tickBackupJobs(): Promise<void> {
       const locked = await acquireLock(`lock:backup:${job.id}:${minuteTs}`, 61_000);
       if (!locked) continue;
 
-      // Check if this job already has a backup in "running" state (still in progress)
+      // Skip a run that is genuinely in flight. Time-bounded like the manual
+      // path: a row left "running" by a crashed process would otherwise block
+      // this job forever. lastRunAt is left to runBackup, which only refreshes
+      // it for a run that actually captured something.
       const runningBackup = await db.query.backups.findFirst({
-        where: and(eq(backups.jobId, job.id), eq(backups.status, "running")),
+        where: and(
+          eq(backups.jobId, job.id),
+          inArray(backups.status, ["pending", "running"]),
+          gt(backups.startedAt, new Date(now.getTime() - STALE_RUN_MS)),
+        ),
       });
 
       if (runningBackup) {
@@ -44,12 +51,6 @@ export async function tickBackupJobs(): Promise<void> {
         );
         continue;
       }
-
-      // Mark lastRunAt before executing so a concurrent tick won't double-fire
-      await db
-        .update(backupJobs)
-        .set({ lastRunAt: now, updatedAt: now })
-        .where(eq(backupJobs.id, job.id));
 
       log.info(`Running job "${job.name}" (${job.id})`);
 
