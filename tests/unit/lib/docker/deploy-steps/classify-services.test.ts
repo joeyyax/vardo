@@ -10,7 +10,9 @@ import type { ComposeFile } from "@/lib/docker/compose-types";
 // referenced via image: with no build: directive. The swap pre-pull then tried
 // to `docker compose pull` the locally-built image and 404'd.
 
-function services(map: Record<string, { image?: string; build?: unknown }>): ComposeFile["services"] {
+function services(
+  map: Record<string, { image?: string; build?: unknown; "x-vardo-shared"?: boolean }>,
+): ComposeFile["services"] {
   return map as unknown as ComposeFile["services"];
 }
 
@@ -54,6 +56,16 @@ describe("classifyComposeServices", () => {
     );
     expect(buildServices).toEqual([]);
     expect(pullServices).toEqual(["db", "cache"]);
+  });
+
+  it("skips a shared service — it is brought up with --no-recreate, so a pull is discarded", () => {
+    const { pullServices } = classifyComposeServices(
+      services({
+        db: { image: "postgres:17", "x-vardo-shared": true },
+        cache: { image: "redis:7" },
+      }),
+    );
+    expect(pullServices).toEqual(["cache"]);
   });
 
   it("still pulls a registry image even if an unrelated ref was built locally", () => {
