@@ -964,9 +964,9 @@ export function ProjectDetail({
                 return (
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button size="sm" className={anyNeedsRedeploy
-                        ? "bg-status-warning-muted text-status-warning hover:ring-1 hover:ring-inset hover:ring-status-warning/40"
-                        : "bg-status-success-muted text-status-success hover:ring-1 hover:ring-inset hover:ring-status-success/40"
+                      <Button size="sm" variant="status" className={anyNeedsRedeploy
+                        ? "bg-status-warning-muted text-status-warning hover:ring-status-warning/40"
+                        : "bg-status-success-muted text-status-success hover:ring-status-success/40"
                       }>
                         {anyNeedsRedeploy ? (
                           <><RotateCcw className="mr-1.5 size-3.5" />Deploy needed</>
