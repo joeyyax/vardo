@@ -7,7 +7,7 @@ import {
 } from "recharts";
 import { Activity, AlertTriangle, ArrowDown, ArrowUp, Box, Cpu, HardDrive, MemoryStick, Network, Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { formatBytes, formatBytesShort, formatMemLimit, formatTime } from "@/lib/metrics/format";
+import { cpuDisplay, formatBytes, formatBytesShort, formatCores, formatCoresShort, formatMemLimit, formatTime, type CpuCeiling } from "@/lib/metrics/format";
 import { CHART_COLORS, chartTickStyle, type TimeRange } from "@/lib/metrics/constants";
 import { dedupeByContainer } from "@/lib/metrics/aggregate";
 import { networkRates } from "@/lib/metrics/rates";
@@ -51,7 +51,7 @@ function CpuTooltip(props: { active?: boolean; payload?: Array<{ dataKey?: strin
   return (
     <MetricsTooltip
       {...props}
-      valueFormatter={(v: number) => `${v.toFixed(1)}%`}
+      valueFormatter={(v: number) => formatCores(v)}
       categoryLabels={{ cpu: "CPU" }}
     />
   );
@@ -308,6 +308,10 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
   // Status counts cover top-level apps — the same set /projects lists.
   const statusCounts = useMemo(() => countApps(appRows).byStatus, [appRows]);
 
+  // Nothing caps a whole organization, so the host is the ceiling it competes for.
+  const cpuCeiling: CpuCeiling = cpuCores > 0 ? { kind: "capacity", cores: cpuCores } : { kind: "none" };
+  const cpu = cpuDisplay(hasSamples ? totals.cpu : null, cpuCeiling);
+
   // Memoized chart data with network rate computation
   const chartPoints = useMemo(() => {
     const rates = networkRates(points);
@@ -404,12 +408,10 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
             <p className="text-xs text-muted-foreground">CPU</p>
           </div>
           <p className="relative type-numeral text-2xl mt-1">
-            {loading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : hasSamples ? `${totals.cpu.toFixed(1)}%` : <NoValue />}
+            {loading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : hasSamples ? cpu.headline : <NoValue />}
           </p>
           <p className="relative text-[10px] text-muted-foreground mt-0.5">
-            {cpuCores > 0
-              ? `of ${cpuCores * 100}% · ${cpuCores} cores`
-              : `summed across containers · ${scopeNote}`}
+            {cpu.detail ?? `summed across containers · ${scopeNote}`}
           </p>
         </div>
         <div className="squircle relative rounded-lg border bg-card px-4 py-3 overflow-hidden">
@@ -488,6 +490,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
             <div className="flex items-center gap-2 px-4 py-3 border-b">
               <Cpu className="size-4 text-muted-foreground" />
               <h3 className="text-sm font-medium">CPU</h3>
+              <span className="text-[10px] text-muted-foreground">cores</span>
             </div>
             <div className="p-4">
               <ResponsiveContainer width="100%" height={180}>
@@ -500,7 +503,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
                   <XAxis dataKey="time" tick={chartTickStyle} />
-                  <YAxis width={45} tickFormatter={(v) => `${v}%`} tick={chartTickStyle} />
+                  <YAxis width={45} tickFormatter={formatCoresShort} tick={chartTickStyle} />
                   <Tooltip content={<CpuTooltip />} />
                   <Area isAnimationActive={false} type="monotone" dataKey="cpu" stroke={CHART_COLORS.cpu} fill="url(#orgCpuGradient)" />
                 </AreaChart>
@@ -636,9 +639,9 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
             <ShareBar
               title="CPU"
               subtitle="by app"
-              total={`${totals.cpu.toFixed(1)}%`}
-              totalLabel={cpuCores > 0 ? `of ${cpuCores * 100}%` : "total"}
-              slices={cpuApps.map((a, i) => ({ label: a.name, value: a.cpu, color: appColors[i % appColors.length], detail: `${a.cpu.toFixed(1)}%` }))}
+              total={formatCores(totals.cpu)}
+              totalLabel={cpuCores > 0 ? `of ${cpuCores} cores` : "total"}
+              slices={cpuApps.map((a, i) => ({ label: a.name, value: a.cpu, color: appColors[i % appColors.length], detail: formatCores(a.cpu) }))}
             />
             <ShareBar
               title="Memory"
@@ -685,7 +688,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
             </span>
           </div>
           {/* Header */}
-          <div className="grid grid-cols-[1fr_70px_90px_100px_80px_80px] gap-3 px-4 py-2 border-b text-xs text-muted-foreground whitespace-nowrap min-w-[700px]">
+          <div className="grid grid-cols-[1fr_90px_90px_100px_80px_80px] gap-3 px-4 py-2 border-b text-xs text-muted-foreground whitespace-nowrap min-w-[720px]">
             <SortHeader label="App" sortKey="name" sort={sort} onSort={setSort} align="left" />
             <SortHeader label="CPU" sortKey="cpu" sort={sort} onSort={setSort} />
             <SortHeader label="Memory" sortKey="memory" sort={sort} onSort={setSort} />
@@ -703,7 +706,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
                 <Link
                   key={a.id}
                   href={`/apps/${a.appName}/metrics`}
-                  className="grid grid-cols-[1fr_70px_90px_100px_80px_80px] gap-3 px-4 py-3 hover:bg-accent/50 transition-colors items-center whitespace-nowrap min-w-[700px]"
+                  className="grid grid-cols-[1fr_90px_90px_100px_80px_80px] gap-3 px-4 py-3 hover:bg-accent/50 transition-colors items-center whitespace-nowrap min-w-[720px]"
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     <span
@@ -719,7 +722,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
                     )}
                   </div>
                   <span className="text-xs text-right tabular-nums text-muted-foreground">
-                    {cell(`${a.cpu.toFixed(1)}%`)}
+                    {cell(formatCores(a.cpu))}
                   </span>
                   <span className="text-xs text-right tabular-nums text-muted-foreground">
                     {cell(a.memory > 0 ? formatBytes(a.memory) : "-")}

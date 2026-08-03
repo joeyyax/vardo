@@ -7,7 +7,7 @@ import {
 import { Activity, AlertTriangle, Container, Cpu, Microchip, MemoryStick, Network, Loader2, RefreshCw, Thermometer } from "lucide-react";
 import { ChartCard } from "@/components/app-status";
 import { EmptyState } from "@/components/ui/empty-state";
-import { formatBytes, formatBytesShort, formatMemLimit, formatBytesRate, formatTime } from "@/lib/metrics/format";
+import { cpuDisplay, formatBytes, formatBytesShort, formatCores, formatCoresShort, formatMemLimit, formatBytesRate, formatTime, type CpuCeiling } from "@/lib/metrics/format";
 import { CHART_COLORS, chartTickStyle, TIME_RANGES, type TimeRange } from "@/lib/metrics/constants";
 import { networkRates } from "@/lib/metrics/rates";
 import { MetricsTooltip } from "@/components/metrics-chart";
@@ -23,6 +23,8 @@ type AppMetricsProps = {
   appId: string;
   environmentName?: string;
   gpuEnabled?: boolean;
+  /** Cores the app is capped at, from its own record. Null when uncapped. */
+  cpuLimit?: number | null;
 };
 
 type ChartPoint = {
@@ -47,7 +49,7 @@ function CpuTooltip(props: { active?: boolean; payload?: Array<{ dataKey?: strin
   return (
     <MetricsTooltip
       {...props}
-      valueFormatter={(v) => `${v.toFixed(2)}%`}
+      valueFormatter={(v) => formatCores(v)}
       categoryLabels={{ cpu: "CPU" }}
     />
   );
@@ -162,7 +164,7 @@ function ContainerTable({ containers }: { containers: ContainerPoint[] }) {
                   <span className="font-mono truncate">{c.containerName}</span>
                 </div>
               </td>
-              <td className="text-right px-4 py-3 tabular-nums text-muted-foreground">{c.cpuPercent.toFixed(1)}%</td>
+              <td className="text-right px-4 py-3 tabular-nums text-muted-foreground">{formatCores(c.cpuPercent)}</td>
               <td className="text-right px-4 py-3 tabular-nums text-muted-foreground">{formatBytes(c.memoryUsage)}</td>
               <td className="text-right px-4 py-3 tabular-nums text-muted-foreground">{formatMemLimit(c.memoryLimit)}</td>
               <td className="text-right px-4 py-3 tabular-nums text-muted-foreground">{formatBytes(c.networkRx)}</td>
@@ -175,10 +177,10 @@ function ContainerTable({ containers }: { containers: ContainerPoint[] }) {
   );
 }
 
-export function AppMetrics({ orgId, appId, environmentName, gpuEnabled }: AppMetricsProps) {
+export function AppMetrics({ orgId, appId, environmentName, gpuEnabled, cpuLimit }: AppMetricsProps) {
   const [timeRange, setTimeRange] = useState<TimeRange>("1h");
 
-  const { points, containers, connected, hasLiveFrame, loading, reconnecting, error } = useMetricsStream({
+  const { points, containers, meta, connected, hasLiveFrame, loading, reconnecting, error } = useMetricsStream({
     historyUrl: `/api/v1/organizations/${orgId}/apps/${appId}/stats/history`,
     streamUrl: `/api/v1/organizations/${orgId}/apps/${appId}/stats/stream${environmentName ? "?environment=" + environmentName : ""}`,
     timeRange,
@@ -268,6 +270,16 @@ export function AppMetrics({ orgId, appId, environmentName, gpuEnabled }: AppMet
       : 0,
   };
 
+  // The app's own cap when it has one, otherwise the host it shares.
+  const hostCores = meta?.cpuCount ?? 0;
+  const cpuCeiling: CpuCeiling =
+    cpuLimit && cpuLimit > 0
+      ? { kind: "enforced", cores: cpuLimit }
+      : hostCores > 0
+        ? { kind: "capacity", cores: hostCores }
+        : { kind: "none" };
+  const cpu = cpuDisplay(latest.cpu, cpuCeiling);
+
   const headerValue = (content: React.ReactNode) =>
     awaitingFirstFrame ? <Skeleton /> : content;
 
@@ -303,7 +315,7 @@ export function AppMetrics({ orgId, appId, environmentName, gpuEnabled }: AppMet
       </div>
 
       {/* CPU Chart */}
-      <ChartCard title="CPU Usage" icon={Cpu} value={headerValue(`${latest.cpu.toFixed(1)}%`)}>
+      <ChartCard title="CPU Usage" icon={Cpu} value={headerValue(cpu.compact)}>
         {sparse ? <Collecting count={chartData.length} /> : noSamples ? <NoSamples /> : (
         <ResponsiveContainer width="100%" height={CHART_HEIGHT}>
           <AreaChart data={chartData}>
@@ -315,7 +327,7 @@ export function AppMetrics({ orgId, appId, environmentName, gpuEnabled }: AppMet
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
             <XAxis dataKey="time" tick={chartTickStyle} />
-            <YAxis width={45} tickFormatter={(v) => `${v}%`} tick={chartTickStyle} domain={[0, "auto"]} />
+            <YAxis width={45} tickFormatter={formatCoresShort} tick={chartTickStyle} domain={[0, "auto"]} />
             <Tooltip content={<CpuTooltip />} />
             <Area isAnimationActive={false} type="monotone" dataKey="cpu" stroke={CHART_COLORS.cpu} fill="url(#appCpuGradient)" />
           </AreaChart>

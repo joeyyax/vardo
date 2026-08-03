@@ -790,7 +790,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
 
         {featureFlags?.metrics !== false && (
           <TabsContent value="metrics">
-            <AppMetrics key={`metrics-${selectedEnvId}`} orgId={orgId} appId={app.id} environmentName={selectedEnv?.name} gpuEnabled={!!app.gpuEnabled} />
+            <AppMetrics key={`metrics-${selectedEnvId}`} orgId={orgId} appId={app.id} environmentName={selectedEnv?.name} gpuEnabled={!!app.gpuEnabled} cpuLimit={app.cpuLimit} />
           </TabsContent>
         )}
 

@@ -364,7 +364,7 @@ const PARSED_SERVICE_KEYS = new Set([
   "cap_drop", "devices", "privileged", "security_opt", "shm_size", "init",
   "extra_hosts", "healthcheck", "ulimits", "hostname", "user", "stop_signal",
   "entrypoint", "command", "tmpfs", "group_add", "container_name", "configs",
-  "secrets", "mem_limit", "read_only", "stdin_open", "tty", "working_dir",
+  "secrets", "mem_limit", "cpus", "read_only", "stdin_open", "tty", "working_dir",
   "dns", "dns_search", "dns_opt", "sysctls", "pull_policy", "stop_grace_period",
   SHARED_MARKER,
 ]);
@@ -374,7 +374,7 @@ const PARSED_SERVICE_KEYS = new Set([
  * these, so a silent drop changes behavior with nothing in the log to say so.
  */
 const DROPPED_SERVICE_KEYS = new Set([
-  "cpus", "cpu_count", "cpu_percent", "cpuset", "memswap_limit",
+  "cpu_count", "cpu_percent", "cpuset", "memswap_limit",
   "mem_swappiness", "pids_limit", "blkio_config", "device_cgroup_rules",
   "logging", "profiles", "platform", "domainname", "userns_mode", "ipc", "pid",
   "uts", "cgroup", "cgroup_parent", "isolation", "storage_opt", "annotations",

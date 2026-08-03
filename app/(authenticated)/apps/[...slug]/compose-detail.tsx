@@ -38,7 +38,7 @@ import { StatusIndicator, Uptime } from "@/components/app-status";
 import { Sparkline, SPARKLINE_POINTS } from "@/components/app-metrics-card";
 import { CHART_COLORS } from "@/lib/metrics/constants";
 import type { ContainerPoint } from "@/lib/metrics/types";
-import { formatBytes } from "@/lib/metrics/format";
+import { formatBytes, formatCores } from "@/lib/metrics/format";
 import { AppDeployPanel } from "./app-deploy-panel";
 import { AppNetworking } from "./app-networking";
 import { AppSecurity } from "./app-security";
@@ -226,7 +226,7 @@ function ServiceCard({
       {/* Recessed stats band */}
       <div className="grid grid-cols-4 gap-2 border-t bg-background-deep px-4 py-3">
         <Stat label="CPU">
-          {running && stats ? `${stats.cpuPercent.toFixed(1)}%` : "—"}
+          {running && stats ? formatCores(stats.cpuPercent) : "—"}
         </Stat>
         <Stat label="Mem">
           {running && stats ? formatBytes(stats.memoryUsage) : "—"}
