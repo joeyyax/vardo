@@ -77,14 +77,14 @@ describe("additive service keys the parser now carries", () => {
     logging:
       driver: none
     profiles: [debug]
-    cpus: 4
+    cpuset: "0-3"
     platform: linux/arm64
     extends:
       service: base
 `),
     );
     expect(warnings).toHaveLength(1);
-    for (const key of ["logging", "profiles", "cpus", "platform", "extends"]) {
+    for (const key of ["logging", "profiles", "cpuset", "platform", "extends"]) {
       expect(warnings[0]).toContain(`"${key}"`);
     }
   });
@@ -142,6 +142,73 @@ describe("mem_limit folds into deploy.resources.limits.memory", () => {
     mem_limit: ""
 `).services.app;
     expect(svc.deploy?.resources?.limits?.memory).toBeUndefined();
+  });
+});
+
+describe("cpus folds into deploy.resources.limits.cpus", () => {
+  /** The CPU limit service "app" carries after parsing. */
+  function parsedCpus(yaml: string): string | undefined {
+    return parseCompose(yaml).services.app.deploy?.resources?.limits?.cpus;
+  }
+
+  it("normalizes a bare number to the field the pipeline reads", () => {
+    expect(parsedCpus("services:\n  app:\n    image: nginx\n    cpus: 1.5\n")).toBe("1.5");
+  });
+
+  it("normalizes the quoted form the same way", () => {
+    expect(parsedCpus('services:\n  app:\n    image: nginx\n    cpus: "2"\n')).toBe("2");
+  });
+
+  it("leaves an explicit deploy limit alone", () => {
+    const yaml = `services:
+  app:
+    image: nginx
+    cpus: 1.5
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+`;
+    expect(parsedCpus(yaml)).toBe("4");
+  });
+
+  it("keeps a sibling memory limit intact", () => {
+    const svc = parseCompose(`services:
+  app:
+    image: nginx
+    cpus: 2
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+`).services.app;
+    expect(svc.deploy?.resources?.limits).toEqual({ cpus: "2", memory: "512m" });
+  });
+
+  it("ignores zero and unparseable values, which Docker reads as no limit", () => {
+    expect(parsedCpus("services:\n  app:\n    image: nginx\n    cpus: 0\n")).toBeUndefined();
+    expect(parsedCpus('services:\n  app:\n    image: nginx\n    cpus: ""\n')).toBeUndefined();
+    expect(parsedCpus("services:\n  app:\n    image: nginx\n    cpus: many\n")).toBeUndefined();
+  });
+
+  it("no longer warns about a key it now applies", () => {
+    const yaml = "services:\n  app:\n    image: nginx\n    cpus: 1.5\n";
+    expect(droppedKeyWarnings(parseComposeYaml(yaml))).toEqual([]);
+  });
+
+  it("writes the same value into the base file and the override", () => {
+    const yaml = "services:\n  app:\n    image: nginx\n    cpus: 1.5\n";
+    const compose = parseCompose(yaml);
+    const overlay = buildVardoOverlay({ fullCompose: compose, networkName: NETWORK, cpuLimit: 2 });
+    expect(compose.services.app.deploy?.resources?.limits?.cpus).toBe("1.5");
+    expect(overlay.services.app.deploy?.resources?.limits?.cpus).toBe("2");
+    const raw = YAML.parse(composeToYaml(compose)) as { services: Record<string, Record<string, unknown>> };
+    expect(raw.services.app.cpus).toBeUndefined();
+  });
+
+  it("survives a YAML round trip, so it still reaches the container", () => {
+    const yaml = "services:\n  app:\n    image: nginx\n    cpus: 1.5\n";
+    expect(parsedCpus(composeToYaml(parseCompose(yaml)))).toBe("1.5");
   });
 });
 

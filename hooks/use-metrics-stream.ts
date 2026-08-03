@@ -148,7 +148,7 @@ export function useMetricsStream(
         }
 
         // Auxiliary metadata — merge incrementally
-        if (data.disk || data.system || data.apps || data.projectCount !== undefined || data.orgDiskTotal !== undefined) {
+        if (data.disk || data.system || data.apps || data.projectCount !== undefined || data.cpuCount !== undefined || data.orgDiskTotal !== undefined) {
           setMeta((prev) => ({
             disk: data.disk ?? prev?.disk ?? null,
             system: data.system ?? prev?.system ?? null,

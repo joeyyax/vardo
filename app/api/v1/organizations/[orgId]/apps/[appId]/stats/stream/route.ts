@@ -10,6 +10,7 @@ import { aggregateContainers, containerToPoint } from "@/lib/metrics/aggregate";
 import { matchAppMetrics, filterByEnvironment } from "@/lib/metrics/app-match";
 import { METRICS_APP_COLUMNS } from "@/lib/metrics/app-columns";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
+import { getSystemInfo } from "@/lib/docker/client";
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
@@ -40,6 +41,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     const environment = request.nextUrl.searchParams.get("environment") || undefined;
 
+    // Denominator for an app with no CPU limit of its own.
+    let cpuCount = 0;
+    try {
+      cpuCount = (await getSystemInfo()).cpus;
+    } catch { /* skip */ }
+
     return createSSEResponse(request, async (sendEvent) => {
       const unsubscribe = subscribe((allMetrics) => {
         const matched = matchAppMetrics(app, allMetrics);
@@ -48,6 +55,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         const point = aggregateContainers(containers);
         sendEvent("point", {
           ...point,
+          cpuCount,
           containers: containers.map(containerToPoint),
         });
       });

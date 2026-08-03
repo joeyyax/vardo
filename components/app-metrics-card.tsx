@@ -7,7 +7,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { formatBytes } from "@/lib/metrics/format";
+import { formatBytes, formatCores } from "@/lib/metrics/format";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -226,7 +226,7 @@ export function MetricsBand({
   const net = metrics ? metrics.networkRx + metrics.networkTx : last(history?.network);
   return (
     <div className="grid grid-cols-4 divide-x divide-border/40 border-t">
-      <StatCell label="CPU" value={cpu !== undefined ? `${cpu.toFixed(1)}%` : "—"} data={history?.cpu} />
+      <StatCell label="CPU" value={formatCores(cpu)} data={history?.cpu} />
       <StatCell
         label="Memory"
         value={mem !== undefined ? formatBytes(mem) : "—"}
@@ -286,7 +286,7 @@ export function MetricsLine({
     >
       <MetricChip label="CPU" metric="cpu">
         <Cpu className="size-3" />
-        {metrics.cpuPercent.toFixed(1)}%
+        {formatCores(metrics.cpuPercent)}
       </MetricChip>
       <MetricChip label="Memory" metric="memory">
         <MemoryStick className="size-3" />

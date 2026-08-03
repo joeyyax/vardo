@@ -22,7 +22,7 @@ type OrgBreakdown = {
   containers: number;
 };
 
-import { formatBytes } from "@/lib/metrics/format";
+import { formatBytes, formatCores } from "@/lib/metrics/format";
 
 export function AdminOrganizations() {
   const [orgs, setOrgs] = useState<OrgBreakdown[] | null>(null);
@@ -103,7 +103,7 @@ export function AdminOrganizations() {
             <span className="text-xs text-right tabular-nums text-muted-foreground">{org.activeApps}/{org.appCount}</span>
             <span className="text-xs text-right tabular-nums text-muted-foreground">{org.deploymentCount}</span>
             <span className="text-xs text-right tabular-nums text-muted-foreground">
-              {org.cpu > 0 ? `${org.cpu.toFixed(1)}%` : "-"}
+              {org.cpu > 0 ? formatCores(org.cpu) : "-"}
             </span>
             <span className="text-xs text-right tabular-nums text-muted-foreground">
               {org.memory > 0 ? formatBytes(org.memory) : "-"}

@@ -100,6 +100,29 @@ function foldMemLimit(svc: ComposeService, raw: Record<string, unknown>): void {
 }
 
 /**
+ * Fold `cpus` into `deploy.resources.limits.cpus`, the one CPU field the rest
+ * of the pipeline reads. An existing deploy limit wins, matching what Docker
+ * does when a service sets both.
+ */
+function foldCpus(svc: ComposeService, raw: Record<string, unknown>): void {
+  const cpus = raw.cpus;
+  if (typeof cpus !== "string" && typeof cpus !== "number") return;
+  // Docker treats zero and unparseable as no limit; writing one back would cap
+  // a service the source file left uncapped.
+  const cores = Number(cpus);
+  if (!Number.isFinite(cores) || cores <= 0) return;
+  if (svc.deploy?.resources?.limits?.cpus) return;
+
+  svc.deploy = {
+    ...svc.deploy,
+    resources: {
+      ...svc.deploy?.resources,
+      limits: { ...svc.deploy?.resources?.limits, cpus: String(cpus) },
+    },
+  };
+}
+
+/**
  * Parse a YAML string into a ComposeFile.
  */
 export function parseCompose(yamlString: string): ComposeFile {
@@ -236,6 +259,7 @@ export function parseCompose(yamlString: string): ComposeFile {
     else if (typeof raw.tmpfs === "string") svc.tmpfs = [raw.tmpfs];
     if (Array.isArray(raw.group_add)) svc.group_add = raw.group_add.map(String);
     foldMemLimit(svc, raw);
+    foldCpus(svc, raw);
     // Additive container settings — none of them collide with what the Vardo
     // overlay writes, so they pass straight through.
     if (typeof raw.read_only === "boolean" && raw.read_only) svc.read_only = raw.read_only;
