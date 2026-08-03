@@ -144,6 +144,8 @@ export type App = {
   cloneStrategy: string | null;
   dependsOn: string[] | null;
   status: "active" | "stopped" | "error" | "deploying" | "missing";
+  /** When the live container started. Null on a compose parent, which has none. */
+  containerStartedAt: Date | null;
   /** Null until the app's first transition — render no duration rather than a wrong one. */
   statusChangedAt: Date | null;
   needsRedeploy: boolean | null;
