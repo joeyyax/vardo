@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   Loader2,
-  Trash2,
   UserPlus,
   Shield,
   ShieldCheck,
@@ -13,65 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { RelativeTime } from "@/components/relative-time";
-
-// ---------------------------------------------------------------------------
-// Docker Prune (existing)
-// ---------------------------------------------------------------------------
-
-export function DockerPrune() {
-  const [pruning, setPruning] = useState(false);
-  const [confirmOpen, setConfirmOpen] = useState(false);
-
-  async function handleDockerPrune() {
-    setPruning(true);
-    try {
-      const res = await fetch("/api/v1/admin/docker-prune", { method: "POST" });
-      if (res.ok) {
-        const data = await res.json();
-        toast.success(`Cleaned up ${data.spaceReclaimed || "unused resources"}`);
-      } else {
-        toast.error("Cleanup failed");
-      }
-    } catch {
-      toast.error("Cleanup failed");
-    } finally {
-      setPruning(false);
-    }
-  }
-
-  return (
-    <div className="flex items-center justify-between rounded-lg border bg-card p-4">
-      <div>
-        <p className="text-sm font-medium">Docker Cleanup</p>
-        <p className="text-xs text-muted-foreground">
-          Remove unused images, stopped containers, and dangling volumes.
-        </p>
-      </div>
-      <Button size="sm" variant="outline" onClick={() => setConfirmOpen(true)} disabled={pruning}>
-        {pruning ? (
-          <><Loader2 className="mr-1.5 size-4 animate-spin" />Cleaning...</>
-        ) : (
-          <><Trash2 className="mr-1.5 size-4" />Clean up</>
-        )}
-      </Button>
-
-      <ConfirmDeleteDialog
-        open={confirmOpen}
-        onOpenChange={setConfirmOpen}
-        onConfirm={() => {
-          setConfirmOpen(false);
-          handleDockerPrune();
-        }}
-        title="Clean up Docker"
-        description="Removes every unused image, stopped container and dangling volume on the host — including ones Vardo did not create. A stopped app's data volume is not dangling and survives; anything you were keeping to inspect later does not."
-        confirmLabel="Clean up"
-        loadingLabel="Cleaning up..."
-      />
-    </div>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Invite User
@@ -241,26 +182,6 @@ export function UserManagement() {
           ))}
         </div>
       )}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Main Export
-// ---------------------------------------------------------------------------
-
-/** @deprecated Use DockerPrune and UserManagement directly */
-export function AdminActions() {
-  return (
-    <div className="space-y-6">
-      <div className="space-y-3">
-        <h2 className="text-sm font-medium text-muted-foreground">Maintenance</h2>
-        <div className="space-y-2">
-          <DockerPrune />
-        </div>
-      </div>
-
-      <UserManagement />
     </div>
   );
 }
