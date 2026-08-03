@@ -1,6 +1,38 @@
 import { describe, it, expect } from "vitest";
-import { normalizeRestartPolicy, parseDockerHealthcheck, parseExposedPorts, stripDockerProjectPrefix, resolveVolumeName } from "@/lib/docker/client";
+import { normalizeRestartPolicy, parseDockerHealthcheck, parseExposedPorts, stripDockerProjectPrefix, resolveVolumeName, buildPruneCacheQuery } from "@/lib/docker/client";
 import { nanosToDuration } from "@/lib/docker/compose";
+
+// ---------------------------------------------------------------------------
+// buildPruneCacheQuery — /build/prune query string construction
+//
+// `all: true` is what makes this the equivalent of `docker builder prune -af`
+// rather than the softer dangling-only prune used by the post-deploy step.
+// ---------------------------------------------------------------------------
+
+describe("buildPruneCacheQuery", () => {
+  it("returns an empty string with no filters or options", () => {
+    expect(buildPruneCacheQuery()).toBe("");
+  });
+
+  it("sets all=true when opts.all is true", () => {
+    expect(buildPruneCacheQuery(undefined, { all: true })).toBe("?all=true");
+  });
+
+  it("omits all when opts.all is false", () => {
+    expect(buildPruneCacheQuery(undefined, { all: false })).toBe("");
+  });
+
+  it("encodes filters as JSON", () => {
+    const query = buildPruneCacheQuery({ until: ["168h"] });
+    expect(query).toBe(`?filters=${encodeURIComponent(JSON.stringify({ until: ["168h"] }))}`);
+  });
+
+  it("combines filters and all", () => {
+    const query = buildPruneCacheQuery({ until: ["24h"] }, { all: true });
+    expect(query).toContain("all=true");
+    expect(query).toContain(encodeURIComponent(JSON.stringify({ until: ["24h"] })));
+  });
+});
 
 describe("normalizeRestartPolicy", () => {
   it("returns 'no' when name is empty", () => {
