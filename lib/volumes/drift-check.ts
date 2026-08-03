@@ -53,7 +53,7 @@ export async function runPostDeployDriftCheck(opts: DriftCheckOpts): Promise<voi
 
       if (!imageName) {
         try {
-          const containers = await listContainers(appName, envName);
+          const containers = await listContainers({ id: appId, name: appName }, envName);
           if (containers.length > 0) {
             imageName = containers[0].image;
           }
@@ -69,7 +69,7 @@ export async function runPostDeployDriftCheck(opts: DriftCheckOpts): Promise<voi
     // Find Docker volume names from running containers
     const dockerVolumes = new Map<string, string>(); // mountPath -> dockerVolumeName
     try {
-      const containers = await listContainers(appName, envName);
+      const containers = await listContainers({ id: appId, name: appName }, envName);
       for (const container of containers) {
         const info = await inspectContainer(container.id);
         for (const mount of info.mounts) {

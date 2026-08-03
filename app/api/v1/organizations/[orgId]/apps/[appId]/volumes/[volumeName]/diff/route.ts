@@ -47,7 +47,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     if (!imageName) {
       // For built images, try to detect from running container
       try {
-        const containers = await listContainers(app.name);
+        const containers = await listContainers(app);
         if (containers.length > 0) {
           imageName = containers[0].image;
         }
@@ -64,7 +64,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     // Find the Docker volume name from running containers
     let dockerVolumeName: string | null = null;
     try {
-      const containers = await listContainers(app.name);
+      const containers = await listContainers(app);
       for (const container of containers) {
         const info = await inspectContainer(container.id);
         for (const mount of info.mounts) {

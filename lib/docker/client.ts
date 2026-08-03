@@ -300,20 +300,47 @@ export async function listAllContainers(): Promise<ContainerInfo[]> {
   return containers.map(mapRawContainer);
 }
 
-export async function listContainers(projectLabel?: string, environmentLabel?: string): Promise<ContainerInfo[]> {
-  if (!projectLabel) {
+/**
+ * Which app's containers to list. `vardo.project` is only unique within an
+ * organization, so pass the app row wherever one is available.
+ */
+export type ContainerScope = { id: string; name: string };
+
+function labelFilterQuery(labels: string[]): string {
+  return `?filters=${encodeURIComponent(JSON.stringify({ label: labels }))}`;
+}
+
+export async function listContainers(
+  scope?: string | ContainerScope,
+  environmentLabel?: string,
+): Promise<ContainerInfo[]> {
+  if (!scope) {
     const containers = await dockerRequest<RawContainer[]>("GET", "/containers/json");
     return containers.map(mapRawContainer);
   }
 
-  // Query both vardo.* (new) and host.* (legacy) label prefixes and deduplicate by ID
-  // to support containers deployed before the label rename.
+  const projectId = typeof scope === "string" ? undefined : scope.id;
+  const projectLabel = typeof scope === "string" ? scope : scope.name;
+
+  // vardo.project.id is globally unique; it was only ever written under the
+  // vardo prefix, so there is no legacy host.project.id to query.
+  if (projectId) {
+    const labels = [`vardo.project.id=${projectId}`];
+    if (environmentLabel) labels.push(`vardo.environment=${environmentLabel}`);
+    const byId = await dockerRequest<RawContainer[]>(
+      "GET",
+      `/containers/json${labelFilterQuery(labels)}`,
+    );
+    if (byId.length > 0) return byId.map(mapRawContainer);
+  }
+
+  // Name fallback for containers deployed before vardo.project.id existed, over
+  // both label prefixes. Reached only when the id matched nothing.
   const results = await Promise.all(
     ["vardo", "host"].map((prefix) => {
       const labels = [`${prefix}.project=${projectLabel}`];
       if (environmentLabel) labels.push(`${prefix}.environment=${environmentLabel}`);
-      const query = `?filters=${encodeURIComponent(JSON.stringify({ label: labels }))}`;
-      return dockerRequest<RawContainer[]>("GET", `/containers/json${query}`);
+      return dockerRequest<RawContainer[]>("GET", `/containers/json${labelFilterQuery(labels)}`);
     })
   );
 
@@ -321,6 +348,9 @@ export async function listContainers(projectLabel?: string, environmentLabel?: s
   return results.flat().filter((c) => {
     if (seen.has(c.Id)) return false;
     seen.add(c.Id);
+    // A container labelled for a different app never belongs to this one.
+    const labelledId = c.Labels?.["vardo.project.id"];
+    if (projectId && labelledId && labelledId !== projectId) return false;
     return true;
   }).map(mapRawContainer);
 }
