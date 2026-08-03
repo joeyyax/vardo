@@ -9,14 +9,20 @@ import {
   incidentTone,
   isFault,
   restartCaption,
+  restartCue,
+  restartsElevated,
+  restartTone,
+  stabilityCue,
   stabilitySurface,
   stabilityTone,
   stabilityTrend,
   stabilityVerdict,
   trendBadge,
   trendTone,
+  RESTART_ORDINARY,
   TREND_WINDOW_MS,
   type Incident,
+  type RestartReading,
 } from "@/lib/ui/stability";
 
 const NOW = Date.parse("2026-07-31T12:00:00Z");
@@ -32,6 +38,10 @@ function fault(daysAgo: number, kind: Incident["kind"] = "crashed"): Incident {
 
 function condition(kind: AppCondition["kind"], severity: AppCondition["severity"]): AppCondition {
   return { kind, severity, since: new Date(at(1)).toISOString(), detail: `${kind} detail` };
+}
+
+function restarts(count: number, daysOld = 40): RestartReading {
+  return { count, since: new Date(at(daysOld)).toISOString() };
 }
 
 const OOM: ExitReason = {
@@ -199,12 +209,13 @@ describe("stabilityVerdict", () => {
       exitReason: null,
       incidents: [],
       trend: quiet,
+      restarts: restarts(0),
       ...overrides,
     });
   }
 
   it("calls a clean running app with no history stable", () => {
-    expect(verdict()).toMatchObject({ level: "stable", headline: "Stable" });
+    expect(verdict()).toMatchObject({ level: "stable", headline: "Stable", detail: null });
   });
 
   it("separates a running app with recent incidents from a clean one", () => {
@@ -255,10 +266,81 @@ describe("stabilityVerdict", () => {
     expect(result).toMatchObject({ level: "watch", headline: "Degraded" });
   });
 
-  it("dates the last incident on an app that has been clean since", () => {
+  it("leaves the last incident to the stat rather than repeating it", () => {
     const result = verdict({ incidents: [fault(20)] });
-    expect(result.level).toBe("stable");
-    expect(result.detail).toBe("Last incident 20d ago");
+    expect(result).toMatchObject({ level: "stable", detail: null });
+  });
+
+  it("will not call an app with a restarting container stable", () => {
+    const result = verdict({ restarts: restarts(12) });
+    expect(result).toMatchObject({ level: "watch", headline: "Running" });
+    expect(result.detail).toBe("12 restarts on the container running now, none recorded as incidents");
+  });
+
+  it("lets a container absorb a reboot or two without losing stable", () => {
+    expect(verdict({ restarts: restarts(RESTART_ORDINARY) }).level).toBe("stable");
+    expect(verdict({ restarts: restarts(RESTART_ORDINARY + 1) }).level).toBe("watch");
+  });
+
+  it("never takes the restart count past watch", () => {
+    expect(verdict({ restarts: restarts(500) }).level).toBe("watch");
+  });
+
+  it("leaves a worse verdict alone rather than restating the count", () => {
+    expect(verdict({ status: "error", exitReason: OOM, restarts: restarts(12) }).headline).toBe("Down");
+    expect(verdict({ status: "stopped", restarts: restarts(12) }).headline).toBe("Stopped");
+    expect(verdict({ conditions: [condition("crash-looping", "critical")], restarts: restarts(12) }).level)
+      .toBe("unstable");
+  });
+
+  it("adds the count to the trend rather than claiming the app is clean now", () => {
+    const incidents = [fault(3), fault(5)];
+    const trend = stabilityTrend(incidents, NOW, new Date(NOW - 60 * DAY));
+    const result = verdict({ incidents, trend, restarts: restarts(12) });
+
+    expect(result.detail).toBe("2 incidents, up from 0, 12 restarts on this container");
+    expect(result.detail).not.toContain("clean right now");
+  });
+
+  it("stays stable when Docker could not be read rather than guessing", () => {
+    expect(verdict({ restarts: null }).level).toBe("stable");
+  });
+});
+
+describe("restart count", () => {
+  it("treats a count only above the ordinary band as elevated", () => {
+    expect(restartsElevated(restarts(RESTART_ORDINARY))).toBe(false);
+    expect(restartsElevated(restarts(RESTART_ORDINARY + 1))).toBe(true);
+    expect(restartsElevated(null)).toBe(false);
+  });
+
+  it("paints the figure only once it stops being ordinary", () => {
+    expect(restartTone(restarts(0))).toBe("text-foreground");
+    expect(restartTone(restarts(12))).toBe("text-status-warning");
+  });
+
+  it("gives a row the count and nothing when there is none worth carrying", () => {
+    expect(restartCue(restarts(1))).toBeNull();
+    expect(restartCue(null)).toBeNull();
+    expect(restartCue(restarts(12))).toMatchObject({ label: "12 restarts", tone: "text-status-warning" });
+  });
+});
+
+describe("stabilityCue", () => {
+  const oldEnough = new Date(NOW - 60 * DAY);
+
+  it("gives durable incidents the header before the live count", () => {
+    const trend = stabilityTrend([fault(1), fault(2)], NOW, oldEnough);
+    expect(stabilityCue(trend, restarts(12))).toBe("2 in 7d, up");
+  });
+
+  it("falls back to the live count when nothing durable was recorded", () => {
+    expect(stabilityCue(stabilityTrend([], NOW, oldEnough), restarts(12))).toBe("12 restarts");
+  });
+
+  it("says nothing when neither source has anything", () => {
+    expect(stabilityCue(stabilityTrend([], NOW, oldEnough), restarts(0))).toBeNull();
+    expect(stabilityCue(stabilityTrend([], NOW, oldEnough), null)).toBeNull();
   });
 });
 
@@ -275,6 +357,16 @@ describe("restartCaption", () => {
 
   it("says Docker was unreachable rather than implying zero", () => {
     expect(restartCaption(null, NOW)).toBe("Docker was not reachable");
+  });
+
+  it("keeps the age in days, where the Created date beside it can check it", () => {
+    expect(restartCaption(restarts(12, 47), NOW)).toContain("created 47d ago");
+    expect(restartCaption(restarts(7, 412), NOW)).toContain("created 412d ago");
+  });
+
+  it("drops below a day rather than rounding an hours-old container up", () => {
+    const hours = new Date(NOW - 5 * 60 * 60 * 1000).toISOString();
+    expect(restartCaption({ count: 3, since: hours }, NOW)).toContain("created 5h ago");
   });
 });
 
