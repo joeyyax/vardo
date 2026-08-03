@@ -47,6 +47,7 @@ import type { ConfigSnapshot } from "@/lib/types/deploy-snapshot";
 import { checkEndpoint, sendDeployNotification } from "../deploy";
 import type { DeployContext } from "../deploy-context";
 import { demoteStandbyRestart } from "../restart-policy";
+import { isSelfApp } from "../self-env";
 
 /** Serializes the host-global prune across deploys. */
 const PRUNE_LOCK_KEY = "deploy:prune:lock";
@@ -440,6 +441,15 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
     });
   } catch (err) {
     log(`[deploy] Warning: post-deploy hooks — ${err instanceof Error ? err.message : err}`);
+  }
+
+  // Auto-rollback watches from inside Vardo, so it cannot watch Vardo: the
+  // watcher dies with the slot it would replace. Say so rather than let the
+  // app's setting imply cover it does not have.
+  if (app.autoRollback && isSelfApp(app.name) && activeSlot) {
+    log(
+      `[deploy] Auto-rollback is not armed for Vardo itself — use instant rollback (${activeSlot} is a warm standby) if this release misbehaves`,
+    );
   }
 
   // The old slot is running this process, so this stop ends the deploy. It goes
