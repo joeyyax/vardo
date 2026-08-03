@@ -154,213 +154,231 @@ export async function performRollback(opts: PerformRollbackOpts): Promise<boolea
     await streamLogger.flush();
   }
 
-  // The commit the restored slot is running, so the row reads as the version
-  // it put back rather than as a blank.
-  const restored = await db.query.deployments
-    .findFirst({
-      where: and(
-        eq(deployments.appId, appId),
-        eq(deployments.status, "success"),
-        eq(deployments.slot, previousSlot),
-      ),
-      orderBy: [desc(deployments.startedAt)],
-      columns: { gitSha: true, gitMessage: true },
-    })
-    .catch(() => null);
-
-  await db.insert(deployments).values({
-    id: rollbackId,
-    appId,
-    status: "running",
-    trigger: "rollback",
-    rollbackFromId: deploymentId,
-    slot: previousSlot,
-    gitSha: restored?.gitSha ?? null,
-    gitMessage: restored?.gitMessage ?? null,
-    environmentId: opts.environmentId ?? null,
-    startedAt: new Date(startedAt),
-  });
-
-  // A rollback owns apps.status for its duration, exactly as a deploy does, so
-  // the reconciler yields to it and the stuck-deploy sweep resets it — and fails
-  // the row — if this process dies mid-swap.
-  await db
-    .update(apps)
-    .set({ status: "deploying", updatedAt: new Date() })
-    .where(eq(apps.id, appId));
-
-  rollbackLog(`[rollback] ${appName} stopped inside its grace period — restoring ${previousSlot}`);
-
-  const appDir = appEnvDir(appName, envName);
-
-  const crashedSlotDir = join(appDir, currentSlot);
-  const crashedProjectName = `${appName}-${envName}-${currentSlot}`;
-  const crashedComposeFileArgs = await slotComposeFiles(crashedSlotDir);
-
-  const prevSlotDir = join(appDir, previousSlot);
-  const prevProjectName = `${appName}-${envName}-${previousSlot}`;
-  const prevComposeFileArgs = await slotComposeFiles(prevSlotDir);
-  const prevPartition = await readSlotPartition(prevSlotDir);
-
-  // Step 1: Stop the crashing slot so its restart policy can't reclaim a host
-  // port while the previous slot binds it. Reversible — the containers stay.
-  stage("stop", "running");
   try {
-    await execFileAsync(
-      "docker",
-      ["compose", ...crashedComposeFileArgs, "-p", crashedProjectName, "stop"],
-      { cwd: crashedSlotDir, timeout: COMPOSE_DOWN_TIMEOUT },
-    );
-    rollbackLog(`[rollback] Stopped the crashed ${currentSlot} slot`);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    log.warn("Could not stop the crashing slot:", message);
-    rollbackLog(`[rollback] Could not stop the crashed ${currentSlot} slot: ${message}`);
-  }
-  stage("stop", "success");
+    // The commit the restored slot is running, so the row reads as the version
+    // it put back rather than as a blank.
+    const restored = await db.query.deployments
+      .findFirst({
+        where: and(
+          eq(deployments.appId, appId),
+          eq(deployments.status, "success"),
+          eq(deployments.slot, previousSlot),
+        ),
+        orderBy: [desc(deployments.startedAt)],
+        columns: { gitSha: true, gitMessage: true },
+      })
+      .catch(() => null);
 
-  // Step 2: Bring the previous slot back up, naming the rotating set only —
-  // an unqualified `up` would start a second copy of the shared services here.
-  stage("restore", "running");
-  try {
-    await execFileAsync(
-      "docker",
-      [
-        "compose", ...prevComposeFileArgs, "-p", prevProjectName,
-        "up", "-d", "--no-recreate", "--pull", "never",
-        ...(prevPartition ? slotScopeArgs(prevPartition) : []),
-      ],
-      { cwd: prevSlotDir, timeout: COMPOSE_UP_TIMEOUT },
-    );
-    await restoreSlotRestart(prevComposeFileArgs, prevProjectName, prevSlotDir);
-    rollbackLog(`[rollback] Restored the ${previousSlot} slot`);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    log.error("Failed to restore previous slot — putting the crashed slot back:", message);
-    rollbackLog(`[rollback] ERROR: could not restore the ${previousSlot} slot: ${message}`);
+    await db.insert(deployments).values({
+      id: rollbackId,
+      appId,
+      status: "running",
+      trigger: "rollback",
+      rollbackFromId: deploymentId,
+      slot: previousSlot,
+      gitSha: restored?.gitSha ?? null,
+      gitMessage: restored?.gitMessage ?? null,
+      environmentId: opts.environmentId ?? null,
+      startedAt: new Date(startedAt),
+    });
 
-    // Nothing is serving right now. Undo step 1 rather than leave the app dark.
-    await execFileAsync(
-      "docker",
-      [
-        "compose", ...crashedComposeFileArgs, "-p", crashedProjectName,
-        "up", "-d", "--no-recreate", "--pull", "never",
-      ],
-      { cwd: crashedSlotDir, timeout: COMPOSE_UP_TIMEOUT },
-    ).catch(() => {});
-    rollbackLog(`[rollback] Put the ${currentSlot} slot back rather than leave the app dark`);
+    // A rollback owns apps.status for its duration, exactly as a deploy does, so
+    // the reconciler yields to it and the stuck-deploy sweep resets it — and fails
+    // the row — if this process dies mid-swap.
+    await db
+      .update(apps)
+      .set({ status: "deploying", updatedAt: new Date() })
+      .where(eq(apps.id, appId));
 
-    // The deploy is left as it recorded itself — nothing was rolled back.
-    stage("restore", "failed");
-    await finish("failed", "error");
-    await sendRollbackNotification(organizationId, appId, appName, false);
-    return false;
-  }
-  stage("restore", "success");
+    rollbackLog(`[rollback] ${appName} stopped inside its grace period — restoring ${previousSlot}`);
 
-  // Step 3: Atomic symlink swap back to the previous slot
-  stage("route", "running");
-  const currentSymlinkPath = join(appDir, "current");
-  const tmpSymlinkPath = join(appDir, "current.tmp");
-  try {
-    await rm(tmpSymlinkPath, { force: true });
-    await symlink(previousSlot, tmpSymlinkPath, "dir");
-    await rename(tmpSymlinkPath, currentSymlinkPath);
-    log.info(`[rollback] Updated 'current' symlink -> ${previousSlot}`);
-    rollbackLog(`[rollback] Pointed 'current' at ${previousSlot}`);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    log.warn(`[rollback] Failed to create 'current' symlink: ${message}`);
-    rollbackLog(`[rollback] Could not point 'current' at ${previousSlot}: ${message}`);
-  }
+    const appDir = appEnvDir(appName, envName);
 
-  // Step 3a: The crashed slot is the standby now, so it must not come back on a
-  // daemon restart.
-  await demoteStandbyRestart(crashedComposeFileArgs, crashedProjectName, crashedSlotDir);
+    const crashedSlotDir = join(appDir, currentSlot);
+    const crashedProjectName = `${appName}-${envName}-${currentSlot}`;
+    const crashedComposeFileArgs = await slotComposeFiles(crashedSlotDir);
 
-  // Step 3b: Update container name in DB (for logs/UI — not routing).
-  // Traefik discovers the restored containers via their Docker labels automatically.
-  try {
-    // vardo.project is the app name, never the slot's compose project, so the
-    // restored slot is picked out by com.docker.compose.project.
-    const envContainers = await listContainers({ id: appId, name: appName }, envName);
-    const containers = envContainers.filter(
-      (c) => c.labels["com.docker.compose.project"] === prevProjectName,
-    );
-    if (containers.length > 0) {
-      await db
-        .update(apps)
-        .set({ containerName: containers[0].name, updatedAt: new Date() })
-        .where(eq(apps.id, appId));
+    const prevSlotDir = join(appDir, previousSlot);
+    const prevProjectName = `${appName}-${envName}-${previousSlot}`;
+    const prevComposeFileArgs = await slotComposeFiles(prevSlotDir);
+    const prevPartition = await readSlotPartition(prevSlotDir);
+
+    // Step 1: Stop the crashing slot so its restart policy can't reclaim a host
+    // port while the previous slot binds it. Reversible — the containers stay.
+    stage("stop", "running");
+    try {
+      await execFileAsync(
+        "docker",
+        ["compose", ...crashedComposeFileArgs, "-p", crashedProjectName, "stop"],
+        { cwd: crashedSlotDir, timeout: COMPOSE_DOWN_TIMEOUT },
+      );
+      rollbackLog(`[rollback] Stopped the crashed ${currentSlot} slot`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      log.warn("Could not stop the crashing slot:", message);
+      rollbackLog(`[rollback] Could not stop the crashed ${currentSlot} slot: ${message}`);
     }
-  } catch (err) {
-    log.warn(`[rollback] Failed to update container name: ${err instanceof Error ? err.message : err}`);
-  }
-  stage("route", "success");
+    stage("stop", "success");
 
-  // Step 4: Confirm the restored slot is actually serving before calling it done.
-  stage("verify", "running");
-  const restoredIds = await slotContainerIds(prevProjectName, false);
-  if (restoredIds !== null && restoredIds.length === 0) {
-    rollbackLog(`[rollback] ERROR: the ${previousSlot} slot is not running after the swap`);
-    stage("verify", "failed");
+    // Step 2: Bring the previous slot back up, naming the rotating set only —
+    // an unqualified `up` would start a second copy of the shared services here.
+    stage("restore", "running");
+    try {
+      await execFileAsync(
+        "docker",
+        [
+          "compose", ...prevComposeFileArgs, "-p", prevProjectName,
+          "up", "-d", "--no-recreate", "--pull", "never",
+          ...(prevPartition ? slotScopeArgs(prevPartition) : []),
+        ],
+        { cwd: prevSlotDir, timeout: COMPOSE_UP_TIMEOUT },
+      );
+      await restoreSlotRestart(prevComposeFileArgs, prevProjectName, prevSlotDir);
+      rollbackLog(`[rollback] Restored the ${previousSlot} slot`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      log.error("Failed to restore previous slot — putting the crashed slot back:", message);
+      rollbackLog(`[rollback] ERROR: could not restore the ${previousSlot} slot: ${message}`);
 
-    // The crashed slot is stopped and 'current' already points away from it —
-    // the deploy was rolled back, the restore just did not hold.
+      // Nothing is serving right now. Undo step 1 rather than leave the app dark.
+      await execFileAsync(
+        "docker",
+        [
+          "compose", ...crashedComposeFileArgs, "-p", crashedProjectName,
+          "up", "-d", "--no-recreate", "--pull", "never",
+        ],
+        { cwd: crashedSlotDir, timeout: COMPOSE_UP_TIMEOUT },
+      ).catch(() => {});
+      rollbackLog(`[rollback] Put the ${currentSlot} slot back rather than leave the app dark`);
+
+      // The deploy is left as it recorded itself — nothing was rolled back.
+      stage("restore", "failed");
+      await finish("failed", "error");
+      await sendRollbackNotification(organizationId, appId, appName, false);
+      return false;
+    }
+    stage("restore", "success");
+
+    // Step 3: Atomic symlink swap back to the previous slot
+    stage("route", "running");
+    const currentSymlinkPath = join(appDir, "current");
+    const tmpSymlinkPath = join(appDir, "current.tmp");
+    try {
+      await rm(tmpSymlinkPath, { force: true });
+      await symlink(previousSlot, tmpSymlinkPath, "dir");
+      await rename(tmpSymlinkPath, currentSymlinkPath);
+      log.info(`[rollback] Updated 'current' symlink -> ${previousSlot}`);
+      rollbackLog(`[rollback] Pointed 'current' at ${previousSlot}`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      log.warn(`[rollback] Failed to create 'current' symlink: ${message}`);
+      rollbackLog(`[rollback] Could not point 'current' at ${previousSlot}: ${message}`);
+    }
+
+    // Step 3a: The crashed slot is the standby now, so it must not come back on a
+    // daemon restart.
+    await demoteStandbyRestart(crashedComposeFileArgs, crashedProjectName, crashedSlotDir);
+
+    // Step 3b: Update container name in DB (for logs/UI — not routing).
+    // Traefik discovers the restored containers via their Docker labels automatically.
+    try {
+      // vardo.project is the app name, never the slot's compose project, so the
+      // restored slot is picked out by com.docker.compose.project.
+      const envContainers = await listContainers({ id: appId, name: appName }, envName);
+      const containers = envContainers.filter(
+        (c) => c.labels["com.docker.compose.project"] === prevProjectName,
+      );
+      if (containers.length > 0) {
+        await db
+          .update(apps)
+          .set({ containerName: containers[0].name, updatedAt: new Date() })
+          .where(eq(apps.id, appId));
+      }
+    } catch (err) {
+      log.warn(`[rollback] Failed to update container name: ${err instanceof Error ? err.message : err}`);
+    }
+    stage("route", "success");
+
+    // Step 4: Confirm the restored slot is actually serving before calling it done.
+    stage("verify", "running");
+    const restoredIds = await slotContainerIds(prevProjectName, false);
+    if (restoredIds !== null && restoredIds.length === 0) {
+      rollbackLog(`[rollback] ERROR: the ${previousSlot} slot is not running after the swap`);
+      stage("verify", "failed");
+
+      // The crashed slot is stopped and 'current' already points away from it —
+      // the deploy was rolled back, the restore just did not hold.
+      await db
+        .update(deployments)
+        .set({ status: "rolled_back" })
+        .where(eq(deployments.id, deploymentId));
+      await finish("failed", "error");
+      await sendRollbackNotification(
+        organizationId,
+        appId,
+        appName,
+        false,
+        `Rolled back to ${previousSlot}, but that slot is not running. Manual intervention required.`,
+      );
+      return false;
+    }
+    if (restoredIds === null) {
+      rollbackLog("[rollback] Docker did not answer — treating the restored slot as serving");
+    }
+    stage("verify", "success");
+
+    // Step 5: The deploy keeps its own log, duration and finish time; only its
+    // outcome changes.
     await db
       .update(deployments)
       .set({ status: "rolled_back" })
       .where(eq(deployments.id, deploymentId));
+
+    rollbackLog(`[rollback] ${appName} is serving from ${previousSlot} again`);
+    stage("done", "success");
+    await finish("success", "active");
+
+    addEvent(organizationId, {
+      type: "deploy.status",
+      title: "Deploy rolled back",
+      message: "Containers stopped within grace period, rolled back to previous version",
+      appId,
+      deploymentId: rollbackId,
+      status: "error",
+      success: false,
+    }).catch(() => {});
+
+    recordActivity({
+      organizationId,
+      action: "deployment.rolled_back",
+      appId,
+      metadata: {
+        deploymentId,
+        rollbackDeploymentId: rollbackId,
+        reason: "Containers stopped within grace period",
+        rolledBackTo: previousSlot,
+      },
+    }).catch(() => {});
+
+    await sendRollbackNotification(organizationId, appId, appName, true);
+    return true;
+  } catch (err) {
+    // Every phase above pairs its own failure with a terminal event; this is for
+    // the throws that belong to none of them.
+    const message = err instanceof Error ? err.message : String(err);
+    log.error("Rollback failed unexpectedly:", message);
+    rollbackLog(`[rollback] ERROR: ${message}`);
+    stage("done", "failed");
     await finish("failed", "error");
     await sendRollbackNotification(
       organizationId,
       appId,
       appName,
       false,
-      `Rolled back to ${previousSlot}, but that slot is not running. Manual intervention required.`,
+      `Rollback failed: ${message}. Manual intervention required.`,
     );
     return false;
   }
-  if (restoredIds === null) {
-    rollbackLog("[rollback] Docker did not answer — treating the restored slot as serving");
-  }
-  stage("verify", "success");
-
-  // Step 5: The deploy keeps its own log, duration and finish time; only its
-  // outcome changes.
-  await db
-    .update(deployments)
-    .set({ status: "rolled_back" })
-    .where(eq(deployments.id, deploymentId));
-
-  rollbackLog(`[rollback] ${appName} is serving from ${previousSlot} again`);
-  stage("done", "success");
-  await finish("success", "active");
-
-  addEvent(organizationId, {
-    type: "deploy.status",
-    title: "Deploy rolled back",
-    message: "Containers stopped within grace period, rolled back to previous version",
-    appId,
-    deploymentId: rollbackId,
-    status: "error",
-    success: false,
-  }).catch(() => {});
-
-  recordActivity({
-    organizationId,
-    action: "deployment.rolled_back",
-    appId,
-    metadata: {
-      deploymentId,
-      rollbackDeploymentId: rollbackId,
-      reason: "Containers stopped within grace period",
-      rolledBackTo: previousSlot,
-    },
-  }).catch(() => {});
-
-  await sendRollbackNotification(organizationId, appId, appName, true);
-  return true;
 }
 
 export async function sendRollbackNotification(

@@ -403,6 +403,9 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
     })
     .where(eq(deployments.id, ctx.deploymentId));
 
+  // Committed. Nothing below may take the new slot down when it throws.
+  ctx.succeeded = true;
+
   // Closes the deploy stream. It goes after the write so a client that reloads
   // on this event reads the finished row rather than racing it.
   ctx.stage("done", "success");

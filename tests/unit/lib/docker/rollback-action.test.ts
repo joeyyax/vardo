@@ -310,6 +310,17 @@ describe("performRollback", () => {
     expect(updatesFor("app-1").at(-1)!.values).toMatchObject({ status: "error" });
   });
 
+  it("reaches a terminal state when something unexpected throws", async () => {
+    restartPolicyMock.demoteStandbyRestart.mockRejectedValueOnce(new Error("docker socket gone"));
+
+    await expect(performRollback(OPTS)).resolves.toBe(false);
+
+    const events = stageEvents("rollback-1");
+    expect(events.at(-1)).toEqual({ stage: "done", status: "failed" });
+    expect(updatesFor("rollback-1").at(-1)!.values).toMatchObject({ status: "failed" });
+    expect(updatesFor("app-1").at(-1)!.values).toMatchObject({ status: "error" });
+  });
+
   it("fails when the restored slot is not running after the swap", async () => {
     execFileAsyncMock.mockResolvedValue({ stdout: "", stderr: "" });
 
