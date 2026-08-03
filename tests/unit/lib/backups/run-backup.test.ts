@@ -142,6 +142,20 @@ function volumesPerApp(...groups: Record<string, unknown>[][]) {
   volumesFindMany.mockImplementation(async () => groups[call++] ?? []);
 }
 
+/** Events of one type emitted during the run, in order. */
+function emitted(type: string): Record<string, unknown>[] {
+  return emitMock.mock.calls
+    .map((c) => c[1] as Record<string, unknown>)
+    .filter((e) => e.type === type);
+}
+
+/** Org each event of a type went to, in order. */
+function emittedOrgs(type: string): string[] {
+  return emitMock.mock.calls
+    .filter((c) => (c[1] as Record<string, unknown>).type === type)
+    .map((c) => c[0] as string);
+}
+
 function dockerRuns(): string[][] {
   return execFileMock.mock.calls
     .filter((c) => c[0] === "docker" && (c[1] as string[])[0] === "run")
@@ -193,10 +207,9 @@ describe("runBackup — bind mounts", () => {
     const results = await runBackup("job-1");
 
     expect(results.some((r) => r.outcome === "success")).toBe(false);
-    expect(emitMock).toHaveBeenCalledTimes(1);
-    const event = emitMock.mock.calls[0][1];
-    expect(event.type).toBe("backup.failed");
-    expect(event.message).toMatch(/Nothing was captured/);
+    const outcomes = emitted("backup.failed");
+    expect(outcomes).toHaveLength(1);
+    expect(outcomes[0].message).toMatch(/Nothing was captured/);
   });
 
   it("still captures the named volumes sitting beside a bind mount", async () => {
@@ -300,6 +313,127 @@ describe("runBackup — app scoping", () => {
     await runBackup("job-1");
 
     expect(updated.some((u) => u.table === backupJobs)).toBe(false);
+  });
+});
+
+// A cron-triggered run was invisible from start to finish. Progress rides the
+// event bus per source, and must stay incapable of touching the run itself.
+describe("runBackup — progress events", () => {
+  it("announces every source as it starts, numbered against the run total", async () => {
+    backupJobsFindFirst.mockResolvedValue(
+      job({ backupJobApps: [jobApp("app-a"), jobApp("app-b")] }),
+    );
+    volumesPerApp(
+      [volume({ name: "a-data" }), volume({ id: "vol-2", name: "a-uploads" })],
+      [volume({ id: "vol-3", name: "b-data" })],
+    );
+
+    await runBackup("job-1");
+
+    expect(emitted("backup.progress").map((e) => [e.appName, e.volumeName, e.index, e.total])).toEqual([
+      ["app-a", "a-data", 1, 3],
+      ["app-a", "a-uploads", 2, 3],
+      ["app-b", "b-data", 3, 3],
+    ]);
+  });
+
+  it("announces a source before archiving it, not after", async () => {
+    backupJobsFindFirst.mockResolvedValue(job());
+    volumesPerApp([volume({ name: "a-data" }), volume({ id: "vol-2", name: "a-uploads" })]);
+    // Archives completed at the moment each progress event fires.
+    const archivedAtEmit: number[] = [];
+    emitMock.mockImplementation((_orgId: string, event: { type: string }) => {
+      if (event.type === "backup.progress") archivedAtEmit.push(uploadMock.mock.calls.length);
+    });
+
+    await runBackup("job-1");
+
+    expect(archivedAtEmit).toEqual([0, 1]);
+  });
+
+  it("carries the app id so the UI can name what is running", async () => {
+    backupJobsFindFirst.mockResolvedValue(job());
+    volumesPerApp([volume({ name: "a-data" })]);
+
+    await runBackup("job-1");
+
+    expect(emitted("backup.progress")[0]).toMatchObject({
+      type: "backup.progress",
+      jobId: "job-1",
+      jobName: "Nightly",
+      appId: "app-a",
+      appName: "app-a",
+      index: 1,
+      total: 1,
+    });
+  });
+
+  it("announces a skipped source too, so the count never stalls", async () => {
+    backupJobsFindFirst.mockResolvedValue(job());
+    volumesPerApp([
+      volume({ name: "data" }),
+      volume({ id: "vol-2", name: "uploads", type: "bind", source: "/srv/uploads" }),
+    ]);
+
+    await runBackup("job-1");
+
+    expect(emitted("backup.progress").map((e) => e.volumeName)).toEqual(["data", "uploads"]);
+  });
+
+  it("names an unattached volume after itself", async () => {
+    backupJobsFindFirst.mockResolvedValue(
+      job({
+        backupJobApps: [],
+        backupJobVolumes: [{ volume: { ...volume({ name: "postgres" }), appId: null } }],
+      }),
+    );
+
+    await runBackup("job-1");
+
+    expect(emitted("backup.progress")[0]).toMatchObject({ appId: null, appName: "postgres" });
+  });
+
+  it("reports to the org owning each app when the job spans orgs", async () => {
+    backupJobsFindFirst.mockResolvedValue(
+      job({
+        organizationId: null,
+        backupJobApps: [jobApp("app-a", "org-1"), jobApp("app-b", "org-2")],
+      }),
+    );
+    volumesPerApp([volume({ name: "a-data" })], [volume({ id: "vol-2", name: "b-data" })]);
+
+    await runBackup("job-1");
+
+    expect(emittedOrgs("backup.progress")).toEqual(["org-1", "org-2"]);
+  });
+
+  it("stays quiet when there is no org to report to", async () => {
+    backupJobsFindFirst.mockResolvedValue(
+      job({
+        organizationId: null,
+        backupJobApps: [],
+        backupJobVolumes: [{ volume: { ...volume({ name: "postgres" }), appId: null } }],
+      }),
+    );
+
+    const results = await runBackup("job-1");
+
+    expect(emitted("backup.progress")).toHaveLength(0);
+    expect(results).toHaveLength(1);
+  });
+
+  it("finishes the run when the bus throws on every emit", async () => {
+    backupJobsFindFirst.mockResolvedValue(job({ notifyOnSuccess: true }));
+    volumesPerApp([volume({ name: "a-data" }), volume({ id: "vol-2", name: "a-uploads" })]);
+    emitMock.mockImplementation(() => {
+      throw new Error("redis down");
+    });
+
+    const results = await runBackup("job-1");
+
+    expect(results.map((r) => r.outcome)).toEqual(["success", "success"]);
+    expect(uploadMock).toHaveBeenCalledTimes(2);
+    expect(updated.filter((u) => u.set.status === "success")).toHaveLength(2);
   });
 });
 

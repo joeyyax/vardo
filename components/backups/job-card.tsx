@@ -11,7 +11,8 @@ import { StatusBadge } from "./status-badge";
 import { RetentionSummary } from "./retention-summary";
 import { NextRun } from "./next-run";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
-import type { BackupJob } from "./types";
+import { RunProgressLine } from "./run-progress";
+import type { BackupJob, RunProgress } from "./types";
 
 export function JobCard({
   job,
@@ -19,12 +20,15 @@ export function JobCard({
   readOnly = false,
   onRefresh,
   showApps = true,
+  progress,
 }: {
   job: BackupJob;
   orgId: string;
   readOnly?: boolean;
   onRefresh: () => void;
   showApps?: boolean;
+  /** Live position of a run in flight, from the event stream. */
+  progress?: RunProgress;
 }) {
   const [running, setRunning] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -109,7 +113,11 @@ export function JobCard({
                 Paused
               </Badge>
             )}
-            {lastBackup && <StatusBadge status={lastBackup.status} />}
+            {progress ? (
+              <StatusBadge status="running" />
+            ) : (
+              lastBackup && <StatusBadge status={lastBackup.status} />
+            )}
           </div>
 
           {!readOnly && (
@@ -118,10 +126,10 @@ export function JobCard({
                 size="sm"
                 variant="ghost"
                 className="h-7 text-xs"
-                disabled={running}
+                disabled={running || !!progress}
                 onClick={runNow}
               >
-                {running ? (
+                {running || progress ? (
                   <Loader2 className="size-3 animate-spin mr-1" aria-hidden="true" />
                 ) : (
                   <Play className="size-3 mr-1" aria-hidden="true" />
@@ -157,6 +165,8 @@ export function JobCard({
           <span>Target: {job.target.name}</span>
           <RetentionSummary job={job} />
         </div>
+
+        {progress && <RunProgressLine progress={progress} />}
 
         <UncapturedWarning sources={uncaptured} />
 
