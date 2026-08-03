@@ -55,7 +55,11 @@ export default async function ProjectDetailPage({
           description: true,
           status: true,
           containerStartedAt: true,
+          containerMemoryLimit: true,
           needsRedeploy: true,
+          conditions: true,
+          priority: true,
+          gpuEnabled: true,
           imageName: true,
           gitUrl: true,
           gitBranch: true,
@@ -69,6 +73,7 @@ export default async function ProjectDetailPage({
         },
         with: {
           domains: { columns: { domain: true, isPrimary: true } },
+          appTags: { with: { tag: true } },
           deployments: {
             columns: {
               id: true,
@@ -100,6 +105,10 @@ export default async function ProjectDetailPage({
               composeService: true,
               status: true,
               containerName: true,
+              containerStartedAt: true,
+              needsRedeploy: true,
+              conditions: true,
+              gpuEnabled: true,
               imageName: true,
               dependsOn: true,
               cpuLimit: true,
