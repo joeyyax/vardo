@@ -2,12 +2,10 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
-import { restartContainers, createDeployment } from "@/lib/docker/deploy";
-import { resolveDefaultEnv } from "@/lib/docker/resolve-env";
+import { eq } from "drizzle-orm";
+import { createDeployment } from "@/lib/docker/deploy";
+import { startOrRestartApp } from "@/lib/docker/start-app";
 import { slidingWindowRateLimit } from "@/lib/api/rate-limit";
-import { recordLifecycle } from "@/lib/activity/lifecycle";
-import { reconcileAppNow } from "@/lib/docker/status-reconcile";
 import type { McpAuthContext } from "../auth";
 import { accessDenied, canAccessOrg } from "../scope";
 
@@ -21,7 +19,7 @@ export function registerRestartApp(
 ) {
   server.tool(
     "vardo_restart_app",
-    "Restart all containers for an app. For a running app this does a graceful in-place restart without rebuilding. For an app that is stopped (or a decomposed compose child with no live containers) there is nothing to restart in place, so this transparently falls through to a deploy — which recreates the containers. When the target is a compose child, the deploy runs on its parent. Returns deploymentId when it falls through to a deploy; poll with vardo_get_deploy_status.",
+    "Restart all containers for an app. A running app gets a graceful in-place restart. A stopped one is brought back up from the deployment already on disk — same images, no rebuild. A compose child restarts or starts only its own service inside the parent's project. When nothing is on disk to bring up, this falls through to a deploy of the app (or of the parent, for a compose child) and returns deploymentId; poll it with vardo_get_deploy_status.",
     {
       appId: z.string().describe("The app ID to restart"),
     },
@@ -62,15 +60,16 @@ export function registerRestartApp(
         return accessDenied("App");
       }
 
-      // An in-place `docker compose restart` only works when there are live
-      // containers AND a slot directory to run it from. A stopped app has no
-      // running containers (it was brought down with `compose down`, which
-      // removes them) and may have no slot directory at all — `restartContainers`
-      // would then spawn docker with a non-existent cwd and fail with the
-      // misleading "spawn docker ENOENT". When the app is not active, fall
-      // through to a deploy, which recreates the slot dir and brings containers
-      // up. For a compose child, the deployable unit is the parent compose app.
-      if (app.status !== "active") {
+      const result = await startOrRestartApp({
+        organizationId: app.organizationId,
+        app,
+        userId: context.userId,
+        trigger: "mcp",
+      });
+
+      // Nothing on disk to bring up, so a deploy is the only thing that can
+      // produce containers. It records itself as a deploy, not as a start.
+      if (result.failure === "no-slot") {
         const deployTargetId = app.parentAppId ?? app.id;
 
         const deploymentId = await createDeployment({
@@ -101,16 +100,15 @@ export function registerRestartApp(
                 {
                   appId,
                   appName: app.name,
-                  restartedInPlace: false,
-                  fellThroughToDeploy: true,
+                  action: "deployed",
                   deployTargetId,
                   deployedParent: app.parentAppId !== null,
                   deploymentId,
                   status: "queued",
                   message:
                     app.parentAppId !== null
-                      ? "App is a compose child — restart triggered a deploy of its parent. Use vardo_get_deploy_status to poll."
-                      : "App was not running — restart triggered a deploy to bring it up. Use vardo_get_deploy_status to poll.",
+                      ? "Nothing deployed on disk — triggered a deploy of the parent compose app. Use vardo_get_deploy_status to poll."
+                      : "Nothing deployed on disk — triggered a deploy to bring the app up. Use vardo_get_deploy_status to poll.",
                 },
                 null,
                 2
@@ -120,55 +118,20 @@ export function registerRestartApp(
         };
       }
 
-      // Active app: restart in place. A decomposed child runs inside its
-      // parent's compose project, so restart just that service from the parent's
-      // slot directory rather than redeploying the whole stack.
-      let ownerId = app.id;
-      let project = app.name;
-      if (app.parentAppId) {
-        const parent = await db.query.apps.findFirst({
-          where: and(
-            eq(apps.id, app.parentAppId),
-            eq(apps.organizationId, app.organizationId)
-          ),
-          columns: { id: true, name: true },
-        });
-        if (!parent || !app.composeService) {
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: JSON.stringify({
-                  error: "Could not resolve parent compose project for this child app",
-                }),
-              },
-            ],
-            isError: true,
-          };
-        }
-        ownerId = parent.id;
-        project = parent.name;
-      }
-
-      // Slot directories and compose projects are environment-scoped; without
-      // the name this resolves to the legacy layout and finds nothing.
-      const env = await resolveDefaultEnv(ownerId);
-      const result = await restartContainers(
-        project,
-        env.name,
-        app.parentAppId ? app.composeService ?? undefined : undefined
-      );
-
-      // The fall-through path above is a deploy and records itself as one.
-      if (result.success) {
-        await reconcileAppNow(app.id);
-        await recordLifecycle({
-          organizationId: app.organizationId,
-          app,
-          kind: "restarted",
-          userId: context.userId,
-          trigger: "mcp",
-        });
+      if (!result.success) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(
+                { appId, appName: app.name, action: result.action, error: result.log },
+                null,
+                2
+              ),
+            },
+          ],
+          isError: true,
+        };
       }
 
       return {
@@ -176,7 +139,13 @@ export function registerRestartApp(
           {
             type: "text" as const,
             text: JSON.stringify(
-              { appId, appName: app.name, restartedInPlace: true, ...result },
+              {
+                appId,
+                appName: app.name,
+                action: result.action,
+                status: result.observed,
+                log: result.log,
+              },
               null,
               2
             ),

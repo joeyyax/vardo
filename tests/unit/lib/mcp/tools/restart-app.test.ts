@@ -1,11 +1,15 @@
+// vardo_restart_app shares startOrRestartApp with the HTTP route
+// (tests/unit/lib/docker/start-app.test.ts covers which command each status
+// earns). What is only true here is the deploy fall-through when there is
+// nothing on disk to bring up.
+
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const findFirst = vi.fn();
 const membershipFindFirst = vi.fn();
-const restartContainers = vi.fn();
-const resolveDefaultEnv = vi.fn();
-const reconcileAppNow = vi.fn();
-const recordLifecycle = vi.fn();
+const startOrRestartApp = vi.fn();
+const createDeployment = vi.fn();
+const requestDeploy = vi.fn();
 
 vi.mock("@/lib/db", () => ({
   db: {
@@ -16,20 +20,16 @@ vi.mock("@/lib/db", () => ({
   },
 }));
 vi.mock("@/lib/docker/deploy", () => ({
-  restartContainers: (...a: unknown[]) => restartContainers(...a),
-  createDeployment: vi.fn(),
+  createDeployment: (...a: unknown[]) => createDeployment(...a),
 }));
-vi.mock("@/lib/docker/resolve-env", () => ({
-  resolveDefaultEnv: (...a: unknown[]) => resolveDefaultEnv(...a),
+vi.mock("@/lib/docker/deploy-cancel", () => ({
+  requestDeploy: (...a: unknown[]) => requestDeploy(...a),
+}));
+vi.mock("@/lib/docker/start-app", () => ({
+  startOrRestartApp: (...a: unknown[]) => startOrRestartApp(...a),
 }));
 vi.mock("@/lib/api/rate-limit", () => ({
   slidingWindowRateLimit: async () => ({ limited: false }),
-}));
-vi.mock("@/lib/docker/status-reconcile", () => ({
-  reconcileAppNow: (...a: unknown[]) => reconcileAppNow(...a),
-}));
-vi.mock("@/lib/activity/lifecycle", () => ({
-  recordLifecycle: (...a: unknown[]) => recordLifecycle(...a),
 }));
 
 type Handler = (args: { appId: string }) => Promise<{ content: { text: string }[] }>;
@@ -50,83 +50,96 @@ async function handler(): Promise<Handler> {
   return captured!;
 }
 
+async function call(appId = "a1") {
+  const res = await (await handler())({ appId });
+  return JSON.parse(res.content[0].text);
+}
+
+function app(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "a1",
+    name: "paperless",
+    status: "active",
+    organizationId: "org1",
+    parentAppId: null,
+    composeService: null,
+    ...overrides,
+  };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
-  restartContainers.mockResolvedValue({ success: true, log: "ok" });
   membershipFindFirst.mockResolvedValue({ id: "m1" });
+  createDeployment.mockResolvedValue("dep-1");
+  requestDeploy.mockResolvedValue(undefined);
+  startOrRestartApp.mockResolvedValue({
+    success: true,
+    action: "restarted",
+    log: "ok",
+    observed: "active",
+  });
 });
 
-describe("vardo_restart_app — environment scoping", () => {
-  it("restarts a standalone app in its default environment", async () => {
-    findFirst.mockResolvedValueOnce({
-      id: "a1",
-      name: "paperless",
-      status: "active",
-      organizationId: "org1",
-      parentAppId: null,
-      composeService: null,
-    });
-    resolveDefaultEnv.mockResolvedValueOnce({ name: "staging", type: "staging", id: "e1" });
+describe("vardo_restart_app", () => {
+  it("reports what the shared start path did", async () => {
+    findFirst.mockResolvedValueOnce(app());
 
-    await (await handler())({ appId: "a1" });
+    const out = await call();
 
-    expect(resolveDefaultEnv).toHaveBeenCalledWith("a1");
-    expect(restartContainers).toHaveBeenCalledWith("paperless", "staging", undefined);
-  });
-
-  it("refreshes the row and records the restart once it went through", async () => {
-    findFirst.mockResolvedValueOnce({
-      id: "a1",
-      name: "paperless",
-      status: "active",
-      organizationId: "org1",
-      parentAppId: null,
-      composeService: null,
-    });
-    resolveDefaultEnv.mockResolvedValueOnce({ name: "production", type: "production", id: "e1" });
-
-    await (await handler())({ appId: "a1" });
-
-    expect(reconcileAppNow).toHaveBeenCalledWith("a1");
-    expect(recordLifecycle).toHaveBeenCalledWith(
-      expect.objectContaining({ kind: "restarted", trigger: "mcp", userId: "u1" }),
+    expect(startOrRestartApp).toHaveBeenCalledWith(
+      expect.objectContaining({ organizationId: "org1", userId: "u1", trigger: "mcp" }),
     );
+    expect(out).toMatchObject({ action: "restarted", status: "active" });
+    expect(createDeployment).not.toHaveBeenCalled();
   });
 
-  it("leaves both alone when the restart failed", async () => {
-    findFirst.mockResolvedValueOnce({
-      id: "a1",
-      name: "paperless",
-      status: "active",
-      organizationId: "org1",
-      parentAppId: null,
-      composeService: null,
+  it("names a start a start", async () => {
+    findFirst.mockResolvedValueOnce(app({ status: "stopped" }));
+    startOrRestartApp.mockResolvedValue({
+      success: true,
+      action: "started",
+      log: "",
+      observed: "active",
     });
-    resolveDefaultEnv.mockResolvedValueOnce({ name: "production", type: "production", id: "e1" });
-    restartContainers.mockResolvedValueOnce({ success: false, log: "boom" });
 
-    await (await handler())({ appId: "a1" });
-
-    expect(reconcileAppNow).not.toHaveBeenCalled();
-    expect(recordLifecycle).not.toHaveBeenCalled();
+    expect(await call()).toMatchObject({ action: "started" });
+    expect(createDeployment).not.toHaveBeenCalled();
   });
 
-  it("restarts a compose child using the parent's project and environment", async () => {
-    findFirst
-      .mockResolvedValueOnce({
-        id: "c1",
-        name: "paperless-db",
-        status: "active",
-        organizationId: "org1",
-        parentAppId: "a1",
-        composeService: "db",
-      })
-      .mockResolvedValueOnce({ id: "a1", name: "paperless" });
-    resolveDefaultEnv.mockResolvedValueOnce({ name: "staging", type: "staging", id: "e1" });
+  it("deploys only when there is nothing on disk to bring up", async () => {
+    findFirst.mockResolvedValueOnce(app({ status: "stopped" }));
+    startOrRestartApp.mockResolvedValue({ success: false, action: "none", failure: "no-slot", log: "" });
 
-    await (await handler())({ appId: "c1" });
+    const out = await call();
 
-    expect(resolveDefaultEnv).toHaveBeenCalledWith("a1");
-    expect(restartContainers).toHaveBeenCalledWith("paperless", "staging", "db");
+    expect(createDeployment).toHaveBeenCalledWith(expect.objectContaining({ appId: "a1" }));
+    expect(out).toMatchObject({ action: "deployed", deploymentId: "dep-1", deployedParent: false });
+  });
+
+  it("deploys the parent when the child has nothing on disk", async () => {
+    findFirst.mockResolvedValueOnce(
+      app({ id: "c1", name: "paperless-db", status: "stopped", parentAppId: "a1", composeService: "db" }),
+    );
+    startOrRestartApp.mockResolvedValue({ success: false, action: "none", failure: "no-slot", log: "" });
+
+    const out = await call("c1");
+
+    expect(createDeployment).toHaveBeenCalledWith(expect.objectContaining({ appId: "a1" }));
+    expect(out).toMatchObject({ deployTargetId: "a1", deployedParent: true });
+  });
+
+  it("surfaces a compose failure instead of deploying over it", async () => {
+    findFirst.mockResolvedValueOnce(app());
+    startOrRestartApp.mockResolvedValue({
+      success: false,
+      action: "none",
+      failure: "compose",
+      log: "ERROR: boom",
+    });
+
+    const out = await call();
+
+    expect(createDeployment).not.toHaveBeenCalled();
+    expect(out).toMatchObject({ error: "ERROR: boom" });
   });
 });
