@@ -57,6 +57,7 @@ import {
   BottomSheetDescription,
 } from "@/components/ui/bottom-sheet";
 import { detectAppType } from "@/lib/ui/app-type";
+import { summarizeBulkResult, type BulkOutcome } from "@/lib/ui/bulk-result";
 import { envTypeDotColor, statusDotColor } from "@/lib/ui/status-colors";
 import { appStatusFromEvent } from "@/lib/bus/refresh";
 import type { BusEvent } from "@/lib/bus/events";
@@ -965,23 +966,55 @@ export function ProjectDetail({
     }
   }
 
-  async function handleRestartAll() {
+  // Runs one request per app and collects the names that did not go through.
+  async function runOnAllApps(action: "restart" | "stop"): Promise<string[]> {
+    const failed: string[] = [];
     for (const app of topLevelApps) {
       try {
-        await fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/restart`, { method: "POST" });
-      } catch { /* continue */ }
+        const res = await fetch(
+          `/api/v1/organizations/${orgId}/apps/${app.id}/${action}`,
+          { method: "POST" }
+        );
+        if (!res.ok) failed.push(app.displayName || app.name);
+      } catch {
+        failed.push(app.displayName || app.name);
+      }
     }
-    toast.success("All apps restarted");
+    return failed;
+  }
+
+  function toastBulkResult(outcome: BulkOutcome) {
+    toast[outcome.tone](
+      outcome.message,
+      outcome.description ? { description: outcome.description } : undefined
+    );
+  }
+
+  async function handleRestartAll() {
+    if (topLevelApps.length === 0) return;
+    const failed = await runOnAllApps("restart");
+    toastBulkResult(
+      summarizeBulkResult({
+        verb: "restart",
+        past: "restarted",
+        total: topLevelApps.length,
+        failed,
+      })
+    );
     router.refresh();
   }
 
   async function handleStopAll() {
-    for (const app of topLevelApps) {
-      try {
-        await fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/stop`, { method: "POST" });
-      } catch { /* continue */ }
-    }
-    toast.success("All apps stopped");
+    if (topLevelApps.length === 0) return;
+    const failed = await runOnAllApps("stop");
+    toastBulkResult(
+      summarizeBulkResult({
+        verb: "stop",
+        past: "stopped",
+        total: topLevelApps.length,
+        failed,
+      })
+    );
     router.refresh();
   }
 
