@@ -55,6 +55,7 @@ import { AppSecurity } from "./app-security";
 import { AppErrors } from "./app-errors";
 import { AppStability } from "./app-stability";
 import type { Incident } from "@/lib/ui/stability";
+import type { LifecycleEvent } from "@/lib/ui/lifecycle";
 import { CronManager } from "./app-cron";
 import { AppDebug } from "./app-debug";
 import { AppSettingsPanel } from "./app-settings-panel";
@@ -686,6 +687,7 @@ export function ComposeDetail({
   allTags = [],
   siblings = [],
   stabilityIncidents = [],
+  lifecycleEvents = [],
   allParentApps = [],
 }: {
   app: App & { childApps: NonNullable<App["childApps"]> };
@@ -698,6 +700,8 @@ export function ComposeDetail({
   siblings?: { id: string; name: string; displayName: string; status: string; dependsOn: string[] | null }[];
   /** Durable stability history, newest first. */
   stabilityIncidents?: Incident[];
+  /** Restarts, stops and starts an operator ran, newest first. */
+  lifecycleEvents?: LifecycleEvent[];
   allParentApps?: { id: string; name: string; color: string }[];
 }) {
   const router = useRouter();
@@ -1225,6 +1229,7 @@ export function ComposeDetail({
             deploy={deploy}
             onDeploy={handleDeployClick}
             deployActionLabel="Deploy stack"
+            lifecycleEvents={lifecycleEvents}
           />
         </TabsContent>
 

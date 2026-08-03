@@ -7,6 +7,8 @@ import { restartContainers } from "@/lib/docker/deploy";
 import { resolveDefaultEnv } from "@/lib/docker/resolve-env";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { refuseSystemManaged } from "@/lib/api/system-managed";
+import { recordLifecycle } from "@/lib/activity/lifecycle";
+import { reconcileAppNow } from "@/lib/docker/status-reconcile";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
@@ -25,6 +27,7 @@ async function handlePost(_request: NextRequest, { params }: RouteParams) {
       columns: {
         id: true,
         name: true,
+        status: true,
         isSystemManaged: true,
         parentAppId: true,
         composeService: true,
@@ -60,6 +63,28 @@ async function handlePost(_request: NextRequest, { params }: RouteParams) {
       env.name,
       app.parentAppId ? app.composeService ?? undefined : undefined,
     );
+
+    // The UI's Start button posts here too — compose brings stopped services
+    // back up. What the app was doing beforehand is the only thing that tells
+    // the two apart.
+    if (result.success) {
+      const wasOff = app.status === "stopped" || app.status === "missing";
+      // The containers are new; the row still describes the ones they replaced.
+      const observed = await reconcileAppNow(app.id);
+      // `compose restart` exits clean against a project whose containers were
+      // removed, so a start that brought nothing up must not claim one.
+      const cameUp = observed === null || observed === "active";
+      if (!wasOff || cameUp) {
+        await recordLifecycle({
+          organizationId: orgId,
+          app,
+          kind: wasOff ? "started" : "restarted",
+          userId: org.session.user.id,
+          trigger: org.session.authMethod === "token" ? "api" : undefined,
+        });
+      }
+    }
+
     return NextResponse.json(result);
   } catch (error) {
     return handleRouteError(error, "Error restarting app");

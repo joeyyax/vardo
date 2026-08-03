@@ -4,6 +4,8 @@ const findFirst = vi.fn();
 const membershipFindFirst = vi.fn();
 const restartContainers = vi.fn();
 const resolveDefaultEnv = vi.fn();
+const reconcileAppNow = vi.fn();
+const recordLifecycle = vi.fn();
 
 vi.mock("@/lib/db", () => ({
   db: {
@@ -22,6 +24,12 @@ vi.mock("@/lib/docker/resolve-env", () => ({
 }));
 vi.mock("@/lib/api/rate-limit", () => ({
   slidingWindowRateLimit: async () => ({ limited: false }),
+}));
+vi.mock("@/lib/docker/status-reconcile", () => ({
+  reconcileAppNow: (...a: unknown[]) => reconcileAppNow(...a),
+}));
+vi.mock("@/lib/activity/lifecycle", () => ({
+  recordLifecycle: (...a: unknown[]) => recordLifecycle(...a),
 }));
 
 type Handler = (args: { appId: string }) => Promise<{ content: { text: string }[] }>;
@@ -64,6 +72,43 @@ describe("vardo_restart_app — environment scoping", () => {
 
     expect(resolveDefaultEnv).toHaveBeenCalledWith("a1");
     expect(restartContainers).toHaveBeenCalledWith("paperless", "staging", undefined);
+  });
+
+  it("refreshes the row and records the restart once it went through", async () => {
+    findFirst.mockResolvedValueOnce({
+      id: "a1",
+      name: "paperless",
+      status: "active",
+      organizationId: "org1",
+      parentAppId: null,
+      composeService: null,
+    });
+    resolveDefaultEnv.mockResolvedValueOnce({ name: "production", type: "production", id: "e1" });
+
+    await (await handler())({ appId: "a1" });
+
+    expect(reconcileAppNow).toHaveBeenCalledWith("a1");
+    expect(recordLifecycle).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "restarted", trigger: "mcp", userId: "u1" }),
+    );
+  });
+
+  it("leaves both alone when the restart failed", async () => {
+    findFirst.mockResolvedValueOnce({
+      id: "a1",
+      name: "paperless",
+      status: "active",
+      organizationId: "org1",
+      parentAppId: null,
+      composeService: null,
+    });
+    resolveDefaultEnv.mockResolvedValueOnce({ name: "production", type: "production", id: "e1" });
+    restartContainers.mockResolvedValueOnce({ success: false, log: "boom" });
+
+    await (await handler())({ appId: "a1" });
+
+    expect(reconcileAppNow).not.toHaveBeenCalled();
+    expect(recordLifecycle).not.toHaveBeenCalled();
   });
 
   it("restarts a compose child using the parent's project and environment", async () => {
