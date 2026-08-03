@@ -364,7 +364,9 @@ const PARSED_SERVICE_KEYS = new Set([
   "cap_drop", "devices", "privileged", "security_opt", "shm_size", "init",
   "extra_hosts", "healthcheck", "ulimits", "hostname", "user", "stop_signal",
   "entrypoint", "command", "tmpfs", "group_add", "container_name", "configs",
-  "secrets", SHARED_MARKER,
+  "secrets", "mem_limit", "read_only", "stdin_open", "tty", "working_dir",
+  "dns", "dns_search", "dns_opt", "sysctls", "pull_policy", "stop_grace_period",
+  SHARED_MARKER,
 ]);
 
 /**
@@ -372,14 +374,13 @@ const PARSED_SERVICE_KEYS = new Set([
  * these, so a silent drop changes behavior with nothing in the log to say so.
  */
 const DROPPED_SERVICE_KEYS = new Set([
-  "mem_limit", "cpus", "cpu_count", "cpu_percent", "cpuset", "memswap_limit",
+  "cpus", "cpu_count", "cpu_percent", "cpuset", "memswap_limit",
   "mem_swappiness", "pids_limit", "blkio_config", "device_cgroup_rules",
-  "logging", "profiles", "pull_policy", "platform", "working_dir", "domainname",
-  "stdin_open", "tty", "stop_grace_period", "dns", "dns_search", "dns_opt",
-  "sysctls", "userns_mode", "ipc", "pid", "uts", "cgroup", "cgroup_parent",
-  "isolation", "read_only", "storage_opt", "annotations", "attach", "links",
-  "external_links", "volumes_from", "label_file", "post_start", "pre_stop",
-  "credential_spec", "scale", "develop", "provider", "extends",
+  "logging", "profiles", "platform", "domainname", "userns_mode", "ipc", "pid",
+  "uts", "cgroup", "cgroup_parent", "isolation", "storage_opt", "annotations",
+  "attach", "links", "external_links", "volumes_from", "label_file",
+  "post_start", "pre_stop", "credential_spec", "scale", "develop", "provider",
+  "extends",
 ]);
 
 /**
