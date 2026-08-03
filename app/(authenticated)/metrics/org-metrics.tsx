@@ -9,6 +9,7 @@ import { Activity, AlertTriangle, ArrowDown, ArrowUp, Box, Cpu, HardDrive, Memor
 import { Button } from "@/components/ui/button";
 import { formatBytes, formatBytesShort, formatMemLimit, formatTime } from "@/lib/metrics/format";
 import { CHART_COLORS, chartTickStyle, type TimeRange } from "@/lib/metrics/constants";
+import { dedupeByContainer } from "@/lib/metrics/aggregate";
 import { networkRates } from "@/lib/metrics/rates";
 import { countApps, describeScopeCounts } from "@/lib/metrics/scope";
 import {
@@ -41,7 +42,7 @@ type AppMeta = {
   displayName: string;
   status: string;
   parentAppId?: string | null;
-  containers: { cpuPercent: number; memoryUsage: number; memoryLimit: number; networkRx: number; networkTx: number }[];
+  containers: { containerId: string; cpuPercent: number; memoryUsage: number; memoryLimit: number; networkRx: number; networkTx: number }[];
 };
 
 /* ── Stable tooltip components (outside render to avoid re-creation) ── */
@@ -279,7 +280,9 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
   // Totals from latest point or from meta apps containers
   const totals = useMemo(() => {
     if (metaApps && metaApps.length > 0) {
-      const allContainers = metaApps.flatMap((a) => a.containers);
+      // Each app carries its own breakdown, and a stack child's containers are
+      // also listed under its parent — flattening them counts those twice.
+      const allContainers = dedupeByContainer(metaApps.map((a) => a.containers));
       return {
         cpu: allContainers.reduce((s, c) => s + c.cpuPercent, 0),
         memory: allContainers.reduce((s, c) => s + c.memoryUsage, 0),
