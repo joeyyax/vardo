@@ -209,11 +209,28 @@ export async function importProjectBundle(
         const appId = nanoid();
         appIds.push(appId);
 
+        const appName = isClone
+          ? `${appBundle.name}-${nanoid(6)}`
+          : appBundle.name;
+
+        // Top-level app names are unique instance-wide, so an app of this name
+        // in any other organization blocks the transfer.
+        const nameTaken = await tx.query.apps.findFirst({
+          where: (a, { and, eq: e, isNull: n }) =>
+            and(e(a.name, appName), n(a.parentAppId)),
+          columns: { id: true },
+        });
+        if (nameTaken) {
+          throw new Error(
+            `App name "${appName}" is already taken on this instance`
+          );
+        }
+
         await tx.insert(apps).values({
           id: appId,
           organizationId: orgId,
           projectId,
-          name: isClone ? `${appBundle.name}-${nanoid(6)}` : appBundle.name,
+          name: appName,
           displayName: appBundle.displayName,
           description: appBundle.description,
           source: appBundle.source,

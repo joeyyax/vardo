@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { db } from "@/lib/db";
+import { APP_NAME_TAKEN_ERROR, isTopLevelAppNameTaken } from "@/lib/db/app-name";
 import { apps, environments } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
@@ -122,6 +123,8 @@ export function registerCreateApp(
       }
 
       // Reject duplicate slugs up front for a clean error (the DB also enforces it).
+      // Only an app in this org can be named back — one held by another org
+      // must stay invisible.
       const existing = await db.query.apps.findFirst({
         where: and(eq(apps.organizationId, orgId), eq(apps.name, name)),
         columns: { id: true },
@@ -132,9 +135,20 @@ export function registerCreateApp(
             {
               type: "text" as const,
               text: JSON.stringify({
-                error: "An app with this slug already exists",
+                error: APP_NAME_TAKEN_ERROR,
                 appId: existing.id,
               }),
+            },
+          ],
+          isError: true,
+        };
+      }
+      if (await isTopLevelAppNameTaken(name)) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ error: APP_NAME_TAKEN_ERROR }),
             },
           ],
           isError: true,

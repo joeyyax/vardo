@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError, isUniqueViolation } from "@/lib/api/error-response";
+import {
+  APP_NAME_TAKEN_ERROR,
+  isAppNameViolation,
+  isTopLevelAppNameTaken,
+} from "@/lib/db/app-name";
 import { db } from "@/lib/db";
 import { apps, projects, domains, organizations, environments, volumes } from "@/lib/db/schema";
 import { and, desc, eq, sql } from "drizzle-orm";
@@ -161,6 +166,10 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       }
     }
 
+    if (await isTopLevelAppNameTaken(data.name)) {
+      return NextResponse.json({ error: APP_NAME_TAKEN_ERROR }, { status: 409 });
+    }
+
     // Fetch org for baseDomain
     const orgRecord = await db.query.organizations.findFirst({
       where: eq(organizations.id, orgId),
@@ -269,6 +278,9 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ app }, { status: 201 });
   } catch (error) {
     // Unique constraint violation (Postgres error code 23505)
+    if (isAppNameViolation(error)) {
+      return NextResponse.json({ error: APP_NAME_TAKEN_ERROR }, { status: 409 });
+    }
     if (isUniqueViolation(error)) {
       return NextResponse.json(
         { error: "An app with this name already exists" },

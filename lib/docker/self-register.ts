@@ -12,7 +12,7 @@ import { readFile, access } from "fs/promises";
 import { join } from "path";
 import { promisify } from "util";
 import { execFile } from "child_process";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
 
 import { db } from "@/lib/db";
@@ -145,6 +145,20 @@ export async function ensureVardoProject(): Promise<void> {
   const infraServices = Object.keys(compose.services).filter((name) =>
     INFRA_SERVICES.has(name),
   );
+
+  // "vardo" is a top-level name, so it is unique instance-wide. The upserts
+  // below arbitrate on (organization_id, name) and would not catch another
+  // org's app holding it — check before the transaction rather than fail it.
+  const nameHolder = await db.query.apps.findFirst({
+    where: and(eq(apps.name, "vardo"), isNull(apps.parentAppId)),
+    columns: { organizationId: true },
+  });
+  if (nameHolder && nameHolder.organizationId !== org.id) {
+    log.error(
+      `cannot self-register: an app named "vardo" already exists in another organization`,
+    );
+    return;
+  }
 
   // Wrap all upserts in a transaction so a partial failure doesn't leave the
   // registration in an inconsistent state. All writes are idempotent upserts,
