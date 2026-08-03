@@ -529,10 +529,12 @@ export function forgetConditionStreaks(appIds: Set<string>): void {
 
 let interval: NodeJS.Timeout | null = null;
 let ticking = false;
+let signalsInstalled = false;
 
 export function startHealthMonitor(): void {
   if (interval) return;
 
+  installSignalHandlers();
   log.info(`Monitor started (${POLL_INTERVAL_MS / 1000}s interval)`);
   interval = setInterval(async () => {
     if (ticking) {
@@ -563,6 +565,12 @@ function onShutdown(signal: string) {
   stopHealthMonitor();
 }
 
-process.once("SIGTERM", () => onShutdown("SIGTERM"));
-process.once("SIGINT", () => onShutdown("SIGINT"));
-process.once("exit", () => stopHealthMonitor());
+// Installed from the start function, not at module scope — importing this
+// module must not add listeners or log a shutdown for a monitor never started.
+function installSignalHandlers(): void {
+  if (signalsInstalled) return;
+  signalsInstalled = true;
+  process.once("SIGTERM", () => onShutdown("SIGTERM"));
+  process.once("SIGINT", () => onShutdown("SIGINT"));
+  process.once("exit", () => stopHealthMonitor());
+}
