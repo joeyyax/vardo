@@ -31,6 +31,7 @@ export interface PlannableApp {
   name: string;
   displayName: string;
   status: string;
+  parked: boolean;
   deployType: string | null;
   imageName: string | null;
   composeContent: string | null;
@@ -161,8 +162,10 @@ export function selectCandidates(
       skipped.push(skip(app, "never-run", { idleDays: null }));
       continue;
     }
+    // Parking answers the question the threshold is guessing at, so it stands
+    // in for the wait. Every guard that decides whether re-pull works still runs.
     const threshold = resolveIdleThreshold(app.imageReclaimIdleDays, opts.defaultIdleDays);
-    if (idle < threshold) {
+    if (!app.parked && idle < threshold) {
       skipped.push(skip(app, "not-idle", { idleDays: idle }));
       continue;
     }
@@ -244,6 +247,7 @@ export async function buildReclaimPlan(defaultIdleDays: number, now = new Date()
       name: true,
       displayName: true,
       status: true,
+      parked: true,
       deployType: true,
       imageName: true,
       composeContent: true,

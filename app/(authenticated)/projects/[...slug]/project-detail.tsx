@@ -113,6 +113,7 @@ type ComposeChildApp = {
   displayName: string;
   composeService: string | null;
   status: string;
+  parked: boolean;
   containerName: string | null;
   containerStartedAt: Date | null;
   needsRedeploy: boolean | null;
@@ -132,6 +133,7 @@ type ProjectApp = {
   displayName: string;
   description: string | null;
   status: string;
+  parked: boolean;
   containerStartedAt: Date | null;
   containerMemoryLimit: number | null;
   needsRedeploy: boolean | null;
@@ -611,7 +613,7 @@ export function ProjectDetail({
     () =>
       [...topLevelApps].sort(
         (x, y) =>
-          statusRank(x.status) - statusRank(y.status) ||
+          statusRank(x.status, !!x.parked) - statusRank(y.status, !!y.parked) ||
           Number(y.priority === "critical") - Number(x.priority === "critical") ||
           x.displayName.localeCompare(y.displayName),
       ),
@@ -1131,7 +1133,7 @@ export function ProjectDetail({
                   {[...(app.childApps ?? [])]
                     .sort(
                       (x, y) =>
-                        statusRank(x.status) - statusRank(y.status) ||
+                        statusRank(x.status, !!x.parked) - statusRank(y.status, !!y.parked) ||
                         x.displayName.localeCompare(y.displayName),
                     )
                     .map((child) => (

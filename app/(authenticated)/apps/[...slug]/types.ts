@@ -96,6 +96,7 @@ export type ChildApp = {
   displayName: string;
   composeService: string | null;
   status: string;
+  parked: boolean;
   imageName: string | null;
   containerStartedAt: Date | null;
   containerPort: number | null;
@@ -148,6 +149,8 @@ export type App = {
   containerStartedAt: Date | null;
   /** Null until the app's first transition — render no duration rather than a wrong one. */
   statusChangedAt: Date | null;
+  /** Declared off on purpose. Nothing about it being down is worth saying. */
+  parked: boolean;
   needsRedeploy: boolean | null;
   importedContainerId: string | null;
   isSystemManaged: boolean;
