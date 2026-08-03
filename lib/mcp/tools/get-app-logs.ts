@@ -63,6 +63,7 @@ export function registerGetAppLogs(
 
         const entries = await queryRange({
           query,
+          organizationId: app.organizationId,
           start,
           limit: lines,
           direction: "backward",

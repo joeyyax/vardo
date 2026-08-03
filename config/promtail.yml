@@ -6,6 +6,9 @@ positions:
 
 clients:
   - url: http://loki:3100/loki/api/v1/push
+    # Tenant for a container with no owning organization, which no organization
+    # can address. The tenant stage below overrides it per entry.
+    tenant_id: vardo.unassigned
 
 scrape_configs:
   - job_name: docker
@@ -23,6 +26,12 @@ scrape_configs:
       - source_labels: ["__tmp_managed"]
         regex: "true"
         action: keep
+      # Extract organization label — the Loki tenant, set below in pipeline_stages
+      - source_labels: ["__meta_docker_container_label_host_organization"]
+        target_label: organization
+      - source_labels: ["__meta_docker_container_label_vardo_organization"]
+        regex: "(.+)"
+        target_label: organization
       # Extract project label — vardo.project takes priority, fall back to host.project
       - source_labels: ["__meta_docker_container_label_host_project"]
         target_label: project
@@ -47,3 +56,9 @@ scrape_configs:
       - source_labels: ["__meta_docker_container_name"]
         regex: "/(.*)"
         target_label: container
+    # Loki is tenanted by organization. A relabel to __tenant_id__ would not
+    # survive — the docker target strips every __-prefixed label before the
+    # push — so the tenant is set from the label here.
+    pipeline_stages:
+      - tenant:
+          label: organization

@@ -7,7 +7,7 @@ import { spawn } from "child_process";
 import { resolve } from "path";
 import { readlink } from "fs/promises";
 import { appEnvDir, appBaseDir } from "@/lib/paths";
-import { isLokiAvailable, queryRange, buildLogQLQuery } from "./client";
+import { isLokiAvailable, queryRange, buildLogQLQuery, requireTenant } from "./client";
 import { interleaveByTimestamp, parseComposeLine, type ServiceLine } from "./compose-lines";
 
 export type ComposeTarget = {
@@ -90,6 +90,7 @@ const LOOKBACK_MS = [3_600_000, 86_400_000, 7 * 86_400_000, 30 * 86_400_000];
 /** Read the tail of an app's logs from Loki, widening the window until something turns up. */
 export async function readLokiHistory(opts: {
   project: string;
+  organizationId: string;
   environment?: string;
   service?: string | null;
   prefixed?: boolean;
@@ -106,6 +107,7 @@ export async function readLokiHistory(opts: {
   for (const window of LOOKBACK_MS) {
     const entries = await queryRange({
       query,
+      organizationId: opts.organizationId,
       start: String((Date.now() - window) * 1_000_000),
       limit: opts.tail,
       direction: "backward",
@@ -134,12 +136,17 @@ export type HistoryResult = {
  */
 export async function readLogHistory(opts: {
   project: string;
+  organizationId: string;
   environment: string;
   service?: string | null;
   prefixed?: boolean;
   search?: string;
   tail: number;
 }): Promise<HistoryResult> {
+  // Checked before the try below, which would otherwise swallow it and read
+  // the containers instead of saying the tenant was missing.
+  requireTenant(opts.organizationId);
+
   if (await isLokiAvailable()) {
     try {
       const lines = await readLokiHistory(opts);

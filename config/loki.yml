@@ -1,4 +1,6 @@
-auth_enabled: false
+# One tenant per organization. Every push and every query carries
+# X-Scope-OrgID; a request without one is rejected.
+auth_enabled: true
 
 server:
   http_listen_port: 3100
