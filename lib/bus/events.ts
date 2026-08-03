@@ -241,6 +241,26 @@ export type DeployStatusEvent = {
   supersededBy?: string;
 };
 
+/**
+ * One unit of a backup run started. Emitted per volume as the run walks its
+ * sources, so the backups UI can show which app is being captured right now.
+ * Deliberately absent from EVENT_CATEGORIES — it drives live UI, never a channel.
+ */
+export type BackupProgressEvent = {
+  type: "backup.progress";
+  title: string;
+  message: string;
+  jobId: string;
+  jobName: string;
+  appId: string | null;
+  /** App the source belongs to, or the volume name for unattached sources. */
+  appName: string;
+  volumeName: string;
+  /** 1-based position in the run. */
+  index: number;
+  total: number;
+};
+
 /** An app's runtime state changed (started, stopped, restarted, etc.). */
 export type AppStateChangedEvent = {
   type: "app.state-changed";
@@ -290,6 +310,7 @@ export type BusEvent =
   | SecurityFileExposedEvent
   | SecurityScanFindingsEvent
   | DigestWeeklyEvent
+  | BackupProgressEvent
   | DeployStatusEvent
   | AppStateChangedEvent
   | AppAutoRestartedEvent;

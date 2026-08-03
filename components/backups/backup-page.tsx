@@ -12,6 +12,9 @@ import { JobCard } from "./job-card";
 import { TargetForm } from "./target-form";
 import { JobForm } from "./job-form";
 import { BackupHistory } from "./backup-history";
+import { useNotificationStream } from "@/hooks/use-notification-stream";
+import { applyBackupEvent, type ProgressByJob } from "./progress-state";
+import type { BusEvent } from "@/lib/bus/events";
 import type { App, BackupTarget, BackupJob, RecentBackup } from "./types";
 
 export function BackupPage({
@@ -34,6 +37,7 @@ export function BackupPage({
   const [targetFormOpen, setTargetFormOpen] = useState(false);
   const [jobFormOpen, setJobFormOpen] = useState(false);
   const [editingTargetId, setEditingTargetId] = useState<string | null>(null);
+  const [progress, setProgress] = useState<ProgressByJob>({});
 
   const fetchData = useCallback(async () => {
     try {
@@ -63,6 +67,22 @@ export function BackupPage({
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  // A run started anywhere — cron or another tab — shows itself here as it goes.
+  const onEvent = useCallback(
+    (event: BusEvent & { historical?: boolean }) => {
+      if (event.historical) return;
+
+      setProgress((prev) => applyBackupEvent(prev, event));
+
+      // Pick up the `running` row the engine just wrote, then the finished run.
+      if (event.type === "backup.progress" && event.index === 1) fetchData();
+      if (event.type === "backup.success" || event.type === "backup.failed") fetchData();
+    },
+    [fetchData],
+  );
+
+  useNotificationStream({ orgId, onEvent });
 
   if (loading) {
     return (
@@ -96,6 +116,7 @@ export function BackupPage({
           target={autoTarget}
           jobs={autoJobs}
           recent={history.filter((h) => autoJobs.some((j) => j.id === h.job.id))}
+          running={autoJobs.map((j) => progress[j.id]).filter((p) => p !== undefined)}
         />
       ) : showIntro ? (
         <div className="space-y-1">
@@ -183,6 +204,7 @@ export function BackupPage({
                     orgId={orgId}
                     readOnly={scope === "org" && job.target.type === "system"}
                     showApps={scope !== "admin"}
+                    progress={progress[job.id]}
                     onRefresh={fetchData}
                   />
                 ))}
