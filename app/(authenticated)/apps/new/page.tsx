@@ -1,8 +1,8 @@
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
-import { projects } from "@/lib/db/schema";
+import { apps, projects } from "@/lib/db/schema";
 import { getCurrentOrg } from "@/lib/auth/session";
-import { eq, asc } from "drizzle-orm";
+import { and, asc, desc, eq, isNotNull } from "drizzle-orm";
 import { loadTemplates } from "@/lib/templates/load";
 import { getInstanceConfig } from "@/lib/system-settings";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
@@ -22,7 +22,7 @@ export default async function NewAppPage({
 
   const orgId = orgData.organization.id;
 
-  const [templatesEnabled, parentAppList, instanceConfig, containerImportEnabled] = await Promise.all([
+  const [templatesEnabled, parentAppList, instanceConfig, containerImportEnabled, lastApp] = await Promise.all([
     isFeatureEnabledAsync("templates"),
     // Load projects for grouping
     db.query.projects.findMany({
@@ -32,6 +32,12 @@ export default async function NewAppPage({
     }),
     getInstanceConfig(),
     isFeatureEnabledAsync("container-import"),
+    // Most recently used project, for preselection
+    db.query.apps.findFirst({
+      where: and(eq(apps.organizationId, orgId), isNotNull(apps.projectId)),
+      columns: { projectId: true },
+      orderBy: [desc(apps.createdAt)],
+    }),
   ]);
 
   const templateList = templatesEnabled ? await loadTemplates() : [];
@@ -51,7 +57,12 @@ export default async function NewAppPage({
       orgSlug={orgData.organization.slug}
       templates={cleanTemplates}
       parentApps={parentOptions}
-      baseDomain={instanceConfig.baseDomain}
+      baseDomain={orgData.organization.baseDomain || instanceConfig.baseDomain}
+      recentProjectId={
+        parentAppList.some((p) => p.id === lastApp?.projectId)
+          ? (lastApp?.projectId ?? undefined)
+          : undefined
+      }
       defaultParentId={preselectedParentId}
       defaultProjectId={preselectedProjectId}
       defaultName={prefilledName}
