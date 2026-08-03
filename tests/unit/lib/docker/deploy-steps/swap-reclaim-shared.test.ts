@@ -186,6 +186,24 @@ describe("swap — an app still running its database in the old slot", () => {
     expect(indexOf(isNetworkConnect)).toBe(-1);
   });
 
+  it("does not pin Traefik when the old slot goes down before the new one starts", async () => {
+    // There is no second backend to hand traffic to, so guardCutover would only
+    // wait out PIN_CONFIRM_TIMEOUT before giving up.
+    dockerWith({ oldSlotHoldsPostgres: true });
+    const { guardCutover } = await import("@/lib/docker/traefik-cutover");
+
+    await swap(context());
+    expect(guardCutover).not.toHaveBeenCalled();
+  });
+
+  it("pins Traefik when both slots overlap", async () => {
+    dockerWith({ oldSlotHoldsPostgres: false });
+    const { guardCutover } = await import("@/lib/docker/traefik-cutover");
+
+    await swap(context());
+    expect(guardCutover).toHaveBeenCalled();
+  });
+
   it("leaves an app with nothing shared on the single-project path", async () => {
     dockerWith({ oldSlotHoldsPostgres: true });
     const plain = {
