@@ -1,7 +1,8 @@
 import { formatDistanceToNowStrict } from "date-fns";
 import { Cpu, Package, ShieldCheck, Trash2, type LucideIcon } from "lucide-react";
 
-import { formatBytes } from "@/lib/metrics/format";
+import { formatBytes, formatCores } from "@/lib/metrics/format";
+import { readingLabel } from "@/lib/ui/app-row";
 import { statusDotColor } from "@/lib/ui/status-colors";
 import { conditionLabel, conditionTone } from "@/lib/ui/conditions";
 import type { AppCondition } from "@/lib/docker/conditions";
@@ -18,7 +19,12 @@ export type AppRowCardApp = {
   conditions: AppCondition[] | null;
   domains: { domain: string; isPrimary: boolean | null }[];
   deployments: { status: string; startedAt: Date }[];
+  appTags?: { tag: { name: string } }[];
+  dependsOn?: string[] | null;
 };
+
+/** Live usage, as the row's sparkline plots it. Absent when nothing reported. */
+export type AppRowCardUsage = { cpuPercent: number; memoryUsage: number };
 
 const STATUS_LABEL: Record<string, string> = {
   active: "Running",
@@ -59,9 +65,19 @@ function Row({
 }
 
 /** The context the row's status dot and icon strip encode, spelled out. */
-export function AppRowCard({ app, updateCount }: { app: AppRowCardApp; updateCount: number }) {
+export function AppRowCard({
+  app,
+  updateCount,
+  usage,
+}: {
+  app: AppRowCardApp;
+  updateCount: number;
+  usage?: AppRowCardUsage;
+}) {
   const deploy = app.deployments[0];
   const conditions = app.conditions ?? [];
+  const running = app.status === "active";
+  const tags = (app.appTags ?? []).map((t) => t.tag.name.toLowerCase());
 
   return (
     <div className="w-72 space-y-2.5 text-xs">
@@ -93,6 +109,12 @@ export function AppRowCard({ app, updateCount }: { app: AppRowCardApp; updateCou
         {app.containerStartedAt && (
           <Row label="Uptime">{formatDistanceToNowStrict(new Date(app.containerStartedAt))}</Row>
         )}
+        {running && (
+          <Row label="Usage">
+            {readingLabel(usage?.cpuPercent, formatCores)} ·{" "}
+            {readingLabel(usage?.memoryUsage, formatBytes)}
+          </Row>
+        )}
         <Row label="Memory">{memoryLimitLabel(app.containerMemoryLimit)}</Row>
         {deploy && (
           <Row label="Deployed">
@@ -102,6 +124,11 @@ export function AppRowCard({ app, updateCount }: { app: AppRowCardApp; updateCou
         )}
         {app.domains.length > 0 && (
           <Row label="Domains">{app.domains.map((d) => d.domain).join(", ")}</Row>
+        )}
+        {/* The row hides these on narrow containers; the card always carries them. */}
+        {tags.length > 0 && <Row label="Tags">{tags.join(", ")}</Row>}
+        {(app.dependsOn?.length ?? 0) > 0 && (
+          <Row label="Depends">{app.dependsOn?.join(", ")}</Row>
         )}
         {updateCount > 0 && (
           <Row label="Updates" icon={Package}>

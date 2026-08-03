@@ -1,13 +1,11 @@
 "use client";
 
-import { useState, useCallback, useMemo, useEffect, useRef } from "react";
+import { Fragment, useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { RelativeTime } from "@/components/relative-time";
 import {
   Plus,
   Boxes,
-  Package,
   Pencil,
   Rocket,
   Trash2,
@@ -21,13 +19,7 @@ import {
   FileText,
   Activity,
 } from "lucide-react";
-import {
-  type AppMetrics as AppMetricsType,
-  type MetricsHistory,
-  EMPTY_HISTORY,
-  MetricsBand,
-  useAppMetrics,
-} from "@/components/app-metrics-card";
+import { type AppMetrics as AppMetricsSample, useAppMetrics } from "@/components/app-metrics-card";
 import { useImageUpdates } from "../updates-banner";
 import { toast } from "@/lib/messenger";
 import { PageToolbar } from "@/components/page-toolbar";
@@ -56,13 +48,16 @@ import {
   BottomSheetTitle,
   BottomSheetDescription,
 } from "@/components/ui/bottom-sheet";
-import { detectAppType } from "@/lib/ui/app-type";
 import { summarizeBulkResult, type BulkOutcome } from "@/lib/ui/bulk-result";
-import { envTypeDotColor, statusDotColor } from "@/lib/ui/status-colors";
+import { envTypeDotColor, uniformStatus } from "@/lib/ui/status-colors";
+import { statusRank } from "@/lib/ui/app-row";
 import { appStatusFromEvent } from "@/lib/bus/refresh";
 import type { BusEvent } from "@/lib/bus/events";
-import { Uptime, StatusIndicator, AppIcon, DeploymentStatusBadge, formatDuration } from "@/components/app-status";
-import { EndpointsPopover } from "@/components/endpoints-popover";
+import type { AppCondition } from "@/lib/docker/conditions";
+import { Uptime, DeploymentStatusBadge, formatDuration } from "@/components/app-status";
+import { AppRow } from "@/components/app-row";
+import { AppRowCard } from "@/components/app-row-card";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { LogViewer, DeploymentLog } from "@/components/log-viewer";
 import { EnvEditor } from "@/components/env-editor";
 import { AppMetrics } from "@/app/(authenticated)/apps/[...slug]/app-metrics";
@@ -116,6 +111,10 @@ type ComposeChildApp = {
   composeService: string | null;
   status: string;
   containerName: string | null;
+  containerStartedAt: Date | null;
+  needsRedeploy: boolean | null;
+  conditions: AppCondition[] | null;
+  gpuEnabled: boolean | null;
   imageName: string | null;
   dependsOn: string[] | null;
   cpuLimit: number | null;
@@ -130,7 +129,12 @@ type ProjectApp = {
   description: string | null;
   status: string;
   containerStartedAt: Date | null;
+  containerMemoryLimit: number | null;
   needsRedeploy: boolean | null;
+  conditions: AppCondition[] | null;
+  priority: "critical" | "standard" | "disposable" | null;
+  gpuEnabled: boolean | null;
+  appTags: { tag: { id: string; name: string; color: string } }[];
   imageName: string | null;
   gitUrl: string | null;
   gitBranch: string | null;
@@ -161,211 +165,56 @@ type Project = {
 };
 
 // ---------------------------------------------------------------------------
-// Dependency highlight types
+// App list — one ledger row per app, compose services indented beneath
 // ---------------------------------------------------------------------------
 
-type DepHighlight = "none" | "hovered" | "dependency" | "dependent";
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-// Service list sorts problems first.
-const CHILD_STATUS_RANK: Record<string, number> = {
-  error: 0,
-  missing: 1,
-  deploying: 2,
-  stopped: 3,
-  active: 4,
-};
-
-// ---------------------------------------------------------------------------
-// App Card
-// ---------------------------------------------------------------------------
-
-
-function AppCard({
+function AppLedgerRow({
   app,
-  color,
-  metrics,
-  history,
-  highlight,
+  href,
+  series,
+  usage,
+  updateCount = 0,
+  sharedStatus,
+  statusOverride,
+  related = false,
   onHoverStart,
   onHoverEnd,
-  childApps = [],
-  statusOverride,
-  updateCount = 0,
 }: {
   app: ProjectApp;
-  color: string;
-  metrics?: AppMetricsType;
-  history: MetricsHistory;
-  highlight: DepHighlight;
+  href: string;
+  series?: number[];
+  usage?: AppMetricsSample;
+  updateCount?: number;
+  sharedStatus?: string | null;
+  statusOverride?: string;
+  related?: boolean;
   onHoverStart: () => void;
   onHoverEnd: () => void;
-  childApps?: ComposeChildApp[];
-  statusOverride?: string;
-  updateCount?: number;
 }) {
-  const router = useRouter();
-  const effectiveStatus = statusOverride ?? app.status;
-  const lastDeploy = app.deployments[0];
-  const gitSha = lastDeploy?.gitSha;
-  detectAppType(app);
-
-  // Source line: repo:branch + sha, or image name
-  const sourceLine = app.source === "git" && app.gitUrl
-    ? `${app.gitUrl.replace("https://github.com/", "").replace(".git", "")}:${app.gitBranch || "main"}`
-    : app.imageName || app.deployType;
-
-  const deps = app.dependsOn ?? [];
-
-  // Build highlight ring classes
-  const highlightClasses =
-    highlight === "hovered"
-      ? "ring-2 ring-foreground/20 scale-[1.01]"
-      : highlight === "dependency"
-        ? "ring-2 ring-blue-500/40"
-        : highlight === "dependent"
-          ? "ring-2 ring-emerald-500/40"
-          : "";
-
-  const deployFragment = lastDeploy && (
-    lastDeploy.status === "failed" ? (
-      <span className="text-status-error">
-        Deploy failed <RelativeTime date={lastDeploy.startedAt} />
-      </span>
-    ) : lastDeploy.status === "running" || lastDeploy.status === "queued" ? (
-      <span className="text-status-info">Deploying now</span>
-    ) : (
-      <span>Deployed <RelativeTime date={lastDeploy.startedAt} /></span>
-    )
-  );
-
+  const withStatus = { ...app, status: statusOverride ?? app.status };
   return (
-    <div
-      onMouseEnter={onHoverStart}
-      onMouseLeave={onHoverEnd}
-      className={`squircle relative flex flex-col rounded-lg bg-card shadow-card dark:border transition-all duration-200 hover:shadow-card-hover overflow-hidden ${highlightClasses}`}
-    >
-      {/* Whole-card click target; interactive children stack above it */}
-      <Link href={`/apps/${app.name}`} className="absolute inset-0 z-0" aria-label={app.displayName} />
-      <div className={`p-5${childApps.length === 0 ? " flex-1" : ""}`}>
-      <div className="flex gap-3 w-full">
-        <AppIcon app={app} />
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2 min-w-0">
-              <h3 className="text-sm font-semibold truncate">
-                {app.displayName}
-              </h3>
-              <span className="relative z-10">
-                <EndpointsPopover endpoints={app.domains.map((d) => ({ domain: d.domain }))} />
-              </span>
-            </div>
-            <StatusIndicator status={effectiveStatus} startedAt={app.containerStartedAt} needsRedeploy={!!app.needsRedeploy} />
-          </div>
-          {app.description ? (
-            <p className="text-xs text-muted-foreground truncate mt-0.5">
-              {app.description}
-            </p>
-          ) : (
-            <p className="text-xs text-muted-foreground/40 truncate mt-0.5">
-              {app.name}
-            </p>
-          )}
-          <div className="flex items-center gap-2 mt-0.5">
-            <span className="text-xs text-muted-foreground/40 font-mono truncate">
-              {sourceLine}
-            </span>
-            {gitSha && (
-              <code className="text-[10px] font-mono bg-muted px-1 py-0.5 rounded text-muted-foreground shrink-0">
-                {gitSha.slice(0, 7)}
-              </code>
-            )}
-          </div>
-          {/* What changed — deploy recency and pending updates */}
-          {(deployFragment || updateCount > 0) && (
-            <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
-              {deployFragment}
-              {deployFragment && updateCount > 0 && <span aria-hidden="true">·</span>}
-              {updateCount > 0 && (
-                <span className="flex items-center gap-1">
-                  <Package className="size-3" aria-hidden="true" />
-                  {updateCount} update{updateCount === 1 ? "" : "s"} available
-                </span>
-              )}
-            </p>
-          )}
-        </div>
-      </div>
-
-      {/* Dependency badges */}
-      {deps.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1 mt-2 pt-2 border-t border-border/50">
-          <span className="text-[10px] text-muted-foreground/60 mr-0.5">depends on</span>
-          {deps.map((dep) => (
-            <span
-              key={dep}
-              className="inline-flex items-center rounded-full bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-medium text-blue-600 dark:text-blue-400"
-            >
-              {dep}
-            </span>
-          ))}
-        </div>
-      )}
-
-      {/* Direction indicator when highlighted via hover */}
-      {highlight === "dependency" && (
-        <div className="flex items-center gap-1 mt-1.5 text-[10px] text-blue-600 dark:text-blue-400">
-          <span>&larr;</span>
-          <span>depends on this</span>
-        </div>
-      )}
-      {highlight === "dependent" && (
-        <div className="flex items-center gap-1 mt-1.5 text-[10px] text-emerald-600 dark:text-emerald-400">
-          <span>&rarr;</span>
-          <span>depends on this</span>
-        </div>
-      )}
-      </div>
-
-      {/* Recessed service list — compose services on a lower surface */}
-      {childApps.length > 0 && (
-        <div className="flex-1 border-t bg-background-deep px-2.5 py-2">
-          {[...childApps]
-            .sort(
-              (x, y) =>
-                (CHILD_STATUS_RANK[x.status] ?? 3) - (CHILD_STATUS_RANK[y.status] ?? 3) ||
-                x.displayName.localeCompare(y.displayName),
-            )
-            .map((child) => (
-              <div key={child.id} className="flex min-w-0 items-center gap-2 rounded-md px-2.5 py-1.5 text-xs font-medium">
-                <span aria-hidden="true" className={`size-1.5 shrink-0 rounded-full ${statusDotColor(child.status)}`} />
-                <span className="truncate">{child.displayName}</span>
-                <span className={
-                  child.status === "active"
-                    ? "sr-only"
-                    : `shrink-0 font-normal ${child.status === "error" ? "text-status-error" : child.status === "deploying" ? "text-status-info" : "text-muted-foreground"}`
-                }>
-                  {child.status === "active" ? ", Running" : child.status === "error" ? "crashed" : child.status === "deploying" ? "deploying" : "stopped"}
-                </span>
-              </div>
-            ))}
-        </div>
-      )}
-
-      {/* Resource footer — space is held while stats stream in. Gated on the
-          app being active: the collector reports zeros for an absent container. */}
-      {effectiveStatus === "active" && (
-        <MetricsBand
-          metrics={metrics}
-          history={history}
-          memoryLimit={metrics?.memoryLimit ?? 0}
-          running={effectiveStatus === "active"}
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <AppRow
+          app={{ ...withStatus, tags: app.appTags.map((t) => t.tag.name) }}
+          href={href}
+          series={series}
+          updateCount={updateCount}
+          sharedStatus={sharedStatus}
+          related={related}
+          onMouseEnter={onHoverStart}
+          onMouseLeave={onHoverEnd}
         />
-      )}
-    </div>
+      </TooltipTrigger>
+      <TooltipContent
+        side="right"
+        align="start"
+        sideOffset={6}
+        className="bg-popover text-popover-foreground border shadow-card-hover px-3 py-2.5 [&>span]:hidden"
+      >
+        <AppRowCard app={withStatus} updateCount={updateCount} usage={usage} />
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -746,6 +595,23 @@ export function ProjectDetail({
     [project.apps]
   );
 
+  const sortedApps = useMemo(
+    () =>
+      [...topLevelApps].sort(
+        (x, y) =>
+          statusRank(x.status) - statusRank(y.status) ||
+          Number(y.priority === "critical") - Number(x.priority === "critical") ||
+          x.displayName.localeCompare(y.displayName),
+      ),
+    [topLevelApps],
+  );
+
+  // The toolbar already states a status every app shares; rows suppress it.
+  const sharedStatus = useMemo(
+    () => uniformStatus(topLevelApps.map((a) => a.status)),
+    [topLevelApps],
+  );
+
   const environments = [
     { name: "production", type: "production" },
     ...project.groupEnvironments.map((e) => ({ name: e.name, type: e.type })),
@@ -883,19 +749,15 @@ export function ProjectDetail({
     }, 180000);
   }, [topLevelApps, orgId, project.id, router]);
 
-  // Compute highlight state for each app based on what's hovered
-  const getHighlight = useCallback(
-    (appName: string): DepHighlight => {
-      if (!hoveredAppName) return "none";
-      if (appName === hoveredAppName) return "hovered";
+  // Rows either side of a dependency edge from the hovered row. Neutral, not
+  // hued — direction is spelled out in the hover card instead.
+  const isRelated = useCallback(
+    (appName: string): boolean => {
+      if (!hoveredAppName || appName === hoveredAppName) return false;
       const hoveredApp = topLevelApps.find((a) => a.name === hoveredAppName);
-      if (!hoveredApp) return "none";
-      // Is this app a dependency of the hovered app?
-      if ((hoveredApp.dependsOn ?? []).includes(appName)) return "dependency";
-      // Is this app a dependent of the hovered app? (it depends on the hovered one)
-      const hoveredDependents = dependentsMap.get(hoveredAppName);
-      if (hoveredDependents?.has(appName)) return "dependent";
-      return "none";
+      if (!hoveredApp) return false;
+      if ((hoveredApp.dependsOn ?? []).includes(appName)) return true;
+      return dependentsMap.get(hoveredAppName)?.has(appName) ?? false;
     },
     [hoveredAppName, topLevelApps, dependentsMap]
   );
@@ -1262,8 +1124,6 @@ export function ProjectDetail({
         <div className="min-w-0 flex-1">
 
         <TabsContent value="apps">
-          {/* Multi-column: a compose app lists a dozen services, a plain one
-              lists none, and grid rows take the taller card's height. */}
           {topLevelApps.length === 0 ? (
             <EmptyState
               icon={Boxes}
@@ -1272,25 +1132,40 @@ export function ProjectDetail({
               action={<AddAppDropdown projectId={project.id} align="center" />}
             />
           ) : (
-            <div className="columns-[20rem] gap-4">
-              {project.apps
-                .filter((app) => !app.parentAppId)
-                .map((app) => (
-                  <div key={app.id} className="mb-4 break-inside-avoid">
-                    <AppCard
-                      app={app}
-                      color={color}
-                      metrics={metrics.get(app.id)}
-                      history={history.get(app.id) || EMPTY_HISTORY}
-                      highlight={getHighlight(app.name)}
-                      onHoverStart={() => setHoveredAppName(app.name)}
-                      onHoverEnd={() => setHoveredAppName(null)}
-                      childApps={app.childApps ?? []}
-                      statusOverride={appStatusOverrides.get(app.id)}
-                      updateCount={updatesByApp.get(app.id) ?? 0}
-                    />
-                  </div>
-                ))}
+            /* One line per app, problems first, compose services indented under
+               their stack. Everything the card carried is on the hover card. */
+            <div className="@container squircle rounded-lg bg-card p-1.5 shadow-card dark:border">
+              {sortedApps.map((app) => (
+                <Fragment key={app.id}>
+                  <AppLedgerRow
+                    app={app}
+                    href={`/apps/${app.name}`}
+                    series={history.get(app.id)?.cpu}
+                    usage={metrics.get(app.id)}
+                    updateCount={updatesByApp.get(app.id) ?? 0}
+                    sharedStatus={sharedStatus}
+                    statusOverride={appStatusOverrides.get(app.id)}
+                    related={isRelated(app.name)}
+                    onHoverStart={() => setHoveredAppName(app.name)}
+                    onHoverEnd={() => setHoveredAppName(null)}
+                  />
+                  {[...(app.childApps ?? [])]
+                    .sort(
+                      (x, y) =>
+                        statusRank(x.status) - statusRank(y.status) ||
+                        x.displayName.localeCompare(y.displayName),
+                    )
+                    .map((child) => (
+                      <AppRow
+                        key={child.id}
+                        app={child}
+                        href={`/apps/${child.name}`}
+                        series={history.get(child.id)?.cpu}
+                        indented
+                      />
+                    ))}
+                </Fragment>
+              ))}
             </div>
           )}
         </TabsContent>
