@@ -16,6 +16,7 @@ function app(overrides: Partial<PlannableApp> = {}): PlannableApp {
     name: "jellyfin",
     displayName: "Jellyfin",
     status: "missing",
+    parked: false,
     deployType: "image",
     imageName: "jellyfin/jellyfin:10.9.11",
     composeContent: null,
@@ -79,6 +80,19 @@ describe("selectCandidates — excluded classes are never selected", () => {
       expect(reasonFor(result)).toBe(reason);
     });
   }
+
+  it("selects a parked app that has not waited out the threshold", () => {
+    const result = plan([app({ parked: true, lastRunningAt: YESTERDAY })]);
+    expect(result.candidates).toHaveLength(1);
+  });
+
+  it("still refuses a parked app whose image cannot be pulled back", () => {
+    const result = plan([
+      app({ parked: true, lastRunningAt: YESTERDAY, imageName: "jellyfin/jellyfin:latest" }),
+    ]);
+    expect(result.candidates).toHaveLength(0);
+    expect(reasonFor(result)).toBe("floating-tag");
+  });
 
   it("excludes a compose that builds locally — a reclaimed image cannot be pulled back", () => {
     const result = plan([

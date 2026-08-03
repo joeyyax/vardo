@@ -34,6 +34,7 @@ import {
 export type AppRowApp = {
   displayName: string;
   status: string;
+  parked?: boolean | null;
   conditions?: AppCondition[] | null;
   containerStartedAt?: Date | string | null;
   needsRedeploy?: boolean | null;
@@ -115,9 +116,12 @@ export function AppRow({
   trailing?: React.ReactNode;
   ref?: React.Ref<HTMLAnchorElement>;
 } & React.AnchorHTMLAttributes<HTMLAnchorElement>) {
-  const severity = rowSeverity(app.status, app.conditions, !!app.needsRedeploy);
+  // A parked row keeps its rail off, so the word and the color agree.
+  const severity = app.parked
+    ? "none"
+    : rowSeverity(app.status, app.conditions, !!app.needsRedeploy);
   const rail = railClass(severity);
-  const word = statusWord(app.status, sharedStatus);
+  const word = statusWord(app.status, sharedStatus, !!app.parked);
   const running = app.status === "active";
 
   // Restarts sit under both live signals and above the caller's own note: the

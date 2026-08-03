@@ -13,6 +13,7 @@ import { and, eq } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
+import { setParked } from "@/lib/db/app-parked";
 import { appEnvDir } from "@/lib/paths";
 import { recordLifecycle } from "@/lib/activity/lifecycle";
 import type { LifecycleTrigger } from "@/lib/ui/lifecycle";
@@ -184,6 +185,10 @@ export async function startOrRestartApp(opts: {
   if (!result.success) {
     return { success: false, action: "none", failure: result.failure, log: result.log };
   }
+
+  // Asking for it to run is the opposite of shelving it. Cleared on the owner,
+  // so restarting one service unparks the stack it belongs to.
+  await setParked(ownerId, false);
 
   // The containers are new; the row still describes the ones they replaced.
   const observed = await reconcileAppNow(app.id);

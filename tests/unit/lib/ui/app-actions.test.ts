@@ -11,6 +11,7 @@ function context(overrides: Partial<AppActionContext> = {}): AppActionContext {
   return {
     status: "active",
     isChildService: false,
+    parked: false,
     deploying: false,
     standbyAvailable: false,
     hasDeployed: true,
@@ -55,6 +56,7 @@ describe("appActionMenu", () => {
       "restart",
       "recreate",
       "rollback",
+      "park",
       "stop",
     ]);
   });
@@ -65,6 +67,7 @@ describe("appActionMenu", () => {
       "recreate",
       "deploy",
       "rollback",
+      "park",
     ]);
   });
 
@@ -77,9 +80,28 @@ describe("appActionMenu", () => {
 
   it("makes recreate the primary action for a missing container", () => {
     const ctx = context({ status: "missing" });
-    expect(shown(ctx)).toEqual(["recreate", "deploy", "rollback"]);
+    expect(shown(ctx)).toEqual(["recreate", "deploy", "rollback", "park"]);
     expect(has(ctx, "start")).toBe(false);
     expect(has(ctx, "restart")).toBe(false);
+  });
+
+  it("does not offer to park a running app", () => {
+    expect(has(context({ status: "active" }), "park")).toBe(false);
+  });
+
+  it("offers unpark on a parked app whatever it is doing, and never park", () => {
+    for (const status of ["active", "stopped", "missing", "error"] as const) {
+      const ctx = context({ status, parked: true });
+      expect(has(ctx, "unpark")).toBe(true);
+      expect(has(ctx, "park")).toBe(false);
+    }
+  });
+
+  it("states why park is refused rather than offering a row that fails", () => {
+    const ctx = context({ status: "stopped", parkRefusal: "Vardo manages this." });
+    expect(appActionMenu(ctx).find((i) => i.action === "park")?.disabled).toBe(
+      "Vardo manages this.",
+    );
   });
 
   it("disables rollback with a reason when no earlier success exists", () => {

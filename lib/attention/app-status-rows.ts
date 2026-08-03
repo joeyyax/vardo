@@ -7,10 +7,7 @@
 
 import type { AttentionItem, AttentionRow } from "@/lib/ui/attention";
 
-/**
- * A transition older than this is settled, not something to act on now. Apps
- * kept parked read broken forever, so an unbounded row would never clear.
- */
+/** A transition older than this is settled, not something to act on now. */
 export const APP_DOWN_WINDOW_HOURS = 48;
 
 /**
@@ -30,14 +27,17 @@ export type StatusSubject = {
   status: string;
   /** When the status last became what it is now. Null until the first transition. */
   statusChangedAt: Date | null;
+  /** Declared off on purpose. Nothing about being down is news on one of these. */
+  parked: boolean;
   /** Set on a compose child. Its parent is a separate subject. */
   parentAppId: string | null;
 };
 
 /**
- * Apps that broke recently enough to still be news. A null stamp means the app
- * has not transitioned since the column landed, which is what a parked app
- * looks like — it stays null because rewriting the same status leaves it alone.
+ * Apps that broke recently enough to still be news, plus any that are broken
+ * with no stamp to date it. A null stamp is not evidence of anything — the app
+ * has just not transitioned since the column landed — so it earns the row
+ * without a duration rather than being dropped from it.
  */
 export function appStatusRows(
   apps: StatusSubject[],
@@ -50,21 +50,21 @@ export function appStatusRows(
   for (const app of apps) {
     const detail = STATUS_DETAIL[app.status];
     if (!detail) continue;
+    if (app.parked) continue;
 
     // A stack deploy replaces every container in it, so a child reads missing
     // partway through and is not evidence of anything.
     const parent = app.parentAppId ? byId.get(app.parentAppId) : undefined;
     if (parent?.status === "deploying") continue;
 
-    if (!app.statusChangedAt) continue;
-    if (now - app.statusChangedAt.getTime() > windowMs) continue;
+    if (app.statusChangedAt && now - app.statusChangedAt.getTime() > windowMs) continue;
 
     items.set(app.id, {
       id: app.id,
       name: parent ? `${parent.displayName} · ${app.displayName}` : app.displayName,
       href: `/apps/${app.name}`,
       detail,
-      since: app.statusChangedAt.toISOString(),
+      since: app.statusChangedAt?.toISOString(),
     });
   }
 
@@ -82,7 +82,7 @@ export function appStatusRows(
       label: "App down",
       tone: "error",
       items: [...items.values()],
-      footer: `Each of these changed in the last ${APP_DOWN_WINDOW_HOURS} hours. One left down on purpose drops off this list on its own.`,
+      footer: `Each of these broke in the last ${APP_DOWN_WINDOW_HOURS} hours, or has no record of when. Park one to say it is down on purpose and drop it off this list.`,
     },
   ];
 }
@@ -119,9 +119,15 @@ export function appStoppedRows(apps: StatusSubject[]): AttentionRow[] {
       services.set(app.parentAppId, (services.get(app.parentAppId) ?? 0) + 1);
     }
   }
-  for (const [parentId, count] of services) {
-    const item = items.get(parentId);
-    if (item) item.detail = `${count} service${count === 1 ? "" : "s"}`;
+  // Parked reads beside the count rather than removing the row: the inventory
+  // is how a shelved stack stays findable, and saying why it is quiet is the
+  // whole point of the flag.
+  for (const [id, item] of items) {
+    const parts: string[] = [];
+    if (byId.get(id)?.parked) parts.push("parked");
+    const count = services.get(id);
+    if (count) parts.push(`${count} service${count === 1 ? "" : "s"}`);
+    if (parts.length > 0) item.detail = parts.join(" · ");
   }
 
   if (items.size === 0) return [];

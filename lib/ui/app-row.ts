@@ -73,9 +73,16 @@ const STATUS_WORD: Record<string, string> = {
 
 /**
  * The word beside the name. Healthy rows drop it — the dot already says it —
- * and so does any row matching the status its header already states.
+ * and so does any row matching the status its header already states. Parked
+ * beats the status word: which shape of off it is stops mattering once someone
+ * has said it is off on purpose.
  */
-export function statusWord(status: string, sharedStatus?: string | null): string | null {
+export function statusWord(
+  status: string,
+  sharedStatus?: string | null,
+  parked = false,
+): string | null {
+  if (parked && status !== "active") return "parked";
   if (status === "active") return null;
   if (sharedStatus && status === sharedStatus) return null;
   return STATUS_WORD[status] ?? null;
@@ -97,7 +104,9 @@ const STATUS_RANK: Record<string, number> = {
   active: 4,
 };
 
-export function statusRank(status: string): number {
+/** Parked sorts below everything, running included — it is the quietest row there is. */
+export function statusRank(status: string, parked = false): number {
+  if (parked) return 5;
   return STATUS_RANK[status] ?? 3;
 }
 

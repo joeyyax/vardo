@@ -19,6 +19,7 @@ const {
   reconcileAppNowMock,
   recordLifecycleMock,
   readSlotPartitionMock,
+  setParkedMock,
 } = vi.hoisted(() => {
   const execFileAsyncMock = vi.fn();
   const execFileMock = vi.fn();
@@ -38,12 +39,14 @@ const {
     reconcileAppNowMock: vi.fn(),
     recordLifecycleMock: vi.fn(),
     readSlotPartitionMock: vi.fn(),
+    setParkedMock: vi.fn(),
   };
 });
 
 vi.mock("child_process", () => ({ execFile: execFileMock }));
 vi.mock("fs/promises", () => ({ access: accessMock, readlink: readlinkMock }));
 vi.mock("@/lib/db", () => ({ db: { query: { apps: { findFirst: appsFindFirst } } } }));
+vi.mock("@/lib/db/app-parked", () => ({ setParked: setParkedMock }));
 vi.mock("@/lib/docker/deploy", () => ({ restartContainers: restartContainersMock }));
 vi.mock("@/lib/docker/resolve-env", () => ({ resolveDefaultEnv: resolveDefaultEnvMock }));
 vi.mock("@/lib/docker/status-reconcile", () => ({ reconcileAppNow: reconcileAppNowMock }));
@@ -110,6 +113,12 @@ describe("startOrRestartApp — running app", () => {
     expect(recordLifecycleMock).toHaveBeenCalledWith(
       expect.objectContaining({ kind: "restarted", trigger: "mcp", userId: "u1" }),
     );
+  });
+
+  it("unparks what it was asked to run", async () => {
+    await start();
+
+    expect(setParkedMock).toHaveBeenCalledWith("app-1", false);
   });
 
   it("records what Docker reported and how long the restart took", async () => {

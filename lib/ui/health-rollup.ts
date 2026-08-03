@@ -14,6 +14,8 @@ export type RollupMember = {
   priority?: "critical" | "standard" | "disposable" | null;
   conditions?: AppCondition[] | null;
   containerStartedAt?: Date | null;
+  /** Declared off on purpose. Counted, but kept out of the running fraction. */
+  parked?: boolean | null;
 };
 
 export type HealthRollup = {
@@ -27,7 +29,14 @@ export type HealthRollup = {
   critical: number;
   /** Members carrying a warning or critical condition. */
   attention: number;
+  /** Declared off on purpose. Part of `total`, absent from every other count. */
+  parked: number;
 };
+
+/** Members expected to be doing something. Nothing else is judged against them. */
+export function liveTotal(rollup: HealthRollup): number {
+  return rollup.total - rollup.parked;
+}
 
 /**
  * Counts a group one level deep. Rows nested under a parent in the same list
@@ -44,17 +53,24 @@ export function rollupHealth(members: RollupMember[]): HealthRollup {
     missing: 0,
     critical: 0,
     attention: 0,
+    parked: 0,
   };
 
   for (const member of members) {
     if (member.parentAppId) continue;
     rollup.total++;
+    if (member.priority === "critical") rollup.critical++;
+    // A parked member is inventory. Counting its state would put a group at
+    // "2/3" or "1 crashed" over something nobody is waiting on.
+    if (member.parked) {
+      rollup.parked++;
+      continue;
+    }
     if (member.status === "active") rollup.active++;
     else if (member.status === "error") rollup.errors++;
     else if (member.status === "deploying") rollup.deploying++;
     else if (member.status === "missing") rollup.missing++;
     else if (member.status === "stopped") rollup.stopped++;
-    if (member.priority === "critical") rollup.critical++;
     if (member.conditions?.some((c) => c.severity === "critical" || c.severity === "warning")) {
       rollup.attention++;
     }
@@ -71,7 +87,7 @@ export function rollupHealth(members: RollupMember[]): HealthRollup {
 export function rollupUptimeSince(members: RollupMember[]): Date | null {
   let newest: Date | null = null;
   for (const member of members) {
-    if (member.parentAppId || member.status !== "active") continue;
+    if (member.parentAppId || member.parked || member.status !== "active") continue;
     const started = member.containerStartedAt;
     if (started && (!newest || started > newest)) newest = started;
   }
@@ -80,9 +96,10 @@ export function rollupUptimeSince(members: RollupMember[]): Date | null {
 
 /** State hue for the group, worst first. */
 export function rollupTone(rollup: HealthRollup): string {
+  const live = liveTotal(rollup);
   if (rollup.errors > 0) return "text-status-error";
   if (rollup.deploying > 0) return "text-status-info";
-  if (rollup.total > 0 && rollup.active === rollup.total) return "text-status-success";
+  if (live > 0 && rollup.active === live) return "text-status-success";
   if (rollup.active > 0) return "text-status-warning";
   return "text-status-neutral";
 }
@@ -91,14 +108,18 @@ export function rollupTone(rollup: HealthRollup): string {
 export function rollupLabel(rollup: HealthRollup, noun: string): string {
   const plural = `${noun}s`;
   if (rollup.total === 0) return `No ${plural}`;
+  // Everything shelved reads as the declaration, not as a group that failed.
+  const live = liveTotal(rollup);
+  if (live === 0) return "Parked";
   if (rollup.errors > 0) return `${rollup.errors} crashed`;
   if (rollup.deploying > 0) return `${rollup.deploying} deploying`;
   // A fully stopped group reads as its state, not as a count of zero.
-  if (rollup.stopped === rollup.total) return "Stopped";
-  return `${rollup.active}/${rollup.total} ${rollup.total === 1 ? noun : plural}`;
+  if (rollup.stopped === live) return "Stopped";
+  return `${rollup.active}/${live} ${live === 1 ? noun : plural}`;
 }
 
 /** True while the group is fully up, which is when the dot pulses. */
 export function rollupIsSteady(rollup: HealthRollup): boolean {
-  return rollup.total > 0 && rollup.active === rollup.total;
+  const live = liveTotal(rollup);
+  return live > 0 && rollup.active === live;
 }

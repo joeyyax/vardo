@@ -35,6 +35,8 @@ const PHRASES: Record<string, Phrase> = {
   "app.restarted": { text: "restarted" },
   "app.stopped": { text: "stopped" },
   "app.started": { text: "started" },
+  "app.parked": { text: "parked" },
+  "app.unparked": { text: "unparked" },
   "app.crashed": { text: "detected a crash on" },
   "app.crash_looping": { text: "detected a crash loop on" },
   "app.recovered": { text: "confirmed recovery of" },
