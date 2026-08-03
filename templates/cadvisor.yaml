@@ -16,14 +16,16 @@ composeContent: |
       privileged: true
       command:
         - --housekeeping_interval=30s
-        - --disable_metrics=disk,diskIO,udp,percpu
+        # disk and diskIO drive per-container filesystem usage and write rates.
+        - --disable_metrics=udp,percpu
         - --docker_only=true
       volumes:
         - /:/rootfs:ro
         - /var/run:/var/run:ro
         - /sys:/sys:ro
         - /var/lib/docker/:/var/lib/docker:ro
-      mem_limit: 256m
+      # Disk metrics walk every container's filesystem, so this is not 256m.
+      mem_limit: 512m
       # Vardo reaches this at http://cadvisor:8080. Without joining the shared
       # network the container is unreachable and metrics silently never arrive.
       networks:
