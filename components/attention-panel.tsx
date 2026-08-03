@@ -89,7 +89,9 @@ function Subjects({ row, wide = false }: { row: AttentionRow; wide?: boolean }) 
             "squircle -mx-1.5 flex flex-wrap items-baseline gap-x-2 rounded-md px-1.5 transition-colors hover:bg-muted/60";
           return (
             <li key={item.id} className={wide ? "mb-1 break-inside-avoid" : undefined}>
-              {item.external ? (
+              {!item.href ? (
+                <span className={className}>{content}</span>
+              ) : item.external ? (
                 <a href={item.href} target="_blank" rel="noopener noreferrer" className={className}>
                   {content}
                 </a>

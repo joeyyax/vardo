@@ -1,11 +1,18 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { AlertTriangle, ChevronDown } from "lucide-react";
 
 import { AttentionRowList } from "@/components/attention-panel";
-import { summarize, type AttentionRow, type AttentionTone } from "@/lib/ui/attention";
+import { useInfrastructureStatus } from "@/hooks/use-infrastructure-status";
+import {
+  announceAttention,
+  mergeAttentionRows,
+  summarize,
+  type AttentionRow,
+  type AttentionTone,
+} from "@/lib/ui/attention";
 
 const POLL_MS = 60_000;
 
@@ -27,20 +34,25 @@ const DOT: Record<AttentionTone, string> = {
  * Instance-wide notices as page chrome — one line under the nav on every page,
  * expanding in place. It sits outside the content column so the page title
  * never moves when the fleet changes.
+ *
+ * Two sources: this org's notices, and the instance infrastructure every
+ * session sees whatever org it is scoped to.
  */
 export function AttentionBar({ orgId }: { orgId: string }) {
-  const [rows, setRows] = useState<AttentionRow[]>([]);
+  const [orgRows, setOrgRows] = useState<AttentionRow[]>([]);
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
+  const router = useRouter();
   const inFlight = useRef(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const infra = useInfrastructureStatus();
 
   const load = useCallback(async () => {
     if (inFlight.current) return;
     inFlight.current = true;
     try {
       const res = await fetch(`/api/v1/organizations/${orgId}/attention`);
-      if (res.ok) setRows((await res.json()).rows ?? []);
+      if (res.ok) setOrgRows((await res.json()).rows ?? []);
     } catch {
       // Leave the last known rows up rather than blanking the bar on a blip.
     } finally {
@@ -77,15 +89,23 @@ export function AttentionBar({ orgId }: { orgId: string }) {
     };
   }, [open]);
 
-  const summary = useMemo(() => summarize(rows), [rows]);
+  const summary = useMemo(
+    () => summarize(mergeAttentionRows(infra.rows, orgRows)),
+    [infra.rows, orgRows],
+  );
+
+  // A self-deploy swapped the server out from under this page — pull fresh
+  // server data once it answers again rather than leaving the old render up.
+  useEffect(() => {
+    if (infra.resolvedAt !== null) router.refresh();
+  }, [infra.resolvedAt, router]);
 
   // Close on the transition to healthy so the panel does not linger empty.
   useEffect(() => {
     if (summary.rows.length === 0) setOpen(false);
   }, [summary.rows.length]);
 
-  if (summary.rows.length === 0) return null;
-
+  const empty = summary.rows.length === 0;
   const worst = summary.worst ?? "neutral";
   const headline =
     summary.faults === 0
@@ -97,51 +117,59 @@ export function AttentionBar({ orgId }: { orgId: string }) {
   // within 1 L of the page background in light mode, so the band vanishes.
   return (
     <div ref={containerRef} className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        aria-controls="attention-detail"
-        className="w-full border-b bg-card text-sm transition-colors hover:bg-muted/50"
-      >
-        <div className="container flex h-11 items-center gap-3">
-          {summary.faults > 0 ? (
-            <AlertTriangle aria-hidden="true" className={`size-4 shrink-0 ${ACCENT[worst]}`} />
-          ) : (
-            <span aria-hidden="true" className={`size-2 shrink-0 rounded-full ${DOT[worst]}`} />
-          )}
+      {/* Mounted even when healthy: a live region added at the same moment as
+          its content is not announced. */}
+      <span role="status" aria-live="polite" className="sr-only">
+        {announceAttention(summary.rows)}
+      </span>
 
-          <span className="shrink-0 font-medium">{headline}</span>
+      {!empty && (
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          aria-controls="attention-detail"
+          className="w-full border-b bg-card text-sm transition-colors hover:bg-muted/50"
+        >
+          <div className="container flex h-11 items-center gap-3">
+            {summary.faults > 0 ? (
+              <AlertTriangle aria-hidden="true" className={`size-4 shrink-0 ${ACCENT[worst]}`} />
+            ) : (
+              <span aria-hidden="true" className={`size-2 shrink-0 rounded-full ${DOT[worst]}`} />
+            )}
 
-          {/* Few enough to name: say which, so nobody expands to find one chip. */}
-          {summary.subjects.length > 0 ? (
-            <span className="min-w-0 truncate text-muted-foreground">
-              {summary.subjects.map((s) => s.name).join(", ")}
-            </span>
-          ) : (
-            /* Narrow screens get the worst kind rather than nothing — a bare
-               count is the most alarming, least useful thing to show. */
-            <span className="flex min-w-0 gap-x-3 truncate">
-              {summary.kinds.map((k, i) => (
-                <span
-                  key={k.key}
-                  className={`shrink-0 ${ACCENT[k.tone]} ${i === 0 ? "" : "hidden sm:inline"}`}
-                >
-                  {k.label}
-                  <span className="ml-1 tabular-nums opacity-70">{k.count}</span>
-                </span>
-              ))}
-            </span>
-          )}
+            <span className="shrink-0 font-medium">{headline}</span>
 
-          <ChevronDown
-            aria-hidden="true"
-            className={`ml-auto size-4 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`}
-          />
-        </div>
-      </button>
+            {/* Few enough to name: say which, so nobody expands to find one chip. */}
+            {summary.subjects.length > 0 ? (
+              <span className="min-w-0 truncate text-muted-foreground">
+                {summary.subjects.map((s) => s.name).join(", ")}
+              </span>
+            ) : (
+              /* Narrow screens get the worst kind rather than nothing — a bare
+                 count is the most alarming, least useful thing to show. */
+              <span className="flex min-w-0 gap-x-3 truncate">
+                {summary.kinds.map((k, i) => (
+                  <span
+                    key={k.key}
+                    className={`shrink-0 ${ACCENT[k.tone]} ${i === 0 ? "" : "hidden sm:inline"}`}
+                  >
+                    {k.label}
+                    <span className="ml-1 tabular-nums opacity-70">{k.count}</span>
+                  </span>
+                ))}
+              </span>
+            )}
 
-      {open && (
+            <ChevronDown
+              aria-hidden="true"
+              className={`ml-auto size-4 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`}
+            />
+          </div>
+        </button>
+      )}
+
+      {!empty && open && (
         <div
           id="attention-detail"
           className="absolute inset-x-0 top-full z-30 max-h-[70vh] overflow-y-auto border-b bg-card shadow-lg"

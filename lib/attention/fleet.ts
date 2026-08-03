@@ -14,16 +14,11 @@ import {
 
 export type FleetAttention = {
   unreachableDomains: { id: string; domain: string; appName: string | null; error: string | null }[];
-  servicesDown: ServiceDown[];
 };
 
-/** Domains whose most recent check failed, and services still alerting. */
-export async function getFleetAttention(orgId: string, now = new Date()): Promise<FleetAttention> {
-  const [unreachableDomains, servicesDown] = await Promise.all([
-    loadUnreachableDomains(orgId),
-    loadServicesDown(now),
-  ]);
-  return { unreachableDomains, servicesDown };
+/** Domains whose most recent check failed. */
+export async function getFleetAttention(orgId: string): Promise<FleetAttention> {
+  return { unreachableDomains: await loadUnreachableDomains(orgId) };
 }
 
 async function loadUnreachableDomains(orgId: string): Promise<FleetAttention["unreachableDomains"]> {
@@ -73,7 +68,11 @@ async function loadUnreachableDomains(orgId: string): Promise<FleetAttention["un
     }));
 }
 
-async function loadServicesDown(now: Date): Promise<FleetAttention["servicesDown"]> {
+/**
+ * Services the health monitor is still alerting on. Instance-wide, so this
+ * feeds the infrastructure rows rather than any one org's.
+ */
+export async function getServicesDown(now = new Date()): Promise<ServiceDown[]> {
   const row = await db.query.systemSettings.findFirst({
     where: eq(systemSettings.key, ALERT_STATE_KEY),
   });
