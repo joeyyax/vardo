@@ -30,6 +30,7 @@ import {
   parseCompose,
   sanitizeCompose,
   sharedMarkerTypeErrors,
+  sharedMarkerWarnings,
   validateCompose,
   type ComposeFile,
 } from "../compose";
@@ -71,9 +72,17 @@ function parseAndSanitize(yaml: string, log: (msg: string) => void, opts?: Parse
   // Before parseCompose, which drops a non-boolean marker and leaves no trace.
   // The save routes check too, but compose read out of a git clone reaches
   // deploy without passing through any of them.
+  for (const warning of sharedMarkerWarnings(yaml)) {
+    log(`[deploy] Warning: ${warning}`);
+  }
   const markerErrors = sharedMarkerTypeErrors(yaml);
   if (markerErrors.length > 0) {
-    throw new DeployBlockedError(markerErrors.join("\n"));
+    // A rollback checks out a commit nobody can edit, so name the way out.
+    throw new DeployBlockedError(
+      `${markerErrors.join("\n")}\n` +
+        `If this is a rollback, the commit cannot be edited — use instant rollback, ` +
+        `which restores the previous slot's containers without rebuilding.`,
+    );
   }
   const compose = parseCompose(yaml);
   // Trusted orgs bypass all mount restrictions — no sanitization, no deny list.
