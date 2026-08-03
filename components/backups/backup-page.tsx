@@ -106,6 +106,9 @@ export function BackupPage({
 
   // Auto-backup banner
   const autoTarget = systemTargets[0];
+  // The history below is full of runs from the target these cards hide, so an
+  // empty card has to say whose backups it is empty of.
+  const managed = scope === "org" && !!autoTarget;
   const autoJobs = autoTarget ? jobs.filter((j) => j.target.id === autoTarget.id) : [];
 
   return (
@@ -144,8 +147,12 @@ export function BackupPage({
             {!hasVisibleTargets ? (
               <EmptyState
                 className="p-8"
-                title="No storage targets"
-                body="Add an S3 bucket, Cloudflare R2, Backblaze B2 or SSH server to start backing up."
+                title={managed ? "No targets of your own" : "No storage targets"}
+                body={
+                  managed
+                    ? "Automatic backups run against a target Vardo manages. Add an S3 bucket, Cloudflare R2, Backblaze B2 or SSH server for a second copy."
+                    : "Add an S3 bucket, Cloudflare R2, Backblaze B2 or SSH server to start backing up."
+                }
               />
             ) : (
               <div className="space-y-2">
@@ -179,8 +186,12 @@ export function BackupPage({
             {!hasVisibleTargets ? (
               <EmptyState
                 className="p-8"
-                title="No backup jobs yet"
-                body="Jobs can be added after you add a storage target."
+                title={managed ? "No jobs of your own" : "No backup jobs yet"}
+                body={
+                  managed
+                    ? "The automatic schedule above is managed for you. Add a storage target to run jobs of your own."
+                    : "Jobs can be added after you add a storage target."
+                }
               />
             ) : visibleJobs.length === 0 ? (
               <EmptyState
