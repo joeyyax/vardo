@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import {
+  apps,
   backupJobs,
   backupJobApps,
   backupTargets,
@@ -144,6 +145,20 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       );
     }
 
+    // Every app must belong to this org — ids come straight from the request body.
+    const appIds = [...new Set(data.appIds)];
+    const ownedApps = await db.query.apps.findMany({
+      where: and(inArray(apps.id, appIds), eq(apps.organizationId, orgId)),
+      columns: { id: true },
+    });
+
+    if (ownedApps.length !== appIds.length) {
+      return NextResponse.json(
+        { error: "One or more apps not found" },
+        { status: 404 }
+      );
+    }
+
     const jobId = nanoid();
 
     const [job] = await db
@@ -165,9 +180,9 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       .returning();
 
     // Create app associations
-    if (data.appIds.length > 0) {
+    if (appIds.length > 0) {
       await db.insert(backupJobApps).values(
-        data.appIds.map((appId) => ({
+        appIds.map((appId) => ({
           backupJobId: jobId,
           appId,
         }))
