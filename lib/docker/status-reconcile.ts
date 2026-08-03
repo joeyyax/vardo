@@ -17,7 +17,19 @@ import { listAllContainers, inspectContainer, type ContainerInfo } from "./clien
 import { logger } from "@/lib/logger";
 import { memoryLimitDrifted } from "./limit-drift";
 import { matchContainers } from "./container-match";
+import {
+  exitCandidates,
+  exitReasonFor,
+  parseExitCode,
+  reasonSurvivesRestart,
+  worstExitReason,
+  type ExitReason,
+} from "./exit-reason";
 import { closeOnShutdown } from "@/lib/shutdown";
+
+// Lives with the exit classifier it feeds; re-exported for the callers that
+// have always read it from here.
+export { parseExitCode };
 
 const log = logger.child("status-reconcile");
 
@@ -30,12 +42,6 @@ export type ObservedStatus = "active" | "error" | "stopped" | "missing";
 // ---------------------------------------------------------------------------
 // Pure decision logic (unit tested)
 // ---------------------------------------------------------------------------
-
-/** Exit code embedded in a list-API status string, e.g. "Exited (137) 2 days ago". */
-export function parseExitCode(status: string): number | null {
-  const m = /^Exited \((\d+)\)/.exec(status);
-  return m ? Number(m[1]) : null;
-}
 
 /**
  * How long "deploying" is honored before the reconciler takes the status back.
@@ -68,9 +74,47 @@ export function deriveStatus(containers: ContainerInfo[]): ObservedStatus {
   return "stopped";
 }
 
+/** Whether the stored reason still describes what Docker reports, so a settled app skips its write. */
+export function exitReasonsEqual(a: ExitReason | null, b: ExitReason | null | undefined): boolean {
+  if (!a || !b) return !a && !b;
+  return a.kind === b.kind && a.exitCode === b.exitCode && a.containerName === b.containerName;
+}
+
 // ---------------------------------------------------------------------------
 // Tick
 // ---------------------------------------------------------------------------
+
+/**
+ * Why this app's containers are down. Only containers that ended badly are
+ * inspected — State.OOMKilled is the one field that tells an OOM kill apart
+ * from an ordinary stop, and the list API does not carry it.
+ */
+async function resolveExitReason(
+  matched: ContainerInfo[],
+  now: Date,
+): Promise<ExitReason | null> {
+  const reasons: ExitReason[] = [];
+  for (const c of exitCandidates(matched)) {
+    try {
+      const info = await inspectContainer(c.id);
+      const reason = exitReasonFor(
+        {
+          containerId: c.id,
+          containerName: c.name,
+          oomKilled: info.state.oomKilled,
+          exitCode: info.state.exitCode,
+          memoryLimit: info.memoryBytes,
+          finishedAt: info.state.finishedAt,
+        },
+        now,
+      );
+      if (reason) reasons.push(reason);
+    } catch {
+      // Container went away between list and inspect — nothing left to explain.
+    }
+  }
+  return worstExitReason(reasons);
+}
 
 export async function tickStatusReconcile(): Promise<void> {
   let containers: ContainerInfo[];
@@ -95,6 +139,7 @@ export async function tickStatusReconcile(): Promise<void> {
       containerMemoryLimit: true,
       memoryLimit: true,
       needsRedeploy: true,
+      exitReason: true,
       updatedAt: true,
     },
   });
@@ -115,6 +160,7 @@ export async function tickStatusReconcile(): Promise<void> {
 
         let startedAt: Date | null = null;
         let memoryLimit: number | null = null;
+        let exitReason: ExitReason | null = null;
         if (observed === "active") {
           const running = matched.find((c) => c.state === "running");
           if (running) {
@@ -128,7 +174,10 @@ export async function tickStatusReconcile(): Promise<void> {
               startedAt = app.containerStartedAt;
               memoryLimit = app.containerMemoryLimit;
             }
+            exitReason = reasonSurvivesRestart(app.exitReason, { id: running.id, startedAt }, now);
           }
+        } else {
+          exitReason = await resolveExitReason(matched, now);
         }
 
         if (observed === "missing" && app.status !== "missing") missing.push(app.name);
@@ -142,7 +191,8 @@ export async function tickStatusReconcile(): Promise<void> {
           observed === app.status &&
           startedAt?.getTime() === app.containerStartedAt?.getTime() &&
           memoryLimit === app.containerMemoryLimit &&
-          needsRedeploy === !!app.needsRedeploy;
+          needsRedeploy === !!app.needsRedeploy &&
+          exitReasonsEqual(exitReason, app.exitReason);
         return {
           id: app.id,
           touchOnly: unchanged,
@@ -150,6 +200,7 @@ export async function tickStatusReconcile(): Promise<void> {
           startedAt,
           memoryLimit,
           needsRedeploy,
+          exitReason,
           running: observed === "active",
         };
       }),
@@ -168,6 +219,7 @@ export async function tickStatusReconcile(): Promise<void> {
         containerStartedAt: u.startedAt,
         containerMemoryLimit: u.memoryLimit,
         needsRedeploy: u.needsRedeploy,
+        exitReason: u.exitReason,
         // Stamped only while running and never cleared, so it survives the
         // container going away. Idle age is measured from this.
         ...(u.running ? { lastRunningAt: now } : {}),
