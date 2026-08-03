@@ -365,10 +365,12 @@ export async function tickTraefikDrift(): Promise<void> {
 
 let interval: NodeJS.Timeout | null = null;
 let ticking = false;
+let signalsInstalled = false;
 
 export function startTraefikDriftMonitor(): void {
   if (interval) return;
 
+  installSignalHandlers();
   log.info(`Monitor started (${POLL_INTERVAL_MS / 1000}s interval)`);
   interval = setInterval(async () => {
     if (ticking) return;
@@ -396,6 +398,12 @@ function onShutdown(signal: string) {
   stopTraefikDriftMonitor();
 }
 
-process.once("SIGTERM", () => onShutdown("SIGTERM"));
-process.once("SIGINT", () => onShutdown("SIGINT"));
-process.once("exit", () => stopTraefikDriftMonitor());
+// Installed from the start function, not at module scope — traefik-cutover
+// imports this module for its helpers and must not add listeners.
+function installSignalHandlers(): void {
+  if (signalsInstalled) return;
+  signalsInstalled = true;
+  process.once("SIGTERM", () => onShutdown("SIGTERM"));
+  process.once("SIGINT", () => onShutdown("SIGINT"));
+  process.once("exit", () => stopTraefikDriftMonitor());
+}
