@@ -17,8 +17,9 @@ composeContent: |
       privileged: true
       command:
         - --housekeeping_interval=30s
-        # disk and diskIO drive per-container filesystem usage and write rates.
-        - --disable_metrics=udp,percpu
+        # cAdvisor's own default disable list plus percpu. Setting this flag
+        # replaces that default, so the expensive /proc scanners must be named.
+        - --disable_metrics=advtcp,cpu_topology,cpuset,hugetlb,memory_numa,percpu,process,referenced_memory,resctrl,sched,tcp,udp
         - --docker_only=true
       volumes:
         - /:/rootfs:ro
