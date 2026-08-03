@@ -4,6 +4,7 @@ import nextPkg from "next/package.json";
 import { getAuthMethodStates } from "@/lib/config/auth-methods";
 import { CORE_SERVICE_FEATURES } from "@/lib/infra/core-services";
 import { formatDuration } from "@/lib/ui/service-health";
+import { cpuDisplay, formatBytes, sharePercent } from "@/lib/metrics/format";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -29,6 +30,10 @@ export type ResourceStatus = {
   total: number;
   percent: number;
   unit: string;
+  /** The share, as rendered. */
+  headline: string;
+  /** The line under the bar, in the unit the ceiling is set in. */
+  detail: string;
   status: "ok" | "warning" | "critical";
 };
 
@@ -387,14 +392,18 @@ async function getResourceStatuses(): Promise<ResourceStatus[]> {
     ]);
 
     if (systemInfo && totals) {
-      const maxCpu = systemInfo.cpus * 100;
-      const cpuPercent = maxCpu > 0 ? (totals.cpuPercent / maxCpu) * 100 : 0;
+      // Cores, the unit Docker takes limits in, through the formatter /metrics
+      // reads — cAdvisor's per-core percent means nothing against a 32-core host.
+      const cpu = cpuDisplay(totals.cpuPercent, { kind: "capacity", cores: systemInfo.cpus });
+      const cpuPercent = cpu.share ?? 0;
       resources.push({
         name: "CPU",
-        current: Math.round(totals.cpuPercent * 100) / 100,
-        total: maxCpu,
+        current: cpu.cores ?? 0,
+        total: systemInfo.cpus,
         percent: Math.round(cpuPercent * 10) / 10,
-        unit: "%",
+        unit: "cores",
+        headline: cpu.headline,
+        detail: cpu.detail ?? cpu.headline,
         status: resourceStatus(cpuPercent, THRESHOLDS.cpu),
       });
 
@@ -407,6 +416,8 @@ async function getResourceStatuses(): Promise<ResourceStatus[]> {
         total: systemInfo.memoryTotal,
         percent: Math.round(memPercent * 10) / 10,
         unit: "bytes",
+        headline: sharePercent(memPercent),
+        detail: `${formatBytes(totals.memoryBytes)} / ${formatBytes(systemInfo.memoryTotal)}`,
         status: resourceStatus(memPercent, THRESHOLDS.memory),
       });
     }
@@ -431,6 +442,8 @@ async function getResourceStatuses(): Promise<ResourceStatus[]> {
             total: diskTotal,
             percent: Math.round(diskPercent * 10) / 10,
             unit: "bytes",
+            headline: sharePercent(diskPercent),
+            detail: `${formatBytes(diskUsed)} / ${formatBytes(diskTotal)}`,
             status: resourceStatus(diskPercent, THRESHOLDS.disk),
           });
         }
