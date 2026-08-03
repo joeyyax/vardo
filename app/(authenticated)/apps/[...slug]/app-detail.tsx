@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   AlertTriangle,
-  Pencil,
   Trash2,
   Loader2,
   Plus,
@@ -18,7 +17,6 @@ import {
   Square,
   ChevronDown,
   Check,
-  EllipsisVertical,
   GitBranch,
   Undo2,
   Zap,
@@ -71,6 +69,8 @@ import { appActionMenu, type AppAction, type AppActionItem } from "@/lib/ui/app-
 import { AppNetworking } from "./app-networking";
 import { AppConnect } from "./app-connect";
 import { AppSettingsPanel } from "./app-settings-panel";
+import { DangerZone, DangerZoneRow } from "@/components/danger-zone";
+import { hasAppSettingsPageFields } from "@/lib/ui/app-settings-fields";
 import { AppDebug } from "./app-debug";
 import { ComposeDetail } from "./compose-detail";
 import { AppSecurity } from "./app-security";
@@ -203,6 +203,16 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
   // Child services are stack-level operations managed from the parent
   const isChildService = !!app.parentAppId;
 
+  // Decides which settings pages have anything to show, so an empty one keeps
+  // out of the rail.
+  const settingsFieldContext = {
+    isComposeParent: false,
+    isChildService,
+    deployType: app.deployType,
+    storedDeployType: app.deployType,
+    source: app.source,
+  };
+
   // Instant rollback is only offered when the standby slot can actually serve.
   const slotStatus = useSlotStatus(orgId, app.id, {
     enabled: !isChildService,
@@ -328,6 +338,10 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
 
   // Set when the API would 403 the stop, so the menu offers it disabled with the reason.
   const stopRefusal = systemManagedRefusal(app, "stop");
+
+  // Same for delete, which the Danger Zone states rather than offering a button
+  // that fails.
+  const deleteRefusal = systemManagedRefusal(app, "delete");
 
   // Newest success other than the one serving — what a rollback would restore.
   const rollbackTargetId =
@@ -477,64 +491,6 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
                   {actions.map(renderAction)}
                 </DropdownMenuContent>
               </DropdownMenu>
-            )}
-            {!app.isSystemManaged && (
-              <>
-                <Button size="sm" variant="outline" onClick={() => setActiveTab("settings")}>
-                  <Pencil className="mr-1.5 size-4" />
-                  Edit
-                </Button>
-                {canDelete && (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        size="icon-sm"
-                        variant="outline"
-                      >
-                        <EllipsisVertical className="size-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      {/* Parent switcher */}
-                      {!app.project && allParentApps.length > 0 && (
-                        <>
-                          <DropdownMenuItem
-                            className="text-muted-foreground"
-                            onClick={() => setActiveTab("settings")}
-                          >
-                            <Plus className="mr-2 size-3.5" />
-                            Assign parent
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                        </>
-                      )}
-                      {!isProduction && selectedEnv && (
-                        <DropdownMenuItem
-                          className="text-destructive focus:text-destructive"
-                          onClick={() => setDeleteEnvOpen(true)}
-                        >
-                          <X className="mr-2 size-4" />
-                          Delete {selectedEnv.name} environment
-                        </DropdownMenuItem>
-                      )}
-                      {isChildService ? (
-                        <DropdownMenuItem disabled className="text-muted-foreground">
-                          <Trash2 className="mr-2 size-4" />
-                          Managed by the parent stack
-                        </DropdownMenuItem>
-                      ) : (
-                        <DropdownMenuItem
-                          className="text-destructive focus:text-destructive"
-                          onClick={() => setDeleteOpen(true)}
-                        >
-                          <Trash2 className="mr-2 size-4" />
-                          Delete app
-                        </DropdownMenuItem>
-                      )}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                )}
-              </>
             )}
           </div>
         }
@@ -758,6 +714,10 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
                   items: [
                     { value: "variables", label: "Variables", count: app.envVars.length },
                     { value: "networking", label: "Networking" },
+                    ...(hasAppSettingsPageFields("build", settingsFieldContext)
+                      ? [{ value: "build", label: "Build" }]
+                      : []),
+                    { value: "resources", label: "Resources" },
                     ...(featureFlags?.cron !== false ? [{ value: "cron", label: "Cron" }] : []),
                     { value: "settings", label: "Settings" },
                   ],
@@ -870,6 +830,18 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
             activeTab={activeTab}
             initialSubView={activeTab === "networking" ? initialSubView : undefined}
           />
+          {hasAppSettingsPageFields("networking", settingsFieldContext) && (
+            <div className="border-t pt-6">
+              <AppSettingsPanel
+                app={app}
+                orgId={orgId}
+                userRole={userRole}
+                allParentApps={allParentApps}
+                handleDeploy={handleDeploy}
+                page="networking"
+              />
+            </div>
+          )}
         </TabsContent>
 
         {featureFlags?.logging !== false && (
@@ -891,14 +863,76 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
           </TabsContent>
         )}
 
-        <TabsContent value="settings" className={tabPanelSurface}>
+        {hasAppSettingsPageFields("build", settingsFieldContext) && (
+          <TabsContent value="build" className={tabPanelSurface}>
+            <AppSettingsPanel
+              app={app}
+              orgId={orgId}
+              userRole={userRole}
+              allParentApps={allParentApps}
+              handleDeploy={handleDeploy}
+              page="build"
+            />
+          </TabsContent>
+        )}
+
+        <TabsContent value="resources" className={tabPanelSurface}>
           <AppSettingsPanel
             app={app}
             orgId={orgId}
             userRole={userRole}
             allParentApps={allParentApps}
             handleDeploy={handleDeploy}
+            page="resources"
           />
+        </TabsContent>
+
+        <TabsContent value="settings" className="space-y-6">
+          <div className={tabPanelSurface}>
+            <AppSettingsPanel
+              app={app}
+              orgId={orgId}
+              userRole={userRole}
+              allParentApps={allParentApps}
+              handleDeploy={handleDeploy}
+            />
+          </div>
+          {canDelete && (
+            <DangerZone>
+              {!isProduction && selectedEnv && (
+                <DangerZoneRow
+                  title={`Delete ${selectedEnv.name} environment`}
+                  description="Removes its variables and deployments. The app itself is untouched."
+                  action={
+                    <Button size="sm" variant="destructive" onClick={() => setDeleteEnvOpen(true)}>
+                      <X className="mr-1.5 size-4" />
+                      Delete environment
+                    </Button>
+                  }
+                />
+              )}
+              <DangerZoneRow
+                title="Delete app"
+                description={
+                  deleteRefusal ??
+                  (isChildService
+                    ? "Managed by the parent stack — delete the stack to remove this service."
+                    : "Removes all environments, deployments, domains and variables. This cannot be undone.")
+                }
+                action={
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    disabled={isChildService || deleteRefusal !== null}
+                    onClick={() => setDeleteOpen(true)}
+                  >
+                    <Trash2 className="mr-1.5 size-4" />
+                    Delete app
+                  </Button>
+                }
+              />
+            </DangerZone>
+          )}
         </TabsContent>
 
         {featureFlags?.terminal !== false && (

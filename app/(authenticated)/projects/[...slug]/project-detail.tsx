@@ -6,12 +6,11 @@ import { RelativeTime } from "@/components/relative-time";
 import {
   Plus,
   Boxes,
-  Pencil,
+  Lock,
   Rocket,
   Trash2,
   ChevronDown,
   Check,
-  EllipsisVertical,
   Loader2,
   RotateCcw,
   Square,
@@ -65,7 +64,11 @@ import { ProjectMetrics } from "./project-metrics";
 import { AddAppDropdown } from "../add-app-dropdown";
 import { ProjectInstances } from "@/components/mesh/project-instances";
 import { AppBackupHistory } from "@/components/backups/app-backup-history";
+import { DangerZone, DangerZoneRow } from "@/components/danger-zone";
 import { SystemBadge } from "@/components/system-badge";
+import { systemManagedRefusal } from "@/lib/api/system-managed";
+import { tabPanelSurface } from "@/lib/ui/tab-panel";
+import { cn } from "@/lib/utils";
 import type { MeshPeerSummary, ProjectInstanceSummary } from "@/lib/mesh/types";
 
 // ---------------------------------------------------------------------------
@@ -581,13 +584,17 @@ export function ProjectDetail({
   const eventSourcesRef = useRef<EventSource[]>([]);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [hoveredAppName, setHoveredAppName] = useState<string | null>(null);
-  const [editOpen, setEditOpen] = useState(false);
   const [editDisplayName, setEditDisplayName] = useState(project.displayName);
   const [editDescription, setEditDescription] = useState(project.description || "");
   const [editAllowBindMounts, setEditAllowBindMounts] = useState(project.allowBindMounts);
   const [editAllowDockerSocket, setEditAllowDockerSocket] = useState(project.allowDockerSocket);
   const [editSaving, setEditSaving] = useState(false);
   const [stopAllOpen, setStopAllOpen] = useState(false);
+
+  // Vardo rewrites its own project row on every boot and the API refuses both
+  // verbs, so Settings shows the refusal rather than controls that fail.
+  const editRefusal = systemManagedRefusal(project, "edit");
+  const deleteRefusal = systemManagedRefusal(project, "delete");
 
   // Filter out compose child apps — they render nested under their parent
   const topLevelApps = useMemo(
@@ -901,7 +908,6 @@ export function ProjectDetail({
       );
       if (res.ok) {
         toast.success("Project updated");
-        setEditOpen(false);
         router.refresh();
       } else {
         const data = await res.json().catch(() => ({}));
@@ -1002,32 +1008,7 @@ export function ProjectDetail({
                     </Button>
                   );
                 })()}
-                {!project.isSystemManaged && (
-                  <>
-                    <AddAppDropdown projectId={project.id} />
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button size="icon-sm" variant="outline">
-                          <EllipsisVertical className="size-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => setEditOpen(true)}>
-                          <Pencil className="mr-2 size-4" />
-                          Edit project
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          className="text-destructive focus:text-destructive"
-                          onClick={() => setDeleteOpen(true)}
-                        >
-                          <Trash2 className="mr-2 size-4" />
-                          Delete project
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </>
-                )}
+                {!project.isSystemManaged && <AddAppDropdown projectId={project.id} />}
               </>
 
           </div>
@@ -1103,6 +1084,7 @@ export function ProjectDetail({
                     ...(meshEnabled
                       ? [{ value: "instances", label: "Instances", count: projectInstances.length }]
                       : []),
+                    { value: "settings", label: "Settings" },
                   ],
                 },
                 {
@@ -1217,6 +1199,98 @@ export function ProjectDetail({
           </TabsContent>
         )}
 
+        <TabsContent value="settings" className="space-y-6">
+          <fieldset disabled={editRefusal !== null} className={cn(tabPanelSurface, "grid min-w-0 gap-5")}>
+            {editRefusal && (
+              <p className="flex items-start gap-2 text-sm text-muted-foreground">
+                <Lock className="mt-0.5 size-4 shrink-0" />
+                {editRefusal}
+              </p>
+            )}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-2">
+                <Label htmlFor="edit-name">Display Name</Label>
+                <Input
+                  id="edit-name"
+                  value={editDisplayName}
+                  onChange={(e) => setEditDisplayName(e.target.value)}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="edit-desc">Description</Label>
+                <Input
+                  id="edit-desc"
+                  value={editDescription}
+                  onChange={(e) => setEditDescription(e.target.value)}
+                  placeholder="Optional"
+                />
+              </div>
+            </div>
+            {isAdmin && (
+              <div className="flex items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <Label htmlFor="edit-bind-mounts">Allow bind mounts</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Permit host path mounts in compose definitions for this project. Enable only for trusted workloads.
+                  </p>
+                </div>
+                <Switch
+                  id="edit-bind-mounts"
+                  checked={editAllowBindMounts}
+                  onCheckedChange={setEditAllowBindMounts}
+                />
+              </div>
+            )}
+            {isAdmin && (
+              <div className="flex items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <Label htmlFor="edit-docker-socket">Allow Docker socket</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Permit mounting <span className="font-mono">/var/run/docker.sock</span> in compose definitions (Traefik docker-provider, Dozzle, Watchtower). Grants full control of the host Docker daemon — enable only for trusted workloads.
+                  </p>
+                </div>
+                <Switch
+                  id="edit-docker-socket"
+                  checked={editAllowDockerSocket}
+                  onCheckedChange={setEditAllowDockerSocket}
+                />
+              </div>
+            )}
+            {!editRefusal && (
+              <div className="flex justify-end border-t pt-4">
+                <Button onClick={handleEditProject} disabled={editSaving || !editDisplayName.trim()}>
+                  {editSaving ? "Saving..." : "Save changes"}
+                </Button>
+              </div>
+            )}
+          </fieldset>
+
+          {isAdmin && (
+            <DangerZone>
+              <DangerZoneRow
+                title="Delete project"
+                description={
+                  deleteRefusal ??
+                  (topLevelApps.length > 0
+                    ? `Its ${topLevelApps.length} app${topLevelApps.length === 1 ? "" : "s"} keep running but become unassigned.`
+                    : "This cannot be undone.")
+                }
+                action={
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    disabled={deleteRefusal !== null}
+                    onClick={() => setDeleteOpen(true)}
+                  >
+                    <Trash2 className="mr-1.5 size-4" />
+                    Delete project
+                  </Button>
+                }
+              />
+            </DangerZone>
+          )}
+        </TabsContent>
+
         </div>
       </Tabs>
 
@@ -1248,85 +1322,6 @@ export function ProjectDetail({
             </Button>
             <Button onClick={handleCreateEnv} disabled={newEnvSaving || !newEnvName.trim()}>
               {newEnvSaving ? "Creating..." : "Create Environment"}
-            </Button>
-          </BottomSheetFooter>
-        </BottomSheetContent>
-      </BottomSheet>
-
-      {/* Edit project sheet */}
-      <BottomSheet open={editOpen} onOpenChange={(open) => {
-        setEditOpen(open);
-        if (!open) {
-          setEditDisplayName(project.displayName);
-          setEditDescription(project.description || "");
-          setEditAllowBindMounts(project.allowBindMounts);
-          setEditAllowDockerSocket(project.allowDockerSocket);
-        }
-      }}>
-        <BottomSheetContent>
-          <BottomSheetHeader>
-            <BottomSheetTitle>Edit Project</BottomSheetTitle>
-            <BottomSheetDescription>
-              Update project name, description, and settings.
-            </BottomSheetDescription>
-          </BottomSheetHeader>
-          <div className="p-6 space-y-4">
-            <div className="grid gap-2">
-              <Label htmlFor="edit-name">Name</Label>
-              <Input
-                id="edit-name"
-                value={editDisplayName}
-                onChange={(e) => setEditDisplayName(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") handleEditProject(); }}
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="edit-desc">Description</Label>
-              <Input
-                id="edit-desc"
-                value={editDescription}
-                onChange={(e) => setEditDescription(e.target.value)}
-                placeholder="Optional description"
-                onKeyDown={(e) => { if (e.key === "Enter") handleEditProject(); }}
-              />
-            </div>
-            {isAdmin && (
-              <div className="flex items-center justify-between gap-4 pt-2">
-                <div className="space-y-1">
-                  <Label htmlFor="edit-bind-mounts">Allow bind mounts</Label>
-                  <p className="text-xs text-muted-foreground">
-                    Permit host path mounts in compose definitions for this project. Enable only for trusted workloads.
-                  </p>
-                </div>
-                <Switch
-                  id="edit-bind-mounts"
-                  checked={editAllowBindMounts}
-                  onCheckedChange={setEditAllowBindMounts}
-                />
-              </div>
-            )}
-            {isAdmin && (
-              <div className="flex items-center justify-between gap-4 pt-2">
-                <div className="space-y-1">
-                  <Label htmlFor="edit-docker-socket">Allow Docker socket</Label>
-                  <p className="text-xs text-muted-foreground">
-                    Permit mounting <span className="font-mono">/var/run/docker.sock</span> in compose definitions (Traefik docker-provider, Dozzle, Watchtower). Grants full control of the host Docker daemon — enable only for trusted workloads.
-                  </p>
-                </div>
-                <Switch
-                  id="edit-docker-socket"
-                  checked={editAllowDockerSocket}
-                  onCheckedChange={setEditAllowDockerSocket}
-                />
-              </div>
-            )}
-          </div>
-          <BottomSheetFooter>
-            <Button variant="outline" onClick={() => setEditOpen(false)} disabled={editSaving}>
-              Cancel
-            </Button>
-            <Button onClick={handleEditProject} disabled={editSaving || !editDisplayName.trim()}>
-              {editSaving ? "Saving..." : "Save"}
             </Button>
           </BottomSheetFooter>
         </BottomSheetContent>

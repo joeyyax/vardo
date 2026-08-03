@@ -2,7 +2,13 @@ import { describe, it, expect } from "vitest";
 
 import {
   appSettingsFields,
+  appSettingsPageFields,
+  hasAppSettingsPageFields,
+  APP_SETTINGS_PAGES,
+  APP_SETTINGS_FIELD_PAGE,
+  APP_SETTINGS_REDEPLOY_KEYS,
   type AppSettingsFieldContext,
+  type AppSettingsFieldName,
   type AppSettingsFields,
 } from "@/lib/ui/app-settings-fields";
 
@@ -119,6 +125,134 @@ describe("appSettingsFields", () => {
     for (const key of Object.keys(parent) as (keyof AppSettingsFields)[]) {
       if (key === "priorityInherit") continue;
       if (parent[key]) expect(plain[key]).toBe(true);
+    }
+  });
+});
+
+const fieldNames = Object.keys(APP_SETTINGS_FIELD_PAGE) as AppSettingsFieldName[];
+
+/** Field names the page shows for this app. */
+function shown(page: (typeof APP_SETTINGS_PAGES)[number], ctx: AppSettingsFieldContext) {
+  const fields = appSettingsPageFields(page, ctx);
+  return fieldNames.filter((name) => fields[name]);
+}
+
+describe("APP_SETTINGS_FIELD_PAGE", () => {
+  it("puts the ingress settings on the page that already owns domains", () => {
+    expect(APP_SETTINGS_FIELD_PAGE.containerPort).toBe("networking");
+    expect(APP_SETTINGS_FIELD_PAGE.backendProtocol).toBe("networking");
+  });
+
+  it("puts how the app runs on Resources", () => {
+    expect(shown("resources", plainApp).sort()).toEqual([
+      "diskWriteAlert",
+      "gpu",
+      "healthCheckTimeout",
+      "priority",
+      "resourceLimits",
+      "restartPolicy",
+    ]);
+  });
+
+  it("puts how the app is built and released on Build", () => {
+    expect(shown("build", context({ storedDeployType: "image" })).sort()).toEqual([
+      "autoDeploy",
+      "autoRollback",
+      "composeFilePath",
+      "deployType",
+      "gitSource",
+      "image",
+    ]);
+  });
+
+  it("leaves Settings the app's identity", () => {
+    expect(shown("settings", plainApp).sort()).toEqual(["identity", "project"]);
+  });
+
+  it("gives every field exactly one page, and no field none", () => {
+    // Two contexts, because the compose and Dockerfile path fields never show
+    // together.
+    const seen = new Map<AppSettingsFieldName, string>();
+    for (const ctx of [
+      context({ deployType: "compose", storedDeployType: "image" }),
+      context({ deployType: "dockerfile", storedDeployType: "image" }),
+    ]) {
+      for (const page of APP_SETTINGS_PAGES) {
+        for (const name of shown(page, ctx)) {
+          expect(seen.get(name) ?? page).toBe(page);
+          seen.set(name, page);
+        }
+      }
+    }
+    expect([...seen.keys()].sort()).toEqual([...fieldNames].sort());
+  });
+
+  it("keeps the redeploy seam on the keys Resources and Build write", () => {
+    // Nothing on Settings earns the "Redeploy now" prompt; renaming an app and
+    // halving its memory limit must not read as equally weighty.
+    expect(APP_SETTINGS_REDEPLOY_KEYS).toContain("cpuLimit");
+    expect(APP_SETTINGS_REDEPLOY_KEYS).toContain("memoryLimit");
+    expect(APP_SETTINGS_REDEPLOY_KEYS).toContain("priority");
+    expect(APP_SETTINGS_REDEPLOY_KEYS).toContain("gpuEnabled");
+    expect(APP_SETTINGS_REDEPLOY_KEYS).not.toContain("displayName");
+    expect(APP_SETTINGS_REDEPLOY_KEYS).not.toContain("projectId");
+    expect(APP_SETTINGS_REDEPLOY_KEYS).not.toContain("healthCheckTimeout");
+    expect(APP_SETTINGS_REDEPLOY_KEYS).not.toContain("diskWriteAlertThreshold");
+  });
+});
+
+describe("appSettingsPageFields", () => {
+  it("hides the other pages' fields, so a page writes only its own", () => {
+    const resources = appSettingsPageFields("resources", plainApp);
+    expect(resources.resourceLimits).toBe(true);
+    expect(resources.identity).toBe(false);
+    expect(resources.deployType).toBe(false);
+    expect(resources.containerPort).toBe(false);
+  });
+
+  it("narrows the app's own fields, never widens them", () => {
+    for (const ctx of [plainApp, composeParent, childService]) {
+      const all = appSettingsFields(ctx);
+      for (const page of APP_SETTINGS_PAGES) {
+        const fields = appSettingsPageFields(page, ctx);
+        for (const name of fieldNames) {
+          if (fields[name]) expect(all[name]).toBe(true);
+        }
+      }
+    }
+  });
+
+  it("keeps the inherit tier available wherever priority lands", () => {
+    expect(appSettingsPageFields("resources", childService).priorityInherit).toBe(true);
+  });
+});
+
+describe("hasAppSettingsPageFields", () => {
+  it("leaves a child service no Build page — its stack owns the build", () => {
+    expect(hasAppSettingsPageFields("build", childService)).toBe(false);
+    expect(hasAppSettingsPageFields("networking", childService)).toBe(false);
+  });
+
+  it("keeps the pages a child service does own", () => {
+    expect(hasAppSettingsPageFields("resources", childService)).toBe(true);
+    expect(hasAppSettingsPageFields("settings", childService)).toBe(true);
+  });
+
+  it("gives a compose parent every page", () => {
+    for (const page of APP_SETTINGS_PAGES) {
+      expect(hasAppSettingsPageFields(page, composeParent)).toBe(true);
+    }
+  });
+
+  it("gives a plain app every page, whatever it deploys from", () => {
+    for (const ctx of [
+      plainApp,
+      context({ deployType: "image", storedDeployType: "image", source: "image" }),
+      context({ deployType: "dockerfile", storedDeployType: "dockerfile" }),
+    ]) {
+      for (const page of APP_SETTINGS_PAGES) {
+        expect(hasAppSettingsPageFields(page, ctx)).toBe(true);
+      }
     }
   });
 });
