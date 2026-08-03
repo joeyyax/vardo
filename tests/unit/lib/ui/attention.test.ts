@@ -86,7 +86,7 @@ describe("isInlineRow", () => {
 describe("summarize", () => {
   const row = (
     key: string,
-    tone: "error" | "warning" | "neutral",
+    tone: "error" | "warning" | "neutral" | "activity",
     count: number,
   ) => ({
     key,
@@ -134,5 +134,28 @@ describe("summarize", () => {
     expect(s.rows).toEqual([]);
     expect(s.worst).toBeNull();
     expect(s.faults).toBe(0);
+  });
+
+  // A deploy in progress is not a problem — it must never count as one.
+  it("counts faults without counting activity rows", () => {
+    const s = summarize([row("deploying", "activity", 2), row("down", "error", 1)]);
+    expect(s.faults).toBe(1);
+  });
+
+  // Faults are the point of the bar; routine activity always sorts under them.
+  it("ranks activity behind every other tone", () => {
+    const s = summarize([
+      row("deploying", "activity", 1),
+      row("updates", "neutral", 1),
+      row("memory", "warning", 1),
+      row("down", "error", 1),
+    ]);
+    expect(s.rows.map((r) => r.key)).toEqual(["down", "memory", "updates", "deploying"]);
+  });
+
+  // Naming subjects in the headline is reserved for faults, not routine activity.
+  it("never names activity items as bar subjects", () => {
+    const s = summarize([row("deploying", "activity", 1), row("down", "error", 1)]);
+    expect(s.subjects.map((i) => i.name)).toEqual(["down-0"]);
   });
 });
