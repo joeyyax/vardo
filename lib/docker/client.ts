@@ -628,6 +628,32 @@ export async function inspectImageEnv(imageRef: string): Promise<string[]> {
   }
 }
 
+export interface ImageMeta {
+  id: string;
+  env: string[];
+  labels: Record<string, string>;
+}
+
+/**
+ * Env and labels of a local image. Null when the image is not on this host,
+ * which callers must read as "unknown", not as "nothing there to compare".
+ */
+export async function inspectImageMeta(imageRef: string): Promise<ImageMeta | null> {
+  try {
+    const image = await dockerRequest<{
+      Id?: string;
+      Config?: { Env?: string[] | null; Labels?: Record<string, string> | null };
+    }>("GET", `/images/${encodeURIComponent(imageRef)}/json`);
+    return {
+      id: image.Id ?? "",
+      env: image.Config?.Env ?? [],
+      labels: image.Config?.Labels ?? {},
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function detectExposedPorts(imageOrId: string): Promise<number[]> {
   // Try image inspect first, fall back to container inspect
   let exposedPorts: Record<string, unknown> | undefined;
