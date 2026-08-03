@@ -11,14 +11,6 @@ export const CHANNEL_TYPE_DEFAULTS: Record<string, boolean> = {
 };
 
 /**
- * Live-UI-only events. Never delivered to a channel — they fire many times per
- * run and carry no standalone meaning.
- */
-export const SILENT_EVENT_TYPES: ReadonlySet<BusEventType> = new Set([
-  "backup.progress",
-] as BusEventType[]);
-
-/**
  * Events that always send regardless of user preferences.
  * Users cannot mute these.
  */

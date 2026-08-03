@@ -2,7 +2,8 @@ import { db } from "@/lib/db";
 import { memberships, userNotificationPreferences } from "@/lib/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import type { BusEventType } from "@/lib/bus";
-import { CHANNEL_TYPE_DEFAULTS, CRITICAL_EVENT_TYPES, SILENT_EVENT_TYPES } from "./channel-defaults";
+import { CHANNEL_TYPE_DEFAULTS, CRITICAL_EVENT_TYPES } from "./channel-defaults";
+import { SILENT_EVENT_TYPES } from "./ui-only";
 
 /**
  * Fetch all member user IDs for an org. Called once per dispatch, outside the
