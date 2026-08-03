@@ -953,64 +953,63 @@ export function ProjectDetail({
     <div className="space-y-6">
       <PageToolbar
         actions={
-          <div className="flex items-center gap-2">
-            <>
-                {topLevelApps.length > 0 && (() => {
-                  const allActive = topLevelApps.every((a) => a.status === "active");
-                  const anyNeedsRedeploy = topLevelApps.some((a) => a.needsRedeploy);
+          // No wrapper of its own: the toolbar already lays these out, and a
+          // second flex row that cannot wrap clips "Add app" at 320px.
+          <>
+            {topLevelApps.length > 0 && (() => {
+              const allActive = topLevelApps.every((a) => a.status === "active");
+              const anyNeedsRedeploy = topLevelApps.some((a) => a.needsRedeploy);
 
-                  if (allActive && !deploying) {
-                    return (
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button size="sm" className={anyNeedsRedeploy
-                            ? "bg-status-warning-muted text-status-warning hover:ring-1 hover:ring-inset hover:ring-status-warning/40"
-                            : "bg-status-success-muted text-status-success hover:ring-1 hover:ring-inset hover:ring-status-success/40"
-                          }>
-                            {anyNeedsRedeploy ? (
-                              <><RotateCcw className="mr-1.5 size-3.5" />Restart Needed</>
-                            ) : (
-                              <><span className="mr-1.5 size-2 rounded-full bg-status-success animate-pulse" />Running</>
-                            )}
-                            <ChevronDown className="ml-1.5 size-3.5" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem disabled={deploying} onClick={handleDeployAll}>
-                            <Rocket className="mr-2 size-4" />
-                            Redeploy All
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={handleRestartAll}>
-                            <RotateCcw className="mr-2 size-4" />
-                            Restart All
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem
-                            className="text-destructive focus:text-destructive"
-                            onClick={() => setStopAllOpen(true)}
-                          >
-                            <Square className="mr-2 size-4" />
-                            Stop all
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    );
-                  }
+              if (allActive && !deploying) {
+                return (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button size="sm" className={anyNeedsRedeploy
+                        ? "bg-status-warning-muted text-status-warning hover:ring-1 hover:ring-inset hover:ring-status-warning/40"
+                        : "bg-status-success-muted text-status-success hover:ring-1 hover:ring-inset hover:ring-status-success/40"
+                      }>
+                        {anyNeedsRedeploy ? (
+                          <><RotateCcw className="mr-1.5 size-3.5" />Deploy needed</>
+                        ) : (
+                          <><span className="mr-1.5 size-2 rounded-full bg-status-success animate-pulse" />Running</>
+                        )}
+                        <ChevronDown className="ml-1.5 size-3.5" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem disabled={deploying} onClick={handleDeployAll}>
+                        <Rocket className="mr-2 size-4" />
+                        Redeploy all
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={handleRestartAll}>
+                        <RotateCcw className="mr-2 size-4" />
+                        Restart all
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        className="text-destructive focus:text-destructive"
+                        onClick={() => setStopAllOpen(true)}
+                      >
+                        <Square className="mr-2 size-4" />
+                        Stop all
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                );
+              }
 
-                  return (
-                    <Button size="sm" disabled={deploying} onClick={handleDeployAll}>
-                      {deploying ? (
-                        <><Loader2 className="mr-1.5 size-4 animate-spin" />Deploying...</>
-                      ) : (
-                        <><Rocket className="mr-1.5 size-4" />Deploy All</>
-                      )}
-                    </Button>
-                  );
-                })()}
-                {!project.isSystemManaged && <AddAppDropdown projectId={project.id} />}
-              </>
-
-          </div>
+              return (
+                <Button size="sm" disabled={deploying} onClick={handleDeployAll}>
+                  {deploying ? (
+                    <><Loader2 className="mr-1.5 size-4 animate-spin" />Deploying...</>
+                  ) : (
+                    <><Rocket className="mr-1.5 size-4" />Deploy all</>
+                  )}
+                </Button>
+              );
+            })()}
+            {!project.isSystemManaged && <AddAppDropdown projectId={project.id} />}
+          </>
         }
       >
         <div className="flex items-center gap-3">
