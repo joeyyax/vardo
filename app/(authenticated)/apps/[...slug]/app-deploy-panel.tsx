@@ -42,6 +42,7 @@ import { toast } from "@/lib/messenger";
 import { RelativeTime } from "@/components/relative-time";
 import { Uptime } from "./timer";
 import { InProgressDeployCard } from "./in-progress-deploy-card";
+import { useCancelDeploy } from "./hooks/use-app-actions";
 
 import type { useDeploy } from "./hooks/use-deploy";
 import type { Deployment, SlotStatus } from "./types";
@@ -142,8 +143,12 @@ export function AppDeployPanel({
 
   const [expandedServerDeploy, setExpandedServerDeploy] = useState(false);
   const [cancellingIds, setCancellingIds] = useState<Set<string>>(new Set());
-  const [abortingDeploy, setAbortingDeploy] = useState(false);
-  const [cancelRequested, setCancelRequested] = useState(false);
+  const {
+    cancelling: abortingDeploy,
+    cancelRequested,
+    setCancelRequested,
+    cancelDeploy,
+  } = useCancelDeploy(orgId, appId);
   const [showInfra, setShowInfra] = useState(false);
   const [slotStatus, setSlotStatus] = useState<SlotStatus | null>(null);
   const [instantRollingBack, setInstantRollingBack] = useState(false);
@@ -169,7 +174,7 @@ export function AppDeployPanel({
     }
     if (!wasDeploying || !deploying) fetchSlotStatus();
     return () => { cancelled = true; };
-  }, [orgId, appId, deploying]);
+  }, [orgId, appId, deploying, setCancelRequested]);
 
   const handleInstantRollback = useCallback(async () => {
     setConfirmRollbackOpen(false);
@@ -194,61 +199,18 @@ export function AppDeployPanel({
     }
   }, [orgId, appId, router]);
 
+  // The stream stays open: the engine reports the cancel when it stops, and
+  // closing here is what made a cancel that never landed look successful.
   const handleAbortDeploy = useCallback(async (deploymentId?: string) => {
-    setAbortingDeploy(true);
-    try {
-      let targetId = deploymentId;
-      if (!targetId) {
-        const appRes = await fetch(`/api/v1/organizations/${orgId}/apps/${appId}`);
-        if (appRes.ok) {
-          const { app: appData } = await appRes.json();
-          const active = appData.deployments?.find(
-            (d: { status: string }) => d.status === "running" || d.status === "queued"
-          );
-          targetId = active?.id;
-        }
-      }
-      if (!targetId) {
-        toast.error("No active deployment to cancel");
-        return;
-      }
-      const res = await fetch(
-        `/api/v1/organizations/${orgId}/apps/${appId}/deployments/${targetId}`,
-        { method: "DELETE" },
-      );
-      if (!res.ok) {
-        const data = await res.json();
-        toast.error(data.error || "Failed to cancel deployment");
-        return;
-      }
-      // The stream stays open: the engine reports the cancel when it stops, and
-      // closing here is what made a cancel that never landed look successful.
-      setCancelRequested(true);
-      toast.info("Cancelling — the deploy will stop after the current phase");
-      router.refresh();
-    } catch {
-      toast.error("Failed to cancel deployment");
-    } finally {
-      setAbortingDeploy(false);
-    }
-  }, [orgId, appId, router]);
+    await cancelDeploy(deploymentId);
+    router.refresh();
+  }, [cancelDeploy, router]);
 
   const handleCancelQueued = useCallback(async (deploymentId: string) => {
     setCancellingIds((prev) => new Set(prev).add(deploymentId));
     try {
-      const res = await fetch(
-        `/api/v1/organizations/${orgId}/apps/${appId}/deployments/${deploymentId}`,
-        { method: "DELETE" },
-      );
-      if (!res.ok) {
-        const data = await res.json();
-        toast.error(data.error || "Failed to cancel deployment");
-        return;
-      }
-      toast.success("Deployment cancelled");
+      await cancelDeploy(deploymentId);
       router.refresh();
-    } catch {
-      toast.error("Failed to cancel deployment");
     } finally {
       setCancellingIds((prev) => {
         const next = new Set(prev);
@@ -256,7 +218,7 @@ export function AppDeployPanel({
         return next;
       });
     }
-  }, [orgId, appId, router]);
+  }, [cancelDeploy, router]);
 
   // Containers exist but no deployment records — the app was adopted from Docker.
   const adopted =
