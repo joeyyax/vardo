@@ -483,6 +483,36 @@ describe("status surfaces at the call sites", () => {
     expect(offenders).toEqual([]);
   });
 
+  it("never hand-rolls the label or the edge on its own", () => {
+    const offenders: string[] = [];
+    for (const file of files) {
+      for (const tag of readFileSync(file, "utf8").matchAll(/<Badge\b[^>]*>/g)) {
+        if (/(?:text|border)-status-[a-z-]+/.test(tag[0])) {
+          offenders.push(`${path.relative(ROOT, file)}: ${tag[0].replace(/\s+/g, " ")}`);
+        }
+      }
+    }
+    // A variant carries fill, edge and label together. An outline chip wearing
+    // two of the three is a status chip with no ground under its label.
+    expect(offenders).toEqual([]);
+  });
+
+  it("never paints a chip from outside the token set", () => {
+    const PALETTE =
+      /\b(?:bg|text|border|ring|from|to|via)-(?:(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-\d{2,3}|white|black)\b/;
+    const offenders: string[] = [];
+    for (const file of files) {
+      for (const tag of readFileSync(file, "utf8").matchAll(/<Badge\b[^>]*>/g)) {
+        if (PALETTE.test(tag[0])) {
+          offenders.push(`${path.relative(ROOT, file)}: ${tag[0].replace(/\s+/g, " ")}`);
+        }
+      }
+    }
+    // A raw palette stop does not move between themes and has no measured
+    // ratio against any ground the app paints.
+    expect(offenders).toEqual([]);
+  });
+
   it("never re-tints a status surface on hover", () => {
     const offenders: string[] = [];
     for (const file of files) {
