@@ -68,43 +68,50 @@ describe("the Promtail template", () => {
     expect(UNASSIGNED_TENANT).toContain(".");
   });
 
-  // Promtail's rejected-batch errors quote the stream labels Loki refused, and
-  // those name other organizations' containers and projects. Its own output
-  // belongs with the rest of the instance infrastructure.
-  describe("its own stream", () => {
-    const own = scrape.relabel_configs.filter((r) => r.source_labels?.[0] === "project");
+  // Promtail's and Loki's errors quote the stream labels and tenant ids they
+  // refused, which name other organizations. Vardo's own containers carry
+  // vardo.scope=instance, so the rule keys off that rather than naming them.
+  describe("instance infrastructure", () => {
+    const SCOPE_LABEL = "__meta_docker_container_label_vardo_scope";
+    const rules = scrape.relabel_configs.filter((r) => r.source_labels?.[0] === SCOPE_LABEL);
 
     it("drops the organization, so the tenant falls back to the client default", () => {
-      expect(own).toContainEqual({
-        source_labels: ["project"],
-        regex: "promtail",
+      expect(rules).toContainEqual({
+        source_labels: [SCOPE_LABEL],
+        regex: "instance",
         target_label: "organization",
         replacement: "",
       });
     });
 
-    it("is labelled instance-level like the rest of the infrastructure", () => {
-      expect(own).toContainEqual({
-        source_labels: ["project"],
-        regex: "promtail",
+    it("is labelled instance-level alongside the unmanaged containers", () => {
+      expect(rules).toContainEqual({
+        source_labels: [SCOPE_LABEL],
+        regex: "instance",
         target_label: "scope",
         replacement: "instance",
       });
     });
 
-    // Relabelling runs in order: `project` has to be filled before these read
-    // it, and the organization has to be set before these clear it.
-    it("runs after the labels it reads and the one it clears", () => {
-      const last = (predicate: (r: (typeof scrape.relabel_configs)[number]) => boolean) =>
-        scrape.relabel_configs.findLastIndex(predicate);
+    it("names no individual service, so a new core service needs no config change", () => {
+      const config = JSON.stringify(scrape.relabel_configs);
+      for (const service of ["promtail", "loki", "cadvisor", "vardo"]) {
+        expect(config).not.toContain(`"${service}"`);
+      }
+    });
 
-      const fills = last((r) => r.target_label === "project" && r.source_labels?.[0] !== "project");
-      const sets = last((r) => r.target_label === "organization" && r.source_labels?.[0] !== "project");
-      const reads = scrape.relabel_configs.findIndex((r) => r.source_labels?.[0] === "project");
+    // Relabelling runs in order, so the organization has to be set before
+    // these clear it.
+    it("runs after the organization it clears", () => {
+      const sets = scrape.relabel_configs.findLastIndex(
+        (r) => r.target_label === "organization" && r.source_labels?.[0] !== SCOPE_LABEL,
+      );
+      const clears = scrape.relabel_configs.findIndex(
+        (r) => r.source_labels?.[0] === SCOPE_LABEL && r.target_label === "organization",
+      );
 
-      expect(fills).toBeGreaterThanOrEqual(0);
-      expect(reads).toBeGreaterThan(fills);
-      expect(reads).toBeGreaterThan(sets);
+      expect(sets).toBeGreaterThanOrEqual(0);
+      expect(clears).toBeGreaterThan(sets);
     });
   });
 });
