@@ -40,7 +40,12 @@ describe("the Promtail template", () => {
   const config = YAML.parse(serviceConfig("promtail", "promtail", "promtail-config")) as {
     clients: { tenant_id: string }[];
     scrape_configs: {
-      relabel_configs: { source_labels?: string[]; target_label?: string; regex?: string }[];
+      relabel_configs: {
+        source_labels?: string[];
+        target_label?: string;
+        regex?: string;
+        replacement?: string;
+      }[];
       pipeline_stages: { tenant?: { label: string } }[];
     }[];
   };
@@ -61,5 +66,45 @@ describe("the Promtail template", () => {
   it("parks a container with no organization where no organization can read it", () => {
     expect(config.clients[0].tenant_id).toBe(UNASSIGNED_TENANT);
     expect(UNASSIGNED_TENANT).toContain(".");
+  });
+
+  // Promtail's rejected-batch errors quote the stream labels Loki refused, and
+  // those name other organizations' containers and projects. Its own output
+  // belongs with the rest of the instance infrastructure.
+  describe("its own stream", () => {
+    const own = scrape.relabel_configs.filter((r) => r.source_labels?.[0] === "project");
+
+    it("drops the organization, so the tenant falls back to the client default", () => {
+      expect(own).toContainEqual({
+        source_labels: ["project"],
+        regex: "promtail",
+        target_label: "organization",
+        replacement: "",
+      });
+    });
+
+    it("is labelled instance-level like the rest of the infrastructure", () => {
+      expect(own).toContainEqual({
+        source_labels: ["project"],
+        regex: "promtail",
+        target_label: "scope",
+        replacement: "instance",
+      });
+    });
+
+    // Relabelling runs in order: `project` has to be filled before these read
+    // it, and the organization has to be set before these clear it.
+    it("runs after the labels it reads and the one it clears", () => {
+      const last = (predicate: (r: (typeof scrape.relabel_configs)[number]) => boolean) =>
+        scrape.relabel_configs.findLastIndex(predicate);
+
+      const fills = last((r) => r.target_label === "project" && r.source_labels?.[0] !== "project");
+      const sets = last((r) => r.target_label === "organization" && r.source_labels?.[0] !== "project");
+      const reads = scrape.relabel_configs.findIndex((r) => r.source_labels?.[0] === "project");
+
+      expect(fills).toBeGreaterThanOrEqual(0);
+      expect(reads).toBeGreaterThan(fills);
+      expect(reads).toBeGreaterThan(sets);
+    });
   });
 });

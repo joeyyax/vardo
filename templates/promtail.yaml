@@ -96,6 +96,17 @@ composeContent: |
               - source_labels: ["__meta_docker_container_name"]
                 regex: "/(.*)"
                 target_label: container
+              # Promtail's errors quote the rejected streams of other
+              # organizations, so its own output stays at instance level. An
+              # empty replacement deletes the label, leaving the client default.
+              - source_labels: ["project"]
+                regex: "promtail"
+                target_label: scope
+                replacement: instance
+              - source_labels: ["project"]
+                regex: "promtail"
+                target_label: organization
+                replacement: ""
             # Loki is tenanted by organization. A relabel to __tenant_id__ would
             # not survive — the docker target strips every __-prefixed label
             # before the push — so the tenant is set from the label here.
