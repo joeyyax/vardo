@@ -16,6 +16,12 @@ import type { BackupStorage } from "./storage-port";
 import { createBackupStorage } from "./storage-factory";
 import { assertSafeName } from "@/lib/docker/validate";
 import { isUncapturedSource, uncapturedReason } from "./coverage";
+import {
+  EMPTY_SOURCE_MARKER,
+  MIN_VALID_GZIP_BYTES,
+  buildTarBackupScript,
+  buildTarRestoreScript,
+} from "./archive";
 import { listContainers, inspectContainer } from "@/lib/docker/client";
 import { resolveDefaultEnv } from "@/lib/docker/resolve-env";
 import { logger } from "@/lib/logger";
@@ -113,20 +119,21 @@ export function strategyFromStoragePath(storagePath: string): ArchiveStrategy | 
   return null;
 }
 
-const MIN_VALID_GZIP_BYTES = 100; // gzip header alone is 10 bytes; a real dump is several KB
-
 /**
  * Verify a gzipped archive is valid:
- * - Not empty or suspiciously small (broken pipe, missing container)
  * - Passes gzip integrity check (not truncated or corrupted)
+ * - Holds at least one entry, unless the source was confirmed empty
+ *
+ * Pass `sourceWasEmpty` only on evidence from the source itself — an empty
+ * volume and a broken pipe both produce a tiny file, and size cannot tell them
+ * apart.
  */
-async function verifyArchive(filePath: string, label: string): Promise<number> {
+async function verifyArchive(
+  filePath: string,
+  label: string,
+  sourceWasEmpty = false,
+): Promise<number> {
   const info = await stat(filePath);
-  if (info.size < MIN_VALID_GZIP_BYTES) {
-    throw new Error(
-      `${label} produced a ${info.size}-byte file — too small to be valid, backup aborted`
-    );
-  }
 
   // gzip -t validates the entire compressed stream
   try {
@@ -136,32 +143,13 @@ async function verifyArchive(filePath: string, label: string): Promise<number> {
     throw new Error(`${label} archive is corrupt (gzip -t failed): ${msg}`);
   }
 
+  if (!sourceWasEmpty && info.size < MIN_VALID_GZIP_BYTES) {
+    throw new Error(
+      `${label} produced a ${info.size}-byte file — too small to be valid, backup aborted`
+    );
+  }
+
   return info.size;
-}
-
-const RESTORE_STAGE_DIR = ".vardo-restore-staging";
-
-/**
- * Shell script for a tar restore: extract into a staging dir inside the volume,
- * and only swap it over the live data once tar has fully succeeded.
- *
- * WARNING: the removal of live data must stay after the extract. Moving it
- * earlier (or back to a plain `rm -rf /data/*` before `tar xzf`) empties the
- * volume whenever the archive is unreadable or the wrong format.
- *
- * Paths are parameterized so tests can drive the real script against temp dirs.
- */
-export function buildTarRestoreScript(dataDir = "/data", backupDir = "/backup"): string {
-  return [
-    "set -e",
-    `stage="${dataDir}/${RESTORE_STAGE_DIR}"`,
-    'rm -rf "$stage"',
-    'mkdir "$stage"',
-    `if ! tar xzf "${backupDir}/volume.tar.gz" -C "$stage"; then rm -rf "$stage"; echo "restore: archive could not be extracted" >&2; exit 1; fi`,
-    `find "${dataDir}" -mindepth 1 -maxdepth 1 ! -name ${RESTORE_STAGE_DIR} -exec rm -rf {} ';'`,
-    `find "$stage" -mindepth 1 -maxdepth 1 -exec mv {} "${dataDir}/" ';'`,
-    'rmdir "$stage"',
-  ].join("\n");
 }
 
 // ---------------------------------------------------------------------------
@@ -185,14 +173,21 @@ async function backupVolumeTar(
     assertSafeName(dockerVolumeName);
 
     logFn(`Archiving volume ${dockerVolumeName}`);
-    await execFileAsync(
+    const { stdout } = await execFileAsync(
       "docker",
-      ["run", "--rm", "-v", `${dockerVolumeName}:/data`, "-v", `${tmpDir}:/backup`, "alpine", "tar", "czf", `/backup/${archiveFile}`, "-C", "/data", "."],
+      ["run", "--rm", "-v", `${dockerVolumeName}:/data`, "-v", `${tmpDir}:/backup`, "alpine", "sh", "-c", buildTarBackupScript()],
       { timeout: 600_000 },
     );
 
+    // The container's own verdict on the source. A container that dies
+    // mid-archive fails `docker run` rather than reaching here.
+    const sourceWasEmpty = String(stdout).includes(EMPTY_SOURCE_MARKER);
+    if (sourceWasEmpty) {
+      logFn(`Volume ${dockerVolumeName} is empty — archived 0 files`);
+    }
+
     const archivePath = join(tmpDir, archiveFile);
-    await verifyArchive(archivePath, `Volume ${dockerVolumeName}`);
+    await verifyArchive(archivePath, `Volume ${dockerVolumeName}`, sourceWasEmpty);
 
     const checksum = await checksumFile(archivePath);
     logFn(`Checksum: sha256:${checksum.slice(0, 16)}...`);
@@ -964,8 +959,11 @@ export async function restoreBackup(
     await storage.download(backup.storagePath, archivePath);
     log("Download complete");
 
-    // 2. Validate archive integrity
-    await verifyArchive(archivePath, "Downloaded backup");
+    // 2. Validate archive integrity. A row recorded below the floor was written
+    // from a source verified empty; the checksum below proves it came back intact.
+    const wasEmptyWhenWritten =
+      backup.sizeBytes != null && backup.sizeBytes < MIN_VALID_GZIP_BYTES;
+    await verifyArchive(archivePath, "Downloaded backup", wasEmptyWhenWritten);
     if (backup.checksum) {
       const downloadChecksum = `sha256:${await checksumFile(archivePath)}`;
       if (downloadChecksum !== backup.checksum) {

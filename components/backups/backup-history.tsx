@@ -7,6 +7,7 @@ import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Archive, Download, Loader2, RotateCcw } from "lucide-react";
 import { formatBytes } from "@/lib/metrics/format";
+import { MIN_VALID_GZIP_BYTES } from "@/lib/backups/archive";
 import { toast } from "@/lib/messenger";
 import { RelativeTime } from "@/components/relative-time";
 import { StatusBadge } from "./status-badge";
@@ -17,6 +18,16 @@ function formatDuration(startedAt: string, finishedAt: string | null): string {
   const ms = new Date(finishedAt).getTime() - new Date(startedAt).getTime();
   if (ms < 1000) return `${ms}ms`;
   return `${Math.round(ms / 1000)}s`;
+}
+
+/**
+ * A stored archive under the floor only exists because the engine confirmed the
+ * source empty, so show that rather than a byte count nobody can interpret.
+ */
+function formatArchiveSize(sizeBytes: number | null): string {
+  if (sizeBytes == null) return "—";
+  if (sizeBytes < MIN_VALID_GZIP_BYTES) return "Empty";
+  return formatBytes(sizeBytes);
 }
 
 export function BackupHistory({
@@ -95,7 +106,7 @@ export function BackupHistory({
                 {formatDuration(backup.startedAt, backup.finishedAt)}
               </td>
               <td className="px-4 py-3 text-muted-foreground text-xs">
-                {backup.sizeBytes != null ? formatBytes(backup.sizeBytes) : "—"}
+                {formatArchiveSize(backup.sizeBytes)}
               </td>
               <td className="px-4 py-3 text-muted-foreground text-xs">
                 <RelativeTime date={backup.startedAt} />

@@ -80,7 +80,8 @@ vi.mock("@/lib/backups/storage-factory", () => ({
   }),
 }));
 
-import { restoreBackup, buildTarRestoreScript } from "@/lib/backups/engine";
+import { restoreBackup } from "@/lib/backups/engine";
+import { buildTarRestoreScript } from "@/lib/backups/archive";
 
 function backupRow(overrides: Record<string, unknown> = {}) {
   return {
