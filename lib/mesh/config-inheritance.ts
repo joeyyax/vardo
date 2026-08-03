@@ -1,20 +1,39 @@
-import { setSystemSetting, getFeatureFlagsConfig } from "@/lib/system-settings";
+import {
+  setSystemSetting,
+  getFeatureFlagsConfig,
+  getEmailProviderConfig,
+  getBackupStorageConfig,
+  getGitHubAppConfig,
+  getSslConfig,
+} from "@/lib/system-settings";
 
-type InheritedConfig = {
+export type InheritedConfig = {
   email: boolean;
   backup: boolean;
   github: boolean;
+  /** Sections inherited without their credential — an admin must supply it locally. */
+  credentialsRequired: string[];
+};
+
+export const EMPTY_INHERITED_CONFIG: InheritedConfig = {
+  email: false,
+  backup: false,
+  github: false,
+  credentialsRequired: [],
 };
 
 /**
  * Pull shareable config from a mesh hub and store it locally.
- * Best-effort — returns which sections were successfully inherited.
+ *
+ * The hub serves no credentials, so an inherited section is unusable until an
+ * admin adds the secret here. Sections already configured locally are left alone
+ * rather than overwritten with a credential-free copy.
  */
 export async function inheritConfigFromHub(
   hubApiUrl: string,
   hubToken: string,
 ): Promise<InheritedConfig> {
-  const inherited: InheritedConfig = { email: false, backup: false, github: false };
+  const inherited: InheritedConfig = { ...EMPTY_INHERITED_CONFIG, credentialsRequired: [] };
 
   const configRes = await fetch(`${hubApiUrl}/api/v1/mesh/config`, {
     headers: { Authorization: `Bearer ${hubToken}` },
@@ -24,20 +43,25 @@ export async function inheritConfigFromHub(
 
   const config = await configRes.json();
 
-  if (config.email) {
+  if (config.email && !(await getEmailProviderConfig())) {
     await setSystemSetting("email_provider", JSON.stringify(config.email));
     inherited.email = true;
   }
-  if (config.backup) {
+  if (config.backup && !(await getBackupStorageConfig())) {
     await setSystemSetting("backup_storage", JSON.stringify(config.backup));
     inherited.backup = true;
   }
-  if (config.github) {
+  if (config.github && !(await getGitHubAppConfig())) {
     await setSystemSetting("github_app", JSON.stringify(config.github));
     inherited.github = true;
   }
+
+  // Keep any local ACME credential — the hub never sends one.
   if (config.ssl) {
-    await setSystemSetting("ssl_config", JSON.stringify(config.ssl));
+    const local = await getSslConfig();
+    if (!local.dnsApiToken && !local.zerosslEabKid) {
+      await setSystemSetting("ssl_config", JSON.stringify(config.ssl));
+    }
   }
 
   // Merge feature flags — don't overwrite local flags, only add missing ones
@@ -45,6 +69,12 @@ export async function inheritConfigFromHub(
     const localFlags = (await getFeatureFlagsConfig()) ?? {};
     const merged = { ...config.features, ...localFlags };
     await setSystemSetting("feature_flags", JSON.stringify(merged));
+  }
+
+  if (Array.isArray(config.credentialsRequired)) {
+    inherited.credentialsRequired = config.credentialsRequired.filter(
+      (s: unknown): s is string => typeof s === "string",
+    );
   }
 
   return inherited;
