@@ -7,6 +7,8 @@ import { createSSEResponse } from "@/lib/api/sse";
 import { isMetricsEnabled } from "@/lib/metrics/config";
 import { subscribe } from "@/lib/metrics/broadcast";
 import { aggregateContainers } from "@/lib/metrics/aggregate";
+import { groupMetricsByApp, dedupeMetrics } from "@/lib/metrics/app-match";
+import { METRICS_APP_COLUMNS } from "@/lib/metrics/app-columns";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 
 type RouteParams = {
@@ -34,16 +36,13 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     const projectApps = await db.query.apps.findMany({
       where: and(eq(apps.projectId, projectId), eq(apps.organizationId, orgId)),
-      columns: { id: true, name: true, displayName: true, status: true },
+      columns: { ...METRICS_APP_COLUMNS, displayName: true },
     });
 
     return createSSEResponse(request, async (sendEvent) => {
       const unsubscribe = subscribe((allMetrics) => {
-        // Collect all containers belonging to this project's apps
-        const projectContainers = allMetrics.filter((m) =>
-          projectApps.some(
-            (app) => m.projectName === app.name || m.projectName.startsWith(`${app.name}-`)
-          )
+        const projectContainers = dedupeMetrics(
+          groupMetricsByApp(projectApps, allMetrics).values(),
         );
 
         const point = aggregateContainers(projectContainers);
