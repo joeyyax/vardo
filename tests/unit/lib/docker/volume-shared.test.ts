@@ -20,6 +20,19 @@ volumes:
   postgres-data: {}
 `;
 
+/** paperless on 10.0.0.19: the same hazard reached through a host path. */
+const BIND = `services:
+  paperless:
+    image: ghcr.io/paperless-ngx/paperless-ngx:2.20.15
+    volumes:
+      - /mnt/docker/paperless/data:/usr/src/paperless/data
+      - /mnt/docker/paperless/media:/usr/src/paperless/media
+  paperless-db:
+    image: postgres:16
+    volumes:
+      - /mnt/docker/paperless/postgres:/var/lib/postgresql/data
+`;
+
 describe("volumeSharedServices", () => {
   it("catches a stateful service holding a named volume with no marker", () => {
     expect([...volumeSharedServices(parseCompose(UNMARKED))]).toEqual(["postgres"]);
@@ -32,20 +45,6 @@ describe("volumeSharedServices", () => {
 
   it("leaves a stateless service alone, named volume or not", () => {
     expect(volumeSharedServices(parseCompose(UNMARKED))).not.toContain("web");
-  });
-
-  it("leaves a bind mount alone — the host path is not a volume Vardo externalizes", () => {
-    const bind = parseCompose(`services:
-  web:
-    image: app
-  postgres:
-    image: postgres:17
-    volumes:
-      - /mnt/docker/app/postgres:/var/lib/postgresql/data
-volumes:
-  uploads: {}
-`);
-    expect(volumeSharedServices(bind).size).toBe(0);
   });
 
   it("leaves an anonymous volume alone — each slot gets its own copy", () => {
@@ -90,6 +89,119 @@ volumes:
   postgres-data: {}
 `);
     expect(volumeSharedServices(built).size).toBe(0);
+  });
+});
+
+describe("volumeSharedServices — bind-mounted data directories", () => {
+  it("catches a stateful service holding a host path with no marker", () => {
+    expect([...volumeSharedServices(parseCompose(BIND))]).toEqual(["paperless-db"]);
+  });
+
+  it("catches the same service when it is already marked", () => {
+    const marked = BIND.replace("image: postgres:16", "image: postgres:16\n    x-vardo-shared: true");
+    expect([...volumeSharedServices(parseCompose(marked))]).toEqual(["paperless-db"]);
+  });
+
+  it("leaves a stateless service alone, however many host paths it mounts", () => {
+    expect(volumeSharedServices(parseCompose(BIND))).not.toContain("paperless");
+  });
+
+  it("leaves a bind mount that is not a data directory alone", () => {
+    const initdb = parseCompose(`services:
+  web:
+    image: app
+  postgres:
+    image: postgres:17
+    volumes:
+      - /etc/localtime:/etc/localtime
+      - /mnt/docker/app/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - /mnt/docker/app/backups:/backups
+`);
+    expect(volumeSharedServices(initdb).size).toBe(0);
+  });
+
+  it("leaves a relative source alone — it resolves against the slot dir", () => {
+    const relative = parseCompose(`services:
+  web:
+    image: app
+  postgres:
+    image: postgres:17
+    volumes:
+      - ./postgres:/var/lib/postgresql/data
+`);
+    expect(volumeSharedServices(relative).size).toBe(0);
+  });
+
+  it("catches a subdirectory of the data directory", () => {
+    const pgdata = parseCompose(`services:
+  web:
+    image: app
+  postgres:
+    image: postgres:17
+    volumes:
+      - /mnt/docker/app/postgres:/var/lib/postgresql/data/pgdata
+`);
+    expect([...volumeSharedServices(pgdata)]).toEqual(["postgres"]);
+  });
+
+  it("catches redis on its own directory, which no major bump is gated on", () => {
+    const redis = parseCompose(`services:
+  web:
+    image: app
+  authentik-redis:
+    image: redis:8.8.0-alpine
+    volumes:
+      - /mnt/docker/authentik/redis:/data
+  glitchtip-redis:
+    image: redis:7-alpine
+    volumes:
+      - redis-data:/data
+volumes:
+  redis-data: {}
+`);
+    expect([...volumeSharedServices(redis)].sort()).toEqual(["authentik-redis", "glitchtip-redis"]);
+  });
+
+  it("leaves a redis with nothing persisted alone", () => {
+    const ephemeral = parseCompose(`services:
+  web:
+    image: app
+  redis:
+    image: redis:8.8.0-alpine
+`);
+    expect(volumeSharedServices(ephemeral).size).toBe(0);
+  });
+});
+
+describe("nonRotatingServices — bind-mounted data directories", () => {
+  it("takes the database out of the rotation and leaves the app in it", () => {
+    const { shared, slotted } = partitionBySlot(parseCompose(BIND));
+    expect(Object.keys(shared)).toEqual(["paperless-db"]);
+    expect(Object.keys(slotted)).toEqual(["paperless"]);
+  });
+
+  it("promotes nothing when it would leave no service to deploy", () => {
+    const only = parseCompose(`services:
+  postgres:
+    image: postgres:16
+    volumes:
+      - /mnt/docker/app/postgres:/var/lib/postgresql/data
+`);
+    expect(nonRotatingServices(only).size).toBe(0);
+  });
+
+  it("drops a candidate that depends on a service still rotating", () => {
+    const dependent = parseCompose(`services:
+  web:
+    image: app
+  postgres:
+    image: postgres:16
+    depends_on:
+      - web
+    volumes:
+      - /mnt/docker/app/postgres:/var/lib/postgresql/data
+`);
+    expect(nonRotatingServices(dependent).size).toBe(0);
   });
 });
 

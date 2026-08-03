@@ -63,7 +63,7 @@ volumes:
     expect(warning).toContain("two copies will hold it during a deploy");
   });
 
-  it("says nothing about a bind mount", () => {
+  it("names the host path a bind-mounted database keeps its data on", () => {
     const bind = parseCompose(`services:
   web:
     image: app
@@ -71,9 +71,22 @@ volumes:
     image: postgres:17
     volumes:
       - /mnt/docker/app/postgres:/var/lib/postgresql/data
-volumes:
-  uploads: {}
 `);
-    expect(unmarkedSharedVolumeWarnings(bind)).toEqual([]);
+    const [warning, ...rest] = unmarkedSharedVolumeWarnings(bind);
+    expect(rest).toEqual([]);
+    expect(warning).toContain("/mnt/docker/app/postgres:/var/lib/postgresql/data");
+    expect(warning).toContain("x-vardo-shared: true");
+  });
+
+  it("says nothing about a bind mount that is not a data directory", () => {
+    const config = parseCompose(`services:
+  web:
+    image: app
+  postgres:
+    image: postgres:17
+    volumes:
+      - /etc/localtime:/etc/localtime
+`);
+    expect(unmarkedSharedVolumeWarnings(config)).toEqual([]);
   });
 });
