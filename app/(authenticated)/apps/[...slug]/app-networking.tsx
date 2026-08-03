@@ -488,7 +488,7 @@ export function AppNetworking({
                       {domain.domain}
                     </a>
                     {domain.isPrimary && (
-                      <Badge className="text-xs border-transparent bg-status-info-muted text-status-info shrink-0">
+                      <Badge variant="info" className="text-xs shrink-0">
                         Primary
                       </Badge>
                     )}

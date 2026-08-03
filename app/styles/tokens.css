@@ -24,7 +24,15 @@
    Every -muted surface is opaque, not an alpha tint of its stop. A tint's
    contrast depends on whatever ancestor happens to be behind it — a hovered
    row, or a panel already tinted the same hue — so the label it carries has no
-   fixed ratio. Opaque makes the stop and its surface one testable pair. */
+   fixed ratio. Opaque makes the stop and its surface one testable pair.
+
+   The cost is that an opaque surface can only sit at one lightness, and the
+   grounds a chip lands on span white down to the hover accent — so on some of
+   them the fill matches and the chip has no shape. Each stop therefore also
+   carries an -edge: a hairline darker than every light ground and lighter than
+   every dark one, so it clears 3:1 on all of them and on anything blended
+   between them. The edge is what makes a chip a shape; the fill only tints
+   it. */
 
 :root {
   color-scheme: light;
@@ -78,6 +86,7 @@
   /* Brass. Bronze in light — 5.6:1 on bone. */
   --brass: oklch(48% 0.098 72);
   --brass-muted: oklch(95% 0.011 72);
+  --brass-edge: oklch(57% 0.098 72);
   --ring: var(--brass);
 
   --chart-1: oklch(45% 0.012 78);
@@ -96,29 +105,39 @@
   --sidebar-ring: var(--brass);
 
   /* Status — where color lives. Each -muted is its stop at 10% over the card,
-     resolved to an opaque value. */
+     resolved to an opaque value; each -edge is the stop at 57%, the one
+     lightness below every ground on this theme. */
   --status-success: oklch(45% 0.106 155);
   --status-success-muted: oklch(94.6% 0.011 155);
+  --status-success-edge: oklch(57% 0.106 155);
   --status-error: oklch(50% 0.18 25);
   --status-error-muted: oklch(94.5% 0.016 25);
+  --status-error-edge: oklch(57% 0.18 25);
   --status-warning: oklch(52% 0.108 70);
   --status-warning-muted: oklch(95.3% 0.012 70);
+  --status-warning-edge: oklch(57% 0.108 70);
   --status-info: oklch(45% 0.099 240);
   --status-info-muted: oklch(94.6% 0.01 240);
+  --status-info-edge: oklch(57% 0.099 240);
   --status-neutral: oklch(45% 0.012 78);
   --status-neutral-muted: oklch(94.9% 0.001 78);
+  --status-neutral-edge: oklch(57% 0.012 78);
   /* Teal is the shallowest stop in sRGB — 0.078 is the ceiling at this L. */
   --status-disposable: oklch(48% 0.078 200);
   --status-disposable-muted: oklch(94.9% 0.01 200);
+  --status-disposable-edge: oklch(57% 0.078 200);
   --status-update: oklch(48% 0.16 288);
   --status-update-muted: oklch(95% 0.014 288);
+  --status-update-edge: oklch(57% 0.16 288);
   --status-critical: oklch(48% 0.18 336);
   --status-critical-muted: oklch(94.6% 0.017 336);
+  --status-critical-edge: oklch(57% 0.18 336);
 
   /* Environment tier — a permanent classification, never a health signal.
      One hue; production, staging, preview and local separate by depth. */
   --env-tier: oklch(48% 0.1 110);
   --env-tier-muted: oklch(95.1% 0.011 110);
+  --env-tier-edge: oklch(57% 0.1 110);
 
   /* Chart series identity. Two lightness tiers inside the state band: the two
      headline metrics sit deeper, the rest one step up, so hue-adjacent pairs
@@ -175,6 +194,7 @@
 
   --brass: oklch(74% 0.085 82);
   --brass-muted: oklch(31.3% 0.02 82);
+  --brass-edge: oklch(63% 0.085 82);
 
   --chart-1: oklch(85% 0.006 85);
   --chart-2: oklch(60% 0.08 230);
@@ -190,27 +210,39 @@
   --sidebar-accent-foreground: oklch(93% 0.006 85);
   --sidebar-border: oklch(100% 0.006 85 / 10%);
 
+  /* Edges land at 63% here — above every dark ground, as 57% is below every
+     light one. */
   --status-success: oklch(70% 0.12 155);
   --status-success-muted: oklch(30.5% 0.021 155);
+  --status-success-edge: oklch(63% 0.12 155);
   --status-error: oklch(70% 0.14 25);
   --status-error-muted: oklch(30.4% 0.026 25);
+  --status-error-edge: oklch(63% 0.14 25);
   --status-warning: oklch(75% 0.12 70);
   --status-warning-muted: oklch(31.3% 0.026 70);
+  --status-warning-edge: oklch(63% 0.12 70);
   --status-info: oklch(70% 0.12 240);
   --status-info-muted: oklch(30.4% 0.012 240);
+  --status-info-edge: oklch(63% 0.12 240);
   /* In the same band as its siblings. Below 70% a "Stopped" label misses 4.5
      on its own surface. */
   --status-neutral: oklch(70% 0.008 78);
   --status-neutral-muted: oklch(30.7% 0.009 78);
+  --status-neutral-edge: oklch(63% 0.008 78);
   --status-disposable: oklch(72% 0.116 200);
   --status-disposable-muted: oklch(30.4% 0.021 200);
+  /* Teal again — 0.102 is the ceiling at the edge lightness. */
+  --status-disposable-edge: oklch(63% 0.102 200);
   --status-update: oklch(72% 0.13 288);
   --status-update-muted: oklch(30.9% 0.014 288);
+  --status-update-edge: oklch(63% 0.13 288);
   --status-critical: oklch(72% 0.14 336);
   --status-critical-muted: oklch(30.8% 0.021 336);
+  --status-critical-edge: oklch(63% 0.14 336);
 
   --env-tier: oklch(72% 0.13 110);
   --env-tier-muted: oklch(30.9% 0.028 110);
+  --env-tier-edge: oklch(63% 0.13 110);
 
   --chart-cpu: oklch(70% 0.13 240);
   --chart-memory: oklch(70% 0.13 155);
