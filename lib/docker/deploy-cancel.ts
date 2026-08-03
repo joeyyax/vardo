@@ -4,13 +4,13 @@
 // Ensures only one deploy runs per app at a time. When a new deploy arrives
 // for an app that is already deploying:
 //
-//   - Pre-build stages (clone, build): cancel the in-progress deploy
+//   - Safe stages (clone, compose, build): cancel the in-progress deploy
 //     immediately by aborting the child process group. Mark the old deploy
 //     as "superseded". Start the new deploy right away.
 //
-//   - Post-build stages (deploy, healthcheck, routing, cleanup): let the
-//     current deploy finish — it is already serving traffic or about to.
-//     The new deploy starts as soon as the current one completes.
+//   - Swap stages (deploy, healthcheck, routing, cleanup): let the current
+//     deploy finish — it is already serving traffic or about to. The new
+//     deploy starts as soon as the current one completes.
 //
 // Cross-process registry
 // ----------------------
@@ -80,11 +80,11 @@ type ActiveDeploy = {
 const localRegistry = new Map<string, ActiveDeploy>();
 
 // ---------------------------------------------------------------------------
-// Stages where it is safe to cancel — the build has not yet produced output
-// or started routing traffic.
+// Stages where a cancel costs nothing — no container has been stopped or
+// started, so the previous slot is still serving.
 // ---------------------------------------------------------------------------
 
-const PRE_BUILD_STAGES = new Set<DeployStage>(["clone", "build"]);
+export const SAFE_CANCEL_STAGES = new Set<DeployStage>(["clone", "compose", "build"]);
 
 // ---------------------------------------------------------------------------
 // Redis helpers
@@ -209,15 +209,39 @@ async function clearKillSignal(deploymentId: string): Promise<void> {
 // Public API for user-initiated cancellation
 // ---------------------------------------------------------------------------
 
-/** TTL for the kill signal — short-lived; consumed at the next stage transition. */
-const KILL_TTL_MS = 60 * 1000; // 60 seconds
+/**
+ * TTL for the kill signal. It outlives any single phase — a cold build holds one
+ * stage for minutes, and at 60s the signal expired before it could be read.
+ */
+const KILL_TTL_MS = ACTIVE_TTL_MS;
+
+/** How often a running deploy re-reads its kill key between stage transitions. */
+const KILL_POLL_MS = 3000;
 
 /**
- * Signal a running deployment to stop at the next stage boundary.
- * Called by the API when a user cancels a deployment that is already running.
+ * Signal a running deployment to stop. Consumed within seconds during a safe
+ * stage, otherwise at the next stage boundary.
  */
 export async function publishKillSignal(deploymentId: string): Promise<void> {
   await redis.set(KILL_KEY(deploymentId), "1", "PX", KILL_TTL_MS);
+}
+
+/**
+ * Whether the registry still names this deployment as the app's active deploy.
+ * "unknown" whenever Redis cannot answer — callers must not read that as dead.
+ */
+export async function deployRegistration(
+  appId: string,
+  deploymentId: string,
+): Promise<"active" | "gone" | "unknown"> {
+  try {
+    const raw = await redis.get(ACTIVE_KEY(appId));
+    if (!raw) return "gone";
+    const entry = JSON.parse(raw) as { deploymentId: string };
+    return entry.deploymentId === deploymentId ? "active" : "gone";
+  } catch {
+    return "unknown";
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -243,7 +267,7 @@ export async function requestDeploy(opts: DeployOpts): Promise<DeployResult> {
   // ------------------------------------------------------------------
   const localExisting = localRegistry.get(appId);
   if (localExisting) {
-    if (PRE_BUILD_STAGES.has(localExisting.stage)) {
+    if (SAFE_CANCEL_STAGES.has(localExisting.stage)) {
       localExisting.controller.abort({ supersededBy: newDeploymentId });
     }
     await localExisting.done.catch(() => {});
@@ -253,7 +277,7 @@ export async function requestDeploy(opts: DeployOpts): Promise<DeployResult> {
     // ------------------------------------------------------------------
     const redisEntry = await getActiveFromRedis(appId);
     if (redisEntry) {
-      if (PRE_BUILD_STAGES.has(redisEntry.stage)) {
+      if (SAFE_CANCEL_STAGES.has(redisEntry.stage)) {
         // Signal the remote process to cancel
         await writeCancelSignal(appId, newDeploymentId);
       }
@@ -285,6 +309,21 @@ export async function requestDeploy(opts: DeployOpts): Promise<DeployResult> {
   };
   localRegistry.set(appId, active);
   await setActiveInRedis(appId, newDeploymentId, "clone");
+
+  // Stage transitions are minutes apart during a build, so the kill key is also
+  // polled. Only while nothing is serving from this deploy — past that point the
+  // abort is left to the next stage boundary, where the teardown path runs.
+  const killPoll = setInterval(() => {
+    if (controller.signal.aborted || !SAFE_CANCEL_STAGES.has(active.stage)) return;
+    checkKillSignal(newDeploymentId)
+      .then(async (killed) => {
+        if (!killed || controller.signal.aborted) return;
+        await clearKillSignal(newDeploymentId);
+        controller.abort({ killed: true });
+      })
+      .catch(() => {});
+  }, KILL_POLL_MS);
+  killPoll.unref?.();
 
   // ------------------------------------------------------------------
   // 4. Acquire a system-level concurrency slot (FIFO queue)
@@ -331,7 +370,7 @@ export async function requestDeploy(opts: DeployOpts): Promise<DeployResult> {
           if (cancelSignal) {
             // Consume the signal
             await clearCancelSignal(appId);
-            if (PRE_BUILD_STAGES.has(stage)) {
+            if (SAFE_CANCEL_STAGES.has(stage)) {
               controller.abort({ supersededBy: cancelSignal.supersededBy });
             }
           }
@@ -363,6 +402,8 @@ export async function requestDeploy(opts: DeployOpts): Promise<DeployResult> {
     }
     throw err;
   } finally {
+    clearInterval(killPoll);
+    await clearKillSignal(newDeploymentId);
     if (concurrencySlotHeld) {
       await releaseConcurrencySlot(newDeploymentId);
     }

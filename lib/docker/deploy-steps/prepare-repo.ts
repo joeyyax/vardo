@@ -351,7 +351,7 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
   if (app.deployType === "image" && app.imageName) {
     // Image deploy — no clone needed
     ctx.stage("clone", "skipped");
-    ctx.stage("build", "running");
+    ctx.stage("compose", "running");
     if (app.composeContent) {
       compose = parseAndSanitize(app.composeContent, log, { allowBindMounts: projectAllowBindMounts, allowDockerSocket: projectAllowDockerSocket, orgTrusted });
       log(`[deploy] Using stored compose for imported container: ${app.imageName}`);
@@ -564,7 +564,7 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
     }
 
     ctx.stage("clone", "success");
-    ctx.stage("build", "running");
+    ctx.stage("compose", "running");
 
     if (composeContent && app.deployType === "compose") {
       compose = parseAndSanitize(composeContent, log, { allowBindMounts: projectAllowBindMounts, allowDockerSocket: projectAllowDockerSocket, orgTrusted });
@@ -594,6 +594,10 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
         }
         Object.assign(envMap, applyCompatFixes(envMap, preventiveFixes));
       }
+
+      // The image is produced here for this path, not in the swap step.
+      ctx.stage("compose", "success");
+      ctx.stage("build", "running");
 
       // First build attempt
       const customDockerfile = app.dockerfilePath && app.dockerfilePath !== "Dockerfile" ? app.dockerfilePath : undefined;

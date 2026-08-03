@@ -65,6 +65,10 @@ export type DeployResult = {
   success: boolean;
   log: string;
   durationMs: number;
+  /** Terminal state of the run — distinguishes a failure from a cancel or a supersede. */
+  status: "success" | "failed" | "cancelled" | "superseded";
+  /** Failure message, set only when status is "failed". */
+  error?: string;
 };
 
 export async function createDeployment(opts: DeployOpts): Promise<string> {
@@ -103,10 +107,27 @@ export async function runDeployment(
 
   let currentStage: DeployStage = "clone";
 
+  // Serialized so a slow write can't land after a later one and shorten the log.
+  let logFlush: Promise<unknown> = Promise.resolve();
+
+  /** Persist the log so far. A process that dies mid-deploy keeps everything up to the last stage. */
+  function flushLog() {
+    const snapshot = logLines.join("\n");
+    logFlush = logFlush
+      .then(() =>
+        db
+          .update(deployments)
+          .set({ log: snapshot })
+          .where(eq(deployments.id, deploymentId)),
+      )
+      .catch(() => {});
+  }
+
   function stage(s: DeployStage, status: "running" | "success" | "failed" | "skipped") {
     currentStage = s;
     opts.onStage?.(s, status);
     streamLogger.stage(s, status);
+    flushLog();
     redis.set(`deploy:stage:${opts.appId}`, s, "EX", 660).catch(() => {});
   }
 
@@ -382,10 +403,15 @@ export async function runDeployment(
     ctx = await postDeploy(ctx);
 
     const durationMs = Date.now() - startTime;
-    return { deploymentId, success: true, log: logLines.join("\n"), durationMs };
+    await streamLogger.flush();
+    return { deploymentId, success: true, log: logLines.join("\n"), durationMs, status: "success" };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     const durationMs = Date.now() - startTime;
+
+    // Every exit from here is terminal, and each one closes the stream with a
+    // failed stage — without it the UI waits out its timeout with nothing to show.
+    const fail = () => stage(currentStage, "failed");
 
     // Check if this deploy was aborted — either superseded by a newer one or killed by the user.
     if (opts.signal?.aborted) {
@@ -395,6 +421,7 @@ export async function runDeployment(
       if (supersededById) {
         // The superseding deploy already owns apps.status — leave it alone.
         log(`[deploy] Superseded by deployment ${supersededById}`);
+        fail();
         await db
           .update(deployments)
           .set({
@@ -417,11 +444,13 @@ export async function runDeployment(
           supersededBy: supersededById,
         }).catch(() => {});
 
-        return { deploymentId, success: false, log: logLines.join("\n"), durationMs };
+        await streamLogger.flush();
+        return { deploymentId, success: false, log: logLines.join("\n"), durationMs, status: "superseded" };
       }
 
       if (reason?.killed) {
         log(`[deploy] Cancelled by user`);
+        fail();
         await db
           .update(deployments)
           .set({
@@ -458,7 +487,8 @@ export async function runDeployment(
           metadata: { deploymentId },
         }).catch(() => {});
 
-        return { deploymentId, success: false, log: logLines.join("\n"), durationMs };
+        await streamLogger.flush();
+        return { deploymentId, success: false, log: logLines.join("\n"), durationMs, status: "cancelled" };
       }
     }
 
@@ -482,6 +512,7 @@ export async function runDeployment(
       }
     }
 
+    fail();
     await db
       .update(deployments)
       .set({ status: "failed", log: logLines.join("\n"), durationMs, finishedAt: new Date() })
@@ -515,7 +546,8 @@ export async function runDeployment(
       deploymentId, false, durationMs, message
     ).catch(() => {});
 
-    return { deploymentId, success: false, log: logLines.join("\n"), durationMs };
+    await streamLogger.flush();
+    return { deploymentId, success: false, log: logLines.join("\n"), durationMs, status: "failed", error: message };
   } finally {
     redis.del(`deploy:stage:${opts.appId}`).catch(() => {});
   }
