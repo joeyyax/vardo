@@ -24,7 +24,7 @@ import {
   fetchTraefikRouters,
   fetchTraefikServices,
   liveContainers,
-} from "./traefik-drift";
+} from "./traefik-api";
 
 /** How long to wait for Traefik to publish the pin before giving up on it. */
 export const PIN_CONFIRM_TIMEOUT = 10_000;
