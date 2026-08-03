@@ -206,8 +206,8 @@ export function restartCue(reading: RestartReading | null): RestartCue | null {
 export function restartCaption(reading: RestartReading | null, now: number): string {
   if (!reading) return "Docker was not reachable";
   const since = toDate(reading.since);
-  if (!since) return "Since the container was created. A deploy replaces it and the count restarts at zero";
-  return `Since this container was created ${containerAge(since, now)}. A deploy replaces it and the count restarts at zero`;
+  if (!since) return "Since the containers were created. A deploy replaces them and the count restarts at zero";
+  return `Since the oldest container was created ${containerAge(since, now)}. A deploy replaces them and the count restarts at zero`;
 }
 
 /** Days, so the Created date beside it can be checked against this. */
