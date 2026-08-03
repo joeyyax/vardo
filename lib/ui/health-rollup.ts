@@ -13,6 +13,7 @@ export type RollupMember = {
   parentAppId?: string | null;
   priority?: "critical" | "standard" | "disposable" | null;
   conditions?: AppCondition[] | null;
+  containerStartedAt?: Date | null;
 };
 
 export type HealthRollup = {
@@ -60,6 +61,21 @@ export function rollupHealth(members: RollupMember[]): HealthRollup {
   }
 
   return rollup;
+}
+
+/**
+ * Newest container start among the running members — how long every one of them
+ * has been up, so the group never claims more than its shortest-lived member.
+ * Null when nothing in the group is running.
+ */
+export function rollupUptimeSince(members: RollupMember[]): Date | null {
+  let newest: Date | null = null;
+  for (const member of members) {
+    if (member.parentAppId || member.status !== "active") continue;
+    const started = member.containerStartedAt;
+    if (started && (!newest || started > newest)) newest = started;
+  }
+  return newest;
 }
 
 /** State hue for the group, worst first. */

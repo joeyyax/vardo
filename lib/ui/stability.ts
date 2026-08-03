@@ -21,7 +21,7 @@ import type { AppCondition } from "@/lib/docker/conditions";
 import { worstCondition } from "@/lib/docker/conditions";
 import type { ExitReason } from "@/lib/docker/exit-reason";
 import { exitReasonShort } from "@/lib/ui/exit-reason";
-import { formatRelativeTime, toDate, type DateInput } from "@/lib/ui/relative-time";
+import { formatRelativeTime, formatSpan, toDate, type DateInput } from "@/lib/ui/relative-time";
 
 /** Window each half of the trend comparison covers. */
 export const TREND_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
@@ -432,7 +432,6 @@ export function heldFor(statusChangedAt: DateInput, now: number): string | null 
   const since = toDate(statusChangedAt);
   if (!since) return null;
   const ms = now - since.getTime();
-  // Under ten seconds formatRelativeTime says "just now", which is not a span.
   if (ms < 10_000) return null;
-  return formatRelativeTime(since, new Date(now)).replace(/ ago$/, "");
+  return formatSpan(since, new Date(now));
 }

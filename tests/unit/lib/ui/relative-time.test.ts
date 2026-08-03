@@ -2,7 +2,10 @@ process.env.TZ = "UTC";
 
 import { describe, it, expect } from "vitest";
 
-import { formatAbsoluteDateTime, formatRelativeTime, toDate } from "@/lib/ui/relative-time";
+import { readFileSync, readdirSync } from "fs";
+import path from "path";
+
+import { formatAbsoluteDateTime, formatRelativeTime, formatSpan, toDate } from "@/lib/ui/relative-time";
 
 const now = new Date("2026-07-31T12:00:00.000Z");
 
@@ -72,6 +75,52 @@ describe("formatRelativeTime", () => {
   it("accepts string and number inputs", () => {
     expect(formatRelativeTime(now.toISOString(), now)).toBe("just now");
     expect(formatRelativeTime(now.getTime(), now)).toBe("just now");
+  });
+});
+
+describe("formatSpan", () => {
+  it("returns an em dash for a missing or invalid date", () => {
+    expect(formatSpan(null)).toBe("—");
+    expect(formatSpan("nope")).toBe("—");
+  });
+
+  it("carries the weeks bucket", () => {
+    expect(formatSpan(new Date(now.getTime() - 47 * DAY), now)).toBe("6w");
+  });
+
+  it("names a span under ten seconds rather than saying 'just now'", () => {
+    expect(formatSpan(new Date(now.getTime() - 3 * SECOND), now)).toBe("3s");
+  });
+
+  // The weeks bucket once landed in one formatter and not the other, so the same
+  // timestamp read "7w ago" on a card and "2 months" a hover away.
+  it("agrees with formatRelativeTime on every bucket, in both directions", () => {
+    for (let seconds = 10; seconds < 3 * YEAR / SECOND; seconds = Math.ceil(seconds * 1.01)) {
+      const elapsed = seconds * SECOND;
+      const span = formatSpan(new Date(now.getTime() - elapsed), now);
+      expect(formatRelativeTime(new Date(now.getTime() - elapsed), now)).toBe(`${span} ago`);
+      expect(formatRelativeTime(new Date(now.getTime() + elapsed), now)).toBe(`in ${span}`);
+    }
+  });
+});
+
+describe("relative time formatting has one home", () => {
+  const ROOT = path.resolve(__dirname, "../../../..");
+  const DIRS = ["app", "components", "lib", "hooks"];
+
+  function sources(dir: string): string[] {
+    return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) return sources(full);
+      return /\.tsx?$/.test(entry.name) ? [full] : [];
+    });
+  }
+
+  it("has no date-fns relative formatter left in the UI", () => {
+    const files = DIRS.flatMap((dir) => sources(path.join(ROOT, dir)));
+    expect(files.length).toBeGreaterThan(100);
+    const offenders = files.filter((file) => /from "date-fns"/.test(readFileSync(file, "utf8")));
+    expect(offenders.map((f) => path.relative(ROOT, f))).toEqual([]);
   });
 });
 

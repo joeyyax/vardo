@@ -4,6 +4,7 @@ import {
   rollupIsSteady,
   rollupLabel,
   rollupTone,
+  rollupUptimeSince,
   type RollupMember,
 } from "@/lib/ui/health-rollup";
 
@@ -122,6 +123,36 @@ describe("rollupLabel", () => {
 
   it("handles an empty group", () => {
     expect(rollupLabel(rollupHealth([]), "app")).toBe("No apps");
+  });
+});
+
+describe("rollupUptimeSince", () => {
+  const NOW = new Date("2026-07-31T12:00:00.000Z").getTime();
+  const hoursAgo = (h: number) => new Date(NOW - h * 3_600_000);
+
+  it("takes the newest start, so the stack never outruns its youngest service", () => {
+    expect(
+      rollupUptimeSince([
+        app("active", { containerStartedAt: hoursAgo(21) }),
+        app("active", { containerStartedAt: hoursAgo(13) }),
+      ]),
+    ).toEqual(hoursAgo(13));
+  });
+
+  it("ignores services that are not running", () => {
+    expect(
+      rollupUptimeSince([
+        app("active", { containerStartedAt: hoursAgo(21) }),
+        app("error", { containerStartedAt: hoursAgo(2) }),
+        app("stopped", { containerStartedAt: hoursAgo(1) }),
+      ]),
+    ).toEqual(hoursAgo(21));
+  });
+
+  it("is null when nothing is running, or when no start was observed", () => {
+    expect(rollupUptimeSince([app("stopped", { containerStartedAt: hoursAgo(4) })])).toBeNull();
+    expect(rollupUptimeSince([app("active", { containerStartedAt: null })])).toBeNull();
+    expect(rollupUptimeSince([])).toBeNull();
   });
 });
 

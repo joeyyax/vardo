@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import { ChevronDown } from "lucide-react";
-import { formatDistanceToNowStrict } from "date-fns";
 
 import { isInlineRow, type AttentionRow, type AttentionTone } from "@/lib/ui/attention";
+import { formatSpan } from "@/lib/ui/relative-time";
 
 const DOT: Record<AttentionTone, string> = {
   error: "bg-status-error",
@@ -80,7 +80,7 @@ function Subjects({ row, wide = false }: { row: AttentionRow; wide?: boolean }) 
               {item.detail && <span className="text-muted-foreground">{item.detail}</span>}
               {item.since && (
                 <span className="text-xs text-muted-foreground/70">
-                  for {formatDistanceToNowStrict(new Date(item.since))}
+                  for {formatSpan(item.since)}
                 </span>
               )}
             </>

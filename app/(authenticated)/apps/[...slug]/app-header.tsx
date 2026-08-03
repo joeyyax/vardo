@@ -66,6 +66,7 @@ export function AppHeader({
   siblings,
   onNavigate,
   stack,
+  stackUptimeSince,
   deployStage,
   stabilityIncidents = [],
 }: {
@@ -81,6 +82,8 @@ export function AppHeader({
   onNavigate: (tab: string) => void;
   /** Compose parent: the service roll-up replaces the single-container status. */
   stack?: HealthRollup;
+  /** Compose parent: newest container start across the stack's running services. */
+  stackUptimeSince?: Date | null;
   /** Phase word of a running deploy — "Build", "Health", "Route". */
   deployStage?: string | null;
 }) {
@@ -154,6 +157,7 @@ export function AppHeader({
   const status = STATUS_META[app.status] ?? { label: app.status, className: "text-muted-foreground" };
   const isRunning = app.status === "active";
   const isDeploying = app.status === "deploying" || !!deployStage;
+  const uptimeSince = stack ? stackUptimeSince : isRunning ? app.containerStartedAt : null;
 
   return (
     <div className="space-y-5">
@@ -344,9 +348,16 @@ export function AppHeader({
             {cue && <span className="text-muted-foreground">· {cue}</span>}
           </button>
         </HeaderStat>
-        {isRunning && lastSuccess && (
-          <HeaderStat label="Uptime">
-            <Uptime since={lastSuccess.finishedAt || lastSuccess.startedAt} />
+        {uptimeSince && (
+          <HeaderStat
+            label="Uptime"
+            hint={
+              stack
+                ? "The newest container start across the stack's services — none of them has been up for less."
+                : "How long the current container has been up. A deploy or a restart resets it."
+            }
+          >
+            <Uptime since={uptimeSince} />
           </HeaderStat>
         )}
         <HeaderStat label="Memory">

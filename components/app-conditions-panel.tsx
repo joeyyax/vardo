@@ -1,7 +1,7 @@
 import { AlertTriangle, ShieldAlert } from "lucide-react";
-import { formatDistanceToNowStrict } from "date-fns";
 
 import { conditionKindLabel } from "@/lib/ui/conditions";
+import { formatSpan } from "@/lib/ui/relative-time";
 import { worstCondition, type AppCondition, type ConditionSeverity } from "@/lib/docker/conditions";
 
 const TONE: Record<ConditionSeverity, { border: string; surface: string; text: string }> = {
@@ -50,7 +50,7 @@ export function AppConditionsPanel({ conditions }: { conditions: AppCondition[] 
             </span>
             <span className="text-muted-foreground">{c.detail}</span>
             <span className="text-xs text-muted-foreground/70">
-              for {formatDistanceToNowStrict(new Date(c.since))}
+              for {formatSpan(c.since)}
             </span>
           </li>
         ))}
