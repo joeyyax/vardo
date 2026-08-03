@@ -38,6 +38,7 @@ async function handlePost(_request: NextRequest, { params }: RouteParams) {
     const refused = refuseSystemManaged(app, "stop");
     if (refused) return refused;
 
+    const startedAt = Date.now();
     const result = await stopProject(appId, app.name);
 
     if (result.success) {
@@ -47,6 +48,7 @@ async function handlePost(_request: NextRequest, { params }: RouteParams) {
         kind: "stopped",
         userId: org.session.user.id,
         trigger: org.session.authMethod === "token" ? "api" : undefined,
+        durationMs: Date.now() - startedAt,
       });
     }
 
