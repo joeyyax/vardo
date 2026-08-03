@@ -36,6 +36,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { toast } from "@/lib/messenger";
+import { formatRelativeTime } from "@/lib/ui/relative-time";
 
 type MeshPeer = {
   id: string;
@@ -70,18 +71,10 @@ async function copyToClipboard(text: string, label: string) {
   }
 }
 
-function formatRelativeTime(dateStr: string | null): string {
+/** A peer that has never checked in has no timestamp to format. */
+function formatLastSeen(dateStr: string | null): string {
   if (!dateStr) return "Awaiting first heartbeat";
-  const date = new Date(dateStr);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMins = Math.floor(diffMs / 60_000);
-  if (diffMins < 1) return "Just now";
-  if (diffMins < 60) return `${diffMins}m ago`;
-  const diffHours = Math.floor(diffMins / 60);
-  if (diffHours < 24) return `${diffHours}h ago`;
-  const diffDays = Math.floor(diffHours / 24);
-  return `${diffDays}d ago`;
+  return formatRelativeTime(dateStr);
 }
 
 function formatTimeRemaining(expiresAt: number): string {
@@ -421,7 +414,7 @@ export function InstancesSettings() {
 
                       <div className="flex items-center gap-3 shrink-0">
                         <span className="text-xs text-muted-foreground">
-                          {formatRelativeTime(peer.lastSeenAt)}
+                          {formatLastSeen(peer.lastSeenAt)}
                         </span>
                         {peer.connectionType === "direct" ? (
                           <DropdownMenu>
