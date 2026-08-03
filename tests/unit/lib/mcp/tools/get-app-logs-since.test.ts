@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { MAX_SINCE_MS, resolveSince } from "@/lib/mcp/tools/get-app-logs";
+import { MAX_SINCE_MS, dockerSince, resolveSince } from "@/lib/mcp/tools/get-app-logs";
 import { LOOKBACK_MS } from "@/lib/logging/history";
 
 // The window the tool asks Loki for against the window it admits to covering.
@@ -47,6 +47,29 @@ describe("resolveSince", () => {
   it("reports the window it covered, not the one asked for", () => {
     expect(resolveSince("2160h", NOW).since).toBe("30d");
     expect(resolveSince("45m", NOW).since).toBe("45m");
+  });
+});
+
+// The Docker fallback used to tail N lines whatever the window, so an hour
+// could come back as days. It takes the same `since` and reports what it covers.
+describe("dockerSince", () => {
+  it("cuts the window at the duration asked for", () => {
+    const window = dockerSince("1h", NOW);
+    expect(window.since).toBe("1h");
+    expect(NOW / 1000 - Number(window.seconds)).toBe(3600);
+  });
+
+  it("does not clamp to Loki retention — Docker holds what it holds", () => {
+    const window = dockerSince("90d", NOW);
+    expect(window.since).toBe("90d");
+    expect(NOW / 1000 - Number(window.seconds)).toBe(90 * 86400);
+    expect(Number(window.seconds)).toBeLessThan(
+      Number(resolveSince("90d", NOW).start) / 1_000_000_000,
+    );
+  });
+
+  it("falls back to an hour when the duration does not parse", () => {
+    expect(dockerSince("last tuesday", NOW).since).toBe("1h");
   });
 });
 
