@@ -14,7 +14,8 @@ type SystemAlertType =
   | "system.restart-loop"
   | "system.cert-expiring"
   | "system.update-available"
-  | "app.auto-restarted";
+  | "app.auto-restarted"
+  | "app.oom-killed";
 
 type SystemAlertProps = {
   alertType: SystemAlertType;
@@ -29,6 +30,7 @@ function isCritical(
   details?: Record<string, string>,
 ): boolean {
   if (alertType === "system.service-down") return true;
+  if (alertType === "app.oom-killed") return true;
   if (alertType === "system.disk-alert") {
     const threshold = parseInt(details?.threshold ?? "0");
     return threshold >= 95;
