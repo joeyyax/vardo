@@ -20,6 +20,8 @@ export type LogScopeApp = {
 export type LogScope = {
   /** Compose project name — the parent's for a decomposed service. */
   project: string;
+  /** App id whose containers carry the project label — the parent's for a decomposed service. */
+  projectId: string;
   /** Service to scope to, or null for the whole stack. */
   service: string | null;
   /** Every service in the stack, for the viewer's service pills. */
@@ -41,7 +43,7 @@ export async function resolveLogScope(
   const services = siblings.map((s) => s.composeService).filter((s): s is string => !!s).sort();
 
   if (!app.parentAppId) {
-    return { project: app.name, service: null, services, prefixed: services.length > 1 };
+    return { project: app.name, projectId: app.id, service: null, services, prefixed: services.length > 1 };
   }
 
   const parent = await db.query.apps.findFirst({
@@ -52,6 +54,7 @@ export async function resolveLogScope(
   const service = opts.allServices ? null : app.composeService;
   return {
     project: parent?.name ?? app.name,
+    projectId: parent ? app.parentAppId : app.id,
     service,
     services,
     prefixed: !service && services.length > 1,

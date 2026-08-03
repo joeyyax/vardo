@@ -69,7 +69,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const searchParams = request.nextUrl.searchParams;
     let containerId = searchParams.get("container");
 
-    const containers = await listContainers(app.name);
+    const containers = await listContainers(app);
     const runningContainers = containers.filter((c) => c.state === "running");
 
     if (runningContainers.length === 0) {
