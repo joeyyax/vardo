@@ -13,6 +13,7 @@ import {
   imageReclaimRunSchema,
 } from "@/lib/api/admin/maintenance-schemas";
 import { buildReclaimPlan } from "@/lib/docker/image-reclaim/plan";
+import { buildSlotReclaimPlan } from "@/lib/docker/image-reclaim/slot-plan";
 import { executeReclaimPlan } from "@/lib/docker/image-reclaim/run";
 import {
   getImageReclaimConfig,
@@ -21,6 +22,7 @@ import {
   setImageReclaimConfig,
 } from "@/lib/docker/image-reclaim/settings";
 import { SKIP_COPY } from "@/lib/docker/image-reclaim/policy";
+import { SLOT_SKIP_COPY } from "@/lib/docker/image-reclaim/slot-policy";
 
 const log = logger.child("admin:maintenance:image-reclaim");
 
@@ -37,20 +39,29 @@ export async function GET() {
     const config = await getImageReclaimConfig();
     const lastRun = await getLastRun();
 
+    let plan = null;
     try {
-      const plan = await buildReclaimPlan(config.idleDays);
-      return NextResponse.json({
-        config,
-        lastRun,
-        plan: {
-          ...plan,
-          skipped: plan.skipped.map((s) => ({ ...s, explanation: SKIP_COPY[s.reason] })),
-        },
-      });
+      const built = await buildReclaimPlan(config.idleDays);
+      plan = {
+        ...built,
+        skipped: built.skipped.map((s) => ({ ...s, explanation: SKIP_COPY[s.reason] })),
+      };
     } catch (err) {
       log.error(`Failed to build reclaim plan: ${err}`);
-      return NextResponse.json({ config, lastRun, plan: null });
     }
+
+    let slotPlan = null;
+    try {
+      const built = await buildSlotReclaimPlan();
+      slotPlan = {
+        ...built,
+        skipped: built.skipped.map((s) => ({ ...s, explanation: SLOT_SKIP_COPY[s.reason] })),
+      };
+    } catch (err) {
+      log.error(`Failed to build slot reclaim plan: ${err}`);
+    }
+
+    return NextResponse.json({ config, lastRun, plan, slotPlan });
   } catch (error) {
     return handleRouteError(error);
   }
@@ -82,7 +93,18 @@ async function handlePost(request: NextRequest) {
       log.info(`Manual reclaim removed ${result.reclaimed.length} image(s)`);
     }
 
-    return NextResponse.json({ ok: true, result });
+    // The slot sweep is opt-in per request, so a plain run cannot reach a
+    // generation an operator has not previewed.
+    let slotResult = null;
+    if (parsed.data.slots) {
+      const slotPlan = await buildSlotReclaimPlan();
+      slotResult = await executeReclaimPlan(slotPlan, { dryRun: parsed.data.dryRun });
+      if (!parsed.data.dryRun) {
+        log.info(`Manual slot reclaim removed ${slotResult.reclaimed.length} image(s)`);
+      }
+    }
+
+    return NextResponse.json({ ok: true, result, slotResult });
   } catch (error) {
     return handleRouteError(error, "image reclaim");
   }

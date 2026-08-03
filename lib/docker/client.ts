@@ -795,16 +795,17 @@ export type DiskUsage = {
 
 export async function getSystemDiskUsage(): Promise<DiskUsage> {
   const raw = await dockerRequest<{
-    Images: { Id: string; Size: number; SharedSize: number }[];
+    Images: { Id: string; Size: number; SharedSize: number; Containers: number }[];
     Containers: { Id: string; SizeRw: number; SizeRootFs: number }[];
     Volumes: { Name: string; UsageData: { Size: number; RefCount: number } }[];
-    BuildCache: { ID: string; Size: number; InUse: boolean }[];
+    BuildCache: { ID: string; Size: number; InUse: boolean; Shared: boolean }[];
   }>("GET", "/system/df");
 
   const images = {
     count: raw.Images?.length || 0,
     totalSize: raw.Images?.reduce((s, i) => s + (i.Size || 0), 0) || 0,
-    reclaimable: raw.Images?.filter((i) => i.SharedSize === i.Size).reduce((s, i) => s + i.Size, 0) || 0,
+    // An image no container references, stopped ones included.
+    reclaimable: raw.Images?.filter((i) => i.Containers === 0).reduce((s, i) => s + i.Size, 0) || 0,
   };
 
   const containers = {
@@ -820,7 +821,9 @@ export async function getSystemDiskUsage(): Promise<DiskUsage> {
   const buildCache = {
     count: raw.BuildCache?.length || 0,
     totalSize: raw.BuildCache?.reduce((s, b) => s + (b.Size || 0), 0) || 0,
-    reclaimable: raw.BuildCache?.filter((b) => !b.InUse).reduce((s, b) => s + b.Size, 0) || 0,
+    // A shared record's blobs are held by an image too, so pruning it frees nothing.
+    reclaimable:
+      raw.BuildCache?.filter((b) => !b.InUse && !b.Shared).reduce((s, b) => s + b.Size, 0) || 0,
   };
 
   return {
@@ -922,20 +925,22 @@ export type ImageInfo = {
   id: string;
   repoTags: string[];
   size: number;
+  /** Image labels. Compose stamps its project and service onto what it builds. */
+  labels: Record<string, string>;
 };
 
 export async function listImages(filters?: Record<string, string[]>): Promise<ImageInfo[]> {
   const query = filters
     ? `?filters=${encodeURIComponent(JSON.stringify(filters))}`
     : "";
-  const images = await dockerRequest<{ Id: string; RepoTags: string[] | null; Size: number }[]>(
-    "GET",
-    `/images/json${query}`,
-  );
+  const images = await dockerRequest<
+    { Id: string; RepoTags: string[] | null; Size: number; Labels: Record<string, string> | null }[]
+  >("GET", `/images/json${query}`);
   return images.map((img) => ({
     id: img.Id,
     repoTags: img.RepoTags ?? [],
     size: img.Size,
+    labels: img.Labels ?? {},
   }));
 }
 
