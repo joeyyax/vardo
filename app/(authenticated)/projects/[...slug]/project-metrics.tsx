@@ -8,7 +8,7 @@ import { AlertTriangle, Loader2 } from "lucide-react";
 import { Cpu, MemoryStick, Network } from "lucide-react";
 import { ChartCard } from "@/components/app-status";
 import { EmptyState } from "@/components/ui/empty-state";
-import { formatBytes, formatBytesShort, formatTime } from "@/lib/metrics/format";
+import { formatBytes, formatBytesShort, formatCores, formatCoresShort, formatTime } from "@/lib/metrics/format";
 import { CHART_COLORS, chartTickStyle, TIME_RANGES, type TimeRange } from "@/lib/metrics/constants";
 import { MetricsTooltip } from "@/components/metrics-chart";
 import { useMetricsStream } from "@/hooks/use-metrics-stream";
@@ -29,7 +29,7 @@ function CpuTooltip(props: { active?: boolean; payload?: Array<{ dataKey?: strin
   return (
     <MetricsTooltip
       {...props}
-      valueFormatter={(v) => `${v.toFixed(2)}%`}
+      valueFormatter={(v) => formatCores(v)}
       categoryLabels={{ cpu: "CPU" }}
     />
   );
@@ -100,6 +100,8 @@ export function ProjectMetrics({ orgId, projectId, apps }: ProjectMetricsProps) 
     );
   }
 
+  const latestCpu = points.length > 0 ? points[points.length - 1].cpu : null;
+
   if (loading && points.length === 0) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -128,7 +130,7 @@ export function ProjectMetrics({ orgId, projectId, apps }: ProjectMetricsProps) 
         ))}
       </div>
 
-      <ChartCard title="CPU" icon={Cpu}>
+      <ChartCard title="CPU" icon={Cpu} value={formatCores(latestCpu)}>
         <ResponsiveContainer width="100%" height={200}>
           <AreaChart data={chartPoints}>
             <defs>
@@ -139,7 +141,7 @@ export function ProjectMetrics({ orgId, projectId, apps }: ProjectMetricsProps) 
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
             <XAxis dataKey="time" tick={chartTickStyle} />
-            <YAxis width={45} tickFormatter={(v) => `${v}%`} tick={chartTickStyle} />
+            <YAxis width={45} tickFormatter={formatCoresShort} tick={chartTickStyle} />
             <Tooltip content={<CpuTooltip />} />
             <Area isAnimationActive={false} type="monotone" dataKey="cpu" stroke={CHART_COLORS.cpu} fill="url(#projCpuGradient)" />
           </AreaChart>
