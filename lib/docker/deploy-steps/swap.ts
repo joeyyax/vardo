@@ -27,7 +27,7 @@ import {
   COMPOSE_QUERY_TIMEOUT,
   HTTP_PROBE_TIMEOUT,
 } from "../constants";
-import type { DeployContext } from "../deploy-context";
+import type { DeployContext, SlotStopOutcome } from "../deploy-context";
 import { classifyComposeServices } from "./classify-services";
 import { majorGateAfter, majorGateBefore, type MajorGateState } from "./major-gate";
 import { publishesHostPorts } from "../host-ports";
@@ -72,16 +72,21 @@ export function canPinCutover(canOverlapSlots: boolean): boolean {
  * The pin is confirmed live before the stop is issued and released after it
  * returns, so no request is ever addressed to a slot that has already gone.
  */
-export async function drainThenStop(
+export async function drainThenStop<T>(
   drain: () => Promise<CutoverGuard>,
-  stop: () => Promise<void>,
-): Promise<void> {
+  stop: () => Promise<T>,
+): Promise<T> {
   const guard = await drain();
   try {
-    await stop();
+    return await stop();
   } finally {
     await guard.release();
   }
+}
+
+/** Docker's way of saying the containers this asked to stop are already gone. */
+function alreadyGone(message: string): boolean {
+  return /no such container|no container found for project/i.test(message);
 }
 
 /**
@@ -352,13 +357,13 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
 
   let stoppedOldSlot = false;
 
-  const stopOldSlot = async () => {
-    if (!oldSlotDir || !oldProjectName || stoppedOldSlot) return;
+  const stopOldSlot = async (): Promise<SlotStopOutcome> => {
+    if (!oldSlotDir || !oldProjectName || stoppedOldSlot) return { ok: true };
     stoppedOldSlot = true;
     const oldComposeFileArgs = await getOldComposeFileArgs();
     log(`[deploy] Stopping old slot (${activeSlot})...`);
 
-    const stop = async () => {
+    const stop = async (): Promise<SlotStopOutcome> => {
       try {
         // Demote before stopping, not after — when the old slot is running this
         // process there is no "after". Never move this below the stop.
@@ -372,29 +377,32 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
           ["compose", ...oldComposeFileArgs, "-p", oldProjectName, "stop"],
           { cwd: oldSlotDir, timeout: COMPOSE_DOWN_TIMEOUT }
         );
-        stoppedOldServices.push("__all__");
       } catch (err) {
-        log(`[deploy] Warning: could not stop old slot — ${err instanceof Error ? err.message : err}`);
+        const message = err instanceof Error ? err.message : String(err);
+        if (!alreadyGone(message)) {
+          log(`[deploy] Warning: could not stop old slot — ${message}`);
+          return { ok: false, message };
+        }
       }
+      stoppedOldServices.push("__all__");
+      return { ok: true };
     };
 
-    if (pinCutover) {
-      await drainThenStop(
-        () =>
-          guardCutover({
-            appName: app.name,
-            envName: ctx.envName,
-            compose,
-            slotted,
-            newProjectName,
-            oldProjectName,
-            log,
-          }),
-        stop,
-      );
-    } else {
-      await stop();
-    }
+    const outcome = pinCutover
+      ? await drainThenStop(
+          () =>
+            guardCutover({
+              appName: app.name,
+              envName: ctx.envName,
+              compose,
+              slotted,
+              newProjectName,
+              oldProjectName,
+              log,
+            }),
+          stop,
+        )
+      : await stop();
 
     // While both slots are up the kernel can pick either. A kill that lands on
     // the one already going away is indistinguishable from this teardown.
@@ -403,6 +411,17 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
       oldProjectName,
       swapStartedAt,
       log,
+    );
+
+    return outcome;
+  };
+
+  // A slot that would not stop keeps its containers, and a daemon restart can
+  // bring them back as a second live backend behind Traefik.
+  const noteStopFailure = (outcome: SlotStopOutcome) => {
+    if (outcome.ok) return;
+    (ctx.unfinished ??= []).push(
+      `the old slot (${activeSlot}) is still running — ${outcome.message}`,
     );
   };
 
@@ -433,7 +452,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
     // is no proven second backend to pin to and guardCutover would only burn
     // PIN_CONFIRM_TIMEOUT waiting for one.
     pinCutover = false;
-    await stopOldSlot();
+    noteStopFailure(await stopOldSlot());
   } else if (canOverlapSlots) {
     log(`[deploy] No published host ports — ${activeSlot} keeps serving until ${newSlot} is healthy`);
   }
@@ -634,7 +653,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
   // Both slots have been serving since the new one came up. Drop the old one
   // now that the new one is proven, so the cutover never leaves a gap.
   if (canOverlapSlots && !deferStopToPostDeploy) {
-    await stopOldSlot();
+    noteStopFailure(await stopOldSlot());
   }
   ctx.stopOldSlot = deferStopToPostDeploy ? stopOldSlot : undefined;
 
