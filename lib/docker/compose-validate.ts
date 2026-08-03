@@ -6,7 +6,8 @@ import { resolve } from "path";
 import YAML from "yaml";
 import type { ComposeFile, ComposeService, ValidateOptions } from "./compose-types";
 import { dependsOnKeys } from "./compose-types";
-import { SHARED_MARKER, isSharedService } from "./slot-partition";
+import { SHARED_MARKER, isSharedService, nonRotatingServices } from "./slot-partition";
+import { sharedVolumeMounts, volumeSharedServices } from "./volume-shared";
 import { getTraefikRoutedServices } from "./compose-inject";
 import { selectRoutedService } from "./routed-service";
 
@@ -407,6 +408,39 @@ export function droppedKeyWarnings(compose: unknown): string[] {
           `Docker would honor ${dropped.length === 1 ? "it" : "them"} — the deployed container will not.`,
       );
     }
+  }
+  return warnings;
+}
+
+/**
+ * Report services Vardo will stop rotating because a second copy would land on
+ * their data directory.
+ *
+ * Not an error — the deploy is safer for it. But the service stops being
+ * updated, so the operator has to know it happened and that the marker is how
+ * you say it on purpose.
+ */
+export function unmarkedSharedVolumeWarnings(compose: ComposeFile): string[] {
+  const declared = new Set(Object.keys(compose.volumes ?? {}));
+  const nonRotating = nonRotatingServices(compose);
+
+  const warnings: string[] = [];
+  for (const name of volumeSharedServices(compose)) {
+    const svc = compose.services[name];
+    if (isSharedService(svc)) continue;
+    const mounts = sharedVolumeMounts(svc.volumes, declared).map((v) => `"${v}"`).join(", ");
+    const head = `Service "${name}" runs ${svc.image} and mounts ${mounts}, which both slots address.`;
+
+    // Dropped by nonRotatingServices — it depends on a rotating service, or is
+    // the only thing left to deploy. Still rotating, so say so plainly.
+    warnings.push(
+      nonRotating.has(name)
+        ? `${head} Vardo will deploy it once instead of rotating it — ` +
+            `add ${SHARED_MARKER}: true to say so in the compose file.`
+        : `${head} Vardo cannot take it out of the rotation, so two copies will hold ` +
+            `it during a deploy. Give it its own compose file, or drop the depends_on ` +
+            `tying it to a service that rotates.`,
+    );
   }
   return warnings;
 }
