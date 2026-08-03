@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "@/lib/messenger";
 import { useNotificationStream } from "@/hooks/use-notification-stream";
+import { INFRA_RECHECK_EVENT } from "@/lib/attention/infrastructure-view";
 import { createRefreshScheduler, isRefreshEvent, type RefreshScheduler } from "@/lib/bus/refresh";
 import { toastSeverityFor } from "@/lib/bus/toasts";
 import type { BusEvent } from "@/lib/bus/events";
@@ -51,7 +52,11 @@ export function NotificationListener({ orgId }: { orgId: string }) {
   const onEvent = useCallback((event: BusEvent & { historical?: boolean }) => {
     // Catch-up events fire after a reconnect, when the rendered data is already
     // behind — refresh for them, but don't replay their toasts.
-    if (isRefreshEvent(event.type)) schedulerRef.current?.schedule();
+    if (isRefreshEvent(event.type)) {
+      schedulerRef.current?.schedule();
+      // Infrastructure polls on its own clock; a local event brings it forward.
+      window.dispatchEvent(new Event(INFRA_RECHECK_EVENT));
+    }
     if (event.historical) return;
     showToast(event);
   }, []);
