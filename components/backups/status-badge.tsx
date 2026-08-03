@@ -19,7 +19,7 @@ export function StatusBadge({ status }: { status: string }) {
       );
     case "failed":
       return (
-        <Badge variant="destructive">
+        <Badge variant="error">
           <XCircle className="mr-1 size-3" aria-hidden="true" />
           Failed
         </Badge>

@@ -20,10 +20,14 @@ import {
   statusWordTone,
   tagLabels,
   ROW_DOMAIN_CELL,
+  ROW_ICONS_CELL,
   ROW_NAME_CELL,
   ROW_NOTE_CELL,
   ROW_SOURCE_CELL,
+  ROW_SPARKLINE_CELL,
+  ROW_TAGS_CELL,
   ROW_TRAILING_CELL,
+  ROW_UPTIME_CELL,
   type RowNote,
 } from "@/lib/ui/app-row";
 
@@ -166,26 +170,23 @@ export function AppRow({
 
         <span className={`${ROW_TRAILING_CELL} font-normal text-muted-foreground/70`}>
           {/* The two facts that used to leave the middle of a wide row empty. */}
-          <span className={`${ROW_SOURCE_CELL} hidden @[52rem]:block`}>{source ?? ""}</span>
-          <span className={`${ROW_DOMAIN_CELL} hidden @[68rem]:block`}>{domain ?? ""}</span>
+          <span className={ROW_SOURCE_CELL}>{source ?? ""}</span>
+          <span className={ROW_DOMAIN_CELL}>{domain ?? ""}</span>
           {tags.shown.length > 0 && (
-            <span className="hidden max-w-32 truncate text-muted-foreground/60 @[34rem]:inline">
+            <span className={ROW_TAGS_CELL}>
               {tags.shown.join(" ")}
               {tags.overflow > 0 && ` +${tags.overflow}`}
             </span>
           )}
           {/* The figure outranks the squiggle: uptime holds at every width. */}
-          <span className="w-9 shrink-0 text-right tabular-nums">
+          <span className={ROW_UPTIME_CELL}>
             {running && app.containerStartedAt ? <RowUptime since={app.containerStartedAt} /> : ""}
           </span>
-          <span
-            className={`hidden h-[18px] w-16 shrink-0 items-center justify-end @[26rem]:flex ${sparklineTone(severity)}`}
-            aria-hidden="true"
-          >
+          <span className={`${ROW_SPARKLINE_CELL} ${sparklineTone(severity)}`} aria-hidden="true">
             {series && <RowSparkline data={series} />}
           </span>
           {/* Attributes stay achromatic; only the actionable update takes a hue. */}
-          <span className="flex shrink-0 items-center justify-end gap-1.5 @[26rem]:w-14">
+          <span className={ROW_ICONS_CELL}>
             {updateCount > 0 && (
               <Package className="size-3 text-status-update" aria-label="Update available" />
             )}
