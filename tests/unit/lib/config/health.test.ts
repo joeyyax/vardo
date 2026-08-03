@@ -192,7 +192,6 @@ describe("probes for disabled features", () => {
   const touched = [
     "VARDO_FEATURE_METRICS",
     "VARDO_FEATURE_LOGGING",
-    "VARDO_FEATURE_ERROR_TRACKING",
     "CADVISOR_URL",
   ];
 
@@ -223,10 +222,6 @@ describe("probes for disabled features", () => {
     await expect(checkServiceByName("Promtail")).resolves.toBeNull();
   });
 
-  it("reports nothing for error tracking when its flag is off", async () => {
-    process.env.VARDO_FEATURE_ERROR_TRACKING = "false";
-    await expect(checkServiceByName("GlitchTip")).resolves.toBeNull();
-  });
 });
 
 // ---------------------------------------------------------------------------

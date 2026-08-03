@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-// cAdvisor, Loki, Promtail and GlitchTip are instance-level singletons. The
-// lookup is by app name across the whole instance, so an existing row is
-// adopted wherever it lives — never duplicated, never silently skipped.
+// cAdvisor, Loki and Promtail are instance-level singletons. The lookup is by
+// app name across the whole instance, so an existing row is adopted wherever it
+// lives — never duplicated, never silently skipped.
 
 const {
   dbMock,
@@ -57,7 +57,6 @@ const {
     requestDeployMock: vi.fn(),
     deleteAppMock: vi.fn().mockResolvedValue({ deleted: true }),
     loadTemplatesMock: vi.fn(async () => [
-      template("glitchtip", "GlitchTip"),
       template("loki", "Loki"),
       template("promtail", "Promtail"),
       template("cadvisor", "cAdvisor"),
@@ -114,15 +113,13 @@ describe("core service provisioning", () => {
     appsInserted.length = 0;
   });
 
-  it("creates the row in the Vardo system org on a clean instance", async () => {
-    await provisionForFlag("error-tracking", true);
+  it("creates the rows in the Vardo system org on a clean instance", async () => {
+    await provisionForFlag("logging", true);
 
-    expect(appsInserted).toHaveLength(1);
-    expect(appsInserted[0]).toMatchObject({
-      name: "glitchtip",
-      organizationId: "vardo-org",
-      isSystemManaged: true,
-    });
+    expect(appsInserted.map((row) => row.name)).toEqual(["loki", "promtail"]);
+    for (const row of appsInserted) {
+      expect(row).toMatchObject({ organizationId: "vardo-org", isSystemManaged: true });
+    }
   });
 
   it("adopts a row that already exists rather than creating a second one", async () => {
@@ -134,11 +131,11 @@ describe("core service provisioning", () => {
       composeContent: "services: {}",
     });
 
-    await provisionForFlag("error-tracking", true);
+    await provisionForFlag("logging", true);
 
     expect(appsInserted).toHaveLength(0);
     expect(requestDeployMock).not.toHaveBeenCalled();
-    expect(lastRecordedStatus().glitchtip).toMatchObject({ state: "provisioned", appId: "app-1" });
+    expect(lastRecordedStatus().loki).toMatchObject({ state: "provisioned", appId: "app-1" });
   });
 
   it("does not duplicate or move a row that landed in another organization", async () => {
@@ -150,11 +147,11 @@ describe("core service provisioning", () => {
       composeContent: "services: {}",
     });
 
-    await provisionForFlag("error-tracking", true);
+    await provisionForFlag("logging", true);
 
     expect(appsInserted).toHaveLength(0);
     expect(dbMock.update).not.toHaveBeenCalled();
-    expect(lastRecordedStatus().glitchtip).toMatchObject({
+    expect(lastRecordedStatus().loki).toMatchObject({
       state: "provisioned",
       organizationId: "some-other-org",
     });
@@ -168,11 +165,11 @@ describe("core service provisioning", () => {
       isSystemManaged: false,
     });
 
-    await expect(provisionForFlag("error-tracking", true)).rejects.toThrow(
+    await expect(provisionForFlag("logging", true)).rejects.toThrow(
       /already exists on this instance/i,
     );
     expect(appsInserted).toHaveLength(0);
-    expect(lastRecordedStatus().glitchtip).toMatchObject({ state: "conflict" });
+    expect(lastRecordedStatus().loki).toMatchObject({ state: "conflict" });
   });
 
   it("redeploys an adopted row whose container went missing, in its own org", async () => {
@@ -184,7 +181,7 @@ describe("core service provisioning", () => {
       composeContent: "services: {}",
     });
 
-    await provisionForFlag("error-tracking", true);
+    await provisionForFlag("logging", true);
 
     expect(requestDeployMock).toHaveBeenCalledWith(
       expect.objectContaining({ appId: "app-1", organizationId: "some-other-org" }),
@@ -211,14 +208,14 @@ describe("core service provisioning", () => {
   it("records a missing template rather than skipping it quietly", async () => {
     loadTemplatesMock.mockResolvedValueOnce([]);
 
-    await expect(provisionForFlag("error-tracking", true)).rejects.toThrow(/template/i);
-    expect(lastRecordedStatus().glitchtip).toMatchObject({ state: "missing-template" });
+    await expect(provisionForFlag("logging", true)).rejects.toThrow(/template/i);
+    expect(lastRecordedStatus().loki).toMatchObject({ state: "missing-template" });
   });
 });
 
 describe("core service metadata", () => {
   it("names every instance-level service", () => {
-    expect(CORE_SERVICE_NAMES).toEqual(["cadvisor", "loki", "promtail", "glitchtip"]);
+    expect(CORE_SERVICE_NAMES).toEqual(["cadvisor", "loki", "promtail"]);
     expect(isCoreServiceApp("cadvisor")).toBe(true);
     expect(isCoreServiceApp("wordpress")).toBe(false);
   });
@@ -230,7 +227,7 @@ describe("core service metadata", () => {
   it("reports a disabled flag as off and an enabled-but-unprovisioned service as failed", () => {
     const summary = summarizeCoreServices(
       {},
-      { metrics: false, logging: true, "error-tracking": false },
+      { metrics: false, logging: true },
     );
     const byName = Object.fromEntries(summary.map((s) => [s.name, s]));
 

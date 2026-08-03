@@ -36,7 +36,6 @@ const ATTACHED: Record<string, string> = {
   cadvisor: "cadvisor",
   loki: "loki",
   promtail: "promtail",
-  glitchtip: "glitchtip",
 };
 
 describe("core service templates — shared network", () => {
@@ -67,18 +66,6 @@ describe("core service templates — shared network", () => {
       });
     });
   }
-
-  it("keeps GlitchTip's backing services off the shared network", () => {
-    const { overlay } = deployedFiles("glitchtip");
-    for (const service of ["postgres", "redis", "worker"]) {
-      expect(overlay.services[service].networks).toBeUndefined();
-    }
-  });
-
-  it("keeps GlitchTip on its project network so postgres and redis resolve", () => {
-    const { bare } = deployedFiles("glitchtip");
-    expect(bare.services.glitchtip.networks).toEqual(["default"]);
-  });
 
   it("points Promtail at Loki's compose service name", () => {
     // container_name is stripped for blue/green, so only the service name resolves.
