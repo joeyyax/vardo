@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
+import { statusChange } from "@/lib/db/app-status";
 import { deployments, apps } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
@@ -54,7 +55,7 @@ async function forceCancel(deploymentId: string, appId: string, orgId: string): 
 
   await db
     .update(apps)
-    .set({ status: "stopped", updatedAt: now })
+    .set(statusChange("stopped", now))
     .where(and(eq(apps.id, appId), eq(apps.status, "deploying")));
 
   // Release the concurrency slot, clear the active deploy marker, and remove

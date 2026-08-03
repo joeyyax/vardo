@@ -17,6 +17,7 @@ function app(overrides: Partial<InfraApp> & { name: string }): InfraApp {
     id: `app-${overrides.name}`,
     displayName: overrides.name,
     status: "active",
+    statusChangedAt: null,
     parentAppId: null,
     conditions: null,
     ...overrides,
@@ -212,6 +213,48 @@ describe("infrastructureRows", () => {
 
     expect(rows[0]).toMatchObject({ key: "core-service-down", tone: "error" });
     expect(rows[0].items[0]).toMatchObject({ name: "Loki", detail: "Container stopped" });
+  });
+
+  it("says how long a service has been down", () => {
+    const rows = infrastructureRows(
+      snapshot({
+        apps: [
+          { ...loki, status: "stopped", statusChangedAt: new Date("2026-08-03T03:58:57.000Z") },
+        ],
+      }),
+      ADMIN,
+    );
+
+    expect(rows[0].items[0].since).toBe("2026-08-03T03:58:57.000Z");
+  });
+
+  // A row from before the column existed. Silence beats a duration measured
+  // from updatedAt, which ordinary writes bump.
+  it("says nothing about duration when the status change was never stamped", () => {
+    const rows = infrastructureRows(
+      snapshot({ apps: [{ ...loki, status: "stopped", statusChangedAt: null }] }),
+      ADMIN,
+    );
+
+    expect(rows[0].items[0].since).toBeUndefined();
+  });
+
+  it("prefers the condition's own timestamp over the status stamp", () => {
+    const rows = infrastructureRows(
+      snapshot({
+        apps: [
+          {
+            ...loki,
+            status: "stopped",
+            statusChangedAt: new Date("2026-08-03T03:58:57.000Z"),
+            conditions: [crashLoop],
+          },
+        ],
+      }),
+      ADMIN,
+    );
+
+    expect(rows[0].items[0].since).toBe(crashLoop.since);
   });
 
   it("stays quiet about a stopped core service whose feature is off", () => {

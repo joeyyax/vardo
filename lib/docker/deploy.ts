@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { statusChange } from "@/lib/db/app-status";
 import { deployments, apps, organizations, environments, projects, domains } from "@/lib/db/schema";
 import { decryptOrFallback } from "@/lib/crypto/encrypt";
 import { parseEnvToMap } from "@/lib/env/parse-env";
@@ -179,7 +180,7 @@ export async function runDeployment(
     // it, and the sweeper resets it if this process dies mid-deploy.
     await db
       .update(apps)
-      .set({ status: "deploying", updatedAt: new Date() })
+      .set(statusChange("deploying"))
       .where(eq(apps.id, opts.appId));
 
     addEvent(opts.organizationId, {
@@ -512,7 +513,7 @@ export async function runDeployment(
         // Docker on its next pass.
         await db
           .update(apps)
-          .set({ status: "stopped", updatedAt: new Date() })
+          .set(statusChange("stopped"))
           .where(and(eq(apps.id, opts.appId), eq(apps.status, "deploying")));
 
         addEvent(opts.organizationId, {
@@ -568,7 +569,7 @@ export async function runDeployment(
 
     await db
       .update(apps)
-      .set({ status: "error", updatedAt: new Date() })
+      .set(statusChange("error"))
       .where(eq(apps.id, opts.appId));
 
     addEvent(opts.organizationId, {
@@ -824,15 +825,16 @@ export async function stopProject(
       }
     }
 
+    const stoppedAt = new Date();
     await db
       .update(apps)
-      .set({ status: "stopped", updatedAt: new Date() })
+      .set(statusChange("stopped", stoppedAt))
       .where(eq(apps.id, appId));
 
     // Cascade stop status to compose child services
     await db
       .update(apps)
-      .set({ status: "stopped", updatedAt: new Date() })
+      .set(statusChange("stopped", stoppedAt))
       .where(eq(apps.parentAppId, appId));
 
     return { success: true, log: logs.join("\n") };

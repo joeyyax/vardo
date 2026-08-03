@@ -12,6 +12,7 @@ import pLimit from "p-limit";
 import { eq, inArray } from "drizzle-orm";
 
 import { db } from "@/lib/db";
+import { statusChange } from "@/lib/db/app-status";
 import { apps } from "@/lib/db/schema";
 import { listAllContainers, inspectContainer, type ContainerInfo } from "./client";
 import { logger } from "@/lib/logger";
@@ -275,7 +276,7 @@ export async function tickStatusReconcile(): Promise<void> {
     await db
       .update(apps)
       .set({
-        status: u.observed,
+        ...statusChange(u.observed, now),
         containerStartedAt: u.startedAt,
         containerMemoryLimit: u.memoryLimit,
         needsRedeploy: u.needsRedeploy,
@@ -284,7 +285,6 @@ export async function tickStatusReconcile(): Promise<void> {
         // container going away. Idle age is measured from this.
         ...(u.running ? { lastRunningAt: now } : {}),
         statusCheckedAt: now,
-        updatedAt: now,
       })
       .where(eq(apps.id, u.id));
   }
