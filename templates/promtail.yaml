@@ -11,7 +11,6 @@ composeContent: |
   services:
     promtail:
       image: grafana/promtail:3.4
-      container_name: vardo-promtail
       restart: unless-stopped
       command:
         - -config.file=/etc/promtail/config.yml
@@ -22,6 +21,14 @@ composeContent: |
         - /var/run/docker.sock:/var/run/docker.sock:ro
         - /var/lib/docker/containers:/var/lib/docker/containers:ro
       mem_limit: 128m
+      # Promtail pushes to http://loki:3100 and Loki lives in its own compose
+      # project. Without the shared network the push has nowhere to land.
+      networks:
+        - vardo-network
+
+  networks:
+    vardo-network:
+      external: true
 
   configs:
     promtail-config:
@@ -31,7 +38,7 @@ composeContent: |
         positions:
           filename: /tmp/positions.yaml
         clients:
-          - url: http://vardo-loki:3100/loki/api/v1/push
+          - url: http://loki:3100/loki/api/v1/push
         scrape_configs:
           - job_name: docker
             docker_sd_configs:
