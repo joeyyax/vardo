@@ -210,7 +210,7 @@ export function restartCaption(reading: RestartReading | null, now: number): str
   return `Since this container was created ${containerAge(since, now)}. A deploy replaces it and the count restarts at zero`;
 }
 
-/** Container age in days, the unit the rest of the page uses. formatRelativeTime floors 48d to "1mo". */
+/** Days, so the Created date beside it can be checked against this. */
 function containerAge(since: Date, now: number): string {
   const days = Math.floor((now - since.getTime()) / 86_400_000);
   return days < 1 ? formatRelativeTime(since, new Date(now)) : `${days}d ago`;
