@@ -87,17 +87,22 @@ async function handlePost(request: NextRequest) {
   await invalidateFlagCache();
   revalidatePath("/", "layout");
 
-  // Provision infrastructure for changed flags. Enabling awaits the first
-  // deploy and rolls back on failure (provisionForFlag throws), so a failed
-  // integration never lingers as a connected-but-broken app (#741). On failure
-  // we revert that flag so the UI doesn't show a disconnected integration as on.
+  // Provision core services for changed flags. Enabling awaits the first deploy
+  // and rolls back on failure (provisionForFlag throws), so a failed integration
+  // never lingers as a connected-but-broken app (#741). On failure we revert
+  // that flag and relay why, so turning something on never reports success
+  // while the service isn't there.
   const failed: string[] = [];
+  const reasons: string[] = [];
   for (const [flag, enabled] of Object.entries(parsed.data)) {
     if (before.get(flag) === enabled) continue;
     try {
       await provisionForFlag(flag as FeatureFlag, enabled);
-    } catch {
+    } catch (err) {
       failed.push(flag);
+      reasons.push(
+        err instanceof Error && err.message ? err.message : `Couldn't provision ${flag}.`,
+      );
       merged[flag] = before.get(flag) ?? false;
     }
   }
@@ -109,7 +114,7 @@ async function handlePost(request: NextRequest) {
     await invalidateFlagCache();
     revalidatePath("/", "layout");
     return NextResponse.json(
-      { ok: false, failed, error: `Couldn't start ${failed.join(", ")} — deploy failed, reverted.` },
+      { ok: false, failed, error: `${reasons.join(" ")} Reverted.` },
       { status: 502 },
     );
   }

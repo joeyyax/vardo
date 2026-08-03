@@ -1,124 +1,182 @@
 // ---------------------------------------------------------------------------
-// Infrastructure auto-provisioning
+// Core service provisioning
 //
-// Deploys optional infrastructure services (cAdvisor, Loki, Promtail) as
-// managed apps when their feature flags are enabled. Services are created
-// from built-in templates and attached to a system-managed project.
+// cAdvisor, Loki, Promtail and GlitchTip are instance-level singletons — one
+// row each, in the Vardo system org, shared by every organization. The lookup
+// is by app name across the whole instance, so an existing row is adopted
+// wherever it already lives instead of being duplicated or skipped.
 //
 // Called at startup (instrumentation.ts) and on feature flag toggle.
 // ---------------------------------------------------------------------------
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
 
 import { db } from "@/lib/db";
 import { apps, environments, projects } from "@/lib/db/schema";
-import { isAppNameViolation, isTopLevelAppNameTaken } from "@/lib/db/app-name";
+import { isAppNameViolation } from "@/lib/db/app-name";
 import { isFeatureEnabledAsync, type FeatureFlag } from "@/lib/config/features";
 import { loadTemplates, type Template } from "@/lib/templates/load";
 import { requestDeploy } from "@/lib/docker/deploy-cancel";
 import { deleteApp } from "@/lib/docker/delete-app";
 import { ensureVardoOrg } from "@/lib/infra/vardo-org";
+import {
+  CORE_SERVICE_FEATURES,
+  recordCoreServiceStatus,
+  type CoreServiceFeature,
+  type CoreServiceState,
+} from "@/lib/infra/core-services";
 import { logger } from "@/lib/logger";
 
 const log = logger.child("infra");
 
-/**
- * Feature-to-template mapping. Each entry defines which feature flag
- * controls which templates should be provisioned.
- */
-const INFRA_FEATURES: {
-  flag: FeatureFlag;
-  templates: string[];
-  project: { name: string; displayName: string };
-  /** Override per-template app settings (e.g. enable Traefik labels for user-facing services). */
-  appOverrides?: Partial<{ autoTraefikLabels: boolean }>;
-}[] = [
-  { flag: "metrics", templates: ["cadvisor"], project: { name: "metrics", displayName: "Metrics" } },
-  { flag: "logging", templates: ["loki", "promtail"], project: { name: "logs", displayName: "Logs" } },
-  { flag: "error-tracking", templates: ["glitchtip"], project: { name: "error-tracking", displayName: "Error Tracking" }, appOverrides: { autoTraefikLabels: true } },
-];
+/** What one service ended up as, and enough context to report or undo it. */
+type Outcome = {
+  state: CoreServiceState;
+  appId: string | null;
+  organizationId: string | null;
+  detail: string | null;
+  /** True when this call created the row, so the caller can roll it back. */
+  created: boolean;
+};
+
+/** Drop the rollback-only field so an outcome can be stored as a status. */
+function toStatus(outcome: Outcome) {
+  return {
+    state: outcome.state,
+    appId: outcome.appId,
+    organizationId: outcome.organizationId,
+    detail: outcome.detail,
+  };
+}
 
 /**
- * Ensure all infrastructure services are provisioned based on feature flags.
+ * Ensure every enabled core service is provisioned.
  * Safe to call on every startup — all writes are idempotent.
  */
 export async function ensureInfraServices(): Promise<void> {
   const org = await ensureVardoOrg();
   if (!org) {
-    log.info("No admin user yet, skipping infra provisioning");
+    log.info("No admin user yet, skipping core service provisioning");
     return;
   }
 
   const templates = await loadTemplates();
+  const statuses: Parameters<typeof recordCoreServiceStatus>[0] = [];
 
-  for (const { flag, templates: templateNames, project: projDef, appOverrides } of INFRA_FEATURES) {
-    const enabled = await isFeatureEnabledAsync(flag);
+  for (const feature of CORE_SERVICE_FEATURES) {
+    const enabled = await isFeatureEnabledAsync(feature.flag);
     if (!enabled) continue;
 
-    const project = await ensureProject(org.id, projDef.name, projDef.displayName);
-
-    for (const name of templateNames) {
-      const template = templates.find((t) => t.name === name);
+    for (const service of feature.services) {
+      const template = templates.find((t) => t.name === service.name);
+      let outcome: Outcome;
       if (!template) {
-        log.warn(`Template "${name}" not found, skipping`);
-        continue;
+        outcome = {
+          state: "missing-template",
+          appId: null,
+          organizationId: null,
+          detail: `Built-in template "${service.name}" is missing from this build.`,
+          created: false,
+        };
+        log.warn(`Template "${service.name}" not found, skipping`);
+      } else {
+        try {
+          outcome = await ensureAppDeployed(org.id, feature, template);
+        } catch (err) {
+          outcome = {
+            state: "failed",
+            appId: null,
+            organizationId: null,
+            detail: err instanceof Error ? err.message : String(err),
+            created: false,
+          };
+          log.error(`Failed to provision ${service.name}:`, err);
+        }
       }
 
-      try {
-        await ensureAppDeployed(org.id, project.id, template, appOverrides);
-      } catch (err) {
-        log.error(`Failed to provision ${name}:`, err);
-      }
+      statuses.push({ ...service, flag: feature.flag, ...toStatus(outcome) });
+      if (outcome.state !== "provisioned") log.warn(`Core service "${service.name}": ${outcome.detail}`);
     }
   }
+
+  await recordCoreServiceStatus(statuses);
 }
 
 /**
- * Provision or deprovision specific templates based on a feature flag change.
- * Called from the feature flags API route after a toggle.
+ * Provision the core services a feature flag turns on.
+ * Called from the feature flags API route after a toggle. Throws with an
+ * operator-readable message so the route can revert the flag and say why.
  */
 export async function provisionForFlag(flag: FeatureFlag, enabled: boolean): Promise<void> {
   if (!enabled) return; // Containers keep running when feature is disabled
 
-  const mapping = INFRA_FEATURES.find((f) => f.flag === flag);
-  if (!mapping) return;
+  const feature = CORE_SERVICE_FEATURES.find((f) => f.flag === flag);
+  if (!feature) return;
 
   const org = await ensureVardoOrg();
   if (!org) return;
 
-  const project = await ensureProject(org.id, mapping.project.name, mapping.project.displayName);
   const templates = await loadTemplates();
 
   // Interactive toggle: wait for each first deploy and make the install
   // all-or-nothing. ensureAppDeployed rolls back its own app if its deploy
   // fails and throws; we then roll back any sibling apps already created in
   // this call so a partially-installed integration never lingers (#741).
-  const createdAppIds: string[] = [];
+  const created: { appId: string; organizationId: string }[] = [];
+  const statuses: Parameters<typeof recordCoreServiceStatus>[0] = [];
+  let failure: string | null = null;
+
   try {
-    for (const name of mapping.templates) {
-      const template = templates.find((t) => t.name === name);
-      if (!template) continue;
-      const appId = await ensureAppDeployed(org.id, project.id, template, mapping.appOverrides, {
-        waitForDeploy: true,
-      });
-      if (appId) createdAppIds.push(appId);
+    for (const service of feature.services) {
+      const template = templates.find((t) => t.name === service.name);
+      if (!template) {
+        failure = `Built-in template "${service.name}" is missing from this build.`;
+        statuses.push({
+          ...service,
+          flag,
+          state: "missing-template",
+          appId: null,
+          organizationId: null,
+          detail: failure,
+        });
+        break;
+      }
+
+      const outcome = await ensureAppDeployed(org.id, feature, template, { waitForDeploy: true });
+      statuses.push({ ...service, flag, ...toStatus(outcome) });
+
+      if (outcome.state !== "provisioned") {
+        failure = outcome.detail;
+        break;
+      }
+      if (outcome.created && outcome.appId && outcome.organizationId) {
+        created.push({ appId: outcome.appId, organizationId: outcome.organizationId });
+      }
     }
   } catch (err) {
-    for (const appId of createdAppIds) await rollbackInfraApp(appId, org.id);
+    await recordCoreServiceStatus(statuses);
+    for (const app of created) await rollbackInfraApp(app.appId, app.organizationId);
     throw err;
+  }
+
+  await recordCoreServiceStatus(statuses);
+
+  if (failure) {
+    for (const app of created) await rollbackInfraApp(app.appId, app.organizationId);
+    throw new Error(failure);
   }
 }
 
 /**
- * Undo a provisioned infra app — used to roll back a failed first deploy.
+ * Undo a provisioned core service app — used to roll back a failed first deploy.
  * Best-effort: a rollback failure is logged, never thrown.
  */
 async function rollbackInfraApp(appId: string, orgId: string): Promise<void> {
   try {
     await deleteApp({ appId, organizationId: orgId, allowSystemManaged: true });
   } catch (err) {
-    log.error(`Failed to roll back infra app ${appId}:`, err);
+    log.error(`Failed to roll back core service app ${appId}:`, err);
   }
 }
 
@@ -152,29 +210,34 @@ async function ensureProject(orgId: string, name: string, displayName: string) {
 }
 
 /**
- * Create and deploy an infra app from a template if it doesn't already exist.
+ * Adopt or create the single app row for a core service.
  *
- * Returns the new app's id when it created one, or null when the app already
- * existed (idempotent no-op). With `waitForDeploy`, awaits the first deploy and
- * — on failure — rolls back the app it just created and throws, so the caller
- * can present a clean failure instead of a connected-but-broken integration.
+ * The name is a top-level app name, unique instance-wide, so the lookup isn't
+ * scoped to an org: an existing system-managed row is adopted wherever it sits,
+ * and a row owned by a regular app is reported as a conflict rather than
+ * skipped. With `waitForDeploy`, awaits the first deploy and — on failure —
+ * rolls back the app it just created and throws.
  */
 async function ensureAppDeployed(
   orgId: string,
-  projectId: string,
+  feature: CoreServiceFeature,
   template: Template,
-  overrides?: Partial<{ autoTraefikLabels: boolean }>,
   opts?: { waitForDeploy?: boolean },
-): Promise<string | null> {
-  // Check if app already exists
+): Promise<Outcome> {
   const existing = await db.query.apps.findFirst({
-    where: and(
-      eq(apps.organizationId, orgId),
-      eq(apps.name, template.name),
-      eq(apps.isSystemManaged, true),
-    ),
-    columns: { id: true, status: true },
+    where: and(eq(apps.name, template.name), isNull(apps.parentAppId)),
+    columns: { id: true, status: true, organizationId: true, isSystemManaged: true },
   });
+
+  if (existing && !existing.isSystemManaged) {
+    return {
+      state: "conflict",
+      appId: existing.id,
+      organizationId: existing.organizationId,
+      detail: `An app named "${template.name}" already exists on this instance, so the shared ${template.displayName} service can't be created. Rename or remove that app, then turn this back on.`,
+      created: false,
+    };
+  }
 
   if (existing) {
     // For cadvisor: ensure gpuEnabled matches host GPU availability
@@ -184,36 +247,43 @@ async function ensureAppDeployed(
       if (hasGpu) log.info(`cAdvisor: GPU detected, enabled GPU metrics`);
     }
 
-    // Existence was the only check, so an infra app whose container went away
+    // Existence was the only check, so a core service whose container went away
     // stayed dead forever — the feature reads as enabled and silently does
     // nothing. Redeploy it instead.
     if (existing.status === "missing" || existing.status === "error") {
-      log.info(`Infra app "${template.name}" is ${existing.status} — redeploying`);
+      log.info(`Core service "${template.name}" is ${existing.status} — redeploying`);
+      let ok = false;
       try {
-        const result = await requestDeploy({ appId: existing.id, organizationId: orgId, trigger: "api" });
-        if (!result?.success) log.error(`Redeploy failed for infra app "${template.name}"`);
+        const result = await requestDeploy({
+          appId: existing.id,
+          organizationId: existing.organizationId,
+          trigger: "api",
+        });
+        ok = !!result?.success;
       } catch (err) {
-        log.error(`Redeploy threw for infra app "${template.name}":`, err);
+        log.error(`Redeploy threw for core service "${template.name}":`, err);
       }
-      return existing.id;
+      if (!ok) log.error(`Redeploy failed for core service "${template.name}"`);
+      return {
+        state: ok ? "provisioned" : "failed",
+        appId: existing.id,
+        organizationId: existing.organizationId,
+        detail: ok ? null : `${template.displayName} was ${existing.status} and its redeploy failed.`,
+        created: false,
+      };
     }
 
-    log.info(`Infra app "${template.name}" already exists`);
-    return null;
+    log.info(`Core service "${template.name}" already exists`);
+    return {
+      state: "provisioned",
+      appId: existing.id,
+      organizationId: existing.organizationId,
+      detail: null,
+      created: false,
+    };
   }
 
-  // Infra app names are top-level, so another org holding this one blocks it
-  // instance-wide. Skip rather than crash startup provisioning.
-  if (await isTopLevelAppNameTaken(template.name)) {
-    log.warn(
-      `Infra app "${template.name}" not provisioned — the name is already taken instance-wide`
-    );
-    return null;
-  }
-
-  // Create the app from the template. Wrapped in try/catch for the unique
-  // constraint — concurrent calls (startup + flag toggle) could both pass the
-  // findFirst check above.
+  const project = await ensureProject(orgId, feature.project.name, feature.project.displayName);
   const appId = nanoid();
 
   // For cadvisor: detect GPU to enable NVML-based metrics
@@ -223,7 +293,7 @@ async function ensureAppDeployed(
     await db.insert(apps).values({
       id: appId,
       organizationId: orgId,
-      projectId,
+      projectId: project.id,
       name: template.name,
       displayName: template.displayName,
       description: template.description,
@@ -235,14 +305,14 @@ async function ensureAppDeployed(
       cpuLimit: template.defaultCpuLimit,
       memoryLimit: template.defaultMemoryLimit,
       diskWriteAlertThreshold: template.defaultDiskWriteAlertThreshold,
-      autoTraefikLabels: overrides?.autoTraefikLabels ?? false,
+      autoTraefikLabels: feature.appOverrides?.autoTraefikLabels ?? false,
       gpuEnabled,
     });
   } catch (err) {
-    // Unique constraint violation — another call already created it
+    // Unique constraint violation — a concurrent call already created it
     if (isAppNameViolation(err) || (err instanceof Error && err.message.includes("unique"))) {
-      log.info(`Infra app "${template.name}" already created by concurrent call`);
-      return null;
+      log.info(`Core service "${template.name}" already created by concurrent call`);
+      return { state: "provisioned", appId: null, organizationId: orgId, detail: null, created: false };
     }
     throw err;
   }
@@ -256,7 +326,7 @@ async function ensureAppDeployed(
     isDefault: true,
   });
 
-  log.info(`Created infra app "${template.name}", triggering deploy`);
+  log.info(`Created core service "${template.name}", triggering deploy`);
 
   if (opts?.waitForDeploy) {
     // Interactive install (#741): wait for the first deploy and roll back the
@@ -265,14 +335,14 @@ async function ensureAppDeployed(
     try {
       result = await requestDeploy({ appId, organizationId: orgId, trigger: "api" });
     } catch (err) {
-      log.error(`Deploy threw for infra app "${template.name}":`, err);
+      log.error(`Deploy threw for core service "${template.name}":`, err);
     }
     if (!result?.success) {
-      log.error(`First deploy failed for infra app "${template.name}" — rolling back`);
+      log.error(`First deploy failed for core service "${template.name}" — rolling back`);
       await rollbackInfraApp(appId, orgId);
-      throw new Error(`Integration "${template.name}" failed to deploy`);
+      throw new Error(`${template.displayName} failed to deploy.`);
     }
-    return appId;
+    return { state: "provisioned", appId, organizationId: orgId, detail: null, created: true };
   }
 
   // Startup reconcile: fire-and-forget so boot isn't blocked by a slow or
@@ -282,9 +352,9 @@ async function ensureAppDeployed(
     organizationId: orgId,
     trigger: "api",
   }).catch((err) => {
-    log.error(`Deploy failed for infra app "${template.name}":`, err);
+    log.error(`Deploy failed for core service "${template.name}":`, err);
   });
-  return appId;
+  return { state: "provisioned", appId, organizationId: orgId, detail: null, created: true };
 }
 
 /** Check if an NVIDIA GPU runtime is available on the Docker host. */
