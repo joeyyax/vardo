@@ -183,6 +183,14 @@ export async function syncComposeServices(opts: {
     return result;
   }
 
+  // Children inherit the parent's system-managed flag — the guards that refuse
+  // edits and deletes read the child row, not the stack it belongs to.
+  const parent = await db.query.apps.findFirst({
+    where: eq(apps.id, parentAppId),
+    columns: { isSystemManaged: true },
+  });
+  const isSystemManaged = parent?.isSystemManaged ?? false;
+
   // Fetch existing child records for this parent
   const existingChildren = await db.query.apps.findMany({
     where: and(
@@ -270,6 +278,7 @@ export async function syncComposeServices(opts: {
           projectId,
           parentAppId, // Re-parent if it was orphaned
           composeService: serviceName, // Set if it was missing
+          isSystemManaged,
           updatedAt: new Date(),
         })
         .where(eq(apps.id, existing.id));
@@ -292,13 +301,13 @@ export async function syncComposeServices(opts: {
           "source", "deploy_type", "image_name", "status",
           "parent_app_id", "compose_service", "container_name", "project_id",
           "cpu_limit", "memory_limit", "priority", "persistent_volumes", "exposed_ports", "depends_on", "sort_order",
-          "created_at", "updated_at"
+          "is_system_managed", "created_at", "updated_at"
         ) VALUES (
           ${id}, ${organizationId}, ${childName}, ${displayName}, ${`Compose service: ${serviceName}`},
           ${"direct"}, ${"compose"}, ${svc.image || null}, ${"active"},
           ${parentAppId}, ${serviceName}, ${containerName}, ${projectId},
           ${cpuLimit}, ${memoryLimit}, ${null}, ${volsJson}, ${portsJson}, ${depsJson}, ${0},
-          ${now}, ${now}
+          ${isSystemManaged}, ${now}, ${now}
         )
       `);
 
