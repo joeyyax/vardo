@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "fs";
+import { readdirSync, readFileSync } from "fs";
 import path from "path";
 
 import { CHART_COLORS } from "@/lib/metrics/constants";
@@ -57,16 +57,33 @@ function linearSrgb({ l: L, c: C, h }: Oklch): [number, number, number] {
 
 const inGamut = (t: Oklch) => linearSrgb(t).every((v) => v >= -0.001 && v <= 1.001);
 
-const luminance = (t: Oklch, alpha: number, bg: number) =>
-  linearSrgb(t)
-    .map((v) => Math.min(1, Math.max(0, v)) * alpha + bg * (1 - alpha))
-    .reduce((acc, v, i) => acc + [0.2126, 0.7152, 0.0722][i] * v, 0);
+const encode = (v: number) => {
+  const c = Math.min(1, Math.max(0, v));
+  return c <= 0.0031308 ? c * 12.92 : 1.055 * c ** (1 / 2.4) - 0.055;
+};
+const decode = (s: number) => (s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4);
 
-function contrast(fg: Oklch, bg: Oklch): number {
-  const lb = luminance(bg, 1, 0);
-  const lf = luminance(fg, fg.a, lb);
+/** Gamma-encoded sRGB channels — what the compositor actually blends. */
+const srgb = (t: Oklch): number[] => linearSrgb(t).map(encode);
+
+/** `over` composited onto painted channels. Blending in linear light instead
+    understates dark-mode ratios by about 1.3. */
+const composite = (over: Oklch, under: number[]) =>
+  srgb(over).map((v, i) => v * over.a + under[i] * (1 - over.a));
+
+const luminanceOf = (channels: number[]) =>
+  channels.map(decode).reduce((acc, v, i) => acc + [0.2126, 0.7152, 0.0722][i] * v, 0);
+
+function ratio(fg: number[], bg: number[]): number {
+  const lf = luminanceOf(fg);
+  const lb = luminanceOf(bg);
   const [hi, lo] = lf > lb ? [lf, lb] : [lb, lf];
   return (hi + 0.05) / (lo + 0.05);
+}
+
+function contrast(fg: Oklch, bg: Oklch): number {
+  const ground = srgb(bg);
+  return ratio(composite(fg, ground), ground);
 }
 
 /** Oklab distance. ~0.02 is a large-patch just-noticeable difference. */
@@ -275,6 +292,105 @@ describe("status dots", () => {
       expect(deltaOk(light["--env-tier"], light[`--${name}`]), `${name} light`).toBeGreaterThanOrEqual(0.08);
       expect(deltaOk(dark["--env-tier"], dark[`--${name}`]), `${name} dark`).toBeGreaterThanOrEqual(0.08);
     }
+  });
+});
+
+/** Every stop with a -muted surface, whatever axis it belongs to. */
+const SURFACED = [...Object.keys(LADDER), "status-neutral", "brass"];
+
+describe("status surfaces", () => {
+  it("declares an opaque surface for every stop", () => {
+    for (const name of SURFACED) {
+      for (const [mode, T] of [["light", light], ["dark", dark]] as const) {
+        const surface = T[`--${name}-muted`];
+        expect(surface, `${name} ${mode}`).toBeDefined();
+        // An alpha surface takes its contrast from whatever ancestor is behind
+        // it — a hovered row, or a panel already tinted the same hue.
+        expect(surface.a, `${name} ${mode} is an alpha tint`).toBe(1);
+      }
+    }
+  });
+
+  it("carries its own label at 4.5 and its own glyph at 3", () => {
+    for (const name of SURFACED) {
+      for (const [mode, T] of [["light", light], ["dark", dark]] as const) {
+        const r = contrast(T[`--${name}`], T[`--${name}-muted`]);
+        expect(r, `${name} ${mode} label`).toBeGreaterThanOrEqual(4.5);
+        expect(r, `${name} ${mode} glyph`).toBeGreaterThanOrEqual(3);
+      }
+    }
+  });
+
+  it("stays a surface, not a second card", () => {
+    for (const name of SURFACED) {
+      for (const [mode, T] of [["light", light], ["dark", dark]] as const) {
+        const r = contrast(T[`--${name}-muted`], T["--card"]);
+        expect(r, `${name} ${mode} vanishes on the card`).toBeGreaterThanOrEqual(1.1);
+        expect(r, `${name} ${mode} outshouts the card`).toBeLessThanOrEqual(1.5);
+      }
+    }
+  });
+
+  it("holds every stop inside sRGB, surface and all", () => {
+    for (const name of SURFACED) {
+      for (const [mode, T] of [["light", light], ["dark", dark]] as const) {
+        expect(inGamut(T[`--${name}`]), `${name} ${mode}`).toBe(true);
+        expect(inGamut(T[`--${name}-muted`]), `${name} ${mode} surface`).toBe(true);
+      }
+    }
+  });
+});
+
+describe("destructive", () => {
+  it("declares a foreground that clears 4.5 on its own ground", () => {
+    for (const [mode, T] of [["light", light], ["dark", dark]] as const) {
+      expect(T["--destructive-foreground"], mode).toBeDefined();
+      expect(
+        contrast(T["--destructive-foreground"], T["--destructive"]),
+        `${mode} destructive label`
+      ).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it("is exposed as a Tailwind colour", () => {
+    expect(THEME).toContain("--color-destructive-foreground: var(--destructive-foreground);");
+  });
+});
+
+const ROOT = path.resolve(__dirname, "../../../..");
+
+function sources(dir: string, found: string[] = []): string[] {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) sources(full, found);
+    else if (/\.tsx?$/.test(entry.name)) found.push(full);
+  }
+  return found;
+}
+
+describe("status surfaces at the call sites", () => {
+  const files = ["app", "components", "lib"].flatMap((d) => sources(path.join(ROOT, d)));
+
+  it("never paints a status ground as an alpha of its own stop", () => {
+    const offenders: string[] = [];
+    for (const file of files) {
+      for (const m of readFileSync(file, "utf8").matchAll(/bg-status-[a-z]+\/\d+/g)) {
+        offenders.push(`${path.relative(ROOT, file)}: ${m[0]}`);
+      }
+    }
+    // An alpha ground resolves against whatever is behind it, so the label on
+    // top has no fixed ratio. Use the -muted surface.
+    expect(offenders).toEqual([]);
+  });
+
+  it("never re-tints a status surface on hover", () => {
+    const offenders: string[] = [];
+    for (const file of files) {
+      for (const m of readFileSync(file, "utf8").matchAll(/hover:bg-status-[a-z-]+/g)) {
+        offenders.push(`${path.relative(ROOT, file)}: ${m[0]}`);
+      }
+    }
+    expect(offenders).toEqual([]);
   });
 });
 
