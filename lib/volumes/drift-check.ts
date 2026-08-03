@@ -4,6 +4,7 @@ import { eq, and } from "drizzle-orm";
 import { computeVolumeDiff } from "./diff";
 import { listContainers, inspectContainer, resolveVolumeName } from "@/lib/docker/client";
 import { isAnonymousVolume } from "@/lib/docker/compose";
+import { resolveDefaultEnv } from "@/lib/docker/resolve-env";
 import { recordActivity } from "@/lib/activity";
 
 const DRIFT_NOTIFICATION_THRESHOLD = 10;
@@ -13,6 +14,8 @@ type DriftCheckOpts = {
   organizationId: string;
   appName: string;
   imageName?: string;
+  /** Environment whose containers to inspect. Defaults to the app's default environment. */
+  envName?: string;
   log?: (line: string) => void;
 };
 
@@ -35,6 +38,10 @@ export async function runPostDeployDriftCheck(opts: DriftCheckOpts): Promise<voi
 
     if (appVolumes.length === 0) return;
 
+    // Every environment shares `vardo.project`; without the environment label a
+    // staging or preview container's volumes get counted against this app.
+    const envName = opts.envName ?? (await resolveDefaultEnv(appId)).name;
+
     // Determine image name
     let imageName = opts.imageName;
     if (!imageName) {
@@ -46,7 +53,7 @@ export async function runPostDeployDriftCheck(opts: DriftCheckOpts): Promise<voi
 
       if (!imageName) {
         try {
-          const containers = await listContainers(appName);
+          const containers = await listContainers(appName, envName);
           if (containers.length > 0) {
             imageName = containers[0].image;
           }
@@ -62,7 +69,7 @@ export async function runPostDeployDriftCheck(opts: DriftCheckOpts): Promise<voi
     // Find Docker volume names from running containers
     const dockerVolumes = new Map<string, string>(); // mountPath -> dockerVolumeName
     try {
-      const containers = await listContainers(appName);
+      const containers = await listContainers(appName, envName);
       for (const container of containers) {
         const info = await inspectContainer(container.id);
         for (const mount of info.mounts) {
