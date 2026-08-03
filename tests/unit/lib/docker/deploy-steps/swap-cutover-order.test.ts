@@ -62,14 +62,10 @@ describe("drainThenStop", () => {
 
 describe("canPinCutover", () => {
   it("pins when both slots are up, so there is a proven backend to move to", () => {
-    expect(canPinCutover(true, false)).toBe(true);
+    expect(canPinCutover(true)).toBe(true);
   });
 
   it("does not pin when the old slot was already stopped before the new one started", () => {
-    expect(canPinCutover(false, false)).toBe(false);
-  });
-
-  it("does not pin the deferred self-deploy — the stop kills the process that would unpin", () => {
-    expect(canPinCutover(true, true)).toBe(false);
+    expect(canPinCutover(false)).toBe(false);
   });
 });

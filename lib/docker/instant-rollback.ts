@@ -23,6 +23,7 @@ import {
 } from "./constants";
 import type { ResolvedEnv } from "./resolve-env";
 import { demoteStandbyRestart, restoreSlotRestart } from "./restart-policy";
+import { clearCutoverPin } from "./traefik-cutover";
 
 const execFileAsync = promisify(execFile);
 
@@ -128,6 +129,11 @@ export async function performInstantRollback(
       error: "No standby containers available — use standard rollback",
     };
   }
+
+  // Step 0: Drop any cutover pin. It outranks the Docker routers and names the
+  // slot being rolled away from, so it would 502 the app after the flip. First,
+  // so Traefik reloads while the active slot is still serving.
+  await clearCutoverPin(appName, env.name).catch(() => {});
 
   // Step 1: Start standby slot — use `up -d --no-recreate --pull never` for
   // resilience (handles missing containers, reconnects networks) over bare `start`.
