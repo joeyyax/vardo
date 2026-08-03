@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
+import {
+  APP_NAME_TAKEN_ERROR,
+  isAppNameViolation,
+  isTopLevelAppNameTaken,
+} from "@/lib/db/app-name";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { requirePlugin } from "@/lib/api/require-plugin";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
@@ -86,19 +91,20 @@ async function handler(request: NextRequest, { params }: RouteParams) {
 
     const data = parsed.data;
 
-    // Check for duplicate slug
+    // Check for duplicate slug. Only an app in this org can be named in the
+    // response — one held by another org must stay invisible.
     const existingBySlug = await db.query.apps.findFirst({
       where: and(eq(apps.organizationId, orgId), eq(apps.name, data.name)),
       columns: { id: true },
     });
     if (existingBySlug) {
       return NextResponse.json(
-        {
-          error: "An app with this slug already exists in this organization",
-          appId: existingBySlug.id,
-        },
+        { error: APP_NAME_TAKEN_ERROR, appId: existingBySlug.id },
         { status: 409 }
       );
+    }
+    if (await isTopLevelAppNameTaken(data.name)) {
+      return NextResponse.json({ error: APP_NAME_TAKEN_ERROR }, { status: 409 });
     }
 
     // The marker survives the parse only as a boolean, and this route stores
@@ -234,6 +240,9 @@ async function handler(request: NextRequest, { params }: RouteParams) {
       { status: 201 }
     );
   } catch (error) {
+    if (isAppNameViolation(error)) {
+      return NextResponse.json({ error: APP_NAME_TAKEN_ERROR }, { status: 409 });
+    }
     return handleRouteError(error, "Error adopting compose project");
   }
 }
