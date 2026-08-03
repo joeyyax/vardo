@@ -12,7 +12,14 @@ import { reconcileActiveCounter, reconcileQueue, removeFromQueue } from "@/lib/d
 import { stopProject } from "@/lib/docker/deploy";
 import { publishKillSignal } from "@/lib/docker/deploy-cancel";
 import { appEnvDir } from "@/lib/paths";
-import { detectActiveSlot } from "@/lib/docker/slots";
+import { detectActiveSlot, type Slot as SlotName } from "@/lib/docker/slots";
+import {
+  decideStandbySweep,
+  readCurrentSlot,
+  runningProjects,
+  stopStandbySlot,
+  SLOTS,
+} from "@/lib/docker/standby-slot";
 import {
   performRollback,
   sendRollbackNotification,
@@ -580,6 +587,134 @@ async function checkRollbackWatch(
     envName,
     environmentId: candidate.environmentId,
   });
+}
+
+// ---------------------------------------------------------------------------
+// Standby slot reclamation
+// ---------------------------------------------------------------------------
+
+/**
+ * Quiet time after a deploy before a still-running standby counts as stranded.
+ * Past the deploy budget and the rollback grace period both, so an overlap that
+ * some slower path is still unwinding is never mistaken for one nothing owns.
+ */
+const STANDBY_GRACE_MS = 30 * 60_000;
+
+/** Rate-limits the refusal log to once an hour per environment. */
+const AMBIGUOUS_LOG_TTL_MS = 60 * 60_000;
+
+/**
+ * Stop standby slots that are running again long after their deploy.
+ *
+ * Both slots carry the same Traefik labels, so a standby that comes back is not
+ * idle — Traefik merges it into the live slot's load balancer and splits traffic
+ * across two versions of the app. The live slot is identified from the `current`
+ * symlink alone; anything less than a symlink Docker agrees with is refused
+ * rather than guessed, because the wrong answer here is an outage.
+ */
+export async function sweepStandbySlots(): Promise<void> {
+  const projects = await runningProjects();
+  if (projects === null) return;
+
+  // Prefixes running both slots at once, from one Docker read and no DB work —
+  // the steady state costs a single `docker ps`.
+  const doubled = new Set<string>();
+  for (const project of projects) {
+    for (const slot of SLOTS) {
+      const suffix = `-${slot}`;
+      if (!project.endsWith(suffix)) continue;
+      const prefix = project.slice(0, -suffix.length);
+      if (SLOTS.every((s) => projects.has(`${prefix}-${s}`))) doubled.add(prefix);
+    }
+  }
+  if (doubled.size === 0) return;
+
+  const rows = await db
+    .select({
+      appId: apps.id,
+      appName: apps.name,
+      appStatus: apps.status,
+      organizationId: apps.organizationId,
+      envName: environments.name,
+    })
+    .from(environments)
+    .innerJoin(apps, eq(environments.appId, apps.id));
+
+  // A compose project prefix is `${appName}-${envName}`, and both names may
+  // contain dashes. Two pairs can spell the same prefix; that is an ambiguity
+  // about which app owns the containers, so neither is touched.
+  const byPrefix = new Map<string, typeof rows>();
+  for (const row of rows) {
+    const prefix = `${row.appName}-${row.envName}`;
+    if (!doubled.has(prefix)) continue;
+    const bucket = byPrefix.get(prefix);
+    if (bucket) bucket.push(row);
+    else byPrefix.set(prefix, [row]);
+  }
+
+  for (const [prefix, matches] of byPrefix) {
+    const row = matches[0];
+    try {
+      if (matches.length > 1) {
+        await refuse(row.appId, row.envName, `${prefix} matches ${matches.length} app/environment pairs`);
+        continue;
+      }
+
+      // A deploy runs both slots on purpose. Skip while one owns the app.
+      if (row.appStatus === "deploying") continue;
+      const liveness = await readActiveDeploy(row.appId);
+      if (!liveness.known || liveness.active !== null) continue;
+
+      const latest = await db.query.deployments.findFirst({
+        where: eq(deployments.appId, row.appId),
+        orderBy: [desc(deployments.startedAt)],
+        columns: { status: true, finishedAt: true },
+      });
+      if (!latest || latest.status === "running" || latest.status === "queued") continue;
+      if (!latest.finishedAt) continue;
+      if (Date.now() - new Date(latest.finishedAt).getTime() < STANDBY_GRACE_MS) continue;
+
+      if (!(await acquireLock(`sweep:standby:${row.appId}:${row.envName}`, 60_000))) continue;
+
+      const appDir = appEnvDir(row.appName, row.envName);
+      const currentSlot = await readCurrentSlot(appDir);
+
+      // Re-read rather than trust the set from the top of the sweep — the DB
+      // round-trips above are long enough for a deploy to have started.
+      const live = await runningProjects();
+      const running = live
+        ? (Object.fromEntries(
+            SLOTS.map((s) => [s, live.has(`${prefix}-${s}`)]),
+          ) as Record<SlotName, boolean>)
+        : null;
+
+      const verdict = decideStandbySweep({ currentSlot, running });
+      if (!verdict.act) {
+        if (verdict.refused) await refuse(row.appId, row.envName, verdict.reason);
+        continue;
+      }
+
+      await stopStandbySlot(appDir, prefix, verdict.standby);
+      log.info(
+        `Stopped the ${verdict.standby} standby for ${row.appName} (${row.envName}) — it was running alongside ${currentSlot}`,
+      );
+
+      addEvent(row.organizationId, {
+        type: "app.state-changed",
+        title: "Standby slot reclaimed",
+        message: `The ${verdict.standby} slot was still running alongside ${currentSlot} and taking a share of the traffic. It has been stopped.`,
+        appId: row.appId,
+      }).catch(() => {});
+    } catch (err) {
+      log.error(`Standby sweep failed for ${prefix}:`, err);
+    }
+  }
+}
+
+/** Log a refusal to act, at most once an hour per environment. */
+async function refuse(appId: string, envName: string, reason: string): Promise<void> {
+  if (!(await acquireLock(`standby:ambiguous:${appId}:${envName}`, AMBIGUOUS_LOG_TTL_MS))) return;
+  log.warn(`Both slots are running for app ${appId} (${envName}) but it is not safe to act — ${reason}`);
 }
 
 /**
