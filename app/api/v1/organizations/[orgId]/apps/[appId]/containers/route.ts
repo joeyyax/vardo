@@ -26,7 +26,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    const containers = await listContainers(app.name);
+    const containers = await listContainers(app);
     const running = containers
       .filter((c) => c.state === "running")
       .map((c) => ({

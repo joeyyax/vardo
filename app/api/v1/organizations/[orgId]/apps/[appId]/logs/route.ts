@@ -47,7 +47,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       tail,
     });
 
-    const containers = await listContainers(scope.project).catch(() => []);
+    const containers = await listContainers({ id: scope.projectId, name: scope.project }).catch(() => []);
 
     return NextResponse.json({
       source: history.source,
