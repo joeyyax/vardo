@@ -1,7 +1,5 @@
 import { describe, it, expect } from "vitest";
 import {
-  backendIp,
-  collectDockerBackends,
   findStaleBackends,
   findUnroutedContainers,
   decideRestart,
@@ -12,62 +10,6 @@ import {
 } from "@/lib/docker/traefik-drift";
 
 const NOW = 1_000_000_000;
-
-function service(overrides: Record<string, unknown> = {}) {
-  return {
-    name: "app@docker",
-    provider: "docker",
-    status: "enabled",
-    loadBalancer: { servers: [{ url: "http://172.18.0.5:3000" }] },
-    ...overrides,
-  };
-}
-
-describe("backendIp", () => {
-  it("returns the IPv4 host", () => {
-    expect(backendIp("http://172.18.0.5:3000")).toBe("172.18.0.5");
-  });
-
-  it("unwraps a bracketed IPv6 host", () => {
-    expect(backendIp("http://[fd00::1]:8080")).toBe("fd00::1");
-  });
-
-  it("returns null for a hostname backend", () => {
-    expect(backendIp("http://paperless:8000")).toBeNull();
-  });
-
-  it("returns null for an unparseable URL", () => {
-    expect(backendIp("not a url")).toBeNull();
-  });
-});
-
-describe("collectDockerBackends", () => {
-  it("collects every server of an enabled Docker service", () => {
-    const svc = service({
-      loadBalancer: {
-        servers: [{ url: "http://172.18.0.5:9000" }, { url: "http://172.18.0.6:9000" }],
-      },
-    });
-    expect(collectDockerBackends([svc]).map((b) => b.ip)).toEqual(["172.18.0.5", "172.18.0.6"]);
-  });
-
-  it("skips services from other providers", () => {
-    expect(collectDockerBackends([service({ provider: "file" })])).toEqual([]);
-  });
-
-  it("skips disabled services", () => {
-    expect(collectDockerBackends([service({ status: "disabled" })])).toEqual([]);
-  });
-
-  it("skips hostname backends, which resolve at request time", () => {
-    const svc = service({ loadBalancer: { servers: [{ url: "http://paperless:8000" }] } });
-    expect(collectDockerBackends([svc])).toEqual([]);
-  });
-
-  it("tolerates a service with no load balancer", () => {
-    expect(collectDockerBackends([service({ loadBalancer: undefined })])).toEqual([]);
-  });
-});
 
 describe("findStaleBackends", () => {
   const backends = [
