@@ -28,6 +28,7 @@ async function handlePost(_request: NextRequest, { params }: RouteParams) {
         isSystemManaged: true,
         parentAppId: true,
         composeService: true,
+        needsRedeploy: true,
       },
     });
 

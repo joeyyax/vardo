@@ -69,6 +69,7 @@ export function registerStopApp(
         };
       }
 
+      const startedAt = Date.now();
       const result = await stopProject(appId, app.name);
 
       if (result.success) {
@@ -78,6 +79,7 @@ export function registerStopApp(
           kind: "stopped",
           userId: context.userId,
           trigger: "mcp",
+          durationMs: Date.now() - startedAt,
         });
       }
 
