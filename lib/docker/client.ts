@@ -936,10 +936,26 @@ export async function pruneImages(filters?: Record<string, string[]>): Promise<{
   };
 }
 
-export async function pruneBuildCache(filters?: Record<string, string[]>): Promise<{ spaceReclaimed: number }> {
-  const query = filters
-    ? `?filters=${encodeURIComponent(JSON.stringify(filters))}`
-    : "";
+/**
+ * Builds the /build/prune query string. `all` maps to the `-a` flag on
+ * `docker builder prune` — without it the daemon only removes dangling
+ * cache, not everything unused.
+ */
+export function buildPruneCacheQuery(
+  filters?: Record<string, string[]>,
+  opts?: { all?: boolean },
+): string {
+  const params = new URLSearchParams();
+  if (filters) params.set("filters", JSON.stringify(filters));
+  if (opts?.all) params.set("all", "true");
+  return params.toString() ? `?${params.toString()}` : "";
+}
+
+export async function pruneBuildCache(
+  filters?: Record<string, string[]>,
+  opts?: { all?: boolean },
+): Promise<{ spaceReclaimed: number }> {
+  const query = buildPruneCacheQuery(filters, opts);
   const result = await dockerRequest<{ SpaceReclaimed: number }>("POST", `/build/prune${query}`);
   return { spaceReclaimed: result.SpaceReclaimed ?? 0 };
 }
