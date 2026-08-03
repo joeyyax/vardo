@@ -79,6 +79,9 @@ services:
       # Host /proc — read-only mount for GPU metrics PID-to-container resolution.
       # The GPU collector reads /host-proc/{pid}/cgroup to map GPU processes to containers.
       - /proc:/host-proc:ro
+      # Host cgroup root — read-only mount for OOM kill counts.
+      # The container's own /sys/fs/cgroup is namespaced to itself and always reads zero.
+      - /sys/fs/cgroup:/host-cgroup:ro
       # Traefik dynamic config — shared volume for file-provider route configs.
       # Frontend writes YAML files here; Traefik watches and reloads automatically.
       - traefik_dynamic:/etc/traefik/dynamic:rw
