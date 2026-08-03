@@ -3,6 +3,7 @@ import {
   deriveStatus,
   deployHoldsStatus,
   parseExitCode,
+  restartCountFor,
   stabilityTransition,
   DEPLOYING_HOLD_MS,
 } from "@/lib/docker/status-reconcile";
@@ -152,6 +153,33 @@ describe("parseExitCode", () => {
 
   it("returns null for a running container", () => {
     expect(parseExitCode("Up 2 hours")).toBeNull();
+  });
+});
+
+describe("restartCountFor", () => {
+  it("sums the counter across the app's containers", () => {
+    expect(restartCountFor([3, 1], null)).toBe(4);
+  });
+
+  it("reports zero for containers that have never restarted", () => {
+    expect(restartCountFor([0, 0], null)).toBe(0);
+  });
+
+  it("reports null, not zero, when the app has no containers", () => {
+    expect(restartCountFor([], null)).toBeNull();
+    expect(restartCountFor([], 7)).toBeNull();
+  });
+
+  it("keeps the stored figure when a container did not answer", () => {
+    expect(restartCountFor([2, null], 5)).toBe(5);
+  });
+
+  it("stays null when a container did not answer and nothing was stored", () => {
+    expect(restartCountFor([null], null)).toBeNull();
+  });
+
+  it("never lowers the total to the part it could read", () => {
+    expect(restartCountFor([1, null], 9)).not.toBe(1);
   });
 });
 
