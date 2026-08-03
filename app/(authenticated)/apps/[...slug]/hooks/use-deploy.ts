@@ -7,6 +7,25 @@ import { formatDuration } from "@/components/app-status";
 
 import type { Deployment, RollbackPreview } from "../types";
 
+type StageStatus = "running" | "success" | "failed" | "skipped";
+
+/** Wall-clock window per phase, filled in as stage events arrive. */
+export type StageTiming = { startedAt: number; endedAt?: number };
+
+/** Toast text for a deploy that ended without succeeding and without an error. */
+const TERMINAL_MESSAGES: Record<string, string> = {
+  cancelled: "Deployment cancelled",
+  superseded: "Superseded by a newer deploy",
+  rolled_back: "Deployment rolled back",
+};
+
+/** Cancels and supersedes are outcomes, not faults — they don't warrant an error toast. */
+export const NOT_A_FAULT = new Set(["cancelled", "superseded"]);
+
+export function terminalMessage(status?: string, error?: string): string {
+  return error || (status ? TERMINAL_MESSAGES[status] : undefined) || "Deployment failed";
+}
+
 export function useDeploy({
   orgId,
   appId,
@@ -27,9 +46,19 @@ export function useDeploy({
   const [deploying, setDeploying] = useState(false);
   const [deployLog, setDeployLog] = useState<string[]>([]);
   const [deployStartTime, setDeployStartTime] = useState<number | null>(null);
-  const [deployStages, setDeployStages] = useState<
-    Record<string, "running" | "success" | "failed" | "skipped">
-  >({});
+  const [deployStages, setDeployStages] = useState<Record<string, StageStatus>>({});
+  const [deployStageTimes, setDeployStageTimes] = useState<Record<string, StageTiming>>({});
+  const recordStage = useCallback((stage: string, status: StageStatus) => {
+    const at = Date.now();
+    setDeployStages((prev) => ({ ...prev, [stage]: status }));
+    setDeployStageTimes((prev) => {
+      const entry = prev[stage] ?? { startedAt: at };
+      return {
+        ...prev,
+        [stage]: status === "running" ? { startedAt: at } : { ...entry, endedAt: at },
+      };
+    });
+  }, []);
   const [expandedDeployLog, setExpandedDeployLog] = useState(false);
   const [deployAbort, setDeployAbort] = useState<AbortController | null>(null);
   const [deployAnnouncement, setDeployAnnouncement] = useState("");
@@ -71,7 +100,7 @@ export function useDeploy({
       try {
         const data = JSON.parse(event.data);
         if (data.stage && data.status) {
-          setDeployStages((prev) => ({ ...prev, [data.stage]: data.status }));
+          recordStage(data.stage, data.status);
         }
       } catch { /* skip malformed */ }
     });
@@ -83,29 +112,12 @@ export function useDeploy({
         if (data.success) {
           toast.success(data.durationMs ? `Deployed in ${formatDuration(data.durationMs)}` : "Deployed");
           announce("Deployment succeeded.");
-        } else if (data.status === "rolled_back") {
-          toast.error("Deployment rolled back");
-          announce("Deployment rolled back.");
         } else {
-          toast.error(data.error || "Deployment failed");
-          announce(`Deployment failed. ${data.error || ""}`);
+          const message = terminalMessage(data.status, data.error);
+          if (NOT_A_FAULT.has(data.status)) toast.info(message);
+          else toast.error(message);
+          announce(`${message}.`);
         }
-        if (data.deploymentId) {
-          setViewingLogId(data.deploymentId);
-        }
-      } catch { /* skip malformed */ }
-      es.close();
-      setDeploying(false);
-      setDeployAbort(null);
-      router.refresh();
-    });
-
-    es.addEventListener("rolled_back", (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        finished = true;
-        toast.error(data.message || "Deployment rolled back");
-        announce(data.message || "Deployment rolled back.");
         if (data.deploymentId) {
           setViewingLogId(data.deploymentId);
         }
@@ -144,11 +156,13 @@ export function useDeploy({
             if (dep?.log) {
               setDeployLog(dep.log.split("\n"));
             }
-            if (dep?.status === "success" || dep?.status === "failed" || dep?.status === "rolled_back") {
+            if (dep?.status && dep.status !== "running" && dep.status !== "queued") {
               if (dep.status === "success") {
                 toast.success(dep.durationMs ? `Deployed in ${formatDuration(dep.durationMs)}` : "Deployed");
-              } else if (dep.status === "rolled_back") {
-                toast.error("Deployment rolled back");
+              } else if (dep.status !== "failed") {
+                const message = terminalMessage(dep.status);
+                if (NOT_A_FAULT.has(dep.status)) toast.info(message);
+                else toast.error(message);
               } else {
                 // Extract last error line from deploy log for the toast
                 const errorLine = dep.log
@@ -184,26 +198,9 @@ export function useDeploy({
     onDeployStartedRef.current?.();
     setDeployLog([]);
     setDeployStages({});
+    setDeployStageTimes({});
     setExpandedDeployLog(false);
     setDeployStartTime(Date.now());
-
-    // Queue stage updates with minimum display time
-    const stageQueue: { stage: string; status: string }[] = [];
-    let processingStages = false;
-    const MIN_STAGE_MS = 600;
-
-    async function processStageQueue() {
-      if (processingStages) return;
-      processingStages = true;
-      while (stageQueue.length > 0) {
-        const { stage, status } = stageQueue.shift()!;
-        setDeployStages((prev) => ({ ...prev, [stage]: status as "running" | "success" | "failed" | "skipped" }));
-        if (status === "running") {
-          await new Promise((r) => setTimeout(r, MIN_STAGE_MS));
-        }
-      }
-      processingStages = false;
-    }
 
     const abort = new AbortController();
     setDeployAbort(abort);
@@ -246,17 +243,18 @@ export function useDeploy({
             if (eventType === "log") {
               setDeployLog((prev) => [...prev, data as string]);
             } else if (eventType === "stage") {
-              const { stage, status } = data as { stage: string; status: string };
-              stageQueue.push({ stage, status });
-              processStageQueue();
+              const { stage, status } = data as { stage: string; status: StageStatus };
+              recordStage(stage, status);
             } else if (eventType === "done") {
-              const result = data as { deploymentId: string; success: boolean; durationMs: number; error?: string };
+              const result = data as { deploymentId: string; success: boolean; durationMs: number; status?: string; error?: string };
               if (result.success) {
                 toast.success(`Deployed in ${formatDuration(result.durationMs)}`);
                 announce("Deployment succeeded.");
               } else {
-                toast.error(result.error || "Deployment failed");
-                setDeployAnnouncement(`Deployment failed. ${result.error || ""}`);
+                const message = terminalMessage(result.status, result.error);
+                if (NOT_A_FAULT.has(result.status ?? "")) toast.info(message);
+                else toast.error(message);
+                setDeployAnnouncement(`${message}.`);
               }
               if (result.deploymentId) {
                 setViewingLogId(result.deploymentId);
@@ -279,7 +277,7 @@ export function useDeploy({
       setDeploying(false);
       setDeployAbort(null);
     }
-  }, [orgId, appId, selectedEnvId, setDeploying, announce, router]);
+  }, [orgId, appId, selectedEnvId, setDeploying, announce, router, recordStage]);
 
   async function handleRollbackPreview(deploymentId: string) {
     setRollbackTarget(deploymentId);
@@ -318,23 +316,9 @@ export function useDeploy({
     onDeployStartedRef.current?.();
     setDeployLog([]);
     setDeployStages({});
+    setDeployStageTimes({});
     setExpandedDeployLog(false);
     setDeployStartTime(Date.now());
-
-    const stageQueue: { stage: string; status: string }[] = [];
-    let processingStages = false;
-    const MIN_STAGE_MS = 600;
-
-    async function processStageQueue() {
-      if (processingStages) return;
-      processingStages = true;
-      while (stageQueue.length > 0) {
-        const next = stageQueue.shift()!;
-        setDeployStages((prev) => ({ ...prev, [next.stage]: next.status as "running" | "success" | "failed" | "skipped" }));
-        await new Promise((r) => setTimeout(r, MIN_STAGE_MS));
-      }
-      processingStages = false;
-    }
 
     const abort = new AbortController();
     setDeployAbort(abort);
@@ -381,15 +365,16 @@ export function useDeploy({
             if (eventType === "log") {
               setDeployLog((prev) => [...prev, data as string]);
             } else if (eventType === "stage") {
-              const { stage, status } = data as { stage: string; status: string };
-              stageQueue.push({ stage, status });
-              processStageQueue();
+              const { stage, status } = data as { stage: string; status: StageStatus };
+              recordStage(stage, status);
             } else if (eventType === "done") {
-              const result = data as { deploymentId: string; success: boolean; durationMs: number };
+              const result = data as { deploymentId: string; success: boolean; durationMs: number; status?: string; error?: string };
               if (result.success) {
                 toast.success("Rollback deployed successfully");
+              } else if (NOT_A_FAULT.has(result.status ?? "")) {
+                toast.info(terminalMessage(result.status, result.error));
               } else {
-                toast.error("Rollback deployment failed");
+                toast.error(result.error || "Rollback deployment failed");
               }
               if (result.deploymentId) {
                 setViewingLogId(result.deploymentId);
@@ -417,6 +402,7 @@ export function useDeploy({
     deployLog,
     deployStartTime,
     deployStages,
+    deployStageTimes,
     expandedDeployLog,
     setExpandedDeployLog,
     deployAbort,
