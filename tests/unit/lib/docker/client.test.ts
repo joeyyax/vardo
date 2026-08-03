@@ -7,6 +7,11 @@ import { nanosToDuration } from "@/lib/docker/compose";
 //
 // `all: true` is what makes this the equivalent of `docker builder prune -af`
 // rather than the softer dangling-only prune used by the post-deploy step.
+//
+// `keepStorage` has to go out as `keep-storage`. API 1.48 renamed it to
+// `reserved-space` but still falls back to the old name, so this one spelling
+// bounds the cache on every daemon; `reserved-space` is silently ignored below
+// 1.48 and the cache grows without limit.
 // ---------------------------------------------------------------------------
 
 describe("buildPruneCacheQuery", () => {
@@ -31,6 +36,23 @@ describe("buildPruneCacheQuery", () => {
     const query = buildPruneCacheQuery({ until: ["24h"] }, { all: true });
     expect(query).toContain("all=true");
     expect(query).toContain(encodeURIComponent(JSON.stringify({ until: ["24h"] })));
+  });
+
+  it("sends keepStorage as keep-storage in bytes", () => {
+    expect(buildPruneCacheQuery(undefined, { keepStorage: 10 * 1024 ** 3 })).toBe(
+      "?keep-storage=10737418240",
+    );
+  });
+
+  it("rounds a fractional ceiling down to whole bytes", () => {
+    expect(buildPruneCacheQuery(undefined, { keepStorage: 1.5 * 1024 ** 3 })).toBe(
+      "?keep-storage=1610612736",
+    );
+  });
+
+  it("omits the ceiling when keepStorage is zero or absent", () => {
+    expect(buildPruneCacheQuery(undefined, { keepStorage: 0 })).toBe("");
+    expect(buildPruneCacheQuery(undefined, {})).toBe("");
   });
 });
 
