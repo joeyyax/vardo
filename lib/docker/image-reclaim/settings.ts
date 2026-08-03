@@ -14,11 +14,14 @@ export interface ImageReclaimConfig {
   /** Whether the scheduled sweep deletes. Off means preview only. */
   enabled: boolean;
   idleDays: number;
+  /** Whether the sweep also removes superseded blue-green slot generations. */
+  slots: boolean;
 }
 
 export const DEFAULT_CONFIG: ImageReclaimConfig = {
   enabled: false,
   idleDays: DEFAULT_IDLE_DAYS,
+  slots: false,
 };
 
 export function clampIdleDays(value: unknown): number {
@@ -35,6 +38,7 @@ export async function getImageReclaimConfig(): Promise<ImageReclaimConfig> {
     return {
       enabled: parsed.enabled === true,
       idleDays: clampIdleDays(parsed.idleDays ?? DEFAULT_IDLE_DAYS),
+      slots: parsed.slots === true,
     };
   } catch {
     return { ...DEFAULT_CONFIG };
@@ -85,7 +89,11 @@ export async function recordLastRun(result: {
 export async function setImageReclaimConfig(config: ImageReclaimConfig): Promise<void> {
   await setSystemSetting(
     KEY,
-    JSON.stringify({ enabled: config.enabled, idleDays: clampIdleDays(config.idleDays) }),
+    JSON.stringify({
+      enabled: config.enabled,
+      idleDays: clampIdleDays(config.idleDays),
+      slots: config.slots === true,
+    }),
   );
   invalidateSettingsCache(KEY);
 }

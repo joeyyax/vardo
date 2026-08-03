@@ -9,9 +9,19 @@
 
 import { removeImage } from "../client";
 import { logger } from "@/lib/logger";
-import type { ReclaimPlan } from "./plan";
 
 const log = logger.child("image-reclaim");
+
+/**
+ * The minimum a plan must expose to be executed. Both the idle-app sweep and the
+ * slot sweep satisfy it, so removal, 409 handling and reporting stay in one place.
+ */
+export interface ExecutablePlan {
+  candidates: {
+    appName: string;
+    images: { image: string; bytes: number; present: boolean }[];
+  }[];
+}
 
 export interface ReclaimedImage {
   appName: string;
@@ -53,7 +63,7 @@ function errorMessage(err: unknown): string {
  * the same branches over the same plan, and issues no Docker calls.
  */
 export async function executeReclaimPlan(
-  plan: ReclaimPlan,
+  plan: ExecutablePlan,
   opts: { dryRun: boolean },
 ): Promise<ReclaimResult> {
   const reclaimed: ReclaimedImage[] = [];
