@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { RefreshCw, AlertTriangle, CheckCircle, Info } from "lucide-react";
+import { formatRelativeTime } from "@/lib/ui/relative-time";
 
 type AlertEntry = {
   type: string;
@@ -48,16 +49,6 @@ function alertTypeLabel(type: string): string {
     "update-available": "Update Available",
   };
   return labels[type] ?? type;
-}
-
-function formatRelativeTime(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const minutes = Math.floor(diff / 60_000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
 }
 
 function StatusBadge({ status }: { status: "healthy" | "unhealthy" | "unconfigured" | "ok" | "warning" | "critical" }) {
