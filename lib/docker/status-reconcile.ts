@@ -113,6 +113,25 @@ export function parseExitCode(status: string): number | null {
 }
 
 /**
+ * How long "deploying" is honored before the reconciler takes the status back.
+ * Well past the deploy timeout the sweeper enforces, so this only ever catches
+ * a status the sweeper could not reset — a process killed mid-deploy.
+ */
+export const DEPLOYING_HOLD_MS =
+  (Number(process.env.DEPLOY_TIMEOUT_MINUTES) || 15) * 60_000 * 4;
+
+/** Whether an in-flight deploy still owns this app's status. */
+export function deployHoldsStatus(
+  app: { status: string; updatedAt?: Date | null },
+  now: Date,
+  holdMs: number = DEPLOYING_HOLD_MS,
+): boolean {
+  if (app.status !== "deploying") return false;
+  if (!app.updatedAt) return false;
+  return now.getTime() - app.updatedAt.getTime() < holdMs;
+}
+
+/**
  * Observed status for one app's containers.
  * "restarting" reads as error — a container flapping is not running.
  */
@@ -150,6 +169,7 @@ export async function tickStatusReconcile(): Promise<void> {
       containerMemoryLimit: true,
       memoryLimit: true,
       needsRedeploy: true,
+      updatedAt: true,
     },
   });
 
@@ -160,8 +180,9 @@ export async function tickStatusReconcile(): Promise<void> {
   const updates = await Promise.all(
     rows.map((app) =>
       limit(async () => {
-        // A deploy in flight owns the status until it finishes.
-        if (app.status === "deploying") return null;
+        // A deploy in flight owns the status until it finishes, or until the
+        // hold expires — a stranded "deploying" must not be permanent.
+        if (deployHoldsStatus(app, now)) return null;
 
         const matched = matchContainers(app, containers);
         const observed = deriveStatus(matched);

@@ -46,6 +46,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { isOrgAdmin } from "@/lib/auth/permissions";
+import { useAppEvents } from "@/hooks/use-app-events";
+import { isRefreshEvent } from "@/lib/bus/refresh";
+import type { BusEvent } from "@/lib/bus/events";
 
 // Extracted modules
 import { Uptime } from "./timer";
@@ -169,40 +172,18 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
     router.refresh();
   }, [orgId, app.id, router]);
 
-  // Real-time updates via SSE (Redis pub/sub), with polling fallback
-  useEffect(() => {
-    const eventsUrl = `/api/v1/organizations/${orgId}/apps/${app.id}/events`;
-    let es: EventSource | null = null;
-    let fallbackInterval: ReturnType<typeof setInterval> | null = null;
-
-    try {
-      es = new EventSource(eventsUrl);
-
-      es.addEventListener("deploy:complete", () => {
-        router.refresh();
-      });
-
-      es.addEventListener("deploy:rolled_back", () => {
-        router.refresh();
-      });
-
-      es.onerror = () => {
-        es?.close();
-        es = null;
-        if (!fallbackInterval) {
-          fallbackInterval = setInterval(() => router.refresh(), 10000);
-        }
-      };
-    } catch {
-      fallbackInterval = setInterval(() => router.refresh(), 10000);
-    }
-
-    return () => {
-      es?.close();
-      if (fallbackInterval) clearInterval(fallbackInterval);
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [app.id, orgId]);
+  // Real-time updates from the app's event stream, with a polling fallback
+  useAppEvents({
+    orgId,
+    appId: app.id,
+    onEvent: useCallback(
+      (event: BusEvent) => {
+        if (isRefreshEvent(event.type)) router.refresh();
+      },
+      [router],
+    ),
+    onFallback: useCallback(() => router.refresh(), [router]),
+  });
 
   const canDelete = isOrgAdmin(userRole);
 
