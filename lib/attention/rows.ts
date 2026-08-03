@@ -11,6 +11,7 @@ import { getAggregateUpdateStatus } from "@/lib/docker/image-updates/status";
 import { conditionRows, type AttentionRow } from "@/lib/ui/attention";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { getVersionData } from "@/lib/version";
+import { activityRows, getFleetActivity } from "./activity";
 import { getFleetAttention } from "./fleet";
 
 /** A failure older than this is history, not something to act on now. */
@@ -76,11 +77,14 @@ export async function buildAttentionRows(
 
   const imageUpdatesEnabled = await isFeatureEnabledAsync("image-updates");
 
-  const [fleet, updates, version, failedBackups] = await Promise.all([
+  const appIds = appRows.map((a) => a.id);
+
+  const [fleet, updates, version, failedBackups, activity] = await Promise.all([
     getFleetAttention(orgId),
     getCooldownUntil().then((cooldown) => getAggregateUpdateStatus(orgId, appRows, cooldown)),
     isAppAdmin ? getVersionData().catch(() => null) : null,
-    loadFailedBackups(appRows.map((a) => a.id)),
+    loadFailedBackups(appIds),
+    getFleetActivity(appIds),
   ]);
 
   const rows = conditionRows(appRows);
@@ -188,6 +192,8 @@ export async function buildAttentionRows(
       footer: `${failedBackups.length} failed in the last ${BACKUP_FAILURE_WINDOW_HOURS} hours.`,
     });
   }
+
+  rows.push(...activityRows(appRows, activity));
 
   if (version?.hasUpdate) {
     rows.push({

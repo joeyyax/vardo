@@ -1,7 +1,8 @@
 import type { AppCondition } from "@/lib/docker/conditions";
 import { conditionKindLabel } from "@/lib/ui/conditions";
 
-export type AttentionTone = "error" | "warning" | "neutral";
+/** "activity" is routine — something running right now, not a problem. */
+export type AttentionTone = "error" | "warning" | "neutral" | "activity";
 
 export type AttentionItem = {
   id: string;
@@ -27,7 +28,7 @@ export type AttentionRow = {
   action?: { label: string; href: string };
 };
 
-const TONE_RANK: Record<AttentionTone, number> = { error: 0, warning: 1, neutral: 2 };
+const TONE_RANK: Record<AttentionTone, number> = { error: 0, warning: 1, neutral: 2, activity: 3 };
 
 /** Non-empty rows, worst first, subjects alphabetical within each. */
 export function presentRows(rows: AttentionRow[]): AttentionRow[] {
@@ -37,9 +38,11 @@ export function presentRows(rows: AttentionRow[]): AttentionRow[] {
     .sort((a, b) => TONE_RANK[a.tone] - TONE_RANK[b.tone] || a.label.localeCompare(b.label));
 }
 
-/** An available update is a fact, not a fault, so neutral rows are listed but not counted. */
+/** Only error and warning rows are faults — neutral facts and activity are listed but not counted. */
 export function faultCount(rows: AttentionRow[]): number {
-  return rows.filter((r) => r.tone !== "neutral").reduce((n, r) => n + r.items.length, 0);
+  return rows
+    .filter((r) => r.tone === "error" || r.tone === "warning")
+    .reduce((n, r) => n + r.items.length, 0);
 }
 
 /** Faults this few are named in the collapsed bar rather than hidden behind it. */
@@ -61,7 +64,7 @@ export type BarSummary = {
 export function summarize(rows: AttentionRow[]): BarSummary {
   const present = presentRows(rows);
   const faults = faultCount(present);
-  const faultRows = present.filter((r) => r.tone !== "neutral");
+  const faultRows = present.filter((r) => r.tone === "error" || r.tone === "warning");
 
   return {
     rows: present,
