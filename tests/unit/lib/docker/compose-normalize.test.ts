@@ -140,6 +140,71 @@ describe("normalizeCompose", () => {
     });
   });
 
+  describe("restart precedence (app column vs compose vs default)", () => {
+    const restartOf = (
+      svc: Partial<ComposeFile["services"][string]>,
+      restartPolicy?: string | null,
+    ) =>
+      normalizeCompose(makeCompose({ app: { image: "nginx:latest", ...svc } }), {
+        keepHostPorts: true,
+        restartPolicy,
+      }).compose.services.app.restart;
+
+    it("uses the default when neither compose nor the column says anything", () => {
+      expect(restartOf({}, null)).toBe("unless-stopped");
+    });
+
+    it("fills a service that declares nothing from the app column", () => {
+      expect(restartOf({}, "on-failure")).toBe("on-failure");
+    });
+
+    it("keeps a service's own policy over the app column", () => {
+      expect(restartOf({ restart: "on-failure:3" }, "unless-stopped")).toBe("on-failure:3");
+    });
+
+    it('overrides a declared "no" with the app column', () => {
+      expect(restartOf({ restart: "no" }, "unless-stopped")).toBe("unless-stopped");
+    });
+
+    it('honors a declared "no" when the column also says "no"', () => {
+      expect(restartOf({ restart: "no" }, "no")).toBe("no");
+    });
+
+    it('never emits "always", from the compose file or the column', () => {
+      expect(restartOf({ restart: "always" }, "unless-stopped")).toBe("unless-stopped");
+      expect(restartOf({}, "always")).toBe("unless-stopped");
+    });
+
+    it("falls back to the default when the column holds a value Docker rejects", () => {
+      expect(restartOf({}, "sometimes")).toBe("unless-stopped");
+    });
+
+    it("records no change when the column matches what the service declares", () => {
+      const { changes } = normalizeCompose(
+        makeCompose({ app: { image: "nginx:latest", restart: "no" } }),
+        { keepHostPorts: true, restartPolicy: "no" },
+      );
+      expect(changes.filter((c) => c.field === "restart")).toHaveLength(0);
+    });
+
+    it("applies the column to every service independently", () => {
+      const compose = makeCompose({
+        web: { image: "nginx:latest" },
+        db: { image: "postgres:17", restart: "no" },
+        job: { image: "job:latest", restart: "on-failure" },
+      });
+
+      const { compose: result } = normalizeCompose(compose, {
+        keepHostPorts: true,
+        restartPolicy: "unless-stopped",
+      });
+
+      expect(result.services.web.restart).toBe("unless-stopped");
+      expect(result.services.db.restart).toBe("unless-stopped");
+      expect(result.services.job.restart).toBe("on-failure");
+    });
+  });
+
   describe("changelog", () => {
     it("returns empty changes when nothing to normalize", () => {
       const compose = makeCompose({

@@ -485,6 +485,12 @@ export function buildVardoOverlay(opts: {
       overlayService.networks = vardoNetworks;
     }
 
+    // Restart policy resolved by compose-normalize. The base file keeps the
+    // author's own value; without it here the container never receives one.
+    if (svc.restart) {
+      overlayService.restart = svc.restart;
+    }
+
     // App-level resource limits set via Vardo UI (not from the user's compose)
     if (effCpuLimit || effMemory) {
       const limits: ResourceLimits = {};
