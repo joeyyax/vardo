@@ -4,6 +4,7 @@ import {
   sharedServiceNames,
   findMistypedSharedMarkers,
   sharedMarkerTypeErrors,
+  sharedMarkerWarnings,
 } from "@/lib/docker/compose-validate";
 import { SHARED_MARKER } from "@/lib/docker/slot-partition";
 import type { ComposeFile, ComposeService } from "@/lib/docker/compose-types";
@@ -291,5 +292,37 @@ services:
     ${SHARED_MARKER}: true
 `),
     ).toEqual([]);
+  });
+
+  const withMarker = (value: string) => `
+services:
+  postgres:
+    image: postgres:17
+    ${SHARED_MARKER}: ${value}
+`;
+
+  // A value meaning "not shared" produces the same result dropped as honored,
+  // so blocking it would refuse a deploy that was never at risk.
+  it.each(['"false"', "no", "No", "off", "OFF", "n", "f", "0"])(
+    "does not block %s, which already reads as not-shared",
+    (value) => {
+      expect(sharedMarkerTypeErrors(withMarker(value))).toEqual([]);
+      expect(sharedMarkerWarnings(withMarker(value))).toHaveLength(1);
+    },
+  );
+
+  it.each(['"true"', "yes", "on", "y", "1", "null", "maybe"])(
+    "blocks %s, which could have meant shared",
+    (value) => {
+      expect(sharedMarkerTypeErrors(withMarker(value))).toHaveLength(1);
+      expect(sharedMarkerWarnings(withMarker(value))).toEqual([]);
+    },
+  );
+
+  it("keeps a real boolean out of both lists", () => {
+    for (const value of ["true", "false"]) {
+      expect(sharedMarkerTypeErrors(withMarker(value))).toEqual([]);
+      expect(sharedMarkerWarnings(withMarker(value))).toEqual([]);
+    }
   });
 });

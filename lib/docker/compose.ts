@@ -39,6 +39,8 @@ export {
   sharedServiceNames,
   findMistypedSharedMarkers,
   sharedMarkerTypeErrors,
+  sharedMarkerWarnings,
+  sharedMarkerIsHazardous,
 } from "./compose-validate";
 export type { MistypedSharedMarker } from "./compose-validate";
 

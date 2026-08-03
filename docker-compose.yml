@@ -53,6 +53,9 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+      # Without this the first check waits the full 30s interval, so every
+      # deploy reports healthy ~25s after it already is.
+      start_interval: 2s
     cap_add:
       - NET_ADMIN
     group_add:

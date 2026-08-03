@@ -251,6 +251,22 @@ export function sharedServiceNames(yamlText: string): string[] {
 
 export type MistypedSharedMarker = { service: string; value: unknown };
 
+/** YAML 1.1 falsy spellings the 1.2 core schema resolves as plain strings. */
+const FALSY_SPELLINGS = new Set(["false", "no", "off", "n", "f"]);
+
+/**
+ * Whether a dropped marker could have been meant as "shared".
+ *
+ * A value meaning "not shared" produces the same outcome dropped as honored, so
+ * blocking it would refuse a deploy that was never at risk. Anything else could
+ * have meant true, and a dropped true puts two databases on one volume.
+ */
+export function sharedMarkerIsHazardous(value: unknown): boolean {
+  if (typeof value === "number") return value !== 0;
+  if (typeof value === "string") return !FALSY_SPELLINGS.has(value.trim().toLowerCase());
+  return true;
+}
+
 /**
  * Services setting x-vardo-shared to anything other than a boolean.
  *
@@ -293,16 +309,30 @@ function describeMarkerValue(value: unknown): string {
 }
 
 /**
- * Mistyped x-vardo-shared markers as blocking error messages.
+ * Blocking errors for markers that could have meant "shared".
  * Every caller holding raw compose text should run this before storing it.
  */
 export function sharedMarkerTypeErrors(yamlText: string): string[] {
-  return findMistypedSharedMarkers(yamlText).map(
-    ({ service, value }) =>
-      `Service "${service}" sets ${SHARED_MARKER} to ${describeMarkerValue(value)}, not a boolean — ` +
-      `the marker is ignored, so the service would be replaced on every deploy. ` +
-      `Write it unquoted: ${SHARED_MARKER}: true`,
-  );
+  return findMistypedSharedMarkers(yamlText)
+    .filter(({ value }) => sharedMarkerIsHazardous(value))
+    .map(
+      ({ service, value }) =>
+        `Service "${service}" sets ${SHARED_MARKER} to ${describeMarkerValue(value)}, not a boolean — ` +
+        `the marker is ignored, so the service would be replaced on every deploy. ` +
+        `Write it unquoted: ${SHARED_MARKER}: true`,
+    );
+}
+
+/** Non-blocking notes for markers that already behave as written. */
+export function sharedMarkerWarnings(yamlText: string): string[] {
+  return findMistypedSharedMarkers(yamlText)
+    .filter(({ value }) => !sharedMarkerIsHazardous(value))
+    .map(
+      ({ service, value }) =>
+        `Service "${service}" sets ${SHARED_MARKER} to ${describeMarkerValue(value)}, not a boolean. ` +
+        `It reads as not-shared, which is what an ignored marker already does, so nothing changes. ` +
+        `Write it unquoted: ${SHARED_MARKER}: false`,
+    );
 }
 
 /**
