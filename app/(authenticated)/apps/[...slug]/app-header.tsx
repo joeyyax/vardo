@@ -13,9 +13,10 @@ import { detectAppType } from "@/lib/ui/app-type";
 import { Uptime } from "@/components/app-status";
 import { RelativeTime } from "@/components/relative-time";
 import { AppConditionsPanel } from "@/components/app-conditions-panel";
-import { HelpTip } from "@/components/ui/help-tip";
+import { HeaderStat, PriorityCue, RollupStatus } from "@/components/entity-header";
 import { useAppMetrics } from "@/components/app-metrics-card";
 import { formatBytes } from "@/lib/metrics/format";
+import type { HealthRollup } from "@/lib/ui/health-rollup";
 import { DependencySelector } from "./dependency-selector";
 import { AppUpdateStat } from "./app-updates";
 import type { App, Deployment, SlotStatus, Tag } from "./types";
@@ -43,26 +44,6 @@ const STATUS_META: Record<string, { label: string; className: string }> = {
   missing: { label: "No container", className: "text-status-warning" },
 };
 
-function Stat({
-  label,
-  hint,
-  children,
-}: {
-  label: string;
-  hint?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <div>
-      <dt className="type-label text-muted-foreground/60 flex items-center gap-1">
-        {label}
-        {hint && <HelpTip label={label}>{hint}</HelpTip>}
-      </dt>
-      <dd className="mt-1 text-sm">{children}</dd>
-    </div>
-  );
-}
-
 /**
  * Persistent heading block for the app detail page: identity, at-a-glance
  * health stats, tags and deploy dependencies. Shown above every section.
@@ -76,6 +57,7 @@ export function AppHeader({
   siblings,
   onNavigate,
   stack,
+  deployStage,
 }: {
   app: App;
   orgId: string;
@@ -85,8 +67,10 @@ export function AppHeader({
   allTags: Tag[];
   siblings: { id: string; name: string; displayName: string; status: string; dependsOn: string[] | null }[];
   onNavigate: (tab: string) => void;
-  /** Compose parent: aggregate service counts replace the single-container status. */
-  stack?: { total: number; active: number; errors: number };
+  /** Compose parent: the service roll-up replaces the single-container status. */
+  stack?: HealthRollup;
+  /** Phase word of a running deploy — "Build", "Health", "Route". */
+  deployStage?: string | null;
 }) {
   const router = useRouter();
 
@@ -143,6 +127,7 @@ export function AppHeader({
 
   const status = STATUS_META[app.status] ?? { label: app.status, className: "text-muted-foreground" };
   const isRunning = app.status === "active";
+  const isDeploying = app.status === "deploying" || !!deployStage;
 
   return (
     <div className="space-y-5">
@@ -246,6 +231,7 @@ export function AppHeader({
                 Stack · {stack.total} service{stack.total === 1 ? "" : "s"}
               </span>
             )}
+            <PriorityCue priority={app.priority} />
             <span className="text-muted-foreground/40">
               Created <RelativeTime date={app.createdAt} absoluteFirst />
             </span>
@@ -296,28 +282,16 @@ export function AppHeader({
 
       {/* At-a-glance stats */}
       <dl className="flex flex-wrap gap-x-10 gap-y-4">
-        <Stat label="Status">
-          {stack ? (
-            (() => {
-              const tone = stack.errors > 0
-                ? "text-status-error"
-                : stack.active === stack.total
-                  ? "text-status-success"
-                  : stack.active > 0
-                    ? "text-status-warning"
-                    : "text-status-neutral";
-              return (
-                <span className={`flex items-center gap-1.5 ${tone}`}>
-                  <span
-                    aria-hidden="true"
-                    className={`size-2 rounded-full bg-current ${stack.active === stack.total ? "animate-pulse" : ""}`}
-                  />
-                  {stack.errors > 0
-                    ? `${stack.errors} crashed`
-                    : `${stack.active}/${stack.total} services`}
-                </span>
-              );
-            })()
+        <HeaderStat label="Status">
+          {/* A deploy replaces the roll-up — mid-deploy the counts describe nothing. */}
+          {isDeploying ? (
+            <span className="flex items-center gap-1.5 text-status-info">
+              <span aria-hidden="true" className="size-2 rounded-full bg-current animate-pulse" />
+              Deploying
+              {deployStage && <span className="text-muted-foreground">· {deployStage}</span>}
+            </span>
+          ) : stack ? (
+            <RollupStatus rollup={stack} noun="service" />
           ) : (
             <span className={`flex items-center gap-1.5 ${status.className}`}>
               <span
@@ -327,13 +301,13 @@ export function AppHeader({
               {status.label}
             </span>
           )}
-        </Stat>
+        </HeaderStat>
         {isRunning && lastSuccess && (
-          <Stat label="Uptime">
+          <HeaderStat label="Uptime">
             <Uptime since={lastSuccess.finishedAt || lastSuccess.startedAt} />
-          </Stat>
+          </HeaderStat>
         )}
-        <Stat label="Memory">
+        <HeaderStat label="Memory">
           {/* The collector reports zeros for a container that isn't there. */}
           {appMetrics && isRunning ? (
             <span className="tabular-nums">
@@ -345,9 +319,9 @@ export function AppHeader({
           ) : (
             <span className="text-muted-foreground/50">—</span>
           )}
-        </Stat>
+        </HeaderStat>
         {slotStatus && (
-          <Stat
+          <HeaderStat
             label="Slot"
             hint="Deploys run into one of two slots, blue and green. The active slot serves traffic while the other holds the previous version, so a rollback is a swap rather than a rebuild."
           >
@@ -356,10 +330,10 @@ export function AppHeader({
               {" · "}
               {slotStatus.standbyAvailable ? "standby ready" : "no standby"}
             </span>
-          </Stat>
+          </HeaderStat>
         )}
         {!isChildService && lastSuccess && (
-          <Stat label="Last deploy">
+          <HeaderStat label="Last deploy">
             <button
               type="button"
               onClick={() => onNavigate("deployments")}
@@ -370,11 +344,11 @@ export function AppHeader({
                 <span className="font-mono text-muted-foreground"> · {lastSuccess.gitSha.slice(0, 7)}</span>
               )}
             </button>
-          </Stat>
+          </HeaderStat>
         )}
-        <Stat label="Image">
+        <HeaderStat label="Image">
           <AppUpdateStat orgId={orgId} appId={app.id} />
-        </Stat>
+        </HeaderStat>
       </dl>
 
       {/* Deploy dependencies — only for apps in a project with siblings */}

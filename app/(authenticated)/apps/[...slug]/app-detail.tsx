@@ -74,6 +74,8 @@ import { AppDebug } from "./app-debug";
 import { ComposeDetail } from "./compose-detail";
 import { AppSecurity } from "./app-security";
 import { SystemBadge } from "@/components/system-badge";
+import { extractDeployError } from "@/lib/ui/deploy-error";
+import { currentStageLabel } from "@/lib/ui/deploy-stage";
 import { tabPanelSurface } from "@/lib/ui/tab-panel";
 import { cn } from "@/lib/utils";
 
@@ -589,7 +591,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
             {app.displayName}
           </h1>
         )}
-        {app.isSystemManaged && <SystemBadge label="System Managed" />}
+        {app.isSystemManaged && <SystemBadge />}
         {!isChildService && envsEnabled && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -643,16 +645,8 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
       {app.status === "error" && (() => {
         const failedDeploy = filteredDeployments.find((d) => d.status === "failed");
         if (!failedDeploy) return null;
-        const errorLine = failedDeploy.log
-          ?.split("\n")
-          .reverse()
-          .find((l) => l.includes("ERROR") || l.includes("FATAL") || l.includes("failed") || l.includes("crashed"));
-        const cleaned = errorLine
-          ?.replace(/^\[.*?\]\s*/, "")
-          .replace(/x-access-token:[^\s@]+/g, "x-access-token:***")
-          .replace(/ghs_[A-Za-z0-9]+/g, "***")
-          .trim();
-        const errorMessage = cleaned || "App crashed — check the deploy log for details";
+        const errorMessage =
+          extractDeployError(failedDeploy.log) || "App crashed — check the deploy log for details";
         return (
           <div className="flex items-start gap-2 rounded-lg bg-status-error-muted px-4 py-2.5 text-sm text-status-error">
             <X className="size-4 shrink-0 mt-0.5" />
@@ -730,6 +724,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         allTags={allTags}
         siblings={siblings}
         onNavigate={setActiveTab}
+        deployStage={currentStageLabel(deploy.deployStages)}
       />
 
 
