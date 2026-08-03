@@ -12,7 +12,98 @@ import { mountsSchema, restartSchema, parseMountPair } from "@/lib/api/admin/mai
 //   app/api/v1/admin/maintenance/restart/route.ts
 //   app/api/v1/admin/maintenance/update/route.ts
 //   app/api/v1/admin/maintenance/mounts/route.ts
+//   app/api/v1/admin/maintenance/build-cache/route.ts
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// GET/POST /api/v1/admin/maintenance/build-cache
+//
+// GET reports current build cache size and reclaimable space from
+// getSystemDiskUsage() (docker system df). When that call throws — the
+// live host has seen /system/df 404/500 on leaked containers — both fields
+// must come back null (unknown), never 0, so the UI can't confuse "couldn't
+// check" with "nothing to reclaim".
+//
+// POST runs pruneBuildCache(undefined, { all: true }) and reports the bytes
+// actually reclaimed, including a genuine 0 when there was nothing to clean.
+// ---------------------------------------------------------------------------
+
+type DiskUsageLike = {
+  buildCache: { totalSize: number; reclaimable: number };
+};
+
+async function buildCacheGet(
+  getSystemDiskUsage: () => Promise<DiskUsageLike>,
+): Promise<{ size: number | null; reclaimable: number | null }> {
+  try {
+    const usage = await getSystemDiskUsage();
+    return { size: usage.buildCache.totalSize, reclaimable: usage.buildCache.reclaimable };
+  } catch {
+    return { size: null, reclaimable: null };
+  }
+}
+
+async function buildCachePost(
+  pruneBuildCache: () => Promise<{ spaceReclaimed: number }>,
+): Promise<{ ok: boolean; status: number; reclaimed?: number; error?: string }> {
+  try {
+    const { spaceReclaimed } = await pruneBuildCache();
+    return { ok: true, status: 200, reclaimed: spaceReclaimed };
+  } catch {
+    return { ok: false, status: 500, error: "Internal server error" };
+  }
+}
+
+describe("build-cache GET — reports unknown on failure, never zero", () => {
+  it("returns size and reclaimable when docker system df succeeds", async () => {
+    const res = await buildCacheGet(async () => ({
+      buildCache: { totalSize: 72_419_827_712, reclaimable: 61_029_384_192 },
+    }));
+    expect(res.size).toBe(72_419_827_712);
+    expect(res.reclaimable).toBe(61_029_384_192);
+  });
+
+  it("returns null fields — not 0 — when docker system df throws", async () => {
+    const res = await buildCacheGet(async () => {
+      throw new Error("Docker API GET /system/df returned 404: failed to calculate image disk usage");
+    });
+    expect(res.size).toBeNull();
+    expect(res.reclaimable).toBeNull();
+    expect(res.reclaimable).not.toBe(0);
+  });
+
+  it("reports a genuine zero when the cache is empty", async () => {
+    const res = await buildCacheGet(async () => ({
+      buildCache: { totalSize: 0, reclaimable: 0 },
+    }));
+    expect(res.reclaimable).toBe(0);
+    expect(res.reclaimable).not.toBeNull();
+  });
+});
+
+describe("build-cache POST — reclaimed figure", () => {
+  it("reports the bytes actually reclaimed", async () => {
+    const res = await buildCachePost(async () => ({ spaceReclaimed: 67_310_000_000 }));
+    expect(res.ok).toBe(true);
+    expect(res.reclaimed).toBe(67_310_000_000);
+  });
+
+  it("reports a genuine 0 reclaimed as success, not failure", async () => {
+    const res = await buildCachePost(async () => ({ spaceReclaimed: 0 }));
+    expect(res.ok).toBe(true);
+    expect(res.status).toBe(200);
+    expect(res.reclaimed).toBe(0);
+  });
+
+  it("returns 500 when the prune call fails, distinct from a 0-byte success", async () => {
+    const res = await buildCachePost(async () => {
+      throw new Error("Docker API request failed");
+    });
+    expect(res.ok).toBe(false);
+    expect(res.status).toBe(500);
+    expect(res.reclaimed).toBeUndefined();
+  });
+});
 
 // ---------------------------------------------------------------------------
 // GET /api/v1/admin/maintenance
