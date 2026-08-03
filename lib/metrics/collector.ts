@@ -10,13 +10,32 @@ import { setLatestSnapshot } from "./broadcast";
 
 const log = logger.child("collector");
 
-let timeout: ReturnType<typeof setTimeout> | null = null;
-let started = false;
-let tickCount = 0;
-let consecutiveFailures = 0;
-let disabled = false;
-let diskConsecutiveFailures = 0;
-let projectDiskConsecutiveFailures = 0;
+type CollectorState = {
+  timeout: ReturnType<typeof setTimeout> | null;
+  started: boolean;
+  tickCount: number;
+  consecutiveFailures: number;
+  disabled: boolean;
+  diskConsecutiveFailures: number;
+  projectDiskConsecutiveFailures: number;
+};
+
+/**
+ * Lifecycle state lives on globalThis. Next.js bundles instrumentation and route
+ * handlers separately, so a module-local flag lets each one start its own tick loop.
+ */
+const globalForCollector = globalThis as unknown as { __vardo_metrics_collector?: CollectorState };
+
+const state: CollectorState = (globalForCollector.__vardo_metrics_collector ??= {
+  timeout: null,
+  started: false,
+  tickCount: 0,
+  consecutiveFailures: 0,
+  disabled: false,
+  diskConsecutiveFailures: 0,
+  projectDiskConsecutiveFailures: 0,
+});
+
 const DEGRADED_THRESHOLD = 3; // mark integration degraded after 3 consecutive failures
 
 /** Once a disk-collection failure persists, only re-log it this often (in disk-check cycles). */
@@ -58,22 +77,22 @@ export function shouldLogPersistentFailure(consecutiveFailures: number, every = 
  * Starts fast (every 5s for the first 20 ticks) then settles to every 30s.
  */
 export function isCollectorRunning() {
-  return started;
+  return state.started;
 }
 
 export async function startCollector() {
-  if (started) return;
+  if (state.started) return;
   await initMetricsProvider(); // ensure provider is ready
   if (!isMetricsEnabled()) {
     log.info("Metrics collection disabled — no provider configured");
     return;
   }
-  started = true;
-  tickCount = 0;
-  consecutiveFailures = 0;
-  diskConsecutiveFailures = 0;
-  projectDiskConsecutiveFailures = 0;
-  disabled = false;
+  state.started = true;
+  state.tickCount = 0;
+  state.consecutiveFailures = 0;
+  state.diskConsecutiveFailures = 0;
+  state.projectDiskConsecutiveFailures = 0;
+  state.disabled = false;
   log.info("Starting metrics collection (fast warmup: 5s × 20, then 30s)");
 
   // Initialize GPU collector (non-blocking — returns null on non-GPU hosts)
@@ -85,11 +104,14 @@ export async function startCollector() {
 }
 
 function scheduleTick() {
-  if (!started || disabled) return;
-  const interval = nextInterval({ tickCount, consecutiveFailures });
-  timeout = setTimeout(async () => {
+  if (!state.started || state.disabled) return;
+  const interval = nextInterval({
+    tickCount: state.tickCount,
+    consecutiveFailures: state.consecutiveFailures,
+  });
+  state.timeout = setTimeout(async () => {
     await collect();
-    tickCount++;
+    state.tickCount++;
     scheduleTick();
   }, interval);
 }
@@ -175,24 +197,24 @@ async function collect() {
     }
 
     // Recovered — mark integration connected if it was degraded
-    if (consecutiveFailures >= DEGRADED_THRESHOLD) {
-      log.info(`Metrics provider recovered after ${consecutiveFailures} failed collection(s)`);
+    if (state.consecutiveFailures >= DEGRADED_THRESHOLD) {
+      log.info(`Metrics provider recovered after ${state.consecutiveFailures} failed collection(s)`);
       updateIntegrationHealth("connected");
     }
-    consecutiveFailures = 0;
+    state.consecutiveFailures = 0;
   } catch (err) {
-    consecutiveFailures++;
+    state.consecutiveFailures++;
     // Log the first failure and the shutdown, not each retry.
-    if (consecutiveFailures === 1) {
+    if (state.consecutiveFailures === 1) {
       log.error("Error:", (err as Error).message);
     }
-    if (consecutiveFailures === DEGRADED_THRESHOLD) {
+    if (state.consecutiveFailures === DEGRADED_THRESHOLD) {
       updateIntegrationHealth("degraded");
     }
-    if (consecutiveFailures >= DISABLE_THRESHOLD) {
-      disabled = true;
+    if (state.consecutiveFailures >= DISABLE_THRESHOLD) {
+      state.disabled = true;
       log.error(
-        `Metrics collection disabled after ${consecutiveFailures} consecutive failures — ` +
+        `Metrics collection disabled after ${state.consecutiveFailures} consecutive failures — ` +
           `the provider is unreachable (${(err as Error).message}). ` +
           `Check the metrics integration, then restart Vardo or re-toggle the metrics feature.`,
       );
@@ -202,7 +224,7 @@ async function collect() {
 
   // Disk write alert check: every 6th tick after warmup (~3 min at 30s interval)
   // During warmup, skip to accumulate baseline data
-  if (tickCount >= WARMUP_TICKS && tickCount % 6 === 0 && metrics.length > 0) {
+  if (state.tickCount >= WARMUP_TICKS && state.tickCount % 6 === 0 && metrics.length > 0) {
     try {
       await checkDiskWriteAlerts(metrics);
     } catch (err) {
@@ -211,8 +233,8 @@ async function collect() {
   }
 
   // Disk usage: every 10th tick during warmup, every 10th tick after (~5 min at 30s)
-  const diskInterval = tickCount < WARMUP_TICKS ? 4 : 10; // Every 20s during warmup, every 5min after
-  if (tickCount % diskInterval === 0) {
+  const diskInterval = state.tickCount < WARMUP_TICKS ? 4 : 10; // Every 20s during warmup, every 5min after
+  if (state.tickCount % diskInterval === 0) {
     try {
       const diskUsage = await getSystemDiskUsage();
       await storeDiskUsage(Date.now(), {
@@ -221,17 +243,17 @@ async function collect() {
         buildCache: diskUsage.buildCache.totalSize,
         total: diskUsage.total,
       });
-      if (diskConsecutiveFailures > 0) {
-        log.info(`Disk usage recovered after ${diskConsecutiveFailures} failed collection(s)`);
+      if (state.diskConsecutiveFailures > 0) {
+        log.info(`Disk usage recovered after ${state.diskConsecutiveFailures} failed collection(s)`);
       }
-      diskConsecutiveFailures = 0;
+      state.diskConsecutiveFailures = 0;
     } catch (err) {
-      diskConsecutiveFailures++;
+      state.diskConsecutiveFailures++;
       // Docker's /system/df can 404 on dangling containerd snapshots. Leave
       // disk usage unset (reported as unavailable, not zero) and don't spam
       // the log every cycle while it persists.
-      if (shouldLogPersistentFailure(diskConsecutiveFailures)) {
-        log.error(`Disk error (unavailable, ${diskConsecutiveFailures}x):`, (err as Error).message);
+      if (shouldLogPersistentFailure(state.diskConsecutiveFailures)) {
+        log.error(`Disk error (unavailable, ${state.diskConsecutiveFailures}x):`, (err as Error).message);
       }
     }
 
@@ -243,14 +265,14 @@ async function collect() {
           storeProjectDisk(name, ts, size)
         )
       );
-      if (projectDiskConsecutiveFailures > 0) {
-        log.info(`Per-project disk usage recovered after ${projectDiskConsecutiveFailures} failed collection(s)`);
+      if (state.projectDiskConsecutiveFailures > 0) {
+        log.info(`Per-project disk usage recovered after ${state.projectDiskConsecutiveFailures} failed collection(s)`);
       }
-      projectDiskConsecutiveFailures = 0;
+      state.projectDiskConsecutiveFailures = 0;
     } catch (err) {
-      projectDiskConsecutiveFailures++;
-      if (shouldLogPersistentFailure(projectDiskConsecutiveFailures)) {
-        log.error(`Per-project disk error (unavailable, ${projectDiskConsecutiveFailures}x):`, (err as Error).message);
+      state.projectDiskConsecutiveFailures++;
+      if (shouldLogPersistentFailure(state.projectDiskConsecutiveFailures)) {
+        log.error(`Per-project disk error (unavailable, ${state.projectDiskConsecutiveFailures}x):`, (err as Error).message);
       }
     }
 
@@ -264,19 +286,19 @@ async function collect() {
 }
 
 export function stopCollector() {
-  if (timeout) {
-    clearTimeout(timeout);
-    timeout = null;
+  if (state.timeout) {
+    clearTimeout(state.timeout);
+    state.timeout = null;
   }
-  started = false;
-  disabled = false;
-  diskConsecutiveFailures = 0;
-  projectDiskConsecutiveFailures = 0;
+  state.started = false;
+  state.disabled = false;
+  state.diskConsecutiveFailures = 0;
+  state.projectDiskConsecutiveFailures = 0;
 }
 
 /** True when the collector shut itself off after repeated provider failures. */
 export function isCollectorDisabled() {
-  return disabled;
+  return state.disabled;
 }
 
 /** Update metrics integration status (best-effort, non-blocking). */

@@ -189,6 +189,42 @@ describe("collector disk-usage degradation", () => {
   });
 });
 
+describe("collector single tick loop", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+    providerMock.fetchAllMetrics.mockResolvedValue([sampleMetric()]);
+    dockerMock.getSystemDiskUsage.mockRejectedValue(SNAPSHOT_404);
+    dockerMock.getPerProjectDiskUsage.mockRejectedValue(SNAPSHOT_404);
+  });
+
+  afterEach(() => {
+    stopCollector();
+    vi.useRealTimers();
+    vi.resetModules();
+  });
+
+  // Next.js bundles instrumentation and route handlers separately, so the module
+  // gets loaded twice in one process and each copy tried to start its own loop.
+  it("does not start a second loop when another module instance starts it", async () => {
+    await startCollector();
+
+    vi.resetModules();
+    const secondInstance = await import("@/lib/metrics/collector");
+    expect(secondInstance.startCollector).not.toBe(startCollector); // genuinely a second copy
+    await secondInstance.startCollector();
+
+    const startLogs = logMock.info.mock.calls.filter(([msg]) =>
+      String(msg).includes("Starting metrics collection"),
+    );
+    expect(startLogs).toHaveLength(1);
+    expect(secondInstance.isCollectorRunning()).toBe(true);
+
+    await tick();
+    expect(providerMock.fetchAllMetrics).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("shouldLogPersistentFailure", () => {
   it("logs the first occurrence", () => {
     expect(shouldLogPersistentFailure(1)).toBe(true);
