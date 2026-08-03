@@ -1,7 +1,7 @@
 import { logger } from "@/lib/logger";
 import { isMetricsEnabled, initMetricsProvider } from "./config";
 import { fetchAllMetrics } from "./provider";
-import { storeMetrics, storeDiskUsage, storeDiskWrite, storeGpuMetrics, storeProjectDisk } from "./store";
+import { storeMetrics, storeDiskUsage, storeDiskWrite, storeGpuMetrics, storeProjectDisk, pruneStaleGpuSeries } from "./store";
 import { checkDiskWriteAlerts } from "./disk-write-alerts";
 import { getSystemDiskUsage, getPerProjectDiskUsage } from "@/lib/docker/client";
 import { collectBusinessMetrics } from "./collect-business-metrics";
@@ -285,6 +285,16 @@ async function collect() {
       await collectBusinessMetrics();
     } catch (err) {
       log.error("Business metrics error:", (err as Error).message);
+    }
+
+    // Sweep GPU series past retention.
+    try {
+      const pruned = await pruneStaleGpuSeries();
+      if (pruned > 0) {
+        log.info(`Pruned ${pruned} stale GPU series`);
+      }
+    } catch (err) {
+      log.error("GPU prune error:", (err as Error).message);
     }
   }
 }
