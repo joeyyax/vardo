@@ -140,10 +140,11 @@ export type AppDirRemoval = {
 /**
  * Remove an app's base directory and drop its ownership record.
  *
- * Guarded by assertAppDirOwnership, which throws when the directory belongs to
- * another app. A directory this process cannot remove is reported rather than
- * thrown — Vardo runs unprivileged and many app directories are owned by another
- * uid, so a surviving directory must not fail an otherwise complete delete.
+ * Nothing here throws. A refusal and an unremovable directory both come back as
+ * `removed: false` with a reason — Vardo runs unprivileged and many app
+ * directories are owned by another uid, so a surviving directory must not fail
+ * an otherwise complete delete. Both delete paths assert ownership themselves
+ * before reaching this, so the check below is the second line, not the first.
  *
  * The record is dropped either way. It names an app that no longer exists, and
  * keeping it would refuse every later use of the name.
@@ -158,8 +159,6 @@ export async function removeAppDir(opts: {
   const { appId, appName } = opts;
   if (isSelfApp(appName)) return { removed: false, reason: "Vardo's own directory" };
 
-  // A directory this app cannot prove it owns is left alone, but the app is
-  // still deleted — an ambiguous name must not make the app undeletable.
   try {
     await assertAppDirOwnership({ appId, appName, operation: "delete" });
   } catch (err) {
