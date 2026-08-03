@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react";
 import { Loader2 } from "lucide-react";
 import { Sparkline } from "@/components/app-metrics-card";
-import { formatBytes } from "@/lib/metrics/format";
 import { ServiceDot } from "./service-dot";
 import type { ResourceStatus, ServiceStatus } from "@/lib/config/health";
 
@@ -99,7 +98,7 @@ export function AdminOverview() {
                   res.status === "critical" ? "text-status-error" :
                   res.status === "warning" ? "text-status-warning" :
                   "text-status-success"
-                }`}>{res.percent}%</span>
+                }`}>{res.headline}</span>
               </div>
               <div className="h-1.5 rounded-full bg-muted overflow-hidden">
                 <div
@@ -112,9 +111,7 @@ export function AdminOverview() {
                 />
               </div>
               <p className="text-xs text-muted-foreground mt-1.5 tabular-nums">
-                {res.unit === "bytes"
-                  ? `${formatBytes(res.current)} / ${formatBytes(res.total)}`
-                  : `${res.current}${res.unit} / ${res.total}${res.unit}`}
+                {res.detail}
               </p>
             </div>
           ))

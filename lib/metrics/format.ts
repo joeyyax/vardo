@@ -85,7 +85,8 @@ function ceilingCount(cores: number): string {
   return String(Number(cores.toFixed(2)));
 }
 
-function sharePercent(share: number): string {
+/** A share of a ceiling, e.g. "3.9%". */
+export function sharePercent(share: number): string {
   if (share === 0) return "0%";
   if (share < 0.1) return "<0.1%";
   return share < 10 ? `${share.toFixed(1)}%` : `${Math.round(share)}%`;
