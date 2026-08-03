@@ -3,7 +3,7 @@ import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
-import { listContainers } from "@/lib/docker/client";
+import { listAppContainers } from "@/lib/docker/app-containers";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 
 type RouteParams = {
@@ -19,14 +19,23 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 
     const app = await db.query.apps.findFirst({
       where: and(eq(apps.id, appId), eq(apps.organizationId, orgId)),
-      columns: { id: true, name: true },
+      columns: {
+        id: true,
+        name: true,
+        status: true,
+        parentAppId: true,
+        composeService: true,
+        containerName: true,
+        importedContainerId: true,
+      },
+      with: { parentApp: { columns: { name: true } } },
     });
 
     if (!app) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    const containers = await listContainers(app);
+    const containers = await listAppContainers(app);
     const running = containers
       .filter((c) => c.state === "running")
       .map((c) => ({
