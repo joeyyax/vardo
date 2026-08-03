@@ -39,36 +39,22 @@ import { EnvEditor } from "@/components/env-editor";
 import { BranchSelect } from "@/components/branch-select";
 import { ComposeReview } from "@/components/compose-review";
 
-type Source = "git" | "direct";
-type DeployType = "compose" | "dockerfile" | "image" | "static" | "nixpacks" | "railpack";
+import type { Template } from "@/lib/templates/load";
+import {
+  buildCreateAppBody,
+  missingRequiredEnvKeys,
+  templateEnvContent,
+  templateFormState,
+  type AppDeployType,
+  type AppSource,
+} from "@/lib/templates/create-payload";
+
+type Source = AppSource;
+type DeployType = AppDeployType;
 type GitMode = "github" | "manual";
 
-type Template = {
-  id: string;
-  name: string;
-  displayName: string;
-  description: string | null;
-  icon: string | null;
-  category: string;
-  source: string;
-  deployType: string;
-  imageName: string | null;
-  gitUrl: string | null;
-  gitBranch: string | null;
-  defaultPort: number | null;
-  defaultEnvVars:
-    | { key: string; description: string; required: boolean; defaultValue?: string }[]
-    | null;
-  defaultVolumes:
-    | { name: string; mountPath: string; description: string }[]
-    | null;
-  defaultConnectionInfo:
-    | { label: string; value: string; copyRef?: string }[]
-    | null;
-  defaultCpuLimit: number | null;
-  defaultMemoryLimit: number | null;
-  defaultDiskWriteAlertThreshold: number | null;
-};
+/** Sentinel for the inline "create a project" option in the Project select. */
+const NEW_PROJECT = "new";
 
 type Installation = {
   id: string;
@@ -106,6 +92,8 @@ type Props = {
   defaultImage?: string;
   defaultTemplate?: string;
   defaultSource?: string;
+  /** Project of the most recently created app, preselected when nothing else is. */
+  recentProjectId?: string;
   /** Offer the adopt-an-existing-container card. */
   containerImportEnabled?: boolean;
 };
@@ -128,16 +116,9 @@ const SOURCE_OPTIONS = [
 
 type SourceOption = (typeof SOURCE_OPTIONS)[number]["id"];
 
-function generatePassword(length = 24): string {
-  const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-  const bytes = crypto.getRandomValues(new Uint8Array(length));
-  return Array.from(bytes, (b) => chars[b % chars.length]).join("");
-}
-
-import { isSecretKey } from "@/lib/env/is-secret-key";
 import { slugify } from "@/lib/ui/slugify";
 
-export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], baseDomain: baseDomainProp, defaultParentId, defaultProjectId, defaultName, defaultImage, defaultTemplate, defaultSource, containerImportEnabled }: Props) {
+export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], baseDomain: baseDomainProp, defaultParentId, defaultProjectId, defaultName, defaultImage, defaultTemplate, defaultSource, recentProjectId, containerImportEnabled }: Props) {
   const router = useRouter();
   const [creating, setCreating] = useState(false);
   const [slugEdited, setSlugEdited] = useState(false);
@@ -149,7 +130,9 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], baseDom
   // Form fields
   const [displayName, setDisplayName] = useState("");
   const [name, setName] = useState("");
-  const [slugTaken, setSlugTaken] = useState(false);
+  const [slugStatus, setSlugStatus] = useState<
+    { available: boolean; reason?: string; domain?: string } | null
+  >(null);
   const [description, setDescription] = useState("");
   const [source, setSource] = useState<Source>("git");
   const [deployType, setDeployType] = useState<DeployType>("compose");
@@ -164,7 +147,10 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], baseDom
   const [rootDirectory, setRootDirectory] = useState("");
   const [containerPort, setContainerPort] = useState("");
   const [autoDeploy, setAutoDeploy] = useState(true);
-  const [parentId, setParentId] = useState<string | null>(defaultProjectId ?? defaultParentId ?? null);
+  const [parentId, setParentId] = useState<string | null>(
+    defaultProjectId ?? defaultParentId ?? recentProjectId ?? null
+  );
+  const [newProjectName, setNewProjectName] = useState("");
   const [persistData, setPersistData] = useState(true);
   const [templateVolumes, setTemplateVolumes] = useState<
     { name: string; mountPath: string; description: string }[]
@@ -288,80 +274,45 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], baseDom
   }
 
   function selectTemplate(template: Template) {
+    const wp = generateWordPair();
+    const form = templateFormState(
+      template,
+      `${slugify(template.name)}-${wp.adjective}-${wp.noun}`
+    );
+
     setSelectedTemplate(template);
     setSelectedSource(null);
-    setDisplayName(template.displayName);
-    const wp = generateWordPair();
     setWordPair(wp);
-    setName(`${slugify(template.name)}-${wp.adjective}-${wp.noun}`);
     setSlugEdited(false);
-    setSource(template.source as Source);
-    setDeployType(template.deployType as DeployType);
-    if (template.imageName) setImageName(template.imageName);
-    if (template.gitUrl) setGitUrl(template.gitUrl);
-    if (template.gitBranch) setGitBranch(template.gitBranch);
-    if (template.defaultPort) setContainerPort(template.defaultPort.toString());
-    setDescription(template.description || "");
-    // Databases/caches don't need public URLs but always need persistence
-    const noUrlCategories = ["database", "cache"];
-    const alwaysPersist = ["database", "cache", "monitoring", "tool"];
-    setGenerateDomain(!noUrlCategories.includes(template.category));
-    setPersistData(alwaysPersist.includes(template.category));
-    setTemplateVolumes(template.defaultVolumes || []);
-    setTemplateConnectionInfo(template.defaultConnectionInfo || []);
-    setCpuLimit(template.defaultCpuLimit?.toString() || "");
-    setMemoryLimit(template.defaultMemoryLimit?.toString() || "");
-    setDiskWriteAlertThreshold(template.defaultDiskWriteAlertThreshold ? (template.defaultDiskWriteAlertThreshold / 1_073_741_824).toString() : "");
-    if (template.defaultEnvVars?.length) {
-      const slug = slugify(template.name);
-      const lines: string[] = [`# ${template.displayName} configuration`];
-
-      for (const ev of template.defaultEnvVars) {
-        let value = ev.defaultValue || "";
-
-        if (!value) {
-          // Smart auto-fill
-          if (isSecretKey(ev.key)) {
-            value = generatePassword();
-          } else {
-            const lower = ev.key.toLowerCase();
-            if (lower === "url" || lower === "base_url" || lower === "app_url" ||
-                lower === "site_url" || lower === "public_url" || lower === "nextauth_url" ||
-                lower.endsWith("_base_url") || lower.endsWith("_site_url")) {
-              value = "${project.url}";
-            } else if (lower === "hostname" || lower === "host" || lower === "domain" ||
-                       lower === "virtual_host" || lower === "server_name") {
-              value = "${project.domain}";
-            } else if (lower === "port" || lower === "app_port" || lower === "server_port") {
-              value = "${project.port}";
-            } else if (lower === "node_env") {
-              value = "production";
-            } else if (lower.includes("_database") || lower.includes("_db")) {
-              value = slug;
-            } else if (lower.includes("_user") && !lower.includes("password")) {
-              value = slug;
-            }
-          }
-        }
-
-        // Add description as comment
-        if (ev.description) {
-          lines.push(`# ${ev.description}`);
-        }
-        lines.push(`${ev.key}=${value}`);
-      }
-
-      lines.push("", "# Add your own variables below");
-      setEnvContent(lines.join("\n"));
-    } else {
-      setEnvContent("");
-    }
+    setSlugStatus(null);
+    setDisplayName(form.displayName);
+    setName(form.name);
+    setDescription(form.description);
+    setSource(form.source);
+    setDeployType(form.deployType);
+    setImageName(form.imageName);
+    setGitUrl(form.gitUrl);
+    setGitBranch(form.gitBranch);
+    setComposeContent(form.composeContent);
+    setComposeFilePath(form.composeFilePath);
+    setDockerfilePath(form.dockerfilePath);
+    setRootDirectory(form.rootDirectory);
+    setContainerPort(form.containerPort);
+    setGenerateDomain(form.generateDomain);
+    setPersistData(form.persistData);
+    setTemplateVolumes(form.volumes);
+    setTemplateConnectionInfo(form.connectionInfo);
+    setCpuLimit(form.cpuLimit);
+    setMemoryLimit(form.memoryLimit);
+    setDiskWriteAlertThreshold(form.diskWriteAlertThreshold);
+    setEnvContent(templateEnvContent(template));
   }
 
   function selectSource(opt: SourceOption) {
     setSelectedSource(opt);
     setSelectedTemplate(null);
     setEnvContent("");
+    setComposeContent("");
     setGenerateDomain(true);
     switch (opt) {
       case "github":
@@ -387,87 +338,128 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], baseDom
     setSelectedSource(null);
     setSelectedTemplate(null);
     setEnvContent("");
+    setComposeContent("");
     setGenerateDomain(true);
     setDisplayName(""); setName(""); setDescription("");
     setSlugEdited(false);
+    setSlugStatus(null);
   }
 
-  const appSlug = name || "my-app";
-  const domainPreview = slugEdited
-    ? `${appSlug}.${baseDomain}`
-    : `${appSlug}-${wordPair.adjective}-${wordPair.noun}.${baseDomain}`;
-
+  // The slug is the subdomain the server creates — no second random suffix.
+  const domainPreview = `${name || "my-app"}.${baseDomain}`;
 
   const isConfiguring = selectedSource !== null || selectedTemplate !== null;
-  const hasRequiredEnvVars = false; // Env vars are now free-form in the textarea
+  const missingRequiredEnv = missingRequiredEnvKeys(selectedTemplate, envContent);
+  const projectReady = !!parentId && (parentId !== NEW_PROJECT || !!newProjectName.trim());
+
+  // Reserved slugs are caught locally so the field turns red before the blur check.
+  const locallyReserved = generateDomain && !!name && isReservedSlug(name);
+  const slugUnavailable = slugStatus?.available === false || locallyReserved;
+  const slugMessage =
+    slugStatus?.reason === "domain-taken"
+      ? `${slugStatus.domain ?? `${name}.${baseDomain}`} is already in use`
+      : slugStatus?.reason === "reserved" || locallyReserved
+        ? `"${name}" is reserved`
+        : slugStatus?.reason === "invalid"
+          ? "Use lowercase letters, numbers and hyphens"
+          : "This slug is already in use";
+
+  /** Creates the project chosen inline in the Project select. */
+  async function createInlineProject(): Promise<{ id: string; name: string } | null> {
+    const projectDisplayName = newProjectName.trim();
+    const slug = slugify(projectDisplayName);
+    if (!slug) {
+      toast.error("Enter a name for the new project");
+      return null;
+    }
+    const res = await fetch(`/api/v1/organizations/${orgId}/projects`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: slug, displayName: projectDisplayName }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      toast.error(data.error || "Failed to create project");
+      return null;
+    }
+    return { id: data.project.id, name: data.project.name };
+  }
+
+  /** Creates the opted-in GitHub repo and points the app at it. */
+  async function createRepoForApp(appId: string, installationId: string): Promise<boolean> {
+    const repoRes = await fetch("/api/v1/github/repos", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        installationId,
+        name: name.trim(),
+        description: description.trim() || undefined,
+        isPrivate: true,
+      }),
+    });
+    if (!repoRes.ok) {
+      const err = await repoRes.json().catch(() => ({}));
+      toast.error(err.error || "Failed to create repository — the app has no source yet");
+      return false;
+    }
+    const { repo } = await repoRes.json();
+    await fetch(`/api/v1/organizations/${orgId}/apps/${appId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ gitUrl: repo.cloneUrl, gitBranch: repo.defaultBranch }),
+    });
+    toast.success(`Repository created: ${repo.fullName}`);
+    return true;
+  }
 
   async function handleSubmit() {
-    if (!displayName.trim() || !name.trim()) return;
+    if (!displayName.trim() || !name.trim() || !parentId) return;
     setCreating(true);
     try {
-      const body: Record<string, unknown> = {
-        displayName: displayName.trim(), name: name.trim(),
-        description: description.trim() || undefined,
-        source, deployType, autoTraefikLabels: true, autoDeploy, generateDomain,
-        projectId: parentId!,
-        persistentVolumes: persistData && templateVolumes.length > 0
-          ? templateVolumes.map((v) => ({ name: v.name, mountPath: v.mountPath }))
-          : undefined,
-        connectionInfo: templateConnectionInfo.length > 0 ? templateConnectionInfo : undefined,
-        exposedPorts: exposePort && containerPort
-          ? [{ internal: parseInt(containerPort, 10), description: "Primary port" }]
-          : undefined,
-      };
-      if (containerPort) body.containerPort = parseInt(containerPort, 10);
-      if (cpuLimit) body.cpuLimit = parseFloat(cpuLimit);
-      if (memoryLimit) body.memoryLimit = parseInt(memoryLimit, 10);
-      if (diskWriteAlertThreshold) body.diskWriteAlertThreshold = Math.round(parseFloat(diskWriteAlertThreshold) * 1_073_741_824);
-      if (rootDirectory.trim()) body.rootDirectory = rootDirectory.trim();
-
-      // Create GitHub repo if opted in
-      if (createRepo && installations.length > 0) {
-        const instId = selectedInstallation || installations[0].id;
-        const repoRes = await fetch("/api/v1/github/repos", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            installationId: instId,
-            name: name.trim(),
-            description: description.trim() || undefined,
-            isPrivate: true,
-          }),
-        });
-        if (repoRes.ok) {
-          const { repo } = await repoRes.json();
-          body.source = "git";
-          body.deployType = "nixpacks";
-          body.gitUrl = repo.cloneUrl;
-          body.gitBranch = repo.defaultBranch;
-          toast.success(`Repository created: ${repo.fullName}`);
-        } else {
-          const err = await repoRes.json();
-          toast.error(err.error || "Failed to create repository");
-          setCreating(false);
-          return;
-        }
-      } else if (source === "git") {
-        body.gitUrl = gitUrl.trim();
-        body.gitBranch = gitBranch.trim();
+      let projectId = parentId;
+      let projectName = parentApps.find((p) => p.id === parentId)?.name;
+      if (parentId === NEW_PROJECT) {
+        const created = await createInlineProject();
+        if (!created) return;
+        projectId = created.id;
+        projectName = created.name;
       }
 
-      if (deployType === "image") body.imageName = imageName;
-      // Send a custom compose / Dockerfile path whenever the user set one. The
-      // server defaults both, so this is safe for any source — and the
-      // public-git compose cascade can fall back to the pinned Dockerfile path.
-      if (composeFilePath && composeFilePath !== "docker-compose.yml") {
-        body.composeFilePath = composeFilePath;
-      }
-      if (dockerfilePath && dockerfilePath !== "Dockerfile") {
-        body.dockerfilePath = dockerfilePath;
-      }
-      if (source === "direct" && deployType === "compose") {
-        body.composeContent = composeContent || undefined;
-      }
+      // Opting into a repo makes this a git app. The URL is predictable from the
+      // account and slug, so the app can be created before the repo exists.
+      const repoOwner =
+        createRepo && installations.length > 0
+          ? installations.find((i) => i.id === selectedInstallation) ?? installations[0]
+          : null;
+
+      const body = buildCreateAppBody({
+        displayName,
+        name,
+        description,
+        source: repoOwner ? "git" : source,
+        deployType: repoOwner ? "nixpacks" : deployType,
+        gitUrl: repoOwner
+          ? `https://github.com/${repoOwner.accountLogin}/${name.trim()}.git`
+          : gitUrl,
+        gitBranch: repoOwner ? "main" : gitBranch,
+        imageName,
+        composeContent,
+        composeFilePath,
+        dockerfilePath,
+        rootDirectory,
+        containerPort,
+        cpuLimit,
+        memoryLimit,
+        diskWriteAlertThreshold,
+        autoDeploy,
+        generateDomain,
+        persistData,
+        exposePort,
+        volumes: templateVolumes,
+        connectionInfo: templateConnectionInfo,
+        projectId,
+        templateName: selectedTemplate?.name,
+      });
 
       const res = await fetch(`/api/v1/organizations/${orgId}/apps`, {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -481,6 +473,9 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], baseDom
 
       const { app } = await res.json();
 
+      // After the app exists, so a rejected slug leaves no orphaned repo behind.
+      const repoReady = repoOwner ? await createRepoForApp(app.id, repoOwner.id) : true;
+
       // Bulk-create env vars from .env content
       if (envContent.trim()) {
         await fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/env-vars`, {
@@ -490,7 +485,7 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], baseDom
       }
 
       // Trigger deploy via API so the app detail page can pick up the SSE stream
-      if (autoDeploy) {
+      if (autoDeploy && repoReady) {
         fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/deploy`, {
           method: "POST",
         }).catch(() => {
@@ -500,17 +495,7 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], baseDom
       } else {
         toast.success("App created");
       }
-      // Redirect to the project page if the app belongs to a project
-      if (parentId) {
-        const project = parentApps.find((p) => p.id === parentId);
-        if (project) {
-          router.push(`/projects/${project.name}`);
-        } else {
-          router.push(`/apps/${app.name}`);
-        }
-      } else {
-        router.push(`/apps/${app.name}`);
-      }
+      router.push(projectName ? `/projects/${projectName}` : `/apps/${app.name}`);
     } catch (err) { toast.error(err instanceof Error ? err.message : "Failed to create app"); }
     finally { setCreating(false); }
   }
@@ -752,28 +737,22 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], baseDom
                   onChange={(e) => {
                     setSlugEdited(true);
                     setName(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""));
-                    setSlugTaken(false);
+                    setSlugStatus(null);
                   }}
                   onBlur={async () => {
                     if (!name.trim()) return;
                     try {
-                      const res = await fetch(`/api/v1/organizations/${orgId}/apps`);
-                      if (res.ok) {
-                        const data = await res.json();
-                        const exists = (data.apps || []).some((p: { name: string }) => p.name === name);
-                        setSlugTaken(exists);
-                      }
+                      const res = await fetch(
+                        `/api/v1/organizations/${orgId}/apps/name-available?name=${encodeURIComponent(name)}&generateDomain=${generateDomain}`
+                      );
+                      if (res.ok) setSlugStatus(await res.json());
                     } catch {}
                   }}
-                  className={slugTaken || (generateDomain && isReservedSlug(name)) ? "border-destructive" : ""}
+                  className={slugUnavailable ? "border-destructive" : ""}
                 />
-                {slugTaken && (
-                  <p className="text-xs text-destructive">This slug is already in use</p>
-                )}
-                {!slugTaken && generateDomain && name && isReservedSlug(name) && (
-                  <p className="text-xs text-destructive">&quot;{name}&quot; is reserved</p>
-                )}
-                {!slugTaken && (
+                {slugUnavailable ? (
+                  <p className="text-xs text-destructive">{slugMessage}</p>
+                ) : (
                   <p className="text-xs text-muted-foreground">
                     Must be unique across the whole instance, not just this organization.
                   </p>
@@ -1166,6 +1145,7 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], baseDom
                     <SelectValue placeholder="Select a project" />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value={NEW_PROJECT}>Create new project...</SelectItem>
                     {parentApps.map((p) => (
                       <SelectItem key={p.id} value={p.id}>
                         <span className="flex items-center gap-2">
@@ -1176,6 +1156,15 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], baseDom
                     ))}
                   </SelectContent>
                   </Select>
+                {parentId === NEW_PROJECT && (
+                  <Input
+                    id="new-project-name"
+                    className="w-64"
+                    placeholder="New project name"
+                    value={newProjectName}
+                    onChange={(e) => setNewProjectName(e.target.value)}
+                  />
+                )}
                 </div>
             </div>
 
@@ -1185,16 +1174,21 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], baseDom
 
           {/* Actions */}
           <div className="flex items-center gap-3 pt-2">
+            {missingRequiredEnv.length > 0 && (
+              <p className="order-last text-xs text-destructive">
+                Required: {missingRequiredEnv.join(", ")}
+              </p>
+            )}
             <Button
               onClick={() => {
                 // Show compose review dialog when there's compose content to analyze
-                if (deployType === "compose" && composeContent.trim()) {
+                if (!selectedTemplate && deployType === "compose" && composeContent.trim()) {
                   setShowComposeReview(true);
                 } else {
                   handleSubmit();
                 }
               }}
-              disabled={creating || !displayName.trim() || !name.trim() || !parentId || hasRequiredEnvVars || (selectedSource === "public-git" && !gitUrl.startsWith("https://"))}
+              disabled={creating || !displayName.trim() || !name.trim() || !projectReady || slugUnavailable || missingRequiredEnv.length > 0 || (selectedSource === "public-git" && !gitUrl.startsWith("https://")) || (selectedSource === "compose" && contentMode === "paste" && !composeContent.trim())}
             >
               {creating ? (
                 <><Loader2 className="mr-2 size-4 animate-spin" />Creating...</>
