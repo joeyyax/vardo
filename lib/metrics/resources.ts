@@ -8,6 +8,7 @@
 import type { SeriesByMetric } from "./resource-samples";
 import {
   aggregate,
+  allZero,
   counterRate,
   counterRateSeries,
   limitCoverage,
@@ -118,6 +119,8 @@ export function buildSnapshot(input: SnapshotInput): ResourceSnapshot {
   const rx = counterRate(series.get("networkRx"), scope, now);
   const tx = counterRate(series.get("networkTx"), scope, now);
   const write = counterRate(series.get("diskWrite"), scope, now);
+  // A block-write counter flat at zero for the whole window was never counting.
+  const diskWriteCollected = !allZero(series.get("diskWrite"), scope);
 
   // ---- CPU -----------------------------------------------------------------
   // 100 means one core saturated, so a core count converts to the same scale.
@@ -262,14 +265,16 @@ export function buildSnapshot(input: SnapshotInput): ResourceSnapshot {
         limitKind: "none",
         series: gpuTemp.series,
       }),
-      diskWrite: reading({
-        kind: "diskWrite",
-        unit: "bytesPerSecond",
-        usage: write.value,
-        absence: absenceFor(series, "diskWrite", scope),
-        limitKind: "none",
-        series: counterRateSeries(series.get("diskWrite"), scope),
-      }),
+      diskWrite: diskWriteCollected
+        ? reading({
+            kind: "diskWrite",
+            unit: "bytesPerSecond",
+            usage: write.value,
+            absence: absenceFor(series, "diskWrite", scope),
+            limitKind: "none",
+            series: counterRateSeries(series.get("diskWrite"), scope),
+          })
+        : notCollected("diskWrite", "bytesPerSecond"),
     },
   };
 }
