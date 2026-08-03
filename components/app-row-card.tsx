@@ -2,7 +2,7 @@ import { formatDistanceToNowStrict } from "date-fns";
 import { CircleDashed, Cpu, Package, ShieldCheck, type LucideIcon } from "lucide-react";
 
 import { formatBytes, formatCores } from "@/lib/metrics/format";
-import { readingLabel } from "@/lib/ui/app-row";
+import { readingLabel, restartNote } from "@/lib/ui/app-row";
 import { statusDotColor } from "@/lib/ui/status-colors";
 import { conditionLabel, conditionTone } from "@/lib/ui/conditions";
 import type { AppCondition } from "@/lib/docker/conditions";
@@ -16,6 +16,8 @@ export type AppRowCardApp = {
   priority?: "critical" | "standard" | "disposable" | null;
   gpuEnabled: boolean | null;
   needsRedeploy: boolean | null;
+  /** Restarts the reconciler last counted, null when there was nothing to read. */
+  restartCount?: number | null;
   conditions: AppCondition[] | null;
   domains?: { domain: string; isPrimary: boolean | null }[];
   deployments?: { status: string; startedAt: Date }[];
@@ -39,6 +41,15 @@ export function memoryLimitLabel(containerMemoryLimit: number | null | undefined
   if (containerMemoryLimit == null) return "Unknown";
   if (containerMemoryLimit === 0) return "No limit";
   return `${formatBytes(containerMemoryLimit)} limit`;
+}
+
+/**
+ * The row's restart cue restated, or null when the row carries none either.
+ * Built from the row's own note, so the two cannot drift apart.
+ */
+export function restartLine(count: number | null | undefined) {
+  const note = restartNote(count);
+  return note && { ...note, qualifier: "resets on deploy" };
 }
 
 /** `icon` mirrors the glyph on the app row, so this doubles as its legend. */
@@ -78,6 +89,7 @@ export function AppRowCard({
   const conditions = app.conditions ?? [];
   const domains = app.domains ?? [];
   const running = app.status === "active";
+  const restarts = restartLine(app.restartCount);
   const tags = (app.appTags ?? []).map((t) => t.tag.name.toLowerCase());
 
   return (
@@ -92,7 +104,7 @@ export function AppRowCard({
 
       {/* The row's note, restated first — a card leading with a green Running
           while the row says deploy needed reads as a contradiction. */}
-      {(conditions.length > 0 || app.needsRedeploy) && (
+      {(conditions.length > 0 || app.needsRedeploy || restarts) && (
         <ul className="space-y-1 border-t pt-2">
           {conditions.map((c) => (
             <li key={c.kind} className="flex items-baseline justify-between gap-3">
@@ -109,6 +121,14 @@ export function AppRowCard({
               <span className="shrink-0 font-medium text-status-warning">deploy needed</span>
               <span className="min-w-0 truncate text-right text-muted-foreground">
                 config changed
+              </span>
+            </li>
+          )}
+          {restarts && (
+            <li className="flex items-baseline justify-between gap-3">
+              <span className={`shrink-0 font-medium ${restarts.tone}`}>{restarts.label}</span>
+              <span className="min-w-0 truncate text-right text-muted-foreground">
+                {restarts.qualifier}
               </span>
             </li>
           )}
