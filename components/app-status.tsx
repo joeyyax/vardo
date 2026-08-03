@@ -55,11 +55,13 @@ export function StatusIndicator({
 }) {
   const isRunning = status === "active" || status === "running";
 
+  // Restart cannot clear this — `compose restart` reuses the containers, so env,
+  // labels and compose changes only land when a deploy recreates them.
   if (isRunning && needsRedeploy) {
     return (
       <span className="flex items-center gap-1.5 text-sm text-status-warning shrink-0">
         <AlertTriangle className="size-3.5" />
-        Restart
+        Deploy needed
       </span>
     );
   }

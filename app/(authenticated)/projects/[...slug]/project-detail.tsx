@@ -971,7 +971,7 @@ export function ProjectDetail({
                             : "bg-status-success-muted text-status-success hover:ring-1 hover:ring-inset hover:ring-status-success/40"
                           }>
                             {anyNeedsRedeploy ? (
-                              <><RotateCcw className="mr-1.5 size-3.5" />Restart Needed</>
+                              <><RotateCcw className="mr-1.5 size-3.5" />Deploy needed</>
                             ) : (
                               <><span className="mr-1.5 size-2 rounded-full bg-status-success animate-pulse" />Running</>
                             )}
@@ -981,11 +981,11 @@ export function ProjectDetail({
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem disabled={deploying} onClick={handleDeployAll}>
                             <Rocket className="mr-2 size-4" />
-                            Redeploy All
+                            Redeploy all
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={handleRestartAll}>
                             <RotateCcw className="mr-2 size-4" />
-                            Restart All
+                            Restart all
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
                           <DropdownMenuItem
@@ -1005,7 +1005,7 @@ export function ProjectDetail({
                       {deploying ? (
                         <><Loader2 className="mr-1.5 size-4 animate-spin" />Deploying...</>
                       ) : (
-                        <><Rocket className="mr-1.5 size-4" />Deploy All</>
+                        <><Rocket className="mr-1.5 size-4" />Deploy all</>
                       )}
                     </Button>
                   );
