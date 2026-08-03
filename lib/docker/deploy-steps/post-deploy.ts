@@ -153,7 +153,9 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
         }
 
         try {
-          const { spaceReclaimed: cacheReclaimed } = await pruneBuildCache({ until: ["24h"] });
+          // A week, not a day: at 24h the first deploy after a quiet weekend
+          // throws away the base layers every build starts from.
+          const { spaceReclaimed: cacheReclaimed } = await pruneBuildCache({ until: ["168h"] });
           if (cacheReclaimed > 0) {
             log(`[deploy] Pruned build cache, reclaimed ${formatBytes(cacheReclaimed)}`);
           }
