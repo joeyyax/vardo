@@ -344,6 +344,13 @@
       "when": 1785717619013,
       "tag": "0048_fearless_night_thrasher",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1785723340748,
+      "tag": "0049_wide_madame_masque",
+      "breakpoints": true
     }
   ]
 }

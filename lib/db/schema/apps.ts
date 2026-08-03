@@ -10,6 +10,7 @@ import {
   timestamp,
   unique,
   uniqueIndex,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import {
@@ -97,8 +98,14 @@ export const apps = pgTable(
     isSystemManaged: boolean("is_system_managed").default(false).notNull(), // Managed by Vardo itself — deploy engine blocked
     backendProtocol: text("backend_protocol", { enum: ["http", "https"] }), // Backend scheme Traefik uses to reach the container. Null = auto (https if port 443/8443)
     envContent: text("env_content"), // Encrypted env file blob (AES-256-GCM)
-    // Compose decomposition: child service records point to parent compose app
-    parentAppId: text("parent_app_id"),
+    // Compose decomposition: child service records point to parent compose app.
+    // Cascade — children die with the parent and are rebuilt from its compose
+    // file on the next deploy. Never switch this to set null: that promotes
+    // children into app_top_level_name_uniq's scope and the delete can fail on
+    // an unrelated app's name.
+    parentAppId: text("parent_app_id").references((): AnyPgColumn => apps.id, {
+      onDelete: "cascade",
+    }),
     composeService: text("compose_service"), // service name from compose YAML
     containerName: text("container_name"), // computed: {projectName}-{serviceName}-1
     importedContainerId: text("imported_container_id"), // original container ID when imported from Docker

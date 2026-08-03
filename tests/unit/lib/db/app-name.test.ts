@@ -88,9 +88,8 @@ describe("top-level name uniqueness", () => {
   });
 
   it("applies against the existing glitchtip child collisions", () => {
-    // Four child names duplicated across two parents, one of which is orphaned
-    // — its parent row is gone but parent_app_id still points at it, so the
-    // rows stay outside the index.
+    // Four child names duplicated across two parents. Children are exempt from
+    // the index whatever their parent, so the names never collide.
     const services = ["postgres", "redis", "web", "worker"];
     const rows: Row[] = [
       { name: "glitchtip", orgId: "org-a", parentAppId: null },
@@ -102,7 +101,7 @@ describe("top-level name uniqueness", () => {
       ...services.map((s) => ({
         name: `glitchtip-${s}`,
         orgId: "org-b",
-        parentAppId: "app-deleted",
+        parentAppId: "app-other",
       })),
     ];
     expect(violatesTopLevelUniq(rows)).toBe(false);
