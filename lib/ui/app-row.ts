@@ -175,9 +175,11 @@ export function rowNote(
   if (worst) {
     return { label: conditionLabel(worst), tone: conditionTone(worst.severity), detail: worst.detail };
   }
+  // Restart cannot clear this. `compose restart` reuses the containers, so env,
+  // labels and compose changes only land when a deploy recreates them.
   if (needsRedeploy) {
     return {
-      label: "restart needed",
+      label: "deploy needed",
       tone: "text-status-warning",
       detail: "Config changed since the last deploy",
     };

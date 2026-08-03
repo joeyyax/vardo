@@ -91,7 +91,7 @@ export function AppRowCard({
       </div>
 
       {/* The row's note, restated first — a card leading with a green Running
-          while the row says restart needed reads as a contradiction. */}
+          while the row says deploy needed reads as a contradiction. */}
       {(conditions.length > 0 || app.needsRedeploy) && (
         <ul className="space-y-1 border-t pt-2">
           {conditions.map((c) => (
@@ -106,7 +106,7 @@ export function AppRowCard({
           ))}
           {app.needsRedeploy && (
             <li className="flex items-baseline justify-between gap-3">
-              <span className="shrink-0 font-medium text-status-warning">restart needed</span>
+              <span className="shrink-0 font-medium text-status-warning">deploy needed</span>
               <span className="min-w-0 truncate text-right text-muted-foreground">
                 config changed
               </span>
