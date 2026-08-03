@@ -5,14 +5,14 @@ export function StatusBadge({ status }: { status: string }) {
   switch (status) {
     case "success":
       return (
-        <Badge className="border-transparent bg-status-success-muted text-status-success">
+        <Badge variant="success">
           <CheckCircle2 className="mr-1 size-3" aria-hidden="true" />
           Success
         </Badge>
       );
     case "running":
       return (
-        <Badge className="border-transparent bg-status-warning-muted text-status-warning">
+        <Badge variant="warning">
           <Loader2 className="mr-1 size-3 animate-spin" aria-hidden="true" />
           Running
         </Badge>
@@ -26,7 +26,7 @@ export function StatusBadge({ status }: { status: string }) {
       );
     case "skipped":
       return (
-        <Badge className="border-transparent bg-status-warning-muted text-status-warning">
+        <Badge variant="warning">
           <AlertTriangle className="mr-1 size-3" aria-hidden="true" />
           Skipped
         </Badge>

@@ -377,11 +377,11 @@ export function AppDeployPanel({
                   {isDeploying ? "Live · still serving" : "Live"}
                 </Badge>
               ) : isStopped ? (
-                <Badge className="border-transparent bg-status-neutral-muted text-status-neutral shrink-0">
+                <Badge variant="neutral" className="shrink-0">
                   Stopped
                 </Badge>
               ) : isErrored ? (
-                <Badge className="border-transparent bg-status-error-muted text-status-error shrink-0">
+                <Badge variant="error" className="shrink-0">
                   Crashed
                 </Badge>
               ) : (
@@ -393,14 +393,14 @@ export function AppDeployPanel({
                 Instant rollback
               </Badge>
             ) : deployment.status === "success" ? (
-              <Badge className="border-transparent bg-status-neutral-muted text-status-neutral shrink-0">
+              <Badge variant="neutral" className="shrink-0">
                 Superseded
               </Badge>
             ) : (
               <DeploymentStatusBadge status={deployment.status} />
             )}
             {unfinishedWork && (
-              <Badge className="border-transparent bg-status-warning-muted text-status-warning shrink-0 gap-1">
+              <Badge variant="warning" className="shrink-0 gap-1">
                 <AlertTriangle className="size-3" />
                 Post-deploy incomplete
               </Badge>
@@ -600,7 +600,7 @@ export function AppDeployPanel({
                       >
                         <div className="flex items-center justify-between gap-4 p-4">
                           <div className="flex items-center gap-3 min-w-0">
-                            <Badge className="border-transparent bg-status-neutral-muted text-status-neutral shrink-0 gap-1.5">
+                            <Badge variant="neutral" className="shrink-0 gap-1.5">
                               <Clock className="size-3" />
                               Queued
                             </Badge>

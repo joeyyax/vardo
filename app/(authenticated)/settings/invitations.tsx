@@ -248,7 +248,7 @@ export function InvitationsPanel({
                       variant={isAccepted || isExpired ? "outline" : "secondary"}
                       className={
                         isAccepted
-                          ? "text-status-success border-status-success/30"
+                          ? "text-status-success border-status-success-edge"
                           : isExpired
                           ? "text-muted-foreground"
                           : ""

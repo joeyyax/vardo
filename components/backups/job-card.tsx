@@ -100,10 +100,7 @@ export function JobCard({
           <div className="flex items-center gap-2 min-w-0">
             <p className="text-sm font-medium">{job.name}</p>
             {job.enabled ? (
-              <Badge
-                variant="outline"
-                className="text-xs border-transparent bg-status-success-muted text-status-success"
-              >
+              <Badge variant="success" className="text-xs">
                 <Power className="mr-1 size-3" aria-hidden="true" />
                 Active
               </Badge>
