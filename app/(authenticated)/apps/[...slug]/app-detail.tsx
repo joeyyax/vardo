@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { Fragment, useState, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -9,6 +9,8 @@ import {
   Trash2,
   Loader2,
   Plus,
+  Play,
+  ScrollText,
   X,
   Rocket,
   RotateCcw,
@@ -18,6 +20,9 @@ import {
   Check,
   EllipsisVertical,
   GitBranch,
+  Undo2,
+  Zap,
+  type LucideIcon,
 } from "lucide-react";
 import { toast } from "@/lib/messenger";
 import { PageToolbar } from "@/components/page-toolbar";
@@ -60,6 +65,8 @@ import { SectionNav, type SectionGroup } from "@/components/section-nav";
 import { NewEnvironmentSheet } from "./new-environment-sheet";
 import { AppDeployPanel } from "./app-deploy-panel";
 import { useDeploy } from "./hooks/use-deploy";
+import { useCancelDeploy, useSlotStatus } from "./hooks/use-app-actions";
+import { appActionMenu, type AppAction, type AppActionItem } from "@/lib/ui/app-actions";
 import { AppNetworking } from "./app-networking";
 import { AppConnect } from "./app-connect";
 import { AppSettingsDialog } from "./app-settings-dialog";
@@ -87,6 +94,8 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteEnvOpen, setDeleteEnvOpen] = useState(false);
   const [stopOpen, setStopOpen] = useState(false);
+  const [rollbackOpen, setRollbackOpen] = useState(false);
+  const [rollingBack, setRollingBack] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deletingEnv, setDeletingEnv] = useState(false);
 
@@ -163,6 +172,19 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
     router.refresh();
   }, [orgId, app.id, router]);
 
+  // Same endpoint as Restart: compose restarts stopped services back up.
+  const handleStart = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/restart`, { method: "POST" });
+      const data = await res.json();
+      if (data.success) toast.success("Started");
+      else toast.error(data.error || "Start failed");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Start failed");
+    }
+    router.refresh();
+  }, [orgId, app.id, router]);
+
   const handleRecreate = useCallback(async () => {
     try {
       const res = await fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/recreate`, { method: "POST" });
@@ -170,6 +192,36 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
       data.success ? toast.success("Recreated") : toast.error(data.error || "Recreate failed");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Recreate failed");
+    }
+    router.refresh();
+  }, [orgId, app.id, router]);
+
+  const { cancelling, cancelDeploy } = useCancelDeploy(orgId, app.id);
+
+  // Child services are stack-level operations managed from the parent
+  const isChildService = !!app.parentAppId;
+
+  // Instant rollback is only offered when the standby slot can actually serve.
+  const slotStatus = useSlotStatus(orgId, app.id, {
+    enabled: !isChildService,
+    refreshKey: deploy.deploying,
+  });
+
+  const handleInstantRollback = useCallback(async () => {
+    setRollbackOpen(false);
+    setRollingBack(true);
+    try {
+      const res = await fetch(
+        `/api/v1/organizations/${orgId}/apps/${app.id}/instant-rollback`,
+        { method: "POST" },
+      );
+      const data = await res.json();
+      if (res.ok) toast.success("Rolled back to the standby release");
+      else toast.error(data.error || "Instant rollback failed");
+    } catch {
+      toast.error("Instant rollback failed");
+    } finally {
+      setRollingBack(false);
     }
     router.refresh();
   }, [orgId, app.id, router]);
@@ -270,11 +322,126 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
     );
   }
 
-  // Child services are stack-level operations managed from the parent
-  const isChildService = !!app.parentAppId;
-
   // Set when the API would 403 the stop, so the menu offers it disabled with the reason.
   const stopRefusal = systemManagedRefusal(app, "stop");
+
+  // Newest success other than the one serving — what a rollback would restore.
+  const rollbackTargetId =
+    filteredDeployments.filter((d) => d.status === "success")[1]?.id ?? null;
+
+  const actions = appActionMenu({
+    status: app.status,
+    isChildService,
+    deploying: deploy.deploying,
+    standbyAvailable: !!slotStatus?.standbyAvailable,
+    hasDeployed: filteredDeployments.length > 0,
+    rollbackTarget: !!rollbackTargetId,
+    stopRefusal,
+  });
+
+  const statusTrigger = (() => {
+    if (deploy.deploying || app.status === "deploying") {
+      return {
+        className: "bg-status-info-muted text-status-info hover:bg-status-info/20",
+        content: <><Loader2 className="mr-1.5 size-3.5 animate-spin" />Deploying</>,
+      };
+    }
+    if (app.status === "active") {
+      const lastDeploy = app.deployments.find((d) => d.status === "success");
+      return {
+        className: app.needsRedeploy
+          ? "bg-status-warning-muted text-status-warning hover:bg-status-warning/20"
+          : "bg-status-success-muted text-status-success hover:bg-status-success/20",
+        content: app.needsRedeploy ? (
+          <><AlertTriangle className="mr-1.5 size-3.5" />Restart needed</>
+        ) : (
+          <>
+            <span className="mr-1.5 size-2 rounded-full bg-status-success animate-pulse" />
+            Running
+            {lastDeploy && <Uptime since={lastDeploy.finishedAt || lastDeploy.startedAt} />}
+          </>
+        ),
+      };
+    }
+    if (app.status === "stopped") {
+      return {
+        className: "bg-status-neutral-muted text-status-neutral hover:bg-status-neutral/20",
+        content: <><Square className="mr-1.5 size-3.5" />Stopped</>,
+      };
+    }
+    if (app.status === "missing") {
+      return {
+        className: "bg-status-warning-muted text-status-warning hover:bg-status-warning/20",
+        content: <><AlertTriangle className="mr-1.5 size-3.5" />No container</>,
+      };
+    }
+    return {
+      className: "bg-status-error-muted text-status-error hover:bg-status-error/20",
+      content: <><X className="mr-1.5 size-3.5" />Crashed</>,
+    };
+  })();
+
+  // Opens the rebuild-from-a-deployment sheet, which lives in the Deployments
+  // section alongside the rest of the history.
+  function handleRollback() {
+    if (!rollbackTargetId) return;
+    setActiveTab("deployments");
+    deploy.handleRollbackPreview(rollbackTargetId);
+  }
+
+  const ACTION_LABEL: Record<AppAction, { icon: LucideIcon; label: string }> = {
+    "cancel-deploy": { icon: X, label: "Cancel deploy" },
+    deploy: app.status === "error"
+      ? { icon: Rocket, label: "Retry deploy" }
+      : app.source === "direct"
+        ? { icon: Rocket, label: "Deploy" }
+        : { icon: GitBranch, label: "Pull latest & redeploy" },
+    start: { icon: Play, label: "Start" },
+    restart: { icon: RotateCcw, label: "Restart containers" },
+    recreate: { icon: RefreshCw, label: "Recreate containers" },
+    "instant-rollback": { icon: Zap, label: "Roll back to standby" },
+    rollback: { icon: Undo2, label: "Roll back to a previous deploy" },
+    logs: { icon: ScrollText, label: "View logs" },
+    stop: { icon: Square, label: "Stop" },
+  };
+
+  const ACTION_HANDLER: Record<AppAction, () => void> = {
+    "cancel-deploy": () => { void cancelDeploy(); },
+    deploy: handleDeploy,
+    start: handleStart,
+    restart: handleRestart,
+    recreate: handleRecreate,
+    "instant-rollback": () => setRollbackOpen(true),
+    rollback: handleRollback,
+    logs: () => setActiveTab("logs"),
+    stop: () => setStopOpen(true),
+  };
+
+  function renderAction(item: AppActionItem, index: number) {
+    const { action, disabled } = item;
+    const { icon: Icon, label } = ACTION_LABEL[action];
+    // One reason under a run of rows sharing it, rather than the same
+    // sentence repeated three times.
+    const showReason = !!disabled && actions[index + 1]?.disabled !== disabled;
+    return (
+      <Fragment key={action}>
+        {action === "stop" && <DropdownMenuSeparator />}
+        <DropdownMenuItem
+          disabled={!!disabled || (action === "cancel-deploy" && cancelling) || (action === "instant-rollback" && rollingBack)}
+          className={action === "stop" && !disabled ? "text-destructive focus:text-destructive" : undefined}
+          onClick={disabled ? undefined : ACTION_HANDLER[action]}
+        >
+          <Icon className="mr-2 size-4" />
+          {label}
+        </DropdownMenuItem>
+        {showReason && (
+          <DropdownMenuLabel className="max-w-72 pt-0 type-body-sm font-normal whitespace-normal text-muted-foreground">
+            {disabled}
+          </DropdownMenuLabel>
+        )}
+      </Fragment>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -285,79 +452,8 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
       <PageToolbar
         actions={
           <div className="flex items-center gap-2">
-            {!isChildService && (app.status === "active" ? (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button size="sm" className={app.needsRedeploy
-                    ? "bg-status-warning-muted text-status-warning hover:bg-status-warning/20"
-                    : "bg-status-success-muted text-status-success hover:bg-status-success/20"
-                  }>
-                    {app.needsRedeploy ? (
-                      <AlertTriangle className="mr-1.5 size-3.5" />
-                    ) : (
-                      <span className="mr-1.5 size-2 rounded-full bg-status-success animate-pulse" />
-                    )}
-                    {app.needsRedeploy ? "Restart needed" : "Running"}
-                    {!app.needsRedeploy && (() => {
-                      const lastDeploy = app.deployments.find((d) => d.status === "success");
-                      return lastDeploy ? (
-                        <Uptime since={lastDeploy.finishedAt || lastDeploy.startedAt} />
-                      ) : null;
-                    })()}
-                    <ChevronDown className="ml-1.5 size-3.5" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  {app.source === "direct" ? (
-                    <>
-                      <DropdownMenuItem disabled={deploy.deploying} onClick={handleDeploy}>
-                        <Rocket className="mr-2 size-4" />
-                        Deploy
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={handleRestart}>
-                        <RotateCcw className="mr-2 size-4" />
-                        Restart containers
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={handleRecreate}>
-                        <RefreshCw className="mr-2 size-4" />
-                        Rebuild containers
-                      </DropdownMenuItem>
-                    </>
-                  ) : (
-                    <>
-                      <DropdownMenuItem disabled={deploy.deploying} onClick={handleDeploy}>
-                        <GitBranch className="mr-2 size-4" />
-                        Pull latest & redeploy
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={handleRestart}>
-                        <RotateCcw className="mr-2 size-4" />
-                        Restart
-                      </DropdownMenuItem>
-                    </>
-                  )}
-                  <DropdownMenuSeparator />
-                  {stopRefusal ? (
-                    <>
-                      <DropdownMenuItem disabled>
-                        <Square className="mr-2 size-4" />
-                        Stop
-                      </DropdownMenuItem>
-                      <DropdownMenuLabel className="max-w-72 pt-0 type-body-sm font-normal whitespace-normal text-muted-foreground">
-                        {stopRefusal}
-                      </DropdownMenuLabel>
-                    </>
-                  ) : (
-                    <DropdownMenuItem
-                      className="text-destructive focus:text-destructive"
-                      onClick={() => setStopOpen(true)}
-                    >
-                      <Square className="mr-2 size-4" />
-                      Stop
-                    </DropdownMenuItem>
-                  )}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            ) : (
+            {/* One action for a never-deployed app is a button, not a menu. */}
+            {actions.length === 1 && actions[0].action === "deploy" ? (
               <Button size="sm" disabled={deploy.deploying} onClick={handleDeploy}>
                 {deploy.deploying ? (
                   <><Loader2 className="mr-1.5 size-4 animate-spin" />Deploying...</>
@@ -365,7 +461,19 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
                   <><Rocket className="mr-1.5 size-4" />{app.status === "error" ? "Retry" : "Deploy"}</>
                 )}
               </Button>
-            ))}
+            ) : (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button size="sm" className={statusTrigger.className}>
+                    {statusTrigger.content}
+                    <ChevronDown className="ml-1.5 size-3.5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {actions.map(renderAction)}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
             {!app.isSystemManaged && (
               <>
                 <Button size="sm" variant="outline" onClick={() => setEditOpen(true)}>
@@ -853,6 +961,19 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         description={`Stop "${app.displayName}"? The app will go offline until you redeploy or restart it.`}
         onConfirm={handleStop}
         confirmLabel="Stop"
+      />
+
+      {/* Instant Rollback Confirmation */}
+      <ConfirmDeleteDialog
+        open={rollbackOpen}
+        onOpenChange={setRollbackOpen}
+        title="Roll back to standby"
+        description="Swaps live traffic to the standby slot, which is still running the previous release. The current release becomes the standby."
+        confirmLabel="Roll back"
+        loadingLabel="Rolling back..."
+        variant="default"
+        loading={rollingBack}
+        onConfirm={handleInstantRollback}
       />
 
       {/* Delete Project Confirmation */}
