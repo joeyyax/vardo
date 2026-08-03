@@ -232,4 +232,137 @@ describe("filterByEnvironment", () => {
 
     expect(kept.map((m) => m.containerId)).toEqual(["c-redis", "c-server"]);
   });
+
+  it("reads a shared container's environment off its compose project name", () => {
+    const kept = filterByEnvironment([sharedDb("shop-production-shared"), sharedDb("shop-pr-7-shared")], "production");
+
+    expect(kept.map((m) => m.labels["com.docker.compose.project"])).toEqual([
+      "shop-production-shared",
+    ]);
+  });
+
+  it("keeps a shared container whose project is pinned by the compose name", () => {
+    const kept = filterByEnvironment([sharedDb("vardo")], "production");
+
+    expect(kept).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// x-vardo-shared services
+//
+// Brought up with --no-recreate, so they carry no vardo labels at all — only
+// what compose writes. Their sibling slot containers are labeled as usual.
+// ---------------------------------------------------------------------------
+
+function sharedDb(project: string): ContainerMetrics {
+  return metric({
+    containerId: `c-${project}-db`,
+    containerName: `${project}-postgres-1`,
+    projectName: project,
+    organizationId: null,
+    memoryUsage: 90_000_000,
+    labels: {
+      "com.docker.compose.project": project,
+      "com.docker.compose.service": "postgres",
+    },
+  });
+}
+
+const slottedWeb = metric({
+  containerId: "c-web",
+  containerName: "shop-production-green-web-1",
+  projectName: "shop",
+  memoryUsage: 10_000_000,
+  labels: {
+    "vardo.project": "shop",
+    "vardo.project.id": "parent-shop",
+    "vardo.environment": "production",
+    "com.docker.compose.project": "shop-production-green",
+    "com.docker.compose.service": "web",
+  },
+});
+
+const shopParent = app({ id: "parent-shop", name: "shop" });
+
+describe("shared services", () => {
+  it("gives the parent its shared container alongside the labeled slot", () => {
+    const matched = matchAppMetrics(shopParent, [slottedWeb, sharedDb("shop-production-shared")]);
+
+    expect(matched.map((m) => m.containerId)).toEqual(["c-web", "c-shop-production-shared-db"]);
+    expect(aggregateContainers(matched).memory).toBe(100_000_000);
+  });
+
+  it("finds it under a project name pinned by the compose file", () => {
+    const pinned = metric({
+      containerId: "c-vardo-db",
+      containerName: "vardo-postgres",
+      projectName: "vardo",
+      organizationId: null,
+      labels: {
+        "com.docker.compose.project": "vardo",
+        "com.docker.compose.service": "postgres",
+      },
+    });
+    const frontend = metric({
+      containerId: "c-vardo-frontend",
+      containerName: "vardo-production-green-frontend-1",
+      labels: {
+        "vardo.project.id": "parent-vardo",
+        "vardo.environment": "production",
+        "com.docker.compose.project": "vardo-production-green",
+        "com.docker.compose.service": "frontend",
+      },
+    });
+
+    const matched = matchAppMetrics(app({ id: "parent-vardo", name: "vardo" }), [frontend, pinned]);
+
+    expect(matched.map((m) => m.containerId)).toEqual(["c-vardo-frontend", "c-vardo-db"]);
+  });
+
+  it("resolves the decomposed child to its own shared container", () => {
+    const dbChild = app({
+      id: "child-db",
+      name: "shop-postgres",
+      parentAppId: "parent-shop",
+      composeService: "postgres",
+    });
+
+    const matched = matchAppMetrics(dbChild, [slottedWeb, sharedDb("shop-production-shared")]);
+
+    expect(matched.map((m) => m.containerId)).toEqual(["c-shop-production-shared-db"]);
+  });
+
+  it("does not hand it to a differently-named app", () => {
+    const other = app({ id: "parent-shopify", name: "shopify" });
+
+    expect(matchAppMetrics(other, [sharedDb("shop-production-shared")])).toEqual([]);
+  });
+
+  it("counts it once when the parent and the child both match it", () => {
+    const dbChild = app({
+      id: "child-db",
+      name: "shop-postgres",
+      parentAppId: "parent-shop",
+      composeService: "postgres",
+    });
+    const metrics = [slottedWeb, sharedDb("shop-production-shared")];
+    const total = dedupeMetrics(groupMetricsByApp([shopParent, dbChild], metrics).values());
+
+    expect(total).toHaveLength(2);
+    expect(aggregateContainers(total).memory).toBe(100_000_000);
+  });
+
+  it("keeps a preview's shared database off the production view", () => {
+    const matched = matchAppMetrics(shopParent, [
+      slottedWeb,
+      sharedDb("shop-production-shared"),
+      sharedDb("shop-pr-7-shared"),
+    ]);
+
+    expect(filterByEnvironment(matched, "production").map((m) => m.containerId)).toEqual([
+      "c-web",
+      "c-shop-production-shared-db",
+    ]);
+  });
 });
