@@ -19,6 +19,10 @@ const buttonVariants = cva(
         ghost:
           "hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50",
         link: "text-primary underline-offset-4 hover:underline",
+        // Fill and hover come from the caller's status tone. `default` sets
+        // hover:bg-primary/90, which no status class overrides, so a status
+        // button on that variant repaints near-black on hover.
+        status: "hover:ring-1 hover:ring-inset",
       },
       size: {
         default: "h-10 px-4",
