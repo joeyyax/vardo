@@ -2,6 +2,7 @@ import type { AppCondition } from "@/lib/docker/conditions";
 import type { ExitReason } from "@/lib/docker/exit-reason";
 import type { FeatureFlags } from "@/lib/config/features";
 import type { Incident } from "@/lib/ui/stability";
+import type { LifecycleEvent } from "@/lib/ui/lifecycle";
 
 export type Deployment = {
   id: string;
@@ -170,6 +171,8 @@ export type AppDetailProps = {
   siblings?: { id: string; name: string; displayName: string; status: string; dependsOn: string[] | null }[];
   /** Durable stability history, newest first. */
   stabilityIncidents?: Incident[];
+  /** Restarts, stops and starts an operator ran, newest first. */
+  lifecycleEvents?: LifecycleEvent[];
   initialTab?: string;
   initialEnv?: string;
   initialSubView?: string;
