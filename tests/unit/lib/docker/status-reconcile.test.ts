@@ -3,7 +3,7 @@ import {
   deriveStatus,
   deployHoldsStatus,
   parseExitCode,
-  restartCountFor,
+  restartsFor,
   stabilityTransition,
   DEPLOYING_HOLD_MS,
 } from "@/lib/docker/status-reconcile";
@@ -156,30 +156,46 @@ describe("parseExitCode", () => {
   });
 });
 
-describe("restartCountFor", () => {
+describe("restartsFor", () => {
+  const older = new Date("2026-01-01T00:00:00Z");
+  const newer = new Date("2026-03-01T00:00:00Z");
+  const read = (count: number | null, createdAt: Date | null = newer) => ({ count, createdAt });
+  const nothingStored = { count: null, since: null };
+
   it("sums the counter across the app's containers", () => {
-    expect(restartCountFor([3, 1], null)).toBe(4);
+    expect(restartsFor([read(3), read(1)], nothingStored).count).toBe(4);
   });
 
   it("reports zero for containers that have never restarted", () => {
-    expect(restartCountFor([0, 0], null)).toBe(0);
+    expect(restartsFor([read(0), read(0)], nothingStored).count).toBe(0);
+  });
+
+  it("counts from the oldest container the total covers", () => {
+    expect(restartsFor([read(1, newer), read(2, older)], nothingStored).since).toEqual(older);
+  });
+
+  it("has no anchor when no container gave a creation time", () => {
+    expect(restartsFor([read(1, null)], nothingStored).since).toBeNull();
   });
 
   it("reports null, not zero, when the app has no containers", () => {
-    expect(restartCountFor([], null)).toBeNull();
-    expect(restartCountFor([], 7)).toBeNull();
+    expect(restartsFor([], nothingStored).count).toBeNull();
+    expect(restartsFor([], { count: 7, since: older })).toEqual(nothingStored);
   });
 
   it("keeps the stored figure when a container did not answer", () => {
-    expect(restartCountFor([2, null], 5)).toBe(5);
+    expect(restartsFor([read(2), read(null)], { count: 5, since: older })).toEqual({
+      count: 5,
+      since: older,
+    });
   });
 
   it("stays null when a container did not answer and nothing was stored", () => {
-    expect(restartCountFor([null], null)).toBeNull();
+    expect(restartsFor([read(null)], nothingStored).count).toBeNull();
   });
 
   it("never lowers the total to the part it could read", () => {
-    expect(restartCountFor([1, null], 9)).not.toBe(1);
+    expect(restartsFor([read(1), read(null)], { count: 9, since: older }).count).not.toBe(1);
   });
 });
 

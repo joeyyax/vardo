@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
+import { restartCountsByApp } from "@/lib/db/app-restarts";
 import { apps, projects, tags } from "@/lib/db/schema";
 import { getCurrentOrg, getUserOrganizations } from "@/lib/auth/session";
 import { eq, desc, asc, isNull, and, type AnyColumn } from "drizzle-orm";
@@ -57,6 +58,12 @@ export default async function ProjectsPage() {
 
   const teamsEnabled = await isFeatureEnabledAsync("teams");
 
+  const restarts = await restartCountsByApp(appList.map((a) => a.id));
+  const appsWithRestarts = appList.map((a) => ({
+    ...a,
+    restartCount: restarts.get(a.id) ?? null,
+  }));
+
   // Projects that have no apps assigned
   const projectIdsWithApps = new Set(appList.map((a) => a.projectId).filter(Boolean));
   const emptyProjects = projectList.filter((p) => !projectIdsWithApps.has(p.id));
@@ -80,7 +87,7 @@ export default async function ProjectsPage() {
         <FirstRun canImportContainers={containerImportEnabled} />
       ) : (
         <AppGrid
-          apps={appList}
+          apps={appsWithRestarts}
           allTags={tagList}
           orgId={orgId}
           emptyProjects={emptyProjects}

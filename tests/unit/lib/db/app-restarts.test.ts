@@ -8,7 +8,7 @@ vi.mock("@/lib/db", () => ({
   db: { query: { apps: { findMany: (...args: unknown[]) => findMany(...args) } } },
 }));
 
-const { restartCountsByApp } = await import("@/lib/db/app-restarts");
+const { restartCountsByApp, restartReading } = await import("@/lib/db/app-restarts");
 
 beforeEach(() => {
   findMany.mockReset();
@@ -46,28 +46,62 @@ describe("restartCountsByApp", () => {
   });
 });
 
+describe("restartReading", () => {
+  const since = new Date("2026-03-01T00:00:00Z");
+
+  it("shapes the stored pair into the reading every surface renders", () => {
+    expect(restartReading({ containerRestartCount: 12, containerRestartSince: since })).toEqual({
+      count: 12,
+      since: since.toISOString(),
+    });
+  });
+
+  it("keeps a zero reading, which is not the absence of one", () => {
+    expect(restartReading({ containerRestartCount: 0, containerRestartSince: since })?.count).toBe(0);
+  });
+
+  it("reads null as unread rather than as zero restarts", () => {
+    expect(restartReading({ containerRestartCount: null, containerRestartSince: since })).toBeNull();
+  });
+
+  it("carries a count with no anchor rather than withholding it", () => {
+    expect(restartReading({ containerRestartCount: 4, containerRestartSince: null })).toEqual({
+      count: 4,
+      since: null,
+    });
+  });
+});
+
 // ---------------------------------------------------------------------------
 // The migration
 // ---------------------------------------------------------------------------
 
-describe("container_restart_count migration", () => {
+describe("restart column migrations", () => {
   const dir = join(process.cwd(), "drizzle");
   const sql = readdirSync(dir)
     .filter((f) => f.endsWith(".sql"))
     .map((f) => readFileSync(join(dir, f), "utf8"))
     .join("\n");
 
-  const statement = sql
-    .split("\n")
-    .find((line) => line.includes("container_restart_count"));
+  const statementFor = (column: string) =>
+    sql.split("\n").find((line) => line.includes(column));
 
-  it("adds the column to the app table", () => {
+  it("adds the count to the app table", () => {
+    const statement = statementFor("container_restart_count");
     expect(statement).toBeDefined();
     expect(statement).toMatch(/ALTER TABLE "app" ADD COLUMN "container_restart_count" integer/);
   });
 
-  it("is nullable and has no default, so an unread app is not backfilled with zero", () => {
-    expect(statement).not.toMatch(/NOT NULL/i);
-    expect(statement).not.toMatch(/DEFAULT/i);
+  it("adds the anchor the count resets from", () => {
+    const statement = statementFor("container_restart_since");
+    expect(statement).toBeDefined();
+    expect(statement).toMatch(/ALTER TABLE "app" ADD COLUMN "container_restart_since" timestamp/);
+  });
+
+  it("leaves both nullable with no default, so an unread app is not backfilled with zero", () => {
+    for (const column of ["container_restart_count", "container_restart_since"]) {
+      expect(statementFor(column)).not.toMatch(/NOT NULL/i);
+      expect(statementFor(column)).not.toMatch(/DEFAULT/i);
+    }
   });
 });
