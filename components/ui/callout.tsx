@@ -3,10 +3,10 @@ import { cn } from "@/lib/utils";
 type CalloutVariant = "info" | "warning" | "error" | "success";
 
 const variants: Record<CalloutVariant, { border: string; bg: string; label: string; labelColor: string }> = {
-  info: { border: "border-blue-500/20", bg: "bg-blue-500/5", label: "Info", labelColor: "text-blue-500" },
-  warning: { border: "border-amber-500/20", bg: "bg-amber-500/5", label: "Note", labelColor: "text-amber-500" },
-  error: { border: "border-red-500/20", bg: "bg-red-500/5", label: "Warning", labelColor: "text-red-500" },
-  success: { border: "border-green-500/20", bg: "bg-green-500/5", label: "Success", labelColor: "text-green-500" },
+  info: { border: "border-status-info/20", bg: "bg-status-info/5", label: "Info", labelColor: "text-status-info" },
+  warning: { border: "border-status-warning/20", bg: "bg-status-warning/5", label: "Note", labelColor: "text-status-warning" },
+  error: { border: "border-status-error/20", bg: "bg-status-error/5", label: "Warning", labelColor: "text-status-error" },
+  success: { border: "border-status-success/20", bg: "bg-status-success/5", label: "Success", labelColor: "text-status-success" },
 };
 
 type CalloutProps = {
