@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { RelativeTime } from "@/components/relative-time";
 import { authClient, useSession, passkey as passkeyMethods } from "@/lib/auth/client";
@@ -844,6 +845,7 @@ export function ActiveSessions() {
 type ApiToken = {
   id: string;
   name: string;
+  crossOrg: boolean;
   lastUsedAt: string | null;
   createdAt: string;
 };
@@ -856,6 +858,7 @@ export function ApiTokens({ orgId }: { orgId: string }) {
   const [showCreate, setShowCreate] = useState(false);
   const [createdToken, setCreatedToken] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [togglingScope, setTogglingScope] = useState<string | null>(null);
 
   const fetchTokens = useCallback(async () => {
     try {
@@ -908,6 +911,33 @@ export function ApiTokens({ orgId }: { orgId: string }) {
     }
   }
 
+  async function handleScopeChange(id: string, crossOrg: boolean) {
+    setTogglingScope(id);
+    try {
+      const res = await fetch(`/api/v1/organizations/${orgId}/tokens`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, crossOrg }),
+      });
+      if (res.ok) {
+        setTokens((prev) =>
+          prev.map((t) => (t.id === id ? { ...t, crossOrg } : t))
+        );
+        toast.success(
+          crossOrg
+            ? "Token can now reach all your organizations"
+            : "Token limited to this organization"
+        );
+      } else {
+        toast.error("Failed to update token scope");
+      }
+    } catch {
+      toast.error("Failed to update token scope");
+    } finally {
+      setTogglingScope(null);
+    }
+  }
+
   async function handleDelete(id: string) {
     setDeleting(id);
     try {
@@ -938,7 +968,7 @@ export function ApiTokens({ orgId }: { orgId: string }) {
         <div className="flex items-center justify-between">
           <div>
             <CardTitle>API tokens</CardTitle>
-            <CardDescription>Tokens authenticate API requests. Treat them like passwords — they grant full access to your organization.</CardDescription>
+            <CardDescription>Tokens authenticate API requests. Treat them like passwords — they grant full access to your organization. Turn on &quot;all my organizations&quot; to let a token act on every organization you belong to.</CardDescription>
           </div>
           <Button
             size="sm"
@@ -1033,18 +1063,34 @@ export function ApiTokens({ orgId }: { orgId: string }) {
                     )}
                   </p>
                 </div>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => handleDelete(token.id)}
-                  disabled={deleting === token.id}
-                >
-                  {deleting === token.id ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : (
-                    <Trash2 className="size-4 text-destructive" />
-                  )}
-                </Button>
+                <div className="flex items-center gap-3">
+                  <Label
+                    htmlFor={`cross-org-${token.id}`}
+                    className="flex items-center gap-2 text-xs text-muted-foreground"
+                  >
+                    All my organizations
+                    <Switch
+                      id={`cross-org-${token.id}`}
+                      checked={token.crossOrg}
+                      disabled={togglingScope === token.id}
+                      onCheckedChange={(checked) =>
+                        handleScopeChange(token.id, checked)
+                      }
+                    />
+                  </Label>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => handleDelete(token.id)}
+                    disabled={deleting === token.id}
+                  >
+                    {deleting === token.id ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="size-4 text-destructive" />
+                    )}
+                  </Button>
+                </div>
               </div>
             ))}
           </div>

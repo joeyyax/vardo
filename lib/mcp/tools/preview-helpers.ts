@@ -1,6 +1,8 @@
 import { db } from "@/lib/db";
 import { groupEnvironments, projects } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
+import type { McpAuthContext } from "../auth";
+import { canAccessOrg } from "../scope";
 
 export interface OrgPreview {
   id: string;
@@ -10,15 +12,16 @@ export interface OrgPreview {
   expiresAt: Date | null;
   createdAt: Date;
   projectId: string;
+  organizationId: string;
 }
 
 /**
- * Fetch a preview environment and verify it belongs to the given org.
- * Returns null if the preview doesn't exist or belongs to a different org.
+ * Fetch a preview environment and confirm the token may act on the
+ * organization that owns it.
  */
 export async function resolveOrgPreview(
   previewId: string,
-  organizationId: string
+  context: McpAuthContext
 ): Promise<OrgPreview | null> {
   const row = await db
     .select({
@@ -36,19 +39,10 @@ export async function resolveOrgPreview(
     .where(eq(groupEnvironments.id, previewId))
     .then((rows) => rows[0] ?? null);
 
-  if (!row || row.organizationId !== organizationId) {
-    return null;
-  }
+  if (!row) return null;
+  if (!(await canAccessOrg(context, row.organizationId))) return null;
 
-  return {
-    id: row.id,
-    name: row.name,
-    prNumber: row.prNumber,
-    prUrl: row.prUrl,
-    expiresAt: row.expiresAt,
-    createdAt: row.createdAt,
-    projectId: row.projectId,
-  };
+  return row;
 }
 
 export function previewNotFound() {

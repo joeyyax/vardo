@@ -3,6 +3,7 @@ import { z } from "zod";
 import { deleteApp } from "@/lib/docker/delete-app";
 import { slidingWindowRateLimit } from "@/lib/api/rate-limit";
 import type { McpAuthContext } from "../auth";
+import { accessDenied, resolveAppOrg } from "../scope";
 
 // 5 deletes per 10 minutes per user/org pair.
 // Deletion does real Docker teardown — rate-limit to avoid hammering the daemon.
@@ -52,10 +53,13 @@ export function registerDeleteApp(
         };
       }
 
+      const orgId = await resolveAppOrg(context, appId);
+      if (!orgId) return accessDenied("App");
+
       try {
         const result = await deleteApp({
           appId,
-          organizationId: context.organizationId,
+          organizationId: orgId,
           userId: context.userId,
           pruneVolumes,
           keepVolumes,
