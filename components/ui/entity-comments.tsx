@@ -574,12 +574,12 @@ function CommentItem({
             {wasEdited && " (edited)"}
           </span>
           {comment.isPinned && (
-            <span className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1 shrink-0">
+            <span className="text-xs text-muted-foreground flex items-center gap-1 shrink-0">
               <Pin className="size-3" />
             </span>
           )}
           {comment.isShared && (
-            <span className="text-xs text-blue-600 dark:text-blue-400 flex items-center gap-1 shrink-0">
+            <span className="text-xs text-muted-foreground flex items-center gap-1 shrink-0">
               <Eye className="size-3" /> Shared
             </span>
           )}

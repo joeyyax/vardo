@@ -26,15 +26,15 @@ function getBudgetStatus(pct: number) {
 }
 
 const STATUS_COLORS = {
-  over: "bg-red-500",
-  at_risk: "bg-amber-500",
+  over: "bg-status-error",
+  at_risk: "bg-status-warning",
   on_budget: "bg-primary",
 } as const;
 
 const DOT_COLORS = {
-  over: "bg-red-500",
-  at_risk: "bg-amber-500",
-  on_budget: "bg-emerald-500",
+  over: "bg-status-error",
+  at_risk: "bg-status-warning",
+  on_budget: "bg-status-success",
 } as const;
 
 function formatBudgetLabel(

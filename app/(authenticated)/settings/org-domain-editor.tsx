@@ -228,7 +228,7 @@ export function OrgDomainEditor({
                     Default
                   </Badge>
                   {sslEnabled && (
-                    <Shield className="size-3.5 text-green-500 shrink-0" />
+                    <Shield className="size-3.5 text-status-success shrink-0" />
                   )}
                 </div>
                 <p className="text-xs text-muted-foreground mt-0.5">
@@ -263,8 +263,8 @@ export function OrgDomainEditor({
                       </p>
                       {domain.verified ? (
                         <Badge
-                          variant="secondary"
-                          className="shrink-0 bg-green-500/10 text-green-600 border-green-500/20"
+                          variant="outline"
+                          className="shrink-0 text-status-success border-status-success/30"
                         >
                           <CheckCircle2 className="size-3 mr-1" />
                           Verified
@@ -272,7 +272,7 @@ export function OrgDomainEditor({
                       ) : (
                         <Badge
                           variant="outline"
-                          className="shrink-0 text-amber-600 border-amber-500/30"
+                          className="shrink-0 text-status-warning border-status-warning/30"
                         >
                           <AlertCircle className="size-3 mr-1" />
                           Unverified
