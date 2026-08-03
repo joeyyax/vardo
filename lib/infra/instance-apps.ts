@@ -19,6 +19,17 @@ export function isInstanceInfraApp(name: string | null | undefined): boolean {
 }
 
 /**
+ * True for anything Vardo pins itself. The flag catches the compose children of
+ * a decomposed core service, whose names carry no instance-infra prefix.
+ */
+export function isVardoManagedApp(app: {
+  name?: string | null;
+  isSystemManaged?: boolean | null;
+}): boolean {
+  return app.isSystemManaged === true || isInstanceInfraApp(app.name);
+}
+
+/**
  * Health-probe service names to the app row each one runs as. Lets a probe
  * failure and the app's own conditions collapse into one subject instead of
  * reporting the same outage twice under two names.
