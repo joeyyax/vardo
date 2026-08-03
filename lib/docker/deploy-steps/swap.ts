@@ -29,6 +29,7 @@ import {
 } from "../constants";
 import type { DeployContext } from "../deploy-context";
 import { classifyComposeServices } from "./classify-services";
+import { majorGateAfter, majorGateBefore, type MajorGateState } from "./major-gate";
 import { publishesHostPorts } from "../host-ports";
 import { partitionBySlot, sharedProjectName, slotScopeArgs } from "../slot-partition";
 import { isSelfApp } from "../self-env";
@@ -255,6 +256,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
     compose.services,
     ctx.builtImageRefs,
   );
+  let majorGate: MajorGateState = { candidates: [], before: new Map() };
   try {
     if (buildServices.length > 0) {
       log(`[deploy] Pre-building ${newSlot} slot images (old slot still serving)...`);
@@ -271,6 +273,9 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
       }
     }
     if (pullServices.length > 0) {
+      // Read the engine majors off the local images first. After the pull the
+      // tag points somewhere else and the old major is unreadable.
+      majorGate = await majorGateBefore(ctx, pullServices);
       log(`[deploy] Pre-pulling ${newSlot} slot images (old slot still serving)...`);
       const { stdout, stderr } = await execFileAsync(
         "docker",
@@ -290,6 +295,11 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
       `Pre-build/pre-pull for ${newSlot} failed (old slot unaffected): ${message}`
     );
   }
+
+  // A major-locked engine on a tag that names no version can change major on
+  // the pull alone. Compared here, where a stop costs nothing: the old slot is
+  // still serving and nothing has been replaced.
+  await majorGateAfter(ctx, majorGate);
 
   // Every image this deploy needs now exists locally. Nothing serving has been
   // touched yet, so this is the last point at which a cancel is free.

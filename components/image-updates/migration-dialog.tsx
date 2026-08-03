@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -13,6 +13,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { planMigration, type MigrationPlan } from "@/lib/docker/image-updates/migration-path";
+import type { MajorGateBlock } from "@/lib/docker/image-updates/major-gate";
 import type { ServiceUpdate } from "./update-row";
 
 export type MigrationPrompt = {
@@ -83,46 +84,33 @@ function BackupBeforeMigration({ orgId, appId }: { orgId: string; appId: string 
 }
 
 /**
- * Shown when a pick crosses a major on an image whose data directory is tied to
- * that major. The deploy would fail on the version check, so the recipe comes
- * before the confirm rather than after the outage.
+ * The recipe, the backup, and the acknowledgement, in front of whatever is
+ * about to cross a major. Both entry points below render this.
  */
-export function MigrationDialog(props: {
-  prompt: MigrationPrompt | null;
-  orgId: string;
-  /** Plan the API returned. Falls back to the one computed here. */
-  plan?: MigrationPlan | null;
-  onClose: () => void;
-  onConfirm: (prompt: MigrationPrompt) => void;
-}) {
-  const { prompt } = props;
-  if (!prompt) return null;
-  // Keyed per prompt so the acknowledgement never carries over to another row.
-  return (
-    <MigrationBody
-      {...props}
-      prompt={prompt}
-      key={`${prompt.appId}:${prompt.entry.service}:${prompt.tag}`}
-    />
-  );
-}
-
-function MigrationBody({
-  prompt,
+function MigrationShell({
   orgId,
-  plan: serverPlan,
+  appId,
+  appName,
+  title,
+  description,
+  plan,
+  confirm,
+  secondary,
   onClose,
-  onConfirm,
 }: {
-  prompt: MigrationPrompt;
   orgId: string;
-  plan?: MigrationPlan | null;
+  appId: string;
+  appName: string;
+  title: ReactNode;
+  description: ReactNode;
+  plan: MigrationPlan | null;
+  /** Crosses the major, so it waits on the acknowledgement. */
+  confirm: { label: string; onClick: () => void };
+  /** Stays on the current major, so it does not. */
+  secondary?: { label: string; onClick: () => void };
   onClose: () => void;
-  onConfirm: (prompt: MigrationPrompt) => void;
 }) {
   const [acknowledged, setAcknowledged] = useState(false);
-  const { entry, tag, appId } = prompt;
-  const plan = serverPlan ?? planMigration(entry.image, entry.currentTag, tag);
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -130,12 +118,9 @@ function MigrationBody({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <TriangleAlert className="size-4 text-status-warning" aria-hidden="true" />
-            {entry.currentTag} → {tag} is a data migration
+            {title}
           </DialogTitle>
-          <DialogDescription>
-            {plan?.engine ?? entry.image} stores data in a format tied to its major version. Pinning
-            this tag alone will not start — the new container refuses the existing data directory.
-          </DialogDescription>
+          <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
 
         {plan?.needsIntermediateSteps && (
@@ -161,7 +146,7 @@ function MigrationBody({
             className="mt-0.5"
           />
           <span>
-            I have a backup and will run the migration above. {prompt.appName} stays down until it
+            I have a backup and will run the migration above. {appName} stays down until it
             completes.
           </span>
         </label>
@@ -177,20 +162,102 @@ function MigrationBody({
               Upstream upgrade notes
             </a>
           )}
-          <span className="flex gap-2">
+          <span className="flex flex-wrap gap-2">
             <Button variant="outline" onClick={onClose}>
               Cancel
             </Button>
-            <Button
-              variant="destructive"
-              disabled={!acknowledged}
-              onClick={() => onConfirm(prompt)}
-            >
-              Pin {tag}
+            {secondary && (
+              <Button variant="secondary" onClick={secondary.onClick}>
+                {secondary.label}
+              </Button>
+            )}
+            <Button variant="destructive" disabled={!acknowledged} onClick={confirm.onClick}>
+              {confirm.label}
             </Button>
           </span>
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * Shown when a pick crosses a major on an image whose data directory is tied to
+ * that major. The deploy would fail on the version check, so the recipe comes
+ * before the confirm rather than after the outage.
+ */
+export function MigrationDialog({
+  prompt,
+  orgId,
+  plan: serverPlan,
+  onClose,
+  onConfirm,
+}: {
+  prompt: MigrationPrompt | null;
+  orgId: string;
+  /** Plan the API returned. Falls back to the one computed here. */
+  plan?: MigrationPlan | null;
+  onClose: () => void;
+  onConfirm: (prompt: MigrationPrompt) => void;
+}) {
+  if (!prompt) return null;
+  const { entry, tag, appId, appName } = prompt;
+  const plan = serverPlan ?? planMigration(entry.image, entry.currentTag, tag);
+
+  return (
+    <MigrationShell
+      // Keyed per prompt so the acknowledgement never carries over to another row.
+      key={`${appId}:${entry.service}:${tag}`}
+      orgId={orgId}
+      appId={appId}
+      appName={appName}
+      title={`${entry.currentTag} → ${tag} is a data migration`}
+      description={`${plan?.engine ?? entry.image} stores data in a format tied to its major version. Pinning this tag alone will not start — the new container refuses the existing data directory.`}
+      plan={plan}
+      confirm={{ label: `Pin ${tag}`, onClick: () => onConfirm(prompt) }}
+      onClose={onClose}
+    />
+  );
+}
+
+/**
+ * Shown when the deploy gate stopped a pull that moved a major-locked engine
+ * across a major. Same dialog, two exits: pin what is running, or migrate.
+ */
+export function MajorGateDialog({
+  block,
+  orgId,
+  onClose,
+  onPin,
+}: {
+  block: MajorGateBlock | null;
+  orgId: string;
+  onClose: () => void;
+  onPin: (service: string | null, tag: string, crossesMajor: boolean) => void;
+}) {
+  const entry = block?.services[0];
+  if (!block || !entry) return null;
+
+  const label = entry.service ? `${entry.service} (${entry.image})` : entry.image;
+
+  return (
+    <MigrationShell
+      key={`${block.appId}:${entry.service}:${entry.to}`}
+      orgId={orgId}
+      appId={block.appId}
+      appName={block.appName}
+      title={`${label} moved from major ${entry.from} to ${entry.to}`}
+      description={`The deploy stopped before the swap — ${block.appName} is still serving major ${entry.from} and nothing was replaced. A major ${entry.to} ${entry.engine} exits on its version check against a data directory written by ${entry.from}; the data is not altered by the attempt. Pin ${entry.from} to deploy what is already running, or migrate the data and pin ${entry.to}.`}
+      plan={entry.plan}
+      secondary={{
+        label: `Pin ${entry.from}`,
+        onClick: () => onPin(entry.service, String(entry.from), false),
+      }}
+      confirm={{
+        label: `Pin ${entry.to}`,
+        onClick: () => onPin(entry.service, String(entry.to), true),
+      }}
+      onClose={onClose}
+    />
   );
 }

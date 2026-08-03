@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { RefreshCw, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
+  MajorGateDialog,
   MigrationDialog,
   type MigrationPrompt,
 } from "@/components/image-updates/migration-dialog";
@@ -19,6 +20,7 @@ import { toast } from "@/lib/messenger";
 import { requiresMigration, type MigrationPlan } from "@/lib/docker/image-updates/migration-path";
 import { describeRule } from "@/lib/docker/image-updates/ignore";
 import { pendingImageChange } from "@/lib/docker/image-updates/pending";
+import type { MajorGateBlock } from "@/lib/docker/image-updates/major-gate";
 import type {
   AppUpdateStatus,
   IgnoredUpdate,
@@ -119,6 +121,13 @@ export function AppUpdatesPanel({
   const [migration, setMigration] = useState<MigrationPrompt | null>(null);
   const [migrationPlan, setMigrationPlan] = useState<MigrationPlan | null>(null);
 
+  // A stopped deploy opens the dialog on arrival — it is a decision, not a
+  // notice — and leaves the row behind once it is closed.
+  const blocked = data?.blockedMigration ?? null;
+  const blockedId = blocked?.deploymentId ?? null;
+  const [gateOpen, setGateOpen] = useState(false);
+  useEffect(() => setGateOpen(blockedId !== null), [blockedId]);
+
   const actionable = (data?.services ?? []).filter(
     (entry) => entry.status === "update" || entry.status === "drift",
   );
@@ -150,6 +159,42 @@ export function AppUpdatesPanel({
     }
   }
 
+  /** Pins one of the two majors the stopped deploy reported, then redeploys. */
+  async function pinFromGate(service: string | null, tag: string, crossesMajor: boolean) {
+    try {
+      const res = await fetch(`/api/v1/organizations/${orgId}/apps/${appId}/image-updates`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          service,
+          tag,
+          majorGate: true,
+          ...(crossesMajor ? { acknowledgeMigration: true } : {}),
+        }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error ?? "Could not pin that tag");
+      setGateOpen(false);
+      toast.success(`Pinned ${service ?? "image"} to ${tag}`);
+      refresh();
+      onDeploy();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not pin that tag");
+    }
+  }
+
+  const gateSurface = blocked ? (
+    <>
+      <BlockedDeployNote block={blocked} onReview={() => setGateOpen(true)} />
+      <MajorGateDialog
+        block={gateOpen ? blocked : null}
+        orgId={orgId}
+        onClose={() => setGateOpen(false)}
+        onPin={pinFromGate}
+      />
+    </>
+  ) : null;
+
   if (loading || !data) return null;
 
   // Its own tab, so it answers rather than disappears when there is no work.
@@ -159,6 +204,7 @@ export function AppUpdatesPanel({
         aria-label="Image updates"
         className="squircle rounded-lg border bg-card px-4 py-6 text-center"
       >
+        {gateSurface && <div className="mb-3 text-left">{gateSurface}</div>}
         <p className="type-body text-muted-foreground">Every image in compose is up to date.</p>
         {undeployed.length > 0 && (
           <div className="mt-3">
@@ -242,6 +288,8 @@ export function AppUpdatesPanel({
           <RefreshCw className="size-3.5" aria-hidden="true" />
         </button>
       </header>
+
+      {gateSurface && <div className="px-4 py-2.5">{gateSurface}</div>}
 
       <UpdateRowHeader />
 
@@ -327,6 +375,31 @@ function IgnoredRows({
           </Button>
         </div>
       ))}
+    </div>
+  );
+}
+
+/** A deploy the major gate stopped, kept until the app deploys again. */
+function BlockedDeployNote({
+  block,
+  onReview,
+}: {
+  block: MajorGateBlock;
+  onReview: () => void;
+}) {
+  const entry = block.services[0];
+  const label = entry.service ? `${entry.service} (${entry.image})` : entry.image;
+
+  return (
+    <div className="squircle flex flex-wrap items-center gap-2 rounded-md border border-status-warning/30 bg-status-warning-muted p-2.5 type-body-sm text-muted-foreground">
+      <TriangleAlert className="size-3.5 shrink-0 text-status-warning" aria-hidden="true" />
+      <span>
+        Deploy stopped — {label} moved from major {entry.from} to {entry.to}. {block.appName} is
+        still serving {entry.from}.
+      </span>
+      <Button size="sm" variant="outline" className="ml-auto" onClick={onReview}>
+        Review migration
+      </Button>
     </div>
   );
 }
