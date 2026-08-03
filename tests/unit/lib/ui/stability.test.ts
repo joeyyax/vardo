@@ -89,6 +89,15 @@ describe("buildIncidents", () => {
     expect(incidents).toEqual([]);
   });
 
+  it("reads Vardo's own restart as its own kind", () => {
+    const [incident] = buildIncidents(
+      [{ action: "app.self_healed", createdAt: new Date(at(1)), metadata: { summary: "web was unhealthy" } }],
+      [],
+    );
+    expect(incident.kind).toBe("self-healed");
+    expect(incident.detail).toBe("web was unhealthy");
+  });
+
   it("falls back to a written summary when metadata carries none", () => {
     const [incident] = buildIncidents(
       [{ action: "app.crash_looping", createdAt: new Date(at(1)), metadata: {} }],
@@ -111,6 +120,16 @@ describe("isFault", () => {
     expect(isFault("crashed")).toBe(true);
     expect(isFault("rolled-back")).toBe(true);
     expect(isFault("recovered")).toBe(false);
+  });
+
+  it("does not count a self-heal, which would double the fault it answered", () => {
+    expect(isFault("self-healed")).toBe(false);
+    const trend = stabilityTrend(
+      [fault(1), fault(1, "self-healed")],
+      NOW,
+      new Date(NOW - 60 * DAY),
+    );
+    expect(trend.recent).toBe(1);
   });
 });
 
@@ -290,6 +309,7 @@ describe("tones", () => {
       trendTone("steady"),
       incidentTone("crashed"),
       incidentTone("recovered"),
+      incidentTone("self-healed"),
     ];
     for (const tone of tones) {
       expect(tone).toMatch(/^text-(status-(success|warning|error|neutral)|muted-foreground)$/);
@@ -303,7 +323,7 @@ describe("tones", () => {
   });
 
   it("labels every incident kind", () => {
-    const kinds = ["crashed", "crash-looping", "recovered", "deploy-failed", "rolled-back", "deploy-incomplete"] as const;
+    const kinds = ["crashed", "crash-looping", "recovered", "self-healed", "deploy-failed", "rolled-back", "deploy-incomplete"] as const;
     for (const kind of kinds) expect(incidentLabel(kind)).toBeTruthy();
   });
 });
