@@ -11,6 +11,7 @@ import { cpuDisplay, formatBytes, formatBytesShort, formatCores, formatCoresShor
 import { CHART_COLORS, chartTickStyle, type TimeRange } from "@/lib/metrics/constants";
 import { dedupeByContainer } from "@/lib/metrics/aggregate";
 import { networkRates } from "@/lib/metrics/rates";
+import { networkBarPoint } from "@/lib/metrics/network-chart";
 import { countApps, describeScopeCounts } from "@/lib/metrics/scope";
 import {
   DEFAULT_SORT, nextSortDirection, sortAppRows,
@@ -19,6 +20,7 @@ import {
 import { useMetricsStream } from "@/hooks/use-metrics-stream";
 import { Sparkline } from "@/components/app-metrics-card";
 import { MetricsTooltip } from "@/components/metrics-chart";
+import { NetworkChart } from "@/components/network-chart";
 
 type AppSummary = {
   id: string;
@@ -63,16 +65,6 @@ function MemTooltip(props: { active?: boolean; payload?: Array<{ dataKey?: strin
       {...props}
       valueFormatter={(v: number) => formatBytes(v)}
       categoryLabels={{ memory: "Memory" }}
-    />
-  );
-}
-
-function NetTooltip(props: { active?: boolean; payload?: Array<{ dataKey?: string; name?: string; value?: number; color?: string }>; label?: string }) {
-  return (
-    <MetricsTooltip
-      {...props}
-      valueFormatter={(v: number) => `${formatBytesShort(v)}/s`}
-      categoryLabels={{ networkRxRate: "\u2193 Received", networkTxRate: "\u2191 Sent" }}
     />
   );
 }
@@ -318,7 +310,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
     return points.map((p, i) => ({
       ...p,
       time: formatTime(p.timestamp),
-      ...rates[i],
+      ...networkBarPoint(rates[i]),
     }));
   }, [points]);
 
@@ -464,7 +456,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
           </p>
           {!loading && hasSamples && (
             <p className="relative text-[10px] text-muted-foreground mt-0.5">
-              ↓ {formatBytes(totals.networkRx)} · ↑ {formatBytes(totals.networkTx)} since start
+              ↑ {formatBytes(totals.networkTx)} sent · ↓ {formatBytes(totals.networkRx)} received
             </p>
           )}
         </div>
@@ -539,26 +531,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
               <h3 className="text-sm font-medium">Network</h3>
             </div>
             <div className="p-4">
-              <ResponsiveContainer width="100%" height={180}>
-                <AreaChart data={chartPoints}>
-                  <defs>
-                    <linearGradient id="orgNetRxGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor={CHART_COLORS.networkRx} stopOpacity={0.3} />
-                      <stop offset="100%" stopColor={CHART_COLORS.networkRx} stopOpacity={0.02} />
-                    </linearGradient>
-                    <linearGradient id="orgNetTxGradient" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor={CHART_COLORS.networkTx} stopOpacity={0.3} />
-                      <stop offset="100%" stopColor={CHART_COLORS.networkTx} stopOpacity={0.02} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke={CHART_COLORS.grid} />
-                  <XAxis dataKey="time" tick={chartTickStyle} />
-                  <YAxis width={65} tickFormatter={(v) => `${formatBytesShort(v)}/s`} tick={chartTickStyle} domain={[0, "auto"]} />
-                  <Tooltip content={<NetTooltip />} />
-                  <Area isAnimationActive={false} connectNulls={false} type="monotone" dataKey="networkRxRate" stroke={CHART_COLORS.networkRx} fill="url(#orgNetRxGradient)" />
-                  <Area isAnimationActive={false} connectNulls={false} type="monotone" dataKey="networkTxRate" stroke={CHART_COLORS.networkTx} fill="url(#orgNetTxGradient)" />
-                </AreaChart>
-              </ResponsiveContainer>
+              <NetworkChart data={chartPoints} height={180} />
             </div>
           </div>
           <div className="squircle rounded-lg border bg-card overflow-hidden">
