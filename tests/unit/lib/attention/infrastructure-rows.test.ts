@@ -17,6 +17,7 @@ function app(overrides: Partial<InfraApp> & { name: string }): InfraApp {
     id: `app-${overrides.name}`,
     displayName: overrides.name,
     status: "active",
+    parentAppId: null,
     conditions: null,
     ...overrides,
   };
@@ -26,8 +27,21 @@ const vardo = app({ name: "vardo", displayName: "Vardo" });
 const loki = app({ name: "loki", displayName: "Loki" });
 const postgres = app({ name: "vardo-postgres", displayName: "Postgres" });
 
+const glitchtip = app({ name: "glitchtip", displayName: "GlitchTip" });
+const glitchtipDb = app({
+  name: "glitchtip-postgres",
+  displayName: "Postgres",
+  parentAppId: glitchtip.id,
+});
+
 function snapshot(overrides: Partial<InfrastructureSnapshot> = {}): InfrastructureSnapshot {
-  return { apps: [vardo, loki, postgres], deployments: [], servicesDown: [], ...overrides };
+  return {
+    apps: [vardo, loki, postgres],
+    deployments: [],
+    servicesDown: [],
+    disabledCoreServices: [],
+    ...overrides,
+  };
 }
 
 const crashLoop: AppCondition = {
@@ -51,7 +65,10 @@ describe("infrastructureRows", () => {
 
   it("says nothing when there is no infrastructure at all", () => {
     expect(
-      infrastructureRows({ apps: [], deployments: [], servicesDown: [] }, ADMIN),
+      infrastructureRows(
+        { apps: [], deployments: [], servicesDown: [], disabledCoreServices: [] },
+        ADMIN,
+      ),
     ).toEqual([]);
   });
 
@@ -188,6 +205,95 @@ describe("infrastructureRows", () => {
 
     expect(rows[0]).toMatchObject({ key: "vardo-stack-degraded", tone: "error" });
     expect(rows[0].items[0].detail).toBe("No container on the host");
+  });
+
+  it("reports a stopped core service", () => {
+    const rows = infrastructureRows(snapshot({ apps: [{ ...loki, status: "stopped" }] }), ADMIN);
+
+    expect(rows[0]).toMatchObject({ key: "core-service-down", tone: "error" });
+    expect(rows[0].items[0]).toMatchObject({ name: "Loki", detail: "Container stopped" });
+  });
+
+  it("stays quiet about a stopped core service whose feature is off", () => {
+    const rows = infrastructureRows(
+      snapshot({ apps: [{ ...loki, status: "stopped" }], disabledCoreServices: ["loki"] }),
+      ADMIN,
+    );
+
+    expect(rows).toEqual([]);
+  });
+
+  it("stays quiet about a core service that is running", () => {
+    expect(infrastructureRows(snapshot({ apps: [loki] }), ADMIN)).toEqual([]);
+  });
+
+  // The incident: a compose parent reads "active" off the children that stayed
+  // up, so the stopped child is the only place the outage exists.
+  it("reports a stopped compose child under its parent's name", () => {
+    const rows = infrastructureRows(
+      snapshot({ apps: [glitchtip, { ...glitchtipDb, status: "stopped" }] }),
+      ADMIN,
+    );
+
+    expect(rows[0]).toMatchObject({ key: "core-service-down", tone: "error" });
+    expect(rows[0].items).toHaveLength(1);
+    expect(rows[0].items[0]).toMatchObject({
+      id: glitchtipDb.id,
+      name: "GlitchTip · Postgres",
+      detail: "Container stopped",
+    });
+  });
+
+  it("stays quiet about a stopped compose child whose feature is off", () => {
+    const rows = infrastructureRows(
+      snapshot({
+        apps: [glitchtip, { ...glitchtipDb, status: "stopped" }],
+        disabledCoreServices: ["glitchtip"],
+      }),
+      ADMIN,
+    );
+
+    expect(rows).toEqual([]);
+  });
+
+  it("reports a stopped stack once, not once per cascaded child", () => {
+    const rows = infrastructureRows(
+      snapshot({
+        apps: [
+          { ...glitchtip, status: "stopped" },
+          { ...glitchtipDb, status: "stopped" },
+        ],
+      }),
+      ADMIN,
+    );
+
+    expect(rows[0].items).toHaveLength(1);
+    expect(rows[0].items[0]).toMatchObject({ id: glitchtip.id, name: "GlitchTip" });
+  });
+
+  it("quiets a compose child while its parent deploys", () => {
+    const rows = infrastructureRows(
+      snapshot({
+        apps: [glitchtip, { ...glitchtipDb, status: "stopped" }],
+        deployments: [{ id: "d-gt", appId: glitchtip.id, gitSha: null, startedAt: new Date() }],
+      }),
+      ADMIN,
+    );
+
+    expect(rows.map((r) => r.key)).toEqual(["core-service-updating"]);
+  });
+
+  it("stays quiet about a probe failure for a feature that is off", () => {
+    const rows = infrastructureRows(
+      snapshot({
+        apps: [{ ...loki, status: "stopped" }],
+        servicesDown: [{ id: "service-degraded:Loki", name: "Loki", lastFired: "2026-08-01T10:00:00.000Z" }],
+        disabledCoreServices: ["loki"],
+      }),
+      ADMIN,
+    );
+
+    expect(rows).toEqual([]);
   });
 
   it("keeps a probe with no app row, under its own name", () => {
