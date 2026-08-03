@@ -346,7 +346,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
   const statusTrigger = (() => {
     if (deploy.deploying || app.status === "deploying") {
       return {
-        className: "bg-status-info-muted text-status-info hover:bg-status-info/20",
+        className: "bg-status-info-muted text-status-info hover:ring-1 hover:ring-inset hover:ring-status-info/40",
         content: <><Loader2 className="mr-1.5 size-3.5 animate-spin" />Deploying</>,
       };
     }
@@ -354,8 +354,8 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
       const lastDeploy = app.deployments.find((d) => d.status === "success");
       return {
         className: app.needsRedeploy
-          ? "bg-status-warning-muted text-status-warning hover:bg-status-warning/20"
-          : "bg-status-success-muted text-status-success hover:bg-status-success/20",
+          ? "bg-status-warning-muted text-status-warning hover:ring-1 hover:ring-inset hover:ring-status-warning/40"
+          : "bg-status-success-muted text-status-success hover:ring-1 hover:ring-inset hover:ring-status-success/40",
         content: app.needsRedeploy ? (
           <><AlertTriangle className="mr-1.5 size-3.5" />Restart needed</>
         ) : (
@@ -369,18 +369,18 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
     }
     if (app.status === "stopped") {
       return {
-        className: "bg-status-neutral-muted text-status-neutral hover:bg-status-neutral/20",
+        className: "bg-status-neutral-muted text-status-neutral hover:ring-1 hover:ring-inset hover:ring-status-neutral/40",
         content: <><Square className="mr-1.5 size-3.5" />Stopped</>,
       };
     }
     if (app.status === "missing") {
       return {
-        className: "bg-status-warning-muted text-status-warning hover:bg-status-warning/20",
+        className: "bg-status-warning-muted text-status-warning hover:ring-1 hover:ring-inset hover:ring-status-warning/40",
         content: <><AlertTriangle className="mr-1.5 size-3.5" />No container</>,
       };
     }
     return {
-      className: "bg-status-error-muted text-status-error hover:bg-status-error/20",
+      className: "bg-status-error-muted text-status-error hover:ring-1 hover:ring-inset hover:ring-status-error/40",
       content: <><X className="mr-1.5 size-3.5" />Crashed</>,
     };
   })();
