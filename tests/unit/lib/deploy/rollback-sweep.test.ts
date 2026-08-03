@@ -80,6 +80,7 @@ function candidateRow(overrides: Record<string, unknown> = {}) {
   return {
     deploymentId: DEPLOY_ID,
     appId: "app-1",
+    trigger: "manual",
     slot: "green",
     // 30s into a 60s grace period.
     finishedAt: new Date(Date.now() - 30_000),
@@ -128,8 +129,18 @@ describe("sweepRollbackWatches", () => {
         currentSlot: "green",
         previousSlot: "blue",
         envName: "production",
+        environmentId: "env-1",
       }),
     );
+  });
+
+  it("never rolls back a rollback", async () => {
+    dbMock._queue.push([candidateRow({ trigger: "rollback" })]);
+    crashedWithStandby();
+
+    await sweepRollbackWatches();
+
+    expect(performRollback).not.toHaveBeenCalled();
   });
 
   it("resumes a watch the previous process never held", async () => {
