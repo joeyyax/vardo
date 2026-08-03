@@ -73,6 +73,7 @@ RUN chmod +x ./scripts/entrypoint.sh
 EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
+STOPSIGNAL SIGTERM
 
 # Entrypoint runs as root to set up mesh routing, then drops to nextjs for the app.
 # NET_ADMIN capability is required in docker-compose for the ip route command.

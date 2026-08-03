@@ -10,6 +10,12 @@ export async function register() {
     // Dedup guard — prevents duplicate schedulers on hot reload
     if (globalForInit.__vardo_initialized) return;
     globalForInit.__vardo_initialized = true;
+
+    // Bounded drain on SIGTERM. Registered first so a signal during the rest
+    // of startup is still handled.
+    const { installShutdownHandlers } = await import("./lib/shutdown");
+    installShutdownHandlers();
+
     // Verify data directories are writable — must run first so deploys don't
     // fail with cryptic EACCES errors later.
     const { ensureDataDirs } = await import("./lib/paths");

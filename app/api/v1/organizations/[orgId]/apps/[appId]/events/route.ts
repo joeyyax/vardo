@@ -8,6 +8,7 @@ import { readStream } from "@/lib/stream/consumer";
 import { eventStream } from "@/lib/stream/keys";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import type { BusEvent } from "@/lib/bus/events";
+import { closeOnShutdown } from "@/lib/shutdown";
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
@@ -74,9 +75,11 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
           clearInterval(keepalive);
           clearTimeout(timeout);
           abortController.abort();
+          unregister();
           try { controller.close(); } catch { /* already closed */ }
         }
 
+        const unregister = closeOnShutdown(cleanup);
         request.signal.addEventListener("abort", cleanup);
 
         // Read from the org event stream, filtering to this app's events
