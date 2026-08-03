@@ -284,15 +284,15 @@ function ProjectDeployments({ apps, color }: { apps: ProjectApp[]; color: string
                       Live
                     </Badge>
                   ) : isStopped ? (
-                    <Badge className="border-transparent bg-status-neutral-muted text-status-neutral shrink-0">
+                    <Badge variant="neutral" className="shrink-0">
                       Stopped
                     </Badge>
                   ) : isErrored ? (
-                    <Badge className="border-transparent bg-status-error-muted text-status-error shrink-0">
+                    <Badge variant="error" className="shrink-0">
                       Crashed
                     </Badge>
                   ) : isSuperseded ? (
-                    <Badge className="border-transparent bg-status-neutral-muted text-status-neutral shrink-0">
+                    <Badge variant="neutral" className="shrink-0">
                       Superseded
                     </Badge>
                   ) : (

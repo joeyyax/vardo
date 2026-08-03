@@ -151,35 +151,19 @@ import { Badge } from "@/components/ui/badge";
 export function StatusBadge({ status }: { status: string }) {
   switch (status) {
     case "active":
-      return (
-        <Badge className="border-transparent bg-status-success-muted text-status-success">
-          Active
-        </Badge>
-      );
+      return <Badge variant="success">Active</Badge>;
     case "deploying":
       return (
-        <Badge className="border-transparent bg-status-info-muted text-status-info animate-pulse">
+        <Badge variant="info" className="animate-pulse">
           Deploying
         </Badge>
       );
     case "error":
-      return (
-        <Badge className="border-transparent bg-status-error-muted text-status-error">
-          Crashed
-        </Badge>
-      );
+      return <Badge variant="error">Crashed</Badge>;
     case "missing":
-      return (
-        <Badge className="border-transparent bg-status-warning-muted text-status-warning">
-          No container
-        </Badge>
-      );
+      return <Badge variant="warning">No container</Badge>;
     default:
-      return (
-        <Badge className="border-transparent bg-status-neutral-muted text-status-neutral">
-          Stopped
-        </Badge>
-      );
+      return <Badge variant="neutral">Stopped</Badge>;
   }
 }
 
@@ -190,13 +174,13 @@ export function StatusBadge({ status }: { status: string }) {
 export function DeploymentStatusBadge({ status }: { status: "queued" | "running" | "success" | "failed" | "cancelled" | "rolled_back" | "superseded" }) {
   switch (status) {
     case "success":
-      return <Badge className="border-transparent bg-status-success-muted text-status-success">Success</Badge>;
+      return <Badge variant="success">Success</Badge>;
     case "running":
-      return <Badge className="border-transparent bg-status-info-muted text-status-info animate-pulse">Running</Badge>;
+      return <Badge variant="info" className="animate-pulse">Running</Badge>;
     case "failed":
-      return <Badge className="border-transparent bg-status-error-muted text-status-error">Failed</Badge>;
+      return <Badge variant="error">Failed</Badge>;
     case "rolled_back":
-      return <Badge className="border-transparent bg-status-warning-muted text-status-warning">Rolled back</Badge>;
+      return <Badge variant="warning">Rolled back</Badge>;
     case "cancelled":
       return <Badge variant="secondary">Cancelled</Badge>;
     case "superseded":

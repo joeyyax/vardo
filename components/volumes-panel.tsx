@@ -259,8 +259,8 @@ function VolumeDiffSection({
         <span>Changes</span>
         {totalChanges > 0 && (
           <Badge
-            variant="secondary"
-            className="text-[10px] px-1.5 py-0 h-4 bg-status-warning-muted text-status-warning border-status-warning/20"
+            variant="warning"
+            className="text-[10px] px-1.5 py-0 h-4"
           >
             {totalChanges}
           </Badge>
@@ -739,7 +739,7 @@ export function VolumesPanel({ appId, orgId }: Props) {
                         )}
                         {vol.type !== "bind" && (
                           vol.persistent ? (
-                            <Badge className="text-xs shrink-0 border-transparent bg-status-success-muted text-status-success">
+                            <Badge variant="success" className="text-xs shrink-0">
                               <ShieldCheck className="mr-1 size-3" />
                               Persistent
                             </Badge>
@@ -757,8 +757,8 @@ export function VolumesPanel({ appId, orgId }: Props) {
                         )}
                         {(vol.driftCount ?? 0) > 0 && (
                           <Badge
-                            variant="secondary"
-                            className="text-xs shrink-0 bg-status-warning-muted text-status-warning border-status-warning/20"
+                            variant="warning"
+                            className="text-xs shrink-0"
                           >
                             <GitCompareArrows className="mr-1 size-3" />
                             {vol.driftCount} change{vol.driftCount !== 1 ? "s" : ""}

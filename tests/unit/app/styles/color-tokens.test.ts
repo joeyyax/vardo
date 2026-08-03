@@ -154,6 +154,21 @@ const grounds = {
   dark: [dark["--card"], dark["--background"]],
 };
 
+/** Every opaque ground a status chip lands on. */
+const GROUNDS = [
+  "card",
+  "popover",
+  "background",
+  "background-deep",
+  "muted",
+  "secondary",
+  "accent",
+  "sidebar",
+  "sidebar-accent",
+];
+
+const groundsOf = (T: Record<string, Oklch>) => GROUNDS.map((g) => T[`--${g}`]);
+
 describe("colour ladder", () => {
   it("places every stop at least 40 degrees from its neighbours", () => {
     const hues = Object.values(LADDER).sort((a, b) => a - b);
@@ -336,7 +351,81 @@ describe("status surfaces", () => {
       for (const [mode, T] of [["light", light], ["dark", dark]] as const) {
         expect(inGamut(T[`--${name}`]), `${name} ${mode}`).toBe(true);
         expect(inGamut(T[`--${name}-muted`]), `${name} ${mode} surface`).toBe(true);
+        expect(inGamut(T[`--${name}-edge`]), `${name} ${mode} edge`).toBe(true);
       }
+    }
+  });
+});
+
+describe("status edges", () => {
+  it("declares an opaque edge for every surfaced stop", () => {
+    for (const name of SURFACED) {
+      for (const [mode, T] of [["light", light], ["dark", dark]] as const) {
+        const edge = T[`--${name}-edge`];
+        expect(edge, `${name} ${mode}`).toBeDefined();
+        expect(edge.a, `${name} ${mode} is an alpha line`).toBe(1);
+        expect(edge.h, `${name} ${mode} shifts hue`).toBe(T[`--${name}`].h);
+      }
+    }
+  });
+
+  it("exposes every edge as a Tailwind colour", () => {
+    for (const name of SURFACED) {
+      expect(THEME, `${name} edge`).toContain(`--color-${name}-edge: var(--${name}-edge);`);
+    }
+  });
+
+  // The fill can only sit at one lightness and the ground stack spans white
+  // down to the hover accent, so on some grounds the fill matches and the chip
+  // has no shape. An edge outside the stack has one ratio floor for every
+  // ground, and for anything blended between two of them.
+  it("sits outside the whole ground stack", () => {
+    for (const name of SURFACED) {
+      for (const g of groundsOf(light)) {
+        expect(light[`--${name}-edge`].l, `${name} light`).toBeLessThan(g.l);
+      }
+      for (const g of groundsOf(dark)) {
+        expect(dark[`--${name}-edge`].l, `${name} dark`).toBeGreaterThan(g.l);
+      }
+    }
+  });
+
+  it("clears 3 against every ground and against its own fill", () => {
+    for (const name of SURFACED) {
+      for (const [mode, T] of [["light", light], ["dark", dark]] as const) {
+        const edge = T[`--${name}-edge`];
+        for (const [i, g] of groundsOf(T).entries()) {
+          expect(contrast(edge, g), `${name} ${mode} on ${GROUNDS[i]}`).toBeGreaterThanOrEqual(3);
+        }
+        expect(
+          contrast(edge, T[`--${name}-muted`]),
+          `${name} ${mode} on its own fill`
+        ).toBeGreaterThanOrEqual(3);
+      }
+    }
+  });
+
+  it("stays quieter than the label it frames", () => {
+    for (const name of SURFACED) {
+      for (const [mode, T] of [["light", light], ["dark", dark]] as const) {
+        const surface = T[`--${name}-muted`];
+        expect(
+          contrast(T[`--${name}-edge`], surface),
+          `${name} ${mode} outshouts its label`
+        ).toBeLessThan(contrast(T[`--${name}`], surface));
+      }
+    }
+  });
+});
+
+describe("the status chip", () => {
+  const BADGE = readFileSync(path.resolve(__dirname, "../../../../components/ui/badge.tsx"), "utf8");
+
+  it("pairs every fill with its own edge and label", () => {
+    for (const tone of ["success", "warning", "error", "info", "neutral"]) {
+      expect(BADGE, tone).toContain(
+        `border-status-${tone}-edge bg-status-${tone}-muted text-status-${tone}`
+      );
     }
   });
 });
@@ -380,6 +469,17 @@ describe("status surfaces at the call sites", () => {
     }
     // An alpha ground resolves against whatever is behind it, so the label on
     // top has no fixed ratio. Use the -muted surface.
+    expect(offenders).toEqual([]);
+  });
+
+  it("never hand-rolls a chip that the badge variants already carry", () => {
+    const offenders: string[] = [];
+    for (const file of files) {
+      for (const tag of readFileSync(file, "utf8").matchAll(/<Badge\b[^>]*>/g)) {
+        if (/bg-status-[a-z]+-muted/.test(tag[0])) offenders.push(path.relative(ROOT, file));
+      }
+    }
+    // A fill without its edge disappears the moment the ground matches it.
     expect(offenders).toEqual([]);
   });
 

@@ -17,11 +17,8 @@ type SystemBadgeProps = {
 export function SystemBadge({ label = "System Managed", compact = false, className }: SystemBadgeProps) {
   return (
     <Badge
-      className={cn(
-        "border-status-warning/30 bg-status-warning-muted text-status-warning",
-        compact ? "px-2 py-0.5" : "px-2.5 py-1",
-        className
-      )}
+      variant="warning"
+      className={cn(compact ? "px-2 py-0.5" : "px-2.5 py-1", className)}
     >
       {label}
     </Badge>
