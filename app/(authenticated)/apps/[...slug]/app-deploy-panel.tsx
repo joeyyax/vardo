@@ -12,6 +12,7 @@ import {
   Zap,
   Settings,
   RefreshCw,
+  AlertTriangle,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -275,7 +276,12 @@ export function AppDeployPanel({
     const isStopped = variant === "live" && appStatus === "stopped";
     const isErrored = variant === "live" && appStatus === "error";
 
-    const bgColor = variant === "live"
+    // Serving, but something behind the cutover did not finish.
+    const unfinishedWork = deployment.postDeployError;
+
+    const bgColor = unfinishedWork
+      ? "bg-status-warning-muted"
+      : variant === "live"
       ? isLive ? "bg-status-success-muted" : isStopped ? "bg-status-neutral-muted" : isErrored ? "bg-status-error-muted" : "bg-card"
       : variant === "rollback"
       ? "bg-amber-500/5 border-amber-500/20"
@@ -344,6 +350,12 @@ export function AppDeployPanel({
             ) : (
               <DeploymentStatusBadge status={deployment.status} />
             )}
+            {unfinishedWork && (
+              <Badge className="border-transparent bg-status-warning-muted text-status-warning shrink-0 gap-1">
+                <AlertTriangle className="size-3" />
+                Post-deploy incomplete
+              </Badge>
+            )}
             {showInfra && <SlotPill slot={deployment.slot} />}
             <div className="min-w-0">
               <div className="flex items-center gap-2">
@@ -362,6 +374,11 @@ export function AppDeployPanel({
               {errorSnippet && (
                 <p className="text-xs text-status-error mt-1 truncate max-w-md" title={errorSnippet}>
                   {errorSnippet}
+                </p>
+              )}
+              {unfinishedWork && (
+                <p className="text-xs text-status-warning mt-1 max-w-md" title={unfinishedWork}>
+                  Deployed and serving, but {unfinishedWork.split("\n").join(" · ")}
                 </p>
               )}
             </div>

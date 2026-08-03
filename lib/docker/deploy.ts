@@ -21,6 +21,7 @@ import { readSlotPartition } from "./shared-project";
 import { recordActivity } from "@/lib/activity";
 import { DeployBlockedError } from "./errors";
 import { createDeployLogger, DEPLOY_STAGE_ORDER } from "./deploy-logger";
+import { recordPostDeployIncomplete } from "./deploy-incomplete";
 import type { DeployStage } from "./deploy-logger";
 import type { DeployContext } from "./deploy-context";
 import {
@@ -68,6 +69,8 @@ export type DeployResult = {
   status: "success" | "failed" | "cancelled" | "superseded";
   /** Failure message, set only when status is "failed". */
   error?: string;
+  /** Post-deploy work that did not finish on a deploy that succeeded. */
+  postDeployError?: string;
 };
 
 export async function createDeployment(opts: DeployOpts): Promise<string> {
@@ -435,6 +438,21 @@ export async function runDeployment(
     const message = error instanceof Error ? error.message : "Unknown error";
     const durationMs = Date.now() - startTime;
 
+    // The release cut over and is serving; only the tail behind it failed. The
+    // row, the app status and the closed stream all stand.
+    if (ctx?.succeeded) {
+      await recordPostDeployIncomplete(ctx, message);
+      await streamLogger.flush();
+      return {
+        deploymentId,
+        success: true,
+        log: logLines.join("\n"),
+        durationMs,
+        status: "success",
+        postDeployError: message,
+      };
+    }
+
     // Every exit from here is terminal, and each one closes the stream with a
     // failed stage — without it the UI waits out its timeout with nothing to show.
     // The failure belongs to the phase in flight, or to the one that never opened.
@@ -523,11 +541,12 @@ export async function runDeployment(
     log(`[deploy] ERROR: ${message}`);
 
     // If we got past the deploy stage, containers may be running — tear them
-    // down, unless the deploy recorded success and they are serving traffic.
+    // down. A deploy that recorded success returned above, so nothing serving
+    // traffic reaches this.
     const CONTAINER_STAGES: Set<DeployStage> = new Set(["deploy", "healthcheck", "routing", "cleanup", "done"]);
     const slotDir = ctx?.slotDir;
     const newProjectName = ctx?.newProjectName;
-    if (!ctx?.succeeded && CONTAINER_STAGES.has(reachedStage()) && slotDir && newProjectName) {
+    if (CONTAINER_STAGES.has(reachedStage()) && slotDir && newProjectName) {
       try {
         const cleanupComposeArgs = await slotComposeFiles(slotDir);
         await execFileAsync(
