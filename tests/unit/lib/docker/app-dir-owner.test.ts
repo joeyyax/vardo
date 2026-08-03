@@ -19,6 +19,8 @@ vi.mock("@/lib/logger", () => ({
 import {
   assertAppDirOwnership,
   stampAppDirOwner,
+  stampAllAppDirOwners,
+  summarizeAppDirOwners,
   AppDirOwnershipError,
 } from "@/lib/docker/app-dir-owner";
 import { APP_OWNER_FILE, PROJECTS_DIR, appBaseDir, appOwnerFile } from "@/lib/paths";
@@ -39,6 +41,20 @@ async function markOwner(name: string, appId: string): Promise<void> {
 /** Apps in the database claiming a name. */
 function claimedBy(...ids: string[]) {
   findManyMock.mockResolvedValue(ids.map((id) => ({ id })));
+}
+
+/** The app name in an `eq(apps.name, ...)` where clause. */
+function nameFromWhere(where: unknown): string {
+  const chunks = (where as { queryChunks?: { value?: unknown }[] })?.queryChunks ?? [];
+  const param = chunks.find((c) => typeof c?.value === "string");
+  return param ? String(param.value) : "";
+}
+
+/** Apps in the database claiming each name; names left out are claimed by nobody. */
+function claimsByName(claims: Record<string, string[]>) {
+  findManyMock.mockImplementation(async (args: { where: unknown }) =>
+    (claims[nameFromWhere(args.where)] ?? []).map((id) => ({ id })),
+  );
 }
 
 beforeEach(async () => {
@@ -202,5 +218,162 @@ describe("stampAppDirOwner", () => {
     await stampAppDirOwner(appBaseDir("vardo"));
 
     await expect(readFile(appOwnerFile("vardo"), "utf8")).rejects.toThrow();
+  });
+});
+
+describe("stampAllAppDirOwners", () => {
+  async function ownerOf(name: string): Promise<string> {
+    return JSON.parse(await readFile(appOwnerFile(name), "utf8")).appId;
+  }
+
+  it("stamps every directory and reports full coverage", async () => {
+    await makeAppDir("api");
+    await makeAppDir("web");
+    await makeAppDir("worker");
+    claimsByName({ api: ["app-1"], web: ["app-2"], worker: ["app-3"] });
+
+    const report = await stampAllAppDirOwners();
+
+    expect(report).toMatchObject({ total: 3, stamped: 3, alreadyOwned: 0, exempt: 0, gaps: [] });
+    expect(await ownerOf("api")).toBe("app-1");
+    expect(await ownerOf("web")).toBe("app-2");
+    expect(await ownerOf("worker")).toBe("app-3");
+  });
+
+  it("names a directory with no app row as orphaned rather than failing the pass", async () => {
+    await makeAppDir("api");
+    await makeAppDir("abandoned");
+    claimsByName({ api: ["app-1"] });
+
+    const report = await stampAllAppDirOwners();
+
+    expect(report.stamped).toBe(1);
+    expect(report.gaps).toEqual([
+      {
+        appName: "abandoned",
+        dir: appBaseDir("abandoned"),
+        reason: "orphaned",
+        detail: "no app in the database claims this name",
+      },
+    ]);
+    await expect(readFile(appOwnerFile("abandoned"), "utf8")).rejects.toThrow();
+  });
+
+  it("names an unreadable marker without consulting the database for it", async () => {
+    await makeAppDir("corrupt");
+    await writeFile(appOwnerFile("corrupt"), "{ not json");
+    claimsByName({ corrupt: ["app-1"] });
+
+    const report = await stampAllAppDirOwners();
+
+    expect(report.stamped).toBe(0);
+    expect(report.gaps).toHaveLength(1);
+    expect(report.gaps[0]).toMatchObject({ appName: "corrupt", reason: "unreadable" });
+    expect(findManyMock).not.toHaveBeenCalled();
+  });
+
+  it("names a directory with two claimants as ambiguous and leaves it unmarked", async () => {
+    await makeAppDir("shared");
+    claimsByName({ shared: ["app-1", "app-2"] });
+
+    const report = await stampAllAppDirOwners();
+
+    expect(report.stamped).toBe(0);
+    expect(report.gaps[0]).toMatchObject({ appName: "shared", reason: "ambiguous" });
+    expect(report.gaps[0].detail).toContain("app-1, app-2");
+    await expect(readFile(appOwnerFile("shared"), "utf8")).rejects.toThrow();
+  });
+
+  it("leaves an already-stamped directory alone", async () => {
+    await markOwner("api", "app-1");
+    claimsByName({ api: ["app-2"] });
+
+    const report = await stampAllAppDirOwners();
+
+    expect(report).toMatchObject({ total: 1, stamped: 0, alreadyOwned: 1, gaps: [] });
+    expect(await ownerOf("api")).toBe("app-1");
+    expect(findManyMock).not.toHaveBeenCalled();
+  });
+
+  it("counts Vardo's own directory as exempt, not failed", async () => {
+    await makeAppDir("vardo");
+    await makeAppDir("api");
+    claimsByName({ vardo: ["app-vardo"], api: ["app-1"] });
+
+    const report = await stampAllAppDirOwners();
+
+    expect(report).toMatchObject({ total: 2, stamped: 1, exempt: 1, gaps: [] });
+    await expect(readFile(appOwnerFile("vardo"), "utf8")).rejects.toThrow();
+  });
+
+  it("accounts for every directory it found", async () => {
+    await makeAppDir("vardo");
+    await markOwner("marked", "app-0");
+    await makeAppDir("api");
+    await makeAppDir("orphan");
+    await makeAppDir("shared");
+    claimsByName({ api: ["app-1"], shared: ["app-2", "app-3"] });
+
+    const report = await stampAllAppDirOwners();
+
+    expect(report.stamped + report.alreadyOwned + report.exempt + report.gaps.length).toBe(
+      report.total,
+    );
+    expect(report.total).toBe(5);
+  });
+
+  it("writes nothing on a dry run but reports what it would stamp", async () => {
+    await makeAppDir("api");
+    await makeAppDir("orphan");
+    claimsByName({ api: ["app-1"] });
+
+    const report = await stampAllAppDirOwners({ dryRun: true });
+
+    expect(report).toMatchObject({ total: 2, stamped: 1, dryRun: true });
+    expect(report.gaps).toHaveLength(1);
+    await expect(readFile(appOwnerFile("api"), "utf8")).rejects.toThrow();
+  });
+
+  it("reports nothing to do on a fresh install", async () => {
+    await rm(APPS, { recursive: true, force: true });
+
+    const report = await stampAllAppDirOwners();
+
+    expect(report).toMatchObject({ total: 0, stamped: 0, gaps: [] });
+    expect(findManyMock).not.toHaveBeenCalled();
+  });
+
+  it("ignores loose files in the apps directory", async () => {
+    await makeAppDir("api");
+    await writeFile(join(APPS, "README"), "not an app");
+    claimsByName({ api: ["app-1"] });
+
+    const report = await stampAllAppDirOwners();
+
+    expect(report).toMatchObject({ total: 1, stamped: 1, gaps: [] });
+  });
+
+  it("is idempotent — a second pass stamps nothing new", async () => {
+    await makeAppDir("api");
+    claimsByName({ api: ["app-1"] });
+
+    await stampAllAppDirOwners();
+    const second = await stampAllAppDirOwners();
+
+    expect(second).toMatchObject({ total: 1, stamped: 0, alreadyOwned: 1 });
+  });
+
+  it("summarizes coverage with the gate number", async () => {
+    await makeAppDir("vardo");
+    await markOwner("marked", "app-0");
+    await makeAppDir("api");
+    await makeAppDir("orphan");
+    claimsByName({ api: ["app-1"] });
+
+    const summary = summarizeAppDirOwners(await stampAllAppDirOwners());
+
+    expect(summary).toBe(
+      "2 of 4 app directories name an owner (1 stamped, 1 already marked); 1 exempt, 1 unresolved",
+    );
   });
 });
