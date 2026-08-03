@@ -15,6 +15,7 @@
 import type { ContainerInfo } from "@/lib/docker/client";
 import { matchContainers, type ReconcilableApp } from "@/lib/docker/status-reconcile";
 import { composeProjectApp, composeProjectEnvironment } from "@/lib/docker/slot-partition";
+import { dedupeByContainer } from "./aggregate";
 import type { ContainerMetrics } from "./types";
 
 /** An app row as far as metrics matching is concerned. */
@@ -117,9 +118,5 @@ export function groupMetricsByApp<T extends MetricsApp>(
  * per-app matches counts them twice.
  */
 export function dedupeMetrics(groups: Iterable<ContainerMetrics[]>): ContainerMetrics[] {
-  const byId = new Map<string, ContainerMetrics>();
-  for (const group of groups) {
-    for (const m of group) byId.set(m.containerId, m);
-  }
-  return [...byId.values()];
+  return dedupeByContainer(groups);
 }

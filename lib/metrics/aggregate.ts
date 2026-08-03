@@ -29,6 +29,21 @@ export function aggregateContainers(
   };
 }
 
+/**
+ * One entry per container across several apps' breakdowns. A compose child's
+ * containers are also reported under its parent, so a total summed from the
+ * per-app lists counts them twice.
+ */
+export function dedupeByContainer<T extends { containerId: string }>(
+  groups: Iterable<T[]>,
+): T[] {
+  const byId = new Map<string, T>();
+  for (const group of groups) {
+    for (const item of group) byId.set(item.containerId, item);
+  }
+  return [...byId.values()];
+}
+
 /** Convert a ContainerMetrics to the client-facing ContainerPoint shape */
 export function containerToPoint(m: ContainerMetrics): ContainerPoint {
   return {
