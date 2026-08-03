@@ -42,6 +42,8 @@ describe("availableAppTabs", () => {
       "variables",
       "networking",
       "compose",
+      "build",
+      "resources",
       "cron",
       "settings",
       "stability",
@@ -121,6 +123,20 @@ describe("availableAppTabs", () => {
   it("gives a compose parent the same settings section", () => {
     expect(availableAppTabs(composeParent)).toContain("settings");
     expect(resolveAppTab("settings", composeParent)).toBe("settings");
+  });
+
+  it("splits the configure sections into build and resources", () => {
+    expect(availableAppTabs(plainApp)).toContain("build");
+    expect(availableAppTabs(plainApp)).toContain("resources");
+    expect(availableAppTabs(composeParent)).toContain("build");
+    expect(availableAppTabs(composeParent)).toContain("resources");
+  });
+
+  it("withholds build from a child service, whose stack owns it", () => {
+    expect(availableAppTabs(childService)).not.toContain("build");
+    expect(availableAppTabs(childService)).toContain("resources");
+    // The URL falls back rather than landing on an empty section.
+    expect(resolveAppTab("build", childService)).toBe("logs");
   });
 
   it("only offers connect when the app publishes connection info", () => {
