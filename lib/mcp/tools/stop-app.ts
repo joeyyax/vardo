@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import { stopProject } from "@/lib/docker/deploy";
 import { slidingWindowRateLimit } from "@/lib/api/rate-limit";
 import { systemManagedRefusal } from "@/lib/api/system-managed";
+import { recordLifecycle } from "@/lib/activity/lifecycle";
 import type { McpAuthContext } from "../auth";
 import { accessDenied, canAccessOrg } from "../scope";
 
@@ -51,6 +52,8 @@ export function registerStopApp(
           name: true,
           organizationId: true,
           isSystemManaged: true,
+          parentAppId: true,
+          composeService: true,
         },
       });
 
@@ -67,6 +70,16 @@ export function registerStopApp(
       }
 
       const result = await stopProject(appId, app.name);
+
+      if (result.success) {
+        await recordLifecycle({
+          organizationId: app.organizationId,
+          app,
+          kind: "stopped",
+          userId: context.userId,
+          trigger: "mcp",
+        });
+      }
 
       return {
         content: [

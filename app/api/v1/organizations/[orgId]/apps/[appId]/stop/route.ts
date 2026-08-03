@@ -6,6 +6,7 @@ import { eq, and } from "drizzle-orm";
 import { stopProject } from "@/lib/docker/deploy";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { refuseSystemManaged } from "@/lib/api/system-managed";
+import { recordLifecycle } from "@/lib/activity/lifecycle";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
@@ -21,7 +22,13 @@ async function handlePost(_request: NextRequest, { params }: RouteParams) {
 
     const app = await db.query.apps.findFirst({
       where: and(eq(apps.id, appId), eq(apps.organizationId, orgId)),
-      columns: { id: true, name: true, isSystemManaged: true },
+      columns: {
+        id: true,
+        name: true,
+        isSystemManaged: true,
+        parentAppId: true,
+        composeService: true,
+      },
     });
 
     if (!app) {
@@ -32,6 +39,17 @@ async function handlePost(_request: NextRequest, { params }: RouteParams) {
     if (refused) return refused;
 
     const result = await stopProject(appId, app.name);
+
+    if (result.success) {
+      await recordLifecycle({
+        organizationId: orgId,
+        app,
+        kind: "stopped",
+        userId: org.session.user.id,
+        trigger: org.session.authMethod === "token" ? "api" : undefined,
+      });
+    }
+
     return NextResponse.json(result);
   } catch (error) {
     return handleRouteError(error, "Error stopping app");

@@ -40,6 +40,12 @@ describe("phraseFor", () => {
   it("falls back to a readable form of an unknown action", () => {
     expect(phraseFor("mesh.peer_flapped").text).toBe("mesh peer flapped");
   });
+
+  it("phrases the lifecycle actions as something someone did", () => {
+    expect(phraseFor("app.restarted").text).toBe("restarted");
+    expect(phraseFor("app.stopped").text).toBe("stopped");
+    expect(phraseFor("app.started").text).toBe("started");
+  });
 });
 
 describe("formatDuration", () => {
@@ -61,6 +67,11 @@ describe("detailsFor", () => {
     expect(detailsFor(groupOf("deployment.started", { trigger: "webhook" }))).toEqual([
       "via webhook",
     ]);
+  });
+
+  it("keeps acronym triggers uppercase", () => {
+    expect(detailsFor(groupOf("app.restarted", { trigger: "api" }))).toEqual(["via API"]);
+    expect(detailsFor(groupOf("app.restarted", { trigger: "mcp" }))).toEqual(["via MCP"]);
   });
 
   it("lists what an update changed", () => {

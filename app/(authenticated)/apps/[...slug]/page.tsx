@@ -8,6 +8,7 @@ import { AppDetail } from "./app-detail";
 import { getFeatureFlags } from "@/lib/config/features";
 import { sharedServiceNames } from "@/lib/docker/compose";
 import { loadStabilityHistory } from "@/lib/docker/stability-history";
+import { loadLifecycleHistory } from "@/lib/activity/lifecycle";
 
 import { isOrgAdmin } from "@/lib/auth/permissions";
 import {
@@ -255,7 +256,10 @@ export default async function AppDetailPage({ params }: PageProps) {
   };
   const effectiveTab = resolveAppTab(tab, tabContext);
 
-  const stabilityIncidents = await loadStabilityHistory(app.id);
+  const [stabilityIncidents, lifecycleEvents] = await Promise.all([
+    loadStabilityHistory(app.id),
+    loadLifecycleHistory(app.id),
+  ]);
 
   // Which services a deploy leaves running, for the Services tab to mark.
   const shared = new Set(app.composeContent ? sharedServiceNames(app.composeContent) : []);
@@ -282,6 +286,7 @@ export default async function AppDetailPage({ params }: PageProps) {
       orgVarKeys={orgVars.map((v) => v.key)}
       siblings={siblings}
       stabilityIncidents={stabilityIncidents}
+      lifecycleEvents={lifecycleEvents}
       initialTab={effectiveTab}
       initialEnv={envSegment}
       initialSubView={subSegment}

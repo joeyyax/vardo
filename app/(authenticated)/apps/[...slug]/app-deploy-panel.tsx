@@ -13,6 +13,9 @@ import {
   Settings,
   RefreshCw,
   AlertTriangle,
+  Play,
+  Square,
+  type LucideIcon,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -44,6 +47,12 @@ import { RelativeTime } from "@/components/relative-time";
 import { Uptime } from "./timer";
 import { InProgressDeployCard } from "./in-progress-deploy-card";
 import { useCancelDeploy } from "./hooks/use-app-actions";
+import {
+  interleaveHistory,
+  partitionLifecycle,
+  type LifecycleEvent,
+  type LifecycleKind,
+} from "@/lib/ui/lifecycle";
 
 import type { useDeploy } from "./hooks/use-deploy";
 import type { Deployment, SlotStatus } from "./types";
@@ -62,6 +71,32 @@ export interface AppDeployPanelProps {
   onDeploy: () => void;
   /** Wording of the toolbar button, mirrored in the empty state. */
   deployActionLabel: string;
+  /** Restarts, stops and starts an operator ran, newest first. */
+  lifecycleEvents?: LifecycleEvent[];
+}
+
+const LIFECYCLE_ICONS: Record<LifecycleKind, LucideIcon> = {
+  restarted: RotateCcw,
+  stopped: Square,
+  started: Play,
+};
+
+/**
+ * One thing done to the app that was not a deploy. Deliberately a line and not
+ * a card — it belongs on this timeline but must never be mistaken for a release.
+ */
+function LifecycleLine({ event }: { event: LifecycleEvent }) {
+  const Icon = LIFECYCLE_ICONS[event.kind];
+  return (
+    <div className="flex items-center gap-2 px-4 py-1.5 text-xs text-muted-foreground">
+      <Icon className="size-3 shrink-0" aria-hidden="true" />
+      <span className="text-foreground/70">{event.label}</span>
+      {event.detail && <span className="truncate">{event.detail}</span>}
+      <span className="ml-auto shrink-0">
+        <RelativeTime date={new Date(event.at)} />
+      </span>
+    </div>
+  );
 }
 
 function triggerLabel(trigger: string): string {
@@ -120,6 +155,7 @@ export function AppDeployPanel({
   deploy,
   onDeploy,
   deployActionLabel,
+  lifecycleEvents = [],
 }: AppDeployPanelProps) {
   const {
     deploying,
@@ -261,6 +297,18 @@ export function AppDeployPanel({
 
   const historyDeployments = completedDeployments.filter(
     (d) => d.id !== liveDeploy?.id && d.id !== instantRollbackDeploy?.id
+  );
+
+  // Lifecycle actions after the live release happened to it, so they read above
+  // that card. The rest sit in history between the deploys they fall between.
+  const lifecycle = partitionLifecycle(
+    lifecycleEvents,
+    liveDeploy?.finishedAt ?? liveDeploy?.startedAt ?? null,
+  );
+  const historyTimeline = interleaveHistory(
+    historyDeployments,
+    lifecycle.earlier,
+    (d) => d.finishedAt ?? d.startedAt,
   );
 
   function toggleLog(deploymentId: string) {
@@ -455,26 +503,36 @@ export function AppDeployPanel({
     <>
       <div className="space-y-4">
         {filteredDeployments.length === 0 && !deploying && !serverRunningDeploy ? (
-          <EmptyState
-            icon={Rocket}
-            title={adopted ? "Running, but never deployed from here" : "Ready for your first deploy"}
-            body={
-              adopted
-                ? "These containers were adopted from Docker, so there is no deploy history to show. Deploying records one and unlocks rollback."
-                : source === "git" && autoDeploy
-                  ? "Push to your connected repo to trigger an automatic deploy, or deploy now."
-                  : "Nothing has shipped yet."
-            }
-            action={
-              <Button size="sm" disabled={deploying} onClick={onDeploy}>
-                {deploying ? (
-                  <><Loader2 className="mr-1.5 size-4 animate-spin" />Deploying...</>
-                ) : (
-                  <><Rocket className="mr-1.5 size-4" />{deployActionLabel}</>
-                )}
-              </Button>
-            }
-          />
+          <>
+            {/* A compose child never deploys on its own — these are all it has. */}
+            {lifecycleEvents.length > 0 && (
+              <div className="squircle rounded-lg border py-1">
+                {lifecycleEvents.map((event) => (
+                  <LifecycleLine key={event.id} event={event} />
+                ))}
+              </div>
+            )}
+            <EmptyState
+              icon={Rocket}
+              title={adopted ? "Running, but never deployed from here" : "Ready for your first deploy"}
+              body={
+                adopted
+                  ? "These containers were adopted from Docker, so there is no deploy history to show. Deploying records one and unlocks rollback."
+                  : source === "git" && autoDeploy
+                    ? "Push to your connected repo to trigger an automatic deploy, or deploy now."
+                    : "Nothing has shipped yet."
+              }
+              action={
+                <Button size="sm" disabled={deploying} onClick={onDeploy}>
+                  {deploying ? (
+                    <><Loader2 className="mr-1.5 size-4 animate-spin" />Deploying...</>
+                  ) : (
+                    <><Rocket className="mr-1.5 size-4" />{deployActionLabel}</>
+                  )}
+                </Button>
+              }
+            />
+          </>
         ) : (
           <>
             {/* Infrastructure toggle */}
@@ -578,6 +636,11 @@ export function AppDeployPanel({
                 </div>
               )}
 
+              {/* Done to the live release since it shipped */}
+              {lifecycle.since.map((event) => (
+                <LifecycleLine key={event.id} event={event} />
+              ))}
+
               {/* Live */}
               {liveDeploy ? (
                 renderDeploymentCard(liveDeploy, "live")
@@ -599,10 +662,16 @@ export function AppDeployPanel({
               )}
 
               {/* History */}
-              {historyDeployments.length > 0 && (
+              {historyTimeline.length > 0 && (
                 <div className="space-y-2">
                   <h3 className="text-xs font-medium text-muted-foreground px-1">History</h3>
-                  {historyDeployments.map((d) => renderDeploymentCard(d, "history"))}
+                  {historyTimeline.map((item) =>
+                    item.kind === "deploy" ? (
+                      renderDeploymentCard(item.deploy, "history")
+                    ) : (
+                      <LifecycleLine key={item.event.id} event={item.event} />
+                    ),
+                  )}
                 </div>
               )}
             </div>
