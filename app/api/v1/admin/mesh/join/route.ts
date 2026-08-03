@@ -9,7 +9,7 @@ import { getInstanceId } from "@/lib/constants";
 import { getInstanceDisplayName } from "@/lib/system-settings";
 import { hostname as osHostname } from "node:os";
 import { needsSetup } from "@/lib/setup";
-import { inheritConfigFromHub, validateHubUrl } from "@/lib/mesh/config-inheritance";
+import { inheritConfigFromHub, validateHubUrl, EMPTY_INHERITED_CONFIG } from "@/lib/mesh/config-inheritance";
 import { rebuildAndSync } from "@/lib/mesh/wireguard";
 import { db } from "@/lib/db";
 import { meshPeers } from "@/lib/db/schema";
@@ -27,6 +27,8 @@ const joinResponseSchema = z.object({
   }).passthrough(),
   token: z.string(),
   hub: z.object({
+    /** Absent from hubs older than this field — see the fallback below. */
+    instanceId: z.string().min(1).max(128).optional(),
     publicKey: z.string(),
     endpoint: z.string().nullable().optional(),
     internalIp: z.string(),
@@ -130,10 +132,11 @@ async function handlePost(request: NextRequest) {
     // The hub's WireGuard endpoint: joinData.hub.endpoint (IP:port for UDP)
     const ourMeshIp = joinData.peer.internalIp;
 
-    // Register the hub as a peer on our side
+    // Register the hub as a peer on our side. instanceId identifies the hub, not
+    // us — a self-id here collides the next time this instance pairs with anything.
     await db.insert(meshPeers).values({
       id: nanoid(),
-      instanceId: joinData.peer.instanceId,
+      instanceId: joinData.hub.instanceId ?? `hub:${joinData.hub.publicKey}`,
       name: joinData.hub.name || "Hub",
       type: "persistent",
       publicKey: joinData.hub.publicKey,
@@ -159,7 +162,7 @@ async function handlePost(request: NextRequest) {
     }
 
     // Pull shareable config from the hub (best-effort)
-    let inheritedConfig = { email: false, backup: false, github: false };
+    let inheritedConfig = EMPTY_INHERITED_CONFIG;
     try {
       inheritedConfig = await inheritConfigFromHub(decoded.hubApiUrl, joinData.token);
     } catch {
