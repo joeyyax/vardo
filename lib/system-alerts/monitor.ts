@@ -9,6 +9,7 @@ import { exec } from "child_process";
 import { promisify } from "util";
 import pLimit from "p-limit";
 import { logger } from "@/lib/logger";
+import { closeOnShutdown } from "@/lib/shutdown";
 import { probeCertificate } from "./cert-probe";
 import {
   evaluateCertExpiry,
@@ -390,12 +391,10 @@ export async function tickSystemAlerts(): Promise<void> {
 
 let interval: NodeJS.Timeout | null = null;
 let ticking = false;
-let signalsInstalled = false;
+let unregisterShutdown: (() => void) | null = null;
 
 export function startSystemAlertMonitor(): void {
   if (interval) return;
-
-  installSignalHandlers();
 
   // Load persisted alert state from DB before the first tick so rate-limit
   // windows survive process restarts. Defer the initial tick by 10s to let
@@ -427,35 +426,18 @@ export function startSystemAlertMonitor(): void {
       ticking = false;
     }
   }, 60_000);
+
+  // Registered from the start function, not at module scope — importing this
+  // module must not wire a shutdown for a monitor that was never started.
+  unregisterShutdown = closeOnShutdown(stopSystemAlertMonitor);
 }
 
 export function stopSystemAlertMonitor(): void {
+  unregisterShutdown?.();
+  unregisterShutdown = null;
   if (interval) {
     clearInterval(interval);
     interval = null;
     log.info("Monitor stopped");
   }
-}
-
-// ---------------------------------------------------------------------------
-// Process shutdown hook
-// ---------------------------------------------------------------------------
-
-// Wire cleanup on process exit so the monitor is always stopped cleanly.
-// This covers SIGTERM (Docker stop, systemd), SIGINT (Ctrl-C), and normal exit.
-// Note: SIGUSR2 is not handled here — if you use it for hot reloads (e.g.
-// nodemon) call stopSystemAlertMonitor() in your reload handler manually.
-function onShutdown(signal: string) {
-  log.info(`Received ${signal} — stopping monitor`);
-  stopSystemAlertMonitor();
-}
-
-// Installed from the start function, not at module scope — importing this
-// module must not add listeners or log a shutdown for a monitor never started.
-function installSignalHandlers(): void {
-  if (signalsInstalled) return;
-  signalsInstalled = true;
-  process.once("SIGTERM", () => onShutdown("SIGTERM"));
-  process.once("SIGINT", () => onShutdown("SIGINT"));
-  process.once("exit", () => stopSystemAlertMonitor());
 }

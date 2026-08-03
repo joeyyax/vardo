@@ -16,7 +16,8 @@ import { apps } from "@/lib/db/schema";
 import { listAllContainers, inspectContainer, type ContainerInfo } from "./client";
 import { logger } from "@/lib/logger";
 import { memoryLimitDrifted } from "./limit-drift";
-import { composeProjectApp } from "./slot-partition";
+import { matchContainers } from "./container-match";
+import { closeOnShutdown } from "@/lib/shutdown";
 
 const log = logger.child("status-reconcile");
 
@@ -26,85 +27,9 @@ const INSPECT_CONCURRENCY = 8;
 
 export type ObservedStatus = "active" | "error" | "stopped" | "missing";
 
-/** An app row as far as container matching is concerned. */
-export type ReconcilableApp = {
-  id: string;
-  name: string;
-  status: string;
-  parentAppId: string | null;
-  composeService: string | null;
-  containerName: string | null;
-  importedContainerId: string | null;
-};
-
 // ---------------------------------------------------------------------------
-// Pure matching + decision logic (unit tested)
+// Pure decision logic (unit tested)
 // ---------------------------------------------------------------------------
-
-function label(c: ContainerInfo, key: string): string | undefined {
-  return c.labels[`vardo.${key}`] ?? c.labels[`host.${key}`];
-}
-
-/** App the container's compose project belongs to: paperless-staging-green → paperless. */
-function projectApp(c: ContainerInfo): string | undefined {
-  const project = c.labels["com.docker.compose.project"];
-  return project === undefined ? undefined : composeProjectApp(project);
-}
-
-/**
- * Containers belonging to an app, most specific match first.
- *
- * Vardo-deployed containers carry vardo.project.id; a decomposed child narrows
- * that set by compose service. Vardo's own control plane is started by plain
- * `docker compose` and carries no vardo labels, so compose project/service and
- * the container name are checked too.
- */
-export function matchContainers(app: ReconcilableApp, containers: ContainerInfo[]): ContainerInfo[] {
-  if (app.importedContainerId) {
-    const imported = containers.filter((c) => c.id === app.importedContainerId);
-    if (imported.length > 0) return imported;
-  }
-
-  const byAppId = containers.filter((c) => label(c, "project.id") === app.id);
-  if (byAppId.length > 0) return byAppId;
-
-  // Decomposed children carry the PARENT's vardo.project.id, so narrow the
-  // parent's containers by compose service.
-  if (app.parentAppId && app.composeService) {
-    const byParent = containers.filter(
-      (c) =>
-        label(c, "project.id") === app.parentAppId &&
-        c.labels["com.docker.compose.service"] === app.composeService,
-    );
-    if (byParent.length > 0) return byParent;
-  }
-
-  if (app.composeService) {
-    const byService = containers.filter(
-      (c) => c.labels["com.docker.compose.service"] === app.composeService,
-    );
-    const scoped = byService.filter(
-      (c) =>
-        label(c, "project") === app.name ||
-        projectApp(c) === app.name ||
-        `${projectApp(c)}-${app.composeService}` === app.name,
-    );
-    if (scoped.length > 0) return scoped;
-  }
-
-  const byName = containers.filter(
-    (c) => c.name === app.containerName || c.name === app.name,
-  );
-  if (byName.length > 0) return byName;
-
-  const byProject = containers.filter(
-    (c) =>
-      label(c, "project") === app.name ||
-      c.labels["com.docker.compose.project"] === app.name ||
-      projectApp(c) === app.name,
-  );
-  return byProject;
-}
 
 /** Exit code embedded in a list-API status string, e.g. "Exited (137) 2 days ago". */
 export function parseExitCode(status: string): number | null {
@@ -281,12 +206,11 @@ export async function tickStatusReconcile(): Promise<void> {
 
 let interval: NodeJS.Timeout | null = null;
 let ticking = false;
-let signalsInstalled = false;
+let unregisterShutdown: (() => void) | null = null;
 
 export function startStatusReconciler(): void {
   if (interval) return;
 
-  installSignalHandlers();
   log.info(`Reconciler started (${POLL_INTERVAL_MS / 1000}s interval)`);
   const tick = async () => {
     if (ticking) return;
@@ -303,27 +227,18 @@ export function startStatusReconciler(): void {
   // Run once at startup so a stale "active" doesn't survive until the first interval.
   setTimeout(tick, 5_000);
   interval = setInterval(tick, POLL_INTERVAL_MS);
+
+  // Registered from the start function, not at module scope — importing this
+  // module must not wire a shutdown for a reconciler that was never started.
+  unregisterShutdown = closeOnShutdown(stopStatusReconciler);
 }
 
 export function stopStatusReconciler(): void {
+  unregisterShutdown?.();
+  unregisterShutdown = null;
   if (interval) {
     clearInterval(interval);
     interval = null;
     log.info("Reconciler stopped");
   }
-}
-
-function onShutdown(signal: string) {
-  log.info(`Received ${signal} — stopping reconciler`);
-  stopStatusReconciler();
-}
-
-// Installed from the start function, not at module scope — importing this
-// module for matchContainers() must not add listeners or log a shutdown.
-function installSignalHandlers(): void {
-  if (signalsInstalled) return;
-  signalsInstalled = true;
-  process.once("SIGTERM", () => onShutdown("SIGTERM"));
-  process.once("SIGINT", () => onShutdown("SIGINT"));
-  process.once("exit", () => stopStatusReconciler());
 }

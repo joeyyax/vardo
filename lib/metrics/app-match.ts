@@ -13,7 +13,7 @@
 // ---------------------------------------------------------------------------
 
 import type { ContainerInfo } from "@/lib/docker/client";
-import { matchContainers, type ReconcilableApp } from "@/lib/docker/status-reconcile";
+import { matchContainers, type ReconcilableApp } from "@/lib/docker/container-match";
 import { composeProjectApp, composeProjectEnvironment } from "@/lib/docker/slot-partition";
 import { dedupeByContainer } from "./aggregate";
 import type { ContainerMetrics } from "./types";
