@@ -49,7 +49,7 @@ import {
 import type { ConfigSnapshot } from "@/lib/types/deploy-snapshot";
 import { checkEndpoint, sendDeployNotification } from "../deploy";
 import { recordPostDeployIncomplete } from "../deploy-incomplete";
-import type { DeployContext } from "../deploy-context";
+import type { DeployContext, SlotStopOutcome } from "../deploy-context";
 import { demoteStandbyRestart } from "../restart-policy";
 import { isSelfApp } from "../self-env";
 
@@ -75,6 +75,11 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
     }
     await recordPostDeployIncomplete(ctx, reason);
   };
+
+  // Raised by the swap, which ran before there was a success to qualify them.
+  for (const reason of ctx.unfinished?.splice(0) ?? []) {
+    await unfinishedWork(reason);
+  }
 
   // Step 10: Stop old slot containers (skipped for local environments).
   // We stop rather than down so the standby slot's containers remain on disk,
@@ -426,7 +431,8 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
   // on this event reads the finished row rather than racing it.
   ctx.stage("done", "success");
 
-  // Notify real-time UI via org event stream
+  // The three below announce the success row above. A dropped announcement
+  // leaves nothing running, so none of them is post-deploy work left unfinished.
   addEvent(ctx.organizationId, {
     type: "deploy.status",
     title: "Deploy succeeded",
@@ -445,7 +451,6 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
     metadata: { deploymentId: ctx.deploymentId, durationMs },
   }).catch(() => {});
 
-  // Send success notification (non-blocking)
   sendDeployNotification(app, ctx.deploymentId, true, durationMs).catch(() => {});
 
   // Whatever was held from before the commit lands here, behind the success.
@@ -509,11 +514,15 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
       await releaseConcurrencySlot(ctx.deploymentId).catch(() => {});
     }
     log(`[deploy] Stopping the slot running this deploy — ${newSlot} is serving`);
-    const stopErr = await ctx.stopOldSlot().then(() => null, (err: unknown) => err);
-    if (stopErr) {
-      await unfinishedWork(
-        `the old slot (${activeSlot}) is still running — ${stopErr instanceof Error ? stopErr.message : stopErr}`,
-      );
+    const stopped = await ctx.stopOldSlot().then(
+      (outcome) => outcome,
+      (err: unknown): SlotStopOutcome => ({
+        ok: false,
+        message: err instanceof Error ? err.message : String(err),
+      }),
+    );
+    if (!stopped.ok) {
+      await unfinishedWork(`the old slot (${activeSlot}) is still running — ${stopped.message}`);
     }
   }
 

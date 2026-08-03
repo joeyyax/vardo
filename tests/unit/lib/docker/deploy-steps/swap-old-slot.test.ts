@@ -187,6 +187,70 @@ describe("swap — old slot restore after a failed stop", () => {
   });
 });
 
+describe("swap — an old slot that would not stop", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    order.length = 0;
+  });
+
+  /** Healthy `ps`, and every stop fails with `message`. */
+  function stopFailsWith(message: string) {
+    execFileAsyncMock.mockImplementation(async (_cmd: string, args: string[]) => {
+      if (args.includes("stop")) throw new Error(message);
+      if (args.includes("ps")) {
+        return {
+          stdout: JSON.stringify({ Service: "web", Name: "web-1", State: "running", Health: "healthy" }),
+          stderr: "",
+        };
+      }
+      return { stdout: "", stderr: "" };
+    });
+  }
+
+  it("raises unfinished work when the stop failed and the old slot kept serving", async () => {
+    stopFailsWith("docker daemon unreachable");
+
+    const ctx = context();
+    await expect(swap(ctx)).resolves.toBeTruthy();
+
+    expect(ctx.unfinished).toEqual([
+      "the old slot (blue) is still running — docker daemon unreachable",
+    ]);
+  });
+
+  it("raises nothing when the containers were already gone", async () => {
+    stopFailsWith("Error response from daemon: No such container: app-production-blue-web-1");
+
+    const ctx = context();
+    await swap(ctx);
+
+    expect(ctx.unfinished).toBeUndefined();
+  });
+
+  it("raises nothing when the stop worked", async () => {
+    dockerHealthy();
+
+    const ctx = context();
+    await swap(ctx);
+
+    expect(ctx.unfinished).toBeUndefined();
+  });
+
+  it("hands a failed stop back to post-deploy on the self-deploy", async () => {
+    stopFailsWith("docker daemon unreachable");
+
+    const ctx = context({ appName: "vardo" });
+    await swap(ctx);
+
+    // Deferred, so the swap itself raises nothing — post-deploy owns the outcome.
+    expect(ctx.unfinished).toBeUndefined();
+    await expect(ctx.stopOldSlot!()).resolves.toEqual({
+      ok: false,
+      message: "docker daemon unreachable",
+    });
+  });
+});
+
 describe("swap — cutover pin", () => {
   beforeEach(() => {
     vi.clearAllMocks();
