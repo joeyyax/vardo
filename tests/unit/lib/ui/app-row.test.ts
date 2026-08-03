@@ -5,6 +5,7 @@ import {
   primaryDomain,
   railClass,
   readingLabel,
+  restartNote,
   rowNote,
   rowSeverity,
   shrinkWeight,
@@ -216,6 +217,38 @@ describe("rowNote", () => {
 
   it("lets a condition outrank config drift", () => {
     expect(rowNote([condition("warning")], true)?.label).toBe("unhealthy");
+  });
+});
+
+describe("restartNote", () => {
+  it("carries an elevated count with a hover explaining what resets it", () => {
+    const note = restartNote(12);
+    expect(note?.label).toBe("12 restarts");
+    expect(note?.tone).toBe("text-status-warning");
+    expect(note?.detail).toContain("resets it to zero");
+  });
+
+  it("says nothing for an ordinary count", () => {
+    expect(restartNote(1)).toBeNull();
+  });
+
+  it("tells an unread count apart from zero", () => {
+    expect(restartNote(0)).toBeNull();
+    expect(restartNote(null)).toBeNull();
+    expect(restartNote(undefined)).toBeNull();
+  });
+
+  it("gives way to a condition and to config drift", () => {
+    const cue = restartNote(12);
+    expect(rowNote([condition("warning")], false, cue)?.label).toBe("unhealthy");
+    expect(rowNote(null, true, cue)?.label).toBe("restart needed");
+    expect(rowNote(null, false, cue)?.label).toBe("12 restarts");
+  });
+
+  it("outranks the note a caller passes, as the row composes the two", () => {
+    expect(restartNote(12) ?? { label: "caller", tone: "x" }).toMatchObject({
+      label: "12 restarts",
+    });
   });
 });
 
