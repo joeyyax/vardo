@@ -1,4 +1,5 @@
 import type { AppCondition } from "@/lib/docker/conditions";
+import type { ExitReason } from "@/lib/docker/exit-reason";
 import type { FeatureFlags } from "@/lib/config/features";
 
 export type Deployment = {
@@ -104,6 +105,7 @@ export type ChildApp = {
 export type App = {
   id: string;
   conditions: AppCondition[] | null;
+  exitReason: ExitReason | null;
   name: string;
   displayName: string;
   description: string | null;

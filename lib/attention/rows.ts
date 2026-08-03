@@ -1,13 +1,13 @@
 import "server-only";
 
-import { and, desc, eq, gte, inArray, isNull } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, isNull } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { apps, backups } from "@/lib/db/schema";
 import { defaultMemoryLimitMb, type QosTier } from "@/lib/docker/compose-inject";
 import { getCooldownUntil } from "@/lib/docker/image-updates/check";
 import { getAggregateUpdateStatus } from "@/lib/docker/image-updates/status";
-import { conditionRows, type AttentionRow } from "@/lib/ui/attention";
+import { conditionRows, oomRows, type AttentionRow } from "@/lib/ui/attention";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { isVardoManagedApp } from "@/lib/infra/instance-apps";
 import { getVersionData } from "@/lib/version";
@@ -16,6 +16,9 @@ import { getFleetAttention } from "./fleet";
 
 /** A failure older than this is history, not something to act on now. */
 const BACKUP_FAILURE_WINDOW_HOURS = 48;
+
+/** An OOM kill older than this is history too, even if the app is still down. */
+const OOM_WINDOW_HOURS = 7 * 24;
 
 function formatMb(mb: number): string {
   return mb >= 1024 ? `${(mb / 1024).toFixed(mb % 1024 === 0 ? 0 : 1)} GB` : `${mb} MB`;
@@ -42,6 +45,24 @@ async function loadFailedBackups(appIds: string[]) {
     if (row.appId && !latest.has(row.appId)) latest.set(row.appId, row);
   }
   return [...latest.values()];
+}
+
+/**
+ * Every app the kernel may have killed, children included — a compose service
+ * that OOMs is the subject, not the parent that is otherwise fine.
+ */
+async function loadExitReasons(orgId: string) {
+  const rows = await db
+    .select({
+      id: apps.id,
+      name: apps.name,
+      displayName: apps.displayName,
+      exitReason: apps.exitReason,
+      isSystemManaged: apps.isSystemManaged,
+    })
+    .from(apps)
+    .where(and(eq(apps.organizationId, orgId), isNotNull(apps.exitReason)));
+  return rows.filter((a) => !isVardoManagedApp(a));
 }
 
 type BuildOptions = {
@@ -84,15 +105,17 @@ export async function buildAttentionRows(
 
   const appIds = appRows.map((a) => a.id);
 
-  const [fleet, updates, version, failedBackups, activity] = await Promise.all([
+  const [fleet, updates, version, failedBackups, activity, exited] = await Promise.all([
     getFleetAttention(orgId),
     getCooldownUntil().then((cooldown) => getAggregateUpdateStatus(orgId, appRows, cooldown)),
     isAppAdmin ? getVersionData().catch(() => null) : null,
     loadFailedBackups(appIds),
     getFleetActivity(appIds),
+    loadExitReasons(orgId),
   ]);
 
   const rows = conditionRows(appRows);
+  rows.push(...oomRows(exited, Date.now(), OOM_WINDOW_HOURS * 3_600_000));
 
   if (fleet.unreachableDomains.length > 0) {
     rows.push({
