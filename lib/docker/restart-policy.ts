@@ -87,6 +87,14 @@ export async function demoteStandbyRestart(
 }
 
 /**
+ * Fallback when a slot's compose declares no policy, matching what
+ * compose-normalize writes. A demoted container carries `no` from the demote
+ * rather than from its own compose, so leaving it there would strand a promoted
+ * slot with no crash recovery.
+ */
+const DEFAULT_POLICY = "unless-stopped";
+
+/**
  * Put each container's compose-declared restart policy back. Runs when a
  * demoted slot is promoted to serving, so it restarts on crash like any other.
  */
@@ -101,8 +109,7 @@ export async function restoreSlotRestart(
       declaredPolicies(composeFileArgs, projectName, cwd),
     ]);
     for (const c of containers) {
-      const policy = policies[c.service];
-      if (!policy || policy === "no") continue;
+      const policy = policies[c.service] || DEFAULT_POLICY;
       await execFileAsync("docker", ["update", `--restart=${policy}`, c.id], {
         timeout: COMPOSE_QUERY_TIMEOUT,
       }).catch(() => {});
