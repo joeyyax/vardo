@@ -224,9 +224,11 @@ export function runAsyncContainerMigration(params: MigrationParams): void {
         }
 
         if (anyRestarted) {
+          // The deploy keeps the duration and finish time it recorded; only its
+          // outcome changes.
           await db
             .update(deployments)
-            .set({ status: "rolled_back", finishedAt: new Date() })
+            .set({ status: "rolled_back" })
             .where(eq(deployments.id, deploymentId));
 
           await db

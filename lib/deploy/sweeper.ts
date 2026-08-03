@@ -453,6 +453,7 @@ export async function sweepStuckQueuedDeployments(): Promise<void> {
 type RollbackCandidate = {
   deploymentId: string;
   appId: string;
+  trigger: string;
   slot: string | null;
   finishedAt: Date | null;
   environmentId: string | null;
@@ -478,6 +479,7 @@ export async function sweepRollbackWatches(): Promise<void> {
     .select({
       deploymentId: deployments.id,
       appId: deployments.appId,
+      trigger: deployments.trigger,
       slot: deployments.slot,
       finishedAt: deployments.finishedAt,
       environmentId: deployments.environmentId,
@@ -508,6 +510,7 @@ export async function sweepRollbackWatches(): Promise<void> {
         {
           appName: candidate.appName,
           appStatus: candidate.appStatus,
+          trigger: candidate.trigger,
           slot: candidate.slot,
           finishedAt: candidate.finishedAt,
           gracePeriodSeconds: candidate.gracePeriodSeconds,
@@ -574,6 +577,7 @@ async function checkRollbackWatch(
     currentSlot: slot,
     previousSlot: standbySlot,
     envName,
+    environmentId: candidate.environmentId,
   });
 }
 

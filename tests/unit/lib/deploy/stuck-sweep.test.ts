@@ -283,6 +283,22 @@ describe("sweepStuckDeployments", () => {
     expect(stopProject).not.toHaveBeenCalled();
   });
 
+  it("fails a stranded rollback row and releases the app it was holding", async () => {
+    // A rollback row is a running deployment like any other — it never writes
+    // the active-deploy key, so a process that dies mid-swap leaves it here.
+    seenRunning(PAST_BUDGET_MS);
+    // clearAllMocks keeps implementations, so restore the store-backed reader.
+    vi.mocked(redisMock.redis.get).mockImplementation(async (key: string) => redisMock._store.get(key) ?? null);
+    queueSelects([{ ...RUNNING_ROW, log: "[rollback] restoring blue" }]);
+
+    await sweepStuckDeployments();
+
+    const sets = vi.mocked(dbMock.update).mock.results.map((r) => r.value as { set: ReturnType<typeof vi.fn> });
+    const payloads = sets.flatMap((chain) => chain.set.mock.calls.map((c) => c[0] as Record<string, unknown>));
+    expect(payloads).toContainEqual(expect.objectContaining({ status: "failed" }));
+    expect(payloads).toContainEqual(expect.objectContaining({ status: "stopped" }));
+  });
+
   it("skips a deployment when another instance holds the sweep lock", async () => {
     seenRunning(PAST_BUDGET_MS);
     vi.mocked(lockMock.acquireLock).mockResolvedValue(false);

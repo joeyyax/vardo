@@ -15,6 +15,7 @@ function candidate(overrides: Partial<WatchCandidate> = {}): WatchCandidate {
   return {
     appName: "my-app",
     appStatus: "active",
+    trigger: "manual",
     slot: "green",
     finishedAt: new Date(NOW - 10_000),
     gracePeriodSeconds: 60,
@@ -52,6 +53,11 @@ describe("evaluateWatch", () => {
   it("never arms for Vardo deploying itself", () => {
     const verdict = evaluateWatch(candidate({ appName: "vardo" }), NOW);
     expect(verdict).toEqual({ watch: false, reason: "self-deploy" });
+  });
+
+  it("never arms on a rollback — its predecessor is the version that failed", () => {
+    const verdict = evaluateWatch(candidate({ trigger: "rollback" }), NOW);
+    expect(verdict).toEqual({ watch: false, reason: "rollback deploy" });
   });
 
   it("still watches after the grace period has partly elapsed", () => {
