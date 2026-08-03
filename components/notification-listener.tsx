@@ -22,6 +22,9 @@ function showToast(event: BusEvent): void {
     case "error":
       toast.error(event.title, options);
       break;
+    case "warning":
+      toast.warning(event.title, options);
+      break;
     default:
       toast.info(event.title, options);
       break;

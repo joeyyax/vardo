@@ -90,6 +90,7 @@ export default async function AppDetailPage({ params }: PageProps) {
         environmentId: true,
         configSnapshot: true,
         rollbackFromId: true,
+        postDeployError: true,
         supersededBy: true,
         slot: true,
         startedAt: true,

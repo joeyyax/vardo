@@ -44,6 +44,9 @@ export const deployments = pgTable("deployment", {
   // On an auto-rollback, the deploy that crashed. On a manual or instant
   // rollback, the deploy whose version was restored.
   rollbackFromId: text("rollback_from_id"),
+  // Post-deploy work a successful deploy did not finish (hooks, notifications,
+  // the old slot's stop). The row stays "success" — the release is serving.
+  postDeployError: text("post_deploy_error"),
   slot: text("slot"),
   // ID of the deployment that superseded this one (set when status = "superseded")
   supersededBy: text("superseded_by").references((): AnyPgColumn => deployments.id, {

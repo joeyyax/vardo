@@ -47,6 +47,7 @@ import {
 } from "../constants";
 import type { ConfigSnapshot } from "@/lib/types/deploy-snapshot";
 import { checkEndpoint, sendDeployNotification } from "../deploy";
+import { recordPostDeployIncomplete } from "../deploy-incomplete";
 import type { DeployContext } from "../deploy-context";
 import { demoteStandbyRestart } from "../restart-policy";
 import { isSelfApp } from "../self-env";
@@ -62,6 +63,17 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
   const appDir = ctx.appDir;
 
   ctx.stage("cleanup", "running");
+
+  // Work this step could not finish. Held until the deploy commits — before
+  // that there is no success for it to qualify.
+  const pendingUnfinished: string[] = [];
+  const unfinishedWork = async (reason: string) => {
+    if (!ctx.succeeded) {
+      pendingUnfinished.push(reason);
+      return;
+    }
+    await recordPostDeployIncomplete(ctx, reason);
+  };
 
   // Step 10: Stop old slot containers (skipped for local environments).
   // We stop rather than down so the standby slot's containers remain on disk,
@@ -84,6 +96,9 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
       log(`[deploy] Old slot (${activeSlot}) stopped — available for instant rollback`);
     } catch (err) {
       log(`[deploy] Warning: old slot stop — ${err instanceof Error ? err.message : err}`);
+      await unfinishedWork(
+        `the old slot (${activeSlot}) did not stop — its containers are still running`,
+      );
     }
   }
 
@@ -432,11 +447,16 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
   // Send success notification (non-blocking)
   sendDeployNotification(app, ctx.deploymentId, true, durationMs).catch(() => {});
 
+  // Whatever was held from before the commit lands here, behind the success.
+  for (const reason of pendingUnfinished.splice(0)) {
+    await recordPostDeployIncomplete(ctx, reason);
+  }
+
   // Execute after.deploy.success hooks — plugins handle backup, security scan,
   // rollback monitor, drift check, and any user-registered hooks.
   try {
     const { executeHooks } = await import("@/lib/hooks/execute");
-    await executeHooks("after.deploy.success", {
+    const hookResult = await executeHooks("after.deploy.success", {
       appId: ctx.appId,
       appName: app.name,
       organizationId: ctx.organizationId,
@@ -454,8 +474,17 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
       appId: ctx.appId,
       deployId: ctx.deploymentId,
     });
+
+    // A failing after.* hook returns rather than throws — backup, security scan
+    // and the rollback monitor all hang off this event.
+    if (!hookResult.allowed) {
+      const { hookName, reason } = hookResult.blockedBy ?? {};
+      await unfinishedWork(`the "${hookName ?? "after.deploy.success"}" hook failed — ${reason ?? "no reason given"}`);
+    }
   } catch (err) {
-    log(`[deploy] Warning: post-deploy hooks — ${err instanceof Error ? err.message : err}`);
+    const message = err instanceof Error ? err.message : String(err);
+    log(`[deploy] Warning: post-deploy hooks — ${message}`);
+    await unfinishedWork(`the after.deploy.success hooks did not run — ${message}`);
   }
 
   // Auto-rollback watches from inside Vardo, so it cannot watch Vardo: the
@@ -473,12 +502,18 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
   if (ctx.stopOldSlot) {
     // Hand back the concurrency slot first — the `finally` that normally does it
     // never runs. Skipped when another deploy is queued behind us, which would
-    // otherwise start inside the process about to be stopped.
-    if (await isDeployQueueDrained()) {
+    // otherwise start inside the process about to be stopped. A queue check that
+    // throws must not skip the stop below.
+    if (await isDeployQueueDrained().catch(() => false)) {
       await releaseConcurrencySlot(ctx.deploymentId).catch(() => {});
     }
     log(`[deploy] Stopping the slot running this deploy — ${newSlot} is serving`);
-    await ctx.stopOldSlot().catch(() => {});
+    const stopErr = await ctx.stopOldSlot().then(() => null, (err: unknown) => err);
+    if (stopErr) {
+      await unfinishedWork(
+        `the old slot (${activeSlot}) is still running — ${stopErr instanceof Error ? stopErr.message : stopErr}`,
+      );
+    }
   }
 
   return ctx;
