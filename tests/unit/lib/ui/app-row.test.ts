@@ -208,7 +208,8 @@ describe("rowNote", () => {
   });
 
   it("falls back to config drift, then to the caller's note", () => {
-    expect(rowNote(null, true)?.label).toBe("restart needed");
+    // Never "restart needed" — `compose restart` cannot apply pending config.
+    expect(rowNote(null, true)?.label).toBe("deploy needed");
     expect(rowNote(null, false, { label: "12 restarts", tone: "x" })?.label).toBe("12 restarts");
     expect(rowNote(null, false)).toBeNull();
   });
