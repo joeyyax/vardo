@@ -8,6 +8,7 @@ import {
   queryRange,
   buildLogQLQuery,
 } from "@/lib/logging/client";
+import { LOOKBACK_MS } from "@/lib/logging/history";
 import { listContainers, getContainerLogs } from "@/lib/docker/client";
 import type { McpAuthContext } from "../auth";
 import { accessDenied, canAccessOrg } from "../scope";
@@ -31,7 +32,9 @@ export function registerGetAppLogs(
       since: z
         .string()
         .default("1h")
-        .describe("Time range — e.g. '30m', '1h', '6h', '1d'"),
+        .describe(
+          `Time range — e.g. '30m', '1h', '6h', '1d'. Anything past ${formatDuration(MAX_SINCE_MS)} is clamped to it and the response says so.`
+        ),
       search: z
         .string()
         .optional()
@@ -59,12 +62,12 @@ export function registerGetAppLogs(
           search,
         });
 
-        const start = relativeToTimestamp(since);
+        const window = resolveSince(since);
 
         const entries = await queryRange({
           query,
           organizationId: app.organizationId,
-          start,
+          start: window.start,
           limit: lines,
           direction: "backward",
         });
@@ -79,6 +82,11 @@ export function registerGetAppLogs(
                 {
                   source: "loki",
                   app: app.name,
+                  since: window.since,
+                  ...(window.clamped && {
+                    requestedSince: since,
+                    truncated: `Loki keeps ${window.since} of logs, so this covers ${window.since} rather than the ${since} requested.`,
+                  }),
                   lineCount: entries.length,
                   logs: entries.map((e) => e.line).join("\n"),
                 },
@@ -146,21 +154,37 @@ export function registerGetAppLogs(
   );
 }
 
-function relativeToTimestamp(duration: string): string {
+const UNIT_MS: Record<string, number> = {
+  s: 1000,
+  m: 60_000,
+  h: 3600_000,
+  d: 86400_000,
+};
+
+const DEFAULT_SINCE_MS = UNIT_MS.h;
+
+/** Deepest window Loki still holds — the log viewer's widest lookback, which retention is sized to. */
+export const MAX_SINCE_MS = Math.max(...LOOKBACK_MS);
+
+/** The window a request actually covers, and whether that is less than it asked for. */
+export type SinceWindow = { start: string; since: string; clamped: boolean };
+
+export function resolveSince(duration: string, now: number = Date.now()): SinceWindow {
   const match = duration.match(/^(\d+)(s|m|h|d)$/);
-  if (!match) {
-    return String((Date.now() - 3600_000) * 1_000_000);
-  }
+  const requested = match ? parseInt(match[1]) * UNIT_MS[match[2]] : DEFAULT_SINCE_MS;
+  const covered = Math.min(requested, MAX_SINCE_MS);
 
-  const value = parseInt(match[1]);
-  const unit = match[2];
-  const ms: Record<string, number> = {
-    s: 1000,
-    m: 60_000,
-    h: 3600_000,
-    d: 86400_000,
+  return {
+    start: String((now - covered) * 1_000_000),
+    since: formatDuration(covered),
+    clamped: covered < requested,
   };
+}
 
-  const ago = Date.now() - value * ms[unit];
-  return String(ago * 1_000_000);
+/** Largest whole unit the span divides into, so 30 days reads as "30d". */
+function formatDuration(ms: number): string {
+  for (const unit of ["d", "h", "m", "s"]) {
+    if (ms >= UNIT_MS[unit] && ms % UNIT_MS[unit] === 0) return `${ms / UNIT_MS[unit]}${unit}`;
+  }
+  return `${Math.round(ms / 1000)}s`;
 }
