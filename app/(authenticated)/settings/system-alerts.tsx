@@ -62,15 +62,15 @@ function formatRelativeTime(dateStr: string): string {
 
 function StatusBadge({ status }: { status: "healthy" | "unhealthy" | "unconfigured" | "ok" | "warning" | "critical" }) {
   if (status === "healthy" || status === "ok") {
-    return <Badge variant="outline" className="text-green-600 border-green-200 bg-green-50">OK</Badge>;
+    return <Badge variant="outline" className="text-status-success border-status-success/30">OK</Badge>;
   }
   if (status === "unconfigured") {
-    return <Badge variant="outline" className="text-gray-500 border-gray-200">Not configured</Badge>;
+    return <Badge variant="outline" className="text-muted-foreground">Not configured</Badge>;
   }
   if (status === "warning") {
-    return <Badge variant="outline" className="text-yellow-600 border-yellow-200 bg-yellow-50">Warning</Badge>;
+    return <Badge variant="outline" className="text-status-warning border-status-warning/30">Warning</Badge>;
   }
-  return <Badge variant="outline" className="text-red-600 border-red-200 bg-red-50">Unhealthy</Badge>;
+  return <Badge variant="outline" className="text-status-error border-status-error/30">Unhealthy</Badge>;
 }
 
 export function SystemAlertsPanel() {
@@ -158,7 +158,7 @@ export function SystemAlertsPanel() {
 
   if (error) {
     return (
-      <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
+      <div className="surface-danger rounded-lg border px-4 py-3 text-sm text-destructive" role="alert">
         <span className="font-medium">Error:</span> {error}
       </div>
     );
@@ -199,11 +199,11 @@ export function SystemAlertsPanel() {
               >
                 <div className="flex items-center gap-2.5">
                   {service.status === "healthy" ? (
-                    <CheckCircle className="h-4 w-4 text-green-500 shrink-0" />
+                    <CheckCircle className="h-4 w-4 text-status-success shrink-0" />
                   ) : service.status === "unhealthy" ? (
-                    <AlertTriangle className="h-4 w-4 text-red-500 shrink-0" />
+                    <AlertTriangle className="h-4 w-4 text-status-error shrink-0" />
                   ) : (
-                    <Info className="h-4 w-4 text-gray-400 shrink-0" />
+                    <Info className="h-4 w-4 text-status-neutral shrink-0" />
                   )}
                   <div>
                     <p className="text-sm font-medium">{service.name}</p>
@@ -250,10 +250,10 @@ export function SystemAlertsPanel() {
                     <div
                       className={`h-full rounded-full transition-all ${
                         resource.status === "critical"
-                          ? "bg-red-500"
+                          ? "bg-status-error"
                           : resource.status === "warning"
-                            ? "bg-yellow-500"
-                            : "bg-green-500"
+                            ? "bg-status-warning"
+                            : "bg-status-success"
                       }`}
                       style={{ width: `${Math.max(0, Math.min(resource.percent, 100))}%` }}
                     />
@@ -272,7 +272,7 @@ export function SystemAlertsPanel() {
           <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
             Active Alerts
             {alertsData.active.length > 0 && (
-              <span className="ml-1.5 inline-flex items-center justify-center h-4 w-4 rounded-full bg-red-100 text-red-700 text-xs font-semibold">
+              <span className="ml-1.5 inline-flex items-center justify-center h-4 w-4 rounded-full bg-destructive text-background text-xs font-semibold">
                 {alertsData.active.length}
               </span>
             )}
@@ -280,7 +280,7 @@ export function SystemAlertsPanel() {
 
           {alertsData.active.length === 0 ? (
             <div className="rounded-lg border px-4 py-6 text-center">
-              <CheckCircle className="h-6 w-6 text-green-500 mx-auto mb-2" />
+              <CheckCircle className="h-6 w-6 text-status-success mx-auto mb-2" />
               <p className="text-sm text-muted-foreground">No active alerts</p>
             </div>
           ) : (
@@ -288,7 +288,7 @@ export function SystemAlertsPanel() {
               {alertsData.active.map((alert) => (
                 <div key={`${alert.type}:${alert.key}`} className="flex items-center justify-between px-4 py-3">
                   <div className="flex items-center gap-2.5">
-                    <AlertTriangle className="h-4 w-4 text-yellow-500 shrink-0" />
+                    <AlertTriangle className="h-4 w-4 text-status-warning shrink-0" />
                     <div>
                       <p className="text-sm font-medium">
                         {alertTypeLabel(alert.type)}

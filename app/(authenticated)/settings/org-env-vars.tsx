@@ -5,6 +5,7 @@ import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "@/lib/messenger";
+import "@/components/surface-terminal.css";
 
 type Props = {
   orgId: string;
@@ -150,12 +151,12 @@ export function OrgEnvVarsEditor({ orgId }: Props) {
       .split("\n")
       .map((line) => {
         if (line.startsWith("#"))
-          return `<span class="text-zinc-500">${esc(line)}</span>`;
+          return `<span class="text-muted-foreground">${esc(line)}</span>`;
         const eq = line.indexOf("=");
         if (eq === -1) return esc(line);
         const key = line.slice(0, eq);
         const val = line.slice(eq + 1);
-        return `<span class="text-amber-400">${esc(key)}</span><span class="text-zinc-500">=</span>${esc(val)}`;
+        return `<span class="text-[var(--terminal-key)]">${esc(key)}</span><span class="text-muted-foreground">=</span>${esc(val)}`;
       })
       .join("\n");
   }
@@ -183,7 +184,7 @@ export function OrgEnvVarsEditor({ orgId }: Props) {
         </Button>
       </div>
 
-      <div className="relative rounded-lg border bg-zinc-950 min-h-[400px]">
+      <div className="surface-terminal relative rounded-lg border bg-background min-h-[400px]">
         <div
           className="absolute inset-0 p-4 font-mono text-sm leading-6 whitespace-pre-wrap overflow-auto pointer-events-none"
           aria-hidden
@@ -191,7 +192,7 @@ export function OrgEnvVarsEditor({ orgId }: Props) {
           {content ? (
             <div dangerouslySetInnerHTML={{ __html: highlightContent(content) }} />
           ) : (
-            <span className="text-zinc-600">{"# Organization-wide shared variables\n# Available to all projects via ${org.KEY}\n\nAPI_KEY=your-api-key\nSMTP_HOST=smtp.example.com"}</span>
+            <span className="text-muted-foreground">{"# Organization-wide shared variables\n# Available to all projects via ${org.KEY}\n\nAPI_KEY=your-api-key\nSMTP_HOST=smtp.example.com"}</span>
           )}
         </div>
 
@@ -201,7 +202,7 @@ export function OrgEnvVarsEditor({ orgId }: Props) {
           onChange={handleChange}
           onKeyDown={handleKeyDown}
           onClick={(e) => { setCursorPosition(e.currentTarget.selectionStart); setShowSuggestions(false); }}
-          className="relative w-full p-4 font-mono text-sm leading-6 text-transparent caret-zinc-400 bg-transparent resize-none focus:outline-none min-h-[400px] selection:bg-zinc-700/50"
+          className="relative w-full p-4 font-mono text-sm leading-6 text-transparent caret-foreground bg-transparent resize-none focus:outline-none min-h-[400px] selection:bg-accent/50"
           spellCheck={false}
           autoComplete="off"
           autoCorrect="off"
