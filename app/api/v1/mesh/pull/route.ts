@@ -20,7 +20,7 @@ const pullSchema = z.object({
  */
 async function handlePost(request: NextRequest) {
   try {
-    const peer = await requireMeshPeer(request);
+    await requireMeshPeer(request);
 
     const body = await request.json();
     const parsed = pullSchema.safeParse(body);
@@ -31,11 +31,8 @@ async function handlePost(request: NextRequest) {
       );
     }
 
-    // Dev instances can't be pulled from — their state is ephemeral
-    // This check is about *this* instance being pulled from
-    // The peer type check doesn't apply here since the requesting peer
-    // could be any type. The restriction is on the source (us).
-
+    // Any authenticated peer can pull any project — mesh peers are system-level
+    // and carry no org grants, so there is nothing to scope against.
     const bundle = await buildProjectBundle(parsed.data.projectId, {
       transferType: "pull",
       includeEnvVars: parsed.data.includeEnvVars,
