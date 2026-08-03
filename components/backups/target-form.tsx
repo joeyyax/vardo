@@ -266,7 +266,7 @@ export function TargetForm({
                     onChange={(e) => setLocalPath(e.target.value)}
                   />
                 </div>
-                <div className="rounded-md border border-status-warning/30 bg-status-warning/5 px-4 py-3 text-sm text-status-warning">
+                <div className="rounded-md border border-status-warning/30 bg-status-warning-muted px-4 py-3 text-sm text-status-warning">
                   Local backups don&apos;t protect against disk failure. Use S3 or R2 for production.
                 </div>
                 <p className="text-sm text-muted-foreground">

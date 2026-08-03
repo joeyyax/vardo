@@ -192,7 +192,7 @@ export function UserManagement() {
         </form>
 
         {inviteMessage && (
-          <div className="rounded-lg border border-status-success/30 bg-status-success/5 p-4">
+          <div className="rounded-lg border border-status-success/30 bg-status-success-muted p-4">
             <p className="text-sm text-status-success">{inviteMessage}</p>
           </div>
         )}
