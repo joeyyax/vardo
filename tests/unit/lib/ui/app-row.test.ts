@@ -2,15 +2,25 @@ import { describe, it, expect } from "vitest";
 
 import {
   compactUptime,
+  primaryDomain,
   railClass,
   readingLabel,
+  rowNote,
   rowSeverity,
+  shrinkWeight,
+  sourceRef,
   sparkPath,
   sparklineTone,
   statusRank,
   statusWord,
   statusWordTone,
   tagLabels,
+  truncationOrder,
+  ROW_DOMAIN_CELL,
+  ROW_NAME_CELL,
+  ROW_NOTE_CELL,
+  ROW_SOURCE_CELL,
+  ROW_TRAILING_CELL,
 } from "@/lib/ui/app-row";
 import type { AppCondition } from "@/lib/docker/conditions";
 import { formatBytes } from "@/lib/metrics/format";
@@ -187,5 +197,113 @@ describe("tagLabels", () => {
 
   it("drops empties rather than rendering a gap", () => {
     expect(tagLabels(["", "  ", "ok"])).toEqual({ shown: ["ok"], overflow: 0 });
+  });
+});
+
+describe("rowNote", () => {
+  it("says the worst thing first", () => {
+    const note = rowNote([condition("warning"), condition("critical")], false);
+    expect(note?.label).toBe("crash looping");
+    expect(note?.tone).toBe("text-status-error");
+  });
+
+  it("falls back to config drift, then to the caller's note", () => {
+    expect(rowNote(null, true)?.label).toBe("restart needed");
+    expect(rowNote(null, false, { label: "12 restarts", tone: "x" })?.label).toBe("12 restarts");
+    expect(rowNote(null, false)).toBeNull();
+  });
+
+  it("lets a condition outrank config drift", () => {
+    expect(rowNote([condition("warning")], true)?.label).toBe("unhealthy");
+  });
+});
+
+describe("sourceRef", () => {
+  it("drops the registry host but keeps the namespace and tag", () => {
+    expect(sourceRef({ imageName: "ghcr.io/linuxserver/jellyfin:latest" })).toBe(
+      "linuxserver/jellyfin:latest",
+    );
+    expect(sourceRef({ imageName: "registry:5000/kroki:0.24" })).toBe("kroki:0.24");
+    expect(sourceRef({ imageName: "postgres:17" })).toBe("postgres:17");
+    expect(sourceRef({ imageName: "library/redis" })).toBe("library/redis");
+  });
+
+  it("falls back to the git repository when there is no image", () => {
+    expect(sourceRef({ gitUrl: "https://github.com/joeyyax/vardo.git" })).toBe("joeyyax/vardo");
+    expect(sourceRef({ gitUrl: "git@github.com:joeyyax/vardo.git" })).toBe("joeyyax/vardo");
+  });
+
+  it("has nothing to say about an app with neither", () => {
+    expect(sourceRef({})).toBeNull();
+    expect(sourceRef({ imageName: "  ", gitUrl: null })).toBeNull();
+  });
+
+  it("tells a compose parent apart from the child sharing its name", () => {
+    expect(sourceRef({ imageName: null, gitUrl: null })).not.toBe(
+      sourceRef({ imageName: "yuzutech/kroki:latest" }),
+    );
+  });
+});
+
+describe("primaryDomain", () => {
+  it("prefers the primary, else the first", () => {
+    expect(primaryDomain([{ domain: "a.test" }, { domain: "b.test", isPrimary: true }])).toBe(
+      "b.test",
+    );
+    expect(primaryDomain([{ domain: "a.test" }, { domain: "b.test" }])).toBe("a.test");
+  });
+
+  it("returns null when the app answers nowhere", () => {
+    expect(primaryDomain([])).toBeNull();
+    expect(primaryDomain(null)).toBeNull();
+  });
+});
+
+describe("shrinkWeight", () => {
+  it("reads flex-shrink x flex-basis, the factor CSS shares shrinkage out by", () => {
+    expect(shrinkWeight("truncate", 120)).toBe(120);
+    expect(shrinkWeight("shrink-0", 120)).toBe(0);
+    expect(shrinkWeight("shrink-[9999]", 2)).toBe(19998);
+    expect(shrinkWeight("w-44", 999)).toBe(176);
+  });
+
+  it("scores basis 0 as weightless -- the trap that inverted the row", () => {
+    // What the note carried before: flex-1 sets basis 0, so it absorbed no
+    // shrinkage at all and every pixel came off the name instead.
+    expect(shrinkWeight("min-w-0 flex-1 truncate", 80)).toBe(0);
+    expect(shrinkWeight("truncate", 80)).toBeGreaterThan(0);
+  });
+});
+
+describe("truncationOrder", () => {
+  // The row's own children, then the children of the column group inside it.
+  const row = [
+    { id: "name", className: ROW_NAME_CELL, width: 120 },
+    { id: "note", className: ROW_NOTE_CELL, width: 80 },
+    { id: "columns", className: ROW_TRAILING_CELL, width: 600 },
+  ];
+  const columns = [
+    { id: "source", className: ROW_SOURCE_CELL },
+    { id: "domain", className: ROW_DOMAIN_CELL },
+    { id: "uptime", className: "w-9 shrink-0" },
+    { id: "sparkline", className: "w-16 shrink-0" },
+    { id: "icons", className: "shrink-0", width: 56 },
+  ];
+
+  it("destroys the name last", () => {
+    expect(truncationOrder(row)).toEqual(["columns", "note", "name"]);
+  });
+
+  it("empties the middle columns and keeps the figures", () => {
+    expect(truncationOrder(columns).slice(0, 2)).toEqual(["domain", "source"]);
+    expect(truncationOrder(columns).slice(2).sort()).toEqual(["icons", "sparkline", "uptime"]);
+  });
+
+  it("would fail on the classes that shipped -- a note that never yields width", () => {
+    const shipped = [
+      { id: "name", className: "truncate", width: 120 },
+      { id: "note", className: "min-w-0 flex-1 truncate", width: 80 },
+    ];
+    expect(truncationOrder(shipped)).toEqual(["name", "note"]);
   });
 });
