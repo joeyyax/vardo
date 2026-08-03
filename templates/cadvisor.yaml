@@ -11,7 +11,8 @@ defaultPort: 8080
 composeContent: |
   services:
     cadvisor:
-      image: gcr.io/cadvisor/cadvisor:latest
+      # Pinned. Bump deliberately — do not revert to :latest.
+      image: gcr.io/cadvisor/cadvisor:v0.55.1
       restart: unless-stopped
       privileged: true
       command:

@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Loader2, RefreshCw } from "lucide-react";
 import { toast } from "@/lib/messenger";
 
@@ -37,6 +39,8 @@ export function CoreServicesSettings() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [services, setServices] = useState<CoreService[]>([]);
+  const [diskMetricsEnabled, setDiskMetricsEnabled] = useState(true);
+  const [savingDiskMetrics, setSavingDiskMetrics] = useState(false);
 
   const fetchServices = useCallback(async () => {
     const res = await fetch("/api/v1/admin/core-services");
@@ -45,26 +49,70 @@ export function CoreServicesSettings() {
     setServices(data.services ?? []);
   }, []);
 
+  const fetchDiskMetrics = useCallback(async () => {
+    const res = await fetch("/api/v1/admin/core-services/cadvisor-disk-metrics");
+    if (!res.ok) throw new Error("Failed to fetch");
+    const data = await res.json();
+    setDiskMetricsEnabled(data.diskMetricsEnabled ?? true);
+  }, []);
+
   useEffect(() => {
     (async () => {
       try {
-        await fetchServices();
+        await Promise.all([fetchServices(), fetchDiskMetrics()]);
       } catch {
         toast.error("Couldn't load core services");
       } finally {
         setLoading(false);
       }
     })();
-  }, [fetchServices]);
+  }, [fetchServices, fetchDiskMetrics]);
 
   async function handleRefresh() {
     setRefreshing(true);
     try {
-      await fetchServices();
+      await Promise.all([fetchServices(), fetchDiskMetrics()]);
     } catch {
       toast.error("Couldn't load core services");
     } finally {
       setRefreshing(false);
+    }
+  }
+
+  async function handleToggleDiskMetrics(next: boolean) {
+    setSavingDiskMetrics(true);
+    setDiskMetricsEnabled(next);
+    try {
+      const res = await fetch("/api/v1/admin/core-services/cadvisor-disk-metrics", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ diskMetricsEnabled: next }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        toast.error(data?.error ?? "Couldn't save that change");
+        setDiskMetricsEnabled(!next);
+        return;
+      }
+      if (!data.installed) {
+        toast.success(`Disk metrics ${next ? "on" : "off"}`, {
+          description: "Applies once cAdvisor is installed.",
+        });
+      } else if (data.redeployed) {
+        toast.success(`Disk metrics ${next ? "on" : "off"}`, {
+          description: "cAdvisor redeployed.",
+        });
+        void fetchServices();
+      } else {
+        toast.error("Saved, but the redeploy failed", {
+          description: "Restart cAdvisor from Maintenance to apply it.",
+        });
+      }
+    } catch {
+      toast.error("Couldn't reach the server");
+      setDiskMetricsEnabled(!next);
+    } finally {
+      setSavingDiskMetrics(false);
     }
   }
 
@@ -113,6 +161,24 @@ export function CoreServicesSettings() {
               </div>
               {service.detail && (
                 <div className="text-xs text-status-error">{service.detail}</div>
+              )}
+              {service.name === "cadvisor" && (
+                <div className="flex items-center gap-2 pt-1">
+                  {savingDiskMetrics && (
+                    <Loader2 className="size-3 animate-spin text-muted-foreground" aria-hidden />
+                  )}
+                  <Switch
+                    id="cadvisor-disk-metrics"
+                    size="sm"
+                    checked={diskMetricsEnabled}
+                    disabled={savingDiskMetrics}
+                    onCheckedChange={handleToggleDiskMetrics}
+                    aria-label={`${diskMetricsEnabled ? "Disable" : "Enable"} disk metrics collection`}
+                  />
+                  <Label htmlFor="cadvisor-disk-metrics" className="text-xs font-normal text-muted-foreground">
+                    Disk metrics — walks every container&apos;s filesystem; off drops cAdvisor to 256m
+                  </Label>
+                </div>
               )}
             </div>
           </div>

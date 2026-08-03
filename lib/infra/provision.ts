@@ -225,6 +225,7 @@ async function ensureAppDeployed(
   template: Template,
   opts?: { waitForDeploy?: boolean },
 ): Promise<Outcome> {
+  const composeContent = await resolveComposeContent(template);
   const existing = await db.query.apps.findFirst({
     where: and(eq(apps.name, template.name), isNull(apps.parentAppId)),
     columns: {
@@ -257,13 +258,12 @@ async function ensureAppDeployed(
     // The template is the only source of truth for a core service — the app
     // API refuses edits to a system-managed row. Without this, a template fix
     // reaches new installs only and every existing instance stays broken.
-    const composeStale =
-      !!template.composeContent && existing.composeContent !== template.composeContent;
+    const composeStale = !!composeContent && existing.composeContent !== composeContent;
     if (composeStale) {
       await db
         .update(apps)
         .set({
-          composeContent: template.composeContent,
+          composeContent,
           needsRedeploy: true,
           updatedAt: new Date(),
         })
@@ -324,7 +324,7 @@ async function ensureAppDeployed(
       description: template.description,
       source: template.source as "git" | "direct",
       deployType: template.deployType as "compose",
-      composeContent: template.composeContent,
+      composeContent,
       containerPort: template.defaultPort,
       isSystemManaged: true,
       cpuLimit: template.defaultCpuLimit,
@@ -380,6 +380,17 @@ async function ensureAppDeployed(
     log.error(`Deploy failed for core service "${template.name}":`, err);
   });
   return { state: "provisioned", appId, organizationId: orgId, detail: null, created: true };
+}
+
+/**
+ * Compose content to store for a template, adjusted for cadvisor's disk
+ * metrics setting. Every other template passes through unchanged.
+ */
+async function resolveComposeContent(template: Template): Promise<string | null> {
+  if (template.name !== "cadvisor" || !template.composeContent) return template.composeContent;
+  const { getCadvisorConfig, applyCadvisorDiskMetrics } = await import("@/lib/infra/cadvisor-config");
+  const { diskMetricsEnabled } = await getCadvisorConfig();
+  return applyCadvisorDiskMetrics(template.composeContent, diskMetricsEnabled);
 }
 
 /** Check if an NVIDIA GPU runtime is available on the Docker host. */
