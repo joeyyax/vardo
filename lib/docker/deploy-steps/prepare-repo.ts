@@ -37,6 +37,7 @@ import {
 import { isFeatureEnabled } from "@/lib/config/features";
 import { assertSafeBranch } from "../validate";
 import { DeployBlockedError } from "../errors";
+import { assertAppDirOwnership } from "../app-dir-owner";
 import { getInstallationToken } from "@/lib/git-integration/app";
 import {
   getDecryptedPrivateKey,
@@ -294,6 +295,10 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
   const orgTrusted = ctx.orgTrusted;
   const projectAllowBindMounts = ctx.projectAllowBindMounts;
   const projectAllowDockerSocket = ctx.projectAllowDockerSocket;
+
+  // Both this step and the build step recursively delete name-derived paths,
+  // so refuse before either touches a directory another app owns.
+  await assertAppDirOwnership({ appId: ctx.appId, appName: app.name, operation: "deploy" });
 
   // App-level dir holds the repo; env-level dir holds slots
   const appBase = appBaseDir(app.name);
