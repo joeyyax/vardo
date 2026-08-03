@@ -8,12 +8,34 @@ import { eq, or, isNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
+import { isAppAdmin } from "@/lib/auth/admin";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
 };
+
+// Non-credential config fields the target cards and forms render.
+const DISPLAY_CONFIG_KEYS = [
+  "bucket",
+  "region",
+  "endpoint",
+  "prefix",
+  "host",
+  "port",
+  "username",
+  "path",
+] as const;
+
+/** Strip credentials from a config the caller doesn't own. */
+function displayConfig(config: Record<string, unknown>) {
+  const safe: Record<string, unknown> = {};
+  for (const key of DISPLAY_CONFIG_KEYS) {
+    if (config[key] !== undefined) safe[key] = config[key];
+  }
+  return safe;
+}
 
 const s3ConfigSchema = z.object({
   bucket: z.string().min(1),
@@ -86,11 +108,20 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       ),
     });
 
-    // Mark app-level targets as read-only for the org
-    const enriched = targets.map((t) => ({
-      ...t,
-      isAppLevel: t.organizationId === null,
-    }));
+    // App-level targets are read-only for the org and their credentials are not
+    // the org's to see — only app admins get the full config back.
+    const admin = await isAppAdmin();
+    const enriched = targets.map((t) => {
+      const isAppLevel = t.organizationId === null;
+      return {
+        ...t,
+        config:
+          isAppLevel && !admin
+            ? displayConfig(t.config as Record<string, unknown>)
+            : t.config,
+        isAppLevel,
+      };
+    });
 
     return NextResponse.json({
       targets: enriched,
