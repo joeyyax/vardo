@@ -44,15 +44,31 @@ function asSlot(value: string): Slot | null {
   return v === "blue" || v === "green" ? v : null;
 }
 
+/** Docker's answer for a slot project, or null when the probe itself failed. */
+async function slotRunning(
+  probes: SlotProbes,
+  projectName: string,
+): Promise<boolean | null> {
+  try {
+    return await probes.isSlotRunning(projectName);
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Resolve which slot is currently active for a blue-green app.
  *
  * Resolution order:
- *  1. `current` symlink — vardo's authoritative pointer once a deploy succeeds.
+ *  1. `current` symlink, confirmed against Docker — vardo's authoritative
+ *     pointer once a deploy succeeds. It is overruled only when its slot is
+ *     confirmed stopped and the other is confirmed running, which means the
+ *     symlink drifted from reality (a host reboot re-running `restart:`
+ *     containers). A failed probe is never read as "stopped": an unreachable
+ *     daemon must not demote a good symlink into a host-port collision.
  *  2. Docker ground-truth — a slot project with running containers. This is what
  *     actually holds host ports, so it's the one that must be torn down. Catches
- *     apps that predate the symlink (legacy `.active-slot`) and symlinks that
- *     drifted from reality (a host reboot re-running `restart:` containers).
+ *     apps that predate the symlink (legacy `.active-slot`).
  *  3. Legacy `.active-slot` file — the pre-symlink migration artifact.
  *
  * Returns null only when no slot is detectable — a genuine first deploy.
@@ -65,19 +81,29 @@ export async function detectActiveSlot(
   projectPrefix: string,
   probes: SlotProbes = defaultProbes,
 ): Promise<Slot | null> {
-  // 1. Authoritative pointer
+  // 1. Authoritative pointer, held only while Docker doesn't contradict it.
+  // When both slots run (the self-deploy overlap) the pointer is the only thing
+  // that says which one is old, so a confirmed-running slot ends the search.
   try {
     const slot = asSlot(await probes.readSymlink(join(appDir, "current")));
-    if (slot) return slot;
+    if (slot) {
+      if ((await slotRunning(probes, `${projectPrefix}-${slot}`)) === false) {
+        const other: Slot = slot === "blue" ? "green" : "blue";
+        if ((await slotRunning(probes, `${projectPrefix}-${other}`)) === true) {
+          return other;
+        }
+      }
+      return slot;
+    }
   } catch {
     /* no symlink yet — fall through */
   }
 
   // 2. Docker ground-truth — a running slot is the real host-port holder.
-  // Iteration order is intentional: blue is checked first. If both slots happen
-  // to be running simultaneously (e.g. a previous deploy left the old slot up),
-  // blue wins. This is an arbitrary but stable tie-break — the important thing
-  // is that we find *something* to tear down rather than colliding on the port.
+  // Iteration order is intentional: blue is checked first. With no symlink to
+  // disambiguate, a both-slots-running app needs an arbitrary but stable
+  // tie-break — the important thing is that we find *something* to tear down
+  // rather than colliding on the port.
   for (const slot of ["blue", "green"] as const) {
     try {
       if (await probes.isSlotRunning(`${projectPrefix}-${slot}`)) return slot;
