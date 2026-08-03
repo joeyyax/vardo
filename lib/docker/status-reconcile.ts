@@ -28,6 +28,7 @@ import {
   worstExitReason,
   type ExitReason,
 } from "./exit-reason";
+import { tickOomWatch, type OomSubject as OomWatchSubject } from "./oom-watch";
 import { closeOnShutdown } from "@/lib/shutdown";
 
 // Lives with the exit classifier it feeds; re-exported for the callers that
@@ -263,6 +264,7 @@ export async function tickStatusReconcile(): Promise<void> {
         let startedAt: Date | null = null;
         let memoryLimit: number | null = null;
         let exitReason: ExitReason | null = null;
+        let oomSubject: OomWatchSubject | null = null;
         if (observed === "active") {
           const running = matched.find((c) => c.state === "running");
           if (running) {
@@ -277,6 +279,16 @@ export async function tickStatusReconcile(): Promise<void> {
               memoryLimit = app.containerMemoryLimit;
             }
             exitReason = reasonSurvivesRestart(app.exitReason, { id: running.id, startedAt }, now);
+            // A running container's cgroup counter is the only record of a kill
+            // inside it — nothing else here inspects one that has not ended.
+            oomSubject = {
+              organizationId: app.organizationId,
+              appId: app.id,
+              appName: app.displayName || app.name,
+              containerId: running.id,
+              containerName: running.name,
+              memoryLimit: memoryLimit ?? 0,
+            };
           }
         } else {
           exitReason = await resolveExitReason(matched, now);
@@ -308,6 +320,7 @@ export async function tickStatusReconcile(): Promise<void> {
           memoryLimit,
           needsRedeploy,
           exitReason,
+          oomSubject,
           running: observed === "active",
           stability: unchanged
             ? null
@@ -372,6 +385,14 @@ export async function tickStatusReconcile(): Promise<void> {
   }
 
   await reportOomKills(changed);
+
+  // Every running container, not just the ones whose status moved — a kill
+  // inside one changes nothing the reconciler compares.
+  try {
+    await tickOomWatch(settled.flatMap((u) => (u.oomSubject ? [u.oomSubject] : [])));
+  } catch (err) {
+    log.error("OOM counter check failed:", err);
+  }
 
   if (missing.length > 0) {
     log.error(
