@@ -53,6 +53,7 @@ import {
   type LifecycleEvent,
   type LifecycleKind,
 } from "@/lib/ui/lifecycle";
+import { typicalElapsedMs } from "@/lib/ui/deploy-timing";
 
 import type { useDeploy } from "./hooks/use-deploy";
 import type { Deployment, SlotStatus } from "./types";
@@ -268,9 +269,9 @@ export function AppDeployPanel({
   const completedDeployments = filteredDeployments
     .filter((d) => d.status !== "queued" && d.status !== "running");
 
-  // What this app's last green deploy took — the yardstick for the live timer.
-  const typicalDurationMs =
-    completedDeployments.find((d) => d.status === "success" && d.durationMs)?.durationMs ?? null;
+  // What this app's last green deploy took end to end — the yardstick for the
+  // live timer, which also runs from the request rather than from execution.
+  const typicalMs = typicalElapsedMs(completedDeployments);
 
   // "deploying" is included: the old slot serves throughout a deploy and through
   // a failed one's rollback, so hiding this card is what made a failure read as
@@ -564,7 +565,7 @@ export function AppDeployPanel({
                   onAbort={() => handleAbortDeploy()}
                   canAbort={!abortingDeploy}
                   cancelling={cancelRequested}
-                  typicalDurationMs={typicalDurationMs}
+                  typicalElapsedMs={typicalMs}
                 />
               )}
               {!deploying && serverRunningDeploy && serverRunningDeploy.status === "running" && (
@@ -578,7 +579,7 @@ export function AppDeployPanel({
                   canAbort={!abortingDeploy}
                   cancelling={cancelRequested}
                   trigger={serverRunningDeploy.trigger}
-                  typicalDurationMs={typicalDurationMs}
+                  typicalElapsedMs={typicalMs}
                 />
               )}
 
