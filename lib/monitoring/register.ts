@@ -10,28 +10,12 @@ export async function registerMonitoringPlugin(): Promise<void> {
     return;
   }
 
-  registerInternalHandler("monitoring:start-rollback-monitor", async (context) => {
-    try {
-      const { startRollbackMonitor } = await import("@/lib/docker/rollback-monitor");
-      const app = context.app as Record<string, unknown>;
-      if (!app.autoRollback || !context.activeSlot || context.isLocalEnv) {
-        return { allowed: true, reason: "Rollback monitor not applicable" };
-      }
-      startRollbackMonitor({
-        appId: context.appId as string,
-        appName: app.name as string,
-        organizationId: context.organizationId as string,
-        deploymentId: context.deploymentId as string,
-        gracePeriodSeconds: (app.rollbackGracePeriod as number) ?? 60,
-        currentSlot: context.newSlot as "blue" | "green",
-        previousSlot: context.activeSlot as "blue" | "green",
-        envName: context.envName as string,
-      });
-      return { allowed: true, reason: "Rollback monitor started" };
-    } catch (err) {
-      return { allowed: true, reason: `Rollback monitor failed: ${err}` };
-    }
-  });
+  // Kept so an existing hook registration still resolves. The grace period is
+  // reconciled by the deploy sweeper from the deployment rows, not from here.
+  registerInternalHandler("monitoring:start-rollback-monitor", async () => ({
+    allowed: true,
+    reason: "Auto-rollback is reconciled by the deploy sweeper",
+  }));
 
   registerInternalHandler("monitoring:drift-check", async (context) => {
     try {
