@@ -137,7 +137,7 @@ export function infrastructureRows(
       label: "Core service updating",
       tone: "activity",
       items: coreDeploys,
-      footer: "Metrics, logs or error tracking may have gaps until it finishes.",
+      footer: "Metrics or logs may have gaps until it finishes.",
     });
   }
 
@@ -189,7 +189,7 @@ export function infrastructureRows(
     label: "Core service down",
     issues: grouped.filter((i) => i.core),
     href: coreHref,
-    footer: "Platform services Vardo depends on. Metrics, logs or error tracking will have gaps.",
+    footer: "Platform services Vardo depends on. Metrics or logs will have gaps.",
   });
 
   return rows;

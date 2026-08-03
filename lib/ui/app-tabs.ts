@@ -41,7 +41,6 @@ type FeatureToggles = {
   terminal: boolean;
   cron: boolean;
   backups: boolean;
-  errorTracking: boolean;
   metrics: boolean;
   logging: boolean;
 };
@@ -62,7 +61,7 @@ export function availableAppTabs(ctx: AppTabContext): AppTab[] {
       "stability",
       ...(f.logging ? (["logs"] as const) : []),
       ...(f.metrics ? (["metrics"] as const) : []),
-      ...(f.errorTracking ? (["errors"] as const) : []),
+      "errors",
       "security",
       "volumes",
       ...(f.backups ? (["backups"] as const) : []),
@@ -80,7 +79,7 @@ export function availableAppTabs(ctx: AppTabContext): AppTab[] {
     "settings",
     ...(f.logging ? (["logs"] as const) : []),
     ...(f.metrics ? (["metrics"] as const) : []),
-    ...(f.errorTracking ? (["errors"] as const) : []),
+    "errors",
     "security",
     "volumes",
     ...(f.backups ? (["backups"] as const) : []),

@@ -36,7 +36,6 @@ export type FeatureFlag =
   | "container-import"
   | "digest"
   | "monitoring"
-  | "error-tracking"
   | "hooks"
   | "image-updates"
   | "teams"
@@ -221,13 +220,6 @@ const FLAG_CONFIG: Record<FeatureFlag, FlagConfig> = {
     description: "Background health checks on apps and platform services, feeding the attention panel.",
     group: "observability",
   },
-  "error-tracking": {
-    label: "Error tracking",
-    description:
-      "Automatic error tracking via GlitchTip (Sentry-compatible). One GlitchTip holds a project per app and every organization reads it.",
-    group: "observability",
-    sharedService: true,
-  },
   teams: {
     label: "Teams",
     description:
@@ -353,7 +345,7 @@ export function getFlagConfig(flag: FeatureFlag): FlagConfig {
  * Passed from server components to client components as a serializable object.
  */
 export type FeatureFlags = Record<
-  "terminal" | "cron" | "backups" | "errorTracking" | "metrics" | "logging" | "environments" | "imageUpdates",
+  "terminal" | "cron" | "backups" | "metrics" | "logging" | "environments" | "imageUpdates",
   boolean
 >;
 
@@ -361,17 +353,16 @@ export type FeatureFlags = Record<
  * Get feature flags needed for UI tab gating.
  */
 export async function getFeatureFlags(): Promise<FeatureFlags> {
-  const [terminal, cron, backups, errorTracking, metrics, logging, environments, imageUpdates] = await Promise.all([
+  const [terminal, cron, backups, metrics, logging, environments, imageUpdates] = await Promise.all([
     isFeatureEnabledAsync("terminal"),
     isFeatureEnabledAsync("cron"),
     isFeatureEnabledAsync("backups"),
-    isFeatureEnabledAsync("error-tracking"),
     isFeatureEnabledAsync("metrics"),
     isFeatureEnabledAsync("logging"),
     isFeatureEnabledAsync("environments"),
     isFeatureEnabledAsync("image-updates"),
   ]);
-  return { terminal, cron, backups, errorTracking, metrics, logging, environments, imageUpdates };
+  return { terminal, cron, backups, metrics, logging, environments, imageUpdates };
 }
 
 /** Every declared flag, in declaration order. */

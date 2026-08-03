@@ -1,17 +1,15 @@
 // ---------------------------------------------------------------------------
-// The build step hands each service a GLITCHTIP_DSN through the compose
-// overlay — and a broken GlitchTip leaves the deploy alone.
+// Vardo no longer mints or injects a DSN. An operator who points SENTRY_DSN or
+// GLITCHTIP_DSN at their own Sentry or GlitchTip keeps working — the value
+// reaches the container untouched and the build adds none of its own.
 // ---------------------------------------------------------------------------
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { DeployContext, DeployApp } from "@/lib/docker/deploy-context";
 
-const { writes, childApps, featureEnabled, available, ensureProjectDSN } = vi.hoisted(() => ({
+const { writes, childApps } = vi.hoisted(() => ({
   writes: [] as { path: string; content: string }[],
   childApps: vi.fn().mockResolvedValue([] as unknown[]),
-  featureEnabled: vi.fn().mockResolvedValue(true),
-  available: vi.fn().mockResolvedValue(true),
-  ensureProjectDSN: vi.fn(async (name: string) => `https://key@glitchtip/${name}`),
 }));
 
 vi.mock("fs/promises", () => ({
@@ -46,14 +44,8 @@ vi.mock("@/lib/docker/self-env", () => ({
   isSelfApp: () => false,
   seedSelfEnv: vi.fn().mockResolvedValue(null),
 }));
-vi.mock("@/lib/config/features", () => ({ isFeatureEnabledAsync: featureEnabled }));
-vi.mock("@/lib/error-tracking/client", () => ({
-  isGlitchTipAvailable: available,
-  ensureProjectDSN,
-}));
 
 import { build } from "@/lib/docker/deploy-steps/build";
-import { clearDSNCache } from "@/lib/error-tracking/inject";
 
 function makeCtx(overrides: Partial<DeployContext> = {}): DeployContext {
   const app = {
@@ -92,70 +84,40 @@ function makeCtx(overrides: Partial<DeployContext> = {}): DeployContext {
   } as unknown as DeployContext;
 }
 
+function slotEnv(): string {
+  return writes.find((w) => w.path.endsWith("/.env"))?.content ?? "";
+}
+
 function overlay(): string {
   return writes.find((w) => w.path.endsWith("docker-compose.override.yml"))?.content ?? "";
 }
 
 beforeEach(() => {
   writes.length = 0;
-  clearDSNCache();
   vi.clearAllMocks();
   childApps.mockResolvedValue([]);
-  featureEnabled.mockResolvedValue(true);
-  available.mockResolvedValue(true);
-  ensureProjectDSN.mockImplementation(async (name: string) => `https://key@glitchtip/${name}`);
 });
 
-describe("build — error tracking injection", () => {
-  it("writes the app's DSN into the overlay", async () => {
-    await build(makeCtx());
+describe("build — operator-set DSN", () => {
+  it("passes an app's own SENTRY_DSN through to the container", async () => {
+    await build(makeCtx({ envMap: { PORT: "3000", SENTRY_DSN: "https://operator@sentry.io/9" } }));
 
-    expect(overlay()).toContain("GLITCHTIP_DSN: https://key@glitchtip/blog");
+    expect(slotEnv()).toContain("SENTRY_DSN=https://operator@sentry.io/9");
   });
 
-  it("keeps the DSN out of the deploy log", async () => {
-    const ctx = makeCtx();
-    await build(ctx);
+  it("passes an app's own GLITCHTIP_DSN through to the container", async () => {
+    await build(makeCtx({ envMap: { PORT: "3000", GLITCHTIP_DSN: "https://operator@errors.example.com/1" } }));
 
-    const logged = (ctx.log as unknown as { mock: { calls: string[][] } }).mock.calls.map((c) => c[0]).join("\n");
-    expect(logged).not.toContain("glitchtip/blog");
-    expect(logged).toContain("GLITCHTIP_DSN set for 1 service(s)");
+    expect(slotEnv()).toContain("GLITCHTIP_DSN=https://operator@errors.example.com/1");
   });
 
-  it("finishes the deploy when GlitchTip is unreachable", async () => {
-    available.mockRejectedValue(new Error("ECONNREFUSED"));
-
-    await expect(build(makeCtx())).resolves.toBeDefined();
-    expect(overlay()).not.toContain("GLITCHTIP_DSN");
-  });
-
-  it("finishes the deploy when the GlitchTip API errors", async () => {
-    ensureProjectDSN.mockRejectedValue(new Error("GlitchTip API 500"));
-
-    await expect(build(makeCtx())).resolves.toBeDefined();
-    expect(overlay()).not.toContain("GLITCHTIP_DSN");
-  });
-
-  it("injects nothing when error tracking is off", async () => {
-    featureEnabled.mockResolvedValue(false);
-
-    await build(makeCtx());
-
-    expect(ensureProjectDSN).not.toHaveBeenCalled();
-    expect(overlay()).not.toContain("GLITCHTIP_DSN");
-  });
-
-  it("leaves an operator-set DSN alone", async () => {
-    await build(makeCtx({ envMap: { PORT: "3000", GLITCHTIP_DSN: "https://operator@sentry.io/9" } }));
-
-    expect(ensureProjectDSN).not.toHaveBeenCalled();
-    expect(overlay()).not.toContain("GLITCHTIP_DSN");
-  });
-
-  it("gives each decomposed child its own project", async () => {
+  it("gives a decomposed child its own operator DSN", async () => {
     childApps.mockResolvedValue([
-      { composeService: "api", name: "stack-api", exposedPorts: null, envContent: null },
-      { composeService: "worker", name: "stack-worker", exposedPorts: null, envContent: null },
+      {
+        composeService: "api",
+        exposedPorts: null,
+        envContent: "SENTRY_DSN=https://operator@sentry.io/7",
+      },
     ]);
 
     await build(
@@ -169,7 +131,14 @@ describe("build — error tracking injection", () => {
       }),
     );
 
-    expect(overlay()).toContain("GLITCHTIP_DSN: https://key@glitchtip/stack-api");
-    expect(overlay()).toContain("GLITCHTIP_DSN: https://key@glitchtip/stack-worker");
+    expect(overlay()).toContain("SENTRY_DSN: https://operator@sentry.io/7");
+  });
+
+  it("adds no DSN of its own", async () => {
+    await build(makeCtx());
+
+    expect(overlay()).not.toContain("SENTRY_DSN");
+    expect(overlay()).not.toContain("GLITCHTIP_DSN");
+    expect(slotEnv()).not.toContain("DSN");
   });
 });

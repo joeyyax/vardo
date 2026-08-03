@@ -63,6 +63,15 @@ export async function register() {
       log.error("Hooks flag backfill failed:", err);
     }
 
+    // Hand back the rows of the retired GlitchTip integration. Writes an
+    // encrypted marker, so it runs after the key check above.
+    try {
+      const { retireGlitchTip } = await import("./lib/infra/retire-glitchtip");
+      await retireGlitchTip();
+    } catch (err) {
+      log.error("GlitchTip retirement failed:", err);
+    }
+
     // Ensure backup target exists first (sequential dependency for scheduler)
     let backupTargetReady: Promise<void> | undefined;
     try {
@@ -110,7 +119,6 @@ export async function register() {
       ["domain-monitoring", async () => { const m = await import("./lib/domain-monitoring/register"); await m.registerDomainMonitoringPlugin(); }],
       ["digest", async () => { const m = await import("./lib/digest/register"); await m.registerDigestPlugin(); }],
       ["logging", async () => { const m = await import("./lib/logging/register"); await m.registerLoggingFeature(); }],
-      ["error-tracking", async () => { const m = await import("./lib/error-tracking/register"); await m.registerErrorTrackingPlugin(); }],
       ["image-updates", async () => { const m = await import("./lib/docker/image-updates/register"); await m.registerImageUpdatesPlugin(); }],
       ["image-reclaim", async () => { const m = await import("./lib/docker/image-reclaim/register"); await m.registerImageReclaimPlugin(); }],
     ];
