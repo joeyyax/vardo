@@ -33,6 +33,7 @@ import {
   sanitizeCompose,
   sharedMarkerTypeErrors,
   sharedMarkerWarnings,
+  unmarkedSharedVolumeWarnings,
   validateCompose,
   type ComposeFile,
 } from "../compose";
@@ -91,6 +92,9 @@ function parseAndSanitize(yaml: string, log: (msg: string) => void, opts?: Parse
     log(`[deploy] Warning: ${warning}`);
   }
   const compose = parseCompose(yaml);
+  for (const warning of unmarkedSharedVolumeWarnings(compose)) {
+    log(`[deploy] Warning: ${warning}`);
+  }
   // Trusted orgs bypass all mount restrictions — no sanitization, no deny list.
   if (opts?.orgTrusted) {
     const { valid, errors } = validateCompose(compose, { allowBindMounts: true, skipMountChecks: true });
