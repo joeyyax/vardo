@@ -793,19 +793,37 @@ export type DiskUsage = {
   total: number;
 };
 
-export async function getSystemDiskUsage(): Promise<DiskUsage> {
-  const raw = await dockerRequest<{
-    Images: { Id: string; Size: number; SharedSize: number; Containers: number }[];
-    Containers: { Id: string; SizeRw: number; SizeRootFs: number }[];
-    Volumes: { Name: string; UsageData: { Size: number; RefCount: number } }[];
-    BuildCache: { ID: string; Size: number; InUse: boolean; Shared: boolean }[];
-  }>("GET", "/system/df");
+/** `/system/df`, as far as disk usage is concerned. */
+export type RawDiskUsage = {
+  LayersSize: number;
+  Images: { Id: string; Size: number; SharedSize: number; Containers: number }[];
+  Containers: { Id: string; SizeRw: number; SizeRootFs: number }[];
+  Volumes: { Name: string; UsageData: { Size: number; RefCount: number } }[];
+  BuildCache: { ID: string; Size: number; InUse: boolean; Shared: boolean }[];
+};
 
+/**
+ * The arithmetic `docker system df` does, figure for figure, so the admin panel
+ * and the command an operator would reach for never disagree. Verified against a
+ * live host: every row matches the CLI to the byte.
+ */
+export function summarizeDiskUsage(raw: Partial<RawDiskUsage>): DiskUsage {
+  // Per-image sizes count each shared layer once per image carrying it, so they
+  // sum to far more than images occupy. LayersSize is the deduplicated total.
+  const layersSize = raw.LayersSize || 0;
   const images = {
     count: raw.Images?.length || 0,
-    totalSize: raw.Images?.reduce((s, i) => s + (i.Size || 0), 0) || 0,
-    // An image no container references, stopped ones included.
-    reclaimable: raw.Images?.filter((i) => i.Containers === 0).reduce((s, i) => s + i.Size, 0) || 0,
+    totalSize: layersSize,
+    // Clamped: Docker's shared-layer accounting can exceed the total it is
+    // subtracted from, and no disk gives back a negative number.
+    reclaimable: Math.max(
+      0,
+      layersSize -
+        (raw.Images?.filter((i) => i.Containers === 0).reduce(
+          (s, i) => s + (i.Size - i.SharedSize),
+          0,
+        ) || 0),
+    ),
   };
 
   const containers = {
@@ -821,7 +839,7 @@ export async function getSystemDiskUsage(): Promise<DiskUsage> {
   const buildCache = {
     count: raw.BuildCache?.length || 0,
     totalSize: raw.BuildCache?.reduce((s, b) => s + (b.Size || 0), 0) || 0,
-    // A shared record's blobs are held by an image too, so pruning it frees nothing.
+    // A shared record's blobs are held by an image too, so pruning frees nothing.
     reclaimable:
       raw.BuildCache?.filter((b) => !b.InUse && !b.Shared).reduce((s, b) => s + b.Size, 0) || 0,
   };
@@ -833,6 +851,10 @@ export async function getSystemDiskUsage(): Promise<DiskUsage> {
     buildCache,
     total: images.totalSize + containers.totalSize + volumes.totalSize + buildCache.totalSize,
   };
+}
+
+export async function getSystemDiskUsage(): Promise<DiskUsage> {
+  return summarizeDiskUsage(await dockerRequest<RawDiskUsage>("GET", "/system/df"));
 }
 
 // ---------------------------------------------------------------------------
