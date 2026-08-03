@@ -24,15 +24,67 @@ describe("detectActiveSlot", () => {
     ).toBe("green");
   });
 
-  it("symlink wins over a running slot and the legacy file", async () => {
+  it("symlink wins when both slots are running", async () => {
+    // The self-deploy path runs both slots briefly; the symlink is the only
+    // thing that says which one is old.
     const p = probes({
       readSymlink: () => Promise.resolve("green"),
       isSlotRunning: vi.fn(() => Promise.resolve(true)), // blue would match first
+      readActiveFile: vi.fn(() => Promise.resolve("blue")),
+    });
+    expect(await detectActiveSlot(APP_DIR, PREFIX, p)).toBe("green");
+    // The symlinked slot is confirmed running, so the other is never consulted.
+    expect(p.isSlotRunning).toHaveBeenCalledWith(`${PREFIX}-green`);
+    expect(p.isSlotRunning).not.toHaveBeenCalledWith(`${PREFIX}-blue`);
+    expect(p.readActiveFile).not.toHaveBeenCalled();
+  });
+
+  it("a stale symlink loses to the slot Docker says is running", async () => {
+    // Observed in production: `current` -> blue while the green containers were
+    // serving. Trusting blue would tear down the live slot.
+    const p = probes({
+      readSymlink: () => Promise.resolve("blue"),
+      isSlotRunning: vi.fn((project: string) => Promise.resolve(project === `${PREFIX}-green`)),
+    });
+    expect(await detectActiveSlot(APP_DIR, PREFIX, p)).toBe("green");
+  });
+
+  it("a stale symlink loses to the running slot — green symlink, blue running", async () => {
+    const p = probes({
+      readSymlink: () => Promise.resolve("green"),
+      isSlotRunning: vi.fn((project: string) => Promise.resolve(project === `${PREFIX}-blue`)),
+      readActiveFile: () => Promise.resolve("green"),
+    });
+    expect(await detectActiveSlot(APP_DIR, PREFIX, p)).toBe("blue");
+  });
+
+  it("keeps the symlink when neither slot is running", async () => {
+    // A stopped app has no port holder. The pointer still decides which slot
+    // rotates next, so it must survive.
+    const p = probes({ readSymlink: () => Promise.resolve("green") });
+    expect(await detectActiveSlot(APP_DIR, PREFIX, p)).toBe("green");
+  });
+
+  it("keeps the symlink when the Docker probe errors", async () => {
+    // An unreachable daemon is not evidence the slot is empty. Falling through
+    // to the other slot here is what causes a host-port collision.
+    const p = probes({
+      readSymlink: () => Promise.resolve("green"),
+      isSlotRunning: () => Promise.reject(new Error("docker daemon unreachable")),
       readActiveFile: () => Promise.resolve("blue"),
     });
     expect(await detectActiveSlot(APP_DIR, PREFIX, p)).toBe("green");
-    // Never falls through to Docker when the symlink resolves.
-    expect(p.isSlotRunning).not.toHaveBeenCalled();
+  });
+
+  it("keeps the symlink when its slot is stopped but the other slot probe errors", async () => {
+    const p = probes({
+      readSymlink: () => Promise.resolve("blue"),
+      isSlotRunning: (project: string) =>
+        project === `${PREFIX}-blue`
+          ? Promise.resolve(false)
+          : Promise.reject(new Error("docker daemon unreachable")),
+    });
+    expect(await detectActiveSlot(APP_DIR, PREFIX, p)).toBe("blue");
   });
 
   it("falls back to the running slot when there is no symlink", async () => {
