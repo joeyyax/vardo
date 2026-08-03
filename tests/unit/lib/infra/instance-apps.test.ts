@@ -24,7 +24,7 @@ describe("isInstanceInfraApp", () => {
 
 describe("probeAppName", () => {
   it("maps every probe it knows onto an infrastructure app", () => {
-    for (const service of ["PostgreSQL", "Redis", "Traefik", "WireGuard", "cAdvisor", "Loki", "Promtail", "GlitchTip"]) {
+    for (const service of ["PostgreSQL", "Redis", "Traefik", "WireGuard", "cAdvisor", "Loki", "Promtail"]) {
       const name = probeAppName(service);
       expect(name).not.toBeNull();
       expect(isInstanceInfraApp(name)).toBe(true);

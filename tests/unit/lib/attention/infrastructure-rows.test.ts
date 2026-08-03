@@ -28,11 +28,10 @@ const vardo = app({ name: "vardo", displayName: "Vardo" });
 const loki = app({ name: "loki", displayName: "Loki" });
 const postgres = app({ name: "vardo-postgres", displayName: "Postgres" });
 
-const glitchtip = app({ name: "glitchtip", displayName: "GlitchTip" });
-const glitchtipDb = app({
-  name: "glitchtip-postgres",
-  displayName: "Postgres",
-  parentAppId: glitchtip.id,
+const lokiCache = app({
+  name: "loki-memcached",
+  displayName: "Memcached",
+  parentAppId: loki.id,
 });
 
 function snapshot(overrides: Partial<InfrastructureSnapshot> = {}): InfrastructureSnapshot {
@@ -274,15 +273,15 @@ describe("infrastructureRows", () => {
   // up, so the stopped child is the only place the outage exists.
   it("reports a stopped compose child under its parent's name", () => {
     const rows = infrastructureRows(
-      snapshot({ apps: [glitchtip, { ...glitchtipDb, status: "stopped" }] }),
+      snapshot({ apps: [loki, { ...lokiCache, status: "stopped" }] }),
       ADMIN,
     );
 
     expect(rows[0]).toMatchObject({ key: "core-service-down", tone: "error" });
     expect(rows[0].items).toHaveLength(1);
     expect(rows[0].items[0]).toMatchObject({
-      id: glitchtipDb.id,
-      name: "GlitchTip · Postgres",
+      id: lokiCache.id,
+      name: "Loki · Memcached",
       detail: "Container stopped",
     });
   });
@@ -290,8 +289,8 @@ describe("infrastructureRows", () => {
   it("stays quiet about a stopped compose child whose feature is off", () => {
     const rows = infrastructureRows(
       snapshot({
-        apps: [glitchtip, { ...glitchtipDb, status: "stopped" }],
-        disabledCoreServices: ["glitchtip"],
+        apps: [loki, { ...lokiCache, status: "stopped" }],
+        disabledCoreServices: ["loki"],
       }),
       ADMIN,
     );
@@ -303,22 +302,22 @@ describe("infrastructureRows", () => {
     const rows = infrastructureRows(
       snapshot({
         apps: [
-          { ...glitchtip, status: "stopped" },
-          { ...glitchtipDb, status: "stopped" },
+          { ...loki, status: "stopped" },
+          { ...lokiCache, status: "stopped" },
         ],
       }),
       ADMIN,
     );
 
     expect(rows[0].items).toHaveLength(1);
-    expect(rows[0].items[0]).toMatchObject({ id: glitchtip.id, name: "GlitchTip" });
+    expect(rows[0].items[0]).toMatchObject({ id: loki.id, name: "Loki" });
   });
 
   it("quiets a compose child while its parent deploys", () => {
     const rows = infrastructureRows(
       snapshot({
-        apps: [glitchtip, { ...glitchtipDb, status: "stopped" }],
-        deployments: [{ id: "d-gt", appId: glitchtip.id, gitSha: null, startedAt: new Date() }],
+        apps: [loki, { ...lokiCache, status: "stopped" }],
+        deployments: [{ id: "d-gt", appId: loki.id, gitSha: null, startedAt: new Date() }],
       }),
       ADMIN,
     );

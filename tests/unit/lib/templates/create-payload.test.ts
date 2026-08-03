@@ -56,14 +56,14 @@ describe("shipped templates", () => {
 describe("env autofill", () => {
   it("resolves a prefixed domain var", () => {
     const content = templateEnvContent({
-      name: "glitchtip",
-      displayName: "GlitchTip",
+      name: "gitea",
+      displayName: "Gitea",
       defaultEnvVars: [
-        { key: "GLITCHTIP_DOMAIN", description: "Public URL", required: true },
+        { key: "GITEA_DOMAIN", description: "Public URL", required: true },
       ],
     } as Parameters<typeof templateEnvContent>[0]);
 
-    expect(content).toContain("GLITCHTIP_DOMAIN=${project.domain}");
+    expect(content).toContain("GITEA_DOMAIN=${project.domain}");
   });
 
   it("leaves service connection strings alone", () => {

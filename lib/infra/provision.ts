@@ -1,8 +1,8 @@
 // ---------------------------------------------------------------------------
 // Core service provisioning
 //
-// cAdvisor, Loki, Promtail and GlitchTip get one row each, in the Vardo system
-// org, shared by every organization — see core-services.ts for which of them are
+// cAdvisor, Loki and Promtail get one row each, in the Vardo system org, shared
+// by every organization — see core-services.ts for which of them are
 // singletons by nature and which only until aliases are namespaced. The lookup
 // is by app name across the whole instance, so an existing row is adopted
 // wherever it already lives instead of being duplicated or skipped.
@@ -334,7 +334,6 @@ async function ensureAppDeployed(
       cpuLimit: template.defaultCpuLimit,
       memoryLimit: template.defaultMemoryLimit,
       diskWriteAlertThreshold: template.defaultDiskWriteAlertThreshold,
-      autoTraefikLabels: feature.appOverrides?.autoTraefikLabels ?? false,
       gpuEnabled,
     });
   } catch (err) {
