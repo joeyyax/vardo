@@ -26,8 +26,10 @@ import { appBaseDir, appEnvDir, PROJECTS_DIR } from "@/lib/paths";
 import { decrypt, decryptOrFallback } from "@/lib/crypto/encrypt";
 import { parseEnvToMap } from "@/lib/env/parse-env";
 import {
+  droppedKeyWarnings,
   generateComposeForImage,
   parseCompose,
+  parseComposeYaml,
   sanitizeCompose,
   sharedMarkerTypeErrors,
   sharedMarkerWarnings,
@@ -84,6 +86,9 @@ function parseAndSanitize(yaml: string, log: (msg: string) => void, opts?: Parse
         `If this is a rollback, the commit cannot be edited — use instant rollback, ` +
         `which restores the previous slot's containers without rebuilding.`,
     );
+  }
+  for (const warning of droppedKeyWarnings(parseComposeYaml(yaml))) {
+    log(`[deploy] Warning: ${warning}`);
   }
   const compose = parseCompose(yaml);
   // Trusted orgs bypass all mount restrictions — no sanitization, no deny list.

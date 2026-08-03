@@ -41,6 +41,8 @@ export {
   sharedMarkerTypeErrors,
   sharedMarkerWarnings,
   sharedMarkerIsHazardous,
+  droppedKeyWarnings,
+  parseComposeYaml,
 } from "./compose-validate";
 export type { MistypedSharedMarker } from "./compose-validate";
 
