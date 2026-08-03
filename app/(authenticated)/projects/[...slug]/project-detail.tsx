@@ -116,6 +116,7 @@ type ComposeChildApp = {
   containerName: string | null;
   containerStartedAt: Date | null;
   needsRedeploy: boolean | null;
+  restartCount: number | null;
   conditions: AppCondition[] | null;
   gpuEnabled: boolean | null;
   imageName: string | null;
@@ -134,6 +135,7 @@ type ProjectApp = {
   containerStartedAt: Date | null;
   containerMemoryLimit: number | null;
   needsRedeploy: boolean | null;
+  restartCount: number | null;
   conditions: AppCondition[] | null;
   priority: "critical" | "standard" | "disposable" | null;
   gpuEnabled: boolean | null;

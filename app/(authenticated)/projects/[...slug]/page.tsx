@@ -1,5 +1,6 @@
 import { redirect, notFound } from "next/navigation";
 import { db } from "@/lib/db";
+import { restartCountsByApp } from "@/lib/db/app-restarts";
 import { projects, projectInstances } from "@/lib/db/schema";
 import { getCurrentOrg } from "@/lib/auth/session";
 import { eq, and, or, desc, type AnyColumn } from "drizzle-orm";
@@ -150,9 +151,19 @@ export default async function ProjectDetailPage({
   // Requesting a tab gated by a disabled flag falls back to apps
   const effectiveTab = tab === "logs" && !loggingEnabled ? "apps" : tab || "apps";
 
+  // Stacks and their services both get a row, so both need a figure.
+  const restarts = await restartCountsByApp(
+    project.apps.flatMap((a) => [a.id, ...(a.childApps ?? []).map((c) => c.id)]),
+  );
+  const projectApps = project.apps.map((a) => ({
+    ...a,
+    restartCount: restarts.get(a.id) ?? null,
+    childApps: a.childApps?.map((c) => ({ ...c, restartCount: restarts.get(c.id) ?? null })),
+  }));
+
   return (
     <ProjectDetail
-      project={project}
+      project={{ ...project, apps: projectApps }}
       orgId={orgId}
       initialTab={effectiveTab}
       isAdmin={userIsAdmin}

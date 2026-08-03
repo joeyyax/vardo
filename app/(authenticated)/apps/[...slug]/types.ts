@@ -101,6 +101,7 @@ export type ChildApp = {
   containerPort: number | null;
   exposedPorts: { internal: number; external?: number; description?: string }[] | null;
   needsRedeploy: boolean | null;
+  restartCount?: number | null;
   domains: { domain: string; isPrimary: boolean | null }[];
   /** Marked x-vardo-shared in compose — read off the stored YAML, not a column. */
   isShared?: boolean;
