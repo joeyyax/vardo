@@ -12,6 +12,7 @@ export const TOAST_EVENTS: Partial<Record<BusEventType, ToastSeverity>> = {
   "deploy.failed": "error",
   "deploy.rollback": "error",
   "app.auto-restarted": "info",
+  "app.oom-killed": "error",
   "backup.success": "success",
   "backup.failed": "error",
   "cron.failed": "error",

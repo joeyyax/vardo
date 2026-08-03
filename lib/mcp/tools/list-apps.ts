@@ -12,7 +12,7 @@ export function registerListApps(
 ) {
   server.tool(
     "vardo_list_apps",
-    "List all apps in the organization. Returns app name, status, deploy type, project, and latest deployment info. A cross-org token lists apps across every organization its user belongs to, each labeled with the organization it lives in.",
+    "List all apps in the organization. Returns app name, status, why a down app exited, deploy type, project, and latest deployment info. A cross-org token lists apps across every organization its user belongs to, each labeled with the organization it lives in.",
     {
       limit: z
         .number()
@@ -48,6 +48,7 @@ export function registerListApps(
           name: true,
           displayName: true,
           status: true,
+          exitReason: true,
           deployType: true,
           source: true,
           organizationId: true,
