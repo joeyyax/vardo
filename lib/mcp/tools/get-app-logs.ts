@@ -2,7 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import {
   isLokiAvailable,
   queryRange,
@@ -10,6 +10,7 @@ import {
 } from "@/lib/logging/client";
 import { listContainers, getContainerLogs } from "@/lib/docker/client";
 import type { McpAuthContext } from "../auth";
+import { accessDenied, canAccessOrg } from "../scope";
 
 export function registerGetAppLogs(
   server: McpServer,
@@ -42,23 +43,12 @@ export function registerGetAppLogs(
     },
     async ({ appId, lines, since, search, service }) => {
       const app = await db.query.apps.findFirst({
-        where: and(
-          eq(apps.id, appId),
-          eq(apps.organizationId, context.organizationId)
-        ),
-        columns: { id: true, name: true },
+        where: eq(apps.id, appId),
+        columns: { id: true, name: true, organizationId: true },
       });
 
-      if (!app) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({ error: "App not found or access denied" }),
-            },
-          ],
-          isError: true,
-        };
+      if (!app || !(await canAccessOrg(context, app.organizationId))) {
+        return accessDenied("App");
       }
 
       // Try Loki first

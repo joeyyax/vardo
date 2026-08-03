@@ -2,8 +2,9 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { deployments, apps } from "@/lib/db/schema";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import type { McpAuthContext } from "../auth";
+import { accessDenied, canAccessOrg } from "../scope";
 
 // Cap log output at 100KB of characters. Build logs (Nixpacks/Railpack) can
 // easily reach 10MB+. Fetching the full column for every MCP request would
@@ -56,27 +57,15 @@ export function registerGetDeployLogs(
           finishedAt: deployments.finishedAt,
           appId: apps.id,
           appName: apps.name,
+          organizationId: apps.organizationId,
         })
         .from(deployments)
         .innerJoin(apps, eq(deployments.appId, apps.id))
-        .where(
-          and(
-            eq(deployments.id, deployment_id),
-            eq(apps.organizationId, context.organizationId)
-          )
-        )
+        .where(eq(deployments.id, deployment_id))
         .then((rows) => rows[0] ?? null);
 
-      if (!result) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({ error: "Deployment not found or access denied" }),
-            },
-          ],
-          isError: true,
-        };
+      if (!result || !(await canAccessOrg(context, result.organizationId))) {
+        return accessDenied("Deployment");
       }
 
       return {

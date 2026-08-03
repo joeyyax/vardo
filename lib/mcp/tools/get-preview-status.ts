@@ -2,8 +2,9 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { groupEnvironments, environments, apps, projects } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import type { McpAuthContext } from "../auth";
+import { canAccessOrg } from "../scope";
 import { previewNotFound } from "./preview-helpers";
 
 export function registerGetPreviewStatus(
@@ -19,12 +20,13 @@ export function registerGetPreviewStatus(
         .describe("The preview environment ID (returned by vardo_create_preview)"),
     },
     async ({ preview_id }) => {
-      // Single query: verify org ownership and fetch environments in one JOIN.
-      // groupEnvironments → projects (org check) → environments → apps.
+      // Single query: resolve the owning org and fetch environments in one JOIN.
+      // groupEnvironments → projects (owning org) → environments → apps.
       // LEFT JOINs on environments/apps so a preview with no environments still
       // returns the preview metadata rather than an empty result set.
       const rows = await db
         .select({
+          organizationId: projects.organizationId,
           previewId: groupEnvironments.id,
           previewName: groupEnvironments.name,
           prNumber: groupEnvironments.prNumber,
@@ -47,16 +49,12 @@ export function registerGetPreviewStatus(
           eq(environments.groupEnvironmentId, groupEnvironments.id)
         )
         .leftJoin(apps, eq(environments.appId, apps.id))
-        .where(
-          and(
-            eq(groupEnvironments.id, preview_id),
-            eq(projects.organizationId, context.organizationId)
-          )
-        );
-
-      if (rows.length === 0) return previewNotFound();
+        .where(eq(groupEnvironments.id, preview_id));
 
       const first = rows[0];
+      if (!first || !(await canAccessOrg(context, first.organizationId))) {
+        return previewNotFound();
+      }
       const preview = {
         id: first.previewId,
         name: first.previewName,

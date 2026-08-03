@@ -7,6 +7,7 @@ import { encrypt } from "@/lib/crypto/encrypt";
 import { slidingWindowRateLimit } from "@/lib/api/rate-limit";
 import { systemManagedRefusal } from "@/lib/api/system-managed";
 import type { McpAuthContext } from "../auth";
+import { accessDenied, canAccessOrg } from "../scope";
 
 // 10 env updates per 5 minutes per user/org pair.
 const ENV_RATE_LIMIT = 10;
@@ -45,23 +46,17 @@ export function registerSetEnvVars(
       }
 
       const app = await db.query.apps.findFirst({
-        where: and(
-          eq(apps.id, appId),
-          eq(apps.organizationId, context.organizationId)
-        ),
-        columns: { id: true, name: true, isSystemManaged: true },
+        where: eq(apps.id, appId),
+        columns: {
+          id: true,
+          name: true,
+          organizationId: true,
+          isSystemManaged: true,
+        },
       });
 
-      if (!app) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({ error: "App not found or access denied" }),
-            },
-          ],
-          isError: true,
-        };
+      if (!app || !(await canAccessOrg(context, app.organizationId))) {
+        return accessDenied("App");
       }
 
       const refused = systemManagedRefusal(app, "env-vars");
@@ -72,7 +67,8 @@ export function registerSetEnvVars(
         };
       }
 
-      const encrypted = content.trim() ? encrypt(content, context.organizationId) : null;
+      // Env content is encrypted with the owning app's org as the key context.
+      const encrypted = content.trim() ? encrypt(content, app.organizationId) : null;
 
       await db
         .update(apps)
@@ -81,7 +77,7 @@ export function registerSetEnvVars(
           needsRedeploy: true,
           updatedAt: new Date(),
         })
-        .where(and(eq(apps.id, appId), eq(apps.organizationId, context.organizationId)));
+        .where(and(eq(apps.id, appId), eq(apps.organizationId, app.organizationId)));
 
       return {
         content: [

@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { groupEnvironments, projects } from "@/lib/db/schema";
 import { eq, and, desc, count } from "drizzle-orm";
 import type { McpAuthContext } from "../auth";
+import { accessibleOrgIds, orgFilter, orgLabels } from "../scope";
 
 export function registerListPreviews(
   server: McpServer,
@@ -11,7 +12,7 @@ export function registerListPreviews(
 ) {
   server.tool(
     "vardo_list_previews",
-    "List all active preview environments in the organization. Returns the preview ID, name, PR number, expiry time, and associated domains.",
+    "List all active preview environments in the organization. Returns the preview ID, name, PR number, expiry time, and associated domains. A cross-org token lists previews across every organization its user belongs to, each labeled with the organization it lives in.",
     {
       limit: z
         .number()
@@ -28,9 +29,10 @@ export function registerListPreviews(
         .describe("Offset for pagination"),
     },
     async ({ limit, offset }) => {
+      const orgIds = await accessibleOrgIds(context);
       const orgPreviewFilter = and(
         eq(groupEnvironments.type, "preview"),
-        eq(projects.organizationId, context.organizationId)
+        orgFilter(projects.organizationId, orgIds)
       );
 
       // Fire the page query and total count in parallel.
@@ -44,6 +46,7 @@ export function registerListPreviews(
             createdAt: groupEnvironments.createdAt,
             expiresAt: groupEnvironments.expiresAt,
             projectId: groupEnvironments.projectId,
+            organizationId: projects.organizationId,
           })
           .from(groupEnvironments)
           .innerJoin(projects, eq(groupEnvironments.projectId, projects.id))
@@ -58,12 +61,19 @@ export function registerListPreviews(
           .where(orgPreviewFilter),
       ]);
 
+      const labels = context.crossOrg ? await orgLabels(orgIds) : null;
+      const previews = rows.map(({ organizationId, ...row }) =>
+        labels
+          ? { ...row, organization: labels.get(organizationId) ?? { id: organizationId } }
+          : row
+      );
+
       return {
         content: [
           {
             type: "text" as const,
             text: JSON.stringify(
-              { previews: rows, total: totalRow?.total ?? 0 },
+              { previews, total: totalRow?.total ?? 0 },
               null,
               2
             ),

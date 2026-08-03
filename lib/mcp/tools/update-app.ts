@@ -1,12 +1,13 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { apps } from "@/lib/db/schema";
+import { apps, projects } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { slidingWindowRateLimit } from "@/lib/api/rate-limit";
 import { systemManagedRefusal } from "@/lib/api/system-managed";
 import { sharedMarkerTypeErrors } from "@/lib/docker/compose";
 import type { McpAuthContext } from "../auth";
+import { accessDenied, canAccessOrg } from "../scope";
 
 // 10 updates per 5 minutes per user/org pair.
 const UPDATE_RATE_LIMIT = 10;
@@ -72,20 +73,40 @@ export function registerUpdateApp(
       }
 
       const existingApp = await db.query.apps.findFirst({
-        where: and(eq(apps.id, appId), eq(apps.organizationId, context.organizationId)),
-        columns: { id: true, name: true, isSystemManaged: true },
+        where: eq(apps.id, appId),
+        columns: {
+          id: true,
+          name: true,
+          organizationId: true,
+          isSystemManaged: true,
+        },
       });
 
-      if (!existingApp) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({ error: "App not found or access denied" }),
-            },
-          ],
-          isError: true,
-        };
+      if (!existingApp || !(await canAccessOrg(context, existingApp.organizationId))) {
+        return accessDenied("App");
+      }
+
+      // Refiling an app into a foreign project would hand it that project's
+      // bind-mount and docker-socket privileges on the next deploy.
+      if (config.projectId) {
+        const project = await db.query.projects.findFirst({
+          where: and(
+            eq(projects.id, config.projectId),
+            eq(projects.organizationId, existingApp.organizationId)
+          ),
+          columns: { id: true },
+        });
+        if (!project) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify({ error: "Project not found in this app's organization" }),
+              },
+            ],
+            isError: true,
+          };
+        }
       }
 
       const refused = systemManagedRefusal(existingApp, "edit");
@@ -112,7 +133,7 @@ export function registerUpdateApp(
         .update(apps)
         .set({ ...config, updatedAt: new Date() })
         .where(
-          and(eq(apps.id, appId), eq(apps.organizationId, context.organizationId))
+          and(eq(apps.id, appId), eq(apps.organizationId, existingApp.organizationId))
         )
         .returning();
 
