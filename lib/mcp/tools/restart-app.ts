@@ -53,6 +53,7 @@ export function registerRestartApp(
           organizationId: true,
           parentAppId: true,
           composeService: true,
+          needsRedeploy: true,
         },
       });
 

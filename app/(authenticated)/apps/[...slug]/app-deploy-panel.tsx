@@ -93,7 +93,13 @@ function LifecycleLine({ event }: { event: LifecycleEvent }) {
       <Icon className="size-3 shrink-0" aria-hidden="true" />
       <span className="text-foreground/70">{event.label}</span>
       {event.detail && <span className="truncate">{event.detail}</span>}
-      <span className="ml-auto shrink-0">
+      {event.notes.map((note) => (
+        <span key={note.label} className={`shrink-0 ${note.tone}`} title={note.title}>
+          {note.label}
+        </span>
+      ))}
+      <span className="ml-auto flex shrink-0 items-center gap-3">
+        {event.durationMs != null && <span>took {formatDuration(event.durationMs)}</span>}
         <RelativeTime date={new Date(event.at)} />
       </span>
     </div>
