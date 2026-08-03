@@ -192,6 +192,8 @@ export async function deleteApp(opts: {
   }
 
   // Remove child app records when deleting a parent compose app, then the app.
+  // The parent_app_id FK cascades too — this runs first only so the deleted
+  // service names can be reported. Do not rely on it as the sole cleanup.
   const removedChildApps: string[] = [];
   if (childApps.length > 0) {
     await db
