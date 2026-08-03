@@ -14,9 +14,9 @@
 // VARDO_DIR is accepted as a fallback for VARDO_HOME_DIR (backwards compat).
 // ---------------------------------------------------------------------------
 
-import { resolve, join } from "path";
+import { resolve, join, relative, isAbsolute, sep } from "path";
 import { accessSync, constants } from "fs";
-import { mkdir, access, writeFile, unlink } from "fs/promises";
+import { mkdir, access, writeFile, readFile, rename, unlink } from "fs/promises";
 
 /** Root directory for all Vardo data. */
 export const VARDO_HOME_DIR = resolve(
@@ -61,6 +61,92 @@ export function appEnvDir(appName: string, envName?: string): string {
 /** Specific slot directory (blue or green) within an app environment. */
 export function appSlotDir(appName: string, envName: string, slot: string): string {
   return join(appEnvDir(appName, envName), slot);
+}
+
+/** App name owning `dir`, or null when `dir` is not inside PROJECTS_DIR. */
+export function appNameFromPath(dir: string): string | null {
+  const rel = relative(PROJECTS_DIR, resolve(dir));
+  if (!rel || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return null;
+  return rel.split(sep)[0] || null;
+}
+
+// ---------------------------------------------------------------------------
+// App directory ownership marker
+//
+// App directories are keyed by name, so two organizations that use the same app
+// name resolve to one directory. The marker records which app id owns it; see
+// lib/docker/app-dir-owner.ts for the guard that reads it.
+// ---------------------------------------------------------------------------
+
+/** Ownership marker filename, written at the root of an app's base directory. */
+export const APP_OWNER_FILE = ".vardo-owner.json";
+
+/** Path to an app's ownership marker. */
+export function appOwnerFile(appName: string): string {
+  return join(appBaseDir(appName), APP_OWNER_FILE);
+}
+
+export type AppDirOwner =
+  /** Marker present and parsed. */
+  | { state: "owned"; appId: string }
+  /** No directory on disk — there is nothing to guard. */
+  | { state: "missing" }
+  /** Directory exists with no marker (predates markers, or never claimed). */
+  | { state: "unmarked" }
+  /** Marker exists but could not be read or parsed. Never treat this as unmarked. */
+  | { state: "unreadable"; reason: string };
+
+function isNotFound(err: unknown): boolean {
+  return !!err && typeof err === "object" && "code" in err && (err as { code: string }).code === "ENOENT";
+}
+
+function errText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * Read the ownership marker for an app directory.
+ *
+ * A read failure that is not ENOENT reports `unreadable`, never `unmarked` —
+ * callers must refuse rather than assume the directory is unclaimed.
+ */
+export async function readAppDirOwner(appName: string): Promise<AppDirOwner> {
+  let raw: string;
+  try {
+    raw = await readFile(appOwnerFile(appName), "utf8");
+  } catch (err) {
+    if (!isNotFound(err)) return { state: "unreadable", reason: errText(err) };
+    try {
+      await access(appBaseDir(appName));
+    } catch (dirErr) {
+      if (isNotFound(dirErr)) return { state: "missing" };
+      return { state: "unreadable", reason: errText(dirErr) };
+    }
+    return { state: "unmarked" };
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (parsed && typeof parsed === "object" && typeof (parsed as { appId?: unknown }).appId === "string") {
+      const appId = (parsed as { appId: string }).appId;
+      if (appId) return { state: "owned", appId };
+    }
+  } catch {
+    // Fall through — a corrupt marker is unreadable, not absent.
+  }
+  return { state: "unreadable", reason: `${APP_OWNER_FILE} is malformed` };
+}
+
+/** Write the ownership marker, creating the app base directory if needed. */
+export async function writeAppDirOwner(appName: string, appId: string): Promise<void> {
+  const dir = appBaseDir(appName);
+  await mkdir(dir, { recursive: true });
+  const target = join(dir, APP_OWNER_FILE);
+  const tmp = `${target}.${process.pid}.tmp`;
+  const body = JSON.stringify({ appId, appName, claimedAt: new Date().toISOString() }, null, 2);
+  // Rename so a reader never sees a half-written marker and refuses on it.
+  await writeFile(tmp, `${body}\n`, { mode: 0o644 });
+  await rename(tmp, target);
 }
 
 // ---------------------------------------------------------------------------
