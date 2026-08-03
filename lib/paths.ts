@@ -8,6 +8,7 @@
 //   VARDO_HOME_DIR          → root of all Vardo data (default: /opt/vardo)
 //   VARDO_PROJECTS_DIR      → app deployment files  (default: $VARDO_HOME_DIR/apps)
 //   VARDO_IMAGES_DIR        → docker image storage   (default: $VARDO_HOME_DIR/images)
+//   VARDO_APP_OWNERS_DIR    → app directory ownership (default: $VARDO_HOME_DIR/app-owners)
 //   TRAEFIK_DYNAMIC_DIR     → traefik route configs  (default: /etc/traefik/dynamic, shared volume)
 //
 // Individual overrides take precedence over derived defaults.
@@ -16,7 +17,7 @@
 
 import { resolve, join, relative, isAbsolute, sep } from "path";
 import { accessSync, constants } from "fs";
-import { mkdir, access, writeFile, readFile, rename, unlink } from "fs/promises";
+import { mkdir, access, writeFile, readFile, readdir, rename, unlink } from "fs/promises";
 
 /** Root directory for all Vardo data. */
 export const VARDO_HOME_DIR = resolve(
@@ -33,6 +34,11 @@ export const PROJECTS_DIR = resolve(
 /** Where docker images are stored. */
 export const IMAGES_DIR = resolve(
   process.env.VARDO_IMAGES_DIR || join(VARDO_HOME_DIR, "images"),
+);
+
+/** Where app directory ownership records live, one JSON file per directory name. */
+export const APP_OWNERS_DIR = resolve(
+  process.env.VARDO_APP_OWNERS_DIR || join(VARDO_HOME_DIR, "app-owners"),
 );
 
 /** Where Traefik dynamic config files are written (shared volume between frontend and traefik). */
@@ -71,11 +77,23 @@ export function appNameFromPath(dir: string): string | null {
 }
 
 // ---------------------------------------------------------------------------
-// App directory ownership marker
+// App directory ownership
 //
 // App directories are keyed by name, so two organizations that use the same app
-// name resolve to one directory. The marker records which app id owns it; see
+// name resolve to one directory. Ownership records which app id owns it; see
 // lib/docker/app-dir-owner.ts for the guard that reads it.
+//
+// Written in two places:
+//   APP_OWNERS_DIR/<name>.json     registry, always written
+//   apps/<name>/.vardo-owner.json  mirror, only when the directory is writable
+//
+// Vardo runs unprivileged and app directories predating it are owned by another
+// uid, so the mirror is best effort. The registry lives under VARDO_HOME_DIR,
+// which the process always owns.
+//
+// Survivability: both are on disk, so ownership outlives the database being lost
+// or restored. Only the mirror survives the directory being moved. Neither
+// survives losing VARDO_HOME_DIR.
 // ---------------------------------------------------------------------------
 
 /** Ownership marker filename, written at the root of an app's base directory. */
@@ -86,14 +104,20 @@ export function appOwnerFile(appName: string): string {
   return join(appBaseDir(appName), APP_OWNER_FILE);
 }
 
+/** Path to an app's registry record, or null when the name is not a single path segment. */
+export function appOwnerRegistryFile(appName: string): string | null {
+  if (!appName || appName.startsWith(".") || appName.includes("/") || appName.includes(sep)) return null;
+  return join(APP_OWNERS_DIR, `${appName}.json`);
+}
+
 export type AppDirOwner =
-  /** Marker present and parsed. */
-  | { state: "owned"; appId: string }
+  /** Ownership record present and parsed. */
+  | { state: "owned"; appId: string; source: "marker" | "registry" }
   /** No directory on disk — there is nothing to guard. */
   | { state: "missing" }
-  /** Directory exists with no marker (predates markers, or never claimed). */
+  /** Directory exists with no record (predates ownership, or never claimed). */
   | { state: "unmarked" }
-  /** Marker exists but could not be read or parsed. Never treat this as unmarked. */
+  /** A record exists but could not be read or parsed. Never treat this as unmarked. */
   | { state: "unreadable"; reason: string };
 
 function isNotFound(err: unknown): boolean {
@@ -104,49 +128,120 @@ function errText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-/**
- * Read the ownership marker for an app directory.
- *
- * A read failure that is not ENOENT reports `unreadable`, never `unmarked` —
- * callers must refuse rather than assume the directory is unclaimed.
- */
-export async function readAppDirOwner(appName: string): Promise<AppDirOwner> {
+type OwnerRecord =
+  | { kind: "owned"; appId: string }
+  | { kind: "absent" }
+  | { kind: "unreadable"; reason: string };
+
+async function readOwnerRecord(file: string): Promise<OwnerRecord> {
   let raw: string;
   try {
-    raw = await readFile(appOwnerFile(appName), "utf8");
+    raw = await readFile(file, "utf8");
   } catch (err) {
-    if (!isNotFound(err)) return { state: "unreadable", reason: errText(err) };
-    try {
-      await access(appBaseDir(appName));
-    } catch (dirErr) {
-      if (isNotFound(dirErr)) return { state: "missing" };
-      return { state: "unreadable", reason: errText(dirErr) };
-    }
-    return { state: "unmarked" };
+    if (isNotFound(err)) return { kind: "absent" };
+    // Name the file — Node omits the path on some read errors.
+    return { kind: "unreadable", reason: `${file}: ${errText(err)}` };
   }
 
   try {
     const parsed: unknown = JSON.parse(raw);
     if (parsed && typeof parsed === "object" && typeof (parsed as { appId?: unknown }).appId === "string") {
       const appId = (parsed as { appId: string }).appId;
-      if (appId) return { state: "owned", appId };
+      if (appId) return { kind: "owned", appId };
     }
   } catch {
-    // Fall through — a corrupt marker is unreadable, not absent.
+    // Fall through — a corrupt record is unreadable, not absent.
   }
-  return { state: "unreadable", reason: `${APP_OWNER_FILE} is malformed` };
+  return { kind: "unreadable", reason: `${file} is malformed` };
 }
 
-/** Write the ownership marker, creating the app base directory if needed. */
-export async function writeAppDirOwner(appName: string, appId: string): Promise<void> {
-  const dir = appBaseDir(appName);
-  await mkdir(dir, { recursive: true });
-  const target = join(dir, APP_OWNER_FILE);
-  const tmp = `${target}.${process.pid}.tmp`;
+async function writeOwnerRecord(file: string, appName: string, appId: string): Promise<void> {
+  const tmp = `${file}.${process.pid}.tmp`;
   const body = JSON.stringify({ appId, appName, claimedAt: new Date().toISOString() }, null, 2);
-  // Rename so a reader never sees a half-written marker and refuses on it.
+  // Rename so a reader never sees a half-written record and refuses on it.
   await writeFile(tmp, `${body}\n`, { mode: 0o644 });
-  await rename(tmp, target);
+  await rename(tmp, file);
+}
+
+/**
+ * Read ownership for an app directory. The in-directory marker wins over the
+ * registry — it travels with the directory, so it is the stronger claim.
+ *
+ * A read failure that is not ENOENT reports `unreadable`, never `unmarked` —
+ * callers must refuse rather than assume the directory is unclaimed.
+ */
+export async function readAppDirOwner(appName: string): Promise<AppDirOwner> {
+  const marker = await readOwnerRecord(appOwnerFile(appName));
+  if (marker.kind === "owned") return { state: "owned", appId: marker.appId, source: "marker" };
+  if (marker.kind === "unreadable") return { state: "unreadable", reason: marker.reason };
+
+  try {
+    await access(appBaseDir(appName));
+  } catch (dirErr) {
+    if (isNotFound(dirErr)) return { state: "missing" };
+    return { state: "unreadable", reason: `${appBaseDir(appName)}: ${errText(dirErr)}` };
+  }
+
+  const registryFile = appOwnerRegistryFile(appName);
+  if (!registryFile) return { state: "unmarked" };
+
+  const record = await readOwnerRecord(registryFile);
+  if (record.kind === "owned") return { state: "owned", appId: record.appId, source: "registry" };
+  if (record.kind === "unreadable") return { state: "unreadable", reason: record.reason };
+  return { state: "unmarked" };
+}
+
+/**
+ * Copy the ownership record into the app's own directory so it stays
+ * attributable if moved. False when the directory is not writable by this process.
+ */
+export async function mirrorAppDirOwner(appName: string, appId: string): Promise<boolean> {
+  try {
+    const dir = appBaseDir(appName);
+    await mkdir(dir, { recursive: true });
+    await writeOwnerRecord(join(dir, APP_OWNER_FILE), appName, appId);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Record ownership in the registry, then mirror it into the app directory.
+ * Throws only when the registry write fails.
+ */
+export async function writeAppDirOwner(
+  appName: string,
+  appId: string,
+): Promise<{ mirrored: boolean }> {
+  const registryFile = appOwnerRegistryFile(appName);
+  if (!registryFile) throw new Error(`"${appName}" is not a usable app directory name`);
+
+  await mkdir(APP_OWNERS_DIR, { recursive: true });
+  await writeOwnerRecord(registryFile, appName, appId);
+  return { mirrored: await mirrorAppDirOwner(appName, appId) };
+}
+
+/** Drop an app directory's registry record. */
+export async function removeAppDirOwner(appName: string): Promise<void> {
+  const registryFile = appOwnerRegistryFile(appName);
+  if (!registryFile) return;
+  try {
+    await unlink(registryFile);
+  } catch (err) {
+    if (!isNotFound(err)) throw err;
+  }
+}
+
+/** App directory names holding a registry record. */
+export async function listAppDirOwners(): Promise<string[]> {
+  try {
+    const entries = await readdir(APP_OWNERS_DIR);
+    return entries.filter((e) => e.endsWith(".json")).map((e) => e.slice(0, -".json".length));
+  } catch (err) {
+    if (isNotFound(err)) return [];
+    throw err;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -188,7 +283,7 @@ export function vardoSlotDir(slot: "blue" | "green"): string {
  * if the parent is writable and reports clear errors when not.
  */
 export async function ensureDataDirs(): Promise<string[]> {
-  const dirs = [VARDO_HOME_DIR, PROJECTS_DIR, IMAGES_DIR];
+  const dirs = [VARDO_HOME_DIR, PROJECTS_DIR, IMAGES_DIR, APP_OWNERS_DIR];
   const failures: string[] = [];
 
   for (const dir of dirs) {
