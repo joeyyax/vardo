@@ -4,10 +4,12 @@ import { apps } from "@/lib/db/schema/apps";
 import { environments } from "@/lib/db/schema/environments";
 import { addEvent } from "@/lib/stream/producer";
 import { acquireLock } from "@/lib/redis-lock";
+import { redis } from "@/lib/redis";
 import { logger } from "@/lib/logger";
-import { eq, and, lt, gt, or, desc, inArray } from "drizzle-orm";
+import { eq, and, lt, gt, desc, inArray } from "drizzle-orm";
 import { reconcileActiveCounter, reconcileQueue, removeFromQueue } from "@/lib/docker/deploy-concurrency";
 import { stopProject } from "@/lib/docker/deploy";
+import { publishKillSignal } from "@/lib/docker/deploy-cancel";
 import { appEnvDir } from "@/lib/paths";
 import { detectActiveSlot } from "@/lib/docker/slots";
 import {
@@ -29,47 +31,158 @@ const TIMEOUT_MINUTES = Number(process.env.DEPLOY_TIMEOUT_MINUTES) || 15;
 /** One rollback attempt per deployment. A failed attempt is not retried. */
 const ROLLBACK_ATTEMPT_TTL_MS = MAX_GRACE_PERIOD_SECONDS * 1000;
 
+/** Written by deploy-cancel for as long as a deploy owns the app. */
+const activeDeployKey = (appId: string) => `deploy:active:${appId}`;
+
+/** When this sweep first saw a deployment in "running". */
+const runningSinceKey = (deploymentId: string) => `deploy:sweep:running-since:${deploymentId}`;
+
+/** Outlives the budget by a wide margin — an expired mark only restarts the clock. */
+const RUNNING_MARK_TTL_MS = TIMEOUT_MINUTES * 60_000 * 4;
+
+/** Rate-limits the "still alive" log line to once per timeout budget. */
+const ABORT_LOG_TTL_MS = TIMEOUT_MINUTES * 60_000;
+
+type ActiveDeployEntry = { deploymentId: string; stage?: string };
+
 /**
- * Find deployments stuck in "running" status for longer than the timeout
- * threshold and mark them as failed.
+ * Who owns `deploy:active:{appId}` right now.
+ *
+ * `known: false` covers an unreachable Redis and an unparseable entry alike.
+ * Callers must read it as "unknown", never as "nothing is running" — a Redis
+ * blip that reads as "dead" turns this sweep into a fleet-wide outage.
+ */
+type Liveness = { known: true; active: ActiveDeployEntry | null } | { known: false };
+
+async function readActiveDeploy(appId: string): Promise<Liveness> {
+  let raw: string | null;
+  try {
+    raw = await redis.get(activeDeployKey(appId));
+  } catch (err) {
+    log.warn(`Could not read the active-deploy key for app ${appId}:`, err);
+    return { known: false };
+  }
+
+  if (raw === null) return { known: true, active: null };
+
+  try {
+    const parsed = JSON.parse(raw) as ActiveDeployEntry;
+    if (typeof parsed?.deploymentId !== "string") return { known: false };
+    return { known: true, active: parsed };
+  } catch {
+    log.warn(`Unparseable active-deploy entry for app ${appId} — treating as unknown`);
+    return { known: false };
+  }
+}
+
+/**
+ * How long this sweep has observed a deployment in "running", or null when
+ * Redis could not answer.
+ *
+ * `deployments.startedAt` is stamped at INSERT while the row is still queued and
+ * is never re-stamped, so it measures time since enqueue — up to 9 minutes of
+ * which can be spent waiting for a concurrency slot. Marking the row on first
+ * sight is the only running-clock available without a new column.
+ */
+async function observedRunningMs(deploymentId: string, now: number): Promise<number | null> {
+  const key = runningSinceKey(deploymentId);
+  try {
+    const claimed = await redis.set(key, String(now), "PX", RUNNING_MARK_TTL_MS, "NX");
+    if (claimed === "OK") return 0;
+
+    const raw = await redis.get(key);
+    const since = raw === null ? now : Number(raw);
+    if (!Number.isFinite(since)) return 0;
+    return Math.max(0, now - since);
+  } catch (err) {
+    log.warn(`Could not read the running-since mark for deployment ${deploymentId}:`, err);
+    return null;
+  }
+}
+
+/** Stop a still-live deploy through its own cancellation path. */
+async function requestDeployAbort(deploymentId: string): Promise<void> {
+  try {
+    await publishKillSignal(deploymentId);
+  } catch (err) {
+    log.warn(`Could not signal deployment ${deploymentId} to cancel:`, err);
+  }
+}
+
+/**
+ * Take the dead deploy's environment down, and only when nothing in it is
+ * serving.
+ *
+ * A deploy tears the previous slot down before starting its own, so the slot a
+ * timed-out deploy left behind is usually the only one an environment has.
+ * Stopping it because a deploy record aged out is an outage, not a cleanup —
+ * so the environment is only cleared once Docker confirms it serves nothing.
+ * Every probe failure reads as "unknown" and leaves the containers alone.
+ */
+async function stopDeadDeployEnvironment(
+  appId: string,
+  appName: string,
+  envName: string,
+): Promise<void> {
+  const prefix = `${appName}-${envName}`;
+  const activeSlot = await detectActiveSlot(appEnvDir(appName, envName), prefix).catch(() => null);
+  const project = activeSlot ? `${prefix}-${activeSlot}` : prefix;
+
+  const down = await slotIsDown(project);
+  if (down !== true) return; // still serving, or Docker unreachable
+
+  await stopProject(appId, appName, envName);
+}
+
+/**
+ * Fail deployments that have been running past the timeout budget.
+ *
+ * The budget is measured from when this sweep first saw the deployment running,
+ * not from its enqueue time, and no deployment is touched while Redis still
+ * reports a deploy holding the app. Anything Redis or Docker cannot answer is
+ * left alone until the next pass.
  */
 export async function sweepStuckDeployments(): Promise<void> {
-  const cutoff = new Date(Date.now() - TIMEOUT_MINUTES * 60_000);
-
-  const stuck = await db
+  const running = await db
     .select({
       id: deployments.id,
       appId: deployments.appId,
       log: deployments.log,
-      startedAt: deployments.startedAt,
+      environmentId: deployments.environmentId,
     })
     .from(deployments)
-    .where(
-      and(
-        eq(deployments.status, "running"),
-        lt(deployments.startedAt, cutoff),
-      ),
-    );
+    .where(eq(deployments.status, "running"));
 
   // Always reconcile the concurrency counter — the counter can drift whenever
   // a process crashes mid-deploy, not just when a stuck deployment is found.
   // Running this unconditionally ensures the counter self-heals even when all
   // deploys finish cleanly but a release failed silently.
   try {
-    const activeDeployments = await db
-      .select({ id: deployments.id, status: deployments.status })
+    const queued = await db
+      .select({ id: deployments.id })
       .from(deployments)
-      .where(or(eq(deployments.status, "running"), eq(deployments.status, "queued")));
+      .where(eq(deployments.status, "queued"));
 
-    const runningCount = activeDeployments.filter((d) => d.status === "running").length;
-    await reconcileActiveCounter(runningCount);
+    await reconcileActiveCounter(running.length);
 
     // Reconcile the Redis queue against DB state — removes orphaned entries left
     // by a partial Redis failure (rpush succeeded but subsequent eval threw).
-    const activeIds = new Set(activeDeployments.map((d) => d.id));
+    const activeIds = new Set([...running, ...queued].map((d) => d.id));
     await reconcileQueue(activeIds);
   } catch (err) {
     log.warn("Failed to reconcile deploy concurrency state:", err);
+  }
+
+  if (running.length === 0) return;
+
+  // Mark every running deployment on first sight so the budget starts here, and
+  // keep only the ones that have since exhausted it.
+  const budgetMs = TIMEOUT_MINUTES * 60_000;
+  const markedAt = Date.now();
+  const stuck: typeof running = [];
+  for (const deploy of running) {
+    const elapsed = await observedRunningMs(deploy.id, markedAt);
+    if (elapsed !== null && elapsed >= budgetMs) stuck.push(deploy);
   }
 
   if (stuck.length === 0) return;
@@ -96,15 +209,43 @@ export async function sweepStuckDeployments(): Promise<void> {
     if (!acquired) continue;
 
     try {
+      const liveness = await readActiveDeploy(deploy.appId);
+
+      // Redis could not answer. Unknown is not dead — leave the row for the
+      // next pass rather than failing a deploy that may still be building.
+      if (!liveness.known) {
+        log.warn(
+          `Deployment ${deploy.id} is past its budget but the active-deploy key is unreadable — skipping`,
+        );
+        continue;
+      }
+
+      // Still the deploy holding the app. Ask it to stop through its own
+      // cancellation path; its containers stay up until it lets go of the key.
+      if (liveness.active?.deploymentId === deploy.id) {
+        await requestDeployAbort(deploy.id);
+        if (await acquireLock(`sweep:abort:${deploy.id}`, ABORT_LOG_TTL_MS)) {
+          log.warn(
+            `Deployment ${deploy.id} is past its budget but still registered as active — signalled it to cancel`,
+          );
+        }
+        continue;
+      }
+
+      // A different deploy holds the app. This row is abandoned, but the
+      // containers now belong to that deploy — record the failure and stop.
+      const supersededByLiveDeploy = liveness.active !== null;
+
       const now = new Date();
       const timeoutLine = `[${now.toISOString()}] [TIMEOUT] Deployment timed out after ${TIMEOUT_MINUTES} minutes`;
       const updatedLog = deploy.log
         ? `${deploy.log}\n${timeoutLine}`
         : timeoutLine;
 
-      const durationMs = now.getTime() - new Date(deploy.startedAt).getTime();
+      // The budget itself. Wall time since enqueue would include the queue wait.
+      const durationMs = TIMEOUT_MINUTES * 60_000;
 
-      await db
+      const failed = await db
         .update(deployments)
         .set({
           status: "failed",
@@ -114,23 +255,33 @@ export async function sweepStuckDeployments(): Promise<void> {
         })
         .where(
           and(eq(deployments.id, deploy.id), eq(deployments.status, "running")),
-        );
+        )
+        .returning({ id: deployments.id });
 
-      // Reset the app status if it's still "deploying"
-      await db
-        .update(apps)
-        .set({ status: "stopped", updatedAt: now })
-        .where(
-          and(eq(apps.id, deploy.appId), eq(apps.status, "deploying")),
-        );
+      // The deploy finished on its own between the liveness read and here.
+      if (failed.length === 0) continue;
 
-      // Stop orphaned containers left by the crashed deploy process
       const app = appMap.get(deploy.appId);
-      if (app) {
-        try {
-          await stopProject(deploy.appId, app.name);
-        } catch {
-          // Best effort — containers may not have started
+
+      if (app && !supersededByLiveDeploy) {
+        // Reset the app status if it's still "deploying"
+        await db
+          .update(apps)
+          .set({ status: "stopped", updatedAt: now })
+          .where(
+            and(eq(apps.id, deploy.appId), eq(apps.status, "deploying")),
+          );
+
+        // Re-read liveness immediately before touching Docker — a new deploy
+        // can have claimed the app while the rows above were being written.
+        const recheck = await readActiveDeploy(deploy.appId);
+        if (recheck.known && recheck.active === null) {
+          try {
+            const envName = await envNameFor(deploy.environmentId, deploy.appId);
+            await stopDeadDeployEnvironment(deploy.appId, app.name, envName);
+          } catch (err) {
+            log.warn(`Could not clear the environment for deployment ${deploy.id}:`, err);
+          }
         }
       }
 
@@ -378,7 +529,7 @@ async function checkRollbackWatch(
   slot: Slot,
   standbySlot: Slot,
 ): Promise<void> {
-  const envName = await envNameFor(candidate.environmentId);
+  const envName = await envNameFor(candidate.environmentId, candidate.appId);
   const appDir = appEnvDir(candidate.appName, envName);
   const projectPrefix = `${candidate.appName}-${envName}`;
 
@@ -426,12 +577,23 @@ async function checkRollbackWatch(
   });
 }
 
-/** Mirrors the deploy's own resolution: the environment's name, else production. */
-async function envNameFor(environmentId: string | null): Promise<string> {
-  if (!environmentId) return "production";
-  const env = await db.query.environments.findFirst({
-    where: eq(environments.id, environmentId),
+/**
+ * Mirrors the deploy's own resolution: the named environment, else the app's
+ * default one, else production. The row's environmentId is null whenever the
+ * caller omitted it, and the deploy resolves that against `isDefault`.
+ */
+async function envNameFor(environmentId: string | null, appId: string): Promise<string> {
+  if (environmentId) {
+    const env = await db.query.environments.findFirst({
+      where: eq(environments.id, environmentId),
+      columns: { name: true },
+    });
+    if (env) return env.name;
+  }
+
+  const defaultEnv = await db.query.environments.findFirst({
+    where: and(eq(environments.appId, appId), eq(environments.isDefault, true)),
     columns: { name: true },
   });
-  return env?.name ?? "production";
+  return defaultEnv?.name ?? "production";
 }
