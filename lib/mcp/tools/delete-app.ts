@@ -16,7 +16,7 @@ export function registerDeleteApp(
 ) {
   server.tool(
     "vardo_delete_app",
-    "Delete a compose app: tears down its containers and removes the app record (and its compose child records when deleting a parent). Named volumes are PRESERVED by default. Set pruneVolumes=true to also remove the app's own declared volumes; pass keepVolumes to protect specific named volumes even when pruning. Volumes Vardo does not know the app declared (e.g. a separate OAuth/credential volume) are never touched. A volume still in use by a running container is left in place.",
+    "Delete a compose app: tears down its containers, removes its deployment directory and removes the app record (and its compose child records when deleting a parent). Bind-mounted host paths outside that directory are never touched. Named volumes are PRESERVED by default. Set pruneVolumes=true to also remove the app's own declared volumes; pass keepVolumes to protect specific named volumes even when pruning. Volumes Vardo does not know the app declared (e.g. a separate OAuth/credential volume) are never touched. A volume still in use by a running container is left in place.",
     {
       appId: z.string().describe("The app ID to delete"),
       pruneVolumes: z

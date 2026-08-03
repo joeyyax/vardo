@@ -135,7 +135,8 @@ export default async function AppDetailPage({ params }: PageProps) {
     },
   } as const;
 
-  // Look up by name (slug) or ID — supports clean URLs like /apps/redis
+  // Look up by name (slug) or ID — supports clean URLs like /apps/redis.
+  // The organization predicate is what scopes this, not the global name index.
   const [app, allTags, allApps, orgVars] = await Promise.all([
     db.query.apps.findFirst({
       where: and(
