@@ -57,6 +57,7 @@ export function availableAppTabs(ctx: AppTabContext): AppTab[] {
       "networking",
       "compose",
       ...(f.cron ? (["cron"] as const) : []),
+      "settings",
       ...(f.logging ? (["logs"] as const) : []),
       ...(f.metrics ? (["metrics"] as const) : []),
       ...(f.errorTracking ? (["errors"] as const) : []),

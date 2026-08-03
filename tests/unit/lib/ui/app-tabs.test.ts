@@ -44,6 +44,7 @@ describe("availableAppTabs", () => {
       "networking",
       "compose",
       "cron",
+      "settings",
       "logs",
       "metrics",
       "errors",
@@ -110,6 +111,11 @@ describe("availableAppTabs", () => {
   it("gives settings a section of its own, not a dialog", () => {
     expect(availableAppTabs(plainApp)).toContain("settings");
     expect(resolveAppTab("settings", plainApp)).toBe("settings");
+  });
+
+  it("gives a compose parent the same settings section", () => {
+    expect(availableAppTabs(composeParent)).toContain("settings");
+    expect(resolveAppTab("settings", composeParent)).toBe("settings");
   });
 
   it("only offers connect when the app publishes connection info", () => {
