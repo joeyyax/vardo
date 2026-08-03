@@ -2,6 +2,8 @@ import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
 import { recordActivity } from "@/lib/activity";
+import { IMAGE_UPDATE_REFUSAL } from "@/lib/api/system-managed";
+import { isVardoManagedApp } from "@/lib/infra/instance-apps";
 import { planMigration, requiresMigration, type MigrationPlan } from "./migration-path";
 import { setImageRefTag, setServiceImageTag } from "./apply";
 import { getAppUpdateStatus, type AppUpdateStatus } from "./status";
@@ -70,8 +72,9 @@ export async function applyImageUpdate({
     service: requestedService ?? app.composeService ?? null,
   };
 
-  if (app.isSystemManaged) {
-    return fail(identity, 403, "System-managed apps update themselves");
+  // Backstop. The UI never offers these rows, but the endpoint is public API.
+  if (isVardoManagedApp(app)) {
+    return fail(identity, 403, IMAGE_UPDATE_REFUSAL);
   }
 
   const service = identity.service;

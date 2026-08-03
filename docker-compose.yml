@@ -252,7 +252,7 @@ services:
   wireguard:
     container_name: vardo-wireguard
     x-vardo-shared: true
-    image: linuxserver/wireguard
+    image: linuxserver/wireguard:1.0.20260223-r0-ls119
     restart: unless-stopped
     cap_add:
       - NET_ADMIN
