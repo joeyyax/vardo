@@ -77,6 +77,8 @@ export function rollupLabel(rollup: HealthRollup, noun: string): string {
   if (rollup.total === 0) return `No ${plural}`;
   if (rollup.errors > 0) return `${rollup.errors} crashed`;
   if (rollup.deploying > 0) return `${rollup.deploying} deploying`;
+  // A fully stopped group reads as its state, not as a count of zero.
+  if (rollup.stopped === rollup.total) return "Stopped";
   return `${rollup.active}/${rollup.total} ${rollup.total === 1 ? noun : plural}`;
 }
 

@@ -13,7 +13,12 @@ import { isVardoManagedApp } from "@/lib/infra/instance-apps";
 import { getVersionData } from "@/lib/version";
 import { getElevatedApps } from "@/lib/logging/error-rate";
 import { activityRows, getFleetActivity } from "./activity";
-import { APP_DOWN_WINDOW_HOURS, appStatusRows, withParentNames } from "./app-status-rows";
+import {
+  APP_DOWN_WINDOW_HOURS,
+  appStatusRows,
+  appStoppedRows,
+  withParentNames,
+} from "./app-status-rows";
 import { errorRateRows } from "./error-rate-rows";
 import { getFleetAttention } from "./fleet";
 
@@ -145,6 +150,7 @@ export async function buildAttentionRows(
 
   const rows = conditionRows(withParentNames(subjects));
   rows.push(...appStatusRows(subjects, Date.now(), APP_DOWN_WINDOW_HOURS * 3_600_000));
+  rows.push(...appStoppedRows(subjects));
   rows.push(...oomRows(exited, Date.now(), OOM_WINDOW_HOURS * 3_600_000));
   rows.push(...errorRateRows(appRows, elevated));
 
