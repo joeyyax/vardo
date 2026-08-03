@@ -5,7 +5,7 @@ import { apps, projects } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
 import { stopProject } from "@/lib/docker/deploy";
-import { assertAppDirOwnership, AppDirOwnershipError } from "@/lib/docker/app-dir-owner";
+import { assertAppDirOwnership, AppDirOwnershipError, removeAppDir } from "@/lib/docker/app-dir-owner";
 import { recordActivity } from "@/lib/activity";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { isOrgAdmin } from "@/lib/auth/permissions";
@@ -248,6 +248,10 @@ async function handleDelete(_request: NextRequest, { params }: RouteParams) {
       await stopProject(appId, app.name, undefined, true);
     } catch { /* containers may not be running */ }
 
+    // Runs before the row is deleted — the guard resolves the name against the
+    // database. A directory owned by another uid is left behind, not fatal.
+    const { removed: removedAppDir } = await removeAppDir({ appId, appName: app.name });
+
     await db
       .delete(apps)
       .where(and(eq(apps.id, appId), eq(apps.organizationId, orgId)));
@@ -268,10 +272,10 @@ async function handleDelete(_request: NextRequest, { params }: RouteParams) {
       organizationId: orgId,
       action: "app.deleted",
       userId: org.session.user.id,
-      metadata: { name: app.name },
+      metadata: { name: app.name, removedAppDir },
     });
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, removedAppDir });
   } catch (error) {
     return handleRouteError(error, "Error deleting app");
   }
