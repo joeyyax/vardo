@@ -24,6 +24,7 @@ import { organizations } from "./organizations";
 import { projects } from "./projects";
 import { deployKeys } from "./config";
 import type { AppCondition } from "@/lib/docker/conditions";
+import type { ExitReason } from "@/lib/docker/exit-reason";
 
 // ---------------------------------------------------------------------------
 // Apps (deployable Docker units)
@@ -97,6 +98,9 @@ export const apps = pgTable(
     // How a running app is behaving, written by the health monitor. Separate
     // from status, which only records what Docker did with the container.
     conditions: jsonb("conditions").$type<AppCondition[]>(),
+    // Why this app's containers stopped, written by the status reconciler and
+    // cleared once anything is running again. Null while the app is up.
+    exitReason: jsonb("exit_reason").$type<ExitReason>(),
     needsRedeploy: boolean("needs_redeploy").default(false),
     cpuLimit: real("cpu_limit"), // CPU cores (e.g. 0.5, 1, 2)
     memoryLimit: integer("memory_limit"), // Memory in MB (e.g. 256, 512, 1024)

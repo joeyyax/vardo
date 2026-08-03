@@ -13,6 +13,7 @@ import { detectAppType } from "@/lib/ui/app-type";
 import { Uptime } from "@/components/app-status";
 import { RelativeTime } from "@/components/relative-time";
 import { AppConditionsPanel } from "@/components/app-conditions-panel";
+import { AppExitReason } from "@/components/app-exit-reason";
 import { HeaderStat, PriorityCue, RollupStatus } from "@/components/entity-header";
 import { useAppMetrics } from "@/components/app-metrics-card";
 import { formatBytes } from "@/lib/metrics/format";
@@ -132,6 +133,7 @@ export function AppHeader({
   return (
     <div className="space-y-5">
       <AppConditionsPanel conditions={app.conditions} />
+      <AppExitReason reason={app.exitReason} status={app.status} />
 
       <div className="flex gap-5">
         {/* App icon */}
