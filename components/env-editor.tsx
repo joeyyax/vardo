@@ -373,12 +373,13 @@ export function EnvEditor(props: EnvEditorProps) {
 
   return (
     <div className="space-y-3">
-      {/* Restart needed banner */}
+      {/* A restart reuses the containers, which keep the environment they were
+          created with. Only a deploy replaces them. */}
       {!isStandalone && needsRedeploy && !modified && (
         <div className="flex items-center gap-2 rounded-lg border border-status-warning/30 bg-status-warning-muted px-4 py-3">
           <AlertTriangle className="size-4 text-status-warning shrink-0" />
           <p className="text-sm text-status-warning">
-            Variables saved. Restart the app to apply changes.
+            Variables saved. Deploy the app to apply them.
           </p>
         </div>
       )}

@@ -896,7 +896,7 @@ export function ComposeDetail({
           ? "bg-status-warning-muted text-status-warning hover:ring-1 hover:ring-inset hover:ring-status-warning/40"
           : "bg-status-success-muted text-status-success hover:ring-1 hover:ring-inset hover:ring-status-success/40",
         content: app.needsRedeploy ? (
-          <><RotateCcw className="mr-1.5 size-3.5" />Restart needed</>
+          <><RotateCcw className="mr-1.5 size-3.5" />Deploy needed</>
         ) : (
           <><span className="mr-1.5 size-2 rounded-full bg-status-success animate-pulse" />Running</>
         ),
