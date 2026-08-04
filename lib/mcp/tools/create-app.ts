@@ -10,6 +10,7 @@ import { recordActivity } from "@/lib/activity";
 import { slidingWindowRateLimit } from "@/lib/api/rate-limit";
 import type { McpAuthContext } from "../auth";
 import { resolveProjectOrg } from "../scope";
+import { generateNamespace } from "@/lib/infra/app-namespace";
 
 // 5 app creations per 10 minutes per user/org pair.
 const CREATE_RATE_LIMIT = 5;
@@ -174,6 +175,7 @@ export function registerCreateApp(
             organizationId: orgId,
             projectId,
             name,
+            namespace: generateNamespace(name),
             displayName: displayName ?? name,
             description: description ?? null,
             source: "git",

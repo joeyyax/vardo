@@ -22,6 +22,7 @@ import { resolve, basename } from "path";
 import { slugify } from "@/lib/ui/slugify";
 import type { McpAuthContext } from "../auth";
 import { resolveProjectOrg, resolveTargetOrg } from "../scope";
+import { generateNamespace } from "@/lib/infra/app-namespace";
 
 export function registerAdoptApp(
   server: McpServer,
@@ -230,6 +231,7 @@ export function registerAdoptApp(
             id: appId,
             organizationId: orgId,
             name: effectiveName,
+            namespace: generateNamespace(effectiveName),
             displayName: effectiveDisplayName,
             source: "direct",
             deployType: "compose",
