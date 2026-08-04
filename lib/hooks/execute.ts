@@ -13,6 +13,8 @@
 import { createHmac } from "crypto";
 import { execFile } from "child_process";
 import { promisify } from "util";
+import { safeFetch } from "@/lib/security/safe-fetch";
+import { getOutboundPolicy } from "@/lib/security/outbound-policy";
 import { getHooksForEvent, getInternalHandler } from "./registry";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { addDeployLog } from "@/lib/stream/producer";
@@ -194,11 +196,12 @@ async function executeWebhook(
   const timer = setTimeout(() => controller.abort(), timeout);
 
   try {
-    const response = await fetch(config.url, {
+    const response = await safeFetch(config.url, {
       method: "POST",
       headers,
       body: payload,
       signal: controller.signal,
+      policy: await getOutboundPolicy(),
     });
 
     if (!response.ok) {
