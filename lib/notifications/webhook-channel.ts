@@ -2,6 +2,8 @@ import { createHmac } from "crypto";
 import type { NotificationChannel } from "./port";
 import type { BusEvent } from "@/lib/bus/events";
 import { logger } from "@/lib/logger";
+import { safeFetch } from "@/lib/security/safe-fetch";
+import { getOutboundPolicy } from "@/lib/security/outbound-policy";
 
 const log = logger.child("notifications");
 
@@ -31,11 +33,12 @@ export class WebhookNotificationChannel implements NotificationChannel {
     const timer = setTimeout(() => controller.abort(), WEBHOOK_TIMEOUT);
 
     try {
-      const response = await fetch(this.config.url, {
+      const response = await safeFetch(this.config.url, {
         method: "POST",
         headers,
         body: payload,
         signal: controller.signal,
+        policy: await getOutboundPolicy(),
       });
       if (!response.ok) {
         log.error(`Webhook returned ${response.status}`);
@@ -58,13 +61,14 @@ export class SlackNotificationChannel implements NotificationChannel {
     const timer = setTimeout(() => controller.abort(), WEBHOOK_TIMEOUT);
 
     try {
-      const response = await fetch(this.config.webhookUrl, {
+      const response = await safeFetch(this.config.webhookUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           text: `${emoji} *${event.title}*\n${event.message}`,
         }),
         signal: controller.signal,
+        policy: await getOutboundPolicy(),
       });
       if (!response.ok) {
         log.error(`Slack returned ${response.status}`);
