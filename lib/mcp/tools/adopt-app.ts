@@ -24,7 +24,6 @@ import type { McpAuthContext } from "../auth";
 import { resolveProjectOrg, resolveTargetOrg } from "../scope";
 import { isFeatureEnabled } from "@/lib/config/features";
 import { adoptAllowsBindMounts } from "@/lib/docker/adopt-policy";
-import { generateNamespace } from "@/lib/infra/app-namespace";
 
 export function registerAdoptApp(
   server: McpServer,
@@ -247,7 +246,6 @@ export function registerAdoptApp(
             id: appId,
             organizationId: orgId,
             name: effectiveName,
-            namespace: generateNamespace(effectiveName),
             displayName: effectiveDisplayName,
             source: "direct",
             deployType: "compose",
