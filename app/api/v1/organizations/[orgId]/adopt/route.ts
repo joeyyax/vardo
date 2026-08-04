@@ -29,7 +29,6 @@ import { resolveProjectForImport } from "@/lib/docker/import";
 import { logger } from "@/lib/logger";
 import { isFeatureEnabled } from "@/lib/config/features";
 import { adoptAllowsBindMounts } from "@/lib/docker/adopt-policy";
-import { generateNamespace } from "@/lib/infra/app-namespace";
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
@@ -198,7 +197,6 @@ async function handler(request: NextRequest, { params }: RouteParams) {
           id: appId,
           organizationId: orgId,
           name: data.name,
-          namespace: generateNamespace(data.name),
           displayName: data.displayName,
           source: "direct",
           deployType: "compose",

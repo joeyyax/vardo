@@ -19,7 +19,6 @@ import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { getSslConfig, getPrimaryIssuer } from "@/lib/system-settings";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
-import { generateNamespace } from "@/lib/infra/app-namespace";
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
@@ -163,7 +162,6 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
         id: appId,
         organizationId: orgId,
         name: data.name,
-        namespace: generateNamespace(data.name),
         displayName: data.displayName,
         description: data.description,
         source: data.source,
