@@ -7,9 +7,11 @@ import {
 import { eq, and, isNull, desc, inArray } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { createHash } from "crypto";
-import { createReadStream } from "fs";
-import { execFile } from "child_process";
+import { createReadStream, createWriteStream } from "fs";
+import { execFile, spawn } from "child_process";
 import { promisify } from "util";
+import { pipeline } from "stream/promises";
+import { createGzip, createGunzip } from "zlib";
 import { mkdir, rm, stat } from "fs/promises";
 import { resolve, join } from "path";
 import type { BackupStorage } from "./storage-port";
@@ -17,6 +19,8 @@ import { createBackupStorage } from "./storage-factory";
 import { assertSafeName } from "@/lib/docker/validate";
 import { isUncapturedSource, uncapturedReason } from "./coverage";
 import { exclusionReason } from "./durability";
+import { buildDumpArgv, buildRestoreArgv, describeDumpSpec, type DumpSpec } from "./dump-spec";
+import { resolveDbContainer } from "./resolve-db-container";
 import {
   EMPTY_SOURCE_MARKER,
   MIN_VALID_GZIP_BYTES,
@@ -88,6 +92,7 @@ type VolumeToBackup = {
   source: string | null;
   backupStrategy: string;
   backupMeta: { dumpCmd: string; restoreCmd: string } | null;
+  backupSpec: DumpSpec | null;
 };
 
 // ---------------------------------------------------------------------------
@@ -208,11 +213,14 @@ async function backupVolumeTar(
 }
 
 /**
- * Strategy: dump — run a configurable dump command and gzip the output.
- * The dumpCmd should produce output to stdout (e.g. "docker exec pg pg_dump -U user db").
+ * Strategy: dump — write a dump to stdout and gzip it.
+ *
+ * `run` receives the destination and issues the command. Two callers: a spec,
+ * resolved to a container and argv when the run happens, and the legacy stored
+ * shell string.
  */
 async function backupVolumeDump(
-  dumpCmd: string,
+  run: (dumpFile: string, logFn: (msg: string) => void) => Promise<void>,
   storageKey: string,
   storage: BackupStorage,
   logFn: (msg: string) => void,
@@ -222,12 +230,7 @@ async function backupVolumeDump(
   const dumpFile = join(tmpDir, "dump.gz");
 
   try {
-    logFn(`Running dump: ${dumpCmd}`);
-    await execFileAsync(
-      "bash",
-      ["-c", `set -o pipefail; ${dumpCmd} | gzip > "${dumpFile}"`],
-      { timeout: 600_000 },
-    );
+    await run(dumpFile, logFn);
 
     await verifyArchive(dumpFile, "dump");
 
@@ -246,6 +249,74 @@ async function backupVolumeDump(
       // best effort
     }
   }
+}
+
+/**
+ * Stream a dump straight from `docker` into a gzip file.
+ *
+ * No shell, so the argv is data rather than something to be parsed. Streamed
+ * rather than buffered, because a real database does not fit in memory.
+ *
+ * Both the exit code and the pipeline must succeed. Checking only the pipeline
+ * stores whatever a failing pg_dump managed to write before it gave up.
+ */
+async function streamDockerDump(
+  argv: string[],
+  dumpFile: string,
+  logFn: (msg: string) => void,
+): Promise<void> {
+  logFn(`Running: docker ${argv.slice(0, 3).join(" ")} …`);
+  const child = spawn("docker", argv, { stdio: ["ignore", "pipe", "pipe"] });
+
+  let stderr = "";
+  child.stderr.on("data", (chunk) => {
+    if (stderr.length < 8000) stderr += String(chunk);
+  });
+
+  const exited = new Promise<void>((resolveExit, rejectExit) => {
+    child.on("error", rejectExit);
+    child.on("close", (code) => {
+      if (code === 0) resolveExit();
+      else rejectExit(new Error(`dump exited ${code}: ${stderr.trim().slice(0, 500)}`));
+    });
+  });
+
+  await Promise.all([
+    pipeline(child.stdout, createGzip(), createWriteStream(dumpFile)),
+    exited,
+  ]);
+
+  if (stderr.trim()) logFn(`dump stderr: ${stderr.trim().slice(0, 300)}`);
+}
+
+/** Feed a gzipped dump into a container's stdin. Same both-must-succeed rule. */
+async function streamDockerRestore(
+  argv: string[],
+  archivePath: string,
+  logFn: (msg: string) => void,
+): Promise<void> {
+  logFn(`Restoring via: docker ${argv.slice(0, 3).join(" ")} …`);
+  const child = spawn("docker", argv, { stdio: ["pipe", "pipe", "pipe"] });
+
+  let stderr = "";
+  child.stderr.on("data", (chunk) => {
+    if (stderr.length < 8000) stderr += String(chunk);
+  });
+
+  const exited = new Promise<void>((resolveExit, rejectExit) => {
+    child.on("error", rejectExit);
+    child.on("close", (code) => {
+      if (code === 0) resolveExit();
+      else rejectExit(new Error(`restore exited ${code}: ${stderr.trim().slice(0, 500)}`));
+    });
+  });
+
+  await Promise.all([
+    pipeline(createReadStream(archivePath), createGunzip(), child.stdin),
+    exited,
+  ]);
+
+  if (stderr.trim()) logFn(`restore stderr: ${stderr.trim().slice(0, 300)}`);
 }
 
 /**
@@ -433,6 +504,7 @@ export async function runBackup(
         source: vol.source,
         backupStrategy: vol.backupStrategy,
         backupMeta: vol.backupMeta,
+        backupSpec: vol.backupSpec,
       });
     }
   }
@@ -457,6 +529,7 @@ export async function runBackup(
       source: vol.source,
       backupStrategy: vol.backupStrategy,
       backupMeta: vol.backupMeta,
+      backupSpec: vol.backupSpec,
     });
   }
 
@@ -576,11 +649,45 @@ export async function runBackup(
       let result: { sizeBytes: number; checksum: string };
 
       if (strategy === "dump") {
-        if (!vol.backupMeta?.dumpCmd) {
-          throw new Error(`Dump strategy requires a dumpCmd (volume: ${vol.name})`);
+        const spec = vol.backupSpec;
+        const legacyCmd = vol.backupMeta?.dumpCmd;
+        if (!spec && !legacyCmd) {
+          throw new Error(`Dump strategy requires a backupSpec or dumpCmd (volume: ${vol.name})`);
         }
+
+        // A spec resolves its container now; a stored command names one that
+        // was true when it was written. Prefer the spec whenever there is one.
+        const runDump = spec
+          ? async (dumpFile: string, logFn: (msg: string) => void) => {
+              if (!vol.appId || !vol.appName) {
+                throw new Error(`A dump spec needs an app to resolve against (volume: ${vol.name})`);
+              }
+              logFn(`Dump spec: ${describeDumpSpec(spec)}`);
+              const env = await resolveDefaultEnv(vol.appId);
+              const container = await resolveDbContainer(
+                spec,
+                { id: vol.appId, name: vol.appName },
+                env?.name,
+                logFn,
+              );
+              if (!container) {
+                throw new Error(
+                  `No running container for service "${spec.service}" — cannot dump ${vol.name}`,
+                );
+              }
+              await streamDockerDump(buildDumpArgv(spec.kind, container.id, container.env), dumpFile, logFn);
+            }
+          : async (dumpFile: string, logFn: (msg: string) => void) => {
+              logFn(`Running dump: ${legacyCmd}`);
+              await execFileAsync(
+                "bash",
+                ["-c", `set -o pipefail; ${legacyCmd} | gzip > "${dumpFile}"`],
+                { timeout: 600_000 },
+              );
+            };
+
         result = await backupVolumeDump(
-          vol.backupMeta.dumpCmd,
+          runDump,
           storageKey,
           storage,
           log,
@@ -1010,16 +1117,43 @@ export async function restoreBackup(
 
     // 3. Restore by strategy
     if (strategy === "dump") {
-      if (!vol?.backupMeta?.restoreCmd) {
-        throw new Error("Dump restore requires a restoreCmd on the volume");
+      // Restore config is read live, the same as the dump side. A spec resolves
+      // the container now; a stored command names whatever was running when it
+      // was written.
+      if (vol?.backupSpec) {
+        const spec = vol.backupSpec;
+        if (!backup.app || !backup.appId) {
+          throw new Error("A dump spec needs an app to resolve against");
+        }
+        log(`Restore spec: ${describeDumpSpec(spec)}`);
+        const env = await resolveDefaultEnv(backup.appId);
+        const container = await resolveDbContainer(
+          spec,
+          { id: backup.appId, name: backup.app.name },
+          env?.name,
+          log,
+        );
+        if (!container) {
+          throw new Error(
+            `No running container for service "${spec.service}" — start the app before restoring`,
+          );
+        }
+        await streamDockerRestore(
+          buildRestoreArgv(spec.kind, container.id, container.env),
+          archivePath,
+          log,
+        );
+      } else if (vol?.backupMeta?.restoreCmd) {
+        // restoreCmd receives the dump via stdin (e.g. "docker exec -i pg psql -U user db")
+        log(`Restoring via: ${vol.backupMeta.restoreCmd}`);
+        await execFileAsync(
+          "bash",
+          ["-c", `set -o pipefail; gunzip -c "${archivePath}" | ${vol.backupMeta.restoreCmd}`],
+          { timeout: 600_000 },
+        );
+      } else {
+        throw new Error("Dump restore requires a backupSpec or restoreCmd on the volume");
       }
-      // restoreCmd receives the dump via stdin (e.g. "docker exec -i pg psql -U user db")
-      log(`Restoring via: ${vol.backupMeta.restoreCmd}`);
-      await execFileAsync(
-        "bash",
-        ["-c", `set -o pipefail; gunzip -c "${archivePath}" | ${vol.backupMeta.restoreCmd}`],
-        { timeout: 600_000 },
-      );
     } else {
       // tar restore — need app context for volume name resolution
       if (!backup.app || !backup.appId) {
