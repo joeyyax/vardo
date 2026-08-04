@@ -106,9 +106,12 @@ function buildSystemDumpMeta(): { dumpCmd: string; restoreCmd: string } {
   assertSafeName(container);
   assertSafeName(user);
   assertSafeName(dbname);
+  // --clean --if-exists so the dump applies over a populated database rather
+  // than only into an empty one, and ON_ERROR_STOP so psql fails instead of
+  // skipping every statement it could not apply and exiting 0 (#783).
   return {
-    dumpCmd: `docker exec ${container} pg_dump -U ${user} ${dbname}`,
-    restoreCmd: `docker exec -i ${container} psql -U ${user} ${dbname}`,
+    dumpCmd: `docker exec ${container} pg_dump -U ${user} --clean --if-exists ${dbname}`,
+    restoreCmd: `docker exec -i ${container} psql -U ${user} -v ON_ERROR_STOP=1 -d ${dbname}`,
   };
 }
 
