@@ -17,7 +17,7 @@ const execFileAsync = promisify(execFile);
 const DOCKER_CONTAINER_PREFIX = "docker-container://";
 
 /** Where Railpack looks for BuildKit when the environment does not say. */
-export const DEFAULT_BUILDKIT_HOST = "docker-container://buildkit";
+export const DEFAULT_BUILDKIT_HOST = "docker-container://vardo-buildkit";
 
 /**
  * Container a BUILDKIT_HOST points at, or null for any other transport.
@@ -53,8 +53,8 @@ export async function assertBuildKitReachable(
 
   throw new DeployBlockedError(
     `Railpack needs BuildKit, and no running container named "${container}" was found.\n` +
-      `Start one on the Docker host:\n` +
-      `  docker run -d --name ${container} --restart unless-stopped --privileged moby/buildkit\n` +
-      `Or set BUILDKIT_HOST to an existing daemon.`,
+      `Add "buildkit" to COMPOSE_PROFILES on the Docker host and bring the stack up:\n` +
+      `  COMPOSE_PROFILES=production,buildkit docker compose up -d buildkit\n` +
+      `Or point BUILDKIT_HOST at a daemon you run yourself. Nixpacks needs none of this.`,
   );
 }

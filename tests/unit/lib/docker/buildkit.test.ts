@@ -29,7 +29,7 @@ beforeEach(() => {
 
 describe("buildKitContainerName", () => {
   it("reads the container out of a docker-container host", () => {
-    expect(buildKitContainerName("docker-container://buildkit")).toBe("buildkit");
+    expect(buildKitContainerName("docker-container://vardo-buildkit")).toBe("vardo-buildkit");
   });
 
   it("ignores transports it cannot check", () => {
@@ -43,7 +43,7 @@ describe("buildKitContainerName", () => {
   });
 
   it("the default host names a checkable container", () => {
-    expect(buildKitContainerName(DEFAULT_BUILDKIT_HOST)).toBe("buildkit");
+    expect(buildKitContainerName(DEFAULT_BUILDKIT_HOST)).toBe("vardo-buildkit");
   });
 });
 
@@ -65,9 +65,14 @@ describe("assertBuildKitReachable", () => {
 
   it("tells the operator exactly how to fix it", async () => {
     response = new Error("nope");
-    await expect(assertBuildKitReachable("docker-container://bk")).rejects.toThrow(
-      /docker run -d --name bk --restart unless-stopped --privileged moby\/buildkit/,
-    );
+    const err = assertBuildKitReachable("docker-container://bk");
+    await expect(err).rejects.toThrow(/no running container named "bk"/);
+    await expect(err).rejects.toThrow(/COMPOSE_PROFILES/);
+  });
+
+  it("says Nixpacks needs none of this, so the reader has an out", async () => {
+    response = new Error("nope");
+    await expect(assertBuildKitReachable(DEFAULT_BUILDKIT_HOST)).rejects.toThrow(/Nixpacks needs none of this/);
   });
 
   it("inspects the container the host names", async () => {
