@@ -40,6 +40,7 @@ import {
 import { isFeatureEnabled } from "@/lib/config/features";
 import { assertSafeBranch } from "../validate";
 import { DeployBlockedError } from "../errors";
+import { assertBuildKitReachable, DEFAULT_BUILDKIT_HOST } from "../buildkit";
 import { assertAppDirOwnership } from "../app-dir-owner";
 import { getInstallationToken } from "@/lib/git-integration/app";
 import {
@@ -269,6 +270,13 @@ async function buildFromRepo(
   }
 
   if (deployType === "railpack") {
+    // Railpack builds through BuildKit rather than the Docker daemon, and exits
+    // non-zero with only a hint if it cannot find one. Default to the daemon
+    // Vardo documents, and check it is actually there before spending a deploy
+    // on discovering it is not.
+    if (!buildEnv.BUILDKIT_HOST) buildEnv.BUILDKIT_HOST = DEFAULT_BUILDKIT_HOST;
+    await assertBuildKitReachable(buildEnv.BUILDKIT_HOST, signal);
+
     logs.push(`[build] Building with Railpack...`);
     const args = ["build", "--name", imageName];
     if (envVars) {
