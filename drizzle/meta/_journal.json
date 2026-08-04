@@ -421,6 +421,13 @@
       "when": 1785810920654,
       "tag": "0059_strong_sasquatch",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1785823333736,
+      "tag": "0060_ambiguous_nova",
+      "breakpoints": true
     }
   ]
 }

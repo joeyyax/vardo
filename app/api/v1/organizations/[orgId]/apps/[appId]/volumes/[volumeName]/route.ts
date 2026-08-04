@@ -15,6 +15,8 @@ type RouteParams = {
 const patchSchema = z.object({
   ignorePatterns: z.array(z.string().min(1).max(200)).max(100).optional(),
   description: z.string().max(500).optional(),
+  // null returns the volume to unclassified, which backs it up.
+  durability: z.enum(["stateful", "rebuildable", "external"]).nullable().optional(),
 }).strict();
 
 /**
@@ -50,6 +52,9 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
     }
     if (parsed.data.description !== undefined) {
       updates.description = parsed.data.description;
+    }
+    if (parsed.data.durability !== undefined) {
+      updates.durability = parsed.data.durability;
     }
 
     await db.update(volumes).set(updates).where(eq(volumes.id, volume.id));
