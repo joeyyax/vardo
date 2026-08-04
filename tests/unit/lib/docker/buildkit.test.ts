@@ -18,9 +18,12 @@ let response: { stdout: string } | Error = { stdout: "true\n" };
 
 vi.mock("child_process", () => ({ execFile: execFileMock }));
 
-const { assertBuildKitReachable, buildKitContainerName, DEFAULT_BUILDKIT_HOST } = await import(
-  "@/lib/docker/buildkit"
-);
+const {
+  assertBuildKitReachable,
+  isBuildKitReachable,
+  buildKitContainerName,
+  DEFAULT_BUILDKIT_HOST,
+} = await import("@/lib/docker/buildkit");
 
 beforeEach(() => {
   calls.length = 0;
@@ -82,6 +85,28 @@ describe("assertBuildKitReachable", () => {
 
   it("does not shell out for a transport it cannot check", async () => {
     await expect(assertBuildKitReachable("tcp://10.0.0.5:1234")).resolves.toBeUndefined();
+    expect(calls).toHaveLength(0);
+  });
+});
+
+describe("isBuildKitReachable", () => {
+  it("is true when the container reports running", async () => {
+    response = { stdout: "true\n" };
+    await expect(isBuildKitReachable(DEFAULT_BUILDKIT_HOST)).resolves.toBe(true);
+  });
+
+  it("is false when stopped, without throwing — a builder choice, not a failure", async () => {
+    response = { stdout: "false\n" };
+    await expect(isBuildKitReachable(DEFAULT_BUILDKIT_HOST)).resolves.toBe(false);
+  });
+
+  it("is false when the container is absent", async () => {
+    response = new Error("No such object");
+    await expect(isBuildKitReachable(DEFAULT_BUILDKIT_HOST)).resolves.toBe(false);
+  });
+
+  it("takes an uninspectable transport at its word", async () => {
+    await expect(isBuildKitReachable("tcp://10.0.0.5:1234")).resolves.toBe(true);
     expect(calls).toHaveLength(0);
   });
 });
