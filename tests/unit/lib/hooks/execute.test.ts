@@ -62,6 +62,12 @@ vi.mock("util", async (importOriginal) => {
 // Global fetch mock
 vi.stubGlobal("fetch", mockFetch);
 
+// executeWebhook now vets the URL before fetching. Resolve every test host to a
+// public address so these stay tests of hook behavior, not of the SSRF guard.
+vi.mock("dns/promises", () => ({
+  lookup: vi.fn().mockResolvedValue([{ address: "93.184.216.34", family: 4 }]),
+}));
+
 // ---------------------------------------------------------------------------
 // Subject under test
 // ---------------------------------------------------------------------------
@@ -300,8 +306,8 @@ describe("executeHooks", () => {
       const [url, opts] = mockFetch.mock.calls[0];
       expect(url).toBe("https://hooks.example.com/check");
       expect(opts.method).toBe("POST");
-      expect(opts.headers["Content-Type"]).toBe("application/json");
-      expect(opts.headers["X-Hook-Signature-256"]).toMatch(/^sha256=[a-f0-9]{64}$/);
+      expect(new Headers(opts.headers).get("content-type")).toBe("application/json");
+      expect(new Headers(opts.headers).get("x-hook-signature-256")).toMatch(/^sha256=[a-f0-9]{64}$/);
       expect(JSON.parse(opts.body)).toEqual(context);
     });
 
@@ -314,7 +320,7 @@ describe("executeHooks", () => {
       await executeHooks("before.deploy", {});
 
       const [, opts] = mockFetch.mock.calls[0];
-      expect(opts.headers["X-Hook-Signature-256"]).toBeUndefined();
+      expect(new Headers(opts.headers).get("x-hook-signature-256")).toBeNull();
     });
   });
 
