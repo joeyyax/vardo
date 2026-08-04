@@ -45,8 +45,16 @@ export const volumes = pgTable(
     }),
     // Backup strategy: "tar" (default) for file volumes, "dump" for databases
     backupStrategy: text("backup_strategy").default("tar").notNull(),
-    // For "dump" strategy: { dumpCmd, restoreCmd } — shell commands run via docker exec
+    // For "dump" strategy: { dumpCmd, restoreCmd } — shell commands run via docker exec.
+    // Legacy. A stored command names a container, and app container names carry
+    // the blue/green slot, so one deploy invalidates it. Prefer backupSpec.
     backupMeta: jsonb("backup_meta").$type<{ dumpCmd: string; restoreCmd: string }>(),
+    // For "dump" strategy: what the database is, resolved to a container and
+    // credentials when the backup runs.
+    backupSpec: jsonb("backup_spec").$type<{
+      kind: "postgres" | "mysql" | "mariadb" | "mongo";
+      service: string;
+    }>(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
@@ -55,7 +63,10 @@ export const volumes = pgTable(
     unique("volume_app_mount_uniq").on(t.appId, t.mountPath),
     index("volume_app_id_idx").on(t.appId),
     index("volume_org_id_idx").on(t.organizationId),
-    check("volume_dump_requires_meta", sql`backup_strategy != 'dump' OR backup_meta IS NOT NULL`),
+    check(
+      "volume_dump_requires_meta",
+      sql`backup_strategy != 'dump' OR backup_meta IS NOT NULL OR backup_spec IS NOT NULL`,
+    ),
   ]
 );
 

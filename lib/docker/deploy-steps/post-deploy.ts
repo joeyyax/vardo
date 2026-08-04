@@ -213,7 +213,7 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
   // Auto-detect persistent volumes from running containers
   try {
     const runningContainers = await listContainers({ id: ctx.appId, name: app.name });
-    const detectedVolumes: { name: string; mountPath: string; image: string }[] = [];
+    const detectedVolumes: { name: string; mountPath: string; image: string; service: string }[] = [];
     const seen = new Set<string>();
 
     for (const c of runningContainers) {
@@ -222,7 +222,12 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
         if (mount.type === "volume" && !seen.has(mount.destination) && !isAnonymousVolume(mount.name)) {
           seen.add(mount.destination);
           const name = stripDockerProjectPrefix(mount.name);
-          detectedVolumes.push({ name, mountPath: mount.destination, image: info.image });
+          detectedVolumes.push({
+            name,
+            mountPath: mount.destination,
+            image: info.image,
+            service: info.labels["com.docker.compose.service"] ?? "",
+          });
         }
       }
     }
@@ -246,6 +251,14 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
           const durability =
             proposal && isSafeToApply(null, proposal.durability) ? proposal.durability : null;
 
+          // A recognized database gets dumped rather than archived. The spec
+          // stores the compose service, which survives the blue/green swap that
+          // a container name would not.
+          const spec =
+            durability === "stateful" && proposal?.kind && vol.service
+              ? { kind: proposal.kind, service: vol.service }
+              : null;
+
           await db.insert(volumes).values({
             id: nanoid(),
             appId: ctx.appId,
@@ -254,10 +267,15 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
             mountPath: vol.mountPath,
             persistent: true,
             durability,
+            backupStrategy: spec ? "dump" : "tar",
+            backupSpec: spec,
           }).onConflictDoNothing();
 
           if (durability) {
             log(`[deploy] ${vol.name} classified ${durability} — ${proposal!.reason}`);
+          }
+          if (spec) {
+            log(`[deploy] ${vol.name} will back up with ${spec.kind} dump via service "${spec.service}"`);
           }
         }
         log(`[deploy] Detected ${newDetected.length} volume(s): ${newDetected.map((v) => v.mountPath).join(", ")}`);
