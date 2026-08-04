@@ -414,6 +414,13 @@
       "when": 1785802275000,
       "tag": "0058_overjoyed_james_howlett",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1785810920654,
+      "tag": "0059_strong_sasquatch",
+      "breakpoints": true
     }
   ]
 }
