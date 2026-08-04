@@ -2,7 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { APP_NAME_TAKEN_ERROR, isTopLevelAppNameTaken } from "@/lib/db/app-name";
-import { apps, domains, environments } from "@/lib/db/schema";
+import { apps, domains, environments, projects } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import {
@@ -22,6 +22,8 @@ import { resolve, basename } from "path";
 import { slugify } from "@/lib/ui/slugify";
 import type { McpAuthContext } from "../auth";
 import { resolveProjectOrg, resolveTargetOrg } from "../scope";
+import { isFeatureEnabled } from "@/lib/config/features";
+import { adoptAllowsBindMounts } from "@/lib/docker/adopt-policy";
 import { generateNamespace } from "@/lib/infra/app-namespace";
 
 export function registerAdoptApp(
@@ -195,9 +197,23 @@ export function registerAdoptApp(
         compose = excludeServices(compose, excludeList);
       }
 
-      // Sanitize — bind mounts allowed for local
-      const { compose: sanitized } = sanitizeCompose(compose, {
-        allowBindMounts: environmentType === "local",
+      // Bind mounts follow the project, the same source the deploy path reads.
+      // Keying this on environmentType alone refused in production what deploy
+      // permits in production, for the same project (#767).
+      const adoptProject = projectId
+        ? await db.query.projects.findFirst({
+            where: and(eq(projects.id, projectId), eq(projects.organizationId, orgId)),
+            columns: { allowBindMounts: true },
+          })
+        : null;
+      const bindMountsEnabled = adoptAllowsBindMounts({
+        environmentType,
+        projectAllowBindMounts: adoptProject?.allowBindMounts,
+        featureEnabled: isFeatureEnabled("bindMounts"),
+      });
+
+      const { compose: sanitized, strippedMounts } = sanitizeCompose(compose, {
+        allowBindMounts: bindMountsEnabled,
       });
       compose = sanitized;
 
@@ -288,6 +304,9 @@ export function registerAdoptApp(
                 environmentType,
                 domain: effectiveDomain,
                 excludedServices: excludeList,
+                // Named even when empty, so a caller can tell "nothing was
+                // stripped" from an older response that could not say.
+                strippedMounts,
               },
               null,
               2

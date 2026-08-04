@@ -9,7 +9,7 @@ import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { requirePlugin } from "@/lib/api/require-plugin";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { db } from "@/lib/db";
-import { apps, domains, environments } from "@/lib/db/schema";
+import { apps, domains, environments, projects } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
@@ -27,6 +27,8 @@ import { recordActivity } from "@/lib/activity";
 import { encrypt } from "@/lib/crypto/encrypt";
 import { resolveProjectForImport } from "@/lib/docker/import";
 import { logger } from "@/lib/logger";
+import { isFeatureEnabled } from "@/lib/config/features";
+import { adoptAllowsBindMounts } from "@/lib/docker/adopt-policy";
 import { generateNamespace } from "@/lib/infra/app-namespace";
 
 type RouteParams = {
@@ -137,9 +139,24 @@ async function handler(request: NextRequest, { params }: RouteParams) {
       compose = excludeServices(compose, excludeList);
     }
 
-    // Sanitize (bind mounts allowed for local environments)
-    const { compose: sanitized } = sanitizeCompose(compose, {
-      allowBindMounts: data.environmentType === "local",
+    // Bind mounts follow the project, the same source the deploy path reads.
+    // Keying this on environmentType alone refused in production what deploy
+    // permits in production, for the same project (#767). A brand-new project
+    // has no row yet and takes the schema default.
+    const adoptProject = data.projectId
+      ? await db.query.projects.findFirst({
+          where: and(eq(projects.id, data.projectId), eq(projects.organizationId, orgId)),
+          columns: { allowBindMounts: true },
+        })
+      : null;
+    const bindMountsEnabled = adoptAllowsBindMounts({
+      environmentType: data.environmentType,
+      projectAllowBindMounts: adoptProject?.allowBindMounts,
+      featureEnabled: isFeatureEnabled("bindMounts"),
+    });
+
+    const { compose: sanitized, strippedMounts } = sanitizeCompose(compose, {
+      allowBindMounts: bindMountsEnabled,
     });
     compose = sanitized;
 
@@ -238,6 +255,9 @@ async function handler(request: NextRequest, { params }: RouteParams) {
         app: result.app,
         environmentType: data.environmentType,
         domain,
+        // Named even when empty, so a caller can tell "nothing was stripped"
+        // from an older response that could not say.
+        strippedMounts,
       },
       { status: 201 }
     );
