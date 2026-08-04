@@ -54,6 +54,7 @@ import { recordPostDeployIncomplete } from "../deploy-incomplete";
 import type { DeployContext, SlotStopOutcome } from "../deploy-context";
 import { demoteStandbyRestart } from "../restart-policy";
 import { isSelfApp } from "../self-env";
+import { proposeDurability, isSafeToApply } from "@/lib/backups/durability";
 
 /** Serializes the host-global prune across deploys. */
 const PRUNE_LOCK_KEY = "deploy:prune:lock";
@@ -212,7 +213,7 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
   // Auto-detect persistent volumes from running containers
   try {
     const runningContainers = await listContainers({ id: ctx.appId, name: app.name });
-    const detectedVolumes: { name: string; mountPath: string }[] = [];
+    const detectedVolumes: { name: string; mountPath: string; image: string }[] = [];
     const seen = new Set<string>();
 
     for (const c of runningContainers) {
@@ -221,7 +222,7 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
         if (mount.type === "volume" && !seen.has(mount.destination) && !isAnonymousVolume(mount.name)) {
           seen.add(mount.destination);
           const name = stripDockerProjectPrefix(mount.name);
-          detectedVolumes.push({ name, mountPath: mount.destination });
+          detectedVolumes.push({ name, mountPath: mount.destination, image: info.image });
         }
       }
     }
@@ -235,6 +236,16 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
 
       if (newDetected.length > 0) {
         for (const vol of newDetected) {
+          // Only a `stateful` proposal is written unprompted. A wrong
+          // `stateful` costs storage; a wrong `rebuildable` costs the data.
+          const proposal = proposeDurability({
+            image: vol.image,
+            mountPath: vol.mountPath,
+            volumeName: vol.name,
+          });
+          const durability =
+            proposal && isSafeToApply(null, proposal.durability) ? proposal.durability : null;
+
           await db.insert(volumes).values({
             id: nanoid(),
             appId: ctx.appId,
@@ -242,7 +253,12 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
             name: vol.name,
             mountPath: vol.mountPath,
             persistent: true,
+            durability,
           }).onConflictDoNothing();
+
+          if (durability) {
+            log(`[deploy] ${vol.name} classified ${durability} — ${proposal!.reason}`);
+          }
         }
         log(`[deploy] Detected ${newDetected.length} volume(s): ${newDetected.map((v) => v.mountPath).join(", ")}`);
       }
