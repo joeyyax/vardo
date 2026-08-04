@@ -27,6 +27,7 @@ import { recordActivity } from "@/lib/activity";
 import { encrypt } from "@/lib/crypto/encrypt";
 import { resolveProjectForImport } from "@/lib/docker/import";
 import { logger } from "@/lib/logger";
+import { generateNamespace } from "@/lib/infra/app-namespace";
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
@@ -180,6 +181,7 @@ async function handler(request: NextRequest, { params }: RouteParams) {
           id: appId,
           organizationId: orgId,
           name: data.name,
+          namespace: generateNamespace(data.name),
           displayName: data.displayName,
           source: "direct",
           deployType: "compose",
