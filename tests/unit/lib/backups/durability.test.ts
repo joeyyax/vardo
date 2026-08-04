@@ -4,6 +4,7 @@ import {
   exclusionReason,
   proposeDurability,
   isSafeToApply,
+  isBackupSelected,
 } from "@/lib/backups/durability";
 
 describe("isBackupCandidate", () => {
@@ -134,5 +135,61 @@ describe("isSafeToApply", () => {
     expect(isSafeToApply("rebuildable", "stateful")).toBe(false);
     expect(isSafeToApply("external", "stateful")).toBe(false);
     expect(isSafeToApply("stateful", "stateful")).toBe(false);
+  });
+});
+
+describe("isBackupSelected", () => {
+  const sel = (persistent: boolean, durability: Parameters<typeof isBackupSelected>[0]["durability"]) =>
+    isBackupSelected({ persistent, durability });
+
+  it("covers a persistent, unclassified volume — the behavior that predates durability", () => {
+    expect(sel(true, null)).toBe(true);
+  });
+
+  it("covers a stateful volume even when it is not persistent", () => {
+    // A bind-mounted database: persistent = false because there is nothing to
+    // externalize, and the least replaceable thing on the host.
+    expect(sel(false, "stateful")).toBe(true);
+  });
+
+  it("leaves out rebuildable and external regardless of persistence", () => {
+    expect(sel(true, "rebuildable")).toBe(false);
+    expect(sel(true, "external")).toBe(false);
+    expect(sel(false, "rebuildable")).toBe(false);
+  });
+
+  it("leaves out a non-persistent volume nobody has classified", () => {
+    expect(sel(false, null)).toBe(false);
+  });
+});
+
+describe("proposeDurability — Postgres under other names", () => {
+  it("recognizes a Postgres distribution that does not say postgres", () => {
+    // immich ships tensorchord/pgvecto-rs; matching the image name misses it.
+    expect(
+      proposeDurability({ image: "tensorchord/pgvecto-rs:pg16-v0.2.0", mountPath: "/var/lib/postgresql/data" }),
+    ).toMatchObject({ durability: "stateful", kind: "postgres" });
+  });
+
+  it("recognizes supabase and citus the same way", () => {
+    for (const image of ["supabase/postgres:15.1", "citusdata/citus:12"]) {
+      expect(proposeDurability({ image, mountPath: "/var/lib/postgresql/data" })).toMatchObject({
+        kind: "postgres",
+      });
+    }
+  });
+
+  it("still tells mariadb from mysql, which share a data directory", () => {
+    expect(proposeDurability({ image: "mariadb:11", mountPath: "/var/lib/mysql" })).toMatchObject({ kind: "mariadb" });
+    expect(proposeDurability({ image: "mysql:8", mountPath: "/var/lib/mysql" })).toMatchObject({ kind: "mysql" });
+  });
+
+  it("still refuses a database image mounted somewhere that is not its data", () => {
+    expect(proposeDurability({ image: "postgres:16", mountPath: "/backups" })).toBeNull();
+  });
+
+  it("does not let the data directory alone decide — a sidecar is not the database", () => {
+    // Proposing here would point the dump spec at whatever mounts the volume.
+    expect(proposeDurability({ image: "alpine:3.20", mountPath: "/var/lib/postgresql/data" })).toBeNull();
   });
 });
