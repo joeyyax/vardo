@@ -18,6 +18,7 @@ import { createHash } from "crypto";
 import { getBackupStorageConfig } from "@/lib/system-settings";
 import { assertSafeName } from "@/lib/docker/validate";
 import { logger } from "@/lib/logger";
+import { isBackupSelected } from "./durability";
 
 const log = logger.child("auto-backup");
 
@@ -256,13 +257,15 @@ export async function ensureAutoBackupJob(opts: {
 }): Promise<string | null> {
   const { appId, appName, organizationId } = opts;
 
-  // Check if the app has persistent volumes
+  // Anything a backup run would capture. Not `persistent` — that means
+  // "survives a deploy", and a bind-mounted database is persistent = false
+  // while being the least replaceable thing the app has. Gating on it here left
+  // five live databases with no job at all (#790).
   const appVolumes = await db.query.volumes.findMany({
     where: eq(volumes.appId, appId),
   });
-  const hasPersistentVolumes = appVolumes.some((v) => v.persistent);
 
-  if (!hasPersistentVolumes) {
+  if (!appVolumes.some(isBackupSelected)) {
     return null;
   }
 
