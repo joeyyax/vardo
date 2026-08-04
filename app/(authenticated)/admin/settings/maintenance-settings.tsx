@@ -73,6 +73,23 @@ type ReclaimSkip = {
   image?: string;
 };
 
+type SlotCandidate = {
+  project: string;
+  appName: string;
+  images: { image: string; service: string; bytes: number; present: boolean }[];
+  estimatedBytes: number;
+  /** Present when this generation is an environment's standby. */
+  rollbackTargetFor?: { appName: string; envName: string; liveSlot: string };
+};
+
+type SlotSkip = {
+  project: string;
+  image: string;
+  reason: string;
+  explanation: string;
+  bytes: number;
+};
+
 type ReclaimState = {
   config: { enabled: boolean; idleDays: number };
   lastRun: {
@@ -87,6 +104,11 @@ type ReclaimState = {
     defaultIdleDays: number;
     candidates: ReclaimCandidate[];
     skipped: ReclaimSkip[];
+    estimatedBytes: number;
+  } | null;
+  slotPlan: {
+    candidates: SlotCandidate[];
+    skipped: SlotSkip[];
     estimatedBytes: number;
   } | null;
 };
@@ -160,6 +182,9 @@ export function MaintenanceSettings() {
   const [idleDaysInput, setIdleDaysInput] = useState("30");
   const [savingImages, setSavingImages] = useState(false);
   const [reclaimingImages, setReclaimingImages] = useState(false);
+  // Slot generations are opt-in per run, matching the API — a plain run cannot
+  // reach a generation nobody previewed.
+  const [includeSlots, setIncludeSlots] = useState(false);
   const [showAllSkips, setShowAllSkips] = useState(false);
   const [owners, setOwners] = useState<OwnerReport | null>(null);
   const [loadingOwners, setLoadingOwners] = useState(true);
@@ -284,16 +309,19 @@ export function MaintenanceSettings() {
       const res = await fetch("/api/v1/admin/maintenance/image-reclaim", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ dryRun: false }),
+        body: JSON.stringify({ dryRun: false, slots: includeSlots }),
       });
       const data = await res.json();
       if (!res.ok) {
         toast.error(data.error ?? "Failed to reclaim images");
         return;
       }
-      const freed = data.result.reclaimed.filter((r: { freedLayers: boolean }) => r.freedLayers).length;
-      toast.success(`Removed ${freed} image${freed === 1 ? "" : "s"}`, {
-        description: `Up to ${formatBytes(data.result.estimatedBytesFreed)} freed. Volumes were not touched.`,
+      const idle = data.result.reclaimed.length;
+      const slots = data.slotResult?.reclaimed.length ?? 0;
+      toast.success(`Removed ${idle + slots} image${idle + slots === 1 ? "" : "s"}`, {
+        description: slots
+          ? `${idle} from idle apps, ${slots} from old slot generations. Volumes were not touched.`
+          : "Volumes were not touched.",
       });
       void fetchImages();
     } catch {
@@ -779,6 +807,51 @@ export function MaintenanceSettings() {
             </div>
           )}
 
+          {images?.slotPlan && images.slotPlan.candidates.length > 0 && (
+            <div className="space-y-2 rounded-md border p-3">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">Old slot generations</p>
+                  <p className="text-xs text-muted-foreground">
+                    Images from blue/green slots nothing is serving, and builds from
+                    before slot naming. Up to{" "}
+                    {formatBytes(images.slotPlan.estimatedBytes)} — an upper bound,
+                    since images share layers.
+                  </p>
+                </div>
+                <Button
+                  variant={includeSlots ? "secondary" : "outline"}
+                  size="sm"
+                  className="shrink-0"
+                  onClick={() => setIncludeSlots((v) => !v)}
+                >
+                  {includeSlots ? "Included" : "Include"}
+                </Button>
+              </div>
+              <ul className="divide-y rounded-md border">
+                {images.slotPlan.candidates.map((c) => (
+                  <li key={c.project} className="flex items-start justify-between gap-4 px-3 py-2">
+                    <div className="min-w-0 space-y-0.5">
+                      <p className="text-sm font-medium">{c.project}</p>
+                      <p className="text-xs text-muted-foreground truncate">
+                        {c.images.filter((i) => i.present).map((i) => i.image).join(", ")}
+                      </p>
+                      {c.rollbackTargetFor && (
+                        <p className="flex items-center gap-1 text-xs text-status-warning">
+                          <AlertCircle className="size-3 shrink-0" aria-hidden="true" />
+                          Rollback target for {c.rollbackTargetFor.appName} —{" "}
+                          {c.rollbackTargetFor.liveSlot} is live. Removing this leaves
+                          rollback needing a rebuild.
+                        </p>
+                      )}
+                    </div>
+                    <p className="shrink-0 text-xs font-mono">{formatBytes(c.estimatedBytes)}</p>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           {images?.lastRun && (
             <p className="text-xs text-muted-foreground">
               Last run {new Date(images.lastRun.finishedAt).toLocaleString()} — removed{" "}
@@ -795,7 +868,12 @@ export function MaintenanceSettings() {
               <Button
                 variant="outline"
                 disabled={
-                  reclaimingImages || loadingImages || !images?.plan?.candidates.length
+                  reclaimingImages ||
+                  loadingImages ||
+                  !(
+                    images?.plan?.candidates.length ||
+                    (includeSlots && images?.slotPlan?.candidates.length)
+                  )
                 }
               >
                 {reclaimingImages ? (
@@ -816,8 +894,15 @@ export function MaintenanceSettings() {
                 <AlertDialogTitle>Reclaim images for idle apps?</AlertDialogTitle>
                 <AlertDialogDescription>
                   {images?.plan
-                    ? `This removes the images of ${images.plan.candidates.length} idle app(s), freeing up to ${formatBytes(images.plan.estimatedBytes)}. Volumes are not touched, and each app pulls its image again on next start.`
+                    ? `This removes the images of ${images.plan.candidates.length} idle app(s). Volumes are not touched, and each app pulls its image again on next start.`
                     : "This removes the images of idle apps. Volumes are not touched."}
+                  {includeSlots && images?.slotPlan
+                    ? ` It also removes ${images.slotPlan.candidates.length} old slot generation(s)${
+                        images.slotPlan.candidates.some((c) => c.rollbackTargetFor)
+                          ? ", including generations that are a live app's rollback target — those apps would need a rebuild to roll back"
+                          : ""
+                      }.`
+                    : ""}
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
