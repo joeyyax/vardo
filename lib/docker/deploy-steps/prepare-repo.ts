@@ -40,7 +40,7 @@ import {
 import { isFeatureEnabled } from "@/lib/config/features";
 import { assertSafeBranch } from "../validate";
 import { DeployBlockedError } from "../errors";
-import { assertBuildKitReachable, DEFAULT_BUILDKIT_HOST } from "../buildkit";
+import { assertBuildKitReachable, isBuildKitReachable, DEFAULT_BUILDKIT_HOST } from "../buildkit";
 import { assertAppDirOwnership } from "../app-dir-owner";
 import { getInstallationToken } from "@/lib/git-integration/app";
 import {
@@ -593,8 +593,19 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
           buildType = "dockerfile";
           log(`[deploy] No compose file, found ${dockerfileToCheck}`);
         } catch {
-          buildType = "nixpacks";
-          log(`[deploy] No compose file or Dockerfile, falling back to Nixpacks`);
+          // Railpack is the better builder on this repo shape — measurably
+          // faster and roughly half the image — but it needs BuildKit, which is
+          // opt-in because the daemon is privileged. Prefer it only when the
+          // daemon is actually there, so an instance without the profile still
+          // deploys instead of failing.
+          const buildKitHost = process.env.BUILDKIT_HOST || DEFAULT_BUILDKIT_HOST;
+          if (await isBuildKitReachable(buildKitHost, ctx.signal)) {
+            buildType = "railpack";
+            log(`[deploy] No compose file or Dockerfile — building with Railpack (BuildKit available)`);
+          } else {
+            buildType = "nixpacks";
+            log(`[deploy] No compose file or Dockerfile — building with Nixpacks (BuildKit not reachable)`);
+          }
         }
       }
 

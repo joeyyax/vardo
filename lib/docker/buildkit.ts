@@ -31,13 +31,16 @@ export function buildKitContainerName(host: string): string | null {
   return name.length > 0 ? name : null;
 }
 
-/** Throws a deploy-blocking error when the named BuildKit container is not running. */
-export async function assertBuildKitReachable(
-  host: string,
-  signal?: AbortSignal,
-): Promise<void> {
+/**
+ * Whether BuildKit can be reached. Never throws — for choosing a builder, where
+ * "no" is an answer rather than a failure.
+ *
+ * A transport this cannot inspect is taken at its word and reported reachable;
+ * the build will surface the truth soon enough.
+ */
+export async function isBuildKitReachable(host: string, signal?: AbortSignal): Promise<boolean> {
   const container = buildKitContainerName(host);
-  if (!container) return;
+  if (!container) return true;
 
   try {
     const { stdout } = await execFileAsync(
@@ -45,11 +48,20 @@ export async function assertBuildKitReachable(
       ["inspect", "-f", "{{.State.Running}}", container],
       { timeout: DOCKER_CLEANUP_TIMEOUT, signal },
     );
-    if (stdout.trim() === "true") return;
+    return stdout.trim() === "true";
   } catch {
-    // Absent and stopped read the same way to an operator, and the fix is the
-    // same, so both fall through to one message.
+    return false;
   }
+}
+
+/** Throws a deploy-blocking error when the named BuildKit container is not running. */
+export async function assertBuildKitReachable(
+  host: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  const container = buildKitContainerName(host);
+  if (!container) return;
+  if (await isBuildKitReachable(host, signal)) return;
 
   throw new DeployBlockedError(
     `Railpack needs BuildKit, and no running container named "${container}" was found.\n` +
