@@ -39,6 +39,22 @@ export function isBackupCandidate(durability: Durability | null | undefined): bo
   return durability !== "rebuildable" && durability !== "external";
 }
 
+/**
+ * Whether a backup job covers this volume.
+ *
+ * `persistent` means "survives a deploy", which is not the same question — a
+ * bind-mounted database is `persistent = false` because there is nothing to
+ * externalize, and is still the least replaceable thing on the host. An
+ * explicit `stateful` is therefore sufficient on its own: someone said the word.
+ */
+export function isBackupSelected(vol: {
+  persistent: boolean;
+  durability: Durability | null | undefined;
+}): boolean {
+  if (!isBackupCandidate(vol.durability)) return false;
+  return vol.durability === "stateful" || vol.persistent;
+}
+
 /** Why a volume was left out of a run. Null when it was captured. */
 export function exclusionReason(durability: Durability | null | undefined): string | null {
   if (durability === "rebuildable") return "Rebuildable — reconstructed rather than restored";
@@ -55,7 +71,15 @@ const DATABASE_SIGNATURES: {
   image: RegExp;
   dataDir: string;
 }[] = [
-  { kind: "postgres", image: /(^|\/)(postgres|postgis|timescale|pgvector)/i, dataDir: "/var/lib/postgresql/data" },
+  // Postgres ships under a lot of names that do not contain "postgres" —
+  // immich runs tensorchord/pgvecto-rs. The data directory alone is not enough
+  // to decide: a sidecar mounting it would be proposed as the database and its
+  // dump would target the wrong container.
+  {
+    kind: "postgres",
+    image: /(^|\/)(postgres|postgis|timescale|pgvector|pgvecto|citus|supabase|paradedb|pgautoupgrade|cloudnative-pg)/i,
+    dataDir: "/var/lib/postgresql/data",
+  },
   { kind: "mariadb", image: /(^|\/)(mariadb|percona)/i, dataDir: "/var/lib/mysql" },
   { kind: "mysql", image: /(^|\/)mysql/i, dataDir: "/var/lib/mysql" },
   { kind: "mongo", image: /(^|\/)mongo/i, dataDir: "/data/db" },

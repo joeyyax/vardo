@@ -18,7 +18,7 @@ import type { BackupStorage } from "./storage-port";
 import { createBackupStorage } from "./storage-factory";
 import { assertSafeName } from "@/lib/docker/validate";
 import { isUncapturedSource, uncapturedReason } from "./coverage";
-import { exclusionReason } from "./durability";
+import { exclusionReason, isBackupSelected } from "./durability";
 import { buildDumpArgv, buildRestoreArgv, describeDumpSpec, type DumpSpec } from "./dump-spec";
 import { resolveDbContainer } from "./resolve-db-container";
 import {
@@ -481,7 +481,7 @@ export async function runBackup(
     const appVolumes = await db.query.volumes.findMany({
       where: eq(volumes.appId, app.id),
     });
-    const persistentVols = appVolumes.filter((v) => v.persistent);
+    const persistentVols = appVolumes.filter(isBackupSelected);
 
     for (const vol of persistentVols) {
       // Classified as reconstructible or held elsewhere. Not a skip — the job
