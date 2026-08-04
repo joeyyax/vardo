@@ -8,6 +8,7 @@ import { createPreview, destroyPreview } from "@/lib/docker/preview";
 import { getSystemManagedApp, createVardoPreview, destroyVardoPreview } from "@/lib/docker/self-preview";
 import { isFeatureEnabled, isFeatureEnabledAsync } from "@/lib/config/features";
 import { getGitHubAppConfig } from "@/lib/system-settings";
+import { previewRefusalReason } from "@/lib/git-integration/pull-request";
 import { logger } from "@/lib/logger";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
@@ -154,6 +155,23 @@ async function handlePullRequest(payload: Record<string, unknown>): Promise<Next
   if (!Number.isInteger(prNumber) || prNumber <= 0) {
     log.error(`Invalid PR number in webhook payload: ${prNumber}`);
     return NextResponse.json({ ok: true, skipped: "invalid PR number" });
+  }
+
+  // Anyone with a GitHub account can open a fork PR against a public repo, and
+  // GitHub signs that webhook like any other. Building from it would let an
+  // outsider trigger deploys — and, when the fork's branch name matches one in
+  // the base repo, publish a preview URL for an internal branch on their PR.
+  // Teardown is deliberately left below this: a PR that became a fork after a
+  // preview existed must still be cleaned up.
+  const headRepo = (pr.head as Record<string, unknown>)?.repo as Record<string, unknown> | null;
+  const refusal = action === "closed" ? null : previewRefusalReason({
+    baseRepoFullName: repoFullName,
+    headRepoFullName: headRepo?.full_name as string | undefined,
+    headIsFork: headRepo?.fork as boolean | undefined,
+  });
+  if (refusal) {
+    log.info(`PR #${prNumber} skipped — ${refusal}`);
+    return NextResponse.json({ ok: true, skipped: refusal });
   }
 
   log.info(`PR #${prNumber} ${action} on ${repoFullName}:${branch} by ${author}`);

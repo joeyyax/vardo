@@ -9,6 +9,8 @@ import { matchContainers, type ReconcilableApp } from "@/lib/docker/container-ma
 import { shouldRunNow } from "./parse";
 import { acquireLock } from "@/lib/redis-lock";
 import { logger } from "@/lib/logger";
+import { safeFetch } from "@/lib/security/safe-fetch";
+import { getOutboundPolicy } from "@/lib/security/outbound-policy";
 
 const log = logger.child("cron");
 
@@ -94,9 +96,9 @@ async function fetchUrl(
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 60_000);
-    const res = await fetch(url, {
+    const res = await safeFetch(url, {
       signal: controller.signal,
-      redirect: "follow",
+      policy: await getOutboundPolicy(),
     });
     clearTimeout(timeout);
     const body = await res.text().catch(() => "");
