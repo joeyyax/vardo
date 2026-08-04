@@ -37,6 +37,12 @@ export const volumes = pgTable(
     warnAtPercent: integer("warn_at_percent").default(80),
     ignorePatterns: jsonb("ignore_patterns").$type<string[]>(), // glob patterns to ignore in diff (e.g. "uploads/**")
     driftCount: integer("drift_count").default(0), // unignored file drift after last deploy
+    // Whether the contents are irreplaceable, separate from whether they
+    // survive a deploy. Null means unclassified and is backed up, so adding
+    // this column cannot drop anything from an existing job.
+    durability: text("durability", {
+      enum: ["stateful", "rebuildable", "external"],
+    }),
     // Backup strategy: "tar" (default) for file volumes, "dump" for databases
     backupStrategy: text("backup_strategy").default("tar").notNull(),
     // For "dump" strategy: { dumpCmd, restoreCmd } — shell commands run via docker exec

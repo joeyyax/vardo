@@ -16,6 +16,7 @@ import type { BackupStorage } from "./storage-port";
 import { createBackupStorage } from "./storage-factory";
 import { assertSafeName } from "@/lib/docker/validate";
 import { isUncapturedSource, uncapturedReason } from "./coverage";
+import { exclusionReason } from "./durability";
 import {
   EMPTY_SOURCE_MARKER,
   MIN_VALID_GZIP_BYTES,
@@ -397,6 +398,9 @@ export async function runBackup(
 
   // Collect all volumes to back up
   const volumesToBackup: VolumeToBackup[] = [];
+  // Deliberately left out by their durability class. Kept so a run that
+  // captures nothing because there was nothing to capture can say so.
+  const excludedSources: { name: string; appName: string | null; reason: string }[] = [];
 
   // From linked apps: find their persistent volumes
   for (const bja of jobApps) {
@@ -409,6 +413,14 @@ export async function runBackup(
     const persistentVols = appVolumes.filter((v) => v.persistent);
 
     for (const vol of persistentVols) {
+      // Classified as reconstructible or held elsewhere. Not a skip — the job
+      // does not cover it at all, so it gets no row and no archive.
+      const excluded = exclusionReason(vol.durability);
+      if (excluded) {
+        excludedSources.push({ name: vol.name, appName: app.name, reason: excluded });
+        continue;
+      }
+
       volumesToBackup.push({
         id: vol.id,
         name: vol.name,
@@ -428,6 +440,11 @@ export async function runBackup(
   // From directly linked volumes (system volumes, etc.)
   for (const bjv of jobVolumes) {
     const vol = bjv.volume;
+    const excluded = exclusionReason(vol.durability);
+    if (excluded) {
+      excludedSources.push({ name: vol.name, appName: null, reason: excluded });
+      continue;
+    }
     volumesToBackup.push({
       id: vol.id,
       name: vol.name,
@@ -444,6 +461,19 @@ export async function runBackup(
   }
 
   if (volumesToBackup.length === 0) {
+    // Every source was classified out. The run did its whole job, so it must
+    // refresh lastRunAt — otherwise the stale-backup deploy condition flags
+    // this job forever for correctly archiving nothing.
+    if (excludedSources.length > 0) {
+      const finishedRunAt = new Date();
+      await db
+        .update(backupJobs)
+        .set({ lastRunAt: finishedRunAt, updatedAt: finishedRunAt })
+        .where(eq(backupJobs.id, jobId));
+      log.info(
+        `${job.name}: nothing to capture — ${excludedSources.length} source(s) excluded by durability`,
+      );
+    }
     return [];
   }
 
@@ -642,7 +672,11 @@ export async function runBackup(
     const capturedNothing = succeeded.length === 0;
     const hasFailures = failed.length > 0 || capturedNothing;
     const allSuccess = !hasFailures;
-    const skippedNote = skipped.length > 0 ? ` (${skipped.length} source(s) skipped)` : "";
+    const notes = [
+      skipped.length > 0 ? `${skipped.length} skipped` : null,
+      excludedSources.length > 0 ? `${excludedSources.length} excluded by durability` : null,
+    ].filter(Boolean);
+    const skippedNote = notes.length > 0 ? ` (${notes.join(", ")})` : "";
 
     if (job.organizationId && ((hasFailures && job.notifyOnFailure) || (allSuccess && job.notifyOnSuccess))) {
       const { emit } = await import("@/lib/notifications/dispatch");
