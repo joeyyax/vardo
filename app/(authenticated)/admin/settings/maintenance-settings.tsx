@@ -891,18 +891,25 @@ export function MaintenanceSettings() {
             </AlertDialogTrigger>
             <AlertDialogContent size="sm">
               <AlertDialogHeader>
-                <AlertDialogTitle>Reclaim images for idle apps?</AlertDialogTitle>
+                <AlertDialogTitle>
+                  {includeSlots ? "Reclaim images and old slot generations?" : "Reclaim images for idle apps?"}
+                </AlertDialogTitle>
                 <AlertDialogDescription>
-                  {images?.plan
-                    ? `This removes the images of ${images.plan.candidates.length} idle app(s). Volumes are not touched, and each app pulls its image again on next start.`
-                    : "This removes the images of idle apps. Volumes are not touched."}
-                  {includeSlots && images?.slotPlan
-                    ? ` It also removes ${images.slotPlan.candidates.length} old slot generation(s)${
-                        images.slotPlan.candidates.some((c) => c.rollbackTargetFor)
-                          ? ", including generations that are a live app's rollback target — those apps would need a rebuild to roll back"
-                          : ""
-                      }.`
-                    : ""}
+                  {[
+                    images?.plan?.candidates.length
+                      ? `Removes the images of ${images.plan.candidates.length} idle app(s), which pull again on next start.`
+                      : null,
+                    includeSlots && images?.slotPlan?.candidates.length
+                      ? `Removes ${images.slotPlan.candidates.length} old slot generation(s)${
+                          images.slotPlan.candidates.some((c) => c.rollbackTargetFor)
+                            ? ", including one that is a live app's rollback target — that app would need a rebuild to roll back"
+                            : ""
+                        }.`
+                      : null,
+                    "Volumes are not touched.",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
