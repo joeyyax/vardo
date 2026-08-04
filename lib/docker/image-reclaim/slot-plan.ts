@@ -15,6 +15,7 @@ import { apps } from "@/lib/db/schema";
 import { PROJECTS_DIR } from "@/lib/paths";
 import { listAllContainers, listImages, type ImageInfo } from "../client";
 import { readCurrentSlot } from "../standby-slot";
+import type { Slot } from "../slots";
 import {
   buildSlotIndex,
   classifyProject,
@@ -47,6 +48,13 @@ export interface SlotReclaimCandidate {
   images: PlannedSlotImage[];
   /** Upper bound: shared layers are counted once per image that references them. */
   estimatedBytes: number;
+  /**
+   * Set when this generation is an environment's standby. Taking it does not
+   * break rollback — the slot's compose files stay — but it turns an instant
+   * rollback into a rebuild, which is the one thing the plan otherwise does not
+   * say out loud. Advisory: it does not change what is taken.
+   */
+  rollbackTargetFor?: { appName: string; envName: string; liveSlot: Slot };
 }
 
 export interface SlotReclaimSkip {
@@ -123,12 +131,27 @@ export function selectSlotCandidates(input: SlotPlanInput): SlotReclaimPlan {
 
     let candidate = byProject.get(project);
     if (!candidate) {
+      // A slot generation only reaches here after decideSlotImage refused the
+      // live slot and the unreadable case, so anything left is the standby.
+      const liveSlot =
+        generation.kind === "slot"
+          ? currentByEnv.get(`${generation.appName}-${generation.envName}`) ?? null
+          : null;
       candidate = {
         project,
         appName: generation.appName ?? project,
         generation,
         images: [],
         estimatedBytes: 0,
+        ...(generation.kind === "slot" && liveSlot
+          ? {
+              rollbackTargetFor: {
+                appName: generation.appName,
+                envName: generation.envName,
+                liveSlot,
+              },
+            }
+          : {}),
       };
       byProject.set(project, candidate);
     }

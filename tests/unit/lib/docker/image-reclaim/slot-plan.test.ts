@@ -265,3 +265,48 @@ describe("selectSlotCandidates — determinism", () => {
     expect(planned + result.skipped.length).toBe(images.length);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Rollback-target annotation (#766)
+//
+// The plan explains every refusal but said nothing about what taking a
+// candidate costs. A standby generation is still safe to take — the slot's
+// compose files stay — but rollback stops being instant.
+// ---------------------------------------------------------------------------
+
+describe("selectSlotCandidates — rollback-target annotation", () => {
+  it("flags the standby generation with the slot still serving", () => {
+    const result = plan({ images: [image("agents-production-blue", "bot")] });
+
+    expect(result.candidates).toHaveLength(1);
+    expect(result.candidates[0].rollbackTargetFor).toEqual({
+      appName: "agents",
+      envName: "production",
+      liveSlot: "green",
+    });
+  });
+
+  it("does not flag a legacy generation, which no symlink can name", () => {
+    const result = plan({ images: [image("agents", "bot")] });
+
+    expect(takenTags(result)).toContain("agents-bot:latest");
+    expect(result.candidates[0].rollbackTargetFor).toBeUndefined();
+  });
+
+  it("is advisory — it does not change what is taken", () => {
+    const images = [image("agents-production-blue", "bot")];
+    const result = plan({ images });
+
+    expect(takenTags(result)).toEqual(["agents-production-blue-bot:latest"]);
+    expect(result.estimatedBytes).toBe(1_000);
+  });
+
+  it("names the live slot, not the one being reclaimed", () => {
+    const result = plan({
+      images: [image("agents-production-green", "bot")],
+      environments: [env({ currentSlot: "blue" })],
+    });
+
+    expect(result.candidates[0].rollbackTargetFor?.liveSlot).toBe("blue");
+  });
+});
