@@ -38,12 +38,6 @@ export const apps = pgTable(
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
-    // Compose-safe key for this app's runtime resources — directory, compose
-    // project, volumes, Traefik files. Set once and never rewritten, so renaming
-    // an app does not move anything on disk. `id` cannot serve here: it is a
-    // 21-char nanoid over a 64-symbol alphabet including uppercase, which
-    // Compose rejects. Backfilled to `name` for apps that predate it.
-    namespace: text("namespace"),
     displayName: text("display_name").notNull(),
     description: text("description"),
     source: sourceEnum("source").notNull().default("git"),
@@ -155,11 +149,6 @@ export const apps = pgTable(
     // A top-level app's name is its on-disk directory and compose project, so it
     // must be unique instance-wide. Do not scope this to the organization.
     uniqueIndex("app_top_level_name_uniq").on(t.name).where(sql`parent_app_id is null`),
-    // Same scope as the name index above — a namespace is a compose project name,
-    // which is global on the host.
-    uniqueIndex("app_top_level_namespace_uniq")
-      .on(t.namespace)
-      .where(sql`parent_app_id is null and namespace is not null`),
     unique("app_imported_container_uniq").on(t.organizationId, t.importedContainerId),
     unique("app_imported_compose_project_uniq").on(t.organizationId, t.importedComposeProject),
     index("app_org_id_idx").on(t.organizationId),
