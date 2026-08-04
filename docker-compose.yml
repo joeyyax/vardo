@@ -183,6 +183,24 @@ services:
     networks:
       - internal
 
+  # Railpack builds through BuildKit rather than the Docker daemon, so a
+  # railpack deploy needs this running. Opt in with `buildkit` in
+  # COMPOSE_PROFILES — it is privileged, which should be a deliberate choice
+  # rather than something every install inherits. Nixpacks does not need it.
+  buildkit:
+    container_name: vardo-buildkit
+    x-vardo-shared: true
+    image: moby/buildkit:latest
+    profiles:
+      - buildkit
+    restart: unless-stopped
+    privileged: true
+    mem_limit: ${VARDO_BUILDKIT_MEM:-2g}
+    volumes:
+      - buildkit_data:/var/lib/buildkit
+    networks:
+      - internal
+
   traefik:
     container_name: vardo-traefik
     x-vardo-shared: true
@@ -288,6 +306,7 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  buildkit_data:
   letsencrypt:
   wireguard_config:
   traefik_dynamic:
