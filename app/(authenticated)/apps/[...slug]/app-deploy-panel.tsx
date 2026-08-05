@@ -291,7 +291,10 @@ export function AppDeployPanel({
         appStatus === "deploying")
   );
 
-  const showRollbackAction = slotStatus?.standbyAvailable && appStatus === "active";
+  // A crashed app is when the swap back to the standby matters most, so "error"
+  // shows this card rather than hiding it.
+  const showRollbackAction =
+    slotStatus?.standbyAvailable && (appStatus === "active" || appStatus === "error");
 
   const instantRollbackDeploy = showRollbackAction
     ? completedDeployments.find(
