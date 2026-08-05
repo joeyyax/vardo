@@ -26,6 +26,7 @@ import {
   inspectContainer,
   removeContainer,
   stripDockerProjectPrefix,
+  volumeNameFromMount,
   listImages,
   inspectImageDigest,
   removeImage,
@@ -213,22 +214,37 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
   // Auto-detect persistent volumes from running containers
   try {
     const runningContainers = await listContainers({ id: ctx.appId, name: app.name });
-    const detectedVolumes: { name: string; mountPath: string; image: string; service: string }[] = [];
+    const detectedVolumes: {
+      name: string;
+      mountPath: string;
+      image: string;
+      service: string;
+      type: "named" | "bind";
+      source: string | null;
+    }[] = [];
     const seen = new Set<string>();
 
     for (const c of runningContainers) {
       const info = await inspectContainer(c.id);
       for (const mount of info.mounts) {
-        if (mount.type === "volume" && !seen.has(mount.destination) && !isAnonymousVolume(mount.name)) {
-          seen.add(mount.destination);
-          const name = stripDockerProjectPrefix(mount.name);
-          detectedVolumes.push({
-            name,
-            mountPath: mount.destination,
-            image: info.image,
-            service: info.labels["com.docker.compose.service"] ?? "",
-          });
-        }
+        if (seen.has(mount.destination)) continue;
+
+        // Bind mounts are recorded too. Only the import path used to do this,
+        // so an app deployed normally with host mounts had no volume rows at
+        // all and could never opt them into backup (#763).
+        const isBind = mount.type === "bind";
+        const isNamed = mount.type === "volume" && !isAnonymousVolume(mount.name);
+        if (!isBind && !isNamed) continue;
+
+        seen.add(mount.destination);
+        detectedVolumes.push({
+          name: volumeNameFromMount(mount),
+          mountPath: mount.destination,
+          image: info.image,
+          service: info.labels["com.docker.compose.service"] ?? "",
+          type: isBind ? "bind" : "named",
+          source: isBind ? mount.source : null,
+        });
       }
     }
 
@@ -265,7 +281,12 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
             organizationId: ctx.organizationId,
             name: vol.name,
             mountPath: vol.mountPath,
-            persistent: true,
+            type: vol.type,
+            source: vol.source,
+            // A bind mount survives a deploy because it lives on the host, so
+            // there is nothing for Vardo to externalize. That is what
+            // `persistent` records — not whether the data matters.
+            persistent: vol.type !== "bind",
             durability,
             backupStrategy: spec ? "dump" : "tar",
             backupSpec: spec,
