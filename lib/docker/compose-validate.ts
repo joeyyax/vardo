@@ -123,13 +123,9 @@ const PORT_RE = new RegExp(
   String.raw`(\/\w+)?$`,
 );
 
-const DENIED_MOUNT_PATHS = [
-  "/etc",
-  "/proc",
-  "/sys",
-  "/var/run/docker.sock",
-  "/root",
-];
+// Shared with the backup engine, which restores over these paths and so has
+// far more to lose from a gap in the list. See lib/docker/mount-paths.ts.
+import { DENIED_MOUNT_PATHS } from "./mount-paths";
 
 /**
  * Returns true if a Docker inspect mount name represents an anonymous volume.
