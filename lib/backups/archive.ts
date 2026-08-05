@@ -31,6 +31,29 @@ export function buildTarBackupScript(dataDir = "/data", backupDir = "/backup"): 
   ].join("\n");
 }
 
+/** Printed when the mounted source is a directory. Its absence is the signal. */
+export const DIRECTORY_SOURCE_MARKER = "vardo:source-is-directory";
+
+/**
+ * Preflight for a bind source, run inside the one-shot container.
+ *
+ * It has to run here rather than in Node: Vardo speaks to the daemon over a
+ * socket while `-v` is interpreted against the *host* filesystem, so an
+ * `fs.stat` from this process inspects the wrong machine and answers
+ * confidently about nothing.
+ *
+ * Docker creates a missing bind source as an empty root-owned directory rather
+ * than failing, so "exists" is not evidence the path was right — emptiness is
+ * reported and the caller decides.
+ */
+export function buildBindPreflightScript(dataDir = "/data"): string {
+  return [
+    "set -e",
+    `if [ -d "${dataDir}" ]; then echo "${DIRECTORY_SOURCE_MARKER}"; fi`,
+    `if [ -z "$(ls -A "${dataDir}" 2>/dev/null)" ]; then echo "${EMPTY_SOURCE_MARKER}"; fi`,
+  ].join("\n");
+}
+
 /**
  * Shell script for a tar restore: extract into a staging dir inside the volume,
  * and only swap it over the live data once tar has fully succeeded.

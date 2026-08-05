@@ -131,6 +131,9 @@ export const backups = pgTable("backup", {
   // volume's current config — that can change after the archive exists.
   strategy: text("strategy"),
   checksum: text("checksum"), // sha256 hash of the archive before upload
+  // Host path a bind archive was taken from. Restore compares against this
+  // rather than the volume row, which may have been edited since.
+  resolvedSource: text("resolved_source"),
   log: text("log"),
   startedAt: timestamp("started_at").defaultNow().notNull(),
   finishedAt: timestamp("finished_at"),

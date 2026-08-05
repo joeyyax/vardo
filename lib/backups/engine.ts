@@ -19,11 +19,14 @@ import { createBackupStorage } from "./storage-factory";
 import { assertSafeName } from "@/lib/docker/validate";
 import { isUncapturedSource, uncapturedReason } from "./coverage";
 import { exclusionReason, isBackupSelected } from "./durability";
+import { assertSafeBindSource } from "@/lib/docker/mount-paths";
 import { buildDumpArgv, buildRestoreArgv, describeDumpSpec, type DumpSpec } from "./dump-spec";
 import { resolveDbContainer } from "./resolve-db-container";
 import {
+  DIRECTORY_SOURCE_MARKER,
   EMPTY_SOURCE_MARKER,
   MIN_VALID_GZIP_BYTES,
+  buildBindPreflightScript,
   buildTarBackupScript,
   buildTarRestoreScript,
 } from "./archive";
@@ -93,6 +96,7 @@ type VolumeToBackup = {
   backupStrategy: string;
   backupMeta: { dumpCmd: string; restoreCmd: string } | null;
   backupSpec: DumpSpec | null;
+  durability: string | null;
 };
 
 // ---------------------------------------------------------------------------
@@ -320,6 +324,83 @@ async function streamDockerRestore(
 }
 
 /**
+ * Archive a host directory.
+ *
+ * Mounted read-only: this path only ever reads, and `:ro` means a bug here
+ * cannot become a write to the host.
+ */
+async function backupBindTar(
+  hostSource: string,
+  storageKey: string,
+  storage: BackupStorage,
+  logFn: (msg: string) => void,
+): Promise<{ sizeBytes: number; checksum: string }> {
+  const tmpDir = join(BACKUPS_DIR, `.tmp-${nanoid(8)}`);
+  await ensureDir(tmpDir);
+
+  try {
+    const safeSource = assertSafeBindSource(hostSource, {
+      dockerRoot: await dockerDataRoot(),
+      label: "bind source",
+    });
+
+    // Existence and type are established inside the container, for the reason
+    // given on buildBindPreflightScript.
+    const { stdout: pre } = await execFileAsync(
+      "docker",
+      ["run", "--rm", "-v", `${safeSource}:/data:ro`, "-v", `${tmpDir}:/backup`, "alpine", "sh", "-c", buildBindPreflightScript()],
+      { timeout: 60_000 },
+    );
+    if (!String(pre).includes(DIRECTORY_SOURCE_MARKER)) {
+      throw new Error(`${safeSource} is not a directory — refusing to archive it`);
+    }
+    // For a named volume an empty source is believable, because something
+    // already proved the volume exists. A bind source Docker just created from
+    // a typo looks identical, so this is a failure rather than a waiver.
+    if (String(pre).includes(EMPTY_SOURCE_MARKER)) {
+      throw new Error(
+        `${safeSource} is empty — refusing to record a backup that would restore as nothing`,
+      );
+    }
+
+    logFn(`Archiving host path ${safeSource}`);
+    await execFileAsync(
+      "docker",
+      ["run", "--rm", "-v", `${safeSource}:/data:ro`, "-v", `${tmpDir}:/backup`, "alpine", "sh", "-c", buildTarBackupScript()],
+      { timeout: 1_800_000 },
+    );
+
+    const archivePath = join(tmpDir, "volume.tar.gz");
+    await verifyArchive(archivePath, `Bind mount ${safeSource}`);
+
+    const checksum = await checksumFile(archivePath);
+    logFn(`Checksum: sha256:${checksum.slice(0, 16)}...`);
+
+    logFn(`Uploading to ${storageKey}`);
+    const { sizeBytes } = await storage.upload(storageKey, archivePath);
+
+    logFn(`Upload complete (${sizeBytes} bytes)`);
+    return { sizeBytes, checksum };
+  } finally {
+    try {
+      await rm(tmpDir, { recursive: true, force: true });
+    } catch {
+      // best effort
+    }
+  }
+}
+
+/** The daemon's real data root, so the deny-list covers where volumes actually live. */
+async function dockerDataRoot(): Promise<string | null> {
+  try {
+    const { getSystemInfo } = await import("@/lib/docker/client");
+    return (await getSystemInfo()).dockerRootDir;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Resolve the real Docker volume name backing an app's volume.
  *
  * Persistent volumes are **env-scoped** (`${app}-${env}_${vol}`) and declared
@@ -505,6 +586,7 @@ export async function runBackup(
         backupStrategy: vol.backupStrategy,
         backupMeta: vol.backupMeta,
         backupSpec: vol.backupSpec,
+        durability: vol.durability,
       });
     }
   }
@@ -530,6 +612,7 @@ export async function runBackup(
       backupStrategy: vol.backupStrategy,
       backupMeta: vol.backupMeta,
       backupSpec: vol.backupSpec,
+      durability: vol.durability,
     });
   }
 
@@ -647,6 +730,7 @@ export async function runBackup(
       log(`Backing up volume ${vol.name} (strategy: ${strategy})`);
 
       let result: { sizeBytes: number; checksum: string };
+      let resolvedSource: string | null = null;
 
       if (strategy === "dump") {
         const spec = vol.backupSpec;
@@ -692,6 +776,12 @@ export async function runBackup(
           storage,
           log,
         );
+      } else if (vol.type === "bind") {
+        if (!vol.source) {
+          throw new Error(`Bind mount ${vol.name} has no host path recorded`);
+        }
+        result = await backupBindTar(vol.source, storageKey, storage, log);
+        resolvedSource = vol.source;
       } else {
         // tar strategy — need to resolve the Docker volume name
         if (!vol.appName) {
@@ -714,6 +804,7 @@ export async function runBackup(
           sizeBytes: result.sizeBytes,
           storagePath: storageKey,
           checksum: `sha256:${result.checksum}`,
+          resolvedSource,
           log: logLines.join("\n"),
           finishedAt,
         })
@@ -1154,6 +1245,48 @@ export async function restoreBackup(
       } else {
         throw new Error("Dump restore requires a backupSpec or restoreCmd on the volume");
       }
+    } else if (vol?.type === "bind") {
+      // Restore is the destructive direction: the script deletes the
+      // destination's contents before writing. Three things must agree before
+      // that runs against a host path.
+      if (!vol.source) {
+        throw new Error("Bind restore has no host path recorded on the volume");
+      }
+      const safeSource = assertSafeBindSource(vol.source, {
+        dockerRoot: await dockerDataRoot(),
+        label: "restore destination",
+      });
+
+      // The volume row may have been edited since the archive was written.
+      // The archive's own record of where it came from is the authority.
+      if (backup.resolvedSource && backup.resolvedSource !== safeSource) {
+        throw new Error(
+          `This archive was taken from ${backup.resolvedSource}, but the volume now points at ${safeSource} — refusing to restore into a different location`,
+        );
+      }
+      if (!backup.resolvedSource) {
+        throw new Error(
+          "This archive predates source recording, so where it came from cannot be confirmed — refusing to overwrite a host path",
+        );
+      }
+
+      // Never conjure the destination. For a named volume "missing" is
+      // recoverable; for a host path it means the path is wrong.
+      const { stdout: pre } = await execFileAsync(
+        "docker",
+        ["run", "--rm", "-v", `${safeSource}:/data:ro`, "alpine", "sh", "-c", buildBindPreflightScript()],
+        { timeout: 60_000 },
+      );
+      if (!String(pre).includes(DIRECTORY_SOURCE_MARKER)) {
+        throw new Error(`${safeSource} is not a directory — refusing to restore over it`);
+      }
+
+      log(`Restoring into host path ${safeSource}`);
+      await execFileAsync(
+        "docker",
+        ["run", "--rm", "-v", `${safeSource}:/data`, "-v", `${tmpDir}:/backup`, "alpine", "sh", "-c", buildTarRestoreScript()],
+        { timeout: 1_800_000 },
+      );
     } else {
       // tar restore — need app context for volume name resolution
       if (!backup.app || !backup.appId) {
