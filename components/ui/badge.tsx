@@ -27,6 +27,15 @@ const badgeVariants = cva(
         info: "border-status-info-edge bg-status-info-muted text-status-info",
         neutral:
           "border-status-neutral-edge bg-status-neutral-muted text-status-neutral",
+        disposable:
+          "border-status-disposable-edge bg-status-disposable-muted text-status-disposable",
+        update:
+          "border-status-update-edge bg-status-update-muted text-status-update",
+        critical:
+          "border-status-critical-edge bg-status-critical-muted text-status-critical",
+
+        // Classification, not health — which environment this belongs to.
+        "env-tier": "border-env-tier-edge bg-env-tier-muted text-env-tier",
       },
     },
     defaultVariants: {

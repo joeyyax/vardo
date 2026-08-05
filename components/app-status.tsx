@@ -233,7 +233,7 @@ export function ChartCard({
   children: React.ReactNode;
 }) {
   return (
-    <div className="squircle rounded-lg border bg-card overflow-hidden">
+    <div className="squircle rounded-lg bg-card shadow-card dark:border overflow-hidden">
       <div className="flex items-center justify-between gap-3 px-4 py-3 border-b">
         <div className="flex items-center gap-2 min-w-0">
           <Icon className="size-4 text-muted-foreground shrink-0" />
