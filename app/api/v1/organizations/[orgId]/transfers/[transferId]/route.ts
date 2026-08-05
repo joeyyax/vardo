@@ -36,10 +36,12 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Fetch the transfer
+    // Scoped to the destination org: a transfer addressed to anyone else is
+    // indistinguishable from one that does not exist.
     const transfer = await db.query.appTransfers.findFirst({
       where: and(
         eq(appTransfers.id, transferId),
+        eq(appTransfers.destinationOrgId, orgId),
         eq(appTransfers.status, "pending"),
       ),
       with: {
@@ -51,14 +53,6 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json(
         { error: "Transfer not found or not pending" },
         { status: 404 },
-      );
-    }
-
-    // Only owners/admins of the destination org can accept/reject
-    if (transfer.destinationOrgId !== orgId) {
-      return NextResponse.json(
-        { error: "Only the destination organization can respond to this transfer" },
-        { status: 403 },
       );
     }
 
