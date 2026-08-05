@@ -3,13 +3,14 @@ import { z } from "zod";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { invitations, user } from "@/lib/db/schema";
-import { requireOrgAdmin } from "@/lib/auth/permissions";
+import { isOrgAdmin, requireOrgAdmin } from "@/lib/auth/permissions";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import crypto from "crypto";
 import { sendEmail, emailDelivery } from "@/lib/email/send";
 import { InviteEmail } from "@/lib/email/templates/invite";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
+import { serializeInvitation } from "@/lib/invitations/serialize";
 import { requirePlugin } from "@/lib/api/require-plugin";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
@@ -39,6 +40,17 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
         eq(invitations.targetId, orgId),
         eq(invitations.scope, "org"),
       ),
+      // The token is the invite. Selected explicitly so it is never serialized
+      // to a member, who could otherwise accept an admin invitation.
+      columns: {
+        id: true,
+        email: true,
+        role: true,
+        status: true,
+        token: true,
+        createdAt: true,
+        expiresAt: true,
+      },
       with: {
         inviter: {
           columns: { id: true, name: true, email: true },
@@ -47,7 +59,14 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       orderBy: (t, { desc }) => [desc(t.createdAt)],
     });
 
-    return NextResponse.json({ invitations: pending });
+    const canManage = isOrgAdmin(org.membership.role);
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+
+    const invitationList = pending.map((inv) =>
+      serializeInvitation(inv, { canManage, appUrl }),
+    );
+
+    return NextResponse.json({ invitations: invitationList });
   } catch (error) {
     return handleRouteError(error, "Error fetching invitations");
   }
