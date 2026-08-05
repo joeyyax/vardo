@@ -6,10 +6,9 @@
 // through here so the two cannot drift apart again.
 // ---------------------------------------------------------------------------
 
-import { execFile } from "child_process";
 import { access } from "fs/promises";
-import { promisify } from "util";
 import { and, eq } from "drizzle-orm";
+import { execFileAsync } from "@/lib/utils/exec";
 
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
@@ -26,8 +25,6 @@ import { resolveDefaultEnv } from "./resolve-env";
 import { readSlotPartition, sharedScopeArgs } from "./shared-project";
 import { sharedProjectName, slotScopeArgs } from "./slot-partition";
 import { reconcileAppNow, type ObservedStatus } from "./status-reconcile";
-
-const execFileAsync = promisify(execFile);
 
 export type StartAction = "restarted" | "started" | "none";
 

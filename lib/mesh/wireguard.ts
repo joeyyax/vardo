@@ -1,9 +1,8 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { HUB_IP } from "./ip-allocator";
 import { WG_CONTAINER, FRONTEND_MESH_IP, CONSOLE_PORT } from "./constants";
-
-const execFileAsync = promisify(execFile);
+import { execFile } from "node:child_process";
+import { execFileAsync } from "@/lib/utils/exec";
+import { redactError } from "@/lib/redact";
 
 // WireGuard base64 key: 44 chars, A-Z a-z 0-9 + / ending with =
 const WG_KEY_RE = /^[A-Za-z0-9+/]{43}=$/;
@@ -91,7 +90,7 @@ export async function writeWgConfig(config: string): Promise<void> {
     const child = execFile(
       "docker",
       ["exec", "-i", WG_CONTAINER, "sh", "-c", "mkdir -p /config/wg_confs && cat > /config/wg_confs/wg0.conf"],
-      (err) => (err ? reject(err) : resolve())
+      (err) => (err ? reject(redactError(err)) : resolve())
     );
     child.stdin?.write(config);
     child.stdin?.end();

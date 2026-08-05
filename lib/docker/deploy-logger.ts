@@ -8,6 +8,7 @@
 
 import { addDeployLog } from "@/lib/stream/producer";
 import { logger } from "@/lib/logger";
+import { redactSecrets } from "@/lib/redact";
 
 const log = logger.child("deploy-logger");
 
@@ -59,16 +60,15 @@ export function isTerminalStageEvent(stage?: string, status?: string): boolean {
   return stage === "done" && status === "success";
 }
 
-/** Secret patterns to strip from log output. */
-const SECRET_PATTERNS = [
-  { pattern: /x-access-token:[^\s@]+/g, replacement: "x-access-token:***" },
-  { pattern: /ghs_[A-Za-z0-9]+/g, replacement: "***" },
+/** Key file names, which point at a secret without being one. */
+const KEY_FILE_PATTERNS = [
   { pattern: /\.host-deploy-key-[A-Za-z0-9_-]+/g, replacement: ".host-deploy-key-***" },
+  { pattern: /\.host-ssh-key-[A-Za-z0-9_-]+/g, replacement: ".host-ssh-key-***" },
 ];
 
 function sanitize(line: string): string {
-  let result = line;
-  for (const { pattern, replacement } of SECRET_PATTERNS) {
+  let result = redactSecrets(line);
+  for (const { pattern, replacement } of KEY_FILE_PATTERNS) {
     result = result.replace(pattern, replacement);
   }
   return result;

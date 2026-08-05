@@ -6,13 +6,10 @@
 // cloned and staged — so the check belongs before the build starts.
 // ---------------------------------------------------------------------------
 
-import { execFile } from "child_process";
-import { promisify } from "util";
 
 import { DOCKER_CLEANUP_TIMEOUT } from "./constants";
 import { DeployBlockedError } from "./errors";
-
-const execFileAsync = promisify(execFile);
+import { execFileAsync } from "@/lib/utils/exec";
 
 const DOCKER_CONTAINER_PREFIX = "docker-container://";
 

@@ -2,8 +2,6 @@ import { db } from "@/lib/db";
 import { cronJobs, cronJobRuns } from "@/lib/db/schema";
 import { and, eq, lt } from "drizzle-orm";
 import { nanoid } from "nanoid";
-import { execFile } from "child_process";
-import { promisify } from "util";
 import { listContainers, type ContainerInfo, type ContainerScope } from "@/lib/docker/client";
 import { matchContainers, type ReconcilableApp } from "@/lib/docker/container-match";
 import { shouldRunNow } from "./parse";
@@ -11,10 +9,10 @@ import { acquireLock } from "@/lib/redis-lock";
 import { logger } from "@/lib/logger";
 import { safeFetch } from "@/lib/security/safe-fetch";
 import { getOutboundPolicy } from "@/lib/security/outbound-policy";
+import { execFileAsync } from "@/lib/utils/exec";
 
 const log = logger.child("cron");
 
-const execFileAsync = promisify(execFile);
 
 /** An app a cron job can target, plus the stack it belongs to. */
 export type CronTargetApp = ReconcilableApp & {

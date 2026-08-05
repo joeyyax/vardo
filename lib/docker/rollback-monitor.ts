@@ -13,8 +13,6 @@ import { db } from "@/lib/db";
 import { statusChange } from "@/lib/db/app-status";
 import { deployments, apps } from "@/lib/db/schema";
 import { eq, and, desc } from "drizzle-orm";
-import { execFile } from "child_process";
-import { promisify } from "util";
 import { join } from "path";
 import { nanoid } from "nanoid";
 import { appEnvDir } from "@/lib/paths";
@@ -30,10 +28,10 @@ import { createDeployLogger } from "./deploy-logger";
 import type { RollbackStage, DeployStatus } from "./deploy-logger";
 import { recordActivity } from "@/lib/activity";
 import { logger } from "@/lib/logger";
+import { execFileAsync } from "@/lib/utils/exec";
 
 const log = logger.child("rollback-monitor");
 
-const execFileAsync = promisify(execFile);
 
 /**
  * Container ids belonging to a compose project. `all` includes stopped ones.

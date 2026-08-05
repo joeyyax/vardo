@@ -10,12 +10,9 @@
 // ---------------------------------------------------------------------------
 
 import { readlink, readFile } from "fs/promises";
-import { execFile } from "child_process";
-import { promisify } from "util";
 import { join } from "path";
 import { COMPOSE_QUERY_TIMEOUT } from "./constants";
-
-const execFileAsync = promisify(execFile);
+import { execFileAsync } from "@/lib/utils/exec";
 
 export type Slot = "blue" | "green";
 
