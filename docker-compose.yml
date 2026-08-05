@@ -256,9 +256,18 @@ services:
       - "--providers.file.directory=/etc/traefik/dynamic"
       - "--providers.file.watch=true"
       - "--log.level=${TRAEFIK_LOG_LEVEL:-WARN}"
+      # Serves /ping on the traefik entrypoint for the healthcheck below.
+      - "--ping=true"
     environment:
       # Required for DNS-01 challenge with Cloudflare. Set in .env when using DNS challenge.
       CF_DNS_API_TOKEN: ${CF_DNS_API_TOKEN:-}
+    healthcheck:
+      # Distroless image — no shell and no curl, so the probe is Traefik's own subcommand.
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     ports:
       - "80:80"
       - "443:443"
