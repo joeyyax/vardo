@@ -78,6 +78,7 @@ import { ComposeDetail } from "./compose-detail";
 import { AppSecurity } from "./app-security";
 import { SystemBadge } from "@/components/system-badge";
 import { extractDeployError } from "@/lib/ui/deploy-error";
+import { deployFailureBanner } from "@/lib/ui/deploy-banner";
 import { currentStageLabel } from "@/lib/ui/deploy-stage";
 import { tabPanelSurface } from "@/lib/ui/tab-panel";
 import { cn } from "@/lib/utils";
@@ -644,31 +645,46 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         )}
       </PageToolbar>
 
-      {/* Error banner — only show if the current environment has a failed deploy */}
-      {app.status === "error" && (() => {
-        const failedDeploy = filteredDeployments.find((d) => d.status === "failed");
-        if (!failedDeploy) return null;
-        const errorMessage =
-          extractDeployError(failedDeploy.log) || "App crashed — check the deploy log for details";
+      {/* Failure banner — the app is down, or a deploy failed and the previous release absorbed it */}
+      {(() => {
+        const banner = deployFailureBanner(app.status, filteredDeployments);
+        if (!banner) return null;
+        const { variant, deployment: failedDeploy } = banner;
+        const recovered = variant === "recovered";
+        const errorMessage = recovered
+          ? "Deploy failed. The previous release is still running."
+          : extractDeployError(failedDeploy.log) || "App crashed — check the deploy log for details";
         return (
-          <div className="flex items-start gap-2 rounded-lg bg-status-error-muted px-4 py-2.5 text-sm text-status-error">
-            <X className="size-4 shrink-0 mt-0.5" />
+          <div
+            className={cn(
+              "flex items-start gap-2 rounded-lg px-4 py-2.5 text-sm",
+              recovered
+                ? "bg-status-warning-muted text-status-warning"
+                : "bg-status-error-muted text-status-error"
+            )}
+          >
+            {recovered ? (
+              <AlertTriangle className="size-4 shrink-0 mt-0.5" aria-hidden="true" />
+            ) : (
+              <X className="size-4 shrink-0 mt-0.5" />
+            )}
             <span
-              className="flex-1 line-clamp-3 break-words font-mono text-xs leading-relaxed"
+              className={cn(
+                "flex-1 line-clamp-3 break-words leading-relaxed",
+                !recovered && "font-mono text-xs"
+              )}
               title={errorMessage}
             >
               {errorMessage}
             </span>
             <div className="flex items-center gap-2 shrink-0 mt-0.5">
-              {failedDeploy && (
-                <button
-                  type="button"
-                  onClick={() => { setActiveTab("deployments"); deploy.setViewingLogId(failedDeploy.id); }}
-                  className="text-xs underline underline-offset-2 opacity-80 hover:opacity-100"
-                >
-                  View log
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => { setActiveTab("deployments"); deploy.setViewingLogId(failedDeploy.id); }}
+                className="text-xs underline underline-offset-2 opacity-80 hover:opacity-100"
+              >
+                View log
+              </button>
               <button
                 type="button"
                 disabled={deploy.deploying}
