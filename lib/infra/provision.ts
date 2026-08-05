@@ -398,9 +398,7 @@ async function resolveComposeContent(template: Template): Promise<string | null>
 /** Check if an NVIDIA GPU runtime is available on the Docker host. */
 async function detectNvidiaGpu(): Promise<boolean> {
   try {
-    const { execFile } = await import("child_process");
-    const { promisify } = await import("util");
-    const execFileAsync = promisify(execFile);
+    const { execFileAsync } = await import("@/lib/utils/exec");
     const { stdout } = await execFileAsync("docker", ["info", "--format", "{{json .Runtimes}}"], { timeout: 5000 });
     return stdout.includes("nvidia");
   } catch {

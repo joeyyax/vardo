@@ -1,11 +1,8 @@
 import { NextResponse } from "next/server";
-import { execFile } from "child_process";
-import { promisify } from "util";
 import { requireAppAdmin } from "@/lib/auth/admin";
 import { handleRouteError } from "@/lib/api/error-response";
 import { logger } from "@/lib/logger";
-
-const execFileAsync = promisify(execFile);
+import { execFileAsync } from "@/lib/utils/exec";
 
 const log = logger.child("admin:maintenance");
 

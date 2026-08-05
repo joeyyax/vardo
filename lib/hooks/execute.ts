@@ -11,8 +11,6 @@
 // ---------------------------------------------------------------------------
 
 import { createHmac } from "crypto";
-import { execFile } from "child_process";
-import { promisify } from "util";
 import { safeFetch } from "@/lib/security/safe-fetch";
 import { getOutboundPolicy } from "@/lib/security/outbound-policy";
 import { getHooksForEvent, getInternalHandler } from "./registry";
@@ -27,8 +25,8 @@ import type {
   ScriptHookConfig,
 } from "./types";
 import { logger } from "@/lib/logger";
+import { execFileAsync } from "@/lib/utils/exec";
 
-const execFileAsync = promisify(execFile);
 const log = logger.child("hooks");
 
 const DEFAULT_TIMEOUT_MS = 30_000;

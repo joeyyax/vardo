@@ -8,8 +8,23 @@
 
 import { execFile } from "child_process";
 import { promisify } from "util";
+import { redactError } from "@/lib/redact";
 
-export const execFileAsync = promisify(execFile);
+const execFileRaw = promisify(execFile);
+
+/**
+ * `execFile`, with credentials stripped from a failure before it propagates.
+ * Node builds the error message out of the whole argv, so any secret passed as
+ * an argument would otherwise reach every logger that prints the error.
+ * Use this rather than promisifying `execFile` again.
+ */
+export const execFileAsync = (async (...args: Parameters<typeof execFileRaw>) => {
+  try {
+    return await execFileRaw(...args);
+  } catch (err) {
+    throw redactError(err);
+  }
+}) as typeof execFileRaw;
 
 export type ExecOptions = Parameters<typeof execFileAsync>[2];
 

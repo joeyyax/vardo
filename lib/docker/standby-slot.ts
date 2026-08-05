@@ -8,10 +8,9 @@
 // This finds a standby that came back and stops it again.
 // ---------------------------------------------------------------------------
 
-import { execFile } from "child_process";
-import { promisify } from "util";
 import { readlink } from "fs/promises";
 import { join } from "path";
+import { execFileAsync } from "@/lib/utils/exec";
 
 import { COMPOSE_QUERY_TIMEOUT, COMPOSE_DOWN_TIMEOUT } from "./constants";
 import { slotComposeFiles } from "./compose-inject";
@@ -19,7 +18,6 @@ import { demoteStandbyRestart } from "./restart-policy";
 import { logger } from "@/lib/logger";
 import type { Slot } from "./slots";
 
-const execFileAsync = promisify(execFile);
 const log = logger.child("standby-slot");
 
 export const SLOTS: readonly Slot[] = ["blue", "green"];

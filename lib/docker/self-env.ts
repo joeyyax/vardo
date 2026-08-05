@@ -1,11 +1,8 @@
 import { copyFile } from "fs/promises";
-import { execFile } from "child_process";
-import { promisify } from "util";
 import { dirname, join } from "path";
 import { VARDO_SELF_APP_NAME } from "@/lib/api/system-managed";
 import { APP_UID, DOCKER_CLEANUP_TIMEOUT } from "./constants";
-
-const execFileAsync = promisify(execFile);
+import { execFileAsync } from "@/lib/utils/exec";
 
 /** The self-app is the only app whose env lives on the host, not in the database. */
 export function isSelfApp(appName: string): boolean {

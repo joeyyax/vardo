@@ -1,9 +1,6 @@
-import { execFile } from "child_process";
-import { promisify } from "util";
 import { assertSafeName, assertSafeMountPath } from "@/lib/docker/validate";
 import { assertSafeSyncPath } from "@/lib/utils/exec";
-
-const execFileAsync = promisify(execFile);
+import { execFileAsync } from "@/lib/utils/exec";
 
 /**
  * Validate that an image reference contains only safe characters.

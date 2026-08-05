@@ -10,10 +10,9 @@
 
 import { readFile, access } from "fs/promises";
 import { join } from "path";
-import { promisify } from "util";
-import { execFile } from "child_process";
 import { and, eq, isNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
+import { execFileAsync } from "@/lib/utils/exec";
 
 import { db } from "@/lib/db";
 import { apps, deployments, projects } from "@/lib/db/schema";
@@ -27,8 +26,6 @@ import { ensureVardoOrg } from "@/lib/infra/vardo-org";
 import { logger } from "@/lib/logger";
 import { VARDO_HOME_DIR, VARDO_CURRENT_DIR } from "@/lib/paths";
 import type { ComposeService } from "@/lib/docker/compose-types";
-
-const execFileAsync = promisify(execFile);
 
 const log = logger.child("self-register");
 

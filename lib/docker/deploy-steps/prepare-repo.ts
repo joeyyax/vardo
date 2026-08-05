@@ -18,8 +18,6 @@ import {
 } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
-import { execFile } from "child_process";
-import { promisify } from "util";
 import { mkdir, writeFile, readFile, rm } from "fs/promises";
 import { join } from "path";
 import { appBaseDir, appEnvDir, PROJECTS_DIR } from "@/lib/paths";
@@ -61,8 +59,7 @@ import {
 } from "../constants";
 import type { DeployContext } from "../deploy-context";
 import { deployments } from "@/lib/db/schema";
-
-const execFileAsync = promisify(execFile);
+import { execFileAsync } from "@/lib/utils/exec";
 
 // ---------------------------------------------------------------------------
 // Helpers
