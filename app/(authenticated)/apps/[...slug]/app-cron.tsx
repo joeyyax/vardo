@@ -276,7 +276,7 @@ export function CronManager({ appId, orgId }: Props) {
             {jobs.map((job) => (
               <div
                 key={job.id}
-                className="squircle rounded-lg border bg-background-deep p-4"
+                className="squircle rounded-lg bg-background-deep p-4"
               >
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1 min-w-0 space-y-1.5">

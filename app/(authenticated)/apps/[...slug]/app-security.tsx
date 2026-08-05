@@ -32,17 +32,17 @@ function severityIcon(severity: SecurityFinding["severity"]) {
 function severityClass(severity: SecurityFinding["severity"]) {
   switch (severity) {
     case "critical":
-      return "border-status-error/20 bg-status-error-muted";
+      return "bg-status-error-muted";
     case "warning":
-      return "border-status-warning/20 bg-status-warning-muted";
+      return "bg-status-warning-muted";
     case "info":
-      return "border-status-info/20 bg-status-info-muted";
+      return "bg-status-info-muted";
   }
 }
 
 function FindingCard({ finding }: { finding: SecurityFinding }) {
   return (
-    <div className={`flex items-start gap-3 rounded-lg border px-4 py-3 ${severityClass(finding.severity)}`}>
+    <div className={`flex items-start gap-3 rounded-lg px-4 py-3 ${severityClass(finding.severity)}`}>
       {severityIcon(finding.severity)}
       <div className="flex-1 min-w-0 space-y-0.5">
         <p className="text-sm font-medium leading-snug">{finding.title}</p>

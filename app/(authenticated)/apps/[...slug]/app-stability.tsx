@@ -125,7 +125,7 @@ export function AppStability({
             Nothing recorded. History starts when Vardo first saw this app, not when the container was built.
           </p>
         ) : (
-          <ul className="mt-3 divide-y rounded-lg border">
+          <ul className="mt-3 divide-y rounded-lg bg-card shadow-card dark:border">
             {incidents.map((incident) => (
               <li
                 key={`${incident.kind}-${incident.at}`}
