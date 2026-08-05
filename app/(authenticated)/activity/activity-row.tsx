@@ -111,7 +111,7 @@ export function ActivityRow({ group }: { group: ActivityGroup }) {
         </p>
 
         {failed && group.error && (
-          <p className="squircle rounded border border-status-error/20 bg-background/60 px-2 py-1 font-mono text-xs text-status-error">
+          <p className="squircle rounded bg-background-deep px-2 py-1 font-mono text-xs text-status-error">
             <span className="line-clamp-2 break-words">{group.error}</span>
           </p>
         )}

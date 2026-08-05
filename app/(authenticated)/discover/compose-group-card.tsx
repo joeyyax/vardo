@@ -17,7 +17,7 @@ export function ComposeGroupCard({
   onImport,
 }: ComposeGroupCardProps) {
   return (
-    <div className="squircle border bg-card/50 p-4 space-y-3">
+    <div className="squircle bg-card p-4 space-y-3 shadow-card dark:border">
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <span className="font-medium text-sm">{composeProject}</span>
@@ -40,6 +40,7 @@ export function ComposeGroupCard({
           <ContainerCard
             key={container.id}
             container={container}
+            nested
           />
         ))}
       </div>

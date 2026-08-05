@@ -539,7 +539,7 @@ export function AppGrid({
       </div>
 
       {projectCards.length === 0 && (apps.length > 0 || emptyProjects.length > 0) && (
-        <div className="squircle lining flex flex-col items-center justify-center gap-3 rounded-lg border bg-card p-12">
+        <div className="squircle lining flex flex-col items-center justify-center gap-3 rounded-lg bg-card p-12 shadow-card dark:border">
           <p className="text-sm text-muted-foreground">
             No apps match the current filters.
           </p>

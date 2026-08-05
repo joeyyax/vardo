@@ -8,7 +8,7 @@ export default function BackupsLoading() {
       </div>
 
       {/* Table skeleton */}
-      <div className="rounded-xl border overflow-hidden">
+      <div className="rounded-xl bg-card shadow-card dark:border overflow-hidden">
         {/* Table header */}
         <div className="flex items-center gap-4 border-b bg-muted/30 px-4 py-3">
           {[100, 80, 120, 80, 60].map((w, i) => (
