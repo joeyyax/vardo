@@ -137,6 +137,11 @@ export const backups = pgTable("backup", {
   // "directory" or "file" for a bind archive. Restore refuses when the
   // destination is no longer the shape the archive was taken from.
   sourceKind: text("source_kind"),
+  // Drill results. Kept apart from status: a backup that succeeded is not the
+  // same as one that has been shown to restore.
+  verifiedAt: timestamp("verified_at"),
+  verifyOutcome: text("verify_outcome"),
+  verifyDetail: text("verify_detail"),
   log: text("log"),
   startedAt: timestamp("started_at").defaultNow().notNull(),
   finishedAt: timestamp("finished_at"),
