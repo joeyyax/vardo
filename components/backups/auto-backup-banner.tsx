@@ -33,7 +33,7 @@ export function AutoBackupBanner({
   const healthy = failures.length === 0 && lastRun?.status === "success";
 
   return (
-    <div className="squircle space-y-4 rounded-lg border bg-card p-5">
+    <div className="squircle space-y-4 rounded-lg bg-card p-5 shadow-card dark:border">
       <div className="flex items-start gap-3">
         {running.length > 0 ? (
           <Loader2 className="mt-0.5 size-5 shrink-0 animate-spin text-status-warning" aria-hidden="true" />

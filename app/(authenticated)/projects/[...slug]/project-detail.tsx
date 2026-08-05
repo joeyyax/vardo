@@ -281,7 +281,7 @@ function ProjectDeployments({ apps, color }: { apps: ProjectApp[]; color: string
                   : "bg-card";
 
           return (
-            <div key={deployment.id} className={`squircle rounded-lg border ${bgColor} overflow-hidden`}>
+            <div key={deployment.id} className={`squircle rounded-lg ${bgColor} shadow-card dark:border overflow-hidden`}>
               <button
                 type="button"
                 onClick={() => setViewingLogId(viewingLogId === deployment.id ? null : deployment.id)}
@@ -406,7 +406,7 @@ function ProjectVariables({ apps, orgId }: { apps: ProjectApp[]; orgId: string }
   return (
     <div className="space-y-2">
       {apps.map((app) => (
-        <div key={app.id} className="squircle rounded-lg border bg-card overflow-hidden">
+        <div key={app.id} className="squircle rounded-lg bg-card shadow-card dark:border overflow-hidden">
           <button
             type="button"
             onClick={() => setExpandedApp(expandedApp === app.id ? null : app.id)}

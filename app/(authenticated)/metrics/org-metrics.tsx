@@ -122,7 +122,7 @@ function ShareBar({ title, subtitle, total, totalLabel, slices, footnote }: {
 }) {
   const sum = slices.reduce((s, sl) => s + sl.value, 0);
   return (
-    <div className="squircle rounded-lg border bg-card overflow-hidden">
+    <div className="squircle rounded-lg bg-card shadow-card dark:border overflow-hidden">
       <div className="flex items-center justify-between gap-2 px-4 py-2 border-b">
         <h3 className="text-sm font-medium">{title}</h3>
         {subtitle && <span className="text-[10px] text-muted-foreground text-right">{subtitle}</span>}
@@ -391,7 +391,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
 
       {/* Summary cards with sparklines */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-        <div className="squircle relative rounded-lg border bg-card px-4 py-3 overflow-hidden">
+        <div className="squircle relative rounded-lg bg-card px-4 py-3 shadow-card dark:border overflow-hidden">
           {points.length > 1 && (
             <Sparkline data={cpuSparkData} className="absolute inset-0 w-full h-full pointer-events-none" style={{ color: CHART_COLORS.cpu }} />
           )}
@@ -406,7 +406,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
             {cpu.detail ?? `summed across containers · ${scopeNote}`}
           </p>
         </div>
-        <div className="squircle relative rounded-lg border bg-card px-4 py-3 overflow-hidden">
+        <div className="squircle relative rounded-lg bg-card px-4 py-3 shadow-card dark:border overflow-hidden">
           {points.length > 1 && (
             <Sparkline data={memSparkData} className="absolute inset-0 w-full h-full pointer-events-none" style={{ color: CHART_COLORS.memory }} />
           )}
@@ -423,7 +423,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
               : `running containers · ${scopeNote}`}
           </p>
         </div>
-        <div className="squircle relative rounded-lg border bg-card px-4 py-3 overflow-hidden">
+        <div className="squircle relative rounded-lg bg-card px-4 py-3 shadow-card dark:border overflow-hidden">
           {points.length > 1 && (
             <Sparkline data={diskSparkData} className="absolute inset-0 w-full h-full pointer-events-none" style={{ color: CHART_COLORS.disk }} />
           )}
@@ -442,7 +442,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
             </p>
           )}
         </div>
-        <div className="squircle relative rounded-lg border bg-card px-4 py-3 overflow-hidden">
+        <div className="squircle relative rounded-lg bg-card px-4 py-3 shadow-card dark:border overflow-hidden">
           {points.length > 1 && (<>
             <Sparkline data={netRxSparkData} className="absolute inset-0 w-full h-full pointer-events-none" style={{ color: CHART_COLORS.networkRx }} />
             <Sparkline data={netTxSparkData} className="absolute inset-0 w-full h-full pointer-events-none" style={{ color: CHART_COLORS.networkTx }} />
@@ -460,7 +460,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
             </p>
           )}
         </div>
-        <div className="squircle rounded-lg border bg-card px-4 py-3">
+        <div className="squircle rounded-lg bg-card px-4 py-3 shadow-card dark:border">
           <div className="flex items-center gap-2">
             <Box className="size-4 text-muted-foreground shrink-0" />
             <p className="text-xs text-muted-foreground">Containers</p>
@@ -478,7 +478,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
 
       {/* Aggregate charts */}
       <div className="grid md:grid-cols-2 gap-4">
-          <div className="squircle rounded-lg border bg-card overflow-hidden">
+          <div className="squircle rounded-lg bg-card shadow-card dark:border overflow-hidden">
             <div className="flex items-center gap-2 px-4 py-3 border-b">
               <Cpu className="size-4 text-muted-foreground" />
               <h3 className="text-sm font-medium">CPU</h3>
@@ -502,7 +502,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
               </ResponsiveContainer>
             </div>
           </div>
-          <div className="squircle rounded-lg border bg-card overflow-hidden">
+          <div className="squircle rounded-lg bg-card shadow-card dark:border overflow-hidden">
             <div className="flex items-center gap-2 px-4 py-3 border-b">
               <MemoryStick className="size-4 text-muted-foreground" />
               <h3 className="text-sm font-medium">Memory</h3>
@@ -525,7 +525,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
               </ResponsiveContainer>
             </div>
           </div>
-          <div className="squircle rounded-lg border bg-card overflow-hidden">
+          <div className="squircle rounded-lg bg-card shadow-card dark:border overflow-hidden">
             <div className="flex items-center gap-2 px-4 py-3 border-b">
               <Network className="size-4 text-muted-foreground" />
               <h3 className="text-sm font-medium">Network</h3>
@@ -534,7 +534,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
               <NetworkChart data={chartPoints} height={180} />
             </div>
           </div>
-          <div className="squircle rounded-lg border bg-card overflow-hidden">
+          <div className="squircle rounded-lg bg-card shadow-card dark:border overflow-hidden">
             <div className="flex items-center gap-2 px-4 py-3 border-b">
               <HardDrive className="size-4 text-muted-foreground" />
               <h3 className="text-sm font-medium">Disk Usage</h3>
@@ -652,7 +652,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
           </Button>
         </div>
       ) : (
-        <div className="squircle rounded-lg border bg-card overflow-x-auto">
+        <div className="squircle rounded-lg bg-card shadow-card dark:border overflow-x-auto">
           <div className="flex items-center justify-between gap-2 px-4 py-2 border-b">
             <h3 className="text-sm font-medium">Apps</h3>
             <span className="text-[10px] text-muted-foreground">
