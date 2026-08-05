@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
-import { apps, appTransfers } from "@/lib/db/schema";
+import { apps, appTransfers, organizations } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
 import { initiateTransfer, analyzeTransfer, rejectTransfer } from "@/lib/transfers/engine";
@@ -53,6 +53,20 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       );
     }
 
+    // Existence only — the destination accepts or rejects, so membership in it
+    // is not required. Its contents must not reach this response.
+    const destinationOrg = await db.query.organizations.findFirst({
+      where: eq(organizations.id, destinationOrgId),
+      columns: { id: true },
+    });
+
+    if (!destinationOrg) {
+      return NextResponse.json(
+        { error: "Destination organization not found" },
+        { status: 404 },
+      );
+    }
+
     // Verify the app exists in this org
     const app = await db.query.apps.findFirst({
       where: and(
@@ -82,7 +96,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     }
 
     // Run analysis and create the transfer
-    const analysis = await analyzeTransfer(appId, orgId, destinationOrgId);
+    const analysis = await analyzeTransfer(appId);
 
     const transferId = await initiateTransfer({
       appId: appId,
@@ -100,7 +114,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       metadata: {
         transferId,
         destinationOrgId,
-        frozenRefsCount: analysis.frozenRefs.length,
+        crossProjectRefsCount: analysis.crossProjectRefs.length,
         warningsCount: analysis.warnings.length,
       },
     });
@@ -109,7 +123,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       {
         transferId,
         analysis: {
-          frozenRefs: analysis.frozenRefs,
+          crossProjectRefs: analysis.crossProjectRefs,
           warnings: analysis.warnings,
         },
       },

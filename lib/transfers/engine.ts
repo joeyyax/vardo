@@ -9,16 +9,19 @@ import { eq, and, isNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { extractExpressions, validateExpression } from "@/lib/env/resolve";
 
+type CrossProjectRef = {
+  key: string;
+  refApp: string;
+  originalRef: string;
+  currentValue: string;
+};
+
 /**
  * Analyze what would happen if an app is transferred.
- * Returns list of cross-project refs that would become unresolvable.
+ * Reads the source app only; which refs actually freeze is decided on accept.
  */
-export async function analyzeTransfer(
-  appId: string,
-  sourceOrgId: string,
-  destinationOrgId: string,
-): Promise<{
-  frozenRefs: { key: string; originalRef: string; currentValue: string }[];
+export async function analyzeTransfer(appId: string): Promise<{
+  crossProjectRefs: CrossProjectRef[];
   warnings: string[];
 }> {
   // Load app's env vars (base-level, no environment override)
@@ -26,20 +29,7 @@ export async function analyzeTransfer(
     where: and(eq(envVars.appId, appId), isNull(envVars.environmentId)),
   });
 
-  // Load all app names in destination org
-  const destApps = await db.query.apps.findMany({
-    where: eq(apps.organizationId, destinationOrgId),
-    columns: { name: true },
-  });
-  const destAppNames = new Set(destApps.map((a) => a.name));
-
-  // Load all app names in source org (for reference resolution)
-  const sourceApps = await db.query.apps.findMany({
-    where: eq(apps.organizationId, sourceOrgId),
-    columns: { name: true },
-  });
-
-  const frozenRefs: { key: string; originalRef: string; currentValue: string }[] = [];
+  const crossProjectRefs: CrossProjectRef[] = [];
   const warnings: string[] = [];
 
   for (const v of vars) {
@@ -47,15 +37,12 @@ export async function analyzeTransfer(
     for (const expr of expressions) {
       const { type, target } = validateExpression(expr);
       if (type === "cross-project") {
-        const refAppName = target.split(".")[0];
-        // If the referenced app won't exist in the destination org
-        if (!destAppNames.has(refAppName)) {
-          frozenRefs.push({
-            key: v.key,
-            originalRef: `\${${expr}}`,
-            currentValue: v.value,
-          });
-        }
+        crossProjectRefs.push({
+          key: v.key,
+          refApp: target.split(".")[0],
+          originalRef: `\${${expr}}`,
+          currentValue: v.value,
+        });
       }
       if (type === "org-var") {
         warnings.push(
@@ -65,7 +52,29 @@ export async function analyzeTransfer(
     }
   }
 
-  return { frozenRefs, warnings };
+  return { crossProjectRefs, warnings };
+}
+
+/** Cross-project refs with no app of that name in the destination org. */
+async function resolveFrozenRefs(
+  appId: string,
+  destinationOrgId: string,
+): Promise<{ key: string; originalRef: string; frozenValue: string }[]> {
+  const { crossProjectRefs } = await analyzeTransfer(appId);
+
+  const destApps = await db.query.apps.findMany({
+    where: eq(apps.organizationId, destinationOrgId),
+    columns: { name: true },
+  });
+  const destAppNames = new Set(destApps.map((a) => a.name));
+
+  return crossProjectRefs
+    .filter((r) => !destAppNames.has(r.refApp))
+    .map((r) => ({
+      key: r.key,
+      originalRef: r.originalRef,
+      frozenValue: r.currentValue,
+    }));
 }
 
 /**
@@ -78,12 +87,6 @@ export async function initiateTransfer(opts: {
   initiatedBy: string;
   note?: string;
 }): Promise<string> {
-  const analysis = await analyzeTransfer(
-    opts.appId,
-    opts.sourceOrgId,
-    opts.destinationOrgId,
-  );
-
   const id = nanoid();
   await db.insert(appTransfers).values({
     id,
@@ -92,11 +95,7 @@ export async function initiateTransfer(opts: {
     destinationOrgId: opts.destinationOrgId,
     initiatedBy: opts.initiatedBy,
     status: "pending",
-    frozenRefs: analysis.frozenRefs.map((r) => ({
-      key: r.key,
-      originalRef: r.originalRef,
-      frozenValue: r.currentValue,
-    })),
+    frozenRefs: [],
     note: opts.note,
   });
 
@@ -120,8 +119,13 @@ export async function acceptTransfer(
   }
 
   // Freeze cross-project refs that won't resolve in the new org
-  if (transfer.frozenRefs && transfer.frozenRefs.length > 0) {
-    for (const ref of transfer.frozenRefs) {
+  const frozenRefs = await resolveFrozenRefs(
+    transfer.appId,
+    transfer.destinationOrgId,
+  );
+
+  if (frozenRefs.length > 0) {
+    for (const ref of frozenRefs) {
       const vars = await db.query.envVars.findMany({
         where: and(
           eq(envVars.appId, transfer.appId),
@@ -176,6 +180,7 @@ export async function acceptTransfer(
     .update(appTransfers)
     .set({
       status: "accepted",
+      frozenRefs,
       respondedBy,
       respondedAt: new Date(),
     })
