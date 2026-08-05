@@ -29,6 +29,7 @@ import {
 } from "../constants";
 import type { DeployContext, SlotStopOutcome } from "../deploy-context";
 import { classifyComposeServices } from "./classify-services";
+import { driftedFromDryRun, sharedContainerNames, sharedPullTargets } from "./shared-images";
 import { majorGateAfter, majorGateBefore, type MajorGateState } from "./major-gate";
 import { publishesHostPorts } from "../host-ports";
 import { getServicesWithExternalizedVolumes } from "../compose-inject";
@@ -269,6 +270,25 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
     compose.services,
     ctx.builtImageRefs,
   );
+
+  /** Whether the host already holds an image, so no registry is involved. */
+  const imageIsLocal = async (image: string): Promise<boolean> => {
+    try {
+      await execFileAsync("docker", ["image", "inspect", "--format", "{{.Id}}", image], {
+        timeout: COMPOSE_QUERY_TIMEOUT,
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  // Shared images are fetched here rather than by the `up` further down, which
+  // runs after the old slot may already be stopped. Only the ones missing from
+  // this host: a re-pull on every deploy would slow all of them down and move
+  // tags under containers `--no-recreate` will not replace.
+  const sharedPulls = await sharedPullTargets(shared, ctx.builtImageRefs, imageIsLocal);
+
   let majorGate: MajorGateState = { candidates: [], before: new Map() };
   try {
     // Both phases reach registries — a `build:` service pulls the bases its
@@ -305,12 +325,23 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
           logs.push(`[deploy][pull] ${line.trim()}`);
         }
       }
+      if (sharedPulls.length > 0) {
+        log(`[deploy] Pre-pulling shared images: ${sharedPulls.join(", ")} (old slot still serving)...`);
+        const { stdout, stderr } = await execFileAsync(
+          "docker",
+          ["compose", ...composeFileArgs, "-p", sharedProject, "pull", ...sharedPulls],
+          { cwd: slotDir, env, timeout: COMPOSE_UP_TIMEOUT, maxBuffer: EXEC_MAX_BUFFER, signal: ctx.signal }
+        );
+        for (const line of `${stdout}\n${stderr}`.split(/\r?\n|\r/).filter(Boolean)) {
+          logs.push(`[deploy][pull] ${line.trim()}`);
+        }
+      }
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     const hint = await registryAuthHint(
       message,
-      pullServices.map((name) => compose.services[name]?.image),
+      [...pullServices, ...sharedPulls].map((name) => compose.services[name]?.image),
     );
     throw new Error(
       `Pre-build/pre-pull for ${newSlot} failed (old slot unaffected): ${message}` +
@@ -556,43 +587,72 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
     }
   };
 
+  // `--no-recreate` leaves a running shared service exactly as it is, so an
+  // edited healthcheck, command, environment or image tag never reaches it.
+  // Compose is asked what it would replace and the answer is logged, because a
+  // change that is silently dropped reads as a change that was applied.
+  const reportSharedDrift = async () => {
+    try {
+      const { stdout, stderr } = await execFileAsync(
+        "docker",
+        [
+          "compose",
+          "--dry-run",
+          ...composeFileArgs,
+          "-p", sharedProject,
+          "up", "-d",
+          "--no-deps",
+          ...sharedNames,
+        ],
+        { cwd: slotDir, timeout: COMPOSE_QUERY_TIMEOUT, maxBuffer: EXEC_MAX_BUFFER }
+      );
+      const drifted = driftedFromDryRun(
+        `${stdout}\n${stderr}`,
+        sharedContainerNames(shared, sharedProject),
+      );
+      if (drifted.length > 0) {
+        log(
+          `[deploy] ${drifted.join(", ")} still ${drifted.length === 1 ? "runs" : "run"} an older definition — a deploy never recreates a shared service, so recreate ${drifted.length === 1 ? "it" : "them"} to apply the change`,
+        );
+      }
+    } catch {
+      // Nothing to report on a compose without --dry-run.
+    }
+  };
+
   // Step 6b2: Bring up the shared services. --no-recreate means an already
   // running database is left exactly as it is; only a missing one is created.
   // Runs before the new slot so anything depending on it can connect.
   if (sharedNames.length > 0) {
     log(`[deploy] Shared services (not rotated): ${sharedNames.join(", ")}`);
     try {
-      // Shared services are left out of the pre-pull, so this `up` is where a
-      // missing one is fetched.
-      const { stdout, stderr } = await withRegistryAuth((env) =>
-        execFileAsync(
-          "docker",
-          [
-            "compose",
-            ...composeFileArgs,
-            "-p", sharedProject,
-            "up", "-d",
-            "--no-recreate",
-            "--no-deps",
-            ...sharedNames,
-          ],
-          { cwd: slotDir, env, timeout: COMPOSE_UP_TIMEOUT, maxBuffer: EXEC_MAX_BUFFER }
-        )
+      // `--pull never`: every image was fetched above, while the old slot was
+      // still serving. Reaching a registry here is what turns a slow pull into
+      // an outage, so it is taken away rather than relied on not to happen.
+      const { stdout, stderr } = await execFileAsync(
+        "docker",
+        [
+          "compose",
+          ...composeFileArgs,
+          "-p", sharedProject,
+          "up", "-d",
+          "--no-recreate",
+          "--pull", "never",
+          "--no-deps",
+          ...sharedNames,
+        ],
+        { cwd: slotDir, timeout: COMPOSE_UP_TIMEOUT, maxBuffer: EXEC_MAX_BUFFER }
       );
       for (const line of `${stdout}\n${stderr}`.split(/\r?\n|\r/).filter(Boolean)) {
         logs.push(`[deploy][shared] ${line.trim()}`);
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      const hint = await registryAuthHint(
-        message,
-        sharedNames.map((name) => compose.services[name]?.image),
-      );
-      throw new Error(
-        `Shared services failed to start (old slot unaffected): ${message}` +
-          (hint ? `\n${hint}` : "")
-      );
+      await restoreOldSlot("shared services failing to start");
+      throw new Error(`Shared services failed to start: ${message}`);
     }
+
+    await reportSharedDrift();
   }
 
   // Step 6c: Pre-create and chown bind-mount targets to each service's non-root
