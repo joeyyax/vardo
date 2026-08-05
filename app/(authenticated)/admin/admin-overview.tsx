@@ -65,7 +65,7 @@ export function AdminOverview() {
             ? sparklines[stat.sparklineKey]?.map(([, v]) => v)
             : null;
           return (
-            <div key={stat.label} className="squircle relative rounded-lg border bg-card p-4 overflow-hidden">
+            <div key={stat.label} className="squircle relative rounded-lg bg-card p-4 overflow-hidden shadow-card dark:border">
               {sparklineData && sparklineData.length > 0 && (
                 <Sparkline
                   data={sparklineData}
@@ -91,7 +91,7 @@ export function AdminOverview() {
       <div className="grid gap-4 sm:grid-cols-3 mt-4">
         {resources ? (
           resources.map((res) => (
-            <div key={res.name} className="squircle rounded-lg border bg-card p-4">
+            <div key={res.name} className="squircle rounded-lg bg-card p-4 shadow-card dark:border">
               <div className="flex items-center justify-between mb-2">
                 <p className="text-xs text-muted-foreground">{res.name}</p>
                 <span className={`text-xs font-medium ${
@@ -118,7 +118,7 @@ export function AdminOverview() {
         ) : (
           // Skeleton cards
           ["CPU", "Memory", "Disk"].map((name) => (
-            <div key={name} className="squircle rounded-lg border bg-card p-4">
+            <div key={name} className="squircle rounded-lg bg-card p-4 shadow-card dark:border">
               <p className="text-xs text-muted-foreground mb-2">{name}</p>
               <div className="h-1.5 rounded-full bg-muted" />
               <div className="h-3 w-24 bg-muted rounded mt-2" />

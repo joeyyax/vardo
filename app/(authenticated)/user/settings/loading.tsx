@@ -15,7 +15,7 @@ export default function UserSettingsLoading() {
       </div>
 
       {/* Content card */}
-      <div className="rounded-xl border bg-card p-6 space-y-4">
+      <div className="rounded-xl bg-card p-6 space-y-4 shadow-card dark:border">
         <div className="h-5 w-36 bg-muted animate-pulse rounded-md" />
         <div className="space-y-3">
           {Array.from({ length: 3 }).map((_, i) => (

@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { getCurrentOrg } from "@/lib/auth/session";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { getAuthMethodStates } from "@/lib/config/auth-methods";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   AccountInfo,
   PasswordManagement,
@@ -101,12 +102,14 @@ function TabContent({
             </p>
           </div>
           {!orgId ? (
-            <div className="rounded-xl border bg-card p-6 text-center">
-              <p className="text-sm text-muted-foreground">
-                No organization selected. Create or join an organization to manage
-                API tokens.
-              </p>
-            </div>
+            <Card className="squircle rounded-lg">
+              <CardContent className="text-center">
+                <p className="text-sm text-muted-foreground">
+                  No organization selected. Create or join an organization to manage
+                  API tokens.
+                </p>
+              </CardContent>
+            </Card>
           ) : (
             <ApiTokens orgId={orgId} />
           )}
@@ -135,12 +138,14 @@ function TabContent({
             </p>
           </div>
           {!orgId ? (
-            <div className="rounded-xl border bg-card p-6 text-center">
-              <p className="text-sm text-muted-foreground">
-                No organization selected. Create or join an organization to
-                configure notification preferences.
-              </p>
-            </div>
+            <Card className="squircle rounded-lg">
+              <CardContent className="text-center">
+                <p className="text-sm text-muted-foreground">
+                  No organization selected. Create or join an organization to
+                  configure notification preferences.
+                </p>
+              </CardContent>
+            </Card>
           ) : (
             <UserNotificationPreferences orgId={orgId} />
           )}

@@ -215,7 +215,7 @@ export function OrgDomainEditor({
 
       {/* Default app domain */}
       {defaultDomainEntry && (
-        <div className="squircle rounded-lg border bg-card p-4">
+        <div className="squircle rounded-lg bg-background-deep p-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3 min-w-0">
               <Globe className="size-4 text-muted-foreground shrink-0" />
@@ -251,7 +251,7 @@ export function OrgDomainEditor({
           {customDomains.map((domain) => (
             <div
               key={domain.id}
-              className="squircle rounded-lg border bg-card p-4"
+              className="squircle rounded-lg bg-background-deep p-4"
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3 min-w-0">

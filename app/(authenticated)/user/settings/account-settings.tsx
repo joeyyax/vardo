@@ -558,7 +558,7 @@ export function PasskeyManager() {
             {passkeys.map((pk) => (
               <div
                 key={pk.id}
-                className="flex items-center justify-between rounded-lg border p-3"
+                className="flex items-center justify-between rounded-lg bg-background-deep p-3"
               >
                 <div className="flex items-center gap-3 min-w-0">
                   <KeyRound className="size-4 shrink-0 text-muted-foreground" />
@@ -678,7 +678,7 @@ export function LinkedAccounts() {
               return (
                 <div
                   key={acct.id}
-                  className="flex items-center justify-between rounded-lg border p-3"
+                  className="flex items-center justify-between rounded-lg bg-background-deep p-3"
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     <Icon className="size-4 shrink-0 text-muted-foreground" />
@@ -793,7 +793,7 @@ export function ActiveSessions() {
               return (
                 <div
                   key={s.id}
-                  className="flex items-center justify-between rounded-lg border p-3"
+                  className="flex items-center justify-between rounded-lg bg-background-deep p-3"
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     <Monitor className="size-4 shrink-0 text-muted-foreground" />
@@ -1049,7 +1049,7 @@ export function ApiTokens({ orgId }: { orgId: string }) {
             {tokens.map((token) => (
               <div
                 key={token.id}
-                className="flex items-center justify-between rounded-lg border p-3"
+                className="flex items-center justify-between rounded-lg bg-background-deep p-3"
               >
                 <div className="min-w-0">
                   <p className="text-sm font-medium truncate">{token.name}</p>
