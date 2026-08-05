@@ -76,7 +76,7 @@ function WindowHeader({
   const withoutWindow = filtersToQuery({ ...filters, since: null });
 
   return (
-    <div className="squircle rounded-lg border border-border bg-muted/40 px-4 py-3">
+    <div className="squircle rounded-lg bg-card px-4 py-3 shadow-card dark:border">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         <h2 className="text-sm font-medium">
           While you were away

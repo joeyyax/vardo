@@ -95,7 +95,7 @@ export function JobCard({
 
   return (
     <>
-      <div className="squircle rounded-lg border bg-card p-4 space-y-2">
+      <div className="squircle rounded-lg bg-background-deep p-4 space-y-2">
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-2 min-w-0">
             <p className="text-sm font-medium">{job.name}</p>

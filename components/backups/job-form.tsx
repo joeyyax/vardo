@@ -179,7 +179,7 @@ export function JobForm({
             ) : (
               <div className="grid gap-2">
                 <Label>Apps to back up</Label>
-                <div className="space-y-1 max-h-48 overflow-y-auto rounded-md border p-2">
+                <div className="space-y-1 max-h-48 overflow-y-auto rounded-md bg-background-deep p-2">
                   {apps.length === 0 ? (
                     <p className="text-xs text-muted-foreground py-2 text-center">No apps available</p>
                   ) : (

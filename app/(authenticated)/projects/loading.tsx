@@ -28,7 +28,7 @@ export default function ProjectsLoading() {
               {Array.from({ length: group === 1 ? 3 : 2 }).map((_, i) => (
                 <div
                   key={i}
-                  className="rounded-xl border bg-card p-4 space-y-3"
+                  className="rounded-xl bg-card p-4 space-y-3 shadow-card dark:border"
                 >
                   {/* App header: icon + name + status */}
                   <div className="flex items-center justify-between">
