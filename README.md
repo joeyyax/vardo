@@ -47,6 +47,7 @@ Requires Ubuntu 22.04+ or Debian 12+, 1 GB RAM, and a domain with DNS pointing t
 - [Concepts](docs/concepts.md)
 - [Configuration](docs/configuration.md)
 - [API reference](docs/api.md)
+- [Disaster recovery](docs/disaster-recovery.md)
 - [Migrating Vardo's own stack to the deploy engine](docs/self-deploy-migration.md)
 
 ## Development

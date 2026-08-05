@@ -1399,6 +1399,18 @@ case "${1:-}" in
   ps)       docker compose -f "$COMPOSE_PATH" ps ;;
   update)   shift; bash "$INSTALL_SH" update "$@" ;;
   doctor)   shift; bash "$INSTALL_SH" doctor "$@" ;;
+  key)
+    # The one secret no backup carries. Printed to the terminal only — writing
+    # it anywhere Vardo archives would put it beside the ciphertext it opens.
+    if [ ! -r "$VARDO_DIR/.env" ]; then
+      echo "Cannot read $VARDO_DIR/.env — run as root." >&2
+      exit 1
+    fi
+    grep '^ENCRYPTION_MASTER_KEY=' "$VARDO_DIR/.env" | cut -d= -f2-
+    echo "" >&2
+    echo "Store this in a password manager. Without it, a restore onto a new host" >&2
+    echo "leaves every app's env vars encrypted and unrecoverable." >&2
+    ;;
   uninstall) bash "$INSTALL_SH" uninstall "$@" ;;
   shell)    shift; docker compose -f "$COMPOSE_PATH" exec frontend "${@:-sh}" ;;
   adopt)
@@ -1421,6 +1433,7 @@ case "${1:-}" in
     echo "  ps               Show running containers"
     echo "  update           Pull latest and rebuild"
     echo "  doctor           Run health checks"
+    echo "  key              Print the encryption master key (escrow it)"
     echo "  adopt <path>     Onboard existing repo with vardo.yaml"
     echo "  shell [cmd]      Open shell in frontend container"
     echo "  uninstall        Remove Vardo"
@@ -1482,6 +1495,13 @@ print_install_summary() {
   dimln "  vardo restart        Restart all services"
   dimln "  vardo update         Pull latest and rebuild"
   dimln "  vardo doctor         Run health checks"
+  dimln "  vardo key            Print the encryption master key"
+  echo ""
+
+  echo -e "  ${BOLD}${YELLOW}Escrow the encryption key${RESET}"
+  dimln "  It encrypts every app's env vars, lives only in $VARDO_DIR/.env, and is in"
+  dimln "  no backup. Restoring a backup onto a host without it leaves every secret"
+  dimln "  unreadable. Run ${sudo_prefix}vardo key and store the output in a password manager."
   echo ""
 }
 

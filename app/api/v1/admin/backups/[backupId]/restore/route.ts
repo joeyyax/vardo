@@ -14,7 +14,7 @@ type RouteParams = {
 };
 
 // POST /api/v1/admin/backups/[backupId]/restore
-async function handlePost(_request: NextRequest, { params }: RouteParams) {
+async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     const gate = await requirePlugin("backups");
     if (gate) return gate;
@@ -43,7 +43,12 @@ async function handlePost(_request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    const result = await restoreBackup(backupId);
+    // Opt-in to restoring an archive encrypted with a key this host does not
+    // have. The env vars in it stay unreadable either way.
+    const body = await request.json().catch(() => ({}));
+    const acceptKeyMismatch = body?.acceptKeyMismatch === true;
+
+    const result = await restoreBackup(backupId, { acceptKeyMismatch });
 
     return NextResponse.json(result);
   } catch (error) {
