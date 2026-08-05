@@ -15,15 +15,12 @@
 // user bind-mount targets.
 // ---------------------------------------------------------------------------
 
-import { execFile } from "child_process";
-import { promisify } from "util";
 import { resolve } from "path";
+import { execFileAsync } from "@/lib/utils/exec";
 
 import { DOCKER_CHOWN_TIMEOUT, COMPOSE_QUERY_TIMEOUT } from "../constants";
 import type { ComposeService } from "../compose-types";
 import type { DeployContext } from "../deploy-context";
-
-const execFileAsync = promisify(execFile);
 
 /**
  * Resolve a compose volume entry to its absolute host bind-mount source, or

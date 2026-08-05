@@ -10,8 +10,7 @@ import { db } from "@/lib/db";
 import { backups, volumes } from "@/lib/db/schema";
 import { and, eq, isNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
-import { execFile, spawn } from "child_process";
-import { promisify } from "util";
+import { spawn } from "child_process";
 import { pipeline } from "stream/promises";
 import { createGunzip } from "zlib";
 import { createReadStream } from "fs";
@@ -29,9 +28,9 @@ import {
   type DrillOutcome,
 } from "./drill-plan";
 import { resolveDefaultEnv } from "@/lib/docker/resolve-env";
+import { execFileAsync } from "@/lib/utils/exec";
 
 const log = logger.child("drill");
-const execFileAsync = promisify(execFile);
 
 const READY_ATTEMPTS = 30;
 const READY_INTERVAL_MS = 2000;

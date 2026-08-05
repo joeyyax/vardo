@@ -92,11 +92,8 @@ export const INSTANT_ROLLBACK_POLL_INTERVAL = 1_000;
 
 import { mkdir, writeFile, rm } from "fs/promises";
 import { join } from "path";
-import { execFile } from "child_process";
-import { promisify } from "util";
+import { execFileAsync as execFileAsyncInternal } from "@/lib/utils/exec";
 import { PROJECTS_DIR } from "@/lib/paths";
-
-const execFileAsyncInternal = promisify(execFile);
 
 /**
  * Create a directory and ensure the app user can write to it.

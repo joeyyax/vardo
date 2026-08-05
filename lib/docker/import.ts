@@ -17,6 +17,7 @@ import { requestDeploy } from "@/lib/docker/deploy-cancel";
 import { addEvent } from "@/lib/stream/producer";
 import { recordActivity } from "@/lib/activity";
 import type { ComposeFile } from "@/lib/docker/compose";
+import { execFileAsync } from "@/lib/utils/exec";
 
 // Infer the Drizzle transaction type from the db.transaction callback signature.
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -421,11 +422,7 @@ export function mergeComposeFile(
 
 import { readFile, access, constants } from "fs/promises";
 import { join } from "path";
-import { promisify } from "util";
-import { execFile } from "child_process";
 import { parseCompose } from "@/lib/docker/compose";
-
-const execFileAsync = promisify(execFile);
 
 export type GitBuildContext = {
   gitUrl: string;

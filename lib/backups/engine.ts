@@ -8,8 +8,7 @@ import { eq, and, isNull, desc, inArray } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { createHash } from "crypto";
 import { createReadStream, createWriteStream } from "fs";
-import { execFile, spawn } from "child_process";
-import { promisify } from "util";
+import { spawn } from "child_process";
 import { pipeline } from "stream/promises";
 import { createGzip, createGunzip } from "zlib";
 import { mkdir, readFile, rm, stat, writeFile } from "fs/promises";
@@ -49,10 +48,10 @@ import { listContainers, inspectContainer } from "@/lib/docker/client";
 import { resolveDefaultEnv } from "@/lib/docker/resolve-env";
 import { logger } from "@/lib/logger";
 import type { BusEvent } from "@/lib/bus/events";
+import { execFileAsync } from "@/lib/utils/exec";
 
 const log = logger.child("backup");
 
-const execFileAsync = promisify(execFile);
 
 // Local staging dir for backup archives before upload. Must be writable by the
 // app user AND host-visible: the engine bind-mounts it into a one-shot `alpine`
