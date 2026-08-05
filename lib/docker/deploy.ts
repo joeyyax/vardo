@@ -5,10 +5,9 @@ import { decryptOrFallback } from "@/lib/crypto/encrypt";
 import { parseEnvToMap } from "@/lib/env/parse-env";
 import { eq, and, inArray } from "drizzle-orm";
 import { logger } from "@/lib/logger";
+import { redactSecrets } from "@/lib/redact";
 import { nanoid } from "nanoid";
 import { addEvent } from "@/lib/stream/producer";
-import { execFile } from "child_process";
-import { promisify } from "util";
 import { readlink } from "fs/promises";
 import { join } from "path";
 import { appBaseDir, appEnvDir } from "@/lib/paths";
@@ -38,8 +37,7 @@ import {
   applyRollbackEnv,
   type RollbackTarget,
 } from "./rollback-target";
-
-const execFileAsync = promisify(execFile);
+import { execFileAsync } from "@/lib/utils/exec";
 
 export type { DeployStage } from "./deploy-logger";
 
@@ -439,7 +437,9 @@ export async function runDeployment(
     await streamLogger.flush();
     return { deploymentId, success: true, log: logLines.join("\n"), durationMs, status: "success" };
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
+    // Redacted here rather than at each sink below — this message reaches the
+    // event feed, the activity row, notification channels and the API response.
+    const message = redactSecrets(error instanceof Error ? error.message : "Unknown error");
     const durationMs = Date.now() - startTime;
 
     // The release cut over and is serving; only the tail behind it failed. The

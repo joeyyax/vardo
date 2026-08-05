@@ -6,8 +6,6 @@
 import { db } from "@/lib/db";
 import { orgEnvVars, apps, environments } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
-import { execFile } from "child_process";
-import { promisify } from "util";
 import { mkdir, writeFile, readFile, rm, symlink, copyFile, stat, readdir } from "fs/promises";
 import { join } from "path";
 import { decryptOrFallback } from "@/lib/crypto/encrypt";
@@ -35,8 +33,8 @@ import {
   sharedNetworkName,
   sharedNetworks,
 } from "../shared-networks";
+import { execFileAsync } from "@/lib/utils/exec";
 
-const execFileAsync = promisify(execFile);
 const NETWORK_NAME = VARDO_NETWORK;
 
 export async function build(ctx: DeployContext): Promise<DeployContext> {

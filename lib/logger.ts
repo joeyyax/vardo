@@ -1,3 +1,5 @@
+import { redactSecrets } from "@/lib/redact";
+
 type LogLevel = "debug" | "info" | "warn" | "error";
 
 const LEVELS: Record<LogLevel, number> = {
@@ -13,7 +15,8 @@ const currentLevel: number =
 function fmt(level: LogLevel, prefix: string, args: unknown[]): unknown[] {
   const tag = prefix ? `[${prefix}]` : "";
   const ts = new Date().toISOString();
-  return [`${ts} ${level.toUpperCase()}${tag}`, ...args];
+  const safe = args.map((arg) => (typeof arg === "string" ? redactSecrets(arg) : arg));
+  return [`${ts} ${level.toUpperCase()}${tag}`, ...safe];
 }
 
 function createLogger(prefix = "") {

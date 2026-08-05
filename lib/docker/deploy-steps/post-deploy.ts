@@ -11,8 +11,6 @@ import { setParked } from "@/lib/db/app-parked";
 import { deployments, apps, volumes } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
-import { execFile } from "child_process";
-import { promisify } from "util";
 import { rm, symlink, rename } from "fs/promises";
 import { join } from "path";
 import { encrypt, decryptOrFallback } from "@/lib/crypto/encrypt";
@@ -58,12 +56,12 @@ import type { DeployContext, SlotStopOutcome } from "../deploy-context";
 import { demoteStandbyRestart } from "../restart-policy";
 import { isSelfApp } from "../self-env";
 import { proposeDurability, isSafeToApply } from "@/lib/backups/durability";
+import { execFileAsync } from "@/lib/utils/exec";
 
 /** Serializes the host-global prune across deploys. */
 const PRUNE_LOCK_KEY = "deploy:prune:lock";
 const PRUNE_LOCK_TTL_MS = 5 * 60_000;
 
-const execFileAsync = promisify(execFile);
 
 export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
   const { app, log, logs, compose, activeSlot, newSlot, isLocalEnv, hostConfig } = ctx;

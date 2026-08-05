@@ -8,13 +8,11 @@
 // containers created before that, or created outside Vardo, still carry it.
 // ---------------------------------------------------------------------------
 
-import { execFile } from "child_process";
-import { promisify } from "util";
 
 import { COMPOSE_QUERY_TIMEOUT } from "./constants";
 import { logger } from "@/lib/logger";
+import { execFileAsync } from "@/lib/utils/exec";
 
-const execFileAsync = promisify(execFile);
 const log = logger.child("restart-policy");
 
 /** Restart policy a slot's compose declares per service. */

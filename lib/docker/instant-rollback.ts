@@ -4,8 +4,6 @@ import { apps, deployments } from "@/lib/db/schema";
 import { eq, and, desc } from "drizzle-orm";
 import { rm, symlink, rename } from "fs/promises";
 import { join } from "path";
-import { execFile } from "child_process";
-import { promisify } from "util";
 import { nanoid } from "nanoid";
 import { appEnvDir } from "@/lib/paths";
 import { slotComposeFiles } from "./compose";
@@ -25,8 +23,7 @@ import {
 import type { ResolvedEnv } from "./resolve-env";
 import { demoteStandbyRestart, restoreSlotRestart } from "./restart-policy";
 import { clearCutoverPin } from "./traefik-cutover";
-
-const execFileAsync = promisify(execFile);
+import { execFileAsync } from "@/lib/utils/exec";
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));

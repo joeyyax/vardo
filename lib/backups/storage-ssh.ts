@@ -6,13 +6,10 @@
 // Implements the BackupStorage port interface.
 // ---------------------------------------------------------------------------
 
-import { execFile } from "child_process";
-import { promisify } from "util";
 import { stat, writeFile as fsWriteFile, unlink } from "fs/promises";
 import { nanoid } from "nanoid";
 import type { BackupStorage } from "./storage-port";
-
-const execFileAsync = promisify(execFile);
+import { execFileAsync } from "@/lib/utils/exec";
 
 // ---------------------------------------------------------------------------
 // Types

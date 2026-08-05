@@ -14,8 +14,6 @@
 // running vardo-postgres and vardo-redis services.
 // ---------------------------------------------------------------------------
 
-import { execFile } from "child_process";
-import { promisify } from "util";
 import { mkdir, writeFile, rm } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
@@ -24,10 +22,10 @@ import { apps, organizations } from "@/lib/db/schema";
 import { eq, and, asc } from "drizzle-orm";
 import { getInstanceConfig } from "@/lib/system-settings";
 import { logger } from "@/lib/logger";
+import { execFileAsync } from "@/lib/utils/exec";
 
 const log = logger.child("self-preview");
 
-const execFileAsync = promisify(execFile);
 
 const PREVIEW_PROJECT_PREFIX = "vardo-preview-pr";
 const VARDO_NETWORK = process.env.VARDO_NETWORK ?? "vardo-network";

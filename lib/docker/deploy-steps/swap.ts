@@ -6,8 +6,6 @@
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
-import { execFile } from "child_process";
-import { promisify } from "util";
 import { join } from "path";
 import { ensureNetwork } from "../client";
 import {
@@ -39,8 +37,8 @@ import { clearCutoverPin, guardCutover, type CutoverGuard } from "../traefik-cut
 import { projectScopedNetworkNames } from "../shared-networks";
 import { overlapFitsNow } from "../memory-headroom";
 import { reportOomDuringDeploy } from "../deploy-oom";
+import { execFileAsync } from "@/lib/utils/exec";
 
-const execFileAsync = promisify(execFile);
 const NETWORK_NAME = VARDO_NETWORK;
 const DEFAULT_HEALTH_CHECK_TIMEOUT_MS = DEFAULT_HEALTH_CHECK_TIMEOUT;
 const HEALTH_CHECK_INTERVAL_MS = 2000;
