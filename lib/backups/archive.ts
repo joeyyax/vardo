@@ -14,6 +14,20 @@ export const MIN_VALID_GZIP_BYTES = 100;
 /** Printed by the backup script when the source directory held nothing. */
 export const EMPTY_SOURCE_MARKER = "vardo:empty-source";
 
+/**
+ * Printed when the archive holds at least one non-directory member.
+ *
+ * The size floor cannot stand in for this once exclusions exist: a pattern
+ * matching every file still leaves the directory tree, which clears 100 bytes.
+ */
+export const ARCHIVE_HAS_FILES_MARKER = "vardo:archive-has-files";
+
+/** Written by the backup script, inside the backup dir: what tar left out. */
+export const EXCLUDE_LIST_FILE = "exclude.list";
+
+/** Read by the restore script, inside the backup dir: what to carry over. */
+export const PROTECT_LIST_FILE = "protect.list";
+
 const RESTORE_STAGE_DIR = ".vardo-restore-staging";
 
 /**
@@ -21,13 +35,24 @@ const RESTORE_STAGE_DIR = ".vardo-restore-staging";
  * source was empty. Size alone cannot separate an empty volume from a truncated
  * archive, so this marker is what the size guard consults.
  *
+ * Exclusions arrive as positional arguments — `find` predicates built by
+ * `buildFindExclusionArgv`. Operator patterns are never interpolated into this
+ * string, and tar only ever sees the literal paths `find` resolved them to.
+ *
  * Paths are parameterized so tests can drive the real script against temp dirs.
  */
 export function buildTarBackupScript(dataDir = "/data", backupDir = "/backup"): string {
   return [
     "set -e",
-    `tar czf "${backupDir}/volume.tar.gz" -C "${dataDir}" .`,
+    `cd "${dataDir}"`,
+    'if [ "$#" -gt 0 ]; then',
+    `  find . "$@" > "${backupDir}/${EXCLUDE_LIST_FILE}"`,
+    `  tar czf "${backupDir}/volume.tar.gz" -X "${backupDir}/${EXCLUDE_LIST_FILE}" -C "${dataDir}" .`,
+    "else",
+    `  tar czf "${backupDir}/volume.tar.gz" -C "${dataDir}" .`,
+    "fi",
     `if [ -z "$(ls -A "${dataDir}")" ]; then echo "${EMPTY_SOURCE_MARKER}"; fi`,
+    `if tar tzf "${backupDir}/volume.tar.gz" | grep -qv '/$'; then echo "${ARCHIVE_HAS_FILES_MARKER}"; fi`,
   ].join("\n");
 }
 
@@ -100,6 +125,13 @@ export function buildBindPreflightScript(dataDir = "/data"): string {
  * Shell script for a tar restore: extract into a staging dir inside the volume,
  * and only swap it over the live data once tar has fully succeeded.
  *
+ * The contract is that restore replaces the archived portion and leaves the
+ * paths the archive deliberately omitted as it found them. `protect.list` names
+ * those paths; each is moved from the live copy into the staging tree before
+ * the swap, so they survive it. Same filesystem, so the move is a rename, and a
+ * failure part-way through leaves the volume intact because the clear has not
+ * run yet.
+ *
  * WARNING: the removal of live data must stay after the extract. Moving it
  * earlier (or back to a plain `rm -rf /data/*` before `tar xzf`) empties the
  * volume whenever the archive is unreadable or the wrong format.
@@ -109,12 +141,24 @@ export function buildBindPreflightScript(dataDir = "/data"): string {
 export function buildTarRestoreScript(dataDir = "/data", backupDir = "/backup"): string {
   return [
     "set -e",
-    `stage="${dataDir}/${RESTORE_STAGE_DIR}"`,
+    `data="${dataDir}"`,
+    `stage="$data/${RESTORE_STAGE_DIR}"`,
+    `protect="${backupDir}/${PROTECT_LIST_FILE}"`,
     'rm -rf "$stage"',
     'mkdir "$stage"',
     `if ! tar xzf "${backupDir}/volume.tar.gz" -C "$stage"; then rm -rf "$stage"; echo "restore: archive could not be extracted" >&2; exit 1; fi`,
-    `find "${dataDir}" -mindepth 1 -maxdepth 1 ! -name ${RESTORE_STAGE_DIR} -exec rm -rf {} ';'`,
-    `find "$stage" -mindepth 1 -maxdepth 1 -exec mv {} "${dataDir}/" ';'`,
+    'if [ -f "$protect" ]; then',
+    "  while IFS= read -r p; do",
+    '    [ -n "$p" ] || continue',
+    `    case "$p" in /*|.|..|./*|../*|*/../*|*/..|${RESTORE_STAGE_DIR}|${RESTORE_STAGE_DIR}/*) echo "restore: refusing protected path $p" >&2; exit 1 ;; esac`,
+    '    [ -e "$data/$p" ] || continue',
+    '    mkdir -p "$stage/$(dirname "$p")"',
+    '    rm -rf "$stage/$p"',
+    '    mv "$data/$p" "$stage/$p"',
+    '  done < "$protect"',
+    "fi",
+    `find "$data" -mindepth 1 -maxdepth 1 ! -name ${RESTORE_STAGE_DIR} -exec rm -rf {} ';'`,
+    `find "$stage" -mindepth 1 -maxdepth 1 -exec mv {} "$data/" ';'`,
     'rmdir "$stage"',
   ].join("\n");
 }
