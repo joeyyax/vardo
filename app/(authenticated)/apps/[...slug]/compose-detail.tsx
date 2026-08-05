@@ -81,6 +81,7 @@ import { ComposeReview } from "@/components/compose-review";
 import { SystemBadge } from "@/components/system-badge";
 import { statusDotColor } from "@/lib/ui/status-colors";
 import { crashSummary, extractDeployError } from "@/lib/ui/deploy-error";
+import { deployFailureBanner } from "@/lib/ui/deploy-banner";
 import { currentStageLabel } from "@/lib/ui/deploy-stage";
 import { rollupHealth, rollupUptimeSince } from "@/lib/ui/health-rollup";
 import { tabPanelSurface } from "@/lib/ui/tab-panel";
@@ -1084,18 +1085,38 @@ export function ComposeDetail({
 
       {/* Failure detail — the stack's own deploy log when it failed, otherwise
           the services that are actually down, each linked to its page. */}
-      {app.status === "error" && (() => {
-        const failedDeploy = app.deployments.find((d) => d.status === "failed");
-        const crash = crashSummary(services);
-        const message =
-          extractDeployError(failedDeploy?.log) ||
-          crash?.message ||
-          "Stack crashed — check the service logs for details";
+      {(() => {
+        const banner = deployFailureBanner(app.status, app.deployments);
+        if (!banner) return null;
+        const recovered = banner.variant === "recovered";
+        const failedDeploy = recovered
+          ? banner.deployment
+          : app.deployments.find((d) => d.status === "failed");
+        const crash = recovered ? null : crashSummary(services);
+        const message = recovered
+          ? "Deploy failed. The previous release is still running."
+          : extractDeployError(failedDeploy?.log) ||
+            crash?.message ||
+            "Stack crashed — check the service logs for details";
         return (
-          <div className="flex items-start gap-2 rounded-lg bg-status-error-muted px-4 py-2.5 text-sm text-status-error">
-            <X className="size-4 shrink-0 mt-0.5" />
+          <div
+            className={cn(
+              "flex items-start gap-2 rounded-lg px-4 py-2.5 text-sm",
+              recovered
+                ? "bg-status-warning-muted text-status-warning"
+                : "bg-status-error-muted text-status-error"
+            )}
+          >
+            {recovered ? (
+              <AlertTriangle className="size-4 shrink-0 mt-0.5" aria-hidden="true" />
+            ) : (
+              <X className="size-4 shrink-0 mt-0.5" />
+            )}
             <span
-              className="flex-1 line-clamp-3 break-words font-mono text-xs leading-relaxed"
+              className={cn(
+                "flex-1 line-clamp-3 break-words leading-relaxed",
+                !recovered && "font-mono text-xs"
+              )}
               title={message}
             >
               {message}

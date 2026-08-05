@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "@/lib/messenger";
-import { Plus, Mail, MoreHorizontal, RefreshCw, XCircle, CheckCircle2 } from "lucide-react";
+import { Plus, Mail, MoreHorizontal, RefreshCw, XCircle, CheckCircle2, Copy, Check, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -36,6 +36,8 @@ type Invitation = {
   createdAt: string;
   expiresAt: string;
   inviter: { id: string; name: string | null } | null;
+  /** Null for non-admins and for invitations that can no longer be used. */
+  inviteUrl?: string | null;
 };
 
 type InvitationsPanelProps = {
@@ -43,6 +45,7 @@ type InvitationsPanelProps = {
   orgName: string;
   currentRole: string;
   invitations: Invitation[];
+  emailConfigured: boolean;
 };
 
 const ROLE_LABELS: Record<string, string> = {
@@ -61,18 +64,35 @@ export function InvitationsPanel({
   orgId,
   orgName,
   currentRole,
-  invitations: initialInvitations,
+  invitations: serverInvitations,
+  emailConfigured,
 }: InvitationsPanelProps) {
   const router = useRouter();
-  const [invitations, setInvitations] = useState(initialInvitations);
+  const [revokedIds, setRevokedIds] = useState<string[]>([]);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<"member" | "admin">("member");
   const [inviting, setInviting] = useState(false);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [revokeTarget, setRevokeTarget] = useState<{ id: string; email: string } | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  // Read from props so a refresh after invite or revoke shows up.
+  const invitations = serverInvitations.map((inv) =>
+    revokedIds.includes(inv.id) ? { ...inv, status: "expired" as const } : inv
+  );
 
   const canManage = isOrgAdmin(currentRole);
+
+  async function copyInviteLink(invitationId: string, url: string) {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiedId(invitationId);
+      setTimeout(() => setCopiedId((id) => (id === invitationId ? null : id)), 2000);
+    } catch {
+      toast.error("Failed to copy invite link");
+    }
+  }
 
   async function handleInvite() {
     const trimmedEmail = inviteEmail.trim();
@@ -103,7 +123,18 @@ export function InvitationsPanel({
         return;
       }
 
-      toast.success(`Invitation sent to ${inviteEmail.trim()}`);
+      if (!data.email?.configured) {
+        toast.warning(`Invitation created for ${trimmedEmail}`, {
+          description: "Email is not configured, so no message was sent. Copy the invite link to share it.",
+        });
+      } else if (!data.email.sent) {
+        toast.warning(`Invitation created for ${trimmedEmail}`, {
+          description: `The email failed to send${data.email.error ? ` (${data.email.error})` : ""}. Copy the invite link to share it.`,
+        });
+      } else {
+        toast.success(`Invitation sent to ${trimmedEmail}`);
+      }
+
       setInviteOpen(false);
       setInviteEmail("");
       setInviteRole("member");
@@ -135,11 +166,8 @@ export function InvitationsPanel({
       }
 
       toast.success("Invitation revoked");
-      setInvitations((prev) =>
-        prev.map((inv) =>
-          inv.id === invitationId ? { ...inv, status: "expired" as const } : inv
-        )
-      );
+      setRevokedIds((prev) => [...prev, invitationId]);
+      router.refresh();
     } catch {
       toast.error("Failed to revoke invitation");
     } finally {
@@ -163,7 +191,17 @@ export function InvitationsPanel({
         return;
       }
 
-      toast.success(`Invitation resent to ${email}`);
+      if (!data.email?.configured) {
+        toast.warning("No email was sent", {
+          description: "Email is not configured. Copy the invite link to share it.",
+        });
+      } else if (!data.email.sent) {
+        toast.error(`Failed to resend to ${email}`, {
+          description: data.email.error,
+        });
+      } else {
+        toast.success(`Invitation resent to ${email}`);
+      }
       router.refresh();
     } catch {
       toast.error("Failed to resend invitation");
@@ -186,6 +224,15 @@ export function InvitationsPanel({
 
       <Card className="squircle rounded-lg">
         <CardContent className="space-y-4">
+        {canManage && !emailConfigured && (
+          <div className="flex items-start gap-2 rounded-lg bg-status-warning-muted px-4 py-2.5 text-sm text-status-warning">
+            <AlertTriangle className="size-4 shrink-0 mt-0.5" aria-hidden="true" />
+            <span className="flex-1">
+              Email is not configured, so invitations are not delivered. Copy each invite link and send it yourself, or set up a provider in notification settings.
+            </span>
+          </div>
+        )}
+
         <div className="flex items-center justify-between">
           <p className="text-sm text-muted-foreground">
             {invitations.filter((i) => i.status === "pending").length} pending
@@ -240,6 +287,21 @@ export function InvitationsPanel({
                   </div>
 
                   <div className="flex items-center gap-3 shrink-0">
+                    {isPending && invitation.inviteUrl && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 gap-1.5 text-xs"
+                        onClick={() => copyInviteLink(invitation.id, invitation.inviteUrl!)}
+                      >
+                        {copiedId === invitation.id ? (
+                          <><Check className="size-3.5" />Copied</>
+                        ) : (
+                          <><Copy className="size-3.5" />Copy link</>
+                        )}
+                      </Button>
+                    )}
+
                     <Badge variant="secondary">
                       {ROLE_LABELS[invitation.role] || invitation.role}
                     </Badge>
@@ -295,7 +357,9 @@ export function InvitationsPanel({
           <BottomSheetHeader>
             <BottomSheetTitle>Invite to {orgName}</BottomSheetTitle>
             <BottomSheetDescription>
-              Send an invitation email. They&apos;ll get a link to join the organization.
+              {emailConfigured
+                ? "Send an invitation email. They'll get a link to join the organization."
+                : "Email is not configured, so nothing will be sent. You'll get a link to share yourself."}
             </BottomSheetDescription>
           </BottomSheetHeader>
           <div className="flex-1 overflow-y-auto px-6 pb-6">
@@ -360,7 +424,9 @@ export function InvitationsPanel({
               onClick={handleInvite}
               disabled={inviting || !inviteEmail.trim()}
             >
-              {inviting ? "Sending..." : "Send invitation"}
+              {inviting
+                ? emailConfigured ? "Sending..." : "Creating..."
+                : emailConfigured ? "Send invitation" : "Create invitation"}
             </Button>
           </BottomSheetFooter>
         </BottomSheetContent>

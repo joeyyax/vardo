@@ -15,6 +15,17 @@ type SendEmailOpts = {
 
 type SendResult = { success: boolean; dev?: boolean; error?: string };
 
+/** What a client is told about a send. `configured` false means nothing left the server. */
+export type EmailDelivery = { sent: boolean; configured: boolean; error?: string };
+
+export function emailDelivery(result: SendResult): EmailDelivery {
+  return {
+    sent: result.success && !result.dev,
+    configured: !result.dev,
+    ...(result.error ? { error: result.error } : {}),
+  };
+}
+
 export async function sendEmail({ to, subject, template, from, replyTo }: SendEmailOpts): Promise<SendResult> {
   const config = await getEmailProviderConfig();
 
