@@ -165,6 +165,15 @@ function isDockerSocketMount(mountSource: string, rootResolved: string): boolean
   );
 }
 
+/** Names the setting that unblocks the mount and who can turn it on. */
+function dockerSocketBlockedMessage(service: string, volume: string): string {
+  return (
+    `Service "${service}" mounts the Docker socket "${volume}" — turn on ` +
+    `"Allow Docker socket" in the project's settings to allow this ` +
+    `(organization admins and owners only)`
+  );
+}
+
 // ---------------------------------------------------------------------------
 // x-vardo-shared
 // ---------------------------------------------------------------------------
@@ -493,9 +502,7 @@ export function validateCompose(compose: ComposeFile, opts?: ValidateOptions): {
         // Docker socket is gated by its own flag, independent of bind mounts.
         if (isDockerSocketMount(mountSource, rootResolved)) {
           if (!opts?.allowDockerSocket) {
-            errors.push(
-              `Service "${name}" mounts the Docker socket "${vol}" — enable the Docker Socket feature flag to allow this`,
-            );
+            errors.push(dockerSocketBlockedMessage(name, vol));
           }
           continue;
         }
@@ -637,9 +644,7 @@ export function sanitizeCompose(
         // socket needs it, and a sharp tool should fail loudly, not degrade.
         if (isDockerSocketMount(mountSource, rootResolved)) {
           if (!opts?.allowDockerSocket) {
-            throw new Error(
-              `Service "${name}" mounts the Docker socket "${v}" — enable the Docker Socket feature flag to allow this`,
-            );
+            throw new Error(dockerSocketBlockedMessage(name, v));
           }
           safe.push(v);
           continue;

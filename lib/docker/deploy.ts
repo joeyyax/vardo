@@ -286,10 +286,10 @@ export async function runDeployment(
     const envBranchOverride = resolvedEnv.gitBranch;
     log(`[deploy] Environment: ${envName} (${envType})`);
 
-    // Local environments always allow bind mounts + the docker socket
+    // Local environments always allow bind mounts. The Docker socket stays on
+    // the project flag — anyone can create a local environment (#803).
     if (envType === "local") {
       projectAllowBindMounts = true;
-      projectAllowDockerSocket = true;
     }
 
     // Execute before.deploy.start hooks — approval gates, pre-flight checks

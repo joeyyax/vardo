@@ -134,7 +134,7 @@ describe("sanitizeCompose", () => {
     it("throws when mounting /var/run/docker.sock without the docker socket flag", () => {
       const compose = makeCompose(["/var/run/docker.sock:/var/run/docker.sock"]);
       expect(() => sanitizeCompose(compose, { allowBindMounts: true })).toThrow(
-        /Docker socket.*Docker Socket feature flag/,
+        /Docker socket.*Allow Docker socket/,
       );
     });
 
@@ -186,17 +186,26 @@ describe("sanitizeCompose", () => {
     });
 
     it("throws for the socket when the flag is off, regardless of allowBindMounts", () => {
-      expect(() => sanitizeCompose(makeCompose([SOCK]), { allowBindMounts: false })).toThrow(/Docker Socket feature flag/);
-      expect(() => sanitizeCompose(makeCompose([SOCK]), { allowBindMounts: true })).toThrow(/Docker Socket feature flag/);
+      expect(() => sanitizeCompose(makeCompose([SOCK]), { allowBindMounts: false })).toThrow(/Allow Docker socket/);
+      expect(() => sanitizeCompose(makeCompose([SOCK]), { allowBindMounts: true })).toThrow(/Allow Docker socket/);
     });
 
     it("validateCompose errors on the socket without the flag and accepts it with the flag", () => {
       const off = validateCompose(makeCompose([SOCK]), { allowBindMounts: true });
       expect(off.valid).toBe(false);
-      expect(off.errors.join(" ")).toMatch(/Docker Socket feature flag/);
+      expect(off.errors.join(" ")).toMatch(/Allow Docker socket/);
 
       const on = validateCompose(makeCompose([SOCK]), { allowDockerSocket: true });
       expect(on.valid).toBe(true);
+    });
+
+    // An operator who hits this needs to know which setting, and who can flip it.
+    it("names the project setting and the roles that can enable it", () => {
+      const { errors } = validateCompose(makeCompose([SOCK]), {});
+      const message = errors.find((e) => e.includes("Docker socket"))!;
+      expect(message).toContain('"Allow Docker socket"');
+      expect(message).toContain("project's settings");
+      expect(message).toContain("organization admins and owners only");
     });
   });
 
