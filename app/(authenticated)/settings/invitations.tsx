@@ -260,7 +260,7 @@ export function InvitationsPanel({
             }
           />
         ) : (
-          <div className="divide-y rounded-lg border">
+          <div className="divide-y rounded-lg bg-background-deep">
             {invitations.map((invitation) => {
               const isPending = invitation.status === "pending";
               const isAccepted = invitation.status === "accepted";

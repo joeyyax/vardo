@@ -306,7 +306,7 @@ export function DomainSettings() {
                   const isFirst = activeIssuers[0] === issuer;
 
                   return (
-                    <div key={issuer} className="squircle rounded-lg border bg-card p-4">
+                    <div key={issuer} className="squircle rounded-lg bg-background-deep p-4">
                       <div className="flex items-start justify-between gap-4">
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2">
@@ -336,7 +336,7 @@ export function DomainSettings() {
                       </div>
 
                       {issuer === "zerossl" && isEnabled && (
-                        <div className="mt-4 space-y-3 rounded-md border bg-muted/30 p-3">
+                        <div className="mt-4 space-y-3 rounded-md bg-muted p-3">
                           <p className="text-xs font-medium">
                             ZeroSSL requires External Account Binding (EAB) credentials.{" "}
                             <a
@@ -428,7 +428,7 @@ export function DomainSettings() {
               </div>
 
               {challengeType === "dns" && (
-                <div className="max-w-md space-y-4 rounded-lg border bg-muted/30 p-4">
+                <div className="max-w-md space-y-4 rounded-lg bg-background-deep p-4">
                   <div className="space-y-2">
                     <Label htmlFor="dns-provider">DNS provider</Label>
                     <Select value={dnsProvider} disabled>

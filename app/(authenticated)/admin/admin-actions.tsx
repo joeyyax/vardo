@@ -90,7 +90,7 @@ export function UserManagement() {
       </div>
 
       {/* Invite form */}
-      <div className="rounded-lg border bg-card p-4 space-y-4">
+      <div className="rounded-lg bg-card p-4 space-y-4 shadow-card dark:border">
         <div className="flex items-center gap-2">
           <UserPlus className="size-4 text-muted-foreground" />
           <p className="text-sm font-medium">Invite User</p>
@@ -149,7 +149,7 @@ export function UserManagement() {
           {users.map((u) => (
             <div
               key={u.id}
-              className="flex items-center justify-between rounded-lg border bg-card p-3"
+              className="flex items-center justify-between rounded-lg bg-card p-3 shadow-card dark:border"
             >
               <div className="flex items-center gap-3 min-w-0">
                 {u.isAppAdmin ? (

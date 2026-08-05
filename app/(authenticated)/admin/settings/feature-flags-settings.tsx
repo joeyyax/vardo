@@ -145,7 +145,7 @@ export function FeatureFlagsSettings() {
               <p className="text-xs text-muted-foreground">{group.description}</p>
             </div>
 
-            <div className="squircle divide-y rounded-lg border">
+            <div className="squircle divide-y rounded-lg bg-card shadow-card dark:border">
               {groupFlags.map((f) => (
                 <div key={f.flag} className="flex items-start justify-between gap-4 p-4">
                   <div className="space-y-1">

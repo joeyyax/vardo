@@ -490,7 +490,7 @@ function RouteFormFields({ form, onChange, error }: RouteFormFieldsProps) {
         </p>
       </div>
 
-      <div className="flex items-center justify-between rounded-lg border p-3">
+      <div className="flex items-center justify-between rounded-lg bg-background-deep p-3">
         <div className="space-y-0.5">
           <Label htmlFor="tls" className="text-sm font-normal">
             Enable TLS
@@ -508,7 +508,7 @@ function RouteFormFields({ form, onChange, error }: RouteFormFieldsProps) {
       </div>
 
       {!isRedirect && (
-        <div className="flex items-center justify-between rounded-lg border p-3">
+        <div className="flex items-center justify-between rounded-lg bg-background-deep p-3">
           <div className="space-y-0.5">
             <Label htmlFor="insecureSkipVerify" className="text-sm font-normal">
               Skip TLS verification
@@ -529,7 +529,7 @@ function RouteFormFields({ form, onChange, error }: RouteFormFieldsProps) {
       )}
 
       {isRedirect && (
-        <div className="flex items-center justify-between rounded-lg border p-3">
+        <div className="flex items-center justify-between rounded-lg bg-background-deep p-3">
           <div className="space-y-0.5">
             <Label htmlFor="redirectPermanent" className="text-sm font-normal">
               Permanent redirect

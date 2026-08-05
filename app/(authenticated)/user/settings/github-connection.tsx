@@ -154,7 +154,7 @@ export function GitHubConnection() {
           {installations.map((installation) => (
             <div
               key={installation.id}
-              className="flex items-center gap-3 rounded-lg border p-3"
+              className="flex items-center gap-3 rounded-lg bg-background-deep p-3"
             >
               {installation.accountAvatarUrl ? (
                 <img
