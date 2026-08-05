@@ -16,9 +16,9 @@ import { isSharedService } from "../slot-partition";
  * only in the local daemon, referenced via `image:` with no `build:`, so they
  * must be excluded from the pull set — pulling them 404s and aborts the deploy.
  *
- * Services marked `x-vardo-shared` are excluded too. They are brought up with
- * `--no-recreate`, so a freshly pulled image is never used, and a missing one
- * is still pulled by that `up`.
+ * Services marked `x-vardo-shared` are excluded too. They get their own
+ * pre-pull, keyed on the image being absent from the host — see
+ * `sharedPullTargets`.
  */
 export function classifyComposeServices(
   services: ComposeFile["services"],
