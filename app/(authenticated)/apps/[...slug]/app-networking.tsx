@@ -289,7 +289,7 @@ export function AppNetworking({
         </div>
 
         {domainOpen && (
-          <div className="flex items-end gap-3 rounded-lg border bg-background-deep p-4">
+          <div className="flex items-end gap-3 rounded-lg bg-background-deep p-4">
             <div className="grid gap-1.5 flex-1">
               <label className="text-xs text-muted-foreground">Domain</label>
               <input
@@ -375,7 +375,7 @@ export function AppNetworking({
 
                 if (isEditing) {
                   return (
-                    <div key={domain.id} className="flex items-end gap-3 rounded-lg border bg-background-deep p-4">
+                    <div key={domain.id} className="flex items-end gap-3 rounded-lg bg-background-deep p-4">
                       <div className="grid gap-1.5 flex-1">
                         <label className="text-xs text-muted-foreground">Domain</label>
                         <input
@@ -447,7 +447,7 @@ export function AppNetworking({
                 return (
               <div
                 key={domain.id}
-                className={`squircle rounded-lg border bg-background-deep overflow-hidden ${domain.isPrimary ? "border-primary/30" : ""}`}
+                className={`squircle rounded-lg bg-background-deep overflow-hidden ${domain.isPrimary ? "border border-primary/30" : ""}`}
               >
                 <div className="flex items-center justify-between gap-4 p-4">
                   <div className="flex items-center gap-3 min-w-0">
@@ -635,7 +635,7 @@ export function AppNetworking({
                     <div className="space-y-3">
                       <h3 className="text-sm font-medium">Required DNS Record</h3>
                       <p className="text-xs text-muted-foreground">Use one of the following options:</p>
-                      <div className="rounded-lg border bg-muted/30 divide-y">
+                      <div className="rounded-lg bg-background-deep divide-y">
                         <div className="grid grid-cols-3 gap-4 px-4 py-2 text-xs text-muted-foreground">
                           <span>Type</span>
                           <span>Name</span>

@@ -44,7 +44,7 @@ export function AppConnect({
               ? "Showing variable references — paste these into other apps."
               : "Showing resolved values — toggle to see variable references."}
           </p>
-          <div className="rounded-lg border bg-card divide-y">
+          <div className="rounded-lg bg-card divide-y shadow-card dark:border">
             {connectionInfo.map((info) => {
               const resolved = info.value
                 .replace(/\$\{project\.name\}/g, appName)
@@ -94,7 +94,7 @@ export function AppConnect({
             <p className="text-xs text-muted-foreground">
               Use these to connect from outside Docker (e.g. database tools, local development).
             </p>
-            <div className="rounded-lg border bg-card divide-y">
+            <div className="rounded-lg bg-card divide-y shadow-card dark:border">
               {exposedPorts
                 .filter((p) => p.external)
                 .map((p) => (

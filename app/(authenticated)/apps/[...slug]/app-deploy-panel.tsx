@@ -342,7 +342,7 @@ export function AppDeployPanel({
       : variant === "live"
       ? isLive ? "bg-status-success-muted" : isStopped ? "bg-status-neutral-muted" : isErrored ? "bg-status-error-muted" : "bg-card"
       : variant === "rollback"
-      ? "bg-status-warning-muted border-status-warning-edge"
+      ? "bg-status-warning-muted"
       : ({
           success: "bg-card",
           failed: "bg-status-error-muted",
@@ -373,7 +373,7 @@ export function AppDeployPanel({
         key={deployment.id}
         ref={variant === "live" ? liveCardRef : undefined}
         tabIndex={variant === "live" ? -1 : undefined}
-        className={`squircle rounded-lg border ${bgColor} overflow-hidden`}
+        className={`squircle rounded-lg ${bgColor} shadow-card overflow-hidden dark:border`}
       >
         <div className="flex items-center justify-between gap-4 p-4 cursor-pointer hover:bg-accent/50 transition-colors"
           onClick={() => toggleLog(deployment.id)}
@@ -514,7 +514,7 @@ export function AppDeployPanel({
           <>
             {/* A compose child never deploys on its own — these are all it has. */}
             {lifecycleEvents.length > 0 && (
-              <div className="squircle rounded-lg border py-1">
+              <div className="squircle rounded-lg bg-card py-1 shadow-card dark:border">
                 {lifecycleEvents.map((event) => (
                   <LifecycleLine key={event.id} event={event} />
                 ))}
@@ -603,7 +603,7 @@ export function AppDeployPanel({
                     return (
                       <div
                         key={deployment.id}
-                        className="squircle rounded-lg border bg-status-neutral-muted overflow-hidden"
+                        className="squircle rounded-lg bg-status-neutral-muted shadow-card overflow-hidden dark:border"
                       >
                         <div className="flex items-center justify-between gap-4 p-4">
                           <div className="flex items-center gap-3 min-w-0">
@@ -726,7 +726,7 @@ export function AppDeployPanel({
               <>
                 <div className="space-y-2">
                   <p className="text-sm font-medium">Rolling back to:</p>
-                  <div className="squircle rounded-lg border bg-muted/50 p-3 space-y-1">
+                  <div className="squircle rounded-lg bg-background-deep p-3 space-y-1">
                     <p className="text-sm">{rollbackPreview.gitMessage || "Manual deploy"}</p>
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
                       {rollbackPreview.gitSha && (
@@ -741,7 +741,7 @@ export function AppDeployPanel({
                 {rollbackPreview.configChanges.length > 0 && (
                   <div className="space-y-2">
                     <p className="text-sm font-medium">Config changes</p>
-                    <div className="squircle rounded-lg border divide-y text-xs">
+                    <div className="squircle rounded-lg bg-background-deep divide-y text-xs">
                       {rollbackPreview.configChanges.map((change) => (
                         <div key={change.field} className="flex items-center justify-between px-3 py-2">
                           <span className="text-muted-foreground">{change.field}</span>
@@ -771,7 +771,7 @@ export function AppDeployPanel({
                       </Label>
                     </div>
                     {rollbackIncludeEnv && rollbackPreview.envKeyChanges && (
-                      <div className="squircle rounded-lg border bg-muted/50 p-3 space-y-2 text-xs">
+                      <div className="squircle rounded-lg bg-background-deep p-3 space-y-2 text-xs">
                         {rollbackPreview.envKeyChanges.added.length > 0 && (
                           <div>
                             <span className="text-status-success font-medium">Added: </span>

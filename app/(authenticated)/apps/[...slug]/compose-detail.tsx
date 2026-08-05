@@ -29,6 +29,7 @@ import {
 import { toast } from "@/lib/messenger";
 import { PageToolbar } from "@/components/page-toolbar";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import {
@@ -447,9 +448,9 @@ function PerService({
 
   if (!selected) {
     return (
-      <div className="squircle lining flex flex-col items-center justify-center gap-4 rounded-lg border bg-card p-12">
+      <Card className="squircle lining items-center justify-center rounded-lg p-12">
         <p className="text-sm text-muted-foreground">{emptyMessage}</p>
-      </div>
+      </Card>
     );
   }
 
@@ -509,7 +510,7 @@ function ComposeNetworking({
               <Link
                 key={`${service.id}-${domain}`}
                 href={`/apps/${service.name}/networking`}
-                className="squircle flex items-center justify-between gap-4 rounded-lg border bg-background-deep p-4 transition-colors hover:bg-accent"
+                className="squircle flex items-center justify-between gap-4 rounded-lg bg-background-deep p-4 transition-colors hover:bg-accent"
               >
                 <span className="truncate font-mono text-sm font-medium">{domain}</span>
                 <span className="shrink-0 text-xs text-muted-foreground">
@@ -559,7 +560,7 @@ function ComposeSecurity({
               <Link
                 key={service.id}
                 href={`/apps/${service.name}/security`}
-                className="squircle flex items-center justify-between gap-4 rounded-lg border bg-background-deep p-4 transition-colors hover:bg-accent"
+                className="squircle flex items-center justify-between gap-4 rounded-lg bg-background-deep p-4 transition-colors hover:bg-accent"
               >
                 <span className="truncate text-sm font-medium">{service.displayName}</span>
                 <span className="shrink-0 font-mono text-xs text-muted-foreground">
@@ -1245,7 +1246,7 @@ export function ComposeDetail({
 
         <TabsContent value="services">
           {services.length === 0 ? (
-            <div className="squircle lining flex flex-col items-center justify-center gap-4 rounded-lg border bg-card p-12">
+            <Card className="squircle lining items-center justify-center rounded-lg p-12">
               <Container className="size-8 text-muted-foreground/50" />
               <div className="text-center space-y-1">
                 <p className="text-sm font-medium">No services</p>
@@ -1253,7 +1254,7 @@ export function ComposeDetail({
                   Deploy the stack to see its services here.
                 </p>
               </div>
-            </div>
+            </Card>
           ) : (
             <ComposeServices appId={app.id} services={services} orgId={orgId} />
           )}

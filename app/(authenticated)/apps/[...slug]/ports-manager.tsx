@@ -84,7 +84,7 @@ export function PortsManager({
       </div>
 
       {adding && (
-        <div className="flex items-end gap-3 rounded-lg border bg-card p-4">
+        <div className="flex items-end gap-3 rounded-lg bg-background-deep p-4">
           <div className="grid gap-1.5">
             <label htmlFor="port-container" className="text-xs text-muted-foreground">Container Port</label>
             <input
@@ -134,7 +134,7 @@ export function PortsManager({
           body="Container ports are reachable inside the Docker network by default. Expose one to reach this service directly."
         />
       ) : ports.length > 0 && (
-        <div className="divide-y rounded-lg border">
+        <div className="divide-y rounded-lg bg-background-deep">
           {ports.map((port, i) => (
             <div key={i} className="flex items-center justify-between gap-4 px-4 py-3">
               <div className="flex items-center gap-4">
