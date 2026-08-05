@@ -5,6 +5,12 @@ import { volumes } from "@/lib/db/schema";
 import { verifyAppAccess } from "@/lib/api/verify-access";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
+import {
+  InvalidExclusionError,
+  MAX_EXCLUDE_PATTERNS,
+  MAX_EXCLUDE_PATTERN_LENGTH,
+  normalizeExcludePattern,
+} from "@/lib/backups/exclusions";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
@@ -14,6 +20,23 @@ type RouteParams = {
 
 const patchSchema = z.object({
   ignorePatterns: z.array(z.string().min(1).max(200)).max(100).optional(),
+  // Separate from ignorePatterns, which marks drift rather than disposable data.
+  backupExcludePatterns: z
+    .array(z.string().min(1).max(MAX_EXCLUDE_PATTERN_LENGTH))
+    .max(MAX_EXCLUDE_PATTERNS)
+    .optional()
+    .superRefine((patterns, ctx) => {
+      for (const pattern of patterns ?? []) {
+        try {
+          normalizeExcludePattern(pattern);
+        } catch (err) {
+          ctx.addIssue({
+            code: "custom",
+            message: err instanceof InvalidExclusionError ? err.message : "invalid exclusion pattern",
+          });
+        }
+      }
+    }),
   description: z.string().max(500).optional(),
   // null returns the volume to unclassified, which backs it up.
   durability: z.enum(["stateful", "rebuildable", "external"]).nullable().optional(),
@@ -49,6 +72,9 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
     const updates: Record<string, unknown> = { updatedAt: new Date() };
     if (parsed.data.ignorePatterns !== undefined) {
       updates.ignorePatterns = parsed.data.ignorePatterns;
+    }
+    if (parsed.data.backupExcludePatterns !== undefined) {
+      updates.backupExcludePatterns = parsed.data.backupExcludePatterns;
     }
     if (parsed.data.description !== undefined) {
       updates.description = parsed.data.description;

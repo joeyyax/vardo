@@ -36,6 +36,10 @@ export const volumes = pgTable(
     maxSizeBytes: bigint("max_size_bytes", { mode: "number" }), // nullable = no limit
     warnAtPercent: integer("warn_at_percent").default(80),
     ignorePatterns: jsonb("ignore_patterns").$type<string[]>(), // glob patterns to ignore in diff (e.g. "uploads/**")
+    // Paths a backup leaves out. Deliberately not `ignorePatterns`: that column
+    // means "differs from the image, not drift", which is the mark of runtime
+    // state — the last thing a backup should drop.
+    backupExcludePatterns: jsonb("backup_exclude_patterns").$type<string[]>(),
     driftCount: integer("drift_count").default(0), // unignored file drift after last deploy
     // Whether the contents are irreplaceable, separate from whether they
     // survive a deploy. Null means unclassified and is backed up, so adding

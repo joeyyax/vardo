@@ -12,7 +12,7 @@ import { execFile, spawn } from "child_process";
 import { promisify } from "util";
 import { pipeline } from "stream/promises";
 import { createGzip, createGunzip } from "zlib";
-import { mkdir, rm, stat } from "fs/promises";
+import { mkdir, readFile, rm, stat, writeFile } from "fs/promises";
 import { resolve, join } from "path";
 import type { BackupStorage } from "./storage-port";
 import { createBackupStorage } from "./storage-factory";
@@ -25,17 +25,26 @@ import { assertSafeBindSource } from "@/lib/docker/mount-paths";
 import { buildDumpArgv, buildRestoreArgv, describeDumpSpec, type DumpSpec } from "./dump-spec";
 import { resolveDbContainer } from "./resolve-db-container";
 import {
+  ARCHIVE_HAS_FILES_MARKER,
   DIRECTORY_SOURCE_MARKER,
   EMPTY_SOURCE_MARKER,
+  EXCLUDE_LIST_FILE,
   FILE_PAYLOAD_NAME,
   FILE_SOURCE_MARKER,
   MIN_VALID_GZIP_BYTES,
+  PROTECT_LIST_FILE,
   buildBindPreflightScript,
   buildFileBackupScript,
   buildFileRestoreScript,
   buildTarBackupScript,
   buildTarRestoreScript,
 } from "./archive";
+import {
+  assertExcludedPath,
+  buildFindExclusionArgv,
+  parseExcludedPaths,
+  protectListBody,
+} from "./exclusions";
 import { listContainers, inspectContainer } from "@/lib/docker/client";
 import { resolveDefaultEnv } from "@/lib/docker/resolve-env";
 import { logger } from "@/lib/logger";
@@ -107,6 +116,8 @@ type VolumeToBackup = {
   backupMeta: { dumpCmd: string; restoreCmd: string } | null;
   backupSpec: DumpSpec | null;
   durability: string | null;
+  /** Paths the archive leaves out. Read live, then recorded on the backup row. */
+  backupExcludePatterns: string[] | null;
 };
 
 // ---------------------------------------------------------------------------
@@ -177,6 +188,51 @@ async function verifyArchive(
 // ---------------------------------------------------------------------------
 
 /**
+ * Run the tar backup script in a one-shot container and read back what it left out.
+ *
+ * Exclusion patterns reach the container as argv for `find`, never as text in
+ * the script — a pattern is operator input and the script runs with the source
+ * mounted.
+ */
+async function runTarBackup(
+  mountArgs: string[],
+  tmpDir: string,
+  excludePatterns: string[],
+  timeoutMs: number,
+  label: string,
+): Promise<{ stdout: string; excludedPaths: string[] }> {
+  const findArgv = buildFindExclusionArgv(excludePatterns);
+
+  const { stdout } = await execFileAsync(
+    "docker",
+    [
+      "run", "--rm",
+      ...mountArgs,
+      "-v", `${tmpDir}:/backup`,
+      "alpine", "sh", "-c", buildTarBackupScript(),
+      "vardo-backup", ...findArgv,
+    ],
+    { timeout: timeoutMs },
+  );
+
+  const out = String(stdout);
+  if (findArgv.length === 0) return { stdout: out, excludedPaths: [] };
+
+  // The archive still holds the directory tree when every file matched, and a
+  // tree clears the size floor. Nothing else catches a pattern that took it all.
+  if (!out.includes(ARCHIVE_HAS_FILES_MARKER) && !out.includes(EMPTY_SOURCE_MARKER)) {
+    throw new Error(
+      `${label} excluded every file — refusing to record an archive that holds none`,
+    );
+  }
+
+  return {
+    stdout: out,
+    excludedPaths: parseExcludedPaths(await readFile(join(tmpDir, EXCLUDE_LIST_FILE), "utf8")),
+  };
+}
+
+/**
  * Strategy: tar — create a tar.gz of a Docker volume.
  */
 async function backupVolumeTar(
@@ -184,7 +240,8 @@ async function backupVolumeTar(
   storageKey: string,
   storage: BackupStorage,
   logFn: (msg: string) => void,
-): Promise<{ sizeBytes: number; checksum: string }> {
+  excludePatterns: string[] = [],
+): Promise<{ sizeBytes: number; checksum: string; excludedPaths: string[] }> {
   const tmpDir = join(BACKUPS_DIR, `.tmp-${nanoid(8)}`);
   await ensureDir(tmpDir);
   const archiveFile = "volume.tar.gz";
@@ -193,15 +250,20 @@ async function backupVolumeTar(
     assertSafeName(dockerVolumeName);
 
     logFn(`Archiving volume ${dockerVolumeName}`);
-    const { stdout } = await execFileAsync(
-      "docker",
-      ["run", "--rm", "-v", `${dockerVolumeName}:/data`, "-v", `${tmpDir}:/backup`, "alpine", "sh", "-c", buildTarBackupScript()],
-      { timeout: 600_000 },
+    const { stdout, excludedPaths } = await runTarBackup(
+      ["-v", `${dockerVolumeName}:/data`],
+      tmpDir,
+      excludePatterns,
+      600_000,
+      `Volume ${dockerVolumeName}`,
     );
+    if (excludePatterns.length > 0) {
+      logFn(`Excluded ${excludedPaths.length} path(s) from ${excludePatterns.length} pattern(s)`);
+    }
 
     // The container's own verdict on the source. A container that dies
     // mid-archive fails `docker run` rather than reaching here.
-    const sourceWasEmpty = String(stdout).includes(EMPTY_SOURCE_MARKER);
+    const sourceWasEmpty = stdout.includes(EMPTY_SOURCE_MARKER);
     if (sourceWasEmpty) {
       logFn(`Volume ${dockerVolumeName} is empty — archived 0 files`);
     }
@@ -216,7 +278,7 @@ async function backupVolumeTar(
     const { sizeBytes } = await storage.upload(storageKey, archivePath);
 
     logFn(`Upload complete (${sizeBytes} bytes)`);
-    return { sizeBytes, checksum };
+    return { sizeBytes, checksum, excludedPaths };
   } finally {
     try {
       await rm(tmpDir, { recursive: true, force: true });
@@ -372,7 +434,13 @@ async function backupBindTar(
   storageKey: string,
   storage: BackupStorage,
   logFn: (msg: string) => void,
-): Promise<{ sizeBytes: number; checksum: string; kind: BindSourceKind }> {
+  excludePatterns: string[] = [],
+): Promise<{
+  sizeBytes: number;
+  checksum: string;
+  kind: BindSourceKind;
+  excludedPaths: string[];
+}> {
   const tmpDir = join(BACKUPS_DIR, `.tmp-${nanoid(8)}`);
   await ensureDir(tmpDir);
 
@@ -393,18 +461,40 @@ async function backupBindTar(
       );
     }
 
-    logFn(`Archiving host ${kind} ${safeSource}`);
-    const mount =
-      kind === "file"
-        ? `${safeSource}:/data/${FILE_PAYLOAD_NAME}:ro`
-        : `${safeSource}:/data:ro`;
-    const script = kind === "file" ? buildFileBackupScript() : buildTarBackupScript();
+    // A single file has no paths to subtract. Applying the patterns anyway
+    // would be a no-op the operator reads as working.
+    if (kind === "file" && excludePatterns.length > 0) {
+      throw new Error(
+        `${safeSource} is a single file — exclusion patterns cannot apply to it, remove them to back it up`,
+      );
+    }
 
-    await execFileAsync(
-      "docker",
-      ["run", "--rm", "-v", mount, "-v", `${tmpDir}:/backup`, "alpine", "sh", "-c", script],
-      { timeout: 1_800_000 },
-    );
+    logFn(`Archiving host ${kind} ${safeSource}`);
+
+    let excludedPaths: string[] = [];
+    if (kind === "file") {
+      await execFileAsync(
+        "docker",
+        [
+          "run", "--rm",
+          "-v", `${safeSource}:/data/${FILE_PAYLOAD_NAME}:ro`,
+          "-v", `${tmpDir}:/backup`,
+          "alpine", "sh", "-c", buildFileBackupScript(),
+        ],
+        { timeout: 1_800_000 },
+      );
+    } else {
+      ({ excludedPaths } = await runTarBackup(
+        ["-v", `${safeSource}:/data:ro`],
+        tmpDir,
+        excludePatterns,
+        1_800_000,
+        `Bind mount ${safeSource}`,
+      ));
+      if (excludePatterns.length > 0) {
+        logFn(`Excluded ${excludedPaths.length} path(s) from ${excludePatterns.length} pattern(s)`);
+      }
+    }
 
     const archivePath = join(tmpDir, "volume.tar.gz");
     await verifyArchive(archivePath, `Bind mount ${safeSource}`);
@@ -416,7 +506,7 @@ async function backupBindTar(
     const { sizeBytes } = await storage.upload(storageKey, archivePath);
 
     logFn(`Upload complete (${sizeBytes} bytes)`);
-    return { sizeBytes, checksum, kind };
+    return { sizeBytes, checksum, kind, excludedPaths };
   } finally {
     try {
       await rm(tmpDir, { recursive: true, force: true });
@@ -625,6 +715,7 @@ export async function runBackup(
         backupMeta: vol.backupMeta,
         backupSpec: vol.backupSpec,
         durability: vol.durability,
+        backupExcludePatterns: vol.backupExcludePatterns,
       });
     }
   }
@@ -652,6 +743,7 @@ export async function runBackup(
       backupMeta: vol.backupMeta,
       backupSpec: vol.backupSpec,
       durability: vol.durability,
+      backupExcludePatterns: vol.backupExcludePatterns,
     });
   }
 
@@ -773,6 +865,8 @@ export async function runBackup(
       let result: { sizeBytes: number; checksum: string };
       let resolvedSource: string | null = null;
       let sourceKind: string | null = null;
+      let excludedPaths: string[] = [];
+      const excludePatterns = vol.backupExcludePatterns ?? [];
 
       if (strategy === "dump") {
         const spec = vol.backupSpec;
@@ -822,10 +916,11 @@ export async function runBackup(
         if (!vol.source) {
           throw new Error(`Bind mount ${vol.name} has no host path recorded`);
         }
-        const bind = await backupBindTar(vol.source, storageKey, storage, log);
+        const bind = await backupBindTar(vol.source, storageKey, storage, log, excludePatterns);
         result = bind;
         resolvedSource = vol.source;
         sourceKind = bind.kind;
+        excludedPaths = bind.excludedPaths;
       } else {
         // tar strategy — need to resolve the Docker volume name
         if (!vol.appName) {
@@ -835,7 +930,9 @@ export async function runBackup(
         if (!dockerVolumeName) {
           throw new Error(`Volume not found: ${vol.name}`);
         }
-        result = await backupVolumeTar(dockerVolumeName, storageKey, storage, log);
+        const tar = await backupVolumeTar(dockerVolumeName, storageKey, storage, log, excludePatterns);
+        result = tar;
+        excludedPaths = tar.excludedPaths;
       }
 
       const finishedAt = new Date();
@@ -850,6 +947,7 @@ export async function runBackup(
           checksum: `sha256:${result.checksum}`,
           resolvedSource,
           sourceKind,
+          excludedPaths: excludedPaths.length > 0 ? excludedPaths : null,
           log: logLines.join("\n"),
           finishedAt,
         })
@@ -1291,7 +1389,16 @@ export async function restoreBackup(
       log("Checksum verified");
     }
 
-    // 3. Restore by strategy
+    // 3. Paths this archive deliberately left out. The list is the archive's
+    // own record, never the volume's current patterns: a pattern removed since
+    // would leave that data in neither place, and the swap would delete it.
+    const protectedPaths = (backup.excludedPaths ?? []).map(assertExcludedPath);
+    if (strategy === "tar" && protectedPaths.length > 0) {
+      await writeFile(join(tmpDir, PROTECT_LIST_FILE), protectListBody(protectedPaths));
+      log(`Keeping ${protectedPaths.length} excluded path(s) as found at the destination`);
+    }
+
+    // 4. Restore by strategy
     if (strategy === "dump") {
       // Restore config is read live, the same as the dump side. A spec resolves
       // the container now; a stored command names whatever was running when it

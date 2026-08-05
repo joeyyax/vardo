@@ -141,6 +141,11 @@ export const backups = pgTable("backup", {
   // only on Vardo's own database dump; null everywhere else. Restore refuses
   // when it does not match the running key.
   keyFingerprint: text("key_fingerprint"),
+  // Literal paths this archive left out, relative to the volume root. Restore
+  // carries them over from the live copy instead of deleting them. Recorded per
+  // archive, never re-derived: a pattern dropped afterwards would leave the data
+  // in neither the archive nor this list.
+  excludedPaths: jsonb("excluded_paths").$type<string[]>(),
   // Drill results. Kept apart from status: a backup that succeeded is not the
   // same as one that has been shown to restore.
   verifiedAt: timestamp("verified_at"),
