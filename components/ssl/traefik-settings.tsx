@@ -87,7 +87,7 @@ export function TraefikSettings() {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
-        <div className="flex items-center justify-between rounded-lg border p-4">
+        <div className="flex items-center justify-between rounded-lg bg-card p-4 shadow-card dark:border">
           <div className="space-y-0.5">
             <Label htmlFor="external-routing" className="text-sm font-medium">
               Route to external containers
@@ -115,7 +115,7 @@ export function TraefikSettings() {
       </form>
 
       {restartPending && (
-        <div className="rounded-lg border p-4 flex items-center justify-between gap-4">
+        <div className="rounded-lg bg-card p-4 flex items-center justify-between gap-4 shadow-card dark:border">
           <div className="space-y-0.5">
             <p className="text-sm font-medium">Traefik restart required to apply changes</p>
             <p className="text-xs text-muted-foreground">
@@ -137,7 +137,7 @@ export function TraefikSettings() {
       )}
 
       {restarted && (
-        <div className="rounded-lg border p-4">
+        <div className="rounded-lg bg-card p-4 shadow-card dark:border">
           <p className="text-sm font-medium">Traefik restart initiated</p>
           <p className="text-xs text-muted-foreground">
             The container is restarting and will be back up momentarily.
@@ -146,7 +146,7 @@ export function TraefikSettings() {
       )}
 
       {config.externalRouting && (
-        <div className="rounded-lg border p-4 space-y-3">
+        <div className="rounded-lg bg-card p-4 space-y-3 shadow-card dark:border">
           <div className="space-y-0.5">
             <p className="text-sm font-medium">Making external containers reachable</p>
             <p className="text-xs text-muted-foreground">

@@ -143,7 +143,7 @@ export function CoreServicesSettings() {
         </p>
       </div>
 
-      <div className="squircle divide-y rounded-lg border">
+      <div className="squircle divide-y rounded-lg bg-card shadow-card dark:border">
         {services.map((service) => (
           <div key={service.name} className="flex items-start justify-between gap-4 p-4">
             <div className="space-y-1">

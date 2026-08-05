@@ -182,7 +182,7 @@ export function SystemAlertsPanel() {
           <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
             Services
           </h4>
-          <div className="rounded-lg border divide-y">
+          <div className="rounded-lg bg-card divide-y shadow-card dark:border">
             {healthData.services.map((service) => (
               <div
                 key={service.name}
@@ -222,7 +222,7 @@ export function SystemAlertsPanel() {
           <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
             Resources
           </h4>
-          <div className="rounded-lg border divide-y">
+          <div className="rounded-lg bg-card divide-y shadow-card dark:border">
             {healthData.resources.map((resource) => (
               <div
                 key={resource.name}
@@ -270,12 +270,12 @@ export function SystemAlertsPanel() {
           </h4>
 
           {alertsData.active.length === 0 ? (
-            <div className="rounded-lg border px-4 py-6 text-center">
+            <div className="rounded-lg bg-card px-4 py-6 text-center shadow-card dark:border">
               <CheckCircle className="h-6 w-6 text-status-success mx-auto mb-2" />
               <p className="text-sm text-muted-foreground">No active alerts</p>
             </div>
           ) : (
-            <div className="rounded-lg border divide-y">
+            <div className="rounded-lg bg-card divide-y shadow-card dark:border">
               {alertsData.active.map((alert) => (
                 <div key={`${alert.type}:${alert.key}`} className="flex items-center justify-between px-4 py-3">
                   <div className="flex items-center gap-2.5">
@@ -310,7 +310,7 @@ export function SystemAlertsPanel() {
           <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
             Recent Alert History
           </h4>
-          <div className="rounded-lg border divide-y">
+          <div className="rounded-lg bg-card divide-y shadow-card dark:border">
             {alertsData.history.slice(0, 10).map((alert) => (
               <div
                 key={`${alert.type}:${alert.key}`}

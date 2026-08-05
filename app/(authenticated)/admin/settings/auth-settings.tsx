@@ -231,7 +231,7 @@ function SignInMethods() {
           <span className="sr-only">Loading sign-in methods</span>
         </div>
       ) : (
-        <div className="squircle divide-y rounded-lg border">
+        <div className="squircle divide-y rounded-lg bg-card shadow-card dark:border">
           {methods.map((m) => (
             <div key={m.method} className="flex items-start justify-between gap-4 p-4">
               <div className="space-y-1">
