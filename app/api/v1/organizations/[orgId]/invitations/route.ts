@@ -7,7 +7,7 @@ import { requireOrgAdmin } from "@/lib/auth/permissions";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import crypto from "crypto";
-import { sendEmail } from "@/lib/email/send";
+import { sendEmail, emailDelivery } from "@/lib/email/send";
 import { InviteEmail } from "@/lib/email/templates/invite";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { requirePlugin } from "@/lib/api/require-plugin";
@@ -133,7 +133,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
     const inviteUrl = `${appUrl}/invite/${token}`;
 
-    await sendEmail({
+    const sent = await sendEmail({
       to: normalizedEmail,
       subject: `You've been invited to ${org.organization.name}`,
       template: InviteEmail({
@@ -144,7 +144,10 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       }),
     });
 
-    return NextResponse.json({ invitation }, { status: 201 });
+    return NextResponse.json(
+      { invitation: { ...invitation, inviteUrl }, email: emailDelivery(sent) },
+      { status: 201 },
+    );
   } catch (error) {
     if (error instanceof Error && error.message === "Forbidden") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });

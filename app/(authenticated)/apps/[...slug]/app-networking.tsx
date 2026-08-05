@@ -119,8 +119,8 @@ export function AppNetworking({
           ...prev,
           [domain.id]: data.configured ? "resolving" : "not-configured",
         }));
-        if (data.serverIPs?.length) {
-          setServerIP(data.serverIPs[0]);
+        if (data.serverIp) {
+          setServerIP(data.serverIp);
         }
       } catch {
         setDomainStatuses((prev) => ({ ...prev, [domain.id]: "not-configured" }));

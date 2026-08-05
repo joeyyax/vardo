@@ -12,6 +12,8 @@ import { TeamMembers } from "@/app/(authenticated)/team/team-members";
 import { InvitationsPanel } from "../invitations";
 import { OrgGeneralSettings } from "../org-general-settings";
 import { BackupPage } from "@/components/backups/backup-page";
+import { isOrgAdmin } from "@/lib/auth/permissions";
+import { getEmailProviderConfig } from "@/lib/system-settings";
 
 const VALID_TABS = ["general", "variables", "domains", "backups", "notifications", "team", "invitations"] as const;
 type ValidTab = (typeof VALID_TABS)[number];
@@ -133,6 +135,10 @@ export default async function OrgSettingsTabPage({
         orderBy: (t, { desc }) => [desc(t.createdAt)],
       });
 
+      // The token is the invite itself, so only admins — who can revoke it — see the link.
+      const canManage = isOrgAdmin(orgData.membership.role);
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+
       const invitationList = orgInvitations.map((inv) => ({
         id: inv.id,
         email: inv.email,
@@ -143,6 +149,10 @@ export default async function OrgSettingsTabPage({
         inviter: inv.inviter
           ? { id: inv.inviter.id, name: inv.inviter.name }
           : null,
+        inviteUrl:
+          canManage && inv.status === "pending"
+            ? `${appUrl}/invite/${inv.token}`
+            : null,
       }));
 
       return (
@@ -151,6 +161,7 @@ export default async function OrgSettingsTabPage({
           orgName={orgData.organization.name}
           currentRole={orgData.membership.role}
           invitations={invitationList}
+          emailConfigured={!!(await getEmailProviderConfig())}
         />
       );
     }
