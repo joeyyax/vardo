@@ -11,6 +11,7 @@ import { promisify } from "util";
 import { mkdir, writeFile, readFile, rm, symlink, copyFile, stat, readdir } from "fs/promises";
 import { join } from "path";
 import { decryptOrFallback } from "@/lib/crypto/encrypt";
+import { DeployBlockedError } from "../errors";
 import { parseEnvToMap } from "@/lib/env/parse-env";
 import { resolveAllEnvVars, type ResolveContext } from "@/lib/env/resolve";
 import {
@@ -238,7 +239,12 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
         }
       }
       if (child.envContent) {
-        const { content } = decryptOrFallback(child.envContent, ctx.organizationId);
+        const { content, decryptFailed } = decryptOrFallback(child.envContent, ctx.organizationId);
+        if (decryptFailed) {
+          throw new DeployBlockedError(
+            `Could not decrypt environment variables for service "${child.composeService}" — check ENCRYPTION_MASTER_KEY.`,
+          );
+        }
         if (content) {
           const map = parseEnvToMap(content);
           if (Object.keys(map).length > 0) serviceEnvRaw[child.composeService] = map;
