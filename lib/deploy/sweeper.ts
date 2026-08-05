@@ -725,7 +725,7 @@ async function refuse(appId: string, envName: string, reason: string): Promise<v
 async function envNameFor(environmentId: string | null, appId: string): Promise<string> {
   if (environmentId) {
     const env = await db.query.environments.findFirst({
-      where: eq(environments.id, environmentId),
+      where: and(eq(environments.id, environmentId), eq(environments.appId, appId)),
       columns: { name: true },
     });
     if (env) return env.name;

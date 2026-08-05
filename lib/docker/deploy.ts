@@ -31,6 +31,7 @@ import {
   ENDPOINT_CHECK_TIMEOUT,
 } from "./constants";
 import { prepareRepo, resolveCompose, build, swap, postDeploy } from "./deploy-steps";
+import { resolveDeployEnv } from "./resolve-env";
 import {
   loadRollbackTarget,
   applyRollbackTarget,
@@ -279,20 +280,10 @@ export async function runDeployment(
       if (defaultEnv) opts.environmentId = defaultEnv.id;
     }
 
-    let envName = "production";
-    let envType: "production" | "staging" | "preview" | "local" = "production";
-    let envBranchOverride: string | null = null;
-    if (opts.environmentId) {
-      const env = await db.query.environments.findFirst({
-        where: eq(environments.id, opts.environmentId),
-        columns: { name: true, type: true, gitBranch: true },
-      });
-      if (env) {
-        envName = env.name;
-        envType = env.type;
-        envBranchOverride = env.gitBranch;
-      }
-    }
+    const resolvedEnv = await resolveDeployEnv(opts.appId, opts.environmentId);
+    const envName = resolvedEnv.name;
+    const envType = resolvedEnv.type;
+    const envBranchOverride = resolvedEnv.gitBranch;
     log(`[deploy] Environment: ${envName} (${envType})`);
 
     // Local environments always allow bind mounts + the docker socket
