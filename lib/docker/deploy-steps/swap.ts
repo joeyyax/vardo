@@ -31,6 +31,7 @@ import type { DeployContext, SlotStopOutcome } from "../deploy-context";
 import { classifyComposeServices } from "./classify-services";
 import { majorGateAfter, majorGateBefore, type MajorGateState } from "./major-gate";
 import { publishesHostPorts } from "../host-ports";
+import { getServicesWithExternalizedVolumes } from "../compose-inject";
 import { registryAuthHint, withRegistryAuth } from "../registry-auth";
 import { partitionBySlot, sharedProjectName, slotScopeArgs } from "../slot-partition";
 import { isSelfApp } from "../self-env";
@@ -446,17 +447,37 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
       ? await oldSlotRuns(sharedNames)
       : false;
 
+  // A named volume is externalized to a name carrying no slot, so both slots
+  // address one directory. Suppressed for the whole app: sequencing only the
+  // service holding it leaves the old slot serving without its database. Vardo
+  // deploying itself is exempt — its old slot is running this process.
+  const slottedOnExternalizedVolumes =
+    canOverlapSlots && !deferStopToPostDeploy
+      ? [...getServicesWithExternalizedVolumes(compose)].filter((name) => name in slotted)
+      : [];
+
   // The overlap holds two copies of this app's memory. Read here, after the
   // build, so it describes the host the new slot is about to start on. Vardo
   // deploying itself is exempt — its old slot is running this process.
   const overlapFitsMemory =
-    canOverlapSlots && !deferStopToPostDeploy && !oldSlotHoldsShared
+    canOverlapSlots &&
+    !deferStopToPostDeploy &&
+    !oldSlotHoldsShared &&
+    slottedOnExternalizedVolumes.length === 0
       ? await overlapFitsNow(ctx.organizationId, ctx.appId, log)
       : true;
 
-  if (stopOldBeforeUp || oldSlotHoldsShared || !overlapFitsMemory) {
+  if (
+    stopOldBeforeUp ||
+    oldSlotHoldsShared ||
+    slottedOnExternalizedVolumes.length > 0 ||
+    !overlapFitsMemory
+  ) {
     if (oldSlotHoldsShared) {
       log(`[deploy] Old slot still runs ${sharedNames.join(", ")} — stopping it before the shared project starts`);
+    }
+    if (slottedOnExternalizedVolumes.length > 0) {
+      log(`[deploy] Volume both slots would hold, mounted by ${slottedOnExternalizedVolumes.join(", ")} — stopping ${activeSlot} before ${newSlot} starts`);
     }
     // Every branch here stops the old slot before the new one starts, so there
     // is no proven second backend to pin to and guardCutover would only burn
