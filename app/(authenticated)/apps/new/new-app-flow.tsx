@@ -534,7 +534,7 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], baseDom
                     key={opt.id}
                     type="button"
                     onClick={() => selectSource(opt.id)}
-                    className="squircle flex flex-col items-center gap-2 rounded-lg border bg-card p-4 text-center transition-colors hover:bg-accent/50"
+                    className="squircle flex flex-col items-center gap-2 rounded-lg bg-background-deep p-4 text-center transition-colors hover:bg-accent/50"
                   >
                     <Icon className="size-6 text-muted-foreground" />
                     <span className="text-sm font-medium">{opt.label}</span>
@@ -547,7 +547,7 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], baseDom
               {containerImportEnabled && (
                 <Link
                   href="/discover"
-                  className="squircle flex flex-col items-center gap-2 rounded-lg border bg-card p-4 text-center transition-colors hover:bg-accent/50"
+                  className="squircle flex flex-col items-center gap-2 rounded-lg bg-background-deep p-4 text-center transition-colors hover:bg-accent/50"
                 >
                   <Boxes className="size-6 text-muted-foreground" aria-hidden="true" />
                   <span className="text-sm font-medium">Existing containers</span>
@@ -571,7 +571,7 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], baseDom
                     key={tmpl.id}
                     type="button"
                     onClick={() => selectTemplate(tmpl)}
-                    className="squircle flex items-center gap-3 rounded-lg border bg-card p-3 text-left transition-colors hover:bg-accent/50"
+                    className="squircle flex items-center gap-3 rounded-lg bg-background-deep p-3 text-left transition-colors hover:bg-accent/50"
                   >
                     {tmpl.icon ? (
                       <img
