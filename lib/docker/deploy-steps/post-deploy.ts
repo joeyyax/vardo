@@ -42,8 +42,10 @@ import { addEvent } from "@/lib/stream/producer";
 import { recordActivity } from "@/lib/activity";
 import { volumeThreshold } from "@/lib/volumes/threshold";
 import { DeployBlockedError } from "../errors";
+import { pruneBuildKitCache, DEFAULT_BUILDKIT_HOST } from "../buildkit";
 import {
   BUILD_CACHE_MAX_BYTES,
+  BUILDKIT_CACHE_MAX_BYTES,
   COMPOSE_DOWN_TIMEOUT,
   POST_DEPLOY_DELAY,
   DOCKER_CLEANUP_TIMEOUT,
@@ -193,6 +195,23 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
           }
         } catch {
           // Build cache pruning is optional
+        }
+
+        try {
+          // Railpack's cache lives in the buildkit daemon's own store, on its
+          // own volume, and the prune above never reaches it.
+          const { spaceReclaimed: buildKitReclaimed } = await pruneBuildKitCache(
+            process.env.BUILDKIT_HOST || DEFAULT_BUILDKIT_HOST,
+            BUILDKIT_CACHE_MAX_BYTES,
+          );
+          if (buildKitReclaimed > 0) {
+            log(
+              `[deploy] BuildKit cache over ${formatBytes(BUILDKIT_CACHE_MAX_BYTES)}, ` +
+                `reclaimed ${formatBytes(buildKitReclaimed)}`,
+            );
+          }
+        } catch {
+          // BuildKit cache pruning is optional
         }
       } finally {
         await releaseLock(PRUNE_LOCK_KEY).catch(() => {});

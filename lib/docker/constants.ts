@@ -22,6 +22,15 @@ const configuredCacheGb = Number(process.env.VARDO_BUILD_CACHE_MAX_GB);
 export const BUILD_CACHE_MAX_BYTES =
   (Number.isFinite(configuredCacheGb) && configuredCacheGb > 0 ? configuredCacheGb : 10) * 1024 ** 3;
 
+/**
+ * Ceiling BuildKit's own store is pruned back to after every deploy. Separate
+ * from the Docker build cache above — the daemon prune never reaches it.
+ */
+const configuredBuildKitGb = Number(process.env.VARDO_BUILDKIT_CACHE_MAX_GB);
+export const BUILDKIT_CACHE_MAX_BYTES =
+  (Number.isFinite(configuredBuildKitGb) && configuredBuildKitGb > 0 ? configuredBuildKitGb : 10) *
+  1024 ** 3;
+
 // ---------------------------------------------------------------------------
 // Timeouts (milliseconds)
 // ---------------------------------------------------------------------------
