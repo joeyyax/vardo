@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { invitations, user } from "@/lib/db/schema";
 import { requireOrgAdmin } from "@/lib/auth/permissions";
 import { eq, and } from "drizzle-orm";
-import { sendEmail } from "@/lib/email/send";
+import { sendEmail, emailDelivery } from "@/lib/email/send";
 import { InviteEmail } from "@/lib/email/templates/invite";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { requirePlugin } from "@/lib/api/require-plugin";
@@ -105,7 +105,7 @@ async function handlePatch(
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
     const inviteUrl = `${appUrl}/invite/${invitation.token}`;
 
-    await sendEmail({
+    const sent = await sendEmail({
       to: invitation.email,
       subject: `You've been invited to ${org.organization.name}`,
       template: InviteEmail({
@@ -116,7 +116,7 @@ async function handlePatch(
       }),
     });
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, inviteUrl, email: emailDelivery(sent) });
   } catch (error) {
     if (error instanceof Error && error.message === "Forbidden") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
