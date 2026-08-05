@@ -25,8 +25,12 @@ import { resolveDbContainer } from "./resolve-db-container";
 import {
   DIRECTORY_SOURCE_MARKER,
   EMPTY_SOURCE_MARKER,
+  FILE_PAYLOAD_NAME,
+  FILE_SOURCE_MARKER,
   MIN_VALID_GZIP_BYTES,
   buildBindPreflightScript,
+  buildFileBackupScript,
+  buildFileRestoreScript,
   buildTarBackupScript,
   buildTarRestoreScript,
 } from "./archive";
@@ -323,18 +327,46 @@ async function streamDockerRestore(
   if (stderr.trim()) logFn(`restore stderr: ${stderr.trim().slice(0, 300)}`);
 }
 
+/** What a bind source turned out to be when Docker mounted it. */
+export type BindSourceKind = "directory" | "file";
+
 /**
- * Archive a host directory.
+ * Establish what a bind source actually is, from inside the container.
  *
- * Mounted read-only: this path only ever reads, and `:ro` means a bug here
- * cannot become a write to the host.
+ * Has to run here rather than in Node: Vardo talks to the daemon over a socket
+ * while `-v` resolves against the *host* filesystem, so `fs.stat` from this
+ * process inspects the wrong machine and answers confidently about nothing.
+ */
+async function preflightBindSource(
+  safeSource: string,
+): Promise<{ kind: BindSourceKind; empty: boolean }> {
+  const { stdout } = await execFileAsync(
+    "docker",
+    ["run", "--rm", "-v", `${safeSource}:/data:ro`, "alpine", "sh", "-c", buildBindPreflightScript()],
+    { timeout: 60_000 },
+  );
+  const out = String(stdout);
+  const empty = out.includes(EMPTY_SOURCE_MARKER);
+
+  if (out.includes(DIRECTORY_SOURCE_MARKER)) return { kind: "directory", empty };
+  if (out.includes(FILE_SOURCE_MARKER)) return { kind: "file", empty };
+  throw new Error(
+    `${safeSource} is neither a directory nor a regular file — sockets and devices cannot be archived`,
+  );
+}
+
+/**
+ * Archive a host path, directory or single file.
+ *
+ * Mounted read-only throughout: this path only reads, and `:ro` means a bug
+ * here cannot become a write to the host.
  */
 async function backupBindTar(
   hostSource: string,
   storageKey: string,
   storage: BackupStorage,
   logFn: (msg: string) => void,
-): Promise<{ sizeBytes: number; checksum: string }> {
+): Promise<{ sizeBytes: number; checksum: string; kind: BindSourceKind }> {
   const tmpDir = join(BACKUPS_DIR, `.tmp-${nanoid(8)}`);
   await ensureDir(tmpDir);
 
@@ -344,29 +376,27 @@ async function backupBindTar(
       label: "bind source",
     });
 
-    // Existence and type are established inside the container, for the reason
-    // given on buildBindPreflightScript.
-    const { stdout: pre } = await execFileAsync(
-      "docker",
-      ["run", "--rm", "-v", `${safeSource}:/data:ro`, "-v", `${tmpDir}:/backup`, "alpine", "sh", "-c", buildBindPreflightScript()],
-      { timeout: 60_000 },
-    );
-    if (!String(pre).includes(DIRECTORY_SOURCE_MARKER)) {
-      throw new Error(`${safeSource} is not a directory — refusing to archive it`);
-    }
-    // For a named volume an empty source is believable, because something
-    // already proved the volume exists. A bind source Docker just created from
-    // a typo looks identical, so this is a failure rather than a waiver.
-    if (String(pre).includes(EMPTY_SOURCE_MARKER)) {
+    const { kind, empty } = await preflightBindSource(safeSource);
+
+    // For a named volume an empty source is believable — something already
+    // proved the volume exists. A bind source Docker just created from a typo
+    // looks identical, so this is a failure rather than a waiver.
+    if (empty) {
       throw new Error(
         `${safeSource} is empty — refusing to record a backup that would restore as nothing`,
       );
     }
 
-    logFn(`Archiving host path ${safeSource}`);
+    logFn(`Archiving host ${kind} ${safeSource}`);
+    const mount =
+      kind === "file"
+        ? `${safeSource}:/data/${FILE_PAYLOAD_NAME}:ro`
+        : `${safeSource}:/data:ro`;
+    const script = kind === "file" ? buildFileBackupScript() : buildTarBackupScript();
+
     await execFileAsync(
       "docker",
-      ["run", "--rm", "-v", `${safeSource}:/data:ro`, "-v", `${tmpDir}:/backup`, "alpine", "sh", "-c", buildTarBackupScript()],
+      ["run", "--rm", "-v", mount, "-v", `${tmpDir}:/backup`, "alpine", "sh", "-c", script],
       { timeout: 1_800_000 },
     );
 
@@ -380,7 +410,7 @@ async function backupBindTar(
     const { sizeBytes } = await storage.upload(storageKey, archivePath);
 
     logFn(`Upload complete (${sizeBytes} bytes)`);
-    return { sizeBytes, checksum };
+    return { sizeBytes, checksum, kind };
   } finally {
     try {
       await rm(tmpDir, { recursive: true, force: true });
@@ -731,6 +761,7 @@ export async function runBackup(
 
       let result: { sizeBytes: number; checksum: string };
       let resolvedSource: string | null = null;
+      let sourceKind: string | null = null;
 
       if (strategy === "dump") {
         const spec = vol.backupSpec;
@@ -780,8 +811,10 @@ export async function runBackup(
         if (!vol.source) {
           throw new Error(`Bind mount ${vol.name} has no host path recorded`);
         }
-        result = await backupBindTar(vol.source, storageKey, storage, log);
+        const bind = await backupBindTar(vol.source, storageKey, storage, log);
+        result = bind;
         resolvedSource = vol.source;
+        sourceKind = bind.kind;
       } else {
         // tar strategy — need to resolve the Docker volume name
         if (!vol.appName) {
@@ -805,6 +838,7 @@ export async function runBackup(
           storagePath: storageKey,
           checksum: `sha256:${result.checksum}`,
           resolvedSource,
+          sourceKind,
           log: logLines.join("\n"),
           finishedAt,
         })
@@ -1272,19 +1306,23 @@ export async function restoreBackup(
 
       // Never conjure the destination. For a named volume "missing" is
       // recoverable; for a host path it means the path is wrong.
-      const { stdout: pre } = await execFileAsync(
-        "docker",
-        ["run", "--rm", "-v", `${safeSource}:/data:ro`, "alpine", "sh", "-c", buildBindPreflightScript()],
-        { timeout: 60_000 },
-      );
-      if (!String(pre).includes(DIRECTORY_SOURCE_MARKER)) {
-        throw new Error(`${safeSource} is not a directory — refusing to restore over it`);
+      const live = await preflightBindSource(safeSource);
+      const archivedKind = backup.sourceKind ?? "directory";
+      if (live.kind !== archivedKind) {
+        throw new Error(
+          `This archive holds a ${archivedKind}, but ${safeSource} is now a ${live.kind} — refusing to restore`,
+        );
       }
 
-      log(`Restoring into host path ${safeSource}`);
+      log(`Restoring into host ${live.kind} ${safeSource}`);
+      const mount =
+        live.kind === "file"
+          ? `${safeSource}:/data/${FILE_PAYLOAD_NAME}`
+          : `${safeSource}:/data`;
+      const script = live.kind === "file" ? buildFileRestoreScript() : buildTarRestoreScript();
       await execFileAsync(
         "docker",
-        ["run", "--rm", "-v", `${safeSource}:/data`, "-v", `${tmpDir}:/backup`, "alpine", "sh", "-c", buildTarRestoreScript()],
+        ["run", "--rm", "-v", mount, "-v", `${tmpDir}:/backup`, "alpine", "sh", "-c", script],
         { timeout: 1_800_000 },
       );
     } else {

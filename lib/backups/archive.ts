@@ -34,6 +34,46 @@ export function buildTarBackupScript(dataDir = "/data", backupDir = "/backup"): 
 /** Printed when the mounted source is a directory. Its absence is the signal. */
 export const DIRECTORY_SOURCE_MARKER = "vardo:source-is-directory";
 
+/** Printed when the mounted source is a regular file. */
+export const FILE_SOURCE_MARKER = "vardo:source-is-file";
+
+/**
+ * Where a single-file bind source is mounted inside the helper container.
+ *
+ * Fixed rather than the real basename, so the archive round-trips without the
+ * name having to survive in the storage key, and so nothing derived from a
+ * host path is ever interpolated into a shell script.
+ */
+export const FILE_PAYLOAD_NAME = "payload";
+
+/** Archive a single bind-mounted file. Mounted at `${dataDir}/${FILE_PAYLOAD_NAME}`. */
+export function buildFileBackupScript(dataDir = "/data", backupDir = "/backup"): string {
+  return [
+    "set -e",
+    `tar czf "${backupDir}/volume.tar.gz" -C "${dataDir}" ${FILE_PAYLOAD_NAME}`,
+  ].join("\n");
+}
+
+/**
+ * Restore a single bind-mounted file.
+ *
+ * The contents are written through the existing file rather than replacing it:
+ * the path is a bind mount point, so `mv` over it fails with EBUSY. Extraction
+ * happens first, so a bad archive leaves the original untouched.
+ */
+export function buildFileRestoreScript(dataDir = "/data", backupDir = "/backup"): string {
+  return [
+    "set -e",
+    'stage="/tmp/vardo-restore"',
+    'rm -rf "$stage"',
+    'mkdir -p "$stage"',
+    `if ! tar xzf "${backupDir}/volume.tar.gz" -C "$stage"; then echo "restore: archive could not be extracted" >&2; exit 1; fi`,
+    `if [ ! -f "$stage/${FILE_PAYLOAD_NAME}" ]; then echo "restore: archive does not hold a single file" >&2; exit 1; fi`,
+    `cat "$stage/${FILE_PAYLOAD_NAME}" > "${dataDir}/${FILE_PAYLOAD_NAME}"`,
+    'rm -rf "$stage"',
+  ].join("\n");
+}
+
 /**
  * Preflight for a bind source, run inside the one-shot container.
  *
@@ -50,7 +90,9 @@ export function buildBindPreflightScript(dataDir = "/data"): string {
   return [
     "set -e",
     `if [ -d "${dataDir}" ]; then echo "${DIRECTORY_SOURCE_MARKER}"; fi`,
-    `if [ -z "$(ls -A "${dataDir}" 2>/dev/null)" ]; then echo "${EMPTY_SOURCE_MARKER}"; fi`,
+    `if [ -f "${dataDir}" ]; then echo "${FILE_SOURCE_MARKER}"; fi`,
+    `if [ -d "${dataDir}" ] && [ -z "$(ls -A "${dataDir}" 2>/dev/null)" ]; then echo "${EMPTY_SOURCE_MARKER}"; fi`,
+    `if [ -f "${dataDir}" ] && [ ! -s "${dataDir}" ]; then echo "${EMPTY_SOURCE_MARKER}"; fi`,
   ].join("\n");
 }
 
