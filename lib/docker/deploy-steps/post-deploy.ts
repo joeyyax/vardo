@@ -210,8 +210,11 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
                 `reclaimed ${formatBytes(buildKitReclaimed)}`,
             );
           }
-        } catch {
-          // BuildKit cache pruning is optional
+        } catch (err) {
+          // Logged rather than swallowed: buildctl is deprecating
+          // --keep-storage, and a silent failure reads exactly like a cache
+          // that never needed pruning.
+          log(`[deploy] BuildKit cache prune failed: ${err instanceof Error ? err.message : err}`);
         }
       } finally {
         await releaseLock(PRUNE_LOCK_KEY).catch(() => {});
