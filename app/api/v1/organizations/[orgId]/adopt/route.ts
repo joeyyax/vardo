@@ -154,10 +154,18 @@ async function handler(request: NextRequest, { params }: RouteParams) {
       featureEnabled: isFeatureEnabled("bindMounts"),
     });
 
-    const { compose: sanitized, strippedMounts } = sanitizeCompose(compose, {
-      allowBindMounts: bindMountsEnabled,
-    });
-    compose = sanitized;
+    // A denied mount throws — return what was wrong rather than a bare 500.
+    let strippedMounts: string[];
+    try {
+      const sanitized = sanitizeCompose(compose, { allowBindMounts: bindMountsEnabled });
+      compose = sanitized.compose;
+      strippedMounts = sanitized.strippedMounts;
+    } catch (err) {
+      return NextResponse.json(
+        { error: err instanceof Error ? err.message : "Compose contains a blocked mount" },
+        { status: 400 }
+      );
+    }
 
     // Determine domain — explicit > vardo.yml env config > default
     const domain =

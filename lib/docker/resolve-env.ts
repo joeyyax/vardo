@@ -53,7 +53,7 @@ const FALLBACK: DeployEnv = { name: "production", type: "production", gitBranch:
  * The id is caller-supplied, so the lookup is scoped to the app being deployed:
  * an environment on another app — in this org or any other — resolves to
  * production rather than lending the deploy its name, branch or type. Type
- * matters most: `local` turns on bind mounts and the Docker socket.
+ * matters most: `local` turns on bind mounts.
  */
 export async function resolveDeployEnv(
   appId: string,

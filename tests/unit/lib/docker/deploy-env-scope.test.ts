@@ -3,8 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // ---------------------------------------------------------------------------
 // The environmentId on a deploy request is caller-supplied. Resolving it by id
 // alone lets an environment on another app — in another organization — decide
-// the deploy's name, branch and type, and `local` grants bind mounts and the
-// Docker socket.
+// the deploy's name, branch and type, and `local` grants bind mounts.
 // ---------------------------------------------------------------------------
 
 type Predicate =
