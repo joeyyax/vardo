@@ -1,9 +1,12 @@
 import "server-only";
 
 import { and, desc, eq, gte, inArray, isNotNull, isNull } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 
 import { db } from "@/lib/db";
-import { apps, backups } from "@/lib/db/schema";
+import { apps, backupJobApps, backupJobs, backups, volumes } from "@/lib/db/schema";
+import { isBackupSelected } from "@/lib/backups/durability";
+import { OVERDUE_INTERVALS, overdueBackupJobs } from "@/lib/backups/staleness";
 import { defaultMemoryLimitMb, type QosTier } from "@/lib/docker/compose-inject";
 import { getCooldownUntil } from "@/lib/docker/image-updates/check";
 import { getAggregateUpdateStatus } from "@/lib/docker/image-updates/status";
@@ -24,6 +27,9 @@ import { getFleetAttention } from "./fleet";
 
 /** A failure older than this is history, not something to act on now. */
 const BACKUP_FAILURE_WINDOW_HOURS = 48;
+
+/** A compose child's parent, so a paused database says whose it is. */
+const pausedParents = alias(apps, "paused_parents");
 
 /** An OOM kill older than this is history too, even if the app is still down. */
 const OOM_WINDOW_HOURS = 7 * 24;
@@ -56,6 +62,97 @@ async function loadFailedBackups(appIds: string[]) {
     if (row.appId && !latest.has(row.appId)) latest.set(row.appId, row);
   }
   return [...latest.values()];
+}
+
+/**
+ * Jobs that have captured nothing for several of their own schedule intervals,
+ * with a route to the app when the job covers exactly one.
+ *
+ * Read straight from the jobs rather than from the apps they cover: the app
+ * conditions are only evaluated for apps that have a container, which is every
+ * app except the ones whose backups have quietly stopped.
+ */
+async function loadOverdueBackupJobs(orgId: string, now: Date) {
+  const jobRows = await db
+    .select({
+      id: backupJobs.id,
+      name: backupJobs.name,
+      schedule: backupJobs.schedule,
+      enabled: backupJobs.enabled,
+      lastRunAt: backupJobs.lastRunAt,
+      createdAt: backupJobs.createdAt,
+    })
+    .from(backupJobs)
+    .where(eq(backupJobs.organizationId, orgId));
+
+  const overdue = overdueBackupJobs(jobRows, now);
+  if (overdue.length === 0) return [];
+
+  const links = await db
+    .select({ jobId: backupJobApps.backupJobId, appName: apps.name })
+    .from(backupJobApps)
+    .innerJoin(apps, eq(apps.id, backupJobApps.appId))
+    .where(
+      inArray(
+        backupJobApps.backupJobId,
+        overdue.map((o) => o.job.id),
+      ),
+    );
+
+  const appsByJob = new Map<string, string[]>();
+  for (const link of links) {
+    appsByJob.set(link.jobId, [...(appsByJob.get(link.jobId) ?? []), link.appName]);
+  }
+
+  return overdue.map((entry) => {
+    const covered = appsByJob.get(entry.job.id) ?? [];
+    return {
+      ...entry,
+      href: covered.length === 1 ? `/apps/${covered[0]}/backups` : "/backups",
+    };
+  });
+}
+
+/**
+ * Stopped apps whose database cannot be dumped until they run again. Their
+ * other volumes are still archived on schedule — this is the one source a
+ * stopped app cannot produce.
+ */
+async function loadPausedDumps(orgId: string) {
+  const rows = await db
+    .select({
+      id: apps.id,
+      name: apps.name,
+      displayName: apps.displayName,
+      parentName: pausedParents.displayName,
+      statusChangedAt: apps.statusChangedAt,
+      isSystemManaged: apps.isSystemManaged,
+      persistent: volumes.persistent,
+      durability: volumes.durability,
+    })
+    .from(apps)
+    .leftJoin(pausedParents, eq(pausedParents.id, apps.parentAppId))
+    .innerJoin(volumes, eq(volumes.appId, apps.id))
+    .innerJoin(backupJobApps, eq(backupJobApps.appId, apps.id))
+    .innerJoin(
+      backupJobs,
+      and(eq(backupJobs.id, backupJobApps.backupJobId), eq(backupJobs.enabled, true)),
+    )
+    .where(
+      and(
+        eq(apps.organizationId, orgId),
+        eq(apps.status, "stopped"),
+        eq(volumes.backupStrategy, "dump"),
+      ),
+    );
+
+  const byApp = new Map<string, (typeof rows)[number]>();
+  for (const row of rows) {
+    if (isVardoManagedApp(row)) continue;
+    if (!isBackupSelected(row)) continue;
+    if (!byApp.has(row.id)) byApp.set(row.id, row);
+  }
+  return [...byApp.values()];
 }
 
 /**
@@ -138,11 +235,24 @@ export async function buildAttentionRows(
 
   const appIds = appRows.map((a) => a.id);
 
-  const [fleet, updates, version, failedBackups, activity, exited, subjects, elevated] = await Promise.all([
+  const [
+    fleet,
+    updates,
+    version,
+    failedBackups,
+    overdueJobs,
+    pausedDumps,
+    activity,
+    exited,
+    subjects,
+    elevated,
+  ] = await Promise.all([
     getFleetAttention(orgId),
     getCooldownUntil().then((cooldown) => getAggregateUpdateStatus(orgId, appRows, cooldown)),
     isAppAdmin ? getVersionData().catch(() => null) : null,
     loadFailedBackups(appIds),
+    loadOverdueBackupJobs(orgId, new Date()),
+    loadPausedDumps(orgId),
     getFleetActivity(appIds),
     loadExitReasons(orgId),
     loadStatusSubjects(orgId),
@@ -244,6 +354,39 @@ export async function buildAttentionRows(
         };
       }),
       footer: `${failedBackups.length} app${failedBackups.length === 1 ? "" : "s"} failed a backup in the last ${BACKUP_FAILURE_WINDOW_HOURS} hours. Each row is its most recent failure.`,
+    });
+  }
+
+  if (overdueJobs.length > 0) {
+    rows.push({
+      key: "backup-overdue",
+      label: "Backup overdue",
+      tone: "warning",
+      items: overdueJobs.map((o) => ({
+        id: o.job.id,
+        name: o.job.name,
+        href: o.href,
+        detail: o.neverRan ? "Has never captured a backup" : undefined,
+        since: o.since.toISOString(),
+      })),
+      footer: `Each of these jobs has captured nothing for more than ${OVERDUE_INTERVALS} runs of its own schedule. The time shown is since its last archive, or since the job was created.`,
+    });
+  }
+
+  if (pausedDumps.length > 0) {
+    rows.push({
+      key: "backup-paused",
+      label: "Backup paused",
+      tone: "warning",
+      items: pausedDumps.map((a) => ({
+        id: a.id,
+        name: a.parentName ? `${a.parentName} · ${a.displayName}` : a.displayName,
+        href: `/apps/${a.name}/backups`,
+        detail: "Database dump needs a running container",
+        since: a.statusChangedAt?.toISOString(),
+      })),
+      footer:
+        "These apps are stopped. Their volumes are still archived on schedule, but a database dump cannot run until the app is started.",
     });
   }
 
