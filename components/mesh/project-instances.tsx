@@ -255,7 +255,7 @@ export function ProjectInstances({
 
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border overflow-x-auto">
+      <div className="rounded-lg bg-card overflow-x-auto shadow-card dark:border">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b">

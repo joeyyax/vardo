@@ -78,7 +78,7 @@ export function AdminOrganizations() {
   }
 
   return (
-    <div className="squircle rounded-lg border bg-card overflow-x-auto">
+    <div className="squircle rounded-lg bg-card overflow-x-auto shadow-card dark:border">
       <div className="grid grid-cols-[1fr_70px_70px_70px_90px_100px_80px_80px] gap-3 px-4 py-2 border-b text-xs text-muted-foreground whitespace-nowrap min-w-[800px]">
         <span>Organization</span>
         <span className="text-right">Members</span>

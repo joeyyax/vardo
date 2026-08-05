@@ -97,7 +97,7 @@ function EventFilterEditor({
       </button>
 
       {expanded && (
-        <div className="border border-border rounded-lg p-3 space-y-3 bg-muted/30">
+        <div className="rounded-lg bg-muted p-3 space-y-3">
           <p className="text-xs text-muted-foreground">
             Select which events this channel receives. Leave all checked to receive everything.
           </p>
@@ -196,7 +196,7 @@ export function NotificationChannelsEditor({ orgId }: { orgId: string }) {
         {!showForm && <Button size="sm" onClick={() => setShowForm(true)} className="squircle"><Plus className="h-4 w-4 mr-1" />Add channel</Button>}
       </div>
       {showForm && (
-        <div className="border border-border rounded-lg p-4 space-y-4 bg-card">
+        <div className="rounded-lg bg-background-deep p-4 space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2"><Label>Name</Label><Input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Team alerts" className="squircle" /></div>
             <div className="space-y-2"><Label>Type</Label><Select value={type} onValueChange={v => setType(v as ChannelType)}><SelectTrigger className="squircle"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="email">Email</SelectItem><SelectItem value="webhook">Webhook</SelectItem><SelectItem value="slack">Slack</SelectItem></SelectContent></Select></div>
@@ -221,7 +221,7 @@ export function NotificationChannelsEditor({ orgId }: { orgId: string }) {
         />
       ) : (
         <div className="space-y-2">{channels.map(ch => (
-          <div key={ch.id} className="border border-border rounded-lg p-3 bg-card space-y-2">
+          <div key={ch.id} className="rounded-lg bg-background-deep p-3 space-y-2">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3 min-w-0"><Switch checked={ch.enabled} onCheckedChange={checked => handleToggle(ch.id, checked)} /><div className="min-w-0"><div className="flex items-center gap-2"><span className="text-sm font-medium truncate">{ch.name}</span><span className="text-xs bg-muted px-1.5 py-0.5 rounded">{ch.type}</span></div></div></div>
               <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => handleDelete(ch.id)}><Trash2 className="h-4 w-4" /></Button>
