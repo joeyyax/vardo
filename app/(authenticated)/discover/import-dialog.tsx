@@ -325,7 +325,7 @@ export function ImportDialog({
                 <p className="text-xs text-muted-foreground">No environment variables found.</p>
               )}
               {envVars.length > 0 && (
-                <div className="max-h-48 overflow-y-auto space-y-1.5 rounded-lg border p-2">
+                <div className="max-h-48 overflow-y-auto space-y-1.5 rounded-lg bg-background-deep p-2">
                   {envVars.map((v, i) => (
                     <div key={`${v.key}-${i}`} className="flex items-center gap-2 text-xs font-mono">
                       <span className="text-muted-foreground min-w-0 flex-1 truncate">
@@ -372,7 +372,7 @@ export function ImportDialog({
                   </div>
                 </div>
 
-                <div className="space-y-1.5 rounded-lg border p-2">
+                <div className="space-y-1.5 rounded-lg bg-background-deep p-2">
                   {mounts.map((m) => {
                     const isBind = m.type === "bind";
                     const isSelected = mountToggles[m.destination] ?? true;

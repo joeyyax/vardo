@@ -79,7 +79,7 @@ export function BackupHistory({
   }
 
   return (
-    <div className="rounded-lg border overflow-x-auto">
+    <div className="rounded-lg bg-background-deep overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b">
