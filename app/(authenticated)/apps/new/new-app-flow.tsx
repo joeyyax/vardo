@@ -485,7 +485,8 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], baseDom
       }
 
       // Trigger deploy via API so the app detail page can pick up the SSE stream
-      if (autoDeploy && repoReady) {
+      const deploying = autoDeploy && repoReady;
+      if (deploying) {
         fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/deploy`, {
           method: "POST",
         }).catch(() => {
@@ -495,7 +496,10 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], baseDom
       } else {
         toast.success("App created");
       }
-      router.push(projectName ? `/projects/${projectName}` : `/apps/${app.name}`);
+      // The app page is the only one that streams the deploy log.
+      router.push(
+        deploying || !projectName ? `/apps/${app.name}` : `/projects/${projectName}`
+      );
     } catch (err) { toast.error(err instanceof Error ? err.message : "Failed to create app"); }
     finally { setCreating(false); }
   }
