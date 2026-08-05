@@ -339,7 +339,19 @@ export async function runDeployment(
     // Load env vars from encrypted blob
     const envMap: Record<string, string> = {};
     if (app.envContent) {
-      const { content: envText, wasEncrypted } = decryptOrFallback(app.envContent, app.organizationId);
+      const { content: envText, wasEncrypted, decryptFailed } = decryptOrFallback(
+        app.envContent,
+        app.organizationId,
+      );
+      // Deploying with no env is worse than not deploying: most apps boot on
+      // defaults, pass their healthcheck, and take the cutover while pointed
+      // at nothing.
+      if (decryptFailed) {
+        throw new DeployBlockedError(
+          `Could not decrypt this app's environment variables — check ENCRYPTION_MASTER_KEY. ` +
+            `Refusing to deploy without them.`,
+        );
+      }
       if (envText) {
         Object.assign(envMap, parseEnvToMap(envText));
         if (!wasEncrypted) {
@@ -351,8 +363,6 @@ export async function runDeployment(
               .where(eq(apps.id, app.id));
           } catch { /* best-effort */ }
         }
-      } else if (!wasEncrypted) {
-        log("[deploy] Warning: failed to decrypt env vars — check ENCRYPTION_MASTER_KEY");
       }
     }
 
