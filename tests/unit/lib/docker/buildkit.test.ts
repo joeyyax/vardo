@@ -11,9 +11,13 @@ const { execFileMock, calls } = vi.hoisted(() => ({
 
 let response: { stdout: string } | Error = { stdout: "true\n" };
 
+/** Consumed one per call, ahead of `response`, for calls that shell out twice. */
+const queued: ({ stdout: string } | Error)[] = [];
+
 (execFileMock as Record<symbol, unknown>)[promisify.custom] = (...args: unknown[]) => {
   calls.push(args);
-  return response instanceof Error ? Promise.reject(response) : Promise.resolve(response);
+  const next = queued.shift() ?? response;
+  return next instanceof Error ? Promise.reject(next) : Promise.resolve(next);
 };
 
 vi.mock("child_process", () => ({ execFile: execFileMock }));
@@ -22,11 +26,13 @@ const {
   assertBuildKitReachable,
   isBuildKitReachable,
   buildKitContainerName,
+  pruneBuildKitCache,
   DEFAULT_BUILDKIT_HOST,
 } = await import("@/lib/docker/buildkit");
 
 beforeEach(() => {
   calls.length = 0;
+  queued.length = 0;
   response = { stdout: "true\n" };
 });
 
@@ -108,5 +114,93 @@ describe("isBuildKitReachable", () => {
   it("takes an uninspectable transport at its word", async () => {
     await expect(isBuildKitReachable("tcp://10.0.0.5:1234")).resolves.toBe(true);
     expect(calls).toHaveLength(0);
+  });
+});
+
+describe("pruneBuildKitCache", () => {
+  /** Running container, then the prune's per-record sizes. */
+  const running = (pruneStdout: string) => {
+    queued.push({ stdout: "true\n" }, { stdout: pruneStdout });
+  };
+
+  it("prunes inside the container the host names", async () => {
+    running("");
+
+    await pruneBuildKitCache(DEFAULT_BUILDKIT_HOST, 10 * 1024 ** 3);
+
+    expect(calls[1][1]).toEqual([
+      "exec",
+      "vardo-buildkit",
+      "buildctl",
+      "prune",
+      "--keep-storage",
+      "10737",
+      "--format",
+      "{{.Size}}",
+    ]);
+  });
+
+  it("passes the ceiling in megabytes, which is what buildctl reads", async () => {
+    running("");
+
+    await pruneBuildKitCache(DEFAULT_BUILDKIT_HOST, 2 * 1e9);
+
+    expect(calls[1][1]).toContain("2000");
+  });
+
+  it("never asks for a ceiling of zero", async () => {
+    running("");
+
+    await pruneBuildKitCache(DEFAULT_BUILDKIT_HOST, 1024);
+
+    expect(calls[1][1]).toContain("1");
+  });
+
+  it("totals the sizes of the records it reclaimed", async () => {
+    running("1048576\n2097152\n524288\n");
+
+    await expect(pruneBuildKitCache(DEFAULT_BUILDKIT_HOST, 10 * 1024 ** 3)).resolves.toEqual({
+      spaceReclaimed: 3_670_016,
+    });
+  });
+
+  it("reclaims nothing when the cache is already under the ceiling", async () => {
+    running("\n");
+
+    await expect(pruneBuildKitCache(DEFAULT_BUILDKIT_HOST, 10 * 1024 ** 3)).resolves.toEqual({
+      spaceReclaimed: 0,
+    });
+  });
+
+  it("is a no-op, not an error, when the daemon is not running", async () => {
+    response = { stdout: "false\n" };
+
+    await expect(pruneBuildKitCache(DEFAULT_BUILDKIT_HOST, 10 * 1024 ** 3)).resolves.toEqual({
+      spaceReclaimed: 0,
+    });
+    expect(calls).toHaveLength(1);
+  });
+
+  it("is a no-op when the container does not exist", async () => {
+    response = new Error("No such object: vardo-buildkit");
+
+    await expect(pruneBuildKitCache(DEFAULT_BUILDKIT_HOST, 10 * 1024 ** 3)).resolves.toEqual({
+      spaceReclaimed: 0,
+    });
+  });
+
+  it("leaves a daemon it cannot exec into alone", async () => {
+    await expect(pruneBuildKitCache("tcp://10.0.0.5:1234", 10 * 1024 ** 3)).resolves.toEqual({
+      spaceReclaimed: 0,
+    });
+    expect(calls).toHaveLength(0);
+  });
+
+  it("surfaces a prune that fails, for the caller to swallow", async () => {
+    queued.push({ stdout: "true\n" }, new Error("buildctl: not found"));
+
+    await expect(pruneBuildKitCache(DEFAULT_BUILDKIT_HOST, 10 * 1024 ** 3)).rejects.toThrow(
+      /buildctl/,
+    );
   });
 });
