@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { z } from "zod";
 import { APP_NAME_TAKEN_ERROR } from "@/lib/db/app-name";
+import { sanitizeCompose, type ComposeFile } from "@/lib/docker/compose";
 
 // ---------------------------------------------------------------------------
 // POST /api/v1/organizations/[orgId]/adopt — request schema validation
@@ -503,6 +504,56 @@ describe("POST /adopt — transaction rollback", () => {
     };
 
     expect(transactionBehavior.onError).toBe("all changes rolled back");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Blocked mounts (400)
+//
+// sanitizeCompose throws on a denied mount. The route catches it so the caller
+// reads what was wrong instead of a bare 500.
+// ---------------------------------------------------------------------------
+
+describe("POST /adopt — blocked mount", () => {
+  function adoptMountResponse(compose: ComposeFile, allowBindMounts: boolean) {
+    try {
+      sanitizeCompose(compose, { allowBindMounts });
+      return { status: 201 as const, error: null };
+    } catch (err) {
+      return {
+        status: 400 as const,
+        error: err instanceof Error ? err.message : "Compose contains a blocked mount",
+      };
+    }
+  }
+
+  const socketCompose: ComposeFile = {
+    services: {
+      web: { name: "web", image: "nginx", volumes: ["/var/run/docker.sock:/var/run/docker.sock"] },
+    },
+  };
+
+  it("returns 400 naming the setting when the compose mounts the Docker socket", () => {
+    const result = adoptMountResponse(socketCompose, true);
+    expect(result.status).toBe(400);
+    expect(result.error).toContain('"Allow Docker socket"');
+    expect(result.error).toContain("organization admins and owners only");
+  });
+
+  it("returns 400 naming the path when the compose mounts a denied host path", () => {
+    const compose: ComposeFile = {
+      services: { web: { name: "web", image: "nginx", volumes: ["/etc:/host/etc"] } },
+    };
+    const result = adoptMountResponse(compose, true);
+    expect(result.status).toBe(400);
+    expect(result.error).toContain("/etc");
+  });
+
+  it("adopts normally when no mount is blocked", () => {
+    const compose: ComposeFile = {
+      services: { web: { name: "web", image: "nginx", volumes: ["data:/var/lib/data"] } },
+    };
+    expect(adoptMountResponse(compose, true).status).toBe(201);
   });
 });
 
