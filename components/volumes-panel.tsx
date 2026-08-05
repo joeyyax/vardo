@@ -714,7 +714,7 @@ export function VolumesPanel({ appId, orgId }: Props) {
             {volumes.map((vol) => (
               <div
                 key={`${vol.name}-${vol.mountPath}`}
-                className="squircle rounded-lg border bg-background-deep p-4"
+                className="squircle rounded-lg bg-background-deep p-4"
               >
                 <div className="flex items-center justify-between gap-4">
                   <div className="flex items-center gap-4 min-w-0 flex-1">
@@ -857,7 +857,7 @@ export function VolumesPanel({ appId, orgId }: Props) {
           </div>
 
           {limitEditing ? (
-            <div className="squircle rounded-lg border bg-background-deep p-4 space-y-4">
+            <div className="squircle rounded-lg bg-background-deep p-4 space-y-4">
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="grid gap-2">
                   <Label htmlFor="limit-size">Max Size</Label>
@@ -952,7 +952,7 @@ export function VolumesPanel({ appId, orgId }: Props) {
               </div>
             </div>
           ) : limit ? (
-            <div className="squircle rounded-lg border bg-background-deep p-4 space-y-3">
+            <div className="squircle rounded-lg bg-background-deep p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <p className="text-sm">
