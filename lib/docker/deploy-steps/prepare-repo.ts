@@ -51,6 +51,7 @@ import {
 } from "@/lib/crypto/deploy-key";
 import { detectPreventiveFixes, detectCompatIssues, applyCompatFixes } from "../compat";
 import { checkoutRollbackSha } from "./checkout-sha";
+import { withRegistryAuth } from "../registry-auth";
 import {
   APP_UID,
   GIT_CLONE_TIMEOUT,
@@ -254,53 +255,57 @@ async function buildFromRepo(
   dockerfilePath?: string,
   signal?: AbortSignal,
 ): Promise<void> {
-  const buildEnv = { ...process.env, ...envVars };
+  // A Dockerfile can name a private base image, so every builder runs against
+  // the configured registry credentials.
+  await withRegistryAuth(async (authEnv) => {
+    const buildEnv = { ...authEnv, ...envVars };
 
-  if (deployType === "nixpacks") {
-    logs.push(`[build] Building with Nixpacks...`);
-    const args = ["build", repoPath, "--name", imageName];
-    if (envVars) {
-      for (const [k, v] of Object.entries(envVars)) {
-        args.push("--env", `${k}=${v}`);
+    if (deployType === "nixpacks") {
+      logs.push(`[build] Building with Nixpacks...`);
+      const args = ["build", repoPath, "--name", imageName];
+      if (envVars) {
+        for (const [k, v] of Object.entries(envVars)) {
+          args.push("--env", `${k}=${v}`);
+        }
       }
+      await spawnStream("nixpacks", args, { cwd: repoPath, env: buildEnv, signal }, logs, "[build][nixpacks]");
+      logs.push(`[build] Nixpacks build complete: ${imageName}`);
+      return;
     }
-    await spawnStream("nixpacks", args, { cwd: repoPath, env: buildEnv, signal }, logs, "[build][nixpacks]");
-    logs.push(`[build] Nixpacks build complete: ${imageName}`);
-    return;
-  }
 
-  if (deployType === "railpack") {
-    // Railpack builds through BuildKit rather than the Docker daemon, and exits
-    // non-zero with only a hint if it cannot find one. Default to the daemon
-    // Vardo documents, and check it is actually there before spending a deploy
-    // on discovering it is not.
-    if (!buildEnv.BUILDKIT_HOST) buildEnv.BUILDKIT_HOST = DEFAULT_BUILDKIT_HOST;
-    await assertBuildKitReachable(buildEnv.BUILDKIT_HOST, signal);
+    if (deployType === "railpack") {
+      // Railpack builds through BuildKit rather than the Docker daemon, and exits
+      // non-zero with only a hint if it cannot find one. Default to the daemon
+      // Vardo documents, and check it is actually there before spending a deploy
+      // on discovering it is not.
+      if (!buildEnv.BUILDKIT_HOST) buildEnv.BUILDKIT_HOST = DEFAULT_BUILDKIT_HOST;
+      await assertBuildKitReachable(buildEnv.BUILDKIT_HOST, signal);
 
-    logs.push(`[build] Building with Railpack...`);
-    const args = ["build", "--name", imageName];
+      logs.push(`[build] Building with Railpack...`);
+      const args = ["build", "--name", imageName];
+      if (envVars) {
+        for (const [k, v] of Object.entries(envVars)) {
+          args.push("--env", `${k}=${v}`);
+        }
+      }
+      args.push(repoPath);
+      await spawnStream("railpack", args, { cwd: repoPath, env: buildEnv, signal }, logs, "[build][railpack]");
+      logs.push(`[build] Railpack build complete: ${imageName}`);
+      return;
+    }
+
+    const dfPath = dockerfilePath || "Dockerfile";
+    logs.push(`[build] Building with Dockerfile (${dfPath})...`);
+    const args = ["build", "-t", imageName, "-f", join(repoPath, dfPath)];
     if (envVars) {
       for (const [k, v] of Object.entries(envVars)) {
-        args.push("--env", `${k}=${v}`);
+        args.push("--build-arg", `${k}=${v}`);
       }
     }
     args.push(repoPath);
-    await spawnStream("railpack", args, { cwd: repoPath, env: buildEnv, signal }, logs, "[build][railpack]");
-    logs.push(`[build] Railpack build complete: ${imageName}`);
-    return;
-  }
-
-  const dfPath = dockerfilePath || "Dockerfile";
-  logs.push(`[build] Building with Dockerfile (${dfPath})...`);
-  const args = ["build", "-t", imageName, "-f", join(repoPath, dfPath)];
-  if (envVars) {
-    for (const [k, v] of Object.entries(envVars)) {
-      args.push("--build-arg", `${k}=${v}`);
-    }
-  }
-  args.push(repoPath);
-  await spawnStream("docker", args, { cwd: repoPath, signal }, logs, "[build][docker]");
-  logs.push(`[build] Docker build complete: ${imageName}`);
+    await spawnStream("docker", args, { cwd: repoPath, env: authEnv, signal }, logs, "[build][docker]");
+    logs.push(`[build] Docker build complete: ${imageName}`);
+  });
 }
 
 // ---------------------------------------------------------------------------
