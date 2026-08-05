@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError, isUniqueViolation } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
-import { appTags } from "@/lib/db/schema";
+import { appTags, tags } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
 import { verifyAppAccess } from "@/lib/api/verify-access";
@@ -34,6 +34,16 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
         { error: parsed.error.issues[0].message },
         { status: 400 }
       );
+    }
+
+    // The tag id comes straight from the request body — it must be this org's.
+    const tag = await db.query.tags.findFirst({
+      where: and(eq(tags.id, parsed.data.tagId), eq(tags.organizationId, orgId)),
+      columns: { id: true },
+    });
+
+    if (!tag) {
+      return NextResponse.json({ error: "Tag not found" }, { status: 404 });
     }
 
     await db.insert(appTags).values({
