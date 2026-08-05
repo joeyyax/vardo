@@ -71,7 +71,7 @@ export function InProgressDeployCard({
         : "";
 
   return (
-    <div className="squircle rounded-lg border bg-status-info-muted overflow-hidden">
+    <div className="squircle rounded-lg bg-status-info-muted shadow-card overflow-hidden dark:border">
       <span className="sr-only" aria-live="assertive" aria-atomic="true">{liveAnnouncement}</span>
       <div
         role="button"

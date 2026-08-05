@@ -216,7 +216,7 @@ export function AppUpdatesPanel({
     return (
       <section
         aria-label="Image updates"
-        className="squircle rounded-lg border bg-card px-4 py-6 text-center"
+        className="squircle rounded-lg bg-card px-4 py-6 text-center shadow-card dark:border"
       >
         {gateSurface && <div className="mb-3 text-left">{gateSurface}</div>}
         <p className="type-body text-muted-foreground">Every image in compose is up to date.</p>
@@ -290,7 +290,7 @@ export function AppUpdatesPanel({
   }
 
   return (
-    <section aria-label="Image updates" className="squircle rounded-lg border bg-card divide-y">
+    <section aria-label="Image updates" className="squircle rounded-lg bg-card divide-y shadow-card dark:border">
       <header className="flex items-center gap-2 px-4 py-2.5">
         <h2 className="type-label text-muted-foreground/60">Image updates</h2>
         <button
@@ -406,7 +406,7 @@ function BlockedDeployNote({
   const label = entry.service ? `${entry.service} (${entry.image})` : entry.image;
 
   return (
-    <div className="squircle flex flex-wrap items-center gap-2 rounded-md border border-status-warning/30 bg-status-warning-muted p-2.5 type-body-sm text-muted-foreground">
+    <div className="squircle flex flex-wrap items-center gap-2 rounded-md bg-status-warning-muted p-2.5 type-body-sm text-muted-foreground">
       <TriangleAlert className="size-3.5 shrink-0 text-status-warning" aria-hidden="true" />
       <span>
         Deploy stopped — {label} moved from major {entry.from} to {entry.to}. {block.appName} is
@@ -432,7 +432,7 @@ function UndeployedNote({
   deploying: boolean;
 }) {
   return (
-    <div className="squircle flex flex-wrap items-center justify-center gap-2 rounded-md border border-status-warning/30 bg-status-warning-muted p-2.5 type-body-sm text-muted-foreground">
+    <div className="squircle flex flex-wrap items-center justify-center gap-2 rounded-md bg-status-warning-muted p-2.5 type-body-sm text-muted-foreground">
       <TriangleAlert className="size-3.5 shrink-0 text-status-warning" aria-hidden="true" />
       <span>
         {count} image{count === 1 ? " is" : "s are"} pinned in compose but not deployed.
