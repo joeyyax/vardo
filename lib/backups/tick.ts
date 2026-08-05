@@ -5,6 +5,7 @@ import { runBackup, STALE_RUN_MS } from "./engine";
 import { shouldRunNow } from "@/lib/cron/parse";
 import { acquireLock } from "@/lib/redis-lock";
 import { logger } from "@/lib/logger";
+import { selectDrillCandidates, type DrillCandidate } from "./drill-schedule";
 
 const log = logger.child("backup");
 
@@ -66,6 +67,59 @@ export async function tickBackupJobs(): Promise<void> {
     } catch (err) {
       log.error(`Job "${job.name}" (${job.id}) error:`, err);
       // Continue to next job — don't let one failure crash the whole tick
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Drill tick
+// ---------------------------------------------------------------------------
+
+/** How many drills one tick may start. Each costs a container and a download. */
+const DRILLS_PER_TICK = 1;
+
+/**
+ * Drill whichever archive's restorability is least known.
+ *
+ * Separate from the backup tick so a slow drill can never delay a backup, and
+ * so turning drills off leaves backups untouched.
+ */
+export async function tickRestoreDrills(now = new Date()): Promise<void> {
+  const locked = await acquireLock(`lock:drill:${Math.floor(now.getTime() / 60_000)}`, 61_000);
+  if (!locked) return;
+
+  const rows = await db.query.backups.findMany({
+    where: eq(backups.status, "success"),
+    columns: {
+      id: true,
+      appId: true,
+      volumeName: true,
+      finishedAt: true,
+      verifiedAt: true,
+      verifyOutcome: true,
+    },
+  });
+
+  const candidates: DrillCandidate[] = rows
+    .filter((r): r is typeof r & { finishedAt: Date } => r.finishedAt !== null)
+    .map((r) => ({
+      backupId: r.id,
+      volumeKey: `${r.appId ?? "system"}:${r.volumeName ?? ""}`,
+      finishedAt: r.finishedAt,
+      verifiedAt: r.verifiedAt,
+      verifyOutcome: r.verifyOutcome,
+    }));
+
+  const due = selectDrillCandidates(candidates, now, DRILLS_PER_TICK);
+  if (due.length === 0) return;
+
+  const { runRestoreDrill } = await import("./drill");
+  for (const candidate of due) {
+    try {
+      const result = await runRestoreDrill(candidate.backupId);
+      log.info(`Drill ${candidate.volumeKey}: ${result.outcome} — ${result.detail}`);
+    } catch (err) {
+      log.error(`Drill ${candidate.volumeKey} error:`, err);
     }
   }
 }
