@@ -31,6 +31,7 @@ const {
   listContainersMock,
   inspectContainerMock,
   resolveDefaultEnvMock,
+  probeDecryptabilityMock,
 } = vi.hoisted(() => ({
   backupsFindFirst: vi.fn(),
   volumesFindFirst: vi.fn(),
@@ -43,6 +44,7 @@ const {
   listContainersMock: vi.fn(),
   inspectContainerMock: vi.fn(),
   resolveDefaultEnvMock: vi.fn(),
+  probeDecryptabilityMock: vi.fn(),
 }));
 
 // Default execFile impl: every docker/bash call succeeds. Re-applied in
@@ -66,6 +68,7 @@ vi.mock("@/lib/docker/client", () => ({
   inspectContainer: inspectContainerMock,
 }));
 vi.mock("@/lib/docker/resolve-env", () => ({ resolveDefaultEnv: resolveDefaultEnvMock }));
+vi.mock("@/lib/crypto/key-escrow", () => ({ probeDecryptability: probeDecryptabilityMock }));
 vi.mock("@/lib/logger", () => ({
   logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }) },
 }));
@@ -125,6 +128,7 @@ beforeEach(() => {
   listContainersMock.mockReset().mockResolvedValue([]);
   inspectContainerMock.mockReset().mockResolvedValue({ mounts: [] });
   resolveDefaultEnvMock.mockReset().mockResolvedValue({ name: "production", type: "production", id: "env-1" });
+  probeDecryptabilityMock.mockReset().mockResolvedValue({ encrypted: 3, undecryptable: 0, samples: [] });
 });
 
 describe("restoreBackup — volume (tar) round-trip", () => {
@@ -184,6 +188,91 @@ describe("restoreBackup — corrupted/mismatched archive is rejected", () => {
 
     await expect(restoreBackup("bk-1")).rejects.toThrow(/blocked by hook/i);
     expect(restoreCommandRan()).toBe(false);
+  });
+});
+
+// Restoring Vardo's own database dump replaces every app's env vars with
+// ciphertext from the source instance. Without that instance's master key the
+// result is a complete, unreadable database — and the archive is the only thing
+// that knows which key it belongs to.
+describe("restoring the instance database is gated on the encryption key", () => {
+  const HEX_KEY = "a".repeat(64);
+  const systemDumpRow = (overrides: Record<string, unknown> = {}) =>
+    backupRow({
+      appId: null,
+      app: null,
+      volumeName: "postgres",
+      strategy: "dump",
+      storagePath: "vardo-system/postgres/backup.dump.gz",
+      keyFingerprint: null,
+      ...overrides,
+    });
+  const systemVolume = {
+    backupStrategy: "dump",
+    backupMeta: { dumpCmd: "pg_dump -U u db", restoreCmd: "docker exec -i pg psql -U u db" },
+  };
+
+  beforeEach(() => {
+    delete process.env.ENCRYPTION_MASTER_KEY;
+  });
+
+  afterAll(() => {
+    delete process.env.ENCRYPTION_MASTER_KEY;
+  });
+
+  it("refuses when the archive names a key this host does not have", async () => {
+    process.env.ENCRYPTION_MASTER_KEY = HEX_KEY;
+    backupsFindFirst.mockResolvedValue(systemDumpRow({ keyFingerprint: "k1:fedcba9876543210" }));
+    volumesFindFirst.mockResolvedValue(systemVolume);
+
+    await expect(restoreBackup("bk-1")).rejects.toThrow(/k1:fedcba9876543210/);
+    expect(restoreCommandRan()).toBe(false);
+  });
+
+  it("restores anyway when the operator accepts losing the env vars", async () => {
+    process.env.ENCRYPTION_MASTER_KEY = HEX_KEY;
+    backupsFindFirst.mockResolvedValue(systemDumpRow({ keyFingerprint: "k1:fedcba9876543210" }));
+    volumesFindFirst.mockResolvedValue(systemVolume);
+    probeDecryptabilityMock.mockResolvedValue({ encrypted: 4, undecryptable: 4, samples: ["blog"] });
+
+    const result = await restoreBackup("bk-1", { acceptKeyMismatch: true });
+
+    expect(result.success).toBe(true);
+    expect(result.log).toMatch(/4 of 4 restored encrypted values cannot be decrypted/);
+  });
+
+  it("proceeds when the archive names the running key", async () => {
+    process.env.ENCRYPTION_MASTER_KEY = HEX_KEY;
+    const { fingerprintMasterKey } = await import("@/lib/crypto/key-fingerprint");
+    backupsFindFirst.mockResolvedValue(systemDumpRow({ keyFingerprint: fingerprintMasterKey(HEX_KEY) }));
+    volumesFindFirst.mockResolvedValue(systemVolume);
+
+    const result = await restoreBackup("bk-1");
+
+    expect(result.success).toBe(true);
+    expect(restoreCommandRan()).toBe(true);
+    expect(result.log).toMatch(/Verified 3 restored encrypted value\(s\)/);
+  });
+
+  it("restores an archive predating fingerprinting, and says the key is unconfirmed", async () => {
+    process.env.ENCRYPTION_MASTER_KEY = HEX_KEY;
+    backupsFindFirst.mockResolvedValue(systemDumpRow());
+    volumesFindFirst.mockResolvedValue(systemVolume);
+
+    const result = await restoreBackup("bk-1");
+
+    expect(result.success).toBe(true);
+    expect(result.log).toMatch(/predates encryption key fingerprinting/);
+  });
+
+  it("leaves an app's own archive ungated", async () => {
+    backupsFindFirst.mockResolvedValue(backupRow({ keyFingerprint: "k1:fedcba9876543210" }));
+    volumesFindFirst.mockResolvedValue({ backupStrategy: "tar", backupMeta: null });
+
+    const result = await restoreBackup("bk-1");
+
+    expect(result.success).toBe(true);
+    expect(probeDecryptabilityMock).not.toHaveBeenCalled();
   });
 });
 

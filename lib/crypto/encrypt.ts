@@ -1,4 +1,5 @@
 import { createCipheriv, createDecipheriv, randomBytes, hkdfSync } from "crypto";
+import { fingerprintMasterKey, normalizeMasterKey } from "./key-fingerprint";
 import { logger } from "@/lib/logger";
 
 const log = logger.child("crypto");
@@ -37,15 +38,16 @@ function getMasterKey(): Buffer {
       "Generate one with: openssl rand -hex 32"
     );
   }
-  // Accept hex (64 chars) or base64 (44 chars) encoded 32-byte keys
-  if (key.length === 64) return Buffer.from(key, "hex");
-  if (key.length === 44) return Buffer.from(key, "base64");
-  // Raw string — hash it to 32 bytes via HKDF.
-  // Salt is kept as "" (empty) to preserve backward compatibility with any
-  // existing deployments using a raw-string master key. Changing this salt
-  // would silently derive a different key and break all previously encrypted
-  // data. Hex/base64 keys (the recommended path) bypass HKDF entirely.
-  return Buffer.from(hkdfSync("sha256", key, "", "master", 32));
+  return normalizeMasterKey(key);
+}
+
+/**
+ * Fingerprint of the running master key, or null when none is configured.
+ * Identifies which key a body of ciphertext belongs to without exposing it.
+ */
+export function runningKeyFingerprint(): string | null {
+  const key = process.env.ENCRYPTION_MASTER_KEY;
+  return key ? fingerprintMasterKey(key) : null;
 }
 
 function deriveOrgKey(orgId: string): Buffer {
