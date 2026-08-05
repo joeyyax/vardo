@@ -112,8 +112,8 @@ function volume(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function jobApp(id: string, organizationId = "org-1") {
-  return { app: { id, name: id, organizationId, organization: { slug: "acme" } } };
+function jobApp(id: string, organizationId = "org-1", status = "active") {
+  return { app: { id, name: id, organizationId, status, organization: { slug: "acme" } } };
 }
 
 function job(overrides: Record<string, unknown> = {}) {
@@ -314,6 +314,78 @@ describe("runBackup — app scoping", () => {
     await runBackup("job-1");
 
     expect(updated.some((u) => u.table === backupJobs)).toBe(false);
+  });
+});
+
+// Stopping an app used to end its backups: the scheduled run filtered it out
+// and nothing said so. Its volumes are still on disk, so they are still
+// captured — only a dump, which needs a container to run in, waits.
+describe("runBackup — stopped apps", () => {
+  const dumpVolume = (over: Record<string, unknown> = {}) =>
+    volume({ backupSpec: { kind: "postgres", service: "db" }, backupStrategy: "dump", ...over });
+
+  it("archives a stopped app's volumes on a scheduled run", async () => {
+    backupJobsFindFirst.mockResolvedValue(job({ backupJobApps: [jobApp("app-a", "org-1", "stopped")] }));
+    volumesPerApp([volume({ name: "a-data" })]);
+
+    const results = await runBackup("job-1");
+
+    expect(results.map((r) => [r.volumeName, r.outcome])).toEqual([["a-data", "success"]]);
+    expect(uploadMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("still leaves a missing app out — it has no volumes left to capture", async () => {
+    backupJobsFindFirst.mockResolvedValue(job({ backupJobApps: [jobApp("app-a", "org-1", "missing")] }));
+    volumesPerApp([volume({ name: "a-data" })]);
+
+    const results = await runBackup("job-1");
+
+    expect(results).toEqual([]);
+    expect(volumesFindMany).not.toHaveBeenCalled();
+  });
+
+  it("records a dump against a stopped app as skipped, not failed", async () => {
+    backupJobsFindFirst.mockResolvedValue(job({ backupJobApps: [jobApp("app-a", "org-1", "stopped")] }));
+    volumesPerApp([dumpVolume({ name: "pgdata" })]);
+
+    const results = await runBackup("job-1");
+
+    expect(results[0].outcome).toBe("skipped");
+    expect(results[0].error).toMatch(/needs a running container/);
+    expect(updated.some((u) => u.set.status === "skipped")).toBe(true);
+    expect(updated.some((u) => u.set.status === "failed")).toBe(false);
+  });
+
+  it("fails a dump the same way as before when the app is running", async () => {
+    backupJobsFindFirst.mockResolvedValue(job());
+    volumesPerApp([dumpVolume({ name: "pgdata" })]);
+
+    const results = await runBackup("job-1");
+
+    expect(results[0].outcome).toBe("failed");
+    expect(results[0].error).toMatch(/No running container/);
+  });
+
+  it("does not raise a failure for a run that is only waiting on a stopped app", async () => {
+    backupJobsFindFirst.mockResolvedValue(job({ backupJobApps: [jobApp("app-a", "org-1", "stopped")] }));
+    volumesPerApp([dumpVolume({ name: "pgdata" })]);
+
+    await runBackup("job-1");
+
+    expect(emitted("backup.failed")).toHaveLength(0);
+  });
+
+  it("captures what it can beside a paused dump", async () => {
+    backupJobsFindFirst.mockResolvedValue(job({ backupJobApps: [jobApp("app-a", "org-1", "stopped")] }));
+    volumesPerApp([dumpVolume({ name: "pgdata" }), volume({ id: "vol-2", name: "redis" })]);
+
+    const results = await runBackup("job-1");
+
+    expect(results.map((r) => [r.volumeName, r.outcome])).toEqual([
+      ["pgdata", "skipped"],
+      ["redis", "success"],
+    ]);
+    expect(updated.some((u) => u.table === backupJobs && u.set.lastRunAt instanceof Date)).toBe(true);
   });
 });
 

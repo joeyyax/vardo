@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isUncapturedSource, uncapturedReason } from "@/lib/backups/coverage";
+import { isUncapturedSource, pausedDumpReason, uncapturedReason } from "@/lib/backups/coverage";
 import {
   buildBindPreflightScript,
   buildFileBackupScript,
@@ -42,6 +42,29 @@ describe("bind mounts are opt-in", () => {
   it("tells the operator how to opt in, and which path is affected", () => {
     expect(uncapturedReason(bind())).toMatch(/mark the volume stateful/);
     expect(uncapturedReason(bind())).toContain("/srv/app/data");
+  });
+});
+
+describe("a dump needs a running container", () => {
+  it("pauses a dump while its app is stopped", () => {
+    expect(pausedDumpReason({ backupStrategy: "dump", appStatus: "stopped" })).toMatch(
+      /needs a running container/,
+    );
+  });
+
+  // The data is on disk either way, so tar keeps running. Only the dump waits.
+  it("never pauses a tar — a stopped volume archives fine", () => {
+    expect(pausedDumpReason({ backupStrategy: "tar", appStatus: "stopped" })).toBeNull();
+  });
+
+  it("never pauses a dump for a running app", () => {
+    expect(pausedDumpReason({ backupStrategy: "dump", appStatus: "active" })).toBeNull();
+  });
+
+  // The system database is linked as a volume with no app behind it.
+  it("never pauses a volume with no app", () => {
+    expect(pausedDumpReason({ backupStrategy: "dump", appStatus: null })).toBeNull();
+    expect(pausedDumpReason({ backupStrategy: "dump" })).toBeNull();
   });
 });
 
