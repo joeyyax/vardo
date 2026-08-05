@@ -21,8 +21,8 @@ import { resolve } from "path";
  * Paths a container may not bind-mount. Prefix-matched.
  *
  * Kept narrow on purpose. Mounting a host binary read-only is an ordinary
- * pattern — code-server mounts `/usr/bin/docker` — and widening this list
- * breaks working apps at their next deploy.
+ * pattern — a container needing the host `docker` binary mounts `/usr/bin/docker`
+ * — and widening this list breaks working apps at their next deploy.
  */
 export const DENIED_MOUNT_PATHS = [
   "/etc",

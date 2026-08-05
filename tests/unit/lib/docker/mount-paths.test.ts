@@ -10,8 +10,8 @@ import {
 
 describe("the two lists are not the same list", () => {
   it("keeps compose narrow, so mounting a host binary still works", () => {
-    // code-server bind-mounts /usr/bin/docker. Widening the compose list would
-    // break it at the next deploy.
+    // Mounting the host docker binary into a container is an ordinary pattern.
+    // Widening the compose list would break any app doing it.
     expect(deniedMountReason("/usr/bin/docker", DENIED_MOUNT_PATHS)).toBeNull();
   });
 
@@ -20,7 +20,7 @@ describe("the two lists are not the same list", () => {
   });
 
   it("leaves ordinary application locations alone", () => {
-    for (const p of ["/mnt/docker/gitea/data", "/var/lib/myapp", "/home/joey/appdata", "/srv/data"]) {
+    for (const p of ["/srv/app/data", "/var/lib/myapp", "/home/someone/appdata", "/opt/stack/data"]) {
       expect(deniedMountReason(p, DENIED_BACKUP_PATHS)).toBeNull();
     }
   });
@@ -35,8 +35,8 @@ describe("resolveBothWays", () => {
 
 describe("assertSafeBindSource", () => {
   it("accepts a real application path and returns it normalized", () => {
-    expect(assertSafeBindSource("/mnt/docker/gitea/data")).toBe("/mnt/docker/gitea/data");
-    expect(assertSafeBindSource("/mnt/docker//immich/./upload")).toBe("/mnt/docker/immich/upload");
+    expect(assertSafeBindSource("/srv/app/data")).toBe("/srv/app/data");
+    expect(assertSafeBindSource("/srv//app/./uploads")).toBe("/srv/app/uploads");
   });
 
   it("refuses a relative value, which Docker would read as a volume name", () => {
@@ -72,11 +72,11 @@ describe("assertSafeBindSource", () => {
 
   it("refuses the live Docker data-root when told what it is", () => {
     // The real root is read from the daemon rather than assumed to be
-    // /var/lib/docker — this host keeps it on a separate pool.
-    expect(() => assertSafeBindSource("/mnt/docker/overlay2", { dockerRoot: "/mnt/docker" })).toThrow(
+    // /var/lib/docker; a host may keep it on a separate pool.
+    expect(() => assertSafeBindSource("/pool/docker/overlay2", { dockerRoot: "/pool/docker" })).toThrow(
       /must never be/,
     );
-    expect(assertSafeBindSource("/mnt/appdata", { dockerRoot: "/mnt/docker" })).toBe("/mnt/appdata");
+    expect(assertSafeBindSource("/pool/appdata", { dockerRoot: "/pool/docker" })).toBe("/pool/appdata");
   });
 
   it("refuses empty and whitespace", () => {
@@ -85,7 +85,7 @@ describe("assertSafeBindSource", () => {
   });
 
   it("names the source in the error, so an operator can see which volume", () => {
-    expect(() => assertSafeBindSource("/etc", { label: "gitea data" })).toThrow(/gitea data "\/etc"/);
+    expect(() => assertSafeBindSource("/etc", { label: "app data" })).toThrow(/app data "\/etc"/);
   });
 
   it("does not let a denied prefix match a sibling directory", () => {

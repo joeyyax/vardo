@@ -6,12 +6,13 @@ describe("bind mounts are opt-in", () => {
   const bind = (over: Record<string, unknown> = {}) => ({
     type: "bind" as const,
     backupStrategy: "tar",
-    source: "/mnt/docker/gitea/data",
+    source: "/srv/app/data",
     ...over,
   });
 
   it("leaves an unclassified bind alone — this is where the media libraries live", () => {
-    // /mnt/media is 18 TB. Capturing bind mounts by default would try to tar it.
+    // Bind mounts are also where multi-terabyte media libraries live, so
+    // capturing them by default would try to tar one.
     expect(isUncapturedSource(bind())).toBe(true);
     expect(isUncapturedSource(bind({ durability: "rebuildable" }))).toBe(true);
     expect(isUncapturedSource(bind({ durability: "external" }))).toBe(true);
@@ -32,7 +33,7 @@ describe("bind mounts are opt-in", () => {
 
   it("tells the operator how to opt in, and which path is affected", () => {
     expect(uncapturedReason(bind())).toMatch(/mark the volume stateful/);
-    expect(uncapturedReason(bind())).toContain("/mnt/docker/gitea/data");
+    expect(uncapturedReason(bind())).toContain("/srv/app/data");
   });
 });
 
