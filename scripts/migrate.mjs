@@ -13,6 +13,37 @@ if (!DATABASE_URL) {
 
 const sql = postgres(DATABASE_URL);
 
+// The object is already in its target state. Only reachable on a database left
+// half-applied by the older non-transactional runner, or altered out of band.
+const IGNORABLE = new Set([
+  "42710", // duplicate_object (enum value, constraint)
+  "42701", // duplicate_column
+  "42P07", // duplicate_table
+  "42P16", // invalid_table_definition (constraint already exists)
+]);
+
+// Postgres refuses the statement inside a transaction block.
+const NON_TRANSACTIONAL = new Set([
+  "25001", // active_sql_transaction (CREATE INDEX CONCURRENTLY, VACUUM, ...)
+  "55P04", // unsafe_new_enum_value_usage (enum value used in the transaction that added it)
+]);
+
+// A tolerated error still poisons the transaction, so each statement gets a savepoint.
+async function runStatement(db, stmt, transactional) {
+  try {
+    if (transactional) await db.savepoint((sp) => sp.unsafe(stmt));
+    else await db.unsafe(stmt);
+  } catch (err) {
+    if (!IGNORABLE.has(err.code)) throw err;
+    console.log(
+      `[migrate]   ↳ Skipped (already exists): ${err.message.split("\n")[0]}`,
+    );
+  }
+}
+
+const recordSql = (db, tag) =>
+  db`INSERT INTO __drizzle_migrations (hash, created_at) VALUES (${tag}, ${Date.now()})`;
+
 try {
   // Ensure migration tracking table exists
   await sql`
@@ -49,28 +80,24 @@ try {
       `[migrate] Applying ${entry.tag} (${statements.length} statements)...`,
     );
 
-    for (const stmt of statements) {
-      try {
-        await sql.unsafe(stmt);
-      } catch (err) {
-        // Tolerate DDL conflicts from partially-applied or out-of-band schema changes.
-        // These are safe to skip — the object already exists in the target state.
-        const code = err.code;
-        const ignorable =
-          code === "42710" || // duplicate_object (enum value, constraint)
-          code === "42701" || // duplicate_column
-          code === "42P07" || // duplicate_table
-          code === "42P16";   // invalid_table_definition (constraint already exists)
+    try {
+      // Statements and the journal row commit together — applied and recorded, or neither.
+      await sql.begin(async (tx) => {
+        for (const stmt of statements) await runStatement(tx, stmt, true);
+        await recordSql(tx, entry.tag);
+      });
+    } catch (err) {
+      if (!NON_TRANSACTIONAL.has(err.code)) throw err;
 
-        if (ignorable) {
-          console.log(`[migrate]   ↳ Skipped (already exists): ${err.message.split("\n")[0]}`);
-        } else {
-          throw err;
-        }
-      }
+      // The transaction rolled back, so nothing was applied and replaying is safe.
+      // Unwrapped is the only way these statements can run — atomicity is lost.
+      console.warn(
+        `[migrate]   ↳ ${entry.tag} cannot run inside a transaction (${err.code}) — applying it unwrapped, partial failure is possible`,
+      );
+      for (const stmt of statements) await runStatement(sql, stmt, false);
+      await recordSql(sql, entry.tag);
     }
 
-    await sql`INSERT INTO __drizzle_migrations (hash, created_at) VALUES (${entry.tag}, ${Date.now()})`;
     count++;
   }
 
