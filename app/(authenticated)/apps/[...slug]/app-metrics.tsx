@@ -129,7 +129,7 @@ function NoSamples() {
 
 function ContainerTable({ containers }: { containers: ContainerPoint[] }) {
   return (
-    <div className="squircle rounded-lg border bg-card overflow-x-auto">
+    <div className="squircle rounded-lg bg-card shadow-card dark:border overflow-x-auto">
       <div className="flex items-center gap-2 px-4 py-3 border-b">
         <Container className="size-4 text-muted-foreground" />
         <h3 className="text-sm font-medium">Containers</h3>
@@ -449,7 +449,7 @@ export function AppMetrics({ orgId, appId, environmentName, gpuEnabled, cpuLimit
       {containers.length > 0 ? (
         <ContainerTable containers={containers} />
       ) : awaitingFirstFrame ? (
-        <div className="squircle rounded-lg border bg-card">
+        <div className="squircle rounded-lg bg-card shadow-card dark:border">
           <div className="flex items-center gap-2 px-4 py-3 border-b">
             <Container className="size-4 text-muted-foreground" />
             <h3 className="text-sm font-medium">Containers</h3>

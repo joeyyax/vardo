@@ -19,7 +19,7 @@ export function SelfManagedUpdates({
   return (
     <section
       aria-label={`Vardo-managed images for ${title}`}
-      className="squircle rounded-lg border bg-card divide-y"
+      className="squircle rounded-lg bg-card shadow-card dark:border divide-y"
     >
       <header className="flex items-center gap-2 px-4 py-2.5">
         <Lock className="size-3.5 text-muted-foreground/50" aria-hidden="true" />
