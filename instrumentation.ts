@@ -54,6 +54,10 @@ export async function register() {
       log.info("Encryption key configured");
     }
 
+    // Whether the running key is the one this database's ciphertext belongs to.
+    const { checkKeyEscrowAtStartup } = await import("./lib/crypto/key-escrow");
+    await checkKeyEscrowAtStartup();
+
     // Carry existing hook registrations onto the new hooks flag. Needs the
     // encryption key, so it runs after the check above.
     try {

@@ -19,6 +19,8 @@ import { createBackupStorage } from "./storage-factory";
 import { assertSafeName } from "@/lib/docker/validate";
 import { isUncapturedSource, uncapturedReason } from "./coverage";
 import { exclusionReason, isBackupSelected } from "./durability";
+import { checkRestoreKey, holdsInstanceSecrets } from "./key-guard";
+import { runningKeyFingerprint } from "@/lib/crypto/encrypt";
 import { assertSafeBindSource } from "@/lib/docker/mount-paths";
 import { buildDumpArgv, buildRestoreArgv, describeDumpSpec, type DumpSpec } from "./dump-spec";
 import { resolveDbContainer } from "./resolve-db-container";
@@ -744,7 +746,8 @@ export async function runBackup(
       ? `${vol.orgSlug}/${vol.appName}/${vol.name}/${ts}.${ext}`
       : `vardo-system/${vol.name}/${ts}.${ext}`;
 
-    // Create backup record
+    // Create backup record. The key fingerprint is stamped only where the
+    // archive carries this instance's own ciphertext.
     await db.insert(backups).values({
       id: backupId,
       jobId: job.id,
@@ -753,6 +756,7 @@ export async function runBackup(
       status: "running",
       volumeName: vol.name,
       strategy,
+      keyFingerprint: holdsInstanceSecrets(vol) ? runningKeyFingerprint() : null,
       startedAt,
     });
 
@@ -1156,6 +1160,13 @@ export async function pruneBackups(jobId: string): Promise<number> {
  */
 export async function restoreBackup(
   backupId: string,
+  opts: {
+    /**
+     * Restore an archive whose secrets were encrypted with a different master
+     * key. Every env var in it stays unreadable — only for recovering the rest.
+     */
+    acceptKeyMismatch?: boolean;
+  } = {},
 ): Promise<{ success: boolean; log: string }> {
   const backup = await db.query.backups.findFirst({
     where: eq(backups.id, backupId),
@@ -1189,6 +1200,21 @@ export async function restoreBackup(
     );
   }
 
+  // A restore of Vardo's own database replaces every app's env vars with
+  // ciphertext from the source instance, which the running key may not open.
+  const carriesInstanceSecrets = holdsInstanceSecrets({
+    appId: backup.appId,
+    name: backup.volumeName,
+  });
+  const keyVerdict = checkRestoreKey({
+    archiveFingerprint: backup.keyFingerprint,
+    runningFingerprint: runningKeyFingerprint(),
+    holdsInstanceSecrets: carriesInstanceSecrets,
+  });
+  if (keyVerdict.kind === "blocked" && !opts.acceptKeyMismatch) {
+    throw new Error(`${keyVerdict.message} Restore anyway only if the env vars are expendable.`);
+  }
+
   // Restore commands and mount paths are live config, read from the volume row.
   const vol = backup.appId
     ? await db.query.volumes.findFirst({
@@ -1220,6 +1246,10 @@ export async function restoreBackup(
   const archivePath = join(tmpDir, strategy === "dump" ? "dump.gz" : "volume.tar.gz");
 
   try {
+    if (keyVerdict.kind !== "proceed") {
+      log(`WARNING: ${keyVerdict.message}`);
+    }
+
     // 1. Download archive from storage
     log(`Downloading backup from ${backup.storagePath}`);
     await storage.download(backup.storagePath, archivePath);
@@ -1360,6 +1390,22 @@ export async function restoreBackup(
     }
 
     log("Restore complete");
+
+    // Whether the restored rows actually open. The only check an archive
+    // written before fingerprinting gets.
+    if (carriesInstanceSecrets) {
+      const { probeDecryptability } = await import("@/lib/crypto/key-escrow");
+      const probe = await probeDecryptability();
+      if (probe.undecryptable > 0) {
+        log(
+          `WARNING: ${probe.undecryptable} of ${probe.encrypted} restored encrypted values cannot be decrypted ` +
+            `with the running ENCRYPTION_MASTER_KEY. Affected: ${probe.samples.join(", ")}`,
+        );
+      } else {
+        log(`Verified ${probe.encrypted} restored encrypted value(s) decrypt with the running key`);
+      }
+    }
+
     return { success: true, log: logLines.join("\n") };
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);

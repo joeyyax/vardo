@@ -12,6 +12,7 @@ import { JobCard } from "./job-card";
 import { TargetForm } from "./target-form";
 import { JobForm } from "./job-form";
 import { BackupHistory } from "./backup-history";
+import { KeyEscrowCard } from "./key-escrow-card";
 import { useNotificationStream } from "@/hooks/use-notification-stream";
 import { applyBackupEvent, type ProgressByJob } from "./progress-state";
 import type { BusEvent } from "@/lib/bus/events";
@@ -132,6 +133,9 @@ export function BackupPage({
         </div>
       ) : null}
 
+      {/* The one thing a backup cannot restore */}
+      <KeyEscrowCard />
+
       {/* Two-column: Storage targets + Backup jobs */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Left: Storage targets */}
@@ -250,6 +254,10 @@ export function BackupPage({
             <li className="flex items-start gap-2.5">
               <Info className="size-4 text-muted-foreground/50 shrink-0 mt-0.5" aria-hidden="true" />
               <span className="text-muted-foreground">Does not include container images — they&apos;re pulled from your registry on deploy</span>
+            </li>
+            <li className="flex items-start gap-2.5">
+              <Info className="size-4 text-muted-foreground/50 shrink-0 mt-0.5" aria-hidden="true" />
+              <span className="text-muted-foreground">Does not include the encryption master key — env vars restore as unreadable ciphertext without it</span>
             </li>
           </ul>
         </div>
