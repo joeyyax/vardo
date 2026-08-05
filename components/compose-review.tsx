@@ -274,7 +274,7 @@ export function ComposeReview({
 
 function FindingRow({ finding }: { finding: Finding }) {
   return (
-    <div className="flex items-start gap-2 rounded-md border px-3 py-2 text-sm">
+    <div className="flex items-start gap-2 rounded-md bg-background-deep px-3 py-2 text-sm">
       {severityIcon[finding.severity]}
       <div className="min-w-0">
         <p className="text-sm">{finding.message}</p>
@@ -301,7 +301,7 @@ function EnvFindingRow({
 }) {
   return (
     <div
-      className="flex items-start gap-2 rounded-md border px-3 py-2 text-sm cursor-pointer hover:bg-accent/50 transition-colors"
+      className="flex items-start gap-2 rounded-md bg-background-deep px-3 py-2 text-sm cursor-pointer hover:bg-accent/50 transition-colors"
       onClick={selectable ? onToggle : undefined}
     >
       {selectable ? (
