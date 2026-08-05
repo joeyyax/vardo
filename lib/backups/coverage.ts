@@ -31,3 +31,20 @@ export function uncapturedReason(vol: CoverableVolume): string {
   const path = vol.source ? ` (${vol.source})` : "";
   return `Bind mount${path} is not backed up — mark the volume stateful to archive this host path`;
 }
+
+/**
+ * Why a dump cannot be captured right now, or null when it can.
+ *
+ * A dump runs inside the database, so it needs a container to run in. Tar does
+ * not: a stopped app's volumes are still on disk and still archivable, which is
+ * why only this one strategy pauses when the app comes down.
+ */
+export function pausedDumpReason(vol: {
+  backupStrategy: string;
+  /** apps.status for the owning app. Null for a volume linked without one. */
+  appStatus?: string | null;
+}): string | null {
+  if (vol.backupStrategy !== "dump") return null;
+  if (vol.appStatus !== "stopped") return null;
+  return "App is stopped — a database dump needs a running container. Start the app to capture it.";
+}
