@@ -17,7 +17,7 @@ import { resolve, join } from "path";
 import type { BackupStorage } from "./storage-port";
 import { createBackupStorage } from "./storage-factory";
 import { assertSafeName } from "@/lib/docker/validate";
-import { isUncapturedSource, uncapturedReason } from "./coverage";
+import { isUncapturedSource, pausedDumpReason, uncapturedReason } from "./coverage";
 import { exclusionReason, isBackupSelected } from "./durability";
 import { assertSafeBindSource } from "@/lib/docker/mount-paths";
 import { buildDumpArgv, buildRestoreArgv, describeDumpSpec, type DumpSpec } from "./dump-spec";
@@ -78,6 +78,8 @@ export type BackupResult = {
   sizeBytes: number;
   storagePath: string;
   error?: string;
+  /** Skipped because the app is stopped, not because anything went wrong. */
+  paused?: boolean;
   durationMs: number;
 };
 
@@ -92,6 +94,8 @@ type VolumeToBackup = {
   mountPath: string | null;
   appId: string | null;
   appName: string | null;
+  /** apps.status for the owning app. Null for a directly linked volume. */
+  appStatus: string | null;
   /** Owning org, so an instance-level job reports progress to each app's org. */
   orgId: string | null;
   orgSlug: string | null;
@@ -554,11 +558,12 @@ export async function runBackup(
 
   const scope = options.appIds ? new Set(options.appIds) : null;
   const scoped = scope ? owned.filter((bja) => scope.has(bja.app.id)) : owned;
-  // A retired app's volumes are empty or gone, so a scheduled run against it
-  // fails every night with nothing to fix. An explicit request still runs.
+  // A retired app has no volumes left, so a scheduled run against it fails
+  // every night with nothing to fix. A stopped app still holds its data and is
+  // still backed up. An explicit request runs against either.
   const jobApps = options.appIds
     ? scoped
-    : scoped.filter((bja) => bja.app.status !== "missing" && bja.app.status !== "stopped");
+    : scoped.filter((bja) => bja.app.status !== "missing");
   const jobVolumes = scope
     ? job.backupJobVolumes.filter((bjv) => bjv.volume.appId && scope.has(bjv.volume.appId))
     : job.backupJobVolumes;
@@ -609,6 +614,7 @@ export async function runBackup(
         mountPath: vol.mountPath,
         appId: app.id,
         appName: app.name,
+        appStatus: app.status,
         orgId: app.organizationId,
         orgSlug,
         type: vol.type,
@@ -635,6 +641,7 @@ export async function runBackup(
       mountPath: vol.mountPath,
       appId: vol.appId,
       appName: null,
+      appStatus: null,
       orgId: null,
       orgSlug: null,
       type: vol.type,
@@ -856,13 +863,20 @@ export async function runBackup(
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       log(`Backup failed: ${errorMsg}`);
+
+      // Classified after the attempt, not before it: apps.status is a cached
+      // observation, so an app recorded as stopped whose container is in fact
+      // up still gets its dump.
+      const paused = pausedDumpReason(vol);
+      if (paused) log(paused);
+
       const finishedAt = new Date();
       const durationMs = finishedAt.getTime() - startedAt.getTime();
 
       await db
         .update(backups)
         .set({
-          status: "failed",
+          status: paused ? "skipped" : "failed",
           log: logLines.join("\n"),
           finishedAt,
         })
@@ -872,10 +886,11 @@ export async function runBackup(
         backupId,
         appId: vol.appId || "",
         volumeName: vol.name,
-        outcome: "failed",
+        outcome: paused ? "skipped" : "failed",
         sizeBytes: 0,
         storagePath: "",
-        error: errorMsg,
+        error: paused ?? errorMsg,
+        paused: paused !== null,
         durationMs,
       });
     }
@@ -900,9 +915,13 @@ export async function runBackup(
     const succeeded = results.filter((r) => r.outcome === "success");
     const failed = results.filter((r) => r.outcome === "failed");
     const skipped = results.filter((r) => r.outcome === "skipped");
-    // A run that captured nothing is not a success.
+    // A run that captured nothing is not a success, unless everything it could
+    // not capture is a dump waiting on a stopped app. That is a state to show
+    // on the attention surface, not a fault to alert on every night.
     const capturedNothing = succeeded.length === 0;
-    const hasFailures = failed.length > 0 || capturedNothing;
+    const onlyPaused =
+      capturedNothing && failed.length === 0 && skipped.length > 0 && skipped.every((r) => r.paused);
+    const hasFailures = failed.length > 0 || (capturedNothing && !onlyPaused);
     const allSuccess = !hasFailures;
     const notes = [
       skipped.length > 0 ? `${skipped.length} skipped` : null,
@@ -910,7 +929,9 @@ export async function runBackup(
     ].filter(Boolean);
     const skippedNote = notes.length > 0 ? ` (${notes.join(", ")})` : "";
 
-    if (job.organizationId && ((hasFailures && job.notifyOnFailure) || (allSuccess && job.notifyOnSuccess))) {
+    if (onlyPaused) {
+      log.info(`${job.name}: nothing captured — every source is waiting on a stopped app`);
+    } else if (job.organizationId && ((hasFailures && job.notifyOnFailure) || (allSuccess && job.notifyOnSuccess))) {
       const { emit } = await import("@/lib/notifications/dispatch");
       const names = jobApps.map((bja) => bja.app.name).join(", ") || job.name;
       if (hasFailures) {
