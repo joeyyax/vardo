@@ -11,23 +11,27 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // prune is asked for must stay a size and must stay unfiltered.
 // ---------------------------------------------------------------------------
 
-const { dbMock, emitMock, pruneBuildCacheMock, queueDrained, lockAcquired } = vi.hoisted(() => {
-  const emitMock = vi.fn();
-  const pruneBuildCacheMock = vi.fn().mockResolvedValue({ spaceReclaimed: 0 });
-  const queueDrained = vi.fn().mockResolvedValue(true);
-  const lockAcquired = vi.fn().mockResolvedValue(true);
+const { dbMock, emitMock, pruneBuildCacheMock, pruneBuildKitMock, queueDrained, lockAcquired } =
+  vi.hoisted(() => {
+    const emitMock = vi.fn();
+    const pruneBuildCacheMock = vi.fn().mockResolvedValue({ spaceReclaimed: 0 });
+    const pruneBuildKitMock = vi.fn().mockResolvedValue({ spaceReclaimed: 0 });
+    const queueDrained = vi.fn().mockResolvedValue(true);
+    const lockAcquired = vi.fn().mockResolvedValue(true);
 
-  const dbMock = {
-    update: vi.fn().mockImplementation(() => ({ set: () => ({ where: async () => undefined }) })),
-    insert: vi.fn().mockReturnValue({ values: () => ({ onConflictDoNothing: async () => undefined }) }),
-    query: {
-      volumes: { findMany: vi.fn().mockResolvedValue([]) },
-      deployments: { findFirst: vi.fn().mockResolvedValue(null) },
-    },
-  };
+    const dbMock = {
+      update: vi.fn().mockImplementation(() => ({ set: () => ({ where: async () => undefined }) })),
+      insert: vi
+        .fn()
+        .mockReturnValue({ values: () => ({ onConflictDoNothing: async () => undefined }) }),
+      query: {
+        volumes: { findMany: vi.fn().mockResolvedValue([]) },
+        deployments: { findFirst: vi.fn().mockResolvedValue(null) },
+      },
+    };
 
-  return { dbMock, emitMock, pruneBuildCacheMock, queueDrained, lockAcquired };
-});
+    return { dbMock, emitMock, pruneBuildCacheMock, pruneBuildKitMock, queueDrained, lockAcquired };
+  });
 
 vi.mock("@/lib/db", () => ({ db: dbMock }));
 vi.mock("@/lib/redis", () => ({
@@ -57,6 +61,10 @@ vi.mock("@/lib/docker/client", () => ({
   pruneImages: vi.fn().mockResolvedValue({ spaceReclaimed: 0, count: 0 }),
   pruneBuildCache: pruneBuildCacheMock,
 }));
+vi.mock("@/lib/docker/buildkit", () => ({
+  pruneBuildKitCache: pruneBuildKitMock,
+  DEFAULT_BUILDKIT_HOST: "docker-container://vardo-buildkit",
+}));
 vi.mock("@/lib/docker/compose", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/docker/compose")>()),
   slotComposeFiles: vi.fn(async () => ["-f", "docker-compose.yml"]),
@@ -79,7 +87,7 @@ vi.mock("child_process", () => ({
 
 import { postDeploy } from "@/lib/docker/deploy-steps/post-deploy";
 import type { DeployContext } from "@/lib/docker/deploy-context";
-import { BUILD_CACHE_MAX_BYTES } from "@/lib/docker/constants";
+import { BUILD_CACHE_MAX_BYTES, BUILDKIT_CACHE_MAX_BYTES } from "@/lib/docker/constants";
 import { formatBytes } from "@/lib/metrics/format";
 
 function makeContext(overrides: Partial<DeployContext> = {}): DeployContext {
@@ -188,5 +196,56 @@ describe("post-deploy build cache prune", () => {
     await postDeploy(makeContext());
 
     expect(pruneBuildCacheMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("post-deploy BuildKit cache prune", () => {
+  beforeEach(() => {
+    pruneBuildKitMock.mockClear();
+    pruneBuildKitMock.mockResolvedValue({ spaceReclaimed: 0 });
+    queueDrained.mockResolvedValue(true);
+    lockAcquired.mockResolvedValue(true);
+  });
+
+  it("bounds the daemon Railpack builds through", async () => {
+    await postDeploy(makeContext());
+
+    expect(pruneBuildKitMock).toHaveBeenCalledWith(
+      "docker-container://vardo-buildkit",
+      BUILDKIT_CACHE_MAX_BYTES,
+    );
+  });
+
+  it("names the ceiling in the deploy log when it reclaims", async () => {
+    pruneBuildKitMock.mockResolvedValue({ spaceReclaimed: 2 * 1024 ** 3 });
+    const ctx = makeContext();
+
+    await postDeploy(ctx);
+
+    const line = ctx.logLines.find((l) => l.includes("BuildKit cache over"));
+    expect(line).toContain(formatBytes(BUILDKIT_CACHE_MAX_BYTES));
+    expect(line).toContain(formatBytes(2 * 1024 ** 3));
+  });
+
+  it("says nothing when there was nothing to reclaim", async () => {
+    const ctx = makeContext();
+
+    await postDeploy(ctx);
+
+    expect(ctx.logLines.some((l) => l.includes("BuildKit cache"))).toBe(false);
+  });
+
+  it("does not fail the deploy when the prune throws", async () => {
+    pruneBuildKitMock.mockRejectedValue(new Error("buildctl: not found"));
+
+    await expect(postDeploy(makeContext())).resolves.toBeDefined();
+  });
+
+  it("defers behind another prune holding the lock", async () => {
+    lockAcquired.mockResolvedValue(false);
+
+    await postDeploy(makeContext());
+
+    expect(pruneBuildKitMock).not.toHaveBeenCalled();
   });
 });
