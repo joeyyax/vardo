@@ -31,6 +31,7 @@ import type { DeployContext, SlotStopOutcome } from "../deploy-context";
 import { classifyComposeServices } from "./classify-services";
 import { majorGateAfter, majorGateBefore, type MajorGateState } from "./major-gate";
 import { publishesHostPorts } from "../host-ports";
+import { registryAuthHint, withRegistryAuth } from "../registry-auth";
 import { partitionBySlot, sharedProjectName, slotScopeArgs } from "../slot-partition";
 import { isSelfApp } from "../self-env";
 import { clearCutoverPin, guardCutover, type CutoverGuard } from "../traefik-cutover";
@@ -269,41 +270,50 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
   );
   let majorGate: MajorGateState = { candidates: [], before: new Map() };
   try {
-    if (buildServices.length > 0) {
-      log(`[deploy] Pre-building ${newSlot} slot images (old slot still serving)...`);
-      const { stdout, stderr } = await execFileAsync(
-        "docker",
-        ["compose", "--progress=plain", ...composeFileArgs, "-p", newProjectName, "build"],
-        { cwd: slotDir, timeout: COMPOSE_BUILD_UP_TIMEOUT, maxBuffer: EXEC_MAX_BUFFER, signal: ctx.signal }
-      );
-      for (const line of stdout.split(/\r?\n|\r/).filter(Boolean)) {
-        logs.push(`[deploy][build] ${line.trim()}`);
+    // Both phases reach registries — a `build:` service pulls the bases its
+    // Dockerfile names — so both run against the configured credentials.
+    await withRegistryAuth(async (env) => {
+      if (buildServices.length > 0) {
+        log(`[deploy] Pre-building ${newSlot} slot images (old slot still serving)...`);
+        const { stdout, stderr } = await execFileAsync(
+          "docker",
+          ["compose", "--progress=plain", ...composeFileArgs, "-p", newProjectName, "build"],
+          { cwd: slotDir, env, timeout: COMPOSE_BUILD_UP_TIMEOUT, maxBuffer: EXEC_MAX_BUFFER, signal: ctx.signal }
+        );
+        for (const line of stdout.split(/\r?\n|\r/).filter(Boolean)) {
+          logs.push(`[deploy][build] ${line.trim()}`);
+        }
+        for (const line of stderr.split(/\r?\n|\r/).filter(Boolean)) {
+          logs.push(`[deploy][build] ${line.trim()}`);
+        }
       }
-      for (const line of stderr.split(/\r?\n|\r/).filter(Boolean)) {
-        logs.push(`[deploy][build] ${line.trim()}`);
+      if (pullServices.length > 0) {
+        // Read the engine majors off the local images first. After the pull the
+        // tag points somewhere else and the old major is unreadable.
+        majorGate = await majorGateBefore(ctx, pullServices);
+        log(`[deploy] Pre-pulling ${newSlot} slot images (old slot still serving)...`);
+        const { stdout, stderr } = await execFileAsync(
+          "docker",
+          ["compose", ...composeFileArgs, "-p", newProjectName, "pull", ...pullServices],
+          { cwd: slotDir, env, timeout: COMPOSE_UP_TIMEOUT, maxBuffer: EXEC_MAX_BUFFER, signal: ctx.signal }
+        );
+        for (const line of stdout.split(/\r?\n|\r/).filter(Boolean)) {
+          logs.push(`[deploy][pull] ${line.trim()}`);
+        }
+        for (const line of stderr.split(/\r?\n|\r/).filter(Boolean)) {
+          logs.push(`[deploy][pull] ${line.trim()}`);
+        }
       }
-    }
-    if (pullServices.length > 0) {
-      // Read the engine majors off the local images first. After the pull the
-      // tag points somewhere else and the old major is unreadable.
-      majorGate = await majorGateBefore(ctx, pullServices);
-      log(`[deploy] Pre-pulling ${newSlot} slot images (old slot still serving)...`);
-      const { stdout, stderr } = await execFileAsync(
-        "docker",
-        ["compose", ...composeFileArgs, "-p", newProjectName, "pull", ...pullServices],
-        { cwd: slotDir, timeout: COMPOSE_UP_TIMEOUT, maxBuffer: EXEC_MAX_BUFFER, signal: ctx.signal }
-      );
-      for (const line of stdout.split(/\r?\n|\r/).filter(Boolean)) {
-        logs.push(`[deploy][pull] ${line.trim()}`);
-      }
-      for (const line of stderr.split(/\r?\n|\r/).filter(Boolean)) {
-        logs.push(`[deploy][pull] ${line.trim()}`);
-      }
-    }
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    const hint = await registryAuthHint(
+      message,
+      pullServices.map((name) => compose.services[name]?.image),
+    );
     throw new Error(
-      `Pre-build/pre-pull for ${newSlot} failed (old slot unaffected): ${message}`
+      `Pre-build/pre-pull for ${newSlot} failed (old slot unaffected): ${message}` +
+        (hint ? `\n${hint}` : "")
     );
   }
 
@@ -531,25 +541,36 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
   if (sharedNames.length > 0) {
     log(`[deploy] Shared services (not rotated): ${sharedNames.join(", ")}`);
     try {
-      const { stdout, stderr } = await execFileAsync(
-        "docker",
-        [
-          "compose",
-          ...composeFileArgs,
-          "-p", sharedProject,
-          "up", "-d",
-          "--no-recreate",
-          "--no-deps",
-          ...sharedNames,
-        ],
-        { cwd: slotDir, timeout: COMPOSE_UP_TIMEOUT, maxBuffer: EXEC_MAX_BUFFER }
+      // Shared services are left out of the pre-pull, so this `up` is where a
+      // missing one is fetched.
+      const { stdout, stderr } = await withRegistryAuth((env) =>
+        execFileAsync(
+          "docker",
+          [
+            "compose",
+            ...composeFileArgs,
+            "-p", sharedProject,
+            "up", "-d",
+            "--no-recreate",
+            "--no-deps",
+            ...sharedNames,
+          ],
+          { cwd: slotDir, env, timeout: COMPOSE_UP_TIMEOUT, maxBuffer: EXEC_MAX_BUFFER }
+        )
       );
       for (const line of `${stdout}\n${stderr}`.split(/\r?\n|\r/).filter(Boolean)) {
         logs.push(`[deploy][shared] ${line.trim()}`);
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      throw new Error(`Shared services failed to start (old slot unaffected): ${message}`);
+      const hint = await registryAuthHint(
+        message,
+        sharedNames.map((name) => compose.services[name]?.image),
+      );
+      throw new Error(
+        `Shared services failed to start (old slot unaffected): ${message}` +
+          (hint ? `\n${hint}` : "")
+      );
     }
   }
 
