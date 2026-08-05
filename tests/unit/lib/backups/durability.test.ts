@@ -78,8 +78,8 @@ describe("proposeDurability — databases", () => {
 
 describe("proposeDurability — rebuildable", () => {
   it("reads caches from either the path or the name", () => {
-    expect(proposeDurability({ mountPath: "/var/cache/lonvr" })).toMatchObject({ durability: "rebuildable" });
-    expect(proposeDurability({ volumeName: "reeve_cache" })).toMatchObject({ durability: "rebuildable" });
+    expect(proposeDurability({ mountPath: "/var/cache/app" })).toMatchObject({ durability: "rebuildable" });
+    expect(proposeDurability({ volumeName: "render_cache" })).toMatchObject({ durability: "rebuildable" });
   });
 
   it("reads re-issuable certificates", () => {
@@ -165,7 +165,7 @@ describe("isBackupSelected", () => {
 
 describe("proposeDurability — Postgres under other names", () => {
   it("recognizes a Postgres distribution that does not say postgres", () => {
-    // immich ships tensorchord/pgvecto-rs; matching the image name misses it.
+    // Some Postgres distributions never say "postgres" in the image name.
     expect(
       proposeDurability({ image: "tensorchord/pgvecto-rs:pg16-v0.2.0", mountPath: "/var/lib/postgresql/data" }),
     ).toMatchObject({ durability: "stateful", kind: "postgres" });

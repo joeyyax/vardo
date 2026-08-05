@@ -1,0 +1,1 @@
+ALTER TABLE "backup" ADD COLUMN "source_kind" text;

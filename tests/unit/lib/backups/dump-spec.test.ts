@@ -6,11 +6,11 @@ import {
   describeDumpSpec,
 } from "@/lib/backups/dump-spec";
 
-const PG_ENV = ["POSTGRES_USER=paperless", "POSTGRES_DB=paperless", "POSTGRES_PASSWORD=hunter2"];
+const PG_ENV = ["POSTGRES_USER=appuser", "POSTGRES_DB=appdb", "POSTGRES_PASSWORD=hunter2"];
 
 describe("readEnv", () => {
   it("reads a value", () => {
-    expect(readEnv(PG_ENV, "POSTGRES_USER")).toBe("paperless");
+    expect(readEnv(PG_ENV, "POSTGRES_USER")).toBe("appuser");
   });
 
   it("returns null for a key that is absent", () => {
@@ -33,7 +33,7 @@ describe("readEnv", () => {
 describe("buildDumpArgv — postgres", () => {
   it("dumps the configured user and database", () => {
     expect(buildDumpArgv("postgres", "abc123", PG_ENV)).toEqual([
-      "exec", "abc123", "pg_dump", "-U", "paperless", "--clean", "--if-exists", "paperless",
+      "exec", "abc123", "pg_dump", "-U", "appuser", "--clean", "--if-exists", "appdb",
     ]);
   });
 
@@ -50,7 +50,7 @@ describe("buildDumpArgv — postgres", () => {
   });
 
   it("defaults the database to the user, which is what the image does", () => {
-    expect(buildDumpArgv("postgres", "c", ["POSTGRES_USER=outline"])).toContain("outline");
+    expect(buildDumpArgv("postgres", "c", ["POSTGRES_USER=solo"])).toContain("solo");
   });
 
   it("passes no password — the official image trusts the local socket", () => {
@@ -61,7 +61,7 @@ describe("buildDumpArgv — postgres", () => {
 describe("buildRestoreArgv — postgres", () => {
   it("stops on the first error rather than exiting 0 after skipping statements", () => {
     expect(buildRestoreArgv("postgres", "abc123", PG_ENV)).toEqual([
-      "exec", "-i", "abc123", "psql", "-U", "paperless", "-v", "ON_ERROR_STOP=1", "-d", "paperless",
+      "exec", "-i", "abc123", "psql", "-U", "appuser", "-v", "ON_ERROR_STOP=1", "-d", "appdb",
     ]);
   });
 
@@ -110,8 +110,8 @@ describe("argv shape", () => {
 
 describe("describeDumpSpec", () => {
   it("names the tool and the service", () => {
-    expect(describeDumpSpec({ kind: "postgres", service: "paperless-db" })).toBe(
-      'pg_dump against the "paperless-db" service',
+    expect(describeDumpSpec({ kind: "postgres", service: "app-db" })).toBe(
+      'pg_dump against the "app-db" service',
     );
     expect(describeDumpSpec({ kind: "mariadb", service: "db" })).toContain("mysqldump");
   });

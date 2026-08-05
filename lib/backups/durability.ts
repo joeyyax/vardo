@@ -72,7 +72,7 @@ const DATABASE_SIGNATURES: {
   dataDir: string;
 }[] = [
   // Postgres ships under a lot of names that do not contain "postgres" —
-  // immich runs tensorchord/pgvecto-rs. The data directory alone is not enough
+  // e.g. tensorchord/pgvecto-rs. The data directory alone is not enough
   // to decide: a sidecar mounting it would be proposed as the database and its
   // dump would target the wrong container.
   {

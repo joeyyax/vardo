@@ -1091,6 +1091,8 @@ export async function removeVolume(name: string, opts?: { force?: boolean }): Pr
 
 export type SystemInfo = {
   cpus: number;
+  /** Where the daemon keeps volumes and images. Not assumed to be /var/lib/docker. */
+  dockerRootDir: string | null;
   memoryTotal: number;
   os: string;
   kernel: string;
@@ -1157,10 +1159,12 @@ export async function getSystemInfo(): Promise<SystemInfo> {
     Images: number;
     Containers: number;
     ContainersRunning: number;
+    DockerRootDir?: string;
   }>("GET", "/info");
 
   return {
     cpus: raw.NCPU,
+    dockerRootDir: raw.DockerRootDir ?? null,
     memoryTotal: raw.MemTotal,
     os: raw.OperatingSystem,
     kernel: raw.KernelVersion,

@@ -68,3 +68,71 @@ describe("buildTarBackupScript", () => {
     expect(proc.stdout).not.toContain(EMPTY_SOURCE_MARKER);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Single-file bind sources, driven against real files.
+// ---------------------------------------------------------------------------
+
+import { buildFileBackupScript, buildFileRestoreScript, FILE_PAYLOAD_NAME } from "@/lib/backups/archive";
+import { readFileSync } from "fs";
+
+function makeFileVolume(body: string): { dataDir: string; backupDir: string; payload: string } {
+  const root = mkdtempSync(join(ROOT, "file-"));
+  const dataDir = join(root, "data");
+  const backupDir = join(root, "backup");
+  mkdirSync(dataDir);
+  mkdirSync(backupDir);
+  const payload = join(dataDir, FILE_PAYLOAD_NAME);
+  writeFileSync(payload, body);
+  return { dataDir, backupDir, payload };
+}
+
+describe("single-file archive round-trip", () => {
+  it("restores byte-identical contents", () => {
+    const original = '{"token":"secret","records":[1,2,3]}\n';
+    const { dataDir, backupDir, payload } = makeFileVolume(original);
+
+    const backup = spawnSync("sh", ["-c", buildFileBackupScript(dataDir, backupDir)]);
+    expect(backup.status, backup.stderr?.toString()).toBe(0);
+    expect(statSync(join(backupDir, "volume.tar.gz")).size).toBeGreaterThan(MIN_VALID_GZIP_BYTES);
+
+    writeFileSync(payload, "clobbered");
+    const restore = spawnSync("sh", ["-c", buildFileRestoreScript(dataDir, backupDir)]);
+    expect(restore.status, restore.stderr?.toString()).toBe(0);
+
+    expect(readFileSync(payload, "utf8")).toBe(original);
+  });
+
+  it("writes through the existing inode, since the destination is a mount point", () => {
+    const { dataDir, backupDir, payload } = makeFileVolume("v1\n");
+    spawnSync("sh", ["-c", buildFileBackupScript(dataDir, backupDir)]);
+    const before = statSync(payload).ino;
+
+    writeFileSync(payload, "v2\n");
+    spawnSync("sh", ["-c", buildFileRestoreScript(dataDir, backupDir)]);
+
+    // A replace would give a new inode and, on a real bind mount, EBUSY.
+    expect(statSync(payload).ino).toBe(before);
+    expect(readFileSync(payload, "utf8")).toBe("v1\n");
+  });
+
+  it("leaves the original alone when the archive is unreadable", () => {
+    const { dataDir, backupDir, payload } = makeFileVolume("intact\n");
+    writeFileSync(join(backupDir, "volume.tar.gz"), "this is not a gzip stream");
+
+    const restore = spawnSync("sh", ["-c", buildFileRestoreScript(dataDir, backupDir)]);
+    expect(restore.status).not.toBe(0);
+    expect(readFileSync(payload, "utf8")).toBe("intact\n");
+  });
+
+  it("refuses a directory archive pointed at a file destination", () => {
+    const { dataDir: dirData, backupDir } = makeVolume({ "a.txt": "x" });
+    spawnSync("sh", ["-c", buildTarBackupScript(dirData, backupDir)]);
+
+    const fileVol = makeFileVolume("intact\n");
+    const restore = spawnSync("sh", ["-c", buildFileRestoreScript(fileVol.dataDir, backupDir)]);
+    expect(restore.status).not.toBe(0);
+    expect(restore.stderr.toString()).toMatch(/does not hold a single file/);
+    expect(readFileSync(fileVol.payload, "utf8")).toBe("intact\n");
+  });
+});
