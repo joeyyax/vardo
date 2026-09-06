@@ -19,7 +19,7 @@ composeContent: |
           target: /etc/loki/config.yaml
       volumes:
         - loki-data:/loki
-      mem_limit: 512m
+      mem_limit: ${VARDO_LOKI_MEM:-1g}
       # Vardo queries this at http://loki:3100 and Promtail pushes to it there.
       # Without joining the shared network both silently get nothing.
       networks:
