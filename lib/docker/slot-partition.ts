@@ -1,5 +1,5 @@
 import { dependsOnKeys, type ComposeFile, type ComposeService } from "./compose-types";
-import { volumeSharedServices } from "./volume-shared";
+import { declaredVolumes, slotIndependentMounts, volumeSharedServices } from "./volume-shared";
 
 /**
  * Compose extension field marking a service as exempt from blue/green.
@@ -204,4 +204,36 @@ export function hasSharedServices(compose: ComposeFile): boolean {
 export function slotScopeArgs(partition: SlotPartition): string[] {
   if (Object.keys(partition.shared).length === 0) return [];
   return ["--no-deps", ...Object.keys(partition.slotted)];
+}
+
+/**
+ * Why a rotating service most likely failed to start, when the slots overlapped
+ * and it mounts a directory the old slot still holds.
+ *
+ * Detection is an allowlist of images, so it is always a step behind the engines
+ * people run and the failure has to explain itself — "is unhealthy" is the whole
+ * of what compose says. Narrowed the same two ways detection is: only while the
+ * slots overlap, because a stopped old slot holds nothing, and never a service
+ * this deploy builds, whose content directory both slots share on purpose.
+ */
+export function slotOverlapDiagnosis(
+  compose: ComposeFile,
+  slotted: Record<string, ComposeService>,
+  overlapped: boolean,
+): string | null {
+  if (!overlapped) return null;
+
+  const declared = declaredVolumes(compose);
+  const held = Object.entries(slotted)
+    .filter(([, service]) => !service.build)
+    .map(([name, service]) => [name, slotIndependentMounts(service.volumes, declared)] as const)
+    .filter(([, mounts]) => mounts.length > 0)
+    .map(([name, mounts]) => `${name} (${mounts.join(", ")})`);
+  if (held.length === 0) return null;
+
+  return (
+    `Both slots ran at once, and these rotating services mount a directory the old slot ` +
+    `still held: ${held.join("; ")}. An engine that locks its data directory cannot be stood ` +
+    `up twice — mark it ${SHARED_MARKER}: true to deploy it once and leave it in place.`
+  );
 }
