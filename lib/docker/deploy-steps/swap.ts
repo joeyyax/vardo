@@ -32,7 +32,7 @@ import { majorGateAfter, majorGateBefore, type MajorGateState } from "./major-ga
 import { publishesHostPorts } from "../host-ports";
 import { getServicesWithExternalizedVolumes } from "../compose-inject";
 import { registryAuthHint, withRegistryAuth } from "../registry-auth";
-import { partitionBySlot, sharedProjectName, slotScopeArgs } from "../slot-partition";
+import { partitionBySlot, sharedProjectName, slotOverlapDiagnosis, slotScopeArgs } from "../slot-partition";
 import { isSelfApp } from "../self-env";
 import { clearCutoverPin, guardCutover, type CutoverGuard } from "../traefik-cutover";
 import { projectScopedNetworkNames } from "../shared-networks";
@@ -234,6 +234,11 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
   // The stop is deferred to the end of post-deploy, once every write is durable.
   const deferStopToPostDeploy = deferSlotStop(canOverlapSlots, app.name);
   let pinCutover = canPinCutover(canOverlapSlots);
+
+  // Appended to whichever failure the new slot hits. A slotted service on a
+  // directory the old slot still holds is the likeliest cause, and the one the
+  // compose output never names.
+  const overlapDiagnosis = () => slotOverlapDiagnosis(compose, slotted, canOverlapSlots);
 
   // Bounds the window an OOM kill has to land in to belong to this deploy.
   const swapStartedAt = new Date();
@@ -684,7 +689,11 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
       { cwd: slotDir, timeout: COMPOSE_DOWN_TIMEOUT }
     ).catch(() => {});
     await restoreOldSlot("compose up failure");
-    throw new Error(`docker compose up (${newSlot}) failed: ${message}`);
+    throw new Error(
+      [`docker compose up (${newSlot}) failed: ${message}`, overlapDiagnosis()]
+        .filter(Boolean)
+        .join("\n"),
+    );
   }
 
   // Step 8: Health check
@@ -744,7 +753,14 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
       { cwd: slotDir, timeout: COMPOSE_DOWN_TIMEOUT }
     ).catch(() => {});
     await restoreOldSlot("health check failure");
-    throw new Error(`${newSlot} slot did not become healthy — container may have crashed (see logs above)`);
+    throw new Error(
+      [
+        `${newSlot} slot did not become healthy — container may have crashed (see logs above)`,
+        overlapDiagnosis(),
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
   }
   ctx.stage("healthcheck", "success");
   ctx.stage("routing", "running");

@@ -36,6 +36,14 @@ const DATA_DIRECTORIES = [
   "/var/lib/influxdb2",
   "/usr/share/elasticsearch/data",
   "/usr/share/opensearch/data",
+  "/meili_data",
+  "/qdrant/storage",
+  "/var/lib/clickhouse",
+  "/opt/couchdb/data",
+  "/var/lib/cassandra",
+  "/var/solr",
+  "/etcd-data",
+  "/var/lib/etcd",
   "/data",
 ];
 
@@ -54,9 +62,7 @@ const DATA_DIRECTORIES = [
  */
 export function volumeSharedServices(compose: ComposeFile): Set<string> {
   const found = new Set<string>();
-  const declared = new Set(
-    Object.keys(compose.volumes ?? {}).filter((name) => !ANONYMOUS_VOLUME.test(name)),
-  );
+  const declared = declaredVolumes(compose);
 
   for (const [name, service] of Object.entries(compose.services ?? {})) {
     if (service.build || !service.image) continue;
@@ -64,6 +70,13 @@ export function volumeSharedServices(compose: ComposeFile): Set<string> {
     if (slotIndependentMounts(service.volumes, declared).length > 0) found.add(name);
   }
   return found;
+}
+
+/** Top-level volume names externalization would rewrite. */
+export function declaredVolumes(compose: ComposeFile): Set<string> {
+  return new Set(
+    Object.keys(compose.volumes ?? {}).filter((name) => !ANONYMOUS_VOLUME.test(name)),
+  );
 }
 
 /** Mounts of either kind that reach past the slot, as written in the compose file. */
