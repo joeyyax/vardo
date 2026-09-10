@@ -7,7 +7,7 @@ import YAML from "yaml";
 import type { ComposeFile, ComposeService, ValidateOptions } from "./compose-types";
 import { dependsOnKeys } from "./compose-types";
 import { SHARED_MARKER, isSharedService, nonRotatingServices } from "./slot-partition";
-import { slotIndependentMounts, volumeSharedServices } from "./volume-shared";
+import { declaredVolumes, slotIndependentMounts, volumeSharedServices } from "./volume-shared";
 import { getTraefikRoutedServices } from "./compose-inject";
 import { selectRoutedService } from "./routed-service";
 
@@ -426,7 +426,7 @@ export function droppedKeyWarnings(compose: unknown): string[] {
  * you say it on purpose.
  */
 export function unmarkedSharedVolumeWarnings(compose: ComposeFile): string[] {
-  const declared = new Set(Object.keys(compose.volumes ?? {}));
+  const declared = declaredVolumes(compose);
   const nonRotating = nonRotatingServices(compose);
 
   const warnings: string[] = [];
