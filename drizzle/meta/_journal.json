@@ -470,6 +470,13 @@
       "when": 1785901312485,
       "tag": "0066_new_ezekiel",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1790659453052,
+      "tag": "0067_jittery_argent",
+      "breakpoints": true
     }
   ]
 }
