@@ -11,7 +11,7 @@ import { createReadStream, createWriteStream } from "fs";
 import { spawn } from "child_process";
 import { pipeline } from "stream/promises";
 import { createGzip, createGunzip } from "zlib";
-import { mkdir, readFile, rm, stat, writeFile } from "fs/promises";
+import { mkdir, readFile, rename, rm, stat, writeFile } from "fs/promises";
 import { resolve, join } from "path";
 import type { BackupStorage } from "./storage-port";
 import { createBackupStorage } from "./storage-factory";
@@ -23,6 +23,8 @@ import { runningKeyFingerprint } from "@/lib/crypto/encrypt";
 import { assertSafeBindSource } from "@/lib/docker/mount-paths";
 import { buildDumpArgv, buildRestoreArgv, describeDumpSpec, type DumpSpec } from "./dump-spec";
 import { resolveDbContainer } from "./resolve-db-container";
+import { quiesce, type RestoreDestination } from "./quiesce";
+import { isSelfApp } from "@/lib/docker/self-env";
 import {
   ARCHIVE_HAS_FILES_MARKER,
   DIRECTORY_SOURCE_MARKER,
@@ -1269,6 +1271,114 @@ export async function pruneBackups(jobId: string): Promise<number> {
 // Restore
 // ---------------------------------------------------------------------------
 
+/** Where a failed rollback leaves the pre-restore copy, so the data is never only in a deleted temp dir. */
+async function keepSnapshot(snapshotFile: string, backupId: string, log: (msg: string) => void) {
+  const kept = join(BACKUPS_DIR, `pre-restore-${backupId}-${timestamp()}${snapshotFile.endsWith(".tar.gz") ? ".tar.gz" : ".gz"}`);
+  try {
+    await rename(snapshotFile, kept);
+    log(`Pre-restore copy kept at ${kept}`);
+  } catch (err) {
+    log(`WARNING: could not keep the pre-restore copy — ${err instanceof Error ? err.message : err}`);
+  }
+}
+
+/**
+ * Stop what mounts the destination, copy it aside, restore, and put the copy
+ * back if the restore fails. The writers stay stopped until the data is final.
+ */
+async function restoreFilesWithSnapshot(opts: {
+  backupId: string;
+  dest: RestoreDestination | null;
+  /** `-v` spec for the destination, as the restore script expects it. */
+  mount: string;
+  snapshotScript: string;
+  restoreScript: string;
+  tmpDir: string;
+  timeoutMs: number;
+  log: (msg: string) => void;
+}): Promise<void> {
+  const { backupId, dest, mount, tmpDir, timeoutMs, log } = opts;
+  const snapshotDir = join(tmpDir, "pre-restore");
+  await ensureDir(snapshotDir);
+
+  const quiesced = dest ? await quiesce(dest, log) : null;
+  try {
+    log("Copying the current data aside before restoring");
+    await execFileAsync(
+      "docker",
+      ["run", "--rm", "-v", mount, "-v", `${snapshotDir}:/backup`, "alpine", "sh", "-c", opts.snapshotScript],
+      { timeout: timeoutMs },
+    );
+
+    try {
+      await execFileAsync(
+        "docker",
+        ["run", "--rm", "-v", mount, "-v", `${tmpDir}:/backup`, "alpine", "sh", "-c", opts.restoreScript],
+        { timeout: timeoutMs },
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      log(`Restore failed (${message}) — putting the previous data back`);
+      try {
+        await execFileAsync(
+          "docker",
+          ["run", "--rm", "-v", mount, "-v", `${snapshotDir}:/backup`, "alpine", "sh", "-c", opts.restoreScript],
+          { timeout: timeoutMs },
+        );
+        log("Previous data restored");
+      } catch (rollbackErr) {
+        log(`WARNING: putting the previous data back failed — ${rollbackErr instanceof Error ? rollbackErr.message : rollbackErr}`);
+        await keepSnapshot(join(snapshotDir, "volume.tar.gz"), backupId, log);
+      }
+      throw err;
+    }
+  } finally {
+    await quiesced?.resume();
+  }
+}
+
+/**
+ * Dump restore for engines without a transactional restore. A fresh dump of
+ * the live database is taken first and replayed if the restore fails.
+ */
+async function restoreDumpWithSnapshot(opts: {
+  backupId: string;
+  kind: DumpSpec["kind"];
+  containerId: string;
+  containerEnv: string[];
+  archivePath: string;
+  tmpDir: string;
+  log: (msg: string) => void;
+}): Promise<void> {
+  const { backupId, kind, containerId, containerEnv, archivePath, tmpDir, log } = opts;
+  const restoreArgv = buildRestoreArgv(kind, containerId, containerEnv);
+
+  // One transaction: a failure leaves the database as it was.
+  if (kind === "postgres") {
+    await streamDockerRestore(restoreArgv, archivePath, log);
+    return;
+  }
+
+  const snapshotFile = join(tmpDir, "pre-restore.dump.gz");
+  log("Dumping the current database before restoring");
+  await streamDockerDump(buildDumpArgv(kind, containerId, containerEnv), snapshotFile, log);
+
+  try {
+    await streamDockerRestore(restoreArgv, archivePath, log);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    log(`Restore failed (${message}) — replaying the pre-restore dump`);
+    try {
+      await streamDockerRestore(restoreArgv, snapshotFile, log);
+      log("Previous database restored");
+    } catch (rollbackErr) {
+      log(`WARNING: replaying the pre-restore dump failed — ${rollbackErr instanceof Error ? rollbackErr.message : rollbackErr}`);
+      await keepSnapshot(snapshotFile, backupId, log);
+    }
+    throw err;
+  }
+}
+
 /**
  * Restore a backup — dispatches by the volume's backup strategy.
  * For tar: repopulates the Docker volume.
@@ -1361,6 +1471,14 @@ export async function restoreBackup(
   await ensureDir(tmpDir);
   const archivePath = join(tmpDir, strategy === "dump" ? "dump.gz" : "volume.tar.gz");
 
+  // Only an app's own data is quiesced. Stopping what mounts a system volume,
+  // or Vardo's own, would stop the process running this restore.
+  const quiesceTarget = (dest: RestoreDestination): RestoreDestination | null => {
+    if (backup.appId && backup.app && !isSelfApp(backup.app.name)) return dest;
+    log("WARNING: restoring without stopping the containers that use this data");
+    return null;
+  };
+
   try {
     if (keyVerdict.kind !== "proceed") {
       log(`WARNING: ${keyVerdict.message}`);
@@ -1418,11 +1536,15 @@ export async function restoreBackup(
             `No running container for service "${spec.service}" — start the app before restoring`,
           );
         }
-        await streamDockerRestore(
-          buildRestoreArgv(spec.kind, container.id, container.env),
+        await restoreDumpWithSnapshot({
+          backupId,
+          kind: spec.kind,
+          containerId: container.id,
+          containerEnv: container.env,
           archivePath,
+          tmpDir,
           log,
-        );
+        });
       } else if (vol?.backupMeta?.restoreCmd) {
         // restoreCmd receives the dump via stdin (e.g. "docker exec -i pg psql -U user db")
         log(`Restoring via: ${vol.backupMeta.restoreCmd}`);
@@ -1474,12 +1596,17 @@ export async function restoreBackup(
         live.kind === "file"
           ? `${safeSource}:/data/${FILE_PAYLOAD_NAME}`
           : `${safeSource}:/data`;
-      const script = live.kind === "file" ? buildFileRestoreScript() : buildTarRestoreScript();
-      await execFileAsync(
-        "docker",
-        ["run", "--rm", "-v", mount, "-v", `${tmpDir}:/backup`, "alpine", "sh", "-c", script],
-        { timeout: 1_800_000 },
-      );
+      const dest = quiesceTarget({ kind: "bind", path: safeSource });
+      await restoreFilesWithSnapshot({
+        backupId,
+        dest,
+        mount,
+        snapshotScript: live.kind === "file" ? buildFileBackupScript() : buildTarBackupScript(),
+        restoreScript: live.kind === "file" ? buildFileRestoreScript() : buildTarRestoreScript(),
+        tmpDir,
+        timeoutMs: 1_800_000,
+        log,
+      });
     } else {
       // tar restore — need app context for volume name resolution
       if (!backup.app || !backup.appId) {
@@ -1507,11 +1634,16 @@ export async function restoreBackup(
       }
 
       log(`Restoring to volume ${dockerVolumeName}`);
-      await execFileAsync(
-        "docker",
-        ["run", "--rm", "-v", `${dockerVolumeName}:/data`, "-v", `${tmpDir}:/backup`, "alpine", "sh", "-c", buildTarRestoreScript()],
-        { timeout: 600_000 },
-      );
+      await restoreFilesWithSnapshot({
+        backupId,
+        dest: quiesceTarget({ kind: "volume", name: dockerVolumeName }),
+        mount: `${dockerVolumeName}:/data`,
+        snapshotScript: buildTarBackupScript(),
+        restoreScript: buildTarRestoreScript(),
+        tmpDir,
+        timeoutMs: 600_000,
+        log,
+      });
     }
 
     log("Restore complete");

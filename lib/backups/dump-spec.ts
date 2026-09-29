@@ -85,6 +85,7 @@ export function buildDumpArgv(
  *
  * `ON_ERROR_STOP=1` is the half that makes a failed restore *fail*. Without it
  * psql reports success after skipping every statement it could not apply.
+ * `--single-transaction` makes that failure leave the database as it was.
  */
 export function buildRestoreArgv(
   kind: DatabaseKind,
@@ -94,7 +95,10 @@ export function buildRestoreArgv(
   switch (kind) {
     case "postgres": {
       const { user, database } = postgresTarget(env);
-      return ["exec", "-i", containerId, "psql", "-U", user, "-v", "ON_ERROR_STOP=1", "-d", database];
+      return [
+        "exec", "-i", containerId,
+        "psql", "-U", user, "-v", "ON_ERROR_STOP=1", "--single-transaction", "-d", database,
+      ];
     }
     case "mysql":
     case "mariadb":
