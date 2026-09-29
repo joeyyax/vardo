@@ -847,7 +847,6 @@ type ApiToken = {
   id: string;
   name: string;
   crossOrg: boolean;
-  adminAccess: boolean;
   expiresAt: string | null;
   lastUsedAt: string | null;
   createdAt: string;
@@ -865,7 +864,7 @@ function expiryFromOption(option: string): string | null {
   return new Date(Date.now() + Number(option) * 86_400_000).toISOString();
 }
 
-export function ApiTokens({ orgId, canGrantAdmin = false }: { orgId: string; canGrantAdmin?: boolean }) {
+export function ApiTokens({ orgId }: { orgId: string }) {
   const [tokens, setTokens] = useState<ApiToken[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -932,7 +931,7 @@ export function ApiTokens({ orgId, canGrantAdmin = false }: { orgId: string; can
 
   async function handleScopeChange(
     id: string,
-    change: { crossOrg: boolean } | { adminAccess: boolean },
+    change: { crossOrg: boolean },
   ) {
     setTogglingScope(id);
     try {
@@ -1118,22 +1117,6 @@ export function ApiTokens({ orgId, canGrantAdmin = false }: { orgId: string; can
                       }
                     />
                   </Label>
-                  {(canGrantAdmin || token.adminAccess) && (
-                    <Label
-                      htmlFor={`admin-${token.id}`}
-                      className="flex items-center gap-2 text-xs text-muted-foreground"
-                    >
-                      Instance admin
-                      <Switch
-                        id={`admin-${token.id}`}
-                        checked={token.adminAccess}
-                        disabled={togglingScope === token.id}
-                        onCheckedChange={(checked) =>
-                          handleScopeChange(token.id, { adminAccess: checked })
-                        }
-                      />
-                    </Label>
-                  )}
                   <Button
                     size="sm"
                     variant="ghost"

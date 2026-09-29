@@ -31,7 +31,7 @@ type SessionResult = Awaited<ReturnType<typeof auth.api.getSession>> & AuthMeta;
  *
  * Resolution order:
  *  1. `Authorization: Bearer <token>` header — resolves to the token owner's session,
- *     and only when the api-tokens feature is enabled
+ *     without instance-admin power, and only when the api-tokens feature is enabled
  *  2. Session cookie via Better Auth
  *
  * Returns null if not authenticated.
@@ -65,8 +65,7 @@ export const getSession = cache(async (): Promise<SessionResult | null> => {
               email: tokenUser.email,
               emailVerified: tokenUser.emailVerified,
               image: tokenUser.image,
-              // Admin reach needs both the grant and a user who still holds it.
-              isAppAdmin: Boolean(tokenUser.isAppAdmin && token.adminAccess),
+              isAppAdmin: false,
               twoFactorEnabled: tokenUser.twoFactorEnabled,
             },
             session: {
@@ -82,7 +81,6 @@ export const getSession = cache(async (): Promise<SessionResult | null> => {
             tokenId: token.id,
             tokenScope: {
               crossOrg: token.crossOrg,
-              adminAccess: token.adminAccess,
               expiresAt: token.expiresAt,
             },
           } as SessionResult;
