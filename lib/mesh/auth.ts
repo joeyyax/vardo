@@ -75,3 +75,9 @@ export async function requireMeshPeer(request: NextRequest) {
 
   return peer;
 }
+
+/** The org a peer is bound to. Promote, clone and pull act only inside it. */
+export function peerOrganizationId(peer: { organizationId: string | null }): string {
+  if (!peer.organizationId) throw new Error("Forbidden");
+  return peer.organizationId;
+}

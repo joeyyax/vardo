@@ -11,7 +11,6 @@ const promoteSchema = z.object({
   projectId: z.string().min(1),
   targetPeerId: z.string().min(1),
   environment: z.enum(["production", "staging", "development"]),
-  orgId: z.string().min(1),
   includeEnvVars: z.boolean().default(false),
 }).strict();
 
@@ -34,7 +33,7 @@ async function handlePost(request: NextRequest) {
       );
     }
 
-    const { projectId, targetPeerId, environment, orgId, includeEnvVars } = parsed.data;
+    const { projectId, targetPeerId, environment, includeEnvVars } = parsed.data;
 
     // Build the project bundle from local data
     const bundle = await buildProjectBundle(projectId, {
@@ -45,7 +44,7 @@ async function handlePost(request: NextRequest) {
     // Send to the target peer
     const result = await meshJsonFetch(targetPeerId, "/api/v1/mesh/promote", {
       method: "POST",
-      body: JSON.stringify({ bundle, environment, orgId }),
+      body: JSON.stringify({ bundle, environment }),
     });
 
     return NextResponse.json(result, { status: 201 });

@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { apps, projects, projectInstances, volumes } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { getInstanceId } from "@/lib/constants";
 import { narrowBackendProtocol } from "@/lib/docker/compose";
@@ -76,10 +76,14 @@ export async function buildProjectBundle(
     transferType: "promote" | "pull" | "clone";
     includeEnvVars?: boolean;
     gitRef?: string | null;
+    /** Limits the lookup to one org. */
+    organizationId?: string;
   }
 ): Promise<ProjectBundle> {
   const project = await db.query.projects.findFirst({
-    where: eq(projects.id, projectId),
+    where: options.organizationId
+      ? and(eq(projects.id, projectId), eq(projects.organizationId, options.organizationId))
+      : eq(projects.id, projectId),
     with: {
       apps: {
         with: {
@@ -135,6 +139,20 @@ export async function buildProjectBundle(
   };
 }
 
+/** A bundle this instance won't import as sent. */
+export class BundleRejectedError extends Error {}
+
+const BUNDLE_NAME_RE = /^[a-z0-9][a-z0-9-]*$/;
+
+/** Names become directories under the apps root, so they get the create-time rules. */
+function assertBundleNames(bundle: ProjectBundle) {
+  const names = [bundle.project.name, ...bundle.apps.map((a) => a.name)];
+  const bad = names.find((n) => !BUNDLE_NAME_RE.test(n));
+  if (bad !== undefined) {
+    throw new BundleRejectedError(`Invalid name in bundle: ${JSON.stringify(bad)}`);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Import: create project + apps from a received bundle
 // ---------------------------------------------------------------------------
@@ -153,6 +171,7 @@ export async function importProjectBundle(
   bundle: ProjectBundle,
   environment: string
 ): Promise<{ projectId: string; appIds: string[] }> {
+  assertBundleNames(bundle);
   return db.transaction(async (tx) => {
     const isClone = bundle.transferType === "clone";
 
@@ -187,7 +206,7 @@ export async function importProjectBundle(
         ? null
         : await tx.query.apps.findFirst({
             where: (a, { and, eq: e }) =>
-              and(e(a.projectId, projectId), e(a.name, appBundle.name)),
+              and(e(a.organizationId, orgId), e(a.projectId, projectId), e(a.name, appBundle.name)),
           });
 
       if (existingApp) {
@@ -221,7 +240,7 @@ export async function importProjectBundle(
           columns: { id: true },
         });
         if (nameTaken) {
-          throw new Error(
+          throw new BundleRejectedError(
             `App name "${appName}" is already taken on this instance`
           );
         }
