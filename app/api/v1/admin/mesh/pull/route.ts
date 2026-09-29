@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { handleRouteError } from "@/lib/api/error-response";
 import { requireAppAdmin } from "@/lib/auth/admin";
-import { importProjectBundle } from "@/lib/mesh/transfers";
-import { meshJsonFetch } from "@/lib/mesh/client";
+import { BundleRejectedError, importProjectBundle } from "@/lib/mesh/transfers";
+import { MeshClientError, meshJsonFetch } from "@/lib/mesh/client";
 import type { ProjectBundle } from "@/lib/mesh/transfers";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
@@ -44,7 +44,8 @@ async function handlePost(request: NextRequest) {
       {
         method: "POST",
         body: JSON.stringify({ projectId, includeEnvVars }),
-      }
+      },
+      { requireTls: includeEnvVars },
     );
 
     // Import locally
@@ -52,6 +53,12 @@ async function handlePost(request: NextRequest) {
 
     return NextResponse.json(result, { status: 201 });
   } catch (error) {
+    if (
+      error instanceof BundleRejectedError ||
+      (error instanceof MeshClientError && error.code === "INSECURE")
+    ) {
+      return NextResponse.json({ error: error.message }, { status: 409 });
+    }
     return handleRouteError(error, "Error pulling project");
   }
 }
