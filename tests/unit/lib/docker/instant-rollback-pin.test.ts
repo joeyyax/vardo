@@ -6,7 +6,8 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { dbMock, execFileAsyncMock, execFileMock, cutoverMock, order } = vi.hoisted(() => {
+const { dbMock, execFileAsyncMock, execFileMock, cutoverMock, order, claimMock } = vi.hoisted(() => {
+  const claimMock = vi.fn();
   const order: string[] = [];
 
   const dbMock = {
@@ -26,6 +27,7 @@ const { dbMock, execFileAsyncMock, execFileMock, cutoverMock, order } = vi.hoist
   });
 
   return {
+    claimMock,
     order,
     dbMock,
     execFileAsyncMock,
@@ -37,6 +39,7 @@ const { dbMock, execFileAsyncMock, execFileMock, cutoverMock, order } = vi.hoist
 });
 
 vi.mock("child_process", () => ({ execFile: execFileMock }));
+vi.mock("@/lib/docker/deploy-cancel", () => ({ claimAppForOperation: claimMock }));
 vi.mock("@/lib/db", () => ({ db: dbMock }));
 vi.mock("@/lib/docker/traefik-cutover", () => cutoverMock);
 vi.mock("@/lib/docker/restart-policy", () => ({
@@ -71,6 +74,7 @@ describe("performInstantRollback — cutover pin", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     order.length = 0;
+    claimMock.mockResolvedValue({ release: async () => { order.push("release"); } });
     execFileAsyncMock.mockImplementation(async (_cmd: string, args: string[]) => {
       if (args.includes("stop")) {
         order.push("stop-active");
@@ -91,12 +95,23 @@ describe("performInstantRollback — cutover pin", () => {
 
     expect(result.success).toBe(true);
     expect(cutoverMock.clearCutoverPin).toHaveBeenCalledWith("vardo", "production");
-    expect(order).toEqual(["clear-pin", "stop-active"]);
+    expect(order).toEqual(["clear-pin", "stop-active", "release"]);
   });
 
   it("rolls back even when the pin cannot be removed", async () => {
     cutoverMock.clearCutoverPin.mockRejectedValueOnce(new Error("read-only volume"));
 
     await expect(performInstantRollback(OPTS)).resolves.toMatchObject({ success: true });
+  });
+
+  it("refuses while a deploy of the app is running, and touches nothing", async () => {
+    claimMock.mockResolvedValueOnce(null);
+
+    const result = await performInstantRollback(OPTS);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/deploy is running/);
+    expect(execFileAsyncMock).not.toHaveBeenCalled();
+    expect(cutoverMock.clearCutoverPin).not.toHaveBeenCalled();
   });
 });

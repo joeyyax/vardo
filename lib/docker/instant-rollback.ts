@@ -24,6 +24,11 @@ import type { ResolvedEnv } from "./resolve-env";
 import { demoteStandbyRestart, restoreSlotRestart } from "./restart-policy";
 import { clearCutoverPin } from "./traefik-cutover";
 import { execFileAsync } from "@/lib/utils/exec";
+import { claimAppForOperation } from "./deploy-cancel";
+
+/** Outlasts every step below, so a crashed rollback frees the app on its own. */
+const ROLLBACK_CLAIM_TTL_MS =
+  COMPOSE_UP_TIMEOUT + INSTANT_ROLLBACK_HEALTH_TIMEOUT + COMPOSE_DOWN_TIMEOUT + 6 * COMPOSE_QUERY_TIMEOUT;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -87,6 +92,24 @@ export async function checkStandbyAvailable(
 }
 
 export async function performInstantRollback(
+  opts: InstantRollbackOpts,
+): Promise<InstantRollbackResult> {
+  // A deploy mid-swap owns both slots; flipping under it can leave neither serving.
+  const claim = await claimAppForOperation(opts.appId, "instant-rollback", ROLLBACK_CLAIM_TTL_MS);
+  if (!claim) {
+    return {
+      success: false, deploymentId: "", fromSlot: "", toSlot: "", durationMs: 0,
+      error: "A deploy is running for this app — wait for it to finish or cancel it, then roll back",
+    };
+  }
+  try {
+    return await rollbackClaimed(opts);
+  } finally {
+    await claim.release();
+  }
+}
+
+async function rollbackClaimed(
   opts: InstantRollbackOpts,
 ): Promise<InstantRollbackResult> {
   const { appId, appName, organizationId, userId, env } = opts;

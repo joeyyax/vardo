@@ -35,6 +35,7 @@ import { deployments } from "@/lib/db/schema/apps";
 import { eq, and } from "drizzle-orm";
 import { logger } from "@/lib/logger";
 import { createDeployment, runDeployment } from "./deploy";
+import { DeployBlockedError } from "./errors";
 import type { DeployOpts, DeployResult, DeployStage } from "./deploy";
 import {
   enqueueAndTryAcquire,
@@ -89,6 +90,100 @@ type ActiveDeploy = {
 
 // Keyed by appId — tracks deploys owned by THIS process
 const localRegistry = new Map<string, ActiveDeploy>();
+
+/** Set once a self-deploy starts draining this process before stopping it. */
+let draining = false;
+
+/** Upper bound on how long a self-deploy waits for this process's other deploys. */
+export const SELF_DRAIN_TIMEOUT_MS = 15 * 60 * 1000;
+
+const SELF_DRAIN_POLL_MS = 1000;
+
+/**
+ * Hold a self-deploy's final stop until every other deploy in this process has
+ * finished, because that stop ends the process and every deploy running in it.
+ * New deploys are refused from here on. Bounded: returns the deploys still
+ * running at the deadline, which the stop will cut off.
+ */
+export async function drainForSelfStop(
+  selfAppId: string,
+  onLog: (line: string) => void,
+  timeoutMs: number = SELF_DRAIN_TIMEOUT_MS,
+): Promise<string[]> {
+  draining = true;
+  const others = () =>
+    [...localRegistry.entries()]
+      .filter(([appId]) => appId !== selfAppId)
+      .map(([, entry]) => entry);
+
+  const deadline = Date.now() + timeoutMs;
+  let announced = false;
+  while (others().length > 0 && Date.now() < deadline) {
+    if (!announced) {
+      onLog(
+        `[deploy] Waiting for ${others().length} other deploy(s) in this process to finish before stopping it`,
+      );
+      announced = true;
+    }
+    const remaining = deadline - Date.now();
+    await Promise.race([
+      Promise.all(others().map((entry) => entry.done.catch(() => {}))),
+      new Promise((r) => setTimeout(r, Math.min(SELF_DRAIN_POLL_MS, remaining))),
+    ]);
+  }
+  return others().map((entry) => entry.deploymentId);
+}
+
+/** Take deploys again. For a self-deploy whose stop failed, leaving this process serving. */
+export function endSelfDrain(): void {
+  draining = false;
+}
+
+/** Test hook. */
+export function resetDrainForTests(): void {
+  draining = false;
+  localRegistry.clear();
+}
+
+/**
+ * Whether a deploy of this app is running or queued, here or in another
+ * process. "unknown" when Redis cannot answer and nothing local is running.
+ */
+export async function deployInFlight(appId: string): Promise<boolean | "unknown"> {
+  if (localRegistry.has(appId)) return true;
+  try {
+    return (await redis.get(ACTIVE_KEY(appId))) !== null;
+  } catch {
+    return "unknown";
+  }
+}
+
+/**
+ * Claim the app's active-deploy key for an operation that is not a deploy, such
+ * as an instant rollback, so no deploy starts under it. A deploy arriving
+ * meanwhile sees a swap-stage owner and waits. Null when the app is busy.
+ */
+export async function claimAppForOperation(
+  appId: string,
+  operation: string,
+  ttlMs: number,
+): Promise<{ release: () => Promise<void> } | null> {
+  if (localRegistry.has(appId)) return null;
+  const owner = `${operation}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+  try {
+    const ok = await redis.set(
+      ACTIVE_KEY(appId),
+      JSON.stringify({ deploymentId: owner, stage: "routing" }),
+      "PX",
+      ttlMs,
+      "NX",
+    );
+    if (ok !== "OK") return null;
+  } catch {
+    // Redis down: the local check above is all there is.
+  }
+  return { release: () => clearActiveInRedis(appId, owner) };
+}
 
 // ---------------------------------------------------------------------------
 // Stages where a cancel costs nothing — no container has been stopped or
@@ -272,6 +367,19 @@ export async function deployRegistration(
 export async function requestDeploy(opts: DeployOpts): Promise<DeployResult> {
   const { appId } = opts;
   const newDeploymentId = opts.deploymentId ?? await createDeployment(opts);
+
+  // This process is about to be stopped by a Vardo self-deploy. Checked before
+  // the registry below, which would otherwise supersede a deploy it must wait for.
+  if (draining) {
+    const message = "Vardo is restarting to finish an update — retry the deploy in a minute";
+    const now = new Date();
+    await db
+      .update(deployments)
+      .set({ status: "cancelled", log: `[${now.toISOString()}] [CANCELLED] ${message}`, finishedAt: now })
+      .where(eq(deployments.id, newDeploymentId))
+      .catch((dbErr) => log.warn("Failed to record refused deployment:", dbErr));
+    throw new DeployBlockedError(message);
+  }
 
   // ------------------------------------------------------------------
   // 1. Check in-process registry first (same process — direct control)
