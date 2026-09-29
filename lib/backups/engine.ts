@@ -1164,20 +1164,18 @@ function selectKeepers(
 }
 
 /**
- * Apply the retention policy PER VOLUME. A job with N volumes produces N
- * backups per run (one archive each, same timestamp); retention timelines must
- * not be shared, or e.g. keepLast=1 would keep a single archive across all
- * volumes and prune the rest — silently dropping every volume but one each run.
- * Group by volumeName and union the keepers from each volume's own timeline.
- * Entries must be sorted newest-first (selectKeepers relies on it).
+ * Apply the retention policy per app and volume. A job produces one archive
+ * per volume per app each run, and each (app, volume) pair keeps its own
+ * timeline. Volume names repeat across apps (`data`), so the name alone is not
+ * a key. Entries must be sorted newest-first (selectKeepers relies on it).
  */
 export function selectKeepersByVolume(
-  entries: { id: string; finishedAt: Date; volumeName: string | null }[],
+  entries: { id: string; finishedAt: Date; appId: string | null; volumeName: string | null }[],
   policy: RetentionPolicy,
 ): Set<string> {
   const byVolume = new Map<string, { id: string; finishedAt: Date }[]>();
   for (const e of entries) {
-    const key = e.volumeName ?? "";
+    const key = JSON.stringify([e.appId ?? "", e.volumeName ?? ""]);
     let group = byVolume.get(key);
     if (!group) byVolume.set(key, (group = []));
     group.push(e);
