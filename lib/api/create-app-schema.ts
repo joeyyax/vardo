@@ -1,6 +1,12 @@
 import { z } from "zod";
 import { gitBranchSchema, gitUrlSchema } from "@/lib/api/git-fields";
 
+/** A path inside the repo: no leading slash, no `..` segment. */
+export const repoFilePathSchema = z
+  .string()
+  .regex(/^[a-zA-Z0-9._-][a-zA-Z0-9._\-/]*$/, "Invalid file path")
+  .refine((p) => !p.split("/").includes(".."), { message: "Invalid file path" });
+
 /** Request body accepted by POST /api/v1/organizations/[orgId]/apps. */
 export const createAppSchema = z
   .object({
@@ -16,8 +22,8 @@ export const createAppSchema = z
     gitBranch: gitBranchSchema.optional(),
     imageName: z.string().optional(),
     composeContent: z.string().max(512000).optional(),
-    composeFilePath: z.string().regex(/^[a-zA-Z0-9._-][a-zA-Z0-9._\-/]*$/, "Invalid file path").optional(),
-    dockerfilePath: z.string().regex(/^[a-zA-Z0-9._-][a-zA-Z0-9._\-/]*$/, "Invalid file path").optional(),
+    composeFilePath: repoFilePathSchema.optional(),
+    dockerfilePath: repoFilePathSchema.optional(),
     rootDirectory: z.string().optional(),
     templateName: z.string().max(100).optional(),
     containerPort: z.number().int().positive().optional(),
