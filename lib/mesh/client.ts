@@ -12,7 +12,8 @@ import { eq } from "drizzle-orm";
 export async function meshFetch(
   peerId: string,
   path: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
+  { requireTls = false }: { requireTls?: boolean } = {}
 ): Promise<Response> {
   const peer = await db.query.meshPeers.findFirst({
     where: eq(meshPeers.id, peerId),
@@ -58,6 +59,12 @@ export async function meshFetch(
 
   // Fall back to public API URL
   if (peer.publicApiUrl) {
+    if (requireTls && !peer.publicApiUrl.startsWith("https://")) {
+      throw new MeshClientError(
+        `Peer "${peer.name}" is off the mesh and its public URL isn't HTTPS; refusing to send secrets`,
+        "INSECURE"
+      );
+    }
     const res = await fetch(`${peer.publicApiUrl}${path}`, {
       ...options,
       headers: authHeaders,
@@ -79,7 +86,8 @@ export async function meshFetch(
 export async function meshJsonFetch<T = unknown>(
   peerId: string,
   path: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
+  transport: { requireTls?: boolean } = {}
 ): Promise<T> {
   const res = await meshFetch(peerId, path, {
     ...options,
@@ -87,7 +95,7 @@ export async function meshJsonFetch<T = unknown>(
       "Content-Type": "application/json",
       ...options.headers,
     },
-  });
+  }, transport);
 
   if (!res.ok) {
     let message = `Peer returned ${res.status}`;
@@ -109,7 +117,8 @@ export class MeshClientError extends Error {
       | "NO_API_URL"
       | "NO_TOKEN"
       | "PEER_ERROR"
-      | "UNREACHABLE",
+      | "UNREACHABLE"
+      | "INSECURE",
     public statusCode?: number
   ) {
     super(message);
