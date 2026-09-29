@@ -7,6 +7,7 @@ import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { join } from "path";
+import { connect } from "net";
 import { ensureNetwork } from "../client";
 import {
   slotComposeFiles,
@@ -27,6 +28,7 @@ import {
 } from "../constants";
 import type { DeployContext, SlotStopOutcome } from "../deploy-context";
 import { classifyComposeServices } from "./classify-services";
+import type { ComposeService } from "../compose-types";
 import { driftedFromDryRun, sharedContainerNames, sharedPullTargets } from "./shared-images";
 import { majorGateAfter, majorGateBefore, type MajorGateState } from "./major-gate";
 import { publishesHostPorts } from "../host-ports";
@@ -117,18 +119,64 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function waitForHealthy(
+/** How long a service without a Docker healthcheck must stay ready in a row. */
+export const HEALTH_STABLE_WINDOW_MS = 6_000;
+
+/** Resolves true when the service accepts a connection. */
+export type ReadinessProbe = () => Promise<boolean>;
+
+/** A TCP connect to `host:port`. */
+export function tcpProbe(host: string, port: number, timeoutMs = HTTP_PROBE_TIMEOUT): ReadinessProbe {
+  return () =>
+    new Promise((resolve) => {
+      const socket = connect({ host, port });
+      const done = (ok: boolean) => {
+        socket.destroy();
+        resolve(ok);
+      };
+      socket.setTimeout(timeoutMs, () => done(false));
+      socket.once("connect", () => done(true));
+      socket.once("error", () => done(false));
+    });
+}
+
+/** The port Traefik sends a service's traffic to, when its labels name one. */
+export function routedPort(service: ComposeService | undefined): number | null {
+  const labels = service?.labels;
+  if (!labels) return null;
+  for (const [key, value] of Object.entries(labels)) {
+    if (!/^traefik\.http\.services\.[^.]+\.loadbalancer\.server\.port$/i.test(key)) continue;
+    const port = Number(value);
+    if (Number.isInteger(port) && port > 0) return port;
+  }
+  return null;
+}
+
+/**
+ * Wait for the new slot to be ready. Fails closed: a timeout is a failure.
+ *
+ * A service with a Docker healthcheck is ready when Docker says healthy. One
+ * without must stay running, and the probe must keep succeeding, for
+ * HEALTH_STABLE_WINDOW_MS in a row.
+ */
+export async function waitForHealthy(
   projectName: string,
   composeFileArgs: string[],
   cwd: string,
   logs: { push: (line: string) => void },
   timeoutMs: number = DEFAULT_HEALTH_CHECK_TIMEOUT_MS,
-  httpProbe?: { containerName: string; port: number },
+  probe?: ReadinessProbe,
+  timing: { intervalMs?: number; stableMs?: number } = {},
 ): Promise<boolean> {
+  const intervalMs = timing.intervalMs ?? HEALTH_CHECK_INTERVAL_MS;
+  const stableMs = timing.stableMs ?? HEALTH_STABLE_WINDOW_MS;
   const deadline = Date.now() + timeoutMs;
-  let httpProbeNeeded = false;
+  let readySince: number | null = null;
+  let waitingOn = "no containers yet";
 
   while (Date.now() < deadline) {
+    let ready = false;
+    let needsWindow = false;
     try {
       const { stdout } = await execFileAsync(
         "docker",
@@ -137,60 +185,58 @@ async function waitForHealthy(
       );
 
       const lines = stdout.trim().split("\n").filter(Boolean);
-      if (lines.length === 0) {
-        await sleep(HEALTH_CHECK_INTERVAL_MS);
-        continue;
-      }
-
-      let allReady = true;
-      httpProbeNeeded = false;
+      ready = lines.length > 0;
       for (const line of lines) {
+        let container: { State?: string; Health?: string; Service?: string; Name?: string };
         try {
-          const container = JSON.parse(line);
-          const state = (container.State || "").toLowerCase();
-          const health = (container.Health || "").toLowerCase();
-
-          if (state === "exited" || state === "dead") {
-            logs.push(`[health] ${container.Service || container.Name}: ${state}`);
-            return false;
-          }
-
-          if (health && health !== "healthy") {
-            allReady = false;
-          } else if (!health && state === "running") {
-            httpProbeNeeded = true;
-          } else if (!health && state !== "running") {
-            allReady = false;
-          }
-        } catch { /* skip */ }
-      }
-
-      if (allReady && httpProbeNeeded && httpProbe) {
-        try {
-          const probeUrl = `http://${httpProbe.containerName}:${httpProbe.port}/`;
-          const controller = new AbortController();
-          const timer = setTimeout(() => controller.abort(), HTTP_PROBE_TIMEOUT);
-          const res = await fetch(probeUrl, {
-            signal: controller.signal,
-            redirect: "manual",
-          });
-          clearTimeout(timer);
-          if (res.status > 0) return true;
+          container = JSON.parse(line);
         } catch {
-          // HTTP probe failed — for non-HTTP services (databases, caches, etc.)
-          // a running container without a Docker healthcheck is considered healthy.
-          // Only keep retrying if the container explicitly declares a healthcheck.
-          return true;
+          ready = false;
+          continue;
         }
-      } else if (allReady) {
-        return true;
-      }
-    } catch { /* retry */ }
+        const name = container.Service || container.Name || "container";
+        const state = (container.State || "").toLowerCase();
+        const health = (container.Health || "").toLowerCase();
 
-    await sleep(HEALTH_CHECK_INTERVAL_MS);
+        if (state === "exited" || state === "dead") {
+          logs.push(`[health] ${name}: ${state}`);
+          return false;
+        }
+
+        if (health) {
+          if (health !== "healthy") {
+            ready = false;
+            waitingOn = `${name} is ${health}`;
+          }
+        } else if (state !== "running") {
+          ready = false;
+          waitingOn = `${name} is ${state || "not running"}`;
+        } else {
+          needsWindow = true;
+        }
+      }
+
+      if (ready && needsWindow && probe && !(await probe())) {
+        ready = false;
+        waitingOn = "the service is not accepting connections";
+      }
+    } catch {
+      ready = false;
+    }
+
+    if (!ready) {
+      readySince = null;
+    } else if (!needsWindow) {
+      return true;
+    } else {
+      readySince ??= Date.now();
+      if (Date.now() - readySince >= stableMs) return true;
+    }
+
+    await sleep(intervalMs);
   }
 
-  logs.push(`[health] Timeout after ${timeoutMs / 1000}s`);
+  logs.push(`[health] Timeout after ${timeoutMs / 1000}s — ${readySince ? "not ready long enough" : waitingOn}`);
   return false;
 }
 
@@ -729,11 +775,17 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
   // A shared routed service is never replaced, so the deploy would prove
   // nothing. Validation rejects it on save; this catches apps saved earlier.
   const primarySvcName = sharedNames.includes(routedName) ? undefined : routedName;
-  const httpProbe = primarySvcName
-    ? { containerName: `${newProjectName}-${primarySvcName}-1`, port: containerPort }
-    : undefined;
+  // Only a Traefik-routed service joins vardo-network, so only it can be reached
+  // from here. Anything else is held to the running window alone.
+  const probePort = primarySvcName
+    ? routedPort(compose.services[primarySvcName]) ?? containerPort
+    : 0;
+  const probe =
+    primarySvcName && routed.has(primarySvcName) && probePort > 0
+      ? tcpProbe(`${newProjectName}-${primarySvcName}-1`, probePort)
+      : undefined;
 
-  const healthy = await waitForHealthy(newProjectName, composeFileArgs, slotDir, logs, healthTimeoutMs, httpProbe);
+  const healthy = await waitForHealthy(newProjectName, composeFileArgs, slotDir, logs, healthTimeoutMs, probe);
   if (!healthy) {
     log(`[deploy] Health check failed — fetching container logs...`);
     try {
