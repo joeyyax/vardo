@@ -54,7 +54,7 @@ async function handlePost(request: NextRequest) {
       // Clone to a different peer
       const result = await meshJsonFetch(targetPeerId, "/api/v1/mesh/clone", {
         method: "POST",
-        body: JSON.stringify({ bundle: cloneBundle, orgId }),
+        body: JSON.stringify({ bundle: cloneBundle }),
       });
       return NextResponse.json(result, { status: 201 });
     }

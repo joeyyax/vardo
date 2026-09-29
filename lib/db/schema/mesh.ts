@@ -7,6 +7,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { appStatusEnum, meshPeerConnectionTypeEnum, meshPeerStatusEnum, meshPeerTypeEnum } from "./enums";
 import { projects } from "./projects";
+import { organizations } from "./organizations";
 
 // ---------------------------------------------------------------------------
 // Instance Mesh — peer registry (system-level, not org-scoped)
@@ -28,6 +29,8 @@ export const meshPeers = pgTable("mesh_peer", {
   outboundToken: text("outbound_token"), // token the peer gave us for calling their API (outbound auth)
   connectionType: meshPeerConnectionTypeEnum("connection_type").notNull().default("direct"), // direct = WireGuard tunnel, visible = seen through hub manifest
   sourceHubInstanceId: text("source_hub_instance_id"), // for visible peers: instanceId of the hub that provided this entry
+  // The only org this peer may read or write through promote, clone and pull.
+  organizationId: text("organization_id").references(() => organizations.id, { onDelete: "set null" }),
   lastSeenAt: timestamp("last_seen_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
