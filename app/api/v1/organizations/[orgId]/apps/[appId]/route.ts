@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { apps, projects } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
+import { repoFilePathSchema } from "@/lib/api/create-app-schema";
 import { stopProject } from "@/lib/docker/deploy";
 import { assertAppDirOwnership, AppDirOwnershipError, removeAppDir } from "@/lib/docker/app-dir-owner";
 import { recordActivity } from "@/lib/activity";
@@ -30,8 +31,8 @@ const updateAppSchema = z.object({
   source: z.enum(["git", "direct"]).optional(),
   deployType: z.enum(["compose", "dockerfile", "image", "static", "nixpacks", "railpack"]).optional(),
   composeContent: z.string().max(512000).nullable().optional(),
-  composeFilePath: z.string().regex(/^[a-zA-Z0-9._-][a-zA-Z0-9._\-/]*$/, "Invalid file path").nullable().optional(),
-  dockerfilePath: z.string().regex(/^[a-zA-Z0-9._-][a-zA-Z0-9._\-/]*$/, "Invalid file path").nullable().optional(),
+  composeFilePath: repoFilePathSchema.nullable().optional(),
+  dockerfilePath: repoFilePathSchema.nullable().optional(),
   gitUrl: gitUrlUpdateSchema.nullable().optional(),
   imageName: z.string().nullable().optional(),
   restartPolicy: z.string().nullable().optional(),
