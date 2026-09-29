@@ -38,6 +38,7 @@ import { clearCutoverPin, guardCutover, type CutoverGuard } from "../traefik-cut
 import { projectScopedNetworkNames } from "../shared-networks";
 import { overlapFitsNow } from "../memory-headroom";
 import { reportOomDuringDeploy } from "../deploy-oom";
+import { checkVolumeLimits } from "./volume-limits";
 import { execFileAsync } from "@/lib/utils/exec";
 
 const NETWORK_NAME = VARDO_NETWORK;
@@ -203,6 +204,8 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
   } catch (err) {
     log(`[deploy] Warning: network — ${err instanceof Error ? err.message : err}`);
   }
+
+  await checkVolumeLimits(ctx);
 
   // Services marked x-vardo-shared sit outside the rotation, in their own
   // compose project. Everything below operates on the slotted set only; the
@@ -766,12 +769,13 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
   ctx.stage("routing", "running");
   log(`[deploy] ${newSlot} healthy`);
 
-  // Both slots have been serving since the new one came up. Drop the old one
-  // now that the new one is proven, so the cutover never leaves a gap.
-  if (canOverlapSlots && !deferStopToPostDeploy) {
-    noteStopFailure(await stopOldSlot());
+  // Invariant: an old slot still serving here is stopped only after the deploy
+  // commits. Until then a failure can drop the new slot and leave the old one.
+  if (mustStopOldSlot && !stoppedOldSlot) {
+    ctx.stopOldSlot = stopOldSlot;
+    ctx.stopOldSlotEndsDeploy = deferStopToPostDeploy;
+    ctx.oldSlotServing = () => oldSlotRuns(slottedNames);
   }
-  ctx.stopOldSlot = deferStopToPostDeploy ? stopOldSlot : undefined;
 
   // Step 9: Update container names in DB
   if (!isLocalEnv) {

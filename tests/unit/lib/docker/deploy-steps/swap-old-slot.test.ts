@@ -6,7 +6,7 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { dbMock, execFileAsyncMock, execFileMock, restartPolicyMock, cutoverMock, order } =
+const { dbMock, execFileAsyncMock, execFileMock, restartPolicyMock, cutoverMock, order, volumeLimitsMock } =
   vi.hoisted(() => {
     const order: string[] = [];
 
@@ -27,6 +27,7 @@ const { dbMock, execFileAsyncMock, execFileMock, restartPolicyMock, cutoverMock,
     });
 
     return {
+      volumeLimitsMock: { checkVolumeLimits: vi.fn(async () => {}) },
       order,
       dbMock,
       execFileAsyncMock,
@@ -49,6 +50,7 @@ vi.mock("child_process", () => ({ execFile: execFileMock }));
 vi.mock("@/lib/db", () => ({ db: dbMock }));
 vi.mock("@/lib/docker/restart-policy", () => restartPolicyMock);
 vi.mock("@/lib/docker/traefik-cutover", () => cutoverMock);
+vi.mock("@/lib/docker/deploy-steps/volume-limits", () => volumeLimitsMock);
 vi.mock("@/lib/docker/client", () => ({ ensureNetwork: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("@/lib/docker/compose", () => ({
   slotComposeFiles: vi.fn().mockResolvedValue(["-f", "docker-compose.yml"]),
@@ -210,12 +212,26 @@ describe("swap — an old slot that would not stop", () => {
   it("raises unfinished work when the stop failed and the old slot kept serving", async () => {
     stopFailsWith("docker daemon unreachable");
 
-    const ctx = context();
+    const ctx = context({ compose: composeFile({ ports: true }) });
     await expect(swap(ctx)).resolves.toBeTruthy();
 
     expect(ctx.unfinished).toEqual([
       "the old slot (blue) is still running — docker daemon unreachable",
     ]);
+  });
+
+  it("hands the overlapping stop to post-deploy, which reports its failure", async () => {
+    stopFailsWith("docker daemon unreachable");
+
+    const ctx = context();
+    await swap(ctx);
+
+    expect(ctx.unfinished).toBeUndefined();
+    expect(ctx.stopOldSlotEndsDeploy).toBe(false);
+    await expect(ctx.stopOldSlot!()).resolves.toEqual({
+      ok: false,
+      message: "docker daemon unreachable",
+    });
   });
 
   it("raises nothing when the containers were already gone", async () => {
@@ -264,7 +280,11 @@ describe("swap — cutover pin", () => {
   });
 
   it("routes away from the old slot before stopping it", async () => {
-    await swap(context());
+    const ctx = context();
+    await swap(ctx);
+    expect(order).toEqual(["clear-pin"]);
+
+    await ctx.stopOldSlot!();
     expect(order).toEqual(["clear-pin", "pin", "demote", "unpin"]);
   });
 
@@ -284,5 +304,24 @@ describe("swap — cutover pin", () => {
   it("does not pin when the old slot was stopped before the new one started", async () => {
     await expect(swap(context({ compose: composeFile({ ports: true }) }))).resolves.toBeTruthy();
     expect(cutoverMock.guardCutover).not.toHaveBeenCalled();
+  });
+});
+
+describe("swap — volume limits", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    order.length = 0;
+    dockerHealthy();
+  });
+
+  it("blocks the deploy before the old slot is touched", async () => {
+    const { DeployBlockedError } = await import("@/lib/docker/errors");
+    volumeLimitsMock.checkVolumeLimits.mockRejectedValueOnce(new DeployBlockedError("over limit"));
+
+    await expect(swap(context({ compose: composeFile({ ports: true }) }))).rejects.toThrow("over limit");
+
+    expect(calls().some(isOldSlotStop)).toBe(false);
+    expect(restartPolicyMock.demoteStandbyRestart).not.toHaveBeenCalled();
+    expect(calls().some((a) => a.includes("up"))).toBe(false);
   });
 });

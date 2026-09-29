@@ -287,7 +287,49 @@ describe("runDeployment failures between phases", () => {
     expect(result.status).toBe("failed");
   });
 
-  it("still tears down the containers the deploy started", async () => {
+  it("tears down the new slot when the old one is still serving", async () => {
+    vi.mocked(swap).mockImplementation(async (ctx) => {
+      ctx.slotDir = "/srv/vardo/app/blue";
+      ctx.newProjectName = "app-prod-blue";
+      ctx.stage("routing", "running");
+      ctx.oldSlotServing = async () => true;
+      return ctx;
+    });
+
+    await runDeployment("dep-1", { ...OPTS, onStage });
+
+    expect(dockerCalls.some((c) => c.includes("-p app-prod-blue down"))).toBe(true);
+  });
+
+  it("keeps a healthy new slot when no other slot is serving", async () => {
+    const result = await runDeployment("dep-1", { ...OPTS, onStage });
+
+    expect(result.status).toBe("failed");
+    expect(dockerCalls.some((c) => c.includes("-p app-prod-blue down"))).toBe(false);
+  });
+
+  it("keeps it when the old slot has stopped since the swap", async () => {
+    vi.mocked(swap).mockImplementation(async (ctx) => {
+      ctx.slotDir = "/srv/vardo/app/blue";
+      ctx.newProjectName = "app-prod-blue";
+      ctx.stage("routing", "running");
+      ctx.oldSlotServing = async () => false;
+      return ctx;
+    });
+
+    await runDeployment("dep-1", { ...OPTS, onStage });
+
+    expect(dockerCalls.some((c) => c.includes("-p app-prod-blue down"))).toBe(false);
+  });
+
+  it("tears down a new slot that never passed its health check", async () => {
+    vi.mocked(swap).mockImplementation(async (ctx) => {
+      ctx.slotDir = "/srv/vardo/app/blue";
+      ctx.newProjectName = "app-prod-blue";
+      ctx.stage("healthcheck", "running");
+      throw new Error("green slot did not become healthy");
+    });
+
     await runDeployment("dep-1", { ...OPTS, onStage });
 
     expect(dockerCalls.some((c) => c.includes("-p app-prod-blue down"))).toBe(true);

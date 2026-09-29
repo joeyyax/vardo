@@ -147,9 +147,11 @@ describe("swap — an app still running its database in the old slot", () => {
 
   it("keeps the old slot serving once the database has moved out of it", async () => {
     dockerWith({ oldSlotHoldsPostgres: false });
-    await swap(context());
+    const ctx = context();
+    await swap(ctx);
 
-    expect(indexOf(isOldSlotStop)).toBeGreaterThan(indexOf(isNewSlotUp));
+    expect(indexOf(isOldSlotStop)).toBe(-1);
+    expect(ctx.stopOldSlot).toBeTypeOf("function");
   });
 
   it("brings the database up in the shared project, not the new slot", async () => {
@@ -200,7 +202,9 @@ describe("swap — an app still running its database in the old slot", () => {
     dockerWith({ oldSlotHoldsPostgres: false });
     const { guardCutover } = await import("@/lib/docker/traefik-cutover");
 
-    await swap(context());
+    const ctx = context();
+    await swap(ctx);
+    await ctx.stopOldSlot!();
     expect(guardCutover).toHaveBeenCalled();
   });
 
@@ -210,7 +214,9 @@ describe("swap — an app still running its database in the old slot", () => {
       services: { web: { name: "web", image: "nginx", labels: { "traefik.enable": "true" } } },
     } as unknown as ComposeFile;
 
-    await swap(context({ compose: plain }));
+    const ctx = context({ compose: plain });
+    await swap(ctx);
+    await ctx.stopOldSlot!();
     expect(indexOf(isSharedUp)).toBe(-1);
     expect(indexOf(isOldSlotStop)).toBeGreaterThan(indexOf(isNewSlotUp));
   });
