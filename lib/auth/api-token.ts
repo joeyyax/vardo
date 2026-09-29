@@ -8,14 +8,12 @@ export type ApiTokenRow = {
   userId: string;
   organizationId: string;
   crossOrg: boolean;
-  adminAccess: boolean;
   expiresAt: Date | null;
 };
 
 /** The scope a token carries, or will carry once minted. */
 export type TokenScope = {
   crossOrg: boolean;
-  adminAccess: boolean;
   expiresAt: Date | null;
 };
 
@@ -37,7 +35,6 @@ export async function findApiToken(rawToken: string): Promise<ApiTokenRow | null
       userId: true,
       organizationId: true,
       crossOrg: true,
-      adminAccess: true,
       expiresAt: true,
     },
   });
@@ -51,15 +48,10 @@ export async function findApiToken(rawToken: string): Promise<ApiTokenRow | null
  */
 export function scopeCeilingViolation(opts: {
   caller: TokenScope | null;
-  userIsAppAdmin: boolean;
   requested: Partial<TokenScope>;
 }): string | null {
-  const { caller, userIsAppAdmin, requested } = opts;
+  const { caller, requested } = opts;
 
-  if (requested.adminAccess) {
-    if (!userIsAppAdmin) return "Only instance admins can grant admin access";
-    if (caller && !caller.adminAccess) return "A token cannot grant admin access it does not hold";
-  }
   if (requested.crossOrg && caller && !caller.crossOrg) {
     return "A token cannot grant access to organizations it cannot reach";
   }

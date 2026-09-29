@@ -1,6 +1,5 @@
-// A token carries its user's rights only up to its own grant: no instance-admin
-// reach unless granted, no expiry once past it, and no minting or widening a
-// token beyond the scope of the token doing it.
+// A token never carries instance-admin reach, stops working once expired, and
+// can't mint or widen a token beyond its own scope.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
@@ -21,6 +20,9 @@ vi.mock("next/headers", () => ({
 }));
 vi.mock("@/lib/auth", () => ({ auth: { api: { getSession: cookieSession } } }));
 vi.mock("@/lib/config/features", () => ({ isFeatureEnabledAsync: vi.fn().mockResolvedValue(true) }));
+vi.mock("@/lib/config/vardo-config", () => ({
+  systemSettingsToVardoConfig: vi.fn().mockResolvedValue({ config: {}, secrets: { smtp: "s3cret" } }),
+}));
 vi.mock("@/lib/db", () => ({
   db: {
     query: {
@@ -34,6 +36,8 @@ vi.mock("@/lib/db", () => ({
 import { getSession } from "@/lib/auth/session";
 import { isAppAdmin, requireAppAdmin } from "@/lib/auth/admin";
 import { scopeCeilingViolation, isTokenExpired } from "@/lib/auth/api-token";
+import { GET as exportConfig } from "@/app/api/v1/admin/config/export/route";
+import { NextRequest } from "next/server";
 
 const ADMIN_USER = { id: "u1", name: "Joey", email: "j@x", isAppAdmin: true };
 
@@ -43,7 +47,6 @@ function token(overrides: Record<string, unknown> = {}) {
     userId: "u1",
     organizationId: "org-1",
     crossOrg: false,
-    adminAccess: false,
     expiresAt: null,
     ...overrides,
   };
@@ -58,7 +61,7 @@ beforeEach(() => {
 });
 
 describe("instance-admin reach through a token", () => {
-  it("is withheld from a token without the grant, even for an admin user", async () => {
+  it("is withheld from an admin user's token", async () => {
     tokenFindFirst.mockResolvedValue(token());
 
     const session = await getSession();
@@ -67,18 +70,33 @@ describe("instance-admin reach through a token", () => {
     await expect(requireAppAdmin()).rejects.toThrow("Forbidden");
   });
 
-  it("is carried by a granted token while the user is still an admin", async () => {
+  it("is withheld from a token minted with the retired admin grant", async () => {
     tokenFindFirst.mockResolvedValue(token({ adminAccess: true }));
+
+    expect(await isAppAdmin()).toBe(false);
+    await expect(requireAppAdmin()).rejects.toThrow("Forbidden");
+  });
+
+  it("keeps a token out of the secrets export", async () => {
+    tokenFindFirst.mockResolvedValue(token({ adminAccess: true }));
+
+    const res = await exportConfig(
+      new NextRequest("http://localhost/api/v1/admin/config/export?include=secrets"),
+    );
+    expect(res.status).toBe(403);
+    expect(await res.text()).not.toContain("s3cret");
+  });
+
+  it("still holds for the same admin signed in with a session", async () => {
+    headerMap.clear();
+    cookieSession.mockResolvedValue({ user: { id: "u1", isAppAdmin: true }, session: { id: "s1" } });
 
     expect(await isAppAdmin()).toBe(true);
     await expect(requireAppAdmin()).resolves.toBeTruthy();
-  });
-
-  it("lapses with the user's own admin role", async () => {
-    tokenFindFirst.mockResolvedValue(token({ adminAccess: true }));
-    userFindFirst.mockResolvedValue({ ...ADMIN_USER, isAppAdmin: false });
-
-    expect(await isAppAdmin()).toBe(false);
+    const res = await exportConfig(
+      new NextRequest("http://localhost/api/v1/admin/config/export?include=secrets"),
+    );
+    expect(res.status).toBe(200);
   });
 });
 
@@ -105,61 +123,43 @@ describe("token expiry", () => {
 });
 
 describe("scopeCeilingViolation", () => {
-  const narrow = { crossOrg: false, adminAccess: false, expiresAt: null };
+  const narrow = { crossOrg: false, expiresAt: null };
 
-  it("lets a cookie session grant anything its user holds", () => {
+  it("lets a cookie session grant any scope", () => {
     expect(
-      scopeCeilingViolation({
-        caller: null,
-        userIsAppAdmin: true,
-        requested: { crossOrg: true, adminAccess: true, expiresAt: null },
-      }),
+      scopeCeilingViolation({ caller: null, requested: { crossOrg: true, expiresAt: null } }),
     ).toBeNull();
-  });
-
-  it("never grants admin to a non-admin user", () => {
-    expect(
-      scopeCeilingViolation({ caller: null, userIsAppAdmin: false, requested: { adminAccess: true } }),
-    ).toMatch(/admin/);
-  });
-
-  it("stops a token granting admin it does not hold", () => {
-    expect(
-      scopeCeilingViolation({ caller: narrow, userIsAppAdmin: true, requested: { adminAccess: true } }),
-    ).toMatch(/admin/);
   });
 
   it("stops a token widening to other organizations", () => {
     expect(
-      scopeCeilingViolation({ caller: narrow, userIsAppAdmin: true, requested: { crossOrg: true } }),
+      scopeCeilingViolation({ caller: narrow, requested: { crossOrg: true } }),
     ).toMatch(/organizations/);
   });
 
   it("stops a token minting one that outlives it", () => {
     const caller = { ...narrow, expiresAt: new Date(Date.now() + 60_000) };
     expect(
-      scopeCeilingViolation({ caller, userIsAppAdmin: false, requested: { expiresAt: null } }),
+      scopeCeilingViolation({ caller, requested: { expiresAt: null } }),
     ).toMatch(/outlive/);
     expect(
       scopeCeilingViolation({
         caller,
-        userIsAppAdmin: false,
         requested: { expiresAt: new Date(Date.now() + 120_000) },
       }),
     ).toMatch(/outlive/);
     expect(
       scopeCeilingViolation({
         caller,
-        userIsAppAdmin: false,
         requested: { expiresAt: new Date(Date.now() + 30_000) },
       }),
     ).toBeNull();
   });
 
   it("allows narrowing", () => {
-    const wide = { crossOrg: true, adminAccess: true, expiresAt: null };
+    const wide = { crossOrg: true, expiresAt: null };
     expect(
-      scopeCeilingViolation({ caller: wide, userIsAppAdmin: true, requested: { crossOrg: false, adminAccess: false } }),
+      scopeCeilingViolation({ caller: wide, requested: { crossOrg: false } }),
     ).toBeNull();
   });
 });

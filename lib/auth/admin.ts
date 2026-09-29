@@ -3,11 +3,9 @@ import { user } from "@/lib/db/schema";
 import { getSession, requireSession } from "@/lib/auth/session";
 import { eq } from "drizzle-orm";
 
-type AdminCandidate = { user: { id: string }; authMethod: "token" | "session"; tokenScope?: { adminAccess: boolean } };
-
-/** Whether the credential may carry instance-admin power. A token needs its own grant. */
-export function credentialMayAdmin(session: AdminCandidate): boolean {
-  return session.authMethod !== "token" || session.tokenScope?.adminAccess === true;
+/** Instance-admin power needs a signed-in session; API tokens never carry it. */
+export function credentialMayAdmin(session: { authMethod: "token" | "session" }): boolean {
+  return session.authMethod === "session";
 }
 
 /** Non-throwing admin check, for deciding whether to show admin-only affordances. */
@@ -23,9 +21,7 @@ export async function isAppAdmin(): Promise<boolean> {
 }
 
 /**
- * Require the current user to be an app admin.
- * Works with both session cookies and Bearer API tokens
- * (getSession handles both transparently).
+ * Require the current user to be an app admin, signed in with a session.
  *
  * Throws `Error("Unauthorized")` when no credential is present.
  * Throws `Error("Forbidden")` when credentials are valid but the caller is not an admin.
@@ -44,9 +40,7 @@ export async function requireAppAdmin() {
 }
 
 /**
- * Require app-admin access. Accepts an optional request param for backwards
- * compatibility — Bearer token handling is now in getSession(), so the
- * request object is no longer needed.
+ * Require app-admin access. The request param is unused and kept for callers.
  */
 export async function requireAdminAuth(_request?: unknown): Promise<void> {
   await requireAppAdmin();

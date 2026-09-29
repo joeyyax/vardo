@@ -7,7 +7,6 @@ import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { randomBytes } from "crypto";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
-import { isAppAdmin } from "@/lib/auth/admin";
 import { hashApiToken, scopeCeilingViolation, type TokenScope } from "@/lib/auth/api-token";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
@@ -17,7 +16,6 @@ const createTokenSchema = z
   .object({
     name: z.string().min(1, "Name is required").max(100).trim(),
     crossOrg: z.boolean().default(false),
-    adminAccess: z.boolean().default(false),
     expiresAt: z.iso
       .datetime({ offset: true })
       .transform((v) => new Date(v))
@@ -30,11 +28,9 @@ const deleteTokenSchema = z.object({ id: z.string().min(1, "Token ID is required
 const updateTokenSchema = z
   .object({
     id: z.string().min(1, "Token ID is required"),
-    crossOrg: z.boolean().optional(),
-    adminAccess: z.boolean().optional(),
+    crossOrg: z.boolean(),
   })
-  .strict()
-  .refine((v) => v.crossOrg !== undefined || v.adminAccess !== undefined, "Nothing to update");
+  .strict();
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
@@ -65,7 +61,6 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
         id: true,
         name: true,
         crossOrg: true,
-        adminAccess: true,
         expiresAt: true,
         lastUsedAt: true,
         createdAt: true,
@@ -77,7 +72,6 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
         id: t.id,
         name: t.name,
         crossOrg: t.crossOrg,
-        adminAccess: t.adminAccess,
         expiresAt: t.expiresAt?.toISOString() || null,
         lastUsedAt: t.lastUsedAt?.toISOString() || null,
         createdAt: t.createdAt.toISOString(),
@@ -113,7 +107,6 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
 
     const violation = scopeCeilingViolation({
       caller: callerScope(org.session),
-      userIsAppAdmin: await isAppAdmin(),
       requested: parsed.data,
     });
     if (violation) return NextResponse.json({ error: violation }, { status: 403 });
@@ -128,7 +121,6 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       name: parsed.data.name,
       tokenHash,
       crossOrg: parsed.data.crossOrg,
-      adminAccess: parsed.data.adminAccess,
       expiresAt: parsed.data.expiresAt,
     });
 
@@ -162,7 +154,6 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
     const { id, ...requested } = parsed.data;
     const violation = scopeCeilingViolation({
       caller: callerScope(org.session),
-      userIsAppAdmin: await isAppAdmin(),
       requested,
     });
     if (violation) return NextResponse.json({ error: violation }, { status: 403 });
@@ -180,7 +171,6 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
       .returning({
         id: apiTokens.id,
         crossOrg: apiTokens.crossOrg,
-        adminAccess: apiTokens.adminAccess,
       });
 
     if (!updated) {
