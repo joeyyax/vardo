@@ -186,10 +186,16 @@ export type DeployContext = {
   stableVolumePrefix: string;
 
   /**
-   * Set when the old slot must be stopped after post-deploy rather than during
-   * the swap, because it is running this process. Vardo deploying Vardo.
+   * Stops the old slot. Set when the old slot is still serving at the end of
+   * the swap; post-deploy calls it only after the deploy commits.
    */
   stopOldSlot?: () => Promise<SlotStopOutcome>;
+
+  /** The old slot is running this process (Vardo deploying Vardo), so its stop ends the deploy. */
+  stopOldSlotEndsDeploy?: boolean;
+
+  /** Whether the old slot's rotating services are still running. */
+  oldSlotServing?: () => Promise<boolean>;
 
   /**
    * Post-deploy work an earlier step could not finish. Drained by post-deploy
