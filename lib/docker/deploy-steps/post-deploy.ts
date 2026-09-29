@@ -32,6 +32,7 @@ import { syncComposeServices } from "../compose-sync";
 import { observedMajors } from "./major-gate";
 import { clearMajorGateBlock } from "../image-updates/major-gate-store";
 import { isDeployQueueDrained, releaseConcurrencySlot } from "../deploy-concurrency";
+import { drainForSelfStop, endSelfDrain, SELF_DRAIN_TIMEOUT_MS } from "../deploy-cancel";
 import { acquireLock, releaseLock } from "@/lib/redis-lock";
 import { addEvent } from "@/lib/stream/producer";
 import { recordActivity } from "@/lib/activity";
@@ -85,6 +86,7 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
     if (!stopped.ok) {
       await unfinishedWork(`the old slot (${activeSlot}) is still running — ${stopped.message}`);
     }
+    return stopped.ok;
   };
 
   // Step 12: HTTP health check on domains
@@ -490,15 +492,19 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
   // last, after every write above is durable. Anything that throws earlier
   // leaves the old slot serving alongside the new one.
   if (ctx.stopOldSlot && ctx.stopOldSlotEndsDeploy) {
-    // Hand back the concurrency slot first — the `finally` that normally does it
-    // never runs. Skipped when another deploy is queued behind us, which would
-    // otherwise start inside the process about to be stopped. A queue check that
-    // throws must not skip the stop below.
-    if (await isDeployQueueDrained().catch(() => false)) {
-      await releaseConcurrencySlot(ctx.deploymentId).catch(() => {});
+    // The `finally` that normally hands back the concurrency slot never runs,
+    // and a deploy queued here needs it to finish before the stop.
+    await releaseConcurrencySlot(ctx.deploymentId).catch(() => {});
+    // The stop ends this process and every deploy running in it.
+    const cutOff = await drainForSelfStop(ctx.appId, log).catch(() => [] as string[]);
+    if (cutOff.length > 0) {
+      await unfinishedWork(
+        `the stop cut off deploy(s) still running after ${SELF_DRAIN_TIMEOUT_MS / 60_000} minutes: ${cutOff.join(", ")}`,
+      );
     }
     log(`[deploy] Stopping the slot running this deploy — ${newSlot} is serving`);
-    await stopOldSlot();
+    // A slot that would not stop keeps serving, so it must take deploys again.
+    if (!(await stopOldSlot())) endSelfDrain();
   }
 
   return ctx;

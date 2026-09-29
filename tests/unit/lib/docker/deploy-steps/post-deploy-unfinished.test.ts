@@ -8,7 +8,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // old slot that never stopped is still holding its containers.
 // ---------------------------------------------------------------------------
 
-const { dbMock, writes, emitMock, execCalls, execFails, hooksMock, queueDrained, commitFails } = vi.hoisted(() => {
+const { dbMock, writes, emitMock, execCalls, execFails, hooksMock, queueDrained, commitFails, drainMock, endDrainMock } = vi.hoisted(() => {
+  const drainMock = vi.fn().mockResolvedValue([]);
+  const endDrainMock = vi.fn();
   type Write = { table: unknown; values: Record<string, unknown> };
   const writes: Write[] = [];
   const execCalls: string[] = [];
@@ -37,7 +39,7 @@ const { dbMock, writes, emitMock, execCalls, execFails, hooksMock, queueDrained,
     },
   };
 
-  return { dbMock, writes, emitMock, execCalls, execFails, hooksMock, queueDrained, commitFails };
+  return { dbMock, writes, emitMock, execCalls, execFails, hooksMock, queueDrained, commitFails, drainMock, endDrainMock };
 });
 
 vi.mock("@/lib/db", () => ({ db: dbMock }));
@@ -81,6 +83,11 @@ vi.mock("@/lib/docker/restart-policy", () => ({ demoteStandbyRestart: vi.fn().mo
 vi.mock("@/lib/docker/deploy-concurrency", () => ({
   isDeployQueueDrained: queueDrained,
   releaseConcurrencySlot: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock("@/lib/docker/deploy-cancel", () => ({
+  drainForSelfStop: drainMock,
+  endSelfDrain: endDrainMock,
+  SELF_DRAIN_TIMEOUT_MS: 15 * 60_000,
 }));
 vi.mock("child_process", () => ({
   execFile: (cmd: string, args: string[], _opts: unknown, cb: (err: unknown, out?: unknown) => void) => {
@@ -283,5 +290,54 @@ describe("postDeploy tail work", () => {
     expect(stopOldSlot).not.toHaveBeenCalled();
     expect(removeContainer).not.toHaveBeenCalled();
     expect(execCalls.some((c) => c.includes(" stop"))).toBe(false);
+  });
+
+  it("waits for this process's other deploys before a self-deploy stops its own slot", async () => {
+    const order: string[] = [];
+    drainMock.mockImplementationOnce(async () => {
+      order.push("drain");
+      return [];
+    });
+    const stopOldSlot = vi.fn(async () => {
+      order.push("stop");
+      return { ok: true as const };
+    });
+    const ctx = makeContext({ activeSlot: "green", stopOldSlot, stopOldSlotEndsDeploy: true });
+    ctx.app.name = "vardo";
+
+    await postDeploy(ctx);
+
+    expect(order).toEqual(["drain", "stop"]);
+    expect(unfinishedReasons()).toEqual([]);
+  });
+
+  it("names the deploys a self-deploy's stop cut off after the drain timed out", async () => {
+    drainMock.mockResolvedValueOnce(["dep-stuck"]);
+    const stopOldSlot = vi.fn().mockResolvedValue({ ok: true });
+    const ctx = makeContext({ activeSlot: "green", stopOldSlot, stopOldSlotEndsDeploy: true });
+    ctx.app.name = "vardo";
+
+    await postDeploy(ctx);
+
+    expect(stopOldSlot).toHaveBeenCalled();
+    expect(unfinishedReasons()[0]).toContain("dep-stuck");
+  });
+
+  it("takes deploys again when a self-deploy's stop fails and the old slot keeps serving", async () => {
+    endDrainMock.mockClear();
+    const stopOldSlot = vi.fn().mockResolvedValue({ ok: false, message: "docker daemon unreachable" });
+    const ctx = makeContext({ activeSlot: "green", stopOldSlot, stopOldSlotEndsDeploy: true });
+    ctx.app.name = "vardo";
+
+    await postDeploy(ctx);
+
+    expect(endDrainMock).toHaveBeenCalledOnce();
+  });
+
+  it("does not drain for any other app", async () => {
+    drainMock.mockClear();
+    await postDeploy(makeContext({ activeSlot: "green", stopOldSlot: vi.fn().mockResolvedValue({ ok: true }) }));
+
+    expect(drainMock).not.toHaveBeenCalled();
   });
 });
