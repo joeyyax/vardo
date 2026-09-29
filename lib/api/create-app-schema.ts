@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { gitBranchSchema, gitUrlSchema } from "@/lib/api/git-fields";
 
 /** Request body accepted by POST /api/v1/organizations/[orgId]/apps. */
 export const createAppSchema = z
@@ -11,8 +12,8 @@ export const createAppSchema = z
     description: z.string().optional(),
     source: z.enum(["git", "direct"]),
     deployType: z.enum(["compose", "dockerfile", "image", "static", "nixpacks", "railpack"]),
-    gitUrl: z.string().url().refine((url) => url.startsWith("https://"), { message: "Only HTTPS git URLs are allowed" }).optional(),
-    gitBranch: z.string().regex(/^[a-zA-Z0-9._\-/]+$/, "Invalid branch name").optional(),
+    gitUrl: gitUrlSchema.optional(),
+    gitBranch: gitBranchSchema.optional(),
     imageName: z.string().optional(),
     composeContent: z.string().max(512000).optional(),
     composeFilePath: z.string().regex(/^[a-zA-Z0-9._-][a-zA-Z0-9._\-/]*$/, "Invalid file path").optional(),

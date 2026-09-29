@@ -13,14 +13,31 @@ export function assertSafeName(name: string): void {
   }
 }
 
-const SAFE_BRANCH_RE = /^[a-zA-Z0-9._\-/]+$/;
+const SAFE_BRANCH_RE = /^(?!-)[a-zA-Z0-9._\-/]+$/;
 
-/**
- * Assert that a git branch name is safe for shell interpolation.
- */
+/** A branch name git can't read as an option. */
+export function isSafeBranch(branch: string): boolean {
+  return SAFE_BRANCH_RE.test(branch);
+}
+
 export function assertSafeBranch(branch: string): void {
-  if (!SAFE_BRANCH_RE.test(branch)) {
+  if (!isSafeBranch(branch)) {
     throw new Error(`Invalid branch name: ${branch}`);
+  }
+}
+
+/** HTTPS only: other transports (ext::, file://, local paths) can run commands or read the host. */
+export function isSafeGitUrl(url: string): boolean {
+  try {
+    return new URL(url).protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+export function assertSafeGitUrl(url: string): void {
+  if (!isSafeGitUrl(url)) {
+    throw new Error(`Only HTTPS git URLs are allowed: ${url}`);
   }
 }
 

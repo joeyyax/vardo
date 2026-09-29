@@ -36,7 +36,7 @@ import {
   type ComposeFile,
 } from "../compose";
 import { isFeatureEnabled } from "@/lib/config/features";
-import { assertSafeBranch } from "../validate";
+import { assertSafeBranch, assertSafeGitUrl } from "../validate";
 import { DeployBlockedError } from "../errors";
 import { assertBuildKitReachable, isBuildKitReachable, DEFAULT_BUILDKIT_HOST } from "../buildkit";
 import { assertAppDirOwnership } from "../app-dir-owner";
@@ -389,7 +389,12 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
     const repoDir = join(appBase, "repo");
     ctx.repoDir = repoDir;
     const branch = ctx.envBranchOverride || app.gitBranch || "main";
-    assertSafeBranch(branch);
+    try {
+      assertSafeBranch(branch);
+      assertSafeGitUrl(app.gitUrl);
+    } catch (err) {
+      throw new DeployBlockedError(err instanceof Error ? err.message : String(err));
+    }
 
     // Build authenticated clone URL/env for private repos
     let cloneUrl = app.gitUrl;
@@ -455,9 +460,9 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
     try {
       const execOpts = { timeout: GIT_CLONE_TIMEOUT, env: { ...process.env, ...gitEnv } };
       try {
-        await execFileAsync("git", ["-C", repoDir, "remote", "set-url", "origin", cloneUrl], execOpts);
-        await execFileAsync("git", ["-C", repoDir, "fetch", "origin", branch], execOpts);
-        await execFileAsync("git", ["-C", repoDir, "reset", "--hard", `origin/${branch}`], execOpts);
+        await execFileAsync("git", ["-C", repoDir, "remote", "set-url", "--", "origin", cloneUrl], execOpts);
+        await execFileAsync("git", ["-C", repoDir, "fetch", "--", "origin", branch], execOpts);
+        await execFileAsync("git", ["-C", repoDir, "reset", "--hard", `origin/${branch}`, "--"], execOpts);
         log(`[deploy] Pulled latest from ${branch}`);
       } catch {
         try {
@@ -476,7 +481,7 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
             throw rmErr;
           }
         }
-        await execFileAsync("git", ["clone", "--depth", "1", "--branch", branch, cloneUrl, repoDir], execOpts);
+        await execFileAsync("git", ["clone", "--depth", "1", "--branch", branch, "--", cloneUrl, repoDir], execOpts);
         log(`[deploy] Cloned repo (${branch})`);
       }
 
