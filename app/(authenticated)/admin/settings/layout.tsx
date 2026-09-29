@@ -1,8 +1,6 @@
 import { redirect } from "next/navigation";
-import { db } from "@/lib/db";
-import { user } from "@/lib/db/schema";
+import { isAppAdmin } from "@/lib/auth/admin";
 import { getSession } from "@/lib/auth/session";
-import { eq } from "drizzle-orm";
 import { PageToolbar } from "@/components/page-toolbar";
 import { SettingsNav } from "@/components/settings-nav";
 import { isFeatureEnabledAsync, type FeatureFlag } from "@/lib/config/features";
@@ -43,11 +41,7 @@ export default async function AdminSettingsLayout({
   const session = await getSession();
   if (!session?.user?.id) redirect("/login");
 
-  const dbUser = await db.query.user.findFirst({
-    where: eq(user.id, session.user.id),
-    columns: { isAppAdmin: true },
-  });
-  if (!dbUser?.isAppAdmin) redirect("/projects");
+  if (!(await isAppAdmin())) redirect("/projects");
 
   // Filter by feature flag gates
   const navItems: { label: string; href: string }[] = [];

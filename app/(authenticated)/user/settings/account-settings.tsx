@@ -21,6 +21,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { RelativeTime } from "@/components/relative-time";
 import { authClient, useSession, passkey as passkeyMethods } from "@/lib/auth/client";
@@ -846,15 +847,30 @@ type ApiToken = {
   id: string;
   name: string;
   crossOrg: boolean;
+  adminAccess: boolean;
+  expiresAt: string | null;
   lastUsedAt: string | null;
   createdAt: string;
 };
 
-export function ApiTokens({ orgId }: { orgId: string }) {
+const TOKEN_EXPIRY_OPTIONS = [
+  { value: "30", label: "30 days" },
+  { value: "90", label: "90 days" },
+  { value: "365", label: "1 year" },
+  { value: "never", label: "Never" },
+];
+
+function expiryFromOption(option: string): string | null {
+  if (option === "never") return null;
+  return new Date(Date.now() + Number(option) * 86_400_000).toISOString();
+}
+
+export function ApiTokens({ orgId, canGrantAdmin = false }: { orgId: string; canGrantAdmin?: boolean }) {
   const [tokens, setTokens] = useState<ApiToken[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [newTokenName, setNewTokenName] = useState("");
+  const [newTokenExpiry, setNewTokenExpiry] = useState("90");
   const [showCreate, setShowCreate] = useState(false);
   const [createdToken, setCreatedToken] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
@@ -890,7 +906,10 @@ export function ApiTokens({ orgId }: { orgId: string }) {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: newTokenName.trim() }),
+          body: JSON.stringify({
+            name: newTokenName.trim(),
+            expiresAt: expiryFromOption(newTokenExpiry),
+          }),
         }
       );
       if (res.ok) {
@@ -911,25 +930,25 @@ export function ApiTokens({ orgId }: { orgId: string }) {
     }
   }
 
-  async function handleScopeChange(id: string, crossOrg: boolean) {
+  async function handleScopeChange(
+    id: string,
+    change: { crossOrg: boolean } | { adminAccess: boolean },
+  ) {
     setTogglingScope(id);
     try {
       const res = await fetch(`/api/v1/organizations/${orgId}/tokens`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, crossOrg }),
+        body: JSON.stringify({ id, ...change }),
       });
       if (res.ok) {
         setTokens((prev) =>
-          prev.map((t) => (t.id === id ? { ...t, crossOrg } : t))
+          prev.map((t) => (t.id === id ? { ...t, ...change } : t))
         );
-        toast.success(
-          crossOrg
-            ? "Token can now reach all your organizations"
-            : "Token limited to this organization"
-        );
+        toast.success("Token scope updated");
       } else {
-        toast.error("Failed to update token scope");
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error || "Failed to update token scope");
       }
     } catch {
       toast.error("Failed to update token scope");
@@ -968,7 +987,7 @@ export function ApiTokens({ orgId }: { orgId: string }) {
         <div className="flex items-center justify-between">
           <div>
             <CardTitle>API tokens</CardTitle>
-            <CardDescription>Tokens authenticate API requests. Treat them like passwords — they grant full access to your organization. Turn on &quot;all my organizations&quot; to let a token act on every organization you belong to.</CardDescription>
+            <CardDescription>Tokens authenticate API requests. Treat them like passwords — they grant full access to your organization. Turn on &quot;all my organizations&quot; to let a token act on every organization you belong to. A token has no instance-admin access unless you grant it.</CardDescription>
           </div>
           <Button
             size="sm"
@@ -1025,6 +1044,21 @@ export function ApiTokens({ orgId }: { orgId: string }) {
                 autoFocus
               />
             </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="token-expiry">Expires</Label>
+              <Select value={newTokenExpiry} onValueChange={setNewTokenExpiry}>
+                <SelectTrigger id="token-expiry" className="w-28">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {TOKEN_EXPIRY_OPTIONS.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>
+                      {o.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <Button type="submit" size="sm" disabled={creating}>
               {creating && <Loader2 className="mr-1.5 size-4 animate-spin" />}
               Create
@@ -1055,6 +1089,12 @@ export function ApiTokens({ orgId }: { orgId: string }) {
                   <p className="text-sm font-medium truncate">{token.name}</p>
                   <p className="text-xs text-muted-foreground">
                     Created <RelativeTime date={token.createdAt} />
+                    {token.expiresAt && (
+                      <>
+                        {new Date(token.expiresAt) <= new Date() ? " \u00b7 Expired " : " \u00b7 Expires "}
+                        <RelativeTime date={token.expiresAt} />
+                      </>
+                    )}
                     {token.lastUsedAt && (
                       <>
                         {" \u00b7 Last used "}
@@ -1074,10 +1114,26 @@ export function ApiTokens({ orgId }: { orgId: string }) {
                       checked={token.crossOrg}
                       disabled={togglingScope === token.id}
                       onCheckedChange={(checked) =>
-                        handleScopeChange(token.id, checked)
+                        handleScopeChange(token.id, { crossOrg: checked })
                       }
                     />
                   </Label>
+                  {(canGrantAdmin || token.adminAccess) && (
+                    <Label
+                      htmlFor={`admin-${token.id}`}
+                      className="flex items-center gap-2 text-xs text-muted-foreground"
+                    >
+                      Instance admin
+                      <Switch
+                        id={`admin-${token.id}`}
+                        checked={token.adminAccess}
+                        disabled={togglingScope === token.id}
+                        onCheckedChange={(checked) =>
+                          handleScopeChange(token.id, { adminAccess: checked })
+                        }
+                      />
+                    </Label>
+                  )}
                   <Button
                     size="sm"
                     variant="ghost"

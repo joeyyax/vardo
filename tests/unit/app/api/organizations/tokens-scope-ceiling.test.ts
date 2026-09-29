@@ -1,0 +1,127 @@
+// POST/PATCH /api/v1/organizations/[orgId]/tokens
+//
+// A token could mint a cross-org token or flip its own cross-org flag, widening
+// itself past the scope it was issued with.
+
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { NextRequest } from "next/server";
+
+const { mockVerifyOrgAccess, mockIsAppAdmin, mockInsert, mockUpdate, inserted } = vi.hoisted(() => ({
+  mockVerifyOrgAccess: vi.fn(),
+  mockIsAppAdmin: vi.fn(),
+  mockInsert: vi.fn(),
+  mockUpdate: vi.fn(),
+  inserted: [] as Record<string, unknown>[],
+}));
+
+vi.mock("@/lib/api/verify-access", () => ({ verifyOrgAccess: mockVerifyOrgAccess }));
+vi.mock("@/lib/auth/admin", () => ({ isAppAdmin: mockIsAppAdmin }));
+vi.mock("@/lib/api/require-plugin", () => ({ requirePlugin: vi.fn().mockResolvedValue(null) }));
+vi.mock("@/lib/api/with-rate-limit", () => ({
+  withRateLimit: (handler: (...args: unknown[]) => unknown) => handler,
+}));
+vi.mock("@/lib/db", () => ({ db: { insert: mockInsert, update: mockUpdate, query: {} } }));
+
+const { POST, PATCH } = await import("@/app/api/v1/organizations/[orgId]/tokens/route");
+
+const params = { params: Promise.resolve({ orgId: "org-1" }) };
+
+function req(method: string, body: unknown) {
+  return new NextRequest("http://localhost/api/v1/organizations/org-1/tokens", {
+    method,
+    body: JSON.stringify(body),
+    headers: { "content-type": "application/json" },
+  });
+}
+
+function asToken(scope: { crossOrg?: boolean; adminAccess?: boolean; expiresAt?: Date | null } = {}) {
+  mockVerifyOrgAccess.mockResolvedValue({
+    session: {
+      user: { id: "u1" },
+      authMethod: "token",
+      tokenScope: { crossOrg: false, adminAccess: false, expiresAt: null, ...scope },
+    },
+  });
+}
+
+function asCookie() {
+  mockVerifyOrgAccess.mockResolvedValue({ session: { user: { id: "u1" }, authMethod: "session" } });
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  inserted.length = 0;
+  mockIsAppAdmin.mockResolvedValue(true);
+  mockInsert.mockReturnValue({
+    values: async (v: Record<string, unknown>) => {
+      inserted.push(v);
+    },
+  });
+  mockUpdate.mockReturnValue({
+    set: () => ({ where: () => ({ returning: async () => [{ id: "t2" }] }) }),
+  });
+});
+
+describe("minting a token", () => {
+  it("refuses a cross-org token from a single-org token", async () => {
+    asToken();
+    const res = await POST(req("POST", { name: "wide", crossOrg: true }), params);
+    expect(res.status).toBe(403);
+    expect(inserted).toHaveLength(0);
+  });
+
+  it("refuses an admin token from a token without admin", async () => {
+    asToken();
+    const res = await POST(req("POST", { name: "admin", adminAccess: true }), params);
+    expect(res.status).toBe(403);
+  });
+
+  it("refuses an admin token to a user who is not an instance admin", async () => {
+    asCookie();
+    mockIsAppAdmin.mockResolvedValue(false);
+    const res = await POST(req("POST", { name: "admin", adminAccess: true }), params);
+    expect(res.status).toBe(403);
+  });
+
+  it("refuses a never-expiring token from an expiring one", async () => {
+    asToken({ expiresAt: new Date(Date.now() + 60_000) });
+    const res = await POST(req("POST", { name: "forever" }), params);
+    expect(res.status).toBe(403);
+  });
+
+  it("mints without admin and with the requested expiry by default", async () => {
+    asCookie();
+    const expiresAt = new Date(Date.now() + 86_400_000).toISOString();
+    const res = await POST(req("POST", { name: "ci", expiresAt }), params);
+    expect(res.status).toBe(201);
+    expect(inserted[0]).toMatchObject({ adminAccess: false, crossOrg: false });
+    expect((inserted[0].expiresAt as Date).toISOString()).toBe(expiresAt);
+  });
+
+  it("rejects an expiry in the past", async () => {
+    asCookie();
+    const res = await POST(req("POST", { name: "ci", expiresAt: "2020-01-01T00:00:00Z" }), params);
+    expect(res.status).toBe(400);
+  });
+});
+
+describe("changing a token's scope", () => {
+  it("refuses to widen to cross-org from a single-org token", async () => {
+    asToken();
+    const res = await PATCH(req("PATCH", { id: "t2", crossOrg: true }), params);
+    expect(res.status).toBe(403);
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
+  it("refuses to grant admin from a token without it", async () => {
+    asToken({ crossOrg: true });
+    const res = await PATCH(req("PATCH", { id: "t2", adminAccess: true }), params);
+    expect(res.status).toBe(403);
+  });
+
+  it("lets a token narrow scope", async () => {
+    asToken({ crossOrg: true });
+    const res = await PATCH(req("PATCH", { id: "t2", crossOrg: false }), params);
+    expect(res.status).toBe(200);
+  });
+});

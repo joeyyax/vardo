@@ -1,8 +1,8 @@
-import { createHash } from "crypto";
 import { db } from "@/lib/db";
 import { apiTokens, user } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
+import { findApiToken } from "@/lib/auth/api-token";
 
 export type McpAuthContext = {
   userId: string;
@@ -32,12 +32,7 @@ export async function authenticateRequest(
   const rawToken = authHeader.slice(7).trim();
   if (!rawToken) return null;
 
-  const tokenHash = createHash("sha256").update(rawToken).digest("hex");
-
-  const token = await db.query.apiTokens.findFirst({
-    where: eq(apiTokens.tokenHash, tokenHash),
-    columns: { id: true, userId: true, organizationId: true, crossOrg: true },
-  });
+  const token = await findApiToken(rawToken);
 
   if (!token) return null;
 

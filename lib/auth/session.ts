@@ -1,9 +1,9 @@
 import { cache } from "react";
 import { headers, cookies } from "next/headers";
-import { createHash } from "crypto";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { memberships, apiTokens, user } from "@/lib/db/schema";
+import { findApiToken, type TokenScope } from "@/lib/auth/api-token";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { eq, and } from "drizzle-orm";
 
@@ -14,7 +14,12 @@ export const CURRENT_ORG_COOKIE = "host_current_org";
  * Token auth stashes the bound orgId so getCurrentOrg can use it
  * without relying on cookies.
  */
-type TokenAuthMeta = { authMethod: "token"; tokenOrgId: string };
+type TokenAuthMeta = {
+  authMethod: "token";
+  tokenOrgId: string;
+  tokenId: string;
+  tokenScope: TokenScope;
+};
 type SessionAuthMeta = { authMethod: "session" };
 type AuthMeta = TokenAuthMeta | SessionAuthMeta;
 
@@ -39,11 +44,7 @@ export const getSession = cache(async (): Promise<SessionResult | null> => {
   if (authHeader?.startsWith("Bearer ") && (await isFeatureEnabledAsync("api-tokens"))) {
     const rawToken = authHeader.slice(7).trim();
     if (rawToken) {
-      const tokenHash = createHash("sha256").update(rawToken).digest("hex");
-      const token = await db.query.apiTokens.findFirst({
-        where: eq(apiTokens.tokenHash, tokenHash),
-        columns: { id: true, userId: true, organizationId: true },
-      });
+      const token = await findApiToken(rawToken);
 
       if (token) {
         const tokenUser = await db.query.user.findFirst({
@@ -64,19 +65,26 @@ export const getSession = cache(async (): Promise<SessionResult | null> => {
               email: tokenUser.email,
               emailVerified: tokenUser.emailVerified,
               image: tokenUser.image,
-              isAppAdmin: tokenUser.isAppAdmin,
+              // Admin reach needs both the grant and a user who still holds it.
+              isAppAdmin: Boolean(tokenUser.isAppAdmin && token.adminAccess),
               twoFactorEnabled: tokenUser.twoFactorEnabled,
             },
             session: {
               id: `token:${token.id}`,
               token: token.id,
               userId: tokenUser.id,
-              expiresAt: new Date(Date.now() + 86400000),
+              expiresAt: token.expiresAt ?? new Date(Date.now() + 86400000),
               createdAt: new Date(),
               updatedAt: new Date(),
             },
             authMethod: "token",
             tokenOrgId: token.organizationId,
+            tokenId: token.id,
+            tokenScope: {
+              crossOrg: token.crossOrg,
+              adminAccess: token.adminAccess,
+              expiresAt: token.expiresAt,
+            },
           } as SessionResult;
         }
       }
