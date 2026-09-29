@@ -6,16 +6,14 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
 
-const { mockVerifyOrgAccess, mockIsAppAdmin, mockInsert, mockUpdate, inserted } = vi.hoisted(() => ({
+const { mockVerifyOrgAccess, mockInsert, mockUpdate, inserted } = vi.hoisted(() => ({
   mockVerifyOrgAccess: vi.fn(),
-  mockIsAppAdmin: vi.fn(),
   mockInsert: vi.fn(),
   mockUpdate: vi.fn(),
   inserted: [] as Record<string, unknown>[],
 }));
 
 vi.mock("@/lib/api/verify-access", () => ({ verifyOrgAccess: mockVerifyOrgAccess }));
-vi.mock("@/lib/auth/admin", () => ({ isAppAdmin: mockIsAppAdmin }));
 vi.mock("@/lib/api/require-plugin", () => ({ requirePlugin: vi.fn().mockResolvedValue(null) }));
 vi.mock("@/lib/api/with-rate-limit", () => ({
   withRateLimit: (handler: (...args: unknown[]) => unknown) => handler,
@@ -34,12 +32,12 @@ function req(method: string, body: unknown) {
   });
 }
 
-function asToken(scope: { crossOrg?: boolean; adminAccess?: boolean; expiresAt?: Date | null } = {}) {
+function asToken(scope: { crossOrg?: boolean; expiresAt?: Date | null } = {}) {
   mockVerifyOrgAccess.mockResolvedValue({
     session: {
       user: { id: "u1" },
       authMethod: "token",
-      tokenScope: { crossOrg: false, adminAccess: false, expiresAt: null, ...scope },
+      tokenScope: { crossOrg: false, expiresAt: null, ...scope },
     },
   });
 }
@@ -51,7 +49,6 @@ function asCookie() {
 beforeEach(() => {
   vi.clearAllMocks();
   inserted.length = 0;
-  mockIsAppAdmin.mockResolvedValue(true);
   mockInsert.mockReturnValue({
     values: async (v: Record<string, unknown>) => {
       inserted.push(v);
@@ -70,17 +67,11 @@ describe("minting a token", () => {
     expect(inserted).toHaveLength(0);
   });
 
-  it("refuses an admin token from a token without admin", async () => {
-    asToken();
-    const res = await POST(req("POST", { name: "admin", adminAccess: true }), params);
-    expect(res.status).toBe(403);
-  });
-
-  it("refuses an admin token to a user who is not an instance admin", async () => {
+  it("rejects a request for an admin token", async () => {
     asCookie();
-    mockIsAppAdmin.mockResolvedValue(false);
     const res = await POST(req("POST", { name: "admin", adminAccess: true }), params);
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(400);
+    expect(inserted).toHaveLength(0);
   });
 
   it("refuses a never-expiring token from an expiring one", async () => {
@@ -94,7 +85,8 @@ describe("minting a token", () => {
     const expiresAt = new Date(Date.now() + 86_400_000).toISOString();
     const res = await POST(req("POST", { name: "ci", expiresAt }), params);
     expect(res.status).toBe(201);
-    expect(inserted[0]).toMatchObject({ adminAccess: false, crossOrg: false });
+    expect(inserted[0]).toMatchObject({ crossOrg: false });
+    expect(inserted[0]).not.toHaveProperty("adminAccess");
     expect((inserted[0].expiresAt as Date).toISOString()).toBe(expiresAt);
   });
 
@@ -113,10 +105,11 @@ describe("changing a token's scope", () => {
     expect(mockUpdate).not.toHaveBeenCalled();
   });
 
-  it("refuses to grant admin from a token without it", async () => {
-    asToken({ crossOrg: true });
+  it("rejects a request to grant admin", async () => {
+    asCookie();
     const res = await PATCH(req("PATCH", { id: "t2", adminAccess: true }), params);
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(400);
+    expect(mockUpdate).not.toHaveBeenCalled();
   });
 
   it("lets a token narrow scope", async () => {
