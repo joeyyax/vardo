@@ -3,10 +3,18 @@ import { user } from "@/lib/db/schema";
 import { getSession, requireSession } from "@/lib/auth/session";
 import { eq } from "drizzle-orm";
 
+type AdminCandidate = { user: { id: string }; authMethod: "token" | "session"; tokenScope?: { adminAccess: boolean } };
+
+/** Whether the credential may carry instance-admin power. A token needs its own grant. */
+export function credentialMayAdmin(session: AdminCandidate): boolean {
+  return session.authMethod !== "token" || session.tokenScope?.adminAccess === true;
+}
+
 /** Non-throwing admin check, for deciding whether to show admin-only affordances. */
 export async function isAppAdmin(): Promise<boolean> {
   const session = await getSession();
   if (!session?.user?.id) return false;
+  if (!credentialMayAdmin(session)) return false;
   const dbUser = await db.query.user.findFirst({
     where: eq(user.id, session.user.id),
     columns: { isAppAdmin: true },
@@ -24,6 +32,7 @@ export async function isAppAdmin(): Promise<boolean> {
  */
 export async function requireAppAdmin() {
   const session = await requireSession();
+  if (!credentialMayAdmin(session)) throw new Error("Forbidden");
   const dbUser = await db.query.user.findFirst({
     where: eq(user.id, session.user.id),
     columns: { isAppAdmin: true },

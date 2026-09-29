@@ -1,9 +1,9 @@
 import { NextRequest } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
-import { user, apps } from "@/lib/db/schema";
+import { apps } from "@/lib/db/schema";
 import { requireSession } from "@/lib/auth/session";
-import { eq } from "drizzle-orm";
+import { isAppAdmin } from "@/lib/auth/admin";
 import { getSystemInfo } from "@/lib/docker/client";
 import { getLatestDiskUsage } from "@/lib/metrics/store";
 import { createSSEResponse } from "@/lib/api/sse";
@@ -16,12 +16,8 @@ import { METRICS_APP_COLUMNS } from "@/lib/metrics/app-columns";
 // GET /api/v1/admin/stats/stream
 export async function GET(request: NextRequest) {
   try {
-    const session = await requireSession();
-    const dbUser = await db.query.user.findFirst({
-      where: eq(user.id, session.user.id),
-      columns: { isAppAdmin: true },
-    });
-    if (!dbUser?.isAppAdmin) {
+    await requireSession();
+    if (!(await isAppAdmin())) {
       return new Response("Forbidden", { status: 403 });
     }
 

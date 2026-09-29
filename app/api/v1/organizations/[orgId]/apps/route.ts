@@ -101,12 +101,8 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     // Check reserved slugs — only when generating a subdomain on our base domain
     if (data.generateDomain && isReservedSlug(data.name)) {
       // Allow admins to bypass
-      const { user: userTable } = await import("@/lib/db/schema");
-      const dbUser = await db.query.user.findFirst({
-        where: eq(userTable.id, org.session.user.id),
-        columns: { isAppAdmin: true },
-      });
-      if (!dbUser?.isAppAdmin) {
+      const { isAppAdmin } = await import("@/lib/auth/admin");
+      if (!(await isAppAdmin())) {
         return NextResponse.json(
           { error: `"${data.name}" is a reserved name. Choose a different slug.` },
           { status: 400 }

@@ -1,5 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { getCurrentOrg } from "@/lib/auth/session";
+import { isAppAdmin } from "@/lib/auth/admin";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { getAuthMethodStates } from "@/lib/config/auth-methods";
 import { Card, CardContent } from "@/components/ui/card";
@@ -45,18 +46,21 @@ export default async function UserSettingsTabPage({
   }
 
   const methods = await getAuthMethodStates();
+  const canGrantAdmin = validTab === "tokens" && (await isAppAdmin());
 
-  return <TabContent tab={validTab} orgId={orgId} methods={methods} />;
+  return <TabContent tab={validTab} orgId={orgId} methods={methods} canGrantAdmin={canGrantAdmin} />;
 }
 
 function TabContent({
   tab,
   orgId,
   methods,
+  canGrantAdmin,
 }: {
   tab: ValidTab;
   orgId: string | null;
   methods: Awaited<ReturnType<typeof getAuthMethodStates>>;
+  canGrantAdmin: boolean;
 }) {
   switch (tab) {
     case "profile":
@@ -111,7 +115,7 @@ function TabContent({
               </CardContent>
             </Card>
           ) : (
-            <ApiTokens orgId={orgId} />
+            <ApiTokens orgId={orgId} canGrantAdmin={canGrantAdmin} />
           )}
         </div>
       );
