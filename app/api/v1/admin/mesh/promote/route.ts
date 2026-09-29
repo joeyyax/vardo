@@ -3,7 +3,7 @@ import { z } from "zod";
 import { handleRouteError } from "@/lib/api/error-response";
 import { requireAppAdmin } from "@/lib/auth/admin";
 import { buildProjectBundle } from "@/lib/mesh/transfers";
-import { meshJsonFetch } from "@/lib/mesh/client";
+import { MeshClientError, meshJsonFetch } from "@/lib/mesh/client";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
@@ -42,13 +42,18 @@ async function handlePost(request: NextRequest) {
     });
 
     // Send to the target peer
-    const result = await meshJsonFetch(targetPeerId, "/api/v1/mesh/promote", {
-      method: "POST",
-      body: JSON.stringify({ bundle, environment }),
-    });
+    const result = await meshJsonFetch(
+      targetPeerId,
+      "/api/v1/mesh/promote",
+      { method: "POST", body: JSON.stringify({ bundle, environment }) },
+      { requireTls: includeEnvVars },
+    );
 
     return NextResponse.json(result, { status: 201 });
   } catch (error) {
+    if (error instanceof MeshClientError && error.code === "INSECURE") {
+      return NextResponse.json({ error: error.message }, { status: 409 });
+    }
     return handleRouteError(error, "Error promoting project");
   }
 }

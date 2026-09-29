@@ -4,6 +4,7 @@ import { and, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { getInstanceId } from "@/lib/constants";
 import { narrowBackendProtocol } from "@/lib/docker/compose";
+import { decrypt, decryptOrFallback, encrypt, isEncrypted } from "@/lib/crypto/encrypt";
 
 // ---------------------------------------------------------------------------
 // Dependencies
@@ -41,7 +42,7 @@ export type AppBundle = {
   backendProtocol: "http" | "https" | null;
   restartPolicy: string | null;
   exposedPorts: { internal: number; external?: number; protocol?: string; description?: string }[] | null;
-  envContent: string | null; // only included if explicitly requested
+  envContent: string | null; // plaintext; only included if explicitly requested
   sortOrder: number | null;
   volumes: { name: string; mountPath: string; persistent: boolean }[];
 };
@@ -97,6 +98,14 @@ export async function buildProjectBundle(
     throw new Error(`Project not found: ${projectId}`);
   }
 
+  // Ciphertext is keyed to this instance and org, so the bundle carries plaintext.
+  const exportEnv = (app: { name: string; envContent: string | null }): string | null => {
+    if (!options.includeEnvVars || !app.envContent) return null;
+    const { content, decryptFailed } = decryptOrFallback(app.envContent, project.organizationId);
+    if (decryptFailed) throw new Error(`Env vars for "${app.name}" cannot be decrypted`);
+    return content;
+  };
+
   const appBundles: AppBundle[] = project.apps
     .filter((app) => !app.parentAppId) // only top-level apps (compose parents)
     .map((app) => ({
@@ -116,7 +125,7 @@ export async function buildProjectBundle(
       backendProtocol: narrowBackendProtocol(app.backendProtocol),
       restartPolicy: app.restartPolicy,
       exposedPorts: app.exposedPorts,
-      envContent: options.includeEnvVars ? app.envContent : null,
+      envContent: exportEnv(app),
       sortOrder: app.sortOrder,
       volumes: (app.volumes || []).map((v) => ({
         name: v.name,
@@ -150,6 +159,20 @@ function assertBundleNames(bundle: ProjectBundle) {
   const bad = names.find((n) => !BUNDLE_NAME_RE.test(n));
   if (bad !== undefined) {
     throw new BundleRejectedError(`Invalid name in bundle: ${JSON.stringify(bad)}`);
+  }
+}
+
+/** Bundle env as stored in `orgId`: encrypted under its key, or null when empty. */
+export function sealBundleEnv(appName: string, envContent: string | null, orgId: string): string | null {
+  if (!envContent?.trim()) return null;
+  if (!isEncrypted(envContent)) return encrypt(envContent, orgId);
+  try {
+    // Only readable when it came from this same instance and org.
+    return encrypt(decrypt(envContent, orgId), orgId);
+  } catch {
+    throw new BundleRejectedError(
+      `Env vars for "${appName}" are encrypted with another instance's key; resend from an updated peer`,
+    );
   }
 }
 
@@ -201,6 +224,9 @@ export async function importProjectBundle(
     // Create or update apps
     const appIds: string[] = [];
     for (const appBundle of bundle.apps) {
+      // Clones start without env.
+      const envContent = isClone ? null : sealBundleEnv(appBundle.name, appBundle.envContent, orgId);
+
       // For non-clone transfers, check if app already exists in this project
       const existingApp = isClone
         ? null
@@ -219,7 +245,8 @@ export async function importProjectBundle(
             gitUrl: appBundle.gitUrl,
             gitBranch: appBundle.gitBranch,
             imageName: appBundle.imageName,
-            envContent: appBundle.envContent,
+            // A bundle sent without env leaves the destination's env alone.
+            ...(envContent !== null ? { envContent } : {}),
             updatedAt: new Date(),
           })
           .where(eq(apps.id, existingApp.id));
@@ -265,7 +292,7 @@ export async function importProjectBundle(
           backendProtocol: appBundle.backendProtocol ?? null,
           restartPolicy: appBundle.restartPolicy,
           exposedPorts: appBundle.exposedPorts,
-          envContent: appBundle.envContent,
+          envContent,
           sortOrder: appBundle.sortOrder,
           status: "stopped",
         });
