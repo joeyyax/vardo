@@ -16,6 +16,7 @@ import {
   slotComposeFiles,
 } from "./compose";
 import { detectActiveSlot } from "./slots";
+import { pointCurrentAt } from "./active-slot";
 import { sharedProjectName } from "./slot-partition";
 import { readSlotPartition } from "./shared-project";
 import { recordActivity } from "@/lib/activity";
@@ -544,23 +545,31 @@ export async function runDeployment(
 
     log(`[deploy] ERROR: ${message}`);
 
-    // If we got past the deploy stage, containers may be running — tear them
-    // down. A deploy that recorded success returned above, so nothing serving
-    // traffic reaches this.
+    // If we got past the deploy stage, containers may be running. A deploy that
+    // recorded success returned above, so nothing here has committed.
     const CONTAINER_STAGES: Set<DeployStage> = new Set(["deploy", "healthcheck", "routing", "cleanup", "done"]);
     const slotDir = ctx?.slotDir;
     const newProjectName = ctx?.newProjectName;
-    if (CONTAINER_STAGES.has(reachedStage()) && slotDir && newProjectName) {
-      try {
-        const cleanupComposeArgs = await slotComposeFiles(slotDir);
-        await execFileAsync(
-          "docker",
-          ["compose", ...cleanupComposeArgs, "-p", newProjectName, "down", "--remove-orphans"],
-          { cwd: slotDir, timeout: COMPOSE_DOWN_TIMEOUT }
-        );
-        log(`[deploy] Cleaned up containers after failure`);
-      } catch {
-        // Best effort — containers may not have started
+    let keptNewSlot = false;
+    if (ctx && CONTAINER_STAGES.has(reachedStage()) && slotDir && newProjectName) {
+      keptNewSlot = await keepProvenSlot(ctx, reachedStage());
+      if (keptNewSlot) {
+        log(`[deploy] Keeping ${ctx.newSlot} running — it passed its health check and no other slot is serving`);
+        if (!ctx.isLocalEnv && ctx.appDir) {
+          await pointCurrentAt(ctx.appDir, ctx.newSlot).catch(() => {});
+        }
+      } else {
+        try {
+          const cleanupComposeArgs = await slotComposeFiles(slotDir);
+          await execFileAsync(
+            "docker",
+            ["compose", ...cleanupComposeArgs, "-p", newProjectName, "down", "--remove-orphans"],
+            { cwd: slotDir, timeout: COMPOSE_DOWN_TIMEOUT }
+          );
+          log(`[deploy] Cleaned up containers after failure`);
+        } catch {
+          // Best effort — containers may not have started
+        }
       }
     }
 
@@ -572,7 +581,7 @@ export async function runDeployment(
 
     await db
       .update(apps)
-      .set(statusChange("error"))
+      .set(statusChange(keptNewSlot ? "active" : "error"))
       .where(eq(apps.id, opts.appId));
 
     addEvent(opts.organizationId, {
@@ -601,6 +610,21 @@ export async function runDeployment(
     await streamLogger.flush();
     return { deploymentId, success: false, log: logLines.join("\n"), durationMs, status: "failed", error: message };
   }
+}
+
+/** Stages at which the new slot has passed its health check. */
+const PROVEN_STAGES: ReadonlySet<DeployStage> = new Set(["routing", "cleanup", "done"]);
+
+/**
+ * Whether a failed deploy must leave its new slot running.
+ *
+ * Invariant: the only healthy slot is never removed. A new slot that passed its
+ * health check goes only when the old slot is confirmed still serving.
+ */
+export async function keepProvenSlot(ctx: DeployContext, reached: DeployStage): Promise<boolean> {
+  if (!PROVEN_STAGES.has(reached)) return false;
+  if (!ctx.oldSlotServing) return true;
+  return !(await ctx.oldSlotServing().catch(() => false));
 }
 
 export async function sendDeployNotification(
