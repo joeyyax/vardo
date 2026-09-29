@@ -15,7 +15,10 @@ const fake = vi.hoisted(() => {
     children: [] as Record<string, unknown>[],
     envVars: [] as Record<string, unknown>[],
     deployments: [] as Record<string, unknown>[],
+    keyedApps: [] as Record<string, unknown>[],
+    deployKeys: [] as Record<string, unknown>[],
     writes: [] as { table: string; values: Record<string, unknown> }[],
+    inserts: [] as { table: string; values: Record<string, unknown> }[],
   };
   const tableName = (t: unknown) => (t as { [k: symbol]: string })[Symbol.for("drizzle:Name")];
   const query = {
@@ -25,6 +28,7 @@ const fake = vi.hoisted(() => {
     },
     apps: {
       findMany: async (opts: { columns?: Record<string, boolean> }) => {
+        if (opts?.columns?.gitKeyId) return state.keyedApps;
         if (opts?.columns?.envContent) return state.apps;
         if (opts?.columns?.organizationId) return state.apps;
         if (opts?.columns?.id) return state.children;
@@ -34,6 +38,7 @@ const fake = vi.hoisted(() => {
     },
     envVars: { findMany: async () => state.envVars },
     deployments: { findMany: async () => state.deployments },
+    deployKeys: { findFirst: async () => state.deployKeys.shift() ?? null },
   };
   const update = (t: unknown) => ({
     set: (values: Record<string, unknown>) => {
@@ -46,8 +51,11 @@ const fake = vi.hoisted(() => {
       return { where };
     },
   });
-  const insert = () => ({
-    values: () => ({ onConflictDoUpdate: () => ({ returning: async () => [{ id: "proj-dest" }] }) }),
+  const insert = (t: unknown) => ({
+    values: (values: Record<string, unknown>) => {
+      state.inserts.push({ table: tableName(t), values });
+      return { onConflictDoUpdate: () => ({ returning: async () => [{ id: "proj-dest" }] }) };
+    },
   });
   const tx = { query, update, insert };
   const db = { ...tx, transaction: async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx) };
@@ -66,9 +74,16 @@ function writesTo(table: string) {
   return fake.state.writes.filter((w) => w.table === table).map((w) => w.values);
 }
 
+function deployKey(orgId: string) {
+  return { id: "key-src", organizationId: orgId, name: "gh", publicKey: "ssh-ed25519 AAA", privateKey: encrypt("PEM", orgId) };
+}
+
 describe("acceptTransfer", () => {
   beforeEach(() => {
     fake.state.writes.length = 0;
+    fake.state.inserts.length = 0;
+    fake.state.keyedApps = [];
+    fake.state.deployKeys = [];
     fake.state.transfer = { id: "t-1", appId: "app-1", sourceOrgId: SRC, destinationOrgId: DEST, status: "pending" };
     fake.state.apps = [
       { id: "app-1", name: "web", envContent: encrypt("A=1", SRC) },
@@ -104,6 +119,33 @@ describe("acceptTransfer", () => {
     expect(decrypt(snap, DEST)).toBe("A=0");
   });
 
+  it("gives the app a copy of its deploy key owned by the destination org", async () => {
+    fake.state.keyedApps = [
+      { id: "app-1", gitKeyId: "key-src" },
+      { id: "child-1", gitKeyId: "key-src" },
+    ];
+    fake.state.deployKeys = [deployKey(SRC)];
+
+    await acceptTransfer("t-1", "user-1");
+
+    const copies = fake.state.inserts.filter((i) => i.table === "deploy_key").map((i) => i.values);
+    expect(copies).toHaveLength(1);
+    expect(copies[0]).toMatchObject({ organizationId: DEST, publicKey: "ssh-ed25519 AAA" });
+    expect(decrypt(copies[0].privateKey as string, DEST)).toBe("PEM");
+    const repointed = writesTo("app").filter((v) => "gitKeyId" in v).map((v) => v.gitKeyId);
+    expect(repointed).toEqual([copies[0].id, copies[0].id]);
+  });
+
+  it("drops a deploy key it cannot read instead of failing the transfer", async () => {
+    fake.state.keyedApps = [{ id: "app-1", gitKeyId: "key-src" }];
+    fake.state.deployKeys = [{ ...deployKey(SRC), privateKey: encrypt("PEM", "some-other-org") }];
+
+    await acceptTransfer("t-1", "user-1");
+
+    expect(fake.state.inserts.some((i) => i.table === "deploy_key")).toBe(false);
+    expect(writesTo("app").find((v) => "gitKeyId" in v)?.gitKeyId).toBeNull();
+  });
+
   it("aborts before moving anything when a live secret cannot be read", async () => {
     fake.state.apps[0].envContent = encrypt("A=1", "some-other-org");
 
@@ -115,6 +157,9 @@ describe("acceptTransfer", () => {
 describe("repairTransferredSecrets", () => {
   beforeEach(() => {
     fake.state.writes.length = 0;
+    fake.state.inserts.length = 0;
+    fake.state.keyedApps = [];
+    fake.state.deployKeys = [];
     fake.state.transfer = { appId: "app-1", sourceOrgId: SRC, status: "accepted" };
     fake.state.envVars = [];
     fake.state.deployments = [];
@@ -125,6 +170,26 @@ describe("repairTransferredSecrets", () => {
 
     expect(await repairTransferredSecrets()).toBe(1);
     expect(decrypt(writesTo("app")[0].envContent as string, DEST)).toBe("A=1");
+  });
+
+  it("copies a deploy key still owned by the source org", async () => {
+    fake.state.apps = [{ id: "app-1", organizationId: DEST, envContent: null }];
+    fake.state.keyedApps = [{ id: "app-1", gitKeyId: "key-src" }];
+    fake.state.deployKeys = [deployKey(SRC)];
+
+    expect(await repairTransferredSecrets()).toBe(1);
+    const copy = fake.state.inserts.find((i) => i.table === "deploy_key")!.values;
+    expect(decrypt(copy.privateKey as string, DEST)).toBe("PEM");
+    expect(writesTo("app")[0].gitKeyId).toBe(copy.id);
+  });
+
+  it("leaves a deploy key the app's org already owns", async () => {
+    fake.state.apps = [{ id: "app-1", organizationId: DEST, envContent: null }];
+    fake.state.keyedApps = [{ id: "app-1", gitKeyId: "key-src" }];
+    fake.state.deployKeys = [deployKey(DEST)];
+
+    expect(await repairTransferredSecrets()).toBe(0);
+    expect(fake.state.writes).toEqual([]);
   });
 
   it("leaves env the current org can already read", async () => {

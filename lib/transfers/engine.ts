@@ -1,13 +1,14 @@
 import { db } from "@/lib/db";
 import {
   apps,
+  deployKeys,
   deployments,
   envVars,
   appTransfers,
   projects,
   volumes,
 } from "@/lib/db/schema";
-import { eq, and, isNull, inArray, or } from "drizzle-orm";
+import { eq, and, isNull, isNotNull, inArray, or } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { extractExpressions, validateExpression } from "@/lib/env/resolve";
 import { decrypt, encrypt, isEncrypted } from "@/lib/crypto/encrypt";
@@ -84,6 +85,53 @@ async function reencryptAppSecrets(
       await tx.update(deployments).set({ envSnapshot: next }).where(eq(deployments.id, row.id));
     }
   }
+}
+
+/**
+ * The id of a deploy key `toOrgId` can use in place of `keyId`: the key itself
+ * when the org already owns it, otherwise a copy re-encrypted under the org's key.
+ * Null when the key is gone or unreadable.
+ */
+async function adoptDeployKey(tx: Tx, keyId: string, toOrgId: string): Promise<string | null> {
+  const key = await tx.query.deployKeys.findFirst({ where: eq(deployKeys.id, keyId) });
+  if (!key) return null;
+  if (key.organizationId === toOrgId) return key.id;
+  let privateKey: string;
+  try {
+    privateKey = reencryptForOrg(key.privateKey, key.organizationId, toOrgId);
+  } catch {
+    log.warn(`Deploy key ${key.id} is unreadable; not carried over`);
+    return null;
+  }
+  if (!isEncrypted(privateKey)) privateKey = encrypt(privateKey, toOrgId);
+  const id = nanoid();
+  await tx.insert(deployKeys).values({
+    id,
+    organizationId: toOrgId,
+    name: key.name,
+    publicKey: key.publicKey,
+    privateKey,
+  });
+  return id;
+}
+
+/** Point these apps at deploy keys owned by `toOrgId`, copying keys as needed. */
+async function moveAppDeployKeys(tx: Tx, appIds: string[], toOrgId: string): Promise<number> {
+  const keyed = await tx.query.apps.findMany({
+    where: and(inArray(apps.id, appIds), isNotNull(apps.gitKeyId)),
+    columns: { id: true, gitKeyId: true },
+  });
+  const adopted = new Map<string, string | null>();
+  let moved = 0;
+  for (const app of keyed) {
+    const from = app.gitKeyId!;
+    if (!adopted.has(from)) adopted.set(from, await adoptDeployKey(tx, from, toOrgId));
+    const to = adopted.get(from)!;
+    if (to === from) continue;
+    await tx.update(apps).set({ gitKeyId: to }).where(eq(apps.id, app.id));
+    moved++;
+  }
+  return moved;
 }
 
 type CrossProjectRef = {
@@ -248,6 +296,8 @@ export async function acceptTransfer(
     // Secrets are encrypted under a key derived from the org id. Moving the row
     // without rewriting them leaves them unreadable in the destination org.
     await reencryptAppSecrets(tx, appIds, transfer.sourceOrgId, transfer.destinationOrgId);
+    // Deploy keys are org-owned; the source org keeps its own copy.
+    await moveAppDeployKeys(tx, appIds, transfer.destinationOrgId);
 
     // Ensure a "Default" project exists in the destination org
     const [destProject] = await tx
@@ -282,7 +332,8 @@ export async function acceptTransfer(
 
 /**
  * Repair apps accepted before transfers re-encrypted secrets: anything still
- * encrypted under the source org's key is rewritten under the app's current org.
+ * encrypted under the source org's key is rewritten under the app's current org,
+ * and a deploy key still owned by another org is copied into the app's org.
  * Only values the source key authenticates are touched, so it is idempotent.
  */
 export async function repairTransferredSecrets(): Promise<number> {
@@ -299,7 +350,8 @@ export async function repairTransferredSecrets(): Promise<number> {
     for (const row of rows) {
       if (row.organizationId === t.sourceOrgId) continue;
       repaired += await db.transaction(async (tx) =>
-        repairAppSecrets(tx, row.id, t.sourceOrgId, row.organizationId),
+        (await repairAppSecrets(tx, row.id, t.sourceOrgId, row.organizationId)) +
+        (await moveAppDeployKeys(tx, [row.id], row.organizationId)),
       );
     }
   }
