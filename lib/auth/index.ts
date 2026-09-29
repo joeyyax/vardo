@@ -1,4 +1,5 @@
 import { betterAuth } from "better-auth";
+import { APIError } from "better-auth/api";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { passkey } from "@better-auth/passkey";
 import { twoFactor, magicLink } from "better-auth/plugins";
@@ -6,6 +7,7 @@ import { db } from "@/lib/db";
 import * as schema from "@/lib/db/schema";
 import { DEFAULT_APP_NAME } from "@/lib/constants";
 import { createDefaultOrgForUser } from "@/lib/organizations/create-default-org";
+import { REGISTRATION_CLOSED_MESSAGE, registrationAllowed, shouldCreateDefaultOrg } from "@/lib/auth/registration";
 import { isAuthMethodEnabled } from "@/lib/config/auth-methods";
 import { isPasswordAuthAllowed } from "@/lib/config/provider-restrictions";
 
@@ -172,12 +174,19 @@ function buildAuth() {
     },
   },
 
-  // Auto-promote first user to app admin + auto-create default organization
+  // Every sign-up path (password, magic link, OAuth) creates users through here.
   databaseHooks: {
     user: {
       create: {
+        before: async (user) => {
+          if (!(await registrationAllowed(user.email))) {
+            throw new APIError("FORBIDDEN", { message: REGISTRATION_CLOSED_MESSAGE });
+          }
+        },
         after: async (user) => {
-          await createDefaultOrgForUser(user.id, user.name, user.email);
+          if (await shouldCreateDefaultOrg()) {
+            await createDefaultOrgForUser(user.id, user.name, user.email);
+          }
           if (_setupPending) await refreshSetupState();
         },
       },
