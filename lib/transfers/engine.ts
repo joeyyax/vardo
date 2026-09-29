@@ -1,13 +1,90 @@
 import { db } from "@/lib/db";
 import {
   apps,
+  deployments,
   envVars,
   appTransfers,
   projects,
+  volumes,
 } from "@/lib/db/schema";
-import { eq, and, isNull } from "drizzle-orm";
+import { eq, and, isNull, inArray, or } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { extractExpressions, validateExpression } from "@/lib/env/resolve";
+import { decrypt, encrypt, isEncrypted } from "@/lib/crypto/encrypt";
+import { logger } from "@/lib/logger";
+
+const log = logger.child("transfers");
+
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/** A value encrypted under one org's key, rewritten under another's. Plaintext passes through. */
+export function reencryptForOrg(value: string, fromOrgId: string, toOrgId: string): string {
+  if (!isEncrypted(value)) return value;
+  return encrypt(decrypt(value, fromOrgId), toOrgId);
+}
+
+/**
+ * Move the org-keyed secrets of these apps from one org's key to another's.
+ * Throws when a live secret cannot be read, so the move never strands one.
+ * A deployment snapshot that is already unreadable is left as it is.
+ */
+async function reencryptAppSecrets(
+  tx: Tx,
+  appIds: string[],
+  fromOrgId: string,
+  toOrgId: string,
+): Promise<void> {
+  const appRows = await tx.query.apps.findMany({
+    where: inArray(apps.id, appIds),
+    columns: { id: true, name: true, envContent: true },
+  });
+  for (const row of appRows) {
+    if (!row.envContent) continue;
+    let next: string;
+    try {
+      next = reencryptForOrg(row.envContent, fromOrgId, toOrgId);
+    } catch {
+      throw new Error(`Env vars for "${row.name}" cannot be decrypted — transfer aborted`);
+    }
+    if (next !== row.envContent) {
+      await tx.update(apps).set({ envContent: next }).where(eq(apps.id, row.id));
+    }
+  }
+
+  const varRows = await tx.query.envVars.findMany({
+    where: inArray(envVars.appId, appIds),
+    columns: { id: true, key: true, value: true },
+  });
+  for (const row of varRows) {
+    let next: string;
+    try {
+      next = reencryptForOrg(row.value, fromOrgId, toOrgId);
+    } catch {
+      throw new Error(`Env var "${row.key}" cannot be decrypted — transfer aborted`);
+    }
+    if (next !== row.value) {
+      await tx.update(envVars).set({ value: next }).where(eq(envVars.id, row.id));
+    }
+  }
+
+  const snapshots = await tx.query.deployments.findMany({
+    where: inArray(deployments.appId, appIds),
+    columns: { id: true, envSnapshot: true },
+  });
+  for (const row of snapshots) {
+    if (!row.envSnapshot) continue;
+    let next: string;
+    try {
+      next = reencryptForOrg(row.envSnapshot, fromOrgId, toOrgId);
+    } catch {
+      log.warn(`Deployment ${row.id} env snapshot was already unreadable; left as is`);
+      continue;
+    }
+    if (next !== row.envSnapshot) {
+      await tx.update(deployments).set({ envSnapshot: next }).where(eq(deployments.id, row.id));
+    }
+  }
+}
 
 type CrossProjectRef = {
   key: string;
@@ -124,9 +201,24 @@ export async function acceptTransfer(
     transfer.destinationOrgId,
   );
 
-  if (frozenRefs.length > 0) {
+  await db.transaction(async (tx) => {
+    // Claims the transfer; a second accept racing this one finds nothing pending.
+    const claimed = await tx
+      .update(appTransfers)
+      .set({
+        status: "accepted",
+        frozenRefs,
+        respondedBy,
+        respondedAt: new Date(),
+      })
+      .where(and(eq(appTransfers.id, transferId), eq(appTransfers.status, "pending")))
+      .returning({ id: appTransfers.id });
+    if (claimed.length === 0) {
+      throw new Error("Transfer not found or not pending");
+    }
+
     for (const ref of frozenRefs) {
-      const vars = await db.query.envVars.findMany({
+      const vars = await tx.query.envVars.findMany({
         where: and(
           eq(envVars.appId, transfer.appId),
           eq(envVars.key, ref.key),
@@ -135,56 +227,119 @@ export async function acceptTransfer(
       });
       for (const v of vars) {
         if (v.value.includes(ref.originalRef)) {
-          await db
+          await tx
             .update(envVars)
             .set({
-              value: v.value.replace(
-                ref.originalRef,
-                ref.frozenValue,
-              ),
+              value: v.value.replace(ref.originalRef, ref.frozenValue),
               updatedAt: new Date(),
             })
             .where(eq(envVars.id, v.id));
         }
       }
     }
+
+    // Compose children move with their parent; their secrets are keyed the same way.
+    const children = await tx.query.apps.findMany({
+      where: eq(apps.parentAppId, transfer.appId),
+      columns: { id: true },
+    });
+    const appIds = [transfer.appId, ...children.map((c) => c.id)];
+
+    // Secrets are encrypted under a key derived from the org id. Moving the row
+    // without rewriting them leaves them unreadable in the destination org.
+    await reencryptAppSecrets(tx, appIds, transfer.sourceOrgId, transfer.destinationOrgId);
+
+    // Ensure a "Default" project exists in the destination org
+    const [destProject] = await tx
+      .insert(projects)
+      .values({
+        id: nanoid(),
+        organizationId: transfer.destinationOrgId,
+        name: "default",
+        displayName: "Default",
+      })
+      .onConflictDoUpdate({
+        target: [projects.organizationId, projects.name],
+        set: { updatedAt: new Date() },
+      })
+      .returning({ id: projects.id });
+
+    await tx
+      .update(apps)
+      .set({
+        organizationId: transfer.destinationOrgId,
+        projectId: destProject!.id,
+        updatedAt: new Date(),
+      })
+      .where(inArray(apps.id, appIds));
+
+    await tx
+      .update(volumes)
+      .set({ organizationId: transfer.destinationOrgId })
+      .where(inArray(volumes.appId, appIds));
+  });
+}
+
+/**
+ * Repair apps accepted before transfers re-encrypted secrets: anything still
+ * encrypted under the source org's key is rewritten under the app's current org.
+ * Only values the source key authenticates are touched, so it is idempotent.
+ */
+export async function repairTransferredSecrets(): Promise<number> {
+  const accepted = await db.query.appTransfers.findMany({
+    where: eq(appTransfers.status, "accepted"),
+    columns: { appId: true, sourceOrgId: true },
+  });
+  let repaired = 0;
+  for (const t of accepted) {
+    const rows = await db.query.apps.findMany({
+      where: or(eq(apps.id, t.appId), eq(apps.parentAppId, t.appId)),
+      columns: { id: true, organizationId: true },
+    });
+    for (const row of rows) {
+      if (row.organizationId === t.sourceOrgId) continue;
+      repaired += await db.transaction(async (tx) =>
+        repairAppSecrets(tx, row.id, t.sourceOrgId, row.organizationId),
+      );
+    }
   }
+  return repaired;
+}
 
-  // Ensure a "Default" project exists in the destination org
-  const [destProject] = await db
-    .insert(projects)
-    .values({
-      id: nanoid(),
-      organizationId: transfer.destinationOrgId,
-      name: "default",
-      displayName: "Default",
-    })
-    .onConflictDoUpdate({
-      target: [projects.organizationId, projects.name],
-      set: { updatedAt: new Date() },
-    })
-    .returning({ id: projects.id });
+/** Rewrites values the source key opens and the current key does not. */
+async function repairAppSecrets(tx: Tx, appId: string, fromOrgId: string, toOrgId: string): Promise<number> {
+  const stranded = (value: string | null): value is string => {
+    if (!value || !isEncrypted(value)) return false;
+    try {
+      decrypt(value, toOrgId);
+      return false;
+    } catch {
+      try {
+        decrypt(value, fromOrgId);
+        return true;
+      } catch {
+        return false;
+      }
+    }
+  };
+  let count = 0;
 
-  // Move the app to the destination org
-  await db
-    .update(apps)
-    .set({
-      organizationId: transfer.destinationOrgId,
-      projectId: destProject!.id,
-      updatedAt: new Date(),
-    })
-    .where(eq(apps.id, transfer.appId));
-
-  // Update transfer status
-  await db
-    .update(appTransfers)
-    .set({
-      status: "accepted",
-      frozenRefs,
-      respondedBy,
-      respondedAt: new Date(),
-    })
-    .where(eq(appTransfers.id, transferId));
+  const app = await tx.query.apps.findFirst({ where: eq(apps.id, appId), columns: { envContent: true } });
+  if (stranded(app?.envContent ?? null)) {
+    await tx.update(apps).set({ envContent: reencryptForOrg(app!.envContent!, fromOrgId, toOrgId) }).where(eq(apps.id, appId));
+    count++;
+  }
+  for (const v of await tx.query.envVars.findMany({ where: eq(envVars.appId, appId), columns: { id: true, value: true } })) {
+    if (!stranded(v.value)) continue;
+    await tx.update(envVars).set({ value: reencryptForOrg(v.value, fromOrgId, toOrgId) }).where(eq(envVars.id, v.id));
+    count++;
+  }
+  for (const d of await tx.query.deployments.findMany({ where: eq(deployments.appId, appId), columns: { id: true, envSnapshot: true } })) {
+    if (!stranded(d.envSnapshot)) continue;
+    await tx.update(deployments).set({ envSnapshot: reencryptForOrg(d.envSnapshot, fromOrgId, toOrgId) }).where(eq(deployments.id, d.id));
+    count++;
+  }
+  return count;
 }
 
 /**
