@@ -13,6 +13,7 @@ import { refuseSystemManaged } from "@/lib/api/system-managed";
 import { sharedMarkerTypeErrors } from "@/lib/docker/compose";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
+import { gitBranchUpdateSchema, gitUrlUpdateSchema } from "@/lib/api/git-fields";
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
@@ -24,14 +25,14 @@ const updateAppSchema = z.object({
   containerPort: z.number().int().positive().nullable().optional(),
   autoTraefikLabels: z.boolean().optional(),
   autoDeploy: z.boolean().optional(),
-  gitBranch: z.string().nullable().optional(),
+  gitBranch: gitBranchUpdateSchema.nullable().optional(),
   rootDirectory: z.string().nullable().optional(),
   source: z.enum(["git", "direct"]).optional(),
   deployType: z.enum(["compose", "dockerfile", "image", "static", "nixpacks", "railpack"]).optional(),
   composeContent: z.string().max(512000).nullable().optional(),
   composeFilePath: z.string().regex(/^[a-zA-Z0-9._-][a-zA-Z0-9._\-/]*$/, "Invalid file path").nullable().optional(),
   dockerfilePath: z.string().regex(/^[a-zA-Z0-9._-][a-zA-Z0-9._\-/]*$/, "Invalid file path").nullable().optional(),
-  gitUrl: z.string().nullable().optional(),
+  gitUrl: gitUrlUpdateSchema.nullable().optional(),
   imageName: z.string().nullable().optional(),
   restartPolicy: z.string().nullable().optional(),
   exposedPorts: z.array(z.object({

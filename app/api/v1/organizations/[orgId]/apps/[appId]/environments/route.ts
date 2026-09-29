@@ -11,6 +11,7 @@ import { verifyAppAccess } from "@/lib/api/verify-access";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { requirePlugin } from "@/lib/api/require-plugin";
+import { gitBranchUpdateSchema } from "@/lib/api/git-fields";
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
@@ -99,13 +100,13 @@ const createEnvironmentSchema = z.object({
   type: z.enum(["production", "staging", "preview", "local"]),
   domain: z.string().optional(),
   cloneFrom: z.string().optional(), // environment ID to clone env vars from
-  gitBranch: z.string().optional(), // override git branch for this environment
+  gitBranch: gitBranchUpdateSchema.optional(), // override git branch for this environment
   appOverrides: z
     .record(
       z.string(),
       z.object({
         strategy: z.enum(["clone", "clone_data", "empty", "skip"]).optional(),
-        gitBranch: z.string().optional(),
+        gitBranch: gitBranchUpdateSchema.optional(),
       })
     )
     .optional(),

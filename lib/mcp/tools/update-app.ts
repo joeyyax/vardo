@@ -8,6 +8,7 @@ import { systemManagedRefusal } from "@/lib/api/system-managed";
 import { sharedMarkerTypeErrors } from "@/lib/docker/compose";
 import type { McpAuthContext } from "../auth";
 import { accessDenied, canAccessOrg } from "../scope";
+import { gitBranchUpdateSchema, gitUrlUpdateSchema } from "@/lib/api/git-fields";
 
 // 10 updates per 5 minutes per user/org pair.
 const UPDATE_RATE_LIMIT = 10;
@@ -20,14 +21,14 @@ const updateSchema = z.object({
   containerPort: z.number().int().positive().nullable().optional(),
   autoTraefikLabels: z.boolean().optional(),
   autoDeploy: z.boolean().optional(),
-  gitBranch: z.string().nullable().optional(),
+  gitBranch: gitBranchUpdateSchema.nullable().optional(),
   rootDirectory: z.string().nullable().optional(),
   source: z.enum(["git", "direct"]).optional(),
   deployType: z.enum(["compose", "dockerfile", "image", "static", "nixpacks", "railpack"]).optional(),
   composeContent: z.string().max(512000).nullable().optional(),
   composeFilePath: z.string().nullable().optional(),
   dockerfilePath: z.string().nullable().optional(),
-  gitUrl: z.string().nullable().optional(),
+  gitUrl: gitUrlUpdateSchema.nullable().optional(),
   imageName: z.string().nullable().optional(),
   restartPolicy: z.string().nullable().optional(),
   cpuLimit: z.number().positive().max(64).nullable().optional(),
