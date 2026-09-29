@@ -1692,7 +1692,7 @@ do_update() {
     info "$commit_count incoming commit(s):"
     echo ""
     echo -e "${DIM}"
-    git log HEAD..origin/"$current_branch" --oneline --no-decorate | head -20
+    git log HEAD..origin/"$current_branch" --oneline --no-decorate -n 20
     echo -e "${RESET}"
   fi
 
