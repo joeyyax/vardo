@@ -86,9 +86,9 @@ export function AuthSettings() {
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">
-              {registrationMode === "closed" && "New users can only be added by an admin."}
+              {registrationMode === "closed" && "Only invited people and users an admin adds can sign up."}
               {registrationMode === "open" && "Anyone with the link can create an account."}
-              {registrationMode === "approval" && "New signups are held for admin approval before access is granted."}
+              {registrationMode === "approval" && "Approval isn't built yet, so signups are refused as in Closed."}
             </p>
           </div>
 

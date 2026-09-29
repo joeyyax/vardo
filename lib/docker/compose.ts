@@ -36,6 +36,7 @@ export {
   normalizeNamedNetworkModes,
   validateCompose,
   sanitizeCompose,
+  hostAccessErrors,
   sharedServiceNames,
   findMistypedSharedMarkers,
   sharedMarkerTypeErrors,

@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { organizations, memberships, user } from "@/lib/db/schema";
+import { organizations, memberships } from "@/lib/db/schema";
 import { getSession } from "@/lib/auth/session";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { logger } from "@/lib/logger";
 
@@ -89,12 +89,6 @@ async function handlePost(request: NextRequest) {
     // Add a short suffix to ensure uniqueness
     const slug = `${baseSlug}-${Math.random().toString(36).substring(2, 8)}`;
 
-    // Check if this is the first org (make user app admin)
-    const [{ count: orgCount }] = await db
-      .select({ count: sql<number>`count(*)` })
-      .from(organizations);
-    const isFirstOrg = orgCount === 0;
-
     // Create the organization
     const [org] = await db
       .insert(organizations)
@@ -113,15 +107,7 @@ async function handlePost(request: NextRequest) {
       role: "owner",
     });
 
-    // If first org, make user app admin
-    if (isFirstOrg) {
-      await db
-        .update(user)
-        .set({ isAppAdmin: true })
-        .where(eq(user.id, session.user.id));
-    }
-
-    return NextResponse.json({ organization: org, isAppAdmin: isFirstOrg }, { status: 201 });
+    return NextResponse.json({ organization: org }, { status: 201 });
   } catch (error) {
     log.error("Error creating organization:", error);
     return NextResponse.json(
