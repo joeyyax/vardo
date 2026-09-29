@@ -529,6 +529,23 @@ get_ram_mb() {
   fi
 }
 
+# A quarter of RAM, between 2 and 16 GiB. Bounds every build at once.
+default_buildkit_mem() {
+  local gb=$(( $(get_ram_mb) / 1024 / 4 ))
+  (( gb < 2 )) && gb=2
+  (( gb > 16 )) && gb=16
+  echo "${gb}g"
+}
+
+ensure_buildkit_mem() {
+  local env_file="$1"
+  grep -q "^VARDO_BUILDKIT_MEM=" "$env_file" 2>/dev/null && return
+  local mem
+  mem=$(default_buildkit_mem)
+  printf '\n# Memory limit for builds (vardo-buildkit)\nVARDO_BUILDKIT_MEM=%s\n' "$mem" >> "$env_file"
+  log "Set VARDO_BUILDKIT_MEM=$mem"
+}
+
 # ── Disk space check ─────────────────────────────────────────────────────────
 
 check_disk_space() {
@@ -1287,6 +1304,8 @@ EOF
     echo "EXTERNAL_PROJECTS_PATH=${EXTERNAL_PROJECTS_PATH}" >> "$env_file"
   fi
 
+  ensure_buildkit_mem "$env_file"
+
   chmod 600 "$env_file"
 
   # Symlink .env into the active slot so docker compose picks it up
@@ -1555,13 +1574,18 @@ run_env_migrations() {
   # and gpu when NVIDIA devices are present
   load_env_display
   if ! is_dev; then
-    local target_profiles="production"
-    if [ -e /dev/nvidia0 ] && [ -e /dev/nvidiactl ]; then
-      target_profiles="production,gpu"
-    fi
-
     local current_profiles
     current_profiles=$(grep "^COMPOSE_PROFILES=" "$env_file" 2>/dev/null | cut -d= -f2 || echo "")
+
+    # Adds what is missing and keeps what an operator opted into, like buildkit.
+    local target_profiles="$current_profiles"
+    local wanted=(production)
+    if [ -e /dev/nvidia0 ] && [ -e /dev/nvidiactl ]; then
+      wanted+=(gpu)
+    fi
+    for p in "${wanted[@]}"; do
+      [[ ",$target_profiles," == *",$p,"* ]] || target_profiles="${target_profiles:+$target_profiles,}$p"
+    done
 
     if [[ "$current_profiles" != "$target_profiles" ]]; then
       if grep -q "^COMPOSE_PROFILES=" "$env_file"; then
@@ -1572,6 +1596,8 @@ run_env_migrations() {
       log "Set COMPOSE_PROFILES=$target_profiles"
     fi
   fi
+
+  ensure_buildkit_mem "$env_file"
 
   # Remove deprecated feature flags
   _sed_i '/^FEATURE_METRICS=/d' "$env_file" 2>/dev/null || true

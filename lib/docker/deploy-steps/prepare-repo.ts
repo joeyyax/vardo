@@ -61,6 +61,7 @@ import {
 import type { DeployContext } from "../deploy-context";
 import { deployments } from "@/lib/db/schema";
 import { execFileAsync } from "@/lib/utils/exec";
+import { boundedBuild, buildKitLimit, explainBuildOom } from "../build-memory";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -291,21 +292,30 @@ async function buildFromRepo(
         }
       }
       args.push(repoPath);
-      await spawnStream("railpack", args, { cwd: repoPath, env: buildEnv, signal }, logs, "[build][railpack]");
+      try {
+        await spawnStream("railpack", args, { cwd: repoPath, env: buildEnv, signal }, logs, "[build][railpack]");
+      } catch (err) {
+        throw explainBuildOom(err, await buildKitLimit(buildEnv.BUILDKIT_HOST));
+      }
       logs.push(`[build] Railpack build complete: ${imageName}`);
       return;
     }
 
     const dfPath = dockerfilePath || "Dockerfile";
     logs.push(`[build] Building with Dockerfile (${dfPath})...`);
-    const args = ["build", "-t", imageName, "-f", join(repoPath, dfPath)];
+    const bounded = await boundedBuild((line) => logs.push(line), signal);
+    const args = ["build", ...bounded.loadArgs, "-t", imageName, "-f", join(repoPath, dfPath)];
     if (envVars) {
       for (const [k, v] of Object.entries(envVars)) {
         args.push("--build-arg", `${k}=${v}`);
       }
     }
     args.push(repoPath);
-    await spawnStream("docker", args, { cwd: repoPath, env: authEnv, signal }, logs, "[build][docker]");
+    try {
+      await spawnStream("docker", args, { cwd: repoPath, env: { ...authEnv, ...bounded.env }, signal }, logs, "[build][docker]");
+    } catch (err) {
+      throw explainBuildOom(err, bounded);
+    }
     logs.push(`[build] Docker build complete: ${imageName}`);
   });
 }

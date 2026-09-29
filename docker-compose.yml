@@ -184,7 +184,8 @@ services:
       - internal
 
   # Railpack builds through BuildKit rather than the Docker daemon, so a
-  # railpack deploy needs this running. Opt in with `buildkit` in
+  # railpack deploy needs this running. Dockerfile and compose builds use it
+  # too when it is up, so they run under its memory limit. Opt in with `buildkit` in
   # COMPOSE_PROFILES — it is privileged, which should be a deliberate choice
   # rather than something every install inherits. Nixpacks does not need it.
   buildkit:
@@ -195,7 +196,9 @@ services:
       - buildkit
     restart: unless-stopped
     privileged: true
-    mem_limit: ${VARDO_BUILDKIT_MEM:-2g}
+    # Every build runs here when this profile is on, so this bounds them all.
+    # install.sh sets it to a quarter of RAM.
+    mem_limit: ${VARDO_BUILDKIT_MEM:-4g}
     volumes:
       - buildkit_data:/var/lib/buildkit
     networks:
