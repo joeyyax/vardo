@@ -151,8 +151,10 @@ describe("swap — a rotating service on an externalized volume", () => {
   });
 
   it("keeps both slots up when nothing outlives a slot", async () => {
-    await swap(context());
-    expect(indexOf(isOldSlotStop)).toBeGreaterThan(indexOf(isNewSlotUp));
+    const ctx = context();
+    await swap(ctx);
+    expect(indexOf(isOldSlotStop)).toBe(-1);
+    expect(ctx.stopOldSlot).toBeTypeOf("function");
   });
 
   it("keeps both slots up when the volume belongs to a shared service", async () => {
@@ -168,8 +170,10 @@ describe("swap — a rotating service on an externalized volume", () => {
       volumes: { "postgres-data": {} },
     } as unknown as ComposeFile;
 
-    await swap(context({ compose }));
-    expect(indexOf(isOldSlotStop)).toBeGreaterThan(indexOf(isNewSlotUp));
+    const ctx = context({ compose });
+    await swap(ctx);
+    expect(indexOf(isOldSlotStop)).toBe(-1);
+    expect(ctx.stopOldSlot).toBeTypeOf("function");
   });
 
   it("keeps both slots up for a bind mount, which no slot externalizes", async () => {
@@ -180,8 +184,10 @@ describe("swap — a rotating service on an externalized volume", () => {
       },
     } as unknown as ComposeFile;
 
-    await swap(context({ compose }));
-    expect(indexOf(isOldSlotStop)).toBeGreaterThan(indexOf(isNewSlotUp));
+    const ctx = context({ compose });
+    await swap(ctx);
+    expect(indexOf(isOldSlotStop)).toBe(-1);
+    expect(ctx.stopOldSlot).toBeTypeOf("function");
   });
 
   it("never degrades Vardo deploying itself — its old slot runs the deploy", async () => {

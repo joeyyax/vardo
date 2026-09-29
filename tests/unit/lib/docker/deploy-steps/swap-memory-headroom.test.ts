@@ -119,7 +119,10 @@ beforeEach(() => {
 
 describe("swap — memory headroom", () => {
   it("keeps the old slot serving when both fit", async () => {
-    await swap(context());
+    const ctx = context();
+    await swap(ctx);
+    expect(indexOf(isOldSlotStop)).toBe(-1);
+    await ctx.stopOldSlot!();
     expect(indexOf(isOldSlotStop)).toBeGreaterThan(indexOf(isNewSlotUp));
   });
 
@@ -157,7 +160,9 @@ describe("swap — memory headroom", () => {
 
 describe("swap — OOM inside the deploy window", () => {
   it("checks the old slot after stopping it", async () => {
-    await swap(context());
+    const ctx = context();
+    await swap(ctx);
+    await ctx.stopOldSlot!();
     expect(oomMock.reportOomDuringDeploy).toHaveBeenCalledWith(
       { organizationId: "org-1", appId: "app-1", appName: "app" },
       "app-production-blue",

@@ -8,7 +8,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // old slot that never stopped is still holding its containers.
 // ---------------------------------------------------------------------------
 
-const { dbMock, writes, emitMock, execCalls, execFails, hooksMock, queueDrained } = vi.hoisted(() => {
+const { dbMock, writes, emitMock, execCalls, execFails, hooksMock, queueDrained, commitFails } = vi.hoisted(() => {
   type Write = { table: unknown; values: Record<string, unknown> };
   const writes: Write[] = [];
   const execCalls: string[] = [];
@@ -16,10 +16,12 @@ const { dbMock, writes, emitMock, execCalls, execFails, hooksMock, queueDrained 
   const emitMock = vi.fn();
   const hooksMock = vi.fn().mockResolvedValue({ allowed: true });
   const queueDrained = vi.fn().mockResolvedValue(true);
+  const commitFails = { value: false };
 
   function makeUpdateChain(table: unknown) {
     const where = vi.fn().mockResolvedValue(undefined);
     const set = vi.fn().mockImplementation((values: Record<string, unknown>) => {
+      if (commitFails.value && values.status === "success") throw new Error("connection terminated");
       writes.push({ table, values });
       return { where };
     });
@@ -35,7 +37,7 @@ const { dbMock, writes, emitMock, execCalls, execFails, hooksMock, queueDrained 
     },
   };
 
-  return { dbMock, writes, emitMock, execCalls, execFails, hooksMock, queueDrained };
+  return { dbMock, writes, emitMock, execCalls, execFails, hooksMock, queueDrained, commitFails };
 });
 
 vi.mock("@/lib/db", () => ({ db: dbMock }));
@@ -98,6 +100,7 @@ import { deployments } from "@/lib/db/schema";
 import { addEvent } from "@/lib/stream/producer";
 import { recordActivity } from "@/lib/activity";
 import { sendDeployNotification } from "@/lib/docker/deploy";
+import { removeContainer } from "@/lib/docker/client";
 
 function makeContext(overrides: Partial<DeployContext> = {}): DeployContext {
   const logLines: string[] = [];
@@ -173,6 +176,8 @@ describe("postDeploy tail work", () => {
     writes.length = 0;
     execCalls.length = 0;
     execFails.stop = false;
+    commitFails.value = false;
+    vi.mocked(removeContainer).mockClear();
     emitMock.mockClear();
     hooksMock.mockResolvedValue({ allowed: true });
     queueDrained.mockResolvedValue(true);
@@ -249,16 +254,34 @@ describe("postDeploy tail work", () => {
     expect(unfinishedReasons()[0]).toContain("webhook returned 500");
   });
 
-  it("reports an old slot that would not stop, once the deploy has committed", async () => {
-    execFails.stop = true;
+  it("stops the old slot only after the deploy commits", async () => {
+    let committedFirst = false;
+    const stopOldSlot = vi.fn(async () => {
+      committedFirst = writes.some((w) => w.table === deployments && w.values.status === "success");
+      return { ok: true as const };
+    });
 
-    const ctx = makeContext({ activeSlot: "green", isLocalEnv: false });
-    await postDeploy(ctx);
+    await postDeploy(makeContext({ activeSlot: "green", isLocalEnv: false, stopOldSlot }));
 
-    const success = writes.findIndex((w) => w.table === deployments && w.values.status === "success");
-    const noted = writes.findIndex((w) => w.table === deployments && "postDeployError" in w.values);
-    expect(unfinishedReasons()[0]).toContain("did not stop");
-    expect(success).toBeGreaterThanOrEqual(0);
-    expect(noted).toBeGreaterThan(success);
+    expect(stopOldSlot).toHaveBeenCalledOnce();
+    expect(committedFirst).toBe(true);
+  });
+
+  it("leaves the old slot and the imported original alone when the commit fails", async () => {
+    commitFails.value = true;
+    const stopOldSlot = vi.fn().mockResolvedValue({ ok: true });
+    const ctx = makeContext({
+      activeSlot: "green",
+      isLocalEnv: false,
+      stopOldSlot,
+      app: { ...makeContext().app, importedContainerId: "abc123" },
+    });
+
+    await expect(postDeploy(ctx)).rejects.toThrow("connection terminated");
+
+    expect(ctx.succeeded).toBeFalsy();
+    expect(stopOldSlot).not.toHaveBeenCalled();
+    expect(removeContainer).not.toHaveBeenCalled();
+    expect(execCalls.some((c) => c.includes(" stop"))).toBe(false);
   });
 });
