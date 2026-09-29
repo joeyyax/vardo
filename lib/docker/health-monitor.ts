@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { apps as appsTable } from "@/lib/db/schema";
-import { listContainers, inspectContainer, restartContainer } from "./client";
+import { listContainers, inspectContainer, restartContainer, startContainer } from "./client";
 import { fetchAllMetrics } from "@/lib/metrics/provider";
 import { emit } from "@/lib/notifications/dispatch";
 import { recordActivity } from "@/lib/activity/record";
@@ -50,6 +50,10 @@ export const MAX_RESTARTS_PER_WINDOW = 5;
  *  fresh-deploy window, and Docker reports "starting" (not "unhealthy") during a
  *  healthcheck's start_period anyway. */
 const MIN_CONTAINER_AGE_MS = 120_000;
+/** How long a container is watched after an auto-restart. */
+export const RECOVERY_WINDOW_MS = 5 * 60_000;
+/** An exit this soon after a restart attempt was caused by it. */
+export const RESTART_EXIT_GRACE_MS = 2 * 60_000;
 
 /** Restarts observed within RESTART_WINDOW_MS before a container counts as
  *  crash-looping. Override with VARDO_CRASH_LOOP_RESTARTS. */
@@ -103,6 +107,38 @@ export function isCrashLooping(opts: {
   return opts.restartsSinceBaseline >= opts.threshold;
 }
 
+export type RecoveryDecision = "watch" | "start" | "done" | "escalate";
+
+/**
+ * What to do about a container Vardo just tried to restart.
+ *
+ * A restart whose kill times out leaves Docker's `hasBeenManuallyStopped` set,
+ * so the restart policy never brings the container back once it finally exits.
+ * An exit that lands within RESTART_EXIT_GRACE_MS of the attempt is ours to undo;
+ * a later one is someone else's stop.
+ */
+export function decideRecovery(opts: {
+  running: boolean;
+  status: string;
+  /** Epoch ms of the last exit, or null when unknown. */
+  finishedAt: number | null;
+  attemptAt: number;
+  startTried: boolean;
+  now: number;
+}): RecoveryDecision {
+  const expired = opts.now - opts.attemptAt >= RECOVERY_WINDOW_MS;
+  if (opts.running) return opts.startTried || expired ? "done" : "watch";
+  if (opts.startTried) return "escalate";
+  if (opts.status === "exited" || opts.status === "dead" || opts.status === "created") {
+    const ours =
+      opts.finishedAt !== null &&
+      opts.finishedAt >= opts.attemptAt &&
+      opts.finishedAt - opts.attemptAt <= RESTART_EXIT_GRACE_MS;
+    return ours ? "start" : "done";
+  }
+  return expired ? "escalate" : "watch";
+}
+
 /** Whether an app should be auto-restarted when unhealthy. null on the app means
  *  "use the default", which is on for critical-priority apps and off otherwise. */
 export function effectiveAutoRestart(app: {
@@ -129,6 +165,18 @@ const crashLoopAlerted = new Map<string, number>();
 /** appId → hysteresis streaks, fed back into evaluateConditions each tick. */
 const conditionStreaks = new Map<string, ConditionStreaks>();
 
+type PendingRecovery = {
+  appId: string;
+  appName: string;
+  organizationId: string;
+  containerName: string;
+  attemptAt: number;
+  startTried: boolean;
+};
+/** containerId → a restart still being watched. Stopped containers drop out of
+ *  listContainers(), so these are inspected by id. */
+const pendingRecovery = new Map<string, PendingRecovery>();
+
 // ---------------------------------------------------------------------------
 // Tick
 // ---------------------------------------------------------------------------
@@ -154,6 +202,8 @@ export async function tickHealthMonitor(): Promise<void> {
     log.error("Failed to load self-heal state:", err instanceof Error ? err.message : err);
     return;
   }
+
+  await tickRecoveries(now);
 
   const managed = containers.filter((c) => c.labels["vardo.managed"] === "true");
   const seen = new Set<string>();
@@ -293,6 +343,14 @@ export async function tickHealthMonitor(): Promise<void> {
     }
 
     // decision === "restart"
+    pendingRecovery.set(c.id, {
+      appId: app.id,
+      appName,
+      organizationId: app.organizationId,
+      containerName: c.name,
+      attemptAt: now,
+      startTried: false,
+    });
     let ok = true;
     try {
       await restartContainer(c.id);
@@ -346,6 +404,83 @@ export async function tickHealthMonitor(): Promise<void> {
   await persistConditions(appRows, signals, advisories, now, usageByContainer.size);
   await pruneSelfHealState(now);
   cleanupState(seen);
+}
+
+/** Follow up on recent auto-restarts, starting any the restart left stopped. */
+async function tickRecoveries(now: number): Promise<void> {
+  for (const [id, p] of pendingRecovery) {
+    let info;
+    try {
+      info = await inspectContainer(id);
+    } catch {
+      pendingRecovery.delete(id); // removed or replaced by a redeploy
+      continue;
+    }
+
+    const finished = Date.parse(info.state.finishedAt);
+    const decision = decideRecovery({
+      running: info.state.running,
+      status: info.state.status,
+      finishedAt: Number.isFinite(finished) && finished > 0 ? finished : null,
+      attemptAt: p.attemptAt,
+      startTried: p.startTried,
+      now,
+    });
+
+    if (decision === "watch") continue;
+    if (decision === "done") {
+      pendingRecovery.delete(id);
+      continue;
+    }
+
+    if (decision === "start") {
+      p.startTried = true;
+      try {
+        await startContainer(id);
+        log.info(`Started ${p.containerName} after its auto-restart left it stopped`);
+        await recordActivity({
+          organizationId: p.organizationId,
+          appId: p.appId,
+          action: "app.self_healed",
+          metadata: {
+            summary: `${p.containerName} stopped during an auto-restart and Vardo started it again`,
+            containerName: p.containerName,
+          },
+        }).catch((err) => log.error(`Failed to record recovery for ${p.containerName}:`, err));
+        emit(p.organizationId, {
+          type: "app.auto-restarted",
+          title: `Recovered: ${p.appName}`,
+          message: `${p.containerName} stopped during an auto-restart and has been started again.`,
+          appId: p.appId,
+          appName: p.appName,
+          containerName: p.containerName,
+          containerId: id,
+          reason: "restart-left-stopped",
+          success: true,
+          gaveUp: false,
+        });
+        continue;
+      } catch (err) {
+        log.error(`Failed to start ${p.containerName}:`, err instanceof Error ? err.message : err);
+      }
+    }
+
+    // escalate, or a start that failed
+    pendingRecovery.delete(id);
+    log.error(`${p.containerName} is not running after its auto-restart — giving up`);
+    emit(p.organizationId, {
+      type: "app.auto-restarted",
+      title: `Self-heal failed: ${p.appName}`,
+      message: `${p.containerName} is ${info.state.status} after an auto-restart and Vardo could not bring it back. Manual intervention required.`,
+      appId: p.appId,
+      appName: p.appName,
+      containerName: p.containerName,
+      containerId: id,
+      reason: "restart-left-stopped",
+      success: false,
+      gaveUp: true,
+    });
+  }
 }
 
 function emptySignal(now: number): ConditionInput {
