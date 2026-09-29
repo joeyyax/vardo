@@ -673,3 +673,23 @@ export function sanitizeCompose(
   }
   return { compose: sanitized, strippedMounts };
 }
+
+/** Service settings that reach past the container boundary to the host. */
+export function hostAccessErrors(compose: ComposeFile): string[] {
+  const errors: string[] = [];
+  for (const [name, svc] of Object.entries(compose.services)) {
+    const used: string[] = [];
+    if (svc.privileged) used.push("privileged");
+    if (svc.cap_add?.length) used.push("cap_add");
+    if (svc.devices?.length) used.push("devices");
+    if (svc.security_opt?.length) used.push("security_opt");
+    const nm = svc.network_mode;
+    if (nm === "host" || nm?.startsWith("container:")) used.push(`network_mode: ${nm}`);
+    if (used.length > 0) {
+      errors.push(
+        `Service "${name}" uses ${used.join(", ")}, which only a trusted organization can deploy. An instance admin can mark the organization trusted under Admin → Organizations.`,
+      );
+    }
+  }
+  return errors;
+}

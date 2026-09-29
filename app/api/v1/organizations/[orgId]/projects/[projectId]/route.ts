@@ -6,7 +6,7 @@ import { eq, and, sql } from "drizzle-orm";
 import { z } from "zod";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { refuseSystemManaged } from "@/lib/api/system-managed";
-import { isOrgAdmin } from "@/lib/auth/permissions";
+import { isAppAdmin } from "@/lib/auth/admin";
 import { logger } from "@/lib/logger";
 import { recordActivity } from "@/lib/activity";
 
@@ -108,12 +108,12 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // allowBindMounts / allowDockerSocket are security-sensitive — admins/owners only
+    // Host mounts reach the host, so only instance admins may grant them.
     if (
       (parsed.data.allowBindMounts !== undefined || parsed.data.allowDockerSocket !== undefined) &&
-      !isOrgAdmin(org.membership.role)
+      !(await isAppAdmin())
     ) {
-      return NextResponse.json({ error: "Only admins can change security-sensitive settings" }, { status: 403 });
+      return NextResponse.json({ error: "Only instance admins can change host mount settings" }, { status: 403 });
     }
 
     const existing = await findProjectBasic(orgId, projectId);
