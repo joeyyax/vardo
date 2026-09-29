@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { csrfRejection } from "@/lib/security/csrf";
 
 /**
  * Layer 1: In-memory IP-based rate limiting on all API routes.
@@ -36,6 +37,15 @@ export function proxy(request: NextRequest) {
   // Only rate limit API routes
   if (!request.nextUrl.pathname.startsWith("/api/")) {
     return NextResponse.next();
+  }
+
+  const csrf = csrfRejection({
+    method: request.method,
+    pathname: request.nextUrl.pathname,
+    headers: request.headers,
+  });
+  if (csrf) {
+    return NextResponse.json({ error: "Cross-site request blocked" }, { status: 403 });
   }
 
   // Skip health check and monitoring endpoints
