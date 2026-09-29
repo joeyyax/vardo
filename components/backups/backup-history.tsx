@@ -159,7 +159,7 @@ export function BackupHistory({
         title="Restore this backup"
         description={
           pendingRestore
-            ? `This overwrites ${pendingRestore.app.displayName}'s current volume data with the archive from ${new Date(pendingRestore.startedAt).toLocaleString()}. Anything written since is lost, and there is no undo.`
+            ? `This overwrites ${pendingRestore.app.displayName}'s current volume data with the archive from ${new Date(pendingRestore.startedAt).toLocaleString()}. Containers using a restored volume stop until it finishes. Anything written since is lost, and there is no undo.`
             : ""
         }
         confirmLabel="Restore"
