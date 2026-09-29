@@ -42,6 +42,7 @@ import { overlapFitsNow } from "../memory-headroom";
 import { reportOomDuringDeploy } from "../deploy-oom";
 import { checkVolumeLimits } from "./volume-limits";
 import { execFileAsync } from "@/lib/utils/exec";
+import { boundedBuild, explainBuildOom } from "../build-memory";
 
 const NETWORK_NAME = VARDO_NETWORK;
 const DEFAULT_HEALTH_CHECK_TIMEOUT_MS = DEFAULT_HEALTH_CHECK_TIMEOUT;
@@ -348,11 +349,14 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
     await withRegistryAuth(async (env) => {
       if (buildServices.length > 0) {
         log(`[deploy] Pre-building ${newSlot} slot images (old slot still serving)...`);
+        const bounded = await boundedBuild(log, ctx.signal);
         const { stdout, stderr } = await execFileAsync(
           "docker",
           ["compose", "--progress=plain", ...composeFileArgs, "-p", newProjectName, "build"],
-          { cwd: slotDir, env, timeout: COMPOSE_BUILD_UP_TIMEOUT, maxBuffer: EXEC_MAX_BUFFER, signal: ctx.signal }
-        );
+          { cwd: slotDir, env: { ...env, ...bounded.env }, timeout: COMPOSE_BUILD_UP_TIMEOUT, maxBuffer: EXEC_MAX_BUFFER, signal: ctx.signal }
+        ).catch((err: unknown) => {
+          throw explainBuildOom(err, bounded);
+        });
         for (const line of stdout.split(/\r?\n|\r/).filter(Boolean)) {
           logs.push(`[deploy][build] ${line.trim()}`);
         }
