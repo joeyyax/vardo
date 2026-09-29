@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { handleRouteError } from "@/lib/api/error-response";
-import { requireMeshPeer } from "@/lib/mesh/auth";
-import { importProjectBundle } from "@/lib/mesh/transfers";
+import { peerOrganizationId, requireMeshPeer } from "@/lib/mesh/auth";
+import { BundleRejectedError, importProjectBundle } from "@/lib/mesh/transfers";
 import { projectBundleSchema } from "@/lib/mesh/bundle-schema";
 import type { ProjectBundle } from "@/lib/mesh/transfers";
 
@@ -13,7 +13,8 @@ const promoteSchema = z.object({
     transferType: z.literal("promote"),
   }),
   environment: z.enum(["production", "staging", "development"]),
-  orgId: z.string().min(1),
+  // Ignored: the target org comes from the peer's binding.
+  orgId: z.string().optional(),
 }).strict();
 
 /**
@@ -26,6 +27,7 @@ const promoteSchema = z.object({
 async function handlePost(request: NextRequest) {
   try {
     const peer = await requireMeshPeer(request);
+    const orgId = peerOrganizationId(peer);
 
     const body = await request.json();
     const parsed = promoteSchema.safeParse(body);
@@ -36,7 +38,7 @@ async function handlePost(request: NextRequest) {
       );
     }
 
-    const { bundle, environment, orgId } = parsed.data;
+    const { bundle, environment } = parsed.data;
 
     // Enforce instance type rules: dev instances can only promote to staging
     if (peer.type === "dev" && environment !== "staging") {
@@ -54,6 +56,9 @@ async function handlePost(request: NextRequest) {
 
     return NextResponse.json(result, { status: 201 });
   } catch (error) {
+    if (error instanceof BundleRejectedError) {
+      return NextResponse.json({ error: error.message }, { status: 409 });
+    }
     return handleRouteError(error, "Error receiving promotion");
   }
 }

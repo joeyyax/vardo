@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { handleRouteError } from "@/lib/api/error-response";
-import { requireMeshPeer } from "@/lib/mesh/auth";
+import { peerOrganizationId, requireMeshPeer } from "@/lib/mesh/auth";
 import { buildProjectBundle } from "@/lib/mesh/transfers";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
@@ -20,7 +20,7 @@ const pullSchema = z.object({
  */
 async function handlePost(request: NextRequest) {
   try {
-    await requireMeshPeer(request);
+    const organizationId = peerOrganizationId(await requireMeshPeer(request));
 
     const body = await request.json();
     const parsed = pullSchema.safeParse(body);
@@ -31,11 +31,10 @@ async function handlePost(request: NextRequest) {
       );
     }
 
-    // Any authenticated peer can pull any project — mesh peers are system-level
-    // and carry no org grants, so there is nothing to scope against.
     const bundle = await buildProjectBundle(parsed.data.projectId, {
       transferType: "pull",
       includeEnvVars: parsed.data.includeEnvVars,
+      organizationId,
     });
 
     return NextResponse.json({ bundle });
