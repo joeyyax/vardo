@@ -26,6 +26,7 @@ import { parseEnvToMap } from "@/lib/env/parse-env";
 import {
   droppedKeyWarnings,
   generateComposeForImage,
+  hostAccessErrors,
   parseCompose,
   parseComposeYaml,
   sanitizeCompose,
@@ -71,7 +72,7 @@ type ParseAndSanitizeOpts = {
   orgTrusted?: boolean;
 };
 
-function parseAndSanitize(yaml: string, log: (msg: string) => void, opts?: ParseAndSanitizeOpts): ComposeFile {
+export function parseAndSanitize(yaml: string, log: (msg: string) => void, opts?: ParseAndSanitizeOpts): ComposeFile {
   // Before parseCompose, which drops a non-boolean marker and leaves no trace.
   // The save routes check too, but compose read out of a git clone reaches
   // deploy without passing through any of them.
@@ -101,6 +102,10 @@ function parseAndSanitize(yaml: string, log: (msg: string) => void, opts?: Parse
       throw new DeployBlockedError(`Compose validation failed:\n${errors.join("\n")}`);
     }
     return compose;
+  }
+  const hostErrors = hostAccessErrors(compose);
+  if (hostErrors.length > 0) {
+    throw new DeployBlockedError(hostErrors.join("\n"));
   }
   const bindMountsEnabled = opts?.allowBindMounts || isFeatureEnabled("bindMounts");
   const dockerSocketEnabled = opts?.allowDockerSocket || isFeatureEnabled("dockerSocket");
