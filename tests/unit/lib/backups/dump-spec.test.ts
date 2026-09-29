@@ -61,8 +61,13 @@ describe("buildDumpArgv — postgres", () => {
 describe("buildRestoreArgv — postgres", () => {
   it("stops on the first error rather than exiting 0 after skipping statements", () => {
     expect(buildRestoreArgv("postgres", "abc123", PG_ENV)).toEqual([
-      "exec", "-i", "abc123", "psql", "-U", "appuser", "-v", "ON_ERROR_STOP=1", "-d", "appdb",
+      "exec", "-i", "abc123",
+      "psql", "-U", "appuser", "-v", "ON_ERROR_STOP=1", "--single-transaction", "-d", "appdb",
     ]);
+  });
+
+  it("restores in one transaction, so a failure leaves the database as it was", () => {
+    expect(buildRestoreArgv("postgres", "c", PG_ENV)).toContain("--single-transaction");
   });
 
   it("keeps stdin open, since the dump arrives that way", () => {

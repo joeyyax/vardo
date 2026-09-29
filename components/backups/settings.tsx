@@ -291,7 +291,7 @@ export function BackupSettings() {
               <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
               <span className="text-muted-foreground">
                 <span className="font-medium text-foreground">One-click restore</span>{" "}
-                — any snapshot can be restored directly into the running volume
+                — containers using the volume stop for it, and a failed restore puts the previous data back
               </span>
             </li>
           </ul>

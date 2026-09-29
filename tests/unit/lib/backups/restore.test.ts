@@ -32,7 +32,13 @@ const {
   inspectContainerMock,
   resolveDefaultEnvMock,
   probeDecryptabilityMock,
+  runningContainersMock,
+  stopContainerMock,
+  startContainerMock,
 } = vi.hoisted(() => ({
+  runningContainersMock: vi.fn(),
+  stopContainerMock: vi.fn(),
+  startContainerMock: vi.fn(),
   backupsFindFirst: vi.fn(),
   volumesFindFirst: vi.fn(),
   execFileMock: vi.fn((...args: unknown[]) => {
@@ -66,6 +72,9 @@ vi.mock("@/lib/hooks/execute", () => ({ executeHooks: executeHooksMock }));
 vi.mock("@/lib/docker/client", () => ({
   listContainers: listContainersMock,
   inspectContainer: inspectContainerMock,
+  dockerRequest: runningContainersMock,
+  stopContainer: stopContainerMock,
+  startContainer: startContainerMock,
 }));
 vi.mock("@/lib/docker/resolve-env", () => ({ resolveDefaultEnv: resolveDefaultEnvMock }));
 vi.mock("@/lib/crypto/key-escrow", () => ({ probeDecryptability: probeDecryptabilityMock }));
@@ -129,6 +138,9 @@ beforeEach(() => {
   inspectContainerMock.mockReset().mockResolvedValue({ mounts: [] });
   resolveDefaultEnvMock.mockReset().mockResolvedValue({ name: "production", type: "production", id: "env-1" });
   probeDecryptabilityMock.mockReset().mockResolvedValue({ encrypted: 3, undecryptable: 0, samples: [] });
+  runningContainersMock.mockReset().mockResolvedValue([]);
+  stopContainerMock.mockReset().mockResolvedValue(undefined);
+  startContainerMock.mockReset().mockResolvedValue(undefined);
 });
 
 describe("restoreBackup — volume (tar) round-trip", () => {
@@ -142,7 +154,8 @@ describe("restoreBackup — volume (tar) round-trip", () => {
     expect(result.log).toMatch(/Checksum verified/);
     // The extract command ran against a -v <volume>:/data mount with tar xzf.
     const tarCall = execFileMock.mock.calls.find(
-      ([file, args]) => file === "docker" && (args as string[]).includes("run"),
+      ([file, args]) =>
+        file === "docker" && (args as string[]).includes("run") && !(args as string[]).join(" ").includes("pre-restore"),
     );
     expect(tarCall).toBeDefined();
     expect((tarCall![1] as string[]).join(" ")).toMatch(/tar xzf "\/backup\/volume\.tar\.gz"/);
@@ -487,5 +500,139 @@ describe("#756 — volume resolution targets the real env-scoped volume", () => 
     // restore into one — that's the data-integrity guarantee.
     const mutating = dockerArgs.filter((a) => a.includes("volume create") || a.includes("run"));
     expect(mutating.some((a) => /-blue_|-green_/.test(a))).toBe(false);
+  });
+});
+
+// A restore used to swap files under the running app with no copy of what it
+// replaced. The writers stop first, the live data is copied aside, and a failed
+// restore puts that copy back.
+describe("tar restore quiesces, snapshots and rolls back", () => {
+  const VOLUME = "myapp-production_data";
+  const APP_CONTAINER = { Id: "c-app", Names: ["/myapp-production-blue-web-1"], Mounts: [{ Type: "volume", Name: VOLUME }] };
+  const OTHER_CONTAINER = { Id: "c-other", Names: ["/other-web-1"], Mounts: [{ Type: "volume", Name: "other_data" }] };
+
+  type Step = { step: string; args?: string };
+  let steps: Step[];
+
+  const isRun = (args: string[]) => args[0] === "run";
+  const intoSnapshot = (args: string[]) => args.join(" ").includes("pre-restore:/backup");
+
+  function dockerScript(opts: { failRestore?: boolean; failRollback?: boolean } = {}) {
+    let restoreRuns = 0;
+    execFileMock.mockImplementation((...args: unknown[]) => {
+      const cb = args[args.length - 1] as (e: unknown, r: unknown) => void;
+      const dockerArgs = args[1] as string[];
+      if (Array.isArray(dockerArgs) && isRun(dockerArgs)) {
+        const script = dockerArgs.join(" ");
+        if (script.includes("tar czf")) {
+          steps.push({ step: "snapshot" });
+          const snapDir = dockerArgs.find((a) => a.endsWith("pre-restore:/backup"))!.split(":")[0];
+          writeFileSync(join(snapDir, "volume.tar.gz"), "snapshot");
+        } else if (intoSnapshot(dockerArgs)) {
+          steps.push({ step: "rollback" });
+          if (opts.failRollback) return cb(new Error("rollback extract failed"), null);
+        } else {
+          restoreRuns++;
+          steps.push({ step: "restore" });
+          if (opts.failRestore && restoreRuns === 1) return cb(new Error("disk full"), null);
+        }
+      }
+      cb(null, { stdout: "", stderr: "" });
+    });
+  }
+
+  beforeEach(() => {
+    steps = [];
+    backupsFindFirst.mockResolvedValue(backupRow());
+    volumesFindFirst.mockResolvedValue({ backupStrategy: "tar", backupMeta: null, mountPath: "/app/data" });
+    listContainersMock.mockResolvedValue([{ id: "c1" }]);
+    inspectContainerMock.mockResolvedValue({
+      mounts: [{ type: "volume", name: VOLUME, destination: "/app/data", source: "" }],
+    });
+    runningContainersMock.mockResolvedValue([APP_CONTAINER, OTHER_CONTAINER]);
+    stopContainerMock.mockImplementation(async (id: string) => { steps.push({ step: `stop ${id}` }); });
+    startContainerMock.mockImplementation(async (id: string) => { steps.push({ step: `start ${id}` }); });
+  });
+
+  it("stops the containers using the volume, copies it aside, restores, then starts them", async () => {
+    dockerScript();
+
+    const result = await restoreBackup("bk-1");
+
+    expect(result.success).toBe(true);
+    expect(steps.map((s) => s.step)).toEqual(["stop c-app", "snapshot", "restore", "start c-app"]);
+  });
+
+  it("leaves containers that do not mount the volume alone", async () => {
+    dockerScript();
+
+    await restoreBackup("bk-1");
+
+    expect(stopContainerMock).not.toHaveBeenCalledWith("c-other", expect.anything());
+  });
+
+  it("puts the previous data back when the restore fails, and restarts the app", async () => {
+    dockerScript({ failRestore: true });
+
+    const result = await restoreBackup("bk-1");
+
+    expect(result.success).toBe(false);
+    expect(steps.map((s) => s.step)).toEqual(["stop c-app", "snapshot", "restore", "rollback", "start c-app"]);
+    expect(result.log).toMatch(/Previous data restored/);
+  });
+
+  it("keeps the pre-restore copy on disk when the rollback fails too", async () => {
+    dockerScript({ failRestore: true, failRollback: true });
+
+    const result = await restoreBackup("bk-1");
+
+    expect(result.success).toBe(false);
+    const kept = result.log.match(/Pre-restore copy kept at (\S+)/)?.[1];
+    expect(kept).toMatch(/pre-restore-bk-1-.*\.tar\.gz$/);
+    expect(readFileSync(kept!, "utf8")).toBe("snapshot");
+    expect(steps.at(-1)?.step).toBe("start c-app");
+    rmSync(kept!);
+  });
+
+  it("touches nothing when the snapshot cannot be taken", async () => {
+    execFileMock.mockImplementation((...args: unknown[]) => {
+      const cb = args[args.length - 1] as (e: unknown, r: unknown) => void;
+      const dockerArgs = args[1] as string[];
+      if (Array.isArray(dockerArgs) && isRun(dockerArgs)) {
+        steps.push({ step: dockerArgs.join(" ").includes("tar czf") ? "snapshot" : "restore" });
+        if (dockerArgs.join(" ").includes("tar czf")) return cb(new Error("no space left"), null);
+      }
+      cb(null, { stdout: "", stderr: "" });
+    });
+
+    const result = await restoreBackup("bk-1");
+
+    expect(result.success).toBe(false);
+    expect(steps.map((s) => s.step)).toEqual(["stop c-app", "snapshot", "start c-app"]);
+  });
+
+  it("aborts before the restore when a container will not stop, restarting what it stopped", async () => {
+    const second = { ...APP_CONTAINER, Id: "c-worker", Names: ["/myapp-production-blue-worker-1"] };
+    runningContainersMock.mockResolvedValue([APP_CONTAINER, second]);
+    stopContainerMock.mockImplementation(async (id: string) => {
+      steps.push({ step: `stop ${id}` });
+      if (id === "c-worker") throw new Error("timeout");
+    });
+    dockerScript();
+
+    const result = await restoreBackup("bk-1");
+
+    expect(result.success).toBe(false);
+    expect(steps.map((s) => s.step)).toEqual(["stop c-app", "stop c-worker", "start c-app"]);
+  });
+
+  it("never stops Vardo's own containers", async () => {
+    backupsFindFirst.mockResolvedValue(backupRow({ app: { name: "vardo" } }));
+    dockerScript();
+
+    const result = await restoreBackup("bk-1");
+
+    expect(result.success).toBe(true);
+    expect(stopContainerMock).not.toHaveBeenCalled();
   });
 });
