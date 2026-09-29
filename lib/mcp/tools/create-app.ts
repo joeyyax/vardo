@@ -10,6 +10,7 @@ import { recordActivity } from "@/lib/activity";
 import { slidingWindowRateLimit } from "@/lib/api/rate-limit";
 import type { McpAuthContext } from "../auth";
 import { resolveProjectOrg } from "../scope";
+import { gitBranchSchema, gitUrlSchema } from "@/lib/api/git-fields";
 
 // 5 app creations per 10 minutes per user/org pair.
 const CREATE_RATE_LIMIT = 5;
@@ -41,16 +42,9 @@ export function registerCreateApp(
         .max(500)
         .optional()
         .describe("Optional description"),
-      gitUrl: z
-        .string()
-        .url()
-        .refine((url) => url.startsWith("https://"), {
-          message: "Only HTTPS git URLs are allowed",
-        })
+      gitUrl: gitUrlSchema
         .describe("HTTPS git repository URL (e.g. 'https://github.com/acme/myapp.git')"),
-      gitBranch: z
-        .string()
-        .regex(/^[a-zA-Z0-9._\-/]+$/, "Invalid branch name")
+      gitBranch: gitBranchSchema
         .default("main")
         .describe("Branch to deploy (default 'main')"),
       deployType: z
