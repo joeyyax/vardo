@@ -81,7 +81,7 @@ export async function register() {
       try {
         const { repairTransferredSecrets } = await import("./lib/transfers/engine");
         const repaired = await repairTransferredSecrets();
-        if (repaired > 0) log.info(`Re-encrypted ${repaired} secret(s) stranded by earlier app transfers`);
+        if (repaired > 0) log.info(`Repaired ${repaired} secret(s) and deploy key(s) stranded by earlier app transfers`);
       } catch (err) {
         log.error("Transfer secret repair failed:", err);
       }
