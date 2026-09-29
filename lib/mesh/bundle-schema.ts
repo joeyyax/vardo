@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { gitBranchUpdateSchema, gitUrlUpdateSchema } from "@/lib/api/git-fields";
 
 /**
  * Shared Zod schema for app bundles in mesh transfers.
@@ -10,8 +11,8 @@ export const appBundleSchema = z.object({
   description: z.string().nullable(),
   source: z.enum(["git", "direct"]),
   deployType: z.enum(["compose", "dockerfile", "image", "static", "nixpacks", "railpack"]),
-  gitUrl: z.string().nullable(),
-  gitBranch: z.string().nullable(),
+  gitUrl: gitUrlUpdateSchema.nullable(),
+  gitBranch: gitBranchUpdateSchema.nullable(),
   imageName: z.string().nullable(),
   composeContent: z.string().nullable(),
   composeFilePath: z.string().nullable(),
