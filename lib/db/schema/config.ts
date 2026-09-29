@@ -40,6 +40,10 @@ export const apiTokens = pgTable(
     // per request. Must stay false by default — flipping the default widens
     // every existing token at once.
     crossOrg: boolean("cross_org").default(false).notNull(),
+    // Instance-admin reach. Effective only while the user is still an admin.
+    adminAccess: boolean("admin_access").default(false).notNull(),
+    // Null never expires.
+    expiresAt: timestamp("expires_at"),
     lastUsedAt: timestamp("last_used_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
