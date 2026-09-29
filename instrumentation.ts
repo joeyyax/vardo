@@ -76,6 +76,17 @@ export async function register() {
       log.error("GlitchTip retirement failed:", err);
     }
 
+    // Apps transferred before secrets were re-encrypted on accept.
+    if (keyCheck.ok) {
+      try {
+        const { repairTransferredSecrets } = await import("./lib/transfers/engine");
+        const repaired = await repairTransferredSecrets();
+        if (repaired > 0) log.info(`Re-encrypted ${repaired} secret(s) stranded by earlier app transfers`);
+      } catch (err) {
+        log.error("Transfer secret repair failed:", err);
+      }
+    }
+
     // Ensure backup target exists first (sequential dependency for scheduler)
     let backupTargetReady: Promise<void> | undefined;
     try {
