@@ -6,6 +6,7 @@
 
 import { hostname } from "os";
 import { dockerRequest, startContainer, stopContainer } from "@/lib/docker/client";
+import { holdStopped, releaseStopped } from "@/lib/docker/stop-holds";
 
 export type RestoreDestination =
   | { kind: "volume"; name: string }
@@ -67,6 +68,8 @@ export async function quiesce(
       } catch (err) {
         failed.push(c.name);
         log(`WARNING: ${c.name} did not start again — ${err instanceof Error ? err.message : err}`);
+      } finally {
+        releaseStopped(c.id);
       }
     }
     if (stopped.length > 0 && failed.length === 0) {
@@ -78,9 +81,11 @@ export async function quiesce(
   for (const c of targets) {
     try {
       log(`Stopping ${c.name} for the restore`);
+      holdStopped(c.id, "restore");
       await stopContainer(c.id, STOP_TIMEOUT_SECONDS);
       stopped.push(c);
     } catch (err) {
+      releaseStopped(c.id);
       await resume();
       throw new Error(
         `Could not stop ${c.name} before restoring — ${err instanceof Error ? err.message : err}`,
