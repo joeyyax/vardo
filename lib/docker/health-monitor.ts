@@ -2,7 +2,15 @@ import { eq } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { apps as appsTable } from "@/lib/db/schema";
-import { listContainers, inspectContainer, restartContainer, startContainer } from "./client";
+import {
+  listAllContainers,
+  inspectContainer,
+  restartContainer,
+  startContainer,
+  type ContainerInfo,
+} from "./client";
+import { decideDesiredState, keepsRunning, resolvePriority } from "./desired-state";
+import { stopIntentFor, type IntentApp } from "./stop-intent";
 import { fetchAllMetrics } from "@/lib/metrics/provider";
 import { emit } from "@/lib/notifications/dispatch";
 import { recordActivity } from "@/lib/activity/record";
@@ -37,6 +45,8 @@ const log = logger.child("health-monitor");
 // ---------------------------------------------------------------------------
 
 const POLL_INTERVAL_MS = 30_000;
+/** Container states `docker ps` lists without `--all`. */
+const LISTED_STATES = new Set(["running", "paused", "restarting"]);
 /** Consecutive ticks a container must read "unhealthy" before we act. Docker's
  *  own healthcheck retries already gate the unhealthy state; this is an extra
  *  guard against a single racy read. */
@@ -54,6 +64,8 @@ const MIN_CONTAINER_AGE_MS = 120_000;
 export const RECOVERY_WINDOW_MS = 5 * 60_000;
 /** An exit this soon after a restart attempt was caused by it. */
 export const RESTART_EXIT_GRACE_MS = 2 * 60_000;
+/** How long a container whose restart call failed is watched. */
+export const FAILED_RESTART_WINDOW_MS = 3 * 60 * 60_000;
 
 /** Restarts observed within RESTART_WINDOW_MS before a container counts as
  *  crash-looping. Override with VARDO_CRASH_LOOP_RESTARTS. */
@@ -114,29 +126,71 @@ export type RecoveryDecision = "watch" | "start" | "done" | "escalate";
  *
  * A restart whose kill times out leaves Docker's `hasBeenManuallyStopped` set,
  * so the restart policy never brings the container back once it finally exits.
- * An exit that lands within RESTART_EXIT_GRACE_MS of the attempt is ours to undo;
- * a later one is someone else's stop.
+ * After a restart call that returned, an exit within RESTART_EXIT_GRACE_MS is
+ * ours to undo. After one that threw, the kill may land much later, so any exit
+ * since the first failed attempt is ours for FAILED_RESTART_WINDOW_MS.
  */
 export function decideRecovery(opts: {
   running: boolean;
   status: string;
   /** Epoch ms of the last exit, or null when unknown. */
   finishedAt: number | null;
+  /** Latest restart attempt. */
   attemptAt: number;
+  /** A restart call in this episode threw. */
+  restartFailed?: boolean;
+  /** First failed attempt in this episode. */
+  firstFailedAt?: number | null;
+  healthy?: boolean;
   startTried: boolean;
   now: number;
 }): RecoveryDecision {
-  const expired = opts.now - opts.attemptAt >= RECOVERY_WINDOW_MS;
-  if (opts.running) return opts.startTried || expired ? "done" : "watch";
+  const failed = opts.restartFailed === true;
+  const window = failed ? FAILED_RESTART_WINDOW_MS : RECOVERY_WINDOW_MS;
+  const expired = opts.now - opts.attemptAt >= window;
+  if (opts.running) {
+    if (opts.startTried || !failed) return opts.startTried || expired ? "done" : "watch";
+    if (opts.healthy) return "done";
+    return expired ? "escalate" : "watch";
+  }
   if (opts.startTried) return "escalate";
   if (opts.status === "exited" || opts.status === "dead" || opts.status === "created") {
+    if (opts.finishedAt === null) return "done";
+    if (failed) return opts.finishedAt >= (opts.firstFailedAt ?? opts.attemptAt) ? "start" : "done";
     const ours =
-      opts.finishedAt !== null &&
       opts.finishedAt >= opts.attemptAt &&
       opts.finishedAt - opts.attemptAt <= RESTART_EXIT_GRACE_MS;
     return ours ? "start" : "done";
   }
   return expired ? "escalate" : "watch";
+}
+
+export type PendingRecoveryState = {
+  attemptAt: number;
+  restartFailed: boolean;
+  firstFailedAt: number | null;
+  startTried: boolean;
+};
+
+/** Pending entry for a new restart attempt. A failed attempt stays on record for
+ *  the rest of the episode, whatever later attempts return. */
+export function nextPendingRecovery<T extends PendingRecoveryState>(
+  prev: T | undefined,
+  next: Omit<T, keyof PendingRecoveryState>,
+  now: number,
+): T {
+  return {
+    ...next,
+    attemptAt: now,
+    restartFailed: prev?.restartFailed ?? false,
+    firstFailedAt: prev?.firstFailedAt ?? null,
+    startTried: false,
+  } as T;
+}
+
+/** Pending entry after its restart call threw. */
+export function markRestartFailed<T extends PendingRecoveryState>(p: T, now: number): T {
+  return { ...p, restartFailed: true, firstFailedAt: p.firstFailedAt ?? now };
 }
 
 /** Whether an app should be auto-restarted when unhealthy. null on the app means
@@ -165,13 +219,11 @@ const crashLoopAlerted = new Map<string, number>();
 /** appId → hysteresis streaks, fed back into evaluateConditions each tick. */
 const conditionStreaks = new Map<string, ConditionStreaks>();
 
-type PendingRecovery = {
+type PendingRecovery = PendingRecoveryState & {
   appId: string;
   appName: string;
   organizationId: string;
   containerName: string;
-  attemptAt: number;
-  startTried: boolean;
 };
 /** containerId → a restart still being watched. Stopped containers drop out of
  *  listContainers(), so these are inspected by id. */
@@ -184,11 +236,12 @@ const pendingRecovery = new Map<string, PendingRecovery>();
 export async function tickHealthMonitor(): Promise<void> {
   const now = Date.now();
 
-  let containers;
+  let all: ContainerInfo[];
+  let containers: ContainerInfo[];
   try {
-    // listContainers() returns running containers only — exactly the set whose
-    // healthcheck state is meaningful.
-    containers = await listContainers();
+    all = await listAllContainers();
+    // What `docker ps` lists: the set whose healthcheck state is meaningful.
+    containers = all.filter((c) => LISTED_STATES.has(c.state));
   } catch (err) {
     // Transient Docker socket error — skip this tick, never throw.
     log.error("Failed to list containers:", err instanceof Error ? err.message : err);
@@ -203,7 +256,8 @@ export async function tickHealthMonitor(): Promise<void> {
     return;
   }
 
-  await tickRecoveries(now);
+  await tickRecoveries(containers, now);
+  await tickDesiredState(all, containers, now);
 
   const managed = containers.filter((c) => c.labels["vardo.managed"] === "true");
   const seen = new Set<string>();
@@ -343,20 +397,19 @@ export async function tickHealthMonitor(): Promise<void> {
     }
 
     // decision === "restart"
-    pendingRecovery.set(c.id, {
-      appId: app.id,
-      appName,
-      organizationId: app.organizationId,
-      containerName: c.name,
-      attemptAt: now,
-      startTried: false,
-    });
+    const pending = nextPendingRecovery<PendingRecovery>(
+      pendingRecovery.get(c.id),
+      { appId: app.id, appName, organizationId: app.organizationId, containerName: c.name },
+      now,
+    );
+    pendingRecovery.set(c.id, pending);
     let ok = true;
     try {
       await restartContainer(c.id);
       log.info(`Restarted unhealthy container ${c.name} (app ${appName})`);
     } catch (err) {
       ok = false;
+      pendingRecovery.set(c.id, markRestartFailed(pending, now));
       log.error(`Failed to restart ${c.name}:`, err instanceof Error ? err.message : err);
     }
 
@@ -406,8 +459,27 @@ export async function tickHealthMonitor(): Promise<void> {
   cleanupState(seen);
 }
 
+/** App row and the ids an operator stop could be recorded under, for one container. */
+async function loadIntentApp(
+  appId: string,
+  service: string | undefined,
+): Promise<{ app: IntentApp; appIds: string[] } | null> {
+  const app = await db.query.apps.findFirst({
+    where: eq(appsTable.id, appId),
+    columns: { id: true, organizationId: true, status: true, parked: true },
+  });
+  if (!app) return null;
+  const child = service
+    ? await db.query.apps.findFirst({
+        where: (t, { and: andOp }) => andOp(eq(t.parentAppId, appId), eq(t.composeService, service)),
+        columns: { id: true },
+      })
+    : undefined;
+  return { app, appIds: child ? [app.id, child.id] : [app.id] };
+}
+
 /** Follow up on recent auto-restarts, starting any the restart left stopped. */
-async function tickRecoveries(now: number): Promise<void> {
+async function tickRecoveries(running: ContainerInfo[], now: number): Promise<void> {
   for (const [id, p] of pendingRecovery) {
     let info;
     try {
@@ -423,6 +495,9 @@ async function tickRecoveries(now: number): Promise<void> {
       status: info.state.status,
       finishedAt: Number.isFinite(finished) && finished > 0 ? finished : null,
       attemptAt: p.attemptAt,
+      restartFailed: p.restartFailed,
+      firstFailedAt: p.firstFailedAt,
+      healthy: info.state.health?.status === "healthy",
       startTried: p.startTried,
       now,
     });
@@ -434,6 +509,22 @@ async function tickRecoveries(now: number): Promise<void> {
     }
 
     if (decision === "start") {
+      let intended: string | null = null;
+      try {
+        const owner = await loadIntentApp(p.appId, info.labels["com.docker.compose.service"]);
+        intended = owner
+          ? await stopIntentFor(info, owner.app, owner.appIds, running, true)
+          : "app no longer exists";
+      } catch (err) {
+        log.error(`Failed to read stop intent for ${p.containerName}:`, err instanceof Error ? err.message : err);
+        continue;
+      }
+      if (intended) {
+        log.info(`Leaving ${p.containerName} stopped after its auto-restart: ${intended}`);
+        pendingRecovery.delete(id);
+        continue;
+      }
+
       p.startTried = true;
       try {
         await startContainer(id);
@@ -467,18 +558,183 @@ async function tickRecoveries(now: number): Promise<void> {
 
     // escalate, or a start that failed
     pendingRecovery.delete(id);
-    log.error(`${p.containerName} is not running after its auto-restart — giving up`);
+    const wedged = info.state.running && p.restartFailed && !p.startTried;
+    log.error(
+      wedged
+        ? `${p.containerName} is still wedged ${Math.round((now - p.attemptAt) / 60000)}m after its restart failed — giving up`
+        : `${p.containerName} is not running after its auto-restart — giving up`,
+    );
     emit(p.organizationId, {
       type: "app.auto-restarted",
       title: `Self-heal failed: ${p.appName}`,
-      message: `${p.containerName} is ${info.state.status} after an auto-restart and Vardo could not bring it back. Manual intervention required.`,
+      message: wedged
+        ? `${p.containerName} would not stop when Vardo restarted it and still has not exited. Its processes are likely stuck on storage. Manual intervention required.`
+        : `${p.containerName} is ${info.state.status} after an auto-restart and Vardo could not bring it back. Manual intervention required.`,
       appId: p.appId,
       appName: p.appName,
       containerName: p.containerName,
       containerId: id,
-      reason: "restart-left-stopped",
+      reason: wedged ? "restart-wedged" : "restart-left-stopped",
       success: false,
       gaveUp: true,
+    });
+  }
+}
+
+/** Last reason logged per container for leaving it stopped, so each is logged once. */
+const desiredStateLeft = new Map<string, string>();
+
+/**
+ * Start stopped containers of critical apps that nothing asked to stop. Docker's
+ * restart policy stands down after any stop call, including a restart that
+ * failed, so this puts back what the policy would have done.
+ */
+async function tickDesiredState(all: ContainerInfo[], running: ContainerInfo[], now: number): Promise<void> {
+  const candidates = all.filter(
+    (c) =>
+      c.state === "exited" &&
+      c.labels["vardo.managed"] === "true" &&
+      !!c.labels["vardo.project.id"] &&
+      !pendingRecovery.has(c.id),
+  );
+  const candidateIds = new Set(candidates.map((c) => c.id));
+  for (const id of desiredStateLeft.keys()) if (!candidateIds.has(id)) desiredStateLeft.delete(id);
+  if (candidates.length === 0) return;
+
+  const appIds = [...new Set(candidates.map((c) => c.labels["vardo.project.id"]))];
+  let rows;
+  let children;
+  try {
+    rows = await db.query.apps.findMany({
+      columns: {
+        id: true,
+        name: true,
+        displayName: true,
+        organizationId: true,
+        status: true,
+        parked: true,
+        priority: true,
+        autoRestartUnhealthy: true,
+      },
+      where: (t, { inArray }) => inArray(t.id, appIds),
+    });
+    children = await db.query.apps.findMany({
+      columns: { id: true, parentAppId: true, composeService: true, priority: true, autoRestartUnhealthy: true },
+      where: (t, { inArray }) => inArray(t.parentAppId, appIds),
+    });
+  } catch (err) {
+    log.error("Failed to load apps for desired state:", err instanceof Error ? err.message : err);
+    return;
+  }
+  const appsById = new Map(rows.map((a) => [a.id, a]));
+
+  for (const c of candidates) {
+    const app = appsById.get(c.labels["vardo.project.id"]);
+    if (!app) continue;
+    const service = c.labels["com.docker.compose.service"];
+    const child = children.find((ch) => ch.parentAppId === app.id && ch.composeService === service) ?? null;
+    const critical = keepsRunning({
+      priority: resolvePriority(app, child),
+      autoRestartUnhealthy: child?.autoRestartUnhealthy ?? app.autoRestartUnhealthy,
+    });
+    if (!critical) continue;
+
+    let info;
+    let intended: string | null;
+    try {
+      info = await inspectContainer(c.id);
+      intended = await stopIntentFor(info, app, child ? [app.id, child.id] : [app.id], running);
+    } catch (err) {
+      log.error(`Failed to judge ${c.name}:`, err instanceof Error ? err.message : err);
+      continue;
+    }
+
+    const finished = Date.parse(info.state.finishedAt);
+    const decision = decideDesiredState({
+      intendedStop: intended,
+      finishedAt: Number.isFinite(finished) && finished > 0 ? finished : null,
+      recentRestarts: recentRestarts(c.id, now),
+      gaveUp: hasGivenUp(c.id, now),
+      maxRestarts: MAX_RESTARTS_PER_WINDOW,
+      backoffMs: RESTART_BACKOFF_MS,
+      now,
+    });
+
+    if (decision === "leave" && intended) {
+      if (desiredStateLeft.get(c.id) !== intended) {
+        desiredStateLeft.set(c.id, intended);
+        log.info(`Leaving ${c.name} stopped: ${intended}`);
+      }
+      continue;
+    }
+    if (decision !== "start" && decision !== "giveup") continue;
+
+    const appName = app.displayName || app.name;
+
+    if (decision === "giveup") {
+      await recordGaveUp(app.id, c.id, now);
+      log.error(`${c.name} keeps stopping and hit the restart cap (${MAX_RESTARTS_PER_WINDOW}/${RESTART_WINDOW_MS / 60000}m) — giving up`);
+      emit(app.organizationId, {
+        type: "app.auto-restarted",
+        title: `Self-heal gave up: ${appName}`,
+        message: `${c.name} is stopped and Vardo has started it ${MAX_RESTARTS_PER_WINDOW} times in the last hour without it staying up. Manual intervention required.`,
+        appId: app.id,
+        appName,
+        containerName: c.name,
+        containerId: c.id,
+        reason: "stopped-unexpectedly",
+        success: false,
+        gaveUp: true,
+      });
+      continue;
+    }
+
+    const spent = await recordRestart(app.id, c.id, now);
+    desiredStateLeft.delete(c.id);
+    const exitCode = info.state.exitCode;
+    try {
+      await startContainer(c.id);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      log.error(`Failed to start ${c.name}, which stopped with nothing asking it to:`, message);
+      emit(app.organizationId, {
+        type: "app.auto-restarted",
+        title: `Could not start: ${appName}`,
+        message: `${c.name} stopped (exit ${exitCode}) with nothing asking it to, and Vardo could not start it: ${message}. Manual intervention may be required.`,
+        appId: app.id,
+        appName,
+        containerName: c.name,
+        containerId: c.id,
+        reason: "stopped-unexpectedly",
+        success: false,
+        gaveUp: false,
+      });
+      continue;
+    }
+
+    log.info(`Started ${c.name} (app ${appName}), which stopped with exit ${exitCode} and nothing asking it to`);
+    await recordActivity({
+      organizationId: app.organizationId,
+      appId: app.id,
+      action: "app.self_healed",
+      metadata: {
+        summary: `${c.name} stopped (exit ${exitCode}) with nothing asking it to and Vardo started it (${spent.length}/${MAX_RESTARTS_PER_WINDOW} this hour)`,
+        containerName: c.name,
+        exitCode,
+        restartsThisWindow: spent.length,
+      },
+    }).catch((err) => log.error(`Failed to record start for ${c.name}:`, err));
+    emit(app.organizationId, {
+      type: "app.auto-restarted",
+      title: `Started: ${appName}`,
+      message: `${c.name} stopped (exit ${exitCode}) with nothing asking it to and has been started again (${spent.length}/${MAX_RESTARTS_PER_WINDOW} this hour).`,
+      appId: app.id,
+      appName,
+      containerName: c.name,
+      containerId: c.id,
+      reason: "stopped-unexpectedly",
+      success: true,
+      gaveUp: false,
     });
   }
 }

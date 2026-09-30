@@ -11,6 +11,10 @@ import {
   MAX_RESTARTS_PER_WINDOW,
   RECOVERY_WINDOW_MS,
   RESTART_EXIT_GRACE_MS,
+  FAILED_RESTART_WINDOW_MS,
+  nextPendingRecovery,
+  markRestartFailed,
+  type PendingRecoveryState,
 } from "@/lib/docker/health-monitor";
 
 const NOW = 1_000_000_000;
@@ -140,5 +144,74 @@ describe("decideRecovery", () => {
   it("escalates a container stuck mid-transition past the window", () => {
     expect(decideRecovery({ ...base, status: "removing" })).toBe("watch");
     expect(decideRecovery({ ...base, status: "removing", now: NOW + RECOVERY_WINDOW_MS })).toBe("escalate");
+  });
+});
+
+describe("decideRecovery after a failed restart", () => {
+  const T = NOW;
+  const MIN = 60_000;
+  type P = PendingRecoveryState & { containerName: string };
+  const failed = (attemptAt: number, now: number, extra: Partial<Parameters<typeof decideRecovery>[0]> = {}) =>
+    decideRecovery({
+      running: true,
+      status: "running",
+      finishedAt: null,
+      attemptAt,
+      restartFailed: true,
+      firstFailedAt: T,
+      healthy: false,
+      startTried: false,
+      now,
+      ...extra,
+    });
+  const tick = (p: P, now: number, state: { running: boolean; status: string; finishedAt: number | null }) =>
+    decideRecovery({ ...state, healthy: false, ...p, now });
+  const attempt = (prev: P | undefined, at: number) =>
+    markRestartFailed(nextPendingRecovery<P>(prev, { containerName: "scrypted" }, at), at);
+
+  it("starts the container in the Scrypted NFS-wedge timeline", () => {
+    // Restart calls failed at T and T+5m ("did not receive an exit event"); the
+    // container read running until NFS recovered and exited 137 at T+9.5m.
+    const running = { running: true, status: "running", finishedAt: null };
+    let p = attempt(undefined, T);
+    for (let t = T + 30_000; t <= T + 5 * MIN; t += 30_000) expect(tick(p, t, running)).toBe("watch");
+
+    p = attempt(p, T + 5 * MIN);
+    for (let t = T + 5.5 * MIN; t < T + 9.5 * MIN; t += 30_000) expect(tick(p, t, running)).toBe("watch");
+
+    expect(tick(p, T + 10 * MIN, { running: false, status: "exited", finishedAt: T + 9.5 * MIN })).toBe("start");
+  });
+
+  it("keeps the first failure when a later attempt overwrites the entry", () => {
+    const first = attempt(undefined, T);
+    const second = nextPendingRecovery<P>(first, { containerName: "scrypted" }, T + 5 * MIN);
+    expect(second).toMatchObject({ attemptAt: T + 5 * MIN, restartFailed: true, firstFailedAt: T, startTried: false });
+  });
+
+  it("keeps watching a wedged container past the ordinary window", () => {
+    expect(failed(T, T + RECOVERY_WINDOW_MS)).toBe("watch");
+    expect(failed(T, T + 90 * MIN)).toBe("watch");
+  });
+
+  it("escalates a container still wedged when the window closes", () => {
+    expect(failed(T, T + FAILED_RESTART_WINDOW_MS)).toBe("escalate");
+  });
+
+  it("stops watching once the container reads healthy again", () => {
+    expect(failed(T, T + 10 * MIN, { healthy: true })).toBe("done");
+  });
+
+  it("starts on an exit long after the attempt", () => {
+    expect(failed(T, T + 91 * MIN, { running: false, status: "exited", finishedAt: T + 90 * MIN })).toBe("start");
+  });
+
+  it("leaves an exit from before the first failed attempt", () => {
+    expect(failed(T + 5 * MIN, T + 6 * MIN, { running: false, status: "exited", finishedAt: T - 1 })).toBe("done");
+  });
+
+  it("escalates when the start it tried did not bring the container back", () => {
+    expect(
+      failed(T, T + 11 * MIN, { running: false, status: "exited", finishedAt: T + 10.5 * MIN, startTried: true }),
+    ).toBe("escalate");
   });
 });
