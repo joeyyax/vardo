@@ -9,7 +9,18 @@ vi.mock("@/lib/docker/client", () => ({
   startContainer: vi.fn(),
 }));
 
-import { containersMounting, mountTouches } from "@/lib/backups/quiesce";
+import { containersMounting, mountTouches, quiesce } from "@/lib/backups/quiesce";
+import { stopHolder } from "@/lib/docker/stop-holds";
+
+describe("quiesce", () => {
+  it("holds stopped containers against self-heal until they are started again", async () => {
+    const q = await quiesce({ kind: "volume", name: "v" }, () => {});
+    expect(q.stopped).toContain("app-1");
+    expect(stopHolder("app")).toBe("restore");
+    await q.resume();
+    expect(stopHolder("app")).toBeNull();
+  });
+});
 
 describe("mountTouches", () => {
   it("matches a named volume by name only", () => {
