@@ -122,7 +122,7 @@ export function UserMenu({ collapsed, compact, currentOrgId, organizations, team
         {/* Organizations */}
         <DropdownMenuSeparator />
         <DropdownMenuLabel className="flex items-center justify-between">
-          <span className="text-xs text-muted-foreground">
+          <span className="type-label text-muted-foreground">
             {teamsEnabled ? "Organizations" : "Organization"}
           </span>
           <button

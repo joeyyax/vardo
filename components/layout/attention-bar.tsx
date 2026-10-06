@@ -172,7 +172,7 @@ export function AttentionBar({ orgId }: { orgId: string }) {
       {!empty && open && (
         <div
           id="attention-detail"
-          className="absolute inset-x-0 top-full z-30 max-h-[70vh] overflow-y-auto border-b bg-card shadow-lg"
+          className="absolute inset-x-0 top-full z-30 max-h-[70vh] overflow-y-auto bg-card shadow-lg dark:border-b"
         >
           <div className="container py-1">
             <AttentionRowList rows={summary.rows} />

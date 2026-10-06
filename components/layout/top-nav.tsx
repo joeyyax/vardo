@@ -74,7 +74,7 @@ export function TopNav({ currentOrgId, organizations, teamsEnabled = true, activ
           >
             <Search className="size-3.5" aria-hidden="true" />
             <span>Search</span>
-            <kbd className="rounded border bg-muted px-1.5 py-0.5 font-mono text-[10px]">⌘K</kbd>
+            <kbd className="rounded border bg-muted px-1.5 py-0.5 font-mono text-xs leading-none">⌘K</kbd>
           </button>
           <div className="hidden lg:block">
             <UserMenu

@@ -31,7 +31,7 @@ export function MobileSidebar({ currentOrgId, organizations, teamsEnabled = true
         </Button>
       </SheetTrigger>
       <SheetContent side="left" className="surface-sidebar w-64 p-0">
-        <SheetHeader className="flex h-16 flex-row items-center justify-between px-5 border-b">
+        <SheetHeader className="flex h-16 flex-row items-center justify-between px-5">
           <SheetTitle className="sr-only">Navigation</SheetTitle>
           <Brand />
         </SheetHeader>
@@ -43,7 +43,7 @@ export function MobileSidebar({ currentOrgId, organizations, teamsEnabled = true
           </div>
 
           {/* Footer - Org Switcher & User Menu */}
-          <div className="mt-auto border-t p-3">
+          <div className="mt-auto bg-background-deep p-3">
             <div className="flex flex-col gap-1.5">
               {teamsEnabled && (
                 <OrgSwitcher currentOrgId={currentOrgId} organizations={organizations} />
