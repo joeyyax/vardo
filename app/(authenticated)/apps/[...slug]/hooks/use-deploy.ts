@@ -53,7 +53,9 @@ export function useDeploy({
 }) {
   // Keep stable refs for callbacks to avoid re-triggering effects
   const onDeployStartedRef = useRef(onDeployStarted);
-  onDeployStartedRef.current = onDeployStarted;
+  useEffect(() => {
+    onDeployStartedRef.current = onDeployStarted;
+  });
   const router = useRouter();
   const [deploying, setDeploying] = useState(false);
   const [deployLog, setDeployLog] = useState<string[]>([]);
@@ -87,12 +89,23 @@ export function useDeploy({
 
   // If a deploy is already running (e.g. auto-deploy on creation),
   // show the in-progress UI and poll for updates until it finishes
+  const runningDeployId = serverRunningDeploy?.id ?? null;
+  const [seenRunningId, setSeenRunningId] = useState<string | null>(null);
+  const [attachedDeployId, setAttachedDeployId] = useState<string | null>(null);
+  if (seenRunningId !== runningDeployId) {
+    setSeenRunningId(runningDeployId);
+    const attach = !!serverRunningDeploy && !deploying;
+    setAttachedDeployId(attach ? runningDeployId : null);
+    if (attach) {
+      setDeploying(true);
+      setDeployStartTime(new Date(serverRunningDeploy.startedAt).getTime());
+      setExpandedDeployLog(true);
+    }
+  }
+
   useEffect(() => {
-    if (!serverRunningDeploy || deploying) return;
-    setDeploying(true);
-    setDeployStartTime(new Date(serverRunningDeploy.startedAt).getTime());
+    if (!attachedDeployId) return;
     onDeployStartedRef.current?.();
-    setExpandedDeployLog(true);
 
     // Connect to the deploy stream SSE endpoint for real-time logs
     const streamUrl = `/api/v1/organizations/${orgId}/apps/${appId}/deploy/stream`;
@@ -164,7 +177,7 @@ export function useDeploy({
             );
             if (!res.ok) continue;
             const { app: updated } = await res.json();
-            const dep = updated.deployments?.find((d: { id: string }) => d.id === serverRunningDeploy!.id);
+            const dep = updated.deployments?.find((d: { id: string }) => d.id === attachedDeployId);
             if (dep?.log) {
               setDeployLog(dep.log.split("\n"));
             }
@@ -202,7 +215,7 @@ export function useDeploy({
 
     return () => { es.close(); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [serverRunningDeploy?.id]);
+  }, [attachedDeployId]);
 
   const handleDeploy = useCallback(async () => {
     announce("");
