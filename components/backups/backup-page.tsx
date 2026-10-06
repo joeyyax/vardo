@@ -160,7 +160,7 @@ export function BackupPage({
         {/* Left: Storage targets */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
-            <CardTitle className="text-sm font-medium">Storage targets</CardTitle>
+            <CardTitle>Storage targets</CardTitle>
             <Button size="sm" variant="outline" onClick={() => setTargetFormOpen(true)}>
               <Plus className="mr-1.5 size-4" aria-hidden="true" />
               Add target
@@ -199,7 +199,7 @@ export function BackupPage({
             <ShineBorder shineColor={["#A07CFE", "#FE8FB5", "#FFBE7B"]} duration={8} borderWidth={2} />
           )}
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
-            <CardTitle className="text-sm font-medium">Backup jobs</CardTitle>
+            <CardTitle>Backup jobs</CardTitle>
             <Button size="sm" variant="outline" onClick={() => setJobFormOpen(true)} disabled={!hasVisibleTargets}>
               <Plus className="mr-1.5 size-4" aria-hidden="true" />
               New job
@@ -251,7 +251,7 @@ export function BackupPage({
       {/* Backup history */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm font-medium">Backup history</CardTitle>
+          <CardTitle>Backup history</CardTitle>
           <p className="text-sm text-muted-foreground">
             Recent snapshots across all targets and jobs.
           </p>

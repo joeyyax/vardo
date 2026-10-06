@@ -39,7 +39,7 @@ export function KeyEscrowCard() {
     <Card>
       <CardHeader className="flex flex-row items-center gap-2 space-y-0 pb-4">
         <KeyRound className="size-4 text-muted-foreground" aria-hidden="true" />
-        <CardTitle className="text-sm font-medium">Encryption key</CardTitle>
+        <CardTitle>Encryption key</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
         <Callout variant={VARIANT[state.severity]}>{state.headline}</Callout>

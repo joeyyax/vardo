@@ -11,7 +11,6 @@ import {
   CardContent,
   CardDescription,
   CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 import { Loader2 } from "lucide-react";
 import { toast } from "@/lib/messenger";
@@ -47,9 +46,7 @@ export function SetupWizard() {
     <div className="flex min-h-screen items-center justify-center px-4">
       <Card className="w-full max-w-md rounded-2xl">
         <CardHeader className="text-center">
-          <CardTitle className="text-2xl font-bold">
-            Welcome to Vardo
-          </CardTitle>
+          <h1 className="type-h2">Welcome to Vardo</h1>
           <CardDescription className="mt-1">
             Create your admin account to get started
           </CardDescription>

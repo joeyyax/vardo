@@ -470,7 +470,7 @@ export function MaintenanceSettings() {
       {/* Service overview */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-sm font-medium flex items-center gap-2">
+          <CardTitle className="flex items-center gap-2">
             <Server className="size-4" aria-hidden="true" />
             Services
           </CardTitle>
@@ -558,7 +558,7 @@ export function MaintenanceSettings() {
       {/* One-click update */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm font-medium flex items-center gap-2">
+          <CardTitle className="flex items-center gap-2">
             <ArrowUpCircle className="size-4" aria-hidden="true" />
             Update Vardo
           </CardTitle>
@@ -618,7 +618,7 @@ export function MaintenanceSettings() {
       {/* Build cache */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm font-medium flex items-center gap-2">
+          <CardTitle className="flex items-center gap-2">
             <Trash2 className="size-4" aria-hidden="true" />
             Build Cache
           </CardTitle>
@@ -689,7 +689,7 @@ export function MaintenanceSettings() {
       {/* Idle app images */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm font-medium flex items-center gap-2">
+          <CardTitle className="flex items-center gap-2">
             <PackageX className="size-4" aria-hidden="true" />
             Idle App Images
           </CardTitle>
@@ -923,7 +923,7 @@ export function MaintenanceSettings() {
       {/* App directory ownership */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm font-medium flex items-center gap-2">
+          <CardTitle className="flex items-center gap-2">
             <FileCheck className="size-4" aria-hidden="true" />
             App Directory Ownership
           </CardTitle>
@@ -1010,7 +1010,7 @@ export function MaintenanceSettings() {
       {/* Mount configuration */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm font-medium flex items-center gap-2">
+          <CardTitle className="flex items-center gap-2">
             <HardDrive className="size-4" aria-hidden="true" />
             Host Mounts
           </CardTitle>

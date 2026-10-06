@@ -203,7 +203,7 @@ export function DomainSettings() {
       {/* Domain configuration */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm">Domain info</CardTitle>
+          <CardTitle>Domain info</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="max-w-md space-y-2">
@@ -276,7 +276,7 @@ export function DomainSettings() {
       {/* SSL certificate issuers */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm">
+          <CardTitle>
             SSL certificate issuers
             {!sslLoading && (
               <span className="ml-2 text-xs font-normal text-muted-foreground">
@@ -525,7 +525,7 @@ export function DomainSettings() {
       {/* DNS resolution checks */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm">DNS resolution</CardTitle>
+          <CardTitle>DNS resolution</CardTitle>
           <CardAction>
             <Button
               type="button"
@@ -602,7 +602,7 @@ export function DomainSettings() {
       {/* DNS setup guidance */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm">DNS setup</CardTitle>
+          <CardTitle>DNS setup</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="space-y-1 font-mono text-xs text-muted-foreground">
