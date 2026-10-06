@@ -301,30 +301,30 @@ export async function destroyGroupEnvironment(
   }
 
   const removed: string[] = [];
+  const failed: string[] = [];
 
-  // Stop containers for each app environment
-  const { stopProject } = await import("./deploy");
+  const { stopProject, stopPreviewEnvironment } = await import("./deploy");
   for (const env of groupEnv.environments) {
-    if (env.app) {
-      try {
-        await stopProject(env.app.id, env.app.name);
-        removed.push(env.app.name);
-      } catch {
-        // Container may already be stopped
-        removed.push(env.app.name);
-      }
-    }
+    if (!env.app) continue;
+    const result =
+      groupEnv.type === "preview"
+        ? await stopPreviewEnvironment(env.app.id, env.app.name, env.name)
+        : await stopProject(env.app.id, env.app.name, env.name);
+    if (result.success) removed.push(env.app.name);
+    else failed.push(`${env.app.name}-${env.name}: ${result.log}`);
+  }
 
-    // Clean up domain records for this environment
+  // Rows are the only record of what is running. Keep them until every stop lands.
+  if (failed.length > 0) {
+    throw new Error(`Teardown of ${groupEnv.name} incomplete, records kept:\n${failed.join("\n")}`);
+  }
+
+  // Older releases stored the environment's hostname as a domain row on the app.
+  for (const env of groupEnv.environments) {
     if (env.domain) {
       await db
         .delete(domains)
-        .where(
-          and(
-            eq(domains.appId, env.appId),
-            eq(domains.domain, env.domain)
-          )
-        );
+        .where(and(eq(domains.appId, env.appId), eq(domains.domain, env.domain)));
     }
   }
 

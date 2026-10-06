@@ -31,7 +31,7 @@ import {
   ENDPOINT_CHECK_TIMEOUT,
 } from "./constants";
 import { prepareRepo, resolveCompose, build, swap, postDeploy } from "./deploy-steps";
-import { resolveDeployEnv } from "./resolve-env";
+import { resolveDeployEnv, resolveDefaultEnv } from "./resolve-env";
 import {
   loadRollbackTarget,
   applyRollbackTarget,
@@ -852,19 +852,87 @@ export async function stopProject(
       }
     }
 
-    const stoppedAt = new Date();
-    await db
-      .update(apps)
-      .set(statusChange("stopped", stoppedAt))
-      .where(eq(apps.id, appId));
+    // apps.status describes the default environment; stopping another one leaves it alone.
+    if (!environmentName || (await resolveDefaultEnv(appId)).name === environmentName) {
+      const stoppedAt = new Date();
+      await db
+        .update(apps)
+        .set(statusChange("stopped", stoppedAt))
+        .where(eq(apps.id, appId));
 
-    // Cascade stop status to compose child services
-    await db
-      .update(apps)
-      .set(statusChange("stopped", stoppedAt))
-      .where(eq(apps.parentAppId, appId));
+      // Cascade stop status to compose child services
+      await db
+        .update(apps)
+        .set(statusChange("stopped", stoppedAt))
+        .where(eq(apps.parentAppId, appId));
+    }
 
     return { success: true, log: logs.join("\n") };
+  } catch (err) {
+    logs.push(`ERROR: ${err instanceof Error ? err.message : String(err)}`);
+    return { success: false, log: logs.join("\n") };
+  }
+}
+
+const PREVIEW_ENV_NAME = /^pr-\d+$/;
+
+/** Compose projects a preview teardown may take down: `${app}-pr-<n>-<slot|shared>`. */
+export function isPreviewProject(appName: string, envName: string, project: string): boolean {
+  if (!PREVIEW_ENV_NAME.test(envName)) return false;
+  const prefix = `${appName}-${envName}-`;
+  return project.startsWith(prefix) && /^(blue|green|shared)$/.test(project.slice(prefix.length));
+}
+
+/**
+ * Tear down one preview environment: both slots and its shared project, nothing
+ * else. Fails when any `down` fails, so the caller can keep its records.
+ */
+export async function stopPreviewEnvironment(
+  appId: string,
+  appName: string,
+  envName: string,
+): Promise<{ success: boolean; log: string }> {
+  const logs: string[] = [];
+  if (!PREVIEW_ENV_NAME.test(envName)) {
+    return { success: false, log: `ERROR: Refusing to tear down "${envName}" — not a preview environment` };
+  }
+  try {
+    await assertAppDirOwnership({ appId, appName, operation: "stop" });
+
+    const envDir = appEnvDir(appName, envName);
+    const { access: fsAccess } = await import("fs/promises");
+    const exists = (path: string) => fsAccess(path).then(() => true, () => false);
+    if (!(await exists(envDir))) {
+      return { success: true, log: `Nothing deployed for ${appName}-${envName}` };
+    }
+
+    const failures: string[] = [];
+    const down = async (project: string, slotDir: string) => {
+      if (!isPreviewProject(appName, envName, project)) {
+        failures.push(`refused to take down ${project}`);
+        return;
+      }
+      try {
+        const args = ["compose", ...(await slotComposeFiles(slotDir)), "-p", project, "down"];
+        const { stdout, stderr } = await execFileAsync("docker", args, { cwd: slotDir, timeout: COMPOSE_RESTART_TIMEOUT });
+        if (stdout.trim()) logs.push(stdout.trim());
+        if (stderr.trim()) logs.push(stderr.trim());
+      } catch (err) {
+        failures.push(`${project}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    };
+
+    let sharedFrom: string | null = null;
+    for (const slot of ["blue", "green"] as const) {
+      const slotDir = join(envDir, slot);
+      if (!(await exists(join(slotDir, "docker-compose.yml")))) continue;
+      await down(`${appName}-${envName}-${slot}`, slotDir);
+      if (!sharedFrom && (await readSlotPartition(slotDir))) sharedFrom = slotDir;
+    }
+    if (sharedFrom) await down(sharedProjectName(appName, envName), sharedFrom);
+
+    for (const f of failures) logs.push(`ERROR: ${f}`);
+    return { success: failures.length === 0, log: logs.join("\n") };
   } catch (err) {
     logs.push(`ERROR: ${err instanceof Error ? err.message : String(err)}`);
     return { success: false, log: logs.join("\n") };
