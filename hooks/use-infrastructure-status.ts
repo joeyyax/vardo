@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   applyInfrastructureFailure,
@@ -21,11 +21,13 @@ import type { AttentionRow } from "@/lib/ui/attention";
  */
 export function useInfrastructureStatus(): { rows: AttentionRow[]; resolvedAt: number | null } {
   const [view, setView] = useState<InfrastructureView>(initialInfrastructureView);
-  const [rows, setRows] = useState<AttentionRow[]>([]);
+  const [checkedAt, setCheckedAt] = useState(0);
   const viewRef = useRef(view);
   const inFlight = useRef(false);
 
-  viewRef.current = view;
+  useEffect(() => {
+    viewRef.current = view;
+  }, [view]);
 
   const check = useCallback(async () => {
     if (inFlight.current) return;
@@ -34,15 +36,18 @@ export function useInfrastructureStatus(): { rows: AttentionRow[]; resolvedAt: n
       const res = await fetch("/api/v1/system/infrastructure", { cache: "no-store" });
       if (!res.ok) throw new Error(String(res.status));
       const payload = await res.json();
+      const at = Date.now();
       setView((state) =>
         applyInfrastructurePayload(
           state,
           { rows: payload.rows ?? [], selfDeploy: !!payload.selfDeploy },
-          Date.now(),
+          at,
         ),
       );
+      setCheckedAt(at);
     } catch {
       setView(applyInfrastructureFailure);
+      setCheckedAt(Date.now());
     } finally {
       inFlight.current = false;
     }
@@ -75,9 +80,7 @@ export function useInfrastructureStatus(): { rows: AttentionRow[]; resolvedAt: n
   }, [check]);
 
   // Rendered rows are time-dependent — the resolved notice ages out on its own.
-  useEffect(() => {
-    setRows(infrastructureViewRows(view, Date.now()));
-  }, [view]);
+  const rows = useMemo(() => infrastructureViewRows(view, checkedAt), [view, checkedAt]);
 
   return { rows, resolvedAt: view.resolvedAt };
 }
