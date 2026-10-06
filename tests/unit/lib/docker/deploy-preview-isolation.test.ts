@@ -104,6 +104,7 @@ vi.mock("@/lib/docker/rollback-target", () => ({
 vi.mock("@/lib/notifications/dispatch", () => ({ emit: vi.fn() }));
 
 import { runDeployment } from "@/lib/docker/deploy";
+import { apps } from "@/lib/db/schema";
 
 const PREVIEW_ENV = {
   id: "env-pr-25",
@@ -153,5 +154,48 @@ describe("runDeployment domains", () => {
     await runDeployment("dep-2", { appId: "app-1", organizationId: "org-1", trigger: "manual" });
 
     expect(captured.domains).toEqual([{ domain: "knowledge.example.com", port: 3500 }]);
+  });
+});
+
+describe("runDeployment app status", () => {
+  const appStatusWrites = () =>
+    statusWrites.filter((w) => w.table === apps && typeof w.values.status === "string").map((w) => w.values.status);
+
+  it("leaves the production app's status alone when a preview deploy fails", async () => {
+    envRows.push(PREVIEW_ENV);
+
+    const result = await runDeployment("dep-3", {
+      appId: "app-1",
+      organizationId: "org-1",
+      trigger: "webhook",
+      environmentId: "env-pr-25",
+      groupEnvironmentId: "ge-1",
+    });
+
+    expect(result.success).toBe(false);
+    expect(appStatusWrites()).toEqual([]);
+  });
+
+  it("refuses a deploy for an environment that no longer exists", async () => {
+    const result = await runDeployment("dep-4", {
+      appId: "app-1",
+      organizationId: "org-1",
+      trigger: "webhook",
+      environmentId: "env-deleted",
+      groupEnvironmentId: "ge-1",
+    });
+
+    expect(result.status).toBe("failed");
+    expect(result.error).toMatch(/does not exist/);
+    expect(captured.domains).toBeUndefined();
+    expect(appStatusWrites()).toEqual([]);
+  });
+
+  it("still owns the status for a production deploy", async () => {
+    envRows.push(PRODUCTION_ENV, PRODUCTION_ENV);
+
+    await runDeployment("dep-5", { appId: "app-1", organizationId: "org-1", trigger: "manual" });
+
+    expect(appStatusWrites()).toEqual(["deploying", "error"]);
   });
 });

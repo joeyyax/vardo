@@ -96,8 +96,8 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
     else logs.push(`[health] ${domain.domain} not yet reachable (DNS/TLS propagation)`);
   }
 
-  // Auto-detect persistent volumes from running containers
-  try {
+  // Auto-detect persistent volumes from running containers. Rows describe the default environment.
+  if (!ctx.envIsolated) try {
     const runningContainers = await listContainers({ id: ctx.appId, name: app.name });
     const detectedVolumes: {
       name: string;
@@ -192,7 +192,7 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
   }
 
   // Sync cron jobs from template and/or host.toml
-  try {
+  if (!ctx.envIsolated) try {
     const { syncCronJobs } = await import("@/lib/cron/engine");
     const cronDefs: { name: string; schedule: string; command: string }[] = [];
 
@@ -219,8 +219,8 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
     log(`[deploy] Warning: cron sync — ${err instanceof Error ? err.message : err}`);
   }
 
-  // Sync compose decomposition
-  if (app.deployType === "compose" && Object.keys(compose.services).length > 0) {
+  // Sync compose decomposition. A preview's compose must never add or remove production's children.
+  if (!ctx.envIsolated && app.deployType === "compose" && Object.keys(compose.services).length > 0) {
     try {
       const syncResult = await syncComposeServices({
         parentAppId: ctx.appId,
@@ -239,14 +239,16 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
     }
   }
 
-  // Mark app as active
-  await db
-    .update(apps)
-    .set({ ...statusChange("active"), needsRedeploy: false })
-    .where(eq(apps.id, ctx.appId));
+  if (!ctx.envIsolated) {
+    // Mark app as active
+    await db
+      .update(apps)
+      .set({ ...statusChange("active"), needsRedeploy: false })
+      .where(eq(apps.id, ctx.appId));
 
-  // A deploy that landed is a decision to run this, so it stops being parked.
-  await setParked(ctx.appId, false);
+    // A deploy that landed is a decision to run this, so it stops being parked.
+    await setParked(ctx.appId, false);
+  }
 
   // Snapshot current config onto deployment record for rollback
   let envSnapshot: string | null = null;
@@ -267,7 +269,7 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
   // Engine majors for the deploy gate's baseline, and the block it may have
   // written last time — this deploy is the answer to it.
   const imageMajors = await observedMajors(ctx).catch(() => ({}));
-  await clearMajorGateBlock(ctx.appId);
+  if (!ctx.envIsolated) await clearMajorGateBlock(ctx.appId);
 
   const configSnapshot: ConfigSnapshot = {
     cpuLimit: app.cpuLimit,
@@ -318,7 +320,7 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
 
   // The imported original is the last copy of the app outside Vardo, so it
   // goes only once the deploy has committed.
-  if (app.importedContainerId) {
+  if (app.importedContainerId && !ctx.envIsolated) {
     try {
       const info = await inspectContainer(app.importedContainerId).catch(() => null);
       if (info && (info.state.status === "running" || info.state.status === "exited")) {
@@ -335,7 +337,8 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
   try {
     const { formatBytes } = await import("@/lib/metrics/format");
 
-    if (ctx.builtLocally) {
+    // Production's older tags are its rollback targets; a preview leaves them alone.
+    if (ctx.builtLocally && !ctx.envIsolated) {
       const currentImageName = `host/${app.name}:${ctx.deploymentId.slice(0, 8)}`;
       const appImages = await listImages({ reference: [`host/${app.name}`] });
       const imagePrefix = `host/${app.name}:`;

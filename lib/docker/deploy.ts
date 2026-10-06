@@ -173,18 +173,47 @@ export async function runDeployment(
   // Build the initial deploy context — fetches app, resolves environment, loads env vars
   let ctx: DeployContext | undefined;
 
+  // apps.status describes the default environment. Set once that is what this deploy is.
+  let ownsAppStatus = false;
+
   try {
     await db
       .update(deployments)
       .set({ status: "running" })
       .where(eq(deployments.id, deploymentId));
 
+    if (opts.groupEnvironmentId && !opts.environmentId) {
+      throw new DeployBlockedError("Group environment deploy without an app environment — refusing to deploy production");
+    }
+
+    // Resolve environment — default to production if not specified
+    if (!opts.environmentId) {
+      const defaultEnv = await db.query.environments.findFirst({
+        where: and(
+          eq(environments.appId, opts.appId),
+          eq(environments.isDefault, true),
+        ),
+        columns: { id: true },
+      });
+      if (defaultEnv) opts.environmentId = defaultEnv.id;
+    }
+
+    const resolvedEnv = await resolveDeployEnv(opts.appId, opts.environmentId);
+    const envName = resolvedEnv.name;
+    const envType = resolvedEnv.type;
+    const envBranchOverride = resolvedEnv.gitBranch;
+    log(`[deploy] Environment: ${envName} (${envType})`);
+
+    ownsAppStatus = !!resolvedEnv.isDefault;
+
     // The deploy owns the app status until it exits. The reconciler yields to
     // it, and the sweeper resets it if this process dies mid-deploy.
-    await db
-      .update(apps)
-      .set(statusChange("deploying"))
-      .where(eq(apps.id, opts.appId));
+    if (ownsAppStatus) {
+      await db
+        .update(apps)
+        .set(statusChange("deploying"))
+        .where(eq(apps.id, opts.appId));
+    }
 
     addEvent(opts.organizationId, {
       type: "deploy.status",
@@ -267,28 +296,6 @@ export async function runDeployment(
       projectAllowBindMounts = project?.allowBindMounts ?? false;
       projectAllowDockerSocket = project?.allowDockerSocket ?? false;
     }
-
-    if (opts.groupEnvironmentId && !opts.environmentId) {
-      throw new DeployBlockedError("Group environment deploy without an app environment — refusing to deploy production");
-    }
-
-    // Resolve environment — default to production if not specified
-    if (!opts.environmentId) {
-      const defaultEnv = await db.query.environments.findFirst({
-        where: and(
-          eq(environments.appId, opts.appId),
-          eq(environments.isDefault, true),
-        ),
-        columns: { id: true },
-      });
-      if (defaultEnv) opts.environmentId = defaultEnv.id;
-    }
-
-    const resolvedEnv = await resolveDeployEnv(opts.appId, opts.environmentId);
-    const envName = resolvedEnv.name;
-    const envType = resolvedEnv.type;
-    const envBranchOverride = resolvedEnv.gitBranch;
-    log(`[deploy] Environment: ${envName} (${envType})`);
 
     if (resolvedEnv.isDefault) {
       const groupEnvHosts = await db.query.environments.findMany({
@@ -535,10 +542,12 @@ export async function runDeployment(
         // Release the app status. Guarded so a deploy that started in the
         // meantime keeps ownership; the reconciler corrects "stopped" from
         // Docker on its next pass.
-        await db
-          .update(apps)
-          .set(statusChange("stopped"))
-          .where(and(eq(apps.id, opts.appId), eq(apps.status, "deploying")));
+        if (ownsAppStatus) {
+          await db
+            .update(apps)
+            .set(statusChange("stopped"))
+            .where(and(eq(apps.id, opts.appId), eq(apps.status, "deploying")));
+        }
 
         addEvent(opts.organizationId, {
           type: "deploy.status",
@@ -599,10 +608,12 @@ export async function runDeployment(
       .set({ status: "failed", log: logLines.join("\n"), durationMs, finishedAt: new Date() })
       .where(eq(deployments.id, deploymentId));
 
-    await db
-      .update(apps)
-      .set(statusChange(keptNewSlot ? "active" : "error"))
-      .where(eq(apps.id, opts.appId));
+    if (ownsAppStatus) {
+      await db
+        .update(apps)
+        .set(statusChange(keptNewSlot ? "active" : "error"))
+        .where(eq(apps.id, opts.appId));
+    }
 
     addEvent(opts.organizationId, {
       type: "deploy.status",

@@ -103,11 +103,12 @@ vi.mock("child_process", () => ({
 
 import { postDeploy } from "@/lib/docker/deploy-steps/post-deploy";
 import type { DeployContext } from "@/lib/docker/deploy-context";
-import { deployments } from "@/lib/db/schema";
+import { deployments, apps } from "@/lib/db/schema";
+import { syncComposeServices } from "@/lib/docker/compose-sync";
 import { addEvent } from "@/lib/stream/producer";
 import { recordActivity } from "@/lib/activity";
 import { sendDeployNotification } from "@/lib/docker/deploy";
-import { removeContainer } from "@/lib/docker/client";
+import { removeContainer, inspectContainer } from "@/lib/docker/client";
 
 function makeContext(overrides: Partial<DeployContext> = {}): DeployContext {
   const logLines: string[] = [];
@@ -339,5 +340,41 @@ describe("postDeploy tail work", () => {
     await postDeploy(makeContext({ activeSlot: "green", stopOldSlot: vi.fn().mockResolvedValue({ ok: true }) }));
 
     expect(drainMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("postDeploy for a non-default environment", () => {
+  beforeEach(() => {
+    writes.length = 0;
+    vi.mocked(removeContainer).mockClear();
+    vi.mocked(syncComposeServices).mockClear();
+  });
+
+  const preview = () =>
+    makeContext({
+      envName: "pr-25",
+      envType: "preview",
+      envIsolated: true,
+      compose: { services: { web: { name: "web", image: "web" } } },
+      app: { ...makeContext().app, importedContainerId: "abc123" },
+    });
+
+  it("leaves the production app row alone", async () => {
+    await postDeploy(preview());
+
+    expect(writes.filter((w) => w.table === apps)).toEqual([]);
+  });
+
+  it("never syncs the preview's compose onto production's children", async () => {
+    await postDeploy(preview());
+
+    expect(syncComposeServices).not.toHaveBeenCalled();
+  });
+
+  it("never removes production's imported container", async () => {
+    vi.mocked(inspectContainer).mockResolvedValueOnce({ state: { status: "running" }, mounts: [] } as never);
+    await postDeploy(preview());
+
+    expect(removeContainer).not.toHaveBeenCalled();
   });
 });
