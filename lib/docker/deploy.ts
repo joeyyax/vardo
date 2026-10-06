@@ -267,6 +267,10 @@ export async function runDeployment(
       projectAllowDockerSocket = project?.allowDockerSocket ?? false;
     }
 
+    if (opts.groupEnvironmentId && !opts.environmentId) {
+      throw new DeployBlockedError("Group environment deploy without an app environment — refusing to deploy production");
+    }
+
     // Resolve environment — default to production if not specified
     if (!opts.environmentId) {
       const defaultEnv = await db.query.environments.findFirst({

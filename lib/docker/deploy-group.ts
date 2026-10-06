@@ -76,24 +76,26 @@ async function buildDependencyGraph(
     projectId: string | null;
     dependsOn: string[] | null;
   }[],
-  environmentId: string | null
+  environmentIds: Map<string, string | undefined>
 ): Promise<Map<string, AppNode>> {
   const graph = new Map<string, AppNode>();
   const appNames = new Set(projectApps.map((a) => a.name));
 
   // Batch-fetch all env vars for all apps in a single query (avoids N+1)
   const allAppIds = projectApps.map((a) => a.id);
+  const envIds = [...environmentIds.values()].filter((id): id is string => !!id);
   const allVars = await db.query.envVars.findMany({
     where: and(
       inArray(envVars.appId, allAppIds),
-      environmentId
-        ? or(eq(envVars.environmentId, environmentId), isNull(envVars.environmentId))
+      envIds.length > 0
+        ? or(inArray(envVars.environmentId, envIds), isNull(envVars.environmentId))
         : isNull(envVars.environmentId)
     ),
   });
-  // Group by appId
+  // Group by appId, keeping each app's base vars and its own environment's
   const varsByApp = new Map<string, typeof allVars>();
   for (const v of allVars) {
+    if (v.environmentId && v.environmentId !== environmentIds.get(v.appId)) continue;
     const list = varsByApp.get(v.appId) || [];
     list.push(v);
     varsByApp.set(v.appId, list);
@@ -209,21 +211,13 @@ export async function deployGroup(
   if (!project) throw new Error("Project not found");
 
   // Load all top-level apps in the project (exclude compose child services)
-  const projectApps = await db.query.apps.findMany({
+  const topLevelApps = await db.query.apps.findMany({
     where: and(
       eq(apps.projectId, opts.projectId),
       eq(apps.organizationId, opts.organizationId),
       isNull(apps.parentAppId),
     ),
   });
-
-  if (projectApps.length === 0) {
-    return {
-      success: true,
-      results: [],
-      totalDurationMs: Date.now() - startTime,
-    };
-  }
 
   // Resolve which app-level environmentId to use for each app
   const appEnvironmentIds: Map<string, string | undefined> = new Map();
@@ -237,8 +231,21 @@ export async function deployGroup(
     }
   }
 
+  // A group environment covers only the apps it has an environment for. The
+  // rest would deploy to their default environment, which is production.
+  const projectApps = opts.groupEnvironmentId
+    ? topLevelApps.filter((a) => appEnvironmentIds.has(a.id))
+    : topLevelApps;
+
+  if (projectApps.length === 0) {
+    return {
+      success: true,
+      results: [],
+      totalDurationMs: Date.now() - startTime,
+    };
+  }
+
   // Build dependency graph
-  const firstEnvId = [...appEnvironmentIds.values()][0] ?? null;
   const graph = await buildDependencyGraph(
     projectApps.map((a) => ({
       id: a.id,
@@ -246,7 +253,7 @@ export async function deployGroup(
       projectId: a.projectId,
       dependsOn: a.dependsOn as string[] | null,
     })),
-    firstEnvId
+    appEnvironmentIds
   );
 
   // Sort into tiers

@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { environments } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
+import { DeployBlockedError } from "./errors";
 
 export type EnvType = "production" | "staging" | "preview" | "local";
 
@@ -50,10 +51,10 @@ const FALLBACK: DeployEnv = { name: "production", type: "production", gitBranch:
 /**
  * Resolve the environment a deploy runs under.
  *
- * The id is caller-supplied, so the lookup is scoped to the app being deployed:
- * an environment on another app — in this org or any other — resolves to
- * production rather than lending the deploy its name, branch or type. Type
- * matters most: `local` turns on bind mounts.
+ * The id is caller-supplied, so the lookup is scoped to the app being deployed.
+ * An id that names no environment of this app — deleted, or on another app —
+ * throws rather than resolving to production: falling back would deploy a
+ * preview's branch over the live app.
  */
 export async function resolveDeployEnv(
   appId: string,
@@ -62,6 +63,8 @@ export async function resolveDeployEnv(
 ): Promise<DeployEnv> {
   if (!environmentId) return FALLBACK;
   const env = await load(appId, environmentId);
-  if (!env) return FALLBACK;
+  if (!env) {
+    throw new DeployBlockedError(`Environment ${environmentId} does not exist on this app — refusing to deploy`);
+  }
   return { name: env.name, type: env.type, gitBranch: env.gitBranch };
 }

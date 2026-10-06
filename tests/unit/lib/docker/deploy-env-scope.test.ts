@@ -71,17 +71,12 @@ describe("resolveDeployEnv", () => {
     });
   });
 
-  it("falls back to production for an environment on another app", async () => {
-    await expect(resolveDeployEnv("app-1", "env-foreign")).resolves.toEqual(PRODUCTION);
+  it("rejects an environment on another app", async () => {
+    await expect(resolveDeployEnv("app-1", "env-foreign")).rejects.toThrow(/does not exist/);
   });
 
-  it("does not take the local type from another app's environment", async () => {
-    const env = await resolveDeployEnv("app-1", "env-foreign");
-    expect(env.type).not.toBe("local");
-  });
-
-  it("falls back to production for an id that matches nothing", async () => {
-    await expect(resolveDeployEnv("app-1", "env-missing")).resolves.toEqual(PRODUCTION);
+  it("rejects a deleted environment instead of deploying production", async () => {
+    await expect(resolveDeployEnv("app-1", "env-missing")).rejects.toThrow(/does not exist/);
   });
 
   it("does not query at all when no environment was named", async () => {
