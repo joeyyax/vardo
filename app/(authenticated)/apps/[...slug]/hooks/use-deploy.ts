@@ -56,6 +56,13 @@ export function useDeploy({
   useEffect(() => {
     onDeployStartedRef.current = onDeployStarted;
   });
+  const mountedRef = useRef(false);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
   const router = useRouter();
   const [deploying, setDeploying] = useState(false);
   const [deployLog, setDeployLog] = useState<string[]>([]);
@@ -171,12 +178,14 @@ export function useDeploy({
         while (!stopped) {
           await new Promise((r) => setTimeout(r, 3000));
           if (stopped) break;
+          if (!mountedRef.current) return;
           try {
             const res = await fetch(
               `/api/v1/organizations/${orgId}/apps/${appId}`,
             );
             if (!res.ok) continue;
             const { app: updated } = await res.json();
+            if (!mountedRef.current) return;
             const dep = updated.deployments?.find((d: { id: string }) => d.id === attachedDeployId);
             if (dep?.log) {
               setDeployLog(dep.log.split("\n"));
