@@ -17,6 +17,12 @@ import { deployGroup } from "./deploy-group";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { logger } from "@/lib/logger";
 import { matchesGitHubRepo, previewScope } from "./preview-scope";
+import {
+  acquirePreviewLock,
+  clearPreviewClosed,
+  isPreviewClosed,
+  markPreviewClosed,
+} from "./preview-lock";
 
 const log = logger.child("preview");
 
@@ -51,6 +57,31 @@ export type { CreatePreviewOpts, PreviewResult };
 // Create preview
 // ---------------------------------------------------------------------------
 
+/** Run `fn` under the PR's lock. Without Redis it runs unlocked, as it always did. */
+async function withPreviewLock<T>(
+  repoFullName: string,
+  prNumber: number,
+  fn: () => Promise<T>,
+  whenBusy: T,
+): Promise<T> {
+  let lock;
+  try {
+    lock = await acquirePreviewLock(repoFullName, prNumber);
+  } catch (err) {
+    log.warn(`Preview lock for PR #${prNumber} unavailable, running unlocked:`, err);
+    return fn();
+  }
+  if (!lock) {
+    log.warn(`PR #${prNumber}: another preview operation held the lock too long, skipping`);
+    return whenBusy;
+  }
+  try {
+    return await fn();
+  } finally {
+    await lock.release();
+  }
+}
+
 /** Apps built from this GitHub repo, whatever form their git URL takes. */
 async function appsForRepo(repoFullName: string) {
   const candidates = await db.query.apps.findMany({
@@ -60,12 +91,10 @@ async function appsForRepo(repoFullName: string) {
 }
 
 /**
- * Create a preview environment for a PR.
+ * Create or redeploy the preview environment for a PR.
  *
- * 1. Find app(s) matching the repo + branch
- * 2. If app is in a project, clone the entire project as a preview
- * 3. Deploy the preview project
- * 4. Return preview URLs
+ * Serialized with destroyPreview per PR. A close that lands mid-create is
+ * honoured at the next step: whatever was built is torn down.
  */
 export async function createPreview(
   opts: CreatePreviewOpts
@@ -80,6 +109,17 @@ export async function createPreview(
     log.info("Environments are disabled, skipping preview creation");
     return null;
   }
+
+  // An open after a close supersedes it.
+  await clearPreviewClosed(opts.repoFullName, opts.prNumber).catch(() => {});
+  return withPreviewLock(opts.repoFullName, opts.prNumber, () => createPreviewLocked(opts), null);
+}
+
+async function createPreviewLocked(
+  opts: CreatePreviewOpts
+): Promise<PreviewResult | null> {
+  const closed = () => isPreviewClosed(opts.repoFullName, opts.prNumber);
+  if (await closed()) return null;
 
   const matchingApps = await appsForRepo(opts.repoFullName);
   if (matchingApps.length === 0) return null;
@@ -97,6 +137,14 @@ export async function createPreview(
   const organizationId = groupedApp.organizationId;
   const envName = `pr-${opts.prNumber}`;
   const ttlDays = opts.ttlDays ?? 7;
+
+  const abandon = async (groupEnvironmentId: string) => {
+    log.info(`PR #${opts.prNumber} closed during create — tearing the preview down`);
+    await destroyGroupEnvironment(groupEnvironmentId, organizationId).catch((err) =>
+      log.error(`Teardown after close failed for PR #${opts.prNumber}:`, err),
+    );
+    return null;
+  };
 
   // Check if preview already exists
   const existing = await db.query.groupEnvironments.findFirst({
@@ -119,6 +167,7 @@ export async function createPreview(
     } catch (err) {
       log.error(`Re-deploy failed for PR #${opts.prNumber}:`, err);
     }
+    if (await closed()) return abandon(existing.id);
 
     return {
       groupEnvironmentId: existing.id,
@@ -153,6 +202,7 @@ export async function createPreview(
     prUrl: opts.prUrl,
     expiresAt: new Date(Date.now() + ttlDays * 24 * 60 * 60 * 1000),
   });
+  if (await closed()) return abandon(result.groupEnvironmentId);
 
   // Deploy the preview
   let deployed = false;
@@ -167,6 +217,7 @@ export async function createPreview(
   } catch (err) {
     log.error(`Deploy failed for PR #${opts.prNumber}:`, err);
   }
+  if (await closed()) return abandon(result.groupEnvironmentId);
 
   // Collect domains
   const domains = result.projectEnvironments
@@ -194,6 +245,26 @@ export async function createPreview(
  * stacks that are already running.
  */
 export async function destroyPreview(
+  repoFullName: string,
+  prNumber: number
+): Promise<boolean> {
+  const marked = await markPreviewClosed(repoFullName, prNumber).then(
+    () => true,
+    () => false,
+  );
+  return withPreviewLock(
+    repoFullName,
+    prNumber,
+    async () => {
+      // Reopened while this waited for the lock: the open wins.
+      if (marked && !(await isPreviewClosed(repoFullName, prNumber))) return false;
+      return destroyPreviewLocked(repoFullName, prNumber);
+    },
+    false,
+  );
+}
+
+async function destroyPreviewLocked(
   repoFullName: string,
   prNumber: number
 ): Promise<boolean> {

@@ -31,6 +31,10 @@ vi.mock("@/lib/db", () => {
     },
   };
 });
+vi.mock("@/lib/redis", () => {
+  const down = () => Promise.reject(new Error("redis down"));
+  return { redis: { get: down, set: down, del: down, eval: down } };
+});
 vi.mock("@/lib/config/features", () => ({ isFeatureEnabledAsync: vi.fn().mockResolvedValue(true) }));
 vi.mock("@/lib/docker/deploy-group", () => ({ deployGroup: deployGroupMock }));
 
