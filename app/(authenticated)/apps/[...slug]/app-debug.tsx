@@ -9,6 +9,7 @@ import {
   CollapsibleContent,
 } from "@/components/ui/collapsible";
 import { toast } from "@/lib/messenger";
+import "@/components/surface-terminal.css";
 
 type DebugData = {
   compose: string | null;
@@ -40,19 +41,19 @@ function CodeBlock({
   return (
     <Collapsible
       defaultOpen={defaultOpen}
-      className="rounded-lg border border-zinc-800 bg-zinc-950 overflow-hidden"
+      className="surface-terminal rounded-lg bg-background overflow-hidden"
     >
-      <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-800 bg-zinc-900/50">
-        <CollapsibleTrigger className="flex items-center gap-1.5 text-sm font-medium text-zinc-300 hover:text-zinc-100 transition-colors group">
-          <ChevronRight className="size-3.5 text-zinc-500 group-data-[state=open]:hidden" />
-          <ChevronDown className="size-3.5 text-zinc-500 hidden group-data-[state=open]:block" />
+      <div className="flex items-center justify-between px-3 py-2 bg-background-deep">
+        <CollapsibleTrigger className="type-h4 flex items-center gap-1.5 text-foreground/80 hover:text-foreground transition-colors group">
+          <ChevronRight className="size-3.5 text-muted-foreground group-data-[state=open]:hidden" />
+          <ChevronDown className="size-3.5 text-muted-foreground hidden group-data-[state=open]:block" />
           {label}
         </CollapsibleTrigger>
         {!loading && content && (
           <button
             type="button"
             onClick={handleCopy}
-            className="p-1 rounded text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 transition-colors"
+            className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
             title="Copy to clipboard"
             aria-label={`Copy ${label} to clipboard`}
           >
@@ -65,11 +66,11 @@ function CodeBlock({
         )}
       </div>
       <CollapsibleContent>
-        <pre className="p-4 text-xs text-zinc-300 font-mono overflow-x-auto whitespace-pre leading-5">
+        <pre className="p-4 text-xs text-foreground font-mono overflow-x-auto whitespace-pre leading-5">
           {loading ? (
-            <span className="text-zinc-600 italic">Loading...</span>
+            <span className="text-muted-foreground italic">Loading...</span>
           ) : content ?? (
-            <span className="text-zinc-600 italic">
+            <span className="text-muted-foreground italic">
               Not available — only generated at deploy time for git-sourced apps.
             </span>
           )}
