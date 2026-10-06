@@ -155,13 +155,6 @@
      10px, so it holds 4.5 rather than the 3 a rule alone would need. */
   --chart-reference: oklch(55% 0.01 78);
   --chart-grid: oklch(72% 0.006 82 / 55%);
-
-  /* magicui rainbow-button palette */
-  --color-1: oklch(66.2% 0.225 25.9);
-  --color-2: oklch(60.4% 0.26 302);
-  --color-3: oklch(69.6% 0.165 251);
-  --color-4: oklch(80.2% 0.134 225);
-  --color-5: oklch(90.7% 0.231 133);
 }
 
 /* Warm charcoal, not near-black. The ground drops and the card lifts so the
@@ -255,12 +248,6 @@
 
     --chart-reference: oklch(64% 0.01 78);
     --chart-grid: oklch(48% 0.008 82 / 55%);
-
-    --color-1: oklch(66.2% 0.225 25.9);
-    --color-2: oklch(60.4% 0.26 302);
-    --color-3: oklch(69.6% 0.165 251);
-    --color-4: oklch(80.2% 0.134 225);
-    --color-5: oklch(90.7% 0.231 133);
   }
 }
 
