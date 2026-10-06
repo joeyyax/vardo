@@ -36,7 +36,7 @@ export type StabilityApp = {
 const TREND_DAYS = Math.round(TREND_WINDOW_MS / 86_400_000);
 
 /** Clock the durations read against, refreshed on the same beat as RelativeTime. */
-function useNow(): number {
+export function useNow(): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 30_000);

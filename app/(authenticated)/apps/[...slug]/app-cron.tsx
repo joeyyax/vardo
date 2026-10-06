@@ -85,6 +85,17 @@ function StatusIcon({ status }: { status: CronJob["lastStatus"] }) {
   }
 }
 
+async function requestJobs(url: string): Promise<CronJob[] | null> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.cronJobs || [];
+  } catch {
+    return null;
+  }
+}
+
 export function CronManager({ appId, orgId }: Props) {
   const [jobs, setJobs] = useState<CronJob[]>([]);
   const [loading, setLoading] = useState(true);
@@ -104,23 +115,24 @@ export function CronManager({ appId, orgId }: Props) {
 
   const baseUrl = `/api/v1/organizations/${orgId}/apps/${appId}/cron`;
 
+  const applyJobs = useCallback((list: CronJob[] | null) => {
+    if (list) setJobs(list);
+    setLoading(false);
+  }, []);
+
   const fetchJobs = useCallback(async () => {
-    try {
-      const res = await fetch(baseUrl);
-      if (res.ok) {
-        const data = await res.json();
-        setJobs(data.cronJobs || []);
-      }
-    } catch {
-      // silent
-    } finally {
-      setLoading(false);
-    }
-  }, [baseUrl]);
+    applyJobs(await requestJobs(baseUrl));
+  }, [baseUrl, applyJobs]);
 
   useEffect(() => {
-    fetchJobs();
-  }, [fetchJobs]);
+    let cancelled = false;
+    requestJobs(baseUrl).then((list) => {
+      if (!cancelled) applyJobs(list);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [baseUrl, applyJobs]);
 
   function openCreate() {
     setEditId(null);

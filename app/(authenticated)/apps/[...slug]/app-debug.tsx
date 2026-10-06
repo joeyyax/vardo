@@ -79,6 +79,21 @@ function CodeBlock({
   );
 }
 
+type DebugResult = { data: DebugData } | { error: string };
+
+async function requestDebug(url: string): Promise<DebugResult> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || `HTTP ${res.status}`);
+    }
+    return { data: await res.json() };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Failed to load debug info" };
+  }
+}
+
 export function AppDebug({
   appId,
   orgId,
@@ -86,33 +101,39 @@ export function AppDebug({
   appId: string;
   orgId: string;
 }) {
+  const debugUrl = `/api/v1/organizations/${orgId}/apps/${appId}/debug`;
   const [data, setData] = useState<DebugData | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [requestedUrl, setRequestedUrl] = useState(debugUrl);
+
+  if (requestedUrl !== debugUrl) {
+    setRequestedUrl(debugUrl);
+    setLoading(true);
+    setError(null);
+  }
+
+  const applyResult = useCallback((result: DebugResult) => {
+    if ("data" in result) setData(result.data);
+    else setError(result.error);
+    setLoading(false);
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
-    try {
-      const res = await fetch(
-        `/api/v1/organizations/${orgId}/apps/${appId}/debug`,
-      );
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || `HTTP ${res.status}`);
-      }
-      const json = await res.json();
-      setData(json);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load debug info");
-    } finally {
-      setLoading(false);
-    }
-  }, [appId, orgId]);
+    applyResult(await requestDebug(debugUrl));
+  }, [debugUrl, applyResult]);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    let cancelled = false;
+    requestDebug(debugUrl).then((result) => {
+      if (!cancelled) applyResult(result);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [debugUrl, applyResult]);
 
   const containerJson = useMemo(() => {
     if (!data?.containers?.length) return null;

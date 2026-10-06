@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useState, useCallback, useEffect } from "react";
+import { Fragment, useState, useCallback, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -119,7 +119,14 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
     }
     return productionEnv?.id;
   })();
-  const [selectedEnvId, setSelectedEnvIdRaw] = useState<string | undefined>(initialEnvId);
+  const [selectedEnvIdRaw, setSelectedEnvIdRaw] = useState<string | undefined>(initialEnvId);
+  // A selected environment that no longer exists falls back to production.
+  const selectedEnvId = useMemo(
+    () => selectedEnvIdRaw && !app.environments.some((e) => e.id === selectedEnvIdRaw)
+      ? productionEnv?.id
+      : selectedEnvIdRaw,
+    [selectedEnvIdRaw, app.environments, productionEnv?.id],
+  );
   const [activeTab, setActiveTabState] = useState(initialTab);
 
   const setActiveTab = useCallback((tab: string) => {
@@ -135,12 +142,11 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
 
   const selectedEnv = app.environments.find((e) => e.id === selectedEnvId)
     ?? productionEnv;
-  // If selectedEnvId doesn't match any environment, reset to production
   useEffect(() => {
-    if (selectedEnvId && !app.environments.find((e) => e.id === selectedEnvId)) {
-      setSelectedEnvId(productionEnv?.id);
+    if (selectedEnvIdRaw !== selectedEnvId) {
+      window.history.replaceState({}, "", buildAppPath(app.name, app.environments, selectedEnvId, activeTab));
     }
-  }, [selectedEnvId, app.environments, productionEnv?.id, setSelectedEnvId]);
+  }, [selectedEnvIdRaw, selectedEnvId, app.name, app.environments, activeTab]);
 
   const isProduction = !selectedEnv || selectedEnv.type === "production";
   // Filter deployments by selected environment

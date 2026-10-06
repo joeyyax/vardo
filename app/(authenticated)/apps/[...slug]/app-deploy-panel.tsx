@@ -241,7 +241,7 @@ export function AppDeployPanel({
     } finally {
       setInstantRollingBack(false);
     }
-  }, [orgId, appId, router]);
+  }, [orgId, appId, router, setConfirmRollbackOpen]);
 
   // The stream stays open: the engine reports the cancel when it stops, and
   // closing here is what made a cancel that never landed look successful.

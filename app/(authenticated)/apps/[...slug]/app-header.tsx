@@ -28,6 +28,7 @@ import {
 } from "@/lib/ui/stability";
 import { DependencySelector } from "./dependency-selector";
 import { AppUpdateStat } from "./app-updates";
+import { useNow } from "./app-stability";
 import type { App, Deployment, SlotStatus, Tag } from "./types";
 
 function deployTypeLabel(deployType: string) {
@@ -143,7 +144,7 @@ export function AppHeader({
     return () => { cancelled = true; };
   }, [orgId, app.id, isChildService, latestDeployId]);
 
-  const now = Date.now();
+  const now = useNow();
   const trend = stabilityTrend(stabilityIncidents, now, app.createdAt);
   const verdict = stabilityVerdict({
     now,

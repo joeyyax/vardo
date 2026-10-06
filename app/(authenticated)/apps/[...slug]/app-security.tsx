@@ -113,6 +113,18 @@ function ScanSummary({ scan }: { scan: Scan }) {
   );
 }
 
+async function requestScans(url: string): Promise<Scan[]> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("Failed to load");
+    const data = await res.json();
+    return data.scans;
+  } catch {
+    toast.error("Failed to load security scans");
+    return [];
+  }
+}
+
 type AppSecurityProps = {
   appId: string;
   orgId: string;
@@ -123,23 +135,26 @@ export function AppSecurity({ appId, orgId }: AppSecurityProps) {
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
 
+  const scansUrl = `/api/v1/organizations/${orgId}/apps/${appId}/security`;
+
+  const applyScans = useCallback((list: Scan[]) => {
+    setScans(list);
+    setLoading(false);
+  }, []);
+
   const fetchScans = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/v1/organizations/${orgId}/apps/${appId}/security`);
-      if (!res.ok) throw new Error("Failed to load");
-      const data = await res.json();
-      setScans(data.scans);
-    } catch {
-      setScans([]);
-      toast.error("Failed to load security scans");
-    } finally {
-      setLoading(false);
-    }
-  }, [orgId, appId]);
+    applyScans(await requestScans(scansUrl));
+  }, [scansUrl, applyScans]);
 
   useEffect(() => {
-    fetchScans();
-  }, [fetchScans]);
+    let cancelled = false;
+    requestScans(scansUrl).then((list) => {
+      if (!cancelled) applyScans(list);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [scansUrl, applyScans]);
 
   // Auto-poll while the latest scan is still running (e.g. triggered by a
   // deploy or scheduled job before the user opened this tab).

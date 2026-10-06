@@ -130,8 +130,12 @@ export function AppUpdatesPanel({
   // notice — and leaves the row behind once it is closed.
   const blocked = data?.blockedMigration ?? null;
   const blockedId = blocked?.deploymentId ?? null;
-  const [gateOpen, setGateOpen] = useState(false);
-  useEffect(() => setGateOpen(blockedId !== null), [blockedId]);
+  const [gateOpen, setGateOpen] = useState(blockedId !== null);
+  const [gateBlockedId, setGateBlockedId] = useState(blockedId);
+  if (gateBlockedId !== blockedId) {
+    setGateBlockedId(blockedId);
+    setGateOpen(blockedId !== null);
+  }
 
   const actionable = (data?.services ?? []).filter(
     (entry) => entry.status === "update" || entry.status === "drift",

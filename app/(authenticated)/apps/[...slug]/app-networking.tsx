@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   Plus,
@@ -68,9 +68,18 @@ export function AppNetworking({
   const [editDomainRedirectTo, setEditDomainRedirectTo] = useState("");
   const [editDomainRedirectCode, setEditDomainRedirectCode] = useState("301");
   const [availableIssuers, setAvailableIssuers] = useState<string[]>(["le", "google"]);
-  const [dnsDomainId, setDnsDomainId] = useState<string | null>(null);
-  const [domainStatuses, setDomainStatuses] = useState<Record<string, "checking" | "resolving" | "not-configured">>({});
+  // Open sub-view from URL (e.g. /apps/emmayax/networking/emmayax.com)
+  const [dnsDomainId, setDnsDomainId] = useState<string | null>(
+    () => (initialSubView && domains.find((d) => d.domain === initialSubView)?.id) || null,
+  );
+  const [domainChecks, setDomainChecks] = useState<Record<string, { run: string; status: "resolving" | "not-configured" }>>({});
   const [domainCheckTick, setDomainCheckTick] = useState(0);
+  const checkRun = `${domains.length}:${domainCheckTick}`;
+  const domainStatuses: Record<string, "checking" | "resolving" | "not-configured"> = {};
+  for (const domain of domains) {
+    const check = domainChecks[domain.id];
+    domainStatuses[domain.id] = check?.run === checkRun ? check.status : "checking";
+  }
   const [serverIP, setServerIP] = useState<string | null>(null);
 
   // Fetch available issuers
@@ -91,55 +100,44 @@ export function AppNetworking({
     }
   }
 
-  // Open sub-view from URL (e.g. /apps/emmayax/networking/emmayax.com)
-  useEffect(() => {
-    if (!initialSubView) return;
-    const domain = domains.find((d) => d.domain === initialSubView);
-    if (domain) {
-      setDnsDomainId(domain.id);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Check domain resolution status via server-side API
-  const checkAllDomains = useCallback(async () => {
-    if (domains.length === 0) return;
-    const autoDomain = domains.find((d) => d.domain.endsWith(".localhost"))?.domain;
-
-    for (const domain of domains) {
-      setDomainStatuses((prev) => ({ ...prev, [domain.id]: "checking" }));
-      try {
-        const params = new URLSearchParams({ domain: domain.domain });
-        if (autoDomain && autoDomain !== domain.domain) {
-          params.set("expected", autoDomain);
-        }
-        const res = await fetch(`/api/v1/dns-check?${params}`);
-        const data = await res.json();
-        setDomainStatuses((prev) => ({
-          ...prev,
-          [domain.id]: data.configured ? "resolving" : "not-configured",
-        }));
-        if (data.serverIp) {
-          setServerIP(data.serverIp);
-        }
-      } catch {
-        setDomainStatuses((prev) => ({ ...prev, [domain.id]: "not-configured" }));
-      }
-    }
-  }, [domains]);
-
   // Initial check + re-check on tick
   useEffect(() => {
-    checkAllDomains();
+    if (domains.length === 0) return;
+    const autoDomain = domains.find((d) => d.domain.endsWith(".localhost"))?.domain;
+    let cancelled = false;
+
+    (async () => {
+      for (const domain of domains) {
+        let status: "resolving" | "not-configured" = "not-configured";
+        try {
+          const params = new URLSearchParams({ domain: domain.domain });
+          if (autoDomain && autoDomain !== domain.domain) {
+            params.set("expected", autoDomain);
+          }
+          const res = await fetch(`/api/v1/dns-check?${params}`);
+          const data = await res.json();
+          if (data.configured) status = "resolving";
+          if (data.serverIp && !cancelled) setServerIP(data.serverIp);
+        } catch {
+          // not-configured
+        }
+        if (cancelled) return;
+        setDomainChecks((prev) => ({ ...prev, [domain.id]: { run: checkRun, status } }));
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [domains.length, domainCheckTick]);
+  }, [checkRun]);
 
   // Background re-check every 30s while on the networking tab
   useEffect(() => {
     if (activeTab !== "networking") return;
-    const interval = setInterval(() => checkAllDomains(), 30000);
+    const interval = setInterval(() => setDomainCheckTick((t) => t + 1), 30000);
     return () => clearInterval(interval);
-  }, [activeTab, checkAllDomains]);
+  }, [activeTab]);
 
   async function handleSetPrimaryDomain(domainId: string) {
     try {

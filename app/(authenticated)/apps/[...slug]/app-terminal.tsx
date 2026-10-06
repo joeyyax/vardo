@@ -32,6 +32,17 @@ type AppTerminalProps = {
 
 type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
 
+async function requestContainers(url: string): Promise<Container[] | null> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.containers as Container[];
+  } catch {
+    return null;
+  }
+}
+
 export function AppTerminal({ appId, orgId }: AppTerminalProps) {
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTerm | null>(null);
@@ -47,36 +58,40 @@ export function AppTerminal({ appId, orgId }: AppTerminalProps) {
 
   const baseUrl = `/api/v1/organizations/${orgId}/apps/${appId}`;
 
-  // Fetch available containers
-  const fetchContainers = useCallback(async () => {
+  const containersUrl = `${baseUrl}/containers`;
+  const [requestedUrl, setRequestedUrl] = useState(containersUrl);
+  if (requestedUrl !== containersUrl) {
+    setRequestedUrl(containersUrl);
     setLoadingContainers(true);
-    try {
-      const res = await fetch(`${baseUrl}/containers`);
-      if (!res.ok) {
-        setContainers([]);
-        setErrorMessage("Failed to fetch containers");
-        return;
-      }
-      const data = await res.json();
-      const list = data.containers as Container[];
+  }
+
+  const applyContainers = useCallback((list: Container[] | null) => {
+    if (list) {
       setContainers(list);
       setErrorMessage(null);
-
       // Auto-select first container if none selected
-      if (list.length > 0 && !selectedContainer) {
-        setSelectedContainer(list[0].id);
-      }
-    } catch {
+      if (list.length > 0) setSelectedContainer((prev) => prev || list[0].id);
+    } else {
       setContainers([]);
       setErrorMessage("Failed to fetch containers");
-    } finally {
-      setLoadingContainers(false);
     }
-  }, [baseUrl, selectedContainer]);
+    setLoadingContainers(false);
+  }, []);
+
+  const fetchContainers = useCallback(async () => {
+    setLoadingContainers(true);
+    applyContainers(await requestContainers(containersUrl));
+  }, [containersUrl, applyContainers]);
 
   useEffect(() => {
-    fetchContainers();
-  }, [fetchContainers]);
+    let cancelled = false;
+    requestContainers(containersUrl).then((list) => {
+      if (!cancelled) applyContainers(list);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [containersUrl, applyContainers]);
 
   // Send input to the terminal session
   const sendInput = useCallback(

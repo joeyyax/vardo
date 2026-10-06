@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { toast } from "@/lib/messenger";
@@ -54,13 +54,15 @@ export function NewEnvironmentSheet({
   const [saving, setSaving] = useState(false);
 
   // Reset form each time the sheet opens
-  useEffect(() => {
+  const [resetFor, setResetFor] = useState({ open, defaultCloneFrom });
+  if (resetFor.open !== open || resetFor.defaultCloneFrom !== defaultCloneFrom) {
+    setResetFor({ open, defaultCloneFrom });
     if (open) {
       setName("");
       setBranch("");
       setCloneFrom(defaultCloneFrom);
     }
-  }, [open, defaultCloneFrom]);
+  }
 
   async function handleCreate() {
     const envName = slugify(name.trim());
