@@ -10,7 +10,7 @@ import { logger } from "@/lib/logger";
 import { eq, and, lt, gt, desc, inArray } from "drizzle-orm";
 import { reconcileActiveCounter, reconcileQueue, removeFromQueue } from "@/lib/docker/deploy-concurrency";
 import { stopProject } from "@/lib/docker/deploy";
-import { publishKillSignal } from "@/lib/docker/deploy-cancel";
+import { deployScope, publishKillSignal } from "@/lib/docker/deploy-cancel";
 import { appEnvDir } from "@/lib/paths";
 import { detectActiveSlot, type Slot as SlotName } from "@/lib/docker/slots";
 import {
@@ -39,8 +39,8 @@ const TIMEOUT_MINUTES = Number(process.env.DEPLOY_TIMEOUT_MINUTES) || 15;
 /** One rollback attempt per deployment. A failed attempt is not retried. */
 const ROLLBACK_ATTEMPT_TTL_MS = MAX_GRACE_PERIOD_SECONDS * 1000;
 
-/** Written by deploy-cancel for as long as a deploy owns the app. */
-const activeDeployKey = (appId: string) => `deploy:active:${appId}`;
+/** Written by deploy-cancel for as long as a deploy owns the app environment (see deployScope). */
+const activeDeployKey = (scope: string) => `deploy:active:${scope}`;
 
 /** When this sweep first saw a deployment in "running". */
 const runningSinceKey = (deploymentId: string) => `deploy:sweep:running-since:${deploymentId}`;
@@ -62,12 +62,12 @@ type ActiveDeployEntry = { deploymentId: string; stage?: string };
  */
 type Liveness = { known: true; active: ActiveDeployEntry | null } | { known: false };
 
-async function readActiveDeploy(appId: string): Promise<Liveness> {
+async function readActiveDeploy(scope: string): Promise<Liveness> {
   let raw: string | null;
   try {
-    raw = await redis.get(activeDeployKey(appId));
+    raw = await redis.get(activeDeployKey(scope));
   } catch (err) {
-    log.warn(`Could not read the active-deploy key for app ${appId}:`, err);
+    log.warn(`Could not read the active-deploy key for ${scope}:`, err);
     return { known: false };
   }
 
@@ -78,7 +78,7 @@ async function readActiveDeploy(appId: string): Promise<Liveness> {
     if (typeof parsed?.deploymentId !== "string") return { known: false };
     return { known: true, active: parsed };
   } catch {
-    log.warn(`Unparseable active-deploy entry for app ${appId} — treating as unknown`);
+    log.warn(`Unparseable active-deploy entry for ${scope} — treating as unknown`);
     return { known: false };
   }
 }
@@ -217,7 +217,8 @@ export async function sweepStuckDeployments(): Promise<void> {
     if (!acquired) continue;
 
     try {
-      const liveness = await readActiveDeploy(deploy.appId);
+      const scope = await deployScope(deploy.appId, deploy.environmentId);
+      const liveness = await readActiveDeploy(scope);
 
       // Redis could not answer. Unknown is not dead — leave the row for the
       // next pass rather than failing a deploy that may still be building.
@@ -272,17 +273,19 @@ export async function sweepStuckDeployments(): Promise<void> {
       const app = appMap.get(deploy.appId);
 
       if (app && !supersededByLiveDeploy) {
-        // Reset the app status if it's still "deploying"
-        await db
-          .update(apps)
-          .set(statusChange("stopped", now))
-          .where(
-            and(eq(apps.id, deploy.appId), eq(apps.status, "deploying")),
-          );
+        // Reset the app status if it's still "deploying". Only the default environment owns it.
+        if (scope === deploy.appId) {
+          await db
+            .update(apps)
+            .set(statusChange("stopped", now))
+            .where(
+              and(eq(apps.id, deploy.appId), eq(apps.status, "deploying")),
+            );
+        }
 
         // Re-read liveness immediately before touching Docker — a new deploy
         // can have claimed the app while the rows above were being written.
-        const recheck = await readActiveDeploy(deploy.appId);
+        const recheck = await readActiveDeploy(scope);
         if (recheck.known && recheck.active === null) {
           try {
             const envName = await envNameFor(deploy.environmentId, deploy.appId);
@@ -635,6 +638,7 @@ export async function sweepStandbySlots(): Promise<void> {
       appName: apps.name,
       appStatus: apps.status,
       organizationId: apps.organizationId,
+      envId: environments.id,
       envName: environments.name,
     })
     .from(environments)
@@ -662,7 +666,7 @@ export async function sweepStandbySlots(): Promise<void> {
 
       // A deploy runs both slots on purpose. Skip while one owns the app.
       if (row.appStatus === "deploying") continue;
-      const liveness = await readActiveDeploy(row.appId);
+      const liveness = await readActiveDeploy(await deployScope(row.appId, row.envId));
       if (!liveness.known || liveness.active !== null) continue;
 
       const latest = await db.query.deployments.findFirst({

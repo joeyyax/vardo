@@ -75,7 +75,10 @@ const { dbMock, redisMock, lockMock, slotsMock, rollbackMock, dockerMock, cancel
         slotContainerIds: vi.fn(),
       },
       dockerMock: { stopProject: vi.fn().mockResolvedValue({ success: true, log: "" }) },
-      cancelMock: { publishKillSignal: vi.fn().mockResolvedValue(undefined) },
+      cancelMock: {
+        publishKillSignal: vi.fn().mockResolvedValue(undefined),
+        deployScope: vi.fn(async (appId: string) => appId),
+      },
     };
   });
 
