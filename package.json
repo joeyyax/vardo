@@ -26,7 +26,6 @@
     "@codemirror/language": "^6.12.4",
     "@codemirror/state": "^6.7.6",
     "@codemirror/view": "^6.43.13",
-    "@formkit/auto-animate": "^0.9.0",
     "@hookform/resolvers": "^5.9.1",
     "@iarna/toml": "^2.2.5",
     "@lezer/highlight": "^1.2.5",
