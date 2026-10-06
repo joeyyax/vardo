@@ -966,9 +966,8 @@ export function isPreviewProject(appName: string, envName: string, project: stri
 }
 
 /**
- * Tear down one preview environment: both slots, its shared project, their volumes
- * and its directory, nothing
- * else. Fails when any `down` fails, so the caller can keep its records.
+ * Tear down one preview environment: both slots, its shared project, their
+ * volumes and its directory, nothing else. Fails when any `down` fails, so the caller can keep its records.
  */
 export async function stopPreviewEnvironment(
   appId: string,
