@@ -68,7 +68,7 @@ function TwoFactorForm() {
         <div className="mx-auto mb-4 w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
           <ShieldCheck className="w-6 h-6 text-primary" />
         </div>
-        <CardTitle>Two-factor authentication</CardTitle>
+        <CardTitle as="h1">Two-factor authentication</CardTitle>
         <CardDescription>
           {mode === "totp"
             ? "Enter the 6-digit code from your authenticator app."
@@ -174,7 +174,7 @@ function TwoFactorSkeleton() {
   return (
     <Card className="w-full max-w-md rounded-2xl">
       <CardHeader className="text-center">
-        <CardTitle>Two-factor authentication</CardTitle>
+        <CardTitle as="h1">Two-factor authentication</CardTitle>
         <CardDescription>Loading...</CardDescription>
       </CardHeader>
       <CardContent>

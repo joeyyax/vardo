@@ -109,7 +109,7 @@ export function InviteAcceptClient({
             <div className="mx-auto mb-4 w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
               <Mail className="w-6 h-6 text-primary" />
             </div>
-            <CardTitle>Check your email</CardTitle>
+            <CardTitle as="h1">Check your email</CardTitle>
             <CardDescription className="mt-2">
               We sent a sign-in link to <strong>{email}</strong>
             </CardDescription>
@@ -128,7 +128,7 @@ export function InviteAcceptClient({
     <div className="min-h-screen flex items-center justify-center p-4 bg-muted/30">
       <Card className="w-full max-w-md rounded-2xl">
         <CardHeader className="text-center">
-          <CardTitle>{heading}</CardTitle>
+          <CardTitle as="h1">{heading}</CardTitle>
           <CardDescription className="mt-2">{description}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">

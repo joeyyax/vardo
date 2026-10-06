@@ -30,9 +30,16 @@ function CardHeader({ className, ...props }: React.ComponentProps<"div">) {
   )
 }
 
-function CardTitle({ className, ...props }: React.ComponentProps<"div">) {
+type HeadingTag = "h1" | "h2" | "h3" | "h4" | "h5" | "h6"
+
+// A heading for the outline; the level is the call site's, the look stays type-h3.
+function CardTitle({
+  as: Tag = "h3",
+  className,
+  ...props
+}: React.ComponentProps<"h3"> & { as?: HeadingTag }) {
   return (
-    <div
+    <Tag
       data-slot="card-title"
       className={cn("type-h3", className)}
       {...props}

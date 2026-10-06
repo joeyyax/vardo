@@ -52,7 +52,7 @@ export function OrgGeneralSettings({ orgId, orgName }: OrgGeneralSettingsProps) 
     <div className="space-y-4">
       <Card>
         <CardHeader>
-          <CardTitle>General</CardTitle>
+          <CardTitle as="h2">General</CardTitle>
           <CardDescription>The organization name appears in the sidebar, team invitations, and notification emails.</CardDescription>
         </CardHeader>
         <CardContent>

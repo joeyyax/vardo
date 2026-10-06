@@ -130,6 +130,8 @@ export function BackupPage({
   // empty card has to say whose backups it is empty of.
   const managed = scope === "org" && !!autoTarget;
   const autoJobs = autoTarget ? jobs.filter((j) => j.target.id === autoTarget.id) : [];
+  // Sections sit under the intro's h2 when it renders, under the page h1 when it doesn't.
+  const Heading = !managed && showIntro ? "h3" : "h2";
 
   return (
     <div className="space-y-10">
@@ -153,14 +155,14 @@ export function BackupPage({
       ) : null}
 
       {/* The one thing a backup cannot restore */}
-      <KeyEscrowCard />
+      <KeyEscrowCard heading={Heading} />
 
       {/* Two-column: Storage targets + Backup jobs */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Left: Storage targets */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
-            <CardTitle>Storage targets</CardTitle>
+            <CardTitle as={Heading}>Storage targets</CardTitle>
             <Button size="sm" variant="outline" onClick={() => setTargetFormOpen(true)}>
               <Plus className="mr-1.5 size-4" aria-hidden="true" />
               Add target
@@ -199,7 +201,7 @@ export function BackupPage({
             <ShineBorder shineColor={["#A07CFE", "#FE8FB5", "#FFBE7B"]} duration={8} borderWidth={2} />
           )}
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
-            <CardTitle>Backup jobs</CardTitle>
+            <CardTitle as={Heading}>Backup jobs</CardTitle>
             <Button size="sm" variant="outline" onClick={() => setJobFormOpen(true)} disabled={!hasVisibleTargets}>
               <Plus className="mr-1.5 size-4" aria-hidden="true" />
               New job
@@ -251,7 +253,7 @@ export function BackupPage({
       {/* Backup history */}
       <Card>
         <CardHeader>
-          <CardTitle>Backup history</CardTitle>
+          <CardTitle as={Heading}>Backup history</CardTitle>
           <p className="text-sm text-muted-foreground">
             Recent snapshots across all targets and jobs.
           </p>
@@ -265,7 +267,7 @@ export function BackupPage({
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="@container squircle rounded-lg bg-card shadow-card dark:border">
           <div className="p-6 @lg:p-7 space-y-3">
-            <h3 className="type-h3">What&apos;s in a backup</h3>
+            <Heading className="type-h3">What&apos;s in a backup</Heading>
             <ul className="text-sm space-y-2">
               <li className="flex items-start gap-2.5">
                 <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
@@ -284,7 +286,7 @@ export function BackupPage({
         </div>
         <div className="@container squircle rounded-lg bg-card shadow-card dark:border">
           <div className="p-6 @lg:p-7 space-y-3">
-            <h3 className="type-h3">How it works</h3>
+            <Heading className="type-h3">How it works</Heading>
             <ul className="text-sm space-y-2">
               <li className="flex items-start gap-2.5">
                 <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
@@ -303,7 +305,7 @@ export function BackupPage({
         </div>
         <div className="@container squircle rounded-lg bg-card shadow-card dark:border">
           <div className="p-6 @lg:p-7 space-y-3">
-            <h3 className="type-h3">Good to know</h3>
+            <Heading className="type-h3">Good to know</Heading>
             <ul className="text-sm space-y-2">
               <li className="flex items-start gap-2.5">
                 <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />

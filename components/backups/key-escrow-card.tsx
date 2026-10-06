@@ -23,7 +23,7 @@ const VARIANT = {
 } as const;
 
 /** The master key's identity, and whether it matches this database. */
-export function KeyEscrowCard() {
+export function KeyEscrowCard({ heading = "h3" }: { heading?: "h2" | "h3" }) {
   const [state, setState] = useState<KeyEscrowState | null>(null);
 
   useEffect(() => {
@@ -39,7 +39,7 @@ export function KeyEscrowCard() {
     <Card>
       <CardHeader className="flex flex-row items-center gap-2 space-y-0 pb-4">
         <KeyRound className="size-4 text-muted-foreground" aria-hidden="true" />
-        <CardTitle>Encryption key</CardTitle>
+        <CardTitle as={heading}>Encryption key</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
         <Callout variant={VARIANT[state.severity]}>{state.headline}</Callout>
