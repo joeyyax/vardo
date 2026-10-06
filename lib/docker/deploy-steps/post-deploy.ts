@@ -98,7 +98,7 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
 
   // Auto-detect persistent volumes from running containers. Rows describe the default environment.
   if (!ctx.envIsolated) try {
-    const runningContainers = await listContainers({ id: ctx.appId, name: app.name });
+    const runningContainers = await listContainers({ id: ctx.appId, name: app.name }, ctx.envName);
     const detectedVolumes: {
       name: string;
       mountPath: string;

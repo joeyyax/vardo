@@ -21,7 +21,7 @@ export async function checkVolumeLimits(ctx: DeployContext): Promise<void> {
     if (!limitedVolumes.some((v) => v.maxSizeBytes != null)) return;
 
     const { formatBytes } = await import("@/lib/metrics/format");
-    const runningContainers = await listContainers({ id: ctx.appId, name: app.name });
+    const runningContainers = await listContainers({ id: ctx.appId, name: app.name }, ctx.envName);
 
     const volEntries: { volName: string; displayName: string }[] = [];
     const seen = new Set<string>();
