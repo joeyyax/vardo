@@ -853,7 +853,7 @@ export function VolumesPanel({ appId, orgId }: Props) {
         <div className="space-y-3">
           <div className="flex items-center gap-2">
             <Gauge className="size-4 text-muted-foreground" />
-            <h3 className="text-sm font-medium">Storage Limit</h3>
+            <h3 className="type-h4">Storage Limit</h3>
           </div>
 
           {limitEditing ? (
@@ -997,9 +997,10 @@ export function VolumesPanel({ appId, orgId }: Props) {
                 setLimitWarnPercent("80");
                 setLimitEditing(true);
               }}
-              className="squircle w-full rounded-lg border border-dashed p-4 text-sm text-muted-foreground hover:bg-accent/50 transition-colors text-left"
+              className="squircle flex w-full items-center gap-2.5 rounded-lg bg-background-deep p-4 text-sm text-muted-foreground transition-colors text-left hover:bg-accent hover:text-foreground"
             >
-              No storage limit set. Click to add a size limit that blocks deploys when exceeded.
+              <Plus className="size-4 shrink-0" aria-hidden="true" />
+              Set a storage limit that blocks deploys when exceeded
             </button>
           )}
         </div>

@@ -370,7 +370,7 @@ export function OrgDomainEditor({
               </p>
             </div>
 
-            <div className="rounded-md border border-dashed bg-muted/50 px-4 py-3 space-y-3">
+            <div className="squircle rounded-lg bg-background-deep px-4 py-3 space-y-3">
               <p className="text-sm font-medium">DNS Setup Instructions</p>
               <div className="space-y-2">
                 <p className="text-xs text-muted-foreground">

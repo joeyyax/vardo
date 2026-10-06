@@ -653,7 +653,7 @@ export function AppDeployPanel({
               {liveDeploy ? (
                 renderDeploymentCard(liveDeploy, "live")
               ) : completedDeployments.length > 0 && !deploying && (
-                <div className="squircle rounded-lg border border-dashed bg-muted/30 p-4">
+                <div className="squircle rounded-lg bg-background-deep p-4">
                   <p className="text-sm text-muted-foreground text-center">No active deployment</p>
                 </div>
               )}

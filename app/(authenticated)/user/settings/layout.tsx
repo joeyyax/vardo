@@ -37,7 +37,7 @@ export default async function UserSettingsLayout({
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-10">
       <div>
         <h1 className="type-h1">
           Account settings

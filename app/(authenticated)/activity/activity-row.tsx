@@ -71,7 +71,7 @@ export function ActivityRow({ group }: { group: ActivityGroup }) {
     <div
       className={`squircle flex items-start gap-3 rounded-lg px-3 py-2.5 transition-colors ${
         failed
-          ? "border border-status-error/25 bg-status-error-muted/50"
+          ? "bg-status-error-muted"
           : "hover:bg-muted/50"
       }`}
     >

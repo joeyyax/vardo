@@ -61,7 +61,7 @@ export function AuthSettings() {
   return (
     <div className="space-y-6">
       <div className="space-y-1">
-        <h2 className="text-lg font-medium">Authentication</h2>
+        <h2 className="type-h2">Authentication</h2>
         <p className="text-sm text-muted-foreground">
           Control who can sign up, how they sign in and how sessions work.
         </p>
@@ -216,7 +216,7 @@ function SignInMethods() {
   return (
     <section className="space-y-3">
       <div className="space-y-0.5">
-        <h3 className="text-sm font-medium">Sign-in methods</h3>
+        <h3 className="type-h4">Sign-in methods</h3>
         <p className="text-xs text-muted-foreground">
           Changes save as you flip them and take effect immediately — a disabled method is refused at
           the API, not just hidden. At least one has to stay usable. A method set in vardo.yml or by a{" "}

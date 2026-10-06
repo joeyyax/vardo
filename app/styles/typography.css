@@ -1,35 +1,49 @@
-/* Console type recipes. Geist carries everything; tiers differ by size and
-   weight, not family. Color stays at the call site. */
+/* Console type recipes. Headings take the display face; body and controls take
+   the body face. Color stays at the call site. */
 
 @layer components {
   /* Page title */
   .type-h1 {
-    font-size: 1.5rem;
-    line-height: 1.2;
-    font-weight: 600;
-    letter-spacing: -0.025em;
+    font-family: var(--font-display-sans);
+    font-size: 3rem;
+    line-height: 1.02;
+    font-weight: 700;
+    letter-spacing: -0.035em;
     text-wrap: balance;
   }
   /* Section / card title */
   .type-h2 {
-    font-size: 1.125rem;
-    line-height: 1.4;
-    font-weight: 600;
-    letter-spacing: -0.015em;
+    font-family: var(--font-display-sans);
+    font-size: 1.75rem;
+    line-height: 1.2;
+    font-weight: 650;
+    letter-spacing: -0.028em;
+    text-wrap: balance;
   }
   /* Subsection title */
   .type-h3 {
-    font-size: 0.9375rem;
-    line-height: 1.45;
+    font-family: var(--font-display-sans);
+    font-size: 1.25rem;
+    line-height: 1.3;
     font-weight: 600;
+    letter-spacing: -0.012em;
+  }
+  /* Card-internal group title. Sits at body size so a card can name its parts
+     without competing with the section above it. */
+  .type-h4 {
+    font-family: var(--font-display-sans);
+    font-size: 1rem;
+    line-height: 1.35;
+    font-weight: 600;
+    letter-spacing: -0.006em;
   }
   .type-body {
-    font-size: 0.875rem;
-    line-height: 1.55;
+    font-size: 0.9375rem;
+    line-height: 1.6;
   }
   .type-body-sm {
-    font-size: 0.8125rem;
-    line-height: 1.5;
+    font-size: 0.875rem;
+    line-height: 1.55;
   }
   /* Metric voice — no size baked; pair with a size utility. */
   .type-numeral {
@@ -41,10 +55,19 @@
 }
 
 @layer utilities {
+  /* The wordmark is identity, not hierarchy — it takes the body face and a
+     fixed size so tuning the heading scale never resizes the logo. */
+  .type-wordmark {
+    font-size: 1.1875rem;
+    line-height: 1;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+
   /* Small-caps meta label — pair with text-muted-foreground, or text-brass
      for the trim voice. */
   .type-label {
-    font-family: var(--font-mono);
+    font-family: var(--font-geist-mono);
     font-size: 11px;
     line-height: 1.35;
     font-weight: 500;

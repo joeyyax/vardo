@@ -267,8 +267,8 @@ export function AppNetworking({
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="text-sm font-medium">Domains</h3>
-            <p className="text-xs text-muted-foreground mt-0.5">Route traffic to your app via custom domains.</p>
+            <h3 className="type-h3">Domains</h3>
+            <p className="type-body-sm text-muted-foreground mt-1">Route traffic to your app via custom domains.</p>
           </div>
           <Button
             size="sm"
@@ -631,7 +631,7 @@ export function AppNetworking({
                   /* External domain DNS config */
                   <>
                     <div className="space-y-3">
-                      <h3 className="text-sm font-medium">Required DNS Record</h3>
+                      <h3 className="type-h4">Required DNS Record</h3>
                       <p className="text-xs text-muted-foreground">Use one of the following options:</p>
                       <div className="rounded-lg bg-background-deep divide-y">
                         <div className="grid grid-cols-3 gap-4 px-4 py-2 text-xs text-muted-foreground">
@@ -679,7 +679,7 @@ export function AppNetworking({
                     </div>
 
                     <div className="space-y-2">
-                      <h3 className="text-sm font-medium">Setup Instructions</h3>
+                      <h3 className="type-h4">Setup Instructions</h3>
                       <ol className="text-sm text-muted-foreground space-y-1.5 list-decimal list-inside">
                         <li>Go to your domain registrar or DNS provider</li>
                         <li>Add an <span className="font-mono text-foreground">A</span> record pointing to {serverIP || "your server IP"}{autoDomain && !autoDomain.endsWith(".localhost") && <>, or a <span className="font-mono text-foreground">CNAME</span> pointing to <span className="font-mono text-foreground">{autoDomain}</span></>}</li>

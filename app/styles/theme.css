@@ -5,8 +5,18 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-body-sans);
+  --font-display: var(--font-display-sans);
   --font-mono: var(--font-geist-mono);
+
+  /* One step up across the board. The console ran on 12/13px; Atkinson sits
+     larger on the same em, and the extra size is the point. */
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: 1.45;
+  --text-sm: 0.9375rem;
+  --text-sm--line-height: 1.5;
+  --text-base: 1rem;
+  --text-base--line-height: 1.6;
 
   --color-background: var(--background);
   --color-foreground: var(--foreground);

@@ -12,19 +12,19 @@ type EmptyStateProps = {
   className?: string;
 };
 
-/** The one dashed-border block for "nothing here yet" across the app. */
+/** "Nothing here yet", as an inset tray rather than a fourth surface treatment. */
 export function EmptyState({ icon: Icon, title, body, action, className }: EmptyStateProps) {
   return (
     <div
       className={cn(
-        "squircle flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed p-12 text-center",
+        "squircle flex flex-col items-center justify-center gap-4 rounded-lg bg-background-deep p-12 text-center",
         className,
       )}
     >
       {Icon && <Icon className="size-8 text-muted-foreground/50" aria-hidden="true" />}
       <div className="space-y-1">
-        <p className="text-sm font-medium">{title}</p>
-        {body && <p className="text-sm text-muted-foreground max-w-md">{body}</p>}
+        <p className="type-h4">{title}</p>
+        {body && <p className="type-body-sm text-muted-foreground max-w-md">{body}</p>}
       </div>
       {action}
     </div>

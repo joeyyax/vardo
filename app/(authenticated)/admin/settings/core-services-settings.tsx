@@ -131,7 +131,7 @@ export function CoreServicesSettings() {
   return (
     <div className="space-y-6">
       <div className="space-y-1">
-        <h2 className="text-lg font-medium">Core services</h2>
+        <h2 className="type-h2">Core services</h2>
         <p className="text-sm text-muted-foreground">
           These run once for the whole instance. Each one watches every container on the host, so
           every organization reads the same service — there is no per-organization copy. Turn them

@@ -2,8 +2,17 @@
    reduced-motion guard. */
 
 .container {
-  @apply mx-auto w-full px-5 lg:px-10;
+  @apply mx-auto w-full px-6 lg:px-12;
   max-width: var(--breakpoint-xl);
+}
+
+/* Airy between panels, tight inside them. Panels read their own padding from
+   this so one value moves the whole page rhythm. */
+:root {
+  --pane-pad: 1.5rem;
+}
+@media (min-width: 640px) {
+  :root { --pane-pad: 1.75rem; }
 }
 
 @layer base {

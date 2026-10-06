@@ -132,7 +132,7 @@ export function BackupPage({
   const autoJobs = autoTarget ? jobs.filter((j) => j.target.id === autoTarget.id) : [];
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-10">
       {/* Auto-backup banner — only shown to org users when system backups exist */}
       {scope === "org" && autoTarget ? (
         <AutoBackupBanner
@@ -218,7 +218,7 @@ export function BackupPage({
               />
             ) : visibleJobs.length === 0 ? (
               <EmptyState
-                className="border-none p-8"
+                className="p-8"
                 icon={Archive}
                 title="No backup jobs configured"
                 body="Create one to schedule automatic backups."
@@ -263,7 +263,7 @@ export function BackupPage({
 
       {/* Info sections */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="space-y-3">
+        <div className="@container squircle rounded-lg bg-card p-6 @lg:p-7 shadow-card dark:border space-y-3">
           <h3 className="text-sm font-medium">What&apos;s in a backup</h3>
           <ul className="text-sm space-y-2">
             <li className="flex items-start gap-2.5">
@@ -280,7 +280,7 @@ export function BackupPage({
             </li>
           </ul>
         </div>
-        <div className="space-y-3">
+        <div className="@container squircle rounded-lg bg-card p-6 @lg:p-7 shadow-card dark:border space-y-3">
           <h3 className="text-sm font-medium">How it works</h3>
           <ul className="text-sm space-y-2">
             <li className="flex items-start gap-2.5">
@@ -297,7 +297,7 @@ export function BackupPage({
             </li>
           </ul>
         </div>
-        <div className="space-y-3">
+        <div className="@container squircle rounded-lg bg-card p-6 @lg:p-7 shadow-card dark:border space-y-3">
           <h3 className="text-sm font-medium">Good to know</h3>
           <ul className="text-sm space-y-2">
             <li className="flex items-start gap-2.5">

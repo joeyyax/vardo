@@ -252,7 +252,7 @@ export function ExternalRoutesSettings() {
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="space-y-1">
-          <h2 className="text-lg font-medium">External routes</h2>
+          <h2 className="type-h2">External routes</h2>
           <p className="text-sm text-muted-foreground max-w-2xl">
             Route subdomains to non-Docker services running on arbitrary IP:port targets.
             Traefik will proxy or redirect traffic for each hostname you define here.

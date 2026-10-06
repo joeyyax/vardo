@@ -84,7 +84,7 @@ export function ConfigSettings() {
   return (
     <div className="space-y-6">
       <div className="space-y-1">
-        <h2 className="text-lg font-medium">Configuration</h2>
+        <h2 className="type-h2">Configuration</h2>
         <p className="text-sm text-muted-foreground">
           Export your system configuration for backup or migration. Import a config file to restore settings on a new instance.
         </p>
@@ -164,7 +164,7 @@ export function ConfigSettings() {
       {/* Info */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="space-y-3">
-          <h3 className="text-sm font-medium">What&apos;s included</h3>
+          <h3 className="type-h4">What&apos;s included</h3>
           <ul className="text-sm space-y-2">
             <li className="flex items-start gap-2.5">
               <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
@@ -181,7 +181,7 @@ export function ConfigSettings() {
           </ul>
         </div>
         <div className="space-y-3">
-          <h3 className="text-sm font-medium">Good to know</h3>
+          <h3 className="type-h4">Good to know</h3>
           <ul className="text-sm space-y-2">
             <li className="flex items-start gap-2.5">
               <Info className="size-4 text-muted-foreground/50 shrink-0 mt-0.5" aria-hidden="true" />

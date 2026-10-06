@@ -21,7 +21,7 @@ export function FeatureDisabled({ name, description, canManage, className }: Fea
   return (
     <div
       className={cn(
-        "squircle flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed p-12 text-center",
+        "squircle flex flex-col items-center justify-center gap-4 rounded-lg bg-background-deep p-12 text-center",
         className,
       )}
     >

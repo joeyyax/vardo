@@ -103,7 +103,7 @@ function Skeleton({ className = "w-14" }: { className?: string }) {
 function Collecting({ count }: { count: number }) {
   return (
     <div
-      className="flex flex-col items-center justify-center gap-2 rounded-md border border-dashed"
+      className="squircle flex flex-col items-center justify-center gap-2 rounded-lg bg-background-deep"
       style={{ height: CHART_HEIGHT }}
     >
       <Loader2 className="size-4 animate-spin text-muted-foreground" />
@@ -119,7 +119,7 @@ function Collecting({ count }: { count: number }) {
 function NoSamples() {
   return (
     <div
-      className="flex items-center justify-center rounded-md border border-dashed"
+      className="squircle flex items-center justify-center rounded-lg bg-background-deep"
       style={{ height: CHART_HEIGHT }}
     >
       <p className="text-xs text-muted-foreground">No samples in this range</p>
@@ -132,7 +132,7 @@ function ContainerTable({ containers }: { containers: ContainerPoint[] }) {
     <div className="squircle rounded-lg bg-card shadow-card dark:border overflow-x-auto">
       <div className="flex items-center gap-2 px-4 py-3 border-b">
         <Container className="size-4 text-muted-foreground" />
-        <h3 className="text-sm font-medium">Containers</h3>
+        <h3 className="type-h4">Containers</h3>
       </div>
       <table className="w-full text-sm">
         <thead>
@@ -216,7 +216,7 @@ export function AppMetrics({ orgId, appId, environmentName, gpuEnabled, cpuLimit
   // Loading state -- show if still loading history and not connected
   if (loading && !connected) {
     return (
-      <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
+      <div className="squircle flex flex-col items-center justify-center gap-3 rounded-lg bg-background-deep p-12">
         <Loader2 className="size-6 text-muted-foreground animate-spin" />
         <p className="text-sm text-muted-foreground">Loading metrics...</p>
       </div>
@@ -452,7 +452,7 @@ export function AppMetrics({ orgId, appId, environmentName, gpuEnabled, cpuLimit
         <div className="squircle rounded-lg bg-card shadow-card dark:border">
           <div className="flex items-center gap-2 px-4 py-3 border-b">
             <Container className="size-4 text-muted-foreground" />
-            <h3 className="text-sm font-medium">Containers</h3>
+            <h3 className="type-h4">Containers</h3>
           </div>
           <div className="divide-y">
             {[0, 1].map((i) => (

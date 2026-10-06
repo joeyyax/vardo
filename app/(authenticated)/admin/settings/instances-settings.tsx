@@ -273,7 +273,7 @@ export function InstancesSettings() {
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="space-y-1">
-          <h2 className="text-lg font-medium">Instances</h2>
+          <h2 className="type-h2">Instances</h2>
           <p className="text-sm text-muted-foreground max-w-2xl">
             Run Vardo on multiple servers and keep them in sync. Each server is
             an &quot;instance&quot; — this page lets you link them together over an encrypted
@@ -313,7 +313,7 @@ export function InstancesSettings() {
 
       {/* Pending invites */}
           {invites.length > 0 && (
-            <Card className="squircle rounded-lg border-dashed">
+            <Card className="squircle rounded-lg bg-background-deep shadow-none">
               <CardContent className="p-0">
                 <div className="divide-y">
                   {invites.map((invite) => (
@@ -471,7 +471,7 @@ export function InstancesSettings() {
       {/* About the mesh */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-3">
-              <h3 className="text-sm font-medium">Features</h3>
+              <h3 className="type-h4">Features</h3>
               <ul className="text-sm space-y-2">
                 <li className="flex items-start gap-2.5">
                   <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
@@ -504,7 +504,7 @@ export function InstancesSettings() {
               </ul>
             </div>
             <div className="space-y-3">
-              <h3 className="text-sm font-medium">Good to know</h3>
+              <h3 className="type-h4">Good to know</h3>
               <ul className="text-sm space-y-2">
                 <li className="flex items-start gap-2.5">
                   <Info className="size-4 text-muted-foreground/50 shrink-0 mt-0.5" aria-hidden="true" />

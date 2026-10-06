@@ -43,7 +43,7 @@ export default async function OrgSettingsLayout({
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-10">
       <div className="flex items-center gap-3">
         <h1 className="type-h1">
           Organization settings

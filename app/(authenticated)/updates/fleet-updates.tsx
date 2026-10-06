@@ -461,7 +461,7 @@ function BatchOutcome({ report }: { report: BatchReport }) {
       aria-label="Batch update result"
       className={`squircle rounded-lg p-4 space-y-2 ${
         report.failed > 0
-          ? "border border-status-warning/30 bg-status-warning-muted/30"
+          ? "bg-status-warning-muted shadow-card dark:border dark:border-status-warning/25"
           : "bg-card shadow-card dark:border"
       }`}
     >

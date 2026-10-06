@@ -24,7 +24,7 @@ function DiscussionPanel({
       {/* Header */}
       <div className="flex items-center gap-2 pb-3 border-b border-border/50 shrink-0">
         <MessageSquare className="size-4 text-muted-foreground" />
-        <h3 className="text-sm font-medium">{title}</h3>
+        <h3 className="type-h4">{title}</h3>
         {count != null && count > 0 && (
           <span className="text-xs text-muted-foreground bg-background/50 rounded-full px-2 py-0.5 tabular-nums">
             {count}

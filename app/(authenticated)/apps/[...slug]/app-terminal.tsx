@@ -335,7 +335,7 @@ export function AppTerminal({ appId, orgId }: AppTerminalProps) {
   // Loading state
   if (loadingContainers) {
     return (
-      <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed p-12">
+      <div className="squircle flex flex-col items-center justify-center gap-3 rounded-lg bg-background-deep p-12">
         <Loader2 className="size-6 animate-spin text-muted-foreground" />
         <p className="text-sm text-muted-foreground">Loading containers...</p>
       </div>
@@ -410,7 +410,7 @@ export function AppTerminal({ appId, orgId }: AppTerminalProps) {
 
       {/* Error message */}
       {errorMessage && (
-        <div className="rounded-lg border border-status-error/30 bg-status-error-muted px-4 py-2">
+        <div className="squircle rounded-lg bg-status-error-muted px-4 py-3 dark:border dark:border-status-error/25">
           <p className="text-sm text-status-error">{errorMessage}</p>
         </div>
       )}

@@ -35,7 +35,7 @@ export function Brand() {
   return (
     <Link href="/" className="brand flex items-center gap-2">
       <Mark />
-      <span className="type-h2 tracking-tight">{appName}</span>
+      <span className="type-wordmark">{appName}</span>
     </Link>
   );
 }

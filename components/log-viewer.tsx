@@ -430,7 +430,7 @@ export function TerminalOutput({
             <button
               onClick={loadOlder}
               disabled={loadingOlder}
-              className="w-full mb-2 flex items-center justify-center gap-1.5 rounded border border-dashed py-1 text-xs text-muted-foreground hover:text-foreground hover:border-accent transition-colors"
+              className="squircle w-full mb-2 flex items-center justify-center gap-1.5 rounded-lg bg-background-deep py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
             >
               {loadingOlder
                 ? <><Loader2 className="size-3 animate-spin" />Loading</>

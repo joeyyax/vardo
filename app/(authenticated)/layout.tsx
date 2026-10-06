@@ -69,7 +69,7 @@ export default async function AppLayout({
         </div>
 
         <main className="flex-1">
-          <section className="py-8">
+          <section className="py-10 sm:py-14">
             <div className="container">
               {children}
             </div>

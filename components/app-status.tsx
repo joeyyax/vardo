@@ -237,7 +237,7 @@ export function ChartCard({
       <div className="flex items-center justify-between gap-3 px-4 py-3 border-b">
         <div className="flex items-center gap-2 min-w-0">
           <Icon className="size-4 text-muted-foreground shrink-0" />
-          <h3 className="text-sm font-medium truncate">{title}</h3>
+          <h3 className="type-h4 truncate">{title}</h3>
         </div>
         {value !== undefined && (
           <div className="type-numeral text-sm tabular-nums shrink-0">{value}</div>

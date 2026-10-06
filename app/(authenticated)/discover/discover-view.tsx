@@ -119,10 +119,10 @@ export function DiscoverView({ orgId, projects, defaultProjectId }: DiscoverView
       )}
 
       {!loading && !error && data && (
-        <div className="space-y-6">
+        <div className="space-y-10">
           {data.standalone.length > 0 && (
             <section className="space-y-3" aria-labelledby="section-standalone">
-              <h2 id="section-standalone" className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
+              <h2 id="section-standalone" className="type-h3 text-muted-foreground">
                 Standalone
               </h2>
               <div className="space-y-2">
@@ -139,7 +139,7 @@ export function DiscoverView({ orgId, projects, defaultProjectId }: DiscoverView
 
           {data.groups.length > 0 && (
             <section className="space-y-3" aria-labelledby="section-compose">
-              <h2 id="section-compose" className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
+              <h2 id="section-compose" className="type-h3 text-muted-foreground">
                 Compose stacks
               </h2>
               <div className="space-y-3">

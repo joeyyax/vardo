@@ -20,6 +20,7 @@ import {
   BottomSheetTitle,
   BottomSheetDescription,
 } from "@/components/ui/bottom-sheet";
+import { Callout } from "@/components/ui/callout";
 import { Loader2 } from "lucide-react";
 import { toast } from "@/lib/messenger";
 import type { BackupTarget, TargetType } from "./types";
@@ -266,9 +267,9 @@ export function TargetForm({
                     onChange={(e) => setLocalPath(e.target.value)}
                   />
                 </div>
-                <div className="rounded-md border border-status-warning/30 bg-status-warning-muted px-4 py-3 text-sm text-status-warning">
+                <Callout variant="warning" label="Warning">
                   Local backups don&apos;t protect against disk failure. Use S3 or R2 for production.
-                </div>
+                </Callout>
                 <p className="text-sm text-muted-foreground">
                   Backups will be stored on the server&apos;s local filesystem.
                   The directory must exist and be writable by the Vardo process.

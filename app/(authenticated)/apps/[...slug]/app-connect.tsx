@@ -30,7 +30,7 @@ export function AppConnect({
         {/* Internal connection */}
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-medium">Internal <span className="text-muted-foreground font-normal">(Docker network)</span></h3>
+            <h3 className="type-h4">Internal <span className="text-muted-foreground font-normal">(Docker network)</span></h3>
             <div className="flex items-center gap-2">
               <span className="text-xs text-muted-foreground">{showVarNames ? "Variables" : "Values"}</span>
               <Switch
@@ -90,7 +90,7 @@ export function AppConnect({
         {/* External connection */}
         {exposedPorts?.some((p) => p.external) && (
           <div className="space-y-3">
-            <h3 className="text-sm font-medium">External <span className="text-muted-foreground font-normal">(host ports)</span></h3>
+            <h3 className="type-h4">External <span className="text-muted-foreground font-normal">(host ports)</span></h3>
             <p className="text-xs text-muted-foreground">
               Use these to connect from outside Docker (e.g. database tools, local development).
             </p>

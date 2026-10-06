@@ -106,7 +106,7 @@ export function BackupSettings() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-10">
       <div className="space-y-1">
         <h2 className="text-lg font-medium">Backups</h2>
         <p className="text-sm text-muted-foreground">
@@ -263,7 +263,7 @@ export function BackupSettings() {
 
       {/* How backups work */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="space-y-3">
+        <div className="@container squircle rounded-lg bg-card p-6 @lg:p-7 shadow-card dark:border space-y-3">
           <h3 className="text-sm font-medium">How it works</h3>
           <ul className="text-sm space-y-2">
             <li className="flex items-start gap-2.5">
@@ -296,7 +296,7 @@ export function BackupSettings() {
             </li>
           </ul>
         </div>
-        <div className="space-y-3">
+        <div className="@container squircle rounded-lg bg-card p-6 @lg:p-7 shadow-card dark:border space-y-3">
           <h3 className="text-sm font-medium">Good to know</h3>
           <ul className="text-sm space-y-2">
             <li className="flex items-start gap-2.5">

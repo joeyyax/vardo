@@ -80,7 +80,7 @@ export function TraefikSettings() {
   return (
     <div className="space-y-6">
       <div className="space-y-1">
-        <h2 className="text-lg font-medium">Traefik</h2>
+        <h2 className="type-h2">Traefik</h2>
         <p className="text-sm text-muted-foreground">
           Configure how Vardo&apos;s reverse proxy discovers and routes traffic.
         </p>

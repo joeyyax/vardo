@@ -541,7 +541,7 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], baseDom
         <div className="space-y-8 max-w-4xl">
           {/* Source options row */}
           <div>
-            <h2 className="text-sm font-medium text-muted-foreground mb-3">
+            <h2 className="type-h3 text-muted-foreground mb-3">
               Start from
             </h2>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
@@ -580,7 +580,7 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], baseDom
           {/* Templates */}
           {Object.entries(templatesByCategory).map(([category, tmpls]) => (
             <div key={category}>
-              <h2 className="text-sm font-medium text-muted-foreground mb-3">
+              <h2 className="type-h3 text-muted-foreground mb-3">
                 {CATEGORY_LABELS[category] || category}
               </h2>
               <div className="grid gap-2 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
@@ -642,11 +642,11 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], baseDom
             {selectedSource === "github" && (
               <>
                 {installationsLoading ? (
-                  <div className="flex items-center justify-center rounded-lg border border-dashed p-8">
+                  <div className="squircle flex items-center justify-center rounded-lg bg-background-deep p-8">
                     <Loader2 className="size-5 animate-spin text-muted-foreground" />
                   </div>
                 ) : installations.length === 0 ? (
-                  <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed p-8 text-center">
+                  <div className="squircle flex flex-col items-center gap-3 rounded-lg bg-background-deep p-8 text-center">
                     <Github className="size-8 text-muted-foreground" />
                     <div className="space-y-1">
                       <p className="text-sm font-medium">Connect GitHub to continue</p>
@@ -783,7 +783,7 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], baseDom
             </div>
 
             {/* Public URL toggle + domain preview */}
-            <div className="rounded-lg border border-dashed bg-muted/50 px-4 py-3 space-y-2">
+            <div className="squircle rounded-lg bg-background-deep px-4 py-3 space-y-2">
               <div className="flex items-center gap-3">
                 <Switch
                   id="generate-domain"

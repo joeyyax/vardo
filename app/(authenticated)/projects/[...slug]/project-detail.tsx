@@ -413,7 +413,7 @@ function ProjectVariables({ apps, orgId }: { apps: ProjectApp[]; orgId: string }
             className="flex items-center justify-between gap-3 p-4 w-full text-left hover:bg-accent/50 transition-colors"
           >
             <div className="flex items-center gap-2 min-w-0">
-              <h3 className="text-sm font-medium">{app.displayName}</h3>
+              <h3 className="type-h4">{app.displayName}</h3>
               {app.envVars.length > 0 && (
                 <Badge variant="secondary" className="text-xs">
                   {app.envVars.length}
@@ -1181,7 +1181,7 @@ export function ProjectDetail({
             <div className="space-y-4">
               {topLevelApps.map((app) => (
                 <div key={app.id} className="space-y-2">
-                  <h3 className="text-sm font-medium">{app.displayName}</h3>
+                  <h3 className="type-h4">{app.displayName}</h3>
                   <AppBackupHistory orgId={orgId} appId={app.id} />
                 </div>
               ))}

@@ -171,7 +171,7 @@ export function ComposeReview({
             {/* Auto-fixed items */}
             {autoFixed.length > 0 && (
               <div className="space-y-2">
-                <h4 className="text-sm font-medium flex items-center gap-2">
+                <h4 className="type-h4 flex items-center gap-2">
                   <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
                   Automatic adjustments
                   <Badge variant="secondary" className="text-xs">{autoFixed.length}</Badge>
@@ -187,7 +187,7 @@ export function ComposeReview({
             {/* Warnings that need review */}
             {needsReview.length > 0 && (
               <div className="space-y-2">
-                <h4 className="text-sm font-medium flex items-center gap-2">
+                <h4 className="type-h4 flex items-center gap-2">
                   <AlertCircle className="h-4 w-4 text-status-warning" />
                   Needs review
                   <Badge variant="outline" className="text-xs">{needsReview.length}</Badge>
@@ -204,7 +204,7 @@ export function ComposeReview({
             {envCandidates.length > 0 && (
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <h4 className="text-sm font-medium flex items-center gap-2">
+                  <h4 className="type-h4 flex items-center gap-2">
                     <Info className="h-4 w-4 text-status-info" />
                     Environment variables
                     <Badge variant="outline" className="text-xs">{envCandidates.length}</Badge>

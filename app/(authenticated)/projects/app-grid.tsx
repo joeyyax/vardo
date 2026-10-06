@@ -227,7 +227,7 @@ function ProjectCard({
         aria-label={project.displayName}
       />
       {/* Raised panel: identity + aggregate state */}
-      <div className="p-5">
+      <div className="p-6 @lg:p-7">
         <div className="flex gap-4">
         {/* One icon — a collage of the same marks on every card is noise */}
         {icons.length === 0 ? (
@@ -244,7 +244,7 @@ function ProjectCard({
           {/* Wraps rather than truncating: the title outranks the rollup beside it. */}
           <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
             <div className="flex items-center gap-2 min-w-0">
-              <h3 className="text-base font-semibold truncate">{project.displayName}</h3>
+              <h3 className="type-h3 truncate">{project.displayName}</h3>
               {isSystem && <SystemBadge compact className="shrink-0" />}
               <span className="relative z-10">
                 <EndpointsPopover endpoints={projectApps.flatMap((a) => a.domains.map((d) => ({ label: a.displayName, domain: d.domain })))} />
@@ -307,7 +307,7 @@ function ProjectCard({
       </div>
 
       {/* Recessed app list — rows sit on a lower surface, problems sort first */}
-      <div className="flex-1 border-t bg-background-deep px-2.5 py-2">
+      <div className="flex-1 border-t bg-background-deep px-3 py-3 @md:px-4">
         {projectApps.length === 0 ? (
           <Link
             href={`/apps/new?project=${project.id}`}
@@ -439,7 +439,7 @@ export function AppGrid({
   }, [filtered, emptyProjects, query, sort]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-10">
       <div className="space-y-3">
       {/* Find and order — the grid is the only path to an app that isn't the palette */}
       <div className="flex flex-wrap items-center gap-2">
@@ -523,7 +523,7 @@ export function AppGrid({
           rows take the taller card's height, leaving a void under the shorter
           one. Column width drives the count, so a two-project install still
           fills the row. */}
-      <div className="columns-[25rem] gap-4">
+      <div className="columns-[26rem] gap-6">
         {projectCards.map(({ project, apps: projectApps }) => (
           <div key={project.id} className="mb-4 break-inside-avoid">
             <ProjectCard

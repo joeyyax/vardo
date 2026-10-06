@@ -126,7 +126,7 @@ export function FeatureFlagsSettings() {
   return (
     <div className="space-y-8">
       <div className="space-y-1">
-        <h2 className="text-lg font-medium">Feature flags</h2>
+        <h2 className="type-h2">Feature flags</h2>
         <p className="text-sm text-muted-foreground">
           Changes save as you flip them. A flag set in vardo.yml or by a{" "}
           <code className="bg-muted rounded px-1 py-0.5 text-xs">VARDO_FEATURE_*</code> env var is
@@ -141,7 +141,7 @@ export function FeatureFlagsSettings() {
         return (
           <section key={group.id} className="space-y-3">
             <div className="space-y-0.5">
-              <h3 className="text-sm font-medium">{group.label}</h3>
+              <h3 className="type-h4">{group.label}</h3>
               <p className="text-xs text-muted-foreground">{group.description}</p>
             </div>
 

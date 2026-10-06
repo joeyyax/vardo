@@ -133,7 +133,7 @@ export function NetworkChart({
   if (!hasSamples) {
     return (
       <div
-        className="flex items-center justify-center rounded-md border border-dashed"
+        className="squircle flex items-center justify-center rounded-lg bg-background-deep"
         style={{ height }}
       >
         <p className="text-xs text-muted-foreground">No throughput collected in this range</p>

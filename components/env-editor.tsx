@@ -375,7 +375,7 @@ export function EnvEditor(props: EnvEditorProps) {
       {/* A restart reuses the containers, which keep the environment they were
           created with. Only a deploy replaces them. */}
       {!isStandalone && needsRedeploy && !modified && (
-        <div className="flex items-center gap-2 rounded-lg border border-status-warning/30 bg-status-warning-muted px-4 py-3">
+        <div className="squircle flex items-center gap-2 rounded-lg bg-status-warning-muted px-4 py-3 dark:border dark:border-status-warning/25">
           <AlertTriangle className="size-4 text-status-warning shrink-0" />
           <p className="text-sm text-status-warning">
             Variables saved. Deploy the app to apply them.
@@ -385,7 +385,7 @@ export function EnvEditor(props: EnvEditorProps) {
 
       {/* Password change warning */}
       {!isStandalone && passwordWarning && (
-        <div className="flex items-start gap-2 rounded-lg border border-status-warning/30 bg-status-warning-muted px-4 py-3">
+        <div className="squircle flex items-start gap-2 rounded-lg bg-status-warning-muted px-4 py-3 dark:border dark:border-status-warning/25">
           <AlertTriangle className="size-4 text-status-warning shrink-0 mt-0.5" />
           <p className="text-xs text-status-warning">{passwordWarning}</p>
         </div>

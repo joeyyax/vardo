@@ -159,7 +159,7 @@ export function SystemAlertsPanel() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-sm font-medium">System Health</h3>
+          <h3 className="type-h4">System Health</h3>
           <p className="text-xs text-muted-foreground mt-0.5">
             Infrastructure services and active alerts
           </p>

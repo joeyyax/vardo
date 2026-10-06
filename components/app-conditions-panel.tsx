@@ -6,18 +6,18 @@ import { worstCondition, type AppCondition, type ConditionSeverity } from "@/lib
 
 const TONE: Record<ConditionSeverity, { border: string; surface: string; text: string }> = {
   critical: {
-    border: "border-status-error/40",
-    surface: "bg-status-error-muted/40",
+    border: "dark:border dark:border-status-error/25",
+    surface: "bg-status-error-muted",
     text: "text-status-error",
   },
   warning: {
-    border: "border-status-warning/40",
-    surface: "bg-status-warning-muted/40",
+    border: "dark:border dark:border-status-warning/25",
+    surface: "bg-status-warning-muted",
     text: "text-status-warning",
   },
   info: {
-    border: "border-border",
-    surface: "bg-muted/40",
+    border: "dark:border",
+    surface: "bg-muted",
     text: "text-muted-foreground",
   },
 };

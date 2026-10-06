@@ -34,7 +34,7 @@ export function AppExitReason({
   }
 
   return (
-    <div className="squircle rounded-lg border border-status-error/40 bg-status-error-muted/40 p-3 text-sm">
+    <div className="squircle rounded-lg bg-status-error-muted p-4 text-sm dark:border dark:border-status-error/25">
       <div className="flex items-center gap-2">
         <Skull className="size-4 shrink-0 text-status-error" />
         <span className="font-medium text-status-error">{exitReasonLabel(reason.kind)}</span>

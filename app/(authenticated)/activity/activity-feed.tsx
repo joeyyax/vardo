@@ -78,7 +78,7 @@ function WindowHeader({
   return (
     <div className="squircle rounded-lg bg-card px-4 py-3 shadow-card dark:border">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <h2 className="text-sm font-medium">
+        <h2 className="type-h4">
           While you were away
           <span className="ml-2 font-normal text-muted-foreground">
             the last {describeWindow(since)}
@@ -152,7 +152,7 @@ export function ActivityFeed({
   const filtered = hasActiveFilters({ ...filters, since: null });
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-10">
       <PageToolbar>
         <h1 className="type-h1">Activity</h1>
       </PageToolbar>
@@ -180,7 +180,9 @@ export function ActivityFeed({
         <div className="space-y-8">
           {days.map((day) => (
             <section key={day.label}>
-              <h2 className="mb-3 text-sm font-medium text-muted-foreground">
+              {/* A date stamp repeating down the feed, not a title — the label
+                  voice separates it from the rows without shouting once a day. */}
+              <h2 className="mb-3 type-label text-muted-foreground">
                 {day.label}
               </h2>
               <div className="space-y-1">

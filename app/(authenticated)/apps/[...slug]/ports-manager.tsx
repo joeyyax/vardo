@@ -74,7 +74,7 @@ export function PortsManager({
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-sm font-medium">Exposed Ports</h3>
+          <h3 className="type-h4">Exposed Ports</h3>
           <p className="text-xs text-muted-foreground mt-0.5">Map container ports to host ports for external access.</p>
         </div>
         <Button size="sm" onClick={() => setAdding(!adding)} disabled={saving}>

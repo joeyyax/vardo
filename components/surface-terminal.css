@@ -13,6 +13,7 @@
 @layer components {
   .surface-terminal {
     --background: oklch(14.1% 0.005 285.823);
+    --background-deep: oklch(17.5% 0.005 285.823);
     --foreground: oklch(92% 0.004 286.32);
     --card: oklch(21% 0.006 285.885);
     --card-foreground: oklch(92% 0.004 286.32);

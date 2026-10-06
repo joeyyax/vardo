@@ -500,7 +500,7 @@ function ComposeNetworking({
       {serviceDomains.length > 0 && (
         <div className="space-y-4">
           <div>
-            <h3 className="text-sm font-medium">Service domains</h3>
+            <h3 className="type-h4">Service domains</h3>
             <p className="text-xs text-muted-foreground mt-0.5">
               Pinned to one service. Open the service to edit its domains and ports.
             </p>
@@ -549,7 +549,7 @@ function ComposeSecurity({
       {scannedElsewhere.length > 0 && (
         <div className="space-y-4">
           <div>
-            <h3 className="text-sm font-medium">Service scans</h3>
+            <h3 className="type-h4">Service scans</h3>
             <p className="text-xs text-muted-foreground mt-0.5">
               This scan covers the stack&apos;s own domain and ports. Services with their own domain
               are scanned separately.
@@ -922,7 +922,7 @@ export function ComposeDetail({
       return {
         className: app.needsRedeploy
           ? "bg-status-warning-muted text-status-warning hover:ring-status-warning/40"
-          : "bg-status-success-muted text-status-success hover:ring-status-success/40",
+          : "bg-status-neutral-muted text-foreground hover:ring-status-neutral/40",
         content: app.needsRedeploy ? (
           <><RotateCcw className="mr-1.5 size-3.5" />Deploy needed</>
         ) : (
@@ -1423,7 +1423,7 @@ export function ComposeDetail({
               <div className="space-y-4">
                 {services.map((service) => (
                   <div key={service.id} className="space-y-2">
-                    <h3 className="text-sm font-medium">{service.displayName}</h3>
+                    <h3 className="type-h4">{service.displayName}</h3>
                     <AppBackupHistory orgId={orgId} appId={service.id} />
                   </div>
                 ))}

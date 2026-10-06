@@ -93,7 +93,7 @@ export function UserManagement() {
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-sm font-medium text-muted-foreground">Users</h2>
+        <h2 className="type-h3 text-muted-foreground">Users</h2>
       </div>
 
       {/* Invite form */}
@@ -140,7 +140,7 @@ export function UserManagement() {
         </form>
 
         {inviteMessage && (
-          <div className="rounded-lg border border-status-success/30 bg-status-success-muted p-4">
+          <div className="squircle rounded-lg bg-status-success-muted p-4 dark:border dark:border-status-success/25">
             <p className="text-sm text-status-success">{inviteMessage}</p>
           </div>
         )}
@@ -148,7 +148,7 @@ export function UserManagement() {
 
       {/* User list */}
       {loadingUsers ? (
-        <div className="flex items-center justify-center rounded-lg border border-dashed p-8">
+        <div className="squircle flex items-center justify-center rounded-lg bg-background-deep p-8">
           <Loader2 className="size-5 animate-spin text-muted-foreground" />
         </div>
       ) : (

@@ -415,9 +415,12 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
     if (app.status === "active") {
       const lastDeploy = app.deployments.find((d) => d.status === "success");
       return {
+        // Quiet when healthy. This corner is a control, and a fill it wears on
+        // every healthy app says nothing — color here is reserved for the
+        // states that want a human. The dot still carries the reading.
         className: app.needsRedeploy
           ? "bg-status-warning-muted text-status-warning hover:ring-status-warning/40"
-          : "bg-status-success-muted text-status-success hover:ring-status-success/40",
+          : "bg-status-neutral-muted text-foreground hover:ring-status-neutral/40",
         content: app.needsRedeploy ? (
           <><AlertTriangle className="mr-1.5 size-3.5" />Deploy needed</>
         ) : (

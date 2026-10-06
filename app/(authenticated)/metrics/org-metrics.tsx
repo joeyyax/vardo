@@ -124,7 +124,7 @@ function ShareBar({ title, subtitle, total, totalLabel, slices, footnote }: {
   return (
     <div className="squircle rounded-lg bg-card shadow-card dark:border overflow-hidden">
       <div className="flex items-center justify-between gap-2 px-4 py-2 border-b">
-        <h3 className="text-sm font-medium">{title}</h3>
+        <h3 className="type-h4">{title}</h3>
         {subtitle && <span className="text-[10px] text-muted-foreground text-right">{subtitle}</span>}
       </div>
       <div className="px-4 pt-3">
@@ -323,7 +323,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
 
   if (isEmpty) {
     return (
-      <div className="flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed p-12">
+      <div className="squircle flex flex-col items-center justify-center gap-4 rounded-lg bg-background-deep p-12">
         <Activity className="size-8 text-muted-foreground/50" />
         <div className="text-center space-y-1">
           <p className="text-sm font-medium">No apps deployed yet</p>
@@ -342,7 +342,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-10">
       {/* Period switcher */}
       <div className="flex items-center justify-between">
         <div className="inline-flex items-center gap-1 rounded-lg bg-muted p-1">
@@ -377,7 +377,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
       {streamDown && (
         <div
           role="alert"
-          className="squircle flex items-start gap-3 rounded-lg border border-status-error/30 bg-status-error-muted px-4 py-3"
+          className="squircle flex items-start gap-3 rounded-lg bg-status-error-muted px-4 py-3 dark:border dark:border-status-error/25"
         >
           <AlertTriangle className="size-4 shrink-0 mt-0.5 text-status-error" />
           <div className="space-y-0.5">
@@ -390,7 +390,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
       )}
 
       {/* Summary cards with sparklines */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+      <div className="@container grid grid-cols-2 @2xl:grid-cols-3 @5xl:grid-cols-5 gap-5">
         <div className="squircle relative rounded-lg bg-card px-4 py-3 shadow-card dark:border overflow-hidden">
           {points.length > 1 && (
             <Sparkline data={cpuSparkData} className="absolute inset-0 w-full h-full pointer-events-none" style={{ color: CHART_COLORS.cpu }} />
@@ -477,11 +477,11 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
       </div>
 
       {/* Aggregate charts */}
-      <div className="grid md:grid-cols-2 gap-4">
+      <div className="@container grid @3xl:grid-cols-2 gap-6">
           <div className="squircle rounded-lg bg-card shadow-card dark:border overflow-hidden">
             <div className="flex items-center gap-2 px-4 py-3 border-b">
               <Cpu className="size-4 text-muted-foreground" />
-              <h3 className="text-sm font-medium">CPU</h3>
+              <h3 className="type-h4">CPU</h3>
               <span className="text-[10px] text-muted-foreground">cores</span>
             </div>
             <div className="p-4">
@@ -505,7 +505,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
           <div className="squircle rounded-lg bg-card shadow-card dark:border overflow-hidden">
             <div className="flex items-center gap-2 px-4 py-3 border-b">
               <MemoryStick className="size-4 text-muted-foreground" />
-              <h3 className="text-sm font-medium">Memory</h3>
+              <h3 className="type-h4">Memory</h3>
             </div>
             <div className="p-4">
               <ResponsiveContainer width="100%" height={180}>
@@ -528,7 +528,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
           <div className="squircle rounded-lg bg-card shadow-card dark:border overflow-hidden">
             <div className="flex items-center gap-2 px-4 py-3 border-b">
               <Network className="size-4 text-muted-foreground" />
-              <h3 className="text-sm font-medium">Network</h3>
+              <h3 className="type-h4">Network</h3>
             </div>
             <div className="p-4">
               <NetworkChart data={chartPoints} height={180} />
@@ -537,7 +537,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
           <div className="squircle rounded-lg bg-card shadow-card dark:border overflow-hidden">
             <div className="flex items-center gap-2 px-4 py-3 border-b">
               <HardDrive className="size-4 text-muted-foreground" />
-              <h3 className="text-sm font-medium">Disk Usage</h3>
+              <h3 className="type-h4">Disk Usage</h3>
             </div>
             <div className="p-4">
               <ResponsiveContainer width="100%" height={180}>
@@ -598,7 +598,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
         const netApps = topN(allActive, "network");
 
         return (
-          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="@container grid @xl:grid-cols-2 @5xl:grid-cols-4 gap-5">
             <ShareBar
               title="Apps"
               subtitle={`${scopeNote} · ${streamProjectCount ?? projectCount ?? 0} projects`}
@@ -636,7 +636,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
 
       {/* Per-app stats */}
       {displayApps.length === 0 ? (
-        <div className="flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed p-12">
+        <div className="squircle flex flex-col items-center justify-center gap-4 rounded-lg bg-background-deep p-12">
           <Activity className="size-8 text-muted-foreground/50" />
           <div className="text-center space-y-1">
             <p className="text-sm font-medium">Metrics will appear here</p>
@@ -654,7 +654,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
       ) : (
         <div className="squircle rounded-lg bg-card shadow-card dark:border overflow-x-auto">
           <div className="flex items-center justify-between gap-2 px-4 py-2 border-b">
-            <h3 className="text-sm font-medium">Apps</h3>
+            <h3 className="type-h4">Apps</h3>
             <span className="text-[10px] text-muted-foreground">
               top-level apps in {scopeNote}
               {scope.composeServices > 0 && ` · compose services counted on their parent`}

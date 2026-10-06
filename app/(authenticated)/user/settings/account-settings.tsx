@@ -62,7 +62,7 @@ export function AccountInfo() {
 
   if (isPending) {
     return (
-      <div className="flex items-center justify-center rounded-lg border border-dashed p-8">
+      <div className="squircle flex items-center justify-center rounded-lg bg-background-deep p-8">
         <Loader2 className="size-5 animate-spin text-muted-foreground" />
       </div>
     );
@@ -1018,7 +1018,7 @@ export function ApiTokens({ orgId }: { orgId: string }) {
       <CardContent>
         {/* Created token display */}
         {createdToken && (
-          <div className="rounded-lg border border-status-success/30 bg-status-success-muted p-4 space-y-2">
+          <div className="squircle rounded-lg bg-status-success-muted p-4 space-y-2 dark:border dark:border-status-success/25">
             <p className="text-sm font-medium">
               Token created. Copy it now -- it won&apos;t be shown again.
             </p>
