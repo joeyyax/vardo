@@ -14,6 +14,8 @@ try {
 }
 
 const nextConfig: NextConfig = {
+  // CLAUDE.md is hand-written; `next dev` would otherwise rewrite it.
+  agentRules: false,
   outputFileTracingRoot: resolve(__dirname),
   env: {
     NEXT_PUBLIC_GIT_SHA: gitSha || process.env.NEXT_PUBLIC_GIT_SHA || "",
