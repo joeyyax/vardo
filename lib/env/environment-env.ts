@@ -5,6 +5,7 @@
 // reads environment_env, snapshotted from the app's env when it is created.
 // ---------------------------------------------------------------------------
 
+import { randomBytes } from "node:crypto";
 import { encrypt, decryptOrFallback } from "@/lib/crypto/encrypt";
 import { isSecretKey } from "./is-secret-key";
 import { parseEnvToMap } from "./parse-env";
@@ -24,38 +25,59 @@ export function rewriteHosts(content: string, replacements: Map<string, string>)
   return content.replace(pattern, (host) => replacements.get(host) ?? host);
 }
 
-/** Blank the value of every secret-looking key, keeping the key so it shows in the editor. */
-export function blankSecrets(content: string): { content: string; blanked: string[] } {
-  const blanked: string[] = [];
+/** A random secret, URL-safe so it drops into a connection string as is. */
+export function generateSecret(): string {
+  return randomBytes(24).toString("base64url");
+}
+
+/**
+ * Replace the value of every secret-looking key with a generated one. `generated`
+ * maps each production value to its replacement, so a value shared across apps
+ * gets the same replacement everywhere it is passed.
+ */
+export function regenerateSecrets(
+  content: string,
+  generated: Map<string, string>,
+): { content: string; regenerated: string[] } {
+  const regenerated: string[] = [];
   const lines = content.split("\n").map((line) => {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith("#")) return line;
     const eq = line.indexOf("=");
     if (eq <= 0) return line;
     const key = line.slice(0, eq).trim();
-    if (!isSecretKey(key)) return line;
-    blanked.push(key);
-    return `${line.slice(0, eq)}=`;
+    const value = line.slice(eq + 1).trim().replace(/^(["'])(.*)\1$/, "$2");
+    // An empty value or a ${ref} has no production secret to replace.
+    if (!isSecretKey(key) || !value || value.includes("${")) return line;
+    let next = generated.get(value);
+    if (!next) {
+      next = generateSecret();
+      generated.set(value, next);
+    }
+    regenerated.push(key);
+    return `${line.slice(0, eq)}=${next}`;
   });
-  return { content: lines.join("\n"), blanked };
+  return { content: lines.join("\n"), regenerated };
 }
 
 export type EnvSnapshot = {
   /** Encrypted under the org's key, ready for environment_env.env_content. */
   envContent: string;
   varCount: number;
-  blanked: string[];
+  regenerated: string[];
 };
 
 /**
  * Snapshot an app's env for a new environment: rewrite production hostnames
- * and, for the `empty` clone strategy, blank secrets.
+ * and, for the `empty` clone strategy, generate fresh secrets.
  */
 export function snapshotEnv(opts: {
   appEnvContent: string | null;
   organizationId: string;
   hostReplacements?: Map<string, string>;
   strategy?: string | null;
+  /** Shared across one group environment's snapshots. */
+  generatedSecrets?: Map<string, string>;
 }): EnvSnapshot {
   let content = "";
   if (opts.appEnvContent) {
@@ -66,12 +88,14 @@ export function snapshotEnv(opts: {
     content = plain;
   }
   content = rewriteHosts(content, opts.hostReplacements ?? new Map());
-  let blanked: string[] = [];
-  if (opts.strategy === "empty") ({ content, blanked } = blankSecrets(content));
+  let regenerated: string[] = [];
+  if (opts.strategy === "empty") {
+    ({ content, regenerated } = regenerateSecrets(content, opts.generatedSecrets ?? new Map()));
+  }
   return {
     envContent: encrypt(content, opts.organizationId),
     varCount: Object.keys(parseEnvToMap(content)).length,
-    blanked,
+    regenerated,
   };
 }
 

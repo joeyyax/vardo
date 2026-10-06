@@ -139,6 +139,9 @@ export async function createGroupEnvironment(
     }
   }
 
+  // Production secret -> its replacement, shared by every `empty` app in this environment.
+  const generatedSecrets = new Map<string, string>();
+
   for (const app of projectApps) {
     const override = opts.appOverrides?.[app.id];
     const strategy = strategyOf(app);
@@ -178,6 +181,7 @@ export async function createGroupEnvironment(
       organizationId: opts.organizationId,
       hostReplacements,
       strategy,
+      generatedSecrets,
     });
     await db.insert(environmentEnv).values({ environmentId: envId, envContent: snapshot.envContent });
 

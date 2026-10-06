@@ -36,6 +36,7 @@ vi.mock("@/lib/db", () => ({ db: dbMock }));
 import { createGroupEnvironment } from "@/lib/docker/clone";
 import { environments, environmentEnv } from "@/lib/db/schema";
 import { encrypt, decrypt } from "@/lib/crypto/encrypt";
+import { parseEnvToMap } from "@/lib/env/parse-env";
 
 const app = (id: string, cloneStrategy: string, env: string) => ({
   id,
@@ -73,6 +74,11 @@ beforeEach(() => {
     ),
     app("api", "clone", "PORT=4000"),
     app("db", "empty", "POSTGRES_USER=app\nPOSTGRES_PASSWORD=prod-pass"),
+    app(
+      "worker",
+      "empty",
+      "DB_PASSWORD=prod-pass\nAPI_SECRET=other\nEMPTY_SECRET=\nREF_PASSWORD=${db.POSTGRES_PASSWORD}",
+    ),
     app("cdn", "skip", "TOKEN=x"),
   );
 });
@@ -103,10 +109,32 @@ describe("createGroupEnvironment env snapshot", () => {
     );
   });
 
-  it("blanks secrets for the empty strategy and snapshots nothing for skip", async () => {
+  it("generates fresh secrets for the empty strategy, one per production value across the environment", async () => {
+    await create();
+
+    const db = parseEnvToMap(snapshotFor("db")!);
+    const worker = parseEnvToMap(snapshotFor("worker")!);
+    expect(db.POSTGRES_USER).toBe("app");
+    expect(db.POSTGRES_PASSWORD).toMatch(/^[A-Za-z0-9_-]{32}$/);
+    expect(db.POSTGRES_PASSWORD).not.toBe("prod-pass");
+    expect(worker.DB_PASSWORD).toBe(db.POSTGRES_PASSWORD);
+    expect(worker.API_SECRET).not.toBe(db.POSTGRES_PASSWORD);
+    expect(worker.EMPTY_SECRET).toBe("");
+    expect(worker.REF_PASSWORD).toBe("${db.POSTGRES_PASSWORD}");
+  });
+
+  it("generates different secrets for each new environment", async () => {
+    await create();
+    const first = parseEnvToMap(snapshotFor("db")!).POSTGRES_PASSWORD;
+    inserts.length = 0;
+    await create();
+
+    expect(parseEnvToMap(snapshotFor("db")!).POSTGRES_PASSWORD).not.toBe(first);
+  });
+
+  it("snapshots nothing for skip", async () => {
     const result = await create();
 
-    expect(snapshotFor("db")).toBe("POSTGRES_USER=app\nPOSTGRES_PASSWORD=");
     expect(snapshotFor("cdn")).toBeUndefined();
     expect(result.projectEnvironments.find((e) => e.appId === "web")?.envVarCount).toBe(6);
   });
