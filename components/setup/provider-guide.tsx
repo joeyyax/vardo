@@ -28,9 +28,9 @@ export function ProviderGuide({
 
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
-      <CollapsibleTrigger className="flex w-full items-center justify-between rounded-lg border bg-muted/30 px-3 py-2.5 text-left hover:bg-muted/50 transition-colors">
+      <CollapsibleTrigger className="flex w-full items-center justify-between rounded-lg bg-background-deep px-3 py-2.5 text-left hover:bg-accent/50 transition-colors data-[state=open]:rounded-b-none">
         <div className="space-y-0.5">
-          <div className="text-sm font-medium">{title}</div>
+          <div className="type-h4">{title}</div>
           {description && (
             <div className="text-xs text-muted-foreground">{description}</div>
           )}
@@ -41,7 +41,7 @@ export function ProviderGuide({
         />
       </CollapsibleTrigger>
       <CollapsibleContent>
-        <div className="rounded-b-lg border border-t-0 px-3 py-3 space-y-3 text-sm">
+        <div className="rounded-b-lg bg-background-deep px-3 pt-1 pb-3 space-y-3 text-sm">
           {children}
         </div>
       </CollapsibleContent>
@@ -111,7 +111,7 @@ export function CopyableField({
 
   return (
     <div className="space-y-1">
-      <div className="text-xs font-medium text-muted-foreground">{label}</div>
+      <div className="type-label text-muted-foreground">{label}</div>
       <div className="flex items-center gap-2">
         <code className="flex-1 rounded border bg-muted/50 px-2 py-1.5 text-xs font-mono break-all">
           {value}
@@ -152,7 +152,7 @@ export function PermissionList({
 }) {
   return (
     <div className="space-y-1">
-      <div className="text-xs font-medium text-muted-foreground">Required permissions</div>
+      <div className="type-label text-muted-foreground">Required permissions</div>
       <div className="flex flex-wrap gap-1.5">
         {permissions.map((p) => (
           <span

@@ -420,25 +420,25 @@ export function ImportDialog({
                             {isBind ? (
                               <Badge
                                 variant="warning"
-                                className="text-[10px] px-1.5 py-0 h-4 shrink-0"
+                                className="px-1.5 py-0 shrink-0"
                               >
                                 bind
                               </Badge>
                             ) : (
                               <Badge
                                 variant="secondary"
-                                className="text-[10px] px-1.5 py-0 h-4 shrink-0"
+                                className="px-1.5 py-0 shrink-0"
                               >
                                 named
                               </Badge>
                             )}
                           </div>
                           {isBind ? (
-                            <p className="text-[10px] text-status-warning font-mono truncate pl-4">
+                            <p className="text-xs text-status-warning font-mono truncate pl-4">
                               Host: {m.source}
                             </p>
                           ) : (
-                            <p className="text-[10px] text-muted-foreground font-mono truncate pl-4">
+                            <p className="text-xs text-muted-foreground font-mono truncate pl-4">
                               Volume: {m.source}
                             </p>
                           )}
@@ -460,7 +460,7 @@ export function ImportDialog({
               </div>
             )}
 
-            <p className="text-xs text-muted-foreground border-t pt-4">
+            <p className="text-xs text-muted-foreground pt-2">
               Importing creates a Vardo app record from this container&apos;s configuration. The
               container continues running — future deploys will be managed by Vardo.
             </p>

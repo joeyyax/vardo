@@ -417,13 +417,13 @@ function IgnoredList({
   onRestore: (entry: FleetIgnoredUpdate) => void;
 }) {
   return (
-    <details className="squircle rounded-lg bg-card shadow-card dark:border">
+    <details className="squircle rounded-lg bg-card shadow-card dark:border overflow-hidden">
       <summary className="type-body-sm flex cursor-pointer list-none items-center gap-2 px-4 py-2.5 text-muted-foreground transition-colors hover:text-foreground [&::-webkit-details-marker]:hidden">
         <BellOff className="size-3.5" aria-hidden="true" />
         Ignored ({entries.length})
         <ChevronDown className="ml-auto size-4 transition-transform" aria-hidden="true" />
       </summary>
-      <ul className="divide-y border-t">
+      <ul className="divide-y bg-background-deep">
         {entries.map((entry) => (
           <li
             key={`${entry.appId}:${entry.service.service ?? ""}`}

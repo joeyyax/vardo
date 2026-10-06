@@ -208,7 +208,7 @@ export function GroupImportDialog({
             </div>
           )}
 
-          <p className="text-xs text-muted-foreground border-t pt-4">
+          <p className="text-xs text-muted-foreground pt-2">
             Importing creates a Vardo app from this stack&apos;s configuration. The containers
             continue running — future deploys will be managed by Vardo.
           </p>

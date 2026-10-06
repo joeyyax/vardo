@@ -260,7 +260,7 @@ function VolumeDiffSection({
         {totalChanges > 0 && (
           <Badge
             variant="warning"
-            className="text-[10px] px-1.5 py-0 h-4"
+            className="text-xs px-1.5 py-0 h-5"
           >
             {totalChanges}
           </Badge>
@@ -374,7 +374,7 @@ function DiffFileGroup({
 }) {
   return (
     <div>
-      <div className="flex items-center gap-1.5 text-xs font-medium mb-1">
+      <div className="type-label text-muted-foreground flex items-center gap-1.5 mb-1">
         {icon}
         {label} ({entries.length})
       </div>
@@ -387,7 +387,7 @@ function DiffFileGroup({
             <span className="font-mono text-muted-foreground truncate min-w-0 flex-1">
               {entry.path}
             </span>
-            <span className="text-muted-foreground shrink-0 text-[10px]">
+            <span className="text-muted-foreground shrink-0 text-xs tabular-nums">
               {formatBytes(entry.sizeBytes)}
             </span>
             <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -395,7 +395,7 @@ function DiffFileGroup({
                 <button
                   onClick={() => onSync(entry.path)}
                   disabled={syncing.has(entry.path)}
-                  className="text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-50"
+                  className="text-xs px-1.5 py-0.5 rounded bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-50"
                   title="Sync from image"
                 >
                   {syncing.has(entry.path) ? (
@@ -410,7 +410,7 @@ function DiffFileGroup({
               )}
               <button
                 onClick={() => onIgnore(entry.path)}
-                className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground hover:bg-muted/80"
+                className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground hover:bg-muted/80"
                 title="Add ignore pattern"
               >
                 <EyeOff className="size-2.5" />

@@ -307,7 +307,7 @@ function ProjectCard({
       </div>
 
       {/* Recessed app list — rows sit on a lower surface, problems sort first */}
-      <div className="flex-1 border-t bg-background-deep px-3 py-3 @md:px-4">
+      <div className="flex-1 bg-background-deep px-3 py-3 @md:px-4">
         {projectApps.length === 0 ? (
           <Link
             href={`/apps/new?project=${project.id}`}

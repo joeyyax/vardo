@@ -373,7 +373,7 @@ function ProjectDeployments({ apps, color }: { apps: ProjectApp[]; color: string
                 <DeploymentLog log={deployment.log} />
               )}
               {viewingLogId === deployment.id && !deployment.log && (
-                <div className="border-t p-4">
+                <div className="px-4 pb-4">
                   <p className="text-xs text-muted-foreground">No log output for this deployment.</p>
                 </div>
               )}
@@ -423,7 +423,7 @@ function ProjectVariables({ apps, orgId }: { apps: ProjectApp[]; orgId: string }
             <ChevronDown className={`size-4 text-muted-foreground transition-transform ${expandedApp === app.id ? "rotate-180" : ""}`} />
           </button>
           {expandedApp === app.id && (
-            <div className="border-t p-4">
+            <div className="px-4 pb-4">
               <EnvEditor
                 appId={app.id}
                 appName={app.name}
@@ -1260,7 +1260,7 @@ export function ProjectDetail({
               </div>
             )}
             {!editRefusal && (
-              <div className="flex justify-end border-t pt-4">
+              <div className="flex justify-end pt-2">
                 <Button onClick={handleEditProject} disabled={editSaving || !editDisplayName.trim()}>
                   {editSaving ? "Saving..." : "Save changes"}
                 </Button>

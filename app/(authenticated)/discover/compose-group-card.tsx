@@ -20,7 +20,7 @@ export function ComposeGroupCard({
     <div className="squircle bg-card p-4 space-y-3 shadow-card dark:border">
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <span className="font-medium text-sm">{composeProject}</span>
+          <span className="type-h4">{composeProject}</span>
           <Badge variant="outline" className="text-xs">
             {containers.length} service{containers.length !== 1 ? "s" : ""}
           </Badge>

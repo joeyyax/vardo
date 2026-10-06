@@ -105,7 +105,7 @@ export function AppRowCard({
       {/* The row's note, restated first — a card leading with a green Running
           while the row says deploy needed reads as a contradiction. */}
       {(conditions.length > 0 || app.needsRedeploy || restarts) && (
-        <ul className="space-y-1 border-t pt-2">
+        <ul className="space-y-1 rounded-md bg-background-deep px-2 py-1.5">
           {conditions.map((c) => (
             <li key={c.kind} className="flex items-baseline justify-between gap-3">
               <span className={`shrink-0 font-medium ${conditionTone(c.severity)}`}>
@@ -135,7 +135,7 @@ export function AppRowCard({
         </ul>
       )}
 
-      <dl className="space-y-1 border-t pt-2">
+      <dl className="space-y-1 pt-1">
         {app.imageName && <Row label="Image">{app.imageName}</Row>}
         {/* Same reading as the row this card explains. */}
         {app.containerStartedAt && (

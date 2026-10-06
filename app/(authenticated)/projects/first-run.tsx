@@ -58,7 +58,7 @@ export function FirstRun({ canImportContainers }: { canImportContainers: boolean
               className="squircle flex flex-col gap-2 rounded-lg bg-card p-5 shadow-card dark:border transition-colors hover:bg-accent/50"
             >
               <Icon className="size-6 text-muted-foreground" aria-hidden="true" />
-              <span className="text-sm font-medium">{card.title}</span>
+              <span className="type-h4">{card.title}</span>
               <span className="text-sm text-muted-foreground">{card.body}</span>
             </Link>
           );

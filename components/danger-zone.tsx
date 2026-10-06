@@ -10,7 +10,7 @@ export function DangerZone({ children }: { children: ReactNode }) {
       aria-labelledby="danger-zone-heading"
       className="surface-danger squircle grid gap-4 rounded-lg border p-4 sm:p-6"
     >
-      <h2 id="danger-zone-heading" className="type-h4 text-destructive">
+      <h2 id="danger-zone-heading" className="type-h3 text-destructive">
         Danger Zone
       </h2>
       {children}
