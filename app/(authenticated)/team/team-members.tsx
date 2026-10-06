@@ -28,7 +28,7 @@ import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { Card, CardContent } from "@/components/ui/card";
 import { isOrgAdmin } from "@/lib/auth/permissions";
 import { OrgSwitcher } from "@/components/layout/org-switcher";
-import { getInitials } from "@/lib/utils";
+import { getInitials } from "@/lib/initials";
 import type { Organization } from "@/lib/types";
 
 type Member = {

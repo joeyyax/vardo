@@ -4,7 +4,7 @@ import { Fragment } from "react";
 import Link from "next/link";
 import { AlertTriangle } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { getInitials } from "@/lib/utils";
+import { getInitials } from "@/lib/initials";
 import { detailsFor, phraseFor, subjectSummary } from "@/lib/activity/labels";
 import { isFleetWide } from "@/lib/activity/group";
 import type { ActivityGroup, ActivitySubjectRef } from "@/lib/activity/types";
