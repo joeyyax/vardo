@@ -253,11 +253,9 @@ export function TwoFactorAuth() {
         setEnabling(false);
         return;
       }
-      if (data?.totpURI) {
+      if (data?.method === "totp") {
         setTotpUri(data.totpURI);
-        if (data.backupCodes) {
-          setBackupCodes(data.backupCodes);
-        }
+        setBackupCodes(data.backupCodes);
       }
     } catch {
       toast.error("Failed to enable 2FA");
