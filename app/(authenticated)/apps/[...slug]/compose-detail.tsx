@@ -18,7 +18,6 @@ import {
   ArchiveRestore,
   EllipsisVertical,
   AlertTriangle,
-  Check,
   Play,
   ScrollText,
   Undo2,
@@ -80,7 +79,7 @@ import type { App, ChildApp, Tag } from "./types";
 import type { FeatureFlags } from "@/lib/config/features";
 import { ComposeReview } from "@/components/compose-review";
 import { SystemBadge } from "@/components/system-badge";
-import { statusDotColor } from "@/lib/ui/status-colors";
+import { AppSwitcher, EntityTitle } from "@/components/entity-title";
 import { crashSummary, extractDeployError } from "@/lib/ui/deploy-error";
 import { deployFailureBanner } from "@/lib/ui/deploy-banner";
 import { currentStageLabel } from "@/lib/ui/deploy-stage";
@@ -1044,44 +1043,13 @@ export function ComposeDetail({
           </div>
         }
       >
-        {app.project ? (
-          <>
-            <Link
-              href={`/projects/${app.project.name}`}
-              className="type-h1 text-muted-foreground hover:text-foreground transition-colors"
-            >
-              {app.project.displayName}
-            </Link>
-            <span className="text-muted-foreground/40 text-xl">›</span>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="gap-1.5">
-                  <span className={`size-2 rounded-full ${statusDotColor(app.status)}`} />
-                  {app.displayName}
-                  <ChevronDown className="size-3.5 opacity-60" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start">
-                <DropdownMenuItem disabled>
-                  <span className={`mr-2 size-2 rounded-full ${statusDotColor(app.status)}`} />
-                  {app.displayName}
-                  <Check className="ml-auto size-3.5" />
-                </DropdownMenuItem>
-                {siblings.map((sibling) => (
-                  <DropdownMenuItem key={sibling.name} asChild>
-                    <Link href={`/apps/${sibling.name}`} className="flex items-center gap-2">
-                      <span className={`mr-2 size-2 rounded-full ${statusDotColor(sibling.status)}`} />
-                      {sibling.displayName}
-                    </Link>
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </>
-        ) : (
-          <h1 className="type-h1">{app.displayName}</h1>
-        )}
-        {app.isSystemManaged && <SystemBadge />}
+        <EntityTitle
+          crumbs={app.project ? [{ href: `/projects/${app.project.name}`, label: app.project.displayName }] : []}
+          title={app.displayName}
+        >
+          {app.project && <AppSwitcher current={app} siblings={siblings} />}
+          {app.isSystemManaged && <SystemBadge />}
+        </EntityTitle>
       </PageToolbar>
 
       {/* Failure detail — the stack's own deploy log when it failed, otherwise

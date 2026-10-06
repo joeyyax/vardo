@@ -2,7 +2,6 @@
 
 import { Fragment, useState, useCallback, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import {
   AlertTriangle,
   Trash2,
@@ -31,7 +30,7 @@ import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { LogViewer } from "@/components/log-viewer";
 import dynamic from "next/dynamic";
-import { statusDotColor, envTypeDotColor } from "@/lib/ui/status-colors";
+import { envTypeDotColor } from "@/lib/ui/status-colors";
 import { AppMetrics } from "./app-metrics";
 import { AppBackupHistory } from "@/components/backups/app-backup-history";
 import { AppErrors } from "./app-errors";
@@ -77,6 +76,7 @@ import { AppDebug } from "./app-debug";
 import { ComposeDetail } from "./compose-detail";
 import { AppSecurity } from "./app-security";
 import { SystemBadge } from "@/components/system-badge";
+import { AppSwitcher, EntityTitle } from "@/components/entity-title";
 import { extractDeployError } from "@/lib/ui/deploy-error";
 import { deployFailureBanner } from "@/lib/ui/deploy-banner";
 import { currentStageLabel } from "@/lib/ui/deploy-stage";
@@ -550,108 +550,63 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
           </div>
         }
       >
-        {isChildService && parentApp ? (
-          <>
-            <Link
-              href={`/apps/${parentApp.name}`}
-              className="type-h1 text-muted-foreground hover:text-foreground transition-colors"
-            >
-              {parentApp.displayName}
-            </Link>
-            <span className="text-muted-foreground/40 text-xl">›</span>
-            <h1 className="type-h1">
-              {app.displayName}
-            </h1>
-          </>
-        ) : app.project ? (
-          <>
-            <Link
-              href={`/projects/${app.project.name}`}
-              className="type-h1 text-muted-foreground hover:text-foreground transition-colors"
-            >
-              {app.project.displayName}
-            </Link>
-            <span className="text-muted-foreground/40 text-xl">›</span>
+        <EntityTitle
+          crumbs={[
+            ...(app.project ? [{ href: `/projects/${app.project.name}`, label: app.project.displayName }] : []),
+            ...(isChildService && parentApp ? [{ href: `/apps/${parentApp.name}`, label: parentApp.displayName }] : []),
+          ]}
+          title={app.displayName}
+        >
+          {app.project && !isChildService && <AppSwitcher current={app} siblings={siblings} />}
+          {app.isSystemManaged && <SystemBadge />}
+          {!isChildService && envsEnabled && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="gap-1.5">
-                  <span className={`size-2 rounded-full ${statusDotColor(app.status)}`} />
-                  {app.displayName}
+                <Button
+                  variant={isProduction ? "ghost" : "status"}
+                  size="xs"
+                  className={`gap-1.5 ${isProduction ? "text-muted-foreground" : (
+                    selectedEnv?.type === "staging"
+                      ? "border border-status-warning-edge bg-status-warning-muted text-status-warning hover:ring-status-warning/40"
+                      : "border border-status-info-edge bg-status-info-muted text-status-info hover:ring-status-info/40"
+                  )}`}
+                >
+                  <span className={`size-2 rounded-full ${envTypeDotColor(selectedEnv?.type ?? "production")}`} />
+                  {selectedEnv?.name ?? "production"}
                   <ChevronDown className="size-3.5 opacity-60" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start">
-                {/* Current app */}
-                <DropdownMenuItem disabled>
-                  <span className={`mr-2 size-2 rounded-full ${statusDotColor(app.status)}`} />
-                  {app.displayName}
-                  <Check className="ml-auto size-3.5" />
-                </DropdownMenuItem>
-                {/* Sibling apps */}
-                {siblings.map((sibling) => (
-                  <DropdownMenuItem key={sibling.name} asChild>
-                    <Link href={`/apps/${sibling.name}`} className="flex items-center gap-2">
-                      <span className={`mr-2 size-2 rounded-full ${statusDotColor(sibling.status)}`} />
-                      {sibling.displayName}
-                    </Link>
+                {app.environments.map((env) => (
+                  <DropdownMenuItem
+                    key={env.id}
+                    onClick={() => setSelectedEnvId(env.id)}
+                  >
+                    <span className={`mr-2 size-2 rounded-full ${envTypeDotColor(env.type)}`} />
+                    {env.name}
+                    {env.gitBranch && env.type !== "production" && (
+                      <span className="ml-1 text-xs text-muted-foreground font-mono">{env.gitBranch}</span>
+                    )}
+                    {env.id === selectedEnvId && <Check className="ml-auto size-3.5" />}
                   </DropdownMenuItem>
                 ))}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  className="text-muted-foreground"
+                  onClick={() => {
+                    setNewEnvCloneDefault(
+                      isProduction ? "__production" : (selectedEnvId ?? "__production")
+                    );
+                    setNewEnvOpen(true);
+                  }}
+                >
+                  <Plus className="mr-2 size-3.5" />
+                  New environment
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-          </>
-        ) : (
-          <h1 className="type-h1">
-            {app.displayName}
-          </h1>
-        )}
-        {app.isSystemManaged && <SystemBadge />}
-        {!isChildService && envsEnabled && (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant={isProduction ? "outline" : "status"}
-                size="sm"
-                className={`gap-1.5 ${!isProduction ? (
-                  selectedEnv?.type === "staging"
-                    ? "border border-status-warning-edge bg-status-warning-muted text-status-warning hover:ring-status-warning/40"
-                    : "border border-status-info-edge bg-status-info-muted text-status-info hover:ring-status-info/40"
-                ) : ""}`}
-              >
-                <span className={`size-2 rounded-full ${envTypeDotColor(selectedEnv?.type ?? "production")}`} />
-                {selectedEnv?.name ?? "production"}
-                <ChevronDown className="size-3.5 opacity-60" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
-              {app.environments.map((env) => (
-                <DropdownMenuItem
-                  key={env.id}
-                  onClick={() => setSelectedEnvId(env.id)}
-                >
-                  <span className={`mr-2 size-2 rounded-full ${envTypeDotColor(env.type)}`} />
-                  {env.name}
-                  {env.gitBranch && env.type !== "production" && (
-                    <span className="ml-1 text-xs text-muted-foreground font-mono">{env.gitBranch}</span>
-                  )}
-                  {env.id === selectedEnvId && <Check className="ml-auto size-3.5" />}
-                </DropdownMenuItem>
-              ))}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                className="text-muted-foreground"
-                onClick={() => {
-                  setNewEnvCloneDefault(
-                    isProduction ? "__production" : (selectedEnvId ?? "__production")
-                  );
-                  setNewEnvOpen(true);
-                }}
-              >
-                <Plus className="mr-2 size-3.5" />
-                New environment
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
+          )}
+        </EntityTitle>
       </PageToolbar>
 
       {/* Failure banner — the app is down, or a deploy failed and the previous release absorbed it */}
