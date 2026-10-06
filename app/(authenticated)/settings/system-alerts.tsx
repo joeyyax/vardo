@@ -179,7 +179,7 @@ export function SystemAlertsPanel() {
       {/* Services */}
       {healthData && healthData.services.length > 0 && (
         <div className="space-y-2">
-          <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+          <h4 className="type-label text-muted-foreground">
             Services
           </h4>
           <div className="rounded-lg bg-card divide-y shadow-card dark:border">
@@ -219,7 +219,7 @@ export function SystemAlertsPanel() {
       {/* Resources */}
       {healthData && healthData.resources.length > 0 && (
         <div className="space-y-2">
-          <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+          <h4 className="type-label text-muted-foreground">
             Resources
           </h4>
           <div className="rounded-lg bg-card divide-y shadow-card dark:border">
@@ -260,7 +260,7 @@ export function SystemAlertsPanel() {
       {/* Active Alerts */}
       {alertsData && (
         <div className="space-y-2">
-          <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+          <h4 className="type-label text-muted-foreground">
             Active Alerts
             {alertsData.active.length > 0 && (
               <span className="ml-1.5 inline-flex items-center justify-center h-4 w-4 rounded-full bg-destructive text-background text-xs font-semibold">
@@ -307,7 +307,7 @@ export function SystemAlertsPanel() {
       {/* Alert History */}
       {alertsData && alertsData.history.length > 0 && (
         <div className="space-y-2">
-          <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+          <h4 className="type-label text-muted-foreground">
             Recent Alert History
           </h4>
           <div className="rounded-lg bg-card divide-y shadow-card dark:border">

@@ -258,10 +258,10 @@ export function ProjectInstances({
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b">
-              <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground">Environment</th>
-              <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground">Instance</th>
-              <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground">Status</th>
-              <th className="px-4 py-2 text-right text-xs font-medium text-muted-foreground">
+              <th className="px-4 py-2 text-left type-label text-muted-foreground">Environment</th>
+              <th className="px-4 py-2 text-left type-label text-muted-foreground">Instance</th>
+              <th className="px-4 py-2 text-left type-label text-muted-foreground">Status</th>
+              <th className="px-4 py-2 text-right type-label text-muted-foreground">
                 <span className="sr-only">Actions</span>
               </th>
             </tr>

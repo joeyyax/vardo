@@ -150,7 +150,7 @@ export function FeatureFlagsSettings() {
                 <div key={f.flag} className="flex items-start justify-between gap-4 p-4">
                   <div className="space-y-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <Label htmlFor={`flag-${f.flag}`} className="text-sm font-medium">
+                      <Label htmlFor={`flag-${f.flag}`}>
                         {f.label}
                       </Label>
                       <Badge

@@ -358,7 +358,7 @@ export function TwoFactorAuth() {
 
         {/* TOTP Setup */}
         {totpUri && (
-          <div className="mt-4 space-y-3 border-t pt-4">
+          <div className="mt-4 space-y-3 rounded-lg bg-background-deep p-4">
             <p className="text-sm text-muted-foreground">
               Scan this QR code with your authenticator app, then enter the code
               below.
@@ -396,7 +396,7 @@ export function TwoFactorAuth() {
             </div>
             {backupCodes && backupCodes.length > 0 && (
               <div className="mt-3 space-y-2">
-                <p className="text-sm font-medium">Backup codes</p>
+                <p className="type-h4">Backup codes</p>
                 <p className="text-xs text-muted-foreground">
                   Save these codes in a safe place. You can use them to sign in
                   if you lose access to your authenticator app.
@@ -413,7 +413,7 @@ export function TwoFactorAuth() {
 
         {/* Disable confirmation */}
         {showDisable && (
-          <div className="mt-4 space-y-3 border-t pt-4">
+          <div className="mt-4 space-y-3 rounded-lg bg-background-deep p-4">
             <p className="text-sm text-muted-foreground">
               Enter your password to disable two-factor authentication.
             </p>

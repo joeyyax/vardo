@@ -808,7 +808,7 @@ export function MaintenanceSettings() {
             <div className="space-y-2 rounded-md bg-background-deep p-3">
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
-                  <p className="text-sm font-medium">Old slot generations</p>
+                  <p className="type-h4">Old slot generations</p>
                   <p className="text-xs text-muted-foreground">
                     Images from blue/green slots nothing is serving, and builds from
                     before slot naming. Up to{" "}
@@ -969,7 +969,7 @@ export function MaintenanceSettings() {
 
               {owners.gaps.length > 0 && (
                 <div className="space-y-1.5">
-                  <p id="owner-gaps" className="text-xs font-medium">
+                  <p id="owner-gaps" className="type-label text-muted-foreground">
                     Without an owner
                   </p>
                   <ul aria-labelledby="owner-gaps" className="divide-y rounded-md bg-background-deep">

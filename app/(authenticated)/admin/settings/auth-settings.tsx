@@ -69,7 +69,7 @@ export function AuthSettings() {
 
     <Card>
       <CardHeader>
-        <CardTitle className="text-sm">Settings</CardTitle>
+        <CardTitle>Settings</CardTitle>
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-6">
@@ -236,7 +236,7 @@ function SignInMethods() {
             <div key={m.method} className="flex items-start justify-between gap-4 p-4">
               <div className="space-y-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Label htmlFor={`auth-method-${m.method}`} className="text-sm font-medium">
+                  <Label htmlFor={`auth-method-${m.method}`}>
                     {m.label}
                   </Label>
                   <Badge

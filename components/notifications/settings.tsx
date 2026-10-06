@@ -201,7 +201,7 @@ export function EmailSettings() {
                         <span className="font-medium">{preset.label}</span>
                         <span className="text-muted-foreground ml-2">{preset.host}:{preset.port}</span>
                       </div>
-                      <span className="text-muted-foreground text-[11px]">{preset.note}</span>
+                      <span className="text-muted-foreground">{preset.note}</span>
                     </div>
                   ))}
                 </div>

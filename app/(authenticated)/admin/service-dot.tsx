@@ -60,7 +60,7 @@ export function ServiceDot({ service, onChecked }: ServiceDotProps) {
 
       <PopoverContent align="start" className="w-80 p-4">
         <div className="flex items-center justify-between gap-2">
-          <p className="text-sm font-medium">{service.name}</p>
+          <p className="type-h4">{service.name}</p>
           <span className={`text-xs ${serviceStatusTone(service.status)}`}>
             {serviceStatusWord(service.status)}
           </span>

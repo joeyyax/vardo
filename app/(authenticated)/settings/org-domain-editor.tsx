@@ -370,7 +370,7 @@ export function OrgDomainEditor({
             </div>
 
             <div className="squircle rounded-lg bg-background-deep px-4 py-3 space-y-3">
-              <p className="text-sm font-medium">DNS Setup Instructions</p>
+              <p className="type-h4">DNS Setup Instructions</p>
               <div className="space-y-2">
                 <p className="text-xs text-muted-foreground">
                   Add a wildcard DNS record pointing to this server. Choose one
@@ -378,7 +378,7 @@ export function OrgDomainEditor({
                 </p>
                 <div className="space-y-1.5">
                   <div className="flex items-start gap-2">
-                    <span className="text-xs font-medium text-muted-foreground mt-0.5 shrink-0">
+                    <span className="type-label text-muted-foreground mt-1 shrink-0">
                       A Record:
                     </span>
                     <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground">
@@ -386,7 +386,7 @@ export function OrgDomainEditor({
                     </code>
                   </div>
                   <div className="flex items-start gap-2">
-                    <span className="text-xs font-medium text-muted-foreground mt-0.5 shrink-0">
+                    <span className="type-label text-muted-foreground mt-1 shrink-0">
                       CNAME:
                     </span>
                     <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground">

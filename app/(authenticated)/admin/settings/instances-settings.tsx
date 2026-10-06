@@ -370,7 +370,7 @@ export function InstancesSettings() {
             <Card>
               <CardContent className="flex flex-col items-center justify-center py-12 text-center">
                 <Network className="size-10 text-muted-foreground/50 mb-3" aria-hidden="true" />
-                <p className="text-sm font-medium">No instances connected</p>
+                <p className="type-h4">No instances connected</p>
                 <p className="text-sm text-muted-foreground mt-1">
                   Generate an invite or join an existing mesh to get started.
                 </p>
@@ -400,13 +400,13 @@ export function InstancesSettings() {
                             <p className="text-sm font-medium truncate">
                               {peer.name}
                             </p>
-                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 shrink-0">
+                            <Badge variant="outline" className="px-1.5 py-0 shrink-0">
                               {peer.type}
                             </Badge>
                             {peer.connectionType === "visible" && (
                               <Badge
                                 variant="secondary"
-                                className="text-[10px] px-1.5 py-0 shrink-0"
+                                className="px-1.5 py-0 shrink-0"
                                 title="Seen through hub — no direct tunnel"
                               >
                                 via hub

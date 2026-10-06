@@ -94,7 +94,7 @@ export function ConfigSettings() {
         {/* Export */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm font-medium">Export</CardTitle>
+            <CardTitle>Export</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-sm text-muted-foreground">
@@ -133,7 +133,7 @@ export function ConfigSettings() {
         {/* Import */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm font-medium">Import</CardTitle>
+            <CardTitle>Import</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-sm text-muted-foreground">

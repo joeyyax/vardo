@@ -141,7 +141,7 @@ export function DigestSettingsEditor({ orgId }: { orgId: string }) {
         <div className="space-y-1">
           <div className="flex items-center gap-2">
             <Mail className="h-4 w-4 text-muted-foreground" />
-            <p className="text-sm font-medium">Weekly Digest</p>
+            <p className="type-h3">Weekly Digest</p>
             {saving && (
               <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
             )}

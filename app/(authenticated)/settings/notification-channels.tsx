@@ -104,7 +104,7 @@ function EventFilterEditor({
           {(Object.entries(EVENT_CATEGORIES) as [EventCategory, readonly BusEventType[]][]).map(
             ([category, events]) => (
               <div key={category} className="space-y-1.5">
-                <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                <span className="type-label text-muted-foreground">
                   {CATEGORY_LABELS[category]}
                 </span>
                 <div className="grid grid-cols-2 gap-1">

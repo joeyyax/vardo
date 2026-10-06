@@ -79,7 +79,7 @@ export function AdminOverview() {
                   {stats ? stats[stat.key] : <Loader2 className="size-5 animate-spin text-muted-foreground" />}
                 </p>
                 {stats && (
-                  <p className="text-[10px] text-muted-foreground mt-0.5">{stat.scope(stats)}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{stat.scope(stats)}</p>
                 )}
               </div>
             </div>

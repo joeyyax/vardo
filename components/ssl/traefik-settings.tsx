@@ -117,7 +117,7 @@ export function TraefikSettings() {
       {restartPending && (
         <div className="rounded-lg bg-card p-4 flex items-center justify-between gap-4 shadow-card dark:border">
           <div className="space-y-0.5">
-            <p className="text-sm font-medium">Traefik restart required to apply changes</p>
+            <p className="type-h4">Traefik restart required to apply changes</p>
             <p className="text-xs text-muted-foreground">
               Settings are saved. The running container won&apos;t pick them up until you restart.
             </p>
@@ -138,7 +138,7 @@ export function TraefikSettings() {
 
       {restarted && (
         <div className="rounded-lg bg-card p-4 shadow-card dark:border">
-          <p className="text-sm font-medium">Traefik restart initiated</p>
+          <p className="type-h4">Traefik restart initiated</p>
           <p className="text-xs text-muted-foreground">
             The container is restarting and will be back up momentarily.
           </p>
@@ -148,7 +148,7 @@ export function TraefikSettings() {
       {config.externalRouting && (
         <div className="rounded-lg bg-card p-4 space-y-3 shadow-card dark:border">
           <div className="space-y-0.5">
-            <p className="text-sm font-medium">Making external containers reachable</p>
+            <p className="type-h4">Making external containers reachable</p>
             <p className="text-xs text-muted-foreground">
               When the network filter is removed, Traefik can <em>discover</em> any container
               with <code className="font-mono">traefik.enable=true</code>. But to actually{" "}

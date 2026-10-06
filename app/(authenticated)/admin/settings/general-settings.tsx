@@ -97,7 +97,7 @@ export function GeneralSettings() {
       {runtime && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Runtime</CardTitle>
+            <CardTitle>Runtime</CardTitle>
           </CardHeader>
           <CardContent>
             <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-4">

@@ -276,7 +276,7 @@ export function ExternalRoutesSettings() {
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-12 text-center">
             <Globe className="size-10 text-muted-foreground/50 mb-3" aria-hidden="true" />
-            <p className="text-sm font-medium">No external routes defined</p>
+            <p className="type-h4">No external routes defined</p>
             <p className="text-sm text-muted-foreground mt-1">
               Add a route to proxy a subdomain to an external service.
             </p>
@@ -297,17 +297,17 @@ export function ExternalRoutesSettings() {
                         {route.hostname}
                       </p>
                       {route.tls && (
-                        <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                        <Badge variant="outline" className="text-xs px-1.5 py-0">
                           TLS
                         </Badge>
                       )}
                       {route.insecureSkipVerify && (
-                        <Badge variant="warning" className="text-[10px] px-1.5 py-0">
+                        <Badge variant="warning" className="text-xs px-1.5 py-0">
                           skip verify
                         </Badge>
                       )}
                       {route.redirectUrl && (
-                        <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                        <Badge variant="outline" className="text-xs px-1.5 py-0">
                           {route.redirectPermanent ? "301" : "302"} redirect
                         </Badge>
                       )}

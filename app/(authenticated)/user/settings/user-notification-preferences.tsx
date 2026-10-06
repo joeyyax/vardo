@@ -249,7 +249,7 @@ export function UserNotificationPreferences({ orgId }: { orgId: string }) {
           <CardContent className="space-y-4">
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-sm font-medium">{channel.name}</span>
+                <span className="type-h3">{channel.name}</span>
                 <span className="text-xs bg-muted px-1.5 py-0.5 rounded">
                   {channel.type}
                 </span>
@@ -274,7 +274,7 @@ export function UserNotificationPreferences({ orgId }: { orgId: string }) {
                 ][]
               ).map(([category, events]) => (
                 <div key={category} className="space-y-2">
-                  <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  <span className="type-label text-muted-foreground">
                     {CATEGORY_LABELS[category]}
                   </span>
                   <div className="space-y-1">
@@ -329,7 +329,7 @@ export function UserNotificationPreferences({ orgId }: { orgId: string }) {
         <CardContent className="space-y-2">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium">Weekly digest</p>
+              <p className="type-h3">Weekly digest</p>
               <p className="text-xs text-muted-foreground">
                 Receive a weekly summary of org activity alongside real-time
                 notifications.

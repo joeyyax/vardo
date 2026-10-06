@@ -309,7 +309,7 @@ export function DomainSettings() {
                           <div className="flex items-center gap-2">
                             <Label
                               htmlFor={`ssl-issuer-${issuer}`}
-                              className="text-sm font-medium leading-none cursor-pointer"
+                              className="leading-none cursor-pointer"
                             >
                               {ISSUER_LABELS[issuer]}
                             </Label>
