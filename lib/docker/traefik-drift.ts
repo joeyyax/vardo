@@ -115,6 +115,10 @@ let staleStreak = new Map<string, number>();
 let restartHistory: number[] = [];
 let escalated = false;
 let reported = false;
+/** Fault keys that were held when Traefik was last restarted. */
+let restartedFor = new Set<string>();
+/** Fault keys already alerted as surviving a restart. */
+let persistentAlerted = new Set<string>();
 
 /** Test seam — reset the accumulated streaks and restart history. */
 export function resetDriftState(): void {
@@ -122,6 +126,8 @@ export function resetDriftState(): void {
   restartHistory = [];
   escalated = false;
   reported = false;
+  restartedFor = new Set();
+  persistentAlerted = new Set();
 }
 
 async function emitAll(event: BusEvent): Promise<void> {
@@ -171,6 +177,8 @@ export async function tickTraefikDrift(): Promise<void> {
   if (stale.length === 0 && unrouted.length === 0) {
     staleStreak = new Map();
     escalated = false;
+    restartedFor = new Set();
+    persistentAlerted = new Set();
     return;
   }
 
@@ -183,10 +191,33 @@ export async function tickTraefikDrift(): Promise<void> {
   for (const f of faults) next.set(f.key, (staleStreak.get(f.key) ?? 0) + 1);
   staleStreak = next;
 
+  const present = new Set(faults.map((f) => f.key));
+  restartedFor = new Set([...restartedFor].filter((k) => present.has(k)));
+  persistentAlerted = new Set([...persistentAlerted].filter((k) => present.has(k)));
+
   // A fault on one tick is a deploy in flight, not drift.
-  const longest = Math.max(...faults.map((f) => staleStreak.get(f.key) ?? 0));
-  const held = faults.filter((f) => (staleStreak.get(f.key) ?? 0) >= CONFIRM_STREAK);
+  const confirmed = faults.filter((f) => (staleStreak.get(f.key) ?? 0) >= CONFIRM_STREAK);
+
+  // A fault that outlived a restart won't clear with another one.
+  const survivors = confirmed.filter(
+    (f) => restartedFor.has(f.key) && !persistentAlerted.has(f.key),
+  );
+  if (survivors.length > 0) {
+    for (const f of survivors) persistentAlerted.add(f.key);
+    const labels = survivors.map((f) => f.label).join(", ");
+    log.error(`Survived a Traefik restart, not restarting again: ${labels}`);
+    await emitAll({
+      type: "system.service-down",
+      title: "Traefik routing is stale",
+      message: `Traefik routing still disagrees with Docker after a restart: ${labels}. Vardo won't restart Traefik again for this. Manual intervention required.`,
+      service: "Traefik",
+      description: labels,
+    });
+  }
+
+  const held = confirmed.filter((f) => !restartedFor.has(f.key));
   if (held.length === 0) return;
+  const longest = Math.max(...held.map((f) => staleStreak.get(f.key) ?? 0));
 
   restartHistory = restartHistory.filter((t) => now - t < RESTART_WINDOW_MS);
   const decision = decideRestart({ streak: longest, recentRestarts: restartHistory, now });
@@ -241,6 +272,7 @@ export async function tickTraefikDrift(): Promise<void> {
 
   restartHistory.push(now);
   staleStreak = new Map();
+  if (ok) for (const f of held) restartedFor.add(f.key);
 
   await emitAll({
     type: "system.service-down",
