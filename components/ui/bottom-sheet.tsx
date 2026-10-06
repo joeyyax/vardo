@@ -137,7 +137,7 @@ function BottomSheetTitle({
   return (
     <SheetPrimitive.Title
       data-slot="bottom-sheet-title"
-      className={cn("text-foreground font-semibold", className)}
+      className={cn("type-h3 text-foreground", className)}
       {...props}
     />
   );
