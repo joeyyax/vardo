@@ -4,8 +4,8 @@ import path from "path";
 
 import { CHART_COLORS } from "@/lib/metrics/constants";
 
-const TOKENS = readFileSync(path.resolve(__dirname, "../../../../app/styles/tokens.css"), "utf8");
-const THEME = readFileSync(path.resolve(__dirname, "../../../../app/styles/theme.css"), "utf8");
+const BRAND = readFileSync(path.resolve(__dirname, "../../../../app/brand.css"), "utf8");
+const CONSOLE = readFileSync(path.resolve(__dirname, "../../../../app/console.css"), "utf8");
 
 type Oklch = { l: number; c: number; h: number; a: number };
 
@@ -36,8 +36,8 @@ function parseTokens(body: string): Record<string, Oklch> {
   return out;
 }
 
-const light = parseTokens(block(TOKENS, ":root"));
-const dark = parseTokens(block(TOKENS, ".dark"));
+const light = parseTokens(block(BRAND, ":root"));
+const dark = parseTokens(block(BRAND, ".dark"));
 
 // --- Oklch -> sRGB ------------------------------------------------------
 
@@ -190,8 +190,8 @@ describe("colour ladder", () => {
 
   it("exposes every state and classification stop as a Tailwind colour", () => {
     for (const name of Object.keys(LADDER)) {
-      expect(THEME, name).toContain(`--color-${name}: var(--${name});`);
-      expect(THEME, `${name} muted`).toContain(
+      expect(CONSOLE, name).toContain(`--color-${name}: var(--${name});`);
+      expect(CONSOLE, `${name} muted`).toContain(
         `--color-${name}-muted: var(--${name}-muted);`
       );
     }
@@ -371,7 +371,7 @@ describe("status edges", () => {
 
   it("exposes every edge as a Tailwind colour", () => {
     for (const name of SURFACED) {
-      expect(THEME, `${name} edge`).toContain(`--color-${name}-edge: var(--${name}-edge);`);
+      expect(CONSOLE, `${name} edge`).toContain(`--color-${name}-edge: var(--${name}-edge);`);
     }
   });
 
@@ -442,7 +442,7 @@ describe("destructive", () => {
   });
 
   it("is exposed as a Tailwind colour", () => {
-    expect(THEME).toContain("--color-destructive-foreground: var(--destructive-foreground);");
+    expect(CONSOLE).toContain("--color-destructive-foreground: var(--destructive-foreground);");
   });
 });
 
@@ -556,7 +556,7 @@ describe("CHART_COLORS", () => {
       const name = /^var\((--[\w-]+)\)$/.exec(value)?.[1];
       expect(name, `${key} is not a token reference`).toBeDefined();
       expect(
-        light[name!] !== undefined || TOKENS.includes(`${name}:`),
+        light[name!] !== undefined || BRAND.includes(`${name}:`),
         `${key} references undeclared ${name}`
       ).toBe(true);
     }

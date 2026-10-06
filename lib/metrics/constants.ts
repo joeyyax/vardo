@@ -26,7 +26,7 @@ export const TIME_RANGES: { label: string; value: TimeRange }[] = [
 
 /**
  * Series identity, not state. Values are theme tokens so every series has a
- * light and a dark counterpart; definitions live in app/styles/tokens.css.
+ * light and a dark counterpart; definitions live in app/brand.css.
  * Only legible where a legend, axis or card title names the series.
  */
 export const CHART_COLORS = {

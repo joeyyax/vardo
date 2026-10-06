@@ -1,0 +1,308 @@
+/* Vardo's brand: every value the kit and the console read. Import after the
+   kit layer in app/styles. A token set for light needs its dark value too.
+
+   Warm achromatic chrome — color belongs to state, never to chrome. Status
+   hues carry meaning; brass is trim (hairlines, focus, labels, the mark),
+   never meaning. Contrast and gamut verified in
+   tests/unit/app/styles/color-tokens.test.ts.
+
+   One hue ladder, eight stops ~45° apart, serves every axis:
+   25 error · 70 warning · 110 env-tier · 155 success · 200 disposable ·
+   240 info · 288 update · 336 critical.
+
+   Three axes draw from it. State answers "is this healthy, broken, urgent" and
+   owns all eight stops. Classification (environment tier) is permanent, not a
+   signal, and gets stop 110 to itself. Series identity names a line inside a
+   chart and reuses the ladder minus the two alarm stops — no chart series is
+   ever error or critical red.
+
+   The rule that keeps them apart is placement, not hue: a series color is only
+   legible where a legend, axis or card title names it. Outside that, marks are
+   neutral or state-colored. Sparklines therefore stay neutral until the state
+   is abnormal.
+
+   Chroma is clamped to 95% of the sRGB maximum at each lightness and hue, so
+   what ships is what is written here rather than whatever the browser gamut
+   maps it to.
+
+   Every -muted surface is opaque, not an alpha tint of its stop. A tint's
+   contrast depends on whatever ancestor happens to be behind it, so the label
+   it carries has no fixed ratio. Opaque makes the stop and its surface one
+   testable pair. Each stop also carries an -edge: a hairline darker than every
+   light ground and lighter than every dark one, so it clears 3:1 on all of
+   them. The edge is what makes a chip a shape; the fill only tints it. */
+
+:root {
+  /* --- Kit roles --------------------------------------------------------- */
+
+  /* Operational density — tighter than the editorial sites. */
+  --radius: 1rem;
+
+  /* next/font sets these three on <html> in app/layout.tsx. */
+  --font-sans: var(--font-body-sans);
+  --font-display-var: var(--font-display-sans);
+  --font-mono: var(--font-geist-mono);
+  --font-hand-var: var(--font-body-sans);
+
+  /* Heading scale at console density: 32 / 22 / 18 / 16. */
+  --type-h1-size: 2rem;
+  --type-h1-leading: 1.1;
+  --type-h1-weight: 680;
+  --type-h1-tracking: -0.025em;
+  --type-h2-size: 1.375rem;
+  --type-h2-leading: 1.25;
+  --type-h2-weight: 650;
+  --type-h2-tracking: -0.015em;
+  --type-h3-size: 1.125rem;
+  --type-h3-leading: 1.3;
+  --type-h3-weight: 620;
+  --type-h3-tracking: -0.01em;
+  --type-h4-size: 1rem;
+  --type-h4-leading: 1.35;
+  --type-h4-weight: 600;
+  --type-h4-tracking: -0.005em;
+  --type-wordmark-size: 1.1875rem;
+  --type-wordmark-leading: 1;
+  --type-wordmark-weight: 700;
+  --type-wordmark-tracking: -0.02em;
+
+  /* Bone ground, warm ink. Cards are lifted by shadow, not outlined. The ground
+     sits close to the card so white never reads as a cut-out; the tray and the
+     shadow carry the separation instead of raw lightness. */
+  --background: oklch(95.8% 0.005 85);
+  --foreground: oklch(18% 0.012 75);
+  --card: oklch(99.3% 0.001 85);
+  --card-foreground: oklch(18% 0.012 75);
+  /* Card tray — a step down from the card band, still above the page ground so
+     the card lifts as a whole. */
+  --background-deep: oklch(97.4% 0.004 85);
+  --primary: oklch(20% 0.012 75);
+  --primary-foreground: oklch(98.5% 0.003 85);
+  --primary-strong: var(--primary);
+  --secondary: oklch(95.4% 0.006 83);
+  --secondary-foreground: oklch(20% 0.012 75);
+  --muted: oklch(96.4% 0.005 83);
+  --muted-foreground: oklch(44% 0.013 78);
+  --foreground-soft: var(--muted-foreground);
+  --tertiary: var(--status-neutral);
+  --accent: oklch(93.4% 0.007 82);
+  --accent-foreground: oklch(20% 0.012 75);
+  --border: oklch(89.5% 0.007 82);
+  --ring: var(--brass);
+
+  /* The mark's brass as a ground. Same in both themes. */
+  --brand: oklch(48% 0.098 72);
+  --backdrop: oklch(5% 0.005 75);
+  --scrim: oklch(0% 0 0 / 50%);
+
+  /* Kit tones read the ladder stops. */
+  --success: var(--status-success);
+  --success-ink: var(--status-success);
+  --success-soft: var(--status-success-muted);
+  --success-edge: var(--status-success-edge);
+  --warning: var(--status-warning);
+  --warning-soft: var(--status-warning-muted);
+  --warning-edge: var(--status-warning-edge);
+  --danger: var(--status-error);
+  --danger-soft: var(--status-error-muted);
+  --danger-edge: var(--status-error-edge);
+  --info: var(--status-info);
+  --info-ink: var(--status-info);
+  --info-soft: var(--status-info-muted);
+  --info-edge: var(--status-info-edge);
+
+  /* Marker inks at the ladder hues, only ever drawn translucent. */
+  --hl-gold: oklch(85% 0.12 70);
+  --hl-sky: oklch(85% 0.08 240);
+  --hl-mint: oklch(85% 0.12 155);
+  --hl-rose: oklch(85% 0.08 25);
+
+  /* --- Console roles ----------------------------------------------------- */
+
+  --shadow-card-value: 0 1px 2px rgba(28, 22, 14, 0.07), 0 4px 10px rgba(28, 22, 14, 0.06), 0 12px 28px rgba(28, 22, 14, 0.07);
+  --shadow-card-hover-value: 0 2px 4px rgba(28, 22, 14, 0.09), 0 8px 18px rgba(28, 22, 14, 0.09), 0 20px 40px rgba(28, 22, 14, 0.11);
+  --popover: oklch(99.4% 0.002 85);
+  --popover-foreground: oklch(18% 0.012 75);
+  --destructive: oklch(50% 0.18 25);
+  /* Inverts per theme: the dark stop is a light red that ink sits on. */
+  --destructive-foreground: oklch(98.5% 0.003 85);
+  --input: oklch(89.5% 0.007 82);
+
+  /* The line between a field and the ground BEHIND it — the only value
+     clearing 3:1 on both white fields and bone. Same value both modes;
+     scope classes never re-declare it, so a field's outer edge always
+     resolves against the band it sits on. */
+  --field-edge: oklch(62% 0.01 78);
+
+  /* Brass. Bronze in light — 5.6:1 on bone. */
+  --brass: oklch(48% 0.098 72);
+  --brass-muted: oklch(95% 0.011 72);
+  --brass-edge: oklch(57% 0.098 72);
+
+  --chart-1: oklch(45% 0.012 78);
+  --chart-2: oklch(55% 0.08 230);
+  --chart-3: oklch(50% 0.06 155);
+  --chart-4: oklch(65% 0.012 78);
+  --chart-5: oklch(35% 0.012 78);
+
+  --sidebar: oklch(95.8% 0.006 83);
+  --sidebar-foreground: oklch(18% 0.012 75);
+  --sidebar-primary: oklch(20% 0.012 75);
+  --sidebar-primary-foreground: oklch(98.5% 0.003 85);
+  --sidebar-accent: oklch(92% 0.008 82);
+  --sidebar-accent-foreground: oklch(20% 0.012 75);
+  --sidebar-border: oklch(88.5% 0.007 82);
+  --sidebar-ring: var(--brass);
+
+  /* Status — where color lives. Each -muted is its stop at 10% over the card,
+     resolved to an opaque value; each -edge is the stop at 57%, the one
+     lightness below every ground on this theme. */
+  --status-success: oklch(45% 0.106 155);
+  --status-success-muted: oklch(94.6% 0.011 155);
+  --status-success-edge: oklch(57% 0.106 155);
+  --status-error: oklch(50% 0.18 25);
+  --status-error-muted: oklch(94.5% 0.016 25);
+  --status-error-edge: oklch(57% 0.18 25);
+  --status-warning: oklch(52% 0.108 70);
+  --status-warning-muted: oklch(95.3% 0.012 70);
+  --status-warning-edge: oklch(57% 0.108 70);
+  --status-info: oklch(45% 0.099 240);
+  --status-info-muted: oklch(94.6% 0.01 240);
+  --status-info-edge: oklch(57% 0.099 240);
+  --status-neutral: oklch(45% 0.012 78);
+  --status-neutral-muted: oklch(94.9% 0.001 78);
+  --status-neutral-edge: oklch(57% 0.012 78);
+  /* Teal is the shallowest stop in sRGB — 0.078 is the ceiling at this L. */
+  --status-disposable: oklch(48% 0.078 200);
+  --status-disposable-muted: oklch(94.9% 0.01 200);
+  --status-disposable-edge: oklch(57% 0.078 200);
+  --status-update: oklch(48% 0.16 288);
+  --status-update-muted: oklch(95% 0.014 288);
+  --status-update-edge: oklch(57% 0.16 288);
+  --status-critical: oklch(48% 0.18 336);
+  --status-critical-muted: oklch(94.6% 0.017 336);
+  --status-critical-edge: oklch(57% 0.18 336);
+
+  /* Environment tier — a permanent classification, never a health signal.
+     One hue; production, staging, preview and local separate by depth. */
+  --env-tier: oklch(48% 0.1 110);
+  --env-tier-muted: oklch(95.1% 0.011 110);
+  --env-tier-edge: oklch(57% 0.1 110);
+
+  /* Chart series identity. Two lightness tiers inside the state band: the two
+     headline metrics sit deeper, the rest one step up, so hue-adjacent pairs
+     also separate on lightness and survive red-green colour vision deficiency. */
+  --chart-cpu: oklch(45% 0.099 240);
+  --chart-memory: oklch(45% 0.106 155);
+  --chart-network-rx: oklch(52% 0.13 288);
+  --chart-network-tx: oklch(52% 0.084 200);
+  --chart-disk: oklch(52% 0.108 110);
+  /* The one series where hue tracks the quantity — heat reads warm. */
+  --chart-gpu-temperature: oklch(52% 0.108 70);
+
+  /* A limit or threshold is a reference, not data and not an alarm. Quieter
+     than any series, dashed at the call site, no hue. Also labels the limit at
+     10px, so it holds 4.5 rather than the 3 a rule alone would need. */
+  --chart-reference: oklch(55% 0.01 78);
+  --chart-grid: oklch(72% 0.006 82 / 55%);
+}
+
+/* Warm charcoal, not near-black. The ground drops and the card lifts so the
+   step is visible on its own — shadows barely read on a dark ground, so value
+   does the work here and the hairline is a detail rather than the edge.
+   Screen only, so print always takes the light tokens. */
+@media screen {
+  .dark {
+    /* --- Kit roles ------------------------------------------------------- */
+    --background: oklch(16% 0.008 75);
+    --foreground: oklch(93% 0.006 85);
+    --card: oklch(24.5% 0.009 75);
+    --card-foreground: oklch(93% 0.006 85);
+    --background-deep: oklch(20% 0.008 75);
+    --primary: oklch(93% 0.004 85);
+    --primary-foreground: oklch(16% 0.008 75);
+    --secondary: oklch(29% 0.008 75);
+    --secondary-foreground: oklch(93% 0.006 85);
+    --muted: oklch(28% 0.008 75);
+    --muted-foreground: oklch(68% 0.012 80);
+    --accent: oklch(31% 0.009 75);
+    --accent-foreground: oklch(93% 0.006 85);
+    --border: oklch(100% 0.006 85 / 9%);
+
+    --hl-gold: oklch(87% 0.13 70);
+    --hl-sky: oklch(87% 0.085 240);
+    --hl-mint: oklch(87% 0.13 155);
+    --hl-rose: oklch(87% 0.085 25);
+
+    /* --- Console roles --------------------------------------------------- */
+    --shadow-card-value: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 20px rgba(0, 0, 0, 0.32);
+    --shadow-card-hover-value: 0 2px 5px rgba(0, 0, 0, 0.48), 0 16px 34px rgba(0, 0, 0, 0.42);
+    --popover: oklch(26% 0.009 75);
+    --popover-foreground: oklch(93% 0.006 85);
+    --destructive: oklch(70% 0.14 25);
+    --destructive-foreground: oklch(16% 0.008 75);
+    --input: oklch(100% 0.006 85 / 14%);
+
+    --brass: oklch(74% 0.085 82);
+    --brass-muted: oklch(31.3% 0.02 82);
+    --brass-edge: oklch(63% 0.085 82);
+
+    --chart-1: oklch(85% 0.006 85);
+    --chart-2: oklch(60% 0.08 230);
+    --chart-3: oklch(55% 0.06 155);
+    --chart-4: oklch(45% 0.008 78);
+    --chart-5: oklch(30% 0.008 78);
+
+    --sidebar: oklch(17.5% 0.008 75);
+    --sidebar-foreground: oklch(93% 0.006 85);
+    --sidebar-primary: oklch(93% 0.004 85);
+    --sidebar-primary-foreground: oklch(20% 0.008 75);
+    --sidebar-accent: oklch(26% 0.009 75);
+    --sidebar-accent-foreground: oklch(93% 0.006 85);
+    --sidebar-border: oklch(100% 0.006 85 / 10%);
+
+    /* Edges land at 63% here — above every dark ground, as 57% is below every
+       light one. */
+    --status-success: oklch(70% 0.12 155);
+    --status-success-muted: oklch(30.5% 0.021 155);
+    --status-success-edge: oklch(63% 0.12 155);
+    --status-error: oklch(70% 0.14 25);
+    --status-error-muted: oklch(30.4% 0.026 25);
+    --status-error-edge: oklch(63% 0.14 25);
+    --status-warning: oklch(75% 0.12 70);
+    --status-warning-muted: oklch(31.3% 0.026 70);
+    --status-warning-edge: oklch(63% 0.12 70);
+    --status-info: oklch(70% 0.12 240);
+    --status-info-muted: oklch(30.4% 0.012 240);
+    --status-info-edge: oklch(63% 0.12 240);
+    /* In the same band as its siblings. Below 70% a "Stopped" label misses 4.5
+       on its own surface. */
+    --status-neutral: oklch(70% 0.008 78);
+    --status-neutral-muted: oklch(30.7% 0.009 78);
+    --status-neutral-edge: oklch(63% 0.008 78);
+    --status-disposable: oklch(72% 0.116 200);
+    --status-disposable-muted: oklch(30.4% 0.021 200);
+    /* Teal again — 0.102 is the ceiling at the edge lightness. */
+    --status-disposable-edge: oklch(63% 0.102 200);
+    --status-update: oklch(72% 0.13 288);
+    --status-update-muted: oklch(30.9% 0.014 288);
+    --status-update-edge: oklch(63% 0.13 288);
+    --status-critical: oklch(72% 0.14 336);
+    --status-critical-muted: oklch(30.8% 0.021 336);
+    --status-critical-edge: oklch(63% 0.14 336);
+
+    --env-tier: oklch(72% 0.13 110);
+    --env-tier-muted: oklch(30.9% 0.028 110);
+    --env-tier-edge: oklch(63% 0.13 110);
+
+    --chart-cpu: oklch(70% 0.13 240);
+    --chart-memory: oklch(70% 0.13 155);
+    --chart-network-rx: oklch(75% 0.13 288);
+    --chart-network-tx: oklch(75% 0.121 200);
+    --chart-disk: oklch(75% 0.13 110);
+    --chart-gpu-temperature: oklch(75% 0.13 70);
+
+    --chart-reference: oklch(64% 0.01 78);
+    --chart-grid: oklch(48% 0.008 82 / 55%);
+  }
+}

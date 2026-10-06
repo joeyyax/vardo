@@ -1,13 +1,13 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
-/* Entry point only. Tailwind v4 inlines these before generating utilities, so
-   the @theme / @utility / @layer directives across them resolve as one sheet. */
+/* Kit layer, then the brand, then what the console adds. */
 @import "./styles/theme.css";
 @import "./styles/tokens.css";
 @import "./styles/typography.css";
 @import "./styles/surfaces.css";
-@import "./styles/effects.css";
 @import "./styles/base.css";
+@import "./brand.css";
+@import "./console.css";
 
 @plugin "@tailwindcss/typography";

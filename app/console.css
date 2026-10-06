@@ -1,0 +1,274 @@
+/* What the console adds on top of the kit: utilities for its extra roles,
+   ground scopes, ornaments and motion. Values live in brand.css. Extends the
+   kit; never redefines a kit recipe. */
+
+@theme inline {
+  /* One step up across the board. Atkinson sits larger on the same em. */
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: 1.45;
+  --text-sm: 0.9375rem;
+  --text-sm--line-height: 1.5;
+  --text-base: 1rem;
+  --text-base--line-height: 1.6;
+
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-input: var(--input);
+  --color-field-edge: var(--field-edge);
+  --color-brass: var(--brass);
+  --color-brass-muted: var(--brass-muted);
+  --color-brass-edge: var(--brass-edge);
+
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --color-status-success: var(--status-success);
+  --color-status-success-muted: var(--status-success-muted);
+  --color-status-success-edge: var(--status-success-edge);
+  --color-status-error: var(--status-error);
+  --color-status-error-muted: var(--status-error-muted);
+  --color-status-error-edge: var(--status-error-edge);
+  --color-status-warning: var(--status-warning);
+  --color-status-warning-muted: var(--status-warning-muted);
+  --color-status-warning-edge: var(--status-warning-edge);
+  --color-status-info: var(--status-info);
+  --color-status-info-muted: var(--status-info-muted);
+  --color-status-info-edge: var(--status-info-edge);
+  --color-status-neutral: var(--status-neutral);
+  --color-status-neutral-muted: var(--status-neutral-muted);
+  --color-status-neutral-edge: var(--status-neutral-edge);
+  --color-status-disposable: var(--status-disposable);
+  --color-status-disposable-muted: var(--status-disposable-muted);
+  --color-status-disposable-edge: var(--status-disposable-edge);
+  --color-status-update: var(--status-update);
+  --color-status-update-muted: var(--status-update-muted);
+  --color-status-update-edge: var(--status-update-edge);
+  --color-status-critical: var(--status-critical);
+  --color-status-critical-muted: var(--status-critical-muted);
+  --color-status-critical-edge: var(--status-critical-edge);
+
+  --color-env-tier: var(--env-tier);
+  --color-env-tier-muted: var(--env-tier-muted);
+  --color-env-tier-edge: var(--env-tier-edge);
+
+  --shadow-card: var(--shadow-card-value);
+  --shadow-card-hover: var(--shadow-card-hover-value);
+
+  --animate-shine: shine var(--duration) infinite linear;
+  --animate-aurora: aurora 8s ease-in-out infinite alternate;
+}
+
+:root {
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --duration-fast: 150ms;
+  --duration-normal: 250ms;
+  --duration-slow: 400ms;
+
+  /* Panel padding; one value moves the whole page rhythm. */
+  --pane-pad: 1.5rem;
+}
+@media (min-width: 640px) {
+  :root { --pane-pad: 1.75rem; }
+}
+
+/* Collapse the quiet tiers to full ink, re-declared per ground so each
+   resolves against its own calibrated foreground. .surface-sidebar and
+   .surface-danger read the collapsed values through their var() refs. */
+@media (prefers-contrast: more) {
+  :root {
+    --muted-foreground: var(--foreground);
+    --border: var(--foreground);
+    --input: var(--foreground);
+    --field-edge: var(--foreground);
+    --sidebar-border: var(--sidebar-foreground);
+  }
+  .dark {
+    --muted-foreground: var(--foreground);
+    --border: var(--foreground);
+    --input: var(--foreground);
+    --field-edge: var(--foreground);
+    --sidebar-border: var(--sidebar-foreground);
+  }
+  .surface-danger {
+    --border: var(--destructive);
+    --muted-foreground: var(--foreground);
+  }
+}
+
+::selection {
+  background: var(--brass);
+  color: var(--background);
+}
+
+/* Scope classes re-declare the role tokens so anything dropped on that ground
+   resolves correctly. --field-edge is never re-declared by a scope. */
+@layer components {
+  /* The chrome ground: top nav, sidebar, drawers. */
+  .surface-sidebar {
+    --background: var(--sidebar);
+    --foreground: var(--sidebar-foreground);
+    --card: var(--sidebar);
+    --card-foreground: var(--sidebar-foreground);
+    --primary: var(--sidebar-primary);
+    --primary-foreground: var(--sidebar-primary-foreground);
+    --muted: var(--sidebar-accent);
+    --accent: var(--sidebar-accent);
+    --accent-foreground: var(--sidebar-accent-foreground);
+    --border: var(--sidebar-border);
+    --ring: var(--sidebar-ring);
+  }
+
+  /* Destructive zone — red is allowed to be loud here because it's state. */
+  .surface-danger {
+    background-color: color-mix(in oklch, var(--destructive) 5%, var(--card));
+    --border: color-mix(in oklch, var(--destructive) 30%, transparent);
+    --accent: color-mix(in oklch, var(--destructive) 8%, var(--background));
+    --accent-foreground: var(--destructive);
+    --ring: var(--destructive);
+  }
+}
+
+@layer utilities {
+  /* Vardo lining — a brass hairline tracing a panel's inset edge. Ornament,
+     used sparingly; never a status signal. */
+  .lining {
+    position: relative;
+  }
+  .lining::after {
+    content: "";
+    position: absolute;
+    inset: 0.4rem;
+    border: 1px solid color-mix(in oklch, var(--brass) 45%, transparent);
+    border-radius: calc(var(--radius) - 0.25rem);
+    pointer-events: none;
+  }
+}
+
+/* Squircle corners on one side only: the curve needs twice the radius. */
+@supports (corner-shape: squircle) {
+  .squircle {
+    &.rounded-l-2xl {
+      border-top-left-radius: calc(var(--radius-2xl) * 2);
+      border-bottom-left-radius: calc(var(--radius-2xl) * 2);
+      border-top-right-radius: 0;
+      border-bottom-right-radius: 0;
+    }
+    &.rounded-t-3xl {
+      border-top-left-radius: calc(var(--radius-3xl) * 2);
+      border-top-right-radius: calc(var(--radius-3xl) * 2);
+      border-bottom-left-radius: 0;
+      border-bottom-right-radius: 0;
+    }
+  }
+}
+
+@layer base {
+  * {
+    @apply outline-ring/50;
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    a,
+    button,
+    [role="button"],
+    [role="link"],
+    [data-clickable="true"] {
+      transition: background-color var(--duration-fast) var(--ease-out-quart),
+                  color var(--duration-fast) var(--ease-out-quart),
+                  box-shadow var(--duration-fast) var(--ease-out-quart),
+                  transform var(--duration-fast) var(--ease-out-quart);
+    }
+
+    button:hover,
+    [role="button"]:hover,
+    [data-clickable="true"]:hover {
+      filter: brightness(0.97);
+    }
+  }
+}
+
+@keyframes shine {
+  0% {
+    background-position: 0% 0%;
+  }
+  50% {
+    background-position: 100% 100%;
+  }
+  to {
+    background-position: 0% 0%;
+  }
+}
+
+@keyframes aurora {
+  0% {
+    background-position: 0% 50%;
+    transform: rotate(-5deg) scale(0.9);
+  }
+  25% {
+    background-position: 50% 100%;
+    transform: rotate(5deg) scale(1.1);
+  }
+  50% {
+    background-position: 100% 50%;
+    transform: rotate(-3deg) scale(0.95);
+  }
+  75% {
+    background-position: 50% 0%;
+    transform: rotate(3deg) scale(1.05);
+  }
+  100% {
+    background-position: 0% 50%;
+    transform: rotate(-5deg) scale(0.9);
+  }
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+@utility animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+/* Bottom sheet depth — scale main content down while a sheet is open. */
+html[data-bottom-sheet-open] body {
+  background-color: var(--backdrop);
+}
+
+html[data-bottom-sheet-open] [data-main-content] {
+  transform: scale(0.97);
+  border-top-left-radius: var(--radius-2xl);
+  border-top-right-radius: var(--radius-2xl);
+  overflow: hidden;
+  box-shadow: 0 25px 60px -12px rgba(0, 0, 0, 0.4);
+}
+
+/* Tiptap editor placeholder */
+.tiptap p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: var(--muted-foreground);
+  pointer-events: none;
+  height: 0;
+}

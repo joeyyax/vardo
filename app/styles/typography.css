@@ -1,6 +1,6 @@
 /* Console type recipes. Headings take the display face; body and controls take
    the body face. Color stays at the call site. Sizes, leading, weight and
-   tracking read the --type-* tokens in tokens.css, the same contract as the
+   tracking read the --type-* tokens in app/brand.css, the same contract as the
    uikit recipes. */
 
 @layer components {

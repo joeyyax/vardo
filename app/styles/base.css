@@ -1,45 +1,16 @@
-/* Element resets, layout container, global interaction transitions and the
-   reduced-motion guard. */
+/* Element resets, layout container and the reduced-motion guard. */
 
 .container {
   @apply mx-auto w-full px-6 lg:px-12;
   max-width: var(--breakpoint-xl);
 }
 
-/* Airy between panels, tight inside them. Panels read their own padding from
-   this so one value moves the whole page rhythm. */
-:root {
-  --pane-pad: 1.5rem;
-}
-@media (min-width: 640px) {
-  :root { --pane-pad: 1.75rem; }
-}
-
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border;
   }
   body {
     @apply bg-background text-foreground;
-  }
-
-  @media (hover: hover) and (pointer: fine) {
-    a,
-    button,
-    [role="button"],
-    [role="link"],
-    [data-clickable="true"] {
-      transition: background-color var(--duration-fast) var(--ease-out-quart),
-                  color var(--duration-fast) var(--ease-out-quart),
-                  box-shadow var(--duration-fast) var(--ease-out-quart),
-                  transform var(--duration-fast) var(--ease-out-quart);
-    }
-
-    button:hover,
-    [role="button"]:hover,
-    [data-clickable="true"]:hover {
-      filter: brightness(0.97);
-    }
   }
 }
 
@@ -52,13 +23,4 @@
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
-}
-
-/* Tiptap editor placeholder */
-.tiptap p.is-editor-empty:first-child::before {
-  content: attr(data-placeholder);
-  float: left;
-  color: var(--muted-foreground);
-  pointer-events: none;
-  height: 0;
 }
