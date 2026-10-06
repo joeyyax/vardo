@@ -2,25 +2,25 @@
 // Environment cloning
 //
 // Creates group-level environments (staging/preview) by fanning out
-// app-level environments and cloning env vars with updated refs.
+// app-level environments, each with a snapshot of its app's env.
 // ---------------------------------------------------------------------------
 
 import { db } from "@/lib/db";
 import {
   apps,
-  envVars,
   environments,
+  environmentEnv,
   groupEnvironments,
   domains,
 } from "@/lib/db/schema";
-import { eq, and, isNull } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import {
   generateEnvironmentSubdomain,
   generatePreviewSubdomain,
   getBaseDomain,
 } from "@/lib/domain-monitoring/auto-domain";
-import { extractExpressions, validateExpression } from "@/lib/env/resolve";
+import { snapshotEnv } from "@/lib/env/environment-env";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -117,53 +117,31 @@ export async function createGroupEnvironment(
 
   const projectEnvironments: GroupEnvironmentResult["projectEnvironments"] = [];
 
-  // Build a map of app name -> new environment ID for ref updates
-  const appEnvMap = new Map<string, string>();
-  for (const app of projectApps) {
-    appEnvMap.set(app.name, nanoid());
-  }
+  const strategyOf = (app: (typeof projectApps)[number]) =>
+    opts.appOverrides?.[app.id]?.strategy ?? app.cloneStrategy ?? "clone";
+  const envDomainOf = (app: (typeof projectApps)[number]) =>
+    opts.type === "preview" && opts.prNumber
+      ? generatePreviewSubdomain(app.name, opts.prNumber, org?.baseDomain)
+      : generateEnvironmentSubdomain(app.name, opts.name, org?.baseDomain);
 
-  // Build domain replacement map: production domain → preview domain
-  // Used during env var cloning to rewrite domain references automatically.
-  const domainReplacements = new Map<string, string>();
-  if (opts.type === "preview" && opts.prNumber) {
-    for (const app of projectApps) {
-      const previewDomain = generatePreviewSubdomain(
-        app.name,
-        opts.prNumber,
-        org?.baseDomain
-      );
-      // Load production domains for this app
-      const appDomains = await db.query.domains.findMany({
-        where: eq(domains.appId, app.id),
-      });
-      for (const d of appDomains) {
-        if (d.domain && previewDomain) {
-          domainReplacements.set(d.domain, previewDomain);
-        }
-      }
-    }
-  } else if (opts.type === "staging") {
-    for (const app of projectApps) {
-      const stagingDomain = generateEnvironmentSubdomain(
-        app.name,
-        opts.name,
-        org?.baseDomain
-      );
-      const appDomains = await db.query.domains.findMany({
-        where: eq(domains.appId, app.id),
-      });
-      for (const d of appDomains) {
-        if (d.domain && stagingDomain) {
-          domainReplacements.set(d.domain, stagingDomain);
-        }
-      }
+  // Production hostname -> this environment's hostname, for every app that gets one.
+  const cloned = projectApps.filter((app) => strategyOf(app) !== "skip");
+  const hostReplacements = new Map<string, string>();
+  if (cloned.length > 0) {
+    const prodDomains = await db.query.domains.findMany({
+      where: inArray(domains.appId, cloned.map((a) => a.id)),
+      columns: { appId: true, domain: true },
+    });
+    const envDomains = new Map(cloned.map((a) => [a.id, envDomainOf(a)]));
+    for (const d of prodDomains) {
+      const envDomain = envDomains.get(d.appId);
+      if (d.domain && envDomain) hostReplacements.set(d.domain, envDomain);
     }
   }
 
   for (const app of projectApps) {
     const override = opts.appOverrides?.[app.id];
-    const strategy = override?.strategy ?? app.cloneStrategy ?? "clone";
+    const strategy = strategyOf(app);
 
     // Skip apps marked as skip
     if (strategy === "skip") {
@@ -178,24 +156,8 @@ export async function createGroupEnvironment(
       continue;
     }
 
-    // Generate environment-specific domain
-    let envDomain: string | null = null;
-    if (opts.type === "preview" && opts.prNumber) {
-      envDomain = generatePreviewSubdomain(
-        app.name,
-        opts.prNumber,
-        org?.baseDomain
-      );
-    } else {
-      envDomain = generateEnvironmentSubdomain(
-        app.name,
-        opts.name,
-        org?.baseDomain
-      );
-    }
-
-    // Create app-level environment
-    const envId = appEnvMap.get(app.name)!;
+    const envDomain = envDomainOf(app);
+    const envId = nanoid();
     const envType = opts.type === "preview" ? "preview" : "staging";
 
     await db.insert(environments).values({
@@ -211,33 +173,13 @@ export async function createGroupEnvironment(
     // The hostname lives on the environment only. A domain row would route it
     // to, and strip hand-written labels from, the production deploy.
 
-    // Clone env vars from source (base vars, environmentId = NULL)
-    const sourceVars = await db.query.envVars.findMany({
-      where: and(
-        eq(envVars.appId, app.id),
-        isNull(envVars.environmentId)
-      ),
+    const snapshot = snapshotEnv({
+      appEnvContent: app.envContent,
+      organizationId: opts.organizationId,
+      hostReplacements,
+      strategy,
     });
-
-    // Clone vars, rewriting any domain references to point to the
-    // environment-specific domains (e.g. agents.example.com → agents-pr-166.example.com)
-    let clonedCount = 0;
-    for (const sourceVar of sourceVars) {
-      let clonedValue = sourceVar.value;
-      for (const [prodDomain, envDomain2] of domainReplacements) {
-        clonedValue = clonedValue.replaceAll(prodDomain, envDomain2);
-      }
-
-      await db.insert(envVars).values({
-        id: nanoid(),
-        appId: app.id,
-        key: sourceVar.key,
-        value: clonedValue,
-        isSecret: sourceVar.isSecret,
-        environmentId: envId,
-      });
-      clonedCount++;
-    }
+    await db.insert(environmentEnv).values({ environmentId: envId, envContent: snapshot.envContent });
 
     projectEnvironments.push({
       appId: app.id,
@@ -245,7 +187,7 @@ export async function createGroupEnvironment(
       environmentId: envId,
       domain: envDomain,
       cloneStrategy: strategy,
-      envVarCount: clonedCount,
+      envVarCount: snapshot.varCount,
     });
   }
 
@@ -265,7 +207,7 @@ export async function createGroupEnvironment(
  *
  * Cascading deletes handle most cleanup via ON DELETE CASCADE:
  * - group_environment deletion → environment records (via FK)
- * - environment deletion → env_var records (via FK)
+ * - environment deletion → environment_env and env_var records (via FK)
  *
  * Containers and domains need explicit cleanup.
  */

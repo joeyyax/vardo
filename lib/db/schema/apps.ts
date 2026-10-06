@@ -162,7 +162,7 @@ export const apps = pgTable(
 export { deployments } from "./deployments";
 export { envVars } from "./env-vars";
 export { domains, domainChecks } from "./domains";
-export { groupEnvironments, environments } from "./environments";
+export { groupEnvironments, environments, environmentEnv } from "./environments";
 export { tags, appTags } from "./tags";
 export { volumes, volumeLimits } from "./volumes";
 export { appTransfers } from "./app-transfers";

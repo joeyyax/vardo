@@ -13,6 +13,7 @@ import { DeployBlockedError } from "../errors";
 import { parseEnvToMap } from "@/lib/env/parse-env";
 import { resolveAllEnvVars, type ResolveContext } from "@/lib/env/resolve";
 import { externalVarResolver } from "./external-var";
+import { environmentEnvContent } from "../environment-env";
 import {
   isAnonymousVolume,
   composeToYaml,
@@ -227,10 +228,15 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
         eq(apps.parentAppId, app.id),
         eq(apps.organizationId, ctx.organizationId),
       ),
-      columns: { composeService: true, exposedPorts: true, envContent: true },
+      columns: { id: true, composeService: true, exposedPorts: true, envContent: true },
     });
     for (const child of childApps) {
       if (!child.composeService) continue;
+      if (ctx.envIsolated) {
+        const own = await environmentEnvContent(child.id, ctx.envName);
+        if (own !== null) child.envContent = own;
+        else if (child.envContent) ctx.log(`[deploy] Warning: service ${child.composeService} has no ${ctx.envName} env of its own — deploying with production's`);
+      }
       if (child.exposedPorts) {
         const ports = child.exposedPorts as { internal: number; external?: number; protocol?: string }[];
         if (ports.length > 0) {
@@ -325,6 +331,8 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
         organizationId: ctx.organizationId,
         projectId: app.projectId,
         groupEnvironmentId: ctx.groupEnvironmentId,
+        environmentName: ctx.envIsolated ? ctx.envName : undefined,
+        log: ctx.log,
       }),
     };
 

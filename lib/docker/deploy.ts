@@ -3,7 +3,7 @@ import { statusChange } from "@/lib/db/app-status";
 import { deployments, apps, organizations, environments, projects, domains } from "@/lib/db/schema";
 import { decryptOrFallback } from "@/lib/crypto/encrypt";
 import { parseEnvToMap } from "@/lib/env/parse-env";
-import { eq, and, inArray, isNotNull } from "drizzle-orm";
+import { eq, and, inArray, isNotNull, ne } from "drizzle-orm";
 import { logger } from "@/lib/logger";
 import { redactSecrets } from "@/lib/redact";
 import { nanoid } from "nanoid";
@@ -40,6 +40,8 @@ import {
 } from "./rollback-target";
 import { execFileAsync } from "@/lib/utils/exec";
 import { environmentDomains, withoutEnvironmentHosts } from "./environment-domains";
+import { loadEnvironmentEnv } from "./environment-env";
+import { productionHostRefs } from "@/lib/env/environment-env";
 
 export type { DeployStage } from "./deploy-logger";
 
@@ -90,6 +92,28 @@ export async function createDeployment(opts: DeployOpts): Promise<string> {
     .returning({ id: deployments.id });
 
   return deployment.id;
+}
+
+/** The app's production hostnames and those of the other apps in its project. */
+async function productionHostsFor(
+  appId: string,
+  projectId: string | null,
+  appDomains: { domain: string }[],
+  environmentHost: string | null,
+): Promise<string[]> {
+  const hosts = new Set(appDomains.map((d) => d.domain));
+  if (projectId) {
+    const siblings = await db.query.domains.findMany({
+      where: inArray(
+        domains.appId,
+        db.select({ id: apps.id }).from(apps).where(and(eq(apps.projectId, projectId), ne(apps.id, appId))),
+      ),
+      columns: { domain: true },
+    });
+    for (const d of siblings) hosts.add(d.domain);
+  }
+  if (environmentHost) hosts.delete(environmentHost);
+  return [...hosts];
 }
 
 export async function runDeployment(
@@ -297,6 +321,11 @@ export async function runDeployment(
       projectAllowDockerSocket = project?.allowDockerSocket ?? false;
     }
 
+    // Hostnames a non-default environment's env must not point at.
+    const productionHosts = resolvedEnv.isDefault
+      ? []
+      : await productionHostsFor(app.id, app.projectId, app.domains, resolvedEnv.domain);
+
     if (resolvedEnv.isDefault) {
       const groupEnvHosts = await db.query.environments.findMany({
         where: and(
@@ -361,6 +390,18 @@ export async function runDeployment(
       applyRollbackEnv(app as DeployContext["app"], rollbackTarget, log);
     }
 
+    // A non-default environment deploys with its own env, or the app's when it predates snapshots.
+    let envFromApp = true;
+    if (!resolvedEnv.isDefault && resolvedEnv.id && !(rollbackTarget?.includeEnvVars && rollbackTarget.envSnapshot)) {
+      const own = await loadEnvironmentEnv(resolvedEnv.id);
+      if (own !== null) {
+        app.envContent = own;
+        envFromApp = false;
+      } else {
+        log(`[deploy] Warning: environment ${envName} has no env of its own — deploying with the app's env`);
+      }
+    }
+
     // Load env vars from encrypted blob
     const envMap: Record<string, string> = {};
     if (app.envContent) {
@@ -379,7 +420,7 @@ export async function runDeployment(
       }
       if (envText) {
         Object.assign(envMap, parseEnvToMap(envText));
-        if (!wasEncrypted) {
+        if (!wasEncrypted && envFromApp) {
           log("[deploy] Warning: env vars were not encrypted — auto-encrypting");
           try {
             const { encrypt } = await import("@/lib/crypto/encrypt");
@@ -389,6 +430,10 @@ export async function runDeployment(
           } catch { /* best-effort */ }
         }
       }
+    }
+
+    for (const { key, host } of productionHostRefs(envMap, productionHosts)) {
+      log(`[deploy] Warning: ${key} points at production's ${host}`);
     }
 
     const totalEnvVarCount = Object.keys(envMap).length;

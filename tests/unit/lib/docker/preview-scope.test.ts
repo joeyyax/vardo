@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
+process.env.ENCRYPTION_MASTER_KEY = "1".repeat(64);
+
 // A PR on tools-api once cloned and deployed every app in the homelab "AI"
 // project, notes-api included. A preview covers the PR repo's apps,
 // their compose children and their declared dependencies — nothing else.

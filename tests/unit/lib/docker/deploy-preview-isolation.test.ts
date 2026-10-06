@@ -58,6 +58,7 @@ const { dbMock, statusWrites, captured, envRows, groupEnvHosts } = vi.hoisted(()
         findFirst: vi.fn(async () => envRows.shift() ?? null),
         findMany: vi.fn(async () => groupEnvHosts),
       },
+      environmentEnv: { findFirst: vi.fn().mockResolvedValue(undefined) },
       deployments: { findFirst: vi.fn().mockResolvedValue(null) },
     },
     select: vi.fn().mockReturnValue({ from: () => ({ where: () => Promise.resolve([]) }) }),
