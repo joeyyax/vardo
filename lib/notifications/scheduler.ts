@@ -1,19 +1,40 @@
-import { tickNotificationRetries } from "./retry";
+import { dropStaleRetries, tickNotificationRetries } from "./retry";
 import { logger } from "@/lib/logger";
 
 const log = logger.child("notifications");
 
+const TICK_MS = 30_000;
+/** A retry due longer ago than this describes an event nobody wants paged about now. */
+export const STALE_RETRY_MS = 60 * 60_000;
+
+let started = false;
 let interval: NodeJS.Timeout | null = null;
 
-export function startNotificationRetryScheduler(): void {
-  if (interval) return;
+/** Per process; the tick's Redis lock keeps a second worker or slot from double-sending. */
+export async function startNotificationRetryScheduler(): Promise<void> {
+  if (started) return;
+  started = true;
 
-  log.info("Retry scheduler started (30s interval)");
+  try {
+    const dropped = await dropStaleRetries(STALE_RETRY_MS);
+    if (dropped > 0) log.info(`Dropped ${dropped} queued notification retr${dropped === 1 ? "y" : "ies"} older than 1h`);
+  } catch (err) {
+    log.error("Stale retry cleanup failed:", err);
+  }
+
+  if (!started) return;
   interval = setInterval(async () => {
     try {
       await tickNotificationRetries();
     } catch (err) {
       log.error("Retry tick error:", err);
     }
-  }, 30_000);
+  }, TICK_MS);
+  log.info(`Retry scheduler started (${TICK_MS / 1000}s interval)`);
+}
+
+export function stopNotificationRetryScheduler(): void {
+  started = false;
+  if (interval) clearInterval(interval);
+  interval = null;
 }

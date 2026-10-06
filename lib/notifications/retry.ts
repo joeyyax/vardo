@@ -10,7 +10,7 @@
  */
 
 import { redis } from "@/lib/redis";
-import { acquireLock } from "@/lib/redis-lock";
+import { acquireLock, releaseLock } from "@/lib/redis-lock";
 import { db } from "@/lib/db";
 import { notificationChannels, notificationLogs } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
@@ -22,6 +22,7 @@ import { logger } from "@/lib/logger";
 const log = logger.child("notifications");
 
 const RETRY_KEY = "vardo:notification:retry";
+const LOCK_KEY = "lock:notification-retry";
 const MAX_ATTEMPTS = 3;
 const MAX_QUEUE_LENGTH = 500; // circuit breaker - drop oldest if exceeded
 const BACKOFF_MS = [0, 5_000, 15_000]; // immediate, 5s, 15s
@@ -55,6 +56,35 @@ export async function enqueueRetry(entry: Omit<RetryEntry, "attempt" | "retryAft
 }
 
 /**
+ * Drop queued retries that came due more than `maxAgeMs` ago. Returns how many.
+ * Holds the tick's lock so it never races a tick on another worker.
+ */
+export async function dropStaleRetries(maxAgeMs: number): Promise<number> {
+  const len = await redis.llen(RETRY_KEY);
+  if (len === 0) return 0;
+  if (!(await acquireLock(LOCK_KEY, 30_000))) return 0;
+  try {
+    const cutoff = Date.now() - maxAgeMs;
+    const kept: string[] = [];
+    let dropped = 0;
+    for (let i = 0; i < len; i++) {
+      const raw = await redis.rpop(RETRY_KEY);
+      if (!raw) break;
+      let entry: RetryEntry | null = null;
+      try {
+        entry = JSON.parse(raw);
+      } catch { /* corrupt, dropped */ }
+      if (entry && entry.retryAfter >= cutoff) kept.push(raw);
+      else dropped++;
+    }
+    if (kept.length > 0) await redis.lpush(RETRY_KEY, ...kept);
+    return dropped;
+  } finally {
+    await releaseLock(LOCK_KEY);
+  }
+}
+
+/**
  * Process the retry queue. Call every 30s from the scheduler.
  * Pops entries that are past their backoff time and retries them.
  */
@@ -63,9 +93,16 @@ export async function tickNotificationRetries(): Promise<void> {
   if (len === 0) return;
 
   // Distributed lock - prevents multiple workers processing the same entries
-  const locked = await acquireLock("lock:notification-retry", 30_000);
+  const locked = await acquireLock(LOCK_KEY, 30_000);
   if (!locked) return;
+  try {
+    await processRetries(len);
+  } finally {
+    await releaseLock(LOCK_KEY);
+  }
+}
 
+async function processRetries(len: number): Promise<void> {
   const now = Date.now();
   const requeue: string[] = [];
 

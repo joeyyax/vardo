@@ -1,11 +1,12 @@
 import { startNotificationConsumer, stopNotificationConsumer } from "@/lib/notifications/stream-consumer";
+import { startNotificationRetryScheduler, stopNotificationRetryScheduler } from "@/lib/notifications/scheduler";
 import { isFeatureEnabled } from "@/lib/config/features";
 import { logger } from "@/lib/logger";
 
 const log = logger.child("notifications");
 
 /**
- * Start the notification stream consumer.
+ * Start the notification stream consumer and the retry scheduler.
  */
 export async function registerNotificationsPlugin(): Promise<void> {
   if (!isFeatureEnabled("notifications")) {
@@ -18,9 +19,14 @@ export async function registerNotificationsPlugin(): Promise<void> {
   });
 
   log.info("Notification consumer started");
+
+  startNotificationRetryScheduler().catch((err) => {
+    log.error("Failed to start notification retry scheduler:", err);
+  });
 }
 
 /** Graceful shutdown. */
 export async function stopNotificationsPlugin(): Promise<void> {
+  stopNotificationRetryScheduler();
   await stopNotificationConsumer();
 }
