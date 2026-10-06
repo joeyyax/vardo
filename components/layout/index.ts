@@ -1,6 +1,0 @@
-export { Sidebar } from "./sidebar"
-export { SidebarNav } from "./sidebar-nav"
-export { MobileSidebar } from "./mobile-sidebar"
-export { TopNav } from "./top-nav"
-export { OrgSwitcher } from "./org-switcher"
-export { UserMenu } from "./user-menu"
