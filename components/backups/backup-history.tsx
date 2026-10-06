@@ -82,14 +82,14 @@ export function BackupHistory({
     <div className="squircle rounded-lg bg-background-deep overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b">
-            <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground">Status</th>
-            <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground">App</th>
-            <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground">Job</th>
-            <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground">Runtime</th>
-            <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground">Size</th>
-            <th className="px-4 py-2 text-left text-xs font-medium text-muted-foreground">Created</th>
-            <th className="px-4 py-2 text-right text-xs font-medium text-muted-foreground">
+          <tr className="bg-background-deep">
+            <th className="px-4 py-2 text-left type-label text-muted-foreground">Status</th>
+            <th className="px-4 py-2 text-left type-label text-muted-foreground">App</th>
+            <th className="px-4 py-2 text-left type-label text-muted-foreground">Job</th>
+            <th className="px-4 py-2 text-left type-label text-muted-foreground">Runtime</th>
+            <th className="px-4 py-2 text-left type-label text-muted-foreground">Size</th>
+            <th className="px-4 py-2 text-left type-label text-muted-foreground">Created</th>
+            <th className="px-4 py-2 text-right type-label text-muted-foreground">
               <span className="sr-only">Actions</span>
             </th>
           </tr>

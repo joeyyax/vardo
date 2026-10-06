@@ -148,7 +148,7 @@ export function JobForm({
             </div>
 
             <div className="grid gap-2">
-              <Label className="text-sm font-medium">Retention</Label>
+              <Label>Retention</Label>
               <p className="text-xs text-muted-foreground">
                 How many snapshots to keep at each tier. Older backups are pruned automatically.
               </p>

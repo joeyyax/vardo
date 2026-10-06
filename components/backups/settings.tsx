@@ -108,7 +108,7 @@ export function BackupSettings() {
   return (
     <div className="space-y-10">
       <div className="space-y-1">
-        <h2 className="text-lg font-medium">Backups</h2>
+        <h2 className="type-h2">Backups</h2>
         <p className="text-sm text-muted-foreground">
           Configure the system-wide backup storage target. This is the default target for automatic backups across all organizations.
         </p>
@@ -264,7 +264,7 @@ export function BackupSettings() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="@container squircle rounded-lg bg-card shadow-card dark:border">
           <div className="p-6 @lg:p-7 space-y-3">
-            <h3 className="text-sm font-medium">How it works</h3>
+            <h3 className="type-h3">How it works</h3>
             <ul className="text-sm space-y-2">
               <li className="flex items-start gap-2.5">
                 <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
@@ -299,7 +299,7 @@ export function BackupSettings() {
         </div>
         <div className="@container squircle rounded-lg bg-card shadow-card dark:border">
           <div className="p-6 @lg:p-7 space-y-3">
-            <h3 className="text-sm font-medium">Good to know</h3>
+            <h3 className="type-h3">Good to know</h3>
             <ul className="text-sm space-y-2">
               <li className="flex items-start gap-2.5">
                 <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />

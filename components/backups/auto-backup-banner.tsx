@@ -47,7 +47,7 @@ export function AutoBackupBanner({
             />
           )}
           <div className="space-y-1">
-            <h3 className="text-sm font-medium">
+            <h3 className="type-h4">
               {running.length > 0
                 ? `Backing up now — ${running.length} job${running.length === 1 ? "" : "s"} in flight`
                 : failures.length > 0

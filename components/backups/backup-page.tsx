@@ -143,7 +143,7 @@ export function BackupPage({
         />
       ) : showIntro ? (
         <div className="space-y-1">
-          <h2 className="text-lg font-medium">Backups</h2>
+          <h2 className="type-h2">Backups</h2>
           <p className="text-sm text-muted-foreground">
             {scope === "admin"
               ? "Manage system-wide backup targets, retention policies, and view backup history across all organizations."
@@ -265,7 +265,7 @@ export function BackupPage({
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="@container squircle rounded-lg bg-card shadow-card dark:border">
           <div className="p-6 @lg:p-7 space-y-3">
-            <h3 className="text-sm font-medium">What&apos;s in a backup</h3>
+            <h3 className="type-h3">What&apos;s in a backup</h3>
             <ul className="text-sm space-y-2">
               <li className="flex items-start gap-2.5">
                 <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
@@ -284,7 +284,7 @@ export function BackupPage({
         </div>
         <div className="@container squircle rounded-lg bg-card shadow-card dark:border">
           <div className="p-6 @lg:p-7 space-y-3">
-            <h3 className="text-sm font-medium">How it works</h3>
+            <h3 className="type-h3">How it works</h3>
             <ul className="text-sm space-y-2">
               <li className="flex items-start gap-2.5">
                 <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
@@ -303,7 +303,7 @@ export function BackupPage({
         </div>
         <div className="@container squircle rounded-lg bg-card shadow-card dark:border">
           <div className="p-6 @lg:p-7 space-y-3">
-            <h3 className="text-sm font-medium">Good to know</h3>
+            <h3 className="type-h3">Good to know</h3>
             <ul className="text-sm space-y-2">
               <li className="flex items-start gap-2.5">
                 <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
