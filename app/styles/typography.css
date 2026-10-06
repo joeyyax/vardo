@@ -4,7 +4,7 @@
 @layer components {
   /* Page title */
   .type-h1 {
-    font-family: var(--font-display-sans);
+    font-family: --theme(--font-display);
     font-size: 3rem;
     line-height: 1.02;
     font-weight: 700;
@@ -13,7 +13,7 @@
   }
   /* Section / card title */
   .type-h2 {
-    font-family: var(--font-display-sans);
+    font-family: --theme(--font-display);
     font-size: 1.75rem;
     line-height: 1.2;
     font-weight: 650;
@@ -22,7 +22,7 @@
   }
   /* Subsection title */
   .type-h3 {
-    font-family: var(--font-display-sans);
+    font-family: --theme(--font-display);
     font-size: 1.25rem;
     line-height: 1.3;
     font-weight: 600;
@@ -31,7 +31,7 @@
   /* Card-internal group title. Sits at body size so a card can name its parts
      without competing with the section above it. */
   .type-h4 {
-    font-family: var(--font-display-sans);
+    font-family: --theme(--font-display);
     font-size: 1rem;
     line-height: 1.35;
     font-weight: 600;
@@ -67,7 +67,7 @@
   /* Small-caps meta label — pair with text-muted-foreground, or text-brass
      for the trim voice. */
   .type-label {
-    font-family: var(--font-geist-mono);
+    font-family: --theme(--font-mono);
     font-size: 11px;
     line-height: 1.35;
     font-weight: 500;
