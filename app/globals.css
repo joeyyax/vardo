@@ -1,11 +1,14 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
-/* Kit layer, then the brand, then what the console adds. */
+/* @uikit/base-core, then the brand, then what the console adds. */
 @import "./styles/theme.css";
 @import "./styles/tokens.css";
 @import "./styles/typography.css";
+@import "./styles/layout.css";
 @import "./styles/surfaces.css";
+@import "./styles/effects.css";
+@import "./styles/environments.css";
 @import "./styles/base.css";
 @import "./brand.css";
 @import "./console.css";

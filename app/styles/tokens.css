@@ -1,12 +1,95 @@
-/* Runtime tokens the kit layer owns. Brand values live in app/brand.css. */
+/* Runtime tokens the kit owns: easing, card shadows and the
+   .surface-brand scope. Brand values (color roles, radius, fonts) live in the
+   project's brand.css, imported after this file. Tailwind config lives in
+   theme.css. */
 
 :root {
   color-scheme: light;
+
+  /* Motion vocabulary — one easing set for the whole site.
+     Durations: 150ms micro, 250ms hover, 400ms reveal, 1100ms ring draw. */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: linear(
+    0, 0.019, 0.073, 0.155, 0.259, 0.378, 0.505, 0.635, 0.762 28%,
+    0.98 38%, 1.055 46%, 1.072 52%, 1.061 60%, 1.021 74%, 1.001 86%, 1
+  );
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+
+  /* Card elevation: a tight contact tier and a wide ambient tier, tinted ink-navy. */
+  --shadow-card-value: 0 1px 3px rgba(18, 26, 64, 0.05), 0 8px 22px rgba(18, 26, 64, 0.06);
+  --shadow-card-hover-value: 0 2px 5px rgba(18, 26, 64, 0.06), 0 16px 36px rgba(18, 26, 64, 0.1);
+  /* Scroll-stack depth: a soft upward glow on an incoming layer's top edge. */
+  --shadow-stack-value: 0 -20px 44px -16px rgba(18, 26, 64, 0.16);
 }
 
-/* Screen only, so print always takes the light tokens. */
+/* Ink-navy dark mode — a real dark room, not an inversion. Class strategy on
+   <html>, persisted in localStorage, seeded from prefers-color-scheme by the
+   no-flash script in layout.tsx. */
 @media screen {
   .dark {
     color-scheme: dark;
+
+    --shadow-card-value: 0 1px 3px rgba(0, 0, 0, 0.5), 0 8px 22px rgba(0, 0, 0, 0.45);
+    --shadow-card-hover-value: 0 2px 5px rgba(0, 0, 0, 0.55), 0 16px 36px rgba(0, 0, 0, 0.5);
+    --shadow-stack-value: 0 -20px 44px -16px rgba(0, 0, 0, 0.55);
+    /* Re-resolved so a nested .dark (a dark Section on a light page) reads its own values. */
+    --shadow-card: var(--shadow-card-value);
+    --shadow-card-hover: var(--shadow-card-hover-value);
+    --shadow-stack: var(--shadow-stack-value);
   }
+}
+
+/* Cobalt brand surface — the same trick as `.dark` above (re-declare the role
+   tokens so every descendant that reads them via plain utilities/`.type-*`
+   recipes resolves correctly), scoped to the cobalt ground instead of a dark
+   room. `Section tone="brand"` and `Card variant="brand"` apply this class.
+   Before this existed, `bg-primary text-primary-foreground` set the surface
+   but never re-scoped `--tertiary`/`--foreground-soft`/etc., so anything
+   using those (`.type-kicker`, a subhead) rendered its cream-calibrated color
+   — illegible on cobalt — which is why CtaBand hand-patched a `!important`
+   kicker override instead of just working like `.dark` already did.
+
+   `--primary`/`--primary-foreground` invert meaning in here: outside this
+   scope `--primary` IS the cobalt signal; inside it we're already standing
+   on the signal, so `--primary` becomes "the color that pops off this
+   ground" — white — and a `variant="primary"` Button turns into a white pill
+   with cobalt text automatically (the "Book a call" treatment that used to
+   be a manual tone-swap to `secondary`). `--background`/`--foreground`
+   become the ground itself (cobalt/white), same relationship `.dark`'s
+   `--background`/`--foreground` have to the dark room. Contrast ratios below
+   are measured against Quiet Canvas's cobalt ground (oklch(50.3% 0.26 265.5), #1d46f5). */
+@media screen {
+  .surface-brand {
+    --background: var(--brand); /* the signal color, now a ground */
+    --foreground: oklch(100% 0 0);
+    --card: color-mix(in oklch, white 8%, var(--background));
+    --card-foreground: oklch(100% 0 0);
+
+    --primary: oklch(100% 0 0);
+    --primary-foreground: var(--brand);
+    /* no darker "signal" tier exists once you're standing on the signal
+       color itself — same white as the primary pair. */
+    --primary-strong: oklch(100% 0 0);
+    /* Kept darker than the +8% card so the quiet text-tertiary that rides this
+       fill (neutral Chip, `muted` List row) clears AA on cobalt — ~4.6:1 at +5%;
+       the +10% it used to be only reached 4.1:1. Still lifts clear of the ground. */
+    --secondary: color-mix(in oklch, white 5%, var(--background));
+    --secondary-foreground: oklch(100% 0 0);
+    --muted: color-mix(in oklch, white 3%, var(--background));
+    --muted-foreground: color-mix(in oklch, white 82%, var(--background)); /* ~4.95:1 */
+    --accent: color-mix(in oklch, white 14%, var(--background));
+    --accent-foreground: oklch(100% 0 0);
+    --border: color-mix(in oklch, white 22%, var(--background));
+    --ring: oklch(100% 0 0);
+
+    --foreground-soft: color-mix(in oklch, white 90%, var(--background)); /* ~5.6:1 */
+    /* the workhorse text-emphasis tier — MUST clear AA here since
+       `.type-kicker` (every section kicker) rides this token directly. */
+    --tertiary: color-mix(in oklch, white 85%, var(--background)); /* ~5.2:1 */
+  }
+}
+
+::selection {
+  background: var(--primary);
+  color: var(--primary-foreground);
 }

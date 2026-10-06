@@ -1,9 +1,5 @@
-/* Element resets, layout container and the reduced-motion guard. */
-
-.container {
-  @apply mx-auto w-full px-6 lg:px-12;
-  max-width: var(--breakpoint-xl);
-}
+/* Base layer — element resets (border color, body ground/type) and the global
+   reduced-motion guard. */
 
 @layer base {
   * {
@@ -11,16 +7,52 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-feature-settings: "kern";
+    /* Prevent orphans/widows in running copy site-wide; headings override
+       with text-wrap: balance in their recipes. Degrades gracefully. */
+    text-wrap: pretty;
   }
-}
+  html {
+    @apply font-sans;
+  }
 
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
+  /* Respect the OS "reduce motion" setting — neutralize transitions, CSS
+     animations, and smooth scrolling for users who opt out. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      /* Delays too, not just durations. The observer writes a stagger delay
+         as an inline `transition-delay`, and a collapsed duration behind a
+         0.6s delay is still 0.6s of an invisible element. */
+      animation-delay: 0s !important;
+      transition-delay: 0s !important;
+      scroll-behavior: auto !important;
+    }
+
+    /* Reveals render at opacity 0 until something flips them on — force
+       every animated leaf visible and unmoved. This is the guarantee; the
+       reduced-motion gates in components are the optimization that stops the
+       work. */
+    [data-motion] {
+      opacity: 1 !important;
+      transform: none !important;
+      translate: none !important;
+      /* `scale` is an independent property in this codebase, not a transform
+         function (see .press and .badge-pop in effects.css) — `transform:
+         none` does not touch it, so anything revealed by scaling would rest
+         at its from-value: shrunken, permanently. */
+      scale: none !important;
+      clip-path: none !important;
+      /* Neutralize the rise at its source, not just its effect. The minifier
+         folds a rule's transform/translate/scale into a single `transform`
+         and drops the standalone properties — which leaves reveal.css's
+         `translate: 0 var(--reveal-rise)` applying, and every leaf visible
+         but permanently 8px low. A custom property can't be folded away. */
+      --reveal-rise: 0px !important;
+    }
   }
 }

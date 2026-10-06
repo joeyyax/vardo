@@ -1,0 +1,51 @@
+/* Toast motion: slide and fade in, follow a swipe, fling off on release. */
+
+@layer utilities {
+  /* Toast — slides/fades in on mount, swipe follows the pointer 1:1 and a
+     released swipe flings it the rest of the way off-screen. Driven by
+     Radix's own data-state/data-swipe attributes, no framer-motion needed. */
+  .toast-item[data-state="open"] {
+    animation: toast-in 350ms var(--ease-out) 1 both;
+  }
+  .toast-item[data-state="closed"] {
+    animation: toast-out 200ms var(--ease-out) 1 both;
+  }
+  .toast-item[data-swipe="move"] {
+    transform: translateX(var(--radix-toast-swipe-move-x));
+  }
+  .toast-item[data-swipe="cancel"] {
+    transform: translateX(0);
+    transition: transform 200ms var(--ease-out);
+  }
+  .toast-item[data-swipe="end"] {
+    animation: toast-swipe-out 150ms var(--ease-out) 1 both;
+  }
+  @keyframes toast-in {
+    from {
+      opacity: 0;
+      transform: translateY(16px) scale(0.95);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+  @keyframes toast-out {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+  @keyframes toast-swipe-out {
+    from {
+      transform: translateX(var(--radix-toast-swipe-end-x));
+      opacity: 1;
+    }
+    to {
+      transform: translateX(calc(100% + 24px));
+      opacity: 0;
+    }
+  }
+}

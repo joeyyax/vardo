@@ -1,0 +1,132 @@
+/* Environments the site renders into that aren't a normal screen — paper,
+   a forced palette, and a raised-contrast preference. Each one breaks a
+   different assumption the rest of the sheet makes: print never runs the JS
+   that triggers reveals, forced-colors strips every shadow and background,
+   and prefers-contrast says the quiet text tiers are too quiet.
+
+   Kept in one file because they share a shape — none of them is a theme, all
+   of them are "the ground rules changed". The .dark and .surface-brand scopes
+   in tokens.css and brand.css are wrapped in @media screen, so print gets the light
+   palette for free and isn't repeated here. */
+
+@layer utilities {
+  /* ---------------------------------------------------------------------
+     PRINT
+     --------------------------------------------------------------------- */
+  @media print {
+    /* Reveals SSR at opacity 0 and are flipped visible by an observer that
+       never runs in a print context — everything below the fold would print
+       blank. Collapsed as well as pinned: a print stylesheet applied
+       mid-transition otherwise starts a 400ms animation toward the pinned
+       value, and the page can be painted before it lands. */
+    [data-motion] {
+      /* `transition: none`, not a collapsed duration. A transition that has
+         already STARTED keeps the timing it started with — shortening the
+         duration doesn't retarget it, so a page captured mid-sequence prints
+         the items part-way through their fade. Removing the property cancels
+         the running transition outright and the element jumps to the pinned
+         value below. This is what makes a full-page screenshot taken right
+         after load safe. */
+      transition: none !important;
+      animation: none !important;
+      opacity: 1 !important;
+      transform: none !important;
+      translate: none !important;
+      /* `scale` is an independent property here, not a transform function
+         (see .press and .badge-pop) — `transform: none` does not reset it,
+         so anything revealed by scaling would otherwise print shrunken. */
+      scale: none !important;
+      clip-path: none !important;
+      /* See the same line in base.css — the minifier folds the three
+         transform properties into one and drops `translate`, so the rise has
+         to be neutralized at its source. */
+      --reveal-rise: 0px !important;
+    }
+
+    /* Chrome that means nothing on paper. The nav floats over content and
+       would print across the first paragraph; toasts and dialogs are
+       transient by definition. */
+    div:has(> nav[aria-label="Main"]),
+    [data-radix-toast-viewport],
+    [role="dialog"],
+    [role="tooltip"] {
+      display: none !important;
+    }
+
+    /* Shadows print as gray mud; the cards still need an edge. */
+    .pill-card,
+    .pill-card-glass,
+    .pill-card-recessed,
+    .pill-card-brand {
+      box-shadow: none !important;
+      border: 1px solid #999 !important;
+      /* A card split across a page break loses the thing that made it one
+         object. */
+      break-inside: avoid;
+    }
+
+    /* Backdrop blur costs a raster pass and buys nothing on paper. */
+    .pill-card-glass {
+      backdrop-filter: none !important;
+      -webkit-backdrop-filter: none !important;
+      background-color: transparent !important;
+    }
+
+    /* Decorative texture only adds toner. */
+    .dot-grid {
+      background-image: none !important;
+    }
+
+    h1,
+    h2,
+    h3 {
+      break-after: avoid;
+    }
+  }
+
+  /* ---------------------------------------------------------------------
+     FORCED COLORS (Windows High Contrast and friends)
+     --------------------------------------------------------------------- */
+  @media (forced-colors: active) {
+    /* THE ONE THAT MATTERS. Tailwind's `ring-*` focus indicators are
+       box-shadows, and forced-colors strips every box-shadow — so a site
+       whose entire focus treatment is a ring has NO visible focus at all in
+       this mode, which is the one mode most likely to be keyboard-driven.
+       An outline is honored; a ring is not. */
+    :focus-visible {
+      outline: 2px solid Highlight !important;
+      outline-offset: 2px;
+    }
+
+    /* Every surface in this sheet lifts on shadow with no hairline in light
+       mode (see .pill-card). With shadows stripped, a card becomes invisible
+       — it needs a real border or it stops being an object. */
+    .pill-card,
+    .pill-card-glass,
+    .pill-card-recessed,
+    .pill-card-brand {
+      border: 1px solid CanvasText;
+    }
+
+    /* Texture and marker washes carry no meaning and render as flat blocks
+       that can sit on top of text. */
+    .dot-grid {
+      background-image: none;
+    }
+  }
+}
+
+/* ---------------------------------------------------------------------
+   RAISED CONTRAST
+   --------------------------------------------------------------------- */
+/* Unlayered, and doubled selectors outrank the :root and .dark in any brand.css. */
+@media (prefers-contrast: more) {
+  :root:root,
+  .dark.dark,
+  .surface-brand.surface-brand {
+    --muted-foreground: var(--foreground);
+    --foreground-soft: var(--foreground);
+    --tertiary: var(--foreground);
+    --border: color-mix(in oklch, var(--foreground) 60%, var(--background));
+  }
+}

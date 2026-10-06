@@ -1,78 +1,199 @@
-/* Console type recipes. Headings take the display face; body and controls take
-   the body face. Color stays at the call site. Sizes, leading, weight and
-   tracking read the --type-* tokens in app/brand.css, the same contract as the
-   uikit recipes. */
+/* Type system — the .type-* recipes. The heading ladder stays in @layer
+   components (call-site utilities override them); the display/kicker/hand
+   helpers stay in @layer utilities. Prose lives in marketing.css. */
 
 @layer components {
-  /* Page title */
-  .type-h1 {
-    font-family: --theme(--font-display);
-    font-size: var(--type-h1-size);
-    line-height: var(--type-h1-leading);
-    font-weight: var(--type-h1-weight);
-    letter-spacing: var(--type-h1-tracking);
-    text-wrap: balance;
-  }
-  /* Section title */
-  .type-h2 {
-    font-family: --theme(--font-display);
-    font-size: var(--type-h2-size);
-    line-height: var(--type-h2-leading);
-    font-weight: var(--type-h2-weight);
-    letter-spacing: var(--type-h2-tracking);
-    text-wrap: balance;
-  }
-  /* Card / panel title */
-  .type-h3 {
-    font-family: --theme(--font-display);
-    font-size: var(--type-h3-size);
-    line-height: var(--type-h3-leading);
-    font-weight: var(--type-h3-weight);
-    letter-spacing: var(--type-h3-tracking);
-  }
-  /* Group title inside a card. Body size; weight and face carry it. */
-  .type-h4 {
-    font-family: --theme(--font-display);
-    font-size: var(--type-h4-size);
-    line-height: var(--type-h4-leading);
-    font-weight: var(--type-h4-weight);
-    letter-spacing: var(--type-h4-tracking);
+  /* Body copy sizes — the plain paragraph scale, kept independent of color
+     (pair with text-foreground/text-foreground-soft/text-muted-foreground at the
+     call site, same as before) since the same size legitimately shows up
+     in a few different tones. Mirrors the raw text-[Npx] leading-relaxed
+     strings that were hand-copied across sections/pages before this. */
+  .type-body-lg {
+    font-size: 16px;
+    line-height: 1.625;
   }
   .type-body {
-    font-size: 0.9375rem;
-    line-height: 1.6;
+    font-size: 15px;
+    line-height: 1.625;
   }
   .type-body-sm {
-    font-size: 0.875rem;
-    line-height: 1.55;
+    font-size: 14px;
+    line-height: 1.625;
   }
-  /* Metric voice — no size baked; pair with a size utility. */
-  .type-numeral {
-    font-variant-numeric: tabular-nums;
-    font-weight: 600;
+
+  /* Lead paragraph — one step up from body-lg (privacy/service intros, About). */
+  .type-body-xl {
+    font-size: 17px;
+    line-height: 1.625;
+  }
+
+  /* Hero subhead — the responsive paragraph under a .type-h1. */
+  .type-subhead {
+    font-size: clamp(1.05rem, 1.6vw, 1.25rem);
+    line-height: 1.625;
+  }
+
+  /* Heading ladder — h1/h2/h3 share .type-display's voice (Bricolage 750,
+     -0.03em, 1.05), differing only in baked clamp. VISUAL size tiers,
+     independent of the HTML tag used for outline; call sites override with a
+     className for genuine one-offs (the homepage hero, HeroBlock compact).
+
+     .type-hero and .type-h4 extend the same ladder, promoted out of the
+     bespoke text-[clamp(…)] literal zoo (see the token-normalization
+     mapping doc): .type-hero is the homepage hero's own step ABOVE h1 (a
+     deliberately bigger display moment, not a near-duplicate of anything);
+     .type-h4 is the smaller display tier the kitchen sink already demos and
+     labels as "section headings" — two call sites match its clamp exactly. */
+  .type-hero,
+  .type-h1,
+  .type-h2,
+  .type-h3,
+  .type-h4 {
+    font-family: var(--font-display-var);
+    text-wrap: balance;
+  }
+  /* A brand.css retunes a step with --type-hN-size, -leading, -weight and -tracking. */
+  .type-h1 {
+    font-size: var(--type-h1-size, clamp(2.4rem, 6vw, 4rem));
+    line-height: var(--type-h1-leading, 1.05);
+    font-weight: var(--type-h1-weight, 750);
+    letter-spacing: var(--type-h1-tracking, -0.03em);
+  }
+  .type-h2 {
+    font-size: var(--type-h2-size, clamp(2rem, 4.6vw, 3.2rem));
+    line-height: var(--type-h2-leading, 1.05);
+    font-weight: var(--type-h2-weight, 750);
+    letter-spacing: var(--type-h2-tracking, -0.03em);
+  }
+  .type-h3 {
+    font-size: var(--type-h3-size, clamp(1.5rem, 3.2vw, 2.4rem));
+    line-height: var(--type-h3-leading, 1.05);
+    font-weight: var(--type-h3-weight, 750);
+    letter-spacing: var(--type-h3-tracking, -0.03em);
+  }
+  .type-h4 {
+    font-size: var(--type-h4-size, clamp(1.4rem, 2.8vw, 1.9rem));
+    line-height: var(--type-h4-leading, 1.05);
+    font-weight: var(--type-h4-weight, 750);
+    letter-spacing: var(--type-h4-tracking, -0.03em);
+  }
+  /* Declared LAST in the ladder so it wins the cascade tie when composed over
+     a base .type-h1: HeroBlock applies type-h1 unconditionally, and the
+     homepage hero adds type-hero via titleClassName to step above it. */
+  .type-hero {
+    font-size: var(--type-hero-size, clamp(2.7rem, 7vw, 4.6rem));
+    line-height: 1.05;
+    font-weight: 750;
+    letter-spacing: -0.03em;
+  }
+
+  /* Identity text: the body face at a fixed size, independent of the heading scale. */
+  .type-wordmark {
+    font-family: var(--font-sans);
+    font-size: var(--type-wordmark-size, 1.1875rem);
+    line-height: var(--type-wordmark-leading, 1);
+    font-weight: var(--type-wordmark-weight, 700);
+    letter-spacing: var(--type-wordmark-tracking, -0.02em);
+  }
+
+  /* Statement — quieter display-weight declarative line (disqualifier items,
+     quoted questions). 650 (not 750) reads calmer at this size; looser leading
+     keeps wrapped phrases readable. */
+  .type-statement {
+    font-family: var(--font-display-var);
+    font-weight: 650;
+    letter-spacing: -0.03em;
+    line-height: 1.375;
+    font-size: clamp(1.25rem, 2.4vw, 1.7rem);
+    text-wrap: balance;
+  }
+
+  /* Title — compact card/tile heading voice (700, looser 1.2 leading since
+     these wrap inside cards). No size baked — pair with a size utility. */
+  .type-title {
+    font-family: var(--font-display-var);
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    line-height: 1.2;
+    text-wrap: balance;
+  }
+
+  /* Callout — the one emphatic closing sentence, sans (not display). */
+  .type-callout {
+    font-weight: 500;
     letter-spacing: -0.01em;
-    line-height: 1.1;
+    line-height: 1.375;
+    font-size: clamp(1.2rem, 2.6vw, 1.6rem);
+    text-wrap: balance;
+  }
+
+  /* Numeral — mono tabular count-up voice (Stat, score gauge). No size baked.
+     A brand retunes it with --type-numeral-font and --type-numeral-weight. */
+  .type-numeral {
+    font-family: var(--type-numeral-font, var(--font-mono));
+    font-weight: var(--type-numeral-weight, 500);
+    letter-spacing: -0.025em;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Label — mono meta label at 11px/0.08em; the quieter sibling of
+     .type-kicker (sans, 12px, 0.16em). Almost always --muted-foreground. */
+  .type-label {
+    font-family: var(--font-mono);
+    /* Small caps, not text-transform — see .type-kicker for why.
+       No size compensation here, unlike the kicker: this face is monospace, so
+       the advance width is per character and doesn't scale with the glyphs.
+       Bumping the size to recover cap height made the line 25% wider and
+       wrapped it onto three lines on a phone. At the original size the line is
+       exactly as wide as it was; the caps just sit a little shorter. */
+    font-variant-caps: all-small-caps;
+    letter-spacing: 0.08em;
+    font-size: var(--text-2xs);
+    line-height: var(--text-2xs--line-height);
   }
 }
 
 @layer utilities {
-  /* The wordmark is identity, not hierarchy — it takes the body face and a
-     fixed size so tuning the heading scale never resizes the logo. */
-  .type-wordmark {
-    font-size: var(--type-wordmark-size);
-    line-height: var(--type-wordmark-leading);
-    font-weight: var(--type-wordmark-weight);
-    letter-spacing: var(--type-wordmark-tracking);
+  /* Display type — Bricolage Grotesque carries headlines and big numerals:
+     chunky but friendly-confident, not poster-heavy. */
+  .type-display {
+    font-family: var(--font-display-var);
+    font-weight: 750;
+    letter-spacing: -0.03em;
+    line-height: 1.05;
+    text-wrap: balance;
   }
 
-  /* Small-caps meta label — pair with text-muted-foreground, or text-brass
-     for the trim voice. */
-  .type-label {
-    font-family: --theme(--font-mono);
-    font-size: 11px;
-    line-height: 1.35;
-    font-weight: 500;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
+  /* Section kicker — small-caps line above headings.
+     Actual small caps rather than `text-transform: uppercase`, because Chrome
+     folds a text transform into the accessibility tree: the DOM said "For
+     businesses without a tech person of their own" and a screen reader was
+     handed "FOR BUSINESSES WITHOUT A TECH PERSON OF THEIR OWN". Short all-caps
+     strings then get spelled out letter by letter — "ONE-OFF" as O-N-E-O-F-F.
+     font-variant-caps is a font feature, so the text itself is untouched and
+     the announced name matches what was written.
+     The size is scaled by the 0.8 Chrome synthesizes small caps at, which
+     lands the cap height and the line width exactly where the uppercase
+     version had them. Browsers that synthesize at a different ratio will
+     render this a hair smaller or larger. */
+  .type-kicker {
+    font-size: calc(12px / 0.8);
+    line-height: 1.2;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    font-variant-caps: all-small-caps;
+    color: var(--tertiary);
+  }
+
+  /* The same treatment for one-off eyebrows that aren't a section kicker. */
+  .type-smallcaps {
+    font-variant-caps: all-small-caps;
+  }
+
+  /* Handwriting accent — Caveat, the annotation voice. */
+  .type-hand {
+    font-family: var(--font-hand);
+    font-weight: 600;
   }
 }

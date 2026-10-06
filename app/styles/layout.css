@@ -1,0 +1,63 @@
+/* Layout primitives that answer to the space they were given rather than to
+   the browser. */
+
+@layer utilities {
+  /*
+   * Centers content and pads it, capped at `--breakpoint-xl` (Tailwind's
+   * own default, 80rem/1280px — nothing in this kit's theme overrides it).
+   * Tailwind v4's built-in `container` utility caps max-width at the current
+   * breakpoint but doesn't center or pad (v4 dropped the `center`/`padding`
+   * config), so this redefines the name instead of inventing a new one.
+   * Ported from Vardo (`app/globals.css` in vardo-console).
+   */
+  .container {
+    @apply mx-auto w-full;
+    /* A brand sets --container-pad and --container-pad-lg. */
+    padding-inline: var(--container-pad, --spacing(5));
+    max-width: var(--breakpoint-xl);
+    @variant lg {
+      padding-inline: var(--container-pad-lg, --spacing(10));
+    }
+  }
+
+  /*
+   * The one grid every card list uses.
+   *
+   * The tracks are sized from the grid's OWN width — every length in the
+   * formula is a percentage of the grid box, not a viewport unit and not a
+   * breakpoint — so the same collection dropped into a full-width band and
+   * into a split section's narrow rail finds a different column count in each
+   * without a single media query. That is the whole point: a `md:grid-cols-3`
+   * in a narrow rail still lays out for the browser width and overflows.
+   *
+   * `--collection-columns` is the ceiling (see lib/layout/collection-columns.ts).
+   * The `max()` is what makes the ceiling a ceiling rather than a target: a
+   * track is whichever is larger of the readable floor and an even share of
+   * the row, and `auto-fit` sheds columns as the share drops below the floor.
+   * The `min(100%, …)` keeps a single item from demanding more than the row.
+   */
+  .collection {
+    display: grid;
+    /* One variable for the common case, with a row override for the layouts
+       that want more air between rows than between columns. A Tailwind
+       `gap-y-*` at the call site can't do this job — it loses to the shorthand
+       here, which is emitted later in the same layer. */
+    gap: var(--collection-row-gap, var(--collection-gap, 1.5rem)) var(--collection-gap, 1.5rem);
+    grid-template-columns: repeat(
+      auto-fit,
+      minmax(
+        min(
+          100%,
+          max(
+            var(--collection-min, 16rem),
+            calc(
+              (100% - (var(--collection-columns, 1) - 1) * var(--collection-gap, 1.5rem)) /
+                var(--collection-columns, 1)
+            )
+          )
+        ),
+        1fr
+      )
+    );
+  }
+}

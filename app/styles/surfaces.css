@@ -1,6 +1,163 @@
-/* Squircle progressive enhancement */
-@supports (corner-shape: squircle) {
-  .squircle {
+/* Surfaces & interaction primitives — the .pill-card* recipes plus the
+   rounded-full reset, dot-grid texture, and hover/press motion. Card recipes
+   stay in @layer components ON PURPOSE (see the comment below) so call-site
+   radius utilities win; the rest are @layer utilities. */
+
+/* Card recipes live in @layer components (not @layer utilities) on purpose:
+   Tailwind's own utilities always sit in a later, higher-priority layer, so
+   a call-site `rounded-2xl`/`rounded-full`/etc. reliably overrides the
+   default radius below — same-layer same-specificity ties would otherwise
+   be broken by source order, not intent, which is what left every
+   `cardVariants()` radius override (Card, Modal, the sheets) silently
+   losing to this default until this was caught. */
+@layer components {
+  /* Recessed sibling of .pill-card — background-deep fill, sits below the
+     ground instead of lifting off it. For quiet panels and the bespoke tier. */
+  .pill-card-recessed {
+    background-color: var(--background-deep);
+    border-radius: var(--radius-xl);
     corner-shape: squircle;
+  }
+  .dark .pill-card-recessed {
+    border: 1px solid var(--border);
+  }
+
+  /* The card recipe — layers over borders. White surface lifted off the cream
+     ground by the two-tier shadow; NO hairline in light. Dark keeps a 1px
+     border because shadows die on dark grounds. */
+  .pill-card {
+    background-color: var(--card);
+    color: var(--card-foreground);
+    border-radius: var(--radius-xl);
+    corner-shape: squircle;
+    box-shadow: var(--shadow-card);
+  }
+  .dark .pill-card {
+    border: 1px solid var(--border);
+  }
+
+  /* Frosted-glass sibling of .pill-card — for the floating nav, which
+     floats OVER scrolling content instead of sitting on its own ground.
+     Translucent (not opaque) + backdrop-blurred so page content visibly
+     blurs behind it, still tinted from --card/--card-foreground so the
+     nav's runtime `dark` class toggle (nav-shell.tsx's tone-tracking) picks
+     up the matching dark-glass tint for free — same re-scope trick
+     `.dark`/`.surface-brand` play above, just applied dynamically instead
+     of baked into markup. The color-mix keeps the tint even though the fill
+     itself is see-through; a plain opacity would wash out the text with it. */
+  .pill-card-glass {
+    background-color: color-mix(in oklch, var(--card) 80%, transparent);
+    color: var(--card-foreground);
+    border-radius: var(--radius-xl);
+    corner-shape: squircle;
+    border: 1px solid color-mix(in oklch, var(--foreground) 9%, transparent);
+    box-shadow: var(--shadow-card);
+    backdrop-filter: blur(32px) saturate(1.6);
+    -webkit-backdrop-filter: blur(32px) saturate(1.6);
+    transition:
+      background-color 300ms var(--ease-out),
+      border-color 300ms var(--ease-out);
+  }
+  /* Dark room reads flatter under blur — richer tint + a brighter hairline
+     (shadows die on dark grounds, same reasoning as .dark .pill-card). */
+  .dark .pill-card-glass {
+    background-color: color-mix(in oklch, var(--card) 70%, transparent);
+    border-color: color-mix(in oklch, white 14%, transparent);
+  }
+  /* No backdrop-filter support (old Firefox/Chromium builds) — fall back to
+     a near-opaque fill so text over busy content stays legible without the
+     blur doing the work. */
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .pill-card-glass {
+      background-color: color-mix(in oklch, var(--card) 96%, transparent);
+    }
+  }
+
+  /* Cobalt sibling of .pill-card — a true-signal surface, not a ground.
+     Reserved for the rare card that needs to visibly outrank everything
+     around it. Paints from `--background`/`--foreground`, not `--primary`/
+     `--primary-foreground` — `Card variant="brand"` also applies the
+     `.surface-brand` scope (see tokens.css), which is
+     the ground those two tokens describe there; `--primary` itself is
+     repurposed inside that scope to mean the white pop-color, not this
+     surface's own fill. */
+  .pill-card-brand {
+    background-color: var(--background);
+    color: var(--foreground);
+    border-radius: var(--radius-xl);
+    corner-shape: squircle;
+    box-shadow: var(--shadow-card);
+  }
+}
+
+@layer utilities {
+  /* Squircle escape hatch — a handful of call sites layer `cardVariants()`'s
+     `.pill-card` surface styling (bg/shadow) onto a DELIBERATELY round pill
+     or circle (the "N of these sound familiar" bar in symptoms.tsx, the
+     sheet close button in sheet-host.tsx) by overriding the radius with
+     `rounded-full`. Utilities beat components in this stylesheet's cascade
+     (see the comment above `.pill-card` in @layer components), so this one
+     rule guarantees `corner-shape` resets to `round` for every current AND
+     future `rounded-full` element, regardless of what other classes it
+     carries — nobody has to remember to add a `:not(.rounded-full)` guard
+     per recipe. */
+  .rounded-full {
+    corner-shape: round;
+  }
+
+  /* Quiet texture — a faint dot lattice for the hero's backdrop. Fades out
+     via mask at the call site; never a color field. */
+  .dot-grid {
+    background-image: radial-gradient(
+      color-mix(in oklch, var(--foreground) 12%, transparent) 1.25px,
+      transparent 1.25px
+    );
+    background-size: 24px 24px;
+  }
+
+  /* Hover lift for interactive cards — deepen the shadow and rise 3px on the
+     spring. Uses native `translate` so it composes with framer's inline
+     transform instead of fighting it. */
+  .pill-card-hover {
+    transition:
+      translate 250ms var(--ease-spring),
+      box-shadow 250ms var(--ease-spring);
+  }
+  @media (hover: hover) {
+    .pill-card-hover:hover,
+    .pill-card-hover:focus-within {
+      box-shadow: var(--shadow-card-hover);
+    }
+    .pill-card-hover:hover {
+      translate: 0 -3px;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .pill-card-hover:hover {
+      translate: none;
+    }
+  }
+
+  /* Press compression — pill controls squeeze to 0.97 on press and spring
+     back on release. CSS only. */
+  .press.press {
+    transition:
+      scale 250ms var(--ease-spring),
+      translate 250ms var(--ease-spring),
+      box-shadow 250ms var(--ease-spring),
+      color 150ms var(--ease-out),
+      background-color 150ms var(--ease-out),
+      border-color 150ms var(--ease-out),
+      opacity 150ms var(--ease-out);
+  }
+  .press.press:active {
+    scale: 0.97;
+    transition-duration: 150ms;
+    transition-timing-function: var(--ease-out);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .press.press:active {
+      scale: none;
+    }
   }
 }
