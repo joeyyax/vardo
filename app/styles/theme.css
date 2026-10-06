@@ -2,7 +2,14 @@
    color / radius / font / animation utilities. Values live in tokens.css;
    keyframes for the animate-* utilities live in effects.css. */
 
-@custom-variant dark (&:is(.dark *));
+/* Screen only, like the .dark tokens. */
+@custom-variant dark {
+  @media screen {
+    &:is(.dark *) {
+      @slot;
+    }
+  }
+}
 
 @theme inline {
   --font-sans: var(--font-body-sans);

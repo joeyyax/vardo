@@ -167,98 +167,101 @@
 /* Warm charcoal, not near-black. The ground drops and the card lifts so the
    step is visible on its own — shadows barely read on a dark ground, so value
    does the work here and the hairline is a detail rather than the edge. */
-.dark {
-  color-scheme: dark;
+/* Screen only, so print always takes the light tokens. */
+@media screen {
+  .dark {
+    color-scheme: dark;
 
-  --background: oklch(16% 0.008 75);
-  --foreground: oklch(93% 0.006 85);
-  --card: oklch(24.5% 0.009 75);
-  --card-foreground: oklch(93% 0.006 85);
-  --popover: oklch(26% 0.009 75);
-  --popover-foreground: oklch(93% 0.006 85);
-  --primary: oklch(93% 0.004 85);
-  --primary-foreground: oklch(16% 0.008 75);
-  --secondary: oklch(29% 0.008 75);
-  --secondary-foreground: oklch(93% 0.006 85);
-  --muted: oklch(28% 0.008 75);
-  --muted-foreground: oklch(68% 0.012 80);
-  --accent: oklch(31% 0.009 75);
-  --accent-foreground: oklch(93% 0.006 85);
-  --destructive: oklch(70% 0.14 25);
-  --destructive-foreground: oklch(16% 0.008 75);
-  --border: oklch(100% 0.006 85 / 9%);
-  --input: oklch(100% 0.006 85 / 14%);
-  --background-deep: oklch(20% 0.008 75);
-  --shadow-card-value: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 20px rgba(0, 0, 0, 0.32);
-  --shadow-card-hover-value: 0 2px 5px rgba(0, 0, 0, 0.48), 0 16px 34px rgba(0, 0, 0, 0.42);
+    --background: oklch(16% 0.008 75);
+    --foreground: oklch(93% 0.006 85);
+    --card: oklch(24.5% 0.009 75);
+    --card-foreground: oklch(93% 0.006 85);
+    --popover: oklch(26% 0.009 75);
+    --popover-foreground: oklch(93% 0.006 85);
+    --primary: oklch(93% 0.004 85);
+    --primary-foreground: oklch(16% 0.008 75);
+    --secondary: oklch(29% 0.008 75);
+    --secondary-foreground: oklch(93% 0.006 85);
+    --muted: oklch(28% 0.008 75);
+    --muted-foreground: oklch(68% 0.012 80);
+    --accent: oklch(31% 0.009 75);
+    --accent-foreground: oklch(93% 0.006 85);
+    --destructive: oklch(70% 0.14 25);
+    --destructive-foreground: oklch(16% 0.008 75);
+    --border: oklch(100% 0.006 85 / 9%);
+    --input: oklch(100% 0.006 85 / 14%);
+    --background-deep: oklch(20% 0.008 75);
+    --shadow-card-value: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 20px rgba(0, 0, 0, 0.32);
+    --shadow-card-hover-value: 0 2px 5px rgba(0, 0, 0, 0.48), 0 16px 34px rgba(0, 0, 0, 0.42);
 
-  --brass: oklch(74% 0.085 82);
-  --brass-muted: oklch(31.3% 0.02 82);
-  --brass-edge: oklch(63% 0.085 82);
+    --brass: oklch(74% 0.085 82);
+    --brass-muted: oklch(31.3% 0.02 82);
+    --brass-edge: oklch(63% 0.085 82);
 
-  --chart-1: oklch(85% 0.006 85);
-  --chart-2: oklch(60% 0.08 230);
-  --chart-3: oklch(55% 0.06 155);
-  --chart-4: oklch(45% 0.008 78);
-  --chart-5: oklch(30% 0.008 78);
+    --chart-1: oklch(85% 0.006 85);
+    --chart-2: oklch(60% 0.08 230);
+    --chart-3: oklch(55% 0.06 155);
+    --chart-4: oklch(45% 0.008 78);
+    --chart-5: oklch(30% 0.008 78);
 
-  --sidebar: oklch(17.5% 0.008 75);
-  --sidebar-foreground: oklch(93% 0.006 85);
-  --sidebar-primary: oklch(93% 0.004 85);
-  --sidebar-primary-foreground: oklch(20% 0.008 75);
-  --sidebar-accent: oklch(26% 0.009 75);
-  --sidebar-accent-foreground: oklch(93% 0.006 85);
-  --sidebar-border: oklch(100% 0.006 85 / 10%);
+    --sidebar: oklch(17.5% 0.008 75);
+    --sidebar-foreground: oklch(93% 0.006 85);
+    --sidebar-primary: oklch(93% 0.004 85);
+    --sidebar-primary-foreground: oklch(20% 0.008 75);
+    --sidebar-accent: oklch(26% 0.009 75);
+    --sidebar-accent-foreground: oklch(93% 0.006 85);
+    --sidebar-border: oklch(100% 0.006 85 / 10%);
 
-  /* Edges land at 63% here — above every dark ground, as 57% is below every
-     light one. */
-  --status-success: oklch(70% 0.12 155);
-  --status-success-muted: oklch(30.5% 0.021 155);
-  --status-success-edge: oklch(63% 0.12 155);
-  --status-error: oklch(70% 0.14 25);
-  --status-error-muted: oklch(30.4% 0.026 25);
-  --status-error-edge: oklch(63% 0.14 25);
-  --status-warning: oklch(75% 0.12 70);
-  --status-warning-muted: oklch(31.3% 0.026 70);
-  --status-warning-edge: oklch(63% 0.12 70);
-  --status-info: oklch(70% 0.12 240);
-  --status-info-muted: oklch(30.4% 0.012 240);
-  --status-info-edge: oklch(63% 0.12 240);
-  /* In the same band as its siblings. Below 70% a "Stopped" label misses 4.5
-     on its own surface. */
-  --status-neutral: oklch(70% 0.008 78);
-  --status-neutral-muted: oklch(30.7% 0.009 78);
-  --status-neutral-edge: oklch(63% 0.008 78);
-  --status-disposable: oklch(72% 0.116 200);
-  --status-disposable-muted: oklch(30.4% 0.021 200);
-  /* Teal again — 0.102 is the ceiling at the edge lightness. */
-  --status-disposable-edge: oklch(63% 0.102 200);
-  --status-update: oklch(72% 0.13 288);
-  --status-update-muted: oklch(30.9% 0.014 288);
-  --status-update-edge: oklch(63% 0.13 288);
-  --status-critical: oklch(72% 0.14 336);
-  --status-critical-muted: oklch(30.8% 0.021 336);
-  --status-critical-edge: oklch(63% 0.14 336);
+    /* Edges land at 63% here — above every dark ground, as 57% is below every
+       light one. */
+    --status-success: oklch(70% 0.12 155);
+    --status-success-muted: oklch(30.5% 0.021 155);
+    --status-success-edge: oklch(63% 0.12 155);
+    --status-error: oklch(70% 0.14 25);
+    --status-error-muted: oklch(30.4% 0.026 25);
+    --status-error-edge: oklch(63% 0.14 25);
+    --status-warning: oklch(75% 0.12 70);
+    --status-warning-muted: oklch(31.3% 0.026 70);
+    --status-warning-edge: oklch(63% 0.12 70);
+    --status-info: oklch(70% 0.12 240);
+    --status-info-muted: oklch(30.4% 0.012 240);
+    --status-info-edge: oklch(63% 0.12 240);
+    /* In the same band as its siblings. Below 70% a "Stopped" label misses 4.5
+       on its own surface. */
+    --status-neutral: oklch(70% 0.008 78);
+    --status-neutral-muted: oklch(30.7% 0.009 78);
+    --status-neutral-edge: oklch(63% 0.008 78);
+    --status-disposable: oklch(72% 0.116 200);
+    --status-disposable-muted: oklch(30.4% 0.021 200);
+    /* Teal again — 0.102 is the ceiling at the edge lightness. */
+    --status-disposable-edge: oklch(63% 0.102 200);
+    --status-update: oklch(72% 0.13 288);
+    --status-update-muted: oklch(30.9% 0.014 288);
+    --status-update-edge: oklch(63% 0.13 288);
+    --status-critical: oklch(72% 0.14 336);
+    --status-critical-muted: oklch(30.8% 0.021 336);
+    --status-critical-edge: oklch(63% 0.14 336);
 
-  --env-tier: oklch(72% 0.13 110);
-  --env-tier-muted: oklch(30.9% 0.028 110);
-  --env-tier-edge: oklch(63% 0.13 110);
+    --env-tier: oklch(72% 0.13 110);
+    --env-tier-muted: oklch(30.9% 0.028 110);
+    --env-tier-edge: oklch(63% 0.13 110);
 
-  --chart-cpu: oklch(70% 0.13 240);
-  --chart-memory: oklch(70% 0.13 155);
-  --chart-network-rx: oklch(75% 0.13 288);
-  --chart-network-tx: oklch(75% 0.121 200);
-  --chart-disk: oklch(75% 0.13 110);
-  --chart-gpu-temperature: oklch(75% 0.13 70);
+    --chart-cpu: oklch(70% 0.13 240);
+    --chart-memory: oklch(70% 0.13 155);
+    --chart-network-rx: oklch(75% 0.13 288);
+    --chart-network-tx: oklch(75% 0.121 200);
+    --chart-disk: oklch(75% 0.13 110);
+    --chart-gpu-temperature: oklch(75% 0.13 70);
 
-  --chart-reference: oklch(64% 0.01 78);
-  --chart-grid: oklch(48% 0.008 82 / 55%);
+    --chart-reference: oklch(64% 0.01 78);
+    --chart-grid: oklch(48% 0.008 82 / 55%);
 
-  --color-1: oklch(66.2% 0.225 25.9);
-  --color-2: oklch(60.4% 0.26 302);
-  --color-3: oklch(69.6% 0.165 251);
-  --color-4: oklch(80.2% 0.134 225);
-  --color-5: oklch(90.7% 0.231 133);
+    --color-1: oklch(66.2% 0.225 25.9);
+    --color-2: oklch(60.4% 0.26 302);
+    --color-3: oklch(69.6% 0.165 251);
+    --color-4: oklch(80.2% 0.134 225);
+    --color-5: oklch(90.7% 0.231 133);
+  }
 }
 
 /* Collapse the quiet tiers to full ink, re-declared per ground so each
