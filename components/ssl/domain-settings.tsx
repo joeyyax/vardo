@@ -63,7 +63,7 @@ export function DomainSettings() {
   const [saving, setSaving] = useState(false);
   const [checking, setChecking] = useState(false);
   const [instance, setInstance] = useState<InstanceData>({ baseDomain: "", serverIp: "", domain: "", instanceName: "" });
-  const [acmeEmail, setAcmeEmail] = useState("");
+  const acmeEmail = process.env.NEXT_PUBLIC_ACME_EMAIL ?? "";
   const [dnsChecks, setDnsChecks] = useState<DnsCheck[]>([]);
 
   // SSL issuer settings
@@ -136,8 +136,6 @@ export function DomainSettings() {
         setLoading(false);
       }
     })();
-
-    setAcmeEmail(process.env.NEXT_PUBLIC_ACME_EMAIL ?? "");
   }, []);
 
   async function saveDomainSettings() {

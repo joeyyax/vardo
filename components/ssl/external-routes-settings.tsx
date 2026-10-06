@@ -74,6 +74,17 @@ function routeToForm(route: ExternalRoute): RouteFormState {
   };
 }
 
+async function requestRoutes(): Promise<ExternalRoute[] | null> {
+  try {
+    const res = await fetch("/api/v1/admin/external-routes");
+    if (!res.ok) return null;
+    const json = await res.json();
+    return json.routes ?? [];
+  } catch {
+    return null;
+  }
+}
+
 export function ExternalRoutesSettings() {
   const [routes, setRoutes] = useState<ExternalRoute[]>([]);
   const [loading, setLoading] = useState(true);
@@ -95,22 +106,22 @@ export function ExternalRoutesSettings() {
   const [deleteTarget, setDeleteTarget] = useState<ExternalRoute | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  async function fetchRoutes() {
-    try {
-      const res = await fetch("/api/v1/admin/external-routes");
-      if (!res.ok) throw new Error("Failed to load");
-      const json = await res.json();
-      setRoutes(json.routes ?? []);
+  function applyRoutes(routes: ExternalRoute[] | null) {
+    if (routes) {
+      setRoutes(routes);
       setError(false);
-    } catch {
+    } else {
       setError(true);
-    } finally {
-      setLoading(false);
     }
+    setLoading(false);
+  }
+
+  async function fetchRoutes() {
+    applyRoutes(await requestRoutes());
   }
 
   useEffect(() => {
-    fetchRoutes();
+    requestRoutes().then(applyRoutes);
   }, []);
 
   function handleOpenEdit(route: ExternalRoute) {

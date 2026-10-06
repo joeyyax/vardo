@@ -128,12 +128,14 @@ export function TerminalOutput({
     return map;
   }, [matches, visibleLines, query]);
 
-  const active = activeMatch >= 0 ? matches[activeMatch] : undefined;
-
-  useEffect(() => {
+  // Re-anchoring on every keystroke is the point — a new query starts at its first hit.
+  const [anchoredTo, setAnchoredTo] = useState<{ query: string; count: number } | null>(null);
+  if (!anchoredTo || anchoredTo.query !== query || anchoredTo.count !== matches.length) {
+    setAnchoredTo({ query, count: matches.length });
     setActiveMatch(matches.length > 0 ? 0 : -1);
-    // Re-anchoring on every keystroke is the point — a new query starts at its first hit.
-  }, [query, matches.length]);
+  }
+
+  const active = activeMatch >= 0 ? matches[activeMatch] : undefined;
 
   const step = useCallback((delta: number) => {
     setActiveMatch((current) => stepMatch(current, matches.length, delta));

@@ -32,6 +32,18 @@ type OrgSwitcherProps = {
   collapsed?: boolean;
 };
 
+async function requestOrgs(): Promise<Organization[] | null> {
+  try {
+    const res = await fetch("/api/v1/organizations");
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.organizations || [];
+  } catch (err) {
+    console.error("Failed to fetch organizations:", err);
+    return null;
+  }
+}
+
 /** Renders nothing when the teams flag is off — callers gate on it. */
 export function OrgSwitcher({ currentOrgId, organizations: initialOrganizations, collapsed }: OrgSwitcherProps) {
   const router = useRouter();
@@ -41,29 +53,27 @@ export function OrgSwitcher({ currentOrgId, organizations: initialOrganizations,
   const [newOrgName, setNewOrgName] = useState("");
   const [creating, setCreating] = useState(false);
 
-  const fetchOrgs = useCallback(async () => {
-    try {
-      const res = await fetch("/api/v1/organizations");
-      if (res.ok) {
-        const data = await res.json();
-        setOrganizations(data.organizations || []);
-      }
-    } catch (err) {
-      console.error("Failed to fetch organizations:", err);
-    } finally {
-      setLoading(false);
-    }
+  const applyOrgs = useCallback((list: Organization[] | null) => {
+    if (list) setOrganizations(list);
+    setLoading(false);
   }, []);
 
+  const fetchOrgs = useCallback(async () => {
+    applyOrgs(await requestOrgs());
+  }, [applyOrgs]);
+
   // Seed from server-provided data or fetch on mount
+  const [seededFrom, setSeededFrom] = useState(initialOrganizations);
+  if (initialOrganizations && initialOrganizations !== seededFrom) {
+    setSeededFrom(initialOrganizations);
+    setOrganizations(initialOrganizations);
+    setLoading(false);
+  }
+
   useEffect(() => {
-    if (initialOrganizations) {
-      setOrganizations(initialOrganizations);
-      setLoading(false);
-      return;
-    }
-    fetchOrgs();
-  }, [initialOrganizations, fetchOrgs]);
+    if (initialOrganizations) return;
+    requestOrgs().then(applyOrgs);
+  }, [initialOrganizations, applyOrgs]);
 
   const currentOrg = organizations.find((o) => o.id === currentOrgId) || organizations[0];
 

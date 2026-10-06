@@ -89,6 +89,23 @@ type TimelineItem =
 
 // --- Default field change formatter ---
 
+type DiscussionData = { comments?: Comment[]; activities?: ActivityEntry[] };
+
+async function requestDiscussion(apiBasePath: string): Promise<DiscussionData> {
+  const data: DiscussionData = {};
+  try {
+    const [commentsRes, activitiesRes] = await Promise.all([
+      fetch(`${apiBasePath}/comments`),
+      fetch(`${apiBasePath}/activities`),
+    ]);
+    if (commentsRes.ok) data.comments = await commentsRes.json();
+    if (activitiesRes.ok) data.activities = await activitiesRes.json();
+  } catch (err) {
+    console.error("Error fetching discussion data:", err);
+  }
+  return data;
+}
+
 function defaultFormatFieldChange(
   activity: ActivityEntry,
   entityLabel: string
@@ -153,30 +170,32 @@ function EntityComments({
   const [editContent, setEditContent] = useState("");
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
+  const [loadedPath, setLoadedPath] = useState(apiBasePath);
+  if (loadedPath !== apiBasePath) {
+    setLoadedPath(apiBasePath);
+    setIsLoading(true);
+  }
+
+  const applyData = useCallback((data: DiscussionData) => {
+    if (data.comments) setComments(data.comments);
+    if (data.activities) setActivities(data.activities);
+    setIsLoading(false);
+  }, []);
+
   const fetchData = useCallback(async () => {
     setIsLoading(true);
-    try {
-      const [commentsRes, activitiesRes] = await Promise.all([
-        fetch(`${apiBasePath}/comments`),
-        fetch(`${apiBasePath}/activities`),
-      ]);
-
-      if (commentsRes.ok) {
-        setComments(await commentsRes.json());
-      }
-      if (activitiesRes.ok) {
-        setActivities(await activitiesRes.json());
-      }
-    } catch (err) {
-      console.error("Error fetching discussion data:", err);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [apiBasePath]);
+    applyData(await requestDiscussion(apiBasePath));
+  }, [apiBasePath, applyData]);
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    let cancelled = false;
+    requestDiscussion(apiBasePath).then((data) => {
+      if (!cancelled) applyData(data);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [apiBasePath, applyData]);
 
   // Subscribe to event bus for real-time updates
   useEffect(() => {

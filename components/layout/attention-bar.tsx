@@ -47,17 +47,19 @@ export function AttentionBar({ orgId }: { orgId: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const infra = useInfrastructureStatus();
 
-  const load = useCallback(async () => {
+  const load = useCallback(() => {
     if (inFlight.current) return;
     inFlight.current = true;
-    try {
-      const res = await fetch(`/api/v1/organizations/${orgId}/attention`);
-      if (res.ok) setOrgRows((await res.json()).rows ?? []);
-    } catch {
-      // Leave the last known rows up rather than blanking the bar on a blip.
-    } finally {
-      inFlight.current = false;
-    }
+    fetch(`/api/v1/organizations/${orgId}/attention`)
+      .then(async (res) => {
+        if (res.ok) setOrgRows((await res.json()).rows ?? []);
+      })
+      .catch(() => {
+        // Leave the last known rows up rather than blanking the bar on a blip.
+      })
+      .finally(() => {
+        inFlight.current = false;
+      });
   }, [orgId]);
 
   // Refetch on navigation too — the layout persists, so nothing else would.
@@ -101,9 +103,7 @@ export function AttentionBar({ orgId }: { orgId: string }) {
   }, [infra.resolvedAt, router]);
 
   // Close on the transition to healthy so the panel does not linger empty.
-  useEffect(() => {
-    if (summary.rows.length === 0) setOpen(false);
-  }, [summary.rows.length]);
+  if (open && summary.rows.length === 0) setOpen(false);
 
   const empty = summary.rows.length === 0;
   const worst = summary.worst ?? "neutral";
