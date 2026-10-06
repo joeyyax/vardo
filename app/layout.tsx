@@ -1,14 +1,13 @@
 import type { Metadata } from "next";
-import { Atkinson_Hyperlegible, Bricolage_Grotesque, Geist_Mono } from "next/font/google";
+import { Atkinson_Hyperlegible_Next, Bricolage_Grotesque, Geist_Mono } from "next/font/google";
 import { ThemeProvider } from "next-themes";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
 
 // Body face. Designed by the Braille Institute for low-vision readers, so its
 // letterforms stay distinct at the sizes a console actually uses.
-const bodySans = Atkinson_Hyperlegible({
+const bodySans = Atkinson_Hyperlegible_Next({
   variable: "--font-body-sans",
-  weight: ["400", "700"],
   subsets: ["latin"],
 });
 
@@ -51,10 +50,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body
-        className={`${bodySans.variable} ${displaySans.variable} ${geistMono.variable} antialiased`}
-      >
+    <html
+      lang="en"
+      className={`${bodySans.variable} ${displaySans.variable} ${geistMono.variable}`}
+      suppressHydrationWarning
+    >
+      <body className="antialiased">
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
           {children}
           <Toaster position="bottom-right" />
