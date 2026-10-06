@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "@/lib/messenger";
 import {
@@ -51,16 +51,26 @@ export function GroupImportDialog({
   const [newProjectName, setNewProjectName] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
-    if (!open || !group) return;
-
-    const initial = group.composeProject;
-    setDisplayName(initial);
-    setName(slugify(initial));
-    const validDefault = defaultProjectId && projects.some((p) => p.id === defaultProjectId);
-    setProjectId(validDefault ? defaultProjectId : "");
-    setNewProjectName("");
-  }, [open, group, defaultProjectId, projects]);
+  // Reset the form when the dialog opens
+  const resetKey = { open, group, defaultProjectId, projects };
+  const [resetFor, setResetFor] = useState<typeof resetKey | null>(null);
+  if (
+    !resetFor ||
+    resetFor.open !== open ||
+    resetFor.group !== group ||
+    resetFor.defaultProjectId !== defaultProjectId ||
+    resetFor.projects !== projects
+  ) {
+    setResetFor(resetKey);
+    if (open && group) {
+      const initial = group.composeProject;
+      setDisplayName(initial);
+      setName(slugify(initial));
+      const validDefault = defaultProjectId && projects.some((p) => p.id === defaultProjectId);
+      setProjectId(validDefault ? defaultProjectId : "");
+      setNewProjectName("");
+    }
+  }
 
   async function handleSubmit() {
     if (!group) return;

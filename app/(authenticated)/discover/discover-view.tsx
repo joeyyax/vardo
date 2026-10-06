@@ -17,6 +17,21 @@ type DiscoverViewProps = {
   defaultProjectId?: string;
 };
 
+type DiscoverResult = { data: DiscoveryResponse } | { error: string };
+
+async function requestContainers(orgId: string): Promise<DiscoverResult> {
+  try {
+    const res = await fetch(`/api/v1/organizations/${orgId}/discover/containers`);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error ?? `HTTP ${res.status}`);
+    }
+    return { data: await res.json() };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Failed to load containers" };
+  }
+}
+
 export function DiscoverView({ orgId, projects, defaultProjectId }: DiscoverViewProps) {
   const [data, setData] = useState<DiscoveryResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -31,26 +46,34 @@ export function DiscoverView({ orgId, projects, defaultProjectId }: DiscoverView
   } | null>(null);
   const [groupImportOpen, setGroupImportOpen] = useState(false);
 
+  const [loadedOrgId, setLoadedOrgId] = useState(orgId);
+  if (loadedOrgId !== orgId) {
+    setLoadedOrgId(orgId);
+    setLoading(true);
+    setError(null);
+  }
+
+  const applyResult = useCallback((result: DiscoverResult) => {
+    if ("data" in result) setData(result.data);
+    else setError(result.error);
+    setLoading(false);
+  }, []);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
-    try {
-      const res = await fetch(`/api/v1/organizations/${orgId}/discover/containers`);
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error ?? `HTTP ${res.status}`);
-      }
-      setData(await res.json());
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load containers");
-    } finally {
-      setLoading(false);
-    }
-  }, [orgId]);
+    applyResult(await requestContainers(orgId));
+  }, [orgId, applyResult]);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    let cancelled = false;
+    requestContainers(orgId).then((result) => {
+      if (!cancelled) applyResult(result);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [orgId, applyResult]);
 
   function handleImport(container: DiscoveredContainer) {
     setImportTarget(container);

@@ -63,23 +63,38 @@ export function ImportDialog({
   const [containerPort, setContainerPort] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
 
+  // Reset the form when the dialog opens
+  const resetKey = { open, container, orgId, defaultProjectId, projects };
+  const [resetFor, setResetFor] = useState<typeof resetKey | null>(null);
+  if (
+    !resetFor ||
+    resetFor.open !== open ||
+    resetFor.container !== container ||
+    resetFor.orgId !== orgId ||
+    resetFor.defaultProjectId !== defaultProjectId ||
+    resetFor.projects !== projects
+  ) {
+    setResetFor(resetKey);
+    if (open && container) {
+      const initialName = slugify(container.name);
+      setDisplayName(container.name);
+      setName(initialName);
+      const validDefault = defaultProjectId && projects.some((p) => p.id === defaultProjectId);
+      setProjectId(validDefault ? defaultProjectId : "");
+      setNewProjectName("");
+      setEnvVars([]);
+      setMountToggles({});
+      setContainerPort("");
+      setDetail(null);
+      setDetailError(false);
+      setLoadingDetail(true);
+    }
+  }
+
   // Load container detail when dialog opens
   useEffect(() => {
     if (!open || !container) return;
 
-    const initialName = slugify(container.name);
-    setDisplayName(container.name);
-    setName(initialName);
-    const validDefault = defaultProjectId && projects.some((p) => p.id === defaultProjectId);
-    setProjectId(validDefault ? defaultProjectId : "");
-    setNewProjectName("");
-    setEnvVars([]);
-    setMountToggles({});
-    setContainerPort("");
-    setDetail(null);
-    setDetailError(false);
-
-    setLoadingDetail(true);
     const controller = new AbortController();
 
     fetch(`/api/v1/organizations/${orgId}/discover/containers/${container.id}`, {
@@ -112,7 +127,9 @@ export function ImportDialog({
         setDetailError(true);
         toast.error("Failed to load container details");
       })
-      .finally(() => setLoadingDetail(false));
+      .finally(() => {
+        if (!controller.signal.aborted) setLoadingDetail(false);
+      });
 
     return () => controller.abort();
   }, [open, container, orgId, defaultProjectId, projects]);
