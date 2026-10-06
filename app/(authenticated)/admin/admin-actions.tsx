@@ -28,6 +28,18 @@ type UserInfo = {
   createdAt: string;
 };
 
+async function requestUsers(): Promise<UserInfo[] | null> {
+  try {
+    const res = await fetch("/api/v1/admin/users");
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.users || [];
+  } catch {
+    console.error("Failed to fetch users");
+    return null;
+  }
+}
+
 export function UserManagement() {
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
@@ -36,23 +48,18 @@ export function UserManagement() {
   const [users, setUsers] = useState<UserInfo[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(true);
 
-  const fetchUsers = useCallback(async () => {
-    try {
-      const res = await fetch("/api/v1/admin/users");
-      if (res.ok) {
-        const data = await res.json();
-        setUsers(data.users || []);
-      }
-    } catch {
-      console.error("Failed to fetch users");
-    } finally {
-      setLoadingUsers(false);
-    }
+  const applyUsers = useCallback((list: UserInfo[] | null) => {
+    if (list) setUsers(list);
+    setLoadingUsers(false);
   }, []);
 
+  const fetchUsers = useCallback(async () => {
+    applyUsers(await requestUsers());
+  }, [applyUsers]);
+
   useEffect(() => {
-    fetchUsers();
-  }, [fetchUsers]);
+    requestUsers().then(applyUsers);
+  }, [applyUsers]);
 
   async function handleInvite(e: React.FormEvent) {
     e.preventDefault();

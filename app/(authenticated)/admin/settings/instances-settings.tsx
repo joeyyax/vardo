@@ -72,6 +72,18 @@ async function copyToClipboard(text: string, label: string) {
 }
 
 /** A peer that has never checked in has no timestamp to format. */
+type PeersResponse = { peers?: MeshPeer[]; invites?: MeshInviteStatus[] };
+
+async function requestPeers(): Promise<PeersResponse | null> {
+  try {
+    const res = await fetch("/api/v1/admin/mesh/peers");
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
 function formatLastSeen(dateStr: string | null): string {
   if (!dateStr) return "Awaiting first heartbeat";
   return formatRelativeTime(dateStr);
@@ -108,25 +120,25 @@ export function InstancesSettings() {
   const [deleting, setDeleting] = useState(false);
   const [cancellingCode, setCancellingCode] = useState<string | null>(null);
 
+  function applyPeers(json: PeersResponse | null) {
+    if (json) {
+      setPeers(json.peers ?? []);
+      setInvites((json.invites ?? []).filter((i) => i.status === "pending"));
+      setError(false);
+    } else {
+      setError(true);
+    }
+    setLoading(false);
+    setRefreshing(false);
+  }
+
   async function fetchPeers(isRefresh = false) {
     if (isRefresh) setRefreshing(true);
-    try {
-      const res = await fetch("/api/v1/admin/mesh/peers");
-      if (!res.ok) throw new Error("Failed to load");
-      const json = await res.json();
-      setPeers(json.peers ?? []);
-      setInvites((json.invites ?? []).filter((i: MeshInviteStatus) => i.status === "pending"));
-      setError(false);
-    } catch {
-      setError(true);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
+    applyPeers(await requestPeers());
   }
 
   useEffect(() => {
-    fetchPeers();
+    requestPeers().then(applyPeers);
   }, []);
 
   // Live-update invite countdowns and auto-remove expired
