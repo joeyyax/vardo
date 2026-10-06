@@ -29,10 +29,6 @@ export const ALLOWED_RUNTIMES = ["runc", "nvidia", "sysbox"];
  * Throws on unresolvable merge sources, which Docker rejects too.
  */
 export function parseComposeYaml(yamlText: string): unknown {
-  // Merge resolution skips the alias-expansion guard, so a few hundred bytes of
-  // nested `<<` can pin the event loop. The merge-free parse still counts the
-  // aliases and throws first.
-  YAML.parse(yamlText);
   return YAML.parse(yamlText, { merge: true });
 }
 

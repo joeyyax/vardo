@@ -87,9 +87,8 @@ services:
     expect(() => YAML.parse("services:\n  db:\n    <<: 5\n", { merge: true })).toThrow();
   });
 
-  it("stops counting aliases once merge resolution is enabled", () => {
-    expect(() => YAML.parse(ALIAS_BOMB)).toThrow(/alias/i);
-    expect(() => YAML.parse(ALIAS_BOMB, { merge: true })).not.toThrow();
+  it("still counts aliases when merge resolution is enabled", () => {
+    expect(() => YAML.parse(ALIAS_BOMB, { merge: true })).toThrow(/alias/i);
   });
 });
 
