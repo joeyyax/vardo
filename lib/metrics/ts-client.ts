@@ -10,6 +10,8 @@ export function getTsClient(): Redis {
     globalForTS.tsRedis = new Redis(url, {
       maxRetriesPerRequest: 3,
       lazyConnect: true,
+      // RESP3 reshapes TS.MGET/TS.MRANGE replies; the parsers expect RESP2.
+      protocol: 2,
     });
   }
   return globalForTS.tsRedis;

@@ -13,8 +13,8 @@ import {
   Plus,
   Key,
   KeyRound,
-  Github,
 } from "lucide-react";
+import { Github } from "@/components/icons/github";
 import { toast } from "@/lib/messenger";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -254,11 +254,9 @@ export function TwoFactorAuth() {
         setEnabling(false);
         return;
       }
-      if (data?.totpURI) {
+      if (data?.method === "totp") {
         setTotpUri(data.totpURI);
-        if (data.backupCodes) {
-          setBackupCodes(data.backupCodes);
-        }
+        setBackupCodes(data.backupCodes);
       }
     } catch {
       toast.error("Failed to enable 2FA");

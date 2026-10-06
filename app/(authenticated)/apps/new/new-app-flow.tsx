@@ -8,7 +8,6 @@ import {
   ArrowLeft,
   Boxes,
   Loader2,
-  Github,
   Lock,
   Globe,
   GitBranch,
@@ -18,6 +17,7 @@ import {
   RefreshCw,
   ChevronDown,
 } from "lucide-react";
+import { Github } from "@/components/icons/github";
 import { toast } from "@/lib/messenger";
 import { PageToolbar } from "@/components/page-toolbar";
 import { Button } from "@/components/ui/button";

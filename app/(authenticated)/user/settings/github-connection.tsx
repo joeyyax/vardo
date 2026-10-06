@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
-import { Github, Loader2, ExternalLink, Trash2 } from "lucide-react";
+import { Loader2, ExternalLink, Trash2 } from "lucide-react";
+import { Github } from "@/components/icons/github";
 import { toast } from "@/lib/messenger";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";

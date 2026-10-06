@@ -24,6 +24,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Generated test reports:
+    "coverage/**",
+    "playwright-report/**",
+    "test-results/**",
     // Ignore worktrees and host project copies:
     ".claude/worktrees/**",
     ".host/**",

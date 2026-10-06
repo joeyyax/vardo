@@ -84,7 +84,7 @@ export async function slidingWindowRateLimit(
     // Accurate retry-after: time until the oldest request drops out of the window.
     let retryAfterSeconds = ttlSeconds;
     try {
-      const oldest = await redis.zrange(redisKey, 0, 0, "WITHSCORES");
+      const oldest = await redis.zrange(redisKey, 0, "0", "WITHSCORES");
       if (oldest.length >= 2) {
         const oldestMs = Number(oldest[1]);
         const msUntilClear = oldestMs + windowMs - now;

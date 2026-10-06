@@ -1,4 +1,4 @@
-import { Heading, Link, Section, Text } from "@react-email/components";
+import { Heading, Link, Section, Text } from "react-email";
 import { EmailLayout, CTA, InfoBox, Label, styles } from "./components";
 
 type BuildStage = {
