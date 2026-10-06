@@ -2,13 +2,13 @@
 // PR preview lifecycle
 //
 // Creates and destroys preview environments for GitHub pull requests.
-// A preview clones the entire project's environment so the PR gets a
-// fully functional stack.
+// A preview covers the PR repo's apps, their compose children and their
+// declared dependencies (see preview-scope.ts).
 // ---------------------------------------------------------------------------
 
 import { db } from "@/lib/db";
 import { apps, groupEnvironments } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, ilike } from "drizzle-orm";
 import {
   createGroupEnvironment,
   destroyGroupEnvironment,
@@ -16,6 +16,7 @@ import {
 import { deployGroup } from "./deploy-group";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { logger } from "@/lib/logger";
+import { matchesGitHubRepo, previewScope } from "./preview-scope";
 
 const log = logger.child("preview");
 
@@ -50,6 +51,14 @@ export type { CreatePreviewOpts, PreviewResult };
 // Create preview
 // ---------------------------------------------------------------------------
 
+/** Apps built from this GitHub repo, whatever form their git URL takes. */
+async function appsForRepo(repoFullName: string) {
+  const candidates = await db.query.apps.findMany({
+    where: ilike(apps.gitUrl, `%${repoFullName}%`),
+  });
+  return candidates.filter((a) => matchesGitHubRepo(a.gitUrl, repoFullName));
+}
+
 /**
  * Create a preview environment for a PR.
  *
@@ -72,13 +81,7 @@ export async function createPreview(
     return null;
   }
 
-  const gitUrl = `https://github.com/${opts.repoFullName}.git`;
-
-  // Find apps matching this repo
-  const matchingApps = await db.query.apps.findMany({
-    where: eq(apps.gitUrl, gitUrl),
-  });
-
+  const matchingApps = await appsForRepo(opts.repoFullName);
   if (matchingApps.length === 0) return null;
 
   // Find the first app that belongs to a project.
@@ -124,8 +127,13 @@ export async function createPreview(
     };
   }
 
-  // Build branch overrides — set the PR branch on all git-sourced apps
-  // so the deploy checks out the feature branch instead of main.
+  const projectApps = await db.query.apps.findMany({
+    where: eq(apps.projectId, projectId),
+    columns: { id: true, name: true, gitUrl: true, parentAppId: true, dependsOn: true, cloneStrategy: true },
+  });
+  const appIds = [...previewScope(projectApps, opts.repoFullName)];
+
+  // The PR branch goes on the repo's own apps; dependencies deploy their usual branch.
   const appOverrides: Record<string, { gitBranch: string }> = {};
   for (const app of matchingApps) {
     if (app.projectId === projectId) {
@@ -139,6 +147,7 @@ export async function createPreview(
     organizationId,
     name: envName,
     type: "preview",
+    appIds,
     appOverrides,
     prNumber: opts.prNumber,
     prUrl: opts.prUrl,
@@ -188,13 +197,7 @@ export async function destroyPreview(
   repoFullName: string,
   prNumber: number
 ): Promise<boolean> {
-  const gitUrl = `https://github.com/${repoFullName}.git`;
-
-  // Find apps matching this repo
-  const matchingApps = await db.query.apps.findMany({
-    where: eq(apps.gitUrl, gitUrl),
-  });
-
+  const matchingApps = await appsForRepo(repoFullName);
   const groupedApp = matchingApps.find((a) => a.projectId);
   if (!groupedApp || !groupedApp.projectId) return false;
 

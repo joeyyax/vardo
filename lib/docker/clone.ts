@@ -32,6 +32,8 @@ type CreateGroupEnvironmentOpts = {
   name: string;
   type: "staging" | "preview";
   sourceEnvironment?: string;
+  /** Limit the environment to these apps. Omitted means every app in the project. */
+  appIds?: string[];
   /** Per-app overrides for clone strategy and git branch */
   appOverrides?: Record<
     string,
@@ -107,10 +109,11 @@ export async function createGroupEnvironment(
     expiresAt: opts.expiresAt,
   });
 
-  // Load all apps in the project
-  const projectApps = await db.query.apps.findMany({
+  const allProjectApps = await db.query.apps.findMany({
     where: eq(apps.projectId, opts.projectId),
   });
+  const scope = opts.appIds ? new Set(opts.appIds) : null;
+  const projectApps = scope ? allProjectApps.filter((a) => scope.has(a.id)) : allProjectApps;
 
   const projectEnvironments: GroupEnvironmentResult["projectEnvironments"] = [];
 
