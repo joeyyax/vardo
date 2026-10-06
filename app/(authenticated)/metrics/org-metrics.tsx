@@ -342,7 +342,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
   }
 
   return (
-    <div className="space-y-10">
+    <div className="@container space-y-10">
       {/* Period switcher */}
       <div className="flex items-center justify-between">
         <div className="inline-flex items-center gap-1 rounded-lg bg-muted p-1">
@@ -390,7 +390,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
       )}
 
       {/* Summary cards with sparklines */}
-      <div className="@container grid grid-cols-2 @2xl:grid-cols-3 @5xl:grid-cols-5 gap-5">
+      <div className="grid grid-cols-2 @2xl:grid-cols-3 @5xl:grid-cols-5 gap-5">
         <div className="squircle relative rounded-lg bg-card px-4 py-3 shadow-card dark:border overflow-hidden">
           {points.length > 1 && (
             <Sparkline data={cpuSparkData} className="absolute inset-0 w-full h-full pointer-events-none" style={{ color: CHART_COLORS.cpu }} />
@@ -477,7 +477,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
       </div>
 
       {/* Aggregate charts */}
-      <div className="@container grid @3xl:grid-cols-2 gap-6">
+      <div className="grid @3xl:grid-cols-2 gap-6">
           <div className="squircle rounded-lg bg-card shadow-card dark:border overflow-hidden">
             <div className="flex items-center gap-2 px-4 py-3 border-b">
               <Cpu className="size-4 text-muted-foreground" />
@@ -598,7 +598,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
         const netApps = topN(allActive, "network");
 
         return (
-          <div className="@container grid @xl:grid-cols-2 @5xl:grid-cols-4 gap-5">
+          <div className="grid @xl:grid-cols-2 @5xl:grid-cols-4 gap-5">
             <ShareBar
               title="Apps"
               subtitle={`${scopeNote} · ${streamProjectCount ?? projectCount ?? 0} projects`}
