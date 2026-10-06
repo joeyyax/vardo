@@ -35,7 +35,8 @@ vi.mock("@/lib/db/schema", () => ({
   groupEnvironments: { projectId: "projectId" },
 }));
 
-const { mockEnvFindFirst, mockEnvVarsFindMany, mockInsertValues } = vi.hoisted(() => ({
+const { mockEnvFindFirst, mockEnvVarsFindMany, mockInsertValues, mockSnapshot } = vi.hoisted(() => ({
+  mockSnapshot: vi.fn(),
   mockEnvFindFirst: vi.fn(),
   mockEnvVarsFindMany: vi.fn(),
   mockInsertValues: vi.fn(),
@@ -75,6 +76,7 @@ vi.mock("@/lib/api/with-rate-limit", () => ({
 }));
 
 vi.mock("@/lib/docker/clone", () => ({ createGroupEnvironment: vi.fn() }));
+vi.mock("@/lib/docker/environment-env", () => ({ snapshotIntoEnvironment: mockSnapshot }));
 
 vi.mock("@/lib/api/error-response", () => ({
   handleRouteError: (error: unknown) => {
@@ -137,5 +139,13 @@ describe("POST /environments — cloneFrom source lookup", () => {
 
     // The production branch pulls in base vars via a second envVars query.
     expect(mockEnvVarsFindMany).toHaveBeenCalledTimes(1);
+  });
+
+  it("gives the new environment its own env, scoped to the app in the path", async () => {
+    await postEnvironment("env-foreign");
+
+    expect(mockSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({ appId: "app-1", organizationId: "org-1", environmentId: expect.any(String), sourceEnvironmentId: "env-foreign" }),
+    );
   });
 });

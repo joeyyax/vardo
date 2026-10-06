@@ -9,6 +9,7 @@ import { verifyAppAccess } from "@/lib/api/verify-access";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { requirePlugin } from "@/lib/api/require-plugin";
+import { snapshotIntoEnvironment } from "@/lib/docker/environment-env";
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string; envId: string }>;
@@ -105,6 +106,14 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
           }))
         );
       }
+    });
+
+    await snapshotIntoEnvironment({
+      appId,
+      organizationId: orgId,
+      environmentId: newEnvId,
+      domain: parsed.data.domain || null,
+      sourceEnvironmentId: envId,
     });
 
     const created = await db.query.environments.findFirst({

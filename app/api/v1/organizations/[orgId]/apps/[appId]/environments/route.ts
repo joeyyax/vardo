@@ -7,6 +7,7 @@ import { eq, and, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { createGroupEnvironment } from "@/lib/docker/clone";
+import { snapshotIntoEnvironment } from "@/lib/docker/environment-env";
 import { verifyAppAccess } from "@/lib/api/verify-access";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
@@ -245,6 +246,16 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
           }))
         );
       }
+    }
+
+    if (!created.isDefault) {
+      await snapshotIntoEnvironment({
+        appId,
+        organizationId: orgId,
+        environmentId: envId,
+        domain: created.domain,
+        sourceEnvironmentId: parsed.data.cloneFrom,
+      });
     }
 
     return NextResponse.json({ environment: created }, { status: 201 });
