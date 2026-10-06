@@ -15,6 +15,7 @@ const fake = vi.hoisted(() => {
     children: [] as Record<string, unknown>[],
     envVars: [] as Record<string, unknown>[],
     deployments: [] as Record<string, unknown>[],
+    environmentEnv: [] as Record<string, unknown>[],
     keyedApps: [] as Record<string, unknown>[],
     deployKeys: [] as Record<string, unknown>[],
     writes: [] as { table: string; values: Record<string, unknown> }[],
@@ -57,7 +58,8 @@ const fake = vi.hoisted(() => {
       return { onConflictDoUpdate: () => ({ returning: async () => [{ id: "proj-dest" }] }) };
     },
   });
-  const tx = { query, update, insert };
+  const select = () => ({ from: () => ({ innerJoin: () => ({ where: async () => state.environmentEnv }) }) });
+  const tx = { query, update, insert, select };
   const db = { ...tx, transaction: async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx) };
   return { state, db };
 });
@@ -95,6 +97,14 @@ describe("acceptTransfer", () => {
       { id: "v-2", key: "PLAIN", value: "visible" },
     ];
     fake.state.deployments = [{ id: "d-1", envSnapshot: encrypt("A=0", SRC) }];
+    fake.state.environmentEnv = [{ environmentId: "env-pr-7", name: "pr-7", envContent: encrypt("A=7", SRC) }];
+  });
+
+  it("re-encrypts a preview's own env", async () => {
+    await acceptTransfer("t-1", "user-1");
+
+    const env = writesTo("environment_env")[0].envContent as string;
+    expect(decrypt(env, DEST)).toBe("A=7");
   });
 
   it("re-encrypts env content of the app and its compose children under the destination org's key", async () => {
@@ -163,6 +173,7 @@ describe("repairTransferredSecrets", () => {
     fake.state.transfer = { appId: "app-1", sourceOrgId: SRC, status: "accepted" };
     fake.state.envVars = [];
     fake.state.deployments = [];
+    fake.state.environmentEnv = [];
   });
 
   it("rewrites env stranded under the source org's key", async () => {

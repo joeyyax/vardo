@@ -4,6 +4,8 @@ import {
   deployKeys,
   deployments,
   envVars,
+  environments,
+  environmentEnv,
   appTransfers,
   projects,
   volumes,
@@ -22,6 +24,19 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 export function reencryptForOrg(value: string, fromOrgId: string, toOrgId: string): string {
   if (!isEncrypted(value)) return value;
   return encrypt(decrypt(value, fromOrgId), toOrgId);
+}
+
+/** The env of every non-default environment of these apps. */
+async function environmentEnvRows(tx: Tx, appIds: string[]) {
+  return tx
+    .select({
+      environmentId: environmentEnv.environmentId,
+      envContent: environmentEnv.envContent,
+      name: environments.name,
+    })
+    .from(environmentEnv)
+    .innerJoin(environments, eq(environments.id, environmentEnv.environmentId))
+    .where(inArray(environments.appId, appIds));
 }
 
 /**
@@ -65,6 +80,18 @@ async function reencryptAppSecrets(
     }
     if (next !== row.value) {
       await tx.update(envVars).set({ value: next }).where(eq(envVars.id, row.id));
+    }
+  }
+
+  for (const row of await environmentEnvRows(tx, appIds)) {
+    let next: string;
+    try {
+      next = reencryptForOrg(row.envContent, fromOrgId, toOrgId);
+    } catch {
+      throw new Error(`Env vars for environment "${row.name}" cannot be decrypted — transfer aborted`);
+    }
+    if (next !== row.envContent) {
+      await tx.update(environmentEnv).set({ envContent: next }).where(eq(environmentEnv.environmentId, row.environmentId));
     }
   }
 
@@ -384,6 +411,11 @@ async function repairAppSecrets(tx: Tx, appId: string, fromOrgId: string, toOrgI
   for (const v of await tx.query.envVars.findMany({ where: eq(envVars.appId, appId), columns: { id: true, value: true } })) {
     if (!stranded(v.value)) continue;
     await tx.update(envVars).set({ value: reencryptForOrg(v.value, fromOrgId, toOrgId) }).where(eq(envVars.id, v.id));
+    count++;
+  }
+  for (const e of await environmentEnvRows(tx, [appId])) {
+    if (!stranded(e.envContent)) continue;
+    await tx.update(environmentEnv).set({ envContent: reencryptForOrg(e.envContent, fromOrgId, toOrgId) }).where(eq(environmentEnv.environmentId, e.environmentId));
     count++;
   }
   for (const d of await tx.query.deployments.findMany({ where: eq(deployments.appId, appId), columns: { id: true, envSnapshot: true } })) {
