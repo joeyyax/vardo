@@ -1,4 +1,4 @@
-import { render } from "@react-email/components";
+import { render } from "react-email";
 import type { ReactElement } from "react";
 import { getEmailProviderConfig, type EmailProviderConfig } from "@/lib/system-settings";
 import { logger } from "@/lib/logger";

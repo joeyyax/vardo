@@ -1,4 +1,4 @@
-import { Heading, Text } from "@react-email/components";
+import { Heading, Text } from "react-email";
 import { EmailLayout, CTA, ErrorBox, styles } from "./components";
 
 type BackupFailedProps = {
