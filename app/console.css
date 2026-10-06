@@ -65,9 +65,6 @@
   --color-env-tier-muted: var(--env-tier-muted);
   --color-env-tier-edge: var(--env-tier-edge);
 
-  --shadow-card: var(--shadow-card-value);
-  --shadow-card-hover: var(--shadow-card-hover-value);
-
   --animate-shine: shine var(--duration) infinite linear;
   --animate-aurora: aurora 8s ease-in-out infinite alternate;
 }
@@ -87,27 +84,16 @@
   :root { --pane-pad: 1.75rem; }
 }
 
-/* Collapse the quiet tiers to full ink, re-declared per ground so each
-   resolves against its own calibrated foreground. .surface-sidebar and
-   .surface-danger read the collapsed values through their var() refs. */
+/* The kit raises the quiet tiers; this covers the console's own edges. */
 @media (prefers-contrast: more) {
-  :root {
-    --muted-foreground: var(--foreground);
-    --border: var(--foreground);
-    --input: var(--foreground);
-    --field-edge: var(--foreground);
-    --sidebar-border: var(--sidebar-foreground);
-  }
+  :root,
   .dark {
-    --muted-foreground: var(--foreground);
-    --border: var(--foreground);
-    --input: var(--foreground);
-    --field-edge: var(--foreground);
-    --sidebar-border: var(--sidebar-foreground);
+    --input: var(--border);
+    --field-edge: var(--border);
+    --sidebar-border: var(--border);
   }
   .surface-danger {
     --border: var(--destructive);
-    --muted-foreground: var(--foreground);
   }
 }
 
