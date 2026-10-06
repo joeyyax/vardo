@@ -63,13 +63,18 @@ describe("decideRestart", () => {
   });
 });
 
+const ROUTED = {
+  "traefik.enable": "true",
+  "traefik.http.routers.frontend.rule": "Host(`vardo.example.com`)",
+};
+
 describe("findUnroutedContainers", () => {
   const backend = { service: "a@docker", url: "http://172.18.0.5:3000", ip: "172.18.0.5" };
 
   function container(over: Partial<{ name: string; labels: Record<string, string>; ips: string[] }> = {}) {
     return {
       name: "vardo-frontend",
-      labels: { "traefik.enable": "true" },
+      labels: ROUTED,
       ips: ["172.18.0.5"],
       ...over,
     };
@@ -89,8 +94,21 @@ describe("findUnroutedContainers", () => {
   });
 
   it("ignores traefik.enable=false", () => {
-    const off = container({ labels: { "traefik.enable": "false" } });
+    const off = container({ labels: { ...ROUTED, "traefik.enable": "false" } });
     expect(findUnroutedContainers([off], [])).toEqual([]);
+  });
+
+  it("ignores an enabled sidecar with no router rule", () => {
+    // changedetection-pr-13-blue-sockpuppetbrowser-1: enabled, never routed.
+    const sidecar = container({ labels: { "traefik.enable": "true" } });
+    expect(findUnroutedContainers([sidecar], [])).toEqual([]);
+  });
+
+  it("ignores a TCP-only router, which has no HTTP backend to match", () => {
+    const tcp = container({
+      labels: { "traefik.enable": "true", "traefik.tcp.routers.db.rule": "HostSNI(`*`)" },
+    });
+    expect(findUnroutedContainers([tcp], [])).toEqual([]);
   });
 
   it("ignores a container with no address yet", () => {

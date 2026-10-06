@@ -58,6 +58,18 @@ export function findStaleBackends(
   return backends.filter((b) => !liveIps.has(b.ip));
 }
 
+const HTTP_ROUTER_RULE = /^traefik\.http\.routers\.[^.]+\.rule$/;
+
+/**
+ * Enabled with an HTTP router rule of its own. `traefik.enable` alone marks a
+ * sidecar Traefik can see but never routes, which no restart will change.
+ */
+export function requestsRouting(labels: Record<string, string>): boolean {
+  return (
+    labels["traefik.enable"] === "true" && Object.keys(labels).some((k) => HTTP_ROUTER_RULE.test(k))
+  );
+}
+
 /**
  * Containers that ask to be routed but have no backend in Traefik at all.
  *
@@ -73,7 +85,7 @@ export function findUnroutedContainers(
 ): string[] {
   const routed = new Set(backends.map((b) => b.ip));
   return containers
-    .filter((c) => c.labels["traefik.enable"] === "true")
+    .filter((c) => requestsRouting(c.labels))
     .filter((c) => c.ips.length > 0 && !c.ips.some((ip) => routed.has(ip)))
     .map((c) => c.name);
 }
@@ -145,7 +157,7 @@ export async function tickTraefikDrift(): Promise<void> {
   // indistinguishable from a monitor that found no drift.
   if (!reported) {
     reported = true;
-    const wantRouting = containers.filter((c) => c.labels["traefik.enable"] === "true").length;
+    const wantRouting = containers.filter((c) => requestsRouting(c.labels)).length;
     log.info(
       `Watching ${backends.length} Traefik backend(s) against ${liveIps.size} container IP(s); ${wantRouting} container(s) request routing`,
     );
