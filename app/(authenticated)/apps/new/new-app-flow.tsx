@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
@@ -184,46 +184,64 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], baseDom
   const [selectedRepo, setSelectedRepo] = useState("");
   const [branches, setBranches] = useState<string[]>([]);
 
-  const fetchInstallations = useCallback(async () => {
+  // Refetch installations whenever the source or git mode changes
+  const installationsKey = `${selectedSource}:${gitMode}`;
+  const [installationsFor, setInstallationsFor] = useState<string | null>(null);
+  if (installationsFor !== installationsKey) {
+    setInstallationsFor(installationsKey);
     setInstallationsLoading(true);
-    try {
-      const res = await fetch("/api/v1/github/installations");
-      if (res.ok) {
-        const data = await res.json();
-        const list = data.installations || [];
-        setInstallations(list);
-        if (list.length === 1) setSelectedInstallation(list[0].id);
-      }
-    } catch { /* noop */ } finally {
-      setInstallationsLoading(false);
-    }
-  }, []);
+  }
 
   useEffect(() => {
-    if (!selectedInstallation) { setRepos([]); setSelectedRepo(""); return; }
+    (async () => {
+      try {
+        const res = await fetch("/api/v1/github/installations");
+        if (res.ok) {
+          const data = await res.json();
+          const list = data.installations || [];
+          setInstallations(list);
+          if (list.length === 1) setSelectedInstallation(list[0].id);
+        }
+      } catch { /* noop */ } finally {
+        setInstallationsLoading(false);
+      }
+    })();
+  }, [installationsKey]);
+
+  // Reset repos when the installation changes
+  const [reposFor, setReposFor] = useState(selectedInstallation);
+  if (reposFor !== selectedInstallation) {
+    setReposFor(selectedInstallation);
+    setRepos([]);
+    setSelectedRepo("");
+    setReposLoading(!!selectedInstallation);
+  }
+
+  useEffect(() => {
+    if (!selectedInstallation) return;
     let cancelled = false;
-    async function fetchRepos() {
-      setReposLoading(true); setRepos([]); setSelectedRepo("");
+    (async () => {
       try {
         const res = await fetch(`/api/v1/github/repos?installationId=${selectedInstallation}`);
         if (res.ok && !cancelled) setRepos((await res.json()).repos || []);
       } catch { if (!cancelled) toast.error("Failed to fetch repositories"); }
       finally { if (!cancelled) setReposLoading(false); }
-    }
-    fetchRepos();
+    })();
     return () => { cancelled = true; };
   }, [selectedInstallation]);
 
-  // Auto-fetch installations when GitHub source is selected
-  useEffect(() => {
-    fetchInstallations();
-  }, [selectedSource, gitMode, fetchInstallations]);
-
   // Fetch branches when a repo is selected
+  const branchesKey = `${selectedInstallation}/${selectedRepo}`;
+  const [branchesFor, setBranchesFor] = useState(branchesKey);
+  if (branchesFor !== branchesKey) {
+    setBranchesFor(branchesKey);
+    if (!selectedRepo || !selectedInstallation) setBranches([]);
+  }
+
   useEffect(() => {
-    if (!selectedRepo || !selectedInstallation) { setBranches([]); return; }
+    if (!selectedRepo || !selectedInstallation) return;
     let cancelled = false;
-    async function fetchBranches() {
+    (async () => {
       try {
         const res = await fetch(`/api/v1/github/branches?installationId=${selectedInstallation}&repo=${selectedRepo}`);
         if (res.ok && !cancelled) {
@@ -231,8 +249,7 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], baseDom
           setBranches(data.branches || []);
         }
       } catch { /* noop */ }
-    }
-    fetchBranches();
+    })();
     return () => { cancelled = true; };
   }, [selectedRepo, selectedInstallation]);
 
@@ -249,6 +266,7 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], baseDom
     }
     if (defaultImage) {
       selectSource("image");
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- defaults carry random slugs, so they apply after hydration
       setImageName(defaultImage);
     } else if (SOURCE_OPTIONS.some((s) => s.id === defaultSource)) {
       selectSource(defaultSource as SourceOption);
