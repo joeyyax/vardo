@@ -4,7 +4,7 @@
 // ---------------------------------------------------------------------------
 
 import { db } from "@/lib/db";
-import { orgEnvVars, apps, environments } from "@/lib/db/schema";
+import { orgEnvVars, apps } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { mkdir, writeFile, readFile, rm, symlink, copyFile, stat, readdir } from "fs/promises";
 import { join } from "path";
@@ -12,6 +12,7 @@ import { decryptOrFallback } from "@/lib/crypto/encrypt";
 import { DeployBlockedError } from "../errors";
 import { parseEnvToMap } from "@/lib/env/parse-env";
 import { resolveAllEnvVars, type ResolveContext } from "@/lib/env/resolve";
+import { externalVarResolver } from "./external-var";
 import {
   isAnonymousVolume,
   composeToYaml,
@@ -320,70 +321,11 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
       },
       envVars: envMap,
       orgEnvVars: orgEnvVarMap,
-      resolveExternalVar: async (appName: string, varKey: string) => {
-        const refApp = await db.query.apps.findFirst({
-          where: and(
-            eq(apps.organizationId, ctx.organizationId),
-            eq(apps.name, appName),
-          ),
-          columns: {
-            id: true,
-            name: true,
-            displayName: true,
-            organizationId: true,
-            projectId: true,
-            containerPort: true,
-            gitUrl: true,
-            gitBranch: true,
-            imageName: true,
-            envContent: true,
-          },
-          with: { domains: { columns: { domain: true }, limit: 1 } },
-        });
-        if (!refApp) return null;
-
-        const builtinFields: Record<string, string | null> = {
-          name: refApp.name,
-          displayName: refApp.displayName,
-          port: refApp.containerPort?.toString() ?? null,
-          id: refApp.id,
-          domain: refApp.domains[0]?.domain ?? null,
-          url: refApp.domains[0]?.domain
-            ? `https://${refApp.domains[0].domain}`
-            : null,
-          host: refApp.domains[0]?.domain ?? null,
-          internalHost: refApp.name,
-          gitUrl: refApp.gitUrl,
-          gitBranch: refApp.gitBranch,
-          imageName: refApp.imageName,
-        };
-        if (varKey in builtinFields) return builtinFields[varKey];
-
-        if (
-          ctx.groupEnvironmentId &&
-          refApp.projectId &&
-          app.projectId &&
-          refApp.projectId === app.projectId
-        ) {
-          const refEnv = await db.query.environments.findFirst({
-            where: and(
-              eq(environments.appId, refApp.id),
-              eq(environments.groupEnvironmentId, ctx.groupEnvironmentId),
-            ),
-            columns: { id: true },
-          });
-
-          if (refEnv) {
-            // Environment-specific resolution would go here
-          }
-        }
-
-        if (!refApp.envContent) return null;
-        const { content: refText } = decryptOrFallback(refApp.envContent, refApp.organizationId);
-        if (!refText) return null;
-        const refMap = parseEnvToMap(refText);
-        return refMap[varKey] ?? null;
-      },
+      resolveExternalVar: externalVarResolver({
+        organizationId: ctx.organizationId,
+        projectId: app.projectId,
+        groupEnvironmentId: ctx.groupEnvironmentId,
+      }),
     };
 
     if (Object.keys(envMap).length > 0) {
