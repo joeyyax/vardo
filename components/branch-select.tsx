@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState } from "react";
 import { Check, ChevronDown, Loader2, GitBranch } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -35,21 +35,14 @@ export function BranchSelect({
 }: BranchSelectProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
-  const [branches, setBranches] = useState<string[]>(externalBranches ?? []);
+  const [fetchedBranches, setFetchedBranches] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
-  const [fetched, setFetched] = useState(!!externalBranches);
-
-  // Sync external branches
-  useEffect(() => {
-    if (externalBranches) {
-      setBranches(externalBranches);
-      setFetched(true);
-    }
-  }, [externalBranches]);
+  const [fetched, setFetched] = useState(false);
+  const branches = externalBranches ?? fetchedBranches;
 
   // Fetch from project API on first open
-  const fetchBranches = useCallback(async () => {
-    if (fetched || !appId || !orgId) return;
+  async function fetchBranches() {
+    if (externalBranches || fetched || !appId || !orgId) return;
     setLoading(true);
     try {
       const res = await fetch(
@@ -57,7 +50,7 @@ export function BranchSelect({
       );
       if (res.ok) {
         const data = await res.json();
-        setBranches(data.branches || []);
+        setFetchedBranches(data.branches || []);
       }
     } catch {
       // silent
@@ -65,18 +58,19 @@ export function BranchSelect({
       setLoading(false);
       setFetched(true);
     }
-  }, [fetched, appId, orgId]);
+  }
 
-  useEffect(() => {
-    if (open) fetchBranches();
-  }, [open, fetchBranches]);
+  function handleOpenChange(next: boolean) {
+    setOpen(next);
+    if (next) fetchBranches();
+  }
 
   const filtered = branches
     .filter((b) => !excludeBranch || b !== excludeBranch)
     .filter((b) => !search || b.toLowerCase().includes(search.toLowerCase()));
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
         <Button
           variant="outline"

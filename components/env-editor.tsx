@@ -147,11 +147,10 @@ export function EnvEditor(props: EnvEditorProps) {
   const [selectedLineSet, setSelectedLineSet] = useState<Set<number>>(new Set());
   const containerRef = useRef<HTMLDivElement>(null);
   const cmRef = useRef<ReactCodeMirrorRef>(null);
+  const [editorView, setEditorView] = useState<EditorView | null>(null);
 
   // Track CodeMirror selection to detect multi-line selections
-  const updateSelectionFromView = useCallback(() => {
-    const view = cmRef.current?.view;
-    if (!view) return;
+  const updateSelectionFromView = useCallback((view: EditorView) => {
     const { from, to } = view.state.selection.main;
     if (from === to) {
       setSelectedLineSet(new Set());
@@ -174,7 +173,7 @@ export function EnvEditor(props: EnvEditorProps) {
       ...baseExtensions,
       EditorView.updateListener.of((update) => {
         if (update.selectionSet) {
-          updateSelectionFromView();
+          updateSelectionFromView(update.view);
         }
       }),
     ],
@@ -315,7 +314,7 @@ export function EnvEditor(props: EnvEditorProps) {
       const count = selected.length;
 
       // Position at first selected line
-      const view = cmRef.current?.view;
+      const view = editorView;
       if (!view) return null;
       const firstLine = view.state.doc.line(indices[0] + 1);
       const block = view.lineBlockAt(firstLine.from);
@@ -349,7 +348,7 @@ export function EnvEditor(props: EnvEditorProps) {
     const varRef = appName ? `\${${appName}.${key}}` : null;
 
     // Get pixel position from CodeMirror
-    const view = cmRef.current?.view;
+    const view = editorView;
     if (!view) return null;
     const cmLine = view.state.doc.line(hoveredLine + 1);
     const block = view.lineBlockAt(cmLine.from);
@@ -419,6 +418,7 @@ export function EnvEditor(props: EnvEditorProps) {
       >
         <CodeMirror
           ref={cmRef}
+          onCreateEditor={setEditorView}
           value={content}
           onChange={handleChange}
           extensions={extensions}
