@@ -108,13 +108,13 @@ async function upActiveSlot(
       // start a second copy of it.
       const shared = partition !== null && service in partition.shared;
       await up(
-        shared ? sharedProjectName(appName, envName) : composeProject,
+        shared ? sharedProjectName(appName, envName, partition.composeName) : composeProject,
         shared ? ["--no-deps", service] : [service],
       );
     } else if (partition) {
       // The same split the deploy made. Shared first, so a database is
       // answering before anything that depends on it comes up.
-      await up(sharedProjectName(appName, envName), sharedScopeArgs(partition));
+      await up(sharedProjectName(appName, envName, partition.composeName), sharedScopeArgs(partition));
       await up(composeProject, slotScopeArgs(partition));
     } else {
       await up(composeProject, []);

@@ -794,8 +794,9 @@ async function stopSlotInDir(
 
   // No deploy ever takes the shared project down. Left up, its containers
   // outlive the app and the reconciler reports the stopped app as active.
-  if (shared && (await readSlotPartition(slotDir))) {
-    await down(sharedProjectName(shared.appName, shared.envName));
+  const partition = shared ? await readSlotPartition(slotDir) : null;
+  if (shared && partition) {
+    await down(sharedProjectName(shared.appName, shared.envName, partition.composeName));
   }
 }
 
@@ -976,7 +977,7 @@ export async function restartContainers(
     if (service && environmentName) {
       const partition = await readSlotPartition(slotDir);
       if (partition && service in partition.shared) {
-        targetProject = sharedProjectName(appName, environmentName);
+        targetProject = sharedProjectName(appName, environmentName, partition.composeName);
       }
     }
 
