@@ -13,7 +13,7 @@ import {
   detectLevel, assignLevels, countLevels, filterByLevel, type LogLevel,
 } from "@/lib/logging/levels";
 import { highlightLine, serviceColor } from "@/lib/logging/highlight";
-import { findMatches, matchedLines, filterToMatches, stepMatch } from "@/lib/logging/search";
+import { findMatches, matchedLines, filterToMatches, stepMatch, type LineMatch } from "@/lib/logging/search";
 import {
   capLines, mergeOlder, historyUrlFor, SCROLLBACK_OPTIONS, DEFAULT_SCROLLBACK,
 } from "@/lib/logging/buffer";
@@ -128,11 +128,21 @@ export function TerminalOutput({
     return map;
   }, [matches, visibleLines, query]);
 
-  // Re-anchoring on every keystroke is the point — a new query starts at its first hit.
-  const [anchoredTo, setAnchoredTo] = useState<{ query: string; count: number } | null>(null);
-  if (!anchoredTo || anchoredTo.query !== query || anchoredTo.count !== matches.length) {
-    setAnchoredTo({ query, count: matches.length });
-    setActiveMatch(matches.length > 0 ? 0 : -1);
+  // A new query starts at its first hit; streamed lines keep the active match on its line.
+  const [anchoredTo, setAnchoredTo] = useState<{
+    query: string;
+    matches: LineMatch[];
+    lines: typeof visibleLines;
+  } | null>(null);
+  if (!anchoredTo || anchoredTo.query !== query || anchoredTo.matches !== matches) {
+    const first = matches.length > 0 ? 0 : -1;
+    const prev = anchoredTo?.query === query ? anchoredTo.matches[activeMatch] : undefined;
+    const prevLine = prev && anchoredTo?.lines[prev.line];
+    const kept = prevLine
+      ? matches.findIndex((m) => visibleLines[m.line] === prevLine && m.ordinal === prev.ordinal)
+      : -1;
+    setAnchoredTo({ query, matches, lines: visibleLines });
+    setActiveMatch(kept >= 0 ? kept : first);
   }
 
   const active = activeMatch >= 0 ? matches[activeMatch] : undefined;
@@ -143,16 +153,20 @@ export function TerminalOutput({
     userScrolledRef.current = true;
   }, [matches.length]);
 
-  // Center the current match without scrolling the page around it
+  // Center the current match without scrolling the page around it. Keyed on the
+  // line itself so streamed lines that leave the match in place don't re-center.
+  const activeRow = active?.line;
+  const activeLine = activeRow === undefined ? undefined : visibleLines[activeRow];
+  const activeOrdinal = active?.ordinal;
   useEffect(() => {
     const container = containerRef.current;
-    if (!active || !container) return;
-    const row = container.querySelector(`[data-line="${active.line}"]`);
+    if (activeRow === undefined || !container) return;
+    const row = container.querySelector(`[data-line="${activeRow}"]`);
     if (!row) return;
     const pane = container.getBoundingClientRect();
     const line = row.getBoundingClientRect();
     container.scrollTop += line.top - pane.top - (pane.height - line.height) / 2;
-  }, [active]);
+  }, [activeRow, activeLine, activeOrdinal]);
 
   // Fill the rest of the viewport
   const [fillHeight, setFillHeight] = useState<number>();
