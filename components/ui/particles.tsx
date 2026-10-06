@@ -100,43 +100,6 @@ export const Particles: React.FC<ParticlesProps> = ({
   const rafID = useRef<number | null>(null)
   const resizeTimeout = useRef<NodeJS.Timeout | null>(null)
 
-  useEffect(() => {
-    if (canvasRef.current) {
-      context.current = canvasRef.current.getContext("2d")
-    }
-    initCanvas()
-    animate()
-
-    const handleResize = () => {
-      if (resizeTimeout.current) {
-        clearTimeout(resizeTimeout.current)
-      }
-      resizeTimeout.current = setTimeout(() => {
-        initCanvas()
-      }, 200)
-    }
-
-    window.addEventListener("resize", handleResize)
-
-    return () => {
-      if (rafID.current != null) {
-        window.cancelAnimationFrame(rafID.current)
-      }
-      if (resizeTimeout.current) {
-        clearTimeout(resizeTimeout.current)
-      }
-      window.removeEventListener("resize", handleResize)
-    }
-  }, [color])
-
-  useEffect(() => {
-    onMouseMove()
-  }, [mousePosition.x, mousePosition.y])
-
-  useEffect(() => {
-    initCanvas()
-  }, [refresh])
-
   const initCanvas = () => {
     resizeCanvas()
     drawParticles()
@@ -300,6 +263,43 @@ export const Particles: React.FC<ParticlesProps> = ({
     })
     rafID.current = window.requestAnimationFrame(animate)
   }
+
+  useEffect(() => {
+    if (canvasRef.current) {
+      context.current = canvasRef.current.getContext("2d")
+    }
+    initCanvas()
+    animate()
+
+    const handleResize = () => {
+      if (resizeTimeout.current) {
+        clearTimeout(resizeTimeout.current)
+      }
+      resizeTimeout.current = setTimeout(() => {
+        initCanvas()
+      }, 200)
+    }
+
+    window.addEventListener("resize", handleResize)
+
+    return () => {
+      if (rafID.current != null) {
+        window.cancelAnimationFrame(rafID.current)
+      }
+      if (resizeTimeout.current) {
+        clearTimeout(resizeTimeout.current)
+      }
+      window.removeEventListener("resize", handleResize)
+    }
+  }, [color])
+
+  useEffect(() => {
+    onMouseMove()
+  }, [mousePosition.x, mousePosition.y])
+
+  useEffect(() => {
+    initCanvas()
+  }, [refresh])
 
   return (
     <div
