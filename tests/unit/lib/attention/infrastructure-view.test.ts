@@ -117,6 +117,21 @@ describe("infrastructure view", () => {
     expect(infrastructurePollMs(back)).toBe(INFRA_POLL_ACTIVE_MS);
   });
 
+  it("drops back to the idle cadence once the resolved notice ages out", () => {
+    const back = applyInfrastructurePayload(
+      applyInfrastructurePayload(initialInfrastructureView(), deploying, NOW),
+      healthy,
+      NOW,
+    );
+    const within = applyInfrastructurePayload(back, healthy, NOW + INFRA_RESOLVED_MS - 1);
+    const after = applyInfrastructurePayload(within, healthy, NOW + INFRA_RESOLVED_MS);
+
+    expect(within.resolvedAt).toBe(NOW);
+    expect(infrastructurePollMs(within)).toBe(INFRA_POLL_ACTIVE_MS);
+    expect(after.resolvedAt).toBeNull();
+    expect(infrastructurePollMs(after)).toBe(INFRA_POLL_IDLE_MS);
+  });
+
   it("does not claim a resolution nobody was waiting for", () => {
     const state = applyInfrastructurePayload(initialInfrastructureView(), healthy, NOW);
 

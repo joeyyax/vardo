@@ -48,11 +48,12 @@ export function applyInfrastructurePayload(
   now: number,
 ): InfrastructureView {
   const finished = state.selfDeploy && !payload.selfDeploy;
+  const expired = state.resolvedAt !== null && now - state.resolvedAt >= INFRA_RESOLVED_MS;
   return {
     rows: payload.rows,
     selfDeploy: payload.selfDeploy,
     failures: 0,
-    resolvedAt: payload.selfDeploy ? null : finished ? now : state.resolvedAt,
+    resolvedAt: payload.selfDeploy ? null : finished ? now : expired ? null : state.resolvedAt,
   };
 }
 

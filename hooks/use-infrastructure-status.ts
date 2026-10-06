@@ -22,62 +22,59 @@ import type { AttentionRow } from "@/lib/ui/attention";
 export function useInfrastructureStatus(): { rows: AttentionRow[]; resolvedAt: number | null } {
   const [view, setView] = useState<InfrastructureView>(initialInfrastructureView);
   const [checkedAt, setCheckedAt] = useState(0);
-  const viewRef = useRef(view);
+  const [hiddenTick, setHiddenTick] = useState(0);
   const inFlight = useRef(false);
 
-  useEffect(() => {
-    viewRef.current = view;
-  }, [view]);
-
-  const check = useCallback(async () => {
+  const check = useCallback(() => {
     if (inFlight.current) return;
     inFlight.current = true;
-    try {
-      const res = await fetch("/api/v1/system/infrastructure", { cache: "no-store" });
-      if (!res.ok) throw new Error(String(res.status));
-      const payload = await res.json();
-      const at = Date.now();
-      setView((state) =>
-        applyInfrastructurePayload(
-          state,
-          { rows: payload.rows ?? [], selfDeploy: !!payload.selfDeploy },
-          at,
-        ),
-      );
-      setCheckedAt(at);
-    } catch {
-      setView(applyInfrastructureFailure);
-      setCheckedAt(Date.now());
-    } finally {
-      inFlight.current = false;
-    }
+    fetch("/api/v1/system/infrastructure", { cache: "no-store" })
+      .then(async (res) => {
+        if (!res.ok) throw new Error(String(res.status));
+        const payload = await res.json();
+        const at = Date.now();
+        setView((state) =>
+          applyInfrastructurePayload(
+            state,
+            { rows: payload.rows ?? [], selfDeploy: !!payload.selfDeploy },
+            at,
+          ),
+        );
+        setCheckedAt(at);
+      })
+      .catch(() => {
+        setView(applyInfrastructureFailure);
+        setCheckedAt(Date.now());
+      })
+      .finally(() => {
+        inFlight.current = false;
+      });
   }, []);
 
+  // A hidden tab is not evidence of anything: no polls, so no failures either.
   useEffect(() => {
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    let cancelled = false;
+    if (document.visibilityState === "visible") check();
 
-    // A hidden tab is not evidence of anything: no polls, so no failures either.
-    const run = async () => {
-      if (document.visibilityState === "visible") await check();
-      if (!cancelled) timer = setTimeout(run, infrastructurePollMs(viewRef.current));
-    };
-
-    void run();
-
-    const recheck = () => document.visibilityState === "visible" && void check();
+    const recheck = () => document.visibilityState === "visible" && check();
     document.addEventListener("visibilitychange", recheck);
     window.addEventListener("online", recheck);
     window.addEventListener(INFRA_RECHECK_EVENT, recheck);
 
     return () => {
-      cancelled = true;
-      if (timer) clearTimeout(timer);
       document.removeEventListener("visibilitychange", recheck);
       window.removeEventListener("online", recheck);
       window.removeEventListener(INFRA_RECHECK_EVENT, recheck);
     };
   }, [check]);
+
+  // Every check commits a new view, which re-arms this timer at that view's cadence.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (document.visibilityState === "visible") check();
+      else setHiddenTick((n) => n + 1);
+    }, infrastructurePollMs(view));
+    return () => clearTimeout(timer);
+  }, [view, hiddenTick, check]);
 
   // Rendered rows are time-dependent — the resolved notice ages out on its own.
   const rows = useMemo(() => infrastructureViewRows(view, checkedAt), [view, checkedAt]);
