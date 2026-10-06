@@ -78,6 +78,11 @@
   /* Metrics in the body face: Atkinson keeps 0/O and 1/l apart. */
   --type-numeral-font: var(--font-sans);
   --type-numeral-weight: 600;
+  --type-numeral-tracking: -0.01em;
+  --type-numeral-leading: 1.1;
+  /* Geist Mono has no real small caps; Chrome fakes them at about 0.7. */
+  --type-label-size: 14px;
+  --type-label-weight: 500;
 
   /* Bone ground, warm ink. Cards are lifted by shadow, not outlined. The ground
      sits close to the card so white never reads as a cut-out; the tray and the

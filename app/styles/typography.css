@@ -132,25 +132,28 @@
   .type-numeral {
     font-family: var(--type-numeral-font, var(--font-mono));
     font-weight: var(--type-numeral-weight, 500);
-    letter-spacing: -0.025em;
-    line-height: 1;
+    letter-spacing: var(--type-numeral-tracking, -0.025em);
+    line-height: var(--type-numeral-leading, 1);
     font-variant-numeric: tabular-nums;
   }
 
   /* Label — mono meta label at 11px/0.08em; the quieter sibling of
      .type-kicker (sans, 12px, 0.16em). Almost always --muted-foreground. */
   .type-label {
-    font-family: var(--font-mono);
+    font-family: var(--type-label-font, var(--font-mono));
     /* Small caps, not text-transform — see .type-kicker for why.
        No size compensation here, unlike the kicker: this face is monospace, so
        the advance width is per character and doesn't scale with the glyphs.
        Bumping the size to recover cap height made the line 25% wider and
        wrapped it onto three lines on a phone. At the original size the line is
        exactly as wide as it was; the caps just sit a little shorter. */
-    font-variant-caps: all-small-caps;
-    letter-spacing: 0.08em;
-    font-size: var(--text-2xs);
-    line-height: var(--text-2xs--line-height);
+    /* A face without real small caps gets them faked at about 0.7 scale; such
+       a brand sets --type-label-size and --type-label-weight to compensate. */
+    font-variant-caps: var(--type-label-caps, all-small-caps);
+    letter-spacing: var(--type-label-tracking, 0.08em);
+    font-size: var(--type-label-size, var(--text-2xs));
+    font-weight: var(--type-label-weight, inherit);
+    line-height: var(--type-label-leading, var(--text-2xs--line-height));
   }
 }
 
