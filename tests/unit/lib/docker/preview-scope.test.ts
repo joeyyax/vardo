@@ -35,7 +35,7 @@ vi.mock("@/lib/config/features", () => ({ isFeatureEnabledAsync: vi.fn().mockRes
 vi.mock("@/lib/docker/deploy-group", () => ({ deployGroup: deployGroupMock }));
 
 import { createPreview } from "@/lib/docker/preview";
-import { environments } from "@/lib/db/schema";
+import { environments, domains } from "@/lib/db/schema";
 import { normalizeGitRepo, previewScope } from "@/lib/docker/preview-scope";
 
 const base = { projectId: "proj-ai", organizationId: "org-1", cloneStrategy: "clone", dependsOn: null, parentAppId: null };
@@ -79,6 +79,12 @@ describe("createPreview scope", () => {
       inserts.filter((i) => i.table === environments).map((i) => [i.values.appId, i.values.gitBranch]),
     );
     expect(branches).toEqual({ svc: "feat/x", "svc-worker": undefined, redis: undefined });
+  });
+
+  it("inserts no domain row on the production app", async () => {
+    await openPr();
+
+    expect(inserts.filter((i) => i.table === domains)).toEqual([]);
   });
 
   it("matches the repo whatever form the git URL takes", async () => {

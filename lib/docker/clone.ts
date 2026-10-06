@@ -208,16 +208,8 @@ export async function createGroupEnvironment(
       groupEnvironmentId: groupEnvId,
     });
 
-    // Create domain record
-    if (envDomain) {
-      await db.insert(domains).values({
-        id: nanoid(),
-        appId: app.id,
-        domain: envDomain,
-        isPrimary: false,
-        sslEnabled: true,
-      });
-    }
+    // The hostname lives on the environment only. A domain row would route it
+    // to, and strip hand-written labels from, the production deploy.
 
     // Clone env vars from source (base vars, environmentId = NULL)
     const sourceVars = await db.query.envVars.findMany({

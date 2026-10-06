@@ -25,12 +25,23 @@ export async function resolveDefaultEnv(appId: string): Promise<ResolvedEnv> {
 }
 
 export type DeployEnv = {
+  id: string | null;
   name: string;
   type: EnvType;
   gitBranch: string | null;
+  /** The app's own environment, the one apps.status and domain rows describe. */
+  isDefault: boolean;
+  domain: string | null;
 };
 
-type DeployEnvRow = { name: string; type: EnvType; gitBranch: string | null };
+type DeployEnvRow = {
+  id: string;
+  name: string;
+  type: EnvType;
+  gitBranch: string | null;
+  isDefault: boolean | null;
+  domain: string | null;
+};
 
 /** Injectable loader — the real implementation reads the environments table. */
 export type DeployEnvLoader = (
@@ -41,12 +52,19 @@ export type DeployEnvLoader = (
 const defaultLoader: DeployEnvLoader = async (appId, environmentId) => {
   const row = await db.query.environments.findFirst({
     where: and(eq(environments.id, environmentId), eq(environments.appId, appId)),
-    columns: { name: true, type: true, gitBranch: true },
+    columns: { id: true, name: true, type: true, gitBranch: true, isDefault: true, domain: true },
   });
   return row ?? null;
 };
 
-const FALLBACK: DeployEnv = { name: "production", type: "production", gitBranch: null };
+const FALLBACK: DeployEnv = {
+  id: null,
+  name: "production",
+  type: "production",
+  gitBranch: null,
+  isDefault: true,
+  domain: null,
+};
 
 /**
  * Resolve the environment a deploy runs under.
@@ -66,5 +84,12 @@ export async function resolveDeployEnv(
   if (!env) {
     throw new DeployBlockedError(`Environment ${environmentId} does not exist on this app — refusing to deploy`);
   }
-  return { name: env.name, type: env.type, gitBranch: env.gitBranch };
+  return {
+    id: env.id,
+    name: env.name,
+    type: env.type,
+    gitBranch: env.gitBranch,
+    isDefault: env.isDefault ?? false,
+    domain: env.domain,
+  };
 }

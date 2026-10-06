@@ -3,7 +3,7 @@ import { statusChange } from "@/lib/db/app-status";
 import { deployments, apps, organizations, environments, projects, domains } from "@/lib/db/schema";
 import { decryptOrFallback } from "@/lib/crypto/encrypt";
 import { parseEnvToMap } from "@/lib/env/parse-env";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, isNotNull } from "drizzle-orm";
 import { logger } from "@/lib/logger";
 import { redactSecrets } from "@/lib/redact";
 import { nanoid } from "nanoid";
@@ -39,6 +39,7 @@ import {
   type RollbackTarget,
 } from "./rollback-target";
 import { execFileAsync } from "@/lib/utils/exec";
+import { environmentDomains, withoutEnvironmentHosts } from "./environment-domains";
 
 export type { DeployStage } from "./deploy-logger";
 
@@ -288,6 +289,20 @@ export async function runDeployment(
     const envType = resolvedEnv.type;
     const envBranchOverride = resolvedEnv.gitBranch;
     log(`[deploy] Environment: ${envName} (${envType})`);
+
+    if (resolvedEnv.isDefault) {
+      const groupEnvHosts = await db.query.environments.findMany({
+        where: and(
+          eq(environments.appId, opts.appId),
+          eq(environments.isDefault, false),
+          isNotNull(environments.groupEnvironmentId),
+        ),
+        columns: { domain: true },
+      });
+      app.domains = withoutEnvironmentHosts(app.domains, groupEnvHosts.map((e) => e.domain));
+    } else {
+      app.domains = environmentDomains(app.domains, resolvedEnv, app.id);
+    }
 
     // Local environments always allow bind mounts. The Docker socket stays on
     // the project flag — anyone can create a local environment (#803).

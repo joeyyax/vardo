@@ -36,11 +36,11 @@ import { resolveDeployEnv, type DeployEnvLoader } from "@/lib/docker/resolve-env
 // Same shape, different owner: one environment on the app being deployed, one
 // on an app the caller has no access to.
 const ENV_ROWS = [
-  { id: "env-own", appId: "app-1", name: "staging", type: "staging", gitBranch: "develop" },
+  { id: "env-own", appId: "app-1", name: "staging", type: "staging", gitBranch: "develop", isDefault: false, domain: "api-staging.example.com" },
   { id: "env-foreign", appId: "app-2", name: "sandbox", type: "local", gitBranch: "main" },
 ];
 
-const PRODUCTION = { name: "production", type: "production", gitBranch: null };
+const PRODUCTION = { id: null, name: "production", type: "production", gitBranch: null, isDefault: true, domain: null };
 
 describe("resolveDeployEnv", () => {
   beforeEach(() => {
@@ -65,6 +65,9 @@ describe("resolveDeployEnv", () => {
 
   it("resolves an environment belonging to the app being deployed", async () => {
     await expect(resolveDeployEnv("app-1", "env-own")).resolves.toEqual({
+      id: "env-own",
+      isDefault: false,
+      domain: "api-staging.example.com",
       name: "staging",
       type: "staging",
       gitBranch: "develop",
