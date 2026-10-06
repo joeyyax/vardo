@@ -71,7 +71,10 @@ vi.mock("@/lib/docker/deploy-concurrency", () => ({
   reconcileQueue: vi.fn(),
 }));
 vi.mock("@/lib/docker/deploy", () => ({ stopProject: vi.fn() }));
-vi.mock("@/lib/docker/deploy-cancel", () => ({ publishKillSignal: vi.fn() }));
+vi.mock("@/lib/docker/deploy-cancel", () => ({
+  publishKillSignal: vi.fn(),
+  deployScope: vi.fn(async (appId: string) => appId),
+}));
 vi.mock("@/lib/stream/producer", () => ({ addEvent: vi.fn().mockResolvedValue("id") }));
 vi.mock("@/lib/notifications/dispatch", () => ({ emit: vi.fn() }));
 vi.mock("@/lib/logger", () => ({

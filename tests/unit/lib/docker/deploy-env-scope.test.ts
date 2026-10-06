@@ -36,11 +36,11 @@ import { resolveDeployEnv, type DeployEnvLoader } from "@/lib/docker/resolve-env
 // Same shape, different owner: one environment on the app being deployed, one
 // on an app the caller has no access to.
 const ENV_ROWS = [
-  { id: "env-own", appId: "app-1", name: "staging", type: "staging", gitBranch: "develop" },
+  { id: "env-own", appId: "app-1", name: "staging", type: "staging", gitBranch: "develop", isDefault: false, domain: "api-staging.example.com" },
   { id: "env-foreign", appId: "app-2", name: "sandbox", type: "local", gitBranch: "main" },
 ];
 
-const PRODUCTION = { name: "production", type: "production", gitBranch: null };
+const PRODUCTION = { id: null, name: "production", type: "production", gitBranch: null, isDefault: true, domain: null };
 
 describe("resolveDeployEnv", () => {
   beforeEach(() => {
@@ -65,23 +65,21 @@ describe("resolveDeployEnv", () => {
 
   it("resolves an environment belonging to the app being deployed", async () => {
     await expect(resolveDeployEnv("app-1", "env-own")).resolves.toEqual({
+      id: "env-own",
+      isDefault: false,
+      domain: "api-staging.example.com",
       name: "staging",
       type: "staging",
       gitBranch: "develop",
     });
   });
 
-  it("falls back to production for an environment on another app", async () => {
-    await expect(resolveDeployEnv("app-1", "env-foreign")).resolves.toEqual(PRODUCTION);
+  it("rejects an environment on another app", async () => {
+    await expect(resolveDeployEnv("app-1", "env-foreign")).rejects.toThrow(/does not exist/);
   });
 
-  it("does not take the local type from another app's environment", async () => {
-    const env = await resolveDeployEnv("app-1", "env-foreign");
-    expect(env.type).not.toBe("local");
-  });
-
-  it("falls back to production for an id that matches nothing", async () => {
-    await expect(resolveDeployEnv("app-1", "env-missing")).resolves.toEqual(PRODUCTION);
+  it("rejects a deleted environment instead of deploying production", async () => {
+    await expect(resolveDeployEnv("app-1", "env-missing")).rejects.toThrow(/does not exist/);
   });
 
   it("does not query at all when no environment was named", async () => {

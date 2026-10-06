@@ -29,6 +29,7 @@ import { and, eq } from "drizzle-orm";
 import type { DeployContext } from "../deploy-context";
 import type { ServiceConfigOverride } from "../compose-types";
 import { appScope } from "@/lib/infra/instance-apps";
+import { handWrittenRoute, isolateCompose } from "../environment-isolation";
 
 const NETWORK_NAME = VARDO_NETWORK;
 
@@ -64,6 +65,21 @@ export async function resolveCompose(ctx: DeployContext): Promise<DeployContext>
   // existing Traefik/vardo labels that came in via import.
   const bareCompose = stripVardoInjections(compose, NETWORK_NAME);
   ctx.bareCompose = bareCompose;
+
+  // The repo's routing belongs to production. Route the environment's own
+  // hostname where those labels pointed, and drop the labels themselves.
+  if (ctx.envIsolated) {
+    const route = handWrittenRoute(compose);
+    if (route) {
+      for (const domain of app.domains) {
+        domain.composeService ??= route.service;
+        domain.port ??= route.port;
+      }
+    }
+    compose = isolateCompose(compose);
+    ctx.bareCompose = isolateCompose(ctx.bareCompose);
+    log(`[deploy] ${ctx.envName}: production routing labels removed`);
+  }
 
   // Normalize: treat the user's compose as intent, produce safe runtime config.
   // Host ports are intentionally KEPT. Vardo writes the user's bare compose to
@@ -199,6 +215,8 @@ export async function resolveCompose(ctx: DeployContext): Promise<DeployContext>
     );
     const imagePorts = needsImagePorts ? await imagePortsByService(compose) : {};
     const narrowedProtocol = narrowBackendProtocol(app.backendProtocol);
+    // Production names must stay byte-identical; live routers carry them.
+    const envRoute = ctx.envIsolated ? `${app.name}-${ctx.envName}` : undefined;
     for (const domain of app.domains) {
       const port = domain.port || containerPort;
       const resolvedProtocol = resolveBackendProtocol(
@@ -220,8 +238,9 @@ export async function resolveCompose(ctx: DeployContext): Promise<DeployContext>
         );
       }
       compose = injectTraefikLabels(compose, {
-        projectName: `${app.name}-${domain.id.slice(0, 8)}`,
+        projectName: envRoute ?? `${app.name}-${domain.id.slice(0, 8)}`,
         appName: app.name,
+        traefikService: envRoute,
         domain: domain.domain,
         containerPort: port,
         certResolver: domain.certResolver || "le-dns",
@@ -240,7 +259,7 @@ export async function resolveCompose(ctx: DeployContext): Promise<DeployContext>
     }
 
     // Clean up any stale file-provider config from before this change
-    removeAppRouteConfig(app.name).catch(() => {});
+    if (!ctx.envIsolated) removeAppRouteConfig(app.name).catch(() => {});
   } else if (allServicesCustomNetwork) {
     log(`[deploy] Skipping Traefik labels — all services use custom network modes: ${servicesWithCustomNetwork.join(", ")}`);
   }

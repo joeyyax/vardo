@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { environments } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
+import { DeployBlockedError } from "./errors";
 
 export type EnvType = "production" | "staging" | "preview" | "local";
 
@@ -24,12 +25,23 @@ export async function resolveDefaultEnv(appId: string): Promise<ResolvedEnv> {
 }
 
 export type DeployEnv = {
+  id: string | null;
   name: string;
   type: EnvType;
   gitBranch: string | null;
+  /** The app's own environment, the one apps.status and domain rows describe. */
+  isDefault: boolean;
+  domain: string | null;
 };
 
-type DeployEnvRow = { name: string; type: EnvType; gitBranch: string | null };
+type DeployEnvRow = {
+  id: string;
+  name: string;
+  type: EnvType;
+  gitBranch: string | null;
+  isDefault: boolean | null;
+  domain: string | null;
+};
 
 /** Injectable loader — the real implementation reads the environments table. */
 export type DeployEnvLoader = (
@@ -40,20 +52,27 @@ export type DeployEnvLoader = (
 const defaultLoader: DeployEnvLoader = async (appId, environmentId) => {
   const row = await db.query.environments.findFirst({
     where: and(eq(environments.id, environmentId), eq(environments.appId, appId)),
-    columns: { name: true, type: true, gitBranch: true },
+    columns: { id: true, name: true, type: true, gitBranch: true, isDefault: true, domain: true },
   });
   return row ?? null;
 };
 
-const FALLBACK: DeployEnv = { name: "production", type: "production", gitBranch: null };
+const FALLBACK: DeployEnv = {
+  id: null,
+  name: "production",
+  type: "production",
+  gitBranch: null,
+  isDefault: true,
+  domain: null,
+};
 
 /**
  * Resolve the environment a deploy runs under.
  *
- * The id is caller-supplied, so the lookup is scoped to the app being deployed:
- * an environment on another app — in this org or any other — resolves to
- * production rather than lending the deploy its name, branch or type. Type
- * matters most: `local` turns on bind mounts.
+ * The id is caller-supplied, so the lookup is scoped to the app being deployed.
+ * An id that names no environment of this app — deleted, or on another app —
+ * throws rather than resolving to production: falling back would deploy a
+ * preview's branch over the live app.
  */
 export async function resolveDeployEnv(
   appId: string,
@@ -62,6 +81,15 @@ export async function resolveDeployEnv(
 ): Promise<DeployEnv> {
   if (!environmentId) return FALLBACK;
   const env = await load(appId, environmentId);
-  if (!env) return FALLBACK;
-  return { name: env.name, type: env.type, gitBranch: env.gitBranch };
+  if (!env) {
+    throw new DeployBlockedError(`Environment ${environmentId} does not exist on this app — refusing to deploy`);
+  }
+  return {
+    id: env.id,
+    name: env.name,
+    type: env.type,
+    gitBranch: env.gitBranch,
+    isDefault: env.isDefault ?? false,
+    domain: env.domain,
+  };
 }

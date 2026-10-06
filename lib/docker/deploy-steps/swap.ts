@@ -833,8 +833,8 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
     ctx.oldSlotServing = () => oldSlotRuns(slottedNames);
   }
 
-  // Step 9: Update container names in DB
-  if (!isLocalEnv) {
+  // Step 9: Update container names in DB. The row names the default environment's containers.
+  if (!isLocalEnv && !ctx.envIsolated) {
     try {
       const serviceNames = Object.keys(compose.services);
       // A shared service keeps its own project name; only slotted ones move.

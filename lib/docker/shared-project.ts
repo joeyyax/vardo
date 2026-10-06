@@ -30,10 +30,12 @@ const defaultReader: ComposeReader = (path) => readFile(path, "utf-8");
 export async function readSlotPartition(
   slotDir: string,
   read: ComposeReader = defaultReader,
-): Promise<SlotPartition | null> {
+): Promise<(SlotPartition & { composeName?: string }) | null> {
   try {
-    const partition = partitionBySlot(parseCompose(await read(join(slotDir, "docker-compose.yml"))));
-    return Object.keys(partition.shared).length > 0 ? partition : null;
+    const compose = parseCompose(await read(join(slotDir, "docker-compose.yml")));
+    const partition = partitionBySlot(compose);
+    if (Object.keys(partition.shared).length === 0) return null;
+    return compose.name ? { ...partition, composeName: compose.name } : partition;
   } catch {
     return null;
   }

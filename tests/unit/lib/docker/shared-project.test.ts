@@ -38,6 +38,11 @@ describe("readSlotPartition", () => {
     expect(Object.keys(partition!.slotted)).toEqual(["web"]);
   });
 
+  it("carries the compose name the shared project was started under", async () => {
+    const partition = await readSlotPartition(SLOT_DIR, reader(`name: paperless-stack\n${WITH_SHARED}`));
+    expect(partition!.composeName).toBe("paperless-stack");
+  });
+
   it("reads the compose from the slot directory", async () => {
     const read = reader(WITH_SHARED);
     await readSlotPartition(SLOT_DIR, read);

@@ -48,7 +48,7 @@ const { dbMock, events, hooksMock, dockerCalls } = vi.hoisted(() => {
       domains: { findMany: vi.fn().mockResolvedValue([]) },
       organizations: { findFirst: vi.fn().mockResolvedValue({ id: "org-1", name: "Org", baseDomain: null, trusted: false }) },
       projects: { findFirst: vi.fn().mockResolvedValue(null) },
-      environments: { findFirst: vi.fn().mockResolvedValue(null) },
+      environments: { findFirst: vi.fn().mockResolvedValue(null), findMany: vi.fn().mockResolvedValue([]) },
       deployments: { findFirst: vi.fn().mockResolvedValue(null) },
     },
     select: vi.fn().mockReturnValue({ from: () => ({ where: () => Promise.resolve([]) }) }),

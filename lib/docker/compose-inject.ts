@@ -131,6 +131,8 @@ export function injectTraefikLabels(
     redirectTo?: string;
     redirectCode?: number;
     backendProtocol?: "http" | "https";
+    /** Traefik service name. Defaults to appName, then projectName. */
+    traefikService?: string;
   },
 ): ComposeFile {
   const { projectName, domain, containerPort, certResolver = "le-dns", ssl = true } = opts;
@@ -149,7 +151,8 @@ export function injectTraefikLabels(
   const isLocal = domain.endsWith(".localhost") || domain === "localhost";
   const isRedirect = !!opts.redirectTo;
   const permanent = (opts.redirectCode ?? 301) === 301;
-  const svcName = opts.appName || projectName;
+  const svcName = opts.traefikService || opts.appName || projectName;
+  const transportName = opts.appName || projectName;
 
   const labels: Record<string, string> = {
     ...existing.labels,
@@ -172,7 +175,7 @@ export function injectTraefikLabels(
     labels[`traefik.http.routers.${projectName}.service`] = svcName;
     if (opts.backendProtocol === "https") {
       labels[`traefik.http.services.${svcName}.loadbalancer.server.scheme`] = "https";
-      labels[`traefik.http.services.${svcName}.loadbalancer.serversTransport`] = `${svcName}-insecure@file`;
+      labels[`traefik.http.services.${svcName}.loadbalancer.serversTransport`] = `${transportName}-insecure@file`;
     }
   }
 

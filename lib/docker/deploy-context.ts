@@ -113,6 +113,8 @@ export type DeployContext = {
   envName: string;
   envType: "production" | "staging" | "preview" | "local";
   envBranchOverride: string | null;
+  /** Not the app's default environment: no production hostnames, names or state. */
+  envIsolated?: boolean;
 
   /** Merged env vars (app + host.toml + org). */
   envMap: Record<string, string>;

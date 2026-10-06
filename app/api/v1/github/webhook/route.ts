@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { createHmac, timingSafeEqual } from "crypto";
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
@@ -217,55 +217,48 @@ async function handlePullRequest(payload: Record<string, unknown>): Promise<Next
     }
   }
 
+  // A create runs for minutes and GitHub gives up after ten seconds, so both
+  // run after the response. preview.ts serializes them per PR.
   if (previewsEnabled && (action === "opened" || action === "reopened" || action === "synchronize")) {
-    // Create or update preview
-    try {
-      const result = await createPreview({
-        repoFullName,
-        prNumber,
-        prUrl,
-        branch,
-        author,
-      });
+    after(async () => {
+      try {
+        const result = await createPreview({
+          repoFullName,
+          prNumber,
+          prUrl,
+          branch,
+          author,
+        });
 
-      if (!result) {
-        log.info(`No grouped project found for ${repoFullName}:${branch}`);
-        return NextResponse.json({ ok: true, skipped: "no grouped project" });
-      }
-
-      // Post preview URLs as PR comment
-      if (result.domains.length > 0) {
-        try {
-          await postPreviewComment(repoFullName, prNumber, result.domains);
-        } catch (err) {
-          log.error("Failed to post PR comment:", err);
+        if (!result) {
+          log.info(`No preview for ${repoFullName}#${prNumber} (no grouped project, or closed meanwhile)`);
+          return;
         }
-      }
 
-      return NextResponse.json({
-        ok: true,
-        preview: {
-          groupEnvironmentId: result.groupEnvironmentId,
-          domains: result.domains,
-          deployed: result.deployed,
-        },
-      });
-    } catch (err) {
-      log.error(`Preview creation failed for PR #${prNumber}:`, err);
-      return NextResponse.json({ ok: true, error: "Preview creation failed" });
-    }
+        if (result.domains.length > 0) {
+          try {
+            await postPreviewComment(repoFullName, prNumber, result.domains);
+          } catch (err) {
+            log.error("Failed to post PR comment:", err);
+          }
+        }
+      } catch (err) {
+        log.error(`Preview creation failed for PR #${prNumber}:`, err);
+      }
+    });
+    return NextResponse.json({ ok: true, accepted: "preview" }, { status: 202 });
   }
 
   if (action === "closed") {
-    // Destroy preview
-    try {
-      const destroyed = await destroyPreview(repoFullName, prNumber);
-      log.info(`Preview for PR #${prNumber} ${destroyed ? "destroyed" : "not found"}`);
-      return NextResponse.json({ ok: true, destroyed });
-    } catch (err) {
-      log.error(`Preview cleanup failed for PR #${prNumber}:`, err);
-      return NextResponse.json({ ok: true, error: "Preview cleanup failed" });
-    }
+    after(async () => {
+      try {
+        const destroyed = await destroyPreview(repoFullName, prNumber);
+        log.info(`Preview for PR #${prNumber} ${destroyed ? "destroyed" : "not found"}`);
+      } catch (err) {
+        log.error(`Preview cleanup failed for PR #${prNumber}:`, err);
+      }
+    });
+    return NextResponse.json({ ok: true, accepted: "teardown" }, { status: 202 });
   }
 
   return NextResponse.json({

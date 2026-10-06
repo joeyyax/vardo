@@ -37,7 +37,11 @@ function projectApp(c: ContainerInfo): string | undefined {
  * `docker compose` and carries no vardo labels, so compose project/service and
  * the container name are checked too.
  */
-export function matchContainers(app: ReconcilableApp, containers: ContainerInfo[]): ContainerInfo[] {
+export function matchContainers(app: ReconcilableApp, all: ContainerInfo[]): ContainerInfo[] {
+  // A preview's containers carry the app's labels but are not the app's: they
+  // must not decide its status, exit reason or where its cron jobs run.
+  const containers = all.filter((c) => !/^pr-\d+$/.test(label(c, "environment") ?? ""));
+
   if (app.importedContainerId) {
     const imported = containers.filter((c) => c.id === app.importedContainerId);
     if (imported.length > 0) return imported;

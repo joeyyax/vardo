@@ -1,8 +1,10 @@
 // ---------------------------------------------------------------------------
 // Per-app deploy cancel-and-replace
 //
-// Ensures only one deploy runs per app at a time. When a new deploy arrives
-// for an app that is already deploying:
+// Ensures only one deploy runs per app environment at a time. The default
+// environment is keyed by appId alone; any other is keyed `${appId}:${envId}`,
+// so a preview never supersedes, cancels or waits on production. When a new
+// deploy arrives for an environment that is already deploying:
 //
 //   - Safe stages (clone, compose, build): cancel the in-progress deploy
 //     immediately by aborting the child process group. Mark the old deploy
@@ -32,6 +34,7 @@
 import { redis } from "@/lib/redis";
 import { db } from "@/lib/db";
 import { deployments } from "@/lib/db/schema/apps";
+import { environments } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { logger } from "@/lib/logger";
 import { createDeployment, runDeployment } from "./deploy";
@@ -50,6 +53,23 @@ const log = logger.child("deploy-cancel");
 // ---------------------------------------------------------------------------
 // Redis key helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * Registry key for a deploy: the appId for the app's default environment (and
+ * for anything that cannot be resolved), `${appId}:${environmentId}` otherwise.
+ */
+export async function deployScope(appId: string, environmentId?: string | null): Promise<string> {
+  if (!environmentId) return appId;
+  try {
+    const env = await db.query.environments.findFirst({
+      where: and(eq(environments.id, environmentId), eq(environments.appId, appId)),
+      columns: { isDefault: true },
+    });
+    return env && !env.isDefault ? `${appId}:${environmentId}` : appId;
+  } catch {
+    return appId;
+  }
+}
 
 const ACTIVE_KEY = (appId: string) => `deploy:active:${appId}`;
 const CANCEL_KEY = (appId: string) => `deploy:cancel:${appId}`;
@@ -113,7 +133,7 @@ export async function drainForSelfStop(
   draining = true;
   const others = () =>
     [...localRegistry.entries()]
-      .filter(([appId]) => appId !== selfAppId)
+      .filter(([scope]) => scope !== selfAppId)
       .map(([, entry]) => entry);
 
   const deadline = Date.now() + timeoutMs;
@@ -341,7 +361,11 @@ export async function deployRegistration(
   deploymentId: string,
 ): Promise<"active" | "gone" | "unknown"> {
   try {
-    const raw = await redis.get(ACTIVE_KEY(appId));
+    const row = await db.query.deployments.findFirst({
+      where: eq(deployments.id, deploymentId),
+      columns: { environmentId: true },
+    });
+    const raw = await redis.get(ACTIVE_KEY(await deployScope(appId, row?.environmentId)));
     if (!raw) return "gone";
     const entry = JSON.parse(raw) as { deploymentId: string };
     return entry.deploymentId === deploymentId ? "active" : "gone";
@@ -365,8 +389,8 @@ export async function deployRegistration(
  * deploy running in a different process.
  */
 export async function requestDeploy(opts: DeployOpts): Promise<DeployResult> {
-  const { appId } = opts;
   const newDeploymentId = opts.deploymentId ?? await createDeployment(opts);
+  const scope = await deployScope(opts.appId, opts.environmentId);
 
   // This process is about to be stopped by a Vardo self-deploy. Checked before
   // the registry below, which would otherwise supersede a deploy it must wait for.
@@ -384,7 +408,7 @@ export async function requestDeploy(opts: DeployOpts): Promise<DeployResult> {
   // ------------------------------------------------------------------
   // 1. Check in-process registry first (same process — direct control)
   // ------------------------------------------------------------------
-  const localExisting = localRegistry.get(appId);
+  const localExisting = localRegistry.get(scope);
   if (localExisting) {
     if (SAFE_CANCEL_STAGES.has(localExisting.stage)) {
       localExisting.controller.abort({ supersededBy: newDeploymentId });
@@ -394,11 +418,11 @@ export async function requestDeploy(opts: DeployOpts): Promise<DeployResult> {
     // ------------------------------------------------------------------
     // 2. Check Redis for a deploy owned by a different process
     // ------------------------------------------------------------------
-    const redisEntry = await getActiveFromRedis(appId);
+    const redisEntry = await getActiveFromRedis(scope);
     if (redisEntry) {
       if (SAFE_CANCEL_STAGES.has(redisEntry.stage)) {
         // Signal the remote process to cancel
-        await writeCancelSignal(appId, newDeploymentId);
+        await writeCancelSignal(scope, newDeploymentId);
       }
 
       // Poll until the foreign deploy clears (or times out). Its lease is
@@ -406,7 +430,7 @@ export async function requestDeploy(opts: DeployOpts): Promise<DeployResult> {
       opts.onLog?.("[queue] Waiting for the deploy already running for this app");
       const deadline = Date.now() + WAIT_TIMEOUT_MS;
       while (Date.now() < deadline) {
-        const still = await getActiveFromRedis(appId);
+        const still = await getActiveFromRedis(scope);
         if (!still) break;
         await new Promise((r) => setTimeout(r, WAIT_POLL_MS));
       }
@@ -428,13 +452,13 @@ export async function requestDeploy(opts: DeployOpts): Promise<DeployResult> {
     stage: "clone",
     done,
   };
-  localRegistry.set(appId, active);
-  await setActiveInRedis(appId, newDeploymentId, "clone");
+  localRegistry.set(scope, active);
+  await setActiveInRedis(scope, newDeploymentId, "clone");
 
   // Stage transitions are minutes apart during a build, so they cannot carry
   // the lease on their own.
   const leaseRenew = setInterval(() => {
-    renewActiveLease(appId, newDeploymentId, active.stage).catch(() => {});
+    renewActiveLease(scope, newDeploymentId, active.stage).catch(() => {});
   }, ACTIVE_HEARTBEAT_MS);
   leaseRenew.unref?.();
 
@@ -480,7 +504,7 @@ export async function requestDeploy(opts: DeployOpts): Promise<DeployResult> {
       onStage: async (stage, status) => {
         // Keep local registry up to date
         active.stage = stage;
-        await renewActiveLease(appId, newDeploymentId, stage);
+        await renewActiveLease(scope, newDeploymentId, stage);
 
         // Check for a user-initiated kill signal (cancel running deployment via API)
         if (!controller.signal.aborted) {
@@ -493,10 +517,10 @@ export async function requestDeploy(opts: DeployOpts): Promise<DeployResult> {
 
         // Check for a cross-process cancel signal written by another process
         if (!controller.signal.aborted) {
-          const cancelSignal = await checkCancelSignal(appId);
+          const cancelSignal = await checkCancelSignal(scope);
           if (cancelSignal) {
             // Consume the signal
-            await clearCancelSignal(appId);
+            await clearCancelSignal(scope);
             if (SAFE_CANCEL_STAGES.has(stage)) {
               controller.abort({ supersededBy: cancelSignal.supersededBy });
             }
@@ -538,10 +562,10 @@ export async function requestDeploy(opts: DeployOpts): Promise<DeployResult> {
     // Only remove from the local registry if we are still the active deploy for
     // this app. A deploy that started after us may have already replaced the
     // entry (e.g. rapid pushes).
-    if (localRegistry.get(appId) === active) {
-      localRegistry.delete(appId);
+    if (localRegistry.get(scope) === active) {
+      localRegistry.delete(scope);
     }
-    await clearActiveInRedis(appId, newDeploymentId);
+    await clearActiveInRedis(scope, newDeploymentId);
     resolveDone();
   }
 }

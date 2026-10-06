@@ -3,7 +3,7 @@ import { statusChange } from "@/lib/db/app-status";
 import { deployments, apps, organizations, environments, projects, domains } from "@/lib/db/schema";
 import { decryptOrFallback } from "@/lib/crypto/encrypt";
 import { parseEnvToMap } from "@/lib/env/parse-env";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, isNotNull } from "drizzle-orm";
 import { logger } from "@/lib/logger";
 import { redactSecrets } from "@/lib/redact";
 import { nanoid } from "nanoid";
@@ -31,7 +31,7 @@ import {
   ENDPOINT_CHECK_TIMEOUT,
 } from "./constants";
 import { prepareRepo, resolveCompose, build, swap, postDeploy } from "./deploy-steps";
-import { resolveDeployEnv } from "./resolve-env";
+import { resolveDeployEnv, resolveDefaultEnv } from "./resolve-env";
 import {
   loadRollbackTarget,
   applyRollbackTarget,
@@ -39,6 +39,7 @@ import {
   type RollbackTarget,
 } from "./rollback-target";
 import { execFileAsync } from "@/lib/utils/exec";
+import { environmentDomains, withoutEnvironmentHosts } from "./environment-domains";
 
 export type { DeployStage } from "./deploy-logger";
 
@@ -172,18 +173,47 @@ export async function runDeployment(
   // Build the initial deploy context — fetches app, resolves environment, loads env vars
   let ctx: DeployContext | undefined;
 
+  // apps.status describes the default environment. Set once that is what this deploy is.
+  let ownsAppStatus = false;
+
   try {
     await db
       .update(deployments)
       .set({ status: "running" })
       .where(eq(deployments.id, deploymentId));
 
+    if (opts.groupEnvironmentId && !opts.environmentId) {
+      throw new DeployBlockedError("Group environment deploy without an app environment — refusing to deploy production");
+    }
+
+    // Resolve environment — default to production if not specified
+    if (!opts.environmentId) {
+      const defaultEnv = await db.query.environments.findFirst({
+        where: and(
+          eq(environments.appId, opts.appId),
+          eq(environments.isDefault, true),
+        ),
+        columns: { id: true },
+      });
+      if (defaultEnv) opts.environmentId = defaultEnv.id;
+    }
+
+    const resolvedEnv = await resolveDeployEnv(opts.appId, opts.environmentId);
+    const envName = resolvedEnv.name;
+    const envType = resolvedEnv.type;
+    const envBranchOverride = resolvedEnv.gitBranch;
+    log(`[deploy] Environment: ${envName} (${envType})`);
+
+    ownsAppStatus = !!resolvedEnv.isDefault;
+
     // The deploy owns the app status until it exits. The reconciler yields to
     // it, and the sweeper resets it if this process dies mid-deploy.
-    await db
-      .update(apps)
-      .set(statusChange("deploying"))
-      .where(eq(apps.id, opts.appId));
+    if (ownsAppStatus) {
+      await db
+        .update(apps)
+        .set(statusChange("deploying"))
+        .where(eq(apps.id, opts.appId));
+    }
 
     addEvent(opts.organizationId, {
       type: "deploy.status",
@@ -267,23 +297,19 @@ export async function runDeployment(
       projectAllowDockerSocket = project?.allowDockerSocket ?? false;
     }
 
-    // Resolve environment — default to production if not specified
-    if (!opts.environmentId) {
-      const defaultEnv = await db.query.environments.findFirst({
+    if (resolvedEnv.isDefault) {
+      const groupEnvHosts = await db.query.environments.findMany({
         where: and(
           eq(environments.appId, opts.appId),
-          eq(environments.isDefault, true),
+          eq(environments.isDefault, false),
+          isNotNull(environments.groupEnvironmentId),
         ),
-        columns: { id: true },
+        columns: { domain: true },
       });
-      if (defaultEnv) opts.environmentId = defaultEnv.id;
+      app.domains = withoutEnvironmentHosts(app.domains, groupEnvHosts.map((e) => e.domain));
+    } else {
+      app.domains = environmentDomains(app.domains, resolvedEnv, app.id);
     }
-
-    const resolvedEnv = await resolveDeployEnv(opts.appId, opts.environmentId);
-    const envName = resolvedEnv.name;
-    const envType = resolvedEnv.type;
-    const envBranchOverride = resolvedEnv.gitBranch;
-    log(`[deploy] Environment: ${envName} (${envType})`);
 
     // Local environments always allow bind mounts. The Docker socket stays on
     // the project flag — anyone can create a local environment (#803).
@@ -394,6 +420,7 @@ export async function runDeployment(
       envName,
       envType,
       envBranchOverride,
+      envIsolated: !resolvedEnv.isDefault,
       envMap,
 
       volumesList: [],
@@ -515,10 +542,12 @@ export async function runDeployment(
         // Release the app status. Guarded so a deploy that started in the
         // meantime keeps ownership; the reconciler corrects "stopped" from
         // Docker on its next pass.
-        await db
-          .update(apps)
-          .set(statusChange("stopped"))
-          .where(and(eq(apps.id, opts.appId), eq(apps.status, "deploying")));
+        if (ownsAppStatus) {
+          await db
+            .update(apps)
+            .set(statusChange("stopped"))
+            .where(and(eq(apps.id, opts.appId), eq(apps.status, "deploying")));
+        }
 
         addEvent(opts.organizationId, {
           type: "deploy.status",
@@ -579,10 +608,12 @@ export async function runDeployment(
       .set({ status: "failed", log: logLines.join("\n"), durationMs, finishedAt: new Date() })
       .where(eq(deployments.id, deploymentId));
 
-    await db
-      .update(apps)
-      .set(statusChange(keptNewSlot ? "active" : "error"))
-      .where(eq(apps.id, opts.appId));
+    if (ownsAppStatus) {
+      await db
+        .update(apps)
+        .set(statusChange(keptNewSlot ? "active" : "error"))
+        .where(eq(apps.id, opts.appId));
+    }
 
     addEvent(opts.organizationId, {
       type: "deploy.status",
@@ -771,7 +802,7 @@ async function stopSlotInDir(
   logs: string[],
   removeVolumes = false,
   /** App and environment names — omitted for the legacy unscoped layout. */
-  shared?: { appName: string; envName: string },
+  shared?: { appName: string; envName: string; isDefault: boolean },
 ): Promise<void> {
   const { slotDir, composeProject } = await resolveActiveSlot(dir, projectPrefix);
   const composeFileArgs = await slotComposeFiles(slotDir);
@@ -794,8 +825,10 @@ async function stopSlotInDir(
 
   // No deploy ever takes the shared project down. Left up, its containers
   // outlive the app and the reconciler reports the stopped app as active.
-  if (shared && (await readSlotPartition(slotDir))) {
-    await down(sharedProjectName(shared.appName, shared.envName));
+  const partition = shared ? await readSlotPartition(slotDir) : null;
+  if (shared && partition) {
+    // Only the default environment owns the compose `name:`; any other env sharing it would be production's.
+    await down(sharedProjectName(shared.appName, shared.envName, shared.isDefault ? partition.composeName : undefined));
   }
 }
 
@@ -815,12 +848,15 @@ export async function stopProject(
       operation: removeVolumes ? "stop and remove volumes for" : "stop",
     });
 
+    const defaultEnvName = (await resolveDefaultEnv(appId)).name;
+
     if (environmentName) {
       // Stop specific environment
       const envDir = appEnvDir(appName, environmentName);
       await stopSlotInDir(envDir, `${appName}-${environmentName}`, logs, removeVolumes, {
         appName,
         envName: environmentName,
+        isDefault: environmentName === defaultEnvName,
       });
     } else {
       // Stop all environments — try env-aware layout first
@@ -840,6 +876,7 @@ export async function stopProject(
             await stopSlotInDir(envDir, `${appName}-${entry.name}`, logs, removeVolumes, {
               appName,
               envName: entry.name,
+              isDefault: entry.name === defaultEnvName,
             });
           }
         } else {
@@ -852,19 +889,87 @@ export async function stopProject(
       }
     }
 
-    const stoppedAt = new Date();
-    await db
-      .update(apps)
-      .set(statusChange("stopped", stoppedAt))
-      .where(eq(apps.id, appId));
+    // apps.status describes the default environment; stopping another one leaves it alone.
+    if (!environmentName || environmentName === defaultEnvName) {
+      const stoppedAt = new Date();
+      await db
+        .update(apps)
+        .set(statusChange("stopped", stoppedAt))
+        .where(eq(apps.id, appId));
 
-    // Cascade stop status to compose child services
-    await db
-      .update(apps)
-      .set(statusChange("stopped", stoppedAt))
-      .where(eq(apps.parentAppId, appId));
+      // Cascade stop status to compose child services
+      await db
+        .update(apps)
+        .set(statusChange("stopped", stoppedAt))
+        .where(eq(apps.parentAppId, appId));
+    }
 
     return { success: true, log: logs.join("\n") };
+  } catch (err) {
+    logs.push(`ERROR: ${err instanceof Error ? err.message : String(err)}`);
+    return { success: false, log: logs.join("\n") };
+  }
+}
+
+const PREVIEW_ENV_NAME = /^pr-\d+$/;
+
+/** Compose projects a preview teardown may take down: `${app}-pr-<n>-<slot|shared>`. */
+export function isPreviewProject(appName: string, envName: string, project: string): boolean {
+  if (!PREVIEW_ENV_NAME.test(envName)) return false;
+  const prefix = `${appName}-${envName}-`;
+  return project.startsWith(prefix) && /^(blue|green|shared)$/.test(project.slice(prefix.length));
+}
+
+/**
+ * Tear down one preview environment: both slots and its shared project, nothing
+ * else. Fails when any `down` fails, so the caller can keep its records.
+ */
+export async function stopPreviewEnvironment(
+  appId: string,
+  appName: string,
+  envName: string,
+): Promise<{ success: boolean; log: string }> {
+  const logs: string[] = [];
+  if (!PREVIEW_ENV_NAME.test(envName)) {
+    return { success: false, log: `ERROR: Refusing to tear down "${envName}" — not a preview environment` };
+  }
+  try {
+    await assertAppDirOwnership({ appId, appName, operation: "stop" });
+
+    const envDir = appEnvDir(appName, envName);
+    const { access: fsAccess } = await import("fs/promises");
+    const exists = (path: string) => fsAccess(path).then(() => true, () => false);
+    if (!(await exists(envDir))) {
+      return { success: true, log: `Nothing deployed for ${appName}-${envName}` };
+    }
+
+    const failures: string[] = [];
+    const down = async (project: string, slotDir: string) => {
+      if (!isPreviewProject(appName, envName, project)) {
+        failures.push(`refused to take down ${project}`);
+        return;
+      }
+      try {
+        const args = ["compose", ...(await slotComposeFiles(slotDir)), "-p", project, "down"];
+        const { stdout, stderr } = await execFileAsync("docker", args, { cwd: slotDir, timeout: COMPOSE_RESTART_TIMEOUT });
+        if (stdout.trim()) logs.push(stdout.trim());
+        if (stderr.trim()) logs.push(stderr.trim());
+      } catch (err) {
+        failures.push(`${project}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    };
+
+    let sharedFrom: string | null = null;
+    for (const slot of ["blue", "green"] as const) {
+      const slotDir = join(envDir, slot);
+      if (!(await exists(join(slotDir, "docker-compose.yml")))) continue;
+      await down(`${appName}-${envName}-${slot}`, slotDir);
+      if (!sharedFrom && (await readSlotPartition(slotDir))) sharedFrom = slotDir;
+    }
+    if (sharedFrom) await down(sharedProjectName(appName, envName), sharedFrom);
+
+    for (const f of failures) logs.push(`ERROR: ${f}`);
+    return { success: failures.length === 0, log: logs.join("\n") };
   } catch (err) {
     logs.push(`ERROR: ${err instanceof Error ? err.message : String(err)}`);
     return { success: false, log: logs.join("\n") };
@@ -908,7 +1013,7 @@ export async function restartContainers(
     if (service && environmentName) {
       const partition = await readSlotPartition(slotDir);
       if (partition && service in partition.shared) {
-        targetProject = sharedProjectName(appName, environmentName);
+        targetProject = sharedProjectName(appName, environmentName, partition.composeName);
       }
     }
 

@@ -24,7 +24,16 @@ vi.mock("child_process", async () => {
   });
   return { ...actual, execFile };
 });
-vi.mock("@/lib/db", () => ({ db: { update: updateMock, query: {} } }));
+vi.mock("@/lib/db", () => ({
+  db: {
+    update: updateMock,
+    query: {
+      environments: {
+        findFirst: vi.fn().mockResolvedValue({ id: "env-prod", name: "production", type: "production" }),
+      },
+    },
+  },
+}));
 vi.mock("@/lib/redis", () => ({ redis: {} }));
 vi.mock("@/lib/stream/producer", () => ({ addEvent: vi.fn() }));
 vi.mock("@/lib/activity", () => ({ recordActivity: vi.fn() }));
@@ -83,5 +92,18 @@ describe("stopProject ownership guard", () => {
       appName: "api",
       operation: "stop and remove volumes for",
     });
+  });
+
+  it("leaves the app status alone when stopping a non-default environment", async () => {
+    const result = await stopProject("app-1", "api", "pr-3");
+
+    expect(result.success).toBe(true);
+    expect(updateMock).not.toHaveBeenCalled();
+  });
+
+  it("marks the app stopped when stopping its default environment", async () => {
+    await stopProject("app-1", "api", "production");
+
+    expect(updateMock).toHaveBeenCalled();
   });
 });

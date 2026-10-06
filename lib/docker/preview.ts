@@ -2,13 +2,13 @@
 // PR preview lifecycle
 //
 // Creates and destroys preview environments for GitHub pull requests.
-// A preview clones the entire project's environment so the PR gets a
-// fully functional stack.
+// A preview covers the PR repo's apps, their compose children and their
+// declared dependencies (see preview-scope.ts).
 // ---------------------------------------------------------------------------
 
 import { db } from "@/lib/db";
 import { apps, groupEnvironments } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, ilike } from "drizzle-orm";
 import {
   createGroupEnvironment,
   destroyGroupEnvironment,
@@ -16,6 +16,13 @@ import {
 import { deployGroup } from "./deploy-group";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { logger } from "@/lib/logger";
+import { matchesGitHubRepo, previewScope } from "./preview-scope";
+import {
+  acquirePreviewLock,
+  clearPreviewClosed,
+  isPreviewClosed,
+  markPreviewClosed,
+} from "./preview-lock";
 
 const log = logger.child("preview");
 
@@ -50,13 +57,44 @@ export type { CreatePreviewOpts, PreviewResult };
 // Create preview
 // ---------------------------------------------------------------------------
 
+/** Run `fn` under the PR's lock. Without Redis it runs unlocked, as it always did. */
+async function withPreviewLock<T>(
+  repoFullName: string,
+  prNumber: number,
+  fn: () => Promise<T>,
+  whenBusy: T,
+): Promise<T> {
+  let lock;
+  try {
+    lock = await acquirePreviewLock(repoFullName, prNumber);
+  } catch (err) {
+    log.warn(`Preview lock for PR #${prNumber} unavailable, running unlocked:`, err);
+    return fn();
+  }
+  if (!lock) {
+    log.warn(`PR #${prNumber}: another preview operation held the lock too long, skipping`);
+    return whenBusy;
+  }
+  try {
+    return await fn();
+  } finally {
+    await lock.release();
+  }
+}
+
+/** Apps built from this GitHub repo, whatever form their git URL takes. */
+async function appsForRepo(repoFullName: string) {
+  const candidates = await db.query.apps.findMany({
+    where: ilike(apps.gitUrl, `%${repoFullName}%`),
+  });
+  return candidates.filter((a) => matchesGitHubRepo(a.gitUrl, repoFullName));
+}
+
 /**
- * Create a preview environment for a PR.
+ * Create or redeploy the preview environment for a PR.
  *
- * 1. Find app(s) matching the repo + branch
- * 2. If app is in a project, clone the entire project as a preview
- * 3. Deploy the preview project
- * 4. Return preview URLs
+ * Serialized with destroyPreview per PR. A close that lands mid-create is
+ * honoured at the next step: whatever was built is torn down.
  */
 export async function createPreview(
   opts: CreatePreviewOpts
@@ -72,13 +110,18 @@ export async function createPreview(
     return null;
   }
 
-  const gitUrl = `https://github.com/${opts.repoFullName}.git`;
+  // An open after a close supersedes it.
+  await clearPreviewClosed(opts.repoFullName, opts.prNumber).catch(() => {});
+  return withPreviewLock(opts.repoFullName, opts.prNumber, () => createPreviewLocked(opts), null);
+}
 
-  // Find apps matching this repo
-  const matchingApps = await db.query.apps.findMany({
-    where: eq(apps.gitUrl, gitUrl),
-  });
+async function createPreviewLocked(
+  opts: CreatePreviewOpts
+): Promise<PreviewResult | null> {
+  const closed = () => isPreviewClosed(opts.repoFullName, opts.prNumber);
+  if (await closed()) return null;
 
+  const matchingApps = await appsForRepo(opts.repoFullName);
   if (matchingApps.length === 0) return null;
 
   // Find the first app that belongs to a project.
@@ -94,6 +137,14 @@ export async function createPreview(
   const organizationId = groupedApp.organizationId;
   const envName = `pr-${opts.prNumber}`;
   const ttlDays = opts.ttlDays ?? 7;
+
+  const abandon = async (groupEnvironmentId: string) => {
+    log.info(`PR #${opts.prNumber} closed during create — tearing the preview down`);
+    await destroyGroupEnvironment(groupEnvironmentId, organizationId).catch((err) =>
+      log.error(`Teardown after close failed for PR #${opts.prNumber}:`, err),
+    );
+    return null;
+  };
 
   // Check if preview already exists
   const existing = await db.query.groupEnvironments.findFirst({
@@ -116,6 +167,7 @@ export async function createPreview(
     } catch (err) {
       log.error(`Re-deploy failed for PR #${opts.prNumber}:`, err);
     }
+    if (await closed()) return abandon(existing.id);
 
     return {
       groupEnvironmentId: existing.id,
@@ -124,8 +176,13 @@ export async function createPreview(
     };
   }
 
-  // Build branch overrides — set the PR branch on all git-sourced apps
-  // so the deploy checks out the feature branch instead of main.
+  const projectApps = await db.query.apps.findMany({
+    where: eq(apps.projectId, projectId),
+    columns: { id: true, name: true, gitUrl: true, parentAppId: true, dependsOn: true, cloneStrategy: true },
+  });
+  const appIds = [...previewScope(projectApps, opts.repoFullName)];
+
+  // The PR branch goes on the repo's own apps; dependencies deploy their usual branch.
   const appOverrides: Record<string, { gitBranch: string }> = {};
   for (const app of matchingApps) {
     if (app.projectId === projectId) {
@@ -139,11 +196,13 @@ export async function createPreview(
     organizationId,
     name: envName,
     type: "preview",
+    appIds,
     appOverrides,
     prNumber: opts.prNumber,
     prUrl: opts.prUrl,
     expiresAt: new Date(Date.now() + ttlDays * 24 * 60 * 60 * 1000),
   });
+  if (await closed()) return abandon(result.groupEnvironmentId);
 
   // Deploy the preview
   let deployed = false;
@@ -158,6 +217,7 @@ export async function createPreview(
   } catch (err) {
     log.error(`Deploy failed for PR #${opts.prNumber}:`, err);
   }
+  if (await closed()) return abandon(result.groupEnvironmentId);
 
   // Collect domains
   const domains = result.projectEnvironments
@@ -188,13 +248,27 @@ export async function destroyPreview(
   repoFullName: string,
   prNumber: number
 ): Promise<boolean> {
-  const gitUrl = `https://github.com/${repoFullName}.git`;
+  const marked = await markPreviewClosed(repoFullName, prNumber).then(
+    () => true,
+    () => false,
+  );
+  return withPreviewLock(
+    repoFullName,
+    prNumber,
+    async () => {
+      // Reopened while this waited for the lock: the open wins.
+      if (marked && !(await isPreviewClosed(repoFullName, prNumber))) return false;
+      return destroyPreviewLocked(repoFullName, prNumber);
+    },
+    false,
+  );
+}
 
-  // Find apps matching this repo
-  const matchingApps = await db.query.apps.findMany({
-    where: eq(apps.gitUrl, gitUrl),
-  });
-
+async function destroyPreviewLocked(
+  repoFullName: string,
+  prNumber: number
+): Promise<boolean> {
+  const matchingApps = await appsForRepo(repoFullName);
   const groupedApp = matchingApps.find((a) => a.projectId);
   if (!groupedApp || !groupedApp.projectId) return false;
 
