@@ -6,12 +6,12 @@ import { worstCondition, type AppCondition, type ConditionSeverity } from "@/lib
 
 const TONE: Record<ConditionSeverity, { border: string; surface: string; text: string }> = {
   critical: {
-    border: "dark:border dark:border-status-error/25",
+    border: "border-status-error-edge",
     surface: "bg-status-error-muted",
     text: "text-status-error",
   },
   warning: {
-    border: "dark:border dark:border-status-warning/25",
+    border: "border-status-warning-edge",
     surface: "bg-status-warning-muted",
     text: "text-status-warning",
   },

@@ -255,8 +255,8 @@ export function errorRateTone(status: ErrorRateStatus): string {
 
 /** Muted band behind the verdict, matched to errorRateTone. */
 export function errorRateSurface(status: ErrorRateStatus): string {
-  if (status === "elevated") return "border-status-warning/40 bg-status-warning-muted/40";
-  if (status === "normal") return "border-status-success/40 bg-status-success-muted/40";
+  if (status === "elevated") return "border-status-warning-edge bg-status-warning-muted";
+  if (status === "normal") return "border-status-success-edge bg-status-success-muted";
   return "border-border bg-muted/40";
 }
 

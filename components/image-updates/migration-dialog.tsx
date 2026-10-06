@@ -59,7 +59,7 @@ function BackupBeforeMigration({ orgId, appId }: { orgId: string; appId: string 
 
   if (state === "started") {
     return (
-      <p className="squircle type-body-sm rounded-lg bg-status-success-muted p-3.5 text-foreground/75 dark:border dark:border-status-success/25">
+      <p className="squircle type-body-sm rounded-lg bg-status-success-muted p-3.5 text-foreground/75 border border-status-success-edge">
         <span className="text-status-success">Backup started.</span> Track it on the Backups tab
         before continuing.
         {gitSourced && " Code is in git; this captures the data volumes."}
@@ -70,7 +70,7 @@ function BackupBeforeMigration({ orgId, appId }: { orgId: string; appId: string 
 
   if (state === "unavailable") {
     return (
-      <p className="squircle type-body-sm rounded-lg bg-status-warning-muted p-3.5 text-status-warning dark:border dark:border-status-warning/25">
+      <p className="squircle type-body-sm rounded-lg bg-status-warning-muted p-3.5 text-status-warning border border-status-warning-edge">
         {detail} — back up by hand before continuing.
       </p>
     );

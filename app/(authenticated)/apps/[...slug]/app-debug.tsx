@@ -163,7 +163,7 @@ export function AppDebug({
       </div>
 
       {error && (
-        <div className="squircle rounded-lg bg-status-error-muted px-4 py-3 text-sm text-status-error dark:border dark:border-status-error/25">
+        <div className="squircle rounded-lg bg-status-error-muted px-4 py-3 text-sm text-status-error border border-status-error-edge">
           {error}
         </div>
       )}

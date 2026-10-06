@@ -140,7 +140,7 @@ export function UserManagement() {
         </form>
 
         {inviteMessage && (
-          <div className="squircle rounded-lg bg-status-success-muted p-4 dark:border dark:border-status-success/25">
+          <div className="squircle rounded-lg bg-status-success-muted p-4 border border-status-success-edge">
             <p className="text-sm text-status-success">{inviteMessage}</p>
           </div>
         )}

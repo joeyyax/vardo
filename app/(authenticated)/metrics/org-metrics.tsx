@@ -377,7 +377,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
       {streamDown && (
         <div
           role="alert"
-          className="squircle flex items-start gap-3 rounded-lg bg-status-error-muted px-4 py-3 dark:border dark:border-status-error/25"
+          className="squircle flex items-start gap-3 rounded-lg bg-status-error-muted px-4 py-3 border border-status-error-edge"
         >
           <AlertTriangle className="size-4 shrink-0 mt-0.5 text-status-error" />
           <div className="space-y-0.5">

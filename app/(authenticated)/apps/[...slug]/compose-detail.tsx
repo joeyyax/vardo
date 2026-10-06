@@ -133,7 +133,7 @@ function PendingImageRef({ pending }: { pending: PendingImage }) {
       {pending.repo && (
         <span className="truncate font-mono text-xs text-muted-foreground/60">{pending.repo}</span>
       )}
-      <span className="shrink-0 rounded border border-status-warning/40 bg-status-warning-muted px-1.5 py-px font-mono text-[11px] leading-4 text-status-warning">
+      <span className="shrink-0 rounded border border-status-warning-edge bg-status-warning-muted px-1.5 py-px font-mono text-[11px] leading-4 text-status-warning">
         {pending.tag}
       </span>
     </span>

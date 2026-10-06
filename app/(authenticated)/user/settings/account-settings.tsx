@@ -1018,7 +1018,7 @@ export function ApiTokens({ orgId }: { orgId: string }) {
       <CardContent>
         {/* Created token display */}
         {createdToken && (
-          <div className="squircle rounded-lg bg-status-success-muted p-4 space-y-2 dark:border dark:border-status-success/25">
+          <div className="squircle rounded-lg bg-status-success-muted p-4 space-y-2 border border-status-success-edge">
             <p className="text-sm font-medium">
               Token created. Copy it now -- it won&apos;t be shown again.
             </p>

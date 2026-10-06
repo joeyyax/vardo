@@ -251,7 +251,7 @@ export function ImportDialog({
         ) : (
           <div className="space-y-5 py-1">
             {isHostNetwork && (
-              <div role="alert" className="squircle flex gap-2 rounded-lg bg-status-warning-muted p-4 text-sm text-status-warning dark:border dark:border-status-warning/25">
+              <div role="alert" className="squircle flex gap-2 rounded-lg bg-status-warning-muted p-4 text-sm text-status-warning border border-status-warning-edge">
                 <AlertTriangle aria-hidden="true" className="size-4 shrink-0 mt-0.5" />
                 <span>
                   This container uses host networking — no port mapping or automatic domain
@@ -449,7 +449,7 @@ export function ImportDialog({
                 </div>
 
                 {hasSelectedBindMounts && (
-                  <div role="alert" className="squircle flex gap-2 rounded-lg bg-status-warning-muted p-4 text-xs text-status-warning dark:border dark:border-status-warning/25">
+                  <div role="alert" className="squircle flex gap-2 rounded-lg bg-status-warning-muted p-4 text-xs text-status-warning border border-status-warning-edge">
                     <AlertTriangle aria-hidden="true" className="size-3.5 shrink-0 mt-0.5" />
                     <span>
                       Bind mounts reference host paths — they&apos;ll be included in the generated

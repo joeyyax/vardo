@@ -410,7 +410,7 @@ export function AppTerminal({ appId, orgId }: AppTerminalProps) {
 
       {/* Error message */}
       {errorMessage && (
-        <div className="squircle rounded-lg bg-status-error-muted px-4 py-3 dark:border dark:border-status-error/25">
+        <div className="squircle rounded-lg bg-status-error-muted px-4 py-3 border border-status-error-edge">
           <p className="text-sm text-status-error">{errorMessage}</p>
         </div>
       )}

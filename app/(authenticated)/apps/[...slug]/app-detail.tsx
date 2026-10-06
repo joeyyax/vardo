@@ -613,8 +613,8 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
                 size="sm"
                 className={`gap-1.5 ${!isProduction ? (
                   selectedEnv?.type === "staging"
-                    ? "border border-status-warning/40 bg-status-warning-muted text-status-warning hover:ring-status-warning/40"
-                    : "border border-status-info/40 bg-status-info-muted text-status-info hover:ring-status-info/40"
+                    ? "border border-status-warning-edge bg-status-warning-muted text-status-warning hover:ring-status-warning/40"
+                    : "border border-status-info-edge bg-status-info-muted text-status-info hover:ring-status-info/40"
                 ) : ""}`}
               >
                 <span className={`size-2 rounded-full ${envTypeDotColor(selectedEnv?.type ?? "production")}`} />

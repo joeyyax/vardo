@@ -463,12 +463,23 @@ describe("status surfaces at the call sites", () => {
   it("never paints a status ground as an alpha of its own stop", () => {
     const offenders: string[] = [];
     for (const file of files) {
-      for (const m of readFileSync(file, "utf8").matchAll(/bg-status-[a-z]+\/\d+/g)) {
+      for (const m of readFileSync(file, "utf8").matchAll(/bg-status-[a-z-]+\/\d+/g)) {
         offenders.push(`${path.relative(ROOT, file)}: ${m[0]}`);
       }
     }
     // An alpha ground resolves against whatever is behind it, so the label on
     // top has no fixed ratio. Use the -muted surface.
+    expect(offenders).toEqual([]);
+  });
+
+  it("never draws a status edge as an alpha of its own stop", () => {
+    const offenders: string[] = [];
+    for (const file of files) {
+      for (const m of readFileSync(file, "utf8").matchAll(/border(?:-[a-z])?-status-[a-z-]+\/\d+/g)) {
+        offenders.push(`${path.relative(ROOT, file)}: ${m[0]}`);
+      }
+    }
+    // Use the opaque -edge, which clears 3:1 on every ground in both themes.
     expect(offenders).toEqual([]);
   });
 

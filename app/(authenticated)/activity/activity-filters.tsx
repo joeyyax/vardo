@@ -42,9 +42,9 @@ function Chip({
 }) {
   const activeClass =
     tone === "error"
-      ? "border-status-error/40 bg-status-error-muted text-status-error"
+      ? "border-status-error-edge bg-status-error-muted text-status-error"
       : tone === "success"
-        ? "border-status-success/40 bg-status-success-muted text-status-success"
+        ? "border-status-success-edge bg-status-success-muted text-status-success"
         : "border-foreground/20 bg-muted text-foreground";
 
   return (

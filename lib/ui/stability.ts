@@ -403,10 +403,10 @@ export function stabilityTone(level: StabilityLevel): string {
 
 /** Muted tint for the verdict band, matched to stabilityTone. */
 const LEVEL_SURFACE: Record<StabilityLevel, string> = {
-  stable: "border-status-success/40 bg-status-success-muted/40",
-  watch: "border-status-warning/40 bg-status-warning-muted/40",
-  unstable: "border-status-error/40 bg-status-error-muted/40",
-  down: "border-status-error/40 bg-status-error-muted/40",
+  stable: "border-status-success-edge bg-status-success-muted",
+  watch: "border-status-warning-edge bg-status-warning-muted",
+  unstable: "border-status-error-edge bg-status-error-muted",
+  down: "border-status-error-edge bg-status-error-muted",
   unknown: "border-border bg-muted/40",
 };
 
