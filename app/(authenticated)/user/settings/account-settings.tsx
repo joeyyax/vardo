@@ -13,8 +13,8 @@ import {
   Plus,
   Key,
   KeyRound,
-  Github,
 } from "lucide-react";
+import { Github } from "@/components/icons/github";
 import { toast } from "@/lib/messenger";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
