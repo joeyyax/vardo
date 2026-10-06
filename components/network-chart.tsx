@@ -143,7 +143,7 @@ export function NetworkChart({
 
   return (
     <div>
-      <div className="mb-2 flex items-center gap-3 text-[10px] text-muted-foreground">
+      <div className="mb-2 flex items-center gap-3 text-xs text-muted-foreground">
         <LegendChip direction="sent" arrow="↑" onFocus={setFocus} />
         <LegendChip direction="received" arrow="↓" onFocus={setFocus} />
         {hasGaps && <span className="ml-auto">gaps: not collected</span>}

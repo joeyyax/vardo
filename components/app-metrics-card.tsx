@@ -167,12 +167,12 @@ function StatCell({
   const trend = meter === undefined && data && data.length > 1 && data.some((v) => v > 0);
   return (
     <div className={`min-w-0 px-3 py-2 first:pl-5 last:pr-5 ${className ?? ""}`}>
-      <div className="text-[9px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+      <div className="type-label text-muted-foreground">
         {label}
       </div>
       <div className="mt-0.5 truncate whitespace-nowrap text-xs tabular-nums text-foreground/75">
         {value}
-        {sub && <span className="ml-1 text-[9px] text-muted-foreground">{sub}</span>}
+        {sub && <span className="ml-1 text-muted-foreground">{sub}</span>}
       </div>
       <div className="mt-1 flex h-3 items-center" aria-hidden="true">
         {meter !== undefined ? (
@@ -213,7 +213,7 @@ export function MetricsBand({
   // cells of 0 B read as "measured and idle" rather than "not running".
   if (!running) {
     return (
-      <div className="border-t px-4 py-2.5">
+      <div className="px-4 py-2.5">
         <span className="type-label text-muted-foreground/50">No metrics — not running</span>
       </div>
     );

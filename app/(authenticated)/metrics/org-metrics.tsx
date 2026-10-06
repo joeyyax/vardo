@@ -123,9 +123,9 @@ function ShareBar({ title, subtitle, total, totalLabel, slices, footnote }: {
   const sum = slices.reduce((s, sl) => s + sl.value, 0);
   return (
     <div className="squircle rounded-lg bg-card shadow-card dark:border overflow-hidden">
-      <div className="flex items-center justify-between gap-2 px-4 py-2 border-b">
+      <div className="flex items-center justify-between gap-2 px-4 pt-3">
         <h3 className="type-h4">{title}</h3>
-        {subtitle && <span className="text-[10px] text-muted-foreground text-right">{subtitle}</span>}
+        {subtitle && <span className="text-xs text-muted-foreground text-right">{subtitle}</span>}
       </div>
       <div className="px-4 pt-3">
         <div className="flex items-baseline justify-between gap-2">
@@ -155,7 +155,7 @@ function ShareBar({ title, subtitle, total, totalLabel, slices, footnote }: {
             </span>
           </div>
         ))}
-        {footnote && <p className="pt-1 text-[10px] text-muted-foreground">{footnote}</p>}
+        {footnote && <p className="pt-1 text-xs text-muted-foreground">{footnote}</p>}
       </div>
     </div>
   );
@@ -326,7 +326,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
       <div className="squircle flex flex-col items-center justify-center gap-4 rounded-lg bg-background-deep p-12">
         <Activity className="size-8 text-muted-foreground/50" />
         <div className="text-center space-y-1">
-          <p className="text-sm font-medium">No apps deployed yet</p>
+          <p className="type-h4">No apps deployed yet</p>
           <p className="text-sm text-muted-foreground">
             Deploy an app to start seeing CPU, memory, network, and disk metrics.
           </p>
@@ -397,12 +397,12 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
           )}
           <div className="relative flex items-center gap-2">
             <Cpu className="size-4 text-muted-foreground shrink-0" />
-            <p className="text-xs text-muted-foreground">CPU</p>
+            <p className="type-label text-muted-foreground">CPU</p>
           </div>
           <p className="relative type-numeral text-2xl mt-1">
             {loading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : hasSamples ? cpu.headline : <NoValue />}
           </p>
-          <p className="relative text-[10px] text-muted-foreground mt-0.5">
+          <p className="relative text-xs text-muted-foreground mt-0.5">
             {cpu.detail ?? `summed across containers · ${scopeNote}`}
           </p>
         </div>
@@ -412,12 +412,12 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
           )}
           <div className="relative flex items-center gap-2">
             <MemoryStick className="size-4 text-muted-foreground shrink-0" />
-            <p className="text-xs text-muted-foreground">Memory</p>
+            <p className="type-label text-muted-foreground">Memory</p>
           </div>
           <p className="relative type-numeral text-2xl mt-1">
             {loading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : hasSamples ? formatBytes(totals.memory) : <NoValue />}
           </p>
-          <p className="relative text-[10px] text-muted-foreground mt-0.5">
+          <p className="relative text-xs text-muted-foreground mt-0.5">
             {containerCountKnown
               ? `across ${totals.containers} running container${totals.containers === 1 ? "" : "s"}`
               : `running containers · ${scopeNote}`}
@@ -429,13 +429,13 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
           )}
           <div className="relative flex items-center gap-2">
             <HardDrive className="size-4 text-muted-foreground shrink-0" />
-            <p className="text-xs text-muted-foreground">Disk</p>
+            <p className="type-label text-muted-foreground">Disk</p>
           </div>
           <p className="relative type-numeral text-2xl mt-1">
             {loading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : hasSamples ? formatBytes(diskTotal) : <NoValue />}
           </p>
           {!loading && hasSamples && (
-            <p className="relative text-[10px] text-muted-foreground mt-0.5">
+            <p className="relative text-xs text-muted-foreground mt-0.5">
               {adminMode
                 ? "images, volumes and build cache · whole host"
                 : `across ${scope.topLevel} app${scope.topLevel !== 1 ? "s" : ""} in ${scopeNote}`}
@@ -449,13 +449,13 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
           </>)}
           <div className="relative flex items-center gap-2">
             <Network className="size-4 text-muted-foreground shrink-0" />
-            <p className="text-xs text-muted-foreground">Bandwidth</p>
+            <p className="type-label text-muted-foreground">Bandwidth</p>
           </div>
           <p className="relative type-numeral text-2xl mt-1">
             {loading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : hasSamples ? formatBytes(totals.networkRx + totals.networkTx) : <NoValue />}
           </p>
           {!loading && hasSamples && (
-            <p className="relative text-[10px] text-muted-foreground mt-0.5">
+            <p className="relative text-xs text-muted-foreground mt-0.5">
               ↑ {formatBytes(totals.networkTx)} sent · ↓ {formatBytes(totals.networkRx)} received
             </p>
           )}
@@ -463,14 +463,14 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
         <div className="squircle rounded-lg bg-card px-4 py-3 shadow-card dark:border">
           <div className="flex items-center gap-2">
             <Box className="size-4 text-muted-foreground shrink-0" />
-            <p className="text-xs text-muted-foreground">Containers</p>
+            <p className="type-label text-muted-foreground">Containers</p>
           </div>
           <p className="type-numeral text-2xl mt-1">
             {loading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : containerCountKnown ? totals.containers : <NoValue />}
           </p>
           {/* App counts live in the Apps breakdown below — a container count and an
               app count never match, and side by side they read as one figure. */}
-          <p className="text-[10px] text-muted-foreground mt-0.5">
+          <p className="text-xs text-muted-foreground mt-0.5">
             reporting to cAdvisor now · {scopeNote}
           </p>
         </div>
@@ -479,10 +479,10 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
       {/* Aggregate charts */}
       <div className="grid @3xl:grid-cols-2 gap-6">
           <div className="squircle rounded-lg bg-card shadow-card dark:border overflow-hidden">
-            <div className="flex items-center gap-2 px-4 py-3 border-b">
+            <div className="flex items-center gap-2 px-4 pt-3">
               <Cpu className="size-4 text-muted-foreground" />
               <h3 className="type-h4">CPU</h3>
-              <span className="text-[10px] text-muted-foreground">cores</span>
+              <span className="text-xs text-muted-foreground">cores</span>
             </div>
             <div className="p-4">
               <ResponsiveContainer width="100%" height={180}>
@@ -503,7 +503,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
             </div>
           </div>
           <div className="squircle rounded-lg bg-card shadow-card dark:border overflow-hidden">
-            <div className="flex items-center gap-2 px-4 py-3 border-b">
+            <div className="flex items-center gap-2 px-4 pt-3">
               <MemoryStick className="size-4 text-muted-foreground" />
               <h3 className="type-h4">Memory</h3>
             </div>
@@ -526,7 +526,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
             </div>
           </div>
           <div className="squircle rounded-lg bg-card shadow-card dark:border overflow-hidden">
-            <div className="flex items-center gap-2 px-4 py-3 border-b">
+            <div className="flex items-center gap-2 px-4 pt-3">
               <Network className="size-4 text-muted-foreground" />
               <h3 className="type-h4">Network</h3>
             </div>
@@ -535,7 +535,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
             </div>
           </div>
           <div className="squircle rounded-lg bg-card shadow-card dark:border overflow-hidden">
-            <div className="flex items-center gap-2 px-4 py-3 border-b">
+            <div className="flex items-center gap-2 px-4 pt-3">
               <HardDrive className="size-4 text-muted-foreground" />
               <h3 className="type-h4">Disk Usage</h3>
             </div>
@@ -639,7 +639,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
         <div className="squircle flex flex-col items-center justify-center gap-4 rounded-lg bg-background-deep p-12">
           <Activity className="size-8 text-muted-foreground/50" />
           <div className="text-center space-y-1">
-            <p className="text-sm font-medium">Metrics will appear here</p>
+            <p className="type-h4">Metrics will appear here</p>
             <p className="text-sm text-muted-foreground">
               Deploy your first app to see CPU, memory, network, and disk usage across your infrastructure.
             </p>
@@ -653,15 +653,15 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
         </div>
       ) : (
         <div className="squircle rounded-lg bg-card shadow-card dark:border overflow-x-auto">
-          <div className="flex items-center justify-between gap-2 px-4 py-2 border-b">
+          <div className="flex items-center justify-between gap-2 px-4 py-3">
             <h3 className="type-h4">Apps</h3>
-            <span className="text-[10px] text-muted-foreground">
+            <span className="text-xs text-muted-foreground">
               top-level apps in {scopeNote}
               {scope.composeServices > 0 && ` · compose services counted on their parent`}
             </span>
           </div>
           {/* Header */}
-          <div className="grid grid-cols-[1fr_90px_90px_100px_80px_80px] gap-3 px-4 py-2 border-b text-xs text-muted-foreground whitespace-nowrap min-w-[720px]">
+          <div className="grid grid-cols-[1fr_90px_90px_100px_80px_80px] gap-3 px-4 py-2 bg-background-deep text-xs text-muted-foreground whitespace-nowrap min-w-[720px]">
             <SortHeader label="App" sortKey="name" sort={sort} onSort={setSort} align="left" />
             <SortHeader label="CPU" sortKey="cpu" sort={sort} onSort={setSort} />
             <SortHeader label="Memory" sortKey="memory" sort={sort} onSort={setSort} />
@@ -689,7 +689,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
                     />
                     <span className="text-sm font-medium truncate">{a.name}</span>
                     {a.services > 0 && (
-                      <span className="text-[10px] text-muted-foreground shrink-0">
+                      <span className="text-xs text-muted-foreground shrink-0">
                         +{a.services} service{a.services !== 1 ? "s" : ""}
                       </span>
                     )}
@@ -719,7 +719,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
           {idleApps.length > 0 && (
             <button
               onClick={() => setShowIdle((v) => !v)}
-              className="w-full border-t px-4 py-2.5 text-left text-xs text-muted-foreground hover:bg-accent/50 transition-colors"
+              className="w-full bg-background-deep px-4 py-2.5 text-left text-xs text-muted-foreground hover:bg-accent/50 transition-colors"
             >
               {showIdle
                 ? `Hide ${idleApps.length} not running`
