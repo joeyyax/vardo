@@ -32,6 +32,15 @@ function ackKey(appId: string, service: string | null, tag: string): string {
   return `${rowKey(appId, service)}@${tag}`;
 }
 
+async function requestFleetStatus(orgId: string): Promise<FleetUpdateStatus | null> {
+  try {
+    const res = await fetch(`/api/v1/organizations/${orgId}/image-updates?detail=services`);
+    return res.ok ? await res.json() : null;
+  } catch {
+    return null;
+  }
+}
+
 export function FleetUpdates({ orgId }: { orgId: string }) {
   const [data, setData] = useState<FleetUpdateStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -46,20 +55,24 @@ export function FleetUpdates({ orgId }: { orgId: string }) {
   const [migrationSelects, setMigrationSelects] = useState(false);
   const [report, setReport] = useState<BatchReport | null>(null);
 
+  const applyStatus = useCallback((status: FleetUpdateStatus | null) => {
+    setData(status);
+    setLoading(false);
+  }, []);
+
   const refresh = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/v1/organizations/${orgId}/image-updates?detail=services`);
-      setData(res.ok ? await res.json() : null);
-    } catch {
-      setData(null);
-    } finally {
-      setLoading(false);
-    }
-  }, [orgId]);
+    applyStatus(await requestFleetStatus(orgId));
+  }, [orgId, applyStatus]);
 
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    let cancelled = false;
+    requestFleetStatus(orgId).then((status) => {
+      if (!cancelled) applyStatus(status);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [orgId, applyStatus]);
 
   const rows = useMemo(
     () =>

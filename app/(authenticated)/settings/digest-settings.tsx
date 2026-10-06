@@ -40,6 +40,17 @@ const HOUR_LABELS: Record<number, string> = Object.fromEntries(
   }),
 );
 
+async function requestDigestSettings(orgId: string): Promise<DigestSettingsData | null> {
+  try {
+    const res = await fetch(`/api/v1/organizations/${orgId}/digest`);
+    if (!res.ok) return null;
+    const d = await res.json();
+    return d.digestSettings;
+  } catch {
+    return null;
+  }
+}
+
 export function DigestSettingsEditor({ orgId }: { orgId: string }) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
@@ -51,28 +62,30 @@ export function DigestSettingsEditor({ orgId }: { orgId: string }) {
     lastSentAt: null,
   });
 
-  const load = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/v1/organizations/${orgId}/digest`);
-      if (res.ok) {
-        const d = await res.json();
-        setSettings(d.digestSettings);
-        setLoadError(false);
-      } else {
-        setLoadError(true);
-        toast.error("Failed to load digest settings");
-      }
-    } catch {
+  const applySettings = useCallback((data: DigestSettingsData | null) => {
+    if (data) {
+      setSettings(data);
+      setLoadError(false);
+    } else {
       setLoadError(true);
       toast.error("Failed to load digest settings");
-    } finally {
-      setLoading(false);
     }
-  }, [orgId]);
+    setLoading(false);
+  }, []);
+
+  const load = useCallback(async () => {
+    applySettings(await requestDigestSettings(orgId));
+  }, [orgId, applySettings]);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    let cancelled = false;
+    requestDigestSettings(orgId).then((data) => {
+      if (!cancelled) applySettings(data);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [orgId, applySettings]);
 
   const save = useCallback(
     async (patch: Partial<DigestSettingsData>) => {

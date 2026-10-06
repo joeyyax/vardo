@@ -130,6 +130,17 @@ function EventFilterEditor({
   );
 }
 
+async function requestChannels(orgId: string): Promise<Channel[] | null> {
+  try {
+    const res = await fetch(`/api/v1/organizations/${orgId}/notifications`);
+    if (!res.ok) return null;
+    const d = await res.json();
+    return d.channels || [];
+  } catch {
+    return null;
+  }
+}
+
 export function NotificationChannelsEditor({ orgId }: { orgId: string }) {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [loading, setLoading] = useState(true);
@@ -142,11 +153,18 @@ export function NotificationChannelsEditor({ orgId }: { orgId: string }) {
   const [webhookSecret, setWebhookSecret] = useState("");
   const [slackUrl, setSlackUrl] = useState("");
 
-  const load = useCallback(async () => {
-    try { const res = await fetch(`/api/v1/organizations/${orgId}/notifications`); if (res.ok) { const d = await res.json(); setChannels(d.channels || []); } } catch {}
+  const applyChannels = useCallback((list: Channel[] | null) => {
+    if (list) setChannels(list);
     setLoading(false);
-  }, [orgId]);
-  useEffect(() => { load(); }, [load]);
+  }, []);
+  const load = useCallback(async () => {
+    applyChannels(await requestChannels(orgId));
+  }, [orgId, applyChannels]);
+  useEffect(() => {
+    let cancelled = false;
+    requestChannels(orgId).then((list) => { if (!cancelled) applyChannels(list); });
+    return () => { cancelled = true; };
+  }, [orgId, applyChannels]);
 
   const reset = () => { setName(""); setType("email"); setRecipients(""); setWebhookUrl(""); setWebhookSecret(""); setSlackUrl(""); setShowForm(false); };
 

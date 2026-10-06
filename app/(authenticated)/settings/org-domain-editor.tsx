@@ -38,6 +38,18 @@ interface OrgDomain {
   createdAt: string;
 }
 
+async function requestDomains(orgId: string): Promise<OrgDomain[] | null> {
+  try {
+    const res = await fetch(`/api/v1/organizations/${orgId}/domains`);
+    if (!res.ok) throw new Error();
+    const data = await res.json();
+    return data.domains;
+  } catch {
+    toast.error("Failed to load domains");
+    return null;
+  }
+}
+
 export function OrgDomainEditor({
   orgId,
   defaultDomain,
@@ -58,22 +70,24 @@ export function OrgDomainEditor({
   const [verifying, setVerifying] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
 
+  const applyDomains = useCallback((list: OrgDomain[] | null) => {
+    if (list) setDomains(list);
+    setLoading(false);
+  }, []);
+
   const fetchDomains = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/v1/organizations/${orgId}/domains`);
-      if (!res.ok) throw new Error();
-      const data = await res.json();
-      setDomains(data.domains);
-    } catch {
-      toast.error("Failed to load domains");
-    } finally {
-      setLoading(false);
-    }
-  }, [orgId]);
+    applyDomains(await requestDomains(orgId));
+  }, [orgId, applyDomains]);
 
   useEffect(() => {
-    fetchDomains();
-  }, [fetchDomains]);
+    let cancelled = false;
+    requestDomains(orgId).then((list) => {
+      if (!cancelled) applyDomains(list);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [orgId, applyDomains]);
 
   async function handleToggle(domain: OrgDomain) {
     const prev = domains;
