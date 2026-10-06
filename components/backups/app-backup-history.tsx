@@ -8,6 +8,22 @@ import { BackupHistory } from "./backup-history";
 import { UncapturedWarning, uncapturedSources } from "./uncaptured-warning";
 import type { BackupJob, RecentBackup } from "./types";
 
+type AppBackupData = { history: RecentBackup[]; uncaptured: string[] };
+
+async function requestAppBackups(orgId: string, appId: string): Promise<AppBackupData | null> {
+  try {
+    const res = await fetch(`/api/v1/organizations/${orgId}/backups?appId=${appId}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const jobApps = ((data.jobs || []) as BackupJob[]).flatMap((job) =>
+      job.backupJobApps.map((bja) => bja.app).filter((app) => app.id === appId),
+    );
+    return { history: data.recentHistory || [], uncaptured: uncapturedSources(jobApps) };
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Backup history scoped to a single app. Used in project and app detail tabs.
  * Fetches all org backup history and filters client-side by appId.
@@ -24,27 +40,27 @@ export function AppBackupHistory({
   const [uncaptured, setUncaptured] = useState<string[]>([]);
   const [backingUp, setBackingUp] = useState(false);
 
-  const fetchData = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/v1/organizations/${orgId}/backups?appId=${appId}`);
-      if (res.ok) {
-        const data = await res.json();
-        setHistory(data.recentHistory || []);
-        const jobApps = ((data.jobs || []) as BackupJob[]).flatMap((job) =>
-          job.backupJobApps.map((bja) => bja.app).filter((app) => app.id === appId),
-        );
-        setUncaptured(uncapturedSources(jobApps));
-      }
-    } catch {
-      // silent
-    } finally {
-      setLoading(false);
+  const applyData = useCallback((data: AppBackupData | null) => {
+    if (data) {
+      setHistory(data.history);
+      setUncaptured(data.uncaptured);
     }
-  }, [orgId, appId]);
+    setLoading(false);
+  }, []);
+
+  const fetchData = useCallback(async () => {
+    applyData(await requestAppBackups(orgId, appId));
+  }, [orgId, appId, applyData]);
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    let cancelled = false;
+    requestAppBackups(orgId, appId).then((data) => {
+      if (!cancelled) applyData(data);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [orgId, appId, applyData]);
 
   // Creates the backup job the app is missing, so an app on no schedule can
   // still be backed up before a risky change.

@@ -18,6 +18,26 @@ import { applyBackupEvent, type ProgressByJob } from "./progress-state";
 import type { BusEvent } from "@/lib/bus/events";
 import type { App, BackupTarget, BackupJob, RecentBackup } from "./types";
 
+type BackupPageData = {
+  jobs?: { jobs?: BackupJob[]; recentHistory?: RecentBackup[] };
+  targets?: { targets?: BackupTarget[]; allowLocalBackups?: boolean };
+};
+
+async function requestBackupData(orgId: string): Promise<BackupPageData> {
+  const data: BackupPageData = {};
+  try {
+    const [jobsRes, targetsRes] = await Promise.all([
+      fetch(`/api/v1/organizations/${orgId}/backups`),
+      fetch(`/api/v1/organizations/${orgId}/backups/targets`),
+    ]);
+    if (jobsRes.ok) data.jobs = await jobsRes.json();
+    if (targetsRes.ok) data.targets = await targetsRes.json();
+  } catch {
+    // silent
+  }
+  return data;
+}
+
 export function BackupPage({
   scope,
   orgId,
@@ -40,34 +60,33 @@ export function BackupPage({
   const [editingTargetId, setEditingTargetId] = useState<string | null>(null);
   const [progress, setProgress] = useState<ProgressByJob>({});
 
-  const fetchData = useCallback(async () => {
-    try {
-      const [jobsRes, targetsRes] = await Promise.all([
-        fetch(`/api/v1/organizations/${orgId}/backups`),
-        fetch(`/api/v1/organizations/${orgId}/backups/targets`),
-      ]);
-      if (jobsRes.ok) {
-        const data = await jobsRes.json();
-        setJobs(data.jobs || []);
-        setHistory(data.recentHistory || []);
-      }
-      if (targetsRes.ok) {
-        const data = await targetsRes.json();
-        setTargets(data.targets || []);
-        if (data.allowLocalBackups !== undefined) {
-          setAllowLocalBackups(data.allowLocalBackups);
-        }
-      }
-    } catch {
-      // silent
-    } finally {
-      setLoading(false);
+  const applyData = useCallback((data: BackupPageData) => {
+    if (data.jobs) {
+      setJobs(data.jobs.jobs || []);
+      setHistory(data.jobs.recentHistory || []);
     }
-  }, [orgId]);
+    if (data.targets) {
+      setTargets(data.targets.targets || []);
+      if (data.targets.allowLocalBackups !== undefined) {
+        setAllowLocalBackups(data.targets.allowLocalBackups);
+      }
+    }
+    setLoading(false);
+  }, []);
+
+  const fetchData = useCallback(async () => {
+    applyData(await requestBackupData(orgId));
+  }, [orgId, applyData]);
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    let cancelled = false;
+    requestBackupData(orgId).then((data) => {
+      if (!cancelled) applyData(data);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [orgId, applyData]);
 
   // A run started anywhere — cron or another tab — shows itself here as it goes.
   const onEvent = useCallback(
