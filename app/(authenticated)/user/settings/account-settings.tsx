@@ -32,14 +32,15 @@ import { authClient, useSession, passkey as passkeyMethods } from "@/lib/auth/cl
 
 export function AccountInfo() {
   const { data: sessionData, isPending } = useSession();
-  const [name, setName] = useState("");
+  const sessionName = sessionData?.user?.name ?? "";
+  const [name, setName] = useState(sessionName);
+  const [syncedName, setSyncedName] = useState(sessionName);
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    if (sessionData?.user?.name) {
-      setName(sessionData.user.name);
-    }
-  }, [sessionData]);
+  if (sessionName && sessionName !== syncedName) {
+    setSyncedName(sessionName);
+    setName(sessionName);
+  }
 
   async function handleSaveName(e: React.FormEvent) {
     e.preventDefault();
@@ -458,29 +459,35 @@ type PasskeyInfo = {
   createdAt: string | Date | null;
 };
 
+async function requestPasskeys(): Promise<PasskeyInfo[] | null> {
+  try {
+    const res = await fetch("/api/auth/passkey/list-user-passkeys");
+    if (!res.ok) return null;
+    return (await res.json()) as PasskeyInfo[];
+  } catch {
+    // Passkey list may fail silently on first load
+    return null;
+  }
+}
+
 export function PasskeyManager() {
   const [passkeys, setPasskeys] = useState<PasskeyInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
 
-  const fetchPasskeys = useCallback(async () => {
-    try {
-      const res = await fetch("/api/auth/passkey/list-user-passkeys");
-      if (res.ok) {
-        const data = await res.json();
-        setPasskeys(data as PasskeyInfo[]);
-      }
-    } catch {
-      // Passkey list may fail silently on first load
-    } finally {
-      setLoading(false);
-    }
+  const applyPasskeys = useCallback((list: PasskeyInfo[] | null) => {
+    if (list) setPasskeys(list);
+    setLoading(false);
   }, []);
 
+  const fetchPasskeys = useCallback(async () => {
+    applyPasskeys(await requestPasskeys());
+  }, [applyPasskeys]);
+
   useEffect(() => {
-    fetchPasskeys();
-  }, [fetchPasskeys]);
+    requestPasskeys().then(applyPasskeys);
+  }, [applyPasskeys]);
 
   async function handleAdd() {
     setAdding(true);
@@ -610,30 +617,28 @@ const PROVIDER_LABELS: Record<string, { label: string; icon: typeof Github }> = 
   github: { label: "GitHub", icon: Github },
 };
 
+async function requestAccounts(): Promise<LinkedAccount[] | null> {
+  try {
+    const res = await fetch("/api/auth/list-accounts");
+    if (!res.ok) return null;
+    const data = await res.json();
+    return (data as LinkedAccount[]).filter((a) => a.providerId !== "credential");
+  } catch {
+    // Silently fail
+    return null;
+  }
+}
+
 export function LinkedAccounts() {
   const [accounts, setAccounts] = useState<LinkedAccount[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchAccounts = useCallback(async () => {
-    try {
-      const res = await fetch("/api/auth/list-accounts");
-      if (res.ok) {
-        const data = await res.json();
-        const socialAccounts = (data as LinkedAccount[]).filter(
-          (a) => a.providerId !== "credential",
-        );
-        setAccounts(socialAccounts);
-      }
-    } catch {
-      // Silently fail
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
   useEffect(() => {
-    fetchAccounts();
-  }, [fetchAccounts]);
+    requestAccounts().then((list) => {
+      if (list) setAccounts(list);
+      setLoading(false);
+    });
+  }, []);
 
   return (
     <Card className="squircle rounded-lg">
@@ -718,32 +723,32 @@ type SessionInfo = {
   expiresAt: Date;
 };
 
+async function requestSessions(): Promise<SessionInfo[] | null> {
+  try {
+    const { data, error } = await authClient.listSessions();
+    if (error) {
+      toast.error("Failed to load sessions");
+      return null;
+    }
+    return data ? (data as SessionInfo[]) : null;
+  } catch {
+    toast.error("Failed to load sessions");
+    return null;
+  }
+}
+
 export function ActiveSessions() {
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [revoking, setRevoking] = useState<string | null>(null);
   const { data: sessionData } = useSession();
 
-  const fetchSessions = useCallback(async () => {
-    try {
-      const { data, error } = await authClient.listSessions();
-      if (error) {
-        toast.error("Failed to load sessions");
-        return;
-      }
-      if (data) {
-        setSessions(data as SessionInfo[]);
-      }
-    } catch {
-      toast.error("Failed to load sessions");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
   useEffect(() => {
-    fetchSessions();
-  }, [fetchSessions]);
+    requestSessions().then((list) => {
+      if (list) setSessions(list);
+      setLoading(false);
+    });
+  }, []);
 
   async function handleRevoke(token: string) {
     setRevoking(token);
@@ -864,6 +869,18 @@ function expiryFromOption(option: string): string | null {
   return new Date(Date.now() + Number(option) * 86_400_000).toISOString();
 }
 
+async function requestTokens(orgId: string): Promise<ApiToken[] | null> {
+  try {
+    const res = await fetch(`/api/v1/organizations/${orgId}/tokens`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.tokens || [];
+  } catch {
+    console.error("Failed to fetch tokens");
+    return null;
+  }
+}
+
 export function ApiTokens({ orgId }: { orgId: string }) {
   const [tokens, setTokens] = useState<ApiToken[]>([]);
   const [loading, setLoading] = useState(true);
@@ -875,25 +892,24 @@ export function ApiTokens({ orgId }: { orgId: string }) {
   const [deleting, setDeleting] = useState<string | null>(null);
   const [togglingScope, setTogglingScope] = useState<string | null>(null);
 
+  const applyTokens = useCallback((list: ApiToken[] | null) => {
+    if (list) setTokens(list);
+    setLoading(false);
+  }, []);
+
   const fetchTokens = useCallback(async () => {
-    try {
-      const res = await fetch(
-        `/api/v1/organizations/${orgId}/tokens`
-      );
-      if (res.ok) {
-        const data = await res.json();
-        setTokens(data.tokens || []);
-      }
-    } catch {
-      console.error("Failed to fetch tokens");
-    } finally {
-      setLoading(false);
-    }
-  }, [orgId]);
+    applyTokens(await requestTokens(orgId));
+  }, [orgId, applyTokens]);
 
   useEffect(() => {
-    fetchTokens();
-  }, [fetchTokens]);
+    let cancelled = false;
+    requestTokens(orgId).then((list) => {
+      if (!cancelled) applyTokens(list);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [orgId, applyTokens]);
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();

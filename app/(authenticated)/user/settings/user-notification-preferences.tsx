@@ -75,6 +75,22 @@ function getEffectiveEnabled(
   return CHANNEL_TYPE_DEFAULTS[channelType] ?? true;
 }
 
+type PreferencesResponse = {
+  channels?: Channel[];
+  preferences?: Preference[];
+  digestEnabled?: boolean;
+};
+
+async function requestPreferences(orgId: string): Promise<PreferencesResponse | null> {
+  try {
+    const res = await fetch(`/api/v1/user/notification-preferences?orgId=${orgId}`);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
 export function UserNotificationPreferences({ orgId }: { orgId: string }) {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [prefs, setPrefs] = useState<Preference[]>([]);
@@ -83,29 +99,37 @@ export function UserNotificationPreferences({ orgId }: { orgId: string }) {
   const [loadError, setLoadError] = useState(false);
   const [saving, setSaving] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
+  const [loadedOrgId, setLoadedOrgId] = useState(orgId);
+  if (loadedOrgId !== orgId) {
+    setLoadedOrgId(orgId);
     setLoadError(false);
-    try {
-      const res = await fetch(
-        `/api/v1/user/notification-preferences?orgId=${orgId}`,
-      );
-      if (!res.ok) {
-        setLoadError(true);
-      } else {
-        const data = await res.json();
-        setChannels(data.channels ?? []);
-        setPrefs(data.preferences ?? []);
-        setDigestEnabled(data.digestEnabled ?? false);
-      }
-    } catch {
+  }
+
+  const applyPreferences = useCallback((data: PreferencesResponse | null) => {
+    if (data) {
+      setChannels(data.channels ?? []);
+      setPrefs(data.preferences ?? []);
+      setDigestEnabled(data.digestEnabled ?? false);
+    } else {
       setLoadError(true);
     }
     setLoading(false);
-  }, [orgId]);
+  }, []);
+
+  const load = useCallback(async () => {
+    setLoadError(false);
+    applyPreferences(await requestPreferences(orgId));
+  }, [orgId, applyPreferences]);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    let cancelled = false;
+    requestPreferences(orgId).then((data) => {
+      if (!cancelled) applyPreferences(data);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [orgId, applyPreferences]);
 
   async function toggleEvent(
     channel: Channel,
