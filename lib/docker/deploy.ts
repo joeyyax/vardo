@@ -966,7 +966,8 @@ export function isPreviewProject(appName: string, envName: string, project: stri
 }
 
 /**
- * Tear down one preview environment: both slots and its shared project, nothing
+ * Tear down one preview environment: both slots, its shared project, their volumes
+ * and its directory, nothing
  * else. Fails when any `down` fails, so the caller can keep its records.
  */
 export async function stopPreviewEnvironment(
@@ -982,7 +983,7 @@ export async function stopPreviewEnvironment(
     await assertAppDirOwnership({ appId, appName, operation: "stop" });
 
     const envDir = appEnvDir(appName, envName);
-    const { access: fsAccess } = await import("fs/promises");
+    const { access: fsAccess, rm } = await import("fs/promises");
     const exists = (path: string) => fsAccess(path).then(() => true, () => false);
     if (!(await exists(envDir))) {
       return { success: true, log: `Nothing deployed for ${appName}-${envName}` };
@@ -995,7 +996,7 @@ export async function stopPreviewEnvironment(
         return;
       }
       try {
-        const args = ["compose", ...(await slotComposeFiles(slotDir)), "-p", project, "down"];
+        const args = ["compose", ...(await slotComposeFiles(slotDir)), "-p", project, "down", "-v"];
         const { stdout, stderr } = await execFileAsync("docker", args, { cwd: slotDir, timeout: COMPOSE_RESTART_TIMEOUT });
         if (stdout.trim()) logs.push(stdout.trim());
         if (stderr.trim()) logs.push(stderr.trim());
@@ -1014,6 +1015,7 @@ export async function stopPreviewEnvironment(
     if (sharedFrom) await down(sharedProjectName(appName, envName), sharedFrom);
 
     for (const f of failures) logs.push(`ERROR: ${f}`);
+    if (failures.length === 0) await rm(envDir, { recursive: true, force: true });
     return { success: failures.length === 0, log: logs.join("\n") };
   } catch (err) {
     logs.push(`ERROR: ${err instanceof Error ? err.message : String(err)}`);
