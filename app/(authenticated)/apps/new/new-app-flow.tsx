@@ -555,7 +555,7 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], baseDom
                     className="squircle flex flex-col items-center gap-2 rounded-lg bg-background-deep p-4 text-center transition-colors hover:bg-accent/50"
                   >
                     <Icon className="size-6 text-muted-foreground" />
-                    <span className="text-sm font-medium">{opt.label}</span>
+                    <span className="type-h4">{opt.label}</span>
                     <span className="text-xs text-muted-foreground">
                       {opt.description}
                     </span>
@@ -568,7 +568,7 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], baseDom
                   className="squircle flex flex-col items-center gap-2 rounded-lg bg-background-deep p-4 text-center transition-colors hover:bg-accent/50"
                 >
                   <Boxes className="size-6 text-muted-foreground" aria-hidden="true" />
-                  <span className="text-sm font-medium">Existing containers</span>
+                  <span className="type-h4">Existing containers</span>
                   <span className="text-xs text-muted-foreground">
                     Adopt what&apos;s already running on this host
                   </span>
@@ -649,7 +649,7 @@ export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], baseDom
                   <div className="squircle flex flex-col items-center gap-3 rounded-lg bg-background-deep p-8 text-center">
                     <Github className="size-8 text-muted-foreground" />
                     <div className="space-y-1">
-                      <p className="text-sm font-medium">Connect GitHub to continue</p>
+                      <p className="type-h4">Connect GitHub to continue</p>
                       <p className="text-xs text-muted-foreground">
                         Install the GitHub App to import repositories and enable auto-deploy.
                       </p>

@@ -144,7 +144,7 @@ function SlotPill({ slot }: { slot: string | null }) {
   if (!slot) return null;
   const color = slot === "green" ? "bg-emerald-500/15 text-emerald-600" : "bg-blue-500/15 text-blue-600";
   return (
-    <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${color}`}>
+    <span className={`text-xs font-mono px-1.5 py-0.5 rounded ${color}`}>
       {slot}
     </span>
   );
@@ -499,7 +499,7 @@ export function AppDeployPanel({
           </div>
         )}
         {isExpanded && !deployment.log && (
-          <div id={logPanelId} className="border-t p-4">
+          <div id={logPanelId} className="px-4 pb-4">
             <p className="text-xs text-muted-foreground">No log output for this deployment.</p>
           </div>
         )}
@@ -593,7 +593,7 @@ export function AppDeployPanel({
               {/* Queued */}
               {queuedDeployments.length > 0 && (
                 <div className="space-y-2">
-                  <h3 className="text-xs font-medium text-muted-foreground px-1">Queued</h3>
+                  <h3 className="type-label text-muted-foreground px-1">Queued</h3>
                   {queuedDeployments.map((deployment, idx) => {
                     const position = idx + 1;
                     const total = queuedDeployments.length;
@@ -661,7 +661,7 @@ export function AppDeployPanel({
               {/* Instant rollback */}
               {instantRollbackDeploy && (
                 <div className="space-y-2">
-                  <h3 className="text-xs font-medium text-muted-foreground px-1 flex items-center gap-1.5">
+                  <h3 className="type-label text-muted-foreground px-1 flex items-center gap-1.5">
                     <Zap className="size-3" />
                     Standby
                   </h3>
@@ -672,7 +672,7 @@ export function AppDeployPanel({
               {/* History */}
               {historyTimeline.length > 0 && (
                 <div className="space-y-2">
-                  <h3 className="text-xs font-medium text-muted-foreground px-1">History</h3>
+                  <h3 className="type-label text-muted-foreground px-1">History</h3>
                   {historyTimeline.map((item) =>
                     item.kind === "deploy" ? (
                       renderDeploymentCard(item.deploy, "history")
@@ -725,7 +725,7 @@ export function AppDeployPanel({
             {rollbackPreview && (
               <>
                 <div className="space-y-2">
-                  <p className="text-sm font-medium">Rolling back to:</p>
+                  <p className="type-h4">Rolling back to</p>
                   <div className="squircle rounded-lg bg-background-deep p-3 space-y-1">
                     <p className="text-sm">{rollbackPreview.gitMessage || "Manual deploy"}</p>
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -740,7 +740,7 @@ export function AppDeployPanel({
                 </div>
                 {rollbackPreview.configChanges.length > 0 && (
                   <div className="space-y-2">
-                    <p className="text-sm font-medium">Config changes</p>
+                    <p className="type-h4">Config changes</p>
                     <div className="squircle rounded-lg bg-background-deep divide-y text-xs">
                       {rollbackPreview.configChanges.map((change) => (
                         <div key={change.field} className="flex items-center justify-between px-3 py-2">

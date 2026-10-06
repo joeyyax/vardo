@@ -858,7 +858,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
             initialSubView={activeTab === "networking" ? initialSubView : undefined}
           />
           {hasAppSettingsPageFields("networking", settingsFieldContext) && (
-            <div className="border-t pt-6">
+            <div className="pt-4">
               <AppSettingsPanel
                 app={app}
                 orgId={orgId}

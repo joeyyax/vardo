@@ -91,7 +91,7 @@ export function DependencySelector({
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2">
-        <p className="text-xs font-medium text-muted-foreground">Deploy dependencies</p>
+        <p className="type-label text-muted-foreground/60">Deploy dependencies</p>
         <HelpTip label="Deploy dependencies">
           Apps in this project that deploy before this one. Deploying the whole project sorts it
           into tiers, so a database is up before whatever connects to it.
@@ -143,8 +143,8 @@ export function DependencySelector({
                 </button>
               ))}
               {wouldCircular.size > 0 && (
-                <div className="border-t mt-1 pt-1 px-2 py-1">
-                  <p className="text-[10px] text-muted-foreground/60">
+                <div className="mt-1 px-2 py-1">
+                  <p className="text-xs text-muted-foreground/60">
                     {[...wouldCircular].length === 1 ? "1 app excluded" : `${[...wouldCircular].length} apps excluded`} (circular dependency)
                   </p>
                 </div>

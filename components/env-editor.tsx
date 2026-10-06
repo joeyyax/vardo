@@ -297,7 +297,7 @@ export function EnvEditor(props: EnvEditorProps) {
       </div>
     );
   }
-  const btnClass = "px-2 py-0.5 rounded border border-accent bg-muted/80 text-[10px] font-mono text-muted-foreground hover:text-foreground hover:border-ring hover:bg-accent transition-colors";
+  const btnClass = "px-2 py-1 rounded border border-accent bg-muted/80 text-xs leading-none font-mono text-muted-foreground hover:text-foreground hover:border-ring hover:bg-accent transition-colors";
 
   function renderCopyChips() {
     // Multi-line selection mode
@@ -325,7 +325,7 @@ export function EnvEditor(props: EnvEditorProps) {
           className="absolute right-3 flex items-center gap-1.5 h-6 pointer-events-auto z-10"
           style={{ top }}
         >
-          <span className="text-[10px] font-mono text-muted-foreground">copy {count} vars</span>
+          <span className="text-xs font-mono text-muted-foreground">copy {count} vars</span>
           <button type="button" className={btnClass} onClick={() => copyToast(keys.join("\n"))}>keys</button>
           <button type="button" className={btnClass} onClick={() => copyToast(values.join("\n"))}>values</button>
           <button type="button" className={btnClass} onClick={() => copyToast(selected.join("\n"))}>pairs</button>
@@ -359,7 +359,7 @@ export function EnvEditor(props: EnvEditorProps) {
         className="absolute right-3 flex items-center gap-1.5 h-6 pointer-events-auto z-10"
         style={{ top }}
       >
-        <span className="text-[10px] font-mono text-muted-foreground">copy</span>
+        <span className="text-xs font-mono text-muted-foreground">copy</span>
         <button type="button" className={btnClass} onClick={() => copyToast(line)}>pair</button>
         <button type="button" className={btnClass} onClick={() => copyToast(key)}>key</button>
         <button type="button" className={btnClass} onClick={() => copyToast(value)}>value</button>
@@ -393,7 +393,7 @@ export function EnvEditor(props: EnvEditorProps) {
 
       <div className="flex items-center justify-between">
         <p className="text-xs text-muted-foreground">
-          KEY=value format. <kbd className="bg-muted px-1 py-0.5 rounded text-[10px]">Cmd+D</kbd> select next occurrence. <kbd className="bg-muted px-1 py-0.5 rounded text-[10px]">Alt+↑↓</kbd> move lines.
+          KEY=value format. <kbd className="bg-muted px-1 py-0.5 rounded font-mono text-xs">Cmd+D</kbd> select next occurrence. <kbd className="bg-muted px-1 py-0.5 rounded font-mono text-xs">Alt+↑↓</kbd> move lines.
         </p>
         {!isStandalone && (
           <Button

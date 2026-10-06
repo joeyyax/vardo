@@ -234,7 +234,7 @@ export function ChartCard({
 }) {
   return (
     <div className="squircle rounded-lg bg-card shadow-card dark:border overflow-hidden">
-      <div className="flex items-center justify-between gap-3 px-4 py-3 border-b">
+      <div className="flex items-center justify-between gap-3 px-4 pt-4 pb-2">
         <div className="flex items-center gap-2 min-w-0">
           <Icon className="size-4 text-muted-foreground shrink-0" />
           <h3 className="type-h4 truncate">{title}</h3>
@@ -243,7 +243,7 @@ export function ChartCard({
           <div className="type-numeral text-sm tabular-nums shrink-0">{value}</div>
         )}
       </div>
-      <div className="p-4">{children}</div>
+      <div className="px-4 pb-4">{children}</div>
     </div>
   );
 }

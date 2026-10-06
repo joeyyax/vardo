@@ -317,7 +317,7 @@ export function CronManager({ appId, orgId }: Props) {
                       )}
                     </div>
                     <p className="text-xs font-mono text-muted-foreground truncate">
-                      <Badge variant="outline" className="text-[10px] mr-1.5 font-sans">
+                      <Badge variant="outline" className="mr-1.5 font-sans">
                         {job.type === "url" ? "URL" : "CMD"}
                       </Badge>
                       {job.command}

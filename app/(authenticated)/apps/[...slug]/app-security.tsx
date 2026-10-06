@@ -220,7 +220,7 @@ export function AppSecurity({ appId, orgId }: AppSecurityProps) {
         <div className="flex flex-col items-center gap-3 py-12 text-center">
           <Shield className="size-8 text-muted-foreground/30" />
           <div className="space-y-1">
-            <p className="text-sm font-medium">No scans yet</p>
+            <p className="type-h4">No scans yet</p>
             <p className="text-xs text-muted-foreground">
               Scans run automatically after the first deploy. Click &ldquo;Scan now&rdquo; to run one manually.
             </p>
@@ -232,10 +232,10 @@ export function AppSecurity({ appId, orgId }: AppSecurityProps) {
 
           {scans && scans.length > 1 && (
             <div className="space-y-2">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              <p className="type-label text-muted-foreground">
                 Previous scans
               </p>
-              <div className="space-y-4 border-t pt-4">
+              <div className="space-y-4">
                 {scans.slice(1).map((scan) => (
                   <div key={scan.id} className="opacity-60">
                     <ScanSummary scan={scan} />

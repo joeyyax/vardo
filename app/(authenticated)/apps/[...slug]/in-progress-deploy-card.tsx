@@ -110,7 +110,7 @@ export function InProgressDeployCard({
                   {/* Shape and color are the only cues left on the row. */}
                   <span className="sr-only">{STAGE_STATUS_WORDS[status ?? "pending"]}</span>
                   {running && timing && (
-                    <Timer since={timing.startedAt} className="text-[10px] text-status-info/70" />
+                    <Timer since={timing.startedAt} className="text-xs text-status-info/70" />
                   )}
                 </div>
               );
@@ -150,7 +150,7 @@ export function InProgressDeployCard({
         </p>
       )}
       {expanded && log.length > 0 && (
-        <div className="border-t">
+        <div className="px-4 pb-4">
           <TerminalOutput
             lines={log.map((text) => ({ text, html: highlightLogLine(text), level: detectLogLevel(text) }))}
             height="max-h-80"

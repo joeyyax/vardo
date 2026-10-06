@@ -598,7 +598,7 @@ export function AppSettingsPanel({
       )}
 
       {!locked && (
-        <div className="flex justify-end border-t pt-4">
+        <div className="flex justify-end pt-2">
           <Button onClick={handleSave} disabled={saving || (fields.identity && !displayName.trim())}>
             {saving ? (
               <>

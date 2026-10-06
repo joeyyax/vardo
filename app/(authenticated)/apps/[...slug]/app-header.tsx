@@ -276,7 +276,7 @@ export function AppHeader({
             {(app.appTags ?? []).map(({ tag }) => (
               <span
                 key={tag.id}
-                className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium"
+                className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
                 style={{ backgroundColor: `${tag.color}15`, color: tag.color }}
               >
                 <span className="size-1.5 rounded-full" style={{ backgroundColor: tag.color }} />

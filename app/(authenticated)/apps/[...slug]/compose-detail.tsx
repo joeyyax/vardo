@@ -116,7 +116,7 @@ function ImageRef({ imageName }: { imageName: string }) {
       <span className="truncate font-mono text-xs text-muted-foreground/60">{repo}</span>
       <span
         data-slot="image-tag"
-        className="shrink-0 rounded border px-1.5 py-px font-mono text-[11px] leading-4 text-muted-foreground"
+        className="shrink-0 rounded border px-1.5 py-px font-mono text-xs leading-4 text-muted-foreground"
       >
         {tag ?? "untagged"}
       </span>
@@ -132,7 +132,7 @@ function PendingImageRef({ pending }: { pending: PendingImage }) {
       {pending.repo && (
         <span className="truncate font-mono text-xs text-muted-foreground/60">{pending.repo}</span>
       )}
-      <span className="shrink-0 rounded border border-status-warning-edge bg-status-warning-muted px-1.5 py-px font-mono text-[11px] leading-4 text-status-warning">
+      <span className="shrink-0 rounded border border-status-warning-edge bg-status-warning-muted px-1.5 py-px font-mono text-xs leading-4 text-status-warning">
         {pending.tag}
       </span>
     </span>
@@ -260,12 +260,12 @@ function ServiceRowCard({
         />
       </div>
 
-      <div className="space-y-1 border-t pt-2">
+      <div className="space-y-1 rounded-md bg-background-deep px-2 py-1.5">
         {service.imageName && <ImageRef imageName={service.imageName} />}
         {pending && <PendingImageRef pending={pending} />}
       </div>
 
-      <dl className="space-y-1 border-t pt-2">
+      <dl className="space-y-1 pt-1">
         <Detail label="Service">{service.composeService ?? service.name}</Detail>
         {running && (
           <Detail label="Usage">
@@ -1217,7 +1217,7 @@ export function ComposeDetail({
             <Card className="lining items-center justify-center p-12">
               <Container className="size-8 text-muted-foreground/50" />
               <div className="text-center space-y-1">
-                <p className="text-sm font-medium">No services</p>
+                <p className="type-h4">No services</p>
                 <p className="text-sm text-muted-foreground">
                   Deploy the stack to see its services here.
                 </p>
@@ -1261,7 +1261,7 @@ export function ComposeDetail({
             activeTab={activeTab}
             initialSubView={activeTab === "networking" ? initialSubView : undefined}
           />
-          <div className="border-t pt-6">
+          <div className="pt-4">
             <AppSettingsPanel
               app={app}
               orgId={orgId}

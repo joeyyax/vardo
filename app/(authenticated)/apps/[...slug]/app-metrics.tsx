@@ -108,7 +108,7 @@ function Collecting({ count }: { count: number }) {
     >
       <Loader2 className="size-4 animate-spin text-muted-foreground" />
       <p className="text-xs text-muted-foreground">Collecting data</p>
-      <p className="text-[10px] text-muted-foreground tabular-nums">
+      <p className="text-xs text-muted-foreground tabular-nums">
         {count} of {MIN_CHART_POINTS} samples
       </p>
     </div>
@@ -130,13 +130,13 @@ function NoSamples() {
 function ContainerTable({ containers }: { containers: ContainerPoint[] }) {
   return (
     <div className="squircle rounded-lg bg-card shadow-card dark:border overflow-x-auto">
-      <div className="flex items-center gap-2 px-4 py-3 border-b">
+      <div className="flex items-center gap-2 px-4 py-3">
         <Container className="size-4 text-muted-foreground" />
         <h3 className="type-h4">Containers</h3>
       </div>
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b text-xs text-muted-foreground">
+          <tr className="bg-background-deep text-xs text-muted-foreground">
             <th className="text-left font-normal px-4 py-2">Name</th>
             <th className="text-right font-normal px-4 py-2">CPU</th>
             <th className="text-right font-normal px-4 py-2">Memory</th>
@@ -327,7 +327,7 @@ export function AppMetrics({ orgId, appId, environmentName, gpuEnabled, cpuLimit
       {/* Memory Chart */}
       <ChartCard title="Memory Usage" icon={MemoryStick} value={headerValue(formatBytes(latest.memory))}>
         {latestMemoryLimit > 0 && (
-          <p className="text-[10px] text-muted-foreground mb-1" style={{ color: CHART_COLORS.memoryLimit }}>
+          <p className="text-xs text-muted-foreground mb-1" style={{ color: CHART_COLORS.memoryLimit }}>
             Limit: {formatBytes(latestMemoryLimit, 0)}
           </p>
         )}
@@ -391,7 +391,7 @@ export function AppMetrics({ orgId, appId, environmentName, gpuEnabled, cpuLimit
 
           <ChartCard title="GPU Memory" icon={MemoryStick} value={headerValue(formatBytes(latest.gpuMemoryUsed))}>
             {latestGpuMemTotal > 0 && (
-              <p className="text-[10px] text-muted-foreground mb-1" style={{ color: CHART_COLORS.memoryLimit }}>
+              <p className="text-xs text-muted-foreground mb-1" style={{ color: CHART_COLORS.memoryLimit }}>
                 Total: {formatBytes(latestGpuMemTotal, 0)}
               </p>
             )}
@@ -450,7 +450,7 @@ export function AppMetrics({ orgId, appId, environmentName, gpuEnabled, cpuLimit
         <ContainerTable containers={containers} />
       ) : awaitingFirstFrame ? (
         <div className="squircle rounded-lg bg-card shadow-card dark:border">
-          <div className="flex items-center gap-2 px-4 py-3 border-b">
+          <div className="flex items-center gap-2 px-4 py-3">
             <Container className="size-4 text-muted-foreground" />
             <h3 className="type-h4">Containers</h3>
           </div>
