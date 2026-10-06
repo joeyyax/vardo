@@ -413,6 +413,7 @@ export async function runDeployment(
       envName,
       envType,
       envBranchOverride,
+      envIsolated: !resolvedEnv.isDefault,
       envMap,
 
       volumesList: [],
@@ -790,7 +791,7 @@ async function stopSlotInDir(
   logs: string[],
   removeVolumes = false,
   /** App and environment names — omitted for the legacy unscoped layout. */
-  shared?: { appName: string; envName: string },
+  shared?: { appName: string; envName: string; isDefault: boolean },
 ): Promise<void> {
   const { slotDir, composeProject } = await resolveActiveSlot(dir, projectPrefix);
   const composeFileArgs = await slotComposeFiles(slotDir);
@@ -815,7 +816,8 @@ async function stopSlotInDir(
   // outlive the app and the reconciler reports the stopped app as active.
   const partition = shared ? await readSlotPartition(slotDir) : null;
   if (shared && partition) {
-    await down(sharedProjectName(shared.appName, shared.envName, partition.composeName));
+    // Only the default environment owns the compose `name:`; any other env sharing it would be production's.
+    await down(sharedProjectName(shared.appName, shared.envName, shared.isDefault ? partition.composeName : undefined));
   }
 }
 
@@ -835,12 +837,15 @@ export async function stopProject(
       operation: removeVolumes ? "stop and remove volumes for" : "stop",
     });
 
+    const defaultEnvName = (await resolveDefaultEnv(appId)).name;
+
     if (environmentName) {
       // Stop specific environment
       const envDir = appEnvDir(appName, environmentName);
       await stopSlotInDir(envDir, `${appName}-${environmentName}`, logs, removeVolumes, {
         appName,
         envName: environmentName,
+        isDefault: environmentName === defaultEnvName,
       });
     } else {
       // Stop all environments — try env-aware layout first
@@ -860,6 +865,7 @@ export async function stopProject(
             await stopSlotInDir(envDir, `${appName}-${entry.name}`, logs, removeVolumes, {
               appName,
               envName: entry.name,
+              isDefault: entry.name === defaultEnvName,
             });
           }
         } else {
@@ -873,7 +879,7 @@ export async function stopProject(
     }
 
     // apps.status describes the default environment; stopping another one leaves it alone.
-    if (!environmentName || (await resolveDefaultEnv(appId)).name === environmentName) {
+    if (!environmentName || environmentName === defaultEnvName) {
       const stoppedAt = new Date();
       await db
         .update(apps)
