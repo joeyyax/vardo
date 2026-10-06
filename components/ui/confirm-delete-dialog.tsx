@@ -43,20 +43,19 @@ function ConfirmDeleteDialog({
 }: ConfirmDeleteDialogProps) {
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent className="squircle">
+      <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>{title}</AlertDialogTitle>
           <AlertDialogDescription>{description}</AlertDialogDescription>
         </AlertDialogHeader>
         {children && <div className="px-0 pb-2">{children}</div>}
         <AlertDialogFooter>
-          <AlertDialogCancel className="squircle" disabled={loading}>
+          <AlertDialogCancel disabled={loading}>
             Cancel
           </AlertDialogCancel>
           <Button
             type="button"
             variant={variant}
-            className="squircle"
             onClick={onConfirm}
             disabled={loading || confirmDisabled}
           >

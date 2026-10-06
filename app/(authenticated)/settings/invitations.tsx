@@ -222,7 +222,7 @@ export function InvitationsPanel({
         confirmLabel="Revoke"
       />
 
-      <Card className="squircle rounded-lg">
+      <Card>
         <CardContent className="space-y-4">
         {canManage && !emailConfigured && (
           <div className="flex items-start gap-2 rounded-lg bg-status-warning-muted px-4 py-2.5 text-sm text-status-warning">

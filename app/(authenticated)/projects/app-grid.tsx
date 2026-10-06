@@ -451,11 +451,11 @@ export function AppGrid({
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Filter by app, project or domain"
             aria-label="Filter apps"
-            className="squircle pl-8"
+            className="pl-8"
           />
         </div>
         <Select value={sort} onValueChange={(v) => isSortKey(v) && setSort(v)}>
-          <SelectTrigger className="squircle w-44" aria-label="Sort projects">
+          <SelectTrigger className="w-44" aria-label="Sort projects">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

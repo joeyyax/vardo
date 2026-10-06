@@ -108,7 +108,7 @@ export function TraefikSettings() {
           />
         </div>
 
-        <Button type="submit" className="squircle" disabled={saving} aria-label="Save Traefik settings">
+        <Button type="submit" disabled={saving} aria-label="Save Traefik settings">
           {saving && <Loader2 className="size-4 animate-spin" />}
           Save
         </Button>
@@ -125,7 +125,7 @@ export function TraefikSettings() {
           <Button
             type="button"
             variant="outline"
-            className="squircle shrink-0"
+            className="shrink-0"
             onClick={handleRestart}
             disabled={restarting}
             aria-label="Restart Traefik now"

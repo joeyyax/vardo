@@ -245,7 +245,7 @@ export function UserNotificationPreferences({ orgId }: { orgId: string }) {
   return (
     <div className="space-y-6">
       {channels.map((channel) => (
-        <Card key={channel.id} className="squircle rounded-lg">
+        <Card key={channel.id}>
           <CardContent className="space-y-4">
             <div>
               <div className="flex items-center gap-2">
@@ -325,7 +325,7 @@ export function UserNotificationPreferences({ orgId }: { orgId: string }) {
         </Card>
       ))}
 
-      <Card className="squircle rounded-lg">
+      <Card>
         <CardContent className="space-y-2">
           <div className="flex items-center justify-between">
             <div>

@@ -114,7 +114,7 @@ export function BackupSettings() {
         </p>
       </div>
 
-    <Card className="squircle rounded-lg">
+    <Card>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">
           {configured && (
@@ -195,12 +195,12 @@ export function BackupSettings() {
             {isMaskedValue(accessKey) && !editingAccessKey ? (
               <div className="flex gap-2">
                 <Input id="sys-accessKey" value={toDisplay(accessKey)} disabled className="font-mono" />
-                <Button type="button" variant="outline" size="sm" className="squircle shrink-0" aria-label="Edit access key" onClick={() => { setEditingAccessKey(true); setAccessKey(""); }}>Edit</Button>
+                <Button type="button" variant="outline" size="sm" className="shrink-0" aria-label="Edit access key" onClick={() => { setEditingAccessKey(true); setAccessKey(""); }}>Edit</Button>
               </div>
             ) : editingAccessKey ? (
               <div className="flex gap-2">
                 <Input id="sys-accessKey" value={accessKey} onChange={(e) => setAccessKey(e.target.value)} required autoFocus />
-                <Button type="button" variant="outline" size="sm" className="squircle shrink-0" onClick={() => { setEditingAccessKey(false); setAccessKey(maskedAccessKey.current); }}>Cancel</Button>
+                <Button type="button" variant="outline" size="sm" className="shrink-0" onClick={() => { setEditingAccessKey(false); setAccessKey(maskedAccessKey.current); }}>Cancel</Button>
               </div>
             ) : (
               <Input id="sys-accessKey" value={accessKey} onChange={(e) => setAccessKey(e.target.value)} required />
@@ -212,12 +212,12 @@ export function BackupSettings() {
             {isMaskedValue(secretKey) && !editingSecretKey ? (
               <div className="flex gap-2">
                 <Input id="sys-secretKey" value={toDisplay(secretKey)} disabled className="font-mono" />
-                <Button type="button" variant="outline" size="sm" className="squircle shrink-0" aria-label="Edit secret key" onClick={() => { setEditingSecretKey(true); setSecretKey(""); }}>Edit</Button>
+                <Button type="button" variant="outline" size="sm" className="shrink-0" aria-label="Edit secret key" onClick={() => { setEditingSecretKey(true); setSecretKey(""); }}>Edit</Button>
               </div>
             ) : editingSecretKey ? (
               <div className="flex gap-2">
                 <Input id="sys-secretKey" type="password" value={secretKey} onChange={(e) => setSecretKey(e.target.value)} autoComplete="current-password" required autoFocus />
-                <Button type="button" variant="outline" size="sm" className="squircle shrink-0" onClick={() => { setEditingSecretKey(false); setSecretKey(maskedSecretKey.current); }}>Cancel</Button>
+                <Button type="button" variant="outline" size="sm" className="shrink-0" onClick={() => { setEditingSecretKey(false); setSecretKey(maskedSecretKey.current); }}>Cancel</Button>
               </div>
             ) : (
               <Input id="sys-secretKey" type="password" value={secretKey} onChange={(e) => setSecretKey(e.target.value)} autoComplete="current-password" required />
@@ -225,7 +225,7 @@ export function BackupSettings() {
           </div>
 
           <div className="flex items-center gap-3">
-            <Button type="submit" className="squircle" disabled={saving} aria-label="Save backup settings">
+            <Button type="submit" disabled={saving} aria-label="Save backup settings">
               {saving && <Loader2 className="size-4 animate-spin" />}
               Save
             </Button>
@@ -233,7 +233,6 @@ export function BackupSettings() {
               <Button
                 type="button"
                 variant="outline"
-                className="squircle"
                 disabled={verifying}
                 onClick={verify}
                 aria-label="Test backup connection"

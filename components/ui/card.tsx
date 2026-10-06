@@ -9,7 +9,7 @@ function Card({ className, ...props }: React.ComponentProps<"div">) {
       className={cn(
         // Layers over borders — the surface and its shadow define the card.
         // Dark keeps a hairline because shadows barely read on a dark ground.
-        "bg-card text-card-foreground @container flex flex-col gap-5 py-6 shadow-card dark:border",
+        "bg-card text-card-foreground squircle rounded-lg @container flex flex-col gap-5 py-6 shadow-card dark:border",
         className
       )}
       {...props}

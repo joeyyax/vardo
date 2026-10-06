@@ -448,7 +448,7 @@ function PerService({
 
   if (!selected) {
     return (
-      <Card className="squircle lining items-center justify-center rounded-lg p-12">
+      <Card className="lining items-center justify-center p-12">
         <p className="text-sm text-muted-foreground">{emptyMessage}</p>
       </Card>
     );
@@ -1246,7 +1246,7 @@ export function ComposeDetail({
 
         <TabsContent value="services">
           {services.length === 0 ? (
-            <Card className="squircle lining items-center justify-center rounded-lg p-12">
+            <Card className="lining items-center justify-center p-12">
               <Container className="size-8 text-muted-foreground/50" />
               <div className="text-center space-y-1">
                 <p className="text-sm font-medium">No services</p>

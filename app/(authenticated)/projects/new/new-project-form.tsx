@@ -73,7 +73,7 @@ export function NewProjectForm({ orgId }: { orgId: string }) {
 
   return (
     <form onSubmit={handleSubmit} className="max-w-lg space-y-6">
-      <Card className="squircle rounded-lg">
+      <Card>
         <CardContent className="space-y-5">
         <div className="space-y-2">
           <Label htmlFor="displayName">Name</Label>
@@ -83,7 +83,6 @@ export function NewProjectForm({ orgId }: { orgId: string }) {
             value={displayName}
             onChange={(e) => handleNameChange(e.target.value)}
             required
-            className="squircle"
           />
         </div>
 
@@ -95,7 +94,7 @@ export function NewProjectForm({ orgId }: { orgId: string }) {
             value={slug}
             onChange={(e) => handleSlugChange(e.target.value)}
             required
-            className="squircle font-mono text-sm"
+            className="font-mono text-sm"
           />
           <p className="text-xs text-muted-foreground">
             Auto-generated from name. Used in URLs and API references.
@@ -113,21 +112,19 @@ export function NewProjectForm({ orgId }: { orgId: string }) {
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             rows={3}
-            className="squircle"
           />
         </div>
         </CardContent>
       </Card>
 
       <div className="flex items-center gap-3">
-        <Button type="submit" disabled={submitting || !slug.trim()} className="squircle">
+        <Button type="submit" disabled={submitting || !slug.trim()}>
           {submitting ? "Creating..." : "Create project"}
         </Button>
         <Button
           type="button"
           variant="ghost"
           onClick={() => router.back()}
-          className="squircle"
         >
           Cancel
         </Button>

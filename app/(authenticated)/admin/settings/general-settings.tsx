@@ -69,7 +69,7 @@ export function GeneralSettings() {
         </p>
       </div>
 
-      <Card className="squircle rounded-lg">
+      <Card>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="max-w-md space-y-2">
@@ -86,7 +86,7 @@ export function GeneralSettings() {
               </p>
             </div>
 
-            <Button type="submit" className="squircle" disabled={saving} aria-label="Save general settings">
+            <Button type="submit" disabled={saving} aria-label="Save general settings">
               {saving && <Loader2 className="size-4 animate-spin" />}
               Save
             </Button>
@@ -95,7 +95,7 @@ export function GeneralSettings() {
       </Card>
 
       {runtime && (
-        <Card className="squircle rounded-lg">
+        <Card>
           <CardHeader>
             <CardTitle className="text-base">Runtime</CardTitle>
           </CardHeader>

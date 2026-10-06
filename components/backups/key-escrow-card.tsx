@@ -36,7 +36,7 @@ export function KeyEscrowCard() {
   if (!state) return null;
 
   return (
-    <Card className="squircle">
+    <Card>
       <CardHeader className="flex flex-row items-center gap-2 space-y-0 pb-4">
         <KeyRound className="size-4 text-muted-foreground" aria-hidden="true" />
         <CardTitle className="text-sm font-medium">Encryption key</CardTitle>

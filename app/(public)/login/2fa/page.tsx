@@ -63,7 +63,7 @@ function TwoFactorForm() {
   };
 
   return (
-    <Card className="w-full max-w-md squircle rounded-2xl">
+    <Card className="w-full max-w-md rounded-2xl">
       <CardHeader className="text-center">
         <div className="mx-auto mb-4 w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
           <ShieldCheck className="w-6 h-6 text-primary" />
@@ -96,7 +96,7 @@ function TwoFactorForm() {
                   setCode(val);
                 }}
                 placeholder="000000"
-                className="h-12 text-center text-xl tracking-[0.5em] font-mono squircle rounded-lg"
+                className="h-12 text-center text-xl tracking-[0.5em] font-mono rounded-lg"
                 maxLength={6}
                 inputMode="numeric"
                 autoComplete="one-time-code"
@@ -112,7 +112,7 @@ function TwoFactorForm() {
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
                 placeholder="Enter backup code"
-                className="h-12 text-center font-mono squircle rounded-lg"
+                className="h-12 text-center font-mono rounded-lg"
                 autoFocus
                 disabled={loading}
               />
@@ -139,7 +139,7 @@ function TwoFactorForm() {
 
           <Button
             type="submit"
-            className="w-full h-11 squircle rounded-lg"
+            className="w-full h-11 rounded-lg"
             disabled={loading || !code}
           >
             {loading ? (
@@ -172,7 +172,7 @@ function TwoFactorForm() {
 
 function TwoFactorSkeleton() {
   return (
-    <Card className="w-full max-w-md squircle rounded-2xl">
+    <Card className="w-full max-w-md rounded-2xl">
       <CardHeader className="text-center">
         <CardTitle>Two-factor authentication</CardTitle>
         <CardDescription>Loading...</CardDescription>

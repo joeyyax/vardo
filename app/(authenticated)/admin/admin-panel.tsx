@@ -32,7 +32,7 @@ export function AdminPanel({ activeTab, orgId, metricsEnabled, metricsFlag }: Ad
     <div className="space-y-6">
       <PageToolbar
         actions={
-          <Button variant="outline" size="sm" className="squircle gap-2" asChild>
+          <Button variant="outline" size="sm" className="gap-2" asChild>
             <Link href="/admin/settings">
               <Settings className="size-4" />
               System settings

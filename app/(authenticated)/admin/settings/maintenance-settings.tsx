@@ -468,7 +468,7 @@ export function MaintenanceSettings() {
       </div>
 
       {/* Service overview */}
-      <Card className="squircle">
+      <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-sm font-medium flex items-center gap-2">
             <Server className="size-4" aria-hidden="true" />
@@ -480,7 +480,6 @@ export function MaintenanceSettings() {
                 <Button
                   variant="outline"
                   size="sm"
-                  className="squircle"
                   disabled={restarting !== null || updating}
                   aria-label="Restart all services"
                 >
@@ -537,7 +536,7 @@ export function MaintenanceSettings() {
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="squircle h-7 px-2"
+                      className="h-7 px-2"
                       onClick={() => void handleRestart(svc.name)}
                       disabled={restarting !== null || updating}
                       aria-label={`Restart ${svc.name}`}
@@ -557,7 +556,7 @@ export function MaintenanceSettings() {
       </Card>
 
       {/* One-click update */}
-      <Card className="squircle">
+      <Card>
         <CardHeader>
           <CardTitle className="text-sm font-medium flex items-center gap-2">
             <ArrowUpCircle className="size-4" aria-hidden="true" />
@@ -583,7 +582,6 @@ export function MaintenanceSettings() {
               <Button
                 variant="outline"
                 disabled={updating || restarting !== null || loadingStatus || !status?.hasVardoDir}
-                className="squircle"
               >
                 {updating ? (
                   <>
@@ -618,7 +616,7 @@ export function MaintenanceSettings() {
       </Card>
 
       {/* Build cache */}
-      <Card className="squircle">
+      <Card>
         <CardHeader>
           <CardTitle className="text-sm font-medium flex items-center gap-2">
             <Trash2 className="size-4" aria-hidden="true" />
@@ -654,7 +652,6 @@ export function MaintenanceSettings() {
               <Button
                 variant="outline"
                 disabled={reclaiming || loadingBuildCache}
-                className="squircle"
               >
                 {reclaiming ? (
                   <>
@@ -690,7 +687,7 @@ export function MaintenanceSettings() {
       </Card>
 
       {/* Idle app images */}
-      <Card className="squircle">
+      <Card>
         <CardHeader>
           <CardTitle className="text-sm font-medium flex items-center gap-2">
             <PackageX className="size-4" aria-hidden="true" />
@@ -924,7 +921,7 @@ export function MaintenanceSettings() {
       </Card>
 
       {/* App directory ownership */}
-      <Card className="squircle">
+      <Card>
         <CardHeader>
           <CardTitle className="text-sm font-medium flex items-center gap-2">
             <FileCheck className="size-4" aria-hidden="true" />
@@ -992,7 +989,6 @@ export function MaintenanceSettings() {
 
           <Button
             variant="outline"
-            className="squircle"
             disabled={stampingOwners || loadingOwners}
             onClick={() => void handleStampOwners()}
           >
@@ -1012,7 +1008,7 @@ export function MaintenanceSettings() {
       </Card>
 
       {/* Mount configuration */}
-      <Card className="squircle">
+      <Card>
         <CardHeader>
           <CardTitle className="text-sm font-medium flex items-center gap-2">
             <HardDrive className="size-4" aria-hidden="true" />
@@ -1052,7 +1048,7 @@ export function MaintenanceSettings() {
                           ...m,
                           vardoData: { source: e.target.value, destination: m.vardoData.destination },
                         }))}
-                        className="squircle font-mono text-sm"
+                        className="font-mono text-sm"
                       />
                     </div>
                     <div className="space-y-1.5">
@@ -1067,7 +1063,7 @@ export function MaintenanceSettings() {
                           ...m,
                           vardoData: { source: m.vardoData.source, destination: e.target.value },
                         }))}
-                        className="squircle font-mono text-sm"
+                        className="font-mono text-sm"
                       />
                     </div>
                   </div>
@@ -1091,7 +1087,7 @@ export function MaintenanceSettings() {
                           ...m,
                           vardoProjects: { source: e.target.value, destination: m.vardoProjects.destination },
                         }))}
-                        className="squircle font-mono text-sm"
+                        className="font-mono text-sm"
                       />
                     </div>
                     <div className="space-y-1.5">
@@ -1106,7 +1102,7 @@ export function MaintenanceSettings() {
                           ...m,
                           vardoProjects: { source: m.vardoProjects.source, destination: e.target.value },
                         }))}
-                        className="squircle font-mono text-sm"
+                        className="font-mono text-sm"
                       />
                     </div>
                   </div>
@@ -1130,7 +1126,7 @@ export function MaintenanceSettings() {
                           ...m,
                           vardoMount1: { source: e.target.value, destination: m.vardoMount1.destination },
                         }))}
-                        className="squircle font-mono text-sm"
+                        className="font-mono text-sm"
                       />
                     </div>
                     <div className="space-y-1.5">
@@ -1145,7 +1141,7 @@ export function MaintenanceSettings() {
                           ...m,
                           vardoMount1: { source: m.vardoMount1.source, destination: e.target.value },
                         }))}
-                        className="squircle font-mono text-sm"
+                        className="font-mono text-sm"
                       />
                     </div>
                   </div>
@@ -1169,7 +1165,7 @@ export function MaintenanceSettings() {
                           ...m,
                           vardoMount2: { source: e.target.value, destination: m.vardoMount2.destination },
                         }))}
-                        className="squircle font-mono text-sm"
+                        className="font-mono text-sm"
                       />
                     </div>
                     <div className="space-y-1.5">
@@ -1184,14 +1180,14 @@ export function MaintenanceSettings() {
                           ...m,
                           vardoMount2: { source: m.vardoMount2.source, destination: e.target.value },
                         }))}
-                        className="squircle font-mono text-sm"
+                        className="font-mono text-sm"
                       />
                     </div>
                   </div>
                 </div>
               </div>
 
-              <Button type="submit" className="squircle" disabled={savingMounts}>
+              <Button type="submit" disabled={savingMounts}>
                 {savingMounts && <Loader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />}
                 Save mounts
               </Button>

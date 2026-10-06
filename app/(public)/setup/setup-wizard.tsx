@@ -45,7 +45,7 @@ export function SetupWizard() {
 
   return (
     <div className="flex min-h-screen items-center justify-center px-4">
-      <Card className="w-full max-w-md squircle rounded-2xl">
+      <Card className="w-full max-w-md rounded-2xl">
         <CardHeader className="text-center">
           <CardTitle className="text-2xl font-bold">
             Welcome to Vardo
@@ -92,7 +92,7 @@ export function SetupWizard() {
             </div>
             <Button
               type="submit"
-              className="squircle w-full"
+              className="w-full"
               disabled={loading}
             >
               {loading ? (

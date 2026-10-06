@@ -240,7 +240,7 @@ export function ExternalRoutesSettings() {
     return (
       <div className="space-y-4">
         <p className="text-sm text-muted-foreground">Unable to load external routes.</p>
-        <Button variant="outline" className="squircle" onClick={() => { setLoading(true); fetchRoutes(); }}>
+        <Button variant="outline" onClick={() => { setLoading(true); fetchRoutes(); }}>
           Retry
         </Button>
       </div>
@@ -260,7 +260,6 @@ export function ExternalRoutesSettings() {
         </div>
         <Button
           size="sm"
-          className="squircle"
           onClick={() => {
             setAddForm(defaultForm);
             setAddError(null);
@@ -274,7 +273,7 @@ export function ExternalRoutesSettings() {
 
       {/* Route list */}
       {routes.length === 0 ? (
-        <Card className="squircle rounded-lg">
+        <Card>
           <CardContent className="flex flex-col items-center justify-center py-12 text-center">
             <Globe className="size-10 text-muted-foreground/50 mb-3" aria-hidden="true" />
             <p className="text-sm font-medium">No external routes defined</p>
@@ -284,7 +283,7 @@ export function ExternalRoutesSettings() {
           </CardContent>
         </Card>
       ) : (
-        <Card className="squircle rounded-lg">
+        <Card>
           <CardContent className="p-0">
             <div className="divide-y">
               {routes.map((route) => (
@@ -336,7 +335,7 @@ export function ExternalRoutesSettings() {
                         <MoreHorizontal className="size-4" />
                       </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="squircle">
+                    <DropdownMenuContent align="end">
                       <DropdownMenuItem onClick={() => handleOpenEdit(route)}>
                         <Pencil className="size-4" />
                         Edit
@@ -359,7 +358,7 @@ export function ExternalRoutesSettings() {
 
       {/* Add route dialog */}
       <Dialog open={addOpen} onOpenChange={(open) => { if (!addSaving) setAddOpen(open); }}>
-        <DialogContent className="squircle sm:max-w-lg">
+        <DialogContent className="sm:max-w-lg">
           <form onSubmit={handleAdd}>
             <DialogHeader>
               <DialogTitle>Add external route</DialogTitle>
@@ -377,13 +376,12 @@ export function ExternalRoutesSettings() {
               <Button
                 type="button"
                 variant="outline"
-                className="squircle"
                 disabled={addSaving}
                 onClick={() => setAddOpen(false)}
               >
                 Cancel
               </Button>
-              <Button type="submit" className="squircle" disabled={addSaving}>
+              <Button type="submit" disabled={addSaving}>
                 {addSaving && <Loader2 className="size-4 animate-spin" />}
                 Add route
               </Button>
@@ -397,7 +395,7 @@ export function ExternalRoutesSettings() {
         open={!!editTarget}
         onOpenChange={(open) => { if (!editSaving && !open) setEditTarget(null); }}
       >
-        <DialogContent className="squircle sm:max-w-lg">
+        <DialogContent className="sm:max-w-lg">
           <form onSubmit={handleEdit}>
             <DialogHeader>
               <DialogTitle>Edit external route</DialogTitle>
@@ -414,13 +412,12 @@ export function ExternalRoutesSettings() {
               <Button
                 type="button"
                 variant="outline"
-                className="squircle"
                 disabled={editSaving}
                 onClick={() => setEditTarget(null)}
               >
                 Cancel
               </Button>
-              <Button type="submit" className="squircle" disabled={editSaving}>
+              <Button type="submit" disabled={editSaving}>
                 {editSaving && <Loader2 className="size-4 animate-spin" />}
                 Save changes
               </Button>

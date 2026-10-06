@@ -207,22 +207,22 @@ export function NotificationChannelsEditor({ orgId }: { orgId: string }) {
   if (loading) return <div className="flex items-center gap-2 text-muted-foreground py-8"><Loader2 className="h-4 w-4 animate-spin" />Loading...</div>;
 
   return (
-    <Card className="squircle rounded-lg">
+    <Card>
       <CardContent className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">Configure where notifications are sent for deploy, backup, and cron failures.</p>
-        {!showForm && <Button size="sm" onClick={() => setShowForm(true)} className="squircle"><Plus className="h-4 w-4 mr-1" />Add channel</Button>}
+        {!showForm && <Button size="sm" onClick={() => setShowForm(true)}><Plus className="h-4 w-4 mr-1" />Add channel</Button>}
       </div>
       {showForm && (
         <div className="rounded-lg bg-background-deep p-4 space-y-4">
           <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2"><Label>Name</Label><Input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Team alerts" className="squircle" /></div>
-            <div className="space-y-2"><Label>Type</Label><Select value={type} onValueChange={v => setType(v as ChannelType)}><SelectTrigger className="squircle"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="email">Email</SelectItem><SelectItem value="webhook">Webhook</SelectItem><SelectItem value="slack">Slack</SelectItem></SelectContent></Select></div>
+            <div className="space-y-2"><Label>Name</Label><Input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Team alerts" /></div>
+            <div className="space-y-2"><Label>Type</Label><Select value={type} onValueChange={v => setType(v as ChannelType)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="email">Email</SelectItem><SelectItem value="webhook">Webhook</SelectItem><SelectItem value="slack">Slack</SelectItem></SelectContent></Select></div>
           </div>
-          {type === "email" && <div className="space-y-2"><Label>Recipients (comma-separated)</Label><Input value={recipients} onChange={e => setRecipients(e.target.value)} placeholder="alice@example.com, bob@example.com" className="squircle" /></div>}
-          {type === "webhook" && <div className="space-y-4"><div className="space-y-2"><Label>URL</Label><Input value={webhookUrl} onChange={e => setWebhookUrl(e.target.value)} placeholder="https://example.com/webhook" className="squircle" /></div><div className="space-y-2"><Label>Secret <span className="text-muted-foreground">(optional)</span></Label><Input value={webhookSecret} onChange={e => setWebhookSecret(e.target.value)} placeholder="HMAC signing secret" type="password" className="squircle" /></div></div>}
-          {type === "slack" && <div className="space-y-2"><Label>Slack Webhook URL</Label><Input value={slackUrl} onChange={e => setSlackUrl(e.target.value)} placeholder="https://hooks.slack.com/services/..." className="squircle" /></div>}
-          <div className="flex gap-2"><Button size="sm" onClick={handleCreate} disabled={saving || !name} className="squircle">{saving && <Loader2 className="h-4 w-4 animate-spin mr-1" />}Create</Button><Button size="sm" variant="ghost" onClick={reset} className="squircle">Cancel</Button></div>
+          {type === "email" && <div className="space-y-2"><Label>Recipients (comma-separated)</Label><Input value={recipients} onChange={e => setRecipients(e.target.value)} placeholder="alice@example.com, bob@example.com" /></div>}
+          {type === "webhook" && <div className="space-y-4"><div className="space-y-2"><Label>URL</Label><Input value={webhookUrl} onChange={e => setWebhookUrl(e.target.value)} placeholder="https://example.com/webhook" /></div><div className="space-y-2"><Label>Secret <span className="text-muted-foreground">(optional)</span></Label><Input value={webhookSecret} onChange={e => setWebhookSecret(e.target.value)} placeholder="HMAC signing secret" type="password" /></div></div>}
+          {type === "slack" && <div className="space-y-2"><Label>Slack Webhook URL</Label><Input value={slackUrl} onChange={e => setSlackUrl(e.target.value)} placeholder="https://hooks.slack.com/services/..." /></div>}
+          <div className="flex gap-2"><Button size="sm" onClick={handleCreate} disabled={saving || !name}>{saving && <Loader2 className="h-4 w-4 animate-spin mr-1" />}Create</Button><Button size="sm" variant="ghost" onClick={reset}>Cancel</Button></div>
         </div>
       )}
       {channels.length === 0 && !showForm ? (

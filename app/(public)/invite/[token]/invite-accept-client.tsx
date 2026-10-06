@@ -104,7 +104,7 @@ export function InviteAcceptClient({
   if (magicLinkSent) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4 bg-muted/30">
-        <Card className="w-full max-w-md squircle rounded-2xl">
+        <Card className="w-full max-w-md rounded-2xl">
           <CardHeader className="text-center">
             <div className="mx-auto mb-4 w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
               <Mail className="w-6 h-6 text-primary" />
@@ -126,7 +126,7 @@ export function InviteAcceptClient({
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4 bg-muted/30">
-      <Card className="w-full max-w-md squircle rounded-2xl">
+      <Card className="w-full max-w-md rounded-2xl">
         <CardHeader className="text-center">
           <CardTitle>{heading}</CardTitle>
           <CardDescription className="mt-2">{description}</CardDescription>
@@ -142,7 +142,7 @@ export function InviteAcceptClient({
 
           {isLoggedIn && loggedInEmail === email ? (
             <Button
-              className="w-full h-11 squircle rounded-lg"
+              className="w-full h-11 rounded-lg"
               onClick={handleAccept}
               disabled={accepting}
             >
@@ -157,7 +157,7 @@ export function InviteAcceptClient({
 
               <Button
                 variant="default"
-                className="w-full h-11 squircle rounded-lg"
+                className="w-full h-11 rounded-lg"
                 onClick={handlePasskey}
                 disabled={signingIn !== null}
               >
@@ -171,7 +171,7 @@ export function InviteAcceptClient({
 
               <Button
                 variant="outline"
-                className="w-full h-11 squircle rounded-lg"
+                className="w-full h-11 rounded-lg"
                 onClick={handleMagicLink}
                 disabled={signingIn !== null}
               >

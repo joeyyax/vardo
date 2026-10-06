@@ -117,7 +117,7 @@ export function GitHubSettings() {
         <CopyableField label="Webhook URL (paste into GitHub)" value={webhookUrl} />
       )}
 
-    <Card className="squircle rounded-lg">
+    <Card>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">
           {configured && (
@@ -174,7 +174,7 @@ export function GitHubSettings() {
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="squircle shrink-0"
+                  className="shrink-0"
                   aria-label="Edit client secret"
                   onClick={() => {
                     setEditingClientSecret(true);
@@ -199,7 +199,7 @@ export function GitHubSettings() {
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="squircle shrink-0"
+                  className="shrink-0"
                   onClick={() => {
                     setEditingClientSecret(false);
                     setClientSecret(maskedClientSecret.current);
@@ -234,7 +234,7 @@ export function GitHubSettings() {
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="squircle shrink-0"
+                  className="shrink-0"
                   aria-label="Edit private key"
                   onClick={() => {
                     setEditingPrivateKey(true);
@@ -258,7 +258,7 @@ export function GitHubSettings() {
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="squircle shrink-0"
+                  className="shrink-0"
                   onClick={() => {
                     setEditingPrivateKey(false);
                     setPrivateKey(maskedPrivateKey.current);
@@ -292,7 +292,7 @@ export function GitHubSettings() {
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="squircle shrink-0"
+                  className="shrink-0"
                   aria-label="Edit webhook secret"
                   onClick={() => {
                     setEditingWebhookSecret(true);
@@ -317,7 +317,7 @@ export function GitHubSettings() {
                   type="button"
                   variant="outline"
                   size="sm"
-                  className="squircle shrink-0"
+                  className="shrink-0"
                   onClick={() => {
                     setEditingWebhookSecret(false);
                     setWebhookSecret(maskedWebhookSecret.current);
@@ -339,7 +339,7 @@ export function GitHubSettings() {
           </div>
 
           <div className="flex items-center gap-3">
-            <Button type="submit" className="squircle" disabled={saving} aria-label="Save GitHub App settings">
+            <Button type="submit" disabled={saving} aria-label="Save GitHub App settings">
               {saving && <Loader2 className="size-4 animate-spin" />}
               Save
             </Button>
@@ -347,7 +347,6 @@ export function GitHubSettings() {
               <Button
                 type="button"
                 variant="outline"
-                className="squircle"
                 disabled={verifying}
                 onClick={verify}
                 aria-label="Test GitHub App connection"

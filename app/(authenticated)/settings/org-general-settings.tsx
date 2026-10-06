@@ -50,7 +50,7 @@ export function OrgGeneralSettings({ orgId, orgName }: OrgGeneralSettingsProps) 
 
   return (
     <div className="space-y-4">
-      <Card className="squircle rounded-lg">
+      <Card>
         <CardHeader>
           <CardTitle>General</CardTitle>
           <CardDescription>The organization name appears in the sidebar, team invitations, and notification emails.</CardDescription>
@@ -71,7 +71,6 @@ export function OrgGeneralSettings({ orgId, orgName }: OrgGeneralSettingsProps) 
 
             <Button
               type="submit"
-              className="squircle"
               disabled={!isDirty || saving || !name.trim()}
             >
               {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

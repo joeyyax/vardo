@@ -119,7 +119,7 @@ function LoginForm({ methods }: { methods: EnabledMethods }) {
 
   if (magicLinkSent) {
     return (
-      <Card className="w-full max-w-md squircle rounded-2xl">
+      <Card className="w-full max-w-md rounded-2xl">
         <CardHeader className="text-center">
           <div className="mx-auto mb-4 w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
             <Mail className="w-6 h-6 text-primary" />
@@ -148,7 +148,7 @@ function LoginForm({ methods }: { methods: EnabledMethods }) {
   }
 
   return (
-    <Card className="w-full max-w-md squircle rounded-2xl">
+    <Card className="w-full max-w-md rounded-2xl">
       <CardContent className="space-y-4 pt-6">
         {error && (
           <div
@@ -170,7 +170,7 @@ function LoginForm({ methods }: { methods: EnabledMethods }) {
         {methods.passkey && (
         <Button
           variant="default"
-          className="w-full h-11 squircle rounded-lg"
+          className="w-full h-11 rounded-lg"
           onClick={handlePasskeySignIn}
           disabled={isLoading !== null}
         >
@@ -187,7 +187,7 @@ function LoginForm({ methods }: { methods: EnabledMethods }) {
         {methods.github && (
         <Button
           variant="outline"
-          className="w-full h-11 squircle rounded-lg"
+          className="w-full h-11 rounded-lg"
           onClick={async () => {
             setIsLoading("github");
             setError(null);
@@ -238,7 +238,7 @@ function LoginForm({ methods }: { methods: EnabledMethods }) {
                 placeholder="you@example.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="h-11 squircle rounded-lg"
+                className="h-11 rounded-lg"
                 disabled={isLoading !== null}
                 required
               />
@@ -251,7 +251,7 @@ function LoginForm({ methods }: { methods: EnabledMethods }) {
                   type={showPassword ? "text" : "password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="h-11 squircle rounded-lg pr-10"
+                  className="h-11 rounded-lg pr-10"
                   disabled={isLoading !== null}
                   required
                 />
@@ -272,7 +272,7 @@ function LoginForm({ methods }: { methods: EnabledMethods }) {
             <Button
               type="submit"
               variant="outline"
-              className="w-full h-11 squircle rounded-lg"
+              className="w-full h-11 rounded-lg"
               disabled={isLoading !== null || !email || !password}
             >
               {isLoading === "password" ? (
@@ -293,7 +293,7 @@ function LoginForm({ methods }: { methods: EnabledMethods }) {
                 placeholder="you@example.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="h-11 squircle rounded-lg"
+                className="h-11 rounded-lg"
                 disabled={isLoading !== null}
                 required
               />
@@ -301,7 +301,7 @@ function LoginForm({ methods }: { methods: EnabledMethods }) {
             <Button
               type="submit"
               variant="outline"
-              className="w-full h-11 squircle rounded-lg"
+              className="w-full h-11 rounded-lg"
               disabled={isLoading !== null || !email}
             >
               {isLoading === "magic" ? (
@@ -338,7 +338,7 @@ function LoginForm({ methods }: { methods: EnabledMethods }) {
 
 function LoginSkeleton() {
   return (
-    <Card className="w-full max-w-md squircle rounded-2xl">
+    <Card className="w-full max-w-md rounded-2xl">
       <CardContent className="space-y-4 pt-6">
         <div className="h-11 bg-muted animate-pulse rounded-lg" />
         <div className="h-4" />

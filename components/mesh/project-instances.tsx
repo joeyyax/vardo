@@ -169,7 +169,7 @@ export function ProjectInstances({
   function renderDialog() {
     return (
       <Dialog open={!!transferAction} onOpenChange={(open) => !open && setTransferAction(null)}>
-        <DialogContent className="squircle">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle className="capitalize">{transferAction} project</DialogTitle>
             <DialogDescription>
@@ -234,13 +234,12 @@ export function ProjectInstances({
           <DialogFooter>
             <Button
               variant="outline"
-              className="squircle"
               onClick={() => setTransferAction(null)}
             >
               Cancel
             </Button>
             <Button
-              className="squircle capitalize"
+              className="capitalize"
               disabled={loading || !targetPeerId}
               onClick={handleTransfer}
             >
@@ -328,7 +327,6 @@ export function ProjectInstances({
       <Button
         variant="outline"
         size="sm"
-        className="squircle"
         onClick={() => {
           setTransferAction("clone");
           setTargetPeerId("");

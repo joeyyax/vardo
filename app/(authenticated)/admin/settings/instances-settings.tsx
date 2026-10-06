@@ -261,7 +261,7 @@ export function InstancesSettings() {
     return (
       <div className="space-y-4">
         <p className="text-sm text-muted-foreground">Unable to load instances.</p>
-        <Button variant="outline" className="squircle" onClick={() => fetchPeers(true)}>
+        <Button variant="outline" onClick={() => fetchPeers(true)}>
           Retry
         </Button>
       </div>
@@ -294,7 +294,6 @@ export function InstancesSettings() {
           <Button
             variant="outline"
             size="sm"
-            className="squircle"
             onClick={() => setJoinOpen(true)}
           >
             <Link className="size-4" />
@@ -302,7 +301,6 @@ export function InstancesSettings() {
           </Button>
           <Button
             size="sm"
-            className="squircle"
             onClick={handleGenerateInvite}
           >
             <Plus className="size-4" />
@@ -313,7 +311,7 @@ export function InstancesSettings() {
 
       {/* Pending invites */}
           {invites.length > 0 && (
-            <Card className="squircle rounded-lg bg-background-deep shadow-none">
+            <Card className="bg-background-deep shadow-none">
               <CardContent className="p-0">
                 <div className="divide-y">
                   {invites.map((invite) => (
@@ -369,7 +367,7 @@ export function InstancesSettings() {
 
           {/* Peer list */}
           {peers.length === 0 && invites.length === 0 ? (
-            <Card className="squircle rounded-lg">
+            <Card>
               <CardContent className="flex flex-col items-center justify-center py-12 text-center">
                 <Network className="size-10 text-muted-foreground/50 mb-3" aria-hidden="true" />
                 <p className="text-sm font-medium">No instances connected</p>
@@ -379,7 +377,7 @@ export function InstancesSettings() {
               </CardContent>
             </Card>
           ) : peers.length > 0 ? (
-            <Card className="squircle rounded-lg">
+            <Card>
               <CardContent className="p-0">
                 <div className="divide-y">
                   {peers.map((peer) => (
@@ -440,7 +438,7 @@ export function InstancesSettings() {
                                 <MoreHorizontal className="size-4" />
                               </Button>
                             </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="squircle">
+                            <DropdownMenuContent align="end">
                               <DropdownMenuItem
                                 onClick={() => copyToClipboard(peer.publicKey, "Public key")}
                               >
@@ -524,7 +522,7 @@ export function InstancesSettings() {
 
       {/* Generate invite dialog */}
       <Dialog open={inviteOpen} onOpenChange={(open) => !open && handleCloseInvite()}>
-        <DialogContent className="squircle sm:max-w-md">
+        <DialogContent className="sm:max-w-md">
           {inviteLoading ? (
             <>
               <DialogHeader>
@@ -542,7 +540,7 @@ export function InstancesSettings() {
                 <DialogDescription>{inviteError}</DialogDescription>
               </DialogHeader>
               <DialogFooter>
-                <Button className="squircle" onClick={handleCloseInvite}>
+                <Button onClick={handleCloseInvite}>
                   Close
                 </Button>
               </DialogFooter>
@@ -563,7 +561,7 @@ export function InstancesSettings() {
                 <Button
                   variant="outline"
                   size="sm"
-                  className="squircle shrink-0"
+                  className="shrink-0"
                   aria-label="Copy invite token"
                   onClick={() => copyToClipboard(inviteToken, "Invite token")}
                 >
@@ -571,7 +569,7 @@ export function InstancesSettings() {
                 </Button>
               </div>
               <DialogFooter>
-                <Button className="squircle" onClick={handleCloseInvite}>
+                <Button onClick={handleCloseInvite}>
                   Done
                 </Button>
               </DialogFooter>
@@ -582,7 +580,7 @@ export function InstancesSettings() {
 
       {/* Join mesh dialog */}
       <Dialog open={joinOpen} onOpenChange={setJoinOpen}>
-        <DialogContent className="squircle sm:max-w-md">
+        <DialogContent className="sm:max-w-md">
           <form onSubmit={handleJoin}>
             <DialogHeader>
               <DialogTitle>Join mesh</DialogTitle>
@@ -613,7 +611,6 @@ export function InstancesSettings() {
               <Button
                 type="button"
                 variant="outline"
-                className="squircle"
                 onClick={() => {
                   setJoinOpen(false);
                   setJoinToken("");
@@ -623,7 +620,6 @@ export function InstancesSettings() {
               </Button>
               <Button
                 type="submit"
-                className="squircle"
                 disabled={joinLoading || !joinToken.trim()}
               >
                 {joinLoading && <Loader2 className="size-4 animate-spin" />}

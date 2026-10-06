@@ -139,7 +139,7 @@ export function EmailSettings() {
         </p>
       </div>
 
-    <Card className="squircle rounded-lg">
+    <Card>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">
           {configured && (
@@ -252,7 +252,7 @@ export function EmailSettings() {
                       type="button"
                       variant="outline"
                       size="sm"
-                      className="squircle shrink-0"
+                      className="shrink-0"
                       aria-label="Edit SMTP password"
                       onClick={() => {
                         setEditingSmtpPass(true);
@@ -277,7 +277,7 @@ export function EmailSettings() {
                       type="button"
                       variant="outline"
                       size="sm"
-                      className="squircle shrink-0"
+                      className="shrink-0"
                       onClick={() => {
                         setEditingSmtpPass(false);
                         setSmtpPass(maskedSmtpPass.current);
@@ -315,7 +315,7 @@ export function EmailSettings() {
                     type="button"
                     variant="outline"
                     size="sm"
-                    className="squircle shrink-0"
+                    className="shrink-0"
                     aria-label="Edit Mailpace API token"
                     onClick={() => {
                       setEditingApiKey(true);
@@ -339,7 +339,7 @@ export function EmailSettings() {
                     type="button"
                     variant="outline"
                     size="sm"
-                    className="squircle shrink-0"
+                    className="shrink-0"
                     onClick={() => {
                       setEditingApiKey(false);
                       setApiKey(maskedApiKey.current);
@@ -375,7 +375,7 @@ export function EmailSettings() {
                     type="button"
                     variant="outline"
                     size="sm"
-                    className="squircle shrink-0"
+                    className="shrink-0"
                     aria-label="Edit Postmark server token"
                     onClick={() => {
                       setEditingApiKey(true);
@@ -400,7 +400,7 @@ export function EmailSettings() {
                     type="button"
                     variant="outline"
                     size="sm"
-                    className="squircle shrink-0"
+                    className="shrink-0"
                     onClick={() => {
                       setEditingApiKey(false);
                       setApiKey(maskedApiKey.current);
@@ -437,7 +437,7 @@ export function EmailSettings() {
                     type="button"
                     variant="outline"
                     size="sm"
-                    className="squircle shrink-0"
+                    className="shrink-0"
                     aria-label="Edit Resend API key"
                     onClick={() => {
                       setEditingApiKey(true);
@@ -462,7 +462,7 @@ export function EmailSettings() {
                     type="button"
                     variant="outline"
                     size="sm"
-                    className="squircle shrink-0"
+                    className="shrink-0"
                     onClick={() => {
                       setEditingApiKey(false);
                       setApiKey(maskedApiKey.current);
@@ -508,7 +508,7 @@ export function EmailSettings() {
           </div>
 
           <div className="flex items-center gap-3">
-            <Button type="submit" className="squircle" disabled={saving || (!allowSmtp && provider === "smtp")} aria-label="Save email settings">
+            <Button type="submit" disabled={saving || (!allowSmtp && provider === "smtp")} aria-label="Save email settings">
               {saving && <Loader2 className="size-4 animate-spin" />}
               Save
             </Button>
@@ -516,7 +516,6 @@ export function EmailSettings() {
               <Button
                 type="button"
                 variant="outline"
-                className="squircle"
                 disabled={verifying}
                 onClick={verify}
                 aria-label="Test email connection"

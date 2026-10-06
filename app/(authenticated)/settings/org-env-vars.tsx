@@ -170,7 +170,7 @@ export function OrgEnvVarsEditor({ orgId }: Props) {
   }
 
   return (
-    <Card className="squircle rounded-lg">
+    <Card>
       <CardContent className="space-y-3">
       <div className="flex items-center justify-between">
         <p className="text-xs text-muted-foreground">

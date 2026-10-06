@@ -218,7 +218,7 @@ export function OrgDomainEditor({
   const customDomains = domains.filter((d) => !d.isDefault);
 
   return (
-    <Card className="squircle rounded-lg">
+    <Card>
       <CardContent className="space-y-4">
       <div>
         <p className="text-sm text-muted-foreground">
@@ -330,7 +330,6 @@ export function OrgDomainEditor({
         variant="outline"
         size="sm"
         onClick={() => setAddOpen(true)}
-        className="squircle"
       >
         <Plus className="size-4 mr-1.5" />
         Add domain
@@ -408,7 +407,6 @@ export function OrgDomainEditor({
             <Button
               onClick={handleAdd}
               disabled={adding || !newDomain.trim()}
-              className="squircle"
             >
               {adding ? "Adding..." : "Add domain"}
             </Button>

@@ -209,7 +209,7 @@ export function TeamMembers({ members: initialMembers, orgId, orgName, currentRo
           </PageToolbar>
         )}
 
-        <Card className="squircle rounded-lg">
+        <Card>
           <div className="divide-y">
           {sortedMembers.map((member) => {
             const isSelf = member.id === currentUserId;

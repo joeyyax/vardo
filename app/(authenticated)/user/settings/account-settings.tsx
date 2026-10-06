@@ -69,7 +69,7 @@ export function AccountInfo() {
   }
 
   return (
-    <Card className="squircle rounded-lg">
+    <Card>
       <CardHeader>
         <CardTitle>Account</CardTitle>
         <CardDescription>Update your display name.</CardDescription>
@@ -148,7 +148,7 @@ export function PasswordManagement() {
   }
 
   return (
-    <Card className="squircle rounded-lg">
+    <Card>
       <CardHeader>
         <CardTitle>Password</CardTitle>
         <CardDescription>Must be at least 8 characters. Existing sessions stay active.</CardDescription>
@@ -310,7 +310,7 @@ export function TwoFactorAuth() {
   }
 
   return (
-    <Card className="squircle rounded-lg">
+    <Card>
       <CardHeader>
         <CardTitle>Two-factor authentication</CardTitle>
         <CardDescription>Use an authenticator app like 1Password or Authy for a second factor at login.</CardDescription>
@@ -522,7 +522,7 @@ export function PasskeyManager() {
   }
 
   return (
-    <Card className="squircle rounded-lg">
+    <Card>
       <CardHeader>
         <div className="flex items-center justify-between">
           <div>
@@ -639,7 +639,7 @@ export function LinkedAccounts() {
   }, []);
 
   return (
-    <Card className="squircle rounded-lg">
+    <Card>
       <CardHeader>
         <div className="flex items-center justify-between">
           <div>
@@ -775,7 +775,7 @@ export function ActiveSessions() {
   }
 
   return (
-    <Card className="squircle rounded-lg">
+    <Card>
       <CardHeader>
         <CardTitle>Active sessions</CardTitle>
         <CardDescription>Revoke sessions you don&apos;t recognize. Your current session is marked.</CardDescription>
@@ -995,7 +995,7 @@ export function ApiTokens({ orgId }: { orgId: string }) {
   }
 
   return (
-    <Card className="squircle rounded-lg">
+    <Card>
       <CardHeader>
         <div className="flex items-center justify-between">
           <div>

@@ -142,7 +142,7 @@ export function ComposeReview({
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (v) fetchAnalysis(); onOpenChange(v); }}>
-      <DialogContent className="squircle sm:max-w-lg">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Compose Review</DialogTitle>
           <DialogDescription>

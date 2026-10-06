@@ -102,7 +102,7 @@ function TabContent({
             </p>
           </div>
           {!orgId ? (
-            <Card className="squircle rounded-lg">
+            <Card>
               <CardContent className="text-center">
                 <p className="text-sm text-muted-foreground">
                   No organization selected. Create or join an organization to manage
@@ -138,7 +138,7 @@ function TabContent({
             </p>
           </div>
           {!orgId ? (
-            <Card className="squircle rounded-lg">
+            <Card>
               <CardContent className="text-center">
                 <p className="text-sm text-muted-foreground">
                   No organization selected. Create or join an organization to

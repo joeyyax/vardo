@@ -116,7 +116,7 @@ export function GitHubConnection() {
   }
 
   return (
-    <Card className="squircle rounded-lg">
+    <Card>
       <CardHeader>
         <div className="flex items-center justify-between">
           <div>

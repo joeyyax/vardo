@@ -92,7 +92,7 @@ export function ConfigSettings() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Export */}
-        <Card className="squircle">
+        <Card>
           <CardHeader>
             <CardTitle className="text-sm font-medium">Export</CardTitle>
           </CardHeader>
@@ -131,7 +131,7 @@ export function ConfigSettings() {
         </Card>
 
         {/* Import */}
-        <Card className="squircle">
+        <Card>
           <CardHeader>
             <CardTitle className="text-sm font-medium">Import</CardTitle>
           </CardHeader>

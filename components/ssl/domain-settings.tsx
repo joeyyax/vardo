@@ -201,7 +201,7 @@ export function DomainSettings() {
       </div>
 
       {/* Domain configuration */}
-      <Card className="squircle rounded-lg">
+      <Card>
         <CardHeader>
           <CardTitle className="text-sm">Domain info</CardTitle>
         </CardHeader>
@@ -261,7 +261,6 @@ export function DomainSettings() {
           )}
 
           <Button
-            className="squircle"
             onClick={saveDomainSettings}
             disabled={saving}
           >
@@ -275,7 +274,7 @@ export function DomainSettings() {
       </Card>
 
       {/* SSL certificate issuers */}
-      <Card className="squircle rounded-lg">
+      <Card>
         <CardHeader>
           <CardTitle className="text-sm">
             SSL certificate issuers
@@ -430,7 +429,7 @@ export function DomainSettings() {
                   <div className="space-y-2">
                     <Label htmlFor="dns-provider">DNS provider</Label>
                     <Select value={dnsProvider} disabled>
-                      <SelectTrigger id="dns-provider" className="squircle">
+                      <SelectTrigger id="dns-provider">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -473,7 +472,6 @@ export function DomainSettings() {
 
               <div className="flex items-center gap-3">
                 <Button
-                  className="squircle"
                   onClick={() => {
                     resetSslVerify();
                     saveSsl({
@@ -497,7 +495,6 @@ export function DomainSettings() {
                 <Button
                   type="button"
                   variant="outline"
-                  className="squircle"
                   disabled={verifyingSsl}
                   onClick={verifySsl}
                   aria-label="Test SSL configuration"
@@ -526,7 +523,7 @@ export function DomainSettings() {
       </Card>
 
       {/* DNS resolution checks */}
-      <Card className="squircle rounded-lg">
+      <Card>
         <CardHeader>
           <CardTitle className="text-sm">DNS resolution</CardTitle>
           <CardAction>
@@ -534,7 +531,7 @@ export function DomainSettings() {
               type="button"
               variant="outline"
               size="sm"
-              className="squircle gap-1.5"
+              className="gap-1.5"
               onClick={recheckDns}
               disabled={checking}
               aria-label="Re-check DNS"
@@ -603,7 +600,7 @@ export function DomainSettings() {
       </Card>
 
       {/* DNS setup guidance */}
-      <Card className="squircle rounded-lg">
+      <Card>
         <CardHeader>
           <CardTitle className="text-sm">DNS setup</CardTitle>
         </CardHeader>

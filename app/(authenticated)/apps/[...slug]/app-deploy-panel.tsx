@@ -817,7 +817,6 @@ export function AppDeployPanel({
             <Button
               onClick={handleRollbackConfirm}
               disabled={!rollbackPreview || rollbackLoading}
-              className="squircle"
             >
               <RotateCcw className="size-4 mr-2" />
               Rebuild from this deployment

@@ -135,7 +135,7 @@ export function DigestSettingsEditor({ orgId }: { orgId: string }) {
   }
 
   return (
-    <Card className="squircle rounded-lg">
+    <Card>
       <CardContent className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div className="space-y-1">
@@ -171,7 +171,7 @@ export function DigestSettingsEditor({ orgId }: { orgId: string }) {
                 value={String(settings.dayOfWeek)}
                 onValueChange={(v) => save({ dayOfWeek: parseInt(v) })}
               >
-                <SelectTrigger id="digest-day" className="squircle">
+                <SelectTrigger id="digest-day">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -190,7 +190,7 @@ export function DigestSettingsEditor({ orgId }: { orgId: string }) {
                 value={String(settings.hourOfDay)}
                 onValueChange={(v) => save({ hourOfDay: parseInt(v) })}
               >
-                <SelectTrigger id="digest-hour" className="squircle">
+                <SelectTrigger id="digest-hour">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

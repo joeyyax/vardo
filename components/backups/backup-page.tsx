@@ -158,7 +158,7 @@ export function BackupPage({
       {/* Two-column: Storage targets + Backup jobs */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Left: Storage targets */}
-        <Card className="squircle">
+        <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
             <CardTitle className="text-sm font-medium">Storage targets</CardTitle>
             <Button size="sm" variant="outline" onClick={() => setTargetFormOpen(true)}>
@@ -194,7 +194,7 @@ export function BackupPage({
         </Card>
 
         {/* Right: Backup jobs */}
-        <Card className={`squircle ${hasVisibleTargets && visibleJobs.length === 0 ? "relative overflow-hidden" : ""}`}>
+        <Card className={`${hasVisibleTargets && visibleJobs.length === 0 ? "relative overflow-hidden" : ""}`}>
           {hasVisibleTargets && visibleJobs.length === 0 && (
             <ShineBorder shineColor={["#A07CFE", "#FE8FB5", "#FFBE7B"]} duration={8} borderWidth={2} />
           )}
@@ -249,7 +249,7 @@ export function BackupPage({
       </div>
 
       {/* Backup history */}
-      <Card className="squircle">
+      <Card>
         <CardHeader>
           <CardTitle className="text-sm font-medium">Backup history</CardTitle>
           <p className="text-sm text-muted-foreground">

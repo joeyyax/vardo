@@ -67,7 +67,7 @@ export function AuthSettings() {
         </p>
       </div>
 
-    <Card className="squircle rounded-lg">
+    <Card>
       <CardHeader>
         <CardTitle className="text-sm">Settings</CardTitle>
       </CardHeader>
@@ -108,7 +108,7 @@ export function AuthSettings() {
             </p>
           </div>
 
-          <Button type="submit" className="squircle" disabled={saving} aria-label="Save authentication settings">
+          <Button type="submit" disabled={saving} aria-label="Save authentication settings">
             {saving && <Loader2 className="size-4 animate-spin" />}
             Save
           </Button>
