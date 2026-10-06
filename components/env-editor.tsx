@@ -99,6 +99,8 @@ type EnvEditorProps = {
   appId: string;
   appName: string;
   orgId: string;
+  /** A non-default environment whose own env this edits. */
+  environment?: { id: string; name: string };
   allAppNames?: string[];
   orgVarKeys?: string[];
 } | {
@@ -132,6 +134,9 @@ export function EnvEditor(props: EnvEditorProps) {
   const appId = isStandalone ? "" : (props as Exclude<EnvEditorProps, { standalone: true }>).appId;
   const appName = isStandalone ? "" : (props as Exclude<EnvEditorProps, { standalone: true }>).appName;
   const orgId = isStandalone ? "" : (props as Exclude<EnvEditorProps, { standalone: true }>).orgId;
+  const environment = isStandalone ? undefined : (props as Exclude<EnvEditorProps, { standalone: true }>).environment;
+  const environmentId = environment?.id;
+  const [inherited, setInherited] = useState(false);
 
   const router = useRouter();
   const [content, setContentState] = useState(isStandalone ? (props.initialContent || "") : "");
@@ -204,11 +209,14 @@ export function EnvEditor(props: EnvEditorProps) {
     if (isStandalone) return;
     async function load() {
       try {
-        const res = await fetch(`/api/v1/organizations/${orgId}/apps/${appId}/env-vars?reveal=true`);
+        const scope = environmentId ? `&environmentId=${encodeURIComponent(environmentId)}` : "";
+        const res = await fetch(`/api/v1/organizations/${orgId}/apps/${appId}/env-vars?reveal=true${scope}`);
         if (res.ok) {
           const data = await res.json();
           setContentState(data.content || "");
           setInitialContent(data.content || "");
+          setInherited(!!data.inherited);
+          setModified(false);
         }
       } catch {
         // Start empty
@@ -216,7 +224,7 @@ export function EnvEditor(props: EnvEditorProps) {
       setLoaded(true);
     }
     load();
-  }, [orgId, appId, isStandalone]);
+  }, [orgId, appId, isStandalone, environmentId]);
 
   function handleChange(value: string) {
     setContent(value);
@@ -245,7 +253,7 @@ export function EnvEditor(props: EnvEditorProps) {
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ content }),
+          body: JSON.stringify(environmentId ? { content, environmentId } : { content }),
         }
       );
       if (!res.ok) {
@@ -258,6 +266,7 @@ export function EnvEditor(props: EnvEditorProps) {
       setNeedsRedeploy(true);
       setInitialContent(content);
       setPasswordWarning(null);
+      setInherited(false);
       return true;
     } catch {
       toast.error("Failed to save");
@@ -381,6 +390,20 @@ export function EnvEditor(props: EnvEditorProps) {
             Variables saved. Deploy the app to apply them.
           </p>
         </div>
+      )}
+
+      {!isStandalone && environment && (
+        <p className="text-sm text-muted-foreground">
+          {inherited ? (
+            <>
+              <span className="font-medium text-foreground">{environment.name}</span> has no variables of its own and deploys with production&apos;s, shown here. Saving gives it its own copy.
+            </>
+          ) : (
+            <>
+              Variables for the <span className="font-medium text-foreground">{environment.name}</span> environment. Production&apos;s are unaffected.
+            </>
+          )}
+        </p>
       )}
 
       {/* Password change warning */}

@@ -835,6 +835,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
             appId={app.id}
             appName={app.name}
             orgId={orgId}
+            environment={selectedEnv && !selectedEnv.isDefault ? { id: selectedEnv.id, name: selectedEnv.name } : undefined}
             allAppNames={allAppNames}
             orgVarKeys={orgVarKeys}
           />
