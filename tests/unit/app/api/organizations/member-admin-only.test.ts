@@ -32,11 +32,16 @@ const ADMIN_ONLY: [string, string, string][] = [
   ["create a backup target", "backups/targets", "POST"],
   ["edit a backup target", "backups/targets/[targetId]", "PATCH"],
   ["delete a backup target", "backups/targets/[targetId]", "DELETE"],
+  ["create a backup job", "backups", "POST"],
+  ["edit a backup job", "backups/jobs/[jobId]", "PATCH"],
+  ["delete a backup job", "backups/jobs/[jobId]", "DELETE"],
 ];
 
 const modules: Record<string, () => Promise<Record<string, unknown>>> = {
   "backups/history/[backupId]/restore": () => import("@/app/api/v1/organizations/[orgId]/backups/history/[backupId]/restore/route"),
   "backups/history/[backupId]/download": () => import("@/app/api/v1/organizations/[orgId]/backups/history/[backupId]/download/route"),
+  "backups": () => import("@/app/api/v1/organizations/[orgId]/backups/route"),
+  "backups/jobs/[jobId]": () => import("@/app/api/v1/organizations/[orgId]/backups/jobs/[jobId]/route"),
   "backups/targets": () => import("@/app/api/v1/organizations/[orgId]/backups/targets/route"),
   "backups/targets/[targetId]": () => import("@/app/api/v1/organizations/[orgId]/backups/targets/[targetId]/route"),
 };

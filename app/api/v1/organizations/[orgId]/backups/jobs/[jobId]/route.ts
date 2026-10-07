@@ -183,7 +183,7 @@ async function handleDelete(_request: NextRequest, { params }: RouteParams) {
     const gate = await requirePlugin("backups");
     if (gate) return gate;
     const { orgId, jobId } = await params;
-    const org = await verifyOrgAccess(orgId, "backup.jobs.delete");
+    const org = await verifyOrgAccess(orgId, "backup.jobs.manage");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const existing = await db.query.backupJobs.findFirst({

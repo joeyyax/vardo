@@ -66,8 +66,7 @@ export const CAPABILITIES = {
   "backup.download": ADMINS,
   "backup.delete": ADMINS,
   "backup.targets.manage": ADMINS,
-  "backup.jobs.manage": MEMBERS,
-  "backup.jobs.delete": ADMINS,
+  "backup.jobs.manage": ADMINS,
 } as const satisfies Record<string, readonly Role[]>;
 
 export type Capability = keyof typeof CAPABILITIES;
