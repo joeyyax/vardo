@@ -143,7 +143,7 @@ async function handleDelete(request: NextRequest, { params }: RouteParams) {
     if (gate) return gate;
 
     const { orgId, targetId } = await params;
-    const org = await verifyOrgAccess(orgId, "backup.targets.delete");
+    const org = await verifyOrgAccess(orgId, "backup.targets.manage");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const parsed = deleteTargetSchema.safeParse(await request.json().catch(() => ({})));

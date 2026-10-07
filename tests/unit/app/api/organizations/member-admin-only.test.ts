@@ -29,11 +29,16 @@ const params = { orgId: "org-1", appId: "app-1", backupId: "b-1", jobId: "j-1", 
 const ADMIN_ONLY: [string, string, string][] = [
   ["restore a backup", "backups/history/[backupId]/restore", "POST"],
   ["download a backup", "backups/history/[backupId]/download", "GET"],
+  ["create a backup target", "backups/targets", "POST"],
+  ["edit a backup target", "backups/targets/[targetId]", "PATCH"],
+  ["delete a backup target", "backups/targets/[targetId]", "DELETE"],
 ];
 
 const modules: Record<string, () => Promise<Record<string, unknown>>> = {
   "backups/history/[backupId]/restore": () => import("@/app/api/v1/organizations/[orgId]/backups/history/[backupId]/restore/route"),
   "backups/history/[backupId]/download": () => import("@/app/api/v1/organizations/[orgId]/backups/history/[backupId]/download/route"),
+  "backups/targets": () => import("@/app/api/v1/organizations/[orgId]/backups/targets/route"),
+  "backups/targets/[targetId]": () => import("@/app/api/v1/organizations/[orgId]/backups/targets/[targetId]/route"),
 };
 
 beforeEach(() => {

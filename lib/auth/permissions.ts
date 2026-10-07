@@ -65,8 +65,7 @@ export const CAPABILITIES = {
   "backup.restore": ADMINS,
   "backup.download": ADMINS,
   "backup.delete": ADMINS,
-  "backup.targets.manage": MEMBERS,
-  "backup.targets.delete": ADMINS,
+  "backup.targets.manage": ADMINS,
   "backup.jobs.manage": MEMBERS,
   "backup.jobs.delete": ADMINS,
 } as const satisfies Record<string, readonly Role[]>;

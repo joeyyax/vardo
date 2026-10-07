@@ -13,7 +13,7 @@ const ADMIN_ONLY: Capability[] = [
   "backup.restore",
   "backup.download",
   "backup.delete",
-  "backup.targets.delete",
+  "backup.targets.manage",
   "backup.jobs.delete",
 ];
 
