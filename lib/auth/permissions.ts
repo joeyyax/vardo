@@ -74,13 +74,27 @@ export const CAPABILITIES = {
 
 export type Capability = keyof typeof CAPABILITIES;
 
+/** Backup capabilities an instance admin holds in any org they belong to. */
+export const INSTANCE_ADMIN_CAPABILITIES: ReadonlySet<Capability> = new Set<Capability>([
+  "backup.view",
+  "backup.run",
+  "backup.restore",
+  "backup.download",
+  "backup.delete",
+  "backup.targets.manage",
+  "backup.jobs.manage",
+]);
+
+type Grant = { instanceAdmin?: boolean };
+
 /** True when `role` holds `cap`. Unknown or missing roles hold nothing. */
-export function can(role: string | null | undefined, cap: Capability): boolean {
+export function can(role: string | null | undefined, cap: Capability, grant: Grant = {}): boolean {
   if (!role) return false;
+  if (grant.instanceAdmin && INSTANCE_ADMIN_CAPABILITIES.has(cap)) return true;
   return (CAPABILITIES[cap] as readonly string[]).includes(role);
 }
 
 /** Every capability `role` holds, for passing to client components. */
-export function capabilitiesFor(role: string | null | undefined): Capability[] {
-  return (Object.keys(CAPABILITIES) as Capability[]).filter((cap) => can(role, cap));
+export function capabilitiesFor(role: string | null | undefined, grant: Grant = {}): Capability[] {
+  return (Object.keys(CAPABILITIES) as Capability[]).filter((cap) => can(role, cap, grant));
 }

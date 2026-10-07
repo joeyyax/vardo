@@ -4,7 +4,7 @@ import { NextRequest } from "next/server";
 // A member is refused each admin-only action at the route, through the real
 // verifyOrgAccess and capability map.
 
-const state = vi.hoisted(() => ({ role: "member" }));
+const state = vi.hoisted(() => ({ role: "member", instanceAdmin: false }));
 
 vi.mock("@/lib/auth/session", () => ({
   requireOrg: async () => ({
@@ -17,6 +17,7 @@ vi.mock("@/lib/api/with-rate-limit", () => ({
   withRateLimit: (handler: (...args: unknown[]) => unknown) => handler,
 }));
 vi.mock("@/lib/api/require-plugin", () => ({ requirePlugin: vi.fn().mockResolvedValue(null) }));
+vi.mock("@/lib/auth/admin", () => ({ isAppAdmin: async () => state.instanceAdmin }));
 vi.mock("@/lib/db", () => ({
   db: new Proxy({}, { get: () => { throw new Error("db reached past the gate"); } }),
 }));
@@ -53,6 +54,7 @@ const modules: Record<string, () => Promise<Record<string, unknown>>> = {
 
 beforeEach(() => {
   state.role = "member";
+  state.instanceAdmin = false;
 });
 
 describe("admin-only actions", () => {
@@ -63,6 +65,31 @@ describe("admin-only actions", () => {
       method,
       body: method === "GET" ? undefined : "{}",
     });
+
+    const res = await handler(req, { params: Promise.resolve(params) });
+    expect(res.status).toBe(403);
+  });
+});
+
+describe("an instance admin who is a member", () => {
+  const backupActions = ADMIN_ONLY.filter(([, route]) => route.startsWith("backups"));
+
+  it.each(backupActions)("may %s", async (_label, route, method) => {
+    state.instanceAdmin = true;
+    const handler = (await modules[route]())[method] as Handler;
+    const req = new NextRequest(`http://localhost/api/v1/organizations/org-1/${route}`, {
+      method,
+      body: method === "GET" ? undefined : "{}",
+    });
+
+    const res = await handler(req, { params: Promise.resolve(params) });
+    expect(res.status).not.toBe(403);
+  });
+
+  it("still may not delete a project", async () => {
+    state.instanceAdmin = true;
+    const handler = (await modules["projects/[projectId]"]()).DELETE as Handler;
+    const req = new NextRequest("http://localhost/api/v1/organizations/org-1/projects/p-1", { method: "DELETE" });
 
     const res = await handler(req, { params: Promise.resolve(params) });
     expect(res.status).toBe(403);

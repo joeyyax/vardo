@@ -11,6 +11,7 @@ import { SessionFooter } from "@/components/layout/session-footer";
 import { AttentionBar } from "@/components/layout/attention-bar";
 import { CapabilitiesProvider } from "@/components/capabilities-provider";
 import { capabilitiesFor } from "@/lib/auth/permissions";
+import { isAppAdmin } from "@/lib/auth/admin";
 
 
 export const metadata: Metadata = {
@@ -52,13 +53,14 @@ export default async function AppLayout({
 
   const { organization } = orgData;
   const organizations = await getUserOrganizations();
+  const instanceAdmin = await isAppAdmin();
   const [teamsEnabled, activityEnabled] = await Promise.all([
     isFeatureEnabledAsync("teams"),
     isFeatureEnabledAsync("activity"),
   ]);
 
   return (
-    <CapabilitiesProvider capabilities={capabilitiesFor(orgData.membership.role)}>
+    <CapabilitiesProvider capabilities={capabilitiesFor(orgData.membership.role, { instanceAdmin })}>
       <TooltipProvider>
         <div className="min-h-dvh flex flex-col bg-background">
           <div className="sticky top-0 z-40 bg-sidebar">

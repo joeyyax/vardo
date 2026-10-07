@@ -45,6 +45,13 @@ describe("capability map", () => {
     expect(capabilitiesFor("viewer").sort()).toEqual(["app.view", "org.view"]);
   });
 
+  it("gives an instance admin who is a member the backup capabilities only", () => {
+    expect(can("member", "backup.restore", { instanceAdmin: true })).toBe(true);
+    expect(can("member", "backup.targets.manage", { instanceAdmin: true })).toBe(true);
+    expect(can("member", "app.delete", { instanceAdmin: true })).toBe(false);
+    expect(can(null, "backup.restore", { instanceAdmin: true })).toBe(false);
+  });
+
   it("grants nothing to a missing or unknown role", () => {
     expect(can(null, "org.view")).toBe(false);
     expect(can("superuser", "org.view")).toBe(false);
