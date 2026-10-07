@@ -1435,6 +1435,7 @@ export function ComposeDetail({
         onOpenChange={setDeleteOpen}
         orgId={orgId}
         app={app}
+        noun="stack"
         onDeleted={() => router.push("/projects")}
       />
 

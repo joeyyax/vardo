@@ -7,6 +7,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { formatBytes } from "@/lib/metrics/format";
 import { formatRelativeTime } from "@/lib/ui/relative-time";
+import { deleteConfirmState } from "@/lib/ui/delete-app-confirm";
 import type { BackupJob, RecentBackup } from "@/components/backups/types";
 
 type Preview = {
@@ -24,9 +25,9 @@ type DeleteResult = {
 
 type BackupStatus = { covered: boolean; lastAt: string | null };
 
-async function fetchPreview(orgId: string, appId: string): Promise<Preview | null> {
+async function fetchPreview<T>(orgId: string, appId: string, query = ""): Promise<T | null> {
   try {
-    const res = await fetch(`/api/v1/organizations/${orgId}/apps/${appId}/delete-preview`);
+    const res = await fetch(`/api/v1/organizations/${orgId}/apps/${appId}/delete-preview${query}`);
     return res.ok ? await res.json() : null;
   } catch {
     return null;
@@ -62,12 +63,15 @@ export function DeleteAppDialog({
   onOpenChange,
   orgId,
   app,
+  noun = "app",
   onDeleted,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   orgId: string;
   app: { id: string; name: string; displayName: string };
+  /** Matches the Danger Zone trigger. */
+  noun?: "app" | "stack";
   onDeleted: () => void;
 }) {
   const [preview, setPreview] = useState<Preview | null>(null);
@@ -80,10 +84,16 @@ export function DeleteAppDialog({
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    fetchPreview(orgId, app.id).then((p) => {
+    fetchPreview<Preview>(orgId, app.id).then((p) => {
       if (cancelled) return;
       setPreview(p);
       setPreviewFailed(p === null);
+      if (!p || p.volumes.length + p.bindMounts.length === 0) return;
+      // Sizes arrive later, or not at all; the list never waits on them.
+      fetchPreview<Omit<Preview, "project">>(orgId, app.id, "?sizes=1").then((sized) => {
+        if (cancelled || !sized) return;
+        setPreview((prev) => (prev ? { ...prev, ...sized } : prev));
+      });
     });
     fetchBackupStatus(orgId, app.id).then((b) => {
       if (!cancelled) setBackup(b);
@@ -111,7 +121,16 @@ export function DeleteAppDialog({
       ]
     : [];
   const loading = !preview && !previewFailed;
-  const needsTyping = deleteVolumes && items.length > 0;
+  const confirm = deleteConfirmState({
+    preview: loading ? "loading" : previewFailed ? "failed" : "ready",
+    hasData: items.length > 0,
+    deleteVolumes,
+    typed,
+    appName: app.name,
+    noun,
+  });
+  const needsTyping = confirm.deleteVolumes;
+  const Noun = noun === "stack" ? "Stack" : "App";
 
   async function handleDelete() {
     setDeleting(true);
@@ -119,7 +138,7 @@ export function DeleteAppDialog({
       const res = await fetch(`/api/v1/organizations/${orgId}/apps/${app.id}`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ deleteVolumes: needsTyping }),
+        body: JSON.stringify({ deleteVolumes: confirm.deleteVolumes }),
       });
       const data: Partial<DeleteResult> & { error?: string } = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -131,10 +150,10 @@ export function DeleteAppDialog({
       const kept = (data.keptVolumes?.length ?? 0) + (data.keptPaths?.length ?? 0);
       toast.success(
         removed > 0
-          ? `App and ${plural(removed, "volume")} deleted`
+          ? `${Noun} and ${plural(removed, "volume")} deleted`
           : kept > 0
-            ? "App deleted. Volumes kept."
-            : "App deleted",
+            ? `${Noun} deleted. Volumes kept.`
+            : `${Noun} deleted`,
       );
       const skipped = data.skippedVolumes?.length ?? 0;
       if (skipped > 0) toast.warning(`${plural(skipped, "volume")} still in use and kept`);
@@ -152,11 +171,11 @@ export function DeleteAppDialog({
       open={open}
       onOpenChange={handleOpenChange}
       title={`Delete ${app.displayName}`}
-      description="Removes its environments, deployments, domains and variables. This can't be undone."
+      description={`Removes its ${noun === "stack" ? "services, " : ""}environments, deployments, domains and variables. This can't be undone.`}
       onConfirm={handleDelete}
       loading={deleting}
-      confirmLabel={needsTyping ? "Delete app and volumes" : "Delete app"}
-      confirmDisabled={loading || (needsTyping && typed !== app.name)}
+      confirmLabel={confirm.label}
+      confirmDisabled={confirm.disabled}
     >
       <div className="space-y-4 text-sm">
         {preview?.project && (
