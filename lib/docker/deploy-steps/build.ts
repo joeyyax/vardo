@@ -323,7 +323,7 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
   }
 
   // Vardo's own secrets live on the host, not in its database.
-  const seededEnv = await seedSelfEnv(app.name, appDir, slotDir, activeSlot);
+  const seededEnv = await seedSelfEnv(app.name, appDir, slotDir, activeSlot, { log });
   if (seededEnv) {
     log(`[deploy] Seeded slot .env from ${seededEnv}`);
   } else if (isSelfApp(app.name)) {

@@ -26,6 +26,8 @@ That is what the manual procedure always did. The difference is that the engine 
 
 The shared project is pinned by the compose file's top-level `name: vardo`, so **no volume, network or container is renamed and no data is copied**.
 
+`/opt/vardo/.env` stays the instance's settings file. Each deploy builds the slot `.env` from it, keeping only `GIT_SHA` and `COMPOSE_PROJECT_NAME` from the previous slot. To change a setting, edit `/opt/vardo/.env` and redeploy; shared services whose definition changes are recreated or held as above.
+
 ## The dashboard can drive this
 
 An earlier draft of this document claimed it could not, on the grounds that the frontend is the deploy engine and would be stopping itself. That turned out to be wrong, for a load-bearing reason:
@@ -57,7 +59,7 @@ Watch the log. It should say:
 Active slot: none, deploying to: blue
 Externalized 1 volume(s): traefik_dynamic → vardo_traefik_dynamic
 Shared network(s): internal, mesh
-Seeded slot .env from /opt/vardo/apps/vardo/env/current/.env
+Seeded slot .env from /opt/vardo/.env (slot keys from /opt/vardo/apps/vardo/env/current/.env)
 Shared services (not rotated): postgres, redis, traefik, wireguard
   Container vardo-traefik Running
   Container vardo-postgres Running
