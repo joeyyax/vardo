@@ -18,8 +18,7 @@ import { nanoid } from "nanoid";
 import {
   generateEnvironmentSubdomain,
   generatePreviewSubdomain,
-  getBaseDomain,
-} from "@/lib/domain-monitoring/auto-domain";
+  } from "@/lib/domain-monitoring/auto-domain";
 import { snapshotEnv } from "@/lib/env/environment-env";
 
 // ---------------------------------------------------------------------------

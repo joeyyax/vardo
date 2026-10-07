@@ -53,15 +53,6 @@ const nextConfig: NextConfig = {
           },
         ],
       },
-      {
-        // Allow the widget bridge to be iframed from any origin
-        // (overrides the default X-Frame-Options for this route)
-        source: "/widget/bridge",
-        headers: [
-          { key: "X-Frame-Options", value: "ALLOWALL" },
-          { key: "Content-Security-Policy", value: "frame-ancestors *" },
-        ],
-      },
     ];
   },
 };

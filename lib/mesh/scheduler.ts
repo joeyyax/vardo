@@ -1,5 +1,4 @@
 import { db } from "@/lib/db";
-import { meshPeers } from "@/lib/db/schema";
 import { sendHeartbeatToPeer } from "./heartbeat";
 import { logger } from "@/lib/logger";
 

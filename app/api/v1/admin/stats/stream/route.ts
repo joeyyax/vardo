@@ -1,7 +1,6 @@
 import { NextRequest } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
-import { apps } from "@/lib/db/schema";
 import { requireSession } from "@/lib/auth/session";
 import { isAppAdmin } from "@/lib/auth/admin";
 import { getSystemInfo } from "@/lib/docker/client";

@@ -173,7 +173,7 @@ async function rollbackClaimed(
     );
     // It is about to serve, so it needs its own restart policy back.
     await restoreSlotRestart(standbyComposeFileArgs, standbyProjectName, standbyDir);
-  } catch (err) {
+  } catch {
     return {
       success: false, deploymentId: "", fromSlot: activeSlot, toSlot: standbySlot,
       durationMs: Date.now() - startTime,

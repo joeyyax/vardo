@@ -25,7 +25,7 @@ import {
   BottomSheetTitle,
 } from "@/components/ui/bottom-sheet";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { can } from "@/lib/auth/permissions";
 import { OrgSwitcher } from "@/components/layout/org-switcher";
 import { getInitials } from "@/lib/initials";

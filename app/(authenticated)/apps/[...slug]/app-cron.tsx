@@ -4,14 +4,11 @@ import { useState, useEffect, useCallback } from "react";
 import {
   Loader2,
   Plus,
-  Play,
   Trash2,
   Clock,
   CheckCircle2,
   XCircle,
-  Power,
-  PowerOff,
-} from "lucide-react";
+  } from "lucide-react";
 import { toast } from "@/lib/messenger";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";

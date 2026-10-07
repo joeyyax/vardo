@@ -33,7 +33,7 @@ export class InvalidExclusionError extends Error {
 }
 
 // A newline would split one pattern into two entries of a list file.
-// eslint-disable-next-line no-control-regex
+ 
 const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
 
 function assertSegments(pattern: string, original: string): string[] {

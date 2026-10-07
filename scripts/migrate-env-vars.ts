@@ -8,7 +8,7 @@
 
 import { db } from "@/lib/db";
 import { apps, envVars } from "@/lib/db/schema";
-import { eq, isNull } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { encrypt } from "@/lib/crypto/encrypt";
 
 async function migrate() {

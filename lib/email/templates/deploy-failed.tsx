@@ -26,7 +26,6 @@ type DeployFailedProps = {
 
 export function DeployFailedEmail({
   projectName,
-  deploymentId,
   errorMessage,
   errorSnapshot,
   failedAtStage,

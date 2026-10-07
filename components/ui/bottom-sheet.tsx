@@ -32,7 +32,7 @@ function BottomSheetContent({
   className,
   children,
   size = "default",
-  showCloseButton = false,
+  showCloseButton: _showCloseButton,
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Content> & {
   size?: BottomSheetSize;

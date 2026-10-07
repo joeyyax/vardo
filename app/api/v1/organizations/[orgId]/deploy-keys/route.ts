@@ -6,7 +6,7 @@ import { deployKeys } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { generateDeployKeypair } from "@/lib/crypto/ssh-keygen";
-import { encrypt, decrypt } from "@/lib/crypto/encrypt";
+import { encrypt } from "@/lib/crypto/encrypt";
 import { recordActivity } from "@/lib/activity";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 

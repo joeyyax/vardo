@@ -48,7 +48,7 @@ function MemTooltip(props: { active?: boolean; payload?: Array<{ dataKey?: strin
   );
 }
 
-export function ProjectMetrics({ orgId, projectId, apps }: ProjectMetricsProps) {
+export function ProjectMetrics({ orgId, projectId }: ProjectMetricsProps) {
   const [timeRange, setTimeRange] = useState<TimeRange>("1h");
 
   const { points, loading, error, connected } = useMetricsStream({

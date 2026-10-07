@@ -236,7 +236,8 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
     try {
       const res = await fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/recreate`, { method: "POST" });
       const data = await res.json();
-      data.success ? toast.success("Recreated") : toast.error(data.error || "Recreate failed");
+      if (data.success) toast.success("Recreated");
+      else toast.error(data.error || "Recreate failed");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Recreate failed");
     }
@@ -302,7 +303,8 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
     try {
       const res = await fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/stop`, { method: "POST" });
       const data = await res.json();
-      data.success ? toast.success("Stopped") : toast.error(data.error || "Stop failed");
+      if (data.success) toast.success("Stopped");
+      else toast.error(data.error || "Stop failed");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Stop failed");
     }

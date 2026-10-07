@@ -98,7 +98,7 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
                 );
               } catch { /* skip malformed entries */ }
             }
-          } catch (err) {
+          } catch {
             if (!abortController.signal.aborted) {
               try {
                 controller.enqueue(

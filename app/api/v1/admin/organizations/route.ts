@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { requireAppAdmin } from "@/lib/auth/admin";
 import { db } from "@/lib/db";
-import { apps, organizations, memberships, deployments } from "@/lib/db/schema";
+import { apps, memberships, deployments } from "@/lib/db/schema";
 import { eq, sql, asc, desc } from "drizzle-orm";
 import { fetchAllMetrics } from "@/lib/metrics/provider";
 import { groupMetricsByApp, dedupeMetrics } from "@/lib/metrics/app-match";

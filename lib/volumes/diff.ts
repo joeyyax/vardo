@@ -116,7 +116,6 @@ async function getImageManifest(
  */
 async function getVolumeManifest(
   volumeDockerName: string,
-  mountPath: string,
 ): Promise<FileEntry[]> {
   assertSafeName(volumeDockerName);
   const script = `find /vol -type f -exec sh -c 'for f; do s=$(stat -c %s "$f" 2>/dev/null || stat -f %z "$f" 2>/dev/null); h=$(md5sum "$f" 2>/dev/null | cut -d" " -f1); echo "$f\\t$h\\t$s"; done' _ {} +`;
@@ -172,7 +171,7 @@ export async function computeVolumeDiff(
 ): Promise<VolumeDiffResult> {
   const [imageFiles, volumeFiles] = await Promise.all([
     getImageManifest(imageName, mountPath),
-    getVolumeManifest(volumeDockerName, mountPath),
+    getVolumeManifest(volumeDockerName),
   ]);
 
   const imageMap = new Map(imageFiles.map((f) => [f.path, f]));

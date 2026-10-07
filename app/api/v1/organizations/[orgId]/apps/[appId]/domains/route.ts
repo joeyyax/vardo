@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError, isUniqueViolation } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { domains } from "@/lib/db/schema";
-import { logger } from "@/lib/logger";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";

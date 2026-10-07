@@ -14,8 +14,7 @@ import { db } from "@/lib/db";
 import {
   notificationChannels,
   notificationLogs,
-  organizations,
-} from "@/lib/db/schema";
+  } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { consumeGroup } from "@/lib/stream/consumer";

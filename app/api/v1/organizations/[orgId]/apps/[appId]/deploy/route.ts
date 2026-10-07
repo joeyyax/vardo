@@ -10,10 +10,6 @@ import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { refuseSystemManaged } from "@/lib/api/system-managed";
 
-type RouteParams = {
-  params: Promise<{ orgId: string; appId: string }>;
-};
-
 // POST /api/v1/organizations/[orgId]/apps/[appId]/deploy
 // Returns SSE stream of deploy log lines, final event is the result
 async function handler(request: NextRequest, { params }: { params: Promise<{ orgId: string; appId: string }> }) {

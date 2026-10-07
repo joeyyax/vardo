@@ -8,21 +8,15 @@
 
 import { db } from "@/lib/db";
 import {
-  apps,
   volumes,
-  projects,
-  organizations,
-  environments,
   githubAppInstallations,
   memberships,
 } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
-import { mkdir, writeFile, readFile, rm } from "fs/promises";
+import { readFile, rm } from "fs/promises";
 import { join } from "path";
 import { appBaseDir, appEnvDir, PROJECTS_DIR } from "@/lib/paths";
-import { decrypt, decryptOrFallback } from "@/lib/crypto/encrypt";
-import { parseEnvToMap } from "@/lib/env/parse-env";
 import {
   droppedKeyWarnings,
   generateComposeForImage,

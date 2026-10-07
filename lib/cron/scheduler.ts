@@ -54,7 +54,6 @@ function startDailySecurityScans(): void {
 
     try {
       const { db } = await import("@/lib/db");
-      const { organizations } = await import("@/lib/db/schema");
       const { runScheduledScans } = await import("@/lib/security/scanner");
 
       const orgs = await db.query.organizations.findMany({

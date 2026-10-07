@@ -124,7 +124,7 @@ async function handler(_request: NextRequest, { params }: RouteParams) {
         .filter((r): r is PromiseFulfilledResult<Awaited<ReturnType<typeof inspectContainer>>> => r.status === "fulfilled")
         .flatMap((r) => {
           // Strip env — secrets are encrypted at rest and must not be exposed here
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+           
           const { env, ...rest } = r.value;
           const serialized = JSON.stringify(rest);
           totalBytes += serialized.length;

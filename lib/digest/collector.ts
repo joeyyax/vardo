@@ -7,7 +7,7 @@ import {
   deployments,
   activities,
 } from "@/lib/db/schema";
-import { eq, and, gte, inArray, count, sql } from "drizzle-orm";
+import { eq, and, gte, inArray, count } from "drizzle-orm";
 import type {
   DigestDeploySummary,
   DigestBackupSummary,

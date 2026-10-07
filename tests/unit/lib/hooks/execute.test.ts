@@ -45,7 +45,7 @@ vi.mock("@/lib/logger", () => ({
 
 // Mock child_process.execFile via promisify — the module calls promisify(execFile)
 vi.mock("child_process", () => ({
-  execFile: (...args: unknown[]) => {
+  execFile: (..._args: unknown[]) => {
     // promisify wraps this into a promise-returning function.
     // We intercept at the promisified level below.
   },

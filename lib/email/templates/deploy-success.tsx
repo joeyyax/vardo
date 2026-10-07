@@ -26,7 +26,6 @@ type DeploySuccessProps = {
 
 export function DeploySuccessEmail({
   projectName,
-  deploymentId,
   domain,
   duration,
   gitSha,

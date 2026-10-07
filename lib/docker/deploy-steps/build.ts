@@ -70,7 +70,6 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
   ctx.activeSlot = activeSlot;
   ctx.newSlot = newSlot;
   const slotDir = ctx.slotDir;
-  const newProjectName = ctx.newProjectName;
 
   await ensureWritableDir(slotDir);
 

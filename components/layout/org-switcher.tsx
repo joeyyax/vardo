@@ -45,10 +45,10 @@ async function requestOrgs(): Promise<Organization[] | null> {
 }
 
 /** Renders nothing when the teams flag is off — callers gate on it. */
-export function OrgSwitcher({ currentOrgId, organizations: initialOrganizations, collapsed }: OrgSwitcherProps) {
+export function OrgSwitcher({ currentOrgId, organizations: initialOrganizations }: OrgSwitcherProps) {
   const router = useRouter();
   const [organizations, setOrganizations] = useState<Organization[]>(initialOrganizations || []);
-  const [loading, setLoading] = useState(!initialOrganizations);
+  const [, setLoading] = useState(!initialOrganizations);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [newOrgName, setNewOrgName] = useState("");
   const [creating, setCreating] = useState(false);

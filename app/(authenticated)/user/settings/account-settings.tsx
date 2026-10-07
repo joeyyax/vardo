@@ -365,7 +365,7 @@ export function TwoFactorAuth() {
               below.
             </p>
             <div className="flex justify-center rounded-lg bg-white p-4">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
+              { }
               <img
                 src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(totpUri)}`}
                 alt="TOTP QR Code"
@@ -654,7 +654,10 @@ export function LinkedAccounts() {
               size="sm"
               variant="outline"
               onClick={() => {
-                window.location.href = `/api/auth/sign-in/social?provider=github&callbackURL=${encodeURIComponent(window.location.href)}`;
+                const url = new URL("/api/auth/sign-in/social", window.location.origin);
+                url.searchParams.set("provider", "github");
+                url.searchParams.set("callbackURL", window.location.href);
+                window.location.assign(url);
               }}
             >
               <Github className="mr-1.5 size-4" />

@@ -4,7 +4,7 @@ import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { createChannel } from "./factory";
 import { enqueueRetry } from "./retry";
-import { emit, onEmit } from "@/lib/bus";
+import { onEmit } from "@/lib/bus";
 import type { BusEvent, BusEventType } from "@/lib/bus";
 import { logger } from "@/lib/logger";
 import { fetchOrgMembers, fetchEventPrefs, resolveRecipients } from "./resolve-recipients";

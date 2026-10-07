@@ -726,7 +726,8 @@ export function ComposeDetail({
     try {
       const res = await fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/restart`, { method: "POST" });
       const data = await res.json();
-      data.success ? toast.success("Stack restarted") : toast.error(data.error || "Restart failed");
+      if (data.success) toast.success("Stack restarted");
+      else toast.error(data.error || "Restart failed");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Restart failed");
     }
@@ -770,7 +771,8 @@ export function ComposeDetail({
     try {
       const res = await fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/recreate`, { method: "POST" });
       const data = await res.json();
-      data.success ? toast.success("Stack recreated") : toast.error(data.error || "Recreate failed");
+      if (data.success) toast.success("Stack recreated");
+      else toast.error(data.error || "Recreate failed");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Recreate failed");
     }
@@ -803,7 +805,8 @@ export function ComposeDetail({
     try {
       const res = await fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/stop`, { method: "POST" });
       const data = await res.json();
-      data.success ? toast.success("Stack stopped") : toast.error(data.error || "Stop failed");
+      if (data.success) toast.success("Stack stopped");
+      else toast.error(data.error || "Stop failed");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Stop failed");
     }

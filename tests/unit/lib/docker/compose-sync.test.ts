@@ -37,11 +37,6 @@ import type { ComposeFile } from "@/lib/docker/compose";
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeInsertChain() {
-  const values = vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([]) });
-  return { values };
-}
-
 function makeUpdateChain() {
   const where = vi.fn().mockResolvedValue(undefined);
   const set = vi.fn().mockReturnValue({ where });

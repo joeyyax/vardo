@@ -16,7 +16,8 @@ export const authClient = createAuthClient({
     twoFactorClient({
       onTwoFactorRedirect() {
         // Redirect to 2FA verification page when needed
-        window.location.href = "/login/2fa";
+        const url = new URL("/login/2fa", window.location.origin);
+        window.location.assign(url);
       },
     }),
 

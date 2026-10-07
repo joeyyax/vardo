@@ -17,7 +17,7 @@
 
 import { db } from "@/lib/db";
 import { systemSettings } from "@/lib/db/schema";
-import { eq, inArray } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { encryptSystem, isEncrypted } from "@/lib/crypto/encrypt";
 
 const SECRET_KEYS = ["backup_storage", "github_app", "email_provider"];

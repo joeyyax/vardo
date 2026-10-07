@@ -194,16 +194,17 @@ export function EnvEditor(props: EnvEditorProps) {
   }
 
   // Update content when initialContent prop changes (standalone mode — template switch)
-  const prevInitialRef = useRef(isStandalone ? (props.initialContent || "") : "");
+  const standaloneInitial = isStandalone ? props.initialContent : undefined;
+  const prevInitialRef = useRef(standaloneInitial || "");
   useEffect(() => {
     if (!isStandalone) return;
-    const newInitial = props.initialContent || "";
+    const newInitial = standaloneInitial || "";
     if (newInitial !== prevInitialRef.current) {
       prevInitialRef.current = newInitial;
       setContentState(newInitial);
       setInitialContent(newInitial);
     }
-  }, [isStandalone, isStandalone ? props.initialContent : null]);
+  }, [isStandalone, standaloneInitial]);
 
   // Load env content (skip in standalone mode)
   useEffect(() => {

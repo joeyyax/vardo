@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import Image from "next/image";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -25,7 +24,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
-import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -118,7 +116,7 @@ type SourceOption = (typeof SOURCE_OPTIONS)[number]["id"];
 
 import { slugify } from "@/lib/ui/slugify";
 
-export function NewAppFlow({ orgId, orgSlug, templates, parentApps = [], baseDomain: baseDomainProp, defaultParentId, defaultProjectId, defaultName, defaultImage, defaultTemplate, defaultSource, recentProjectId, containerImportEnabled }: Props) {
+export function NewAppFlow({ orgId, templates, parentApps = [], baseDomain: baseDomainProp, defaultParentId, defaultProjectId, defaultName, defaultImage, defaultTemplate, defaultSource, recentProjectId, containerImportEnabled }: Props) {
   const router = useRouter();
   const [creating, setCreating] = useState(false);
   const [slugEdited, setSlugEdited] = useState(false);

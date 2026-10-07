@@ -68,7 +68,7 @@ export function generateComposeForImage(opts: {
   volumes?: { name: string; mountPath: string }[];
   exposedPorts?: { internal: number; external?: number; protocol?: string }[];
 }): ComposeFile {
-  const { projectName, imageName, containerPort, envVars, volumes, exposedPorts } = opts;
+  const { projectName, imageName, envVars, volumes, exposedPorts } = opts;
 
   const service: ComposeService = {
     name: projectName,

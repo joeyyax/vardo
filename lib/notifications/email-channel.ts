@@ -208,7 +208,7 @@ export class EmailNotificationChannel implements NotificationChannel {
 
 /** Flatten a BusEvent extra fields to Record<string, string> for templates that need it. */
 function flattenToStrings(event: BusEvent): Record<string, string> {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   const { type: _type, title: _title, message: _message, ...rest } = event;
   const result: Record<string, string> = {};
   for (const [key, value] of Object.entries(rest)) {

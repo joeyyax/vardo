@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Loader2,
@@ -17,7 +16,7 @@ import { toast } from "@/lib/messenger";
 
 export function ConfigSettings() {
   const [loading, setLoading] = useState(true);
-  const [fileStatus, setFileStatus] = useState<{
+  const [, setFileStatus] = useState<{
     config: boolean;
     secrets: boolean;
     configPath: string;

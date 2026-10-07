@@ -10,9 +10,7 @@ import {
   apps,
   envVars,
   environments,
-  groupEnvironments,
-  orgEnvVars,
-} from "@/lib/db/schema";
+  } from "@/lib/db/schema";
 import { eq, and, isNull, inArray, or } from "drizzle-orm";
 import { extractExpressions, validateExpression } from "@/lib/env/resolve";
 import { requestDeploy } from "./deploy-cancel";

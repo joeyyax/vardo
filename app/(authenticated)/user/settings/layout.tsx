@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { getSession, getCurrentOrg } from "@/lib/auth/session";
+import { getSession } from "@/lib/auth/session";
 import { isFeatureEnabledAsync, type FeatureFlag } from "@/lib/config/features";
 import { SettingsNav } from "@/components/settings-nav";
 

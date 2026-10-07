@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
-import { apps } from "@/lib/db/schema";
 import { fetchAllMetrics } from "@/lib/metrics/provider";
 import { groupMetricsByApp } from "@/lib/metrics/app-match";
 import { METRICS_APP_COLUMNS } from "@/lib/metrics/app-columns";

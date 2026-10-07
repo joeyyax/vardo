@@ -120,7 +120,6 @@ export async function syncConfig(): Promise<void> {
 export async function rebuildAndSync(overrideAddress?: string): Promise<void> {
   // Dynamic imports to avoid circular dependencies
   const { db } = await import("@/lib/db");
-  const { meshPeers } = await import("@/lib/db/schema");
 
   // Read the current private key from the running interface
   const { stdout: privKeyOut } = await execFileAsync("docker", [

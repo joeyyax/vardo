@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
   const isLocal = domain.endsWith(".localhost");
   if (isLocal) {
     try {
-      const res = await fetch(`http://${domain}`, {
+      await fetch(`http://${domain}`, {
         method: "HEAD",
         signal: AbortSignal.timeout(3000),
         redirect: "manual",
