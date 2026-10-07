@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 
-import { handleRouteError } from "@/lib/api/error-response";
+import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { requirePlugin } from "@/lib/api/require-plugin";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
@@ -27,7 +27,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId, "org.view");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
 
     const gate = await requirePlugin("away");
     if (gate) return gate;
@@ -37,7 +37,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       columns: { id: true, lastSeenAt: true },
     });
     if (!membership) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return apiError.forbidden();
     }
 
     const now = new Date();
@@ -70,7 +70,7 @@ async function handlePost(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId, "org.view");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
 
     const gate = await requirePlugin("away");
     if (gate) return gate;

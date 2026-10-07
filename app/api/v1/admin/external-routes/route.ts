@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { nanoid } from "nanoid";
-import { handleRouteError } from "@/lib/api/error-response";
+import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { requireAppAdmin } from "@/lib/auth/admin";
 import { db } from "@/lib/db";
 import { externalRoutes, domains } from "@/lib/db/schema";
@@ -50,10 +50,7 @@ async function handlePost(request: NextRequest) {
     const body = await request.json();
     const parsed = createExternalRouteSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: parsed.error.issues[0].message },
-        { status: 400 }
-      );
+      return apiError.validation(parsed.error);
     }
 
     const { hostname, targetUrl, tls, insecureSkipVerify, redirectUrl, redirectPermanent } =

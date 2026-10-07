@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handleRouteError } from "@/lib/api/error-response";
+import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { fetchAllMetrics } from "@/lib/metrics/provider";
 import { groupMetricsByApp } from "@/lib/metrics/app-match";
@@ -63,7 +63,7 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     if (error instanceof Error && error.message === "Forbidden") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return apiError.forbidden();
     }
     return handleRouteError(error, "Error fetching admin stats");
   }

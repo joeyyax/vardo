@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { and, eq, isNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
-import { handleRouteError } from "@/lib/api/error-response";
+import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { requirePlugin } from "@/lib/api/require-plugin";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
@@ -37,7 +37,7 @@ async function handleGet(_request: NextRequest, { params }: RouteParams) {
   const { orgId } = await params;
   try {
     const org = await verifyOrgAccess(orgId, "org.view");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
 
     const gate = await requirePlugin("image-updates");
     if (gate) return gate;
@@ -52,14 +52,14 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
   const { orgId } = await params;
   try {
     const org = await verifyOrgAccess(orgId, "app.config");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
 
     const gate = await requirePlugin("image-updates");
     if (gate) return gate;
 
     const parsed = ruleSchema.safeParse(await request.json().catch(() => ({})));
     if (!parsed.success) {
-      return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
+      return apiError.validation(parsed.error);
     }
     const { appId, scope, days } = parsed.data;
     const service = parsed.data.service ?? null;
@@ -68,7 +68,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       where: and(eq(apps.id, appId), eq(apps.organizationId, orgId)),
       columns: { id: true },
     });
-    if (!app) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    if (!app) return apiError.notFound("app");
 
     const expiresAt = expiryFor(days);
     const [rule] = await db
@@ -115,14 +115,14 @@ async function handleDelete(request: NextRequest, { params }: RouteParams) {
   const { orgId } = await params;
   try {
     const org = await verifyOrgAccess(orgId, "app.config");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
 
     const gate = await requirePlugin("image-updates");
     if (gate) return gate;
 
     const parsed = deleteSchema.safeParse(await request.json().catch(() => ({})));
     if (!parsed.success) {
-      return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
+      return apiError.validation(parsed.error);
     }
     const service = parsed.data.service ?? null;
 

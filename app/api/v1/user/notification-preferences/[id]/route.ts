@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handleRouteError } from "@/lib/api/error-response";
+import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { userNotificationPreferences } from "@/lib/db/schema";
 import { requireSession } from "@/lib/auth/session";
@@ -28,7 +28,7 @@ async function handleDelete(
     });
 
     if (!pref) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return apiError.notFound("notification preference");
     }
 
     await db

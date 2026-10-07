@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { domains, organizations } from "@/lib/db/schema";
-import { handleRouteError } from "@/lib/api/error-response";
+import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { isTopLevelAppNameTaken } from "@/lib/db/app-name";
 import { getBaseDomain } from "@/lib/domain-monitoring/auto-domain";
 import { isReservedSlug } from "@/lib/domain-monitoring/reserved";
@@ -20,7 +20,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId, "org.view");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
 
     const searchParams = request.nextUrl.searchParams;
     const name = (searchParams.get("name") || "").trim();

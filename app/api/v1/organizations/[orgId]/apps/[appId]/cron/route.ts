@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handleRouteError } from "@/lib/api/error-response";
+import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { cronJobs } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
@@ -46,7 +46,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     const app = await verifyAppAccess(orgId, appId, "app.view");
 
     if (!app) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return apiError.notFound("app");
     }
 
     const jobs = await db.query.cronJobs.findMany({
@@ -68,21 +68,18 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
 
     const { orgId, appId } = await params;
     const orgAccess = await verifyOrgAccess(orgId, "app.cron");
-    if (!orgAccess) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!orgAccess) return apiError.forbidden();
     const app = await verifyAppAccess(orgId, appId, "app.cron");
 
     if (!app) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return apiError.notFound("app");
     }
 
     const body = await request.json();
     const parsed = createCronSchema.safeParse(body);
 
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: parsed.error.issues[0].message },
-        { status: 400 }
-      );
+      return apiError.validation(parsed.error);
     }
 
     const [created] = await db
@@ -112,21 +109,18 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
 
     const { orgId, appId } = await params;
     const orgAccess = await verifyOrgAccess(orgId, "app.cron");
-    if (!orgAccess) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!orgAccess) return apiError.forbidden();
     const app = await verifyAppAccess(orgId, appId, "app.cron");
 
     if (!app) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return apiError.notFound("app");
     }
 
     const body = await request.json();
     const parsed = updateCronSchema.safeParse(body);
 
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: parsed.error.issues[0].message },
-        { status: 400 }
-      );
+      return apiError.validation(parsed.error);
     }
 
     const { id, ...updates } = parsed.data;
@@ -138,7 +132,7 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
       .returning();
 
     if (!updated) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return apiError.notFound("cron job");
     }
 
     return NextResponse.json({ cronJob: updated });
@@ -155,21 +149,18 @@ async function handleDelete(request: NextRequest, { params }: RouteParams) {
 
     const { orgId, appId } = await params;
     const orgAccess = await verifyOrgAccess(orgId, "app.cron");
-    if (!orgAccess) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!orgAccess) return apiError.forbidden();
     const app = await verifyAppAccess(orgId, appId, "app.cron");
 
     if (!app) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return apiError.notFound("app");
     }
 
     const body = await request.json();
     const parsed = deleteCronSchema.safeParse(body);
 
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: "Validation failed", details: parsed.error.flatten().fieldErrors },
-        { status: 400 }
-      );
+      return apiError.validation(parsed.error, { details: true });
     }
 
     const [deleted] = await db
@@ -183,7 +174,7 @@ async function handleDelete(request: NextRequest, { params }: RouteParams) {
       .returning({ id: cronJobs.id });
 
     if (!deleted) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return apiError.notFound("cron job");
     }
 
     return NextResponse.json({ success: true });

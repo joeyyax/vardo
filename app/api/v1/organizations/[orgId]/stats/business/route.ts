@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handleRouteError } from "@/lib/api/error-response";
+import { apiError, handleRouteError } from "@/lib/api/error-response";
 import {
   queryOrgBusinessMetric,
   getLatestOrgBusinessMetric,
@@ -30,7 +30,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId, "org.view");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
 
     const searchParams = request.nextUrl.searchParams;
     const from = searchParams.get("from");

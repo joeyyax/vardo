@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handleRouteError } from "@/lib/api/error-response";
+import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { apps, domains } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
@@ -16,14 +16,14 @@ async function handlePut(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
     const org = await verifyOrgAccess(orgId, "app.domains");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
 
     const app = await db.query.apps.findFirst({
       where: and(eq(apps.id, appId), eq(apps.organizationId, orgId)),
       columns: { id: true },
     });
     if (!app) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return apiError.notFound("app");
     }
 
     const { domainId } = await request.json();

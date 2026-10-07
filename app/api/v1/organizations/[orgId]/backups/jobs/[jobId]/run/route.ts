@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handleRouteError } from "@/lib/api/error-response";
+import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { backupJobs } from "@/lib/db/schema";
 import { requirePlugin } from "@/lib/api/require-plugin";
@@ -21,7 +21,7 @@ async function handlePost(_request: NextRequest, { params }: RouteParams) {
 
     const { orgId, jobId } = await params;
     const org = await verifyOrgAccess(orgId, "backup.run");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
 
     const job = await db.query.backupJobs.findFirst({
       where: and(
@@ -31,7 +31,7 @@ async function handlePost(_request: NextRequest, { params }: RouteParams) {
     });
 
     if (!job) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return apiError.notFound("backup job");
     }
 
     const results = await runBackup(jobId);

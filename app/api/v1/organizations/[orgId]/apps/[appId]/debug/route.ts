@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handleRouteError } from "@/lib/api/error-response";
+import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { apps, volumes, projects } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
@@ -27,7 +27,7 @@ async function handler(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
     const org = await verifyOrgAccess(orgId, "app.debug");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
 
     const [app, appVolumes] = await Promise.all([
       db.query.apps.findFirst({
@@ -40,7 +40,7 @@ async function handler(_request: NextRequest, { params }: RouteParams) {
     ]);
 
     if (!app) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return apiError.notFound("app");
     }
 
     const volumesList = appVolumes

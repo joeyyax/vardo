@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handleRouteError } from "@/lib/api/error-response";
+import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { notificationChannels } from "@/lib/db/schema";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
@@ -16,7 +16,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, channelId } = await params;
     const org = await verifyOrgAccess(orgId, "org.view");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
     const channel = await db.query.notificationChannels.findFirst({ where: and(eq(notificationChannels.id, channelId), eq(notificationChannels.organizationId, orgId)) });
     if (!channel) return NextResponse.json({ error: "Channel not found" }, { status: 404 });
     return NextResponse.json({ channel: presentChannel(channel) });
@@ -27,9 +27,9 @@ async function handlePatch(req: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, channelId } = await params;
     const org = await verifyOrgAccess(orgId, "org.notifications.manage");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
     const parsed = updateSchema.safeParse(await req.json());
-    if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
+    if (!parsed.success) return apiError.validation(parsed.error);
     const updates: Record<string, unknown> = { updatedAt: new Date() };
     if (parsed.data.name !== undefined) updates.name = parsed.data.name;
     if (parsed.data.config !== undefined) updates.config = sealChannelConfig(parsed.data.config, orgId);
@@ -45,7 +45,7 @@ async function handleDelete(_req: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, channelId } = await params;
     const org = await verifyOrgAccess(orgId, "org.notifications.manage");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
     const [deleted] = await db.delete(notificationChannels).where(and(eq(notificationChannels.id, channelId), eq(notificationChannels.organizationId, orgId))).returning({ id: notificationChannels.id });
     if (!deleted) return NextResponse.json({ error: "Channel not found" }, { status: 404 });
     return NextResponse.json({ success: true });

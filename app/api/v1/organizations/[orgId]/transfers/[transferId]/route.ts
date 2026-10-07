@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handleRouteError } from "@/lib/api/error-response";
+import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { appTransfers } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
@@ -24,16 +24,13 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, transferId } = await params;
     const org = await verifyOrgAccess(orgId, "org.transfers.manage");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
 
     const body = await request.json();
     const parsed = respondSchema.safeParse(body);
 
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: parsed.error.issues[0].message },
-        { status: 400 },
-      );
+      return apiError.validation(parsed.error);
     }
 
     // Scoped to the destination org: a transfer addressed to anyone else is

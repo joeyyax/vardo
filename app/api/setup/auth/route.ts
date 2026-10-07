@@ -5,6 +5,7 @@ import { needsSetup } from "@/lib/setup";
 import { getAuthConfig, setSystemSetting } from "@/lib/system-settings";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
+import { apiError } from "@/lib/api/error-response";
 
 const authSchema = z.object({
   registrationMode: z.enum(["closed", "open", "approval"]),
@@ -32,10 +33,7 @@ async function handlePost(request: NextRequest) {
   const body = await request.json();
   const parsed = authSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: "Validation failed", details: parsed.error.flatten().fieldErrors },
-      { status: 400 },
-    );
+    return apiError.validation(parsed.error, { details: true });
   }
 
   await setSystemSetting("auth_config", JSON.stringify(parsed.data));

@@ -6,7 +6,7 @@ export async function requirePlugin(capability: FeatureFlag): Promise<NextRespon
   const available = await isFeatureEnabledAsync(capability);
   if (!available) {
     return NextResponse.json(
-      { error: `Feature "${capability}" is not enabled.` },
+      { error: `Feature "${capability}" isn't enabled.` },
       { status: 404 },
     );
   }

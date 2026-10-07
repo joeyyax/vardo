@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { handleRouteError } from "@/lib/api/error-response";
+import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import {
   notificationChannels,
@@ -40,7 +40,7 @@ export async function GET(req: NextRequest) {
     }
 
     const org = await verifyOrgAccess(orgId, "org.view");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
     const userId = org.session.user.id;
 
     const [channels, prefs, digestPref] = await Promise.all([
@@ -88,14 +88,11 @@ async function handlePut(req: NextRequest) {
     const parsed = putSchema.safeParse(body);
 
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: parsed.error.issues[0].message },
-        { status: 400 },
-      );
+      return apiError.validation(parsed.error);
     }
 
     const org = await verifyOrgAccess(parsed.data.orgId, "org.view");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
     const userId = org.session.user.id;
 
     if (parsed.data.type === "digest") {

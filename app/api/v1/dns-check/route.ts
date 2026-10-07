@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { resolve4, resolveCname } from "dns/promises";
 import { getServerIP } from "@/lib/server-ip";
 import { isCloudflareIp } from "@/lib/cloudflare-ips";
+import { apiError } from "@/lib/api/error-response";
 
 const BASE_DOMAIN = process.env.VARDO_BASE_DOMAIN || "localhost";
 
@@ -10,7 +11,7 @@ export async function GET(request: NextRequest) {
   const { getSession } = await import("@/lib/auth/session");
   const session = await getSession();
   if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return apiError.unauthorized();
   }
 
   const domain = request.nextUrl.searchParams.get("domain");

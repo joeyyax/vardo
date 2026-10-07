@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handleRouteError } from "@/lib/api/error-response";
+import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { apps, projects } from "@/lib/db/schema";
 import { eq, and, isNull } from "drizzle-orm";
@@ -17,7 +17,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, projectId } = await params;
     const org = await verifyOrgAccess(orgId, "org.view");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
 
     if (!isMetricsEnabled()) {
       return NextResponse.json({ series: {} });
@@ -28,7 +28,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       columns: { id: true },
     });
     if (!project) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return apiError.notFound("project");
     }
 
     // Stack children read under their parent's series, so summing both counts them twice.

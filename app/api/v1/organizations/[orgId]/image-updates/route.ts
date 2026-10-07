@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { and, eq, isNull } from "drizzle-orm";
-import { handleRouteError } from "@/lib/api/error-response";
+import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { requirePlugin } from "@/lib/api/require-plugin";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
@@ -20,7 +20,7 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
   const { orgId } = await params;
   try {
     const org = await verifyOrgAccess(orgId, "org.view");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
 
     const gate = await requirePlugin("image-updates");
     if (gate) return gate;
@@ -56,7 +56,7 @@ async function handlePost(_request: NextRequest, { params }: RouteParams) {
   const { orgId } = await params;
   try {
     const org = await verifyOrgAccess(orgId, "app.config");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
 
     const gate = await requirePlugin("image-updates");
     if (gate) return gate;

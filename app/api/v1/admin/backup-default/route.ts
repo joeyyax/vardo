@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { handleRouteError } from "@/lib/api/error-response";
+import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { requireAppAdmin } from "@/lib/auth/admin";
 import { getSystemBackupsDefault, reconcileInBackground, setSystemBackupsDefault } from "@/lib/backups/switch";
@@ -24,7 +24,7 @@ async function handlePut(request: NextRequest) {
 
     const parsed = putSchema.safeParse(await request.json().catch(() => null));
     if (!parsed.success) {
-      return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
+      return apiError.validation(parsed.error);
     }
 
     await setSystemBackupsDefault(parsed.data.enabled);

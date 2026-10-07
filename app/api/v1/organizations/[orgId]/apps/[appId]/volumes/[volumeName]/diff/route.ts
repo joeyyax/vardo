@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handleRouteError } from "@/lib/api/error-response";
+import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { apps, volumes } from "@/lib/db/schema";
 import { verifyAppAccess } from "@/lib/api/verify-access";
@@ -18,7 +18,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     const { orgId, appId, volumeName } = await params;
     const appRecord = await verifyAppAccess(orgId, appId, "app.view");
     if (!appRecord) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return apiError.notFound("app");
     }
 
     const volume = await db.query.volumes.findFirst({

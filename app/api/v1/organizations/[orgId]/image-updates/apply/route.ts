@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { handleRouteError } from "@/lib/api/error-response";
+import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { requirePlugin } from "@/lib/api/require-plugin";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
@@ -39,14 +39,14 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
   const { orgId } = await params;
   try {
     const org = await verifyOrgAccess(orgId, "app.deploy");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
 
     const gate = await requirePlugin("image-updates");
     if (gate) return gate;
 
     const parsed = batchSchema.safeParse(await request.json().catch(() => ({})));
     if (!parsed.success) {
-      return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
+      return apiError.validation(parsed.error);
     }
 
     // Serial: parallel writes to one compose file lose all but the last.

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handleRouteError } from "@/lib/api/error-response";
+import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { statusChange } from "@/lib/db/app-status";
 import { deployments, apps } from "@/lib/db/schema";
@@ -78,7 +78,7 @@ async function handleDelete(_request: NextRequest, { params }: RouteParams) {
     const { orgId, appId, deploymentId } = await params;
 
     const org = await verifyOrgAccess(orgId, "app.deploy");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
 
     const app = await db.query.apps.findFirst({
       where: and(eq(apps.id, appId), eq(apps.organizationId, orgId)),
@@ -86,7 +86,7 @@ async function handleDelete(_request: NextRequest, { params }: RouteParams) {
     });
 
     if (!app) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return apiError.notFound("app");
     }
 
     const deployment = await db.query.deployments.findFirst({
@@ -95,7 +95,7 @@ async function handleDelete(_request: NextRequest, { params }: RouteParams) {
     });
 
     if (!deployment) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return apiError.notFound("deployment");
     }
 
     if (deployment.status !== "queued" && deployment.status !== "running") {

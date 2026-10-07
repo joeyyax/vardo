@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handleRouteError } from "@/lib/api/error-response";
+import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { notificationChannels } from "@/lib/db/schema";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
@@ -17,7 +17,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId, "org.view");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
     const channels = await db.query.notificationChannels.findMany({ where: eq(notificationChannels.organizationId, orgId), orderBy: [asc(notificationChannels.createdAt)] });
     const masked = channels.map(presentChannel);
     return NextResponse.json({ channels: masked });
@@ -28,9 +28,9 @@ async function handlePost(req: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId, "org.notifications.manage");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
     const parsed = createSchema.safeParse(await req.json());
-    if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
+    if (!parsed.success) return apiError.validation(parsed.error);
     const [channel] = await db.insert(notificationChannels).values({ id: nanoid(), organizationId: orgId, name: parsed.data.name, type: parsed.data.type, config: sealChannelConfig(parsed.data.config, orgId), enabled: parsed.data.enabled, subscribedEvents: parsed.data.subscribedEvents }).returning();
     return NextResponse.json({ channel: presentChannel(channel) }, { status: 201 });
   } catch (error) { return handleRouteError(error, "Error creating notification channel"); }

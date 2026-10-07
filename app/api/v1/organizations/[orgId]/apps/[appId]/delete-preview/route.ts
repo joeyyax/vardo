@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { and, eq, ne, isNull, or } from "drizzle-orm";
-import { handleRouteError } from "@/lib/api/error-response";
+import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
@@ -16,14 +16,14 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
     const org = await verifyOrgAccess(orgId, "app.delete");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
 
     const app = await db.query.apps.findFirst({
       where: and(eq(apps.id, appId), eq(apps.organizationId, orgId)),
       columns: { id: true, name: true, parentAppId: true, projectId: true },
       with: { project: { columns: { id: true, name: true, displayName: true } } },
     });
-    if (!app) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    if (!app) return apiError.notFound("app");
 
     if (request.nextUrl.searchParams.get("sizes") === "1") {
       return NextResponse.json(await measureAppData(await findAppData(app)));

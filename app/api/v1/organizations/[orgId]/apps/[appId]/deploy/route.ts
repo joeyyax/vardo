@@ -1,5 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
-import { handleRouteError } from "@/lib/api/error-response";
+import { NextRequest } from "next/server";
+import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
@@ -17,7 +17,7 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ org
 
   try {
     const org = await verifyOrgAccess(orgId, "app.deploy");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
 
     const app = await db.query.apps.findFirst({
       where: and(
@@ -28,7 +28,7 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ org
     });
 
     if (!app) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return apiError.notFound("app");
     }
 
     const refused = refuseSystemManaged(app, "deploy");

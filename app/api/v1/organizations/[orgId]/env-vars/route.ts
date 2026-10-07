@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handleRouteError, isUniqueViolation } from "@/lib/api/error-response";
+import { apiError, handleRouteError, isUniqueViolation } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { orgEnvVars } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
@@ -40,7 +40,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId, "env.read");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
 
     const vars = await db.query.orgEnvVars.findMany({
       where: eq(orgEnvVars.organizationId, orgId),
@@ -62,12 +62,12 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId, "env.write");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
 
     const body = await request.json();
     const parsed = createSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
+      return apiError.validation(parsed.error);
     }
 
     const [created] = await db.insert(orgEnvVars).values({
@@ -96,12 +96,12 @@ async function handlePut(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId, "env.write");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
 
     const body = await request.json();
     const parsed = bulkSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
+      return apiError.validation(parsed.error);
     }
 
     let varsToUpsert: { key: string; value: string; isSecret: boolean }[];
@@ -164,14 +164,14 @@ async function handleDelete(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId, "env.write");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
 
     const { id } = await request.json();
     const [deleted] = await db.delete(orgEnvVars)
       .where(and(eq(orgEnvVars.id, id), eq(orgEnvVars.organizationId, orgId)))
       .returning({ id: orgEnvVars.id });
 
-    if (!deleted) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    if (!deleted) return apiError.notFound("variable");
     return NextResponse.json({ success: true });
   } catch (error) {
     return handleRouteError(error);

@@ -5,7 +5,7 @@ import { organizations } from "@/lib/db/schema";
 import { requireSession } from "@/lib/auth/session";
 import { isAppAdmin } from "@/lib/auth/admin";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
-import { handleRouteError } from "@/lib/api/error-response";
+import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { recordActivity } from "@/lib/activity";
 import { eq } from "drizzle-orm";
 
@@ -30,7 +30,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     const { orgId } = await params;
     const access = await verifyOrgAccess(orgId, "org.view");
     if (!access) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return apiError.forbidden();
     }
 
     return NextResponse.json({
@@ -50,22 +50,19 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
     const body = await request.json();
     const parsed = updateOrgSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: "Validation failed", details: parsed.error.flatten().fieldErrors },
-        { status: 400 },
-      );
+      return apiError.validation(parsed.error, { details: true });
     }
 
     // trusted is a security boundary. Only instance admins set it.
     if (parsed.data.trusted !== undefined && !(await isAppAdmin())) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return apiError.forbidden();
     }
 
     const trustedOnly = Object.keys(parsed.data).every((k) => k === "trusted");
     if (!trustedOnly) {
       const access = await verifyOrgAccess(orgId, "org.settings");
       if (!access) {
-        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+        return apiError.forbidden();
       }
     }
 

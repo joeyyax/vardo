@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { handleRouteError } from "@/lib/api/error-response";
+import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { getInfrastructureSnapshot } from "@/lib/attention/infrastructure";
 import { hasSelfDeploy, infrastructureRows } from "@/lib/attention/infrastructure-rows";
 import { getSession } from "@/lib/auth/session";
@@ -12,7 +12,7 @@ import { getSession } from "@/lib/auth/session";
 export async function GET() {
   try {
     const session = await getSession();
-    if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!session) return apiError.unauthorized();
 
     const snapshot = await getInfrastructureSnapshot();
     const rows = infrastructureRows(snapshot, {

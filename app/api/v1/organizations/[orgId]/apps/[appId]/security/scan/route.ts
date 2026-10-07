@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyAppAccess } from "@/lib/api/verify-access";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { runSecurityScan } from "@/lib/security/scanner";
+import { apiError } from "@/lib/api/error-response";
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
@@ -16,7 +17,7 @@ async function handler(_request: NextRequest, { params }: RouteParams) {
     const { orgId, appId } = await params;
 
     const app = await verifyAppAccess(orgId, appId, "app.config");
-    if (!app) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!app) return apiError.forbidden();
 
     const scanId = await runSecurityScan({
       appId,
@@ -31,7 +32,7 @@ async function handler(_request: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ scanId });
   } catch (err) {
     console.error("[security] scan error:", err);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return apiError.internal();
   }
 }
 

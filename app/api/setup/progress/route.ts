@@ -10,6 +10,7 @@ import {
 import { db } from "@/lib/db";
 import { meshPeers } from "@/lib/db/schema";
 import { sql } from "drizzle-orm";
+import { apiError } from "@/lib/api/error-response";
 
 // GET /api/setup/progress — returns completion status for each setup step.
 // Unauthenticated during setup (no user exists yet); requires admin after.
@@ -20,7 +21,7 @@ export async function GET() {
     try {
       await requireAdminAuth();
     } catch {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return apiError.unauthorized();
     }
   }
 

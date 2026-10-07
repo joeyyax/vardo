@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { handleRouteError } from "@/lib/api/error-response";
+import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { buildAttentionRows } from "@/lib/attention/rows";
 import { getSession } from "@/lib/auth/session";
@@ -12,7 +12,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
   const { orgId } = await params;
   try {
     const org = await verifyOrgAccess(orgId, "org.view");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
 
     const session = await getSession();
     const rows = await buildAttentionRows(orgId, {

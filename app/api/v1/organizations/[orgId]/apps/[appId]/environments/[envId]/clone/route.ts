@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handleRouteError, isUniqueViolation } from "@/lib/api/error-response";
+import { apiError, handleRouteError, isUniqueViolation } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { environments, envVars } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
@@ -38,17 +38,14 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     const app = await verifyAppAccess(orgId, appId, "app.config");
 
     if (!app) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return apiError.notFound("app");
     }
 
     const body = await request.json();
     const parsed = cloneSchema.safeParse(body);
 
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: parsed.error.issues[0].message },
-        { status: 400 }
-      );
+      return apiError.validation(parsed.error);
     }
 
     if (parsed.data.type === "preview") {

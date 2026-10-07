@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handleRouteError } from "@/lib/api/error-response";
+import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { requireAppAdmin } from "@/lib/auth/admin";
 import { checkServiceByName } from "@/lib/config/health";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
@@ -21,7 +21,7 @@ async function handlePost(
     return NextResponse.json({ service: status });
   } catch (error) {
     if (error instanceof Error && error.message === "Forbidden") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return apiError.forbidden();
     }
     return handleRouteError(error, "Error checking service health");
   }

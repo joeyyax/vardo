@@ -179,7 +179,7 @@ describe("POST /api/v1/mesh/heartbeat", () => {
     const body = await res.json() as { error: string };
 
     expect(res.status).toBe(401);
-    expect(body.error).toBe("Unauthorized");
+    expect(body.error).toBe("Sign in to continue.");
   });
 
   it("returns 500 on unexpected errors", async () => {

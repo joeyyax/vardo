@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handleRouteError } from "@/lib/api/error-response";
+import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { apps, backupJobs, backupJobApps, backupTargets } from "@/lib/db/schema";
 import { eq, and, or, inArray, isNull } from "drizzle-orm";
@@ -41,7 +41,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 
     const { orgId, jobId } = await params;
     const org = await verifyOrgAccess(orgId, "backup.view");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
 
     const job = await db.query.backupJobs.findFirst({
       where: and(
@@ -65,7 +65,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     });
 
     if (!job) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return apiError.notFound("backup job");
     }
 
     return NextResponse.json({ job });
@@ -81,16 +81,13 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
     if (gate) return gate;
     const { orgId, jobId } = await params;
     const org = await verifyOrgAccess(orgId, "backup.jobs.manage");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
 
     const body = await request.json();
     const parsed = updateJobSchema.safeParse(body);
 
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: parsed.error.issues[0].message },
-        { status: 400 }
-      );
+      return apiError.validation(parsed.error);
     }
 
     const { appIds, ...updateData } = parsed.data;
@@ -141,7 +138,7 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
       .returning();
 
     if (!updated) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return apiError.notFound("backup job");
     }
 
     // Update app associations if provided
@@ -182,7 +179,7 @@ async function handleDelete(_request: NextRequest, { params }: RouteParams) {
     if (gate) return gate;
     const { orgId, jobId } = await params;
     const org = await verifyOrgAccess(orgId, "backup.jobs.manage");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
 
     const existing = await db.query.backupJobs.findFirst({
       where: and(
@@ -192,7 +189,7 @@ async function handleDelete(_request: NextRequest, { params }: RouteParams) {
     });
 
     if (!existing) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return apiError.notFound("backup job");
     }
 
     await db

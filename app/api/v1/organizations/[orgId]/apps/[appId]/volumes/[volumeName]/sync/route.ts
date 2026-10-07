@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handleRouteError } from "@/lib/api/error-response";
+import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { apps, volumes } from "@/lib/db/schema";
 import { verifyAppAccess, verifyOrgAccess } from "@/lib/api/verify-access";
@@ -41,19 +41,16 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId, volumeName } = await params;
     const org = await verifyOrgAccess(orgId, "app.volumes.sync");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
     const appRecord = await verifyAppAccess(orgId, appId, "app.volumes.sync");
     if (!appRecord) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return apiError.notFound("app");
     }
 
     const body = await request.json();
     const parsed = syncSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: parsed.error.issues[0].message },
-        { status: 400 },
-      );
+      return apiError.validation(parsed.error);
     }
 
     const { paths, confirm } = parsed.data;

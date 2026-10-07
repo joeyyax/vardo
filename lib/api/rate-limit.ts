@@ -106,7 +106,7 @@ export async function rateLimit(
 
   if (result.limited) {
     return NextResponse.json(
-      { error: "Too many requests" },
+      { error: "Too many requests. Try again shortly." },
       {
         status: 429,
         headers: { "Retry-After": String(result.retryAfterSeconds) },

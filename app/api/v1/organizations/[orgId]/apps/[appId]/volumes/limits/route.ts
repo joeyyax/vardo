@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handleRouteError } from "@/lib/api/error-response";
+import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { volumes } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
@@ -31,7 +31,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     const app = await verifyAppAccess(orgId, appId, "app.view");
 
     if (!app) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return apiError.notFound("app");
     }
 
     const volWithLimit = await db.query.volumes.findFirst({
@@ -61,17 +61,14 @@ async function handlePut(request: NextRequest, { params }: RouteParams) {
     const app = await verifyAppAccess(orgId, appId, "app.config");
 
     if (!app) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return apiError.notFound("app");
     }
 
     const body = await request.json();
     const parsed = volumeLimitSchema.safeParse(body);
 
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: parsed.error.issues[0].message },
-        { status: 400 }
-      );
+      return apiError.validation(parsed.error);
     }
 
     await db
@@ -101,7 +98,7 @@ async function handleDelete(_request: NextRequest, { params }: RouteParams) {
     const app = await verifyAppAccess(orgId, appId, "app.config");
 
     if (!app) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return apiError.notFound("app");
     }
 
     await db

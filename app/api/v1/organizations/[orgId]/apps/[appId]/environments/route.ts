@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handleRouteError, isUniqueViolation } from "@/lib/api/error-response";
+import { apiError, handleRouteError, isUniqueViolation } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { environments, envVars, apps, groupEnvironments } from "@/lib/db/schema";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
@@ -25,7 +25,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     const app = await verifyAppAccess(orgId, appId, "app.view");
 
     if (!app) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return apiError.notFound("app");
     }
 
     const envs = await db.query.environments.findMany({
@@ -121,17 +121,14 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     const app = await verifyAppAccess(orgId, appId, "app.config");
 
     if (!app) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return apiError.notFound("app");
     }
 
     const body = await request.json();
     const parsed = createEnvironmentSchema.safeParse(body);
 
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: parsed.error.issues[0].message },
-        { status: 400 }
-      );
+      return apiError.validation(parsed.error);
     }
 
     if (parsed.data.type === "preview") {
@@ -154,7 +151,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       }
 
       const orgAccess = await verifyOrgAccess(orgId, "app.config");
-      if (!orgAccess) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      if (!orgAccess) return apiError.forbidden();
       const result = await createGroupEnvironment({
         projectId: appRecord.projectId,
         organizationId: orgId,
@@ -274,7 +271,7 @@ async function handleDelete(request: NextRequest, { params }: RouteParams) {
     const app = await verifyAppAccess(orgId, appId, "app.config");
 
     if (!app) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return apiError.notFound("app");
     }
 
     const body = await request.json();

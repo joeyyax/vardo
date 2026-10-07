@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { handleRouteError } from "@/lib/api/error-response";
+import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { peerOrganizationId, requireMeshPeer } from "@/lib/mesh/auth";
 import { buildProjectBundle } from "@/lib/mesh/transfers";
 
@@ -19,10 +19,7 @@ async function handlePost(request: NextRequest) {
     const body = await request.json();
     const parsed = pullSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: "Invalid request", details: parsed.error.flatten().fieldErrors },
-        { status: 400 }
-      );
+      return apiError.validation(parsed.error, { details: true });
     }
 
     const bundle = await buildProjectBundle(parsed.data.projectId, {

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { handleRouteError } from "@/lib/api/error-response";
+import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { apps, deployments } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
@@ -30,7 +30,7 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ org
 
   try {
     const org = await verifyOrgAccess(orgId, "app.deploy");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
 
     let body: { deploymentId?: string; includeEnvVars?: boolean };
     try {
@@ -41,10 +41,7 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ org
 
     const parsed = rollbackSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: "Validation failed", details: parsed.error.flatten().fieldErrors },
-        { status: 400 },
-      );
+      return apiError.validation(parsed.error, { details: true });
     }
     const { deploymentId, includeEnvVars } = parsed.data;
 
@@ -187,7 +184,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
     const org = await verifyOrgAccess(orgId, "app.view");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
 
     const deploymentId = request.nextUrl.searchParams.get("deploymentId");
     if (!deploymentId) {

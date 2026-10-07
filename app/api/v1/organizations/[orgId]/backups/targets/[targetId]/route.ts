@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handleRouteError } from "@/lib/api/error-response";
+import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { backupTargets } from "@/lib/db/schema";
 import { requirePlugin } from "@/lib/api/require-plugin";
@@ -61,15 +61,12 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
 
     const { orgId, targetId } = await params;
     const org = await verifyOrgAccess(orgId, "backup.targets.manage");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
 
     const body = await request.json();
     const parsed = updateTargetSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: parsed.error.issues[0].message },
-        { status: 400 }
-      );
+      return apiError.validation(parsed.error);
     }
 
     const { denied, target } = await guardTarget(orgId, targetId);
@@ -83,7 +80,7 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
         mergeTargetConfig(target.config as Record<string, unknown>, parsed.data.config),
       );
       if (!merged.success) {
-        return NextResponse.json({ error: merged.error.issues[0].message }, { status: 400 });
+        return apiError.validation(merged.error);
       }
       updateData.config = sealTargetConfig(merged.data, target.organizationId);
     }
@@ -117,7 +114,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 
     const { orgId, targetId } = await params;
     const org = await verifyOrgAccess(orgId, "backup.targets.manage");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
 
     const { denied } = await guardTarget(orgId, targetId);
     if (denied) return denied;
@@ -140,11 +137,11 @@ async function handleDelete(request: NextRequest, { params }: RouteParams) {
 
     const { orgId, targetId } = await params;
     const org = await verifyOrgAccess(orgId, "backup.targets.manage");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
 
     const parsed = deleteTargetSchema.safeParse(await request.json().catch(() => ({})));
     if (!parsed.success) {
-      return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
+      return apiError.validation(parsed.error);
     }
 
     const { denied, target } = await guardTarget(orgId, targetId);

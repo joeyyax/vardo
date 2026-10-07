@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handleRouteError } from "@/lib/api/error-response";
+import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { invitations, user } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
@@ -24,7 +24,7 @@ async function handleDelete(
   try {
     const { orgId, invitationId } = await params;
     const org = await verifyOrgAccess(orgId, "org.members.manage");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
 
     const gate = await requirePlugin("teams");
     if (gate) return gate;
@@ -55,7 +55,7 @@ async function handleDelete(
     return NextResponse.json({ success: true });
   } catch (error) {
     if (error instanceof Error && error.message === "Forbidden") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return apiError.forbidden();
     }
     return handleRouteError(error, "Error revoking invitation");
   }
@@ -70,7 +70,7 @@ async function handlePatch(
   try {
     const { orgId, invitationId } = await params;
     const org = await verifyOrgAccess(orgId, "org.members.manage");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
 
     const gate = await requirePlugin("teams");
     if (gate) return gate;
@@ -132,7 +132,7 @@ async function handlePatch(
     return NextResponse.json({ success: true, inviteUrl, email: emailDelivery(sent) });
   } catch (error) {
     if (error instanceof Error && error.message === "Forbidden") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return apiError.forbidden();
     }
     return handleRouteError(error, "Error resending invitation");
   }

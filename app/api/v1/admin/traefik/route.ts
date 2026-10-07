@@ -8,6 +8,7 @@ import { logger } from "@/lib/logger";
 import { VARDO_HOME_DIR } from "@/lib/paths";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
+import { apiError } from "@/lib/api/error-response";
 
 const log = logger.child("admin:traefik");
 
@@ -28,10 +29,7 @@ async function handlePost(request: NextRequest) {
   const body = await request.json();
   const parsed = traefikConfigSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: "Validation failed", details: parsed.error.flatten().fieldErrors },
-      { status: 400 },
-    );
+    return apiError.validation(parsed.error, { details: true });
   }
 
   await setSystemSetting("traefik_config", JSON.stringify(parsed.data));

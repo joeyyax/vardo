@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { handleRouteError } from "@/lib/api/error-response";
+import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { requireAppAdmin } from "@/lib/auth/admin";
 import { buildProjectBundle } from "@/lib/mesh/transfers";
 import { MeshClientError, meshJsonFetch } from "@/lib/mesh/client";
@@ -23,10 +23,7 @@ async function handlePost(request: NextRequest) {
     const body = await request.json();
     const parsed = promoteSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: "Validation failed", details: parsed.error.flatten().fieldErrors },
-        { status: 400 }
-      );
+      return apiError.validation(parsed.error, { details: true });
     }
 
     const { projectId, orgId, targetPeerId, environment, includeEnvVars } = parsed.data;

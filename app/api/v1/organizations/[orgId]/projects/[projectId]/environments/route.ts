@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handleRouteError, isUniqueViolation } from "@/lib/api/error-response";
+import { apiError, handleRouteError, isUniqueViolation } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { projects, groupEnvironments } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
@@ -27,7 +27,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, projectId } = await params;
     const org = await verifyOrgAccess(orgId, "org.view");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
 
     const project = await db.query.projects.findFirst({
       where: and(eq(projects.id, projectId), eq(projects.organizationId, orgId)),
@@ -35,7 +35,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     });
 
     if (!project) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return apiError.notFound("project");
     }
 
     const envs = await db.query.groupEnvironments.findMany({
@@ -56,7 +56,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
 
     const { orgId, projectId } = await params;
     const org = await verifyOrgAccess(orgId, "project.manage");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
 
     const project = await db.query.projects.findFirst({
       where: and(eq(projects.id, projectId), eq(projects.organizationId, orgId)),
@@ -64,17 +64,14 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     });
 
     if (!project) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return apiError.notFound("project");
     }
 
     const body = await request.json();
     const parsed = createEnvSchema.safeParse(body);
 
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: parsed.error.issues[0].message },
-        { status: 400 }
-      );
+      return apiError.validation(parsed.error);
     }
 
     if (parsed.data.type === "preview") {

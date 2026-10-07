@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handleRouteError } from "@/lib/api/error-response";
+import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { digestSettings, notificationChannels, organizations } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
@@ -29,7 +29,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId, "org.view");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
 
     const setting = await db.query.digestSettings.findFirst({
       where: eq(digestSettings.organizationId, orgId),
@@ -65,14 +65,11 @@ async function handlePatch(req: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId, "org.digest.manage");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
 
     const parsed = patchSchema.safeParse(await req.json());
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: parsed.error.issues[0].message },
-        { status: 400 },
-      );
+      return apiError.validation(parsed.error);
     }
 
     const now = new Date();
@@ -117,7 +114,7 @@ async function handlePost(_req: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId, "org.digest.manage");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
 
     const orgRecord = await db.query.organizations.findFirst({
       where: eq(organizations.id, orgId),

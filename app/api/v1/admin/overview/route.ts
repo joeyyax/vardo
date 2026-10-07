@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { handleRouteError } from "@/lib/api/error-response";
+import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { requireAppAdmin } from "@/lib/auth/admin";
 import { db } from "@/lib/db";
 import { user, apps, deployments, organizations } from "@/lib/db/schema";
@@ -51,7 +51,7 @@ export async function GET() {
     });
   } catch (error) {
     if (error instanceof Error && error.message === "Forbidden") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return apiError.forbidden();
     }
     return handleRouteError(error, "Error fetching admin overview");
   }

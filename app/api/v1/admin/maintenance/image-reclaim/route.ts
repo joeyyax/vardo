@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { eq } from "drizzle-orm";
 
 import { requireAppAdmin } from "@/lib/auth/admin";
-import { handleRouteError } from "@/lib/api/error-response";
+import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
@@ -72,10 +72,7 @@ async function handlePost(request: NextRequest) {
     const body = await request.json().catch(() => ({}));
     const parsed = imageReclaimRunSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: "Validation failed", details: parsed.error.flatten().fieldErrors },
-        { status: 400 },
-      );
+      return apiError.validation(parsed.error, { details: true });
     }
 
     const config = await getImageReclaimConfig();
@@ -111,10 +108,7 @@ async function handlePut(request: NextRequest) {
     const body = await request.json().catch(() => ({}));
     const parsed = imageReclaimConfigSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: "Validation failed", details: parsed.error.flatten().fieldErrors },
-        { status: 400 },
-      );
+      return apiError.validation(parsed.error, { details: true });
     }
 
     await setImageReclaimConfig(parsed.data);
@@ -132,10 +126,7 @@ async function handlePatch(request: NextRequest) {
     const body = await request.json().catch(() => ({}));
     const parsed = imageReclaimAppSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: "Validation failed", details: parsed.error.flatten().fieldErrors },
-        { status: 400 },
-      );
+      return apiError.validation(parsed.error, { details: true });
     }
 
     const { appId, policy, idleDays } = parsed.data;

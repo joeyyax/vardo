@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handleRouteError } from "@/lib/api/error-response";
+import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { z } from "zod";
 import { db } from "@/lib/db";
@@ -30,10 +30,7 @@ async function handler(request: NextRequest) {
     const body = await request.json();
     const parsed = joinSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: parsed.error.issues[0].message },
-        { status: 400 }
-      );
+      return apiError.validation(parsed.error);
     }
 
     const { code, outboundToken: joinerOutboundToken, ...peerInput } = parsed.data;

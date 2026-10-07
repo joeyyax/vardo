@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handleRouteError, isUniqueViolation } from "@/lib/api/error-response";
+import { apiError, handleRouteError, isUniqueViolation } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { projects, apps } from "@/lib/db/schema";
 import { eq, and, sql } from "drizzle-orm";
@@ -59,7 +59,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, projectId } = await params;
     const org = await verifyOrgAccess(orgId, "org.view");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
 
     const project = await findProject(orgId, projectId);
 
@@ -94,16 +94,13 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, projectId } = await params;
     const org = await verifyOrgAccess(orgId, "project.manage");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
 
     const body = await request.json();
     const parsed = updateSchema.safeParse(body);
 
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: parsed.error.issues[0].message },
-        { status: 400 }
-      );
+      return apiError.validation(parsed.error);
     }
 
     const existing = await findProjectBasic(orgId, projectId);
@@ -194,7 +191,7 @@ async function handleDelete(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, projectId } = await params;
     const org = await verifyOrgAccess(orgId, "project.delete");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
 
     const existing = await findProjectBasic(orgId, projectId);
 

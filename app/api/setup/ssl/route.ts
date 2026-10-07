@@ -5,6 +5,7 @@ import { getSslConfig, setSystemSetting, ISSUER_LABELS } from "@/lib/system-sett
 import { maskSecret, resolveSecret } from "@/lib/mask-secrets";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
+import { apiError } from "@/lib/api/error-response";
 
 const sslSchema = z.object({
   activeIssuers: z.array(z.enum(["le", "google", "zerossl"])).min(1, "At least one issuer must be enabled"),
@@ -44,10 +45,7 @@ async function handlePost(request: NextRequest) {
   const body = await request.json();
   const parsed = sslSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: "Validation failed", details: parsed.error.flatten().fieldErrors },
-      { status: 400 },
-    );
+    return apiError.validation(parsed.error, { details: true });
   }
 
   const { activeIssuers, concurrentIssuers, challengeType, dnsProvider, dnsApiToken, zerosslEabKid, zerosslEabHmac } = parsed.data;

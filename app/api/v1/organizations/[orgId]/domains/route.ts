@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handleRouteError, isUniqueViolation } from "@/lib/api/error-response";
+import { apiError, handleRouteError, isUniqueViolation } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { orgDomains } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
@@ -39,7 +39,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId, "org.view");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
 
     const rows = await db.query.orgDomains.findMany({
       where: eq(orgDomains.organizationId, orgId),
@@ -75,15 +75,12 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId, "org.domains.manage");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
 
     const body = await request.json();
     const parsed = addSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: parsed.error.issues[0].message },
-        { status: 400 }
-      );
+      return apiError.validation(parsed.error);
     }
 
     const domain = parsed.data.domain;
@@ -126,15 +123,12 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
 
   const parsed = patchSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0].message },
-      { status: 400 }
-    );
+    return apiError.validation(parsed.error);
   }
 
   try {
     const org = await verifyOrgAccess(orgId, "org.domains.manage");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
 
     // The default domain is created on its first toggle.
     if (parsed.data.id === "__default__") {
@@ -165,7 +159,7 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
       .returning();
 
     if (!updated) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return apiError.notFound("domain");
     }
 
     return NextResponse.json({ domain: updated });
@@ -197,16 +191,13 @@ async function handleDelete(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId, "org.domains.manage");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
 
     const body = await request.json();
     const deleteSchema = z.object({ id: z.string().min(1) }).strict();
     const parsed = deleteSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: parsed.error.issues[0].message },
-        { status: 400 }
-      );
+      return apiError.validation(parsed.error);
     }
 
     const { id } = parsed.data;
@@ -219,7 +210,7 @@ async function handleDelete(request: NextRequest, { params }: RouteParams) {
     });
 
     if (!existing) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return apiError.notFound("domain");
     }
 
     if (existing.isDefault) {

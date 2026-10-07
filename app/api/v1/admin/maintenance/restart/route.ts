@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { spawn } from "child_process";
 import { requireAppAdmin } from "@/lib/auth/admin";
-import { handleRouteError } from "@/lib/api/error-response";
+import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { restartSchema } from "@/lib/api/admin/maintenance-schemas";
 import { logger } from "@/lib/logger";
@@ -18,10 +18,7 @@ async function handlePost(request: NextRequest) {
     const body = await request.json().catch(() => ({}));
     const parsed = restartSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: "Validation failed", details: parsed.error.flatten().fieldErrors },
-        { status: 400 },
-      );
+      return apiError.validation(parsed.error, { details: true });
     }
 
     const { service } = parsed.data;

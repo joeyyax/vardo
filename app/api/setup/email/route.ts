@@ -7,6 +7,7 @@ import { maskSecret, resolveSecret } from "@/lib/mask-secrets";
 import { isSmtpAllowed } from "@/lib/config/provider-restrictions";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
+import { apiError } from "@/lib/api/error-response";
 
 const emailSchema = z.object({
   provider: z.enum(["smtp", "mailpace", "resend", "postmark"]),
@@ -50,10 +51,7 @@ async function handlePost(request: NextRequest) {
   const body = await request.json();
   const parsed = emailSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: "Validation failed", details: parsed.error.flatten().fieldErrors },
-      { status: 400 },
-    );
+    return apiError.validation(parsed.error, { details: true });
   }
 
   const { provider, smtpHost, smtpPort, smtpUser, smtpPass, apiKey, fromEmail, fromName } = parsed.data;

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handleRouteError } from "@/lib/api/error-response";
+import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { requireAppAdmin } from "@/lib/auth/admin";
 import { requirePlugin } from "@/lib/api/require-plugin";
@@ -62,7 +62,7 @@ async function handler(request: NextRequest, { params }: RouteParams) {
     const { orgId, composeProject } = await params;
 
     const org = await verifyOrgAccess(orgId, "app.import");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
     await requireAppAdmin();
 
     const gate = await requirePlugin("container-import");
@@ -76,7 +76,7 @@ async function handler(request: NextRequest, { params }: RouteParams) {
     const body = await request.json();
     const parsed = importGroupSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
+      return apiError.validation(parsed.error);
     }
 
     const data = parsed.data;

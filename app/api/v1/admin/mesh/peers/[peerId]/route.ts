@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { handleRouteError } from "@/lib/api/error-response";
+import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { requireAppAdmin } from "@/lib/auth/admin";
 import { db } from "@/lib/db";
 import { meshPeers, organizations, projectInstances } from "@/lib/db/schema";
@@ -56,10 +56,7 @@ async function handlePatch(
     const { peerId } = await params;
     const parsed = patchSchema.safeParse(await request.json());
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: "Validation failed", details: parsed.error.flatten().fieldErrors },
-        { status: 400 }
-      );
+      return apiError.validation(parsed.error, { details: true });
     }
 
     const { organizationId } = parsed.data;

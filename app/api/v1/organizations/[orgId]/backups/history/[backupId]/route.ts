@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handleRouteError } from "@/lib/api/error-response";
+import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { requirePlugin } from "@/lib/api/require-plugin";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
@@ -17,10 +17,10 @@ async function handleDelete(_request: NextRequest, { params }: RouteParams) {
     if (gate) return gate;
     const { orgId, backupId } = await params;
     const org = await verifyOrgAccess(orgId, "backup.delete");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
 
     const backup = await findOrgAppBackup(orgId, backupId);
-    if (!backup) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    if (!backup) return apiError.notFound("backup");
     if (isInProgress(backup.status)) {
       return NextResponse.json({ error: "This backup is still running" }, { status: 409 });
     }

@@ -5,6 +5,7 @@ import { needsSetup } from "@/lib/setup";
 import { getInstanceConfig, setSystemSetting } from "@/lib/system-settings";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
+import { apiError } from "@/lib/api/error-response";
 
 const generalSchema = z.object({
   instanceName: z.string().min(1).max(100),
@@ -36,10 +37,7 @@ async function handlePost(request: NextRequest) {
   const body = await request.json();
   const parsed = generalSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: "Validation failed", details: parsed.error.flatten().fieldErrors },
-      { status: 400 },
-    );
+    return apiError.validation(parsed.error, { details: true });
   }
 
   const existing = await getInstanceConfig();

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handleRouteError, isUniqueViolation } from "@/lib/api/error-response";
+import { apiError, handleRouteError, isUniqueViolation } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { domains } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
@@ -38,7 +38,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     const app = await verifyAppAccess(orgId, appId, "app.domains");
 
     if (!app) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return apiError.notFound("app");
     }
 
     const refused = refuseSystemManaged(app, "domains");
@@ -48,10 +48,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     const parsed = createDomainSchema.safeParse(body);
 
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: parsed.error.issues[0].message },
-        { status: 400 }
-      );
+      return apiError.validation(parsed.error);
     }
 
     // Redirect domains can't self-reference.
@@ -118,7 +115,7 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
     const app = await verifyAppAccess(orgId, appId, "app.domains");
 
     if (!app) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return apiError.notFound("app");
     }
 
     const refused = refuseSystemManaged(app, "domains");
@@ -128,10 +125,7 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
     const parsed = updateDomainSchema.safeParse(body);
 
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: parsed.error.issues[0].message },
-        { status: 400 }
-      );
+      return apiError.validation(parsed.error);
     }
 
     const { id, ...updates } = parsed.data;
@@ -157,7 +151,7 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
       .returning();
 
     if (!updated) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return apiError.notFound("domain");
     }
 
     // Domain changes require a redeploy to update Traefik labels
@@ -176,7 +170,7 @@ async function handleDelete(request: NextRequest, { params }: RouteParams) {
     const app = await verifyAppAccess(orgId, appId, "app.domains");
 
     if (!app) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return apiError.notFound("app");
     }
 
     const refused = refuseSystemManaged(app, "domains");
@@ -186,10 +180,7 @@ async function handleDelete(request: NextRequest, { params }: RouteParams) {
     const parsed = deleteDomainSchema.safeParse(body);
 
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: parsed.error.issues[0].message },
-        { status: 400 }
-      );
+      return apiError.validation(parsed.error);
     }
 
     const [deleted] = await db
@@ -203,7 +194,7 @@ async function handleDelete(request: NextRequest, { params }: RouteParams) {
       .returning({ id: domains.id });
 
     if (!deleted) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return apiError.notFound("domain");
     }
 
     // Domain deletion requires a redeploy to remove Traefik labels

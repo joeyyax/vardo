@@ -8,6 +8,7 @@ import { z } from "zod";
 import { logger } from "@/lib/logger";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
+import { apiError } from "@/lib/api/error-response";
 
 const log = logger.child("github:repos");
 
@@ -44,7 +45,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ repos });
   } catch (error) {
     if (error instanceof Error && error.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return apiError.unauthorized();
     }
     log.error("Error fetching GitHub repos:", error);
     return NextResponse.json(
@@ -69,10 +70,7 @@ async function handlePost(request: NextRequest) {
     const body = await request.json();
     const parsed = createRepoSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: parsed.error.issues[0].message },
-        { status: 400 }
-      );
+      return apiError.validation(parsed.error);
     }
 
     const { installationId, name, description, isPrivate } = parsed.data;
@@ -103,7 +101,7 @@ async function handlePost(request: NextRequest) {
     return NextResponse.json({ repo }, { status: 201 });
   } catch (error) {
     if (error instanceof Error && error.message === "Unauthorized") {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return apiError.unauthorized();
     }
     log.error("Error creating GitHub repo:", error);
     return NextResponse.json(

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { join } from "path";
 import { requireAppAdmin } from "@/lib/auth/admin";
 import { writeEnvKey } from "@/lib/env/write-env-key";
-import { handleRouteError } from "@/lib/api/error-response";
+import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { mountsSchema, parseMountPair } from "@/lib/api/admin/maintenance-schemas";
 import { logger } from "@/lib/logger";
 import { VARDO_HOME_DIR } from "@/lib/paths";
@@ -43,10 +43,7 @@ async function handlePost(request: Request) {
     const body = await request.json();
     const parsed = mountsSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: "Validation failed", details: parsed.error.flatten().fieldErrors },
-        { status: 400 },
-      );
+      return apiError.validation(parsed.error, { details: true });
     }
 
     const envPath = join(VARDO_HOME_DIR, ".env");

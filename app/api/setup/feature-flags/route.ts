@@ -17,6 +17,7 @@ import {
 import { provisionForFlag } from "@/lib/infra/provision";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
+import { apiError } from "@/lib/api/error-response";
 
 export async function GET(request: NextRequest) {
   await requireAdminAuth(request);
@@ -35,10 +36,7 @@ async function handlePost(request: NextRequest) {
   const flagsSchema = z.record(z.string(), z.boolean());
   const parsed = flagsSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: "Validation failed", details: parsed.error.flatten().fieldErrors },
-      { status: 400 },
-    );
+    return apiError.validation(parsed.error, { details: true });
   }
 
   const known = new Set<string>(ALL_FEATURE_FLAGS);

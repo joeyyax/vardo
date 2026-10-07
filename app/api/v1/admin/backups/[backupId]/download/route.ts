@@ -1,5 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
-import { handleRouteError } from "@/lib/api/error-response";
+import { NextRequest } from "next/server";
+import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { backups } from "@/lib/db/schema";
 import { requireAppAdmin } from "@/lib/auth/admin";
@@ -25,7 +25,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     });
 
     if (!backup || backup.status !== "success" || !backup.storagePath) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return apiError.notFound("backup");
     }
 
     recordAdminBackupActivity("backup.downloaded", backup, session.user.id).catch(() => {});

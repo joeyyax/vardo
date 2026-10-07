@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handleRouteError } from "@/lib/api/error-response";
+import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { volumes } from "@/lib/db/schema";
 import { verifyAppAccess } from "@/lib/api/verify-access";
@@ -48,16 +48,13 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
     const { orgId, appId, volumeName } = await params;
     const appRecord = await verifyAppAccess(orgId, appId, "app.config");
     if (!appRecord) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return apiError.notFound("app");
     }
 
     const body = await request.json();
     const parsed = patchSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: parsed.error.issues[0].message },
-        { status: 400 },
-      );
+      return apiError.validation(parsed.error);
     }
 
     const volume = await db.query.volumes.findFirst({

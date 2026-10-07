@@ -6,6 +6,7 @@ import { getBackupStorageConfig, setSystemSetting } from "@/lib/system-settings"
 import { maskSecret, resolveSecret } from "@/lib/mask-secrets";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
+import { apiError } from "@/lib/api/error-response";
 
 const backupSchema = z.object({
   type: z.enum(["s3", "r2", "b2"]),
@@ -44,10 +45,7 @@ async function handlePost(request: NextRequest) {
   const body = await request.json();
   const parsed = backupSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: "Validation failed", details: parsed.error.flatten().fieldErrors },
-      { status: 400 },
-    );
+    return apiError.validation(parsed.error, { details: true });
   }
 
   const { type, bucket, region, endpoint, accessKey, secretKey } = parsed.data;

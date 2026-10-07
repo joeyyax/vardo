@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
 
-import { handleRouteError } from "@/lib/api/error-response";
+import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { db } from "@/lib/db";
@@ -17,13 +17,13 @@ async function handler(
   try {
     const { orgId, appId } = await params;
     const org = await verifyOrgAccess(orgId, "app.view");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
 
     const app = await db.query.apps.findFirst({
       where: and(eq(apps.id, appId), eq(apps.organizationId, orgId)),
       columns: { id: true, parentAppId: true, containerStartedAt: true },
     });
-    if (!app) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    if (!app) return apiError.notFound("app");
 
     if (!(await isLokiAvailable())) {
       return NextResponse.json({ available: false });

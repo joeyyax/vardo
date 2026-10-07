@@ -6,6 +6,7 @@ import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { db } from "@/lib/db";
 import { memberships } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
+import { apiError } from "@/lib/api/error-response";
 
 const switchOrgSchema = z.object({
   organizationId: z.string().min(1, "organizationId is required"),
@@ -16,7 +17,7 @@ const switchOrgSchema = z.object({
 async function handler(request: NextRequest) {
   const session = await getSession();
   if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return apiError.unauthorized();
   }
 
   const body = await request.json().catch(() => null);

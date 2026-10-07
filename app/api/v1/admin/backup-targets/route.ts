@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handleRouteError } from "@/lib/api/error-response";
+import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { backupTargets } from "@/lib/db/schema";
 import { isNull } from "drizzle-orm";
@@ -32,7 +32,7 @@ export async function GET() {
     return NextResponse.json({ targets: targets.map(presentTarget), allowLocalBackups: isLocalBackupsAllowed() });
   } catch (error) {
     if (error instanceof Error && error.message === "Forbidden") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return apiError.forbidden();
     }
     return handleRouteError(error, "Error fetching admin backup targets");
   }
@@ -47,10 +47,7 @@ async function handlePost(request: NextRequest) {
     const parsed = createTargetSchema.safeParse(body);
 
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: parsed.error.issues[0].message },
-        { status: 400 },
-      );
+      return apiError.validation(parsed.error);
     }
 
     const data = parsed.data;
@@ -80,7 +77,7 @@ async function handlePost(request: NextRequest) {
     return NextResponse.json({ target: presentTarget(target) }, { status: 201 });
   } catch (error) {
     if (error instanceof Error && error.message === "Forbidden") {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return apiError.forbidden();
     }
     return handleRouteError(error, "Error creating admin backup target");
   }

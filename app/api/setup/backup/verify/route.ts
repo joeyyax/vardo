@@ -9,7 +9,7 @@ async function handlePost() {
   try {
     await requireAdminAuth();
   } catch {
-    return NextResponse.json({ ok: false, message: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ ok: false, message: "Sign in to continue." }, { status: 401 });
   }
 
   const config = await getBackupStorageConfig();

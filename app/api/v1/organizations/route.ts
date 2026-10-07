@@ -9,6 +9,7 @@ import { nanoid } from "nanoid";
 import { logger } from "@/lib/logger";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
+import { apiError } from "@/lib/api/error-response";
 
 const log = logger.child("api:organizations");
 
@@ -23,7 +24,7 @@ export async function GET() {
     const session = await getSession();
 
     if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return apiError.unauthorized();
     }
 
     const userMemberships = await db.query.memberships.findMany({
@@ -60,16 +61,13 @@ async function handlePost(request: NextRequest) {
     const session = await getSession();
 
     if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return apiError.unauthorized();
     }
 
     const body = await request.json();
     const parsed = createOrgSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: "Validation failed", details: parsed.error.flatten().fieldErrors },
-        { status: 400 },
-      );
+      return apiError.validation(parsed.error, { details: true });
     }
 
     const { name: trimmedName, slug: providedSlug } = parsed.data;

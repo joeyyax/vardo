@@ -7,6 +7,7 @@ import { getGitHubAppConfig, setSystemSetting } from "@/lib/system-settings";
 import { maskSecret, resolveSecret } from "@/lib/mask-secrets";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
+import { apiError } from "@/lib/api/error-response";
 
 const githubSchema = z.object({
   appId: z.string().min(1, "App ID is required"),
@@ -45,10 +46,7 @@ async function handlePost(request: NextRequest) {
   const body = await request.json();
   const parsed = githubSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json(
-      { error: "Validation failed", details: parsed.error.flatten().fieldErrors },
-      { status: 400 },
-    );
+    return apiError.validation(parsed.error, { details: true });
   }
 
   const { appId, appSlug, clientId, clientSecret, privateKey, webhookSecret } = parsed.data;

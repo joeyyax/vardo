@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handleRouteError } from "@/lib/api/error-response";
+import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { backupTargets } from "@/lib/db/schema";
 import { requirePlugin } from "@/lib/api/require-plugin";
@@ -23,7 +23,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     if (gate) return gate;
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId, "backup.view");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
 
     // Org-level and app-level (organizationId IS NULL) targets.
     const targets = await db.query.backupTargets.findMany({
@@ -54,16 +54,13 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     if (gate) return gate;
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId, "backup.targets.manage");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
 
     const body = await request.json();
     const parsed = createTargetSchema.safeParse(body);
 
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: parsed.error.issues[0].message },
-        { status: 400 }
-      );
+      return apiError.validation(parsed.error);
     }
 
     const data = parsed.data;

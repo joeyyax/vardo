@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handleRouteError, isUniqueViolation } from "@/lib/api/error-response";
+import { apiError, handleRouteError, isUniqueViolation } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { environments } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
@@ -29,17 +29,14 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
     const app = await verifyAppAccess(orgId, appId, "app.config");
 
     if (!app) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return apiError.notFound("app");
     }
 
     const body = await request.json();
     const parsed = updateEnvironmentSchema.safeParse(body);
 
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: parsed.error.issues[0].message },
-        { status: 400 }
-      );
+      return apiError.validation(parsed.error);
     }
 
     const updates: Record<string, unknown> = {
@@ -60,7 +57,7 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
       .returning();
 
     if (!updated) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return apiError.notFound("environment");
     }
 
     return NextResponse.json({ environment: updated });
@@ -82,7 +79,7 @@ async function handleDelete(_request: NextRequest, { params }: RouteParams) {
     const app = await verifyAppAccess(orgId, appId, "app.config");
 
     if (!app) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return apiError.notFound("app");
     }
 
     const env = await db.query.environments.findFirst({
@@ -93,7 +90,7 @@ async function handleDelete(_request: NextRequest, { params }: RouteParams) {
     });
 
     if (!env) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return apiError.notFound("environment");
     }
 
     if (env.type === "production") {
@@ -122,7 +119,7 @@ async function handleDelete(_request: NextRequest, { params }: RouteParams) {
       .returning({ id: environments.id });
 
     if (!deleted) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return apiError.notFound("environment");
     }
 
     return NextResponse.json({ success: true });

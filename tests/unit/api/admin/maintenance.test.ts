@@ -154,24 +154,24 @@ describe("auth guard — error-to-status mapping", () => {
   // Mirrors the logic in lib/api/error-response.ts
   function handleRouteError(error: unknown): { status: number; body: { error: string } } {
     if (error instanceof Error && error.message === "Unauthorized") {
-      return { status: 401, body: { error: "Unauthorized" } };
+      return { status: 401, body: { error: "Sign in to continue." } };
     }
     if (error instanceof Error && error.message === "Forbidden") {
-      return { status: 403, body: { error: "Forbidden" } };
+      return { status: 403, body: { error: "You don't have access to this." } };
     }
-    return { status: 500, body: { error: "Internal server error" } };
+    return { status: 500, body: { error: "Something went wrong. Try again." } };
   }
 
   it("maps Unauthorized to 401", () => {
     const res = handleRouteError(new Error("Unauthorized"));
     expect(res.status).toBe(401);
-    expect(res.body.error).toBe("Unauthorized");
+    expect(res.body.error).toBe("Sign in to continue.");
   });
 
   it("maps Forbidden to 403 — non-admin authenticated users", () => {
     const res = handleRouteError(new Error("Forbidden"));
     expect(res.status).toBe(403);
-    expect(res.body.error).toBe("Forbidden");
+    expect(res.body.error).toBe("You don't have access to this.");
   });
 
   it("maps unknown errors to 500", () => {

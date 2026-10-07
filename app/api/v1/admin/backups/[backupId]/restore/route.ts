@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handleRouteError } from "@/lib/api/error-response";
+import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { backups } from "@/lib/db/schema";
 import { requireAppAdmin } from "@/lib/auth/admin";
@@ -27,7 +27,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     });
 
     if (!backup) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return apiError.notFound("backup");
     }
 
     if (backup.status !== "success") {

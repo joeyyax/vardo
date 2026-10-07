@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handleRouteError } from "@/lib/api/error-response";
+import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { apps, projects } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
@@ -67,7 +67,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
     const org = await verifyOrgAccess(orgId, "app.view");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
 
     const app = await db.query.apps.findFirst({
       where: and(
@@ -87,7 +87,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     });
 
     if (!app) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return apiError.notFound("app");
     }
 
     return NextResponse.json({ app });
@@ -101,16 +101,13 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
     const org = await verifyOrgAccess(orgId, "app.config");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
 
     const body = await request.json();
     const parsed = updateAppSchema.safeParse(body);
 
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: parsed.error.issues[0].message },
-        { status: 400 }
-      );
+      return apiError.validation(parsed.error);
     }
 
     // GPU passthrough grants host hardware access; owner/admin only.
@@ -126,7 +123,7 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
       columns: { id: true, name: true, projectId: true, isSystemManaged: true, composeContent: true },
     });
     if (!existingApp) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return apiError.notFound("app");
     }
 
     const refused = refuseSystemManaged(existingApp, "edit");
@@ -185,7 +182,7 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
     }
 
     if (!updated) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return apiError.notFound("app");
     }
 
     recordActivity({
@@ -207,7 +204,7 @@ async function handleDelete(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
     const org = await verifyOrgAccess(orgId, "app.delete");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
 
     const raw = await request.text();
     let body: unknown = {};
@@ -218,7 +215,7 @@ async function handleDelete(request: NextRequest, { params }: RouteParams) {
     }
     const parsed = deleteAppSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
+      return apiError.validation(parsed.error);
     }
 
     const app = await db.query.apps.findFirst({
@@ -227,7 +224,7 @@ async function handleDelete(request: NextRequest, { params }: RouteParams) {
     });
 
     if (!app) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return apiError.notFound("app");
     }
 
     const refused = refuseSystemManaged(app, "delete");

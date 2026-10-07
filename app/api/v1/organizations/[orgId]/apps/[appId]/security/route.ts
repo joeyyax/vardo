@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { appSecurityScans } from "@/lib/db/schema";
 import { eq, desc, and } from "drizzle-orm";
 import { verifyAppAccess } from "@/lib/api/verify-access";
+import { apiError } from "@/lib/api/error-response";
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
@@ -17,7 +18,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     const { orgId, appId } = await params;
 
     const app = await verifyAppAccess(orgId, appId, "app.view");
-    if (!app) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!app) return apiError.forbidden();
 
     const scans = await db.query.appSecurityScans.findMany({
       where: and(
@@ -31,6 +32,6 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ scans });
   } catch (err) {
     console.error("[security] GET error:", err);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return apiError.internal();
   }
 }

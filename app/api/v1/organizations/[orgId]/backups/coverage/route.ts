@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { and, eq, isNull, or } from "drizzle-orm";
 import { z } from "zod";
-import { handleRouteError } from "@/lib/api/error-response";
+import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { requirePlugin } from "@/lib/api/require-plugin";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
@@ -22,7 +22,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     if (gate) return gate;
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId, "backup.jobs.manage");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
 
     const [uncovered, defaultTarget] = await Promise.all([
       listUncoveredApps(orgId),
@@ -49,11 +49,11 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     if (gate) return gate;
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId, "backup.jobs.manage");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
 
     const parsed = optInSchema.safeParse(await request.json());
     if (!parsed.success) {
-      return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
+      return apiError.validation(parsed.error);
     }
     const { appId, targetId, volumeIds } = parsed.data;
 

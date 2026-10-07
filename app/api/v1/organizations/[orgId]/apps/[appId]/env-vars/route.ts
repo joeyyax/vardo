@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handleRouteError } from "@/lib/api/error-response";
+import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { apps, environments } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
@@ -48,7 +48,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const org = await verifyOrgAccess(orgId, "env.read");
     const app = org && (await verifyAppAccess(orgId, appId, "env.read"));
     if (!org || !app) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return apiError.notFound("app");
     }
 
     const refused = refuseSystemManaged(app, "env-vars");
@@ -117,7 +117,7 @@ async function handlePut(request: NextRequest, { params }: RouteParams) {
     const { orgId, appId } = await params;
     const app = await verifyAppAccess(orgId, appId, "env.write");
     if (!app) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return apiError.notFound("app");
     }
 
     const refused = refuseSystemManaged(app, "env-vars");
@@ -126,7 +126,7 @@ async function handlePut(request: NextRequest, { params }: RouteParams) {
     const body = await request.json();
     const parsed = putSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
+      return apiError.validation(parsed.error);
     }
 
     const content = parsed.data.content;

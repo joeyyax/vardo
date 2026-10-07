@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handleRouteError } from "@/lib/api/error-response";
+import { apiError, describeIssue, handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { apps, backupJobApps, backupJobs, backups, volumes } from "@/lib/db/schema";
 import { requirePlugin } from "@/lib/api/require-plugin";
@@ -40,7 +40,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
 
     const { orgId, appId } = await params;
     const org = await verifyOrgAccess(orgId, "backup.run");
-    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!org) return apiError.forbidden();
 
     let body: unknown = {};
     try {
@@ -50,7 +50,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     }
     const parsed = bodySchema.safeParse(body ?? {});
     if (!parsed.success) {
-      return fail("INVALID_BODY", parsed.error.issues[0].message, 400);
+      return fail("INVALID_BODY", describeIssue(parsed.error.issues[0]), 400);
     }
 
     const app = await db.query.apps.findFirst({
@@ -59,7 +59,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     });
 
     if (!app) {
-      return fail("APP_NOT_FOUND", "Not found", 404);
+      return fail("APP_NOT_FOUND", "App not found.", 404);
     }
 
     const appVolumes = await db.query.volumes.findMany({

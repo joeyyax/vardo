@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { handleRouteError } from "@/lib/api/error-response";
+import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { invitations, memberships } from "@/lib/db/schema";
 import { getSession } from "@/lib/auth/session";
@@ -22,10 +22,7 @@ async function handlePost(request: NextRequest) {
     const body = await request.json();
     const parsed = acceptSchema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: "Validation failed", details: parsed.error.flatten().fieldErrors },
-        { status: 400 },
-      );
+      return apiError.validation(parsed.error, { details: true });
     }
     const { token } = parsed.data;
 
