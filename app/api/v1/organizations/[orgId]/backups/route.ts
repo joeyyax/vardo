@@ -13,6 +13,7 @@ import { eq, and, or, desc, inArray, isNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
+import { backupOwnerOrgId, orgBackupScope } from "@/lib/backups/org-backup";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
@@ -78,13 +79,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       orderBy: [desc(backupJobs.createdAt)],
     });
 
-    // Scoped by the org on the row, so history whose job or app was deleted
-    // still lists. Optional ?appId= filter for project/app detail tabs.
+    // Optional ?appId= filter for project/app detail tabs.
     const filterAppId = request.nextUrl.searchParams.get("appId");
+    const scope = orgBackupScope(orgId);
     const rows = await db.query.backups.findMany({
-      where: filterAppId
-        ? and(eq(backups.organizationId, orgId), eq(backups.appId, filterAppId))
-        : eq(backups.organizationId, orgId),
+      where: filterAppId ? and(scope, eq(backups.appId, filterAppId)) : scope,
       orderBy: [desc(backups.startedAt)],
       limit: 20,
       with: {
@@ -94,8 +93,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         },
       },
     });
-    // A live app now in another org takes its history with it, as in findOrgAppBackup.
-    const recentHistory = rows.filter((b) => !b.app || b.app.organizationId === orgId);
+    const recentHistory = rows.filter((b) => backupOwnerOrgId(b) === orgId);
 
     return NextResponse.json({ jobs, recentHistory });
   } catch (error) {

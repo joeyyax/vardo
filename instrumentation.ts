@@ -102,6 +102,15 @@ export async function register() {
       }
     }
 
+    // A run that loaded its apps before a transfer records the old org.
+    try {
+      const { realignBackupOrgs } = await import("./lib/backups/org-backup");
+      const moved = await realignBackupOrgs();
+      if (moved > 0) log.info(`Moved ${moved} backup(s) to their app's current org`);
+    } catch (err) {
+      log.error("Backup org realignment failed:", err);
+    }
+
     // Ensure backup target exists first (sequential dependency for scheduler)
     let backupTargetReady: Promise<void> | undefined;
     try {

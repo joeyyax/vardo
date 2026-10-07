@@ -84,7 +84,21 @@ describe("backup history list", () => {
 
     const { sql, params } = listWhere();
     expect(sql).toContain('"backup"."organization_id" = $');
-    expect(params).toEqual(["org-1"]);
+    expect(params).toEqual(["org-1", "org-1"]);
+  });
+
+  it("follows a live app into the org it was transferred to", async () => {
+    backupsFindMany.mockResolvedValue([]);
+
+    await list(new NextRequest("http://localhost/api"), {
+      params: Promise.resolve({ orgId: "org-2" }),
+    });
+
+    const { sql } = listWhere();
+    expect(sql).toContain(
+      '"backup"."app_id" in (select "id" from "app" where "organization_id" = $1)',
+    );
+    expect(sql).toContain('"backup"."app_id" not in (select "id" from "app")');
   });
 
   it("leaves out a live app's backups once the app is in another org", async () => {

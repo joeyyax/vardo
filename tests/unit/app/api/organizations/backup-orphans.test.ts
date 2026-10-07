@@ -121,6 +121,22 @@ describe("a live app's backup", () => {
     expect(res.status).toBe(404);
   });
 
+  it("is found by the org the app was transferred to", async () => {
+    backupsFindFirst.mockResolvedValue({
+      ...orphan,
+      organizationId: "org-1",
+      app: { id: "app-1", name: "web", organizationId: "org-2" },
+    });
+
+    const res = await download(req(), ctx("org-2"));
+
+    expect(res.status).toBe(307);
+    const { sql } = lookupWhere();
+    expect(sql).toContain(
+      '"backup"."app_id" in (select "id" from "app" where "organization_id" = $',
+    );
+  });
+
   it("still restores", async () => {
     backupsFindFirst.mockResolvedValue({
       ...orphan,
