@@ -115,6 +115,11 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
     if (gate) return gate;
 
     const { orgId, appId } = await params;
+    const orgAccess = await verifyOrgAccess(orgId);
+    if (!orgAccess) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!isOrgAdmin(orgAccess.membership.role)) {
+      return NextResponse.json({ error: "Admin access required" }, { status: 403 });
+    }
     const app = await verifyAppAccess(orgId, appId);
 
     if (!app) {
@@ -156,6 +161,11 @@ async function handleDelete(request: NextRequest, { params }: RouteParams) {
     if (gate) return gate;
 
     const { orgId, appId } = await params;
+    const orgAccess = await verifyOrgAccess(orgId);
+    if (!orgAccess) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!isOrgAdmin(orgAccess.membership.role)) {
+      return NextResponse.json({ error: "Admin access required" }, { status: 403 });
+    }
     const app = await verifyAppAccess(orgId, appId);
 
     if (!app) {
