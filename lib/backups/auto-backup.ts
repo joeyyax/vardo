@@ -270,10 +270,14 @@ export async function ensureAutoBackupJob(opts: {
     return null;
   }
 
-  // Check if the app already has a backup job
-  const existingLink = await db.query.backupJobApps.findFirst({
+  // A job of another org does not cover the app; the engine skips it.
+  const links = await db.query.backupJobApps.findMany({
     where: eq(backupJobApps.appId, appId),
+    with: { backupJob: { columns: { organizationId: true } } },
   });
+  const existingLink = links.find(
+    (l) => l.backupJob.organizationId === organizationId || l.backupJob.organizationId === null,
+  );
 
   if (existingLink) {
     return null; // Already covered

@@ -9,13 +9,13 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 const {
   volumesFindMany,
-  backupJobAppsFindFirst,
+  backupJobAppsFindMany,
   backupTargetsFindFirst,
   transactionMock,
   state,
 } = vi.hoisted(() => ({
   volumesFindMany: vi.fn(),
-  backupJobAppsFindFirst: vi.fn(),
+  backupJobAppsFindMany: vi.fn(),
   backupTargetsFindFirst: vi.fn(),
   transactionMock: vi.fn(),
   state: { inserted: [] as string[], failLinkInsert: false },
@@ -25,7 +25,7 @@ vi.mock("@/lib/db", () => ({
   db: {
     query: {
       volumes: { findMany: volumesFindMany },
-      backupJobApps: { findFirst: backupJobAppsFindFirst },
+      backupJobApps: { findMany: backupJobAppsFindMany },
       backupTargets: { findFirst: backupTargetsFindFirst },
     },
     transaction: transactionMock,
@@ -43,7 +43,7 @@ beforeEach(() => {
   state.inserted = [];
   state.failLinkInsert = false;
   volumesFindMany.mockReset();
-  backupJobAppsFindFirst.mockReset();
+  backupJobAppsFindMany.mockReset();
   backupTargetsFindFirst.mockReset().mockResolvedValue({ id: "tgt-1", organizationId: "o1" });
   transactionMock.mockReset().mockImplementation(async (cb: (tx: unknown) => unknown) => {
     const tx = {
@@ -63,7 +63,7 @@ beforeEach(() => {
 describe("ensureAutoBackupJob — atomic job+link creation (#757)", () => {
   it("creates the job and its app link inside a single transaction", async () => {
     volumesFindMany.mockResolvedValue([{ persistent: true }]);
-    backupJobAppsFindFirst.mockResolvedValue(undefined); // not yet covered
+    backupJobAppsFindMany.mockResolvedValue([]); // not yet covered
 
     const jobId = await ensureAutoBackupJob({ appId: "a1", appName: "myapp", organizationId: "o1" });
 
@@ -74,7 +74,7 @@ describe("ensureAutoBackupJob — atomic job+link creation (#757)", () => {
 
   it("rolls back (rejects) if the app-link insert fails — no orphan job", async () => {
     volumesFindMany.mockResolvedValue([{ persistent: true }]);
-    backupJobAppsFindFirst.mockResolvedValue(undefined);
+    backupJobAppsFindMany.mockResolvedValue([]);
     state.failLinkInsert = true;
 
     await expect(
@@ -87,12 +87,22 @@ describe("ensureAutoBackupJob — atomic job+link creation (#757)", () => {
 
   it("skips apps already covered by a backup job (dedup guard)", async () => {
     volumesFindMany.mockResolvedValue([{ persistent: true }]);
-    backupJobAppsFindFirst.mockResolvedValue({ backupJobId: "existing" });
+    backupJobAppsFindMany.mockResolvedValue([{ backupJobId: "existing", backupJob: { organizationId: "o1" } }]);
 
     const result = await ensureAutoBackupJob({ appId: "a1", appName: "myapp", organizationId: "o1" });
 
     expect(result).toBeNull();
     expect(transactionMock).not.toHaveBeenCalled();
+  });
+
+  it("does not count a job of another org as coverage (#873)", async () => {
+    volumesFindMany.mockResolvedValue([{ persistent: true }]);
+    backupJobAppsFindMany.mockResolvedValue([{ backupJobId: "stale", backupJob: { organizationId: "o-old" } }]);
+
+    const jobId = await ensureAutoBackupJob({ appId: "a1", appName: "myapp", organizationId: "o1" });
+
+    expect(typeof jobId).toBe("string");
+    expect(state.inserted).toEqual(["backupJobs", "backupJobApps"]);
   });
 
   it("skips apps with no persistent volumes", async () => {
