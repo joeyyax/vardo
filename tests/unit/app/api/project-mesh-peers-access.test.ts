@@ -24,6 +24,10 @@ const {
 vi.mock("@/lib/auth/session", () => ({ getCurrentOrg: mockGetCurrentOrg }));
 vi.mock("@/lib/auth/permissions", () => ({ isOrgAdmin: mockIsOrgAdmin }));
 vi.mock("@/lib/config/features", () => ({ isFeatureEnabledAsync: mockIsFeatureEnabledAsync }));
+vi.mock("@/lib/auth/admin", () => ({
+  canImportContainers: vi.fn(async () => false),
+  isAppAdmin: vi.fn(async () => false),
+}));
 vi.mock("next/navigation", () => ({
   redirect: vi.fn(() => { throw new Error("REDIRECT"); }),
   notFound: vi.fn(() => { throw new Error("NOT_FOUND"); }),
