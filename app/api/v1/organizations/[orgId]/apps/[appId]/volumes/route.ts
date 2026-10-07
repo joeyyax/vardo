@@ -46,6 +46,8 @@ type VolumeInfo = {
   driftCount: number;
   source: string;
   sizeBytes: number | null;
+  /** Docker's name for the mount, when it differs from the row's. */
+  dockerName?: string;
 };
 
 // GET — list all volumes for this app (from Docker + volumes table)
@@ -78,6 +80,9 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       where: eq(volumes.appId, appId),
     });
     const savedByName = new Map(savedVolumes.map((v) => [v.name, v]));
+    // Rows are named from the mount path (#757), Docker names a mount by its
+    // volume or host path, so the mount path is what matches them.
+    const savedByPath = new Map(savedVolumes.map((v) => [v.mountPath, v]));
 
     // Get volumes from running containers. A stack's services can share a
     // mount, so each volume is listed once.
@@ -89,10 +94,11 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
         try {
           const info = await inspectContainer(container.id);
           for (const mount of info.mounts) {
-            const name = mount.type === "volume" ? resolveVolumeName(mount) : mount.source;
-            if (seenMounts.has(`${name}:${mount.destination}`)) continue;
-            seenMounts.add(`${name}:${mount.destination}`);
-            const saved = savedByName.get(name);
+            const dockerName = mount.type === "volume" ? resolveVolumeName(mount) : mount.source;
+            if (seenMounts.has(`${dockerName}:${mount.destination}`)) continue;
+            seenMounts.add(`${dockerName}:${mount.destination}`);
+            const saved = savedByPath.get(mount.destination) ?? savedByName.get(dockerName);
+            const name = saved?.name ?? dockerName;
             dockerVolumes.push({
               id: saved?.id ?? null,
               name,
@@ -108,6 +114,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
               driftCount: saved?.driftCount ?? 0,
               source: mount.source,
               sizeBytes: null,
+              dockerName,
             });
           }
         } catch { /* skip */ }
@@ -118,14 +125,14 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
         .map((vol, idx) => ({ vol, idx }))
         .filter(({ vol }) => {
           if (vol.type !== "named") return false;
-          return /^[a-zA-Z0-9._-]+$/.test(vol.name);
+          return /^[a-zA-Z0-9._-]+$/.test(vol.dockerName ?? vol.name);
         });
 
       if (measurable.length > 0) {
         const results = await Promise.allSettled(
           measurable.map(({ vol }) => {
             return execAsync(
-              `docker run --rm -v "${vol.name}:/data" alpine du -sb /data`,
+              `docker run --rm -v "${vol.dockerName ?? vol.name}:/data" alpine du -sb /data`,
               { timeout: 5000 }
             );
           })
