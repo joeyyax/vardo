@@ -122,6 +122,12 @@ describe("acceptTransfer", () => {
     expect(decrypt(vars[0].value as string, DEST)).toBe("s3cret");
   });
 
+  it("moves the app's backup history to the destination org", async () => {
+    await acceptTransfer("t-1", "user-1");
+
+    expect(writesTo("backup")).toEqual([{ organizationId: DEST }]);
+  });
+
   it("re-encrypts deployment env snapshots so rollback still works", async () => {
     await acceptTransfer("t-1", "user-1");
 

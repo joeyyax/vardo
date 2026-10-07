@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
-import { db } from "@/lib/db";
-import { backups } from "@/lib/db/schema";
 import { requirePlugin } from "@/lib/api/require-plugin";
-import { eq } from "drizzle-orm";
 import { runRestoreDrill } from "@/lib/backups/drill";
+import { findOrgAppBackup } from "@/lib/backups/org-backup";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
@@ -21,12 +19,8 @@ async function handlePost(_request: NextRequest, { params }: RouteParams) {
     const org = await verifyOrgAccess(orgId);
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    const backup = await db.query.backups.findFirst({
-      where: eq(backups.id, backupId),
-      with: { app: { columns: { id: true, organizationId: true } } },
-    });
-
-    if (!backup || !backup.app || backup.app.organizationId !== orgId) {
+    const backup = await findOrgAppBackup(orgId, backupId);
+    if (!backup) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
     if (backup.status !== "success") {

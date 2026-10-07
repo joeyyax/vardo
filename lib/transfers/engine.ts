@@ -7,6 +7,7 @@ import {
   environments,
   environmentEnv,
   appTransfers,
+  backups,
   projects,
   volumes,
 } from "@/lib/db/schema";
@@ -354,6 +355,11 @@ export async function acceptTransfer(
       .update(volumes)
       .set({ organizationId: transfer.destinationOrgId })
       .where(inArray(volumes.appId, appIds));
+
+    await tx
+      .update(backups)
+      .set({ organizationId: transfer.destinationOrgId })
+      .where(inArray(backups.appId, appIds));
   });
 }
 

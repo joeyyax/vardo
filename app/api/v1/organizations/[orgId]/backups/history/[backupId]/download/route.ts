@@ -1,13 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
-import { db } from "@/lib/db";
-import { backups } from "@/lib/db/schema";
 import { requirePlugin } from "@/lib/api/require-plugin";
-import { eq } from "drizzle-orm";
 import { getBackupDownloadUrl, downloadBackupToTemp } from "@/lib/backups/engine";
 import { createReadStream } from "fs";
 import { rm } from "fs/promises";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
+import { findOrgAppBackup } from "@/lib/backups/org-backup";
 
 type RouteParams = {
   params: Promise<{ orgId: string; backupId: string }>;
@@ -22,17 +20,8 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     const org = await verifyOrgAccess(orgId);
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    // Verify the backup belongs to a project in this org
-    const backup = await db.query.backups.findFirst({
-      where: eq(backups.id, backupId),
-      with: {
-        app: {
-          columns: { id: true, name: true, organizationId: true },
-        },
-      },
-    });
-
-    if (!backup || !backup.app || backup.app.organizationId !== orgId) {
+    const backup = await findOrgAppBackup(orgId, backupId);
+    if (!backup) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
@@ -51,7 +40,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 
     // SSH targets: download to temp and stream through server
     const tempPath = await downloadBackupToTemp(backupId);
-    const fileName = `${backup.app?.name ?? "vardo"}-${backup.volumeName ?? "backup"}-${backup.startedAt.toISOString().slice(0, 10)}.tar.gz`;
+    const fileName = `${backup.app?.name ?? backup.appName ?? "vardo"}-${backup.volumeName ?? "backup"}-${backup.startedAt.toISOString().slice(0, 10)}.tar.gz`;
 
     try {
       const stream = createReadStream(tempPath);
