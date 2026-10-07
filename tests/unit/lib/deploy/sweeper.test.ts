@@ -56,6 +56,11 @@ vi.mock("@/lib/docker/deploy-concurrency", () => removeMock);
 vi.mock("@/lib/events", () => eventsMock);
 vi.mock("@/lib/stream/producer", () => streamMock);
 vi.mock("@/lib/notifications/dispatch", () => ({ emit: emitMock }));
+vi.mock("@/lib/docker/deploy-cancel", () => ({
+  deployScope: vi.fn(async (appId: string) => appId),
+  deployWorker: vi.fn().mockResolvedValue("gone"),
+  publishKillSignal: vi.fn(),
+}));
 vi.mock("@/lib/logger", () => ({
   logger: { child: () => ({ warn: vi.fn(), info: vi.fn(), error: vi.fn() }) },
 }));
@@ -68,6 +73,7 @@ import { sweepStuckQueuedDeployments } from "@/lib/deploy/sweeper";
 import { addEvent } from "@/lib/stream/producer";
 import { acquireLock } from "@/lib/redis-lock";
 import { removeFromQueue } from "@/lib/docker/deploy-concurrency";
+import { deployWorker } from "@/lib/docker/deploy-cancel";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -92,28 +98,45 @@ const TEST_APP = {
   displayName: "My App",
 };
 
+const updates: Record<string, unknown>[] = [];
+
+// Queued five minutes ago: past the orphan threshold, inside the queue timeout.
+const RECENT_DEPLOY = {
+  id: "deploy-queued-recent",
+  appId: "app-1",
+  startedAt: new Date(Date.now() - 5 * 60_000),
+  log: "[queue] Waiting for the deploy already running for this app",
+};
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
-describe("sweepStuckQueuedDeployments", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    dbMock._queue.length = 0;
-    // Restore the select mock to use the queue
-    vi.mocked(dbMock.select).mockImplementation(() => {
-      const result = dbMock._queue.shift() ?? [];
-      const where = vi.fn().mockResolvedValue(result);
-      const from = vi.fn().mockReturnValue({ where });
-      return { from } as ReturnType<typeof dbMock.select>;
-    });
-    // Restore the update mock
-    vi.mocked(dbMock.update).mockImplementation(() => {
-      const where = vi.fn().mockResolvedValue(undefined);
-      const set = vi.fn().mockReturnValue({ where });
-      return { set, where } as ReturnType<typeof dbMock.update>;
-    });
+function resetMocks() {
+  vi.clearAllMocks();
+  dbMock._queue.length = 0;
+  // Restore the select mock to use the queue
+  vi.mocked(dbMock.select).mockImplementation(() => {
+    const result = dbMock._queue.shift() ?? [];
+    const where = vi.fn().mockResolvedValue(result);
+    const from = vi.fn().mockReturnValue({ where });
+    return { from } as ReturnType<typeof dbMock.select>;
   });
+  // Restore the update mock
+  updates.length = 0;
+  vi.mocked(dbMock.update).mockImplementation(() => {
+    const where = vi.fn().mockResolvedValue(undefined);
+    const set = vi.fn().mockImplementation((values: Record<string, unknown>) => {
+      updates.push(values);
+      return { where };
+    });
+    return { set, where } as ReturnType<typeof dbMock.update>;
+  });
+  vi.mocked(deployWorker).mockResolvedValue("gone");
+}
+
+describe("sweepStuckQueuedDeployments", () => {
+  beforeEach(resetMocks);
 
   it("cancels a stuck queued deployment and removes it from the Redis queue", async () => {
     queueSelectResults([TEST_DEPLOY], [TEST_APP]);
@@ -195,5 +218,49 @@ describe("sweepStuckQueuedDeployments", () => {
     expect(removeFromQueue).toHaveBeenCalledTimes(2);
     expect(removeFromQueue).toHaveBeenCalledWith(TEST_DEPLOY.id);
     expect(removeFromQueue).toHaveBeenCalledWith(deploy2.id);
+  });
+});
+
+describe("sweepStuckQueuedDeployments for a deploy whose process died", () => {
+  beforeEach(resetMocks);
+
+  it("cancels it and appends the reason to its log", async () => {
+    queueSelectResults([RECENT_DEPLOY], [TEST_APP]);
+
+    await sweepStuckQueuedDeployments();
+
+    expect(deployWorker).toHaveBeenCalledWith(RECENT_DEPLOY.id);
+    expect(updates[0]).toMatchObject({ status: "cancelled" });
+    expect(updates[0].log).toMatch(/^\[queue\] Waiting for the deploy already running for this app\n.*\[CANCELLED\] .*never started/);
+    expect(removeFromQueue).toHaveBeenCalledWith(RECENT_DEPLOY.id);
+  });
+
+  it("leaves a deploy waiting behind another deploy of its app", async () => {
+    queueSelectResults([RECENT_DEPLOY], [TEST_APP]);
+    vi.mocked(deployWorker).mockResolvedValue("live");
+
+    await sweepStuckQueuedDeployments();
+
+    expect(dbMock.update).not.toHaveBeenCalled();
+    expect(removeFromQueue).not.toHaveBeenCalled();
+  });
+
+  it("leaves it when Redis can't say whether its worker lives", async () => {
+    queueSelectResults([RECENT_DEPLOY], [TEST_APP]);
+    vi.mocked(deployWorker).mockResolvedValue("unknown");
+
+    await sweepStuckQueuedDeployments();
+
+    expect(dbMock.update).not.toHaveBeenCalled();
+  });
+
+  it("cancels a deploy past the queue timeout without asking for its worker", async () => {
+    queueSelectResults([TEST_DEPLOY], [TEST_APP]);
+    vi.mocked(deployWorker).mockResolvedValue("live");
+
+    await sweepStuckQueuedDeployments();
+
+    expect(deployWorker).not.toHaveBeenCalled();
+    expect(updates[0]).toMatchObject({ status: "cancelled" });
   });
 });

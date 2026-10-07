@@ -37,6 +37,7 @@ export async function deployScope(appId: string, environmentId?: string | null):
 const ACTIVE_KEY = (appId: string) => `deploy:active:${appId}`;
 const CANCEL_KEY = (appId: string) => `deploy:cancel:${appId}`;
 const KILL_KEY = (deploymentId: string) => `deploy:kill:${deploymentId}`;
+const WORKER_KEY = (deploymentId: string) => `deploy:worker:${deploymentId}`;
 
 /** Lease on the active-deploy entry, renewed while the owner runs. A dead process (e.g. a self-deploy) releases it within the lease. */
 export const ACTIVE_TTL_MS = 30 * 1000;
@@ -297,10 +298,34 @@ export async function deployRegistration(
   }
 }
 
+async function renewWorkerLease(deploymentId: string): Promise<void> {
+  try {
+    await redis.set(WORKER_KEY(deploymentId), "1", "PX", ACTIVE_TTL_MS);
+  } catch {
+    // Non-fatal: the sweeper reads a missing Redis as unknown.
+  }
+}
+
+async function clearWorkerLease(deploymentId: string): Promise<void> {
+  try {
+    await redis.del(WORKER_KEY(deploymentId));
+  } catch {
+    // Expires on its own.
+  }
+}
+
+/** Whether a live process still owns this deployment. "unknown" is not dead. */
+export async function deployWorker(deploymentId: string): Promise<"live" | "gone" | "unknown"> {
+  try {
+    return (await redis.get(WORKER_KEY(deploymentId))) !== null ? "live" : "gone";
+  } catch {
+    return "unknown";
+  }
+}
+
 /** Entry point for all deploys: create the record, cancel or wait for any in-progress deploy of the app (across processes), then run. */
 export async function requestDeploy(opts: DeployOpts): Promise<DeployResult> {
   const newDeploymentId = opts.deploymentId ?? await createDeployment(opts);
-  const scope = await deployScope(opts.appId, opts.environmentId);
 
   // A self-deploy is about to stop this process. Checked before the registry, which would supersede a deploy it must wait for.
   if (draining) {
@@ -313,6 +338,24 @@ export async function requestDeploy(opts: DeployOpts): Promise<DeployResult> {
       .catch((dbErr) => log.warn("Failed to record refused deployment:", dbErr));
     throw new DeployBlockedError(message);
   }
+
+  // Leased for the whole request, so the sweeper can tell a waiting deploy from one whose process died.
+  await renewWorkerLease(newDeploymentId);
+  const workerRenew = setInterval(() => {
+    renewWorkerLease(newDeploymentId).catch(() => {});
+  }, ACTIVE_HEARTBEAT_MS);
+  workerRenew.unref?.();
+
+  try {
+    return await runRequestedDeploy(newDeploymentId, opts);
+  } finally {
+    clearInterval(workerRenew);
+    await clearWorkerLease(newDeploymentId);
+  }
+}
+
+async function runRequestedDeploy(newDeploymentId: string, opts: DeployOpts): Promise<DeployResult> {
+  const scope = await deployScope(opts.appId, opts.environmentId);
 
   // 1. Same-process deploy.
   const localExisting = localRegistry.get(scope);

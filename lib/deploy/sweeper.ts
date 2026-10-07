@@ -10,7 +10,7 @@ import { logger } from "@/lib/logger";
 import { eq, and, lt, gt, desc, inArray } from "drizzle-orm";
 import { reconcileActiveCounter, reconcileQueue, removeFromQueue } from "@/lib/docker/deploy-concurrency";
 import { stopProject } from "@/lib/docker/deploy";
-import { deployScope, publishKillSignal } from "@/lib/docker/deploy-cancel";
+import { deployScope, deployWorker, publishKillSignal } from "@/lib/docker/deploy-cancel";
 import { appEnvDir } from "@/lib/paths";
 import { detectActiveSlot, type Slot as SlotName } from "@/lib/docker/slots";
 import {
@@ -306,24 +306,38 @@ export async function sweepStuckDeployments(): Promise<void> {
 
 }
 
-/** Cancel deployments stuck in "queued" past twice the timeout, orphaned by a crashed process. */
+/** A queued deploy with no live worker for this long was orphaned by a stopped process. */
+const ORPHAN_QUEUED_MS = 2 * 60_000;
+
+/** Cancel queued deployments whose process died, or that sat in the queue past twice the timeout. */
 export async function sweepStuckQueuedDeployments(): Promise<void> {
   const queueTimeoutMinutes = TIMEOUT_MINUTES * 2;
-  const cutoff = new Date(Date.now() - queueTimeoutMinutes * 60_000);
+  const now = Date.now();
+  const timeoutCutoff = now - queueTimeoutMinutes * 60_000;
 
-  const stuck = await db
+  const candidates = await db
     .select({
       id: deployments.id,
       appId: deployments.appId,
       startedAt: deployments.startedAt,
+      log: deployments.log,
     })
     .from(deployments)
     .where(
       and(
         eq(deployments.status, "queued"),
-        lt(deployments.startedAt, cutoff),
+        lt(deployments.startedAt, new Date(now - ORPHAN_QUEUED_MS)),
       ),
     );
+
+  const stuck: (typeof candidates[number] & { reason: string })[] = [];
+  for (const deploy of candidates) {
+    if (new Date(deploy.startedAt).getTime() < timeoutCutoff) {
+      stuck.push({ ...deploy, reason: `was stuck in the queue for ${queueTimeoutMinutes} minutes` });
+    } else if ((await deployWorker(deploy.id)) === "gone") {
+      stuck.push({ ...deploy, reason: "never started — the process that queued it stopped" });
+    }
+  }
 
   if (stuck.length === 0) return;
 
@@ -349,13 +363,14 @@ export async function sweepStuckQueuedDeployments(): Promise<void> {
     try {
       const now = new Date();
       const durationMs = now.getTime() - new Date(deploy.startedAt).getTime();
-      const timeoutLine = `[${now.toISOString()}] [TIMEOUT] Deployment was stuck in queue for ${queueTimeoutMinutes} minutes and was cancelled`;
+      const message = `Deployment ${deploy.reason} and was cancelled`;
+      const line = `[${now.toISOString()}] [CANCELLED] ${message}`;
 
       await db
         .update(deployments)
         .set({
           status: "cancelled",
-          log: timeoutLine,
+          log: deploy.log ? `${deploy.log}\n${line}` : line,
           finishedAt: now,
           durationMs,
         })
@@ -365,44 +380,39 @@ export async function sweepStuckQueuedDeployments(): Promise<void> {
 
       await removeFromQueue(deploy.id).catch(() => {});
 
-      {
-        const app = appMap.get(deploy.appId);
-        if (app) {
-          addEvent(app.organizationId, {
-            type: "deploy.status",
-            title: "Queued deploy cancelled",
-            message: `Deployment was stuck in queue for ${queueTimeoutMinutes} minutes and was cancelled`,
-            appId: deploy.appId,
-            deploymentId: deploy.id,
-            status: "cancelled",
-            success: false,
-            durationMs,
-          }).catch(() => {});
-        }
+      const app = appMap.get(deploy.appId);
+      if (app) {
+        addEvent(app.organizationId, {
+          type: "deploy.status",
+          title: "Queued deploy cancelled",
+          message,
+          appId: deploy.appId,
+          deploymentId: deploy.id,
+          status: "cancelled",
+          success: false,
+          durationMs,
+        }).catch(() => {});
       }
 
       try {
         const { emit } = await import("@/lib/notifications/dispatch");
-        const app = appMap.get(deploy.appId);
         if (app) {
           const projectName = app.displayName || app.name;
           emit(app.organizationId, {
             type: "deploy.failed",
             title: `Deploy cancelled: ${projectName}`,
-            message: `Deployment was stuck in the queue for ${queueTimeoutMinutes} minutes and was cancelled.`,
+            message: `${message}.`,
             projectName,
             appId: deploy.appId,
             deploymentId: deploy.id,
-            errorMessage: `Deployment stuck in queue for ${queueTimeoutMinutes} minutes`,
+            errorMessage: message,
           });
         }
       } catch {
         // notification failure is non-fatal
       }
 
-      log.info(
-        `Cancelled queued deployment ${deploy.id} (app ${deploy.appId}) — stuck in queue for ${queueTimeoutMinutes}m`,
-      );
+      log.info(`Cancelled queued deployment ${deploy.id} (app ${deploy.appId}) — ${deploy.reason}`);
     } catch (err) {
       log.error(`Failed to sweep queued deployment ${deploy.id}:`, err);
     }
