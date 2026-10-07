@@ -1,5 +1,8 @@
 import pkg from "@/package.json";
 import type { VersionData } from "@/lib/types/version";
+import { logger } from "@/lib/logger";
+
+const log = logger.child("version");
 
 const GITHUB_REPO = "joeyyax/vardo";
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
@@ -77,4 +80,83 @@ export async function getVersionData(): Promise<VersionData> {
 
   cache = { data, fetchedAt: now };
   return data;
+}
+
+// ---------------------------------------------------------------------------
+// Commit update check — installs track main, so a new commit is a new release
+// ---------------------------------------------------------------------------
+
+const UPDATE_BRANCH = "main";
+// Unauthenticated GitHub API allows 60 requests an hour per IP.
+const COMMIT_CHECK_TTL_MS = 6 * 60 * 60 * 1000;
+const SHA_RE = /^[0-9a-f]{7,40}$/i;
+
+export type CommitUpdate = {
+  localSha: string;
+  remoteSha: string;
+  hasUpdate: boolean;
+};
+
+let commitCache: { result: CommitUpdate | null; checkedAt: number } | null = null;
+
+/** Commit the image was built from, inlined by next.config.ts from the GIT_SHA build arg. */
+export function getBuildSha(): string {
+  return process.env.NEXT_PUBLIC_GIT_SHA ?? "";
+}
+
+/**
+ * Compare the build commit to the head of main on GitHub. Returns null when
+ * the build commit is unknown or GitHub can't be reached.
+ */
+export async function getCommitUpdate(): Promise<CommitUpdate | null> {
+  const localSha = getBuildSha().trim();
+  if (!SHA_RE.test(localSha)) {
+    log.debug("Update check skipped: no build commit");
+    return null;
+  }
+
+  const now = Date.now();
+  if (commitCache && now - commitCache.checkedAt < COMMIT_CHECK_TTL_MS) {
+    return commitCache.result;
+  }
+  // Failures wait out the TTL too.
+  commitCache = { result: null, checkedAt: now };
+
+  try {
+    const res = await fetch(
+      `https://api.github.com/repos/${GITHUB_REPO}/commits/${UPDATE_BRANCH}`,
+      {
+        headers: {
+          Accept: "application/vnd.github.sha",
+          "User-Agent": "vardo-update-check",
+        },
+        signal: AbortSignal.timeout(5000),
+      }
+    );
+    if (!res.ok) {
+      log.debug(`Update check failed: GitHub returned ${res.status}`);
+      return null;
+    }
+
+    const remoteSha = (await res.text()).trim();
+    if (!SHA_RE.test(remoteSha)) {
+      log.debug("Update check failed: unexpected GitHub response");
+      return null;
+    }
+
+    const result: CommitUpdate = {
+      localSha,
+      remoteSha,
+      hasUpdate: !remoteSha.toLowerCase().startsWith(localSha.toLowerCase()),
+    };
+    commitCache = { result, checkedAt: now };
+    return result;
+  } catch (err) {
+    log.debug("Update check failed:", err);
+    return null;
+  }
+}
+
+export function resetCommitUpdateCache(): void {
+  commitCache = null;
 }

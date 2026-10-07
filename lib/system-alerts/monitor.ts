@@ -5,7 +5,7 @@ import { shouldFire, markFired, clearFired, loadAlertState } from "./state";
 import { db } from "@/lib/db";
 import { domainCertChecks, systemSettings } from "@/lib/db/schema";
 import { sql } from "drizzle-orm";
-import { execFileAsync } from "@/lib/utils/exec";
+import { getCommitUpdate } from "@/lib/version";
 import pLimit from "p-limit";
 import { logger } from "@/lib/logger";
 import { closeOnShutdown } from "@/lib/shutdown";
@@ -328,35 +328,28 @@ async function checkCertAlerts(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Update available — check git remote
+// Update available — compare the build commit to main on GitHub
 // ---------------------------------------------------------------------------
 
 export async function checkUpdateAlert(): Promise<void> {
   try {
-    // Outside a checkout, ls-remote orphans a shell that PID 1 has to reap.
-    const localResult = await execFileAsync("git", ["rev-parse", "HEAD"], { timeout: 5_000 });
-    const remoteResult = await execFileAsync("git", ["ls-remote", "origin", "HEAD"], {
-      timeout: 10_000,
-    });
-
-    const remoteHead = remoteResult.stdout.split("\t")[0].trim();
-    const localHead = localResult.stdout.trim();
-
-    if (!remoteHead || !localHead) return;
-    if (remoteHead === localHead) return;
+    const update = await getCommitUpdate();
+    if (!update?.hasUpdate) return;
 
     if (!shouldFire("update-available", "main")) return;
     markFired("update-available", "main");
 
+    const remoteHead = update.remoteSha.slice(0, 8);
+    const localHead = update.localSha.slice(0, 8);
     await emitAll({
       type: "system.update-available",
       title: "Vardo update available",
-      message: `A new version of Vardo is available. Remote: ${remoteHead.slice(0, 8)} — Local: ${localHead.slice(0, 8)}. Pull and redeploy when ready.`,
-      remoteHead: remoteHead.slice(0, 8),
-      localHead: localHead.slice(0, 8),
+      message: `A new version of Vardo is available. Remote: ${remoteHead} — Local: ${localHead}. Run vardo update when ready.`,
+      remoteHead,
+      localHead,
     });
-  } catch {
-    // git not available or no remote — best-effort
+  } catch (err) {
+    log.debug("Update check error:", err);
   }
 }
 
@@ -396,7 +389,7 @@ export function startSystemAlertMonitor(): void {
 
   // Load persisted alert state from DB before the first tick so rate-limit
   // windows survive process restarts. Defer the initial tick by 10s to let
-  // the process stabilize before firing network calls (git ls-remote, etc.).
+  // the process stabilize before firing network calls.
   loadAlertState()
     .then(() => {
       setTimeout(() => {
