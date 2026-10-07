@@ -1,9 +1,4 @@
-// ---------------------------------------------------------------------------
-// Usage and limit for the five resources, for one app or one project.
-//
-// Pure: everything it needs is passed in, so the aggregation and the
-// absent-versus-zero rules are testable without a Redis or a database.
-// ---------------------------------------------------------------------------
+// Usage and limit for the five resources, for one app or one project. Pure.
 
 import type { SeriesByMetric } from "./resource-samples";
 import {
@@ -67,13 +62,7 @@ export type SnapshotInput = {
 
 const MB = 1024 * 1024;
 
-/**
- * Combine per-app caps into one ceiling.
- *
- * `enforced` needs every app in scope capped — a project where one app runs
- * uncapped has no total limit, only a floor, and saying otherwise is how a
- * "90% of limit" bar appears for a subject that can use the whole host.
- */
+/** Combines per-app caps into one ceiling. `enforced` only when every app in scope is capped. */
 function combineLimits(
   values: (number | null)[],
   capacity: number | null,
@@ -122,8 +111,7 @@ export function buildSnapshot(input: SnapshotInput): ResourceSnapshot {
   // A block-write counter flat at zero for the whole window was never counting.
   const diskWriteCollected = !allZero(series.get("diskWrite"), scope);
 
-  // ---- CPU -----------------------------------------------------------------
-  // 100 means one core saturated, so a core count converts to the same scale.
+  // CPU: 100 is one saturated core.
   const cpuCapacity = host.cpuCores !== null ? host.cpuCores * 100 : null;
   const cpuLimits = combineLimits(
     limits.map((l) => (l.cpuLimit !== null ? l.cpuLimit * 100 : null)),
@@ -138,9 +126,7 @@ export function buildSnapshot(input: SnapshotInput): ResourceSnapshot {
     series: cpu.series,
   });
 
-  // ---- Memory --------------------------------------------------------------
-  // The limit the kernel actually enforces, read back off the containers,
-  // beats the number the app record asks for — those disagree until a redeploy.
+  // Memory: the limit read off the containers beats the app record until a redeploy.
   const observed = limitCoverage(series.get("memoryLimit"), scope, now);
   const declared = combineLimits(
     limits.map((l) => (l.memoryLimitMb !== null ? l.memoryLimitMb * MB : null)),
@@ -166,9 +152,7 @@ export function buildSnapshot(input: SnapshotInput): ResourceSnapshot {
     series: memory.series,
   });
 
-  // ---- Disk ----------------------------------------------------------------
-  // Per-container filesystem accounting is off in cAdvisor, so the only figure
-  // is the one /system/df attributes by label — which names the top-level app.
+  // Disk: only /system/df has a figure, attributed to the top-level app.
   const diskLimits = combineLimits(
     limits.map((l) => l.diskLimitBytes),
     null,
@@ -184,8 +168,7 @@ export function buildSnapshot(input: SnapshotInput): ResourceSnapshot {
       })
     : notCollected("disk", "bytes", "unsupported");
 
-  // ---- Network -------------------------------------------------------------
-  // No mechanism anywhere in Vardo caps container throughput.
+  // Network: nothing caps container throughput.
   const networkUsage = rx.value === null && tx.value === null ? null : (rx.value ?? 0) + (tx.value ?? 0);
   const networkReading = reading({
     kind: "network",
@@ -199,9 +182,7 @@ export function buildSnapshot(input: SnapshotInput): ResourceSnapshot {
     ),
   });
 
-  // ---- GPU -----------------------------------------------------------------
-  // Utilization is a share of the devices the containers touch, and no Docker
-  // setting caps it — the ceiling is the hardware.
+  // GPU: no Docker setting caps utilization; the ceiling is the hardware.
   const gpuAbsence: Absence =
     seriesInScope(series.get("gpuUtilization"), scope).length > 0
       ? "stale"

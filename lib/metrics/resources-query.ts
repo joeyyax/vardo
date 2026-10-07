@@ -1,10 +1,4 @@
-// ---------------------------------------------------------------------------
-// Fetching resource snapshots for an organization.
-//
-// One pass serves every app and every project on a page: the time series are
-// read once, the scoping is done in memory, and the same builder produces both
-// levels so an app row and its project card can never disagree.
-// ---------------------------------------------------------------------------
+// Resource snapshots for an organization. Apps and projects share one builder so they can't disagree.
 
 import { db } from "@/lib/db";
 import { apps, projects, volumeLimits } from "@/lib/db/schema";
@@ -18,7 +12,7 @@ import type { ResourceSnapshot } from "./resource-types";
 
 const log = logger.child("resources");
 
-/** Sparkline window and resolution. 24 buckets is what a row-sized chart shows. */
+/** Sparkline window and resolution. */
 export const DEFAULT_WINDOW_MS = 60 * 60 * 1000;
 export const DEFAULT_BUCKETS = 24;
 
@@ -28,7 +22,7 @@ export type OrgResources = {
   /** Snapshot per project id, built from top-level apps only. */
   projects: Record<string, ResourceSnapshot>;
   host: HostCapacity;
-  /** False when no metrics provider is configured — every reading is absent. */
+  /** False when no metrics provider is configured. */
   collecting: boolean;
 };
 
@@ -44,7 +38,7 @@ type AppRow = {
   parentApp: { name: string } | null;
 };
 
-/** Docker's view of the host, best-effort — a missing answer becomes "unknown". */
+/** Docker's view of the host. A missing answer becomes "unknown". */
 async function readHostCapacity(): Promise<HostCapacity> {
   try {
     const { getSystemInfo } = await import("@/lib/docker/client");
@@ -80,10 +74,7 @@ function scopedApp(app: AppRow): ScopedApp {
 
 /**
  * Usage and limits for every app and project in an organization.
- *
- * A project's readings come from its top-level apps' scopes. Compose children
- * store under their parent's `project` label, so they are already inside that
- * total — adding their own scope would count every stack service twice.
+ * Project totals use top-level apps only; compose children are already inside the parent's scope.
  */
 export async function getOrgResources(
   orgId: string,
@@ -135,8 +126,7 @@ export async function getOrgResources(
       series,
       limits: [limitsOf(app, diskLimitByApp.get(app.id) ?? null)],
       host,
-      // /system/df attributes disk by the vardo.project label, which names the
-      // top-level app — a stack child has no figure of its own to report.
+      // Disk is attributed to the top-level app.
       diskSupported: !app.parentAppId,
       now,
     });
@@ -160,7 +150,7 @@ export async function getOrgResources(
   return { apps: appSnapshots, projects: projectSnapshots, host, collecting };
 }
 
-/** One app's snapshot. Prefer getOrgResources when a page needs more than one. */
+/** One app's snapshot. Prefer getOrgResources for more than one. */
 export async function getAppResources(
   orgId: string,
   appId: string,

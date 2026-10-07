@@ -5,10 +5,7 @@ import type { MetricsPoint } from "./types";
 
 export type TimeSeriesPoint = [number, number]; // [timestamp, value]
 
-/**
- * Generic helper: ensure + write a set of named time-series values for a container.
- * Shared by storeMetrics, storeGpuMetrics, and any future per-container series.
- */
+/** Ensures and writes a set of named time-series values for a container. */
 async function storeContainerSeries(
   projectName: string,
   containerId: string,
@@ -42,9 +39,7 @@ async function storeContainerSeries(
   );
 }
 
-/**
- * Store a metrics snapshot for a project's container.
- */
+/** Stores a metrics snapshot for a project's container. */
 export async function storeMetrics(
   projectName: string,
   containerId: string,
@@ -69,9 +64,7 @@ export async function storeMetrics(
   }, organizationId, composeService);
 }
 
-/**
- * Store cumulative disk write bytes for a container.
- */
+/** Stores cumulative disk write bytes for a container. */
 export async function storeDiskWrite(
   projectName: string,
   containerId: string,
@@ -95,10 +88,7 @@ export async function storeDiskWrite(
   await touchRetention(key);
 }
 
-/**
- * Store GPU metrics for a container (utilization, memory, temperature).
- * Only called when the container has accelerators reported by cAdvisor.
- */
+/** Stores GPU metrics for a container with accelerators. */
 export async function storeGpuMetrics(
   projectName: string,
   containerId: string,
@@ -123,10 +113,7 @@ export async function storeGpuMetrics(
 
 const GPU_METRIC_NAMES = ["gpuUtilization", "gpuMemoryUsed", "gpuMemoryTotal", "gpuTemperature"] as const;
 
-/**
- * Delete GPU series whose last sample is older than retention.
- * Returns the number of containers pruned.
- */
+/** Deletes GPU series older than retention. Returns the number of containers pruned. */
 export async function pruneStaleGpuSeries(): Promise<number> {
   const now = Date.now();
   let pruned = 0;
@@ -139,8 +126,7 @@ export async function pruneStaleGpuSeries(): Promise<number> {
     cursor = next;
 
     for (const key of keys) {
-      // metrics:{project}:{metric}:{container}. Split from the end --
-      // container is never ':'-delimited, project may be.
+      // metrics:{project}:{metric}:{container}. Split from the end; project may contain ':'.
       const parts = key.split(":");
       const containerId = parts[parts.length - 1];
       const projectName = parts.slice(1, parts.length - 2).join(":");
@@ -159,7 +145,7 @@ export async function pruneStaleGpuSeries(): Promise<number> {
         );
         pruned++;
       } catch {
-        // Best-effort -- leave the key for the next sweep.
+        // Best-effort; the next sweep retries.
       }
     }
   } while (cursor !== "0");
@@ -167,10 +153,7 @@ export async function pruneStaleGpuSeries(): Promise<number> {
   return pruned;
 }
 
-/**
- * Query disk write bytes for a specific container over a time range.
- * Returns raw [timestamp, value] pairs (cumulative counters).
- */
+/** Cumulative disk write bytes for a container over a time range. */
 export async function queryDiskWriteRange(
   projectName: string,
   containerId: string,
@@ -188,17 +171,10 @@ export async function queryDiskWriteRange(
   }
 }
 
-// ---------------------------------------------------------------------------
-// Query functions
-// ---------------------------------------------------------------------------
-
 type MetricName = "cpu" | "memory" | "memoryLimit" | "networkRx" | "networkTx" | "disk" | "diskWrite" | "gpuUtilization" | "gpuMemoryUsed" | "gpuMemoryTotal" | "gpuTemperature";
 type Aggregation = { type: "avg" | "max" | "min" | "sum"; bucketMs: number };
 
-/**
- * Query historical metrics for a project.
- * `composeService` narrows a decomposed stack to one service's containers.
- */
+/** Historical metrics for a project. `composeService` narrows a stack to one service. */
 export async function queryMetrics(
   projectName: string,
   metric: MetricName,
@@ -212,10 +188,7 @@ export async function queryMetrics(
   return mrangeQuery(metric, fromMs, toMs, aggregation, filters);
 }
 
-/**
- * Query historical metrics for an organization (all projects in the org).
- * Requires containers to have the `vardo.organization` label.
- */
+/** Historical metrics for an organization. Requires the `vardo.organization` label. */
 export async function queryByOrg(
   orgId: string,
   metric: MetricName,
@@ -226,9 +199,7 @@ export async function queryByOrg(
   return mrangeQuery(metric, fromMs, toMs, aggregation, [`organization=${orgId}`]);
 }
 
-/**
- * Query historical metrics across all projects (system-wide).
- */
+/** Historical metrics across all projects. */
 export async function queryAll(
   metric: MetricName,
   fromMs: number,
@@ -238,9 +209,7 @@ export async function queryAll(
   return mrangeQuery(metric, fromMs, toMs, aggregation, []);
 }
 
-/**
- * Internal: run TS.MRANGE with filters and aggregate across series.
- */
+/** Runs TS.MRANGE with filters and aggregates across series. */
 function mrangeQuery(
   metric: MetricName,
   fromMs: number,
@@ -275,7 +244,7 @@ async function mrangeQueryImpl(
 
   if (!result || result.length === 0) return [];
 
-  // Aggregate across series: max for limits, avg for GPU util/temp, sum otherwise
+  // Max for limits, avg for GPU util/temp, sum otherwise.
   const pointMap = new Map<number, number>();
   const useMax = metric === "memoryLimit" || metric === "disk";
   const useAvg = metric === "gpuUtilization" || metric === "gpuTemperature";
@@ -300,14 +269,7 @@ async function mrangeQueryImpl(
     .map(([t, v]) => [t, countMap ? v / Math.max(1, countMap.get(t) ?? 1) : v] as TimeSeriesPoint);
 }
 
-// ---------------------------------------------------------------------------
-// Unified MetricsPoint[] query helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Query historical metrics for a project, returns unified MetricsPoint[].
- * `composeService` narrows a decomposed stack to one service's containers.
- */
+/** Historical metrics for a project as MetricsPoint[]. `composeService` narrows a stack to one service. */
 export async function queryMetricsPoints(
   projectName: string,
   fromMs: number,
@@ -337,7 +299,7 @@ export async function queryMetricsPoints(
   return seriesToPoints({ cpu, memory, memoryLimit, networkRx, networkTx, disk, gpuUtilization, gpuMemoryUsed, gpuMemoryTotal, gpuTemperature });
 }
 
-/** Query historical metrics for an org, returns unified MetricsPoint[] */
+/** Historical metrics for an org as MetricsPoint[]. */
 export async function queryByOrgPoints(
   orgId: string,
   fromMs: number,
@@ -366,7 +328,7 @@ export async function queryByOrgPoints(
   return seriesToPoints({ cpu, memory, memoryLimit, networkRx, networkTx, disk, gpuUtilization, gpuMemoryUsed, gpuMemoryTotal, gpuTemperature });
 }
 
-/** Query historical metrics system-wide, returns unified MetricsPoint[] */
+/** Historical metrics system-wide as MetricsPoint[]. */
 export async function queryAllPoints(
   fromMs: number,
   toMs: number,

@@ -1,9 +1,4 @@
-// ---------------------------------------------------------------------------
-// Reading the time-series store once for a whole page.
-//
-// Scoping happens in memory, not in the query: every app and project on a page
-// draws from the same handful of TS.MRANGE calls rather than one per card.
-// ---------------------------------------------------------------------------
+// Reads the time-series store once per page; scoping happens in memory.
 
 import { tsRedis } from "./ts-client";
 
@@ -27,22 +22,18 @@ export type ResourceMetricName = (typeof RESOURCE_METRICS)[number];
 /** One container's samples for one metric, with the labels that place it. */
 export type LabeledSeries = {
   key: string;
-  /** `project` label — the top-level app's name, not the Vardo project. */
+  /** `project` label: the top-level app's name, not the Vardo project. */
   project: string;
   /** `service` label, present on decomposed stack children. */
   service: string | null;
-  /** Short container id, empty on series stored per project rather than per container. */
+  /** Short container id, empty on per-project series. */
   container: string;
   points: [number, number][];
 };
 
 export type SeriesByMetric = Map<ResourceMetricName, LabeledSeries[]>;
 
-/**
- * How each metric collapses inside a bucket. Gauges and cumulative counters
- * take the bucket's last sample; averaging a counter reports a value that was
- * never true of any instant.
- */
+/** Per-bucket aggregation. Counters take the last sample; averaging one is never true of any instant. */
 const AGGREGATOR: Record<ResourceMetricName, string> = {
   cpu: "avg",
   memory: "last",
@@ -100,13 +91,7 @@ function parseSeries(result: unknown): LabeledSeries[] {
   return out;
 }
 
-/**
- * Every series carrying samples in the window, for each named metric.
- *
- * Series belonging to containers that stopped before `fromMs` come back empty
- * and are dropped, so a project's stale history — thousands of keys after a few
- * weeks of redeploys — never reaches the aggregation.
- */
+/** Every series with samples in the window, per metric. Empty series are dropped. */
 export async function readSeries(
   metrics: readonly ResourceMetricName[],
   fromMs: number,

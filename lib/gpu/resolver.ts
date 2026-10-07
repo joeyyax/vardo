@@ -7,19 +7,10 @@ const log = logger.child("gpu-resolver");
 
 const CONTAINER_LIST_TTL_MS = 10_000;
 
-/**
- * Host proc path — the Vardo container mounts host /proc at /host-proc
- * for PID-to-container resolution without Docker API calls.
- */
+/** Host /proc, mounted into the Vardo container. */
 const HOST_PROC = "/host-proc";
 
-/**
- * Docker container resolver — maps PIDs to containers by reading
- * /host-proc/{pid}/cgroup (host /proc mounted read-only), then maps
- * container IDs to Vardo apps via Docker labels.
- *
- * Zero Docker API calls for PID resolution — just filesystem reads.
- */
+/** Maps PIDs to containers via /host-proc/{pid}/cgroup, then containers to apps via Docker labels. */
 export class DockerContainerResolver implements ContainerResolver {
   private containerListCache: { containers: ContainerInfo[]; cachedAt: number } | null = null;
 
@@ -28,7 +19,7 @@ export class DockerContainerResolver implements ContainerResolver {
       const content = await readFile(`${HOST_PROC}/${pid}/cgroup`, "utf-8");
       return parseCgroupContent(content);
     } catch {
-      // PID gone or /host-proc not mounted — expected
+      // PID gone or /host-proc not mounted.
       return null;
     }
   }
@@ -70,17 +61,9 @@ export class DockerContainerResolver implements ContainerResolver {
   }
 }
 
-// ---------------------------------------------------------------------------
-// cgroup parsing
-// ---------------------------------------------------------------------------
-
 /**
- * Parse /proc/{pid}/cgroup content to extract Docker container ID.
- *
- * cgroup v2: `0::/system.slice/docker-{64hex}.scope`
- * cgroup v1: `N:name:/docker/{64hex}`
- *
- * Returns 12-char short ID to match Docker API conventions.
+ * Short container ID from /proc/{pid}/cgroup content.
+ * v2: `0::/system.slice/docker-{64hex}.scope`, v1: `N:name:/docker/{64hex}`.
  */
 function parseCgroupContent(content: string): string | null {
   for (const line of content.split("\n")) {

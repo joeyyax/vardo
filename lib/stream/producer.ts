@@ -1,7 +1,3 @@
-// ---------------------------------------------------------------------------
-// Redis Streams producer — write events to streams
-// ---------------------------------------------------------------------------
-
 import { redis } from "@/lib/redis";
 import { eventStream, deployStream, toastStream, installStream } from "./keys";
 import type { ToastEvent } from "./types";
@@ -15,10 +11,7 @@ async function xadd(key: string, maxLen: number, ...fields: string[]): Promise<s
   return id;
 }
 
-/**
- * Add a typed org event to the event stream.
- * Returns the stream entry ID.
- */
+/** Adds an org event to the event stream. Returns the entry ID. */
 export async function addEvent(orgId: string, event: BusEvent): Promise<string> {
   const maxLen = await getStreamMaxLen();
   return xadd(eventStream(orgId), maxLen,
@@ -28,10 +21,7 @@ export async function addEvent(orgId: string, event: BusEvent): Promise<string> 
   );
 }
 
-/**
- * Add a deploy log line to a deploy's stream.
- * Returns the stream entry ID.
- */
+/** Adds a log line to a deploy's stream. Returns the entry ID. */
 export async function addDeployLog(
   deployId: string,
   entry: { line: string; stage: string; status: string },
@@ -45,10 +35,7 @@ export async function addDeployLog(
   );
 }
 
-/**
- * Add a toast event to a user's toast stream.
- * Returns the stream entry ID.
- */
+/** Adds a toast to a user's toast stream. Returns the entry ID. */
 export async function addToast(userId: string, toast: ToastEvent): Promise<string> {
   const maxLen = await getStreamMaxLen();
   const fields: string[] = [
@@ -68,11 +55,7 @@ export async function addToast(userId: string, toast: ToastEvent): Promise<strin
   return xadd(toastStream(userId), maxLen, ...fields);
 }
 
-/**
- * Add an install progress event to an install stream.
- * Used for one-off workflows like integration installs.
- * Returns the stream entry ID.
- */
+/** Adds a progress event to an install stream. Returns the entry ID. */
 export async function addInstallEvent(
   installId: string,
   event: Record<string, string>,

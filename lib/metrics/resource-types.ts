@@ -1,10 +1,4 @@
-// ---------------------------------------------------------------------------
-// One shape for "what is this using, and what is it allowed to use".
-//
-// A reading never carries a number it did not measure. `usage: null` with an
-// `absence` reason is how a metric nobody collects reports itself, so a caller
-// cannot render it as 0 B without noticing.
-// ---------------------------------------------------------------------------
+// Usage and limit readings. A reading never carries a number it didn't measure: `usage: null` comes with an `absence` reason.
 
 export type ResourceKind =
   | "cpu"
@@ -32,7 +26,7 @@ export type Absence =
 export type LimitKind =
   /** The kernel caps this subject at `limit`. */
   | "enforced"
-  /** Some containers in scope are capped, others run uncapped — `limit` is a floor. */
+  /** Some containers capped, others not; `limit` is a floor. */
   | "partial"
   /** A shared ceiling the subject competes for, not a cap on the subject. */
   | "capacity"
@@ -73,10 +67,7 @@ export type ReadingInput = {
   series?: SeriesPoint[];
 };
 
-/**
- * Build a reading. The only place percentage-of-limit is computed, and the only
- * place `usage`/`absence` are reconciled.
- */
+/** Builds a reading. The only place percent-of-limit is computed and `usage`/`absence` reconciled. */
 export function reading(input: ReadingInput): ResourceReading {
   const usage = input.usage ?? null;
   const absence = usage === null ? (input.absence ?? "not-collected") : null;

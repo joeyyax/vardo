@@ -1,11 +1,4 @@
-// ---------------------------------------------------------------------------
-// Which stored time series belong to one app.
-//
-// Every container in a decomposed stack carries the parent's vardo labels, so
-// its series are stored under the parent's project name. A child reads under
-// the parent and narrows by compose service — the same shape as
-// appContainerScope, one layer down.
-// ---------------------------------------------------------------------------
+// Which stored time series belong to one app. Stack children read under the parent's project, narrowed by service.
 
 /** An app row as far as time-series lookup is concerned. */
 export type SeriesOwnerApp = {

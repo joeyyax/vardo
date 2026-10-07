@@ -1,7 +1,7 @@
 import type { ContainerMetrics } from "./types";
 import type { MetricsPoint, ContainerPoint } from "./types";
 
-/** Aggregate container metrics into a single MetricsPoint */
+/** Aggregates container metrics into a single MetricsPoint. */
 export function aggregateContainers(
   containers: ContainerMetrics[],
   diskTotal = 0,
@@ -29,11 +29,7 @@ export function aggregateContainers(
   };
 }
 
-/**
- * One entry per container across several apps' breakdowns. A compose child's
- * containers are also reported under its parent, so a total summed from the
- * per-app lists counts them twice.
- */
+/** One entry per container across several apps' breakdowns. Compose children would otherwise count twice. */
 export function dedupeByContainer<T extends { containerId: string }>(
   groups: Iterable<T[]>,
 ): T[] {
@@ -44,7 +40,7 @@ export function dedupeByContainer<T extends { containerId: string }>(
   return [...byId.values()];
 }
 
-/** Convert a ContainerMetrics to the client-facing ContainerPoint shape */
+/** Converts ContainerMetrics to the client-facing ContainerPoint. */
 export function containerToPoint(m: ContainerMetrics): ContainerPoint {
   return {
     containerId: m.containerId,
@@ -63,10 +59,7 @@ export function containerToPoint(m: ContainerMetrics): ContainerPoint {
   };
 }
 
-/**
- * Convert parallel Redis TS series arrays into MetricsPoint[].
- * Each series is [[timestamp, value], ...] sorted by timestamp.
- */
+/** Converts parallel Redis TS series into MetricsPoint[]. */
 export function seriesToPoints(series: {
   cpu?: [number, number][];
   memory?: [number, number][];
@@ -79,7 +72,6 @@ export function seriesToPoints(series: {
   gpuMemoryTotal?: [number, number][];
   gpuTemperature?: [number, number][];
 }): MetricsPoint[] {
-  // Collect all unique timestamps
   const tsSet = new Set<number>();
   for (const arr of Object.values(series)) {
     if (arr) for (const [ts] of arr) tsSet.add(ts);
@@ -87,7 +79,6 @@ export function seriesToPoints(series: {
 
   const timestamps = Array.from(tsSet).sort((a, b) => a - b);
 
-  // Build lookup maps for each series
   const cpuMap = new Map(series.cpu || []);
   const memMap = new Map(series.memory || []);
   const memLimitMap = new Map(series.memoryLimit || []);
@@ -99,9 +90,7 @@ export function seriesToPoints(series: {
   const gpuMemTotalMap = new Map(series.gpuMemoryTotal || []);
   const gpuTempMap = new Map(series.gpuTemperature || []);
 
-  // Disk is sampled less often than CPU and memory, and it is a gauge: a bucket
-  // with no sample means unchanged, not empty. Reading it as 0 is what made the
-  // chart drop to the floor between samples.
+  // Disk is a gauge sampled less often; an empty bucket means unchanged, not zero.
   let lastDisk = 0;
 
   return timestamps.map((ts) => {

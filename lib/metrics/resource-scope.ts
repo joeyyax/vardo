@@ -1,12 +1,5 @@
-// ---------------------------------------------------------------------------
-// Which stored series belong to one app or one project, and how they combine.
-//
-// Pure over LabeledSeries so the double-counting rules can be tested without a
-// Redis. The rule that matters: every container in a decomposed stack stores
-// under the parent's `project` label, so a project total built from top-level
-// apps already contains the children. Adding child apps to that list counts
-// them twice.
-// ---------------------------------------------------------------------------
+// Which stored series belong to one app or project. Stack children store under the parent's
+// `project` label, so adding them to a project total counts them twice.
 
 import { composeProjectApp } from "@/lib/docker/slot-partition";
 import type { LabeledSeries } from "./resource-samples";
@@ -33,10 +26,7 @@ export type ResourceScope = {
   knownAppNames?: ReadonlySet<string>;
 };
 
-/**
- * Series scope for one app. A stack child reads under its parent's name and
- * narrows by compose service; everything else reads under its own name.
- */
+/** Series scope for one app. A stack child reads under its parent and narrows by service. */
 export function appResourceScope(
   app: ScopedApp,
   knownAppNames?: ReadonlySet<string>,
@@ -51,11 +41,7 @@ export function appResourceScope(
   };
 }
 
-/**
- * Series scope for a Vardo project. Takes top-level apps only — a child's
- * containers are already inside its parent's `project` label, so including
- * children here is the double count a project total must not have.
- */
+/** Series scope for a project. Top-level apps only; children would be counted twice. */
 export function projectResourceScope(
   projectApps: ScopedApp[],
   knownAppNames?: ReadonlySet<string>,
@@ -65,12 +51,8 @@ export function projectResourceScope(
 }
 
 /**
- * Whether a series belongs to the scope.
- *
- * A shared service keeps its compose project name (`adguard-production-blue`)
- * instead of the app's, so the slot suffix is folded off before comparing. The
- * fold is skipped when the raw name is itself a known app, which is what stops
- * one app's series being read as another's.
+ * Whether a series belongs to the scope. Folds the slot suffix off the project name
+ * unless the raw name is itself a known app.
  */
 export function inScope(series: LabeledSeries, scope: ResourceScope): boolean {
   if (scope.service !== null && series.service !== scope.service) return false;
@@ -79,7 +61,7 @@ export function inScope(series: LabeledSeries, scope: ResourceScope): boolean {
   return scope.appNames.includes(composeProjectApp(series.project));
 }
 
-/** Series in scope, one per container — a container can only be counted once. */
+/** Series in scope, one per container. */
 export function seriesInScope(
   all: LabeledSeries[] | undefined,
   scope: ResourceScope,
@@ -88,8 +70,7 @@ export function seriesInScope(
   const byContainer = new Map<string, LabeledSeries>();
   for (const series of all) {
     if (!inScope(series, scope)) continue;
-    // Series stored per project rather than per container carry no container
-    // label; keying those on the series name keeps them from collapsing.
+    // Per-project series have no container label; key them on the series name.
     const key = series.container || series.key;
     const existing = byContainer.get(key);
     // Same container under two project labels: keep whichever reported last.
@@ -118,7 +99,7 @@ export type Aggregate = {
 
 const EMPTY: Aggregate = { value: null, at: null, containers: 0, series: [] };
 
-/** Combine every in-scope container's samples into one reading. */
+/** Combines every in-scope container's samples into one reading. */
 export function aggregate(
   all: LabeledSeries[] | undefined,
   scope: ResourceScope,
@@ -173,12 +154,8 @@ function round(value: number): number {
 }
 
 /**
- * Bytes per second across the scope, from the last two samples of each
- * container's cumulative counter.
- *
- * A counter that fell restarted, and the sample after a restart carries the
- * whole counter again — both are dropped rather than reported as a spike.
- * Null when no container yielded a usable pair.
+ * Bytes per second across the scope from each container's last two counter samples.
+ * Drops counter resets and the sample after. Null when no pair is usable.
  */
 export function counterRate(
   all: LabeledSeries[] | undefined,
@@ -235,24 +212,14 @@ export function counterRateSeries(
     .map(([ts, value]) => [ts, round(value)] as SeriesPoint);
 }
 
-/**
- * Whether every in-scope sample is zero.
- *
- * A cumulative counter pinned at zero for a whole window was not counting.
- * cAdvisor runs with `--disable_metrics=diskIO`, and the collector stored that
- * as a literal 0 until it was taught not to, so a week of zeros outlives the
- * fix and would otherwise render as "wrote nothing".
- */
+/** Whether every in-scope sample is zero, meaning the counter wasn't collecting. */
 export function allZero(all: LabeledSeries[] | undefined, scope: ResourceScope): boolean {
   const scoped = seriesInScope(all, scope);
   if (scoped.length === 0) return false;
   return scoped.every((s) => s.points.every(([, value]) => value === 0));
 }
 
-/**
- * How many in-scope containers report a non-zero memory limit, against how many
- * report at all. `enforced` needs every one of them capped.
- */
+/** In-scope containers reporting a non-zero memory limit vs. all reporting. */
 export function limitCoverage(
   all: LabeledSeries[] | undefined,
   scope: ResourceScope,

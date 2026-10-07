@@ -1,17 +1,11 @@
-/**
- * Scale and shape math for the diverging network throughput chart.
- *
- * Sent sits above the center line, received below it, on a symmetric axis so
- * zero is always the middle. Bars carry a signed value for plotting and the
- * true rate alongside it, since nothing below the line is a negative quantity.
- */
+/** Scale math for the diverging network chart: sent above the center line, received below. */
 
 import { formatBytes, formatBytesShort } from "./format";
 
 /** Container-relative direction labels. Egress is "Sent", ingress is "Received". */
 export const NETWORK_LABELS = { sent: "Sent", received: "Received" } as const;
 
-/** Smallest half-range the axis will take, so an idle series still has a scale. */
+/** Smallest half-range the axis takes. */
 export const MIN_NETWORK_DOMAIN = 256;
 
 export type NetworkRatePoint = {
@@ -30,7 +24,7 @@ export type NetworkBarPoint = {
   received: number | null;
 };
 
-/** Signed plot values for one sample, preserving null as null rather than zero. */
+/** Signed plot values for one sample, keeping null as null. */
 export function networkBarPoint(point: NetworkRatePoint): NetworkBarPoint {
   const sentRate = point.networkTxRate;
   const receivedRate = point.networkRxRate;
@@ -53,7 +47,7 @@ export function hasNetworkSamples(points: NetworkBarPoint[]): boolean {
 
 const CEILING_STEPS = [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10];
 
-/** Rounds up to a round figure that stays round when halved for the mid tick. */
+/** Rounds up to a figure that stays round when halved. */
 export function niceRateCeiling(value: number): number {
   if (!Number.isFinite(value) || value <= 0) return MIN_NETWORK_DOMAIN;
   const unit = 1024 ** Math.floor(Math.log(value) / Math.log(1024));
@@ -80,7 +74,7 @@ export function networkTicks(max: number): number[] {
   return [-max, -max / 2, 0, max / 2, max];
 }
 
-/** Axis tick. A downward bar is still a positive rate, so the sign is dropped. */
+/** Axis tick, sign dropped. */
 export function formatRateTick(value: number): string {
   if (value === 0) return "0";
   return `${formatBytesShort(Math.abs(value))}/s`;

@@ -6,14 +6,10 @@ import {
   storeOrgBusinessMetric,
 } from "./store-business";
 
-/**
- * Collect business metrics (entity counts) from the database and store them
- * in Redis TimeSeries. Includes both global counts and per-org breakdowns.
- */
+/** Stores global and per-org entity counts in Redis TimeSeries. */
 export async function collectBusinessMetrics() {
   const ts = Date.now();
 
-  // Global entity counts
   const counts = await db.execute(sql`
     SELECT 'users' AS name, COUNT(*)::text AS count FROM "user"
     UNION ALL SELECT 'organizations', COUNT(*)::text FROM "organization"
@@ -34,11 +30,10 @@ export async function collectBusinessMetrics() {
     )
   );
 
-  // Templates (file-based, not in DB)
+  // Templates are file-based.
   const templateList = await loadTemplates().catch(() => []);
   await storeBusinessMetric("templates", ts, templateList.length);
 
-  // Per-org business metrics — LEFT JOIN aggregations instead of correlated subqueries
   const orgCounts = await db.execute(sql`
     SELECT
       o.id AS org_id,

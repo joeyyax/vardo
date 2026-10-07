@@ -1,9 +1,4 @@
-/**
- * App counting for metrics surfaces. Every count on screen is one of these, and
- * the tile subtitle says which: `/projects` lists top-level apps for one org,
- * `/metrics` covers one org, `/admin` covers the whole instance — and compose
- * children are app records too, so a raw row count is always the largest number.
- */
+/** App counts for metrics surfaces. Compose children are app records too. */
 
 export type ScopeApp = {
   status: string;
@@ -53,7 +48,7 @@ export function countApps(apps: ScopeApp[]): ScopeCounts {
   };
 }
 
-/** "59 apps · 51 compose services" — the sentence that makes a total checkable. */
+/** "59 apps · 51 compose services". */
 export function describeScopeCounts(counts: ScopeCounts): string {
   const apps = `${counts.topLevel} app${counts.topLevel === 1 ? "" : "s"}`;
   if (counts.composeServices === 0) return apps;

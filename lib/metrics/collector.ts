@@ -20,10 +20,7 @@ type CollectorState = {
   projectDiskConsecutiveFailures: number;
 };
 
-/**
- * Lifecycle state lives on globalThis. Next.js bundles instrumentation and route
- * handlers separately, so a module-local flag lets each one start its own tick loop.
- */
+/** State lives on globalThis; Next.js bundles instrumentation and routes separately, which would start two loops. */
 const globalForCollector = globalThis as unknown as { __vardo_metrics_collector?: CollectorState };
 
 const state: CollectorState = (globalForCollector.__vardo_metrics_collector ??= {
@@ -36,25 +33,21 @@ const state: CollectorState = (globalForCollector.__vardo_metrics_collector ??= 
   projectDiskConsecutiveFailures: 0,
 });
 
-const DEGRADED_THRESHOLD = 3; // mark integration degraded after 3 consecutive failures
+const DEGRADED_THRESHOLD = 3;
 
-/** Once a disk-collection failure persists, only re-log it this often (in disk-check cycles). */
+/** Re-log a persistent disk failure every N disk-check cycles. */
 const DISK_ERROR_LOG_EVERY = 20;
 
-const FAST_INTERVAL_MS = 5000;   // First 20 ticks: every 5s
-const NORMAL_INTERVAL_MS = 30000; // After warmup: every 30s
+const FAST_INTERVAL_MS = 5000;
+const NORMAL_INTERVAL_MS = 30000;
 const WARMUP_TICKS = 20;
 
 /** Cap on the exponential backoff between failed collections. */
 const MAX_BACKOFF_MS = 15 * 60_000;
-/** Consecutive failures before the collector stops polling a provider that isn't there. */
+/** Consecutive failures before the collector stops polling. */
 const DISABLE_THRESHOLD = 20;
 
-/**
- * Poll interval for the next tick. Failures back off exponentially from the
- * normal interval so an unreachable provider is retried occasionally rather
- * than every 30s forever.
- */
+/** Interval for the next tick. Failures back off exponentially from the normal interval. */
 export function nextInterval(opts: { tickCount: number; consecutiveFailures: number }): number {
   if (opts.consecutiveFailures > 0) {
     const backoff = NORMAL_INTERVAL_MS * 2 ** (opts.consecutiveFailures - 1);
@@ -63,26 +56,19 @@ export function nextInterval(opts: { tickCount: number; consecutiveFailures: num
   return opts.tickCount < WARMUP_TICKS ? FAST_INTERVAL_MS : NORMAL_INTERVAL_MS;
 }
 
-/**
- * Whether a persistent sub-collection failure (disk usage, per-project disk)
- * should be logged this cycle: the first occurrence, then every `every` cycles
- * while it keeps failing, instead of on every single cycle.
- */
+/** Whether a persistent sub-collection failure logs this cycle: first, then every `every` cycles. */
 export function shouldLogPersistentFailure(consecutiveFailures: number, every = DISK_ERROR_LOG_EVERY): boolean {
   return consecutiveFailures === 1 || consecutiveFailures % every === 0;
 }
 
-/**
- * Start the metrics collector.
- * Starts fast (every 5s for the first 20 ticks) then settles to every 30s.
- */
 export function isCollectorRunning() {
   return state.started;
 }
 
+/** Starts the collector: every 5s for the first 20 ticks, then every 30s. */
 export async function startCollector() {
   if (state.started) return;
-  await initMetricsProvider(); // ensure provider is ready
+  await initMetricsProvider();
   if (!isMetricsEnabled()) {
     log.info("Metrics collection disabled — no provider configured");
     return;
@@ -95,7 +81,7 @@ export async function startCollector() {
   state.disabled = false;
   log.info("Starting metrics collection (fast warmup: 5s × 20, then 30s)");
 
-  // Initialize GPU collector (non-blocking — returns null on non-GPU hosts)
+  // Returns null on non-GPU hosts.
   initGpuCollector().catch((err) => {
     log.warn("GPU collector init failed:", (err as Error).message);
   });
@@ -134,12 +120,10 @@ async function collect() {
             networkTxBytes: m.networkTxBytes,
           }, m.organizationId, service),
         ];
-        // Writing an unreported counter as 0 is what made "no disk I/O data"
-        // read as "wrote nothing".
+        // Skip unreported counters; storing 0 reads as "wrote nothing".
         if (m.diskWriteBytes !== null) {
           ops.push(storeDiskWrite(m.projectName, m.containerId, m.containerName, m.timestamp, m.diskWriteBytes, m.organizationId, service));
         }
-        // Only store GPU metrics when a GPU is present for this container
         if (m.gpuMemoryTotal > 0) {
           ops.push(storeGpuMetrics(m.projectName, m.containerId, m.containerName, m.timestamp, {
             gpuUtilization: m.gpuUtilization,
@@ -156,7 +140,7 @@ async function collect() {
       log.error(`${results.length - failed} stored, ${failed} failed:`, (results.find((r) => r.status === "rejected") as PromiseRejectedResult)?.reason);
     }
 
-    // GPU collector: supplement containers that cAdvisor didn't report GPU data for
+    // Fill GPU data cAdvisor didn't report.
     const gpuCollector = getGpuCollector();
     if (gpuCollector) {
       try {
@@ -172,7 +156,7 @@ async function collect() {
         setGpuSnapshot(gpuMetrics);
         const ts = Date.now();
 
-        // The GPU resolver doesn't read Docker labels; take the service off the cAdvisor row.
+        // The GPU resolver doesn't read labels; take the service from cAdvisor.
         const serviceByContainer = new Map(
           metrics.map((m) => [m.containerId, m.labels["com.docker.compose.service"] ?? null]),
         );
@@ -200,7 +184,6 @@ async function collect() {
       }
     }
 
-    // Recovered — mark integration connected if it was degraded
     if (state.consecutiveFailures >= DEGRADED_THRESHOLD) {
       log.info(`Metrics provider recovered after ${state.consecutiveFailures} failed collection(s)`);
       updateIntegrationHealth("connected");
@@ -226,8 +209,7 @@ async function collect() {
     }
   }
 
-  // Disk write alert check: every 6th tick after warmup (~3 min at 30s interval)
-  // During warmup, skip to accumulate baseline data
+  // Disk write alerts: every 6th tick after warmup.
   if (state.tickCount >= WARMUP_TICKS && state.tickCount % 6 === 0 && metrics.length > 0) {
     try {
       await checkDiskWriteAlerts(metrics);
@@ -236,8 +218,8 @@ async function collect() {
     }
   }
 
-  // Disk usage: every 10th tick during warmup, every 10th tick after (~5 min at 30s)
-  const diskInterval = state.tickCount < WARMUP_TICKS ? 4 : 10; // Every 20s during warmup, every 5min after
+  // Disk usage: every 4th tick during warmup, every 10th after.
+  const diskInterval = state.tickCount < WARMUP_TICKS ? 4 : 10;
   if (state.tickCount % diskInterval === 0) {
     try {
       const diskUsage = await getSystemDiskUsage();
@@ -253,9 +235,7 @@ async function collect() {
       state.diskConsecutiveFailures = 0;
     } catch (err) {
       state.diskConsecutiveFailures++;
-      // Docker's /system/df can 404 on dangling containerd snapshots. Leave
-      // disk usage unset (reported as unavailable, not zero) and don't spam
-      // the log every cycle while it persists.
+      // /system/df can 404 on dangling containerd snapshots. Leave disk unset, not zero.
       if (shouldLogPersistentFailure(state.diskConsecutiveFailures)) {
         log.error(`Disk error (unavailable, ${state.diskConsecutiveFailures}x):`, (err as Error).message);
       }
@@ -280,7 +260,6 @@ async function collect() {
       }
     }
 
-    // Business metrics (entity counts)
     try {
       await collectBusinessMetrics();
     } catch (err) {
@@ -315,9 +294,8 @@ export function isCollectorDisabled() {
   return state.disabled;
 }
 
-/** Update metrics integration status (best-effort, non-blocking). */
+/** Updates metrics integration status. Best-effort. */
 function updateIntegrationHealth(status: "connected" | "degraded") {
-  // Log metrics health status
   import("@/lib/config/features")
     .then(({ isFeatureEnabledAsync }) => isFeatureEnabledAsync("metrics"))
     .then((active) => {
@@ -325,6 +303,6 @@ function updateIntegrationHealth(status: "connected" | "degraded") {
         log.info(`Metrics health: ${status}`);
       }
     })
-    .catch(() => {}); // best-effort
+    .catch(() => {});
 
 }

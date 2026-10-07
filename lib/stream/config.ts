@@ -1,18 +1,12 @@
-// ---------------------------------------------------------------------------
-// Stream configuration — admin-tunable via system settings
-// ---------------------------------------------------------------------------
+// Stream configuration, tunable via system settings.
 
 const DEFAULT_MAX_LEN = 10_000;
-const CACHE_TTL_MS = 60_000; // Re-read setting every 60s
+const CACHE_TTL_MS = 60_000;
 
 let cachedMaxLen: number | null = null;
 let cachedAt = 0;
 
-/**
- * Get the max stream length (XTRIM MAXLEN ~).
- * Reads from system settings and caches for CACHE_TTL_MS.
- * Falls back to DEFAULT_MAX_LEN if settings aren't available.
- */
+/** Max stream length (XTRIM MAXLEN ~) from system settings, cached. Falls back to DEFAULT_MAX_LEN. */
 export async function getStreamMaxLen(): Promise<number> {
   if (cachedMaxLen != null && Date.now() - cachedAt < CACHE_TTL_MS) {
     return cachedMaxLen;
@@ -30,7 +24,7 @@ export async function getStreamMaxLen(): Promise<number> {
   return cachedMaxLen;
 }
 
-/** Reset the cached value (e.g. after admin changes the setting). */
+/** Resets the cached value after the setting changes. */
 export function resetStreamConfig(): void {
   cachedMaxLen = null;
   cachedAt = 0;

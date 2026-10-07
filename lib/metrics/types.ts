@@ -1,12 +1,12 @@
 export type ContainerMetrics = {
-  /** 12-char id — the form metric keys are stored under. */
+  /** 12-char id that metric keys use. */
   containerId: string;
   /** Full 64-char Docker id, empty when the cgroup path carries none. */
   containerIdFull: string;
   containerName: string;
   projectName: string;
   organizationId: string | null;
-  /** Vardo, host and compose labels — what app matching joins on. */
+  /** Vardo, host and compose labels for app matching. */
   labels: Record<string, string>;
   cpuPercent: number;
   memoryUsage: number;
@@ -26,7 +26,7 @@ export type ContainerMetrics = {
   timestamp: number;
 };
 
-/** Unified metrics data point — same shape for historical and live */
+/** Metrics data point, same shape for historical and live. */
 export type MetricsPoint = {
   timestamp: number; // ms epoch
   cpu: number; // percent (summed across containers)
@@ -41,7 +41,7 @@ export type MetricsPoint = {
   gpuTemperature: number; // Celsius (average)
 };
 
-/** Per-container snapshot for detail tables */
+/** Per-container snapshot for detail tables. */
 export type ContainerPoint = {
   containerId: string;
   containerName: string;
@@ -59,7 +59,7 @@ export type ContainerPoint = {
   gpuTemperature: number;
 };
 
-/** SSE event payload — point + optional container breakdown */
+/** SSE payload: point plus optional container breakdown. */
 export type MetricsStreamEvent = MetricsPoint & {
   containers?: ContainerPoint[];
 };

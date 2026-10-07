@@ -1,5 +1,4 @@
-// Barrel re-export: all public exports from the split modules
-// preserving existing import paths from "@/lib/metrics/store"
+// Barrel re-export of the split store modules.
 
 export { getTsClient } from "./ts-client";
 

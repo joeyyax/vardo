@@ -6,15 +6,10 @@ const log = logger.child("gpu-nvidia");
 
 const MiB = 1024 * 1024;
 
-/**
- * Docker image used when nvidia-smi isn't available locally.
- * The Vardo container typically doesn't have the NVIDIA runtime,
- * but it has the Docker socket — so we spawn a GPU-enabled container
- * to run nvidia-smi and capture the output.
- */
+/** Image for running nvidia-smi through the Docker socket when it isn't installed locally. */
 const NVIDIA_SMI_IMAGE = "nvidia/cuda:12.8.1-base-ubuntu24.04";
 
-/** Fixed name, so at most one probe container can exist however a run ends. */
+/** Fixed name, so at most one probe container can exist. */
 export const PROBE_CONTAINER_NAME = "vardo-gpu-probe";
 
 const DEVICE_FIELDS =
@@ -25,10 +20,10 @@ const CSV_FORMAT = "--format=csv,noheader,nounits";
 /** Separates the device rows from the process rows in one probe's output. */
 export const SECTION_MARKER = "__vardo_gpu_processes__";
 
-/** How long one probe's output is reused, so a collector tick costs a single run. */
+/** How long one probe's output is reused. */
 export const SNAPSHOT_TTL_MS = 5_000;
 
-/** Whole-probe budget, kept under the collector's 15s GPU timeout. */
+/** Whole-probe budget. Keep under the collector's 15s GPU timeout. */
 const PROBE_BUDGET_MS = 10_000;
 const STEP_TIMEOUT_MS = 5_000;
 const CLEANUP_TIMEOUT_MS = 3_000;
@@ -43,22 +38,17 @@ export const BREAKER_COOLDOWN_MS = 30 * 60_000;
 
 export type CommandResult = { ok: true; stdout: string } | { ok: false; code?: string };
 
-/** Runs a command to completion. Never rejects — failures come back as ok: false. */
+/** Runs a command to completion. Never rejects; failures return ok: false. */
 export type CommandRunner = (cmd: string, args: string[], timeoutMs: number) => Promise<CommandResult>;
 
 type GpuSnapshot = { devices: string[]; processes: string[] };
 
-/** Execution mode — detected once on first call. */
+/** Execution mode, detected on first call. */
 type ExecMode = "local" | "docker";
 
 /**
- * NVIDIA GPU provider — uses nvidia-smi CSV output.
- *
- * Tries nvidia-smi locally first. If not available (ENOENT), falls back to a
- * GPU-enabled container started through the Docker socket.
- *
- * Every query is served from one probe per tick: concurrent callers share the
- * in-flight run, and the result is reused for SNAPSHOT_TTL_MS.
+ * NVIDIA GPU provider using nvidia-smi CSV output, locally or in a GPU container.
+ * One probe per tick: callers share the in-flight run, reused for SNAPSHOT_TTL_MS.
  */
 export class NvidiaProvider implements GpuProvider {
   readonly vendor = "nvidia" as const;
@@ -112,10 +102,7 @@ export class NvidiaProvider implements GpuProvider {
     return Date.now() < this.openUntil;
   }
 
-  /**
-   * Latest nvidia-smi output — cached, single-flight, and skipped entirely
-   * while the breaker is open.
-   */
+  /** Latest nvidia-smi output: cached, single-flight, skipped while the breaker is open. */
   private snapshot(): Promise<GpuSnapshot | null> {
     const now = Date.now();
     if (this.cache && now - this.cache.at < SNAPSHOT_TTL_MS) {
@@ -136,7 +123,7 @@ export class NvidiaProvider implements GpuProvider {
     return this.inFlight;
   }
 
-  /** Track consecutive failures and open the breaker once they pile up. */
+  /** Tracks consecutive failures and opens the breaker. */
   private record(snapshot: GpuSnapshot | null): void {
     if (snapshot) {
       if (this.breakerOpen) log.info("GPU probe recovered");
@@ -198,11 +185,8 @@ export class NvidiaProvider implements GpuProvider {
   }
 
   /**
-   * Run nvidia-smi in a GPU-enabled container via the Docker socket.
-   *
-   * Detached, so cleanup never depends on the CLI client surviving: the
-   * container is force-removed before and after every probe, and the fixed
-   * name means a leftover from a killed run is reclaimed rather than orphaned.
+   * Runs nvidia-smi in a GPU container via the Docker socket. Detached and force-removed
+   * before and after every probe, so a killed run can't orphan it.
    */
   private async probeDocker(): Promise<GpuSnapshot | null> {
     const deadline = Date.now() + PROBE_BUDGET_MS;
@@ -241,7 +225,7 @@ export class NvidiaProvider implements GpuProvider {
     }
   }
 
-  /** Poll until the probe container exits, within the remaining budget. */
+  /** Polls until the probe container exits, within the remaining budget. */
   private async waitForExit(deadline: number): Promise<boolean> {
     for (;;) {
       const status = await this.docker(
@@ -269,14 +253,7 @@ export class NvidiaProvider implements GpuProvider {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Execution backend
-// ---------------------------------------------------------------------------
-
-/**
- * SIGKILL on timeout — a wedged `docker run` ignores SIGTERM and the callback
- * would otherwise never fire.
- */
+/** SIGKILL on timeout; a wedged `docker run` ignores SIGTERM. */
 const execCommand: CommandRunner = (cmd, args, timeoutMs) =>
   new Promise((resolve) => {
     execFile(cmd, args, { timeout: timeoutMs, killSignal: "SIGKILL" }, (err, stdout) => {
@@ -289,11 +266,7 @@ const execCommand: CommandRunner = (cmd, args, timeoutMs) =>
     });
   });
 
-// ---------------------------------------------------------------------------
-// Parsing
-// ---------------------------------------------------------------------------
-
-/** Split combined probe output into device rows and process rows. */
+/** Splits probe output into device rows and process rows. */
 export function splitSections(stdout: string): GpuSnapshot | null {
   const marker = stdout.indexOf(SECTION_MARKER);
   const deviceBlock = marker === -1 ? stdout : stdout.slice(0, marker);

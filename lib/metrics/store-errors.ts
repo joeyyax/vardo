@@ -1,10 +1,6 @@
 import { tsRedis, ensureTimeSeries, touchRetention } from "./ts-client";
 
-/**
- * Log line counts per app: matches for the error shape, and the total they came
- * out of. Keyed on app id rather than project name so a rename does not orphan
- * the series and a stack child never collides with its parent.
- */
+/** Log line keys per app: error matches and total lines. Keyed on app id so renames don't orphan series. */
 function key(appId: string, metric: "errors" | "lines"): string {
   return `metrics:logs:${appId}:${metric}`;
 }
@@ -31,11 +27,7 @@ export async function storeLogCounts(
 
 export type LogCountSample = { at: number; errors: number; lines: number };
 
-/**
- * Samples in a range, paired by timestamp. Never reads a last value: retention
- * only trims on write, so an idle series would otherwise report a stale rate
- * as the current one forever.
- */
+/** Samples in a range, paired by timestamp. Never reads a last value; retention only trims on write. */
 export async function queryLogCounts(
   appId: string,
   fromMs: number,

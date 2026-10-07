@@ -1,7 +1,3 @@
-// ---------------------------------------------------------------------------
-// Redis Streams consumer — read and consume events
-// ---------------------------------------------------------------------------
-
 import Redis from "ioredis";
 import { redis } from "@/lib/redis";
 import type { StreamEntry, ReadStreamOptions, ConsumeGroupOptions } from "./types";
@@ -16,7 +12,7 @@ const CATCHUP_BATCH_SIZE = 200;
 /** Backoff after a consumer loop error, doubling up to the cap. */
 const CONSUMER_BACKOFF_MIN_MS = 1_000;
 const CONSUMER_BACKOFF_MAX_MS = 60_000;
-/** Consecutive loop errors before the consumer gives up instead of spinning. */
+/** Consecutive loop errors before the consumer gives up. */
 const CONSUMER_ERROR_LIMIT = 10;
 
 /** A Redis stream ID: "<ms>-<seq>", or the "$"/">"/"0" specials. */
@@ -27,13 +23,7 @@ export function isValidStreamId(id: string | null | undefined): boolean {
   return STREAM_ID_RE.test(id) || id === "0" || id === "$" || id === "0-0";
 }
 
-// ---------------------------------------------------------------------------
-// Blocking reader connections
-//
-// XREAD BLOCK / XREADGROUP BLOCK hold the connection for up to blockMs.
-// Using the shared `redis` client would block all other operations.
-// Each blocking reader gets a dedicated connection from this pool.
-// ---------------------------------------------------------------------------
+// Blocking reads hold their connection for blockMs, so each reader gets a dedicated one.
 
 /** Live blocking connections, each mapped to its shutdown unregister. */
 const blockingClients = new Map<Redis, () => void>();
@@ -44,24 +34,19 @@ function getBlockingClient(): Redis {
     maxRetriesPerRequest: 3,
     lazyConnect: true,
   });
-  // Registered per client, not at module scope — importing this module for its
-  // helpers must not wire a shutdown for a pool that is never built.
+  // Registered per client so importing the helpers doesn't wire a shutdown.
   blockingClients.set(client, closeOnShutdown(() => releaseBlockingClient(client)));
   return client;
 }
 
-/** Disconnect a blocking client and drop it from the shutdown registry. */
+/** Disconnects a blocking client and drops it from the shutdown registry. */
 function releaseBlockingClient(client: Redis): void {
   blockingClients.get(client)?.();
   blockingClients.delete(client);
   client.disconnect();
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/** Parse raw ioredis XRANGE/XREAD result into StreamEntry[]. */
+/** Parses an ioredis XRANGE/XREAD result into StreamEntry[]. */
 function parseEntries(raw: [string, string[]][]): StreamEntry[] {
   return raw.map(([id, fields]) => {
     const record: Record<string, string> = {};
@@ -72,11 +57,7 @@ function parseEntries(raw: [string, string[]][]): StreamEntry[] {
   });
 }
 
-/**
- * Ensure a consumer group exists on a stream.
- * Uses MKSTREAM to create the stream if it doesn't exist.
- * Silently ignores "BUSYGROUP" (group already exists).
- */
+/** Ensures a consumer group exists, creating the stream if needed. Ignores BUSYGROUP. */
 async function ensureGroup(key: string, group: string): Promise<void> {
   try {
     await redis.xgroup("CREATE", key, group, "0", "MKSTREAM");
@@ -87,11 +68,7 @@ async function ensureGroup(key: string, group: string): Promise<void> {
   await repairGroupCursor(key, group);
 }
 
-/**
- * Reset a group whose persisted last-delivered-ID is not a valid stream ID.
- * Redis rejects every XREADGROUP against such a group, so the consumer can
- * never make progress — it just retries the same error forever.
- */
+/** Resets a group whose last-delivered-ID is invalid; Redis rejects every XREADGROUP against it. */
 async function repairGroupCursor(key: string, group: string): Promise<void> {
   try {
     const groups = (await redis.xinfo("GROUPS", key)) as unknown[];
@@ -115,33 +92,19 @@ async function repairGroupCursor(key: string, group: string): Promise<void> {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Read: history + live tail (for SSE gateway)
-// ---------------------------------------------------------------------------
-
 /**
- * Async generator that yields stream entries.
- *
- * 1. Reads existing entries from `fromId` via paginated XRANGE (catchup)
- * 2. Then live-tails via XREAD BLOCK on a dedicated connection (realtime)
- *
- * The consumer doesn't need to know which phase it's in — entries
- * arrive in order regardless.
- *
- * Stops when the signal is aborted or an error occurs.
- * Note: XREAD BLOCK cannot be interrupted mid-call — there is up to
- * `blockMs` latency between abort and actual stop.
+ * Yields stream entries: paginated XRANGE catchup from `fromId`, then XREAD BLOCK live tail.
+ * XREAD BLOCK can't be interrupted, so stopping lags abort by up to `blockMs`.
  */
 export async function* readStream(
   key: string,
   opts?: ReadStreamOptions,
 ): AsyncGenerator<StreamEntry> {
   const fromId = opts?.fromId ?? "0";
-  const blockMs = opts?.blockMs ?? 2000; // Short block for responsive abort
+  const blockMs = opts?.blockMs ?? 2000;
   const signal = opts?.signal;
 
-  // Phase 1: Catchup — paginated XRANGE to avoid unbounded memory.
-  // "$" skips it entirely and live-tails from now.
+  // Catchup, paginated. "$" skips it and live-tails from now.
   let cursor = fromId === "0" ? "-" : `(${fromId}`;
   let lastId: string | undefined;
 
@@ -158,11 +121,11 @@ export async function* readStream(
       lastId = entry.id;
     }
 
-    if (batch.length < CATCHUP_BATCH_SIZE) break; // No more entries
-    cursor = `(${lastId}`; // Exclusive start for next page
+    if (batch.length < CATCHUP_BATCH_SIZE) break;
+    cursor = `(${lastId}`;
   }
 
-  // Phase 2: Live tail — dedicated blocking connection
+  // Live tail.
   const blockClient = getBlockingClient();
   const readCursor = lastId ?? (fromId === "0" ? "$" : fromId);
   let liveCursor = readCursor;
@@ -196,23 +159,15 @@ export async function* readStream(
   }
 }
 
-// ---------------------------------------------------------------------------
-// Consumer group: at-least-once delivery for background processors
-// ---------------------------------------------------------------------------
-
 /**
- * Start a consumer group loop. Processes entries via the handler and ACKs on success.
- * Failed entries stay pending and will be reclaimed on restart.
- *
- * Returns a stop function. Call it to gracefully drain — it returns a Promise
- * that resolves when the consumer has finished processing and disconnected.
+ * Starts a consumer group loop with at-least-once delivery, ACKing on success.
+ * Returns a stop function that resolves once the consumer drains and disconnects.
  */
 export async function consumeGroup(opts: ConsumeGroupOptions): Promise<() => Promise<void>> {
   const { group, consumer, keys, handler, signal } = opts;
   const blockMs = opts.blockMs ?? 2000;
   const count = opts.count ?? 10;
 
-  // Ensure groups exist on all keys
   for (const key of keys) {
     await ensureGroup(key, group);
   }
@@ -222,22 +177,18 @@ export async function consumeGroup(opts: ConsumeGroupOptions): Promise<() => Pro
     ? mergeSignals(signal, controller.signal)
     : controller.signal;
 
-  // Dedicated blocking connection for XREADGROUP BLOCK
   const blockClient = getBlockingClient();
 
-  // Run the consumer loop
   const loop = (async () => {
     try {
-      // First, process any pending entries from a previous crash
+      // Pending entries from a previous crash first.
       await processPending(keys, group, consumer, handler, stopSignal);
 
-      // XREADGROUP takes every key first, then every ID — interleaving them
-      // makes Redis read key 2 as an ID and reject the whole command.
+      // XREADGROUP takes every key, then every ID. Interleaving them breaks the command.
       const streamArgs = [...keys, ...keys.map(() => ">")];
       let consecutiveErrors = 0;
       let backoffMs = CONSUMER_BACKOFF_MIN_MS;
 
-      // Then read new entries
       while (!stopSignal.aborted) {
         try {
           const result = await blockClient.xreadgroup(
@@ -260,7 +211,7 @@ export async function consumeGroup(opts: ConsumeGroupOptions): Promise<() => Pro
                 await redis.xack(streamKey, group, entry.id);
               } catch (err) {
                 log.warn(`Consumer ${group}/${consumer} failed on ${streamKey}:${entry.id}:`, err);
-                // Don't ACK — entry stays pending for retry
+                // No ACK; the entry stays pending for retry.
               }
             }
           }
@@ -288,14 +239,13 @@ export async function consumeGroup(opts: ConsumeGroupOptions): Promise<() => Pro
     }
   })();
 
-  // Return stop function that awaits graceful drain
   return async () => {
     controller.abort();
     await loop;
   };
 }
 
-/** Process pending entries that weren't ACKed from a previous run. */
+/** Processes entries left unACKed by a previous run. */
 async function processPending(
   keys: string[],
   group: string,
@@ -306,7 +256,7 @@ async function processPending(
   for (const key of keys) {
     if (signal.aborted) return;
     try {
-      // Claim entries idle for > 30s
+      // Claim entries idle for over 30s.
       const pending = await redis.xpending(key, group, "-", "+", 100);
       if (!pending || !Array.isArray(pending)) continue;
 
@@ -336,7 +286,7 @@ async function processPending(
   }
 }
 
-/** Merge two AbortSignals — aborts when either fires. */
+/** Merges two AbortSignals. */
 function mergeSignals(a: AbortSignal, b: AbortSignal): AbortSignal {
   const controller = new AbortController();
   const abort = () => controller.abort();

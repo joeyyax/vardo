@@ -12,9 +12,7 @@ export type BusinessMetricName =
   | "cronJobs"
   | "templates";
 
-/**
- * Store a business metric snapshot (entity count).
- */
+/** Stores a business metric snapshot. */
 export async function storeBusinessMetric(
   metric: BusinessMetricName,
   timestamp: number,
@@ -25,14 +23,12 @@ export async function storeBusinessMetric(
   await tsRedis.call("TS.ADD", key, timestamp.toString(), value.toString());
 }
 
-/**
- * Query historical business metrics.
- */
+/** Queries historical business metrics. */
 export async function queryBusinessMetric(
   metric: BusinessMetricName,
   fromMs: number,
   toMs: number,
-  bucketMs = 300_000, // 5 min default
+  bucketMs = 300_000,
 ): Promise<TimeSeriesPoint[]> {
   const key = `metrics:business:${metric}`;
   try {
@@ -46,9 +42,7 @@ export async function queryBusinessMetric(
   }
 }
 
-/**
- * Get the latest value for a business metric.
- */
+/** Latest value for a business metric. */
 export async function getLatestBusinessMetric(
   metric: BusinessMetricName,
 ): Promise<{ timestamp: number; value: number } | null> {
@@ -62,13 +56,7 @@ export async function getLatestBusinessMetric(
   }
 }
 
-// ---------------------------------------------------------------------------
-// Per-org business metrics
-// ---------------------------------------------------------------------------
-
-/**
- * Store a per-org business metric snapshot.
- */
+/** Stores a per-org business metric snapshot. */
 export async function storeOrgBusinessMetric(
   orgId: string,
   metric: BusinessMetricName,
@@ -80,9 +68,7 @@ export async function storeOrgBusinessMetric(
   await tsRedis.call("TS.ADD", key, timestamp.toString(), value.toString());
 }
 
-/**
- * Query historical per-org business metrics.
- */
+/** Queries historical per-org business metrics. */
 export async function queryOrgBusinessMetric(
   orgId: string,
   metric: BusinessMetricName,
@@ -102,9 +88,7 @@ export async function queryOrgBusinessMetric(
   }
 }
 
-/**
- * Get the latest value for a per-org business metric.
- */
+/** Latest value for a per-org business metric. */
 export async function getLatestOrgBusinessMetric(
   orgId: string,
   metric: BusinessMetricName,

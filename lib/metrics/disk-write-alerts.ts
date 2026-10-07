@@ -8,13 +8,13 @@ import { logger } from "@/lib/logger";
 
 const log = logger.child("disk-write-alert");
 
-// Default threshold: 1 GB/hour
+// 1 GB/hour.
 const DEFAULT_THRESHOLD_BYTES = 1_073_741_824;
 
-// Rate limit: don't re-alert for the same container within 1 hour
+// One alert per container per hour.
 const ALERT_COOLDOWN_MS = 60 * 60 * 1000;
 
-// In-memory map of last alert times: containerKey -> timestamp
+// containerKey -> last alert timestamp.
 const lastAlertTimes = new Map<string, number>();
 
 function formatBytes(bytes: number): string {
@@ -35,20 +35,13 @@ function formatThreshold(bytes: number): string {
   return (bytes / 1024).toFixed(0) + " KB";
 }
 
-/**
- * Check disk write rates for all containers from the latest collection tick.
- * Compares the delta of cumulative disk writes over the last hour against
- * per-app thresholds (or the default 1 GB/hour).
- *
- * This is alert-only -- it never blocks deploys or operations.
- */
+/** Alerts when a container's disk writes over the last hour exceed its app's threshold. Never blocks. */
 export async function checkDiskWriteAlerts(
   metrics: ContainerMetrics[],
 ): Promise<void> {
   const now = Date.now();
   const oneHourAgo = now - 60 * 60 * 1000;
 
-  // Group containers by their project name to batch DB lookups
   const projectContainers = new Map<string, ContainerMetrics[]>();
   for (const m of metrics) {
     if (!m.projectName) continue;
@@ -61,11 +54,9 @@ export async function checkDiskWriteAlerts(
     for (const container of containers) {
       const alertKey = `${projectName}:${container.containerId}`;
 
-      // Rate limit check
       const lastAlert = lastAlertTimes.get(alertKey);
       if (lastAlert && now - lastAlert < ALERT_COOLDOWN_MS) continue;
 
-      // Query the last hour of disk write data from Redis TimeSeries
       const points = await queryDiskWriteRange(
         projectName,
         container.containerId,
@@ -75,17 +66,15 @@ export async function checkDiskWriteAlerts(
 
       if (points.length < 2) continue;
 
-      // Compute delta: cumulative counter difference between oldest and newest
       const oldest = points[0][1];
       const newest = points[points.length - 1][1];
       const writtenInHour = newest - oldest;
 
       if (writtenInHour <= 0) continue;
 
-      // Look up the app's configured threshold
       let threshold = DEFAULT_THRESHOLD_BYTES;
       try {
-        // Match app by containerName (most reliable) or project name
+        // Match by containerName first, then project name.
         const app = await db.query.apps.findFirst({
           where: eq(apps.containerName, container.containerName),
           columns: {

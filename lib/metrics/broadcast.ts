@@ -3,9 +3,7 @@ import type { ContainerMetrics } from "./types";
 import { isMetricsEnabled } from "./config";
 import { getGpuSnapshot } from "@/lib/gpu/collector";
 
-// ---------------------------------------------------------------------------
-// Shared cAdvisor broadcast — one poll serves all SSE subscribers
-// ---------------------------------------------------------------------------
+// Shared cAdvisor broadcast: one poll serves all SSE subscribers.
 
 type Listener = {
   id: string;
@@ -18,20 +16,13 @@ let nextId = 0;
 
 const POLL_INTERVAL_MS = 5000;
 
-/**
- * Subscribe to cAdvisor metrics updates.
- * The broadcast loop starts lazily on first subscriber and stops
- * when the last subscriber unsubscribes.
- *
- * Returns an unsubscribe function.
- */
+/** Subscribes to cAdvisor updates. Polling runs while anyone is subscribed. Returns an unsubscribe function. */
 export function subscribe(
   callback: (metrics: ContainerMetrics[]) => void,
 ): () => void {
   const id = String(++nextId);
   listeners.push({ id, callback });
 
-  // Start polling if this is the first subscriber
   if (listeners.length === 1) {
     startPolling();
   }
@@ -44,32 +35,22 @@ export function subscribe(
   };
 }
 
-/** Latest metrics snapshot — available between polls for initial sends */
+/** Latest metrics snapshot, available between polls. */
 let latestMetrics: ContainerMetrics[] | null = null;
 
-/**
- * Get the most recent metrics snapshot without waiting for the next poll.
- * Returns null if no data has been collected yet.
- */
+/** Most recent metrics snapshot, or null before the first collection. */
 export function getLatestSnapshot(): ContainerMetrics[] | null {
   return latestMetrics;
 }
 
-/**
- * Publish a snapshot fetched elsewhere.
- *
- * The broadcast loop only runs while something is subscribed, so on an instance
- * with no metrics stream open the snapshot stayed null and the admin overview
- * reported the whole host at zero. The collector tick fetches the same data on
- * its own schedule and hands it over here.
- */
+/** Publishes a snapshot fetched by the collector tick, so it's set with no stream open. */
 export function setLatestSnapshot(metrics: ContainerMetrics[]): void {
   latestMetrics = metrics;
 }
 
 function startPolling() {
   if (timer) return;
-  poll(); // immediate first poll
+  poll();
 }
 
 function stopPolling() {
@@ -86,8 +67,7 @@ async function poll() {
   try {
     const metrics = await fetchAllMetrics();
 
-    // Merge cached GPU snapshot into cAdvisor metrics for live display.
-    // The snapshot is updated by the metrics collector tick — no extra API calls here.
+    // Merge the cached GPU snapshot from the collector tick.
     const gpuSnapshot = getGpuSnapshot();
     if (gpuSnapshot.length > 0) {
       const containersWithGpu = new Set(
@@ -107,16 +87,15 @@ async function poll() {
 
     latestMetrics = metrics;
 
-    // Dispatch to all listeners
     for (const listener of listeners) {
       try {
         listener.callback(metrics);
       } catch {
-        // Don't let one bad listener break others
+        // Don't let one bad listener break others.
       }
     }
   } catch {
-    // cAdvisor unavailable — skip this tick
+    // cAdvisor unavailable; skip this tick.
   }
 
   if (listeners.length > 0) {

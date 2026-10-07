@@ -1,4 +1,4 @@
-/** Columns every stats route selects so an app row can be matched to its containers. */
+/** Columns stats routes select to match an app row to its containers. */
 export const METRICS_APP_COLUMNS = {
   id: true,
   name: true,

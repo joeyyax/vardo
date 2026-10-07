@@ -7,10 +7,10 @@ type V2Accelerator = {
   id: string;
   make: string;
   model: string;
-  memory: number;       // total GPU memory in bytes
-  duty_cycle: number;   // GPU utilization %
-  memory_used: number;  // GPU memory used in bytes
-  temperature: number;  // Celsius
+  memory: number; // bytes
+  duty_cycle: number; // percent
+  memory_used: number; // bytes
+  temperature: number; // Celsius
 };
 
 type V2StatEntry = {
@@ -39,32 +39,24 @@ type V2SpecEntry = {
   memory?: { limit: number };
 };
 
-const SPECS_TTL_MS = 60_000; // 60 seconds
+const SPECS_TTL_MS = 60_000;
 
-// Per-URL spec cache — keyed by base URL to avoid stale data on provider swap
+// Spec cache keyed by base URL.
 const specsCacheByUrl = new Map<string, { specs: Record<string, V2SpecEntry>; cachedAt: number }>();
 
-/**
- * Short container id from a cAdvisor cgroup path. Keys are `/docker/<id>` on
- * cgroup v1 and `/system.slice/docker-<id>.scope` under systemd, so taking the
- * last path segment yields "docker-abcde" on any modern host.
- */
+/** Short container id from a cAdvisor cgroup path (cgroup v1 or systemd). */
 export function parseContainerId(cgroupPath: string): string {
   const hex = parseFullContainerId(cgroupPath);
   if (hex) return hex.slice(0, 12);
   return cgroupPath.split("/").pop()?.replace(/^docker[-/]/, "").slice(0, 12) ?? "";
 }
 
-/** Full 64-char container id from a cAdvisor cgroup path; empty when it carries none. */
+/** Full 64-char container id from a cgroup path; empty when it carries none. */
 export function parseFullContainerId(cgroupPath: string): string {
   return cgroupPath.match(/([0-9a-f]{64})/i)?.[1] ?? "";
 }
 
-/**
- * Label prefixes app matching reads. cAdvisor's spec endpoint returns every
- * Docker label; Traefik rules and OCI annotations are dropped here so the
- * snapshot held in memory stays small.
- */
+/** Label prefixes app matching reads. Others are dropped to keep the snapshot small. */
 const IDENTITY_LABEL_PREFIXES = ["vardo.", "host.", "com.docker.compose."];
 
 function identityLabels(labels: Record<string, string> | undefined): Record<string, string> {
@@ -75,11 +67,8 @@ function identityLabels(labels: Record<string, string> | undefined): Record<stri
   return out;
 }
 
-/**
- * Fetch metrics for all Docker containers from cAdvisor v2 API.
- */
+/** Fetches metrics for all Docker containers from the cAdvisor v2 API. */
 export async function fetchAllContainerMetrics(baseUrl = CADVISOR_URL): Promise<ContainerMetrics[]> {
-  // Always fetch fresh stats
   const statsRes = await fetch(
     `${baseUrl}/api/v2.0/stats?type=docker&recursive=true&count=2`,
     { signal: AbortSignal.timeout(5000) }
@@ -87,7 +76,6 @@ export async function fetchAllContainerMetrics(baseUrl = CADVISOR_URL): Promise<
   if (!statsRes.ok) throw new Error(`cAdvisor stats returned ${statsRes.status}`);
   const statsData = (await statsRes.json()) as Record<string, V2StatEntry[]>;
 
-  // Only refetch specs if cache is stale or missing (keyed per URL)
   let specsData: Record<string, V2SpecEntry>;
   const cached = specsCacheByUrl.get(baseUrl);
   if (cached && Date.now() - cached.cachedAt < SPECS_TTL_MS) {
@@ -110,7 +98,6 @@ export async function fetchAllContainerMetrics(baseUrl = CADVISOR_URL): Promise<
     const spec = specsData[key];
     if (!spec) continue;
 
-    // Get project name and org from labels
     const projectName =
       spec.labels?.["vardo.project"] ||
       spec.labels?.["host.project"] ||
@@ -123,19 +110,17 @@ export async function fetchAllContainerMetrics(baseUrl = CADVISOR_URL): Promise<
     const prev = statEntries[statEntries.length - 2];
     const curr = statEntries[statEntries.length - 1];
 
-    // CPU: delta-based
+    // CPU: delta-based.
     const cpuDelta = curr.cpu.usage.total - prev.cpu.usage.total;
     const timeDelta = new Date(curr.timestamp).getTime() - new Date(prev.timestamp).getTime();
     const cpuPercent = timeDelta > 0 ? (cpuDelta / (timeDelta * 1e6)) * 100 : 0;
 
-    // Memory
     const memoryUsage = curr.memory.working_set || curr.memory.usage;
-    // cAdvisor reports max uint64 when no memory limit is set — treat as 0 (unlimited)
+    // cAdvisor reports max uint64 when no limit is set; treat as 0 (unlimited).
     const rawLimit = spec.memory?.limit || 0;
     const memoryLimit = rawLimit > 1e15 ? 0 : rawLimit;
     const memoryPercent = memoryLimit > 0 ? (memoryUsage / memoryLimit) * 100 : 0;
 
-    // Network
     let networkRxBytes = 0;
     let networkTxBytes = 0;
     if (curr.network?.interfaces) {
@@ -145,9 +130,7 @@ export async function fetchAllContainerMetrics(baseUrl = CADVISOR_URL): Promise<
       }
     }
 
-    // Filesystem. Null, not zero, when cAdvisor runs without per-container
-    // filesystem accounting — a container using no disk and a host not
-    // measuring disk are different answers.
+    // Null, not zero, when cAdvisor has no per-container filesystem accounting.
     let diskUsage: number | null = null;
     let diskLimit: number | null = null;
     if (curr.has_filesystem && curr.filesystem && curr.filesystem.length > 0) {
@@ -159,8 +142,7 @@ export async function fetchAllContainerMetrics(baseUrl = CADVISOR_URL): Promise<
       }
     }
 
-    // Cumulative block I/O writes. Null when the diskio block carries no
-    // io_service_bytes, which is every container on a cgroup v2 host.
+    // Null when diskio has no io_service_bytes (every container on cgroup v2).
     let diskWriteBytes: number | null = null;
     if (curr.diskio?.io_service_bytes && curr.diskio.io_service_bytes.length > 0) {
       diskWriteBytes = 0;
@@ -169,7 +151,7 @@ export async function fetchAllContainerMetrics(baseUrl = CADVISOR_URL): Promise<
       }
     }
 
-    // GPU accelerators (NVIDIA via cAdvisor NVML integration)
+    // NVIDIA accelerators via cAdvisor NVML.
     let gpuUtilization = 0;
     let gpuMemoryUsed = 0;
     let gpuMemoryTotal = 0;
@@ -181,7 +163,6 @@ export async function fetchAllContainerMetrics(baseUrl = CADVISOR_URL): Promise<
         gpuMemoryTotal += acc.memory || 0;
         gpuTemperature += acc.temperature || 0;
       }
-      // Average temperature across GPUs
       gpuTemperature = Math.round(gpuTemperature / curr.accelerators.length);
     }
 
@@ -215,10 +196,7 @@ export async function fetchAllContainerMetrics(baseUrl = CADVISOR_URL): Promise<
   return metrics;
 }
 
-/**
- * cAdvisor metrics provider — implements MetricsProvider interface.
- * Optionally accepts a URL override (for integration-configured instances).
- */
+/** cAdvisor metrics provider. Accepts an optional URL override. */
 export class CadvisorProvider implements MetricsProvider {
   private url: string;
 

@@ -11,15 +11,8 @@ export type FleetTotals = {
 };
 
 /**
- * Sum the last sample of every series for a metric.
- *
- * TS.MGET, not TS.MRANGE: containers write on their own schedules, so the
- * newest range bucket holds whichever few happened to land on that millisecond
- * — summing it reported the whole fleet at one container's usage. MGET takes
- * each series' own latest point.
- *
- * Returns null when nothing is fresh, so a fleet that isn't being measured
- * doesn't read as a fleet using nothing.
+ * Sums the last sample of every series for a metric. Uses TS.MGET; MRANGE's newest bucket holds only a few containers.
+ * Null when nothing is fresh.
  */
 async function sumLatest(metric: string, cutoffMs: number): Promise<number | null> {
   let result: unknown;
@@ -47,13 +40,7 @@ async function sumLatest(metric: string, cutoffMs: number): Promise<number | nul
   return fresh > 0 ? total : null;
 }
 
-/**
- * Fleet CPU and memory from the time-series store.
- *
- * Reads the shared store rather than the broadcast module's in-process
- * snapshot: that variable is only filled while something is subscribed, and a
- * server component does not share a module instance with the collector.
- */
+/** Fleet CPU and memory from the time-series store. */
 export async function getFleetTotals(now = Date.now()): Promise<FleetTotals | null> {
   const cutoff = now - FRESH_WINDOW_MS;
 

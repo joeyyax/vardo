@@ -1,10 +1,6 @@
 /**
- * Rate derivation from the cumulative byte counters cAdvisor reports.
- *
- * A counter only ever climbs while a container lives. It drops when a container
- * restarts or leaves the aggregated set, and the sample after that drop carries
- * the whole counter again — differencing it blindly reports a lifetime's traffic
- * as one second's worth. Both the drop and the recovery are reported as unknown.
+ * Rates from cAdvisor's cumulative byte counters.
+ * A counter drop (restart or set change) and the sample after it are reported as unknown.
  */
 
 export type CounterSample = {

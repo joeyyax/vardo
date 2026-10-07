@@ -6,7 +6,7 @@ export function formatBytes(bytes: number, decimals = 1): string {
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(decimals))} ${sizes[i]}`;
 }
 
-// Memory limit > 1TB is effectively "unlimited" (Docker reports host RAM or sentinel)
+// Limits over 1 TB read as unlimited.
 export function formatMemLimit(bytes: number): string {
   if (bytes === 0 || bytes > 1099511627776) return "No limit";
   return formatBytes(bytes);
@@ -29,13 +29,7 @@ export function formatBytesRateShort(bytes: number): string {
   return `${formatBytesShort(bytes)}/s`;
 }
 
-// ---------------------------------------------------------------------------
-// CPU
-//
-// cAdvisor reports per-core percent: 100 is one core saturated, so a 32-core
-// host tops out at 3200. Cores is the unit Docker takes limits in, so every
-// CPU figure in the UI is rendered through here.
-// ---------------------------------------------------------------------------
+// CPU. cAdvisor reports per-core percent: 100 is one saturated core.
 
 const PERCENT_PER_CORE = 100;
 
@@ -80,7 +74,7 @@ function coreCount(cores: number): string {
   return String(Math.round(cores));
 }
 
-/** A configured ceiling, so trailing zeros go: 32, 2, 1.5. */
+/** A configured ceiling without trailing zeros: 32, 2, 1.5. */
 function ceilingCount(cores: number): string {
   return String(Number(cores.toFixed(2)));
 }
@@ -92,7 +86,7 @@ export function sharePercent(share: number): string {
   return share < 10 ? `${share.toFixed(1)}%` : `${Math.round(share)}%`;
 }
 
-/** Cores in use, e.g. "0.60 cores". Absent reads as absent, not as zero. */
+/** Cores in use, e.g. "0.60 cores". Absent stays absent. */
 export function formatCores(percent: number | null | undefined): string {
   if (percent === null || percent === undefined) return "—";
   return `${coreCount(percent / PERCENT_PER_CORE)} cores`;
@@ -118,8 +112,7 @@ export function cpuDisplay(
     return { cores, share: null, headline: `${used} cores`, detail: null, compact: `${used} cores`, meter: null };
   }
 
-  // A reading drifts past its own cap between samples. The share stops at 100
-  // so the bar stays readable; the core figure keeps the overshoot.
+  // Share caps at 100; cores keep the overshoot.
   const share = Math.min(100, (cores / ceiling.cores) * 100);
   const total = ceilingCount(ceiling.cores);
   const pct = sharePercent(share);

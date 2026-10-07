@@ -3,13 +3,7 @@ import type { ContainerGpuMetrics, ContainerResolver, GpuProvider } from "./type
 
 const log = logger.child("gpu-collector");
 
-/**
- * GPU metrics collector — orchestrates a GpuProvider + ContainerResolver
- * to produce per-container GPU metrics.
- *
- * Called on each metrics tick. Returns empty array gracefully when no
- * GPUs are present or nvidia-smi isn't available.
- */
+/** Produces per-container GPU metrics from a GpuProvider and ContainerResolver. Empty when no GPUs. */
 export class GpuMetricsCollector {
   private provider: GpuProvider;
   private resolver: ContainerResolver;
@@ -19,18 +13,8 @@ export class GpuMetricsCollector {
     this.resolver = resolver;
   }
 
-  /**
-   * Collect per-container GPU metrics.
-   *
-   * 1. Get device-level metrics (utilization, temp, memory)
-   * 2. Get per-process GPU memory from nvidia-smi
-   * 3. Map each process PID → container → Vardo app
-   * 4. Aggregate per-container, with proportional utilization estimate
-   *
-   * Only called when initGpuCollector() already confirmed GPUs are present.
-   */
+  /** Per-container GPU metrics: per-process memory with utilization split proportionally. */
   async collect(): Promise<ContainerGpuMetrics[]> {
-
     const [deviceMetrics, processes] = await Promise.all([
       this.provider.getDeviceMetrics(),
       this.provider.getProcesses(),
@@ -38,10 +22,8 @@ export class GpuMetricsCollector {
 
     if (deviceMetrics.length === 0) return [];
 
-    // Build device-level lookup by index
     const deviceByIndex = new Map(deviceMetrics.map((dm) => [dm.device.index, dm]));
 
-    // Map processes to containers (parallel — each /proc read is independent)
     type ResolvedProcess = {
       containerId: string;
       projectName: string;
@@ -72,7 +54,6 @@ export class GpuMetricsCollector {
 
     const resolved = resolveResults.filter((r): r is ResolvedProcess => r !== null);
 
-    // Aggregate by container
     const byContainer = new Map<string, {
       containerId: string;
       containerName: string;
@@ -100,7 +81,7 @@ export class GpuMetricsCollector {
       }
     }
 
-    // Compute per-device total process memory (for proportional utilization)
+    // Per-device total process memory.
     const deviceProcessMemory = new Map<number, number>();
     for (const rp of resolved) {
       deviceProcessMemory.set(
@@ -109,12 +90,10 @@ export class GpuMetricsCollector {
       );
     }
 
-    // Build final metrics
     const results: ContainerGpuMetrics[] = [];
 
     for (const entry of byContainer.values()) {
-      // Weighted utilization: proportion of GPU memory this container uses
-      // relative to total process memory on each device it touches
+      // Utilization weighted by this container's share of process memory on each device.
       let weightedUtil = 0;
       let maxTemp = 0;
       let totalDeviceMemory = 0;
@@ -147,16 +126,14 @@ export class GpuMetricsCollector {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Singleton management — uses globalThis to survive Next.js module reloads
-// ---------------------------------------------------------------------------
+// Singleton on globalThis to survive Next.js module reloads.
 
 const globalForGpu = globalThis as unknown as {
   __vardo_gpu_collector?: GpuMetricsCollector | null;
   __vardo_gpu_snapshot?: ContainerGpuMetrics[];
 };
 
-/** Initialize the GPU collector with auto-detected provider. */
+/** Initializes the GPU collector with an auto-detected provider. */
 export async function initGpuCollector(): Promise<GpuMetricsCollector | null> {
   if (globalForGpu.__vardo_gpu_collector) return globalForGpu.__vardo_gpu_collector;
 
@@ -178,21 +155,17 @@ export async function initGpuCollector(): Promise<GpuMetricsCollector | null> {
   return instance;
 }
 
-/** Get the current GPU collector instance (null if not initialized or no GPUs). */
+/** Current GPU collector, or null without GPUs. */
 export function getGpuCollector(): GpuMetricsCollector | null {
   return globalForGpu.__vardo_gpu_collector ?? null;
 }
 
-/** Store the latest GPU metrics snapshot (called by the collector tick). */
+/** Stores the latest GPU snapshot. */
 export function setGpuSnapshot(metrics: ContainerGpuMetrics[]): void {
   globalForGpu.__vardo_gpu_snapshot = metrics;
 }
 
-/**
- * Get the latest GPU metrics snapshot.
- * This is the cached result from the most recent collector tick —
- * use this in the SSE broadcast instead of calling collect() again.
- */
+/** Latest GPU snapshot from the collector tick. */
 export function getGpuSnapshot(): ContainerGpuMetrics[] {
   return globalForGpu.__vardo_gpu_snapshot ?? [];
 }

@@ -1,21 +1,13 @@
 import { matchAppMetrics, type MetricsApp } from "./app-match";
 import type { ContainerMetrics } from "./types";
 
-/**
- * Metrics provider interface.
- * Any container metrics source (cAdvisor, Prometheus, etc.) implements this.
- */
+/** A container metrics source. */
 export interface MetricsProvider {
   /** Fetch metrics for all Docker containers. */
   fetchAll(): Promise<ContainerMetrics[]>;
 }
 
-// ---------------------------------------------------------------------------
-// Provider registry — currently only cAdvisor, but pluggable
-//
-// Uses globalThis so the provider survives across Next.js module instances
-// (instrumentation.ts sets it, API routes read it).
-// ---------------------------------------------------------------------------
+// Provider registry on globalThis: instrumentation.ts sets it, API routes read it.
 
 const globalForMetrics = globalThis as unknown as { __vardo_metrics_provider?: MetricsProvider | null };
 
@@ -27,20 +19,14 @@ export function getMetricsProvider(): MetricsProvider | null {
   return globalForMetrics.__vardo_metrics_provider ?? null;
 }
 
-/**
- * Convenience: fetch all container metrics from the active provider.
- * Returns empty array if no provider is configured.
- */
+/** All container metrics from the active provider. Empty when none is configured. */
 export async function fetchAllMetrics(): Promise<ContainerMetrics[]> {
   const p = getMetricsProvider();
   if (!p) return [];
   return p.fetchAll();
 }
 
-/**
- * Convenience: fetch the metrics belonging to one app.
- * Returns empty array if no provider is configured.
- */
+/** One app's metrics from the active provider. Empty when none is configured. */
 export async function fetchAppMetrics(app: MetricsApp): Promise<ContainerMetrics[]> {
   return matchAppMetrics(app, await fetchAllMetrics());
 }

@@ -2,7 +2,7 @@ import Redis from "ioredis";
 
 const url = process.env.REDIS_URL || "redis://localhost:7200";
 
-// Dedicated connection for time-series operations
+// Dedicated connection for time-series operations.
 const globalForTS = globalThis as unknown as { tsRedis: Redis | undefined };
 
 export function getTsClient(): Redis {
@@ -28,24 +28,20 @@ export const tsRedis = new Proxy({} as Redis, {
   },
 });
 
-// Retention: 7 days in ms
+// Seven days.
 export const RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
-// Key naming: metrics:{projectName}:{metric}:{containerId}
+// metrics:{projectName}:{metric}:{containerId}
 export function tsKey(project: string, metric: string, container?: string) {
   return container
     ? `metrics:${project}:${metric}:${container}`
     : `metrics:${project}:${metric}`;
 }
 
-// Track which time-series keys have already been created to skip redundant TS.CREATE calls
+// Keys already created in this process.
 const createdKeys = new Set<string>();
 
-/**
- * Ensure a time-series key exists with the correct retention and labels.
- * Skips the TS.CREATE call if the key was already created in this process.
- * A key written before a label was introduced is altered to carry it.
- */
+/** Ensures a time-series key exists with retention and labels, adding labels to older keys. */
 export async function ensureTimeSeries(
   key: string,
   labels: Record<string, string>
@@ -72,19 +68,19 @@ export async function ensureTimeSeries(
     try {
       await tsRedis.call("TS.ALTER", key, "LABELS", ...labelArgs);
     } catch {
-      // Best effort — a stale label set still serves the existing queries.
+      // Best-effort; a stale label set still serves existing queries.
     }
   }
 
   createdKeys.add(key);
 }
 
-/** Refresh a series' Redis key TTL to the retention window. Call after every write. */
+/** Refreshes a series' key TTL to the retention window. Call after every write. */
 export async function touchRetention(key: string): Promise<void> {
   await tsRedis.call("PEXPIRE", key, RETENTION_MS.toString());
 }
 
-/** Drop a key from the created-keys cache after deleting it out of band (pruning). */
+/** Drops a key from the created-keys cache after deleting it out of band. */
 export function forgetKey(key: string): void {
   createdKeys.delete(key);
 }

@@ -1,6 +1,4 @@
-// ---------------------------------------------------------------------------
-// GPU Metrics — Port Interfaces & Types
-// ---------------------------------------------------------------------------
+// GPU metrics port interfaces and types.
 
 export type GpuVendor = "nvidia" | "amd" | "intel";
 
@@ -41,33 +39,24 @@ export type ContainerGpuMetrics = {
   gpuTemperature: number; // celsius (device-level)
 };
 
-// ---------------------------------------------------------------------------
-// Port: GpuProvider
-// ---------------------------------------------------------------------------
-
 export interface GpuProvider {
-  /** Detect available GPUs. Returns empty array if none. */
+  /** Detects available GPUs. Empty when none. */
   detectDevices(): Promise<GpuDevice[]>;
 
-  /** Get current metrics for all GPUs. */
+  /** Current metrics for all GPUs. */
   getDeviceMetrics(): Promise<GpuDeviceMetrics[]>;
 
-  /** Get processes using GPUs — for PID-to-container mapping. */
+  /** Processes using GPUs, for PID-to-container mapping. */
   getProcesses(): Promise<GpuProcess[]>;
 
-  /** Vendor identifier for this provider. */
   readonly vendor: GpuVendor;
 }
 
-// ---------------------------------------------------------------------------
-// Port: ContainerResolver
-// ---------------------------------------------------------------------------
-
 export interface ContainerResolver {
-  /** Map a host PID to a container ID. Returns null if not in a container. */
+  /** Maps a host PID to a container ID. Null if not in a container. */
   pidToContainerId(pid: number): Promise<string | null>;
 
-  /** Map a container ID to app info. Returns null if unmanaged. */
+  /** Maps a container ID to app info. Null if unmanaged. */
   containerIdToApp(containerId: string): Promise<{
     projectName: string;
     containerName: string;

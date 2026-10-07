@@ -1,16 +1,5 @@
-// ---------------------------------------------------------------------------
-// Which cAdvisor rows belong to one app.
-//
-// Every container in a compose stack carries the parent's vardo labels, so a
-// child resolved by its own name or id matches nothing. cAdvisor's spec
-// endpoint returns the Docker labels, so metrics join on the same labels the
-// Docker matcher uses and reuse it outright.
-//
-// x-vardo-shared services are the exception: they are brought up with
-// --no-recreate so they survive the blue/green rotation, which means they never
-// receive the vardo labels the overlay injects. Their compose project name is
-// the only thing left tying them to an app.
-// ---------------------------------------------------------------------------
+// Which cAdvisor rows belong to one app, matched on Docker labels.
+// x-vardo-shared services never get vardo labels (--no-recreate), so they match by compose project name.
 
 import type { ContainerInfo } from "@/lib/docker/client";
 import { matchContainers, type ReconcilableApp } from "@/lib/docker/container-match";
@@ -40,17 +29,12 @@ function toEntries(metrics: ContainerMetrics[]): MetricsEntry[] {
   return metrics.map((m) => [asContainer(m), m] as const);
 }
 
-/** Vardo's own app id, absent on anything it did not recreate. */
+/** Vardo's app id, absent on anything it didn't recreate. */
 function appId(m: ContainerMetrics): string | undefined {
   return m.labels["vardo.project.id"] ?? m.labels["host.project.id"];
 }
 
-/**
- * An app's shared services, keyed on the compose project name alone.
- *
- * The label matcher stops at the first hit, so an app with any labeled
- * container never reaches the project-name fallback its shared services need.
- */
+/** An app's shared services, keyed on the compose project name. The label matcher stops at the first hit. */
 function sharedEntries(app: MetricsApp, entries: MetricsEntry[]): ContainerMetrics[] {
   return entries
     .filter(([, m]) => !appId(m))
@@ -72,15 +56,12 @@ function matchEntries(app: MetricsApp, entries: MetricsEntry[]): ContainerMetric
   return dedupeMetrics([matched, sharedEntries(app, scoped)]);
 }
 
-/** Metrics for one app alone — a stack child gets only its own service. */
+/** Metrics for one app. A stack child gets only its own service. */
 export function matchAppMetrics(app: MetricsApp, metrics: ContainerMetrics[]): ContainerMetrics[] {
   return matchEntries(app, toEntries(metrics));
 }
 
-/**
- * Environment a row belongs to, falling back to the compose project name for a
- * shared service. Null when neither names one.
- */
+/** Environment a row belongs to, falling back to a shared service's project name. */
 export function metricsEnvironment(m: ContainerMetrics): string | null {
   const labeled = m.labels["vardo.environment"] ?? m.labels["host.environment"];
   if (labeled) return labeled;
@@ -88,11 +69,7 @@ export function metricsEnvironment(m: ContainerMetrics): string | null {
   return project ? composeProjectEnvironment(project) : null;
 }
 
-/**
- * Narrow a match to one environment. A row naming no environment is kept — a
- * shared project named by the compose file's `name:` only ever exists in the
- * app's own environment.
- */
+/** Narrows a match to one environment. Rows naming none are kept. */
 export function filterByEnvironment(
   metrics: ContainerMetrics[],
   environmentName: string,
@@ -112,11 +89,7 @@ export function groupMetricsByApp<T extends MetricsApp>(
   return new Map(apps.map((app) => [app.id, matchEntries(app, entries)]));
 }
 
-/**
- * One entry per container across several apps' matches. A stack child's
- * containers are a subset of its parent's, so a total built by concatenating
- * per-app matches counts them twice.
- */
+/** One entry per container across several apps' matches. Stack children would otherwise count twice. */
 export function dedupeMetrics(groups: Iterable<ContainerMetrics[]>): ContainerMetrics[] {
   return dedupeByContainer(groups);
 }

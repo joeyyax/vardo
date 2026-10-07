@@ -1,9 +1,7 @@
 import { tsRedis, tsKey, ensureTimeSeries } from "./ts-client";
 import type { TimeSeriesPoint } from "./store-container";
 
-/**
- * Store system-level disk usage (not per-project).
- */
+/** Stores system-level disk usage. */
 export async function storeDiskUsage(
   timestamp: number,
   values: { images: number; volumes: number; buildCache: number; total: number }
@@ -33,9 +31,7 @@ export async function storeDiskUsage(
   ]);
 }
 
-/**
- * Query system-level disk usage history.
- */
+/** System-level disk usage history. */
 export async function queryDiskHistory(
   fromMs: number,
   toMs: number,
@@ -53,9 +49,7 @@ export async function queryDiskHistory(
   }
 }
 
-/**
- * Get the latest disk usage values from Redis (instant, no Docker call).
- */
+/** Latest system disk usage from Redis. */
 export async function getLatestDiskUsage(): Promise<{
   total: number;
   images: number;
@@ -81,9 +75,7 @@ export async function getLatestDiskUsage(): Promise<{
   }
 }
 
-/**
- * Store per-project disk usage.
- */
+/** Stores per-project disk usage. */
 export async function storeProjectDisk(
   projectName: string,
   timestamp: number,
@@ -94,9 +86,7 @@ export async function storeProjectDisk(
   await tsRedis.call("TS.ADD", key, timestamp.toString(), sizeBytes.toString());
 }
 
-/**
- * Get the latest disk usage for a specific project from Redis (no Docker call).
- */
+/** Latest disk usage for one project from Redis. */
 export async function getLatestProjectDiskUsage(
   projectName: string
 ): Promise<number | null> {
