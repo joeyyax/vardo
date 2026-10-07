@@ -16,6 +16,7 @@ import { nanoid } from "nanoid";
 import { extractExpressions, validateExpression } from "@/lib/env/resolve";
 import { decrypt, encrypt, isEncrypted } from "@/lib/crypto/encrypt";
 import { logger } from "@/lib/logger";
+import { coverAppsInOrg, releaseAppsFromOrgJobs } from "@/lib/backups/transfer";
 
 const log = logger.child("transfers");
 
@@ -277,7 +278,7 @@ export async function acceptTransfer(
     transfer.destinationOrgId,
   );
 
-  await db.transaction(async (tx) => {
+  const moved = await db.transaction(async (tx) => {
     // Claims the transfer; a second accept racing this one finds nothing pending.
     const claimed = await tx
       .update(appTransfers)
@@ -317,8 +318,13 @@ export async function acceptTransfer(
     // Compose children move with their parent; their secrets are keyed the same way.
     const children = await tx.query.apps.findMany({
       where: eq(apps.parentAppId, transfer.appId),
-      columns: { id: true },
+      columns: { id: true, name: true },
     });
+    const parent = await tx.query.apps.findFirst({
+      where: eq(apps.id, transfer.appId),
+      columns: { id: true, name: true },
+    });
+    const moved = [...(parent ? [{ id: parent.id, name: parent.name }] : []), ...children];
     const appIds = [transfer.appId, ...children.map((c) => c.id)];
 
     // Secrets are encrypted under a key derived from the org id. Moving the row
@@ -360,7 +366,16 @@ export async function acceptTransfer(
       .update(backups)
       .set({ organizationId: transfer.destinationOrgId })
       .where(inArray(backups.appId, appIds));
+
+    const released = await releaseAppsFromOrgJobs(tx, transfer.sourceOrgId, moved);
+    if (released.unlinked > 0) {
+      log.info(`Transfer ${transferId}: released ${released.unlinked} backup job link(s) in the source org`);
+    }
+    return moved;
   });
+
+  // After commit: a coverage failure must not undo the move.
+  await coverAppsInOrg(transfer.destinationOrgId, moved);
 }
 
 /**

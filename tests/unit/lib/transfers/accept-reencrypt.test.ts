@@ -65,6 +65,10 @@ const fake = vi.hoisted(() => {
 });
 
 vi.mock("@/lib/db", () => ({ db: fake.db }));
+vi.mock("@/lib/backups/transfer", () => ({
+  releaseAppsFromOrgJobs: async () => ({ unlinked: 0, deletedJobIds: [] }),
+  coverAppsInOrg: async () => [],
+}));
 
 import { acceptTransfer, repairTransferredSecrets } from "@/lib/transfers/engine";
 import { encrypt, decrypt } from "@/lib/crypto/encrypt";
