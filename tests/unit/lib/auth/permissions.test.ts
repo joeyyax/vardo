@@ -10,6 +10,8 @@ const ADMIN_ONLY: Capability[] = [
   "app.cron",
   "app.debug",
   "app.delete",
+  "backup.restore",
+  "backup.download",
   "backup.delete",
   "backup.targets.delete",
   "backup.jobs.delete",

@@ -62,8 +62,8 @@ export const CAPABILITIES = {
   // Backups
   "backup.view": MEMBERS,
   "backup.run": MEMBERS,
-  "backup.restore": MEMBERS,
-  "backup.download": MEMBERS,
+  "backup.restore": ADMINS,
+  "backup.download": ADMINS,
   "backup.delete": ADMINS,
   "backup.targets.manage": MEMBERS,
   "backup.targets.delete": ADMINS,
