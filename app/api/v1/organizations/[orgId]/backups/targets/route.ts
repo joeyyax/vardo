@@ -6,90 +6,14 @@ import { requirePlugin } from "@/lib/api/require-plugin";
 import { isLocalBackupsAllowed } from "@/lib/config/provider-restrictions";
 import { eq, or, isNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
-import { z } from "zod";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
-import { isAppAdmin } from "@/lib/auth/admin";
+import { createTargetSchema, presentTarget, sealTargetConfig } from "@/lib/backups/target-config";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
 };
-
-// Non-credential config fields the target cards and forms render.
-const DISPLAY_CONFIG_KEYS = [
-  "bucket",
-  "region",
-  "endpoint",
-  "prefix",
-  "host",
-  "port",
-  "username",
-  "path",
-] as const;
-
-/** Strip credentials from a config the caller doesn't own. */
-function displayConfig(config: Record<string, unknown>) {
-  const safe: Record<string, unknown> = {};
-  for (const key of DISPLAY_CONFIG_KEYS) {
-    if (config[key] !== undefined) safe[key] = config[key];
-  }
-  return safe;
-}
-
-const s3ConfigSchema = z.object({
-  bucket: z.string().min(1),
-  region: z.string().min(1),
-  endpoint: z.string().optional(),
-  accessKeyId: z.string().min(1),
-  secretAccessKey: z.string().min(1),
-  prefix: z.string().optional(),
-});
-
-const sshConfigSchema = z.object({
-  host: z.string().min(1),
-  port: z.number().int().positive().optional(),
-  username: z.string().min(1),
-  privateKey: z.string().optional(),
-  path: z.string().min(1),
-});
-
-const localConfigSchema = z.object({
-  path: z.string().min(1, "Path is required"),
-});
-
-const createTargetSchema = z.discriminatedUnion("type", [
-  z.object({
-    name: z.string().min(1, "Name is required"),
-    type: z.literal("s3"),
-    config: s3ConfigSchema,
-    isDefault: z.boolean().default(false),
-  }),
-  z.object({
-    name: z.string().min(1, "Name is required"),
-    type: z.literal("r2"),
-    config: s3ConfigSchema,
-    isDefault: z.boolean().default(false),
-  }),
-  z.object({
-    name: z.string().min(1, "Name is required"),
-    type: z.literal("b2"),
-    config: s3ConfigSchema,
-    isDefault: z.boolean().default(false),
-  }),
-  z.object({
-    name: z.string().min(1, "Name is required"),
-    type: z.literal("ssh"),
-    config: sshConfigSchema,
-    isDefault: z.boolean().default(false),
-  }),
-  z.object({
-    name: z.string().min(1, "Name is required"),
-    type: z.literal("local"),
-    config: localConfigSchema,
-    isDefault: z.boolean().default(false),
-  }),
-]);
 
 // GET /api/v1/organizations/[orgId]/backups/targets
 export async function GET(_request: NextRequest, { params }: RouteParams) {
@@ -108,20 +32,10 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       ),
     });
 
-    // App-level targets are read-only for the org and their credentials are not
-    // the org's to see — only app admins get the full config back.
-    const admin = await isAppAdmin();
-    const enriched = targets.map((t) => {
-      const isAppLevel = t.organizationId === null;
-      return {
-        ...t,
-        config:
-          isAppLevel && !admin
-            ? displayConfig(t.config as Record<string, unknown>)
-            : t.config,
-        isAppLevel,
-      };
-    });
+    const enriched = targets.map((t) => ({
+      ...presentTarget(t),
+      isAppLevel: t.organizationId === null,
+    }));
 
     return NextResponse.json({
       targets: enriched,
@@ -188,12 +102,12 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
         organizationId: orgId,
         name: data.name,
         type: data.type,
-        config: data.config,
+        config: sealTargetConfig(data.config, orgId),
         isDefault: data.isDefault,
       })
       .returning();
 
-    return NextResponse.json({ target }, { status: 201 });
+    return NextResponse.json({ target: presentTarget(target) }, { status: 201 });
   } catch (error) {
     return handleRouteError(error, "Error creating backup target");
   }

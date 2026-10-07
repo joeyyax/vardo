@@ -23,6 +23,7 @@ import {
 import { Callout } from "@/components/ui/callout";
 import { Loader2 } from "lucide-react";
 import { toast } from "@/lib/messenger";
+import { MASK_SENTINEL, isMasked } from "@/lib/mask-secrets";
 import type { BackupTarget, TargetType } from "./types";
 
 export function TargetForm({
@@ -44,6 +45,11 @@ export function TargetForm({
 }) {
   const isEditing = !!editTarget;
   const config = (editTarget?.config ?? {}) as Record<string, string>;
+  // Stored credentials come back masked; blank keeps them.
+  const stored = (key: string) => isMasked(config[key]);
+  const unmasked = (key: string) => (stored(key) ? "" : config[key] ?? "");
+  const secret = (key: string, value: string) => value.trim() || (stored(key) ? MASK_SENTINEL : "");
+  const keepPlaceholder = (key: string, fallback?: string) => (stored(key) ? "Saved — leave blank to keep" : fallback);
 
   const [saving, setSaving] = useState(false);
   const [name, setName] = useState(editTarget?.name ?? "");
@@ -53,15 +59,15 @@ export function TargetForm({
   const [bucket, setBucket] = useState(config.bucket ?? "");
   const [region, setRegion] = useState(config.region ?? "");
   const [endpoint, setEndpoint] = useState(config.endpoint ?? "");
-  const [accessKeyId, setAccessKeyId] = useState(config.accessKeyId ?? "");
-  const [secretAccessKey, setSecretAccessKey] = useState(config.secretAccessKey ?? "");
+  const [accessKeyId, setAccessKeyId] = useState(unmasked("accessKeyId"));
+  const [secretAccessKey, setSecretAccessKey] = useState(unmasked("secretAccessKey"));
   const [prefix, setPrefix] = useState(config.prefix ?? "");
 
   // SSH
   const [sshHost, setSshHost] = useState(config.host ?? "");
   const [sshPort, setSshPort] = useState(config.port ?? "");
   const [sshUsername, setSshUsername] = useState(config.username ?? "");
-  const [sshPrivateKey, setSshPrivateKey] = useState(config.privateKey ?? "");
+  const [sshPrivateKey, setSshPrivateKey] = useState(unmasked("privateKey"));
   const [sshPath, setSshPath] = useState(config.path ?? "");
 
   // Local
@@ -88,11 +94,11 @@ export function TargetForm({
     if (!name.trim()) return false;
     switch (type) {
       case "s3":
-        return !!(bucket.trim() && region.trim() && accessKeyId.trim() && secretAccessKey.trim());
+        return !!(bucket.trim() && region.trim() && secret("accessKeyId", accessKeyId) && secret("secretAccessKey", secretAccessKey));
       case "r2":
-        return !!(bucket.trim() && endpoint.trim() && accessKeyId.trim() && secretAccessKey.trim());
+        return !!(bucket.trim() && endpoint.trim() && secret("accessKeyId", accessKeyId) && secret("secretAccessKey", secretAccessKey));
       case "b2":
-        return !!(bucket.trim() && region.trim() && accessKeyId.trim() && secretAccessKey.trim());
+        return !!(bucket.trim() && region.trim() && secret("accessKeyId", accessKeyId) && secret("secretAccessKey", secretAccessKey));
       case "ssh":
         return !!(sshHost.trim() && sshUsername.trim() && sshPath.trim());
       case "local":
@@ -106,21 +112,21 @@ export function TargetForm({
         return {
           bucket: bucket.trim(), region: region.trim(),
           ...(endpoint.trim() && { endpoint: endpoint.trim() }),
-          accessKeyId: accessKeyId.trim(), secretAccessKey: secretAccessKey.trim(),
+          accessKeyId: secret("accessKeyId", accessKeyId), secretAccessKey: secret("secretAccessKey", secretAccessKey),
           ...(prefix.trim() && { prefix: prefix.trim() }),
         };
       case "r2":
         return {
           bucket: bucket.trim(), region: region.trim() || "auto",
           endpoint: endpoint.trim(),
-          accessKeyId: accessKeyId.trim(), secretAccessKey: secretAccessKey.trim(),
+          accessKeyId: secret("accessKeyId", accessKeyId), secretAccessKey: secret("secretAccessKey", secretAccessKey),
           ...(prefix.trim() && { prefix: prefix.trim() }),
         };
       case "b2":
         return {
           bucket: bucket.trim(), region: region.trim(),
           endpoint: endpoint.trim(),
-          accessKeyId: accessKeyId.trim(), secretAccessKey: secretAccessKey.trim(),
+          accessKeyId: secret("accessKeyId", accessKeyId), secretAccessKey: secret("secretAccessKey", secretAccessKey),
           ...(prefix.trim() && { prefix: prefix.trim() }),
         };
       case "ssh":
@@ -128,7 +134,7 @@ export function TargetForm({
           host: sshHost.trim(),
           ...(sshPort.trim() && { port: parseInt(sshPort, 10) }),
           username: sshUsername.trim(),
-          ...(sshPrivateKey.trim() && { privateKey: sshPrivateKey.trim() }),
+          ...(secret("privateKey", sshPrivateKey) && { privateKey: secret("privateKey", sshPrivateKey) }),
           path: sshPath.trim(),
         };
       case "local":
@@ -217,11 +223,11 @@ export function TargetForm({
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="target-access-key">Access key ID</Label>
-                  <Input id="target-access-key" placeholder="AKIA..." value={accessKeyId} onChange={(e) => setAccessKeyId(e.target.value)} />
+                  <Input id="target-access-key" placeholder={keepPlaceholder("accessKeyId", "AKIA...")} value={accessKeyId} onChange={(e) => setAccessKeyId(e.target.value)} />
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="target-secret-key">Secret access key</Label>
-                  <Input id="target-secret-key" type="password" value={secretAccessKey} onChange={(e) => setSecretAccessKey(e.target.value)} />
+                  <Input id="target-secret-key" type="password" placeholder={keepPlaceholder("secretAccessKey")} value={secretAccessKey} onChange={(e) => setSecretAccessKey(e.target.value)} />
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="target-prefix">Prefix<span className="text-muted-foreground font-normal"> (optional)</span></Label>
@@ -246,7 +252,7 @@ export function TargetForm({
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="target-ssh-key">Private key<span className="text-muted-foreground font-normal"> (optional)</span></Label>
-                  <Textarea id="target-ssh-key" placeholder="Paste PEM private key (optional — uses system SSH key if empty)" className="font-mono text-xs min-h-[120px]" value={sshPrivateKey} onChange={(e) => setSshPrivateKey(e.target.value)} />
+                  <Textarea id="target-ssh-key" placeholder={keepPlaceholder("privateKey", "Paste PEM private key (optional — uses system SSH key if empty)")} className="font-mono text-xs min-h-[120px]" value={sshPrivateKey} onChange={(e) => setSshPrivateKey(e.target.value)} />
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="target-ssh-path">Remote path</Label>

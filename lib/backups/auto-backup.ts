@@ -19,6 +19,7 @@ import { getBackupStorageConfig } from "@/lib/system-settings";
 import { assertSafeName } from "@/lib/docker/validate";
 import { logger } from "@/lib/logger";
 import { isBackupSelected } from "./durability";
+import { sealTargetConfig } from "./target-config";
 
 const log = logger.child("auto-backup");
 
@@ -83,7 +84,7 @@ export async function ensureHostBackupTarget() {
       organizationId: null, // system-level
       name: "System default",
       type,
-      config,
+      config: sealTargetConfig(config, null),
       isDefault: true,
     })
     .returning();

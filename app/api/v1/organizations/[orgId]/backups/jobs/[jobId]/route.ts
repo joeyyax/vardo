@@ -49,7 +49,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
         eq(backupJobs.organizationId, orgId)
       ),
       with: {
-        target: true,
+        target: { columns: { config: false } },
         backupJobApps: {
           with: {
             app: {

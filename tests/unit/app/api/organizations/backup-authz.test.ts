@@ -1,7 +1,6 @@
 // Backup routes verify the org, then trusted ids straight off the request body.
 // Foreign app ids let a job back a victim's volumes up to the caller's own
-// bucket, and instance-level targets were writable — and their credentials
-// readable — by any org member.
+// bucket, and instance-level targets were writable by any org member.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
@@ -242,16 +241,16 @@ describe("GET /organizations/[orgId]/backups/targets — credential disclosure",
     ]);
   });
 
-  it("strips credentials from app-level targets for org members", async () => {
+  it("masks credentials on app-level targets for org members", async () => {
     const res = await listTargets(request(), params);
     const { targets } = await res.json();
 
     const s3 = targets.find((t: { id: string }) => t.id === APP_LEVEL_TARGET);
-    expect(s3.config.accessKeyId).toBeUndefined();
-    expect(s3.config.secretAccessKey).toBeUndefined();
+    expect(s3.config.accessKeyId).not.toBe(S3_CONFIG.accessKeyId);
+    expect(s3.config.secretAccessKey).not.toBe(S3_CONFIG.secretAccessKey);
 
     const ssh = targets.find((t: { id: string }) => t.id === "target-ssh");
-    expect(ssh.config.privateKey).toBeUndefined();
+    expect(ssh.config.privateKey).not.toContain("BEGIN PRIVATE KEY");
 
     const appLevel = targets.filter((t: { isAppLevel: boolean }) => t.isAppLevel);
     expect(JSON.stringify(appLevel)).not.toContain("super-secret");
@@ -278,23 +277,21 @@ describe("GET /organizations/[orgId]/backups/targets — credential disclosure",
     });
   });
 
-  it("returns the org's own target config untouched", async () => {
+  it("masks the org's own target credentials too", async () => {
     const res = await listTargets(request(), params);
     const { targets } = await res.json();
 
     const own = targets.find((t: { id: string }) => t.id === ORG_TARGET);
-    expect(own.config.secretAccessKey).toBe("super-secret");
+    expect(own.config.bucket).toBe("org-bucket");
+    expect(JSON.stringify(own)).not.toContain("super-secret");
     expect(own.isAppLevel).toBe(false);
   });
 
-  it("returns the full app-level config to app admins", async () => {
+  it("masks app-level credentials for app admins too", async () => {
     mockIsAppAdmin.mockResolvedValue(true);
 
     const res = await listTargets(request(), params);
-    const { targets } = await res.json();
-
-    const s3 = targets.find((t: { id: string }) => t.id === APP_LEVEL_TARGET);
-    expect(s3.config.secretAccessKey).toBe("super-secret");
+    expect(JSON.stringify(await res.json())).not.toContain("super-secret");
   });
 });
 

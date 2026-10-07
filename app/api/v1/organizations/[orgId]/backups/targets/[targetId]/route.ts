@@ -7,6 +7,13 @@ import { eq, and, or, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { isAppAdmin } from "@/lib/auth/admin";
+import {
+  mergeTargetConfig,
+  presentTarget,
+  sealTargetConfig,
+  targetConfigSchema,
+  type TargetType,
+} from "@/lib/backups/target-config";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
@@ -17,7 +24,7 @@ type RouteParams = {
 /**
  * Gate mutations on a target. App-level targets (organizationId NULL) are
  * visible to the org but only app admins may modify them.
- * Returns a response to send, or null when the caller may proceed.
+ * Returns a response to send, or the target when the caller may proceed.
  */
 async function guardTarget(orgId: string, targetId: string) {
   const target = await db.query.backupTargets.findFirst({
@@ -25,21 +32,22 @@ async function guardTarget(orgId: string, targetId: string) {
       eq(backupTargets.id, targetId),
       or(eq(backupTargets.organizationId, orgId), isNull(backupTargets.organizationId)),
     ),
-    columns: { id: true, organizationId: true },
   });
 
   if (!target) {
-    return NextResponse.json({ error: "Target not found" }, { status: 404 });
+    return { denied: NextResponse.json({ error: "Target not found" }, { status: 404 }) };
   }
 
   if (target.organizationId === null && !(await isAppAdmin())) {
-    return NextResponse.json(
-      { error: "Only app admins can modify instance-level backup targets" },
-      { status: 403 },
-    );
+    return {
+      denied: NextResponse.json(
+        { error: "Only app admins can modify instance-level backup targets" },
+        { status: 403 },
+      ),
+    };
   }
 
-  return null;
+  return { target };
 }
 
 const updateTargetSchema = z.object({
@@ -67,12 +75,21 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    const denied = await guardTarget(orgId, targetId);
+    const { denied, target } = await guardTarget(orgId, targetId);
     if (denied) return denied;
 
     const updateData: Record<string, unknown> = { updatedAt: new Date() };
     if (parsed.data.name) updateData.name = parsed.data.name;
-    if (parsed.data.config) updateData.config = parsed.data.config;
+    if (parsed.data.config) {
+      // Kept credentials stay as stored ciphertext; seal skips them.
+      const merged = targetConfigSchema(target.type as TargetType).safeParse(
+        mergeTargetConfig(target.config as Record<string, unknown>, parsed.data.config),
+      );
+      if (!merged.success) {
+        return NextResponse.json({ error: merged.error.issues[0].message }, { status: 400 });
+      }
+      updateData.config = sealTargetConfig(merged.data, target.organizationId);
+    }
     if (parsed.data.isDefault !== undefined) updateData.isDefault = parsed.data.isDefault;
 
     const [updated] = await db
@@ -88,7 +105,7 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Target not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ target: updated });
+    return NextResponse.json({ target: presentTarget(updated) });
   } catch (error) {
     return handleRouteError(error, "Error updating backup target");
   }
@@ -104,7 +121,7 @@ async function handleDelete(_request: NextRequest, { params }: RouteParams) {
     const org = await verifyOrgAccess(orgId);
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    const denied = await guardTarget(orgId, targetId);
+    const { denied } = await guardTarget(orgId, targetId);
     if (denied) return denied;
 
     const deleted = await db

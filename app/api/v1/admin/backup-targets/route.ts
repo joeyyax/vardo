@@ -7,51 +7,16 @@ import { nanoid } from "nanoid";
 import { z } from "zod";
 import { requireAppAdmin } from "@/lib/auth/admin";
 import { isLocalBackupsAllowed } from "@/lib/config/provider-restrictions";
+import { createTargetVariant, presentTarget, sealTargetConfig } from "@/lib/backups/target-config";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
-const s3ConfigSchema = z.object({
-  bucket: z.string().min(1),
-  region: z.string().min(1),
-  endpoint: z.string().optional(),
-  accessKeyId: z.string().min(1),
-  secretAccessKey: z.string().min(1),
-  prefix: z.string().optional(),
-});
-
-const sshConfigSchema = z.object({
-  host: z.string().min(1),
-  port: z.number().int().positive().optional(),
-  username: z.string().min(1),
-  privateKey: z.string().optional(),
-  path: z.string().min(1),
-});
-
+// Local targets are org-only: their path is checked for writability on create.
 const createTargetSchema = z.discriminatedUnion("type", [
-  z.object({
-    name: z.string().min(1, "Name is required"),
-    type: z.literal("s3"),
-    config: s3ConfigSchema,
-    isDefault: z.boolean().default(false),
-  }),
-  z.object({
-    name: z.string().min(1, "Name is required"),
-    type: z.literal("r2"),
-    config: s3ConfigSchema,
-    isDefault: z.boolean().default(false),
-  }),
-  z.object({
-    name: z.string().min(1, "Name is required"),
-    type: z.literal("b2"),
-    config: s3ConfigSchema,
-    isDefault: z.boolean().default(false),
-  }),
-  z.object({
-    name: z.string().min(1, "Name is required"),
-    type: z.literal("ssh"),
-    config: sshConfigSchema,
-    isDefault: z.boolean().default(false),
-  }),
+  createTargetVariant("s3"),
+  createTargetVariant("r2"),
+  createTargetVariant("b2"),
+  createTargetVariant("ssh"),
 ]);
 
 // GET /api/v1/admin/backup-targets — list app-level targets
@@ -63,7 +28,7 @@ export async function GET() {
       where: isNull(backupTargets.organizationId),
     });
 
-    return NextResponse.json({ targets, allowLocalBackups: isLocalBackupsAllowed() });
+    return NextResponse.json({ targets: targets.map(presentTarget), allowLocalBackups: isLocalBackupsAllowed() });
   } catch (error) {
     if (error instanceof Error && error.message === "Forbidden") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -104,12 +69,12 @@ async function handlePost(request: NextRequest) {
         organizationId: null, // app-level
         name: data.name,
         type: data.type,
-        config: data.config,
+        config: sealTargetConfig(data.config, null),
         isDefault: data.isDefault,
       })
       .returning();
 
-    return NextResponse.json({ target }, { status: 201 });
+    return NextResponse.json({ target: presentTarget(target) }, { status: 201 });
   } catch (error) {
     if (error instanceof Error && error.message === "Forbidden") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
