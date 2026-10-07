@@ -1,7 +1,4 @@
-// ---------------------------------------------------------------------------
-// Notification channel config: webhook URLs and signing secrets are encrypted
-// at rest under the org key, one field at a time.
-// ---------------------------------------------------------------------------
+// Channel credentials are encrypted at rest under the org key, one field at a time.
 
 import { decryptOrFallback, encrypt, isEncrypted } from "@/lib/crypto/encrypt";
 import { maskChannelConfig } from "./mask-config";
@@ -41,7 +38,7 @@ export function openChannelConfig(channel: { name?: string; organizationId: stri
   });
 }
 
-/** A channel row safe to return to any caller: decrypted, then masked as before. */
+/** A channel row safe to return to any caller: decrypted, then masked. */
 export function presentChannel<T extends { type: string; organizationId: string; config: unknown }>(channel: T): T {
   const config = mapSecrets(channel.config as ChannelConfig, (value) => {
     const result = decryptOrFallback(value, channel.organizationId);

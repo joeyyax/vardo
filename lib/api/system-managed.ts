@@ -1,11 +1,4 @@
-// ---------------------------------------------------------------------------
-// System-managed guard.
-//
-// Vardo rewrites its own app and project rows on every boot from
-// docker-compose.yml and the infra templates, so verbs that change those
-// records are refused. Verbs that act on containers are the product path and
-// stay open — every one of them has an undo.
-// ---------------------------------------------------------------------------
+// Refuses verbs that rewrite Vardo's own app and project rows, which boot regenerates.
 
 import { NextResponse } from "next/server";
 
@@ -27,7 +20,7 @@ export type SystemManagedAction =
 
 type Guarded = { isSystemManaged: boolean | null; name?: string | null };
 
-/** Core service image tags come from files Vardo ships, so they move when Vardo does. */
+/** Core service image tags come from files Vardo ships. */
 export const IMAGE_UPDATE_REFUSAL =
   "Vardo pins this image in docker-compose.yml or a service template and rewrites it on every restart. It moves with the next Vardo release.";
 
@@ -53,15 +46,12 @@ export function isVardoStack(name: string | null | undefined): boolean {
   return name === VARDO_SELF_APP_NAME || name.startsWith(`${VARDO_SELF_APP_NAME}-`);
 }
 
-/**
- * Why a system-managed app or project refuses `action`, or null when it is allowed.
- */
+/** Why a system-managed app or project refuses `action`, or null when allowed. */
 export function systemManagedRefusal(
   target: Guarded,
   action: SystemManagedAction,
 ): string | null {
-  // Checked before the flag: compose children of the Vardo stack carry their
-  // own is_system_managed, and a false one there would unlock the stop.
+  // Check before the flag; a child's false is_system_managed would unlock the stop.
   if (action === "stop" && isVardoStack(target.name)) {
     return VARDO_STOP_REFUSAL;
   }

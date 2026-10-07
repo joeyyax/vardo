@@ -1,13 +1,8 @@
-// ---------------------------------------------------------------------------
-// Activity view — shared types
-//
-// The feed is built from pure functions: taxonomy classifies a raw row, filter
-// narrows the set, group collapses repeats. Components render the result.
-// ---------------------------------------------------------------------------
+// Activity view types.
 
 import type { AwayFamily, AwayOutcome } from "@/lib/away/types";
 
-/** Families are shared with "while you were away" so the two surfaces agree. */
+/** Shared with "while you were away". */
 export type ActivityFamily = AwayFamily;
 export type ActivityOutcome = AwayOutcome;
 
@@ -87,7 +82,7 @@ export type ActivityFilters = {
   since: Date | null;
 };
 
-/** Counts for the filter bar, taken across the window rather than one page. */
+/** Filter bar counts across the whole window. */
 export type ActivityFacets = {
   /** Families with rows in the window, so no chip leads to an empty view. */
   families: ActivityFamily[];

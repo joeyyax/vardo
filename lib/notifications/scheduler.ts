@@ -4,13 +4,13 @@ import { logger } from "@/lib/logger";
 const log = logger.child("notifications");
 
 const TICK_MS = 30_000;
-/** A retry due longer ago than this describes an event nobody wants paged about now. */
+/** Retries due longer ago than this are dropped. */
 export const STALE_RETRY_MS = 60 * 60_000;
 
 let started = false;
 let interval: NodeJS.Timeout | null = null;
 
-/** Per process; the tick's Redis lock keeps a second worker or slot from double-sending. */
+/** Per process; the tick's Redis lock prevents double-sending. */
 export async function startNotificationRetryScheduler(): Promise<void> {
   if (started) return;
   started = true;

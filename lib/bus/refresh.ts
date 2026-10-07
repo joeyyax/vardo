@@ -1,10 +1,4 @@
-// ---------------------------------------------------------------------------
-// Bus event → data refresh
-//
-// Server-rendered surfaces stay live by refreshing on the events that change
-// them, whatever started the work: the UI, the REST API, the MCP server or a
-// git webhook.
-// ---------------------------------------------------------------------------
+// Refreshes server-rendered surfaces on the bus events that change them.
 
 import type { BusEvent, BusEventType } from "./events";
 
@@ -27,10 +21,7 @@ export type RefreshScheduler = {
   cancel: () => void;
 };
 
-/**
- * Debounces refreshes so a burst of events costs one render, while the max
- * wait keeps a long burst from deferring it indefinitely.
- */
+/** Debounces refreshes so a burst costs one render, capped by the max wait. */
 export function createRefreshScheduler(
   run: () => void,
   opts?: { delayMs?: number; maxWaitMs?: number },
@@ -67,18 +58,14 @@ export function createRefreshScheduler(
   };
 }
 
-/**
- * App status implied by a finished deploy, or null while it is still running.
- * Drives the optimistic status a deploying app shows until the server data
- * catches up.
- */
+/** Optimistic app status implied by a finished deploy, or null while it's running. */
 export function appStatusFromEvent(event: BusEvent): string | null {
   switch (event.type) {
     case "deploy.success":
       return "active";
     case "deploy.failed":
       return "error";
-    // Unfinished tail work, but the release cut over and is serving.
+    // The release cut over and is serving.
     case "deploy.incomplete":
       return "active";
     case "deploy.status":

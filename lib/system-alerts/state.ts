@@ -1,6 +1,4 @@
-// ---------------------------------------------------------------------------
-// Alert state tracking — prevents notification spam
-// ---------------------------------------------------------------------------
+// Alert state tracking to rate-limit notifications.
 
 import { db } from "@/lib/db";
 import { systemSettings } from "@/lib/db/schema";
@@ -20,33 +18,27 @@ type AlertState = {
   count: number;
 };
 
-// Rate limit windows in milliseconds per alert type
 const RATE_LIMITS: Record<AlertType, number> = {
   "service-degraded": 24 * 60 * 60 * 1000, // once per outage; recovery clears it
-  "disk-space": 60 * 60 * 1000, // 1 hour
-  "host-restarted": 365 * 24 * 60 * 60 * 1000, // effectively once per startup (reset on process restart)
-  "cert-expiring": 24 * 60 * 60 * 1000, // 1 day
-  "update-available": 24 * 60 * 60 * 1000, // 24 hours
+  "disk-space": 60 * 60 * 1000,
+  "host-restarted": 365 * 24 * 60 * 60 * 1000, // once per startup
+  "cert-expiring": 24 * 60 * 60 * 1000,
+  "update-available": 24 * 60 * 60 * 1000,
 };
 
-// In-memory hot path — source of truth during runtime
+// Source of truth at runtime.
 const state = new Map<string, AlertState>();
 
-// Track whether we've loaded from DB yet
 let loadedFromDb = false;
 
 function makeKey(type: AlertType, key: string): string {
   return `${type}:${key}`;
 }
 
-// ---------------------------------------------------------------------------
-// DB persistence helpers
-// ---------------------------------------------------------------------------
-
 const DB_KEY = "system_alert_state";
 
 type PersistedEntry = {
-  lastFired: string; // ISO string
+  lastFired: string; // ISO
   count: number;
 };
 
@@ -66,15 +58,12 @@ async function persistToDb(): Promise<void> {
         set: { value: JSON.stringify(snapshot), updatedAt: new Date() },
       });
   } catch (err) {
-    // Best-effort — never let a DB write block alert logic
+    // Best-effort.
     log.error("Failed to persist alert state:", err);
   }
 }
 
-/**
- * Load alert state from the database into the in-memory map.
- * Called once at startup before the first tick.
- */
+/** Loads alert state from the database into memory, once at startup. */
 export async function loadAlertState(): Promise<void> {
   if (loadedFromDb) return;
   loadedFromDb = true;
@@ -93,10 +82,6 @@ export async function loadAlertState(): Promise<void> {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Public API
-// ---------------------------------------------------------------------------
-
 export function shouldFire(type: AlertType, key: string): boolean {
   const mapKey = makeKey(type, key);
   const entry = state.get(mapKey);
@@ -112,14 +97,11 @@ export function markFired(type: AlertType, key: string): void {
     lastFired: new Date(),
     count: (existing?.count ?? 0) + 1,
   });
-  // Fire-and-forget — don't block the caller on DB I/O
+  // Fire-and-forget.
   persistToDb().catch(() => {});
 }
 
-/**
- * Forget an alert so the next occurrence fires again. Called on recovery — an
- * entry that survives recovery makes the next outage look like a repeat.
- */
+/** Forgets an alert on recovery so the next occurrence fires again. */
 export function clearFired(type: AlertType, key: string): void {
   if (state.delete(makeKey(type, key))) {
     persistToDb().catch(() => {});
@@ -149,6 +131,5 @@ export function clearAlertState(type?: AlertType, key?: string): void {
   } else {
     state.clear();
   }
-  // Sync the deletion to DB
   persistToDb().catch(() => {});
 }

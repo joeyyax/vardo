@@ -2,11 +2,7 @@ import type { BusEvent, BusEventType } from "./events";
 
 export type ToastSeverity = "success" | "error" | "warning" | "info";
 
-/**
- * Event types that auto-toast. Low-signal events (digests, invitations,
- * update notices) are excluded — they belong in a notification panel, not
- * interrupting the user mid-session.
- */
+/** Event types that auto-toast. */
 export const TOAST_EVENTS: Partial<Record<BusEventType, ToastSeverity>> = {
   "deploy.success": "success",
   "deploy.failed": "error",
@@ -26,7 +22,7 @@ export const TOAST_EVENTS: Partial<Record<BusEventType, ToastSeverity>> = {
 
 /** Toast severity for an event, or undefined when it should not toast. */
 export function toastSeverityFor(event: BusEvent): ToastSeverity | undefined {
-  // A self-heal that gave up stopped defending the app — that needs attention.
+  // A self-heal that gave up needs attention.
   if (event.type === "app.auto-restarted" && event.gaveUp) return "error";
   return TOAST_EVENTS[event.type];
 }

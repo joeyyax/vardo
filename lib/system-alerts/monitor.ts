@@ -20,10 +20,6 @@ import {
 
 const log = logger.child("system-alerts");
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
 async function getAllOrgIds(): Promise<string[]> {
   try {
     const orgs = await db.query.organizations.findMany({
@@ -47,9 +43,7 @@ async function emitAll(event: BusEvent): Promise<void> {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Service health check — alert on healthy → unhealthy transitions
-// ---------------------------------------------------------------------------
+// Service health: alert on healthy → unhealthy transitions.
 
 const previousServiceStatus = new Map<string, "healthy" | "unhealthy" | "unconfigured">();
 const unhealthyStreak = new Map<string, number>();
@@ -60,24 +54,18 @@ async function checkServiceAlerts(health: Awaited<ReturnType<typeof getSystemHea
       const prev = previousServiceStatus.get(service.name);
       previousServiceStatus.set(service.name, service.status);
 
-      // Track consecutive unhealthy checks — require 3 in a row to filter
-      // out brief blips during deploys or container restarts.
+      // Require 3 unhealthy checks in a row to filter out deploy blips.
       if (service.status === "unhealthy") {
         unhealthyStreak.set(service.name, (unhealthyStreak.get(service.name) ?? 0) + 1);
       } else {
-        // Healthy: forget any alert so the next outage reads as new and the
-        // attention bar stops listing it. Not gated on the in-memory streak —
-        // that starts empty every boot, which would strand an entry written
-        // before a restart. clearFired is a no-op when there is nothing to
-        // clear.
+        // Not gated on the in-memory streak, which resets on boot and would strand a pre-restart alert.
         clearFired("service-degraded", service.name);
         unhealthyStreak.set(service.name, 0);
       }
 
       const streak = unhealthyStreak.get(service.name) ?? 0;
 
-      // Only alert after 3 consecutive unhealthy checks (~3 min) and
-      // skip when prev is undefined (first check after startup).
+      // Skip when prev is undefined (first check after startup).
       if (service.status === "unhealthy" && prev !== undefined && streak >= 3) {
         if (!shouldFire("service-degraded", service.name)) continue;
         markFired("service-degraded", service.name);
@@ -97,9 +85,7 @@ async function checkServiceAlerts(health: Awaited<ReturnType<typeof getSystemHea
   }
 }
 
-// ---------------------------------------------------------------------------
-// Disk space — alert at 95%, 90%, 85% thresholds (highest severity first)
-// ---------------------------------------------------------------------------
+// Disk space: alert at 95%, 90% and 85%, highest first.
 
 const DISK_THRESHOLDS = [95, 90, 85];
 
@@ -125,7 +111,6 @@ async function checkDiskAlerts(health: Awaited<ReturnType<typeof getSystemHealth
           used: disk.current,
           total: disk.total,
         });
-        // Only fire the highest triggered threshold per cycle
         break;
       }
     }
@@ -134,13 +119,9 @@ async function checkDiskAlerts(health: Awaited<ReturnType<typeof getSystemHealth
   }
 }
 
-// ---------------------------------------------------------------------------
 // Restart detection
-// ---------------------------------------------------------------------------
 
-// Process-level flag: only evaluate once per process lifetime to prevent
-// hot-reload false positives. process.uptime() resets on Next.js hot reload,
-// which would otherwise re-trigger the alert on every dev restart.
+// Evaluated once per process; process.uptime() resets on Next.js hot reload.
 let startupCheckDone = false;
 
 async function checkHostRestart(): Promise<void> {
@@ -149,18 +130,15 @@ async function checkHostRestart(): Promise<void> {
 
   try {
     const uptimeSeconds = process.uptime();
-    // Use a 5-minute guard to avoid false positives from slow cold starts
-    // or environments where the process may take time to initialize.
+    // Five-minute guard against slow cold starts.
     if (uptimeSeconds >= 300) return;
 
-    // Check if we've tracked a previous uptime — if no record, this is truly
-    // the first startup; skip alert
     const setting = await db.query.systemSettings.findFirst({
       where: (t, { eq }) => eq(t.key, "last_known_uptime"),
     });
 
     if (!setting) {
-      // First time ever — record but don't alert
+      // First startup ever: record, don't alert.
       await db
         .insert(systemSettings)
         .values({ key: "last_known_uptime", value: Date.now().toString() })
@@ -184,7 +162,6 @@ async function checkHostRestart(): Promise<void> {
     log.error("Restart check error:", err);
   }
 
-  // Always update last_known_uptime
   try {
     await db
       .insert(systemSettings)
@@ -198,12 +175,7 @@ async function checkHostRestart(): Promise<void> {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Certificate expiry — dial each domain over TLS and read the served cert
-// ---------------------------------------------------------------------------
-
-// Expiry moves by one day per day, so a 60s tick would re-dial every domain
-// 1440 times for the same answer.
+// Certificate expiry: dial each domain over TLS and read the served cert.
 const CERT_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const CERT_PROBE_CONCURRENCY = 5;
 
@@ -224,11 +196,7 @@ type ProbedDomain = {
   verdict: CertVerdict;
 };
 
-/**
- * Keep the latest observation per domain so app conditions can read an expiry
- * they never probe themselves. Best-effort — a failed write must not cost the
- * alert.
- */
+/** Stores the latest observation per domain for app conditions. Best-effort; a failed write must not cost the alert. */
 async function recordCertObservations(probed: ProbedDomain[]): Promise<void> {
   if (probed.length === 0) return;
   const checkedAt = new Date();
@@ -327,9 +295,7 @@ async function checkCertAlerts(): Promise<void> {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Update available — compare the build commit to main on GitHub
-// ---------------------------------------------------------------------------
+// Update available: compare the build commit to main on GitHub.
 
 export async function checkUpdateAlert(): Promise<void> {
   try {
@@ -353,13 +319,8 @@ export async function checkUpdateAlert(): Promise<void> {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Main tick
-// ---------------------------------------------------------------------------
-
 export async function tickSystemAlerts(): Promise<void> {
-  // Fetch health once and share the result across checks that need it.
-  // This avoids duplicate getSystemHealth() calls per tick.
+  // Fetch health once per tick and share it.
   let health: Awaited<ReturnType<typeof getSystemHealth>> | null = null;
   try {
     health = await getSystemHealth();
@@ -376,10 +337,6 @@ export async function tickSystemAlerts(): Promise<void> {
   await Promise.allSettled(checks);
 }
 
-// ---------------------------------------------------------------------------
-// Scheduler
-// ---------------------------------------------------------------------------
-
 let interval: NodeJS.Timeout | null = null;
 let ticking = false;
 let unregisterShutdown: (() => void) | null = null;
@@ -387,9 +344,7 @@ let unregisterShutdown: (() => void) | null = null;
 export function startSystemAlertMonitor(): void {
   if (interval) return;
 
-  // Load persisted alert state from DB before the first tick so rate-limit
-  // windows survive process restarts. Defer the initial tick by 10s to let
-  // the process stabilize before firing network calls.
+  // Load persisted alert state before the first tick so rate-limit windows survive restarts.
   loadAlertState()
     .then(() => {
       setTimeout(() => {
@@ -418,8 +373,7 @@ export function startSystemAlertMonitor(): void {
     }
   }, 60_000);
 
-  // Registered from the start function, not at module scope — importing this
-  // module must not wire a shutdown for a monitor that was never started.
+  // Registered here, not at module scope, so importing doesn't wire a shutdown.
   unregisterShutdown = closeOnShutdown(stopSystemAlertMonitor);
 }
 

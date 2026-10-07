@@ -1,14 +1,4 @@
-// ---------------------------------------------------------------------------
-// Notification stream consumer
-//
-// Replaces the in-process onEmit hook + Redis list retry queue with a
-// Redis Streams consumer group. Each event is processed exactly once
-// (at-least-once with dedup via ACK). Failed deliveries stay as pending
-// entries and are automatically reclaimed on restart.
-//
-// This module is the bridge between the event bus and notification channels.
-// It consumes from all org event streams and dispatches to email/webhook/slack.
-// ---------------------------------------------------------------------------
+// Consumes org event streams and dispatches to notification channels. Failed deliveries stay pending and are reclaimed.
 
 import { db } from "@/lib/db";
 import {
@@ -101,8 +91,7 @@ async function dispatchEvent(orgId: string, event: BusEvent): Promise<void> {
     }),
   );
 
-  // If any channel failed, throw so the consumer doesn't ACK.
-  // The entry stays pending and will be retried via XCLAIM.
+  // Throw on any failure so the entry isn't ACKed and is retried via XCLAIM.
   const failures = results.filter((r) => r.status === "rejected");
   if (failures.length > 0) {
     throw new Error(`${failures.length} channel(s) failed delivery`);
@@ -135,26 +124,15 @@ async function logDelivery(
   }
 }
 
-// ---------------------------------------------------------------------------
-// Consumer lifecycle
-// ---------------------------------------------------------------------------
-
 let stopFn: (() => Promise<void>) | null = null;
 
-/**
- * Start the notification stream consumer.
- *
- * Queries all active orgs and subscribes to their event streams.
- * New orgs created after startup will need a restart or dynamic
- * stream addition (future improvement).
- */
+/** Starts the consumer on every active org's event stream. New orgs need a restart. */
 export async function startNotificationConsumer(): Promise<void> {
   if (stopFn) {
     log.warn("Notification consumer already running");
     return;
   }
 
-  // Get all active org IDs to subscribe to their event streams
   const orgs = await db.query.organizations.findMany({
     columns: { id: true },
   });
@@ -181,10 +159,7 @@ export async function startNotificationConsumer(): Promise<void> {
   });
 }
 
-/**
- * Stop the notification consumer gracefully.
- * Awaits drain of in-progress deliveries.
- */
+/** Stops the consumer after in-progress deliveries drain. */
 export async function stopNotificationConsumer(): Promise<void> {
   if (stopFn) {
     log.info("Stopping notification consumer...");
@@ -194,10 +169,7 @@ export async function stopNotificationConsumer(): Promise<void> {
   }
 }
 
-/**
- * Restart the consumer to pick up new org streams.
- * Call this when a new organization is created.
- */
+/** Restarts the consumer to pick up new org streams. */
 export async function restartNotificationConsumer(): Promise<void> {
   await stopNotificationConsumer();
   await startNotificationConsumer();

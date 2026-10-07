@@ -1,9 +1,4 @@
-// ---------------------------------------------------------------------------
-// "While you were away" — shared types
-//
-// The classifier is pure: collectors turn database rows into AwayFact[] plus
-// per-subject baselines, and classify() decides what deserves attention.
-// ---------------------------------------------------------------------------
+// "While you were away" types.
 
 export type AwayFamily =
   | "deploy"
@@ -45,14 +40,11 @@ export type AwayInput = {
   now: Date;
   facts: AwayFact[];
   baselines: AwayBaselines;
-  /** Sources that could not be read. Reported rather than silently dropped. */
+  /** Sources that couldn't be read. */
   unavailable?: string[];
 };
 
-/**
- * Why an item is on the list. This is the answer to "do I need to care",
- * so it is rendered, not just used for scoring.
- */
+/** Why an item is on the list. Rendered, not only scored. */
 export type AwayReason =
   | "first-failure"
   | "regression"

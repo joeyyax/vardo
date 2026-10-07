@@ -1,12 +1,4 @@
-// ---------------------------------------------------------------------------
-// App state facts
-//
-// The status reconciler writes "missing"/"error" straight to the app row and
-// emits nothing, so a container that died outside Vardo leaves no event to
-// replay. These facts are reconstructed from the current row plus the window's
-// deploys: a state change with a deploy behind it is explained, one without is
-// the interesting case.
-// ---------------------------------------------------------------------------
+// App state facts, rebuilt from the app row and the window's deploys; the reconciler emits no events.
 
 import type { AwayFact } from "./types";
 
@@ -31,13 +23,7 @@ export type AwayDeployRow = {
 
 const DOWN_STATUSES = new Set(["error", "missing"]);
 
-/**
- * Facts for apps whose runtime state moved during the window.
- *
- * Deploys are the only sanctioned cause of a state change, so each app is
- * matched against its deploys in the window before anything is called
- * unexplained.
- */
+/** Facts for apps whose runtime state moved during the window and no deploy explains. */
 export function deriveAppStateFacts(
   apps: AwayAppRow[],
   deploys: AwayDeployRow[],
@@ -53,7 +39,7 @@ export function deriveAppStateFacts(
   const facts: AwayFact[] = [];
 
   for (const app of apps) {
-    // A deploy in flight owns the status; judging it now would be premature.
+    // A deploy in flight owns the status.
     if (app.status === "deploying") continue;
 
     const appDeploys = byApp.get(app.id) ?? [];
@@ -72,10 +58,9 @@ export function deriveAppStateFacts(
     const down = DOWN_STATUSES.has(app.status);
     const stopped = app.status === "stopped";
 
-    // A parked app being off is the declaration working, not a fact. Its
-    // restart branch below still fires — coming back up is the surprising part.
+    // A parked app being off isn't a fact; its restart branch still fires.
     if ((down || stopped) && !app.parked && app.updatedAt >= since) {
-      // A failed deploy already reports itself — don't say it twice.
+      // A failed deploy already reports itself.
       if (latest?.status === "failed") continue;
 
       if (latest?.status === "success") {
@@ -104,8 +89,7 @@ export function deriveAppStateFacts(
       continue;
     }
 
-    // Container came back up on its own — restart policy, host reboot or a
-    // crash loop that settled. None of those are visible anywhere else.
+    // Container came back up on its own.
     if (app.containerStartedAt && app.containerStartedAt >= since) {
       const explained = appDeploys.some(
         (d) =>

@@ -1,9 +1,4 @@
-// ---------------------------------------------------------------------------
-// Env var interpolation / resolution engine
-//
-// Resolves template expressions like ${VAR}, ${project.name},
-// ${postgres.DATABASE_URL} at deploy time.
-// ---------------------------------------------------------------------------
+// Resolves env expressions like ${VAR}, ${project.name} and ${postgres.DATABASE_URL} at deploy time.
 
 const EXPRESSION_RE = /\$\{([^}]+)\}/g;
 
@@ -21,10 +16,6 @@ const BUILTIN_PROJECT_FIELDS = new Set([
   "imageName",
 ]);
 const BUILTIN_ORG_FIELDS = new Set(["name", "id", "baseDomain"]);
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 
 export type ResolveContext = {
   project: {
@@ -53,10 +44,6 @@ export type ResolveContext = {
   ) => Promise<string | null>;
 };
 
-// ---------------------------------------------------------------------------
-// Custom error
-// ---------------------------------------------------------------------------
-
 export class EnvResolutionError extends Error {
   constructor(message: string) {
     super(message);
@@ -64,14 +51,7 @@ export class EnvResolutionError extends Error {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Expression utilities
-// ---------------------------------------------------------------------------
-
-/**
- * Returns all `${...}` expression bodies found in a value (without the
- * `${}` wrapper). Useful for the UI to show what a value references.
- */
+/** Returns the `${...}` expression bodies in a value, without the wrapper. */
 export function extractExpressions(value: string): string[] {
   const results: string[] = [];
   let match: RegExpExecArray | null;
@@ -82,9 +62,7 @@ export function extractExpressions(value: string): string[] {
   return results;
 }
 
-/**
- * Categorizes an expression for UI display.
- */
+/** Categorizes an expression for UI display. */
 export function validateExpression(
   expression: string,
 ): { type: "self" | "cross-project" | "builtin" | "org-var"; target: string } {
@@ -110,16 +88,7 @@ export function validateExpression(
   return { type: "cross-project", target: expression };
 }
 
-// ---------------------------------------------------------------------------
-// Single-value resolution
-// ---------------------------------------------------------------------------
-
-/**
- * Resolves all `${...}` expressions in a single env var value.
- *
- * `resolvedSelf` is an optional map of already-resolved self-references,
- * used internally by `resolveAllEnvVars` during topological resolution.
- */
+/** Resolves all `${...}` expressions in one value; `resolvedSelf` holds already-resolved self-references. */
 export async function resolveEnvValue(
   value: string,
   context: ResolveContext,
@@ -181,10 +150,9 @@ async function resolveOneExpression(
           ? `https://${context.project.domain}`
           : null;
       case "host":
-        // External hostname (same as domain)
         return context.project.domain ?? null;
       case "internalHost":
-        // Docker internal hostname — service name on the shared network
+        // Service name on the shared network.
         return context.project.name;
       case "gitUrl":
         return context.project.gitUrl ?? null;
@@ -207,7 +175,6 @@ async function resolveOneExpression(
       case "baseDomain":
         return context.org.baseDomain ?? null;
       default:
-        // Check org-level shared env vars
         if (context.orgEnvVars && field in context.orgEnvVars) {
           return context.orgEnvVars[field];
         }
@@ -219,14 +186,7 @@ async function resolveOneExpression(
   return context.resolveExternalVar(prefix, field);
 }
 
-// ---------------------------------------------------------------------------
-// Bulk resolution with topological ordering
-// ---------------------------------------------------------------------------
-
-/**
- * Resolves all env vars for a project, handling self-references by resolving
- * vars in dependency order. Detects circular self-references and throws.
- */
+/** Resolves a project's env vars in dependency order. Throws on circular self-references. */
 export async function resolveAllEnvVars(
   vars: Record<string, string>,
   context: ResolveContext,
@@ -244,13 +204,10 @@ export async function resolveAllEnvVars(
     selfDeps.set(key, deps);
   }
 
-  // Topological sort (Kahn's algorithm)
   const order = topologicalSort(selfDeps);
 
-  // Resolve in dependency order
   const resolved: Record<string, string> = {};
 
-  // Use a context clone that points to the original raw vars for lookups
   const ctxWithVars: ResolveContext = { ...context, envVars: vars };
 
   for (const key of order) {
@@ -264,21 +221,17 @@ export async function resolveAllEnvVars(
   return resolved;
 }
 
-/**
- * Kahn's algorithm for topological sorting. Throws on cycles.
- */
+/** Kahn's algorithm. Throws on cycles. */
 function topologicalSort(graph: Map<string, Set<string>>): string[] {
   const inDegree = new Map<string, number>();
   for (const key of graph.keys()) {
     if (!inDegree.has(key)) inDegree.set(key, 0);
     for (const dep of graph.get(key)!) {
       inDegree.set(dep, (inDegree.get(dep) ?? 0) + 0); // ensure dep exists
-      // Increment in-degree for the key that depends on dep? No --
-      // inDegree tracks how many vars a given key depends on.
     }
   }
 
-  // Recompute properly: inDegree[key] = number of deps key has that are in graph
+  // inDegree[key] = number of deps key has
   for (const [key, deps] of graph) {
     inDegree.set(key, deps.size);
   }
@@ -293,7 +246,6 @@ function topologicalSort(graph: Map<string, Set<string>>): string[] {
     const current = queue.shift()!;
     result.push(current);
 
-    // For all keys that depend on `current`, decrement their in-degree
     for (const [key, deps] of graph) {
       if (deps.has(current)) {
         const newDegree = inDegree.get(key)! - 1;

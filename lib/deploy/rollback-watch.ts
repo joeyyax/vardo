@@ -1,10 +1,4 @@
-// ---------------------------------------------------------------------------
-// Auto-rollback grace period.
-//
-// The window is derived from the deployment row on every sweep rather than held
-// in a timer, so a Vardo restart mid-window resumes the watch instead of losing
-// it. This module is the pure decision half; the sweeper does the IO.
-// ---------------------------------------------------------------------------
+// Auto-rollback grace period decisions, re-derived from the deployment row each sweep. Pure.
 
 import { isSelfApp } from "@/lib/docker/self-env";
 
@@ -39,13 +33,9 @@ export function otherSlot(slot: Slot): Slot {
   return slot === "blue" ? "green" : "blue";
 }
 
-/**
- * Whether a successful deployment is still inside its grace period and safe to
- * act on. Everything here is re-derived per sweep — no verdict is remembered.
- */
+/** Whether a successful deployment is still inside its grace period and safe to act on. */
 export function evaluateWatch(c: WatchCandidate, now: number): WatchVerdict {
-  // The watch would run inside the container a rollback tears down, and cannot
-  // observe its own death. Reported at deploy time, never armed.
+  // The watch would run inside the container a rollback tears down.
   if (isSelfApp(c.appName)) return { watch: false, reason: "self-deploy" };
 
   // Rolling back a rollback flips to the version that was just abandoned.
@@ -66,7 +56,7 @@ export function evaluateWatch(c: WatchCandidate, now: number): WatchVerdict {
   return { watch: true, slot: c.slot, standbySlot: otherSlot(c.slot) };
 }
 
-/** Bound a stored grace period to the range the API accepts. */
+/** Bounds a stored grace period to the range the API accepts. */
 export function clampGracePeriod(seconds: number | null): number {
   if (seconds == null || !Number.isFinite(seconds)) return DEFAULT_GRACE_PERIOD_SECONDS;
   return Math.min(Math.max(Math.trunc(seconds), 1), MAX_GRACE_PERIOD_SECONDS);

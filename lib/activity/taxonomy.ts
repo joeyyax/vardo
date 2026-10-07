@@ -1,10 +1,4 @@
-// ---------------------------------------------------------------------------
-// Activity view — taxonomy
-//
-// Maps an action string to a family and an outcome. recordActivity writes both
-// to the row at insert time; the rules stay here so the columns, the filters
-// and "while you were away" cannot disagree.
-// ---------------------------------------------------------------------------
+// Maps an action string to a family and an outcome, stored on the row at insert.
 
 import type {
   ActivityFamily,
@@ -42,13 +36,13 @@ const FAMILY_BY_PREFIX: Array<[string, ActivityFamily]> = [
 /** Outcomes that the action suffix alone would get wrong. */
 const OUTCOME_OVERRIDES: Record<string, ActivityOutcome> = {
   "volume.drift_detected": "failure",
-  // The durable half of the stability timeline — Docker's own counters reset.
+  // The durable half of the stability timeline.
   "app.crashed": "failure",
   "app.crash_looping": "failure",
   "app.recovered": "success",
   "transfer.rejected": "failure",
   "transfer.accepted": "success",
-  // Automatic rollback means the deploy broke; the manual one is a choice.
+  // Automatic rollback means the deploy broke.
   "deployment.rolled_back": "failure",
   "deployment.instant_rollback": "neutral",
   "deployment.cancelled": "neutral",
@@ -117,7 +111,7 @@ export function asRecord(metadata: unknown): Record<string, unknown> {
   return {};
 }
 
-/** Longer errors are truncated at render time; only the first line is kept. */
+/** Keeps the first line; render truncates the rest. */
 export function errorTextFrom(metadata: unknown): string | undefined {
   const record = asRecord(metadata);
   for (const key of ERROR_KEYS) {
@@ -135,10 +129,7 @@ export function actionLabel(action: string): string {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
-/**
- * Name for the thing acted on. Rows without an app fall back to metadata, then
- * to the action itself, so a subject is never blank.
- */
+/** Name for the thing acted on: the app, then metadata, then the action. */
 function subjectLabelFor(row: ActivityRow): string {
   if (row.app) return row.app.displayName || row.app.name;
   const metadata = asRecord(row.metadata);
@@ -149,7 +140,7 @@ function subjectLabelFor(row: ActivityRow): string {
   return actionLabel(row.action);
 }
 
-/** Stored values win; derivation covers rows written before the columns existed. */
+/** Stored values win; derivation covers older rows. */
 export function classify(row: ActivityRow): ClassifiedActivity {
   const outcome = row.outcome ?? outcomeFor(row.action);
   const subjectLabel = subjectLabelFor(row);
@@ -158,8 +149,7 @@ export function classify(row: ActivityRow): ClassifiedActivity {
     at: new Date(row.createdAt),
     family: row.family ?? familyFor(row.action),
     outcome,
-    // app.deleted carries no appId, so fall back to the name — otherwise two
-    // different deleted apps would collapse into one row.
+    // app.deleted has no appId; key on the name so deleted apps don't collapse.
     subjectId: row.app?.id ?? `label:${row.action}:${subjectLabel}`,
     subjectLabel,
     error: outcome === "failure" ? errorTextFrom(row.metadata) : undefined,

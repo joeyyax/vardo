@@ -1,13 +1,5 @@
-// ---------------------------------------------------------------------------
-// App lifecycle activity
-//
-// Server-only half of lib/ui/lifecycle: writes the row when someone restarts,
-// stops or starts an app, and reads it back for that app's Deployments tab.
-//
-// Every writer is an operator path — the HTTP routes and the MCP tools. The
-// health monitor's self-heal restart deliberately does not call this; it is a
-// response to a symptom and records itself on the stability timeline instead.
-// ---------------------------------------------------------------------------
+// Server half of lib/ui/lifecycle: records operator restarts, stops and starts and reads them back.
+// The health monitor's self-heal restart doesn't call this; it records on the stability timeline.
 
 import { and, desc, eq, gte, inArray } from "drizzle-orm";
 
@@ -43,14 +35,11 @@ export type LifecycleApp = {
   id: string;
   parentAppId?: string | null;
   composeService?: string | null;
-  /** Config waiting on a deploy when the action ran. None of these apply it. */
+  /** Config waiting on a deploy when the action ran. */
   needsRedeploy?: boolean | null;
 };
 
-/**
- * What the action acted on. A compose child names its service; anything with
- * children of its own is a stack, so one click is not mistaken for one app.
- */
+/** What the action acted on: a compose child names its service; a parent is a stack. */
 export async function resolveLifecycleScope(
   app: LifecycleApp,
 ): Promise<{ scope: LifecycleScope; service?: string }> {
@@ -64,10 +53,7 @@ export async function resolveLifecycleScope(
   return { scope: child ? "stack" : "app" };
 }
 
-/**
- * Record one operator lifecycle action. Never throws — an audit row that fails
- * to write must not turn a successful restart into an error.
- */
+/** Records one operator lifecycle action. Never throws. */
 export async function recordLifecycle(opts: {
   organizationId: string;
   app: LifecycleApp;

@@ -2,11 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createHash } from "crypto";
 import { rateLimit } from "./rate-limit";
 
-/**
- * Rate limit tiers for different endpoint types.
- *
- * Tuned for self-hosted operator usage, not public API scale.
- */
+/** Rate limit tiers by endpoint type, tuned for self-hosted use. */
 const TIERS = {
   /** Login, signup, passkey, invite codes — brute-force protection */
   auth: { limit: 5, windowMs: 60_000 },
@@ -27,17 +23,8 @@ type Tier = keyof typeof TIERS;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type RouteHandler = (request: NextRequest, context: any) => Promise<Response | NextResponse>;
 
-/**
- * Extract a rate limit identifier from the request.
- *
- * For authenticated requests: uses the session user ID (from cookie/header).
- * For unauthenticated: falls back to IP address.
- *
- * This is a lightweight check — it reads the session cookie but doesn't
- * validate it. The route handler does full auth validation.
- */
+/** Rate limit identifier from the bearer token or session cookie, else IP. Doesn't validate the session. */
 function extractIdentifier(request: NextRequest): string {
-  // Check for Bearer token — hash for collision-free rate limit key
   const authHeader = request.headers.get("authorization");
   if (authHeader?.startsWith("Bearer ")) {
     const token = authHeader.slice(7).trim();
@@ -45,7 +32,6 @@ function extractIdentifier(request: NextRequest): string {
     return `token:${hash}`;
   }
 
-  // Check for session cookie — hash for collision-free key
   const sessionToken =
     request.cookies.get("better-auth.session_token")?.value ||
     request.cookies.get("__Secure-better-auth.session_token")?.value;
@@ -54,7 +40,6 @@ function extractIdentifier(request: NextRequest): string {
     return `session:${hash}`;
   }
 
-  // Fallback to IP
   return (
     request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
     request.headers.get("x-real-ip") ||
@@ -62,16 +47,7 @@ function extractIdentifier(request: NextRequest): string {
   );
 }
 
-/**
- * Wrap a route handler with Redis-backed rate limiting.
- *
- * Usage:
- * ```ts
- * export const POST = withRateLimit(async (request, context) => {
- *   // ... handler code
- * }, { tier: "mutation" });
- * ```
- */
+/** Wraps a route handler with Redis-backed rate limiting. */
 export function withRateLimit(
   handler: RouteHandler,
   opts: { tier: Tier; key?: string }

@@ -1,13 +1,4 @@
-/**
- * Notification retry via Redis list.
- *
- * When a channel send fails, the delivery is pushed to a Redis list
- * with attempt count and backoff timestamp. A tick function processes
- * the list every 30s, retrying deliveries that are past their backoff.
- *
- * After 3 failed attempts the notification is abandoned and logged
- * as permanently failed.
- */
+/** Retries failed notification sends from a Redis list with backoff; abandoned after 3 attempts. */
 
 import { redis } from "@/lib/redis";
 import { acquireLock, releaseLock } from "@/lib/redis-lock";
@@ -24,7 +15,7 @@ const log = logger.child("notifications");
 const RETRY_KEY = "vardo:notification:retry";
 const LOCK_KEY = "lock:notification-retry";
 const MAX_ATTEMPTS = 3;
-const MAX_QUEUE_LENGTH = 500; // circuit breaker - drop oldest if exceeded
+const MAX_QUEUE_LENGTH = 500; // drops oldest when exceeded
 const BACKOFF_MS = [0, 5_000, 15_000]; // immediate, 5s, 15s
 
 type RetryEntry = {
@@ -37,11 +28,9 @@ type RetryEntry = {
   retryAfter: number; // timestamp ms
 };
 
-/**
- * Enqueue a failed notification for retry.
- */
+/** Enqueues a failed notification for retry. */
 export async function enqueueRetry(entry: Omit<RetryEntry, "attempt" | "retryAfter">, attempt: number): Promise<void> {
-  if (attempt >= MAX_ATTEMPTS) return; // exhausted
+  if (attempt >= MAX_ATTEMPTS) return;
 
   const delay = BACKOFF_MS[attempt] ?? 15_000;
   const retryEntry: RetryEntry = {
@@ -51,14 +40,10 @@ export async function enqueueRetry(entry: Omit<RetryEntry, "attempt" | "retryAft
   };
 
   await redis.lpush(RETRY_KEY, JSON.stringify(retryEntry));
-  // Circuit breaker - trim to cap if the queue is growing unboundedly
   await redis.ltrim(RETRY_KEY, 0, MAX_QUEUE_LENGTH - 1);
 }
 
-/**
- * Drop queued retries that came due more than `maxAgeMs` ago. Returns how many.
- * Holds the tick's lock so it never races a tick on another worker.
- */
+/** Drops retries due more than `maxAgeMs` ago and returns the count. Holds the tick's lock. */
 export async function dropStaleRetries(maxAgeMs: number): Promise<number> {
   const len = await redis.llen(RETRY_KEY);
   if (len === 0) return 0;
@@ -84,15 +69,11 @@ export async function dropStaleRetries(maxAgeMs: number): Promise<number> {
   }
 }
 
-/**
- * Process the retry queue. Call every 30s from the scheduler.
- * Pops entries that are past their backoff time and retries them.
- */
+/** Retries queued entries past their backoff. Runs every 30s. */
 export async function tickNotificationRetries(): Promise<void> {
   const len = await redis.llen(RETRY_KEY);
   if (len === 0) return;
 
-  // Distributed lock - prevents multiple workers processing the same entries
   const locked = await acquireLock(LOCK_KEY, 30_000);
   if (!locked) return;
   try {
@@ -106,7 +87,6 @@ async function processRetries(len: number): Promise<void> {
   const now = Date.now();
   const requeue: string[] = [];
 
-  // Pop all entries
   const entries: string[] = [];
   for (let i = 0; i < len; i++) {
     const raw = await redis.rpop(RETRY_KEY);
@@ -121,24 +101,20 @@ async function processRetries(len: number): Promise<void> {
       continue; // corrupt entry, discard
     }
 
-    // Not ready yet - put it back
     if (now < entry.retryAfter) {
       requeue.push(raw);
       continue;
     }
 
-    // Fetch channel config (may have changed or been deleted)
     const channel = await db.query.notificationChannels.findFirst({
       where: eq(notificationChannels.id, entry.channelId),
     });
 
     if (!channel || !channel.enabled) {
-      // Channel gone or disabled - log and skip
       await logAttempt(entry, "failed", "Channel deleted or disabled");
       continue;
     }
 
-    // Retry the send
     try {
       await createChannel(channel).send(entry.event);
       await logAttempt(entry, "success", null);
@@ -146,14 +122,12 @@ async function processRetries(len: number): Promise<void> {
       const error = err instanceof Error ? err.message : String(err);
 
       if (entry.attempt >= MAX_ATTEMPTS) {
-        // Exhausted all retries
         log.error(
           `Channel "${entry.channelName}" permanently failed after ${entry.attempt} attempts:`,
           error
         );
         await logAttempt(entry, "failed", error);
       } else {
-        // Re-enqueue for another retry
         log.warn(
           `Channel "${entry.channelName}" attempt ${entry.attempt}/${MAX_ATTEMPTS} failed, will retry`
         );
@@ -162,7 +136,6 @@ async function processRetries(len: number): Promise<void> {
     }
   }
 
-  // Put back entries that weren't ready
   if (requeue.length > 0) {
     await redis.lpush(RETRY_KEY, ...requeue);
   }

@@ -1,6 +1,4 @@
-/**
- * Mask sensitive fields in a notification channel's config before returning to clients.
- */
+/** Masks sensitive fields in a channel's config before returning it to clients. */
 export function maskChannelConfig<T extends { type: string; config: unknown }>(
   channel: T,
 ): T {

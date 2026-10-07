@@ -1,11 +1,5 @@
-// ---------------------------------------------------------------------------
-// "While you were away" — classification
-//
-// Two tiers. Routine is an allowlist of successful automated work; everything
-// else is worth a look, including kinds this module does not recognize. Tier is
-// categorical and score only orders the list, so a failure can never be scored
-// down into silence.
-// ---------------------------------------------------------------------------
+// "While you were away" classification: routine is an allowlist, everything else is worth a look.
+// Score only orders the list, so a failure can't be scored down into silence.
 
 import type {
   AwayBaseline,
@@ -32,7 +26,7 @@ export const ROUTINE_KINDS = new Set([
   "system.update-available",
 ]);
 
-/** Kinds with no success denominator — judged on severity, not track record. */
+/** Kinds with no success denominator, judged on severity. */
 const ALERT_KINDS = new Set([
   "disk.write-alert",
   "volume.drift",
@@ -71,7 +65,7 @@ const SEVERITY: Record<string, number> = {
   "disk.write-alert": 24,
 };
 
-/** Unrecognized kinds land mid-list — visible, not shouting. */
+/** Unrecognized kinds land mid-list. */
 const DEFAULT_SEVERITY = 20;
 
 const REASON_BONUS: Record<AwayReason, number> = {
@@ -90,10 +84,7 @@ export const RECURRING_FAILURE_RATE = 0.34;
 /** Extra demotion once something is established as flaky. */
 const RECURRING_PENALTY = 10;
 
-/**
- * Minimum absence before a summary is worth showing. Below this the SSE
- * catch-up window and live toasts already covered the gap.
- */
+/** Minimum absence before a summary is worth showing. */
 export const MIN_AWAY_MS = 15 * 60_000;
 
 export function baselineKey(family: AwayFamily, subjectId: string): string {
@@ -107,10 +98,7 @@ function lookupBaseline(
   return baselines[baselineKey(fact.family, fact.subjectId)];
 }
 
-/**
- * Why this item needs a look. Failures are graded against the subject's own
- * history: never failed before outranks normally-fine, which outranks flaky.
- */
+/** Why this item needs a look: never-failed outranks normally-fine, which outranks flaky. */
 export function reasonFor(
   fact: AwayFact,
   baseline: AwayBaseline | undefined,
@@ -126,16 +114,13 @@ export function reasonFor(
     return "regression";
   }
 
-  // Someone else changed something. Not a fault, still worth knowing.
+  // Someone else changed something.
   if (fact.family === "org") return "change";
 
   return "unrecognized";
 }
 
-/**
- * Ordering weight. Frequency only ever subtracts: a familiar failure sinks
- * below a first-time one, and repeats inside the window add nothing.
- */
+/** Ordering weight. Frequency only subtracts, so a familiar failure sinks below a first-time one. */
 export function scoreFor(
   fact: AwayFact,
   reason: AwayReason,
@@ -163,10 +148,7 @@ function isRoutine(fact: AwayFact): boolean {
   return ROUTINE_KINDS.has(fact.kind) && fact.outcome !== "failure";
 }
 
-/**
- * Split the window into routine and worth-a-look, collapsing repeats.
- * Notable rows group by kind and subject; routine collapses to family counts.
- */
+/** Splits the window into routine and worth-a-look, collapsing repeats. */
 export function classifyAway(input: AwayInput): AwaySummary {
   const { since, now, facts, baselines, unavailable = [] } = input;
 
@@ -227,8 +209,7 @@ export function classifyAway(input: AwayInput): AwaySummary {
     routine,
     routineCount: routine.reduce((sum, r) => sum + r.count, 0),
     unavailable,
-    // Nothing needed a look means nothing worth interrupting for. Successful
-    // work alone is not news, so the surface stays hidden.
+    // Successful work alone isn't news; stay hidden.
     shouldSurface:
       notable.length > 0 && now.getTime() - since.getTime() >= MIN_AWAY_MS,
   };

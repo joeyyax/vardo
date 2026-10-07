@@ -1,9 +1,4 @@
-// ---------------------------------------------------------------------------
-// Activity view — phrasing
-//
-// One phrase per action, written to read as "<actor> <phrase> <subject>".
-// Standalone phrases are complete on their own and take no subject.
-// ---------------------------------------------------------------------------
+// One phrase per action, read as "<actor> <phrase> <subject>".
 
 import type { ActivityGroup, ActivityOutcome } from "./types";
 import { actionLabel, asRecord } from "./taxonomy";
@@ -111,10 +106,7 @@ function triggerLabel(trigger: string): string {
   return TRIGGER_ACRONYMS[trigger] ?? trigger;
 }
 
-/**
- * Short trailing facts for a row — duration, what changed, what triggered it.
- * Only read from a single event, since a collapsed run has no one answer.
- */
+/** Trailing facts for a single-event row: duration, what changed, what triggered it. */
 export function detailsFor(group: ActivityGroup): string[] {
   if (!group.single) return [];
   const metadata = asRecord(group.single.metadata);
@@ -145,7 +137,7 @@ export function detailsFor(group: ActivityGroup): string[] {
   return details;
 }
 
-/** "Alpha, Beta and 3 more" — fleet rows name subjects rather than count them. */
+/** "Alpha, Beta and 3 more". */
 export function subjectSummary(
   labels: string[],
   max = 3

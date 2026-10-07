@@ -13,7 +13,7 @@ type RecordActivityOpts = {
 };
 
 export async function recordActivity(opts: RecordActivityOpts): Promise<void> {
-  // Skip the write, not just the page — disabling activity stops the volume.
+  // Skip the write, not only the page.
   if (!(await isFeatureEnabledAsync("activity"))) return;
 
   await db.insert(activities).values({

@@ -39,9 +39,7 @@ export class EmailNotificationChannel implements NotificationChannel {
 
   private buildTemplate(event: BusEvent) {
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-    // /apps, not /projects: the id here is an app. The app route accepts an id
-    // and redirects to the slug; the project route 404s on one. Templates append
-    // a tab as a path segment — ?tab= is not read anywhere.
+    // /apps, not /projects: only the app route accepts an id. Tabs are path segments.
     const dashboardUrl = "appId" in event && event.appId
       ? `${appUrl}/apps/${event.appId}`
       : appUrl;
@@ -206,7 +204,7 @@ export class EmailNotificationChannel implements NotificationChannel {
   }
 }
 
-/** Flatten a BusEvent extra fields to Record<string, string> for templates that need it. */
+/** Flattens a BusEvent's extra fields to strings for templates. */
 function flattenToStrings(event: BusEvent): Record<string, string> {
    
   const { type: _type, title: _title, message: _message, ...rest } = event;

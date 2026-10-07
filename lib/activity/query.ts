@@ -1,9 +1,4 @@
-// ---------------------------------------------------------------------------
-// Activity view — database queries
-//
-// Server-only. Family and outcome are columns, so every filter is a predicate
-// the database can answer and the feed reads one page rather than a scan.
-// ---------------------------------------------------------------------------
+// Activity feed queries. Server-only.
 
 import { and, count, eq, gte, inArray, isNotNull, type SQL } from "drizzle-orm";
 
@@ -30,7 +25,7 @@ function scopeConditions(scope: ActivityScope, since: Date | null): SQL[] {
   return conditions;
 }
 
-/** An empty family or outcome list means no restriction, not "match nothing". */
+/** An empty family or outcome list means no restriction. */
 export function activityConditions(
   scope: ActivityScope,
   filters: ActivityFilters
@@ -45,10 +40,7 @@ export function activityConditions(
   return conditions;
 }
 
-/**
- * Counts for the filter bar. Deliberately ignores the family and outcome chips
- * so selecting one never hides the others.
- */
+/** Filter bar counts. Ignores the family and outcome chips so one never hides the others. */
 export async function activityFacets(
   scope: ActivityScope,
   since: Date | null

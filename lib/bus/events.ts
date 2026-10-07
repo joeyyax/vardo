@@ -1,14 +1,6 @@
-/**
- * Typed event definitions for the event bus.
- *
- * Each event uses a dot-notation type string and carries a typed payload
- * instead of the old Record<string, string> metadata bag. The discriminated
- * union ensures every consumer handles each variant correctly.
- */
+/** Typed event definitions for the event bus, as a discriminated union on `type`. */
 
-// ---------------------------------------------------------------------------
-// Event categories (used for grouping in the settings UI)
-// ---------------------------------------------------------------------------
+// Event categories for grouping in the settings UI.
 
 export const EVENT_CATEGORIES = {
   deploy: ["deploy.success", "deploy.failed", "deploy.incomplete", "deploy.rollback", "deploy.status"],
@@ -30,10 +22,6 @@ export const EVENT_CATEGORIES = {
 } as const;
 
 export type EventCategory = keyof typeof EVENT_CATEGORIES;
-
-// ---------------------------------------------------------------------------
-// Individual event types
-// ---------------------------------------------------------------------------
 
 export type DeploySuccessEvent = {
   type: "deploy.success";
@@ -184,7 +172,7 @@ export type SystemCertExpiringEvent = {
   title: string;
   message: string;
   domain: string;
-  /** Every domain the certificate covers. A wildcard cert backs many at once. */
+  /** Every domain the certificate covers. */
   domains?: string[];
   daysLeft: number;
   expiresAt: string;
@@ -235,14 +223,9 @@ export type DigestWeeklyEvent = {
   cronFailed: number;
 };
 
-// ---------------------------------------------------------------------------
-// Operational events (real-time UI updates, not notification-worthy)
-// ---------------------------------------------------------------------------
+// Operational events: real-time UI updates, not sent to channels.
 
-/**
- * Lightweight deploy status change for real-time UI (deployments list, logs page).
- * `running` marks the start of a deploy and is not sent to notification channels.
- */
+/** Deploy status change for real-time UI. `running` marks the start of a deploy. */
 export type DeployStatusEvent = {
   type: "deploy.status";
   title: string;
@@ -255,11 +238,7 @@ export type DeployStatusEvent = {
   supersededBy?: string;
 };
 
-/**
- * One unit of a backup run started. Emitted per volume as the run walks its
- * sources, so the backups UI can show which app is being captured right now.
- * Deliberately absent from EVENT_CATEGORIES — it drives live UI, never a channel.
- */
+/** One volume of a backup run started. Keep out of EVENT_CATEGORIES; it drives live UI only. */
 export type BackupProgressEvent = {
   type: "backup.progress";
   title: string;
@@ -283,11 +262,7 @@ export type AppStateChangedEvent = {
   appId: string;
 };
 
-/**
- * The health monitor auto-restarted a container that its healthcheck reported
- * as unhealthy (self-healing). `gaveUp` is true when the per-window restart cap
- * was hit and the monitor stopped retrying — that case needs human attention.
- */
+/** The health monitor restarted an unhealthy container. `gaveUp` means the restart cap was hit. */
 export type AppAutoRestartedEvent = {
   type: "app.auto-restarted";
   title: string;
@@ -301,10 +276,7 @@ export type AppAutoRestartedEvent = {
   gaveUp: boolean;
 };
 
-/**
- * The kernel killed a container for memory. `oom-host` is the machine running
- * out and picking a victim; `oom-limit` is the container hitting its own cap.
- */
+/** The kernel killed a container for memory: `oom-host` is the machine, `oom-limit` the container's own cap. */
 export type AppOomKilledEvent = {
   type: "app.oom-killed";
   title: string;
@@ -318,10 +290,6 @@ export type AppOomKilledEvent = {
   /** ISO timestamp the container finished. */
   at: string;
 };
-
-// ---------------------------------------------------------------------------
-// Union types
-// ---------------------------------------------------------------------------
 
 export type BusEvent =
   | DeploySuccessEvent
@@ -351,7 +319,5 @@ export type BusEvent =
 
 export type BusEventType = BusEvent["type"];
 
-/**
- * Flat list of all event type strings. Useful for validation and UI rendering.
- */
+/** Every event type string. */
 export const ALL_EVENT_TYPES: BusEventType[] = Object.values(EVENT_CATEGORIES).flat() as BusEventType[];

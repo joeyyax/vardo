@@ -1,11 +1,4 @@
-// ---------------------------------------------------------------------------
-// Activity view — filters and the away window
-//
-// Parses and serializes filter state, which lives in the URL so a view can be
-// linked. Narrowing itself happens in SQL — see lib/activity/query.ts. `since`
-// is the deep link "while you were away" uses to answer what happened during
-// an absence.
-// ---------------------------------------------------------------------------
+// Parses and serializes activity filter state in the URL. `since` is the "while you were away" deep link.
 
 import type {
   ActivityFamily,
@@ -14,7 +7,7 @@ import type {
 } from "./types";
 import { isFamily, isOutcome } from "./taxonomy";
 
-/** Oldest window the feed will honor. Beyond this the page is a poor archive. */
+/** Oldest window the feed will honor. */
 export const MAX_SINCE_MS = 90 * 24 * 60 * 60_000;
 
 export const EMPTY_FILTERS: ActivityFilters = {
@@ -37,10 +30,7 @@ function unique<T>(values: T[]): T[] {
   return [...new Set(values)];
 }
 
-/**
- * A usable window start, or null. Future timestamps and unparseable input are
- * rejected rather than guessed at; anything older than the cap is clamped.
- */
+/** A usable window start, or null for future or unparseable input. Older values clamp to the cap. */
 export function parseSince(
   raw: string | string[] | null | undefined,
   now: Date = new Date(),
@@ -82,7 +72,7 @@ export function parseFilters(
   };
 }
 
-/** Round-trips `parseFilters`. Empty values are omitted so URLs stay short. */
+/** Round-trips `parseFilters`, omitting empty values. */
 export function filtersToQuery(filters: ActivityFilters): string {
   const params = new URLSearchParams();
   if (filters.families.length) params.set("family", filters.families.join(","));
@@ -112,7 +102,7 @@ export function toggleOutcome(
   return { ...filters, outcomes: toggle(filters.outcomes, outcome) };
 }
 
-/** Drops family and outcome but keeps the window, so "clear" stays in the window. */
+/** Drops family and outcome but keeps the window. */
 export function clearChips(filters: ActivityFilters): ActivityFilters {
   return { ...filters, families: [], outcomes: [] };
 }

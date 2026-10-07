@@ -3,10 +3,7 @@ import { logger } from "@/lib/logger";
 
 const log = logger.child("api");
 
-/**
- * Standard error response for API route catch blocks.
- * Returns 401 for auth errors, 500 for everything else.
- */
+/** Error response for API catch blocks: 401 for auth errors, else 500. */
 export function handleRouteError(error: unknown, context?: string) {
   if (error instanceof Error && error.message === "Unauthorized") {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -23,14 +20,7 @@ export function handleRouteError(error: unknown, context?: string) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Postgres error helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Extract the PostgreSQL error code from an unknown thrown value.
- * Checks both the error itself and `error.cause` for the `code` property.
- */
+/** PostgreSQL error code from a thrown value or its `cause`. */
 export function getPgErrorCode(error: unknown): string | null {
   if (!(error instanceof Error)) return null;
   const directCode =
@@ -46,10 +36,7 @@ export function getPgErrorCode(error: unknown): string | null {
   return null;
 }
 
-/**
- * Extract the violated constraint name from an unknown thrown value.
- * Checks both the error itself and `error.cause` for the `constraint` property.
- */
+/** Violated constraint name from a thrown value or its `cause`. */
 export function getPgConstraint(error: unknown): string | null {
   if (!(error instanceof Error)) return null;
   const direct =
@@ -66,9 +53,7 @@ export function getPgConstraint(error: unknown): string | null {
   return null;
 }
 
-/**
- * Check if an error is a Postgres unique violation (23505).
- */
+/** Whether an error is a Postgres unique violation (23505). */
 export function isUniqueViolation(error: unknown): boolean {
   return getPgErrorCode(error) === "23505";
 }

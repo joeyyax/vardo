@@ -1,23 +1,16 @@
-// ---------------------------------------------------------------------------
-// Certificate expiry decision
-//
-// Pure. Takes what a TLS handshake observed and returns a verdict. The dialing
-// lives in cert-probe.ts and the alerting in monitor.ts.
-// ---------------------------------------------------------------------------
+// Certificate expiry verdicts from a TLS handshake observation. Pure.
 
 /** Days remaining at or below which a certificate raises an alert. */
 export const CERT_EXPIRY_THRESHOLD_DAYS = 7;
 
-/** Days remaining at or below which the alert is critical rather than a warning. */
+/** Days remaining at or below which the alert is critical. */
 export const CERT_EXPIRY_CRITICAL_DAYS = 2;
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 /**
- * Verification failures that mean "no certificate has been issued for this
- * domain yet" rather than "the certificate is bad". Traefik serves a
- * self-signed default cert until ACME completes. CERT_HAS_EXPIRED is
- * deliberately absent — an expired cert must still reach the expiry math.
+ * Verification failures meaning no certificate has been issued yet.
+ * Keep CERT_HAS_EXPIRED out; an expired cert must reach the expiry math.
  */
 const NOT_ISSUED_ERRORS = new Set([
   "DEPTH_ZERO_SELF_SIGNED_CERT",
@@ -47,11 +40,7 @@ export type CertVerdict =
   | { kind: "not-issued"; reason: string }
   | { kind: "unknown"; reason: string };
 
-/**
- * Parse a peer certificate's notAfter into epoch milliseconds.
- * Accepts OpenSSL's "Aug 12 09:14:22 2026 GMT" and ISO 8601. Returns null for
- * anything else.
- */
+/** Parses a notAfter (OpenSSL or ISO 8601 format) into epoch ms, or null. */
 export function parseCertNotAfter(value: unknown): number | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
@@ -64,8 +53,7 @@ export function parseCertNotAfter(value: unknown): number | null {
 }
 
 /**
- * Turn a probe result into a verdict.
- *
+ * Turns a probe result into a verdict.
  * @param probe          the handshake observation
  * @param now            current epoch ms
  * @param thresholdDays  days remaining at which to start alerting
@@ -123,11 +111,7 @@ function subject(domains: string[]): string {
   return `${first} and ${rest.length} other domain${rest.length === 1 ? "" : "s"}`;
 }
 
-/**
- * Alert copy for a verdict that fires, covering every domain served by the
- * certificate. One wildcard cert can back the whole install, and alerting per
- * domain would send dozens of notifications for a single renewal failure.
- */
+/** Alert copy for a firing verdict, covering every domain the certificate serves. */
 export function certAlertMessage(
   domains: string[],
   verdict: Extract<CertVerdict, { kind: "expiring" | "expired" }>,
@@ -146,10 +130,7 @@ export function certAlertMessage(
   };
 }
 
-/**
- * Group domains onto the certificate each one is served. Domains whose
- * fingerprint is unavailable stay separate, keyed by their own name.
- */
+/** Groups domains by certificate. Domains without a fingerprint are keyed by name. */
 export function groupByCertificate<T extends { domain: string; fingerprint: string | null }>(
   entries: T[],
 ): Map<string, T[]> {

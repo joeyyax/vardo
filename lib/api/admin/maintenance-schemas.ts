@@ -1,28 +1,18 @@
 import { z } from "zod";
 
-// ---------------------------------------------------------------------------
-// Shared validation schemas for the maintenance API
-//
-// Exported here so both the route handlers and tests import from the same
-// source — changes to these schemas are immediately reflected in tests.
-// ---------------------------------------------------------------------------
+// Validation schemas for the maintenance API.
 
-/**
- * Parse a mount pair string into source and destination paths.
- * Supports both new "source:destination:ro" format and legacy single-path format.
- * Returns null for empty or "/dev/null" values.
- */
+/** Parses "source:destination[:ro]" or a legacy single path. Null for empty or "/dev/null". */
 export function parseMountPair(
   value: string | undefined,
 ): { source: string; destination: string } | null {
   if (!value || value === "/dev/null") return null;
 
-  // Strip :ro suffix if present (new format)
   const mountValue = value.endsWith(":ro") ? value.slice(0, -3) : value;
 
   const colonIndex = mountValue.indexOf(":");
   if (colonIndex === -1) {
-    // Legacy single-path format — assume source = destination
+    // Legacy single path: source = destination.
     return { source: mountValue, destination: mountValue };
   }
 
@@ -32,8 +22,7 @@ export function parseMountPair(
   return { source, destination };
 }
 
-// Service names must match the vardo- prefix used in docker-compose.yml and
-// satisfy docker compose naming rules (lowercase alphanumeric + hyphens).
+// Vardo- prefixed docker compose service names.
 export const SERVICE_NAME_RE = /^vardo-[a-z][a-z0-9-]*$/;
 
 export const restartSchema = z.object({
@@ -43,10 +32,7 @@ export const restartSchema = z.object({
     .optional(),
 });
 
-// Mount values are written directly into .env. Empty string clears the
-// mount. Non-empty values must be source:destination pairs with no newline
-// characters (newlines would inject additional lines into the .env file).
-// Source must be an absolute path. Destination must be an absolute path.
+// Written straight into .env: empty clears, otherwise absolute source:destination with no newlines (they'd inject lines).
 export const mountPairField = z
   .string()
   .refine(
@@ -69,8 +55,7 @@ export const mountsSchema = z.object({
   vardoMount2: mountPairField,
 });
 
-// Idle image reclamation. idleDays is bounded so a typo cannot set a threshold
-// that makes every app eligible on the next sweep.
+// Idle image reclamation. idleDays is bounded so a typo can't make every app eligible.
 export const imageReclaimConfigSchema = z.object({
   enabled: z.boolean(),
   idleDays: z.number().int().min(1).max(3650),
@@ -79,7 +64,7 @@ export const imageReclaimConfigSchema = z.object({
 
 export const imageReclaimRunSchema = z.object({
   dryRun: z.boolean().optional().default(false),
-  /** Also sweep superseded blue-green slot generations. Asked for explicitly. */
+  /** Also sweep superseded blue-green slot generations. */
   slots: z.boolean().optional().default(false),
 });
 

@@ -5,10 +5,7 @@ import type { BusEventType } from "@/lib/bus";
 import { CHANNEL_TYPE_DEFAULTS, CRITICAL_EVENT_TYPES } from "./channel-defaults";
 import { SILENT_EVENT_TYPES } from "./ui-only";
 
-/**
- * Fetch all member user IDs for an org. Called once per dispatch, outside the
- * per-channel loop, to avoid N+1 queries.
- */
+/** Fetches all member user IDs for an org, once per dispatch. */
 export async function fetchOrgMembers(
   orgId: string,
 ): Promise<Array<{ userId: string }>> {
@@ -20,13 +17,7 @@ export async function fetchOrgMembers(
 
 export type EventPref = { channelId: string; userId: string; enabled: boolean };
 
-/**
- * Fetch all user notification preferences for a given org and event type,
- * scoped to current org members. Called once per dispatch, before the
- * per-channel loop, to eliminate the per-channel prefs query.
- *
- * The userId IN (...) filter excludes stale rows left behind by ex-members.
- */
+/** Fetches current members' notification preferences for an org and event type, once per dispatch. */
 export async function fetchEventPrefs(
   orgId: string,
   eventType: BusEventType,
@@ -44,19 +35,8 @@ export async function fetchEventPrefs(
 }
 
 /**
- * Determine whether a notification channel should fire for a given event,
- * based on org member preferences.
- *
- * Accepts pre-fetched `members` and `prefs` so both queries are hoisted out
- * of the per-channel loop. No DB calls are made here.
- *
- * Rules:
- * - Live-UI-only events never send.
- * - Critical events always send, bypassing all preferences.
- * - For each org member: check their preference for this channel+event.
- *   If no row exists, fall back to the channel-type default.
- * - If any member has the event enabled, the channel fires.
- * - If all members have explicitly disabled it, the channel is skipped.
+ * Whether a channel fires for an event: live-UI-only never, critical always,
+ * otherwise if any member has it enabled (missing prefs use the channel default).
  */
 export function resolveRecipients(
   channelId: string,

@@ -1,9 +1,4 @@
-// ---------------------------------------------------------------------------
-// A non-default environment's own env file.
-//
-// The default environment reads apps.env_content. Every other environment
-// reads environment_env, snapshotted from the app's env when it is created.
-// ---------------------------------------------------------------------------
+// Non-default environments read environment_env, snapshotted from the app's env at creation.
 
 import { randomBytes } from "node:crypto";
 import { encrypt, decryptOrFallback } from "@/lib/crypto/encrypt";
@@ -30,11 +25,7 @@ export function generateSecret(): string {
   return randomBytes(24).toString("base64url");
 }
 
-/**
- * Replace the value of every secret-looking key with a generated one. `generated`
- * maps each production value to its replacement, so a value shared across apps
- * gets the same replacement everywhere it is passed.
- */
+/** Replaces every secret-looking value; `generated` keeps a shared value's replacement consistent. */
 export function regenerateSecrets(
   content: string,
   generated: Map<string, string>,
@@ -67,10 +58,7 @@ export type EnvSnapshot = {
   regenerated: string[];
 };
 
-/**
- * Snapshot an app's env for a new environment: rewrite production hostnames
- * and, for the `empty` clone strategy, generate fresh secrets.
- */
+/** Snapshots an app's env for a new environment, rewriting hostnames and, for `empty`, generating secrets. */
 export function snapshotEnv(opts: {
   appEnvContent: string | null;
   organizationId: string;

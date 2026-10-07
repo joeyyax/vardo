@@ -1,8 +1,4 @@
-/**
- * Notification channel interface.
- *
- * Channels receive typed BusEvents directly — no legacy conversion layer.
- */
+/** Notification channel interface. */
 
 import type { BusEvent } from "@/lib/bus/events";
 

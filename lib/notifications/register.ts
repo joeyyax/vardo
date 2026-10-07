@@ -5,9 +5,7 @@ import { logger } from "@/lib/logger";
 
 const log = logger.child("notifications");
 
-/**
- * Start the notification stream consumer and the retry scheduler.
- */
+/** Starts the notification stream consumer and the retry scheduler. */
 export async function registerNotificationsPlugin(): Promise<void> {
   if (!isFeatureEnabled("notifications")) {
     log.info("Notifications disabled, skipping registration");

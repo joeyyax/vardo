@@ -10,10 +10,7 @@ export { collectAway } from "./collect";
 /** Longest window a summary will cover, however long the absence was. */
 export const MAX_WINDOW_MS = 14 * 24 * 60 * 60_000;
 
-/**
- * Window start for a membership anchor, or null when there is nothing to look
- * back on. A first visit missed nothing, so it reports nothing.
- */
+/** Window start for a membership anchor, or null on a first visit. */
 export function resolveSince(lastSeenAt: Date | null, now: Date): Date | null {
   if (!lastSeenAt) return null;
   const floor = new Date(now.getTime() - MAX_WINDOW_MS);

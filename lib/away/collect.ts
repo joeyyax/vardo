@@ -1,11 +1,5 @@
-// ---------------------------------------------------------------------------
-// "While you were away" — collection
-//
-// Reads the durable operational tables, turns rows into facts, and counts each
-// subject's history from before the window so the classifier can tell a
-// first-ever failure from a familiar one. Every source is independently
-// try/caught: one unreadable source is reported, never silently dropped.
-// ---------------------------------------------------------------------------
+// "While you were away" collection: turns operational rows into facts with each subject's prior history.
+// A source that throws is reported, never silently dropped.
 
 import { and, eq, gte, inArray, isNull, ne, or } from "drizzle-orm";
 
@@ -30,7 +24,7 @@ import type { AwayBaselines, AwayFact, AwayFamily, AwayInput } from "./types";
 
 const log = logger.child("away");
 
-/** How far back baselines look. Long enough to establish a habit, short enough to stay cheap. */
+/** How far back baselines look. */
 export const BASELINE_LOOKBACK_MS = 30 * 24 * 60 * 60_000;
 
 /** Audit actions with a better source, or too routine to report. */
@@ -92,10 +86,7 @@ export type CollectOptions = {
   now?: Date;
 };
 
-/**
- * Gather everything that happened to one org between `since` and now.
- * Returns classifier input — no tiering decisions are made here.
- */
+/** Gathers everything that happened to one org since `since`, as classifier input. */
 export async function collectAway(opts: CollectOptions): Promise<AwayInput> {
   const { orgId, userId, since } = opts;
   const now = opts.now ?? new Date();
@@ -129,7 +120,7 @@ export async function collectAway(opts: CollectOptions): Promise<AwayInput> {
   const appSlug = new Map(orgApps.map((a) => [a.id, a.name]));
 
   await Promise.all([
-    // ---- Deploys -----------------------------------------------------------
+    // Deploys
     source(
       "deployments",
       unavailable,
@@ -210,7 +201,7 @@ export async function collectAway(opts: CollectOptions): Promise<AwayInput> {
       undefined,
     ),
 
-    // ---- Backups -----------------------------------------------------------
+    // Backups
     source(
       "backups",
       unavailable,
@@ -261,7 +252,7 @@ export async function collectAway(opts: CollectOptions): Promise<AwayInput> {
       undefined,
     ),
 
-    // ---- Cron --------------------------------------------------------------
+    // Cron
     source(
       "cron",
       unavailable,
@@ -312,7 +303,7 @@ export async function collectAway(opts: CollectOptions): Promise<AwayInput> {
       undefined,
     ),
 
-    // ---- Domain reachability ----------------------------------------------
+    // Domain reachability
     source(
       "domains",
       unavailable,
@@ -345,7 +336,7 @@ export async function collectAway(opts: CollectOptions): Promise<AwayInput> {
             );
             continue;
           }
-          // Successful probes only feed the baseline — a working site is not news.
+          // Successful probes only feed the baseline.
           if (row.reachable) continue;
           facts.push({
             kind: "domain.unreachable",
@@ -361,7 +352,7 @@ export async function collectAway(opts: CollectOptions): Promise<AwayInput> {
       undefined,
     ),
 
-    // ---- Security scans ----------------------------------------------------
+    // Security scans
     source(
       "security",
       unavailable,
@@ -408,7 +399,7 @@ export async function collectAway(opts: CollectOptions): Promise<AwayInput> {
       undefined,
     ),
 
-    // ---- Audit trail -------------------------------------------------------
+    // Audit trail
     source(
       "activity",
       unavailable,
@@ -462,9 +453,7 @@ export async function collectAway(opts: CollectOptions): Promise<AwayInput> {
       undefined,
     ),
 
-    // ---- System alerts -----------------------------------------------------
-    // Host alerts never reach Postgres as events; the rate-limiter's persisted
-    // state is the only durable record of them firing.
+    // System alerts: the rate-limiter's persisted state is the only durable record of host alerts.
     source(
       "system-alerts",
       unavailable,
@@ -507,7 +496,7 @@ export async function collectAway(opts: CollectOptions): Promise<AwayInput> {
     ),
   ]);
 
-  // ---- App runtime state ---------------------------------------------------
+  // App runtime state
   await source(
     "app-state",
     unavailable,

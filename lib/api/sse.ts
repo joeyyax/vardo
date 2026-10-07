@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { closeOnShutdown } from "@/lib/shutdown";
 
-/** Default SSE idle timeout: 10 minutes */
+/** Default SSE idle timeout: 10 minutes. */
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
 
 /** Events the stream will buffer for a client that is reading normally. */
@@ -15,14 +15,7 @@ type SSEOptions = {
   timeoutMs?: number;
 };
 
-/**
- * Create an SSE (Server-Sent Events) Response from an async handler.
- * The handler receives a `sendEvent` function to emit events.
- *
- * Streams auto-close after `timeoutMs` (default 10 min) to prevent
- * zombie connections from idle tabs. The client receives a `timeout`
- * event and can reconnect to resume.
- */
+/** Creates an SSE Response from a handler. Closes with a `timeout` event after `timeoutMs`. */
 export function createSSEResponse(
   request: NextRequest,
   handler: (sendEvent: (event: string, data: unknown) => void) => Promise<void>,
@@ -38,9 +31,7 @@ export function createSSEResponse(
 
       function sendEvent(event: string, data: unknown) {
         try {
-          // Only a client that has stopped reading entirely gets dropped. The
-          // previous check dropped at desiredSize <= 0, which a default stream
-          // reaches after one enqueue — a 200-line backfill delivered 10.
+          // Drop only a client that stopped reading; desiredSize hits 0 after one enqueue.
           if (controller.desiredSize !== null && controller.desiredSize <= -STALLED_CLIENT_CHUNKS) {
             dropped++;
             return;
@@ -69,7 +60,6 @@ export function createSSEResponse(
         unregister();
       }
 
-      // Auto-close after timeout
       if (timeoutMs > 0) {
         idleTimer = setTimeout(() => {
           sendEvent("timeout", { message: "Stream timed out", timeoutMs });

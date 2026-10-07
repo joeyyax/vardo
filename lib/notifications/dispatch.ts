@@ -12,10 +12,7 @@ import { isUiOnlyEvent } from "./ui-only";
 
 const log = logger.child("notifications");
 
-/**
- * Check whether a channel's subscribedEvents filter allows this event.
- * Empty array = subscribe to all (backward compatible default).
- */
+/** Whether a channel's subscribedEvents filter allows this event. Empty means all. */
 function channelAcceptsEvent(
   subscribedEvents: string[],
   eventType: BusEventType,
@@ -47,11 +44,11 @@ async function logNotification(
       attempt: 1,
     });
   } catch {
-    // Don't let logging failures break dispatch
+    // Best-effort.
   }
 }
 
-/** Handle a channel send failure - enqueue retry, or log directly as last resort. */
+/** Enqueues a retry for a failed send, or logs it when enqueueing fails. */
 async function handleChannelFailure(
   orgId: string,
   row: { id: string; name: string; type: string },
@@ -70,14 +67,11 @@ async function handleChannelFailure(
       event,
     }, 1);
   } catch {
-    // If even enqueueing fails, log the failure directly
     await logNotification(orgId, row, event.type, event.title, "failed", errorMsg);
   }
 }
 
-/**
- * Dispatch a bus event to all matching notification channels for an org.
- */
+/** Dispatches a bus event to an org's matching notification channels. */
 function dispatchToChannels(orgId: string, event: BusEvent): void {
   if (isUiOnlyEvent(event)) return;
 
@@ -122,11 +116,9 @@ function dispatchToChannels(orgId: string, event: BusEvent): void {
   });
 }
 
-// Stream consumer startup is handled by lib/notifications/register.ts.
-// This onEmit hook is registered as a fallback for direct dispatch.
+// Fallback for direct dispatch; the stream consumer starts in register.ts.
 onEmit("dispatch", dispatchToChannels);
 
-// Re-export emit so call sites can import { emit } from "@/lib/notifications/dispatch"
-// and get the dispatch hook registration as a side effect.
+// Import emit from here so the dispatch hook registers as a side effect.
 export { emit } from "@/lib/bus";
 export type { BusEvent, BusEventType } from "@/lib/bus";

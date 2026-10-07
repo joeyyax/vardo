@@ -1,10 +1,4 @@
-// ---------------------------------------------------------------------------
-// Activity view — grouping
-//
-// A flat list repeats the same sentence until the interesting rows are lost in
-// it. Adjacent events sharing an action, an actor and an outcome collapse into
-// one row: one subject reads as a run, several read as fleet-wide.
-// ---------------------------------------------------------------------------
+// Collapses adjacent events sharing an action, actor and outcome into one row.
 
 import type {
   ActivityGroup,
@@ -37,10 +31,7 @@ function subjectRef(item: ClassifiedActivity): ActivitySubjectRef {
   return { id: item.subjectId, label: item.subjectLabel, app: item.app };
 }
 
-/**
- * Whether `item` belongs in the open bucket. Outcome is part of the identity,
- * so a failure never disappears into a run of successes.
- */
+/** Whether `item` belongs in the open bucket. Outcome is part of the identity. */
 function joins(
   bucket: ClassifiedActivity[],
   item: ClassifiedActivity,
@@ -93,10 +84,7 @@ function toGroup(bucket: ClassifiedActivity[]): ActivityGroup {
   };
 }
 
-/**
- * Collapse a newest-first list into rendered rows. Order is preserved: a group
- * sits where its most recent event sat.
- */
+/** Collapses a newest-first list into rendered rows, preserving order. */
 export function groupActivities(
   items: ClassifiedActivity[],
   options: GroupOptions = {},

@@ -4,12 +4,7 @@ import { logger } from "@/lib/logger";
 
 const log = logger.child("rate-limit");
 
-// Lua script: sliding window using a sorted set of request timestamps.
-// Arguments: key, now (ms), windowMs, limit, ttlSeconds
-// Returns: current request count after incrementing (integer)
-//
-// Member uniqueness: redis.call("TIME") returns {seconds, microseconds},
-// giving microsecond resolution — no collision risk under burst traffic.
+// Sliding window over a sorted set. Args: key, now (ms), windowMs, limit, ttlSeconds. Returns the count.
 const SLIDING_WINDOW_SCRIPT = `
 local key = KEYS[1]
 local now = tonumber(ARGV[1])
@@ -37,20 +32,9 @@ end
 `.trim();
 
 /**
- * Low-level sliding window rate limit check.
- *
- * Returns `{ limited: false }` when the request is allowed, or
- * `{ limited: true, retryAfterSeconds }` when the limit is exceeded.
- *
- * Falls back to allowing the request if Redis is unavailable, so a Redis
- * outage does not block callers.
- *
- * @param identifier - Forgery-resistant string identifying the actor
- *   (e.g. `${userId}:${orgId}`). For unauthenticated contexts the caller
- *   must supply an IP — note x-forwarded-for can be spoofed if not behind a
- *   trusted proxy.
- * @param key - Logical bucket name prefixed onto the Redis key (e.g. "mcp:create-preview").
- *   Pass an empty string to produce a bare `rl:${identifier}` key (legacy format, no bucket).
+ * Sliding window rate limit check. Fails open when Redis is unavailable.
+ * @param identifier - Forgery-resistant actor id (e.g. `${userId}:${orgId}`); x-forwarded-for IPs are spoofable.
+ * @param key - Bucket name prefixed onto the Redis key; empty gives a bare `rl:${identifier}` key.
  */
 export async function slidingWindowRateLimit(
   identifier: string,
@@ -75,13 +59,13 @@ export async function slidingWindowRateLimit(
     );
     count = Number(result);
   } catch (err) {
-    // Redis unavailable — fail open so a Redis outage doesn't block callers
+    // Fail open.
     log.error("Redis error, failing open:", err);
     return { limited: false };
   }
 
   if (count > limit) {
-    // Accurate retry-after: time until the oldest request drops out of the window.
+    // Time until the oldest request leaves the window.
     let retryAfterSeconds = ttlSeconds;
     try {
       const oldest = await redis.zrange(redisKey, 0, "0", "WITHSCORES");
@@ -100,16 +84,8 @@ export async function slidingWindowRateLimit(
 }
 
 /**
- * Redis-backed sliding window rate limiter for Next.js route handlers.
- * Returns null if the request is allowed, or a 429 NextResponse if rate-limited.
- *
- * Falls back to allowing the request if Redis is unavailable, so a Redis outage
- * does not take down the API.
- *
- * @param identifier - For authenticated routes, pass a forgery-resistant identifier
- *   (e.g. `${userId}:${orgId}`) to prevent IP spoofing bypasses. For unauthenticated
- *   routes the IP is the only available signal — note that x-forwarded-for can be
- *   spoofed if the app is not running behind a trusted proxy that overwrites the header.
+ * Rate limiter for route handlers: null when allowed, else a 429. Fails open when Redis is unavailable.
+ * @param identifier - Forgery-resistant id for authenticated routes; x-forwarded-for IPs are spoofable.
  */
 export async function rateLimit(
   request: NextRequest,
