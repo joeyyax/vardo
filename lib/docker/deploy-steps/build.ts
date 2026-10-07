@@ -6,7 +6,7 @@
 import { db } from "@/lib/db";
 import { orgEnvVars, apps } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
-import { mkdir, writeFile, readFile, rm, symlink, copyFile, stat, readdir, chmod } from "fs/promises";
+import { mkdir, writeFile, rm, symlink, copyFile, stat, readdir, chmod } from "fs/promises";
 import { dirname, join } from "path";
 import { decryptOrFallback } from "@/lib/crypto/encrypt";
 import { DeployBlockedError } from "../errors";
