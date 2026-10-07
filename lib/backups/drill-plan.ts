@@ -12,7 +12,7 @@ export type ScratchDatabase = {
   readyArgv: string[];
   /** Reads the dump on stdin. */
   restoreArgv: string[];
-  /** Prints a single number: how much structure the restore actually created. */
+  /** Prints a single number: how much structure the restore created. */
   countArgv: string[];
 };
 

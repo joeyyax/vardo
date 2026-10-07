@@ -547,7 +547,7 @@ async function backupBindTar(
   }
 }
 
-/** The daemon's real data root, so the deny-list covers where volumes actually live. */
+/** The daemon's real data root, so the deny-list covers where volumes live. */
 async function dockerDataRoot(): Promise<string | null> {
   try {
     const { getSystemInfo } = await import("@/lib/docker/client");

@@ -38,7 +38,7 @@ export function evaluateWatch(c: WatchCandidate, now: number): WatchVerdict {
   // The watch would run inside the container a rollback tears down.
   if (isSelfApp(c.appName)) return { watch: false, reason: "self-deploy" };
 
-  // Rolling back a rollback flips to the version that was just abandoned.
+  // Rolling back a rollback flips to the version it abandoned.
   if (c.trigger === "rollback") return { watch: false, reason: "rollback deploy" };
 
   if (c.slot !== "blue" && c.slot !== "green") {
