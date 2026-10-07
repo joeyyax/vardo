@@ -9,6 +9,7 @@ import { withRateLimit } from "@/lib/api/with-rate-limit";
 
 const promoteSchema = z.object({
   projectId: z.string().min(1),
+  orgId: z.string().min(1),
   targetPeerId: z.string().min(1),
   environment: z.enum(["production", "staging", "development"]),
   includeEnvVars: z.boolean().default(false),
@@ -28,10 +29,11 @@ async function handlePost(request: NextRequest) {
       );
     }
 
-    const { projectId, targetPeerId, environment, includeEnvVars } = parsed.data;
+    const { projectId, orgId, targetPeerId, environment, includeEnvVars } = parsed.data;
 
     const bundle = await buildProjectBundle(projectId, {
       transferType: "promote",
+      organizationId: orgId,
       includeEnvVars,
     });
 
