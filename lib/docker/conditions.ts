@@ -1,23 +1,11 @@
-// ---------------------------------------------------------------------------
-// App conditions
-//
-// apps.status answers what Docker did with the container. Conditions answer how
-// a running app is behaving — an app can be active and crash-looping and under
-// memory pressure at once, and all three are independently true. The health
-// monitor already derived crash-loop, unhealthy and self-heal-exhausted and
-// discarded them after firing a notification; this is where they live.
-// ---------------------------------------------------------------------------
+// App conditions: how a running app is behaving, independent of apps.status.
 
-// Certificate thresholds are shared with the expiry alert so the card and the
-// notification never disagree about when a cert is close to lapsing.
 import {
   CERT_EXPIRY_CRITICAL_DAYS,
   CERT_EXPIRY_THRESHOLD_DAYS,
 } from "@/lib/system-alerts/cert-expiry";
 
-// Runtime behavior only. Image updates are a 6h-TTL cache keyed off compose
-// content, so they do not belong in a 30s tick — the updates API stays the
-// source for those and the read path merges them.
+// Runtime behavior only; image updates are merged in on read.
 export type ConditionKind =
   | "crash-looping"
   | "unhealthy"
@@ -52,19 +40,10 @@ export type ConditionStreaks = Partial<Record<ConditionKind, ConditionStreak>>;
 /** Fraction of the memory limit at which an app counts as under pressure. */
 export const MEMORY_PRESSURE_RATIO = 0.9;
 
-/**
- * How long a container must stay over MEMORY_PRESSURE_RATIO before it counts as
- * sustained. A startup burst or a collector's housekeeping pass clears the ratio
- * for a minute or two; those are spikes and the metrics chart already shows them.
- */
+/** How long a container must stay over MEMORY_PRESSURE_RATIO to count as sustained. */
 export const MEMORY_PRESSURE_SUSTAINED_MS = 10 * 60_000;
 
-/**
- * How long a threshold condition must hold before it is confirmed, and samples it
- * must fail before it clears. Asymmetric on purpose — an app sitting on the line
- * would otherwise flip on every poll and strobe the card. Kinds absent here are
- * discrete facts and switch on the first sample.
- */
+/** Time to confirm and failed samples to clear per threshold kind. Absent kinds switch on the first sample. */
 export const HYSTERESIS: Partial<Record<ConditionKind, { sustainedMs: number; clear: number }>> = {
   "memory-pressure": { sustainedMs: MEMORY_PRESSURE_SUSTAINED_MS, clear: 4 },
 };
@@ -86,11 +65,7 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
 /** A backup that has not run in this long is overdue regardless of schedule. */
 export const BACKUP_STALE_MS = 48 * 60 * 60 * 1000;
 
-/**
- * A certificate observation older than this is treated as unknown. Probes run
- * every 6h, so this covers a few missed rounds without letting a reading from a
- * monitor that has since stopped keep a condition alive.
- */
+/** A certificate observation older than this is treated as unknown. */
 export const CERT_OBSERVATION_STALE_MS = 24 * 60 * 60 * 1000;
 
 const SEVERITY_RANK: Record<ConditionSeverity, number> = { critical: 0, warning: 1, info: 2 };
@@ -109,20 +84,11 @@ export type ConditionInput = {
   security: { critical: number; warning: number } | null;
   /** Backup coverage. Null when backup state was not loaded this tick. */
   backup: { hasVolumes: boolean; configured: boolean; lastRunAt: number | null } | null;
-  /**
-   * Soonest certificate expiry across the app's domains. Null when no domain has
-   * a readable certificate on record — never checked, none issued, or monitoring
-   * off. Unknown is not a condition.
-   */
+  /** Soonest certificate expiry across the app's domains. Null when unknown. */
   cert: { domain: string; expiresAt: number; checkedAt: number } | null;
 };
 
-/**
- * A signal, plus a severity when it differs from the kind's default. `active`
- * false is a reading that is not itself a fault — it carries no weight toward
- * raising, and exists so a condition held open by hysteresis can report the
- * current number instead of the one that confirmed it.
- */
+/** A signal with optional severity override. `active: false` is a non-fault reading for a held condition's detail. */
 type Signal = { detail: string; severity?: ConditionSeverity; active?: boolean };
 
 /** The raw signal for each kind this tick, before hysteresis. */
@@ -160,8 +126,7 @@ function rawSignals(input: ConditionInput): Partial<Record<ConditionKind, Signal
         : { detail: `${warning} warning${warning === 1 ? "" : "s"}` };
   }
 
-  // Only apps with persistent data can lose anything, so a stateless app with
-  // no backup job is correct rather than unprotected.
+  // Only apps with persistent data need a backup.
   if (input.backup?.hasVolumes && !input.backup.configured) {
     out["backup-missing"] = { detail: "No backup job covers this app" };
   }
@@ -218,10 +183,7 @@ function certSignal(
   };
 }
 
-/**
- * Confirmed conditions for one app, plus the streak counters to feed back next
- * tick. Pure — the caller owns the streak map.
- */
+/** Confirmed conditions for one app and the streaks to pass back next tick. */
 export function evaluateConditions(
   input: ConditionInput,
   prev: AppCondition[],
@@ -258,8 +220,7 @@ export function evaluateConditions(
     conditions.push({
       kind,
       severity: signal?.severity ?? SEVERITY[kind],
-      // A gated kind dates from when the reading crossed, not when it was
-      // confirmed, so "for 20 minutes" is the overage and not the record's age.
+      // Dates from when the reading crossed, not when it was confirmed.
       since: was?.since ?? new Date(activeSince ?? input.now).toISOString(),
       // Only a tick with no reading at all falls back to the confirming one.
       detail: signal?.detail ?? was?.detail ?? "",

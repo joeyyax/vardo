@@ -1,10 +1,4 @@
-// ---------------------------------------------------------------------------
-// Barrel re-export for Docker Compose modules.
-//
-// All public exports from the decomposed modules are re-exported here so
-// existing import paths (`from "./compose"` / `from "@/lib/docker/compose"`)
-// continue to work without changes.
-// ---------------------------------------------------------------------------
+// Barrel re-export for the Docker Compose modules.
 
 // Types
 export type {

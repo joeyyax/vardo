@@ -1,8 +1,4 @@
-// ---------------------------------------------------------------------------
-// The data an app keeps on the host: its Docker volumes and the bind-mounted
-// paths inside its directory. Deleting an app destroys these only on request,
-// and the confirmation lists exactly what this returns.
-// ---------------------------------------------------------------------------
+// An app's host data: its volumes and bind-mounted paths. Delete confirmation lists exactly what this returns.
 
 import { readdir, readFile, realpath, lstat } from "fs/promises";
 import { join, relative, isAbsolute, sep } from "path";
@@ -28,13 +24,7 @@ function isWithin(dir: string, path: string): boolean {
   return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
 }
 
-/**
- * Volume names that belong to an app.
- *
- * Externalized volumes (`<app>-<env>_<volume>`) carry no compose labels, so they
- * match by name; everything compose created matches by project. A name another
- * app could also claim (`api` vs `api-v2`) is left out.
- */
+/** Volume names owned by an app, by compose project or name prefix. Names another app could claim are left out. */
 export function matchAppVolumes(
   volumes: VolumeInfo[],
   opts: { appName: string; envNames: string[]; composeNames?: string[]; otherAppNames: string[] },
@@ -101,11 +91,7 @@ async function envDirNames(baseDir: string): Promise<string[]> {
   }
 }
 
-/**
- * Bind sources inside the app's directory, read from the compose files each
- * slot was deployed with. Symlinked sources are listed with their target too,
- * so the data behind a link into `repo/` is kept along with the link.
- */
+/** Bind sources inside the app's directory from each slot's compose files, symlink targets included. */
 export async function scanAppDir(appName: string): Promise<{
   bindPaths: string[];
   composeNames: string[];
@@ -160,10 +146,7 @@ async function measurePath(path: string): Promise<number | null> {
   }
 }
 
-/**
- * Volumes and bind-mounted paths owned by an app. A decomposed child owns none
- * of its own: they belong to the parent's stack.
- */
+/** Volumes and bind-mounted paths owned by an app. Decomposed children own none. */
 export async function findAppData(
   app: { id: string; name: string; parentAppId?: string | null },
 ): Promise<AppData> {
@@ -208,10 +191,7 @@ function within<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
   return Promise.race([promise.catch(() => fallback), timeout]).finally(() => clearTimeout(timer));
 }
 
-/**
- * Fill in sizes, best effort. Each source is bounded; a size that isn't back in
- * time stays null.
- */
+/** Fill in sizes, best effort. A size that times out stays null. */
 export async function measureAppData(data: AppData): Promise<AppData> {
   const [volumeSizes, bindSizes] = await Promise.all([
     within(

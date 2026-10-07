@@ -8,12 +8,7 @@ export interface ServiceImage {
   ref: ImageRef;
 }
 
-/**
- * Pulls every pinnable image out of raw compose YAML.
- *
- * Services with a `build:` are skipped — they are built locally, so a registry
- * tag says nothing about them.
- */
+/** Every pinnable image in raw compose YAML. Services with `build:` are skipped. */
 export function extractComposeImages(yamlContent: string): ServiceImage[] {
   let root: unknown;
   try {
@@ -45,10 +40,7 @@ export interface UpdatableApp {
   composeService: string | null;
 }
 
-/**
- * Images an app is responsible for. A child service reports only its own,
- * so updating it cannot move a sibling.
- */
+/** Images an app is responsible for. A child service reports only its own. */
 export function appImages(app: UpdatableApp): ServiceImage[] {
   if (app.deployType === "image") {
     const ref = app.imageName ? parseImageRef(app.imageName) : null;

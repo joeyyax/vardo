@@ -1,10 +1,4 @@
-// ---------------------------------------------------------------------------
-// Which apps a PR preview covers.
-//
-// A preview is built for the repo the PR was opened on: the apps built from it,
-// their compose children, and whatever those apps declare they depend on.
-// Nothing else in the project gets an environment or a deploy.
-// ---------------------------------------------------------------------------
+// Which apps a PR preview covers: the PR repo's apps, their dependencies and compose children.
 
 /** `github.com/owner/repo`, lowercased, for any https, ssh or scp-style git URL. */
 export function normalizeGitRepo(url: string | null | undefined): string | null {
@@ -37,11 +31,7 @@ export type ScopeApp = {
   cloneStrategy: string | null;
 };
 
-/**
- * Ids of the apps a preview of `repoFullName` covers, out of one project's apps:
- * the repo's own top-level apps, their transitive `dependsOn` (unless marked
- * `skip`), and every compose child of those.
- */
+/** App ids a preview of `repoFullName` covers: its top-level apps, transitive non-skip `dependsOn` and compose children. */
 export function previewScope(projectApps: ScopeApp[], repoFullName: string): Set<string> {
   const byId = new Map(projectApps.map((a) => [a.id, a]));
   const topLevelByName = new Map(

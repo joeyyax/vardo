@@ -1,12 +1,4 @@
-// ---------------------------------------------------------------------------
-// Standby slot reclamation
-//
-// A demoted standby is stopped and pinned to `restart: no`, but neither holds
-// forever: a daemon restart can restore a stopped container and start it back
-// up, policy and all. Both slots then carry the same Traefik labels, so Traefik
-// merges them into one load balancer and splits requests across two versions.
-// This finds a standby that came back and stops it again.
-// ---------------------------------------------------------------------------
+// Stops a standby slot that a daemon restart brought back up, which would split Traefik traffic across two versions.
 
 import { readlink } from "fs/promises";
 import { join } from "path";
@@ -33,13 +25,8 @@ export type StandbyVerdict =
   | { act: true; standby: Slot };
 
 /**
- * Decide whether a slot can be reclaimed, from the `current` symlink and what
- * Docker reports running.
- *
- * The symlink is the only authority on which slot is live — both slot dirs share
- * one git dir, so their shas are identical and prove nothing. Every answer short
- * of "the symlink resolves and Docker agrees the slot it names is up" refuses,
- * because the cost of guessing wrong is stopping the slot that is serving.
+ * Decide whether a standby slot can be reclaimed.
+ * Refuses unless the `current` symlink resolves and Docker agrees that slot is up; a wrong guess stops the serving slot.
  */
 export function decideStandbySweep(input: {
   /** `current` target, or null when it is missing, unreadable or not a slot. */
@@ -60,8 +47,7 @@ export function decideStandbySweep(input: {
     };
   }
 
-  // The symlink names a slot that is not up. Docker and the symlink disagree
-  // about what is serving, and the running slot may be the one users reach.
+  // Symlink and Docker disagree; the running slot may be serving.
   if (!running[currentSlot]) {
     return {
       act: false,
@@ -87,8 +73,7 @@ export async function runningProjects(): Promise<Set<string> | null> {
       { timeout: COMPOSE_QUERY_TIMEOUT },
     );
     const names = stdout.trim().split("\n").map((n) => n.trim()).filter(Boolean);
-    // An empty list reads as a failed probe, not as an idle host. Vardo itself
-    // runs in a container here, so nothing running means the read is wrong.
+    // Empty means a failed probe: Vardo itself runs in a container.
     if (names.length === 0) return null;
     return new Set(names);
   } catch (err) {
@@ -107,12 +92,7 @@ export async function readCurrentSlot(appDir: string): Promise<Slot | null> {
   }
 }
 
-/**
- * Stop a reclaimed standby and pin it back to `restart: no`.
- *
- * `stop`, not `down` — the containers stay for instant rollback, exactly as the
- * deploy's own teardown leaves them.
- */
+/** Stop a reclaimed standby and pin it to `restart: no`. `stop`, not `down`: containers stay for instant rollback. */
 export async function stopStandbySlot(
   appDir: string,
   projectPrefix: string,

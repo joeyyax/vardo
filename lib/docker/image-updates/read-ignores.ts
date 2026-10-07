@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { imageUpdateIgnores } from "@/lib/db/schema";
 import type { IgnoreRule } from "./ignore";
 
-/** Every ignore rule in an org, lapsed ones included — expiry is judged at read. */
+/** Every ignore rule in an org, lapsed ones included. */
 export async function readIgnoreRules(orgId: string): Promise<IgnoreRule[]> {
   const rows = await db
     .select({

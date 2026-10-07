@@ -1,10 +1,6 @@
 import { listContainers, inspectContainer, inspectImageEnv } from "./client";
 import type { ContainerInspect, ContainerRuntimeOptions } from "./client";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
 export type DiscoveredContainer = {
   id: string;
   name: string;
@@ -33,10 +29,6 @@ export type ContainerDetail = DiscoveredContainer & {
   labels: Record<string, string>;
 } & ContainerRuntimeOptions;
 
-// ---------------------------------------------------------------------------
-// Traefik label parsing
-// ---------------------------------------------------------------------------
-
 export function parseTraefikDomain(labels: Record<string, string>): string | null {
   for (const [key, value] of Object.entries(labels)) {
     if (/^traefik\.http\.routers\..+\.rule$/.test(key)) {
@@ -57,20 +49,10 @@ export function parseTraefikPort(labels: Record<string, string>): number | null 
   return null;
 }
 
-// Common HTTP ports in preference order — used by detectContainerPort to pick
-// the best candidate when a container exposes multiple ports.
+// HTTP ports in preference order when a container exposes several.
 const PREFERRED_HTTP_PORTS = [80, 8080, 3000, 8000, 443, 8443];
 
-/**
- * Determine the most likely container port for HTTP routing.
- *
- * Priority:
- * 1. Traefik labels — explicit, authoritative
- * 2. ExposedPorts from Docker inspect (Config.ExposedPorts) — declared listening port
- *    - Single port: use it directly
- *    - Multiple: prefer common HTTP ports in order: 80, 8080, 3000, 8000, 443, 8443
- * 3. PortBindings (host-mapped ports, internal side) — last resort
- */
+/** Most likely HTTP port: Traefik label, then exposed ports (preferring common HTTP ports), then bound ports. */
 export function detectContainerPort(
   labels: Record<string, string>,
   exposedPorts: number[],
@@ -92,40 +74,20 @@ export function detectContainerPort(
   return null;
 }
 
-// ---------------------------------------------------------------------------
-// Filtering
-// ---------------------------------------------------------------------------
-
-/**
- * Returns true if the container is Vardo-managed and should be excluded
- * from discovery. Checks both the new vardo.* and legacy host.* label prefixes.
- */
+/** Whether the container is Vardo-managed (vardo.* or legacy host.* labels). */
 function isManagedContainer(labels: Record<string, string>): boolean {
   if (labels["vardo.project"] || labels["host.project"]) return true;
   if (labels["com.docker.compose.project"] === "vardo") return true;
   return false;
 }
 
-// ---------------------------------------------------------------------------
-// GPU detection
-// ---------------------------------------------------------------------------
-
-/**
- * Best-effort GPU heuristic for discovered containers.
- * Checks image name and labels for NVIDIA indicators since the list-containers
- * API does not expose env vars or device mounts.
- */
+/** Best-effort GPU guess from image name and NVIDIA labels. */
 export function detectContainerGpu(image: string, labels: Record<string, string>): boolean {
   const img = image.toLowerCase();
   if (img.includes("nvidia") || img.includes("cuda") || img.startsWith("nvcr.io/")) return true;
-  // NVIDIA runtime labels
   if (labels["com.nvidia.volumes.needed"] || labels["com.nvidia.cuda.version"]) return true;
   return false;
 }
-
-// ---------------------------------------------------------------------------
-// Shape conversion
-// ---------------------------------------------------------------------------
 
 function rawToDiscovered(
   id: string,
@@ -152,14 +114,7 @@ function rawToDiscovered(
   };
 }
 
-// ---------------------------------------------------------------------------
-// Discovery
-// ---------------------------------------------------------------------------
-
-/**
- * List all running containers that are not Vardo-managed.
- * Groups them by compose project; standalone containers have no compose project label.
- */
+/** Running containers not managed by Vardo, grouped by compose project. */
 export async function discoverContainers(): Promise<DiscoveryResponse> {
   const all = await listContainers();
   const unmanaged = all.filter((c) => !isManagedContainer(c.labels));
@@ -180,9 +135,7 @@ export async function discoverContainers(): Promise<DiscoveryResponse> {
   return groupByComposeProject(discovered);
 }
 
-/**
- * Split discovered containers into standalone and compose groups.
- */
+/** Split discovered containers into standalone and compose groups. */
 export function groupByComposeProject(containers: DiscoveredContainer[]): DiscoveryResponse {
   const standalone: DiscoveredContainer[] = [];
   const groupMap = new Map<string, DiscoveredContainer[]>();
@@ -205,28 +158,7 @@ export function groupByComposeProject(containers: DiscoveredContainer[]): Discov
   return { standalone, groups };
 }
 
-// ---------------------------------------------------------------------------
-// Container detail (for import pre-fill)
-// ---------------------------------------------------------------------------
-
-/**
- * Remove env vars that are identical to what the image provides.
- *
- * Docker containers inherit env vars from their image (PATH, LANG, etc.).
- * During import we only want the delta — vars that were explicitly set or
- * overridden at container run time. Capturing inherited vars causes broken
- * containers because the values are locked to whatever was in the image at
- * import time, overriding anything the new image version might set.
- *
- * Vars that share a key with the image but have a different value are kept
- * because they represent explicit runtime overrides.
- */
-/**
- * Keys the runtime rewrites, so their value never matches the image's and the
- * exact-string filter below baked them into compose permanently. A captured
- * PATH is what broke stirling-pdf: the image moved its JDK and the frozen PATH
- * no longer found java.
- */
+/** Keys the runtime rewrites, so their value never matches the image's. Dropped by key when the image sets them. */
 const RUNTIME_OWNED_ENV_KEYS = new Set([
   "PATH",
   "HOME",
@@ -240,6 +172,7 @@ const RUNTIME_OWNED_ENV_KEYS = new Set([
   "_",
 ]);
 
+/** Drop env vars inherited from the image, keeping runtime overrides. */
 export function filterImageInheritedEnv(
   containerEnv: string[],
   imageEnv: string[],
@@ -249,19 +182,11 @@ export function filterImageInheritedEnv(
   return containerEnv.filter((e) => {
     if (imageSet.has(e)) return false;
     const key = e.split("=", 1)[0];
-    // Drop by key, not value — the runtime's version differs from the image's
-    // by definition, which is exactly why matching on the whole string missed it.
     return !(RUNTIME_OWNED_ENV_KEYS.has(key) && imageKeys.has(key));
   });
 }
 
-/**
- * Inspect a single container and return enriched detail including env vars.
- * Verifies the container is not Vardo-managed before returning.
- *
- * Env vars inherited from the image are filtered out — only vars that were
- * explicitly set or overridden at runtime are included.
- */
+/** Inspect an unmanaged container for import, with image-inherited env vars removed. Null if managed. */
 export async function getContainerDetail(containerId: string): Promise<ContainerDetail | null> {
   const data: ContainerInspect = await inspectContainer(containerId);
 
@@ -274,9 +199,6 @@ export async function getContainerDetail(containerId: string): Promise<Container
   const hasNvidiaEnv = data.env.some((e) => e.startsWith("NVIDIA_VISIBLE_DEVICES=") || e.startsWith("NVIDIA_DRIVER_CAPABILITIES="));
   const hasNvidiaDevice = data.devices.some((d) => d.hostPath.startsWith("/dev/nvidia") || d.containerPath.startsWith("/dev/nvidia"));
 
-  // Filter out env vars that come from the image itself. Only the delta
-  // (vars explicitly set or overridden at run time) is meaningful to capture.
-  // If the image inspect fails for any reason we fall back to the full list.
   const imageEnv = await inspectImageEnv(data.image);
   const filteredEnv = filterImageInheritedEnv(data.env, imageEnv);
 
@@ -321,31 +243,17 @@ export async function getContainerDetail(containerId: string): Promise<Container
   };
 }
 
-// ---------------------------------------------------------------------------
-// Import payload builder
-// ---------------------------------------------------------------------------
-
-/**
- * Returns true when any label whose key starts with "traefik." has a value
- * containing "@file" — indicating an external Traefik file provider reference.
- */
+/** Whether any traefik.* label references the file provider (`@file`). */
 export function hasAtFileTraefikLabels(labels: Record<string, string>): boolean {
   return Object.entries(labels).some(([k, v]) => k.startsWith("traefik.") && v.includes("@file"));
 }
 
-/**
- * Check whether an image name looks local (no registry prefix or short hash).
- * Used to warn users that the image may not be pullable.
- */
+/** Whether an image name looks like a local build that may not be pullable. */
 export function isLocalImage(imageName: string): boolean {
-  // Short hash — no colons, no slashes, all hex
+  // Short hash
   if (/^[a-f0-9]{6,64}$/.test(imageName)) return true;
-  // sha256 digest prefix
   if (imageName.startsWith("sha256:")) return true;
-  // Images without any tag and no registry prefix or namespace are likely untagged local builds.
-  // Images with a tag (e.g. "nginx:latest", "myapp:1.0") are ambiguous — Docker Hub official
-  // images have no slash and no registry prefix yet are pullable. We only flag the no-tag case
-  // here; images with a colon-tag are treated as potentially pullable to avoid false positives.
+  // Only a bare untagged name counts; tagged names may be Docker Hub official images.
   if (imageName.includes(":") || imageName.includes("/")) return false;
   return imageName !== "scratch";
 }

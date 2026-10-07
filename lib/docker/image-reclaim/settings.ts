@@ -1,9 +1,4 @@
-// ---------------------------------------------------------------------------
-// Instance-wide reclamation settings.
-//
-// The scheduled sweep is off until someone turns it on. Previewing is always
-// available, so the first thing anyone sees is a list, not a deletion.
-// ---------------------------------------------------------------------------
+// Instance-wide reclamation settings. The scheduled sweep is off by default; preview is always available.
 
 import { getSystemSettingRaw, setSystemSetting, invalidateSettingsCache } from "@/lib/system-settings";
 import { DEFAULT_IDLE_DAYS, MAX_IDLE_DAYS, MIN_IDLE_DAYS } from "./policy";
@@ -45,7 +40,7 @@ export async function getImageReclaimConfig(): Promise<ImageReclaimConfig> {
   }
 }
 
-/** Summary of the last sweep, so the UI can show what was reclaimed after the fact. */
+/** Summary of the last sweep. */
 export interface LastRunSummary {
   finishedAt: string;
   imagesRemoved: number;

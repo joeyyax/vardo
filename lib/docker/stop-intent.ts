@@ -1,7 +1,4 @@
-// ---------------------------------------------------------------------------
-// Gathers what Vardo recorded about a stopped container and asks
-// intendedStopReason whether that stop was meant.
-// ---------------------------------------------------------------------------
+// Decides whether a stopped container was meant to stop, from what Vardo recorded.
 
 import { and, desc, eq, gte, inArray } from "drizzle-orm";
 
@@ -63,13 +60,7 @@ export function siblingRunning(
   return running.some((r) => r.id !== c.id && r.state === "running" && key(r.labels) === mine);
 }
 
-/**
- * Why this stopped container is meant to stay stopped, or null. Cheap checks
- * run first; the slot symlink and the activity log are read only when needed.
- *
- * `appIds` is every row an operator stop could be recorded on: the app and,
- * for a compose service, its child row.
- */
+/** Why this stopped container should stay stopped, or null. `appIds` covers the app and its child row. */
 export async function stopIntentFor(
   info: ContainerInspect,
   app: IntentApp,

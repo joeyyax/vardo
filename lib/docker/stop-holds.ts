@@ -1,8 +1,4 @@
-// ---------------------------------------------------------------------------
-// Containers Vardo stopped on purpose and will start again itself.
-//
-// Held containers are off limits to self-heal until released.
-// ---------------------------------------------------------------------------
+// Containers Vardo stopped on purpose. Self-heal skips them until released.
 
 const holds = new Map<string, string>();
 

@@ -1,29 +1,9 @@
-// ---------------------------------------------------------------------------
-// Host paths a bind mount may point at.
-//
-// One list, two very different consumers. Compose validation uses it to refuse
-// a container that would mount something dangerous — the blast radius there is
-// one container. The backup engine uses it to decide what may be archived and,
-// far more consequentially, what may be **restored over**: restore deletes the
-// destination's contents before writing. A path that only reaches the wrong
-// container is a bug; a path that reaches the wrong restore destination is
-// somebody's host.
-//
-// Compose is also not the only way a bind source is recorded. The adopt and
-// import routes write `volume.source` straight from `docker inspect`, so a row
-// pointing at /etc exists whether or not compose would ever have allowed it.
-// Anything consuming that column has to check it itself.
-// ---------------------------------------------------------------------------
+// Host paths a bind mount or backup restore may point at.
+// Adopt and import write volume.source straight from docker inspect, so consumers must check it themselves.
 
 import { resolve } from "path";
 
-/**
- * Paths a container may not bind-mount. Prefix-matched.
- *
- * Kept narrow on purpose. Mounting a host binary read-only is an ordinary
- * pattern — a container needing the host `docker` binary mounts `/usr/bin/docker`
- * — and widening this list breaks working apps at their next deploy.
- */
+/** Paths a container may not bind-mount. Prefix-matched; widening it breaks working apps on their next deploy. */
 export const DENIED_MOUNT_PATHS = [
   "/etc",
   "/proc",
@@ -33,17 +13,8 @@ export const DENIED_MOUNT_PATHS = [
 ];
 
 /**
- * Paths the backup engine may not archive or restore over.
- *
- * Stricter than the compose list, because the consequences are not comparable.
- * Mounting `/usr/bin/docker` into a container is fine; *restoring over* `/usr`
- * is the end of the host. Restore deletes the destination's contents first, so
- * this list is what stands between a mistyped source and an unbootable machine.
- *
- * `/var/lib` and `/home` are deliberately absent — application data lives in
- * both — while `/var/lib/docker` is present, because restoring over it takes
- * every volume on the host, including the staging area holding the archive.
- * `/root` comes from the compose list and covers the one home worth refusing.
+ * Paths the backup engine may not archive or restore over (restore wipes the destination first).
+ * `/var/lib` and `/home` hold app data and stay allowed; `/var/lib/docker` never.
  */
 export const DENIED_BACKUP_PATHS = [
   ...DENIED_MOUNT_PATHS,
@@ -57,13 +28,7 @@ export const DENIED_BACKUP_PATHS = [
   "/var/lib/docker",
 ];
 
-/**
- * Both readings of a path: relative to the process, and relative to the root.
- *
- * A traversal such as `../../../var/run/docker.sock` resolves differently
- * depending on the working directory, so a check against one form alone is
- * bypassable (#744). Both are compared.
- */
+/** A path resolved against the cwd and against root; checking one alone is bypassable (#744). */
 export function resolveBothWays(rawSource: string): [string, string] {
   return [resolve(rawSource), resolve("/", rawSource)];
 }
@@ -93,17 +58,8 @@ export class UnsafeMountPathError extends Error {
 }
 
 /**
- * Vet a host path before it is handed to `docker run -v`.
- *
- * Rejects, in order: a value Docker would read as a **volume name** rather than
- * a path (no leading slash — `data` is a named volume, not `./data`); a colon,
- * which would restructure the `-v` argument into a different destination or
- * mode; a traversal surviving normalization; and anything on the deny-list.
- *
- * Lexical only, and deliberately so. Vardo runs in a container while `-v` is
- * interpreted against the *host* filesystem, so `fs.stat` here would inspect
- * the wrong machine and return confident nonsense. Existence and type are
- * checked inside the one-shot container instead.
+ * Vet a host path for `docker run -v`: absolute, no colon, no `..`, not deny-listed.
+ * Lexical only; `fs.stat` here would read Vardo's container, not the host.
  */
 export function assertSafeBindSource(
   rawSource: string,

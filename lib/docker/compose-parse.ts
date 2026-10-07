@@ -1,7 +1,3 @@
-// ---------------------------------------------------------------------------
-// YAML parsing and serialization for Docker Compose files.
-// ---------------------------------------------------------------------------
-
 import YAML from "yaml";
 import type {
   ComposeFile,
@@ -18,9 +14,7 @@ import {
 } from "./compose-validate";
 import { SHARED_MARKER } from "./slot-partition";
 
-/**
- * Serialize a ComposeFile to a YAML string.
- */
+/** Serialize a ComposeFile to YAML. */
 export function composeToYaml(compose: ComposeFile): string {
   const doc: Record<string, unknown> = {};
   if (compose.name) doc.name = compose.name;
@@ -48,10 +42,7 @@ export function composeToYaml(compose: ComposeFile): string {
   return YAML.stringify(doc);
 }
 
-/**
- * Normalize a service's `configs:`/`secrets:` list. Entries without a `source`
- * are dropped — they reference nothing.
- */
+/** Normalize a service's `configs:`/`secrets:` list, dropping entries without a `source`. */
 function parseFileRefs(raw: unknown): ComposeFileRef[] | undefined {
   if (!Array.isArray(raw)) return undefined;
   const refs: ComposeFileRef[] = [];
@@ -79,11 +70,7 @@ function parseStringList(raw: unknown): string[] | undefined {
   return undefined;
 }
 
-/**
- * Fold `mem_limit` into `deploy.resources.limits.memory`, the one memory field
- * the rest of the pipeline reads. An existing deploy limit wins, matching what
- * Docker does when a service sets both.
- */
+/** Fold `mem_limit` into `deploy.resources.limits.memory`. An existing deploy limit wins. */
 function foldMemLimit(svc: ComposeService, raw: Record<string, unknown>): void {
   const memLimit = raw.mem_limit;
   if (typeof memLimit !== "string" && typeof memLimit !== "number") return;
@@ -99,16 +86,11 @@ function foldMemLimit(svc: ComposeService, raw: Record<string, unknown>): void {
   };
 }
 
-/**
- * Fold `cpus` into `deploy.resources.limits.cpus`, the one CPU field the rest
- * of the pipeline reads. An existing deploy limit wins, matching what Docker
- * does when a service sets both.
- */
+/** Fold `cpus` into `deploy.resources.limits.cpus`. An existing deploy limit wins. */
 function foldCpus(svc: ComposeService, raw: Record<string, unknown>): void {
   const cpus = raw.cpus;
   if (typeof cpus !== "string" && typeof cpus !== "number") return;
-  // Docker treats zero and unparseable as no limit; writing one back would cap
-  // a service the source file left uncapped.
+  // Docker treats zero and unparseable as no limit.
   const cores = Number(cpus);
   if (!Number.isFinite(cores) || cores <= 0) return;
   if (svc.deploy?.resources?.limits?.cpus) return;
@@ -122,9 +104,7 @@ function foldCpus(svc: ComposeService, raw: Record<string, unknown>): void {
   };
 }
 
-/**
- * Parse a YAML string into a ComposeFile.
- */
+/** Parse a YAML string into a ComposeFile. */
 export function parseCompose(yamlString: string): ComposeFile {
   const parsed = parseComposeYaml(yamlString);
 
@@ -180,26 +160,17 @@ export function parseCompose(yamlString: string): ComposeFile {
         svc.labels = raw.labels as Record<string, string>;
       }
     }
-    // networks: accept both list form ("- internal") and map form
-    // ("internal: { aliases: [pg] }"). The map form is valid Compose syntax
-    // — silently dropping it used to strand services on the implicit
-    // default network, which in turn caused the deploy pipeline to attach
-    // them only to vardo-network. We don't preserve per-network config
-    // (aliases, ipv4_address, etc.) because the rest of the pipeline treats
-    // networks as flat membership, but we always materialize the network
-    // references as strings so downstream transforms can reason about them.
+    // List or map form; map form keeps names only (aliases etc. are dropped).
     if (Array.isArray(raw.networks)) {
       svc.networks = raw.networks.map(String);
     } else if (raw.networks && typeof raw.networks === "object") {
       svc.networks = Object.keys(raw.networks as Record<string, unknown>);
     }
-    // depends_on: array of strings or object with per-service conditions
     if (raw.depends_on) {
       if (Array.isArray(raw.depends_on)) {
         svc.depends_on = raw.depends_on.map(String);
       } else if (typeof raw.depends_on === "object") {
-        // Preserve condition info (e.g. service_healthy) rather than dropping
-        // to a plain string[].
+        // Keep conditions such as service_healthy.
         const deps: Record<string, { condition: ComposeDependsOnCondition }> = {};
         for (const [depName, conf] of Object.entries(
           raw.depends_on as Record<string, { condition?: string }>
@@ -260,8 +231,7 @@ export function parseCompose(yamlString: string): ComposeFile {
     if (Array.isArray(raw.group_add)) svc.group_add = raw.group_add.map(String);
     foldMemLimit(svc, raw);
     foldCpus(svc, raw);
-    // Additive container settings — none of them collide with what the Vardo
-    // overlay writes, so they pass straight through.
+    // Pass-through settings the Vardo overlay never writes.
     if (typeof raw.read_only === "boolean" && raw.read_only) svc.read_only = raw.read_only;
     if (typeof raw.stdin_open === "boolean" && raw.stdin_open) svc.stdin_open = raw.stdin_open;
     if (typeof raw.tty === "boolean" && raw.tty) svc.tty = raw.tty;
@@ -281,19 +251,16 @@ export function parseCompose(yamlString: string): ComposeFile {
         ? raw.sysctls.map(String)
         : (raw.sysctls as Record<string, string | number>);
     }
-    // Both reference a top-level block carried through below. Dropping either
-    // leaves the service pointing at a file that never gets mounted.
+    // Both reference top-level blocks carried through below.
     const configs = parseFileRefs(raw.configs);
     if (configs) svc.configs = configs;
     const secrets = parseFileRefs(raw.secrets);
     if (secrets) svc.secrets = secrets;
 
-    // Carried through by hand — the field list above drops unknown keys, and
-    // the deploy pipeline reads the blue/green opt-out off the parsed compose.
+    // Carried by hand; the deploy pipeline reads the blue/green opt-out from here.
     if (typeof raw[SHARED_MARKER] === "boolean") svc[SHARED_MARKER] = raw[SHARED_MARKER];
 
-    // A fixed name can only belong to a service that is never duplicated, so
-    // it rides along only with the shared marker. Blue and green would collide.
+    // Fixed names only on shared services; blue and green would collide.
     if (svc[SHARED_MARKER] && typeof raw.container_name === "string") {
       svc.container_name = raw.container_name;
     }
@@ -316,8 +283,6 @@ export function parseCompose(yamlString: string): ComposeFile {
     result.secrets = root.secrets as Record<string, unknown>;
   }
 
-  // Docker accepts network_mode with a network name and ignores it, so the
-  // service silently lands on the project's default network. Correct it here
-  // and every consumer — deploy, preview, analyze, import — sees the fix.
+  // Docker silently ignores network_mode set to a network name; correct it for every consumer.
   return normalizeNamedNetworkModes(result);
 }

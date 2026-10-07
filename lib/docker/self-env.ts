@@ -9,16 +9,7 @@ export function isSelfApp(appName: string): boolean {
   return appName === VARDO_SELF_APP_NAME;
 }
 
-/**
- * Give the new slot the `.env` the running instance was started with.
- *
- * Vardo's own secrets stay on the host rather than in its database, so
- * `app.envContent` is empty and the normal write is skipped. Compose then
- * silently falls back to the `:-` defaults in the compose file — `VARDO_DOMAIN`
- * becomes `localhost` and the deploy produces a frontend nothing can reach.
- *
- * Returns the path copied from, or null when there was nothing to copy.
- */
+/** Copy the running instance's host `.env` into the new self-app slot. Returns the source path or null. */
 export async function seedSelfEnv(
   appName: string,
   appDir: string,

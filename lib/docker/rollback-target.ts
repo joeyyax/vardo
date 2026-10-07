@@ -1,12 +1,5 @@
-// ---------------------------------------------------------------------------
-// Standard rollback: resolving what a rollback deploy must actually deploy.
-//
-// A rollback is a normal blue-green deploy whose inputs come from a previous
-// deployment's snapshots instead of the app's current row. This module loads
-// that target and overlays it onto the in-memory app record before the pipeline
-// runs. Anything that can't be resolved throws — deploying the branch tip under
-// the label "rollback" is worse than failing.
-// ---------------------------------------------------------------------------
+// Resolves a rollback deploy's inputs from a previous deployment's snapshots.
+// Anything unresolvable throws; never deploy the branch tip as a "rollback".
 
 import { db } from "@/lib/db";
 import { deployments } from "@/lib/db/schema";
@@ -33,7 +26,7 @@ type TargetRow = {
   configSnapshot: ConfigSnapshot | null;
 };
 
-/** Injectable loader — the real implementation reads the deployments table. */
+/** Injectable loader. */
 export type RollbackTargetLoader = (
   appId: string,
   deploymentId: string,
@@ -77,12 +70,7 @@ export async function loadRollbackTarget(
   };
 }
 
-/**
- * Rewrite the single service's image to `ref`. Returns null when the compose
- * declares anything other than exactly one image, since the recorded digest
- * describes one image and guessing which service it belongs to would be wrong.
- * Line-targeted rather than a YAML round-trip, which would reformat the file.
- */
+/** Rewrite the single `image:` line to `ref`, or null unless the compose has exactly one image. */
 export function pinComposeImage(composeContent: string, ref: string): string | null {
   const lines = composeContent.split("\n");
   const imageLines = lines
@@ -97,10 +85,7 @@ export function pinComposeImage(composeContent: string, ref: string): string | n
   return lines.join("\n");
 }
 
-/**
- * Overlay the target's snapshot onto the app record the deploy pipeline reads,
- * and assert the target is deployable. Mutates `app`.
- */
+/** Overlay the target's snapshot onto `app` and assert it's deployable. Mutates `app`. */
 export function applyRollbackTarget(
   app: DeployApp,
   target: RollbackTarget,
@@ -131,9 +116,7 @@ export function applyRollbackTarget(
     const digest = config?.imageDigest;
     if (digest) {
       app.imageName = digest;
-      // prepare-repo parses stored composeContent for image apps and never
-      // reads imageName, so an imported app would roll back to the tag. Pin
-      // inside the compose too, or say plainly that we could not.
+      // prepare-repo reads composeContent, not imageName, for image apps.
       if (app.composeContent) {
         const pinned = pinComposeImage(app.composeContent, digest);
         if (pinned) {

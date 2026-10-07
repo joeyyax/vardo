@@ -1,11 +1,4 @@
-// ---------------------------------------------------------------------------
-// Routed-service selection — which compose service a domain's Traefik labels
-// belong on.
-//
-// File order alone picks the wrong container in any stack that lists a worker
-// or datastore first (authentik lists authentik-worker before authentik-server),
-// which puts a non-serving container behind the domain.
-// ---------------------------------------------------------------------------
+// Picks which compose service a domain's Traefik labels belong on.
 
 import type { ComposeFile, ComposeService } from "./compose-types";
 import { parsePortString, isTraefikOptedOut } from "./compose-inject";
@@ -14,7 +7,7 @@ import { parsePortString, isTraefikOptedOut } from "./compose-inject";
 const DATASTORE_IMAGE =
   /^(?:.*\/)?(postgres|postgis|mysql|mariadb|percona|mongo|redis|valkey|memcached)\b/i;
 
-/** Service names that name a background role rather than the web tier. */
+/** Service names for background roles. */
 const BACKGROUND_ROLE =
   /(^|[-_.])(worker|celery|beat|scheduler|cron|queue|consumer|migrate|migrations?|init|backup|sidecar)([-_.]|$)/i;
 
@@ -58,13 +51,7 @@ function isServingRole(name: string, svc: ComposeService): boolean {
   return !BACKGROUND_ROLE.test(name);
 }
 
-/**
- * Pick the compose service a domain's Traefik labels belong on.
- *
- * Applies each signal in confidence order, keeping a filter only when it
- * narrows the field without emptying it. `reason` names the last signal that
- * narrowed; `ambiguous` is set when the field never got down to one.
- */
+/** Pick the routed service by signals in confidence order; a filter applies only when it narrows without emptying. */
 export function selectRoutedService(
   compose: ComposeFile,
   opts: {
@@ -82,9 +69,7 @@ export function selectRoutedService(
     return { service: override, reason: "override" };
   }
 
-  // Services on host/container/none network modes are unreachable from
-  // vardo-traefik, so they can never carry the route. Neither can a service
-  // the compose opted out with traefik.enable=false.
+  // Non-bridge network modes are unreachable from vardo-traefik; traefik.enable=false opts out.
   const candidates = Object.keys(compose.services).filter((name) => {
     const mode = compose.services[name].network_mode;
     if (mode && mode !== "bridge") return false;

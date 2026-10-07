@@ -1,11 +1,4 @@
-// ---------------------------------------------------------------------------
-// DeployContext — typed carrier object for deploy pipeline state
-//
-// Replaces the ~12 hoisted variables in runDeployment(). Each step receives
-// the context, reads what it needs, mutates its own fields, and returns it.
-// The orchestrator (runDeployment) owns the context and handles all error
-// recovery — steps just throw on failure.
-// ---------------------------------------------------------------------------
+// Deploy pipeline state. Steps mutate their own fields and throw on failure; runDeployment handles recovery.
 
 import type { ComposeFile, ServiceConfigOverride } from "./compose-types";
 import type { HostConfig } from "@/lib/config/host-config";
@@ -16,10 +9,7 @@ export type DeployStatus = "running" | "success" | "failed" | "skipped";
 /** Result of stopping the old slot. `ok: false` means its containers are still up. */
 export type SlotStopOutcome = { ok: true } | { ok: false; message: string };
 
-/**
- * The app record shape as returned by the db query in runDeployment.
- * Uses `with: { domains: true }` so domains is always present.
- */
+/** App row as loaded by runDeployment, with domains. */
 export type DeployApp = {
   id: string;
   organizationId: string;
@@ -69,20 +59,13 @@ export type DeployApp = {
     certResolver: string | null;
     redirectTo: string | null;
     redirectCode: number | null;
-    /**
-     * Compose service this domain targets. Set when the domain belongs to a
-     * decomposed child app (deploy.ts aggregates child domains and tags them);
-     * absent/null for a parent app's own domains, which target the primary
-     * service. Read by the Traefik-label injection step.
-     */
+    /** Compose service this domain targets; null for the parent's own domains (primary service). */
     composeService?: string | null;
   }[];
 };
 
 export type DeployContext = {
-  // -----------------------------------------------------------------------
-  // Input (from DeployOpts + createDeployment)
-  // -----------------------------------------------------------------------
+  // Input
   deploymentId: string;
   appId: string;
   organizationId: string;
@@ -92,15 +75,10 @@ export type DeployContext = {
   groupEnvironmentId?: string;
   signal?: AbortSignal;
 
-  /**
-   * Set when this deploy is a rollback. The app record has already been
-   * overlaid with the target's snapshot; steps read this for the target commit.
-   */
+  /** Set for a rollback; `app` is already overlaid with the target's snapshot. */
   rollback?: { targetDeploymentId: string; gitSha: string | null };
 
-  // -----------------------------------------------------------------------
-  // Resolved during execution — set by early steps, read by later ones
-  // -----------------------------------------------------------------------
+  // Resolved by earlier steps
   app: DeployApp;
 
   /** Organization record (subset). */
@@ -127,28 +105,19 @@ export type DeployContext = {
   /** Effective source after auto-upgrade (direct -> git when compose has build:). */
   effectiveSource: string;
 
-  /** Parsed compose file — set by prepare-repo or direct compose path. */
+  /** Parsed compose file. */
   compose: ComposeFile;
 
   /** The bare compose before Vardo injections (for docker-compose.yml). */
   bareCompose: ComposeFile;
 
-  /**
-   * Per-service config from decomposed child app rows (compose service name →
-   * override). Built in resolve-compose, consumed by the overlay in build so a
-   * child's resources/GPU take effect. Empty for non-decomposed apps. (#745)
-   */
+  /** Per-service overrides from decomposed child apps, keyed by service name. (#745) */
   serviceConfig: Record<string, ServiceConfigOverride>;
 
   /** Whether the image was built locally (Nixpacks/Railpack/Dockerfile). */
   builtLocally: boolean;
 
-  /**
-   * Image refs that were built locally this deploy (e.g. `host/<app>:<sha>`).
-   * These exist only in the local Docker daemon, never in a registry, so the
-   * swap pre-pull must skip them — otherwise `docker compose pull` 404s and
-   * aborts the deploy. Empty unless a Nixpacks/Railpack/Dockerfile build ran.
-   */
+  /** Image refs built locally this deploy. The swap pre-pull must skip them or `compose pull` 404s. */
   builtImageRefs: string[];
 
   /** host.toml config from repo root. */
@@ -187,10 +156,7 @@ export type DeployContext = {
   /** Stable volume prefix for externalization. */
   stableVolumePrefix: string;
 
-  /**
-   * Stops the old slot. Set when the old slot is still serving at the end of
-   * the swap; post-deploy calls it only after the deploy commits.
-   */
+  /** Stops the old slot; post-deploy calls it only after the deploy commits. */
   stopOldSlot?: () => Promise<SlotStopOutcome>;
 
   /** The old slot is running this process (Vardo deploying Vardo), so its stop ends the deploy. */
@@ -199,25 +165,16 @@ export type DeployContext = {
   /** Whether the old slot's rotating services are still running. */
   oldSlotServing?: () => Promise<boolean>;
 
-  /**
-   * Post-deploy work an earlier step could not finish. Drained by post-deploy
-   * onto the deployment row once the deploy commits.
-   */
+  /** Unfinished work, written to the deployment row by post-deploy. */
   unfinished?: string[];
 
-  /**
-   * Shared services whose relative bind source still sits in a slot dir while
-   * its slot-independent path is empty. The swap holds them rather than
-   * recreating onto an empty directory.
-   */
+  /** Shared services whose bind data still sits in a slot dir; the swap holds them so they never recreate onto an empty dir. */
   sharedPathMoves?: Record<string, string[]>;
 
-  /** Set once the deploy records success — from here the new slot is live, not disposable. */
+  /** Set once the deploy records success; the new slot is live from here. */
   succeeded?: boolean;
 
-  // -----------------------------------------------------------------------
-  // Logging & lifecycle
-  // -----------------------------------------------------------------------
+  // Logging and lifecycle
   log: (line: string) => string;
   stage: (stage: DeployStage, status: DeployStatus) => void;
   checkAbort: () => void;

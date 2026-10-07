@@ -1,12 +1,4 @@
-// ---------------------------------------------------------------------------
-// The on-disk version a datastore's data directory was written by.
-//
-// Reading the stamp beats knowing the engine. A curated list of which images
-// are major-locked goes stale the moment someone deploys a datastore nobody
-// added to it, and it fails open — the direction that breaks a deploy. Asking
-// the running container what its data directory says is self-maintaining, and
-// it is the same check the engine itself makes on startup.
-// ---------------------------------------------------------------------------
+// Reads the version a datastore's data directory was written by, from inside the running container.
 
 /** Where an engine records the format version of its data directory. */
 interface VersionStamp {
@@ -31,7 +23,7 @@ const STAMPS: VersionStamp[] = [
   },
 ];
 
-/** The shell that reads this image's data-directory version, if we know one. */
+/** The shell that reads this image's data-directory version, if known. */
 export function versionProbeFor(image: string): string | null {
   const repo = image.split("@")[0].replace(/:[^:/]*$/, "");
   return STAMPS.find((s) => s.match.test(repo))?.probe ?? null;
@@ -50,11 +42,7 @@ export type DataVersionVerdict =
   | { kind: "unknown"; reason: string }
   | { kind: "mismatch"; onDisk: number; image: number; message: string };
 
-/**
- * Compare what the data directory was written by against the major the new
- * image would run. A mismatch is what made outline's `postgres:16` → `18`
- * deploy fail, after the old slot had already been stopped.
- */
+/** Compare the data directory's version against the major the new image would run. */
 export function checkDataVersion(
   image: string,
   imageTag: string,

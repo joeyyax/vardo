@@ -1,6 +1,4 @@
-// ---------------------------------------------------------------------------
-// Compose file validation, sanitization, and cycle detection.
-// ---------------------------------------------------------------------------
+// Compose file validation, sanitization and cycle detection.
 
 import { resolve } from "path";
 import YAML from "yaml";
@@ -11,42 +9,26 @@ import { declaredVolumes, slotIndependentMounts, volumeSharedServices } from "./
 import { getTraefikRoutedServices } from "./compose-inject";
 import { selectRoutedService } from "./routed-service";
 
-// ---------------------------------------------------------------------------
-// Constants (exported for use by compose-parse)
-// ---------------------------------------------------------------------------
-
 export const ALLOWED_NETWORK_MODES = ["host", "bridge", "none", "service", "container"];
 export const ALLOWED_RUNTIMES = ["runc", "nvidia", "sysbox"];
 
 /**
- * Parse compose YAML with merge keys resolved, the way Docker Compose reads it.
- *
- * Under YAML 1.2 `<<` is an ordinary key, so `<<: *anchor` leaves the anchor's
- * keys nested under `"<<"` where nothing downstream looks. Docker's Go parser
- * merges them, so an unresolved `<<` hides settings Docker is applying — a
- * service reading as shared to Docker and rotating to Vardo.
- *
- * Throws on unresolvable merge sources, which Docker rejects too.
+ * Parse compose YAML with `<<` merge keys resolved, as Docker does; YAML 1.2 leaves them nested.
+ * Throws on unresolvable merge sources.
  */
 export function parseComposeYaml(yamlText: string): unknown {
   return YAML.parse(yamlText, { merge: true });
 }
 
 /**
- * Whether network_mode names a namespace Docker understands.
- *
- * Anything else is a network *name*. Docker accepts it without complaint and
- * then ignores it — the service lands on its compose project's default network
- * instead. `network_mode: vardo-network` took request.example.com down this way.
+ * Whether network_mode names a namespace. Docker silently ignores a network name here
+ * and puts the service on the project's default network.
  */
 export function isSpecialNetworkMode(nm: string): boolean {
   return ALLOWED_NETWORK_MODES.some((p) => nm === p || nm.startsWith(p + ":"));
 }
 
-/**
- * Services whose network_mode names a network rather than a namespace.
- * Takes raw compose YAML so it can audit stored config that was never parsed.
- */
+/** Services whose network_mode names a network. Takes raw YAML to audit stored config. */
 export function findNamedNetworkModes(
   yamlText: string,
 ): { service: string; networkMode: string }[] {
@@ -73,12 +55,8 @@ export function findNamedNetworkModes(
 }
 
 /**
- * Rewrite `network_mode: <network name>` as membership of that network, and
- * declare the network external so Compose attaches to the existing one rather
- * than creating a project-prefixed copy.
- *
- * Special modes (host, none, bridge, container:, service:) are namespaces and
- * are left alone. Returns the input unchanged when there is nothing to move.
+ * Rewrite `network_mode: <network name>` as membership of that network, declared external
+ * so Compose doesn't create a project-prefixed copy. Special modes are left alone.
  */
 export function normalizeNamedNetworkModes(compose: ComposeFile): ComposeFile {
   const services: Record<string, ComposeService> = {};
@@ -105,12 +83,8 @@ export function normalizeNamedNetworkModes(compose: ComposeFile): ComposeFile {
   return { ...compose, services, networks };
 }
 
-// ---------------------------------------------------------------------------
-// Internal constants
-// ---------------------------------------------------------------------------
-
 const SERVICE_NAME_RE = /^[a-z][a-z0-9-]*$/;
-// Port value: literal digits or ${VAR:-default} env interpolation
+// Literal digits or ${VAR:-default}.
 const PORT_VAL = String.raw`(?:\d+|\$\{[^}]+\})`;
 const PORT_RE = new RegExp(
   String.raw`^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:)?` +
@@ -119,24 +93,15 @@ const PORT_RE = new RegExp(
   String.raw`(\/\w+)?$`,
 );
 
-// Shared with the backup engine, which restores over these paths and so has
-// far more to lose from a gap in the list. See lib/docker/mount-paths.ts.
+// Shared with the backup engine. See lib/docker/mount-paths.ts.
 import { DENIED_MOUNT_PATHS } from "./mount-paths";
 
-/**
- * Returns true if a Docker inspect mount name represents an anonymous volume.
- * Docker assigns a 64-character hex hash as the name for anonymous volumes.
- * An empty name is also treated as anonymous.
- */
+/** True for a 64-char hex (or empty) Docker mount name. */
 export function isAnonymousVolume(name: string): boolean {
   return !name || /^[0-9a-f]{64}$/.test(name);
 }
 
-/**
- * Returns true if a compose volume entry is a host bind mount.
- * A bare absolute path like "/data" (no colon) is a Docker anonymous volume —
- * it must not be treated as a bind mount.
- */
+/** True if a compose volume entry is a host bind mount. A bare "/data" is an anonymous volume. */
 function isBindMount(vol: string): boolean {
   return (
     vol.startsWith("./") ||
@@ -145,14 +110,12 @@ function isBindMount(vol: string): boolean {
   );
 }
 
-// /var/run is conventionally a symlink to /run, so a compose file may reference
-// the Docker socket via either path.
+// /var/run is usually a symlink to /run.
 const DOCKER_SOCKET_PATHS = ["/var/run/docker.sock", "/run/docker.sock"];
 
 /**
- * Returns true if a resolved bind-mount source is the host Docker socket.
- * Checked against both the cwd-resolved and root-resolved forms so a traversal
- * (e.g. ../../../var/run/docker.sock) can't slip past the gate. (#744)
+ * True if a bind-mount source is the host Docker socket. Checks the cwd- and root-resolved
+ * forms so a `../` traversal can't slip past the gate. (#744)
  */
 function isDockerSocketMount(mountSource: string, rootResolved: string): boolean {
   return (
@@ -170,15 +133,7 @@ function dockerSocketBlockedMessage(service: string, volume: string): string {
   );
 }
 
-// ---------------------------------------------------------------------------
-// x-vardo-shared
-// ---------------------------------------------------------------------------
-
-/**
- * Services a deploy will put behind Traefik, resolved the way swap.ts does it:
- * the labeled ones, or the one Vardo would pick. A pick that was a guess is
- * dropped — swap.ts settles it with a container port validation doesn't have.
- */
+/** Services a deploy will route through Traefik, resolved as swap.ts does. Guessed picks are dropped. */
 function routedServiceNames(compose: ComposeFile): string[] {
   const labeled = getTraefikRoutedServices(compose);
   if (labeled.size > 0) return [...labeled];
@@ -186,10 +141,7 @@ function routedServiceNames(compose: ComposeFile): string[] {
   return selection.service && !selection.ambiguous ? [selection.service] : [];
 }
 
-/**
- * Misuses of x-vardo-shared, caught before a deploy runs. The last two reach
- * Docker as an unresolvable reference, or don't fail at all.
- */
+/** Misuses of x-vardo-shared, caught before a deploy runs. */
 function sharedServiceErrors(compose: ComposeFile): string[] {
   const errors: string[] = [];
   const names = Object.keys(compose.services);
@@ -245,10 +197,7 @@ function sharedServiceErrors(compose: ComposeFile): string[] {
   return errors;
 }
 
-/**
- * Services marked x-vardo-shared.
- * Takes raw compose YAML so the UI can read stored config directly.
- */
+/** Services marked x-vardo-shared, from raw compose YAML. */
 export function sharedServiceNames(yamlText: string): string[] {
   let root: unknown;
   try {
@@ -275,11 +224,8 @@ export type MistypedSharedMarker = { service: string; value: unknown };
 const FALSY_SPELLINGS = new Set(["false", "no", "off", "n", "f"]);
 
 /**
- * Whether a dropped marker could have been meant as "shared".
- *
- * A value meaning "not shared" produces the same outcome dropped as honored, so
- * blocking it would refuse a deploy that was never at risk. Anything else could
- * have meant true, and a dropped true puts two databases on one volume.
+ * Whether a dropped marker could have meant "shared". A dropped true puts two databases
+ * on one volume.
  */
 export function sharedMarkerIsHazardous(value: unknown): boolean {
   if (typeof value === "number") return value !== 0;
@@ -288,12 +234,8 @@ export function sharedMarkerIsHazardous(value: unknown): boolean {
 }
 
 /**
- * Services setting x-vardo-shared to anything other than a boolean.
- *
- * parseCompose only carries the marker through when it is a boolean, so
- * `x-vardo-shared: "true"` is dropped and the service is blue/green'd — two
- * database containers onto one data directory. Takes raw YAML because after
- * parsing, a quoted marker and an absent one are the same thing.
+ * Services setting x-vardo-shared to a non-boolean, which parseCompose drops. Takes raw YAML;
+ * after parsing, a quoted marker and an absent one look the same.
  */
 export function findMistypedSharedMarkers(yamlText: string): MistypedSharedMarker[] {
   let root: unknown;
@@ -328,10 +270,7 @@ function describeMarkerValue(value: unknown): string {
   return String(value);
 }
 
-/**
- * Blocking errors for markers that could have meant "shared".
- * Every caller holding raw compose text should run this before storing it.
- */
+/** Blocking errors for markers that could have meant "shared". Run before storing raw compose. */
 export function sharedMarkerTypeErrors(yamlText: string): string[] {
   return findMistypedSharedMarkers(yamlText)
     .filter(({ value }) => sharedMarkerIsHazardous(value))
@@ -355,10 +294,7 @@ export function sharedMarkerWarnings(yamlText: string): string[] {
     );
 }
 
-/**
- * Service keys parseCompose carries through. Anything outside this set is
- * dropped on the way to the generated compose file.
- */
+/** Service keys parseCompose carries through. */
 const PARSED_SERVICE_KEYS = new Set([
   "image", "build", "restart", "ports", "expose", "environment", "env_file",
   "volumes", "labels", "networks", "depends_on", "network_mode", "runtime",
@@ -371,10 +307,7 @@ const PARSED_SERVICE_KEYS = new Set([
   SHARED_MARKER,
 ]);
 
-/**
- * Valid Compose service keys Vardo drops. Docker would honor every one of
- * these, so a silent drop changes behavior with nothing in the log to say so.
- */
+/** Valid Compose service keys Docker honors and Vardo drops. */
 const DROPPED_SERVICE_KEYS = new Set([
   "cpu_count", "cpu_percent", "cpuset", "memswap_limit",
   "mem_swappiness", "pids_limit", "blkio_config", "device_cgroup_rules",
@@ -386,10 +319,8 @@ const DROPPED_SERVICE_KEYS = new Set([
 ]);
 
 /**
- * Report Compose keys that Docker honors and Vardo drops.
- *
- * WARNING: adding a key to the parser without removing it here leaves a
- * warning that contradicts the behavior.
+ * Report Compose keys Docker honors and Vardo drops.
+ * Adding a key to the parser means removing it here too.
  */
 export function droppedKeyWarnings(compose: unknown): string[] {
   if (typeof compose !== "object" || compose === null || Array.isArray(compose)) return [];
@@ -413,14 +344,7 @@ export function droppedKeyWarnings(compose: unknown): string[] {
   return warnings;
 }
 
-/**
- * Report services Vardo will stop rotating because a second copy would land on
- * their data directory.
- *
- * Not an error — the deploy is safer for it. But the service stops being
- * updated, so the operator has to know it happened and that the marker is how
- * you say it on purpose.
- */
+/** Report services Vardo stops rotating because a second copy would land on their data directory. */
 export function unmarkedSharedVolumeWarnings(compose: ComposeFile): string[] {
   const declared = declaredVolumes(compose);
   const nonRotating = nonRotatingServices(compose);
@@ -432,8 +356,7 @@ export function unmarkedSharedVolumeWarnings(compose: ComposeFile): string[] {
     const mounts = slotIndependentMounts(svc.volumes, declared).map((v) => `"${v}"`).join(", ");
     const head = `Service "${name}" runs ${svc.image} and mounts ${mounts}, which both slots address.`;
 
-    // Dropped by nonRotatingServices — it depends on a rotating service, or is
-    // the only thing left to deploy. Still rotating, so say so plainly.
+    // Not in nonRotating: it still rotates.
     warnings.push(
       nonRotating.has(name)
         ? `${head} Vardo will deploy it once instead of rotating it — ` +
@@ -446,9 +369,7 @@ export function unmarkedSharedVolumeWarnings(compose: ComposeFile): string[] {
   return warnings;
 }
 
-/**
- * Basic validation of a ComposeFile structure.
- */
+/** Basic validation of a ComposeFile structure. */
 export function validateCompose(compose: ComposeFile, opts?: ValidateOptions): {
   valid: boolean;
   errors: string[];
@@ -465,19 +386,16 @@ export function validateCompose(compose: ComposeFile, opts?: ValidateOptions): {
   }
 
   for (const [name, svc] of Object.entries(compose.services)) {
-    // Validate service name
     if (!SERVICE_NAME_RE.test(name)) {
       errors.push(
         `Service name "${name}" is invalid (must be lowercase alphanumeric with hyphens, starting with a letter)`,
       );
     }
 
-    // Each service must have image or build
     if (!svc.image && !svc.build) {
       errors.push(`Service "${name}" must have either "image" or "build"`);
     }
 
-    // Validate port formats
     if (svc.ports) {
       for (const port of svc.ports) {
         if (!PORT_RE.test(port)) {
@@ -510,7 +428,7 @@ export function validateCompose(compose: ComposeFile, opts?: ValidateOptions): {
           continue;
         }
 
-        // Bind mounts allowed — the rest of the deny-list stays enforced.
+        // The rest of the deny-list stays enforced.
         if (
           DENIED_MOUNT_PATHS.some((p) => mountSource === p || mountSource.startsWith(p + "/")) ||
           DENIED_MOUNT_PATHS.some((p) => rootResolved === p || rootResolved.startsWith(p + "/"))
@@ -523,7 +441,6 @@ export function validateCompose(compose: ComposeFile, opts?: ValidateOptions): {
       }
     }
 
-    // Validate network_mode service:X references
     if (svc.network_mode) {
       const nm = svc.network_mode;
       if (nm.startsWith("service:")) {
@@ -541,8 +458,7 @@ export function validateCompose(compose: ComposeFile, opts?: ValidateOptions): {
     }
   }
 
-  // Detect circular chains in service:X network_mode references (A → B → A or longer).
-  // Self-references (A → A) are already caught above; this covers multi-hop cycles.
+  // Multi-hop cycles in service:X network_mode references.
   const cycleMembers = new Set<string>();
   const cycleReported = new Set<string>();
   for (const startName of Object.keys(compose.services)) {
@@ -557,11 +473,10 @@ export function validateCompose(compose: ComposeFile, opts?: ValidateOptions): {
       const nm = compose.services[node]?.network_mode;
       if (!nm?.startsWith("service:")) break;
       const next = nm.slice("service:".length);
-      // Skip invalid/missing/self-ref targets — already reported above
+      // Already reported.
       if (!next || !compose.services[next] || next === node) break;
 
       if (seen.has(next)) {
-        // next appears earlier in the path — cycle detected
         const cycleStart = path.indexOf(next);
         const cycle = [...path.slice(cycleStart), node];
         const cycleKey = [...cycle].sort().join(",");
@@ -581,8 +496,7 @@ export function validateCompose(compose: ComposeFile, opts?: ValidateOptions): {
     }
   }
 
-  // Detect non-circular chaining: service:B where B itself uses service:X.
-  // Docker does not allow network_mode chains — the target must own its network namespace.
+  // Docker rejects network_mode chains; the target must own its namespace.
   for (const [name, svc] of Object.entries(compose.services)) {
     if (!svc.network_mode?.startsWith("service:")) continue;
     if (cycleMembers.has(name)) continue; // already covered by circular error above
@@ -603,12 +517,8 @@ export function validateCompose(compose: ComposeFile, opts?: ValidateOptions): {
 }
 
 /**
- * Strip host bind mounts from compose, keeping only named volumes.
- * When allowBindMounts is true, bind mounts are allowed but paths in
- * DENIED_MOUNT_PATHS are always blocked regardless of the flag.
- * The Docker socket has its own gate (allowDockerSocket): kept when enabled,
- * stripped otherwise — independent of allowBindMounts. (#744)
- * When stripping, returns the list of removed mounts for logging.
+ * Strip host bind mounts, keeping named volumes. DENIED_MOUNT_PATHS stay blocked even with
+ * allowBindMounts; the Docker socket has its own gate. (#744)
  */
 export function sanitizeCompose(
   compose: ComposeFile,
@@ -630,14 +540,10 @@ export function sanitizeCompose(
 
         const rawSource = v.split(":")[0];
         const mountSource = resolve(rawSource);
-        // Also resolve from root to catch traversal attacks (e.g. ../../../../../../etc)
-        // that would resolve differently depending on CWD depth
+        // Resolve from root too, to catch `../` traversal.
         const rootResolved = resolve("/", rawSource);
 
-        // Docker socket: kept only when its own flag is on; otherwise the deploy
-        // is blocked with a clear message — independent of allowBindMounts. We
-        // throw rather than silently strip because a service that mounts the
-        // socket needs it, and a sharp tool should fail loudly, not degrade.
+        // Socket kept only when its own flag is on; otherwise the deploy fails.
         if (isDockerSocketMount(mountSource, rootResolved)) {
           if (!opts?.allowDockerSocket) {
             throw new Error(dockerSocketBlockedMessage(name, v));
@@ -647,9 +553,7 @@ export function sanitizeCompose(
         }
 
         if (opts?.allowBindMounts) {
-          // Bind mounts allowed — still enforce the deny list unconditionally.
-          // Throw rather than silently drop: the user explicitly configured this
-          // mount, so a silent strip would cause confusing runtime behaviour.
+          // Deny list is enforced unconditionally.
           if (
             DENIED_MOUNT_PATHS.some((p) => mountSource === p || mountSource.startsWith(p + "/")) ||
             DENIED_MOUNT_PATHS.some((p) => rootResolved === p || rootResolved.startsWith(p + "/"))

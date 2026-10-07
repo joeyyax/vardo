@@ -6,31 +6,12 @@ function volumeSource(mount: string): string {
   return mount.split(":")[0];
 }
 
-/**
- * Named volumes mounted only by services that never rotate.
- *
- * Externalizing a volume exists so it survives a slot swap. A shared service is
- * not swapped, so its volumes can stay compose-native — which is what lets a
- * pinned shared project keep the volume names it already created.
- *
- * A volume touched by any rotating service is excluded: that one still has to
- * outlive the slot.
- *
- * Each slot creates an empty copy of these. One compose file serves both
- * projects, so suppressing the copy would mean naming the real volume in the
- * slot's own file — the clutter is the safer trade.
- */
+/** Named volumes mounted only by shared services; these stay compose-native so the shared project keeps its names. */
 export function sharedOnlyVolumes(compose: ComposeFile): Set<string> {
   return volumesByOwner(compose).sharedOnly;
 }
 
-/**
- * External name for a volume both a shared and a rotating service mount.
- *
- * It has to be external — one volume referenced from two compose projects has
- * no other form — but the name must be what the shared project already calls
- * it, or the shared service is handed an empty volume on the first deploy.
- */
+/** External name for a volume both a shared and a rotating service mount. Must match the shared project's name or it gets an empty volume. */
 export function crossBoundaryVolumeName(
   compose: ComposeFile,
   volName: string,
@@ -41,13 +22,8 @@ export function crossBoundaryVolumeName(
 }
 
 /**
- * Volumes mounted by a shared service, split by whether anything rotating also
- * mounts them.
- *
- * Reads the marker alone, not the full partition. A service detection promoted
- * was rotating on the last deploy, so its data already sits under the
- * externalized name — claiming it here would point the database at an empty
- * volume. Naming stays exactly where it was before detection existed.
+ * Volumes mounted by a shared service, split by whether a rotating service also mounts them.
+ * Reads the marker only, not detection: a detected service's data already sits under the externalized name.
  */
 export function volumesByOwner(compose: ComposeFile): {
   sharedOnly: Set<string>;

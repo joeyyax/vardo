@@ -1,9 +1,4 @@
-// ---------------------------------------------------------------------------
-// Which containers belong to one app.
-//
-// Every container in a decomposed stack carries the parent's vardo labels, so a
-// child looks its containers up under the parent and narrows by compose service.
-// ---------------------------------------------------------------------------
+// Which containers belong to one app. Stack children look up under the parent.
 
 import { listContainers, type ContainerInfo, type ContainerScope } from "./client";
 import { matchContainers, type ReconcilableApp } from "./container-match";
@@ -21,7 +16,7 @@ export function appContainerScope(app: ContainerOwnerApp): ContainerScope {
   };
 }
 
-/** Running containers belonging to this app alone — a stack child gets only its own service. */
+/** Running containers belonging to this app alone. */
 export async function listAppContainers(app: ContainerOwnerApp): Promise<ContainerInfo[]> {
   const containers = await listContainers(appContainerScope(app));
   return matchContainers(app, containers);

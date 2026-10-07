@@ -1,11 +1,4 @@
-// ---------------------------------------------------------------------------
-// Whether both slots fit in memory at once
-//
-// A blue-green cutover holds two copies of an app's memory for the overlap
-// window. When the host has no room for the second, the kernel picks a victim
-// from every container running without a limit — most of a fleet, not just the
-// app being deployed.
-// ---------------------------------------------------------------------------
+// Whether both slots of a blue-green cutover fit in host memory at once.
 
 const GIB = 1024 ** 3;
 
@@ -31,15 +24,12 @@ export type OverlapVerdict = {
   reserveBytes: number | null;
 };
 
-/** Memory kept clear of the overlap so the kernel keeps its room to reclaim. */
+/** Memory kept clear of the overlap. */
 export function overlapReserve(hostTotalBytes: number): number {
   return Math.max(MIN_OVERLAP_RESERVE, hostTotalBytes * OVERLAP_RESERVE_FRACTION);
 }
 
-/**
- * Whether both slots fit. An incomplete reading fits — a host with no metrics
- * must not have every deploy quietly change shape.
- */
+/** Whether both slots fit. An incomplete reading fits. */
 export function overlapFits(reading: MemoryReading): OverlapVerdict {
   const { hostTotalBytes: total, fleetUsedBytes: used, appFootprintBytes: app } = reading;
   if (total === null || total <= 0 || used === null || app === null) {
@@ -50,10 +40,6 @@ export function overlapFits(reading: MemoryReading): OverlapVerdict {
   const headroom = total - used - app;
   return { fits: headroom >= reserve, headroomBytes: headroom, reserveBytes: reserve };
 }
-
-// ---------------------------------------------------------------------------
-// Reading the host
-// ---------------------------------------------------------------------------
 
 /** How long a deploy waits on the metrics store before overlapping anyway. */
 export const METRICS_READ_TIMEOUT_MS = 1000;
@@ -94,12 +80,7 @@ async function readFleetUsed(): Promise<number | null> {
   }
 }
 
-/**
- * The app's peak over the sparkline window, not its reading right now — a
- * sample taken in a trough underestimates what the second copy will hold.
- * A deploy inside the same window had both slots up and reads high, which
- * costs an overlap rather than risking one.
- */
+/** The app's peak memory over the sparkline window. */
 async function readAppFootprint(
   organizationId: string,
   appId: string,
@@ -119,10 +100,7 @@ async function readAppFootprint(
   }
 }
 
-/**
- * Host total, fleet usage and this app's footprint, each best-effort. Without
- * a host total the verdict falls open, so the metrics store goes unread.
- */
+/** Host total, fleet usage and this app's footprint, each best-effort. */
 export async function readMemory(
   organizationId: string,
   appId: string,
@@ -139,10 +117,7 @@ export async function readMemory(
   return { hostTotalBytes, fleetUsedBytes, appFootprintBytes };
 }
 
-/**
- * Whether this app's cutover can hold both slots, logged either way. Falls open
- * on anything it could not read.
- */
+/** Whether this app's cutover can hold both slots, logged either way. Falls open on unreadable metrics. */
 export async function overlapFitsNow(
   organizationId: string,
   appId: string,

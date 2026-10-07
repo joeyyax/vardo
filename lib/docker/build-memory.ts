@@ -1,10 +1,4 @@
-// ---------------------------------------------------------------------------
-// Memory-bounded builds
-//
-// A build on the Docker daemon runs under no memory limit, so one large build
-// can take the whole host down. Builds run in the vardo-buildkit container
-// instead, whose memory limit bounds every build at once.
-// ---------------------------------------------------------------------------
+// Runs builds in the vardo-buildkit container, whose memory limit bounds every build.
 
 import { homedir } from "os";
 import { join } from "path";
@@ -26,10 +20,7 @@ export type BoundedBuild = {
 
 const UNBOUNDED: BoundedBuild = { env: {}, loadArgs: [], limitBytes: null };
 
-/**
- * Buildx keeps builders under DOCKER_CONFIG, and registry auth swaps that for a
- * throwaway directory. Pinned here so the builder is found either way.
- */
+/** Pinned buildx dir; registry auth swaps DOCKER_CONFIG for a throwaway directory. */
 function buildxConfigDir(): string {
   return join(process.env.DOCKER_CONFIG ?? join(homedir(), ".docker"), "buildx");
 }
@@ -67,7 +58,7 @@ async function ensureBuilder(host: string, env: NodeJS.ProcessEnv): Promise<bool
   }
 }
 
-/** Railpack builds in BuildKit directly; this is only for naming its limit in an OOM error. */
+/** BuildKit's memory limit, for naming it in a Railpack OOM error. */
 export async function buildKitLimit(host: string): Promise<BoundedBuild> {
   const container = buildKitContainerName(host);
   if (!container) return UNBOUNDED;
@@ -78,11 +69,7 @@ function formatGiB(bytes: number): string {
   return `${(bytes / 1024 ** 3).toFixed(bytes % 1024 ** 3 === 0 ? 0 : 1)} GiB`;
 }
 
-/**
- * Where this deploy's builds should run. Falls back to the daemon, with a
- * warning, when the BuildKit container is not running or has been opted out
- * with VARDO_BUILD_BUILDER=daemon.
- */
+/** Where this deploy's builds run. Falls back to the daemon when BuildKit is down or VARDO_BUILD_BUILDER=daemon. */
 export async function boundedBuild(log: (line: string) => void, signal?: AbortSignal): Promise<BoundedBuild> {
   if (process.env.VARDO_BUILD_BUILDER === "daemon") {
     log("[build] Warning: VARDO_BUILD_BUILDER=daemon — this build runs on the Docker daemon with no memory limit");

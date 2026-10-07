@@ -1,9 +1,4 @@
-/**
- * Detect common build issues from error output and suggest/apply fixes.
- *
- * When a build fails, we analyze the error output, apply known fixes,
- * and retry automatically.
- */
+/** Detects common build issues from error output and applies known env fixes. */
 
 type CompatFix = {
   name: string;
@@ -64,17 +59,12 @@ const KNOWN_FIXES: CompatFix[] = [
   },
 ];
 
-/**
- * Analyze build error output and return applicable fixes.
- */
+/** Fixes that match build error output. */
 export function detectCompatIssues(errorOutput: string): CompatFix[] {
   return KNOWN_FIXES.filter((fix) => fix.detect(errorOutput));
 }
 
-/**
- * Merge fix env vars with existing env vars.
- * Handles NODE_OPTIONS specially — appends instead of overwriting.
- */
+/** Merge fix env vars into existing ones, appending to NODE_OPTIONS and NIXPACKS_APT_PKGS. */
 export function applyCompatFixes(
   envVars: Record<string, string>,
   fixes: CompatFix[]
@@ -84,7 +74,6 @@ export function applyCompatFixes(
   for (const fix of fixes) {
     for (const [key, value] of Object.entries(fix.envVars)) {
       if (key === "NODE_OPTIONS" && result[key]) {
-        // Append to existing NODE_OPTIONS
         result[key] = `${result[key]} ${value}`;
       } else if (key === "NIXPACKS_APT_PKGS" && result[key]) {
         result[key] = `${result[key]} ${value}`;
@@ -97,10 +86,7 @@ export function applyCompatFixes(
   return result;
 }
 
-/**
- * Auto-detect project characteristics and return preventive env vars.
- * Called before the first build attempt to avoid known issues.
- */
+/** Preventive fixes detected from package.json before the first build. */
 export async function detectPreventiveFixes(
   repoPath: string
 ): Promise<CompatFix[]> {
@@ -114,7 +100,7 @@ export async function detectPreventiveFixes(
     );
     const deps = { ...pkgJson.dependencies, ...pkgJson.devDependencies };
 
-    // Old Next.js versions need OpenSSL legacy provider
+    // Next.js < 13 needs the OpenSSL legacy provider.
     const nextVersion = deps?.next;
     if (nextVersion) {
       const major = parseInt(nextVersion.replace(/[^0-9]/g, "").slice(0, 2));
@@ -123,7 +109,7 @@ export async function detectPreventiveFixes(
       }
     }
 
-    // Old webpack versions
+    // So does webpack < 5.
     const webpackVersion = deps?.webpack;
     if (webpackVersion) {
       const major = parseInt(webpackVersion.replace(/[^0-9]/g, "").charAt(0));
@@ -132,22 +118,19 @@ export async function detectPreventiveFixes(
       }
     }
 
-    // Always disable Next.js telemetry in builds
     if (deps?.next) {
       fixes.push(KNOWN_FIXES.find((f) => f.name === "next-telemetry")!);
     }
 
-    // Sharp dependency
     if (deps?.sharp) {
       fixes.push(KNOWN_FIXES.find((f) => f.name === "sharp-linux")!);
     }
 
-    // Prisma
     if (deps?.["@prisma/client"]) {
       fixes.push(KNOWN_FIXES.find((f) => f.name === "prisma-generate")!);
     }
   } catch {
-    // No package.json or not a Node project — skip
+    // Not a Node project.
   }
 
   return fixes.filter(Boolean);

@@ -1,15 +1,5 @@
-// ---------------------------------------------------------------------------
 // Which blue-green slot images are superseded, and which are load-bearing.
-//
-// Instant rollback restarts the standby with `up -d --no-recreate --pull never`.
-// Nothing is pulled and nothing is rebuilt, so the standby's containers and the
-// images behind them have to still be on the host. A slot that has containers is
-// therefore untouchable, running or stopped — the 29 stopped containers here are
-// standbys `stopStandbySlot` deliberately left in place.
-//
-// This is not `docker image prune -a`. Prune reclaims by "nothing references
-// this right now", which is exactly the standby generation.
-// ---------------------------------------------------------------------------
+// A slot with containers (running or stopped) is untouchable: instant rollback restarts it with --pull never.
 
 import { isSelfApp } from "../self-env";
 import type { Slot } from "../slots";
@@ -69,13 +59,7 @@ export interface SlotIndex {
   legacy: Map<string, string>;
 }
 
-/**
- * Index the compose project names the deployed environments account for.
- *
- * Built forward from the environments rather than by parsing a project string
- * backwards: app and environment names both contain dashes (`browser-api`,
- * `pr-166`), so `agents-pr-166-blue` has no unambiguous split.
- */
+/** Index the compose project names the deployed environments account for. Project names can't be split on dashes. */
 export function buildSlotIndex(environments: SlotEnvironment[]): SlotIndex {
   const slots: SlotIndex["slots"] = new Map();
   const legacy: SlotIndex["legacy"] = new Map();
@@ -92,14 +76,7 @@ export function buildSlotIndex(environments: SlotEnvironment[]): SlotIndex {
   return { slots, legacy };
 }
 
-/**
- * Which generation a compose project names, or null when nothing on this host
- * accounts for it.
- *
- * Bare `blue` and `green` are the oldest scheme, from before the project prefix
- * carried the app and environment. Nothing writes them now, so they cannot name
- * a live slot — but they are unmistakably Vardo's, so they are still attributed.
- */
+/** Which generation a compose project names, or null. Bare `blue`/`green` are legacy and never live. */
 export function classifyProject(project: string, index: SlotIndex): SlotGeneration | null {
   const slot = index.slots.get(project);
   if (slot) {
@@ -122,16 +99,8 @@ export function classifyProject(project: string, index: SlotIndex): SlotGenerati
 export type SlotVerdict = { take: true } | { take: false; reason: SlotSkipReason };
 
 /**
- * Decide one image.
- *
- * Two guards do the real work, and they cover different failures. Container
- * presence protects rollback: a slot with containers is one `up --no-recreate`
- * away from serving. The `current` symlink protects an app that was taken all
- * the way down, where both slots lost their containers and only the symlink
- * still says which generation a restart would use.
- *
- * `readlink` is the only authority on which slot is live — both slot directories
- * share one git dir, so their shas are identical and prove nothing.
+ * Decide one image. Container presence protects rollback; the `current` symlink protects a fully stopped app.
+ * `readlink` is the only authority on the live slot: both slots share one git dir, so shas prove nothing.
  */
 export function decideSlotImage(input: {
   generation: SlotGeneration;
@@ -159,13 +128,7 @@ export function decideSlotImage(input: {
   return { take: true };
 }
 
-/**
- * The tag to remove, or a refusal.
- *
- * Compose names what it builds `<project>-<service>`, never registry-qualified.
- * A qualified tag means the service pinned an `image:` a registry owns, and the
- * sweep stays out of the other sweep's territory.
- */
+/** The tag to remove, or a refusal. Registry-qualified tags are pulled images, not slot builds. */
 export type SlotRefVerdict =
   | { take: true; ref: string }
   | { take: false; reason: SlotSkipReason };

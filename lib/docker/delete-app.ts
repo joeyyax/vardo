@@ -13,7 +13,7 @@ export type DeleteAppResult = {
   appId: string;
   appName: string;
   deleteVolumes: boolean;
-  /** Docker volumes actually removed. */
+  /** Docker volumes removed. */
   removedVolumes: string[];
   /** Volumes left in place: all of them unless deleteVolumes, plus keepVolumes matches. */
   keptVolumes: string[];
@@ -30,15 +30,7 @@ export type DeleteAppResult = {
   log: string;
 };
 
-/**
- * Delete an app, keeping its data unless asked otherwise.
- *
- * `deleteVolumes: false` (default) keeps every volume the app owns and every
- * bind-mounted path inside its directory; the rest of the directory goes.
- * `deleteVolumes: true` removes them, except names listed in `keepVolumes`
- * (full Docker name or the compose-stripped suffix). A volume still in use is
- * left in place and reported under `skippedVolumes`.
- */
+/** Delete an app. Volumes and bind paths are kept unless `deleteVolumes`, minus `keepVolumes` matches. */
 export async function deleteApp(opts: {
   appId: string;
   organizationId: string;
@@ -47,18 +39,9 @@ export async function deleteApp(opts: {
   keepVolumes?: string[];
   /** Recorded in the activity log. */
   source?: "api" | "mcp" | "system";
-  /**
-   * Allow deleting a system-managed app. Off by default so user-facing delete
-   * paths can't remove platform/integration apps; the integration-install
-   * rollback (#741) sets it to undo a failed first deploy.
-   */
+  /** Allow deleting a system-managed app. Only the integration-install rollback sets it (#741). */
   allowSystemManaged?: boolean;
-  /**
-   * Allow deleting a decomposed compose child (a service of a parent stack).
-   * Off by default so user-facing paths refuse — the service is declared in
-   * the parent's compose and a deploy would just recreate it. No internal
-   * caller needs this today; it's a deliberate escape hatch.
-   */
+  /** Allow deleting a decomposed compose child. A parent deploy would recreate it. */
   allowChildDelete?: boolean;
 }): Promise<DeleteAppResult> {
   const { appId, organizationId } = opts;
@@ -95,15 +78,14 @@ export async function deleteApp(opts: {
     if (parent) baseProject = parent.name;
   }
 
-  // A decomposed child is managed by its parent stack — refuse independent
-  // deletes (the compose still declares the service; a deploy recreates it).
+  // The parent's compose still declares the child; a deploy would recreate it.
   if (app.parentAppId && !opts.allowChildDelete) {
     throw new Error(
       `"${app.name}" is a service of the "${baseProject}" compose stack and can't be deleted on its own — remove it from the stack's compose file and redeploy.`,
     );
   }
 
-  // Direct compose children of this app (only relevant when deleting a parent).
+  // Compose children, when deleting a parent.
   const childApps = await db.query.apps.findMany({
     where: and(
       eq(apps.parentAppId, appId),
@@ -112,8 +94,7 @@ export async function deleteApp(opts: {
     columns: { id: true, name: true },
   });
 
-  // Throws before anything is torn down or removed from the database, so a
-  // refusal can't leave another org's containers running with the row gone.
+  // Before any teardown, so a refusal can't leave another org's containers running with the row gone.
   await assertAppDirOwnership({
     appId: app.parentAppId ?? appId,
     appName: baseProject,
@@ -150,7 +131,7 @@ export async function deleteApp(opts: {
     }
   }
 
-  // A decomposed child has no directory of its own — the parent owns it.
+  // A decomposed child's directory belongs to the parent.
   let removedAppDir = false;
   const keptPaths: string[] = [];
   if (!app.parentAppId) {
@@ -168,9 +149,7 @@ export async function deleteApp(opts: {
     );
   }
 
-  // Remove child app records when deleting a parent compose app, then the app.
-  // The parent_app_id FK cascades too — this runs first only so the deleted
-  // service names can be reported. Do not rely on it as the sole cleanup.
+  // Explicit only to report names; the parent_app_id FK cascades too.
   const removedChildApps: string[] = [];
   if (childApps.length > 0) {
     await db
@@ -185,7 +164,7 @@ export async function deleteApp(opts: {
     .delete(apps)
     .where(and(eq(apps.id, appId), eq(apps.organizationId, organizationId)));
 
-  // Clean up the project if this was its last app.
+  // Remove the project if this was its last app.
   let deletedProject: DeleteAppResult["deletedProject"] = null;
   if (app.projectId) {
     const remaining = await db.query.apps.findFirst({

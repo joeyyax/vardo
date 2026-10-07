@@ -21,8 +21,7 @@ export function startPreviewSweeper(): void {
   if (interval) return;
 
   log.info("Preview sweeper started (15m interval)");
-  // Sweep on boot: an instance that was down past an expiry would otherwise
-  // wait a full interval, and previews have been outliving expiry for months.
+  // Sweep on boot too.
   void sweep();
   interval = setInterval(sweep, SWEEP_INTERVAL_MS);
 }

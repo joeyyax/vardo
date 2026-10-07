@@ -1,8 +1,7 @@
 import http from "node:http";
 import { execFileSync } from "node:child_process";
 
-// Detect the Docker daemon's API version at startup.
-// Falls back to 1.47 if detection fails.
+// Docker daemon API version, detected at startup. Falls back to 1.47.
 export let DOCKER_API_VERSION = "1.47";
 try {
   const out = execFileSync("docker", ["version", "--format", "{{.Server.APIVersion}}"], {
@@ -14,12 +13,8 @@ try {
     DOCKER_API_VERSION = ver;
   }
 } catch {
-  // Docker not available or detection failed — use fallback
+  // Docker unavailable; keep the fallback.
 }
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 
 export type ContainerInfo = {
   id: string;
@@ -31,10 +26,7 @@ export type ContainerInfo = {
   labels: Record<string, string>;
 };
 
-/**
- * Fields shared across ContainerInspect, ContainerDetail, and ContainerConfig.
- * Extracted here so all three stay in sync automatically.
- */
+/** Fields shared by ContainerInspect, ContainerDetail and ContainerConfig. */
 export type ContainerRuntimeOptions = {
   // Extended host config
   capAdd: string[];
@@ -77,14 +69,12 @@ export type ContainerInspect = {
     exitCode: number;
     /** The kernel killed this container for memory, either at its cgroup limit or host-wide. */
     oomKilled: boolean;
-    // Health probe state from the container's healthcheck, or null when no
-    // healthcheck is configured. status is one of "starting" | "healthy" |
-    // "unhealthy". failingStreak is the count of consecutive failing probes.
+    // Healthcheck state, or null without a healthcheck. failingStreak counts consecutive failed probes.
     health: { status: string; failingStreak: number } | null;
   };
   /** Times Docker has restarted this container since it was created. */
   restartCount: number;
-  /** When the container was created. restartCount counts from here and no earlier. */
+  /** When the container was created. restartCount counts from here. */
   createdAt: string;
   image: string;
   ports: { internal: number; external?: number; protocol: string }[];
@@ -96,10 +86,6 @@ export type ContainerInspect = {
   mounts: { name: string; source: string; destination: string; type: string }[];
 } & ContainerRuntimeOptions;
 
-// ---------------------------------------------------------------------------
-// Connection helpers
-// ---------------------------------------------------------------------------
-
 export function getConnectionOptions(): { socketPath?: string; host?: string; port?: number } {
   const dockerHost = process.env.DOCKER_HOST;
   if (dockerHost) {
@@ -109,10 +95,6 @@ export function getConnectionOptions(): { socketPath?: string; host?: string; po
   }
   return { socketPath: "/var/run/docker.sock" };
 }
-
-// ---------------------------------------------------------------------------
-// Low-level request helper
-// ---------------------------------------------------------------------------
 
 export async function dockerRequest<T = unknown>(
   method: string,
@@ -155,7 +137,7 @@ export async function dockerRequest<T = unknown>(
             return;
           }
 
-          // Some endpoints return empty 204 responses
+          // Some endpoints return an empty 204.
           if (!raw || raw.length === 0) {
             resolve(undefined as T);
             return;
@@ -164,7 +146,7 @@ export async function dockerRequest<T = unknown>(
           try {
             resolve(JSON.parse(raw) as T);
           } catch {
-            // Return raw text (e.g. logs endpoint)
+            // Raw text (e.g. logs).
             resolve(raw as T);
           }
         });
@@ -192,10 +174,6 @@ export async function dockerRequest<T = unknown>(
   });
 }
 
-// ---------------------------------------------------------------------------
-// Health check
-// ---------------------------------------------------------------------------
-
 export async function isDockerAvailable(): Promise<boolean> {
   try {
     await dockerRequest("GET", "/_ping");
@@ -205,12 +183,7 @@ export async function isDockerAvailable(): Promise<boolean> {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Networks
-// ---------------------------------------------------------------------------
-
 export async function ensureNetwork(name: string): Promise<void> {
-  // Check if network already exists
   const networks = await dockerRequest<{ Name: string }[]>(
     "GET",
     `/networks?filters=${encodeURIComponent(JSON.stringify({ name: [name] }))}`,
@@ -226,14 +199,7 @@ export async function ensureNetwork(name: string): Promise<void> {
   });
 }
 
-// ---------------------------------------------------------------------------
-// Port parsing helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Parse Docker's ExposedPorts map (keys like "80/tcp") into plain port numbers.
- * Non-numeric keys are filtered out.
- */
+/** Parse Docker's ExposedPorts keys ("80/tcp") into port numbers, skipping non-numeric keys. */
 export function parseExposedPorts(exposedPorts: Record<string, unknown> | null | undefined): number[] {
   if (!exposedPorts) return [];
   return Object.keys(exposedPorts)
@@ -261,7 +227,6 @@ function parseInspectPorts(
   const ports: ParsedPort[] = [];
 
   for (const [containerPort, hostBindings] of Object.entries(portBindings)) {
-    // containerPort is like "8080/tcp"
     const [portStr, protocol] = containerPort.split("/");
     const internal = parseInt(portStr, 10);
 
@@ -280,10 +245,6 @@ function parseInspectPorts(
 
   return ports;
 }
-
-// ---------------------------------------------------------------------------
-// Containers
-// ---------------------------------------------------------------------------
 
 type RawContainer = {
   Id: string;
@@ -313,10 +274,7 @@ export async function listAllContainers(): Promise<ContainerInfo[]> {
   return containers.map(mapRawContainer);
 }
 
-/**
- * Which app's containers to list. `vardo.project` is only unique within an
- * organization, so pass the app row wherever one is available.
- */
+/** App whose containers to list. `vardo.project` is only unique per org, so pass the app row when available. */
 export type ContainerScope = { id: string; name: string };
 
 function labelFilterQuery(labels: string[]): string {
@@ -335,8 +293,7 @@ export async function listContainers(
   const projectId = typeof scope === "string" ? undefined : scope.id;
   const projectLabel = typeof scope === "string" ? scope : scope.name;
 
-  // vardo.project.id is globally unique; it was only ever written under the
-  // vardo prefix, so there is no legacy host.project.id to query.
+  // vardo.project.id is globally unique and only ever written under the vardo prefix.
   if (projectId) {
     const labels = [`vardo.project.id=${projectId}`];
     if (environmentLabel) labels.push(`vardo.environment=${environmentLabel}`);
@@ -347,8 +304,7 @@ export async function listContainers(
     if (byId.length > 0) return byId.map(mapRawContainer);
   }
 
-  // Name fallback for containers deployed before vardo.project.id existed, over
-  // both label prefixes. Reached only when the id matched nothing.
+  // Name fallback for containers deployed before vardo.project.id, over both label prefixes.
   const results = await Promise.all(
     ["vardo", "host"].map((prefix) => {
       const labels = [`${prefix}.project=${projectLabel}`];
@@ -368,14 +324,7 @@ export async function listContainers(
   }).map(mapRawContainer);
 }
 
-// ---------------------------------------------------------------------------
-// inspectContainer helpers (exported for testing)
-// ---------------------------------------------------------------------------
-
-/**
- * Normalize a Docker restart policy name + retry count to compose format.
- * Returns "no" when name is empty/absent.
- */
+/** Normalize a Docker restart policy name and retry count to compose format ("no" when empty). */
 export function normalizeRestartPolicy(name: string, maxRetryCount: number): string {
   if (!name) return "no";
   if (name === "on-failure" && maxRetryCount > 0) {
@@ -392,11 +341,7 @@ type RawHealthcheck = {
   StartPeriod?: number;
 } | null | undefined;
 
-/**
- * Convert a Docker Engine healthcheck object to the internal shape.
- * Returns null when no healthcheck is configured or it is explicitly disabled
- * (test array starts with "NONE").
- */
+/** Convert a Docker healthcheck to the internal shape. Null when absent or disabled ("NONE"). */
 export function parseDockerHealthcheck(hc: RawHealthcheck): ContainerRuntimeOptions["healthcheck"] {
   if (!hc?.Test || hc.Test[0] === "NONE") return null;
   return {
@@ -535,48 +480,26 @@ export async function inspectContainer(id: string): Promise<ContainerInspect> {
   };
 }
 
-/**
- * Restart a single container in place via the Docker Engine API.
- * `timeoutSec` is how long Docker waits for a graceful stop before killing
- * (passed as the `t` query param). Restarting in place preserves the
- * blue-green slot — used by the health monitor to recover a wedged container.
- */
+/** Restart a container in place, keeping its blue-green slot. `timeoutSec` is the graceful-stop wait. */
 export async function restartContainer(id: string, timeoutSec = 10): Promise<void> {
   await dockerRequest("POST", `/containers/${id}/restart?t=${timeoutSec}`);
 }
 
-// ---------------------------------------------------------------------------
-// Container lifecycle
-// ---------------------------------------------------------------------------
-
-/**
- * Stop a running container. Sends SIGTERM, waits up to `timeoutSeconds` for
- * a clean exit, then sends SIGKILL. Default timeout matches Docker's default.
- */
+/** Stop a container: SIGTERM, then SIGKILL after `timeoutSeconds`. */
 export async function stopContainer(id: string, timeoutSeconds = 10): Promise<void> {
   await dockerRequest("POST", `/containers/${encodeURIComponent(id)}/stop?t=${timeoutSeconds}`);
 }
 
-/**
- * Start a stopped container.
- */
+/** Start a stopped container. */
 export async function startContainer(id: string): Promise<void> {
   await dockerRequest("POST", `/containers/${encodeURIComponent(id)}/start`);
 }
 
-/**
- * Remove a container. Pass `force: true` to remove a running container
- * (equivalent to `docker rm --force`). Without it the daemon returns 409
- * if the container is still running.
- */
+/** Remove a container. Without `force` the daemon returns 409 for a running container. */
 export async function removeContainer(id: string, opts?: { force?: boolean }): Promise<void> {
   const qs = opts?.force ? "?force=true" : "";
   await dockerRequest("DELETE", `/containers/${encodeURIComponent(id)}${qs}`);
 }
-
-// ---------------------------------------------------------------------------
-// Logs
-// ---------------------------------------------------------------------------
 
 export async function getContainerLogs(
   id: string,
@@ -594,8 +517,7 @@ export async function getContainerLogs(
 
   const raw = await dockerRequest<string>("GET", `/containers/${id}/logs?${params.toString()}`);
 
-  // Docker multiplexed stream: each frame has an 8-byte header.
-  // Strip the headers to return clean log text.
+  // Docker multiplexed stream: strip the 8-byte frame headers.
   if (typeof raw === "string") {
     return stripDockerLogHeaders(raw);
   }
@@ -603,9 +525,7 @@ export async function getContainerLogs(
 }
 
 function stripDockerLogHeaders(raw: string): string {
-  // Docker stream protocol: 8-byte header per frame (type[1] + padding[3] + size[4]).
-  // For simple cases where the response is already plain text, return as-is.
-  // The binary header starts with \x01 (stdout) or \x02 (stderr).
+  // Frame header is type[1] + padding[3] + size[4], starting with \x01 (stdout) or \x02 (stderr). Plain text passes through.
   const firstChar = raw.charCodeAt(0);
   if (firstChar !== 0 && firstChar !== 1 && firstChar !== 2) {
     return raw;
@@ -627,15 +547,7 @@ function stripDockerLogHeaders(raw: string): string {
   return lines.join("");
 }
 
-// ---------------------------------------------------------------------------
-// Port detection
-// ---------------------------------------------------------------------------
-
-/**
- * Fetch the env vars baked into a Docker image.
- * Returns an empty array if the image cannot be inspected (e.g. the image
- * was removed after the container was created).
- */
+/** Env vars baked into an image. Empty when the image can't be inspected. */
 export async function inspectImageEnv(imageRef: string): Promise<string[]> {
   try {
     const image = await dockerRequest<{
@@ -653,10 +565,7 @@ export interface ImageMeta {
   labels: Record<string, string>;
 }
 
-/**
- * Env and labels of a local image. Null when the image is not on this host,
- * which callers must read as "unknown", not as "nothing there to compare".
- */
+/** Env and labels of a local image. Null when the image isn't on this host, which means unknown, not empty. */
 export async function inspectImageMeta(imageRef: string): Promise<ImageMeta | null> {
   try {
     const image = await dockerRequest<{
@@ -674,7 +583,7 @@ export async function inspectImageMeta(imageRef: string): Promise<ImageMeta | nu
 }
 
 export async function detectExposedPorts(imageOrId: string): Promise<number[]> {
-  // Try image inspect first, fall back to container inspect
+  // Image inspect first, then container inspect.
   let exposedPorts: Record<string, unknown> | undefined;
 
   try {
@@ -685,7 +594,7 @@ export async function detectExposedPorts(imageOrId: string): Promise<number[]> {
 
     exposedPorts = image.Config?.ExposedPorts ?? image.ContainerConfig?.ExposedPorts;
   } catch {
-    // Might be a container ID instead
+    // Might be a container ID.
     const container = await inspectContainer(imageOrId);
     return container.ports.map((p) => p.internal);
   }
@@ -694,10 +603,6 @@ export async function detectExposedPorts(imageOrId: string): Promise<number[]> {
 
   return parseExposedPorts(exposedPorts);
 }
-
-// ---------------------------------------------------------------------------
-// Container Stats
-// ---------------------------------------------------------------------------
 
 export type ContainerStats = {
   containerId: string;
@@ -712,10 +617,7 @@ export type ContainerStats = {
   blockWrite: number;
 };
 
-/**
- * Get current resource usage stats for a container.
- * Calls the Docker Engine API with stream=false for a single snapshot.
- */
+/** Single snapshot of a container's resource usage. */
 export async function getContainerStats(containerId: string): Promise<ContainerStats> {
   const raw = await dockerRequest<{
     id: string;
@@ -741,19 +643,18 @@ export async function getContainerStats(containerId: string): Promise<ContainerS
     };
   }>("GET", `/containers/${containerId}/stats?stream=false`);
 
-  // CPU percentage calculation
   const cpuDelta = raw.cpu_stats.cpu_usage.total_usage - raw.precpu_stats.cpu_usage.total_usage;
   const systemDelta = raw.cpu_stats.system_cpu_usage - raw.precpu_stats.system_cpu_usage;
   const numCpus = raw.cpu_stats.online_cpus ?? raw.cpu_stats.cpu_usage.percpu_usage?.length ?? 1;
   const cpuPercent = systemDelta > 0 ? (cpuDelta / systemDelta) * numCpus * 100 : 0;
 
-  // Memory (subtract cache/inactive_file for actual working set)
+  // Working set: memory minus inactive_file/cache.
   const cache = raw.memory_stats.stats?.inactive_file ?? raw.memory_stats.stats?.cache ?? 0;
   const memoryUsage = (raw.memory_stats.usage || 0) - cache;
   const memoryLimit = raw.memory_stats.limit || 0;
   const memoryPercent = memoryLimit > 0 ? (memoryUsage / memoryLimit) * 100 : 0;
 
-  // Network I/O (sum across all interfaces)
+  // Summed across interfaces.
   let networkRx = 0;
   let networkTx = 0;
   if (raw.networks) {
@@ -763,7 +664,6 @@ export async function getContainerStats(containerId: string): Promise<ContainerS
     }
   }
 
-  // Block I/O
   let blockRead = 0;
   let blockWrite = 0;
   const blkioEntries = raw.blkio_stats?.io_service_bytes_recursive;
@@ -788,10 +688,6 @@ export async function getContainerStats(containerId: string): Promise<ContainerS
   };
 }
 
-// ---------------------------------------------------------------------------
-// System Disk Usage
-// ---------------------------------------------------------------------------
-
 export type DiskUsage = {
   images: { count: number; totalSize: number; reclaimable: number };
   containers: { count: number; totalSize: number };
@@ -809,20 +705,14 @@ export type RawDiskUsage = {
   BuildCache: { ID: string; Size: number; InUse: boolean; Shared: boolean }[];
 };
 
-/**
- * The arithmetic `docker system df` does, figure for figure, so the admin panel
- * and the command an operator would reach for never disagree. Verified against a
- * live host: every row matches the CLI to the byte.
- */
+/** The arithmetic `docker system df` does, so the admin panel matches the CLI byte for byte. */
 export function summarizeDiskUsage(raw: Partial<RawDiskUsage>): DiskUsage {
-  // Per-image sizes count each shared layer once per image carrying it, so they
-  // sum to far more than images occupy. LayersSize is the deduplicated total.
+  // Per-image sizes double-count shared layers. LayersSize is the deduplicated total.
   const layersSize = raw.LayersSize || 0;
   const images = {
     count: raw.Images?.length || 0,
     totalSize: layersSize,
-    // Clamped: Docker's shared-layer accounting can exceed the total it is
-    // subtracted from, and no disk gives back a negative number.
+    // Clamped: Docker's shared-layer accounting can exceed the total.
     reclaimable: Math.max(
       0,
       layersSize -
@@ -860,7 +750,7 @@ export function summarizeDiskUsage(raw: Partial<RawDiskUsage>): DiskUsage {
   };
 }
 
-/** Bytes per volume name. Docker reports -1 for a size it hasn't measured, which is left out. */
+/** Bytes per volume name. Unmeasured sizes (-1) are left out. */
 export async function getVolumeSizes(opts: { timeoutMs?: number } = {}): Promise<Map<string, number>> {
   const raw = await dockerRequest<Pick<RawDiskUsage, "Volumes">>(
     "GET",
@@ -880,15 +770,7 @@ export async function getSystemDiskUsage(): Promise<DiskUsage> {
   return summarizeDiskUsage(await dockerRequest<RawDiskUsage>("GET", "/system/df"));
 }
 
-// ---------------------------------------------------------------------------
-// Per-Project Disk Usage
-// ---------------------------------------------------------------------------
-
-/**
- * Compute disk usage broken down by project.
- * Uses container labels to map containers and volumes to project names.
- * Returns a Map from project name to total bytes used (containers + volumes).
- */
+/** Disk usage in bytes per project (containers + volumes), mapped by container labels. */
 export async function getPerProjectDiskUsage(): Promise<Map<string, number>> {
   const raw = await dockerRequest<{
     Images: { Id: string; Size: number; SharedSize: number }[];
@@ -899,24 +781,21 @@ export async function getPerProjectDiskUsage(): Promise<Map<string, number>> {
 
   const byProject = new Map<string, number>();
 
-  // Build image size lookup
   const imageSize = new Map<string, number>();
   for (const img of raw.Images || []) {
     imageSize.set(img.Id, img.Size || 0);
   }
 
-  // Track which images have been attributed to which project (avoid double-counting)
+  // Images already attributed per project, to avoid double-counting.
   const imageAttributed = new Map<string, Set<string>>();
 
-  // Containers: writable layer + image size (deduplicated per project)
+  // Containers: writable layer + image size, image counted once per project.
   for (const c of raw.Containers || []) {
     const project = c.Labels?.["vardo.project"] || c.Labels?.["host.project"];
     if (!project) continue;
 
-    // Container writable layer
     byProject.set(project, (byProject.get(project) || 0) + (c.SizeRw || 0));
 
-    // Image size (only count once per project)
     if (c.ImageID) {
       if (!imageAttributed.has(project)) imageAttributed.set(project, new Set());
       if (!imageAttributed.get(project)!.has(c.ImageID)) {
@@ -929,7 +808,7 @@ export async function getPerProjectDiskUsage(): Promise<Map<string, number>> {
     }
   }
 
-  // Build a map from compose project name -> vardo project name using container labels
+  // Compose project name -> vardo project name, from container labels.
   const composeToProject = new Map<string, string>();
   for (const c of raw.Containers || []) {
     const vardoProject = c.Labels?.["vardo.project"] || c.Labels?.["host.project"];
@@ -939,7 +818,7 @@ export async function getPerProjectDiskUsage(): Promise<Map<string, number>> {
     }
   }
 
-  // Volumes: match by compose project label, then fall back to name prefix
+  // Volumes: compose project label, then name prefix.
   for (const v of raw.Volumes || []) {
     const size = v.UsageData?.Size || 0;
     if (size <= 0) continue;
@@ -961,10 +840,6 @@ export async function getPerProjectDiskUsage(): Promise<Map<string, number>> {
 
   return byProject;
 }
-
-// ---------------------------------------------------------------------------
-// Image management
-// ---------------------------------------------------------------------------
 
 export type ImageInfo = {
   id: string;
@@ -989,10 +864,7 @@ export async function listImages(filters?: Record<string, string[]>): Promise<Im
   }));
 }
 
-/**
- * Resolve an image reference to its registry digest (`repo@sha256:...`).
- * Returns null for locally-built images and anything not inspectable.
- */
+/** Resolve an image ref to its registry digest (`repo@sha256:...`). Null for local builds and uninspectable images. */
 export async function inspectImageDigest(imageRef: string): Promise<string | null> {
   try {
     const image = await dockerRequest<{ RepoDigests?: string[] | null }>(
@@ -1008,7 +880,7 @@ export async function inspectImageDigest(imageRef: string): Promise<string | nul
 export type ImageRemoveResult = {
   /** Tags removed. A tag other than the last one only untags. */
   untagged: string[];
-  /** Layer sets actually freed. Empty means nothing was reclaimed. */
+  /** Layer sets freed. Empty means nothing was reclaimed. */
   deleted: string[];
 };
 
@@ -1041,12 +913,7 @@ export async function pruneImages(filters?: Record<string, string[]>): Promise<{
   };
 }
 
-/**
- * Builds the /build/prune query string. `all` maps to the `-a` flag on
- * `docker builder prune` — without it the daemon only removes dangling
- * cache, not everything unused. `keepStorage` is a ceiling in bytes: the
- * daemon deletes the least recently used records until the cache fits under it.
- */
+/** /build/prune query. `all` is `-a` (otherwise only dangling cache goes); `keepStorage` is a byte ceiling, LRU-evicted. */
 export function buildPruneCacheQuery(
   filters?: Record<string, string[]>,
   opts?: { all?: boolean; keepStorage?: number },
@@ -1054,8 +921,7 @@ export function buildPruneCacheQuery(
   const params = new URLSearchParams();
   if (filters) params.set("filters", JSON.stringify(filters));
   if (opts?.all) params.set("all", "true");
-  // keep-storage, not reserved-space: 1.48 renamed it but still falls back to
-  // this, and older daemons read nothing else.
+  // keep-storage, not reserved-space: 1.48 still accepts it and older daemons read nothing else.
   if (opts?.keepStorage) params.set("keep-storage", String(Math.floor(opts.keepStorage)));
   return params.toString() ? `?${params.toString()}` : "";
 }
@@ -1069,20 +935,13 @@ export async function pruneBuildCache(
   return { spaceReclaimed: result.SpaceReclaimed ?? 0 };
 }
 
-// ---------------------------------------------------------------------------
-// Volumes
-// ---------------------------------------------------------------------------
-
 export type VolumeInfo = {
   name: string;
   labels: Record<string, string>;
   mountpoint: string;
 };
 
-/**
- * List Docker volumes, optionally filtered (e.g. by compose project label).
- * Pass filters like `{ label: ["com.docker.compose.project=myapp"] }`.
- */
+/** List volumes, optionally filtered, e.g. `{ label: ["com.docker.compose.project=myapp"] }`. */
 export async function listVolumes(
   filters?: Record<string, string[]>,
 ): Promise<VolumeInfo[]> {
@@ -1099,18 +958,11 @@ export async function listVolumes(
   }));
 }
 
-/**
- * Remove a named Docker volume. Without `force`, the daemon returns 409 if the
- * volume is still in use by a container — callers should treat that as "kept".
- */
+/** Remove a named volume. Without `force` an in-use volume returns 409; treat that as kept. */
 export async function removeVolume(name: string, opts?: { force?: boolean }): Promise<void> {
   const qs = opts?.force ? "?force=true" : "";
   await dockerRequest("DELETE", `/volumes/${encodeURIComponent(name)}${qs}`);
 }
-
-// ---------------------------------------------------------------------------
-// System Info
-// ---------------------------------------------------------------------------
 
 export type SystemInfo = {
   cpus: number;
@@ -1126,38 +978,18 @@ export type SystemInfo = {
   containersRunning: number;
 };
 
-// ---------------------------------------------------------------------------
-// Volume name helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Strips the Docker Compose project prefix from a volume name.
- * Docker names volumes as <project>_<name>; we store only the suffix.
- * Returns the original string unchanged if there is no underscore.
- */
+/** Strip the compose project prefix from `<project>_<name>`. Unchanged without an underscore. */
 export function stripDockerProjectPrefix(volName: string): string {
   return volName.replace(/^[^_]*_/, "");
 }
 
-/**
- * Resolves the effective Docker volume name for a mount.
- * Returns mount.name directly — the Docker inspect Name field is the
- * actual volume name. Callers should check for empty string or use
- * isAnonymousVolume() to skip anonymous volumes.
- */
+/** Effective volume name for a mount. Empty for anonymous volumes; check with isAnonymousVolume(). */
 export function resolveVolumeName(mount: { name: string; source: string }): string {
   return mount.name;
 }
 
-/**
- * Derive a safe, stable `volume.name` from a Docker mount for persistence in
- * the volumes table. For a named, non-anonymous volume this is the friendly
- * Docker volume name with the compose project prefix stripped (e.g.
- * `agents_redis-data` → `redis-data`). For a bind mount or an anonymous volume
- * it's a slug derived from the container path. Crucially it NEVER returns the
- * mount's host `source` path — that contains slashes and fails assertSafeName,
- * which silently breaks tar backups (#757).
- */
+/** Stable `volume.name` for a mount: the unprefixed volume name, or a slug of the container path for binds and anonymous volumes. */
+// Never the host `source` path: it fails assertSafeName and silently breaks tar backups (#757).
 export function volumeNameFromMount(mount: {
   name: string;
   source: string;

@@ -1,13 +1,4 @@
-// ---------------------------------------------------------------------------
-// Blue-green slot resolution.
-//
-// The "active slot" is the one currently serving — and, crucially, the one
-// holding any host ports. It MUST be identified so the deploy can tear it down
-// before starting the new slot. If a stale slot is left running (e.g. recreated
-// by a `restart:` policy after a host reboot, or an app that predates the
-// `current` symlink), failing to detect it means the new slot collides on the
-// host port: "Bind for 0.0.0.0:<port> failed: port is already allocated".
-// ---------------------------------------------------------------------------
+// Blue-green slot resolution. Missing a running slot makes the new one collide on its host ports.
 
 import { readlink, readFile } from "fs/promises";
 import { join } from "path";
@@ -16,7 +7,7 @@ import { execFileAsync } from "@/lib/utils/exec";
 
 export type Slot = "blue" | "green";
 
-/** Injectable probes — real implementations hit the filesystem / Docker. */
+/** Injectable filesystem and Docker probes. */
 export type SlotProbes = {
   readSymlink: (path: string) => Promise<string>;
   readActiveFile: (path: string) => Promise<string>;
@@ -53,34 +44,13 @@ async function slotRunning(
   }
 }
 
-/**
- * Resolve which slot is currently active for a blue-green app.
- *
- * Resolution order:
- *  1. `current` symlink, confirmed against Docker — vardo's authoritative
- *     pointer once a deploy succeeds. It is overruled only when its slot is
- *     confirmed stopped and the other is confirmed running, which means the
- *     symlink drifted from reality (a host reboot re-running `restart:`
- *     containers). A failed probe is never read as "stopped": an unreachable
- *     daemon must not demote a good symlink into a host-port collision.
- *  2. Docker ground-truth — a slot project with running containers. This is what
- *     actually holds host ports, so it's the one that must be torn down. Catches
- *     apps that predate the symlink (legacy `.active-slot`).
- *  3. Legacy `.active-slot` file — the pre-symlink migration artifact.
- *
- * Returns null only when no slot is detectable — a genuine first deploy.
- *
- * `projectPrefix` is the compose project name without the slot suffix
- * (`${appName}-${envName}`); slot projects are `${projectPrefix}-${slot}`.
- */
+/** Active slot: symlink (unless Docker proves it stale), then running containers, then legacy .active-slot. Null on first deploy. */
 export async function detectActiveSlot(
   appDir: string,
   projectPrefix: string,
   probes: SlotProbes = defaultProbes,
 ): Promise<Slot | null> {
-  // 1. Authoritative pointer, held only while Docker doesn't contradict it.
-  // When both slots run (the self-deploy overlap) the pointer is the only thing
-  // that says which one is old, so a confirmed-running slot ends the search.
+  // Overruled only when its slot is confirmed stopped and the other confirmed running; a failed probe never demotes it.
   try {
     const slot = asSlot(await probes.readSymlink(join(appDir, "current")));
     if (slot) {
@@ -93,23 +63,19 @@ export async function detectActiveSlot(
       return slot;
     }
   } catch {
-    /* no symlink yet — fall through */
+    /* no symlink */
   }
 
-  // 2. Docker ground-truth — a running slot is the real host-port holder.
-  // Iteration order is intentional: blue is checked first. With no symlink to
-  // disambiguate, a both-slots-running app needs an arbitrary but stable
-  // tie-break — the important thing is that we find *something* to tear down
-  // rather than colliding on the port.
+  // A running slot holds the host ports. Blue first is a stable tie-break.
   for (const slot of ["blue", "green"] as const) {
     try {
       if (await probes.isSlotRunning(`${projectPrefix}-${slot}`)) return slot;
     } catch {
-      /* probe failed — try the other slot */
+      /* probe failed */
     }
   }
 
-  // 3. Legacy migration artifact
+  // Legacy migration artifact.
   try {
     const slot = asSlot(await probes.readActiveFile(join(appDir, ".active-slot")));
     if (slot) return slot;

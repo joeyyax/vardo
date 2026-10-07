@@ -1,12 +1,4 @@
-// ---------------------------------------------------------------------------
-// App status reconciliation
-//
-// apps.status is written only by the deploy engine, so it records what Vardo
-// was last told to do rather than what Docker is actually running. An app whose
-// container was removed outside Vardo stays "active" forever. This module polls
-// Docker and writes the observed state back, including "missing" for a
-// registered app with no container at all.
-// ---------------------------------------------------------------------------
+// Writes Docker's observed container state back to apps.status.
 
 import pLimit from "p-limit";
 import { eq, inArray, or, type SQL } from "drizzle-orm";
@@ -36,28 +28,19 @@ import {
 import { tickOomWatch, type OomSubject as OomWatchSubject } from "./oom-watch";
 import { closeOnShutdown } from "@/lib/shutdown";
 
-// Lives with the exit classifier it feeds; re-exported for the callers that
-// have always read it from here.
+// Re-exported for existing callers.
 export { parseExitCode };
 
 const log = logger.child("status-reconcile");
 
-/** How often Docker is polled. Nothing the reconciler writes moves faster. */
+/** How often Docker is polled. */
 export const RECONCILE_INTERVAL_MS = 60_000;
 /** Concurrent container inspects while resolving start times. */
 const INSPECT_CONCURRENCY = 8;
 
 export type ObservedStatus = "active" | "error" | "stopped" | "missing";
 
-// ---------------------------------------------------------------------------
-// Pure decision logic (unit tested)
-// ---------------------------------------------------------------------------
-
-/**
- * How long "deploying" is honored before the reconciler takes the status back.
- * Well past the deploy timeout the sweeper enforces, so this only ever catches
- * a status the sweeper could not reset — a process killed mid-deploy.
- */
+/** How long "deploying" is honored before the reconciler takes the status back. */
 export const DEPLOYING_HOLD_MS =
   (Number(process.env.DEPLOY_TIMEOUT_MINUTES) || 15) * 60_000 * 4;
 
@@ -72,13 +55,7 @@ export function deployHoldsStatus(
   return now.getTime() - app.updatedAt.getTime() < holdMs;
 }
 
-/**
- * Observed status for one app's containers.
- * "restarting" reads as error — a container flapping is not running.
- *
- * Without a reason the exit code decides, which reads every 137 as a crash.
- * Pass the reason resolved from the same inspect to tell a stop apart from one.
- */
+/** Observed status for one app's containers. Pass the exit reason to tell a stop from a 137 crash. */
 export function deriveStatus(
   containers: ContainerInfo[],
   reason?: ExitReason | null,
@@ -86,20 +63,14 @@ export function deriveStatus(
   if (containers.length === 0) return "missing";
   if (containers.some((c) => c.state === "restarting" || c.state === "dead")) return "error";
   if (containers.some((c) => c.state === "running")) return "active";
-  // A signal exit is a stop that took SIGTERM or outran its grace period. An
-  // OOM kill also arrives as a signal and is not one.
+  // An OOM kill also arrives as a signal but isn't a stop.
   if (isOomKill(reason)) return "error";
   if (reason?.kind === "signal") return "stopped";
   if (containers.some((c) => (parseExitCode(c.status) ?? 0) !== 0)) return "error";
   return "stopped";
 }
 
-/**
- * The durable stability event a status transition earns, or null when it earns
- * none. apps.status only ever holds the current value and Docker's restart
- * counter resets with the container, so a crash leaves no trace unless it is
- * written to the activity log as it happens.
- */
+/** Crash or recovery activity event for a status transition, or null. */
 export function stabilityTransition(opts: {
   from: string;
   to: ObservedStatus;
@@ -131,7 +102,7 @@ function crashSummary(reason: ExitReason | null): string {
   }
 }
 
-/** Coarse span for a summary sentence — minutes up to a day, then days. */
+/** Coarse span: minutes, hours, then days. */
 function formatSpan(ms: number): string {
   const minutes = Math.max(1, Math.round(ms / 60_000));
   if (minutes < 60) return `${minutes}m`;
@@ -140,7 +111,7 @@ function formatSpan(ms: number): string {
   return `${Math.round(hours / 24)}d`;
 }
 
-/** Whether the stored reason still describes what Docker reports, so a settled app skips its write. */
+/** Whether the stored reason still matches what Docker reports. */
 export function exitReasonsEqual(a: ExitReason | null, b: ExitReason | null | undefined): boolean {
   if (!a || !b) return !a && !b;
   return a.kind === b.kind && a.exitCode === b.exitCode && a.containerName === b.containerName;
@@ -149,17 +120,12 @@ export function exitReasonsEqual(a: ExitReason | null, b: ExitReason | null | un
 /** One container's restart counter and when it was created. */
 export type ContainerRestart = { count: number | null; createdAt: Date | null };
 
-/** The figure a row carries and the point it counts from. */
+/** Stored restart count and the point it counts from. */
 export type StoredRestarts = { count: number | null; since: Date | null };
 
 /**
- * The restart figure a row should carry, from one reading per container and the
- * figure already stored. Null when the app has no containers: there is no
- * counter to read, and null must never be read back as zero restarts.
- *
- * A container that did not answer keeps the stored figure rather than reporting
- * a total that is missing one of its parts. `since` is the oldest creation time
- * the total covers — Docker resets the counter from there.
+ * Restart total across containers. Null with no containers (never read null as zero).
+ * Keeps the stored figure if any container didn't answer.
  */
 export function restartsFor(
   reads: ContainerRestart[],
@@ -175,14 +141,7 @@ export function restartsFor(
   };
 }
 
-// ---------------------------------------------------------------------------
-// Tick
-// ---------------------------------------------------------------------------
-
-/**
- * One inspect per container for the whole pass. A decomposed parent matches
- * every container its children match, so without this each is inspected twice.
- */
+/** One inspect per container per pass. */
 type InspectCache = (id: string) => Promise<ContainerInspect>;
 
 function inspectCache(): InspectCache {
@@ -197,7 +156,7 @@ function inspectCache(): InspectCache {
   };
 }
 
-/** Docker's counter and creation time per container, null for one that did not answer. */
+/** Restart count and creation time per container, null if it didn't answer. */
 function readRestarts(
   matched: ContainerInfo[],
   inspect: InspectCache,
@@ -219,13 +178,8 @@ function readRestarts(
 }
 
 /**
- * Why this app's containers are down. Only containers that ended badly are
- * inspected — State.OOMKilled is the one field that tells an OOM kill apart
- * from an ordinary stop, and the list API does not carry it.
- *
- * Docker clears State.OOMKilled when a container starts, so a poller that
- * watches running containers can never read it. This reconciler lists stopped
- * ones, which is why the signal lives here and not in the health monitor.
+ * Why this app's containers are down, from State.OOMKilled and the exit code.
+ * Docker clears OOMKilled on start, so only a poller of stopped containers can see it.
  */
 async function resolveExitReason(
   matched: ContainerInfo[],
@@ -249,7 +203,7 @@ async function resolveExitReason(
       );
       if (reason) reasons.push(reason);
     } catch {
-      // Container went away between list and inspect — nothing left to explain.
+      // Container went away between list and inspect.
     }
   }
   return worstExitReason(reasons);
@@ -263,7 +217,7 @@ type OomSubject = {
   oomFirstSeen: boolean;
 };
 
-/** One notification per kill. This is the only poller that can see an OOM at all. */
+/** One notification per OOM kill. */
 async function reportOomKills(subjects: OomSubject[]): Promise<void> {
   const killed = subjects.flatMap((s) =>
     s.oomFirstSeen && s.exitReason ? [{ ...s, reason: s.exitReason }] : [],
@@ -326,15 +280,12 @@ async function computeAppUpdate(
   now: Date,
   inspect: InspectCache,
 ) {
-  // A deploy in flight owns the status until it finishes, or until the
-  // hold expires — a stranded "deploying" must not be permanent.
+  // An in-flight deploy owns the status until the hold expires.
   if (deployHoldsStatus(app, now)) return null;
 
   const matched = matchContainers(app, containers);
   let observed = deriveStatus(matched);
 
-  // Counted from the containers this row matches: its own service for a
-  // compose child, every service under it for the parent.
   const restarts = restartsFor(await readRestarts(matched, inspect), {
     count: app.containerRestartCount,
     since: app.containerRestartSince,
@@ -353,13 +304,11 @@ async function computeAppUpdate(
         if (!isNaN(parsed.getTime())) startedAt = parsed;
         memoryLimit = info.memoryBytes;
       } catch {
-        // Container went away between list and inspect — keep the old values.
+        // Container went away between list and inspect.
         startedAt = app.containerStartedAt;
         memoryLimit = app.containerMemoryLimit;
       }
       exitReason = reasonSurvivesRestart(app.exitReason, { id: running.id, startedAt }, now);
-      // A running container's cgroup counter is the only record of a kill
-      // inside it — nothing else here inspects one that has not ended.
       oomSubject = {
         organizationId: app.organizationId,
         appId: app.id,
@@ -371,13 +320,10 @@ async function computeAppUpdate(
     }
   } else {
     exitReason = await resolveExitReason(matched, now, inspect);
-    // Re-read with the reason the same inspect produced: a deliberate
-    // stop is not a crash, and only the reason can say which this was.
     observed = deriveStatus(matched, exitReason);
   }
 
-  // A configured limit the container is not running is a redeploy away
-  // from being real, and nothing else notices the difference.
+  // Flag a configured memory limit the container isn't running with.
   const drifted = memoryLimitDrifted(app.memoryLimit, memoryLimit);
   const needsRedeploy = drifted || !!app.needsRedeploy;
 
@@ -412,7 +358,6 @@ async function computeAppUpdate(
           reason: exitReason,
           heldMs: app.statusChangedAt ? now.getTime() - app.statusChangedAt.getTime() : null,
         }),
-    // A kill already reported is not news on every tick that follows it.
     oomFirstSeen: isOomKill(exitReason) && !exitReasonsEqual(exitReason, app.exitReason),
     oomSubject,
   };
@@ -420,7 +365,7 @@ async function computeAppUpdate(
 
 type AppUpdate = NonNullable<Awaited<ReturnType<typeof computeAppUpdate>>>;
 
-/** The only place an observed status reaches the row. */
+/** Write an observed status to the row. */
 async function applyAppUpdate(u: AppUpdate, now: Date): Promise<void> {
   await db
     .update(apps)
@@ -432,8 +377,7 @@ async function applyAppUpdate(u: AppUpdate, now: Date): Promise<void> {
       containerRestartSince: u.restarts.since,
       needsRedeploy: u.needsRedeploy,
       exitReason: u.exitReason,
-      // Stamped only while running and never cleared, so it survives the
-      // container going away. Idle age is measured from this.
+      // Never cleared; idle age is measured from it.
       ...(u.running ? { lastRunningAt: now } : {}),
       statusCheckedAt: now,
     })
@@ -453,17 +397,7 @@ async function applyAppUpdate(u: AppUpdate, now: Date): Promise<void> {
   }
 }
 
-/**
- * Re-read one app and its compose children from Docker now, instead of leaving
- * the row describing containers that have already been replaced.
- *
- * Restart and recreate change nothing the row records, so until this runs the
- * page shows the old start time and the action reads as a no-op. Bringing a
- * stopped app back up is worse — the badge still says stopped. Routes call this
- * rather than writing the row themselves, so status keeps one writer.
- *
- * Returns what Docker says the app is now, or null when it could not be read.
- */
+/** Reconcile one app and its compose children now. Returns its observed status, or null on failure. */
 export async function reconcileAppNow(appId: string): Promise<ObservedStatus | null> {
   try {
     const containers = await listAllContainers();
@@ -482,7 +416,7 @@ export async function reconcileAppNow(appId: string): Promise<ObservedStatus | n
     }
     return observed;
   } catch (err) {
-    // Best-effort: the periodic tick still corrects the row within the minute.
+    // Best-effort; the periodic tick corrects it.
     log.error(`Failed to reconcile ${appId} on demand:`, err instanceof Error ? err.message : err);
     return null;
   }
@@ -531,8 +465,7 @@ export async function tickStatusReconcile(): Promise<void> {
 
   await reportOomKills(changed);
 
-  // Every running container, not just the ones whose status moved — a kill
-  // inside one changes nothing the reconciler compares.
+  // Every running container, not only changed ones.
   try {
     await tickOomWatch(settled.flatMap((u) => (u.oomSubject ? [u.oomSubject] : [])));
   } catch (err) {
@@ -548,10 +481,6 @@ export async function tickStatusReconcile(): Promise<void> {
     log.info(`Reconciled ${changed.length} app status(es) against Docker`);
   }
 }
-
-// ---------------------------------------------------------------------------
-// Scheduler
-// ---------------------------------------------------------------------------
 
 let interval: NodeJS.Timeout | null = null;
 let ticking = false;
@@ -573,12 +502,10 @@ export function startStatusReconciler(): void {
     }
   };
 
-  // Run once at startup so a stale "active" doesn't survive until the first interval.
+  // Run once shortly after startup.
   setTimeout(tick, 5_000);
   interval = setInterval(tick, RECONCILE_INTERVAL_MS);
 
-  // Registered from the start function, not at module scope — importing this
-  // module must not wire a shutdown for a reconciler that was never started.
   unregisterShutdown = closeOnShutdown(stopStatusReconciler);
 }
 

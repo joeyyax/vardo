@@ -1,11 +1,5 @@
-// ---------------------------------------------------------------------------
 // What it takes to move a major-locked image across a major version.
-//
-// Two facts matter and neither is guessable from the tag: whether the engine
-// can jump majors in one step, and what actually moves the data. Mongo and
-// Elasticsearch refuse to start against a data directory more than one major
-// behind, so "16 → 18" is two migrations for them and one for Postgres.
-// ---------------------------------------------------------------------------
+// Some engines (Mongo, Elasticsearch) can only cross one major per migration.
 
 import { isMajorLocked } from "./stateful-image";
 
@@ -107,12 +101,7 @@ export function isMajorJump(from: string, to: string): boolean {
   return a !== null && b !== null && b > a;
 }
 
-/**
- * Whether moving this image to `to` means migrating its data directory.
- *
- * Read from the image rather than a cached `majorLocked` flag — rows written
- * before that flag existed carry false, and trusting them hides the warning.
- */
+/** Whether moving this image to `to` means migrating its data directory. Don't use the cached `majorLocked` flag: old rows carry false. */
 export function requiresMigration(image: string, from: string, to: string | null): boolean {
   return Boolean(to && isMajorLocked(image) && isMajorJump(from, to));
 }
@@ -135,10 +124,7 @@ export interface MigrationPlan extends MigrationPath {
   needsIntermediateSteps: boolean;
 }
 
-/**
- * Turn a tag pair into a concrete plan, expanding the intermediate majors an
- * engine has to land on when it cannot jump straight there.
- */
+/** Turn a tag pair into a plan, including any intermediate majors. */
 export function planMigration(
   image: string,
   fromTag: string,

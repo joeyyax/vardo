@@ -1,10 +1,5 @@
-// ---------------------------------------------------------------------------
-// Desired state for critical apps
-//
-// Whether a stopped container should be running, judged from what Vardo
-// recorded rather than Docker's manual-stop flag, which a failed restart also
-// sets. Pure; the health monitor gathers the inputs and acts on the verdict.
-// ---------------------------------------------------------------------------
+// Whether a stopped critical-app container should be running, judged from Vardo's records.
+// Docker's manual-stop flag is unreliable: a failed restart also sets it.
 
 import type { Slot } from "./slots";
 
@@ -37,8 +32,7 @@ export function resolveSelfHeal(
   };
 }
 
-/** Whether a stopped container of this app is kept running. Explicitly
- *  disabling auto-restart opts a critical app out. */
+/** Whether a stopped container of this app is kept running. */
 export function keepsRunning(opts: {
   priority: string;
   autoRestartUnhealthy: boolean | null;
@@ -69,10 +63,7 @@ export type StopIntent = {
   siblingRunning: boolean;
 };
 
-/**
- * Why a stopped container is meant to stay stopped, or null when nothing
- * asked for it. Every branch is a way Vardo records a stop.
- */
+/** Why a stopped container is meant to stay stopped, or null. */
 export function intendedStopReason(
   s: StopIntent,
   /** The stop came from Vardo's own restart, so a clean exit is no signal. */

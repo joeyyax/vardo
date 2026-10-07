@@ -85,7 +85,7 @@ export async function checkStandbyAvailable(
     standbyServiceCount = containers.length;
     standbyAvailable = containers.length > 0;
   } catch {
-    // No containers on standby slot
+    // No standby containers.
   }
 
   return { activeSlot, standbySlot, standbyAvailable, standbyServiceCount };
@@ -132,7 +132,6 @@ async function rollbackClaimed(
   const standbyComposeFileArgs = await slotComposeFiles(standbyDir);
   const activeComposeFileArgs = await slotComposeFiles(activeDir);
 
-  // Verify standby has containers
   let standbyHasContainers = false;
   try {
     const { stdout } = await execFileAsync(
@@ -151,15 +150,10 @@ async function rollbackClaimed(
     };
   }
 
-  // Step 0: Drop any cutover pin. It outranks the Docker routers and names the
-  // slot being rolled away from, so it would 502 the app after the flip. First,
-  // so Traefik reloads while the active slot is still serving.
+  // Drop the cutover pin first: it names the outgoing slot and would 502 the app after the flip.
   await clearCutoverPin(appName, env.name).catch(() => {});
 
-  // Step 1: Start standby slot — use `up -d --no-recreate --pull never` for
-  // resilience (handles missing containers, reconnects networks) over bare `start`.
-  // Named to the rotating set only — the slot compose still declares the
-  // shared services, and an unqualified `up` would start a second database.
+  // Start standby. Rotating services only: an unqualified `up` would start a second database.
   const standbyPartition = await readSlotPartition(standbyDir);
   const onlySlotted = standbyPartition ? slotScopeArgs(standbyPartition) : [];
   try {
@@ -171,7 +165,7 @@ async function rollbackClaimed(
       ],
       { cwd: standbyDir, timeout: COMPOSE_UP_TIMEOUT },
     );
-    // It is about to serve, so it needs its own restart policy back.
+    // About to serve, so restore its restart policy.
     await restoreSlotRestart(standbyComposeFileArgs, standbyProjectName, standbyDir);
   } catch {
     return {
@@ -181,7 +175,7 @@ async function rollbackClaimed(
     };
   }
 
-  // Step 2: Health check — wait for containers to be running
+  // Wait for standby containers to run.
   const healthDeadline = Date.now() + INSTANT_ROLLBACK_HEALTH_TIMEOUT;
   let healthy = false;
   while (Date.now() < healthDeadline) {
@@ -216,8 +210,7 @@ async function rollbackClaimed(
     };
   }
 
-  // Step 3: Remove active slot from Traefik's routing pool before stopping,
-  // so in-flight requests don't hit a shutting-down container.
+  // Take the active slot out of Traefik's pool before stopping it.
   try {
     const { stdout } = await execFileAsync(
       "docker",
@@ -233,18 +226,17 @@ async function rollbackClaimed(
     }
   } catch { /* best-effort */ }
 
-  // Step 4: Stop the active slot
   try {
     await execFileAsync(
       "docker",
       ["compose", ...activeComposeFileArgs, "-p", activeProjectName, "stop"],
       { cwd: activeDir, timeout: COMPOSE_DOWN_TIMEOUT },
     );
-    // It is the standby now, so it must not come back on a daemon restart.
+    // Now the standby; it must not come back on a daemon restart.
     await demoteStandbyRestart(activeComposeFileArgs, activeProjectName, activeDir);
   } catch { /* best-effort — standby is already serving */ }
 
-  // Step 5: Flip the current symlink
+  // Flip the current symlink.
   const currentSymlinkPath = join(appDir, "current");
   const tmpSymlinkPath = join(appDir, "current.tmp");
   try {
@@ -252,10 +244,9 @@ async function rollbackClaimed(
     await symlink(standbySlot, tmpSymlinkPath, "dir");
     await rename(tmpSymlinkPath, currentSymlinkPath);
   } catch {
-    // Symlink swap failed — standby is serving, this is just bookkeeping
+    // Bookkeeping only; standby is serving.
   }
 
-  // Step 6: Update container name in DB
   try {
     const { stdout } = await execFileAsync(
       "docker",
@@ -273,7 +264,6 @@ async function rollbackClaimed(
     }
   } catch { /* best-effort */ }
 
-  // Step 7: Create deployment record
   const durationMs = Date.now() - startTime;
   const deploymentId = nanoid();
 

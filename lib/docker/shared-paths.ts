@@ -1,11 +1,4 @@
-// ---------------------------------------------------------------------------
-// Relative paths on a shared service, anchored outside the slot.
-//
-// Compose resolves `./conf` and `env_file: .env` against the slot dir it runs
-// from, so the same definition names blue's copy on one deploy and green's on
-// the next. The config hash follows the path, and a shared service would read
-// as changed on every deploy.
-// ---------------------------------------------------------------------------
+// Anchors a shared service's relative paths outside the slot so its config hash stays stable across slots.
 
 import { join, normalize } from "path";
 import type { ComposeFile } from "./compose-types";
@@ -36,12 +29,7 @@ function slotRelative(source: string, kind: AnchoredPath["kind"]): string | null
   return rel;
 }
 
-/**
- * Rewrite relative bind sources and env files on the given services to
- * absolute, slot-independent paths. A top-level repo entry resolves into the
- * repo, which is what the slot links to; anything else into `sharedDir`.
- * Mutates `compose`, and is a no-op on paths already absolute.
- */
+/** Rewrite relative bind sources and env files to absolute paths in the repo or `sharedDir`. Mutates `compose`. */
 export function anchorSharedPaths(
   compose: ComposeFile,
   services: Set<string>,

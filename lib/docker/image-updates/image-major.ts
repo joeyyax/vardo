@@ -1,19 +1,10 @@
-// ---------------------------------------------------------------------------
-// Reading an engine's major version out of the image itself.
-//
-// A floating tag carries no version to compare, so `postgres:latest` rolling
-// 17 → 18 is invisible to every tag-based check. The version is in the image:
-// the official images export it as an env var, verified on the live host as
-// PG_MAJOR=16/17/18 and MYSQL_MAJOR=8.0.
-//
-// Names are matched per engine rather than by a generic /MAJOR/ grep — the
-// postgres image also carries GOSU_VERSION, which that would happily return.
-// ---------------------------------------------------------------------------
+// Reads an engine's major version from the image's env vars or version label.
+// Env names are matched per engine: a generic /MAJOR/ match would pick up GOSU_VERSION.
 
 import { isMajorLocked } from "./stateful-image";
 import { majorOf } from "./migration-path";
 
-/** Where a major came from, kept so an unknown can be told apart from a guess. */
+/** Where a major came from. */
 export type MajorSource = "env" | "label";
 
 export interface ImageMajor {
@@ -51,12 +42,7 @@ function parseEnv(env: string[]): Map<string, string> {
   return map;
 }
 
-/**
- * Major version of a major-locked engine image, or null when it cannot be read.
- *
- * Null means unknown and must never be treated as "unchanged" — an engine whose
- * version we cannot read is exactly the case where a silent bump would slip past.
- */
+/** Major version of a major-locked engine image, or null. Null means unknown, never "unchanged". */
 export function extractImageMajor(
   image: string,
   inspect: { env?: string[] | null; labels?: Record<string, string> | null },
@@ -79,10 +65,7 @@ export function extractImageMajor(
   return null;
 }
 
-/**
- * Whether a re-pull would cross a major. Unknown on either side returns null,
- * which callers must treat as "cannot say", not as "no change".
- */
+/** Whether a re-pull would cross a major. Null means unknown, never "no change". */
 export function majorChanged(
   before: ImageMajor | null,
   after: ImageMajor | null,

@@ -1,11 +1,4 @@
-// ---------------------------------------------------------------------------
-// Compose analysis — inspects a ComposeFile and returns structured findings.
-//
-// Pure function, no side effects. Used by:
-// - The normalize step (to decide what to transform)
-// - The analysis API (to surface findings to the UI)
-// - The import-time review dialog (to show users what Vardo will change)
-// ---------------------------------------------------------------------------
+// Inspects a ComposeFile and returns structured findings. Pure.
 
 import type { ComposeFile } from "./compose";
 import { parsePortString, parseCompose } from "./compose";
@@ -13,10 +6,6 @@ import { findMistypedSharedMarkers, parseComposeYaml } from "./compose-validate"
 import { SHARED_MARKER } from "./slot-partition";
 import { parseImageRef } from "./image-updates/image-ref";
 import { isFloatingTag } from "./image-updates/tag-version";
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 
 export type FindingSeverity = "info" | "warning" | "critical";
 
@@ -50,16 +39,12 @@ export type ComposeAnalysis = {
   counts: Record<FindingCategory, number>;
 };
 
-// Well-known ports that are almost certainly HTTP and safe to strip
-// when Traefik is routing. Ports outside this set get a warning instead
-// of auto-fix.
+// Ports that are almost certainly HTTP.
 const COMMON_HTTP_PORTS = new Set([
   80, 443, 3000, 3001, 4000, 5000, 5173, 8000, 8080, 8443, 8888, 9000,
 ]);
 
-// Image name patterns for services that need direct host port access.
-// These services use non-HTTP protocols (SQL, Redis, MQTT, etc.) and
-// should never have their ports stripped.
+// Non-HTTP services that need host ports; never strip theirs.
 const NON_HTTP_IMAGE_PATTERNS = [
   /postgres/i, /mysql/i, /mariadb/i, /mongo/i, /redis/i, /memcached/i,
   /rabbitmq/i, /mosquitto/i, /nats/i, /kafka/i, /zookeeper/i,
@@ -67,15 +52,11 @@ const NON_HTTP_IMAGE_PATTERNS = [
   /minio/i, /consul/i, /etcd/i, /vault/i,
 ];
 
-/** Returns true if the image name matches a known non-HTTP service. */
+/** True if the image matches a known non-HTTP service. */
 function isNonHttpService(image: string | undefined): boolean {
   if (!image) return false;
   return NON_HTTP_IMAGE_PATTERNS.some((re) => re.test(image));
 }
-
-// ---------------------------------------------------------------------------
-// Main analyzer
-// ---------------------------------------------------------------------------
 
 export function analyzeCompose(
   compose: ComposeFile,
@@ -92,14 +73,13 @@ export function analyzeCompose(
 
   for (const [name, svc] of Object.entries(compose.services)) {
     analyzeHostPorts(name, svc, routedServices, findings);
-    // container_name is dropped by the parser — pass undefined for parsed compose
+    // The parser drops container_name.
     analyzeContainerName(name, undefined, findings);
     analyzeRestartPolicy(name, svc, findings);
     analyzeEnvironment(name, svc, managedEnvKeys, findings);
     analyzeImageTag(name, svc, findings);
   }
 
-  // Build counts
   const counts = {} as Record<FindingCategory, number>;
   for (const f of findings) {
     counts[f.category] = (counts[f.category] || 0) + 1;
@@ -107,10 +87,6 @@ export function analyzeCompose(
 
   return { findings, counts };
 }
-
-// ---------------------------------------------------------------------------
-// Individual analyzers
-// ---------------------------------------------------------------------------
 
 /** Flags images on a moving tag, which pin to whatever the registry last built. */
 function analyzeImageTag(
@@ -141,8 +117,6 @@ function analyzeHostPorts(
 ): void {
   if (!svc.ports) return;
 
-  // Skip entirely for known non-HTTP services (databases, brokers, etc.)
-  // — they genuinely need host port access
   if (isNonHttpService(svc.image)) return;
 
   for (const raw of svc.ports) {
@@ -171,18 +145,10 @@ function analyzeHostPorts(
         autoFixed: false,
       });
     }
-    // Non-HTTP ports on non-routed services are fine — no finding
   }
 }
 
-/**
- * Analyze container_name directives.
- *
- * Note: the compose parser already drops container_name (it's not in the
- * ComposeService type). This analyzer works on RAW YAML (pre-parse) via
- * analyzeRawCompose(), or on parsed compose where the field is already gone.
- * Included for completeness in raw analysis.
- */
+/** Flag container_name. Only fires from analyzeRawCompose; the parser drops the field. */
 function analyzeContainerName(
   name: string,
   containerName: string | undefined,
@@ -217,7 +183,6 @@ function analyzeRestartPolicy(
     return;
   }
 
-  // "no" and "always" are usually not what you want in a managed environment
   if (svc.restart === "no") {
     findings.push({
       category: "restart-policy",
@@ -239,16 +204,14 @@ function analyzeEnvironment(
   if (!svc.environment) return;
 
   for (const [key, value] of Object.entries(svc.environment)) {
-    // Skip variable references — these are intentional compose-level refs
+    // Skip variable references.
     if (typeof value === "string" && /\$\{?[A-Z_]/.test(value)) {
       continue;
     }
 
-    // Skip empty values
     if (value === "" || value === undefined) continue;
 
     if (managedEnvKeys.has(key)) {
-      // Already managed by Vardo — the inline value will drift
       findings.push({
         category: "inline-env",
         severity: "warning",
@@ -258,7 +221,6 @@ function analyzeEnvironment(
         autoFixed: false,
       });
     } else {
-      // Candidate for extraction
       findings.push({
         category: "inline-env",
         severity: "info",
@@ -271,14 +233,7 @@ function analyzeEnvironment(
   }
 }
 
-// ---------------------------------------------------------------------------
-// Raw YAML analysis (pre-parse)
-// ---------------------------------------------------------------------------
-
-/**
- * Analyze raw compose YAML before parsing. Catches things the parser drops
- * (like container_name) so the UI can show what will happen.
- */
+/** Analyze raw compose YAML, including fields the parser drops. */
 export function analyzeRawCompose(
   yamlContent: string,
   opts: {
@@ -286,11 +241,10 @@ export function analyzeRawCompose(
     managedEnvKeys?: Set<string>;
   } = {},
 ): ComposeAnalysis {
-  // Parse to get the typed compose for standard analysis
   const compose = parseCompose(yamlContent);
   const analysis = analyzeCompose(compose, opts);
 
-  // A non-boolean marker is dropped by the parser, so it can only be seen here.
+  // The parser drops a non-boolean marker.
   for (const { service, value } of findMistypedSharedMarkers(yamlContent)) {
     analysis.findings.push({
       category: "shared-marker",
@@ -303,7 +257,6 @@ export function analyzeRawCompose(
     analysis.counts["shared-marker"] = (analysis.counts["shared-marker"] || 0) + 1;
   }
 
-  // Also check the raw YAML for fields the parser drops
   try {
     const raw = parseComposeYaml(yamlContent) as { services?: Record<string, Record<string, unknown>> } | null;
     if (raw?.services && typeof raw.services === "object") {
@@ -315,7 +268,7 @@ export function analyzeRawCompose(
       }
     }
   } catch {
-    // If raw parse fails, the standard analysis is still valid
+    // The standard analysis still stands.
   }
 
   return analysis;

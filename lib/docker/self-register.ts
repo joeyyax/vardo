@@ -1,12 +1,4 @@
-// ---------------------------------------------------------------------------
-// Vardo self-registration.
-//
-// When the selfManagement feature flag is on, this
-// module upserts a project + apps representing Vardo itself into the database
-// so it appears as a managed project in the dashboard.
-//
-// Safe to call on every startup — all writes are idempotent upserts.
-// ---------------------------------------------------------------------------
+// Registers Vardo itself as a managed project when selfManagement is on. Idempotent.
 
 import { readFile, access } from "fs/promises";
 import { join } from "path";
@@ -29,8 +21,7 @@ import type { ComposeService } from "@/lib/docker/compose-types";
 
 const log = logger.child("self-register");
 
-// Fallback when the running checkout has no readable git remote. Must stay in
-// the format getSystemManagedApp() matches: https host, no .git suffix.
+// Must match getSystemManagedApp()'s format: https, no .git suffix.
 const DEFAULT_REPO_URL = "https://github.com/joeyyax/vardo";
 
 /** Compose service serving the dashboard. */
@@ -39,8 +30,7 @@ const FRONTEND_SERVICE = "frontend";
 /** Port the frontend service listens on. */
 const FRONTEND_PORT = 3000;
 
-// Infrastructure services managed as child app records.
-// cadvisor, loki, and promtail are provisioned separately via lib/infra/provision.ts.
+// Infrastructure services registered as child apps. cadvisor, loki and promtail live in lib/infra/provision.ts.
 const INFRA_SERVICES = new Set([
   "postgres",
   "redis",
@@ -48,13 +38,7 @@ const INFRA_SERVICES = new Set([
   "wireguard",
 ]);
 
-/**
- * Warn when the frontend has not claimed its own Traefik labels.
- *
- * Its host, fallback, unknown-host and /_next routers are hand-written. Without
- * the marker a deploy would strip them and generate a single host router from
- * the app's domains, so IP access and the unknown-host page would stop working.
- */
+/** Warn when the frontend lacks the manual-routing marker; a deploy would replace its hand-written routers. */
 function warnIfRoutingIsReplaceable(frontend: ComposeService | undefined): void {
   if (!frontend || isTraefikSelfRouted(frontend)) return;
   log.warn(
@@ -62,22 +46,11 @@ function warnIfRoutingIsReplaceable(frontend: ComposeService | undefined): void 
   );
 }
 
-/**
- * Ensure Vardo is registered as a managed project in the database.
- *
- * Checks the selfManagement feature flag before doing anything.
- * Creates or updates:
- *   - A project named "vardo"
- *   - A parent compose app representing the full Vardo stack
- *   - Child apps for each infrastructure service found in docker-compose.yml
- *
- * All writes are upserts — safe to call on every startup.
- */
+/** Upsert the "vardo" project, its parent compose app and infra child apps. */
 export async function ensureVardoProject(): Promise<void> {
   if (!(await isFeatureEnabledAsync("selfManagement"))) return;
 
-  // Resolve the Vardo source directory — prefer the active slot (blue/green
-  // layout), fall back to VARDO_HOME_DIR root for legacy flat installs.
+  // Active slot, else VARDO_HOME_DIR for flat installs.
   let vardoDir = VARDO_CURRENT_DIR;
   try {
     await access(join(vardoDir, "docker-compose.yml"));
@@ -94,7 +67,6 @@ export async function ensureVardoProject(): Promise<void> {
     );
   }
 
-  // Read and parse the compose file to discover service names.
   const composePath = join(vardoDir, "docker-compose.yml");
   const composeContent = await readFile(composePath, "utf-8");
   const compose = parseCompose(composeContent);
@@ -107,7 +79,6 @@ export async function ensureVardoProject(): Promise<void> {
     return;
   }
 
-  // Resolve git info so the parent app knows where to pull from.
   let gitUrl: string | null = null;
   let gitBranch: string | null = null;
   try {
@@ -117,8 +88,7 @@ export async function ensureVardoProject(): Promise<void> {
       { timeout: 5000 },
     );
     gitUrl = remoteOut.trim();
-    // Normalize SSH URLs to HTTPS. The .git suffix is stripped for both forms —
-    // getSystemManagedApp() matches on the suffix-free URL.
+    // Normalize to HTTPS without .git, as getSystemManagedApp() matches.
     if (gitUrl.startsWith("git@")) {
       gitUrl = gitUrl.replace(/^git@([^:]+):/, "https://$1/");
     }
@@ -136,16 +106,14 @@ export async function ensureVardoProject(): Promise<void> {
     );
   }
 
-  // A deploy needs somewhere to check out from; an empty git_url blocks it.
+  // An empty git_url blocks deploys.
   if (!gitUrl) gitUrl = DEFAULT_REPO_URL;
 
   const infraServices = Object.keys(compose.services).filter((name) =>
     INFRA_SERVICES.has(name),
   );
 
-  // "vardo" is a top-level name, so it is unique instance-wide. The upserts
-  // below arbitrate on (organization_id, name) and would not catch another
-  // org's app holding it — check before the transaction rather than fail it.
+  // Top-level names are unique instance-wide; the per-org upserts wouldn't catch another org holding it.
   const nameHolder = await db.query.apps.findFirst({
     where: and(eq(apps.name, "vardo"), isNull(apps.parentAppId)),
     columns: { organizationId: true },
@@ -157,11 +125,7 @@ export async function ensureVardoProject(): Promise<void> {
     return;
   }
 
-  // Wrap all upserts in a transaction so a partial failure doesn't leave the
-  // registration in an inconsistent state. All writes are idempotent upserts,
-  // so the transaction is safe to re-run on restart if it fails mid-way.
   await db.transaction(async (tx) => {
-    // Upsert the project.
     const [project] = await tx
       .insert(projects)
       .values({
@@ -185,7 +149,6 @@ export async function ensureVardoProject(): Promise<void> {
 
     if (!project) throw new Error("failed to upsert Vardo project");
 
-    // Upsert the parent app (the compose app for the full Vardo stack).
     const [parentApp] = await tx
       .insert(apps)
       .values({
@@ -218,7 +181,6 @@ export async function ensureVardoProject(): Promise<void> {
 
     if (!parentApp) throw new Error("failed to upsert Vardo parent app");
 
-    // Upsert child apps for each infrastructure service present in the compose file.
     for (const service of infraServices) {
       await tx
         .insert(apps)
@@ -246,9 +208,7 @@ export async function ensureVardoProject(): Promise<void> {
         });
     }
 
-    // Vardo's own stack is started by docker compose, not the deploy engine, so
-    // it has no deployment history. Seed one record so rollback and history
-    // views have an anchor. Status stays with the reconciler.
+    // Seed one deployment so rollback and history have an anchor; compose started the stack.
     const existingDeploy = await tx.query.deployments.findFirst({
       where: and(
         eq(deployments.appId, parentApp.id),

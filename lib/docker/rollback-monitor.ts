@@ -1,13 +1,4 @@
-// ---------------------------------------------------------------------------
-// Auto-rollback action.
-//
-// The grace period itself is reconciled by the deploy sweeper against live
-// state; this module only inspects a slot and performs the swap back.
-//
-// A rollback is its own deployment row with its own stream and phases. The
-// deploy it rescued keeps its log, duration and finish time exactly as it
-// recorded them, and only its status changes to rolled_back.
-// ---------------------------------------------------------------------------
+// Auto-rollback: swaps a crashed slot back to its predecessor as its own deployment row.
 
 import { db } from "@/lib/db";
 import { statusChange } from "@/lib/db/app-status";
@@ -33,11 +24,7 @@ import { execFileAsync } from "@/lib/utils/exec";
 const log = logger.child("rollback-monitor");
 
 
-/**
- * Container ids belonging to a compose project. `all` includes stopped ones.
- * Returns null when Docker could not be reached — never an empty list, so a
- * socket blip can't read as "the slot is gone".
- */
+/** Container ids in a compose project (`all` includes stopped). Null when Docker is unreachable, never empty. */
 export async function slotContainerIds(
   projectName: string,
   all: boolean,
@@ -61,10 +48,7 @@ export async function slotContainerIds(
   }
 }
 
-/**
- * Whether a slot has stopped serving. Null when Docker is unreachable, which
- * callers must treat as "unknown" rather than as a crash.
- */
+/** Whether a slot has stopped serving. Null means unknown, not a crash. */
 export async function slotIsDown(projectName: string): Promise<boolean | null> {
   const ids = await slotContainerIds(projectName, false);
   if (ids === null) return null;
@@ -85,12 +69,7 @@ export type PerformRollbackOpts = {
   environmentId?: string | null;
 };
 
-/**
- * Swap a crashed slot back to its predecessor, recording the swap as its own
- * deployment row. Returns false when the previous slot could not be restored —
- * in that case the crashed slot is put back and the deploy it rescued keeps its
- * success status.
- */
+/** Swap a crashed slot back to its predecessor. False if the restore failed and the crashed slot was put back. */
 export async function performRollback(opts: PerformRollbackOpts): Promise<boolean> {
   const {
     appId,
@@ -107,7 +86,7 @@ export async function performRollback(opts: PerformRollbackOpts): Promise<boolea
   const logLines: string[] = [];
   const streamLogger = createDeployLogger(rollbackId);
 
-  // Serialized so a slow write can't land after a later one and shorten the log.
+  // Serialized so a slow write can't overwrite a later one.
   let logFlush: Promise<unknown> = Promise.resolve();
 
   function flushLog() {
@@ -144,7 +123,7 @@ export async function performRollback(opts: PerformRollbackOpts): Promise<boolea
       })
       .where(eq(deployments.id, rollbackId));
 
-    // Guarded so a deploy that claimed the app in the meantime keeps ownership.
+    // Guarded so a deploy that claimed the app meanwhile keeps it.
     await db
       .update(apps)
       .set(statusChange(appStatus))
@@ -154,8 +133,7 @@ export async function performRollback(opts: PerformRollbackOpts): Promise<boolea
   }
 
   try {
-    // The commit the restored slot is running, so the row reads as the version
-    // it put back rather than as a blank.
+    // Commit the restored slot is running.
     const restored = await db.query.deployments
       .findFirst({
         where: and(
@@ -181,9 +159,7 @@ export async function performRollback(opts: PerformRollbackOpts): Promise<boolea
       startedAt: new Date(startedAt),
     });
 
-    // A rollback owns apps.status for its duration, exactly as a deploy does, so
-    // the reconciler yields to it and the stuck-deploy sweep resets it — and fails
-    // the row — if this process dies mid-swap.
+    // Owns apps.status like a deploy, so the stuck-deploy sweep recovers it if the process dies.
     await db
       .update(apps)
       .set(statusChange("deploying"))
@@ -202,8 +178,7 @@ export async function performRollback(opts: PerformRollbackOpts): Promise<boolea
     const prevComposeFileArgs = await slotComposeFiles(prevSlotDir);
     const prevPartition = await readSlotPartition(prevSlotDir);
 
-    // Step 1: Stop the crashing slot so its restart policy can't reclaim a host
-    // port while the previous slot binds it. Reversible — the containers stay.
+    // Stop (not down) the crashed slot so its restart policy can't reclaim a host port.
     stage("stop", "running");
     try {
       await execFileAsync(
@@ -219,8 +194,7 @@ export async function performRollback(opts: PerformRollbackOpts): Promise<boolea
     }
     stage("stop", "success");
 
-    // Step 2: Bring the previous slot back up, naming the rotating set only —
-    // an unqualified `up` would start a second copy of the shared services here.
+    // Rotating set only; an unqualified `up` would start a second copy of the shared services.
     stage("restore", "running");
     try {
       await execFileAsync(
@@ -239,7 +213,7 @@ export async function performRollback(opts: PerformRollbackOpts): Promise<boolea
       log.error("Failed to restore previous slot — putting the crashed slot back:", message);
       rollbackLog(`[rollback] ERROR: could not restore the ${previousSlot} slot: ${message}`);
 
-      // Nothing is serving right now. Undo step 1 rather than leave the app dark.
+      // Nothing is serving; put the crashed slot back.
       await execFileAsync(
         "docker",
         [
@@ -250,7 +224,6 @@ export async function performRollback(opts: PerformRollbackOpts): Promise<boolea
       ).catch(() => {});
       rollbackLog(`[rollback] Put the ${currentSlot} slot back rather than leave the app dark`);
 
-      // The deploy is left as it recorded itself — nothing was rolled back.
       stage("restore", "failed");
       await finish("failed", "error");
       await sendRollbackNotification(organizationId, appId, appName, false);
@@ -258,7 +231,7 @@ export async function performRollback(opts: PerformRollbackOpts): Promise<boolea
     }
     stage("restore", "success");
 
-    // Step 3: Atomic symlink swap back to the previous slot
+    // Atomic symlink swap.
     stage("route", "running");
     const currentSymlinkPath = join(appDir, "current");
     const tmpSymlinkPath = join(appDir, "current.tmp");
@@ -274,15 +247,11 @@ export async function performRollback(opts: PerformRollbackOpts): Promise<boolea
       rollbackLog(`[rollback] Could not point 'current' at ${previousSlot}: ${message}`);
     }
 
-    // Step 3a: The crashed slot is the standby now, so it must not come back on a
-    // daemon restart.
+    // The crashed slot must not come back on a daemon restart.
     await demoteStandbyRestart(crashedComposeFileArgs, crashedProjectName, crashedSlotDir);
 
-    // Step 3b: Update container name in DB (for logs/UI — not routing).
-    // Traefik discovers the restored containers via their Docker labels automatically.
+    // Container name is for logs and UI only.
     try {
-      // vardo.project is the app name, never the slot's compose project, so the
-      // restored slot is picked out by com.docker.compose.project.
       const envContainers = await listContainers({ id: appId, name: appName }, envName);
       const containers = envContainers.filter(
         (c) => c.labels["com.docker.compose.project"] === prevProjectName,
@@ -298,15 +267,13 @@ export async function performRollback(opts: PerformRollbackOpts): Promise<boolea
     }
     stage("route", "success");
 
-    // Step 4: Confirm the restored slot is actually serving before calling it done.
     stage("verify", "running");
     const restoredIds = await slotContainerIds(prevProjectName, false);
     if (restoredIds !== null && restoredIds.length === 0) {
       rollbackLog(`[rollback] ERROR: the ${previousSlot} slot is not running after the swap`);
       stage("verify", "failed");
 
-      // The crashed slot is stopped and 'current' already points away from it —
-      // the deploy was rolled back, the restore just did not hold.
+      // The deploy was rolled back; the restore didn't hold.
       await db
         .update(deployments)
         .set({ status: "rolled_back" })
@@ -326,8 +293,7 @@ export async function performRollback(opts: PerformRollbackOpts): Promise<boolea
     }
     stage("verify", "success");
 
-    // Step 5: The deploy keeps its own log, duration and finish time; only its
-    // outcome changes.
+    // Only the rescued deploy's status changes.
     await db
       .update(deployments)
       .set({ status: "rolled_back" })
@@ -362,8 +328,6 @@ export async function performRollback(opts: PerformRollbackOpts): Promise<boolea
     await sendRollbackNotification(organizationId, appId, appName, true);
     return true;
   } catch (err) {
-    // Every phase above pairs its own failure with a terminal event; this is for
-    // the throws that belong to none of them.
     const message = err instanceof Error ? err.message : String(err);
     log.error("Rollback failed unexpectedly:", message);
     rollbackLog(`[rollback] ERROR: ${message}`);

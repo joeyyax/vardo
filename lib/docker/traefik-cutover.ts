@@ -1,17 +1,5 @@
-// ---------------------------------------------------------------------------
-// Traefik cutover pin
-//
-// Traefik's Docker provider addresses a slot by container IP and only re-reads
-// the container list when it reconciles. A container that has already exited
-// keeps its place in the load balancer until then, and a request sent to a
-// departed IP hangs until the client gives up — it is never refused.
-//
-// This publishes a short-lived file-provider route that mirrors the app's
-// Docker routers, outranks them by one, and names the new slot's container
-// instead of an IP. Traffic leaves the old slot before it is stopped. The file
-// is removed once Traefik's Docker view no longer holds the old slot's
-// addresses, which hands routing back to the labels.
-// ---------------------------------------------------------------------------
+// Short-lived file-provider route pinning traffic to the new slot while the old one stops.
+// Traefik keeps routing to exited container IPs until it reconciles, and those requests hang.
 
 import { mkdir, rename, unlink, writeFile } from "fs/promises";
 import { join } from "path";
@@ -31,10 +19,6 @@ export const PIN_CONFIRM_TIMEOUT = 10_000;
 /** How long to wait for Traefik to drop the stopped slot before unpinning. */
 export const PIN_RELEASE_TIMEOUT = 20_000;
 const POLL_INTERVAL = 250;
-
-// ---------------------------------------------------------------------------
-// Planning (pure)
-// ---------------------------------------------------------------------------
 
 type Labels = Record<string, string>;
 
@@ -67,26 +51,19 @@ function splitList(value: string | undefined): string[] {
   return value.split(",").map((v) => v.trim()).filter(Boolean);
 }
 
-/**
- * Traefik defaults a router's priority to the length of its rule, so adding one
- * beats the Docker twin without reordering the router against anything else.
- */
+/** Traefik's default priority is the rule length; +1 beats the Docker twin only. */
 function pinPriority(opts: Labels, rule: string): number {
   const declared = Number(opts["priority"]);
   return (Number.isFinite(declared) && declared > 0 ? declared : rule.length) + 1;
 }
 
-/**
- * Mirror the app's Docker routing as a file-provider config aimed at the new
- * slot's containers. Returns null when nothing routable was found — an app with
- * no domains, or one that routes itself.
- */
+/** Mirror the app's Docker routers as file-provider config aimed at the new slot. Null if nothing routable. */
 export function planCutover(
   compose: ComposeFile,
   opts: {
     /** Compose project of the slot that must receive the traffic. */
     newProjectName: string;
-    /** Services that rotate. A shared service is never replaced, so never pinned. */
+    /** Services that rotate. Shared services are never pinned. */
     slotted: Record<string, ComposeService>;
   },
 ): CutoverPlan | null {
@@ -125,8 +102,7 @@ export function planCutover(
 
     const backend = declared.get(target);
     const port = backend?.opts["loadbalancer.server.port"];
-    // A router pointing at a service no service declares is left on the Docker
-    // provider, where it behaves exactly as it did before.
+    // Undeclared target services stay on the Docker provider.
     if (!backend || !port) continue;
 
     const pinName = `${target}-cutover`;
@@ -153,7 +129,7 @@ export function planCutover(
       rule,
       service: pinName,
       priority: pinPriority(router.opts, rule),
-      // Omitted rather than defaulted: no entrypoint label means every entrypoint.
+      // No entrypoint label means every entrypoint.
       ...(entryPoints.length > 0 ? { entryPoints } : {}),
       ...(middlewares.length > 0 ? { middlewares } : {}),
       ...(tls ? { tls } : {}),
@@ -186,15 +162,11 @@ export function pinIsLive(
   return names.every((name) => enabled.has(name));
 }
 
-// ---------------------------------------------------------------------------
-// File I/O
-// ---------------------------------------------------------------------------
-
 export function cutoverPinPath(appName: string, envName: string): string {
   return join(TRAEFIK_DYNAMIC_DIR, `cutover-${appName}-${envName}.yml`);
 }
 
-/** Missing or unwritable Traefik volume — nothing to route through, and not an error. */
+/** Missing or unwritable Traefik volume, which isn't an error. */
 function isMissingVolume(err: unknown): boolean {
   const code = err && typeof err === "object" && "code" in err ? err.code : null;
   return code === "ENOENT" || code === "EACCES" || code === "EROFS";
@@ -219,10 +191,6 @@ export async function clearCutoverPin(appName: string, envName: string): Promise
     if (!isMissingVolume(err)) throw err;
   }
 }
-
-// ---------------------------------------------------------------------------
-// Traefik + Docker reads
-// ---------------------------------------------------------------------------
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -252,12 +220,8 @@ async function projectIps(projectName: string): Promise<Set<string>> {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Guard
-// ---------------------------------------------------------------------------
-
 export type CutoverGuard = {
-  /** Whether Traefik confirmed the pin. False means the swap runs as it always did. */
+  /** Whether Traefik confirmed the pin. */
   pinned: boolean;
   /** Wait for Traefik to drop the stopped slot, then hand routing back to the labels. */
   release: () => Promise<void>;
@@ -266,13 +230,8 @@ export type CutoverGuard = {
 const NO_PIN: CutoverGuard = { pinned: false, release: async () => {} };
 
 /**
- * Route the app at the new slot only, and confirm Traefik is serving that route
- * before returning. Call immediately before the old slot is stopped, and
- * `release()` immediately after.
- *
- * Every failure path leaves the pin removed and the swap running exactly as it
- * did before, so a Traefik that never picks the file up costs a few seconds and
- * nothing else.
+ * Pin the app to the new slot and confirm Traefik serves it. Call right before stopping the old slot, `release()` after.
+ * Every failure path removes the pin.
  */
 export async function guardCutover(opts: {
   appName: string;

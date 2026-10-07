@@ -20,11 +20,7 @@ export async function environmentEnvContent(appId: string, environmentName: stri
   return env ? loadEnvironmentEnv(env.id) : null;
 }
 
-/**
- * Give a new environment of a standalone app its own env: the source
- * environment's when it has one, otherwise the app's, with production
- * hostnames rewritten to `domain`.
- */
+/** Seed a new environment's env from the source environment or the app, rewriting production hostnames to `domain`. */
 export async function snapshotIntoEnvironment(opts: {
   appId: string;
   organizationId: string;

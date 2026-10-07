@@ -1,11 +1,5 @@
-// ---------------------------------------------------------------------------
 // Deploy-time gate for major-locked images whose tag names no version.
-//
-// `postgres:latest` rolling 16 → 18 swaps the engine with nothing in the tag to
-// notice. The new container exits on its version check against the existing
-// data directory, so the deploy is stopped while the old slot is still serving
-// rather than after it has been replaced.
-// ---------------------------------------------------------------------------
+// Stops the deploy before the swap when a pull crossed a major.
 
 import { parseImageRef } from "./image-ref";
 import { isMajorLocked } from "./stateful-image";
@@ -21,11 +15,7 @@ export interface MajorGateCandidate {
   tag: string;
 }
 
-/**
- * Services whose data format is tied to a major and whose tag does not name
- * one. Covers `latest` and bare flavors like `alpine` alike — neither carries a
- * version to compare, which is the whole condition. Digest pins are immutable.
- */
+/** Major-locked services whose tag names no version (`latest`, `alpine`). Digest pins are skipped. */
 export function majorGateCandidates(
   services: { service: string | null; image: string | null | undefined }[],
 ): MajorGateCandidate[] {
@@ -46,12 +36,7 @@ export type MajorGateVerdict =
   | { kind: "unknown"; candidate: MajorGateCandidate; reason: string }
   | { kind: "changed"; candidate: MajorGateCandidate; from: number; to: number };
 
-/**
- * Compare the major read before the pull against the one read after.
- *
- * Either side missing is "cannot say", never "no change" — a gate that fires on
- * uncertainty is a gate people turn off.
- */
+/** Compare the major before and after the pull. Either side missing is "unknown", never "no change". */
 export function majorGateVerdict(
   candidate: MajorGateCandidate,
   before: ImageMajor | null,
@@ -105,10 +90,7 @@ function name(entry: { service: string | null; image: string }): string {
   return entry.service ? `${entry.service} (${entry.image})` : entry.image;
 }
 
-/**
- * The deploy log's account of the block. Says where the deploy stopped, what is
- * still serving, and what the new container would actually do.
- */
+/** Deploy log lines describing the block. */
 export function majorGateLogLines(appName: string, blocked: BlockedService[]): string[] {
   const lines: string[] = [];
   for (const entry of blocked) {
@@ -133,7 +115,7 @@ export function majorGateLogLines(appName: string, blocked: BlockedService[]): s
   return lines;
 }
 
-/** The deploy's failure message — the one the notification and the row carry. */
+/** The deploy's failure message. */
 export function majorGateBlockMessage(appName: string, blocked: BlockedService[]): string {
   const moves = blocked
     .map((entry) => `${name(entry)} moved from major ${entry.from} to ${entry.to}`)

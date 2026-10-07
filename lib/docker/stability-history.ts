@@ -1,10 +1,4 @@
-// ---------------------------------------------------------------------------
-// Durable stability history
-//
-// The half of the stability view that survives a deploy. Docker's restart
-// counter dies with the container it belongs to; these rows do not, because
-// they were written when the crash happened rather than counted afterwards.
-// ---------------------------------------------------------------------------
+// Stability history from activity and deployment rows, which survive container replacement.
 
 import { and, desc, eq, gte, inArray } from "drizzle-orm";
 
@@ -12,7 +6,7 @@ import { db } from "@/lib/db";
 import { activities, deployments } from "@/lib/db/schema";
 import { buildIncidents, STABILITY_ACTIONS, type Incident } from "@/lib/ui/stability";
 
-/** How far back the timeline reaches. Two trend windows, plus room to read one. */
+/** How far back the timeline reaches. */
 export const HISTORY_MS = 30 * 24 * 60 * 60 * 1000;
 
 const ROW_LIMIT = 200;

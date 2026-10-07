@@ -1,10 +1,4 @@
-// ---------------------------------------------------------------------------
-// Building the slot reclamation plan: which superseded generations would go.
-//
-// Selection is pure and separated from Docker, the database and the filesystem
-// so a dry run and a real run share it — the run executes exactly the plan it is
-// handed. Same split as `plan.ts`, and the result feeds the same executor.
-// ---------------------------------------------------------------------------
+// Builds the slot reclamation plan: which superseded generations would go. Selection is pure.
 
 import { readdir } from "fs/promises";
 import { isNull } from "drizzle-orm";
@@ -48,12 +42,7 @@ export interface SlotReclaimCandidate {
   images: PlannedSlotImage[];
   /** Upper bound: shared layers are counted once per image that references them. */
   estimatedBytes: number;
-  /**
-   * Set when this generation is an environment's standby. Taking it does not
-   * break rollback — the slot's compose files stay — but it turns an instant
-   * rollback into a rebuild, which is the one thing the plan otherwise does not
-   * say out loud. Advisory: it does not change what is taken.
-   */
+  /** Set when this generation is a standby; taking it turns instant rollback into a rebuild. Advisory. */
   rollbackTargetFor?: { appName: string; envName: string; liveSlot: Slot };
 }
 
@@ -81,12 +70,7 @@ export interface SlotPlanInput {
   now: Date;
 }
 
-/**
- * Sort locally built slot images into what would be removed and what would not,
- * with a reason for every refusal. Pure — the same input always yields the same
- * plan. Images compose did not build are not this sweep's business and are left
- * out of the plan entirely rather than reported as refusals.
- */
+/** Sort locally built slot images into removable and skipped. Pure; non-compose images are omitted. */
 export function selectSlotCandidates(input: SlotPlanInput): SlotReclaimPlan {
   const index = buildSlotIndex(input.environments);
   const appsByName = new Map(input.apps.map((a) => [a.name, a]));
@@ -131,8 +115,7 @@ export function selectSlotCandidates(input: SlotPlanInput): SlotReclaimPlan {
 
     let candidate = byProject.get(project);
     if (!candidate) {
-      // A slot generation only reaches here after decideSlotImage refused the
-      // live slot and the unreadable case, so anything left is the standby.
+      // Any slot generation reaching here is the standby.
       const liveSlot =
         generation.kind === "slot"
           ? currentByEnv.get(`${generation.appName}-${generation.envName}`) ?? null
@@ -173,12 +156,7 @@ export function selectSlotCandidates(input: SlotPlanInput): SlotReclaimPlan {
   };
 }
 
-/**
- * Every environment directory that holds blue-green slots, with the slot its
- * `current` symlink names. A directory whose symlink cannot be read is still
- * returned, with a null slot — dropping it would silently reclassify both its
- * slots as unaccounted-for projects.
- */
+/** Every environment directory with blue-green slots and its `current` slot. Unreadable symlinks stay, as null. */
 export async function readSlotEnvironments(): Promise<SlotEnvironment[]> {
   let appDirs: string[];
   try {

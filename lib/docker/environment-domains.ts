@@ -1,19 +1,10 @@
-// ---------------------------------------------------------------------------
-// Which hostnames a deploy routes.
-//
-// Domain rows belong to the app's default environment. Any other environment
-// routes exactly one hostname, its own `environment.domain`, and never a
-// production one.
-// ---------------------------------------------------------------------------
+// Which hostnames a deploy routes. Non-default environments route only their own `environment.domain`.
 
 import type { domains } from "@/lib/db/schema";
 
 export type DeployDomain = typeof domains.$inferSelect & { composeService?: string | null };
 
-/**
- * The domain list for a non-default environment: its own hostname, routed the
- * way the app's primary domain is (port, compose service, TLS), or nothing.
- */
+/** A non-default environment's own hostname, routed like the app's primary domain. */
 export function environmentDomains(
   appDomains: DeployDomain[],
   env: { id: string | null; domain: string | null },

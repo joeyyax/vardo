@@ -1,19 +1,11 @@
-// ---------------------------------------------------------------------------
-// Which slot directory an already-deployed app is currently served from.
-//
-// deploy.ts still carries a private copy for stop/restart; fold it into this
-// one when touching that file next.
-// ---------------------------------------------------------------------------
+// Which slot directory an already-deployed app is served from.
 
 import { access, readlink, rename, rm, symlink } from "fs/promises";
 import { join } from "path";
 
 import { detectActiveSlot } from "./slots";
 
-/**
- * Slot directory and compose project name for the running deployment.
- * Local environments use a single `local/` directory with no slot suffix.
- */
+/** Slot directory and compose project for the running deployment. Local environments use `local/` with no slot suffix. */
 export async function resolveActiveSlot(
   dir: string,
   projectPrefix: string,
@@ -27,12 +19,10 @@ export async function resolveActiveSlot(
       return { slotDir: join(dir, "local"), composeProject: projectPrefix };
     }
   } catch {
-    // No local/ directory — standard blue-green.
+    // Blue-green.
   }
 
-  // Same resolution as the deploy path: symlink → running slot → legacy file.
-  // Falls back to blue when nothing is detectable, which leaves the caller
-  // driving a project that does not exist.
+  // Blue when nothing is detectable.
   const activeSlot = (await detectActiveSlot(dir, projectPrefix)) ?? "blue";
 
   return {

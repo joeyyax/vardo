@@ -1,12 +1,7 @@
 import YAML from "yaml";
 import { parseImageRef, withTag } from "./image-ref";
 
-/**
- * Rewrites one service's image tag in place.
- *
- * Edits the YAML document rather than re-serializing a parsed model, so
- * comments, ordering and formatting survive and no other service moves.
- */
+/** Rewrites one service's image tag in place, preserving the rest of the YAML. */
 export function setServiceImageTag(
   yamlContent: string,
   service: string,

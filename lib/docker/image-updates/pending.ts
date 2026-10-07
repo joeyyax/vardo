@@ -17,10 +17,7 @@ function splitForDisplay(image: string): { repo: string; tag: string } {
     : { repo: image, tag: "latest" };
 }
 
-/**
- * The compose pin against the image the last deploy ran. Null when they agree
- * or the pin is unusable.
- */
+/** The compose pin vs. the last deployed image. Null when they agree or the pin is unusable. */
 export function pendingImageChange(
   deployed: string | null | undefined,
   pinned: string | null | undefined,

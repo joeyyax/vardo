@@ -1,10 +1,4 @@
-// ---------------------------------------------------------------------------
-// Start / restart an app, shared by the HTTP route and the MCP tool.
-//
-// `stopProject` runs `compose down`, which removes the containers, so a running
-// app and a stopped one need different compose commands. Both callers come
-// through here so the two cannot drift apart again.
-// ---------------------------------------------------------------------------
+// Start or restart an app, shared by the HTTP route and the MCP tool.
 
 import { access } from "fs/promises";
 import { and, eq } from "drizzle-orm";
@@ -55,12 +49,7 @@ function wasOff(status: string): boolean {
   return status === "stopped" || status === "missing";
 }
 
-/**
- * Bring the deployed slot back up without rebuilding it.
- *
- * `--no-recreate` leaves anything already running alone, so starting one
- * service of a half-up stack touches only what is down.
- */
+/** Bring the deployed slot back up without rebuilding; `--no-recreate` leaves running services alone. */
 async function upActiveSlot(
   appName: string,
   envName: string,
@@ -71,7 +60,6 @@ async function upActiveSlot(
     const dir = appEnvDir(appName, envName);
     const { slotDir, composeProject } = await resolveActiveSlot(dir, `${appName}-${envName}`);
 
-    // Nothing was ever written here, so there is nothing to bring up.
     try {
       await access(slotDir);
     } catch {
@@ -104,16 +92,14 @@ async function upActiveSlot(
     };
 
     if (service) {
-      // A shared service runs in its own project; the slot project's `up` would
-      // start a second copy of it.
+      // Shared services run in their own project; the slot project would start a second copy.
       const shared = partition !== null && service in partition.shared;
       await up(
         shared ? sharedProjectName(appName, envName, partition.composeName) : composeProject,
         shared ? ["--no-deps", service] : [service],
       );
     } else if (partition) {
-      // The same split the deploy made. Shared first, so a database is
-      // answering before anything that depends on it comes up.
+      // Shared first, so databases are up before their dependents.
       await up(sharedProjectName(appName, envName, partition.composeName), sharedScopeArgs(partition));
       await up(composeProject, slotScopeArgs(partition));
     } else {
@@ -128,11 +114,8 @@ async function upActiveSlot(
 }
 
 /**
- * Restart a running app in place, or bring a stopped one back up from the slot
- * already on disk. Records the lifecycle row for whichever it turned out to be.
- *
- * `compose restart` exits 0 against a project whose containers were removed and
- * starts nothing, so a stopped app must be brought up instead.
+ * Restart a running app in place, or bring a stopped one up from its slot, and record the lifecycle row.
+ * `compose restart` exits 0 and starts nothing once `compose down` removed the containers.
  */
 export async function startOrRestartApp(opts: {
   organizationId: string;
@@ -142,8 +125,7 @@ export async function startOrRestartApp(opts: {
 }): Promise<StartResult> {
   const { app, organizationId } = opts;
 
-  // A compose child has no project of its own — the parent owns it, and the
-  // child is one service inside it.
+  // A compose child is one service in its parent's project.
   let ownerId = app.id;
   let project = app.name;
   let service: string | undefined;
@@ -165,8 +147,7 @@ export async function startOrRestartApp(opts: {
     service = app.composeService;
   }
 
-  // Slot directories and compose projects are environment-scoped; without the
-  // name this resolves to the legacy layout and finds nothing.
+  // Slot directories and compose projects are environment-scoped.
   const env = await resolveDefaultEnv(ownerId);
 
   const off = wasOff(app.status);
@@ -183,15 +164,13 @@ export async function startOrRestartApp(opts: {
     return { success: false, action: "none", failure: result.failure, log: result.log };
   }
 
-  // Asking for it to run is the opposite of shelving it. Cleared on the owner,
-  // so restarting one service unparks the stack it belongs to.
+  // Unpark the owner, so restarting one service unparks its stack.
   await setParked(ownerId, false);
 
-  // The containers are new; the row still describes the ones they replaced.
+  // Refresh the row for the new containers.
   const observed = await reconcileAppNow(app.id);
 
-  // Compose can exit clean having brought nothing up, so a start only counts
-  // once Docker agrees it is running.
+  // Compose can exit clean having started nothing; a start counts only once Docker reports it running.
   if (off && observed !== null && observed !== "active") {
     return {
       success: false,

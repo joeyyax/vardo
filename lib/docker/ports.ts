@@ -6,9 +6,7 @@ const execAsync = promisify(exec);
 const PORT_RANGE_START = 32768;
 const PORT_RANGE_END = 60999;
 
-/**
- * Get all host ports currently in use by Docker containers.
- */
+/** Host ports in use by Docker containers. */
 async function getUsedPorts(): Promise<Set<number>> {
   const used = new Set<number>();
   try {
@@ -24,9 +22,7 @@ async function getUsedPorts(): Promise<Set<number>> {
   return used;
 }
 
-/**
- * Allocate a random high port that isn't in use.
- */
+/** Allocate a random free high port. */
 export async function allocatePort(): Promise<number> {
   const used = await getUsedPorts();
   const range = PORT_RANGE_END - PORT_RANGE_START;
@@ -39,9 +35,7 @@ export async function allocatePort(): Promise<number> {
   throw new Error("Could not allocate a free port");
 }
 
-/**
- * Allocate multiple ports at once, ensuring no conflicts.
- */
+/** Allocate `count` distinct free high ports. */
 export async function allocatePorts(count: number): Promise<number[]> {
   const used = await getUsedPorts();
   const allocated: number[] = [];

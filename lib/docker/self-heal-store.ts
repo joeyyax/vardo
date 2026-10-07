@@ -25,11 +25,7 @@ function windowStart(now: number): number {
   return now - RESTART_WINDOW_MS;
 }
 
-/**
- * Load the window's persisted state into memory. Runs once per process; later
- * reads are served from the mirror. Throws so the caller can skip the tick
- * rather than act on an empty budget.
- */
+/** Load the window's persisted state into memory once per process. Throws so the caller skips the tick. */
 export async function hydrateSelfHealState(now: number): Promise<void> {
   if (hydrated) return;
 
@@ -101,11 +97,7 @@ async function persist(containerId: string, entry: Entry, now: number): Promise<
     });
 }
 
-/**
- * Spend one restart from the container's budget. Returns the windowed history
- * including this restart. Write failures are logged, not thrown; the mirror
- * still holds the cap for this process.
- */
+/** Spend one restart from the container's budget and return the windowed history. Write failures are logged. */
 export async function recordRestart(
   appId: string,
   containerId: string,
@@ -138,8 +130,7 @@ export async function recordGaveUp(
   }
 }
 
-/** Clear the give-up marker after the container reads healthy. No-op, and no
- *  query, when there is nothing to clear. Leaves the restart history alone. */
+/** Clear the give-up marker after the container reads healthy. Leaves restart history alone. */
 export async function clearGaveUp(containerId: string, now: number): Promise<void> {
   const entry = cache.get(containerId);
   if (!entry || entry.gaveUpAt === null) return;
@@ -152,9 +143,7 @@ export async function clearGaveUp(containerId: string, now: number): Promise<voi
   }
 }
 
-/** Drop rows and mirror entries that fell out of the window. Runs at most once
- *  per window, and always on the first tick to sweep what the previous process
- *  left behind. */
+/** Drop rows and mirror entries outside the window. Runs on the first tick, then at most once per window. */
 export async function pruneSelfHealState(now: number): Promise<void> {
   if (now - lastPrunedAt < RESTART_WINDOW_MS) return;
   lastPrunedAt = now;
@@ -175,8 +164,7 @@ export async function pruneSelfHealState(now: number): Promise<void> {
   }
 }
 
-/** Drop the in-memory mirror, exactly as a process restart does. The next
- *  hydrate reloads it from the database. */
+/** Drop the in-memory mirror as a process restart does. */
 export function resetSelfHealCache(): void {
   cache.clear();
   hydrated = false;

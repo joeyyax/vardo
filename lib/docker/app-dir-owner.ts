@@ -1,14 +1,5 @@
-// ---------------------------------------------------------------------------
-// App directory ownership guard.
-//
-// `$VARDO_HOME/apps/<name>` is derived from the app name, which is unique only
-// per organization — two orgs can resolve to the same directory. Anything that
-// tears down containers, removes volumes, or deletes files under a name-derived
-// path must call assertAppDirOwnership first.
-//
-// WARNING: adding another destructive path-based operation without this check
-// re-opens cross-organization deletion.
-// ---------------------------------------------------------------------------
+// App directory ownership guard. App names are unique only per org, so two orgs can share a directory.
+// Every destructive name-derived path operation must call assertAppDirOwnership first.
 
 import { access, readdir, rm } from "fs/promises";
 import { constants } from "fs";
@@ -66,15 +57,7 @@ async function claimants(appName: string): Promise<string[]> {
 
 /**
  * Refuse a destructive operation unless `appId` owns the app directory.
- *
- * - record matches → allowed
- * - record names another app, or cannot be read → refused
- * - no directory → allowed, nothing to destroy
- * - directory with no record → adopted only when exactly one app in the
- *   database claims the name, then stamped
- *
- * Vardo's own directory is exempt: install.sh creates it and the running
- * process deploys it, so its marker can never be authoritative.
+ * An unmarked directory is adopted only when exactly one app claims the name; Vardo's own is exempt.
  */
 export async function assertAppDirOwnership(opts: {
   appId: string;
@@ -156,19 +139,8 @@ async function removeAllExcept(dir: string, keep: string[]): Promise<void> {
 }
 
 /**
- * Remove an app's base directory and drop its ownership record.
- *
- * Nothing here throws. A refusal and an unremovable directory both come back as
- * `removed: false` with a reason — Vardo runs unprivileged and many app
- * directories are owned by another uid, so a surviving directory must not fail
- * an otherwise complete delete. Both delete paths assert ownership themselves
- * before reaching this, so the check below is the second line, not the first.
- *
- * The record is dropped either way. It names an app that no longer exists, and
- * keeping it would refuse every later use of the name.
- *
- * Call before the app row is deleted — the guard adopts an unmarked directory by
- * resolving the name against the database.
+ * Remove an app's base directory and drop its ownership record. Never throws.
+ * Call before the app row is deleted; adoption resolves the name against the database.
  */
 export async function removeAppDir(opts: {
   appId: string;
@@ -215,12 +187,7 @@ export async function removeAppDir(opts: {
   return removed ? { removed } : { removed, reason };
 }
 
-/**
- * Stamp ownership on the app base directory containing `dir`, when the database
- * names exactly one app. Best effort — callers create directories regardless.
- *
- * An ambiguous name is left unmarked so the destructive guard refuses instead.
- */
+/** Stamp ownership on the app directory containing `dir` when exactly one app claims the name. */
 export async function stampAppDirOwner(dir: string): Promise<void> {
   const appName = appNameFromPath(dir);
   if (!appName || isSelfApp(appName)) return;
@@ -233,19 +200,11 @@ export async function stampAppDirOwner(dir: string): Promise<void> {
   await writeAppDirOwner(appName, ids[0]);
 }
 
-// ---------------------------------------------------------------------------
-// Fleet-wide stamping pass
-//
-// Records an owner for every app directory and reports coverage. Adoption
-// resolves a name against the database, so it only works while top-level names
-// are unique.
-// ---------------------------------------------------------------------------
-
-/** Why a directory could not be given an owner. Each needs a hand to resolve. */
+/** Why a directory could not be given an owner. */
 export type AppDirOwnerGapReason =
   /** Ownership record present but unparseable. */
   | "unreadable"
-  /** No app in the database claims the name — an orphaned directory on disk. */
+  /** No app in the database claims the name. */
   | "orphaned"
   /** More than one app claims the name. */
   | "ambiguous"
@@ -272,7 +231,7 @@ export type AppDirOwnerReport = {
   exempt: number;
   /** Directories left without an owner, each named with its reason. */
   gaps: AppDirOwnerGap[];
-  /** Owned via the registry alone — the directory is not writable, so it carries no marker. */
+  /** Owned via the registry alone; the directory isn't writable. */
   unmirrored: string[];
   /** Registry records dropped because the directory is gone. */
   pruned: number;
@@ -303,10 +262,7 @@ async function tryMirror(appName: string, appId: string, dryRun: boolean): Promi
   return mirrorAppDirOwner(appName, appId);
 }
 
-/**
- * Directory names directly under PROJECTS_DIR. Empty on a fresh install.
- * Symlinks are included so a linked app directory is never silently skipped.
- */
+/** Directory and symlink names directly under PROJECTS_DIR. */
 async function appDirNames(): Promise<string[]> {
   try {
     const entries = await readdir(PROJECTS_DIR, { withFileTypes: true });
@@ -321,11 +277,8 @@ async function appDirNames(): Promise<string[]> {
 }
 
 /**
- * Drop registry records for directories that are gone, so a name reused later
- * cannot inherit a stale claim.
- *
- * Skipped when the apps directory reads empty — an unmounted volume looks the
- * same and would wipe every record.
+ * Drop registry records for directories that are gone.
+ * Skipped when the apps directory reads empty: an unmounted volume looks the same and would wipe every record.
  */
 async function pruneRegistry(present: string[], dryRun: boolean): Promise<number> {
   if (present.length === 0) return 0;
@@ -335,12 +288,7 @@ async function pruneRegistry(present: string[], dryRun: boolean): Promise<number
   return stale.length;
 }
 
-/**
- * Record an owner for every unclaimed app directory.
- *
- * `dryRun` surveys without writing. `total` always equals
- * `stamped + alreadyOwned + exempt + gaps.length`.
- */
+/** Record an owner for every unclaimed app directory. `dryRun` surveys without writing. */
 export async function stampAllAppDirOwners(
   opts: { dryRun?: boolean } = {},
 ): Promise<AppDirOwnerReport> {
@@ -415,7 +363,7 @@ export async function stampAllAppDirOwners(
   return report;
 }
 
-/** One-line coverage summary — the number that gates dropping the name index. */
+/** One-line coverage summary. */
 export function summarizeAppDirOwners(report: AppDirOwnerReport): string {
   const owned = report.stamped + report.alreadyOwned;
   const noun = report.total === 1 ? "directory" : "directories";
@@ -466,10 +414,7 @@ export function describeAppDirOwnerGaps(report: AppDirOwnerReport): string[] {
   );
 }
 
-/**
- * Startup pass. Idempotent and near-free once complete — unclaimed directories
- * are the only ones that reach the database.
- */
+/** Startup stamping pass. Idempotent. */
 export async function stampAppDirOwnersAtStartup(): Promise<void> {
   const report = await stampAllAppDirOwners();
   if (report.total === 0) return;

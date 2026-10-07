@@ -1,14 +1,4 @@
-// ---------------------------------------------------------------------------
-// An OOM kill inside a deploy window
-//
-// An old slot exiting during a cutover is what teardown looks like, so a kill
-// that lands on it reads as routine and the deploy still reports success. The
-// status reconciler cannot catch it either: it explains apps that end up down,
-// and this one ends up healthy on the new slot.
-//
-// Not the same shape as `deployment.post_deploy_error` — everything the deploy
-// asked for finished. The deploy is only the witness.
-// ---------------------------------------------------------------------------
+// Reports OOM kills that land inside a deploy window, which otherwise read as routine slot teardown.
 
 import { logger } from "@/lib/logger";
 import { listAllContainers, inspectContainer } from "./client";
@@ -23,10 +13,7 @@ export type OomSubject = {
   appName: string;
 };
 
-/**
- * OOM kills among these containers that landed inside the window. A container
- * that was already dead before the deploy started has answered elsewhere.
- */
+/** OOM kills among these containers that landed inside the window. */
 export function oomKillsInWindow(
   states: TerminalState[],
   since: Date,
@@ -39,7 +26,7 @@ export function oomKillsInWindow(
   });
 }
 
-/** How every container in a compose project ended. Running ones have not. */
+/** Terminal state of every stopped container in a compose project. */
 async function terminalStates(projectName: string): Promise<TerminalState[]> {
   const containers = (await listAllContainers()).filter(
     (c) => c.labels["com.docker.compose.project"] === projectName && c.state !== "running",
@@ -58,16 +45,13 @@ async function terminalStates(projectName: string): Promise<TerminalState[]> {
         finishedAt: info.state.finishedAt,
       });
     } catch {
-      // Container went away between list and inspect — nothing left to explain.
+      // Gone between list and inspect.
     }
   }
   return states;
 }
 
-/**
- * Report any OOM kill among a compose project's containers since `since`.
- * Never throws — the deploy that noticed it has already succeeded.
- */
+/** Report any OOM kill among a compose project's containers since `since`. Never throws. */
 export async function reportOomDuringDeploy(
   subject: OomSubject,
   projectName: string,

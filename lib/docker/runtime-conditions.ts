@@ -1,9 +1,6 @@
 import type { AppCondition, ConditionKind } from "./conditions";
 
-/**
- * Conditions that describe a running container. Nothing observes them once the
- * container is gone, so they cannot be true of an app that has none.
- */
+/** Conditions that only describe a running container. */
 const RUNTIME_KINDS = new Set<ConditionKind>([
   "crash-looping",
   "unhealthy",
@@ -11,14 +8,7 @@ const RUNTIME_KINDS = new Set<ConditionKind>([
   "memory-pressure",
 ]);
 
-/**
- * Conditions still worth stating for an app with no containers.
- *
- * The health tick only evaluates apps it saw containers for, so a stopped app
- * keeps whatever was last written — an app showing "0/4 services" was also
- * reporting a crash loop from ten hours earlier. Advisory conditions survive:
- * a missing backup or an expiring certificate is no less true while stopped.
- */
+/** Conditions still worth stating for an app with no containers: advisory ones only. */
 export function withoutRuntimeConditions(
   conditions: AppCondition[] | null,
 ): AppCondition[] {

@@ -1,23 +1,8 @@
-// ---------------------------------------------------------------------------
-// cgroup OOM counters
-//
-// Docker clears State.OOMKilled when a container starts, so every kill on a
-// container that came back is invisible — the reconciler can only read the flag
-// on one that is still stopped. The cgroup counter is cumulative and never
-// cleared, which makes it the only complete signal.
-//
-// On this host there is no second source: inside an LXC the kernel ring buffer
-// belongs to the Proxmox host, so dmesg and journalctl -k carry no OOM lines at
-// all. Docker's stats API reports memory.stat, which does not carry the counter.
-// ---------------------------------------------------------------------------
+// cgroup OOM counters. Docker clears State.OOMKilled on start; the cgroup counter is cumulative.
 
 import { readFile } from "node:fs/promises";
 
-/**
- * Host cgroup root, mounted read-only. Matches the /host-proc mount the GPU
- * collector reads. The container's own /sys/fs/cgroup is namespaced to itself
- * and always reads zero, so it cannot stand in for this.
- */
+/** Host cgroup root, mounted read-only. The container's own /sys/fs/cgroup always reads zero. */
 export const HOST_CGROUP = process.env.HOST_CGROUP_PATH || "/host-cgroup";
 
 /** Where the systemd cgroup driver puts container scopes. */
@@ -36,11 +21,7 @@ export function parseOomKill(content: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-/**
- * Cumulative kills for one cgroup and everything under it. Null when the mount
- * is absent or the cgroup is gone — a host Vardo cannot read must not report
- * zero kills, which reads as "all clear".
- */
+/** Cumulative kills for one cgroup subtree. Null, never zero, when unreadable. */
 export async function readOomKills(
   cgroupPath: string,
   root: string = HOST_CGROUP,
@@ -52,19 +33,12 @@ export async function readOomKills(
   }
 }
 
-/**
- * Kills across every container on the host. memory.events counts the whole
- * subtree, so the slice total holds kills whose own cgroup died with its
- * container — the 164-of-165 the per-container files can no longer account for.
- */
+/** Kills across every container on the host, including containers since removed. */
 export function readFleetOomKills(root?: string): Promise<number | null> {
   return readOomKills(CONTAINER_SLICE, root);
 }
 
-/**
- * Kills inside one container since it started. The scope cgroup is created with
- * the container, so this counts the current life only and resets on recreate.
- */
+/** Kills inside one container since it was created. */
 export function readContainerOomKills(
   containerId: string,
   root?: string,

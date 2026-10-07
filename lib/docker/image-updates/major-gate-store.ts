@@ -1,16 +1,10 @@
-// ---------------------------------------------------------------------------
-// Where a stopped deploy's major change is kept until someone resolves it.
-//
-// A toast dies with the tab and the deploy log scrolls away, so the block
-// outlives both: the app's updates panel reads it back and opens the migration
-// dialog on it. Cleared by the next successful deploy of the same app.
-// ---------------------------------------------------------------------------
+// Stores a major-gate block until resolved. Cleared by the app's next successful deploy.
 
 import { redis } from "@/lib/redis";
 import type { MajorGateBlock } from "./major-gate";
 
 const KEY_PREFIX = "image-updates:major-gate:";
-/** Long enough to survive a weekend and a restart; the deploy clears it sooner. */
+/** Thirty days. */
 const TTL_SECONDS = 30 * 24 * 60 * 60;
 
 function key(appId: string): string {
@@ -21,7 +15,7 @@ export async function writeMajorGateBlock(block: MajorGateBlock): Promise<void> 
   try {
     await redis.set(key(block.appId), JSON.stringify(block), "EX", TTL_SECONDS);
   } catch {
-    // The block is a convenience surface; the deploy already failed loudly.
+    // Best effort; the deploy already failed.
   }
 }
 

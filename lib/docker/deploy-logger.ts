@@ -1,10 +1,4 @@
-// ---------------------------------------------------------------------------
-// Deploy logger — writes deploy events to Redis Streams
-//
-// Replaces the inline log() and stage() functions in runDeployment.
-// Each deploy gets its own stream (stream:deploy:{deployId}) that serves
-// as the single source of truth for both live tailing and history.
-// ---------------------------------------------------------------------------
+// Writes deploy events to a per-deploy Redis stream (stream:deploy:{deployId}), read by live tailing and history.
 
 import { addDeployLog } from "@/lib/stream/producer";
 import { logger } from "@/lib/logger";
@@ -12,10 +6,7 @@ import { redactSecrets } from "@/lib/redact";
 
 const log = logger.child("deploy-logger");
 
-/**
- * Re-use the stage type from deploy.ts to avoid drift.
- * Extended with "queued" for the pre-start state.
- */
+/** Deploy stages, including "queued" before start. */
 export type DeployStage =
   | "queued"
   | "clone"
@@ -40,10 +31,7 @@ export const DEPLOY_STAGE_ORDER: DeployStage[] = [
   "done",
 ];
 
-/**
- * Phases of an auto-rollback, named for the steps performRollback runs.
- * A rollback restores an already-built slot, so it shares no phase with a deploy.
- */
+/** Phases of an auto-rollback, named for the steps performRollback runs. */
 export type RollbackStage = "stop" | "restore" | "route" | "verify" | "done";
 
 /** Any phase that can appear on a deploy stream. */
@@ -51,10 +39,7 @@ export type StreamStage = DeployStage | RollbackStage;
 
 export type DeployStatus = "running" | "success" | "failed" | "skipped" | "cancelled";
 
-/**
- * Whether a stage event ends the deploy, and with it the stream.
- * Success is terminal only on `done` — every stage reports success of its own.
- */
+/** Whether a stage event ends the deploy stream. Success is terminal only on `done`. */
 export function isTerminalStageEvent(stage?: string, status?: string): boolean {
   if (status === "failed" || status === "cancelled") return true;
   return stage === "done" && status === "success";
@@ -74,21 +59,12 @@ function sanitize(line: string): string {
   return result;
 }
 
-/**
- * Create a deploy logger bound to a specific deployment.
- *
- * Returns `log()` and `stage()` functions that write to the deploy's
- * Redis Stream. The stream serves as the single source of truth —
- * live SSE consumers and history views both read from it.
- */
+/** Create `log()` and `stage()` writers bound to a deployment's stream. */
 export function createDeployLogger(deployId: string) {
   let currentStage: StreamStage = "queued";
   let lastWrite: Promise<string> = Promise.resolve("");
 
-  /**
-   * Log a deploy message. Sanitizes secrets and writes to the stream.
-   * Returns the sanitized line (for backward compatibility with logLines[]).
-   */
+  /** Sanitize a line, write it to the stream and return it. */
   function logLine(line: string): string {
     const sanitized = sanitize(line);
 
@@ -103,14 +79,7 @@ export function createDeployLogger(deployId: string) {
     return sanitized;
   }
 
-  /**
-   * Record a stage transition. Writes to the stream with the stage/status
-   * so the frontend can render progress indicators.
-   *
-   * Terminal states (success, failed, cancelled) are awaited to ensure
-   * the SSE endpoint sees the "done" event before the connection closes.
-   * Non-terminal states are fire-and-forget.
-   */
+  /** Record a stage transition. Terminal writes are kept on `lastWrite` for `flush()`; others are fire-and-forget. */
   function setStage(stage: StreamStage, status: DeployStatus): void {
     currentStage = stage;
 
@@ -126,17 +95,15 @@ export function createDeployLogger(deployId: string) {
         log.error(`Failed to write stage for ${deployId}:`, err);
       });
     }
-    // Terminal writes: the returned promise is available on `lastWrite`
-    // so callers can await it if needed
     lastWrite = isTerminal ? write : lastWrite;
   }
 
-  /** Get the current stage (for error handler context). */
+  /** Current stage, for error context. */
   function getStage(): StreamStage {
     return currentStage;
   }
 
-  /** Await the last terminal write to ensure SSE consumers see the done event. */
+  /** Await the last terminal write so SSE consumers see the done event. */
   async function flush(): Promise<void> {
     try { await lastWrite; } catch { /* already logged */ }
   }

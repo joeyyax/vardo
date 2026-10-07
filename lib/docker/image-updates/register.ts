@@ -3,7 +3,7 @@ import { logger } from "@/lib/logger";
 
 const log = logger.child("image-updates");
 
-/** Slow enough that a full 82-image fleet still lands well inside the pull budget. */
+/** Paced to stay inside the registry pull budget. */
 const SWEEP_INTERVAL_MS = 15 * 60 * 1000;
 const PRUNE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const STARTUP_DELAY_MS = 60 * 1000;

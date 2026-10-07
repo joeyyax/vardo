@@ -1,12 +1,5 @@
-// ---------------------------------------------------------------------------
 // Registry authentication for image pulls.
-//
-// Vardo's own container holds no Docker credentials, so `docker compose pull`
-// authenticates as nobody. The configured credentials are handed to the pull
-// through a throwaway DOCKER_CONFIG directory: never on argv, which `ps` shows
-// to every user on the host, and never in the shared ~/.docker/config.json,
-// which concurrent deploys would race over.
-// ---------------------------------------------------------------------------
+// Credentials go through a throwaway DOCKER_CONFIG: never on argv (visible in `ps`) or the shared config.json.
 
 import { mkdtemp, readFile, rm, writeFile } from "fs/promises";
 import { homedir, tmpdir } from "os";
@@ -59,11 +52,7 @@ export function buildDockerConfig(
   return JSON.stringify({ auths });
 }
 
-/**
- * Runs `run` against a Docker config carrying the configured registry logins,
- * removed once it returns. Hands the ambient environment straight through when
- * no credentials are configured.
- */
+/** Runs `run` against a temporary Docker config carrying the configured registry logins. */
 export async function withRegistryAuth<T>(
   run: (env: NodeJS.ProcessEnv) => Promise<T>,
 ): Promise<T> {
@@ -80,10 +69,7 @@ export async function withRegistryAuth<T>(
   }
 }
 
-/**
- * Names the registries a failed pull had no credentials for. Null when the
- * failure was not an authentication one, or every registry involved is covered.
- */
+/** Names the registries a failed auth pull had no credentials for, or null. */
 export async function registryAuthHint(
   message: string,
   images: (string | undefined)[],

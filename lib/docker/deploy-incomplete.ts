@@ -1,14 +1,4 @@
-// ---------------------------------------------------------------------------
-// Post-deploy work that did not finish
-//
-// The third terminal state: the deploy cut over, recorded success and is
-// serving, but something behind it — a hook, a notification, the old slot's
-// stop — did not complete. The row keeps `status: "success"` so it stays the
-// live release and a valid rollback target, and carries what was left undone.
-//
-// Never cleared. The field is what that deploy left behind; the next deploy
-// writes its own row, clean.
-// ---------------------------------------------------------------------------
+// Post-deploy work that didn't finish. The row keeps `status: "success"` so it stays a valid rollback target.
 
 import { db } from "@/lib/db";
 import { deployments } from "@/lib/db/schema";
@@ -16,10 +6,7 @@ import { eq, sql } from "drizzle-orm";
 import { recordActivity } from "@/lib/activity";
 import type { DeployContext } from "./deploy-context";
 
-/**
- * Record unfinished post-deploy work against a deploy that already succeeded.
- * Never throws — the release is live either way.
- */
+/** Record unfinished post-deploy work against a successful deploy. Never throws. */
 export async function recordPostDeployIncomplete(
   ctx: DeployContext,
   reason: string,
@@ -30,13 +17,13 @@ export async function recordPostDeployIncomplete(
     await db
       .update(deployments)
       .set({
-        // Appended: one deploy can leave more than one thing undone.
+        // Appended; one deploy can leave several things undone.
         postDeployError: sql`concat_ws(chr(10), ${deployments.postDeployError}, ${reason})`,
         log: ctx.logLines.join("\n"),
       })
       .where(eq(deployments.id, ctx.deploymentId));
   } catch {
-    // Best effort — the log line above still carries it.
+    // Best effort.
   }
 
   const projectName = ctx.app.displayName || ctx.app.name;

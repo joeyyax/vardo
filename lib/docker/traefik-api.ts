@@ -1,9 +1,4 @@
-// ---------------------------------------------------------------------------
-// Traefik admin API reads
-//
-// Traefik's own view of its routers and services, the live container addresses
-// it is meant to match, and the parsing that turns both into comparable shapes.
-// ---------------------------------------------------------------------------
+// Traefik admin API reads and the live container addresses they're compared against.
 
 import { dockerRequest, listAllContainers } from "./client";
 import { logger } from "@/lib/logger";
@@ -13,10 +8,6 @@ const log = logger.child("traefik-api");
 function apiUrl(): string {
   return process.env.TRAEFIK_API_URL ?? "http://vardo-traefik:8080";
 }
-
-// ---------------------------------------------------------------------------
-// Traefik reads
-// ---------------------------------------------------------------------------
 
 export type TraefikBackend = { service: string; url: string; ip: string };
 
@@ -33,7 +24,7 @@ export type TraefikRouter = { name?: string; status?: string; provider?: string 
 async function fetchTraefik<T>(path: string): Promise<T[] | null> {
   try {
     const res = await fetch(`${apiUrl()}${path}`, {
-      // Next patches global fetch; a cached routing table would defeat the check.
+      // Next patches global fetch; never cache the routing table.
       cache: "no-store",
       signal: AbortSignal.timeout(5_000),
     });
@@ -70,11 +61,7 @@ export function backendIp(url: string): string | null {
   return isV4 || isV6 ? bare : null;
 }
 
-/**
- * Docker-provider backends pointing at an IP address. Hostname backends resolve
- * through Docker's DNS at request time, so they can't drift the same way and are
- * left out of the comparison.
- */
+/** Docker-provider backends addressed by IP. Hostname backends can't drift and are skipped. */
 export function collectDockerBackends(services: TraefikService[]): TraefikBackend[] {
   const out: TraefikBackend[] = [];
   for (const svc of services) {
@@ -87,10 +74,6 @@ export function collectDockerBackends(services: TraefikService[]): TraefikBacken
   }
   return out;
 }
-
-// ---------------------------------------------------------------------------
-// Docker reads
-// ---------------------------------------------------------------------------
 
 type ContainerListEntry = {
   Names?: string[];

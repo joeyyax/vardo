@@ -56,12 +56,9 @@ export type DeployOpts = {
   onLog?: (line: string) => void;
   onStage?: (stage: DeployStage, status: "running" | "success" | "failed" | "skipped") => void;
   signal?: AbortSignal;
-  /** Pre-created deployment record ID — if provided, skips createDeployment. */
+  /** Pre-created deployment record; skips createDeployment. */
   deploymentId?: string;
-  /**
-   * Roll back to a previous deployment: its git SHA, config snapshot and
-   * (optionally) env snapshot drive this deploy instead of the app's current row.
-   */
+  /** Redeploy a previous deployment's git SHA, config snapshot and optionally env snapshot. */
   rollback?: { targetDeploymentId: string; includeEnvVars?: boolean };
 };
 
@@ -70,7 +67,7 @@ export type DeployResult = {
   success: boolean;
   log: string;
   durationMs: number;
-  /** Terminal state of the run — distinguishes a failure from a cancel or a supersede. */
+  /** Terminal state of the run. */
   status: "success" | "failed" | "cancelled" | "superseded";
   /** Failure message, set only when status is "failed". */
   error?: string;
@@ -121,12 +118,11 @@ export async function runDeployment(
   deploymentId: string,
   opts: DeployOpts
 ): Promise<DeployResult> {
-  // Execution clock, and the source of durationMs. The row was inserted earlier
-  // by createDeployment, so everything before this point is queue wait.
+  // Execution clock for durationMs. Time before this is queue wait.
   const startTime = Date.now();
   const logLines: string[] = [];
 
-  // Stream logger — writes to Redis Stream (persistent, replayable)
+  // Redis Stream logger (persistent, replayable).
   const streamLogger = createDeployLogger(deploymentId);
 
   function log(line: string) {
@@ -139,7 +135,7 @@ export async function runDeployment(
   // Serialized so a slow write can't land after a later one and shorten the log.
   let logFlush: Promise<unknown> = Promise.resolve();
 
-  /** Persist the log so far. A process that dies mid-deploy keeps everything up to the last stage. */
+  /** Persist the log so far, so a process that dies mid-deploy keeps it. */
   function flushLog() {
     const snapshot = logLines.join("\n");
     logFlush = logFlush
@@ -163,8 +159,7 @@ export async function runDeployment(
   }
 
   function stage(s: DeployStage, status: StageStatus) {
-    // A step that opens a phase and returns without closing it would leave the
-    // progress header spinning on it for the rest of the deploy.
+    // Close a phase a step left open, or the progress header spins on it.
     const reached = DEPLOY_STAGE_ORDER.indexOf(s);
     if (reached > 0) {
       for (const earlier of DEPLOY_STAGE_ORDER.slice(0, reached)) {
@@ -174,12 +169,12 @@ export async function runDeployment(
     emitStage(s, status);
   }
 
-  /** The phase in flight, or null in the gap between one closing and the next opening. */
+  /** The phase in flight, or null between phases. */
   function runningStage(): DeployStage | null {
     return DEPLOY_STAGE_ORDER.findLast((s) => stageStatus.get(s) === "running") ?? null;
   }
 
-  /** How far the deploy got, whatever each phase reported. */
+  /** How far the deploy got. */
   function reachedStage(): DeployStage {
     return DEPLOY_STAGE_ORDER.findLast((s) => stageStatus.has(s)) ?? "queued";
   }
@@ -195,10 +190,9 @@ export async function runDeployment(
 
   const logs = { push: log };
 
-  // Build the initial deploy context — fetches app, resolves environment, loads env vars
   let ctx: DeployContext | undefined;
 
-  // apps.status describes the default environment. Set once that is what this deploy is.
+  // apps.status describes the default environment; set once this deploy is that.
   let ownsAppStatus = false;
 
   try {
@@ -211,7 +205,7 @@ export async function runDeployment(
       throw new DeployBlockedError("Group environment deploy without an app environment — refusing to deploy production");
     }
 
-    // Resolve environment — default to production if not specified
+    // Defaults to production.
     if (!opts.environmentId) {
       const defaultEnv = await db.query.environments.findFirst({
         where: and(
@@ -235,8 +229,7 @@ export async function runDeployment(
 
     ownsAppStatus = !!resolvedEnv.isDefault;
 
-    // The deploy owns the app status until it exits. The reconciler yields to
-    // it, and the sweeper resets it if this process dies mid-deploy.
+    // The deploy owns the app status until it exits; the sweeper resets it if this process dies.
     if (ownsAppStatus) {
       await db
         .update(apps)
@@ -264,7 +257,6 @@ export async function runDeployment(
 
     log(`[deploy] Starting deployment ${deploymentId}`);
 
-    // Fetch app
     const app = await db.query.apps.findFirst({
       where: and(
         eq(apps.id, opts.appId),
@@ -275,9 +267,7 @@ export async function runDeployment(
 
     if (!app) throw new Error("App not found");
 
-    // A domain on a child service is stored against that child app.
-    // Aggregate those into the deploy and tag each with its compose service
-    // so the injection step can target the right service's container.
+    // Child-service domains, tagged with their compose service for label injection.
     const childDomains = await db.query.domains.findMany({
       where: inArray(
         domains.appId,
@@ -298,20 +288,17 @@ export async function runDeployment(
     for (const d of childDomains) {
       app.domains.push({
         ...d,
-        // composeService is read by the compose-inject step to decide
-        // which service in the rendered compose gets the Traefik labels.
         composeService: d.app?.composeService ?? null,
       } as typeof app.domains[number]);
     }
 
-    // Fetch org — used for trusted flag and env var resolution
     const org = await db.query.organizations.findFirst({
       where: eq(organizations.id, opts.organizationId),
       columns: { id: true, name: true, baseDomain: true, trusted: true },
     });
     const orgTrusted = org?.trusted ?? false;
 
-    // Resolve per-project bind mount + docker socket permissions
+    // Per-project bind mount and Docker socket permissions.
     let projectAllowBindMounts = false;
     let projectAllowDockerSocket = false;
     if (orgTrusted) {
@@ -345,8 +332,7 @@ export async function runDeployment(
       app.domains = environmentDomains(app.domains, resolvedEnv, app.id);
     }
 
-    // Local environments always allow bind mounts. The Docker socket stays on
-    // the project flag — anyone can create a local environment (#803).
+    // Local environments always allow bind mounts. The Docker socket stays on the project flag (#803).
     if (envType === "local") {
       projectAllowBindMounts = true;
     }
@@ -355,8 +341,7 @@ export async function runDeployment(
     log(`[deploy] App: ${app.displayName} (${app.name})`);
     log(`[deploy] Source: ${app.source}, Type: ${app.deployType}`);
 
-    // Rollback: overlay the target deployment's snapshot onto the app record
-    // before anything reads it. Throws when the target can't be deployed.
+    // Overlay the rollback target's snapshot before anything reads the app. Throws when it can't be deployed.
     let rollbackTarget: RollbackTarget | null = null;
     if (opts.rollback) {
       rollbackTarget = await loadRollbackTarget(
@@ -368,7 +353,7 @@ export async function runDeployment(
       applyRollbackEnv(app as DeployContext["app"], rollbackTarget, log);
     }
 
-    // A non-default environment deploys with its own env, or the app's when it predates snapshots.
+    // A non-default environment uses its own env, or the app's when it predates snapshots.
     let envFromApp = true;
     if (!resolvedEnv.isDefault && resolvedEnv.id && !(rollbackTarget?.includeEnvVars && rollbackTarget.envSnapshot)) {
       const own = await loadEnvironmentEnv(resolvedEnv.id);
@@ -380,16 +365,13 @@ export async function runDeployment(
       }
     }
 
-    // Load env vars from encrypted blob
     const envMap: Record<string, string> = {};
     if (app.envContent) {
       const { content: envText, wasEncrypted, decryptFailed } = decryptOrFallback(
         app.envContent,
         app.organizationId,
       );
-      // Deploying with no env is worse than not deploying: most apps boot on
-      // defaults, pass their healthcheck, and take the cutover while pointed
-      // at nothing.
+      // Never deploy with no env: most apps boot on defaults, pass healthcheck and take the cutover.
       if (decryptFailed) {
         throw new DeployBlockedError(
           `Could not decrypt this app's environment variables — check ENCRYPTION_MASTER_KEY. ` +
@@ -420,7 +402,6 @@ export async function runDeployment(
     }
     log(`[deploy] ${totalEnvVarCount} env var(s), ${app.domains.length} domain(s)`);
 
-    // Assemble context for the deploy pipeline
     ctx = {
       deploymentId,
       appId: opts.appId,
@@ -477,7 +458,7 @@ export async function runDeployment(
       startTime,
     };
 
-    // Run the deploy pipeline — each step reads and mutates ctx
+    // Each step reads and mutates ctx.
     ctx = await prepareRepo(ctx);
     ctx = await resolveCompose(ctx);
     ctx = await build(ctx);
@@ -488,13 +469,11 @@ export async function runDeployment(
     await streamLogger.flush();
     return { deploymentId, success: true, log: logLines.join("\n"), durationMs, status: "success" };
   } catch (error) {
-    // Redacted here rather than at each sink below — this message reaches the
-    // event feed, the activity row, notification channels and the API response.
+    // Redacted once: this message reaches events, activity, notifications and the API response.
     const message = redactSecrets(error instanceof Error ? error.message : "Unknown error");
     const durationMs = Date.now() - startTime;
 
-    // The release cut over and is serving; only the tail behind it failed. The
-    // row, the app status and the closed stream all stand.
+    // Cut over and serving; only post-deploy work failed. Row, status and stream stand.
     if (ctx?.succeeded) {
       await recordPostDeployIncomplete(ctx, message);
       await streamLogger.flush();
@@ -508,19 +487,17 @@ export async function runDeployment(
       };
     }
 
-    // Every exit from here is terminal, and each one closes the stream with a
-    // failed stage — without it the UI waits out its timeout with nothing to show.
-    // The failure belongs to the phase in flight, or to the one that never opened.
+    // Every exit below closes the stream with a failed stage, blamed on the phase in flight or the one that never opened.
     const blamed = runningStage() ?? pendingStage();
     const fail = () => stage(blamed, "failed");
 
-    // Check if this deploy was aborted — either superseded by a newer one or killed by the user.
+    // Superseded or killed.
     if (opts.signal?.aborted) {
       const reason = opts.signal.reason as { supersededBy?: string; killed?: boolean } | undefined;
       const supersededById = reason?.supersededBy;
 
       if (supersededById) {
-        // The superseding deploy already owns apps.status — leave it alone.
+        // The superseding deploy owns apps.status.
         log(`[deploy] Superseded by deployment ${supersededById}`);
         fail();
         await db
@@ -562,9 +539,7 @@ export async function runDeployment(
           })
           .where(eq(deployments.id, deploymentId));
 
-        // Release the app status. Guarded so a deploy that started in the
-        // meantime keeps ownership; the reconciler corrects "stopped" from
-        // Docker on its next pass.
+        // Guarded so a newer deploy keeps ownership; the reconciler corrects "stopped" from Docker.
         if (ownsAppStatus) {
           await db
             .update(apps)
@@ -597,8 +572,7 @@ export async function runDeployment(
 
     log(`[deploy] ERROR: ${message}`);
 
-    // If we got past the deploy stage, containers may be running. A deploy that
-    // recorded success returned above, so nothing here has committed.
+    // Past the deploy stage containers may be running. Nothing here has committed.
     const CONTAINER_STAGES: Set<DeployStage> = new Set(["deploy", "healthcheck", "routing", "cleanup", "done"]);
     const slotDir = ctx?.slotDir;
     const newProjectName = ctx?.newProjectName;
@@ -620,7 +594,7 @@ export async function runDeployment(
           );
           log(`[deploy] Cleaned up containers after failure`);
         } catch {
-          // Best effort — containers may not have started
+          // Best effort.
         }
       }
     }
@@ -669,12 +643,8 @@ export async function runDeployment(
 /** Stages at which the new slot has passed its health check. */
 const PROVEN_STAGES: ReadonlySet<DeployStage> = new Set(["routing", "cleanup", "done"]);
 
-/**
- * Whether a failed deploy must leave its new slot running.
- *
- * Invariant: the only healthy slot is never removed. A new slot that passed its
- * health check goes only when the old slot is confirmed still serving.
- */
+/** Whether a failed deploy must leave its new slot running. */
+// Invariant: the only healthy slot is never removed. A proven new slot goes only when the old slot still serves.
 export async function keepProvenSlot(ctx: DeployContext, reached: DeployStage): Promise<boolean> {
   if (!PROVEN_STAGES.has(reached)) return false;
   if (!ctx.oldSlotServing) return true;
@@ -735,10 +705,6 @@ export async function deployProject(opts: DeployOpts): Promise<DeployResult> {
   return runDeployment(deploymentId, opts);
 }
 
-// ---------------------------------------------------------------------------
-// Exported helpers (used by deploy step files)
-// ---------------------------------------------------------------------------
-
 export async function checkEndpoint(domain: string, logs: { push: (line: string) => void }): Promise<boolean> {
   const paths = ["/healthz", "/health", "/"];
   const timeout = ENDPOINT_CHECK_TIMEOUT;
@@ -759,7 +725,6 @@ export async function checkEndpoint(domain: string, logs: { push: (line: string)
     } catch { /* next path */ }
   }
 
-  // Fallback to HTTP
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeout);
@@ -774,25 +739,15 @@ export async function checkEndpoint(domain: string, logs: { push: (line: string)
   return false;
 }
 
-
-// ---------------------------------------------------------------------------
-// Stop / Restart
-// ---------------------------------------------------------------------------
-
-/**
- * Resolve the active slot directory and compose project name.
- * Local environments use a single `local/` directory with no slot suffix.
- * Blue-green environments read the `current` symlink and fall back to `"blue"`.
- */
+/** Active slot dir and compose project. Local envs use `local/`; blue-green reads `current`, defaulting to "blue". */
 async function resolveActiveSlot(
   dir: string,
   projectPrefix: string,
 ): Promise<{ slotDir: string; composeProject: string }> {
-  // Check for local environment first
   const { access: fsAccess } = await import("fs/promises");
   try {
     await fsAccess(join(dir, "local"));
-    // No current symlink + local/ exists = local environment
+    // local/ without a current symlink is a local environment.
     try {
       await readlink(join(dir, "current"));
     } catch {
@@ -802,12 +757,10 @@ async function resolveActiveSlot(
       };
     }
   } catch {
-    // No local/ directory — standard blue-green
+    // Blue-green.
   }
 
-  // Same resolution as the deploy path: symlink → running slot → legacy file.
-  // Falls back to "blue" only when nothing is detectable (stopping a project
-  // that doesn't exist is a harmless no-op).
+  // Symlink, then running slot, then legacy file. "blue" when nothing is detectable.
   const activeSlot = (await detectActiveSlot(dir, projectPrefix)) ?? "blue";
 
   return {
@@ -821,7 +774,7 @@ async function stopSlotInDir(
   projectPrefix: string,
   logs: string[],
   removeVolumes = false,
-  /** App and environment names — omitted for the legacy unscoped layout. */
+  /** App and environment names. Omitted for the legacy unscoped layout. */
   shared?: { appName: string; envName: string; isDefault: boolean },
 ): Promise<void> {
   const { slotDir, composeProject } = await resolveActiveSlot(dir, projectPrefix);
@@ -843,11 +796,10 @@ async function stopSlotInDir(
 
   await down(composeProject);
 
-  // No deploy ever takes the shared project down. Left up, its containers
-  // outlive the app and the reconciler reports the stopped app as active.
+  // Deploys never take the shared project down, so stop does. Left up, it outlives the app.
   const partition = shared ? await readSlotPartition(slotDir) : null;
   if (shared && partition) {
-    // Only the default environment owns the compose `name:`; any other env sharing it would be production's.
+    // Only the default environment owns the compose `name:`.
     await down(sharedProjectName(shared.appName, shared.envName, shared.isDefault ? partition.composeName : undefined));
   }
 }
@@ -860,8 +812,7 @@ export async function stopProject(
 ): Promise<{ success: boolean; log: string }> {
   const logs: string[] = [];
   try {
-    // Every path below reaches `docker compose down` through a name-derived
-    // directory. Do not move or remove this.
+    // Every path below reaches `docker compose down` through a name-derived directory. Don't move or remove this.
     await assertAppDirOwnership({
       appId,
       appName,
@@ -871,7 +822,6 @@ export async function stopProject(
     const defaultEnvName = (await resolveDefaultEnv(appId)).name;
 
     if (environmentName) {
-      // Stop specific environment
       const envDir = appEnvDir(appName, environmentName);
       await stopSlotInDir(envDir, `${appName}-${environmentName}`, logs, removeVolumes, {
         appName,
@@ -879,7 +829,7 @@ export async function stopProject(
         isDefault: environmentName === defaultEnvName,
       });
     } else {
-      // Stop all environments — try env-aware layout first
+      // All environments: env-aware layout first.
       const baseDir = appBaseDir(appName);
       try {
         const { readdir } = await import("fs/promises");
@@ -887,7 +837,7 @@ export async function stopProject(
         const envDirs = entries.filter((e) => e.isDirectory() && e.name !== "repo");
         if (envDirs.length > 0) {
           for (const entry of envDirs) {
-            // Skip blue/green slot dirs at app root (legacy layout)
+            // Legacy blue/green dirs at the app root.
             if (entry.name === "blue" || entry.name === "green") {
               await stopSlotInDir(baseDir, appName, logs, removeVolumes);
               break;
@@ -900,16 +850,16 @@ export async function stopProject(
             });
           }
         } else {
-          // Legacy: slot dirs directly under app
+          // Legacy: slot dirs directly under the app.
           await stopSlotInDir(baseDir, appName, logs, removeVolumes);
         }
       } catch {
-        // Fallback to legacy layout
+        // Legacy layout.
         await stopSlotInDir(baseDir, appName, logs, removeVolumes);
       }
     }
 
-    // apps.status describes the default environment; stopping another one leaves it alone.
+    // apps.status describes the default environment only.
     if (!environmentName || environmentName === defaultEnvName) {
       const stoppedAt = new Date();
       await db
@@ -917,7 +867,7 @@ export async function stopProject(
         .set(statusChange("stopped", stoppedAt))
         .where(eq(apps.id, appId));
 
-      // Cascade stop status to compose child services
+      // Cascade to compose child services.
       await db
         .update(apps)
         .set(statusChange("stopped", stoppedAt))
@@ -966,10 +916,7 @@ export function previewVolumesToRemove(lsOutput: string, project: string): strin
     .filter((name) => name.startsWith(`${project}_`) && name.length > project.length + 1);
 }
 
-/**
- * Tear down one preview environment: both slots, its shared project, their
- * project-scoped volumes and its directory, nothing else. Fails when any `down` fails, so the caller can keep its records.
- */
+/** Tear down one preview: both slots, its shared project, their project-scoped volumes and its directory. Throws if any `down` fails. */
 export async function stopPreviewEnvironment(
   appId: string,
   appName: string,
@@ -1059,11 +1006,7 @@ export async function restartContainers(
 
     const { slotDir, composeProject } = await resolveActiveSlot(dir, prefix);
 
-    // Guard the slot directory up front. execFile with a non-existent `cwd`
-    // fails with the misleading "spawn docker ENOENT" (which looks like a
-    // missing docker binary). An absent slot dir means the app was never
-    // deployed to disk — there is nothing to restart in place; the caller
-    // should deploy instead.
+    // A missing cwd makes execFile fail with a misleading "spawn docker ENOENT". No slot dir means never deployed.
     const { access: fsAccess } = await import("fs/promises");
     try {
       await fsAccess(slotDir);
@@ -1076,8 +1019,7 @@ export async function restartContainers(
 
     const composeFileArgs = await slotComposeFiles(slotDir);
 
-    // A shared service has no container in the slot project, where `restart`
-    // would silently match nothing.
+    // A shared service has no container in the slot project, where `restart` matches nothing.
     let targetProject = composeProject;
     if (service && environmentName) {
       const partition = await readSlotPartition(slotDir);
@@ -1131,7 +1073,7 @@ export async function recreateProject(
       logs.push(`[deploy][compose] ${line.trim()}`);
     }
 
-    // Clear needsRedeploy flag since containers were recreated with fresh env
+    // Containers were recreated with fresh env.
     await db
       .update(apps)
       .set({ needsRedeploy: false, updatedAt: new Date() })

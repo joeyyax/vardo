@@ -1,21 +1,12 @@
-// ---------------------------------------------------------------------------
-// Executing a reclamation plan.
-//
-// The only Docker call is removeImage. Volumes are never named here, never
-// listed and never removed. Removal is unforced: an image a stopped container
-// still references returns 409 and is reported as skipped, because forcing it
-// only untags the image, frees nothing, and leaves the container unable to start.
-// ---------------------------------------------------------------------------
+// Executes a reclamation plan. The only Docker call is removeImage; volumes are never touched.
+// Removal is unforced: forcing an image a stopped container references frees nothing and breaks the container.
 
 import { removeImage } from "../client";
 import { logger } from "@/lib/logger";
 
 const log = logger.child("image-reclaim");
 
-/**
- * The minimum a plan must expose to be executed. Both the idle-app sweep and the
- * slot sweep satisfy it, so removal, 409 handling and reporting stay in one place.
- */
+/** The minimum a plan must expose to be executed. */
 export interface ExecutablePlan {
   candidates: {
     appName: string;
@@ -42,7 +33,7 @@ export interface ReclaimResult {
   dryRun: boolean;
   reclaimed: ReclaimedImage[];
   failed: FailedImage[];
-  /** Sum over images whose layers were actually freed. Still an upper bound. */
+  /** Sum over images whose layers were freed. Upper bound. */
   estimatedBytesFreed: number;
   appsAffected: number;
   finishedAt: string;
@@ -50,18 +41,14 @@ export interface ReclaimResult {
 
 function errorMessage(err: unknown): string {
   const message = err instanceof Error ? err.message : String(err);
-  // Docker returns 409 when a container — including a stopped one — still
-  // references the image.
+  // 409: a container (even a stopped one) still references the image.
   if (/409|conflict|being used/i.test(message)) {
     return "Still referenced by a container";
   }
   return message;
 }
 
-/**
- * Run a plan. A dry run reports exactly what a real run would remove, taking
- * the same branches over the same plan, and issues no Docker calls.
- */
+/** Run a plan. A dry run reports what a real run would remove and makes no Docker calls. */
 export async function executeReclaimPlan(
   plan: ExecutablePlan,
   opts: { dryRun: boolean },

@@ -1,10 +1,4 @@
-// ---------------------------------------------------------------------------
-// PR preview lifecycle
-//
-// Creates and destroys preview environments for GitHub pull requests.
-// A preview covers the PR repo's apps, their compose children and their
-// declared dependencies (see preview-scope.ts).
-// ---------------------------------------------------------------------------
+// PR preview environments: the PR repo's apps, their compose children and declared dependencies.
 
 import { db } from "@/lib/db";
 import { apps, groupEnvironments } from "@/lib/db/schema";
@@ -26,22 +20,14 @@ import {
 
 const log = logger.child("preview");
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
 type CreatePreviewOpts = {
-  /** GitHub repo full name (owner/repo) */
+  /** owner/repo */
   repoFullName: string;
-  /** PR number */
   prNumber: number;
-  /** PR URL */
   prUrl: string;
-  /** Branch being merged */
   branch: string;
-  /** Who opened the PR */
   author?: string;
-  /** How long before auto-cleanup (default: 7 days) */
+  /** Days before auto-cleanup. Default 7. */
   ttlDays?: number;
 };
 
@@ -53,11 +39,7 @@ type PreviewResult = {
 
 export type { CreatePreviewOpts, PreviewResult };
 
-// ---------------------------------------------------------------------------
-// Create preview
-// ---------------------------------------------------------------------------
-
-/** Run `fn` under the PR's lock. Without Redis it runs unlocked, as it always did. */
+/** Run `fn` under the PR's lock, or unlocked without Redis. */
 async function withPreviewLock<T>(
   repoFullName: string,
   prNumber: number,
@@ -90,12 +72,7 @@ async function appsForRepo(repoFullName: string) {
   return candidates.filter((a) => matchesGitHubRepo(a.gitUrl, repoFullName));
 }
 
-/**
- * Create or redeploy the preview environment for a PR.
- *
- * Serialized with destroyPreview per PR. A close that lands mid-create is
- * honoured at the next step: whatever was built is torn down.
- */
+/** Create or redeploy a PR's preview. A close that lands mid-create tears down what was built. */
 export async function createPreview(
   opts: CreatePreviewOpts
 ): Promise<PreviewResult | null> {
@@ -104,7 +81,6 @@ export async function createPreview(
     return null;
   }
 
-  // A preview is a non-production environment, so it needs the environments flag.
   if (!(await isFeatureEnabledAsync("environments"))) {
     log.info("Environments are disabled, skipping preview creation");
     return null;
@@ -124,12 +100,10 @@ async function createPreviewLocked(
   const matchingApps = await appsForRepo(opts.repoFullName);
   if (matchingApps.length === 0) return null;
 
-  // Find the first app that belongs to a project.
-  // The PR branch gets deployed into the preview — we don't filter by
-  // the app's configured gitBranch since any repo app can be previewed.
+  // First repo app in a project, regardless of its configured branch.
   const groupedApp = matchingApps.find((a) => a.projectId);
   if (!groupedApp || !groupedApp.projectId) {
-    // No project — can't create a group preview for standalone apps
+    // Standalone apps can't have a group preview.
     return null;
   }
 
@@ -146,7 +120,6 @@ async function createPreviewLocked(
     return null;
   };
 
-  // Check if preview already exists
   const existing = await db.query.groupEnvironments.findFirst({
     where: and(
       eq(groupEnvironments.projectId, projectId),
@@ -155,8 +128,7 @@ async function createPreviewLocked(
   });
 
   if (existing) {
-    // Preview already exists — could be a push to an existing PR
-    // Re-deploy the project in the existing environment
+    // Push to an existing PR: redeploy.
     try {
       await deployGroup({
         projectId,
@@ -190,7 +162,6 @@ async function createPreviewLocked(
     }
   }
 
-  // Create new preview environment
   const result = await createGroupEnvironment({
     projectId,
     organizationId,
@@ -204,7 +175,6 @@ async function createPreviewLocked(
   });
   if (await closed()) return abandon(result.groupEnvironmentId);
 
-  // Deploy the preview
   let deployed = false;
   try {
     await deployGroup({
@@ -219,7 +189,6 @@ async function createPreviewLocked(
   }
   if (await closed()) return abandon(result.groupEnvironmentId);
 
-  // Collect domains
   const domains = result.projectEnvironments
     .filter((pe) => pe.domain)
     .map((pe) => ({
@@ -234,15 +203,9 @@ async function createPreviewLocked(
   };
 }
 
-// ---------------------------------------------------------------------------
-// Destroy preview
-// ---------------------------------------------------------------------------
-
 /**
- * Destroy a preview environment when a PR is closed/merged.
- *
- * Runs with previews off so a close still removes an existing preview. Only a
- * `type: "preview"` group environment named `pr-<n>` is ever touched.
+ * Destroy a PR's preview on close. Runs even with previews off.
+ * Only touches a `type: "preview"` group environment named `pr-<n>`.
  */
 export async function destroyPreview(
   repoFullName: string,
@@ -274,7 +237,6 @@ async function destroyPreviewLocked(
 
   const envName = `pr-${prNumber}`;
 
-  // Find the preview environment
   const groupEnv = await db.query.groupEnvironments.findFirst({
     where: and(
       eq(groupEnvironments.projectId, groupedApp.projectId),
@@ -293,14 +255,7 @@ async function destroyPreviewLocked(
   return true;
 }
 
-// ---------------------------------------------------------------------------
-// Cleanup expired previews
-// ---------------------------------------------------------------------------
-
-/**
- * Find and destroy all expired preview environments.
- * Call this from a cron job.
- */
+/** Destroy expired preview environments. */
 export async function cleanupExpiredPreviews(): Promise<number> {
   if (!(await isFeatureEnabledAsync("previews"))) return 0;
 

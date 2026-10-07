@@ -1,12 +1,4 @@
-// ---------------------------------------------------------------------------
-// Docker Compose type definitions for Vardo projects.
-// ---------------------------------------------------------------------------
-
 import type { ContainerRuntimeOptions } from "./client";
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 
 export type ResourceLimits = {
   cpus?: string;
@@ -24,10 +16,7 @@ export type HealthCheck = {
 
 export type Ulimits = Record<string, number | { soft: number; hard: number }>;
 
-/**
- * A service's reference to a top-level `configs:`/`secrets:` entry. Short form
- * is the entry name; long form retargets it inside the container.
- */
+/** A service's reference to a top-level `configs:`/`secrets:` entry. */
 export type ComposeFileRef =
   | string
   | {
@@ -43,20 +32,12 @@ export type ComposeDependsOnCondition =
   | "service_healthy"
   | "service_completed_successfully";
 
-/**
- * Docker Compose depends_on can be a simple list of service names or an object
- * mapping service names to their dependency conditions. Using the object form
- * preserves health-check gates (service_healthy) that are lost in the string[]
- * form.
- */
+/** depends_on as a list or a condition map. The map form keeps service_healthy gates. */
 export type ComposeDependsOn =
   | string[]
   | Record<string, { condition: ComposeDependsOnCondition }>;
 
-/**
- * Extract the service name keys from a ComposeDependsOn value, normalising
- * both the string[] and object forms.
- */
+/** Service names from either depends_on form. */
 export function dependsOnKeys(dependsOn: ComposeDependsOn): string[] {
   return Array.isArray(dependsOn) ? dependsOn : Object.keys(dependsOn);
 }
@@ -89,12 +70,11 @@ export type ComposeService = {
       };
     };
   };
-  // QoS tier fields injected by the Vardo overlay (priority → runtime knobs).
-  // Top-level compose service keys honored by `docker compose up` v2 (non-swarm).
+  // QoS tier fields injected by the Vardo overlay.
   oom_score_adj?: number;
   mem_reservation?: string;
   cpu_shares?: number;
-  // Extended fields for faithful container import/round-trip
+  // Extended fields for container import round-trip.
   cap_add?: string[];
   cap_drop?: string[];
   devices?: string[];
@@ -113,10 +93,7 @@ export type ComposeService = {
   tmpfs?: string[];
   /** Supplementary groups, e.g. the docker group for socket access. */
   group_add?: string[];
-  /**
-   * Fixed container name. Only honored on a shared service — two slots cannot
-   * both hold one name, so it is dropped for anything that rotates.
-   */
+  /** Fixed container name. Honored only on a shared service; two slots can't share a name. */
   container_name?: string;
   read_only?: boolean;
   stdin_open?: boolean;
@@ -170,13 +147,7 @@ export type DeployTransformDomain = {
   certResolver: string | null;
   redirectTo: string | null;
   redirectCode: number | null;
-  /**
-   * Compose service this domain should route to. Set when the domain is
-   * attached to a child app of a multi-service compose app — the deploy
-   * pipeline injects Traefik labels for this specific service so multiple
-   * services in the same compose can carry distinct ingress rules.
-   * Null = "primary service" (legacy behavior, used for parent-app domains).
-   */
+  /** Compose service this domain routes to. Null means the primary service. */
   composeService?: string | null;
 };
 
@@ -196,26 +167,17 @@ export type ComposePreviewApp = {
 
 export type ValidateOptions = {
   allowBindMounts?: boolean;
-  /**
-   * Permit mounting the Docker socket (/var/run/docker.sock), independent of
-   * allowBindMounts. The rest of the mount deny-list stays enforced. (#744)
-   */
+  /** Permit mounting the Docker socket; the rest of the mount deny-list stays enforced. (#744) */
   allowDockerSocket?: boolean;
-  /** Skip all mount-related validation checks. Used when the org is trusted. */
+  /** Skip all mount-related validation checks for trusted orgs. */
   skipMountChecks?: boolean;
 };
 
-/**
- * Per-service deploy config sourced from decomposed child app rows. Lets the
- * overlay apply resources/GPU per compose service instead of one global value
- * from the parent app, so a decomposed child's settings actually take effect
- * (#745). Keyed by compose service name.
- */
+/** Per-service deploy config from decomposed child app rows, keyed by compose service name. (#745) */
 export type ServiceConfigOverride = {
   cpuLimit: number | null;
   memoryLimit: number | null;
   gpuEnabled: boolean;
-  /** Resolved QoS tier for this service: the child's own priority, or the
-   * parent's when the child inherits (null). null falls back to "standard". */
+  /** Resolved QoS tier: the child's priority, else the parent's. Null means "standard". */
   priority: "critical" | "standard" | "disposable" | null;
 };

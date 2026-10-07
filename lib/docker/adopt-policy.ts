@@ -1,19 +1,6 @@
-// ---------------------------------------------------------------------------
-// Adoption policy
-//
-// Adoption brings an existing, running service under Vardo, so it is the path
-// most likely to carry bind mounts and the one where dropping them costs the
-// most. The rule has to match what the deploy path will do with the same
-// compose, or adopt refuses what deploy would have permitted.
-// ---------------------------------------------------------------------------
+// Adoption policy. Must match the deploy path's bind-mount rule.
 
-/**
- * Whether an adopt may keep bind mounts.
- *
- * The project is the authority, as it is for deploy. A local environment is
- * additionally permitted because it has no project to speak for it in the
- * common case.
- */
+/** Whether an adopt may keep bind mounts: local environments, the project setting or the feature flag. */
 export function adoptAllowsBindMounts(input: {
   environmentType: string;
   /** The project's setting, or null when adopting into a project that does not exist yet. */

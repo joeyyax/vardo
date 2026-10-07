@@ -9,14 +9,8 @@ import type { MajorGateBlock } from "./major-gate";
 import type { BumpSeverity } from "./tag-version";
 import type { CheckStatus } from "./check";
 
-/**
- * Read-only view over the cache. Page loads call this and never touch a
- * registry, so rendering an app costs nothing against the pull budget.
- *
- * Vardo's own stack and the core services are still checked — a maintainer
- * wants to know when Vardo has fallen behind upstream — but they are split out
- * of every actionable count, because only a Vardo release can move those tags.
- */
+// Read-only view over the check cache; never calls a registry.
+// Vardo-managed apps are reported but excluded from actionable counts.
 
 /** Name and flag needed to tell a Vardo-pinned app from a tenant's. */
 type Identity = { name?: string | null; isSystemManaged?: boolean | null };
@@ -102,10 +96,7 @@ function isActionable(service: ServiceUpdateStatus): boolean {
   return service.status === "update" || service.status === "drift";
 }
 
-/**
- * Splits an app's services into what to show and what a rule is hiding. The
- * ignored ones stay in the answer so they can be listed and undone.
- */
+/** Splits an app's services into shown and ignored-by-rule. */
 function partition(
   services: ServiceUpdateStatus[],
   appId: string | undefined,
@@ -144,10 +135,7 @@ function rollUp(
   return { updateCount, highestSeverity: highest, hasUnknown };
 }
 
-/**
- * The gate's block, narrowed to what this app owns. A child service reads the
- * parent's block — the deploy that was stopped ran against the parent.
- */
+/** The major gate's block, narrowed to this app. A child service reads the parent's block. */
 async function blockFor(app: UpdatableApp & { id?: string; composeOwnerId?: string }) {
   const owner = app.composeOwnerId ?? app.id;
   if (!owner) return null;
@@ -170,8 +158,7 @@ export async function getAppUpdateStatus(
   const all = buildServices(app, cached, Date.now() - CHECK_TTL_MS);
   const selfManaged = isVardoManagedApp(app);
 
-  // Rows stay so the tab can show how far behind upstream it is; the roll-up
-  // does not, so nothing offers an action the apply path refuses.
+  // Rows stay visible; counts stay zero since the apply path refuses these.
   if (selfManaged) {
     return {
       services: all,
@@ -227,11 +214,7 @@ export interface FleetUpdateStatus {
   selfManaged: FleetAppUpdates[];
 }
 
-/**
- * Every actionable service across the fleet, in one cache read. The rows are
- * the same shape the per-app panel renders, so `/updates` is that screen at
- * fleet scope rather than a second implementation of it.
- */
+/** Every actionable service across the fleet, in one cache read. */
 export async function getFleetUpdateStatus(
   orgId: string,
   appRows: AggregateApp[],
@@ -255,8 +238,7 @@ export async function getFleetUpdateStatus(
   for (const app of appRows) {
     const all = buildServices(app, cached, cutoff);
 
-    // Listed on their own, out of the totals and out of the ignore machinery —
-    // an ignore rule on a tag nobody can pin is noise.
+    // Vardo-managed apps are listed separately, outside totals and ignore rules.
     if (isVardoManagedApp(app)) {
       const behind = all.filter(isActionable);
       if (behind.length > 0) {

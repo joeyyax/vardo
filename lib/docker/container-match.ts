@@ -1,9 +1,4 @@
-// ---------------------------------------------------------------------------
-// Matching an app row to the containers that belong to it.
-//
-// Pure and dependency-free so the callers that only need the matcher — metrics,
-// cron, container lookup — don't pull a scheduler into their bundle.
-// ---------------------------------------------------------------------------
+// Matches an app row to its containers. Kept dependency-free for lightweight callers.
 
 import type { ContainerInfo } from "./client";
 import { composeProjectApp } from "./slot-partition";
@@ -29,17 +24,9 @@ function projectApp(c: ContainerInfo): string | undefined {
   return project === undefined ? undefined : composeProjectApp(project);
 }
 
-/**
- * Containers belonging to an app, most specific match first.
- *
- * Vardo-deployed containers carry vardo.project.id; a decomposed child narrows
- * that set by compose service. Vardo's own control plane is started by plain
- * `docker compose` and carries no vardo labels, so compose project/service and
- * the container name are checked too.
- */
+/** Containers belonging to an app, most specific match first: id label, parent + service, compose labels, then name. */
 export function matchContainers(app: ReconcilableApp, all: ContainerInfo[]): ContainerInfo[] {
-  // A preview's containers carry the app's labels but are not the app's: they
-  // must not decide its status, exit reason or where its cron jobs run.
+  // Preview containers carry the app's labels but must not decide its status.
   const containers = all.filter((c) => !/^pr-\d+$/.test(label(c, "environment") ?? ""));
 
   if (app.importedContainerId) {
@@ -50,8 +37,7 @@ export function matchContainers(app: ReconcilableApp, all: ContainerInfo[]): Con
   const byAppId = containers.filter((c) => label(c, "project.id") === app.id);
   if (byAppId.length > 0) return byAppId;
 
-  // Decomposed children carry the PARENT's vardo.project.id, so narrow the
-  // parent's containers by compose service.
+  // Decomposed children carry the parent's vardo.project.id.
   if (app.parentAppId && app.composeService) {
     const byParent = containers.filter(
       (c) =>

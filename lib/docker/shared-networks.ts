@@ -15,18 +15,7 @@ function serviceNetworks(service: ComposeService): string[] {
   return service.networks?.length ? service.networks : [DEFAULT_NETWORK];
 }
 
-/**
- * Networks a shared service attaches to.
- *
- * Compose scopes a declared network to its project, so the shared and slot
- * projects would each create their own — and a network with a fixed subnet
- * fails outright with "pool overlaps with other one on this address space".
- * These have to become external, under one name both projects reference.
- *
- * The implicit default counts. A compose file that declares no networks at all
- * still puts every service on it, so leaving it out strands a shared database
- * on a network nothing looking for `postgres:5432` can reach.
- */
+/** Project-scoped networks a shared service joins, implicit default included. These must become external. */
 export function sharedNetworks(compose: ComposeFile): Set<string> {
   const { shared } = partitionBySlot(compose);
   if (Object.keys(shared).length === 0) return new Set();
@@ -44,10 +33,7 @@ export function sharedNetworks(compose: ComposeFile): Set<string> {
   return used;
 }
 
-/**
- * External name for a shared network — what the shared project would have
- * called it, so an already-running stack keeps the network it created.
- */
+/** External name for a shared network, matching what the shared project would have created. */
 export function sharedNetworkName(
   compose: ComposeFile,
   netName: string,
@@ -56,12 +42,7 @@ export function sharedNetworkName(
   return `${compose.name ?? fallbackPrefix}_${netName}`;
 }
 
-/**
- * Docker names for those same networks as a single compose project scopes them.
- *
- * A slot deployed before the externalization created them under its own project
- * prefix, and its compose file on disk still names them that way.
- */
+/** Docker names for the shared networks as one compose project scopes them. */
 export function projectScopedNetworkNames(
   compose: ComposeFile,
   projectName: string,

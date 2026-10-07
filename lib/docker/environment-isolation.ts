@@ -1,11 +1,5 @@
-// ---------------------------------------------------------------------------
 // Compose transforms for a non-default environment.
-//
-// The repo's compose describes production: hand-written Traefik routers carry
-// production hostnames and router names, and a fixed container_name belongs to
-// the production container. A preview built from it must declare none of that,
-// or Traefik merges its routers with production's and sends live traffic to it.
-// ---------------------------------------------------------------------------
+// Production Traefik labels or container_name left in place would send live traffic to the preview.
 
 import type { ComposeFile, ComposeService } from "./compose-types";
 import { TRAEFIK_LABEL_PREFIX } from "./compose-generate";
@@ -28,11 +22,7 @@ export function handWrittenRoute(
   return null;
 }
 
-/**
- * Drop every Traefik label (keeping an explicit `traefik.enable: "false"`), the
- * self-routed marker, any fixed container_name and the compose `name:`.
- * Returns a new ComposeFile.
- */
+/** Drop Traefik labels (except `traefik.enable: "false"`), the self-routed marker, container_name and `name:`. */
 export function isolateCompose(compose: ComposeFile): ComposeFile {
   const services: Record<string, ComposeService> = {};
   for (const [name, svc] of Object.entries(compose.services)) {

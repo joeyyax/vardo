@@ -2,13 +2,7 @@ import { logger } from "@/lib/logger";
 import { getSystemSettingRaw } from "@/lib/system-settings";
 import type { ImageRef } from "./image-ref";
 
-/**
- * Read-only registry access for update checks.
- *
- * Manifest requests count against Docker Hub's anonymous 100-per-6h pull
- * budget, so callers must go through `check.ts`, which caches and batches.
- * Nothing here pulls an image.
- */
+// Read-only registry access for update checks. Go through `check.ts`: manifest requests count against the pull budget.
 
 /** List types first so the registry answers with the index digest, not a platform's. */
 const MANIFEST_ACCEPT = [
@@ -61,7 +55,7 @@ function credentialsFromEnv(): CredentialMap {
   return map;
 }
 
-/** Env wins over stored settings so an operator can override without a write. */
+/** Registry credentials. Env overrides stored settings. */
 export async function getRegistryCredentials(): Promise<CredentialMap> {
   if (credentialCache && Date.now() - credentialCache.at < CREDENTIAL_TTL_MS) {
     return credentialCache.value;
@@ -82,7 +76,7 @@ export function invalidateRegistryCredentials() {
   credentialCache = null;
 }
 
-/** `docker.io` is the canonical name; the API lives on a different host. */
+/** API host for a registry; `docker.io` maps to `registry-1.docker.io`. */
 function apiHost(registry: string): string {
   return registry === "docker.io" ? "registry-1.docker.io" : registry;
 }
@@ -163,12 +157,7 @@ async function authedFetch(
   });
 }
 
-/**
- * Resolves a tag to its manifest digest via HEAD.
- *
- * Returns the manifest-list digest, which is what `docker inspect` reports
- * locally. Reading the first platform's digest instead reports false drift.
- */
+/** Resolves a tag to its manifest-list digest via HEAD, matching what `docker inspect` reports locally. */
 export async function fetchRemoteDigest(ref: ImageRef, tag: string): Promise<string | null> {
   const url = `https://${apiHost(ref.registry)}/v2/${ref.repository}/manifests/${encodeURIComponent(tag)}`;
   const response = await authedFetch(url, ref.registry, {
@@ -183,10 +172,7 @@ export async function fetchRemoteDigest(ref: ImageRef, tag: string): Promise<str
   return response.headers.get("docker-content-digest");
 }
 
-/**
- * Docker Hub's repository API. Believed not to draw on the pull budget, unlike
- * `registry-1.docker.io`. Falls back to the registry API on any failure.
- */
+/** Docker Hub's repository API, believed outside the pull budget. Falls back to the registry API on failure. */
 async function fetchDockerHubTags(repository: string): Promise<string[]> {
   const tags: string[] = [];
   let url:

@@ -1,11 +1,4 @@
-// ---------------------------------------------------------------------------
-// BuildKit
-//
-// Railpack builds through BuildKit rather than the Docker daemon. When it can't
-// reach one it exits non-zero with only a hint, after the deploy has already
-// cloned and staged — so the check belongs before the build starts.
-// ---------------------------------------------------------------------------
-
+// BuildKit reachability checks for Railpack builds, run before the build starts.
 
 import { DOCKER_CLEANUP_TIMEOUT } from "./constants";
 import { DeployBlockedError } from "./errors";
@@ -16,25 +9,14 @@ const DOCKER_CONTAINER_PREFIX = "docker-container://";
 /** Where Railpack looks for BuildKit when the environment does not say. */
 export const DEFAULT_BUILDKIT_HOST = "docker-container://vardo-buildkit";
 
-/**
- * Container a BUILDKIT_HOST points at, or null for any other transport.
- *
- * Only `docker-container://` can be checked from here. A tcp:// or unix://
- * daemon is somebody's deliberate configuration and is left to Railpack.
- */
+/** Container a `docker-container://` BUILDKIT_HOST points at, or null for any other transport. */
 export function buildKitContainerName(host: string): string | null {
   if (!host.startsWith(DOCKER_CONTAINER_PREFIX)) return null;
   const name = host.slice(DOCKER_CONTAINER_PREFIX.length).trim();
   return name.length > 0 ? name : null;
 }
 
-/**
- * Whether BuildKit can be reached. Never throws — for choosing a builder, where
- * "no" is an answer rather than a failure.
- *
- * A transport this cannot inspect is taken at its word and reported reachable;
- * the build will surface the truth soon enough.
- */
+/** Whether BuildKit can be reached. Never throws; uninspectable transports report reachable. */
 export async function isBuildKitReachable(host: string, signal?: AbortSignal): Promise<boolean> {
   const container = buildKitContainerName(host);
   if (!container) return true;
@@ -68,14 +50,7 @@ export async function assertBuildKitReachable(
   );
 }
 
-/**
- * Prune BuildKit's own store back to a ceiling, returning the bytes reclaimed.
- * Nothing else touches it — `docker builder prune` bounds the daemon's cache,
- * not this one.
- *
- * Reclaims nothing and stays silent when the daemon is not reachable, or when
- * the transport is one this cannot exec into.
- */
+/** Prune BuildKit's own store to a ceiling, returning bytes reclaimed. No-op when unreachable. */
 export async function pruneBuildKitCache(
   host: string,
   maxBytes: number,
@@ -85,8 +60,7 @@ export async function pruneBuildKitCache(
   if (!container) return { spaceReclaimed: 0 };
   if (!(await isBuildKitReachable(host, signal))) return { spaceReclaimed: 0 };
 
-  // `--keep-storage` is megabytes, not bytes, and is the daemon's
-  // max-used-space: a ceiling, so the call is already a no-op when under it.
+  // `--keep-storage` is megabytes, not bytes.
   const keepStorageMb = Math.max(1, Math.floor(maxBytes / 1e6));
   const { stdout } = await execFileAsync(
     "docker",
@@ -97,7 +71,7 @@ export async function pruneBuildKitCache(
       "prune",
       "--keep-storage",
       String(keepStorageMb),
-      // One record size per line. The default output only totals in human units.
+      // One record size per line.
       "--format",
       "{{.Size}}",
     ],

@@ -1,12 +1,8 @@
-// Shared validation helpers for shell-safe interpolation in Docker commands
+// Validation for shell-safe interpolation in Docker commands.
 
 const SAFE_NAME_RE = /^[a-zA-Z0-9._\-]+$/;
 
-/**
- * Assert that a name (volume, container, project, etc.) is safe to interpolate
- * into shell commands. Throws if the name contains characters that could allow
- * command injection.
- */
+/** Assert a volume, container or project name is safe to interpolate into shell commands. */
 export function assertSafeName(name: string): void {
   if (!SAFE_NAME_RE.test(name)) {
     throw new Error(`Invalid name: ${name}`);
@@ -43,25 +39,16 @@ export function assertSafeGitUrl(url: string): void {
 
 const SAFE_GIT_SHA_RE = /^[0-9a-fA-F]{7,40}$/;
 
-/**
- * Assert that a git commit SHA is a plain hex object name.
- */
+/** Assert a git commit SHA is a plain hex object name. */
 export function assertSafeGitSha(sha: string): void {
   if (!SAFE_GIT_SHA_RE.test(sha)) {
     throw new Error(`Invalid git SHA: ${sha}`);
   }
 }
 
-// Mount paths are absolute container paths — same safe character set as names
-// but with an optional leading slash and interior slashes allowed.
 const SAFE_MOUNT_PATH_RE = /^\/[a-zA-Z0-9._\-/]*$/;
 
-/**
- * Assert that a container mount path is safe to interpolate into shell commands.
- * Must be an absolute path containing only alphanumerics, dots, dashes,
- * underscores, and forward slashes. Rejects metacharacters that could allow
- * command injection (e.g. $, `, (, ), ;, |, &, spaces, quotes).
- */
+/** Assert an absolute container mount path is safe to interpolate into shell commands. */
 export function assertSafeMountPath(mountPath: string): void {
   if (!SAFE_MOUNT_PATH_RE.test(mountPath)) {
     throw new Error(`Invalid mount path: ${mountPath}`);

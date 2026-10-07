@@ -1,10 +1,3 @@
-// ---------------------------------------------------------------------------
-// Docker orchestration constants
-//
-// Centralized values that were previously scattered as magic numbers
-// throughout deploy.ts and related modules.
-// ---------------------------------------------------------------------------
-
 /** UID used for the app user inside containers and on host directories. */
 export const APP_UID = process.env.VARDO_APP_UID || "1001";
 
@@ -14,26 +7,18 @@ export const DEFAULT_CONTAINER_PORT = 3000;
 /** Docker network shared by all deployed apps and Traefik. */
 export const NETWORK_NAME = "vardo-network";
 
-/**
- * Ceiling the build cache is pruned back to after every deploy. Set it below
- * one build's worth of cache per locally-built app and they evict each other.
- */
+/** Ceiling the build cache is pruned to after every deploy. Too low and locally built apps evict each other. */
 const configuredCacheGb = Number(process.env.VARDO_BUILD_CACHE_MAX_GB);
 export const BUILD_CACHE_MAX_BYTES =
   (Number.isFinite(configuredCacheGb) && configuredCacheGb > 0 ? configuredCacheGb : 10) * 1024 ** 3;
 
-/**
- * Ceiling BuildKit's own store is pruned back to after every deploy. Separate
- * from the Docker build cache above — the daemon prune never reaches it.
- */
+/** Ceiling BuildKit's own store is pruned to after every deploy. The daemon prune never reaches it. */
 const configuredBuildKitGb = Number(process.env.VARDO_BUILDKIT_CACHE_MAX_GB);
 export const BUILDKIT_CACHE_MAX_BYTES =
   (Number.isFinite(configuredBuildKitGb) && configuredBuildKitGb > 0 ? configuredBuildKitGb : 10) *
   1024 ** 3;
 
-// ---------------------------------------------------------------------------
-// Timeouts (milliseconds)
-// ---------------------------------------------------------------------------
+// Timeouts (ms).
 
 /** Time allowed for a git clone operation. */
 export const GIT_CLONE_TIMEOUT = 60_000;
@@ -86,26 +71,15 @@ export const INSTANT_ROLLBACK_HEALTH_TIMEOUT = 10_000;
 /** Polling interval during instant rollback health checks. */
 export const INSTANT_ROLLBACK_POLL_INTERVAL = 1_000;
 
-// ---------------------------------------------------------------------------
-// Shared deploy utilities
-// ---------------------------------------------------------------------------
-
 import { mkdir, writeFile, rm } from "fs/promises";
 import { join } from "path";
 import { execFileAsync as execFileAsyncInternal } from "@/lib/utils/exec";
 import { PROJECTS_DIR } from "@/lib/paths";
 
-/**
- * Create a directory and ensure the app user can write to it.
- * If the dir exists but is root-owned, fix ownership via docker.
- *
- * Every path that creates an app directory lands here, so this is also where
- * the ownership marker gets stamped.
- */
+/** Create a directory writable by the app user, chowning via docker if root-owned, and stamp the ownership marker. */
 export async function ensureWritableDir(dir: string): Promise<void> {
   await mkdir(dir, { recursive: true });
-  // Dynamic import: app-dir-owner pulls in the db and self-env, which import
-  // this module back.
+  // Dynamic import avoids a cycle through app-dir-owner.
   try {
     const { stampAppDirOwner } = await import("./app-dir-owner");
     await stampAppDirOwner(dir);

@@ -2,10 +2,6 @@ import http from "node:http";
 import net from "node:net";
 import { getConnectionOptions, DOCKER_API_VERSION } from "./client";
 
-// ---------------------------------------------------------------------------
-// Create exec instance
-// ---------------------------------------------------------------------------
-
 export async function createExec(
   containerId: string,
   cmd: string[] = ["/bin/sh"],
@@ -68,10 +64,7 @@ export async function createExec(
   });
 }
 
-// ---------------------------------------------------------------------------
-// Start exec and return raw bidirectional socket
-// ---------------------------------------------------------------------------
-
+/** Start an exec and return the raw bidirectional socket. */
 export async function startExec(execId: string): Promise<net.Socket> {
   const conn = getConnectionOptions();
   const payload = JSON.stringify({
@@ -79,8 +72,7 @@ export async function startExec(execId: string): Promise<net.Socket> {
     Tty: true,
   });
 
-  // Build raw HTTP request — we need the raw socket because Docker hijacks
-  // the connection for bidirectional TTY I/O, which http.request can't handle
+  // Raw HTTP: Docker hijacks the connection for TTY I/O, which http.request can't handle.
   const httpReq = [
     `POST /v${DOCKER_API_VERSION}/exec/${execId}/start HTTP/1.1`,
     `Host: localhost`,
@@ -107,13 +99,12 @@ export async function startExec(execId: string): Promise<net.Socket> {
     socket.on("data", (chunk: Buffer) => {
       if (resolved) return; // Already handed off
 
-      // Accumulate chunks until we have the full HTTP headers
+      // Accumulate until the headers are complete.
       headerBuf = Buffer.concat([headerBuf, chunk]);
       const str = headerBuf.toString();
       const headerEnd = str.indexOf("\r\n\r\n");
-      if (headerEnd === -1) return; // Haven't received full headers yet
+      if (headerEnd === -1) return;
 
-      // Check for 200 OK or 101 Switching Protocols
       const statusLine = str.split("\r\n")[0];
       if (!statusLine.includes("200") && !statusLine.includes("101")) {
         reject(new Error(`Docker exec start failed: ${statusLine}`));
@@ -123,14 +114,12 @@ export async function startExec(execId: string): Promise<net.Socket> {
 
       resolved = true;
 
-      // Any data after the headers is already terminal output
+      // Bytes after the headers are terminal output.
       const bodyStartByte = Buffer.byteLength(str.substring(0, headerEnd + 4));
       const remaining = headerBuf.subarray(bodyStartByte);
 
-      // Remove our initial data listener and resolve with the raw socket
       socket.removeAllListeners("data");
 
-      // Re-emit the remaining data so the caller gets it
       if (remaining.length > 0) {
         process.nextTick(() => socket.emit("data", remaining));
       }
@@ -151,10 +140,6 @@ export async function startExec(execId: string): Promise<net.Socket> {
     });
   });
 }
-
-// ---------------------------------------------------------------------------
-// Resize exec TTY
-// ---------------------------------------------------------------------------
 
 export async function resizeExec(
   execId: string,
@@ -192,10 +177,6 @@ export async function resizeExec(
     req.end();
   });
 }
-
-// ---------------------------------------------------------------------------
-// Inspect exec (check if still running)
-// ---------------------------------------------------------------------------
 
 export async function inspectExec(
   execId: string,

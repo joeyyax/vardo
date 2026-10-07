@@ -1,12 +1,4 @@
-// ---------------------------------------------------------------------------
-// Traefik routing drift
-//
-// Traefik's Docker provider learns container IPs from the event stream. A daemon
-// restart drops that stream, and a reconnect that misses the intervening events
-// leaves Traefik routing to addresses no container holds — every affected domain
-// 502s until someone restarts it by hand. This polls Traefik's own view of its
-// backends against the live container IPs and restarts it when they disagree.
-// ---------------------------------------------------------------------------
+// Restarts Traefik when its backends disagree with live container IPs (missed Docker events cause 502s).
 
 import { db } from "@/lib/db";
 import { emit } from "@/lib/notifications/dispatch";
@@ -26,29 +18,20 @@ import { closeOnShutdown } from "@/lib/shutdown";
 
 const log = logger.child("traefik-drift");
 
-// ---------------------------------------------------------------------------
-// Tuning
-// ---------------------------------------------------------------------------
-
 const POLL_INTERVAL_MS = 60_000;
-/** Consecutive ticks the same backend must read stale before we act. A deploy
- *  swap leaves one tick of legitimate staleness while Traefik catches up. */
+/** Consecutive stale ticks before acting. A deploy swap leaves one legitimately stale tick. */
 export const CONFIRM_STREAK = 2;
 /** Don't restart Traefik more often than this. */
 export const RESTART_BACKOFF_MS = 10 * 60_000;
 /** Rolling window for the restart cap. */
 export const RESTART_WINDOW_MS = 60 * 60_000;
-/** Restarts within RESTART_WINDOW_MS before we stop trying and escalate. */
+/** Restarts within RESTART_WINDOW_MS before escalating instead. */
 export const MAX_RESTARTS_PER_WINDOW = 3;
 
 /** Alert without restarting when set to "false". */
 function autohealEnabled(): boolean {
   return process.env.VARDO_TRAEFIK_DRIFT_AUTOHEAL !== "false";
 }
-
-// ---------------------------------------------------------------------------
-// Pure decision logic (unit tested)
-// ---------------------------------------------------------------------------
 
 /** Backends whose IP no longer belongs to any running container. */
 export function findStaleBackends(
@@ -60,25 +43,14 @@ export function findStaleBackends(
 
 const HTTP_ROUTER_RULE = /^traefik\.http\.routers\.[^.]+\.rule$/;
 
-/**
- * Enabled with an HTTP router rule of its own. `traefik.enable` alone marks a
- * sidecar Traefik can see but never routes, which no restart will change.
- */
+/** Enabled with its own HTTP router rule; `traefik.enable` alone is never routed. */
 export function requestsRouting(labels: Record<string, string>): boolean {
   return (
     labels["traefik.enable"] === "true" && Object.keys(labels).some((k) => HTTP_ROUTER_RULE.test(k))
   );
 }
 
-/**
- * Containers that ask to be routed but have no backend in Traefik at all.
- *
- * The opposite failure to a stale backend, and the one that took vardo.example.com
- * down while every other domain served: Traefik rebuilt its config during a
- * storage stall and simply dropped the routes. The container was up, healthy
- * and still carrying its labels, so nothing pointing at a dead IP existed to
- * detect.
- */
+/** Containers that ask to be routed but have no backend in Traefik. */
 export function findUnroutedContainers(
   containers: { name: string; labels: Record<string, string>; ips: string[] }[],
   backends: TraefikBackend[],
@@ -104,10 +76,6 @@ export function decideRestart(opts: {
   if (last !== undefined && opts.now - last < RESTART_BACKOFF_MS) return "backoff";
   return "restart";
 }
-
-// ---------------------------------------------------------------------------
-// Tick
-// ---------------------------------------------------------------------------
 
 /** Backend URL → consecutive ticks it has read stale. */
 let staleStreak = new Map<string, number>();
@@ -154,13 +122,11 @@ export async function tickTraefikDrift(): Promise<void> {
   }
   const liveIps = ipsOf(containers);
 
-  // An empty container list means the Docker read failed open, not that every
-  // backend is stale — restarting Traefik on that would be self-inflicted.
+  // Empty means the Docker read failed, not that every backend is stale.
   if (liveIps.size === 0) return;
 
   const backends = collectDockerBackends(services);
-  // One line at boot, so a monitor that reads nothing is visible rather than
-  // indistinguishable from a monitor that found no drift.
+  // Log once at boot.
   if (!reported) {
     reported = true;
     const wantRouting = containers.filter((c) => requestsRouting(c.labels)).length;
@@ -169,8 +135,7 @@ export async function tickTraefikDrift(): Promise<void> {
     );
   }
 
-  // A container asking to be routed with no backend anywhere is the same class
-  // of fault as a stale one and clears the same way, so it feeds one streak.
+  // Unrouted containers share the stale-backend streak.
   const unrouted = findUnroutedContainers(containers, backends);
 
   const stale = findStaleBackends(backends, liveIps);
@@ -195,7 +160,6 @@ export async function tickTraefikDrift(): Promise<void> {
   restartedFor = new Set([...restartedFor].filter((k) => present.has(k)));
   persistentAlerted = new Set([...persistentAlerted].filter((k) => present.has(k)));
 
-  // A fault on one tick is a deploy in flight, not drift.
   const confirmed = faults.filter((f) => (staleStreak.get(f.key) ?? 0) >= CONFIRM_STREAK);
 
   // A fault that outlived a restart won't clear with another one.
@@ -285,10 +249,6 @@ export async function tickTraefikDrift(): Promise<void> {
   });
 }
 
-// ---------------------------------------------------------------------------
-// Scheduler
-// ---------------------------------------------------------------------------
-
 let interval: NodeJS.Timeout | null = null;
 let ticking = false;
 let unregisterShutdown: (() => void) | null = null;
@@ -309,8 +269,6 @@ export function startTraefikDriftMonitor(): void {
     }
   }, POLL_INTERVAL_MS);
 
-  // Registered from the start function, not at module scope — importing this
-  // module must not wire a shutdown for a monitor that was never started.
   unregisterShutdown = closeOnShutdown(stopTraefikDriftMonitor);
 }
 

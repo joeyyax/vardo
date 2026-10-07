@@ -1,18 +1,8 @@
-// ---------------------------------------------------------------------------
-// Compose normalization — transforms user-provided compose into safe runtime
-// config. The user's compose is intent; the normalized compose is what runs.
-//
-// Called early in the deploy pipeline, after stripVardoInjections and before
-// Traefik/network injection.
-// ---------------------------------------------------------------------------
+// Turns user compose into safe runtime config. Runs after stripVardoInjections, before Traefik/network injection.
 
 import type { ComposeFile } from "./compose";
 import { parsePortString, stripHostPorts } from "./compose";
 import { selectRoutedService } from "./routed-service";
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 
 export type NormalizeChange = {
   service: string;
@@ -37,20 +27,11 @@ export type NormalizeOptions = {
   keepHostPorts?: boolean;
 };
 
-/** Restart policies Docker accepts. Anything else is a bad column value. */
+/** Restart policies Docker accepts. */
 const VALID_RESTART = /^(no|always|unless-stopped|on-failure(:\d+)?)$/;
 const DEFAULT_RESTART = "unless-stopped";
 
-// ---------------------------------------------------------------------------
-// Routed service detection
-// ---------------------------------------------------------------------------
-
-/**
- * Determine which services are routed via Traefik (have domains).
- *
- * When the app has at least one domain, the service that serves its port is
- * Traefik-routed. Pass `containerPort` so the selection can use it.
- */
+/** Services routed via Traefik: the one serving the app's port, when the app has a domain. */
 export function getRoutedServices(
   compose: ComposeFile,
   domainCount: number,
@@ -64,10 +45,6 @@ export function getRoutedServices(
   return routed;
 }
 
-// ---------------------------------------------------------------------------
-// Main normalizer
-// ---------------------------------------------------------------------------
-
 export function normalizeCompose(
   compose: ComposeFile,
   opts: NormalizeOptions,
@@ -75,25 +52,16 @@ export function normalizeCompose(
   const changes: NormalizeChange[] = [];
   let result = structuredClone(compose);
 
-  // 1. Strip host ports from Traefik-routed services
   if (!opts.keepHostPorts) {
     result = normalizeHostPorts(result, opts.routedServices ?? new Set(), changes);
   }
 
-  // 2. Normalize restart policies
   result = normalizeRestart(result, opts.restartPolicy ?? DEFAULT_RESTART, changes);
 
   return { compose: result, changes };
 }
 
-// ---------------------------------------------------------------------------
-// Individual normalizers
-// ---------------------------------------------------------------------------
-
-/**
- * Strip host port bindings from all Traefik-routed services.
- * Non-routed services keep their ports (databases, MQTT, etc.).
- */
+/** Strip host port bindings from Traefik-routed services. Non-routed services keep theirs. */
 function normalizeHostPorts(
   compose: ComposeFile,
   routedServices: Set<string>,
@@ -104,7 +72,6 @@ function normalizeHostPorts(
   for (const [name, svc] of Object.entries(compose.services)) {
     if (!routedServices.has(name) || !svc.ports) continue;
 
-    // Check what ports will be stripped
     for (const raw of svc.ports) {
       const parsed = parsePortString(raw);
       if (parsed && parsed.external !== undefined) {
@@ -125,9 +92,8 @@ function normalizeHostPorts(
 }
 
 /**
- * Normalize restart policies across all services. Precedence: a service's own
- * `restart:` wins, except "always" (unsafe here) and "no" (overridden unless
- * the app column also says "no"); otherwise the app column, then the default.
+ * Normalize restart policies. A service's own `restart:` wins, except "always" and "no"
+ * (unless the app column also says "no"); otherwise the app column, then the default.
  */
 function normalizeRestart(
   compose: ComposeFile,
@@ -135,8 +101,7 @@ function normalizeRestart(
   changes: NormalizeChange[],
 ): ComposeFile {
   const services = { ...compose.services };
-  // The column is free text, and an unrecognized value would fail every
-  // service's `docker compose up`.
+  // Free-text column; an invalid value would fail every `docker compose up`.
   const requested = VALID_RESTART.test(targetPolicy) ? targetPolicy : DEFAULT_RESTART;
   const safePolicy = requested === "always" ? "unless-stopped" : requested;
 
@@ -161,9 +126,7 @@ function normalizeRestart(
         reason: 'restart: "no" changed — services should restart on failure in production',
       });
     } else if (svc.restart === "always") {
-      // Docker restarts an "always" container when the daemon restarts even if it
-      // was explicitly stopped, which would bring a standby slot back up alongside
-      // the active one. "unless-stopped" is identical except for that case.
+      // "always" resurrects the stopped standby slot on daemon restart.
       services[name] = { ...svc, restart: "unless-stopped" };
       changes.push({
         service: name,

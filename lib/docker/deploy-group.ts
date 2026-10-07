@@ -1,9 +1,4 @@
-// ---------------------------------------------------------------------------
-// Group deploy orchestration
-//
-// Deploys all apps in a project in dependency order, resolving cross-app
-// env var references within the project's environment context.
-// ---------------------------------------------------------------------------
+// Deploys a project's apps in dependency order.
 
 import { db } from "@/lib/db";
 import {
@@ -14,10 +9,6 @@ import {
 import { eq, and, isNull, inArray, or } from "drizzle-orm";
 import { extractExpressions, validateExpression } from "@/lib/env/resolve";
 import { requestDeploy } from "./deploy-cancel";
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 
 type GroupDeployOpts = {
   projectId: string;
@@ -51,10 +42,6 @@ type GroupDeployResult = {
 
 export type { GroupDeployOpts, GroupDeployResult };
 
-// ---------------------------------------------------------------------------
-// Dependency graph
-// ---------------------------------------------------------------------------
-
 type AppNode = {
   id: string;
   name: string;
@@ -63,10 +50,7 @@ type AppNode = {
   inferredDeps: string[];
 };
 
-/**
- * Build the dependency graph for apps in a project.
- * Combines inferred deps (from ${app.VAR} refs) with explicit depends_on.
- */
+/** Dependency graph from `${app.VAR}` refs plus explicit depends_on. */
 async function buildDependencyGraph(
   projectApps: {
     id: string;
@@ -79,7 +63,6 @@ async function buildDependencyGraph(
   const graph = new Map<string, AppNode>();
   const appNames = new Set(projectApps.map((a) => a.name));
 
-  // Batch-fetch all env vars for all apps in a single query (avoids N+1)
   const allAppIds = projectApps.map((a) => a.id);
   const envIds = [...environmentIds.values()].filter((id): id is string => !!id);
   const allVars = await db.query.envVars.findMany({
@@ -90,7 +73,7 @@ async function buildDependencyGraph(
         : isNull(envVars.environmentId)
     ),
   });
-  // Group by appId, keeping each app's base vars and its own environment's
+  // Each app's base vars plus its own environment's.
   const varsByApp = new Map<string, typeof allVars>();
   for (const v of allVars) {
     if (v.environmentId && v.environmentId !== environmentIds.get(v.appId)) continue;
@@ -103,7 +86,6 @@ async function buildDependencyGraph(
     const appVars = varsByApp.get(app.id) || [];
     const allVarValues = appVars.map((v) => v.value);
 
-    // Infer dependencies from cross-app refs
     const inferredDeps = new Set<string>();
     for (const value of allVarValues) {
       for (const expr of extractExpressions(value)) {
@@ -117,7 +99,6 @@ async function buildDependencyGraph(
       }
     }
 
-    // Merge explicit depends_on (filter to apps in the project)
     const explicitDeps = (app.dependsOn ?? []).filter(
       (d) => appNames.has(d) && d !== app.name
     );
@@ -134,11 +115,7 @@ async function buildDependencyGraph(
   return graph;
 }
 
-/**
- * Topological sort into deployment tiers.
- * Apps in the same tier can deploy in parallel.
- * Returns tiers in order (tier 0 has no deps, tier 1 depends on tier 0, etc).
- */
+/** Topological sort into tiers; apps in a tier deploy in parallel. */
 function topologicalTierSort(
   graph: Map<string, AppNode>
 ): string[][] {
@@ -184,20 +161,12 @@ function topologicalTierSort(
   return tiers;
 }
 
-// ---------------------------------------------------------------------------
-// Group deploy
-// ---------------------------------------------------------------------------
-
-/**
- * Deploy all apps in a project in dependency order.
- * Apps within the same tier are deployed in parallel.
- */
+/** Deploy a project's apps tier by tier, stopping after a failed tier. */
 export async function deployGroup(
   opts: GroupDeployOpts
 ): Promise<GroupDeployResult> {
   const startTime = Date.now();
 
-  // Load project (grouping)
   const { projects } = await import("@/lib/db/schema");
   const project = await db.query.projects.findFirst({
     where: and(
@@ -208,7 +177,7 @@ export async function deployGroup(
 
   if (!project) throw new Error("Project not found");
 
-  // Load all top-level apps in the project (exclude compose child services)
+  // Top-level apps only; compose children deploy with their parent.
   const topLevelApps = await db.query.apps.findMany({
     where: and(
       eq(apps.projectId, opts.projectId),
@@ -217,10 +186,8 @@ export async function deployGroup(
     ),
   });
 
-  // Resolve which app-level environmentId to use for each app
   const appEnvironmentIds: Map<string, string | undefined> = new Map();
   if (opts.groupEnvironmentId) {
-    // Find app-level environments linked to this group environment
     const envs = await db.query.environments.findMany({
       where: eq(environments.groupEnvironmentId, opts.groupEnvironmentId),
     });
@@ -229,8 +196,7 @@ export async function deployGroup(
     }
   }
 
-  // A group environment covers only the apps it has an environment for. The
-  // rest would deploy to their default environment, which is production.
+  // Apps without an environment in the group would deploy to production.
   const projectApps = opts.groupEnvironmentId
     ? topLevelApps.filter((a) => appEnvironmentIds.has(a.id))
     : topLevelApps;
@@ -243,7 +209,6 @@ export async function deployGroup(
     };
   }
 
-  // Build dependency graph
   const graph = await buildDependencyGraph(
     projectApps.map((a) => ({
       id: a.id,
@@ -254,7 +219,6 @@ export async function deployGroup(
     appEnvironmentIds
   );
 
-  // Sort into tiers
   const tiers = topologicalTierSort(graph);
 
   opts.onLog?.("group", `[group] Deploying "${project.name}" — ${projectApps.length} app(s), ${tiers.length} tier(s)`);
@@ -262,7 +226,6 @@ export async function deployGroup(
     opts.onLog?.("group", `[group] Tier ${i}: ${tiers[i].join(", ")}`);
   }
 
-  // Deploy tier by tier
   const results: GroupDeployResult["results"] = [];
   let allSuccess = true;
 
@@ -273,7 +236,6 @@ export async function deployGroup(
 
     if (opts.signal?.aborted) throw new Error("Group deployment aborted");
 
-    // Deploy all apps in this tier in parallel
     const tierResults = await Promise.allSettled(
       tier.map(async (appName) => {
         const node = graph.get(appName)!;
@@ -307,7 +269,6 @@ export async function deployGroup(
         results.push(result.value);
         if (!result.value.success) allSuccess = false;
       } else {
-        // Deployment threw an error
         const appName = tier[tierResults.indexOf(result)];
         const node = graph.get(appName)!;
         results.push({
@@ -323,7 +284,6 @@ export async function deployGroup(
       }
     }
 
-    // If any app in this tier failed, abort remaining tiers
     const tierFailed = tierResults.some(
       (r) => r.status === "rejected" || (r.status === "fulfilled" && !r.value.success)
     );

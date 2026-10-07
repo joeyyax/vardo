@@ -47,9 +47,7 @@ export type ApplyOutcome =
 
 /**
  * Rewrites one pinned tag and marks the app for redeploy.
- *
- * Callers must run these one at a time: siblings of a compose parent write the
- * same `composeContent`, and a parallel pair would drop one of the two edits.
+ * Run one at a time: compose siblings share `composeContent`, so parallel calls drop edits.
  */
 export async function applyImageUpdate({
   orgId,
@@ -72,7 +70,7 @@ export async function applyImageUpdate({
     service: requestedService ?? app.composeService ?? null,
   };
 
-  // Backstop. The UI never offers these rows, but the endpoint is public API.
+  // Backstop for the public API.
   if (isVardoManagedApp(app)) {
     return fail(identity, 403, IMAGE_UPDATE_REFUSAL);
   }
@@ -84,23 +82,20 @@ export async function applyImageUpdate({
     return fail(identity, 404, "No such service on this app");
   }
 
-  // Only apply what a check actually proposed — this is not a free-form tag editor.
+  // Only apply a tag a check proposed.
   const offered = new Set(
     [target.latestTag, target.majorAvailable, ...target.available].filter(
       (t): t is string => t !== null,
     ),
   );
-  // The gate read both majors off real local images, so its two are verified in
-  // the same sense a registry check's are — and they are the only way out of a
-  // floating tag, which no check ever offers a tag for.
+  // The major gate's two majors also count as verified.
   const gated = majorGate ? gateChoice(status.blockedMigration, service, tag) : null;
 
   if (!offered.has(tag) && !gated) {
     return fail(identity, 409, `No verified update to ${tag}. Re-run the check first.`);
   }
 
-  // Pinning the major the gate stopped on is the same data migration, and the
-  // tag it moves from names no version for `requiresMigration` to read.
+  // Pinning the gate's new major is a data migration too.
   if (gated === "forward" && !acknowledgeMigration) {
     const blocked = status.blockedMigration!.services.find((entry) => entry.service === service)!;
     return {
@@ -115,8 +110,7 @@ export async function applyImageUpdate({
     };
   }
 
-  // A major bump on a major-locked image cannot start against the existing
-  // data directory. Require the caller to say so explicitly.
+  // A major bump on a major-locked image needs explicit acknowledgment.
   if (requiresMigration(target.image, target.currentTag, tag) && !acknowledgeMigration) {
     return {
       ...identity,
@@ -169,10 +163,7 @@ export async function applyImageUpdate({
   };
 }
 
-/**
- * Which side of a stopped deploy this tag is: the major the app is running, or
- * the one the pull moved to. Null when the tag is neither.
- */
+/** Whether the tag is the gate's running major ("back"), its new major ("forward") or neither. */
 function gateChoice(
   block: AppUpdateStatus["blockedMigration"],
   service: string | null,

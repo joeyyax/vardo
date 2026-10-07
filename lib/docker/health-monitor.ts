@@ -40,25 +40,16 @@ export { RESTART_WINDOW_MS };
 
 const log = logger.child("health-monitor");
 
-// ---------------------------------------------------------------------------
-// Tuning
-// ---------------------------------------------------------------------------
-
 const POLL_INTERVAL_MS = 30_000;
 /** Container states `docker ps` lists without `--all`. */
 const LISTED_STATES = new Set(["running", "paused", "restarting"]);
-/** Consecutive ticks a container must read "unhealthy" before we act. Docker's
- *  own healthcheck retries already gate the unhealthy state; this is an extra
- *  guard against a single racy read. */
+/** Consecutive "unhealthy" ticks before acting, on top of Docker's own healthcheck retries. */
 export const CONFIRM_STREAK = 2;
 /** Don't restart the same container more often than this. */
 export const RESTART_BACKOFF_MS = 5 * 60_000;
-/** Max restarts of one container within RESTART_WINDOW_MS before we give up and
- *  escalate to a human instead of looping forever. */
+/** Max restarts of one container per RESTART_WINDOW_MS before escalating to a human. */
 export const MAX_RESTARTS_PER_WINDOW = 5;
-/** Skip containers younger than this — the post-deploy rollback monitor owns the
- *  fresh-deploy window, and Docker reports "starting" (not "unhealthy") during a
- *  healthcheck's start_period anyway. */
+/** Skip younger containers: the post-deploy rollback monitor owns that window. */
 const MIN_CONTAINER_AGE_MS = 120_000;
 /** How long a container is watched after an auto-restart. */
 export const RECOVERY_WINDOW_MS = 5 * 60_000;
@@ -67,27 +58,15 @@ export const RESTART_EXIT_GRACE_MS = 2 * 60_000;
 /** How long a container whose restart call failed is watched. */
 export const FAILED_RESTART_WINDOW_MS = 3 * 60 * 60_000;
 
-/** Restarts observed within RESTART_WINDOW_MS before a container counts as
- *  crash-looping. Override with VARDO_CRASH_LOOP_RESTARTS. */
+/** Restarts per RESTART_WINDOW_MS that count as crash-looping. Override with VARDO_CRASH_LOOP_RESTARTS. */
 export function getCrashLoopThreshold(): number {
   const parsed = parseInt(process.env.VARDO_CRASH_LOOP_RESTARTS ?? "5", 10);
   return Math.max(2, isNaN(parsed) ? 5 : parsed);
 }
 
-// ---------------------------------------------------------------------------
-// Pure decision logic (unit tested)
-// ---------------------------------------------------------------------------
-
 export type RestartDecision = "wait" | "restart" | "backoff" | "giveup";
 
-/**
- * Decide what to do about a container currently reading "unhealthy".
- * Pure function of the accumulated state so it can be tested in isolation.
- *
- * @param streak           consecutive unhealthy reads including this tick
- * @param recentRestarts   restart timestamps within RESTART_WINDOW_MS, ascending
- * @param now              current epoch ms
- */
+/** Decide what to do about an unhealthy container. `streak` includes this tick; `recentRestarts` is ascending, within RESTART_WINDOW_MS. */
 export function decideRestart(opts: {
   streak: number;
   recentRestarts: number[];
@@ -100,16 +79,8 @@ export function decideRestart(opts: {
   return "restart";
 }
 
-/**
- * Whether a container is crash-looping: Docker's RestartCount has climbed past
- * the threshold since we started watching, and we never once saw the container
- * healthy.
- *
- * This is the failure class the unhealthy check cannot see. A container that
- * dies inside its healthcheck's start_period never leaves "starting", so its
- * FailingStreak stays 0 and it reads as fine forever while Docker restarts it
- * on a loop.
- */
+/** Crash-looping: RestartCount passed the threshold since watching began and the container was never healthy. */
+// Catches containers that die inside start_period, which never leave "starting" and so never read unhealthy.
 export function isCrashLooping(opts: {
   restartsSinceBaseline: number;
   everHealthy: boolean;
@@ -121,15 +92,8 @@ export function isCrashLooping(opts: {
 
 export type RecoveryDecision = "watch" | "start" | "done" | "escalate";
 
-/**
- * What to do about a container Vardo just tried to restart.
- *
- * A restart whose kill times out leaves Docker's `hasBeenManuallyStopped` set,
- * so the restart policy never brings the container back once it finally exits.
- * After a restart call that returned, an exit within RESTART_EXIT_GRACE_MS is
- * ours to undo. After one that threw, the kill may land much later, so any exit
- * since the first failed attempt is ours for FAILED_RESTART_WINDOW_MS.
- */
+/** What to do about a container Vardo tried to restart. */
+// A restart whose kill times out sets `hasBeenManuallyStopped`, so the restart policy never brings it back. Those exits are ours to undo.
 export function decideRecovery(opts: {
   running: boolean;
   status: string;
@@ -172,8 +136,7 @@ export type PendingRecoveryState = {
   startTried: boolean;
 };
 
-/** Pending entry for a new restart attempt. A failed attempt stays on record for
- *  the rest of the episode, whatever later attempts return. */
+/** Pending entry for a new restart attempt. A failed attempt stays on record for the episode. */
 export function nextPendingRecovery<T extends PendingRecoveryState>(
   prev: T | undefined,
   next: Omit<T, keyof PendingRecoveryState>,
@@ -193,8 +156,7 @@ export function markRestartFailed<T extends PendingRecoveryState>(p: T, now: num
   return { ...p, restartFailed: true, firstFailedAt: p.firstFailedAt ?? now };
 }
 
-/** Whether an app should be auto-restarted when unhealthy. null on the app means
- *  "use the default", which is on for critical-priority apps and off otherwise. */
+/** Whether an unhealthy app auto-restarts. null means the default: on for critical-priority apps. */
 export function effectiveAutoRestart(app: {
   autoRestartUnhealthy: boolean | null;
   priority: string | null;
@@ -202,19 +164,14 @@ export function effectiveAutoRestart(app: {
   return app.autoRestartUnhealthy ?? app.priority === "critical";
 }
 
-// ---------------------------------------------------------------------------
-// Per-container in-memory state
-// ---------------------------------------------------------------------------
-
-// The restart budget and the give-up marker are persisted in ./self-heal-store.
-// The state below is rebuilt over the next few ticks after a restart.
+// Restart budget and give-up marker persist in ./self-heal-store; the state below rebuilds over a few ticks.
 
 const unhealthyStreak = new Map<string, number>();
-/** containerId → Docker RestartCount when we first saw it, and when. */
+/** containerId → Docker RestartCount at first sighting, and when. */
 const restartBaseline = new Map<string, { count: number; at: number }>();
-/** containerIds observed healthy at least once — not crash-looping. */
+/** containerIds seen healthy at least once. */
 const everHealthy = new Set<string>();
-/** containerId → last crash-loop alert, so we escalate once per window. */
+/** containerId → last crash-loop alert, one per window. */
 const crashLoopAlerted = new Map<string, number>();
 /** appId → hysteresis streaks, fed back into evaluateConditions each tick. */
 const conditionStreaks = new Map<string, ConditionStreaks>();
@@ -225,13 +182,8 @@ type PendingRecovery = PendingRecoveryState & {
   organizationId: string;
   containerName: string;
 };
-/** containerId → a restart still being watched. Stopped containers drop out of
- *  listContainers(), so these are inspected by id. */
+/** containerId → a restart still being watched. Inspected by id, since stopped containers drop out of listContainers(). */
 const pendingRecovery = new Map<string, PendingRecovery>();
-
-// ---------------------------------------------------------------------------
-// Tick
-// ---------------------------------------------------------------------------
 
 export async function tickHealthMonitor(): Promise<void> {
   const now = Date.now();
@@ -240,10 +192,10 @@ export async function tickHealthMonitor(): Promise<void> {
   let containers: ContainerInfo[];
   try {
     all = await listAllContainers();
-    // What `docker ps` lists: the set whose healthcheck state is meaningful.
+    // The set whose healthcheck state is meaningful.
     containers = all.filter((c) => LISTED_STATES.has(c.state));
   } catch (err) {
-    // Transient Docker socket error — skip this tick, never throw.
+    // Transient socket error: skip this tick.
     log.error("Failed to list containers:", err instanceof Error ? err.message : err);
     return;
   }
@@ -251,7 +203,7 @@ export async function tickHealthMonitor(): Promise<void> {
   try {
     await hydrateSelfHealState(now);
   } catch (err) {
-    // Skip the tick — an empty budget would hand every container a fresh cap.
+    // Skip the tick: an empty budget would hand every container a fresh cap.
     log.error("Failed to load self-heal state:", err instanceof Error ? err.message : err);
     return;
   }
@@ -262,11 +214,9 @@ export async function tickHealthMonitor(): Promise<void> {
   const managed = containers.filter((c) => c.labels["vardo.managed"] === "true");
   const seen = new Set<string>();
 
-  // Load the apps referenced by these containers once, keyed by id.
   const appIds = [...new Set(managed.map((c) => c.labels["vardo.project.id"]).filter(Boolean))];
 
-  // Apps with no containers are not evaluated below, so their last-written
-  // runtime conditions would stand forever.
+  // Apps with no containers aren't evaluated below, so clear their runtime conditions.
   await clearConditionsForContainerlessApps(appIds);
 
   if (appIds.length === 0) {
@@ -292,10 +242,7 @@ export async function tickHealthMonitor(): Promise<void> {
     where: (t, { inArray }) => inArray(t.parentAppId, appIds),
   });
 
-  // One cAdvisor read for the whole fleet, keyed by the container id the loop
-  // below already has.
-  // cAdvisor reports the 12-char short id; Docker's list API returns the full
-  // one. Both sides are truncated so the lookup matches.
+  // One cAdvisor read for the fleet. cAdvisor uses 12-char short ids, so both sides are truncated.
   const usageByContainer = new Map<string, { usage: number; limit: number }>();
   try {
     for (const m of await fetchAllMetrics()) {
@@ -312,7 +259,7 @@ export async function tickHealthMonitor(): Promise<void> {
     signals.set(appId, {
       ...cur,
       ...patch,
-      // An app is crash-looping or unhealthy if any of its containers is.
+      // Any container crash-looping or unhealthy marks the app.
       crashLoop: patch.crashLoop ?? cur.crashLoop,
       health: patch.health === "unhealthy" || cur.health === "unhealthy" ? "unhealthy" : (patch.health ?? cur.health),
       selfHealExhausted: patch.selfHealExhausted || cur.selfHealExhausted,
@@ -333,7 +280,7 @@ export async function tickHealthMonitor(): Promise<void> {
     try {
       info = await inspectContainer(c.id);
     } catch {
-      continue; // container may have just gone away
+      continue; // container may have gone away
     }
 
     if (info.state.health?.status === "healthy") everHealthy.add(c.id);
@@ -354,20 +301,20 @@ export async function tickHealthMonitor(): Promise<void> {
       continue;
     }
 
-    // No healthcheck → we can't judge health; nothing to do.
+    // No healthcheck, nothing to judge.
     if (!info.state.health) {
       unhealthyStreak.delete(c.id);
       continue;
     }
 
     if (info.state.health.status !== "unhealthy") {
-      // healthy / starting → reset and clear any prior give-up escalation
+      // Healthy or starting: reset and clear any give-up escalation.
       unhealthyStreak.delete(c.id);
       await clearGaveUp(c.id, now);
       continue;
     }
 
-    // Skip very young containers (post-deploy window owned by rollback monitor).
+    // The rollback monitor owns the post-deploy window.
     const age = now - new Date(info.state.startedAt).getTime();
     if (Number.isFinite(age) && age < MIN_CONTAINER_AGE_MS) continue;
 
@@ -403,7 +350,6 @@ export async function tickHealthMonitor(): Promise<void> {
       continue;
     }
 
-    // decision === "restart"
     const pending = nextPendingRecovery<PendingRecovery>(
       pendingRecovery.get(c.id),
       { appId: app.id, appName, organizationId: app.organizationId, containerName: c.name },
@@ -420,13 +366,11 @@ export async function tickHealthMonitor(): Promise<void> {
       log.error(`Failed to restart ${c.name}:`, err instanceof Error ? err.message : err);
     }
 
-    // A failed restart still spends budget — otherwise an un-restartable
-    // container retries forever.
+    // A failed restart still spends budget, or an unrestartable container retries forever.
     const spent = await recordRestart(app.id, c.id, now);
     unhealthyStreak.delete(c.id);
 
-    // The notification is read once and gone. This is what the stability
-    // timeline still has when someone asks why the app recovered.
+    // Recorded for the stability timeline; the notification is read once and gone.
     if (ok) {
       try {
         await recordActivity({
@@ -563,7 +507,7 @@ async function tickRecoveries(running: ContainerInfo[], now: number): Promise<vo
       }
     }
 
-    // escalate, or a start that failed
+    // Escalated, or the start failed.
     pendingRecovery.delete(id);
     const wedged = info.state.running && p.restartFailed && !p.startTried;
     log.error(
@@ -591,11 +535,7 @@ async function tickRecoveries(running: ContainerInfo[], now: number): Promise<vo
 /** Last reason logged per container for leaving it stopped, so each is logged once. */
 const desiredStateLeft = new Map<string, string>();
 
-/**
- * Start stopped containers of critical apps that nothing asked to stop. Docker's
- * restart policy stands down after any stop call, including a restart that
- * failed, so this puts back what the policy would have done.
- */
+/** Start stopped containers of critical apps nothing asked to stop. Docker's restart policy stands down after any stop call. */
 async function tickDesiredState(all: ContainerInfo[], running: ContainerInfo[], now: number): Promise<void> {
   const candidates = all.filter(
     (c) =>
@@ -768,10 +708,7 @@ function memRatio(m: { usage: number; limit: number }): number {
   return m.limit > 0 ? m.usage / m.limit : 0;
 }
 
-/**
- * Crash-loop input for one container, or null when it is not looping. Mirrors
- * isCrashLooping — restarts since the baseline, never having reported healthy.
- */
+/** Crash-loop input for one container, or null. Mirrors isCrashLooping. */
 function crashLoopSignal(
   containerId: string,
   restartCount: number,
@@ -792,14 +729,10 @@ function crashLoopSignal(
   return { restarts: delta, windowMs: now - baseline.at };
 }
 
-/** One line on the first tick, so an evaluator that reads nothing is visible
- *  rather than indistinguishable from one that found nothing wrong. */
+/** Logged once on the first tick, so an evaluator that reads nothing is visible. */
 let conditionsReported = false;
 
-/**
- * Strip runtime conditions from apps this tick saw no containers for. Advisory
- * conditions stay — a missing backup is still missing while an app is stopped.
- */
+/** Strip runtime conditions from apps with no containers this tick. Advisory conditions stay. */
 async function clearConditionsForContainerlessApps(seenAppIds: string[]): Promise<void> {
   try {
     const stale = await db.query.apps.findMany({
@@ -867,11 +800,7 @@ async function persistConditions(
   }
 }
 
-/**
- * Escalate a container whose RestartCount keeps climbing without ever reaching
- * healthy. Alerts at most once per RESTART_WINDOW_MS, then rebaselines so a
- * container that is still looping alerts again next window.
- */
+/** Escalate a container whose RestartCount climbs without reaching healthy. Alerts once per RESTART_WINDOW_MS, then rebaselines. */
 async function checkCrashLoop(
   c: { id: string; name: string },
   restartCount: number,
@@ -880,7 +809,7 @@ async function checkCrashLoop(
 ): Promise<void> {
   const baseline = restartBaseline.get(c.id);
   if (!baseline || restartCount < baseline.count) {
-    // First sighting, or the container was recreated and the counter reset.
+    // First sighting, or recreated with the counter reset.
     restartBaseline.set(c.id, { count: restartCount, at: now });
     return;
   }
@@ -908,9 +837,7 @@ async function checkCrashLoop(
       `(~${perHour}/hr, ${restartCount} total) and has never reported healthy — it is dying before its healthcheck can fail`,
   );
 
-  // The notification is read once and gone; this is what the stability
-  // timeline still has after the container is replaced and Docker's count
-  // starts over at zero.
+  // Recorded for the stability timeline, which outlives the container and Docker's count.
   try {
     await recordActivity({
       organizationId: app.organizationId,
@@ -944,8 +871,7 @@ async function checkCrashLoop(
   });
 }
 
-/** Drop in-memory state for containers that no longer exist. Self-heal state is
- *  not evicted here; it ages out by window instead. */
+/** Drop in-memory state for containers that no longer exist. Self-heal state ages out by window. */
 function cleanupState(seen: Set<string>): void {
   for (const id of unhealthyStreak.keys()) if (!seen.has(id)) unhealthyStreak.delete(id);
   for (const id of restartBaseline.keys()) if (!seen.has(id)) restartBaseline.delete(id);
@@ -953,14 +879,12 @@ function cleanupState(seen: Set<string>): void {
   for (const id of crashLoopAlerted.keys()) if (!seen.has(id)) crashLoopAlerted.delete(id);
 }
 
-/** Drop streaks for apps that no longer exist. Keyed by app, not container. */
+/** Drop streaks for apps that no longer exist. */
 export function forgetConditionStreaks(appIds: Set<string>): void {
   for (const id of conditionStreaks.keys()) if (!appIds.has(id)) conditionStreaks.delete(id);
 }
 
-// ---------------------------------------------------------------------------
-// Scheduler (mirrors lib/system-alerts/monitor.ts)
-// ---------------------------------------------------------------------------
+// Scheduler (mirrors lib/system-alerts/monitor.ts).
 
 let interval: NodeJS.Timeout | null = null;
 let ticking = false;
@@ -985,8 +909,7 @@ export function startHealthMonitor(): void {
     }
   }, POLL_INTERVAL_MS);
 
-  // Registered from the start function, not at module scope — importing this
-  // module must not wire a shutdown for a monitor that was never started.
+  // Registered here, not at module scope, so importing the module wires no shutdown.
   unregisterShutdown = closeOnShutdown(stopHealthMonitor);
 }
 

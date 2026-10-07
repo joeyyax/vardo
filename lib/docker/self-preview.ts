@@ -1,18 +1,5 @@
-// ---------------------------------------------------------------------------
-// Vardo self-preview deployer
-//
-// Deploys a frontend-only preview of Vardo when a PR is opened against the
-// Vardo repo. This is a specialized path — not the generic deploy engine.
-//
-// Safety constraints:
-//   - No Docker socket mount
-//   - No VARDO_HOME_DIR mount
-//   - SKIP_MIGRATIONS=true (prevents DB migrations on boot)
-//   - VARDO_PREVIEW=true (webhook handler returns early on preview instances)
-//
-// The preview container joins the existing vardo-network and reuses the
-// running vardo-postgres and vardo-redis services.
-// ---------------------------------------------------------------------------
+// Frontend-only Vardo preview for PRs against the Vardo repo.
+// No Docker socket or VARDO_HOME_DIR mount; SKIP_MIGRATIONS and VARDO_PREVIEW are always set.
 
 import { mkdir, writeFile, rm } from "fs/promises";
 import { join } from "path";
@@ -31,22 +18,13 @@ const log = logger.child("self-preview");
 const PREVIEW_PROJECT_PREFIX = "vardo-preview-pr";
 const VARDO_NETWORK = process.env.VARDO_NETWORK ?? "vardo-network";
 
-// Validate VARDO_NETWORK at startup — used in two positions in the compose
-// template (network reference and network key). A value with newlines or
-// YAML-special chars would produce malformed compose output. baseDomain is
-// already validated with a regex before use in the same template; this applies
-// the same treatment to VARDO_NETWORK.
+// VARDO_NETWORK is interpolated into the compose YAML.
 if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(VARDO_NETWORK)) {
   throw new Error(`Invalid VARDO_NETWORK: "${VARDO_NETWORK}"`);
 }
 
-// Stale preview threshold: tear down previews older than this many hours when
-// cleanupStaleSelfPreviews() runs. Handles missed PR close webhooks.
+// Previews older than this are torn down by cleanupStaleSelfPreviews().
 const STALE_PREVIEW_MAX_AGE_HOURS = 72;
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 
 export type CreateVardoPreviewOpts = {
   prNumber: number;
@@ -59,25 +37,11 @@ export type VardoPreviewResult = {
   projectName: string;
 };
 
-// ---------------------------------------------------------------------------
-// Query helper
-// ---------------------------------------------------------------------------
-
-/**
- * Find an app that is system-managed and linked to the given GitHub repo.
- * Returns null if no matching app exists.
- *
- * Scoped to the first-created organization — the same org selfManagement
- * registers apps under (see self-register.ts). This matches the org-scoped
- * pattern used everywhere else and ensures results never cross tenant
- * boundaries if the partial unique index is ever relaxed.
- */
+/** System-managed app linked to the repo, scoped to the first-created org. Null if none. */
 export async function getSystemManagedApp(repoFullName: string) {
-  // Must match the URL format stored by ensureVardoProject in self-register.ts,
-  // which strips the .git suffix when normalizing SSH remotes to HTTPS.
+  // Must match the format ensureVardoProject stores (no .git suffix).
   const gitUrl = `https://github.com/${repoFullName}`;
 
-  // selfManagement registers apps under the first-created organization.
   const [org] = await db
     .select({ id: organizations.id })
     .from(organizations)
@@ -95,17 +59,7 @@ export async function getSystemManagedApp(repoFullName: string) {
   });
 }
 
-// ---------------------------------------------------------------------------
-// Create preview
-// ---------------------------------------------------------------------------
-
-/**
- * Clone the Vardo repo at the PR branch, generate a single-service compose
- * file, and spin up the frontend container with Traefik routing.
- *
- * If a preview already exists for this PR (e.g. a force-push), the old
- * containers are torn down before rebuilding.
- */
+/** Clone the PR branch and start a single-service preview behind Traefik, replacing any existing one. */
 export async function createVardoPreview(
   opts: CreateVardoPreviewOpts
 ): Promise<VardoPreviewResult> {
@@ -115,28 +69,21 @@ export async function createVardoPreview(
     throw new Error("Vardo previews need both Previews and Self-management enabled");
   }
 
-  // Validate prNumber — used in filesystem paths and container names.
+  // Used in filesystem paths and container names.
   if (!Number.isInteger(prNumber) || prNumber <= 0) {
     throw new Error(`Invalid PR number: ${prNumber}`);
   }
 
-  // Allowlist branch name characters. Must start with an alphanumeric character
-  // (rules out git flag injection like --upload-pack) and only contain the chars
-  // that appear in real-world branch names. execFile already prevents shell
-  // injection, but an allowlist is a stronger guarantee.
+  // Leading alphanumeric blocks git flag injection (--upload-pack).
   if (!/^[a-zA-Z0-9][a-zA-Z0-9/_.~-]*$/.test(branch)) {
     throw new Error(`Invalid branch name: ${branch}`);
   }
 
-  // Validate repoFullName before constructing the clone URL.
-  // HMAC verification upstream makes exploitation unlikely, but this function
-  // runs git clone and manages temp dirs — defensive validation is appropriate.
   if (!/^[\w.-]+\/[\w.-]+$/.test(repoFullName)) {
     throw new Error(`Invalid repo name: ${repoFullName}`);
   }
 
-  // Refuse rather than silently fall back to DATABASE_URL. A preview runs PR
-  // code with write access to whatever database it is handed.
+  // Security: a preview runs PR code with write access to whatever database it's handed.
   if (!process.env.PREVIEW_DATABASE_URL && process.env.VARDO_ALLOW_PREVIEW_PROD_DB !== "true") {
     throw new Error(
       "PREVIEW_DATABASE_URL is not set, so this preview would run PR code against the production database. " +
@@ -149,22 +96,17 @@ export async function createVardoPreview(
 
   const { baseDomain } = await getInstanceConfig();
 
-  // Validate baseDomain before string-concatenating it into YAML labels.
-  // baseDomain is admin-configured, so direct user exploitation isn't possible,
-  // but a stray backtick, newline, or YAML-special char would produce malformed
-  // compose output.
+  // baseDomain is interpolated into YAML labels.
   if (!/^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?$/.test(baseDomain)) {
     throw new Error(`Invalid baseDomain in instance config: ${baseDomain}`);
   }
 
   const domain = `vardo-pr-${prNumber}.${baseDomain}`;
 
-  // Tear down any existing preview for this PR before rebuilding
   await _teardown(projectName).catch(() => {
-    // Ignore — containers may not exist on first run
+    // Containers may not exist on first run.
   });
 
-  // Clean up any leftover temp dir
   await rm(previewDir, { recursive: true, force: true });
   await mkdir(previewDir, { recursive: true });
 
@@ -175,14 +117,12 @@ export async function createVardoPreview(
     { cwd: previewDir, timeout: 120_000 }
   );
 
-  // Write env file with restrictive permissions — avoids YAML escaping issues
-  // with connection strings, and limits exposure of secrets at rest.
+  // Secrets go in a 0600 env file, not the compose YAML.
   const routerName = `vardo-pr-${prNumber}`;
   const envFileContent = buildEnvFile();
   const envFilePath = join(previewDir, ".preview.env");
   await writeFile(envFilePath, envFileContent, { encoding: "utf-8", mode: 0o600 });
 
-  // Write the preview compose file
   const composeContent = buildPreviewCompose({ domain, routerName });
   await writeFile(join(previewDir, "docker-compose.preview.yml"), composeContent, "utf-8");
 
@@ -204,8 +144,7 @@ export async function createVardoPreview(
   } catch (err) {
     buildError = err instanceof Error ? err : new Error(String(err));
   } finally {
-    // Remove the env file — the containers have already read it at startup.
-    // On failure this ensures credentials don't remain in /tmp indefinitely.
+    // Containers have read it by now; don't leave credentials in /tmp.
     await rm(envFilePath, { force: true }).catch(() => {});
   }
 
@@ -216,14 +155,7 @@ export async function createVardoPreview(
   return { domain, projectName };
 }
 
-// ---------------------------------------------------------------------------
-// Destroy preview
-// ---------------------------------------------------------------------------
-
-/**
- * Tear down the preview containers (including volumes) and remove the
- * temporary directory.
- */
+/** Remove the preview containers, volumes and temp directory. */
 export async function destroyVardoPreview(prNumber: number): Promise<void> {
   if (!Number.isInteger(prNumber) || prNumber <= 0) {
     throw new Error(`Invalid PR number: ${prNumber}`);
@@ -237,17 +169,7 @@ export async function destroyVardoPreview(prNumber: number): Promise<void> {
   await rm(previewDir, { recursive: true, force: true });
 }
 
-// ---------------------------------------------------------------------------
-// Cleanup stale previews
-// ---------------------------------------------------------------------------
-
-/**
- * Find and destroy self-preview containers that have been running longer than
- * STALE_PREVIEW_MAX_AGE_HOURS. Handles the case where a PR close webhook was
- * missed, which would otherwise leave preview containers running indefinitely.
- *
- * Call this from a periodic maintenance job.
- */
+/** Destroy self-previews older than maxAgeHours (catches missed PR-close webhooks). */
 export async function cleanupStaleSelfPreviews(
   maxAgeHours = STALE_PREVIEW_MAX_AGE_HOURS
 ): Promise<number> {
@@ -279,7 +201,6 @@ export async function cleanupStaleSelfPreviews(
     const [containerName, createdAt] = line.split("\t");
     if (!containerName || !createdAt) continue;
 
-    // Container names are: {projectName}-{service}-{index}
     // e.g. vardo-preview-pr-42-vardo-1
     const match = containerName.match(/^vardo-preview-pr-(\d+)-/);
     if (!match) continue;
@@ -307,10 +228,6 @@ export async function cleanupStaleSelfPreviews(
   return cleaned;
 }
 
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
-
 async function _teardown(projectName: string): Promise<void> {
   try {
     await execFileAsync(
@@ -327,21 +244,8 @@ async function _teardown(projectName: string): Promise<void> {
 }
 
 /**
- * Build the .preview.env file content. Only passes through secrets that are
- * required for the frontend-only preview — encryption keys and auth secrets
- * are intentionally excluded so PR contributors cannot access production
- * secrets or forge session tokens.
- *
- * DATABASE isolation:
- * Set PREVIEW_DATABASE_URL (and optionally PREVIEW_REDIS_URL) to point preview
- * containers at an isolated database — a read-only replica, a seeded sandbox,
- * or a separate Postgres role with restricted permissions. This is strongly
- * recommended when selfManagement is enabled.
- *
- * If PREVIEW_DATABASE_URL is not set, DATABASE_URL (production) is used as a
- * fallback. This exposes the production database to preview container code.
- * Only acceptable when PR access is restricted to trusted contributors and the
- * repo is not public. See the selfManagement feature docs for details.
+ * Build .preview.env. Encryption and auth secrets are never passed through.
+ * Security: without PREVIEW_DATABASE_URL this falls back to the production DATABASE_URL and exposes it to PR code.
  */
 export function buildEnvFile(): string {
   const lines = [
@@ -349,12 +253,7 @@ export function buildEnvFile(): string {
     "SKIP_MIGRATIONS=true",
   ];
 
-  // Prefer isolated preview DB/cache; fall back to production if not configured.
-  // ENCRYPTION_MASTER_KEY and BETTER_AUTH_SECRET are intentionally omitted —
-  // preview instances do not need to decrypt stored secrets or issue sessions.
-  //
-  // Values are double-quoted so env parsers don't truncate on '#' in connection
-  // strings. Newlines are stripped first to avoid breaking the quoted value.
+  // Quoted so '#' in connection strings isn't read as a comment.
   const dbUrl = process.env.PREVIEW_DATABASE_URL || process.env.DATABASE_URL;
   if (dbUrl) {
     const sanitized = dbUrl.replace(/\r?\n/g, " ");

@@ -1,9 +1,4 @@
-// ---------------------------------------------------------------------------
-// Environment cloning
-//
-// Creates group-level environments (staging/preview) by fanning out
-// app-level environments, each with a snapshot of its app's env.
-// ---------------------------------------------------------------------------
+// Creates group environments by fanning out app environments, each with an env snapshot.
 
 import { db } from "@/lib/db";
 import {
@@ -21,10 +16,6 @@ import {
   } from "@/lib/domain-monitoring/auto-domain";
 import { snapshotEnv } from "@/lib/env/environment-env";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
 type CreateGroupEnvironmentOpts = {
   projectId: string;
   organizationId: string;
@@ -33,7 +24,7 @@ type CreateGroupEnvironmentOpts = {
   sourceEnvironment?: string;
   /** Limit the environment to these apps. Omitted means every app in the project. */
   appIds?: string[];
-  /** Per-app overrides for clone strategy and git branch */
+  /** Per-app clone strategy and git branch overrides. */
   appOverrides?: Record<
     string,
     { strategy?: string; gitBranch?: string }
@@ -58,18 +49,10 @@ type GroupEnvironmentResult = {
 
 export type { CreateGroupEnvironmentOpts, GroupEnvironmentResult };
 
-// ---------------------------------------------------------------------------
-// Create group environment
-// ---------------------------------------------------------------------------
-
-/**
- * Create a group-level environment and fan out app-level environments
- * for each member app in the project.
- */
+/** Create a group environment and an app environment for each member app. */
 export async function createGroupEnvironment(
   opts: CreateGroupEnvironmentOpts
 ): Promise<GroupEnvironmentResult> {
-  // Verify project exists and belongs to org
   const { projects } = await import("@/lib/db/schema");
   const project = await db.query.projects.findFirst({
     where: and(
@@ -80,7 +63,7 @@ export async function createGroupEnvironment(
 
   if (!project) throw new Error("Project not found");
 
-  // Load org for base domain, fall back to instance config
+  // Org base domain, falling back to instance config.
   const { organizations } = await import("@/lib/db/schema");
   const org = await db.query.organizations.findFirst({
     where: eq(organizations.id, opts.organizationId),
@@ -94,7 +77,6 @@ export async function createGroupEnvironment(
     }
   }
 
-  // Create group environment record
   const groupEnvId = nanoid();
   await db.insert(groupEnvironments).values({
     id: groupEnvId,
@@ -145,7 +127,6 @@ export async function createGroupEnvironment(
     const override = opts.appOverrides?.[app.id];
     const strategy = strategyOf(app);
 
-    // Skip apps marked as skip
     if (strategy === "skip") {
       projectEnvironments.push({
         appId: app.id,
@@ -172,8 +153,7 @@ export async function createGroupEnvironment(
       groupEnvironmentId: groupEnvId,
     });
 
-    // The hostname lives on the environment only. A domain row would route it
-    // to, and strip hand-written labels from, the production deploy.
+    // No domain row: it would route this hostname to the production deploy.
 
     const snapshot = snapshotEnv({
       appEnvContent: app.envContent,
@@ -200,10 +180,6 @@ export async function createGroupEnvironment(
   };
 }
 
-// ---------------------------------------------------------------------------
-// Destroy group environment
-// ---------------------------------------------------------------------------
-
 const PREVIEW_ENV_NAME = /^pr-(\d+)$/;
 
 /** What in a preview group isn't positively a preview. Empty means safe to tear down. */
@@ -227,21 +203,11 @@ export function previewGroupStrays(groupEnv: {
   return strays;
 }
 
-/**
- * Delete a group environment and all associated app environments,
- * env vars, domains, and containers.
- *
- * Cascading deletes handle most cleanup via ON DELETE CASCADE:
- * - group_environment deletion → environment records (via FK)
- * - environment deletion → environment_env and env_var records (via FK)
- *
- * Containers and domains need explicit cleanup.
- */
+/** Delete a group environment with its app environments, env vars, domains and containers. FKs cascade the rows. */
 export async function destroyGroupEnvironment(
   groupEnvironmentId: string,
   organizationId: string
 ): Promise<{ removed: string[] }> {
-  // Load the group environment with its app environments
   const groupEnv = await db.query.groupEnvironments.findFirst({
     where: eq(groupEnvironments.id, groupEnvironmentId),
     with: {
@@ -300,7 +266,6 @@ export async function destroyGroupEnvironment(
     }
   }
 
-  // Delete group environment (cascades to app environments and their env vars)
   await db
     .delete(groupEnvironments)
     .where(eq(groupEnvironments.id, groupEnvironmentId));

@@ -1,11 +1,4 @@
-// ---------------------------------------------------------------------------
-// Advisory condition inputs
-//
-// Backup coverage, security findings and certificate expiry change on the order
-// of hours, so they are loaded on their own cadence and cached rather than
-// queried on every health-monitor tick. The monitor stays the single writer of
-// apps.conditions.
-// ---------------------------------------------------------------------------
+// Cached backup, security and certificate inputs for the health monitor's conditions.
 
 import { desc, eq, inArray } from "drizzle-orm";
 
@@ -38,11 +31,7 @@ export function clearAdvisoryCache(): void {
   cache = null;
 }
 
-/**
- * Backup and security state per app, cached for ADVISORY_TTL_MS. Returns an
- * empty map rather than throwing — a failed advisory read must not stop the
- * runtime conditions from being written.
- */
+/** Backup, security and cert state per app, cached for ADVISORY_TTL_MS. Never throws. */
 export async function loadAdvisoryInputs(now: number): Promise<Map<string, AdvisoryInput>> {
   if (cache && now - cache.at < ADVISORY_TTL_MS) return cache.byApp;
 
@@ -125,10 +114,7 @@ export type BackupJobLinkRow = {
   lastRunAt: Date | null;
 };
 
-/**
- * Apps covered by an enabled job of their own org or an instance-level one,
- * with the latest run across those jobs. Another org's job skips the app.
- */
+/** Apps covered by an enabled own-org or instance-level job, with the latest run across those jobs. */
 export function backupCoverage(
   appRows: { id: string; organizationId: string }[],
   jobRows: BackupJobLinkRow[],
@@ -157,10 +143,7 @@ export type CertCheckRow = {
   checkedAt: Date;
 };
 
-/**
- * The observation that lapses first per app. Domains with TLS turned off or with
- * no readable certificate are skipped — they carry no expiry to report.
- */
+/** The soonest-expiring certificate per app. Skips TLS-off domains and unreadable certs. */
 export function soonestCertPerApp(
   rows: CertCheckRow[],
 ): Map<string, NonNullable<ConditionInput["cert"]>> {
@@ -199,7 +182,7 @@ async function latestScans(
 
   for (const row of rows) {
     if (row.status !== "completed") continue;
-    // Rows arrive newest first, so the first one per app wins.
+    // Newest first; first per app wins.
     if (out.has(row.appId)) continue;
     out.set(row.appId, { critical: row.criticalCount, warning: row.warningCount });
   }

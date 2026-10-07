@@ -12,11 +12,7 @@ export interface ResolvedApp extends UpdatableApp {
   isSystemManaged: boolean | null;
 }
 
-/**
- * Loads an app with the compose content that actually governs it. Child
- * services carry none of their own, so the parent's is used and narrowed to
- * the child's `composeService`.
- */
+/** Loads an app with its governing compose content; child services use the parent's. */
 export async function resolveUpdatableApp(
   orgId: string,
   appId: string,

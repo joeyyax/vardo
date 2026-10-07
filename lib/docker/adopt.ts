@@ -76,18 +76,14 @@ const fail = (status: 400 | 409, body: Record<string, unknown>): AdoptResult => 
   body,
 });
 
-/**
- * Create an app from compose content. The caller has already checked the user's
- * membership in `orgId` and parsed `data` with adoptSchema.
- */
+/** Create an app from compose content. Caller checks org membership and parses `data` with adoptSchema. */
 export async function adoptCompose(
   data: AdoptInput,
   ctx: { orgId: string; userId: string; source?: string }
 ): Promise<AdoptResult> {
   const { orgId } = ctx;
   try {
-    // Only an app in this org can be named in the response — one held by
-    // another org must stay invisible.
+    // Never reveal another org's app id.
     const existingBySlug = await db.query.apps.findFirst({
       where: and(eq(apps.organizationId, orgId), eq(apps.name, data.name)),
       columns: { id: true },
@@ -99,8 +95,7 @@ export async function adoptCompose(
       return fail(409, { error: APP_NAME_TAKEN_ERROR });
     }
 
-    // The marker survives the parse only as a boolean, and the re-serialized
-    // compose is what gets stored — a quoted one would vanish without a trace.
+    // Checked on raw content: a quoted marker would vanish in the re-serialized compose.
     const markerErrors = sharedMarkerTypeErrors(data.composeContent);
     if (markerErrors.length > 0) {
       return fail(400, { error: markerErrors.join("\n"), errors: markerErrors });
@@ -131,8 +126,7 @@ export async function adoptCompose(
       }
     }
 
-    // Bind mounts follow the project, the same source the deploy path reads
-    // (#767). A brand-new project has no row yet and takes the schema default.
+    // Bind mounts follow the project, as on deploy (#767). A new project takes the schema default.
     const adoptProject = data.projectId
       ? await db.query.projects.findFirst({
           where: and(eq(projects.id, data.projectId), eq(projects.organizationId, orgId)),
@@ -145,7 +139,7 @@ export async function adoptCompose(
       featureEnabled: isFeatureEnabled("bindMounts"),
     });
 
-    // A denied mount throws — return what was wrong rather than a bare 500.
+    // A denied mount throws.
     let strippedMounts: string[];
     try {
       const sanitized = sanitizeCompose(compose, { allowBindMounts: bindMountsEnabled });
@@ -247,8 +241,7 @@ export async function adoptCompose(
         environmentType: data.environmentType,
         domain,
         excludedServices: excludeList,
-        // Named even when empty, so a caller can tell "nothing was stripped"
-        // from an older response that could not say.
+        // Present even when empty.
         strippedMounts,
       },
     };

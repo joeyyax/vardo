@@ -1,11 +1,5 @@
-// ---------------------------------------------------------------------------
-// Serializing a PR's preview lifecycle.
-//
-// GitHub delivers `opened` and `closed` seconds apart while a create takes
-// minutes. Create and destroy for one PR run under one lock, and a close
-// leaves a tombstone that an in-flight create checks between steps, so the
-// last event wins and a fast open/close leaves nothing behind.
-// ---------------------------------------------------------------------------
+// Serializes a PR's preview create and destroy under one lock.
+// A close leaves a tombstone an in-flight create checks, so a fast open/close leaves nothing behind.
 
 import { randomUUID } from "crypto";
 import { redis } from "@/lib/redis";
@@ -26,10 +20,7 @@ function prKey(kind: string, repoFullName: string, prNumber: number): string {
 
 export type PreviewLock = { release: () => Promise<void> };
 
-/**
- * Take the PR's lock, waiting up to `waitMs`. Null when the wait ran out.
- * Throws when Redis cannot answer.
- */
+/** Take the PR's lock, waiting up to `waitMs`. Null on timeout; throws when Redis is down. */
 export async function acquirePreviewLock(
   repoFullName: string,
   prNumber: number,

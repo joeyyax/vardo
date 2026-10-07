@@ -1,9 +1,4 @@
-// ---------------------------------------------------------------------------
-// Building the reclamation plan: which idle apps' images would be removed.
-//
-// Selection is pure and separated from Docker and the database so a dry run and
-// a real run can share it — the run executes exactly the plan it is handed.
-// ---------------------------------------------------------------------------
+// Builds the reclamation plan: which idle apps' images would be removed. Selection is pure.
 
 import { isNull } from "drizzle-orm";
 
@@ -97,7 +92,7 @@ export function indexImageSizes(
   return sizes;
 }
 
-/** Images an app is responsible for, or null when we cannot read its compose. */
+/** Images an app is responsible for, or null when its compose is unreadable. */
 function resolveImages(app: PlannableApp): string[] | null {
   if (app.deployType === "image") {
     return app.imageName ? [app.imageName] : [];
@@ -121,10 +116,7 @@ function skip(app: PlannableApp, reason: SkipReason, extra?: Partial<ReclaimSkip
   };
 }
 
-/**
- * Sort apps into what would be reclaimed and what would not, with a reason for
- * every exclusion. Pure — the same input always yields the same plan.
- */
+/** Sort apps into reclaimable and skipped, with a reason for every skip. Pure. */
 export function selectCandidates(
   rows: PlannableApp[],
   sizes: ImageSizes,
@@ -146,8 +138,7 @@ export function selectCandidates(
       skipped.push(skip(app, "pinned-by-user"));
       continue;
     }
-    // Only a cleanly stopped or absent app is a candidate. "error" is left
-    // alone — re-pulling under a crash changes what is being debugged.
+    // Only a stopped or missing app is a candidate; "error" is left alone.
     if (app.status === "active" || app.status === "deploying") {
       skipped.push(skip(app, "running"));
       continue;
@@ -162,17 +153,14 @@ export function selectCandidates(
       skipped.push(skip(app, "never-run", { idleDays: null }));
       continue;
     }
-    // Parking answers the question the threshold is guessing at, so it stands
-    // in for the wait. Every guard that decides whether re-pull works still runs.
+    // Parked apps skip the idle wait; every re-pull guard below still runs.
     const threshold = resolveIdleThreshold(app.imageReclaimIdleDays, opts.defaultIdleDays);
     if (!app.parked && idle < threshold) {
       skipped.push(skip(app, "not-idle", { idleDays: idle }));
       continue;
     }
 
-    // A compose we cannot read is a compose we cannot prove has no `build:`.
-    // Git-source apps keep their compose on disk, so this is the common case
-    // and refusing is the whole point — encoder and lonvr both build locally.
+    // An unreadable compose can't be proven free of `build:`, so refuse.
     if (app.deployType !== "image" && !app.composeContent) {
       skipped.push(skip(app, "compose-unavailable", { idleDays: idle }));
       continue;
@@ -192,8 +180,7 @@ export function selectCandidates(
       continue;
     }
 
-    // Every image must be reclaimable. One unsafe image disqualifies the app —
-    // a half-reclaimed stack is not something anyone asked for.
+    // One unsafe image disqualifies the whole app.
     const planned: PlannedImage[] = [];
     let blocked: ReclaimSkip | null = null;
     for (const image of refs) {

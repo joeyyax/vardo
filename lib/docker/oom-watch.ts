@@ -1,16 +1,4 @@
-// ---------------------------------------------------------------------------
-// Watching the cgroup OOM counters
-//
-// Two signals, two shapes. The slice counter is complete but anonymous: it
-// holds every kill, including those whose cgroup died with the container, and
-// can only ever be a count. A per-container counter names its victim but only
-// covers that container's current life.
-//
-// The counters run at roughly one kill an hour on a loaded host, so the fleet
-// total is reported as a windowed rate rather than an event per kill. Only an
-// attributed kill on a container that stayed up earns a notification — the
-// reconciler cannot see that case at all, and it is rare enough to alert on.
-// ---------------------------------------------------------------------------
+// Watches cgroup OOM counters: the fleet total is logged as a windowed rate; kills in running containers notify.
 
 import { logger } from "@/lib/logger";
 import { readContainerOomKills, readFleetOomKills } from "./oom-counter";
@@ -31,10 +19,7 @@ export type OomSubject = {
   memoryLimit: number;
 };
 
-/**
- * Kills added since the last reading. A counter that went backwards means the
- * host rebooted and started over, so the new value is the whole delta.
- */
+/** Kills since the last reading. A counter that went backwards (host reboot) counts in full. */
 export function oomDelta(prev: number | null, next: number): number {
   if (prev === null) return 0;
   return next < prev ? next : next - prev;
@@ -46,11 +31,7 @@ export function killsPerDay(kills: number, windowMs: number): number {
   return (kills / windowMs) * 86_400_000;
 }
 
-/**
- * What the window is worth telling an operator. Names what could be attributed
- * and says plainly that the rest cannot be, so an unexplained count does not
- * read as a missing feature.
- */
+/** Operator summary of a window's kills, split into attributed and anonymous. */
 export function oomWindowSummary(
   kills: number,
   windowMs: number,
@@ -72,10 +53,6 @@ export function oomWindowSummary(
   return parts.join(". ");
 }
 
-// ---------------------------------------------------------------------------
-// Tick
-// ---------------------------------------------------------------------------
-
 let fleetLast: number | null = null;
 let windowKills = 0;
 let windowSince = 0;
@@ -94,11 +71,7 @@ export function resetOomWatch(): void {
   warnedUnreadable = false;
 }
 
-/**
- * Kills inside containers that are still running. Docker clears State.OOMKilled
- * on start and the reconciler skips running containers, so a child process
- * killed inside a container that stayed up is reported nowhere else.
- */
+/** Reports kills inside containers that are still running. */
 async function reportContainerKills(subjects: OomSubject[], now: number): Promise<void> {
   const live = new Set(subjects.map((s) => s.containerId));
   for (const id of containerLast.keys()) {
@@ -149,18 +122,14 @@ async function reportContainerKills(subjects: OomSubject[], now: number): Promis
   }
 }
 
-/**
- * Read both counters and report what the window earned. Never throws — this
- * runs inside the reconciler tick and must not cost it a reconcile.
- */
+/** Read both counters and report the window. Never throws; runs inside the reconciler tick. */
 export async function tickOomWatch(
   subjects: OomSubject[],
   now: number = Date.now(),
 ): Promise<void> {
   const fleet = await readFleetOomKills();
   if (fleet === null) {
-    // Expected wherever the host cgroup root is not mounted. Said once — a
-    // line a minute would bury the reconciler's own output.
+    // Host cgroup root not mounted. Warned once.
     if (!warnedUnreadable) {
       warnedUnreadable = true;
       log.warn(

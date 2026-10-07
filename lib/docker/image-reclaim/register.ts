@@ -1,9 +1,4 @@
-// ---------------------------------------------------------------------------
 // Daily reclamation sweep.
-//
-// The sweep reports what it did to every organization's notification feed.
-// A background delete nobody is told about is not acceptable even when correct.
-// ---------------------------------------------------------------------------
 
 import { isFeatureEnabled } from "@/lib/config/features";
 import { logger } from "@/lib/logger";

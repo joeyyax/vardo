@@ -11,14 +11,7 @@ import { fetchRemoteDigest, fetchTags, RateLimitedError } from "./registry";
 import { parseTag, selectUpdateCandidate, type BumpSeverity } from "./tag-version";
 import { isMajorLocked } from "./stateful-image";
 
-/**
- * Update checking, budgeted.
- *
- * Docker Hub allows 100 anonymous manifest requests per 6 hours per IP, and
- * exhausting it blocks deploys. Every registry call is therefore cached for
- * `CHECK_TTL_MS`, capped per sweep, run two at a time, and stopped entirely by
- * a cooldown once a 429 comes back.
- */
+// Budgeted update checks: cached, capped per sweep and paused on a 429. Exhausting Docker Hub's pull budget blocks deploys.
 
 const CHECK_TTL_MS = 6 * 60 * 60 * 1000;
 const SWEEP_BATCH_SIZE = 12;
@@ -73,10 +66,7 @@ async function startCooldown(retryAfterMs: number | null) {
   );
 }
 
-/**
- * Checks one image. Callers must hold the budget: this always talks to the
- * registry.
- */
+/** Checks one image. Always calls the registry; callers must hold the budget. */
 export async function checkImage(
   ref: ImageRef,
   localImage: string,
@@ -179,12 +169,7 @@ interface SweepTarget {
   localImage: string;
 }
 
-/**
- * Refreshes stale entries, oldest first, up to `limit`.
- *
- * Returns the number checked. A rate limit stops the sweep immediately and
- * leaves the remaining entries stale rather than retrying into the wall.
- */
+/** Refreshes stale entries, oldest first, up to `limit`. Returns the count; a rate limit stops the sweep. */
 export async function refreshStaleChecks(limit = SWEEP_BATCH_SIZE): Promise<number> {
   const cooldownUntil = await getCooldownUntil();
   if (Date.now() < cooldownUntil) return 0;
@@ -286,7 +271,7 @@ export async function pruneOrphanedChecks(): Promise<number> {
   return dead.length;
 }
 
-/** Drops entries older than a week so a removed image cannot linger. */
+/** Drops entries older than a week. */
 export async function pruneExpiredChecks(): Promise<void> {
   const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
   await db.delete(imageUpdateChecks).where(lt(imageUpdateChecks.checkedAt, cutoff));

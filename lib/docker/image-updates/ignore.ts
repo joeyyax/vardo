@@ -1,10 +1,4 @@
-// ---------------------------------------------------------------------------
-// Whether an available update is one the org asked not to hear about.
-//
-// A rule targets one app and, for a compose stack, one service: silencing a
-// stack because its postgres is pinned would hide the rest of it. An expiry is
-// a lapse, not an event — the update simply reappears on the next read.
-// ---------------------------------------------------------------------------
+// Whether an available update is hidden by an org ignore rule. A rule targets one app and one compose service.
 
 export type IgnoreScope = "all" | "major";
 
@@ -29,7 +23,7 @@ export function ruleKey(appId: string, service: string | null): string {
   return `${appId}:${service ?? ""}`;
 }
 
-/** A rule that has lapsed is no rule at all. */
+/** Whether the rule hasn't lapsed. */
 export function isActive(rule: IgnoreRule, now: number = Date.now()): boolean {
   if (!rule.expiresAt) return true;
   const expiry = Date.parse(rule.expiresAt);
@@ -53,10 +47,7 @@ export function silences(
   return rule.scope === "all" || candidate.severity === "major";
 }
 
-/**
- * Index rules by target so a fleet read is one lookup per service rather than
- * a scan of every rule.
- */
+/** Index rules by app and service. */
 export function indexRules(rules: IgnoreRule[]): Map<string, IgnoreRule> {
   return new Map(rules.map((rule) => [ruleKey(rule.appId, rule.composeService), rule]));
 }

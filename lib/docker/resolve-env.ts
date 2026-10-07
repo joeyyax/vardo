@@ -43,7 +43,7 @@ type DeployEnvRow = {
   domain: string | null;
 };
 
-/** Injectable loader — the real implementation reads the environments table. */
+/** Injectable environments-table loader. */
 export type DeployEnvLoader = (
   appId: string,
   environmentId: string,
@@ -67,12 +67,8 @@ const FALLBACK: DeployEnv = {
 };
 
 /**
- * Resolve the environment a deploy runs under.
- *
- * The id is caller-supplied, so the lookup is scoped to the app being deployed.
- * An id that names no environment of this app — deleted, or on another app —
- * throws rather than resolving to production: falling back would deploy a
- * preview's branch over the live app.
+ * Resolve the environment a deploy runs under, scoped to the app.
+ * An unknown id throws: falling back to production would deploy a preview's branch over the live app.
  */
 export async function resolveDeployEnv(
   appId: string,

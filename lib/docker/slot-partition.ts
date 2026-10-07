@@ -1,14 +1,7 @@
 import { dependsOnKeys, type ComposeFile, type ComposeService } from "./compose-types";
 import { declaredVolumes, slotIndependentMounts, volumeSharedServices } from "./volume-shared";
 
-/**
- * Compose extension field marking a service as exempt from blue/green.
- *
- * A database, a broker or a proxy cannot be stood up twice — one owns the data
- * directory, another owns port 443. Without a way to say so, the whole app has
- * to fall back to stop-then-start, which is why Vardo's own stack is still
- * deployed by hand.
- */
+/** Compose extension field marking a service as deployed once, outside blue/green. */
 export const SHARED_MARKER = "x-vardo-shared";
 
 export function isSharedService(service: ComposeService | undefined): boolean {
@@ -16,13 +9,8 @@ export function isSharedService(service: ComposeService | undefined): boolean {
 }
 
 /**
- * Services a deploy must not rotate: the marked ones, plus the ones detection
- * caught holding a volume both slots address.
- *
- * A detected service is dropped again when promoting it would leave nothing to
- * deploy, or when it depends on something that still rotates. The marked form
- * rejects both outright, but a compose file that never claimed to be shared
- * should not start failing to deploy.
+ * Services a deploy must not rotate: marked ones plus those detected holding a volume both slots address.
+ * Detected ones are dropped if that would leave nothing to deploy or they depend on a rotating service.
  */
 export function nonRotatingServices(compose: ComposeFile): Set<string> {
   const services = compose.services ?? {};
@@ -34,8 +22,7 @@ export function nonRotatingServices(compose: ComposeFile): Set<string> {
   const shared = new Set([...marked, ...detected]);
   if (shared.size === Object.keys(services).length) return marked;
 
-  // Repeated to a fixpoint: dropping one candidate can leave another depending
-  // on a service that now rotates.
+  // Fixpoint: dropping one can strand another.
   for (let changed = true; changed; ) {
     changed = false;
     for (const name of detected) {
@@ -60,17 +47,8 @@ export type SlotPartition = {
 export class SlotPartitionError extends Error {}
 
 /**
- * Split a compose file into the services that rotate and the ones that persist.
- * Membership is `nonRotatingServices`: the marker, plus detection.
- *
- * `depends_on` pointing from a slotted service at a shared one is dropped:
- * the two end up in different compose projects, where the dependency cannot be
- * expressed, and leaving it in makes `up` fail with "undefined service". The
- * shared set is started first, so ordering still holds.
- *
- * The reverse — a shared service depending on a slotted one — is rejected. It
- * would mean the persistent half waits on the half being replaced, so the
- * shared set could not start without the very slot the deploy is swapping out.
+ * Split a compose file into rotating and shared services.
+ * Slotted→shared depends_on is dropped (cross-project, else "undefined service"); shared→slotted is rejected.
  */
 export function partitionBySlot(compose: ComposeFile): SlotPartition {
   const services = compose.services ?? {};
@@ -142,16 +120,8 @@ export function composeSubset(
 }
 
 /**
- * Compose project holding an app's shared services.
- *
- * Scoped by environment, not just app: a PR preview must get its own database
- * rather than attaching to production's.
- *
- * A top-level `name:` in the compose file wins, and only in the app's own
- * environment. That is what lets an already-running stack adopt this layout:
- * the shared services stay in the project that created them, under the volume
- * names they already have, so nothing has to be stopped or copied. Previews
- * still get their own, or they would attach to production's database.
+ * Compose project for an app's shared services, scoped by environment.
+ * A compose `name:` wins only in the app's own environment; previews must never attach to production's database.
  */
 export function sharedProjectName(
   appName: string,
@@ -168,17 +138,10 @@ function isOwnEnvironment(envName: string): boolean {
   return !envName.startsWith("pr-");
 }
 
-/**
- * The `-<env>-<slot>` tail every generated compose project name carries.
- * `pr-<n>` is spelled out because it is the one env name with a hyphen.
- */
+/** The `-<env>-<slot>` tail of a generated project name. `pr-<n>` is the one env name with a hyphen. */
 const PROJECT_SUFFIX = /-(pr-\d+|[^-]+)-(blue|green|shared)$/;
 
-/**
- * App a compose project belongs to: paperless-staging-green → paperless.
- * A name with no suffix comes back unchanged — an adopted stack, or a shared
- * project taking its name from the compose file's top-level `name:`.
- */
+/** App a compose project belongs to: paperless-staging-green → paperless. Unsuffixed names come back unchanged. */
 export function composeProjectApp(project: string): string {
   return project.replace(PROJECT_SUFFIX, "");
 }
@@ -194,28 +157,15 @@ export function hasSharedServices(compose: ComposeFile): boolean {
 }
 
 /**
- * Extra `docker compose` arguments confining a command to the rotating set.
- *
- * Empty for an app with nothing shared, so the overwhelming majority of
- * deploys issue exactly the commands they always did. `--no-deps` is required
- * whenever a service list is passed: compose would otherwise start a named
- * service's `depends_on` targets into whichever project it was given.
+ * `docker compose` arguments confining a command to the rotating set. Empty when nothing is shared.
+ * `--no-deps` is required, or compose starts depends_on targets into this project.
  */
 export function slotScopeArgs(partition: SlotPartition): string[] {
   if (Object.keys(partition.shared).length === 0) return [];
   return ["--no-deps", ...Object.keys(partition.slotted)];
 }
 
-/**
- * Why a rotating service most likely failed to start, when the slots overlapped
- * and it mounts a directory the old slot still holds.
- *
- * Detection is an allowlist of images, so it is always a step behind the engines
- * people run and the failure has to explain itself — "is unhealthy" is the whole
- * of what compose says. Narrowed the same two ways detection is: only while the
- * slots overlap, because a stopped old slot holds nothing, and never a service
- * this deploy builds, whose content directory both slots share on purpose.
- */
+/** Likely cause when a rotating service fails while the slots overlap and it mounts a directory the old slot holds. */
 export function slotOverlapDiagnosis(
   compose: ComposeFile,
   slotted: Record<string, ComposeService>,

@@ -1,10 +1,4 @@
-// ---------------------------------------------------------------------------
-// What a batch apply actually did, per app.
-//
-// Dispatching six updates and reporting "6 updated" is the failure this
-// prevents: a rate limit or a stale check fails individual rows while the rest
-// land, and the caller has to be told which.
-// ---------------------------------------------------------------------------
+// What a batch apply did, per app.
 
 export interface BatchItemResult {
   appId: string;
@@ -30,7 +24,7 @@ export interface BatchReport {
   total: number;
   /** One entry per app touched, apps with failures first. */
   apps: AppOutcome[];
-  /** Sentence for the toast — never claims more than landed. */
+  /** Sentence for the toast. */
   message: string;
 }
 

@@ -1,13 +1,5 @@
-// ---------------------------------------------------------------------------
 // Which idle apps may have their images reclaimed, and which never may.
-//
-// Reclamation deletes images only. Volumes are app data and are out of scope —
-// nothing in this module or its callers names a volume.
-//
-// This is not `docker image prune -a`. Prune reclaims by "nothing references
-// this right now", which deletes images a currently-stopped app still needs.
-// Scope here is app inactivity, and re-pull has to be deterministic.
-// ---------------------------------------------------------------------------
+// Images only: volumes are app data and must never be named here.
 
 import { parseImageRef, type ImageRef } from "../image-updates/image-ref";
 import { isMajorLocked } from "../image-updates/stateful-image";
@@ -43,22 +35,12 @@ export type SkipReason =
   | "stateful-floating"
   | "no-images";
 
-/**
- * A tag is treated as pinned when it names at least a major and a minor.
- * `1.8.1`, `v3.6` and `8.0.45-1.el9` qualify; `16`, `v3`, `alpine` and `latest`
- * do not, because they move.
- */
+/** True when the tag names at least a major and minor (`1.8.1`, `v3.6`); `16`, `alpine`, `latest` don't. */
 export function isVersionPinnedTag(tag: string): boolean {
   return /^v?\d+\.\d+/.test(tag);
 }
 
-/**
- * How safe re-pulling this reference is.
- *
- * Major-locked engines need a digest to count as pinned. `mysql:8.0` looks
- * specific but still moves within 8.0.x, and the failure mode for these images
- * is the container refusing to start against its data directory.
- */
+/** How safe re-pulling this reference is. Major-locked engines count as pinned only with a digest. */
 export function classifyImage(ref: ImageRef): ImageSafety {
   if (ref.digest) return "pinned";
   if (isMajorLocked(ref.repository)) return "stateful-unpinned";

@@ -70,10 +70,7 @@ export function refCacheKey(ref: ImageRef): string {
   return `${ref.registry}/${ref.repository}:${ref.tag}`;
 }
 
-/**
- * LinuxServer publishes both `4.0.17.2952-ls314` (immutable) and `4.0.17`,
- * which moves. Short forms need a digest check even though they parse as versions.
- */
+/** LinuxServer short tags (`4.0.17`) move; only `-lsNNN` tags are immutable. */
 export function isMutableShortForm(ref: ImageRef, tag: string): boolean {
   const linuxserver = /(^|\/)linuxserver\//.test(`/${ref.repository}`);
   return linuxserver && !/-ls\d+$/.test(tag);

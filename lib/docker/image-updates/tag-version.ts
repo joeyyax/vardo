@@ -1,10 +1,4 @@
-/**
- * Tag parsing and ordering.
- *
- * Every function here refuses rather than guesses: an unrecognized scheme
- * returns `opaque`/`null`, never a comparison. A wrong "up to date" is worse
- * than an honest "can't tell".
- */
+// Tag parsing and ordering. Unrecognized schemes return `opaque`/`null`, never a guessed comparison.
 
 /** Tags that move. A digest check is the only way to tell if they changed. */
 const FLOATING_WORDS = new Set([
@@ -209,7 +203,7 @@ export function parseTag(input: string): ParsedTag {
     return opaque(raw);
   }
 
-  // A floating core with no orderable parts is still just a pointer.
+  // A floating core with no orderable parts is a pointer.
   if (parsed.kind === "floating") {
     parsed.release = [];
     parsed.prerelease = null;
@@ -251,10 +245,7 @@ function comparePrerelease(a: PrereleaseId[], b: PrereleaseId[]): number {
   return 0;
 }
 
-/**
- * Orders two tags. Returns null when they are not comparable — different
- * variants, different precision, or an unorderable build suffix.
- */
+/** Orders two tags. Null when not comparable (different variant, precision or build suffix). */
 export function compareTags(
   aTag: string | ParsedTag,
   bTag: string | ParsedTag,
@@ -265,7 +256,7 @@ export function compareTags(
   if (a.kind !== "version" || b.kind !== "version") return null;
   if (a.prefix !== b.prefix) return null;
   if (a.flavor !== b.flavor) return null;
-  // `1.26` is usually an alias that tracks `1.26.x`, not a peer of `1.26.2`.
+  // `1.26` usually tracks `1.26.x`; it isn't a peer of `1.26.2`.
   if (a.release.length !== b.release.length) return null;
 
   const release = compareNumbers(a.release, b.release);
@@ -312,25 +303,19 @@ export interface CandidateResult {
   /** Highest orderable tag above the current one, or null. */
   latest: string | null;
   severity: BumpSeverity;
-  /** Tags that sort above nothing we understand. Surfaced, never counted. */
+  /** Unorderable tags. Surfaced, never counted. */
   unorderable: string[];
-  /** Tags actually compared, for reporting confidence. */
+  /** Tags compared, for reporting confidence. */
   comparedCount: number;
-  /** Every newer tag, newest first — the choices offered in the UI. */
+  /** Every newer tag, newest first. */
   available: string[];
-  /**
-   * Newest tag beyond `latest` that crosses a major, when majors were capped.
-   * Offered separately so a migration is always a deliberate pick.
-   */
+  /** Newest tag crossing a major, when majors were capped. Offered separately from `latest`. */
   majorAvailable: string | null;
 }
 
 /**
- * Picks the newest tag above `currentTag`. Pre-releases are only offered when
- * the current tag is itself a pre-release.
- *
- * With `capAtMajor`, candidates that cross a major are collected into
- * `majorAvailable` rather than becoming `latest`.
+ * Picks the newest tag above `currentTag`; pre-releases only when the current tag is one.
+ * With `capAtMajor`, major-crossing candidates go to `majorAvailable`.
  */
 export function selectUpdateCandidate(
   currentTag: string,

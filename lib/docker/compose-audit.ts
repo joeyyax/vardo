@@ -1,10 +1,4 @@
-// ---------------------------------------------------------------------------
-// One-shot audit of stored compose configs.
-//
-// parseCompose auto-corrects config on the way to a deploy, but the stored YAML
-// is what an operator reads and edits. This surfaces the misconfigurations that
-// Docker accepts silently, before the app next starts.
-// ---------------------------------------------------------------------------
+// One-shot audit of stored compose configs for misconfigurations Docker accepts silently.
 
 import { db } from "@/lib/db";
 import { findNamedNetworkModes, findMistypedSharedMarkers } from "./compose-validate";
@@ -84,8 +78,7 @@ export async function reportStoredComposeConfigs(): Promise<void> {
 
     const findings = await auditStoredComposeConfigs(rows);
     if (findings.length > 0) {
-      // One warn line, not an error per service. parseCompose rewrites these on
-      // the way to a deploy, so nothing is broken — only the stored YAML is stale.
+      // parseCompose corrects these at deploy; only the stored YAML is stale.
       const services = findings.map((f) => `${f.appName}/${f.service}`).join(", ");
       log.warn(
         `${findings.length} stored compose service(s) use network_mode with a network name ` +
@@ -94,8 +87,7 @@ export async function reportStoredComposeConfigs(): Promise<void> {
       );
     }
 
-    // Error, not warn: nothing corrects this later, and the service is one
-    // deploy away from a second copy on its data directory.
+    // Nothing corrects this later: the next deploy runs a second copy on its data directory.
     const mistyped = await auditSharedMarkers(rows);
     if (mistyped.length > 0) {
       const services = mistyped.map((f) => `${f.appName}/${f.service}`).join(", ");

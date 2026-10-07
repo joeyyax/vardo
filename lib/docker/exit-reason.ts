@@ -1,11 +1,4 @@
-// ---------------------------------------------------------------------------
-// Why a container stopped
-//
-// apps.status records that a container exited; the exit code alone cannot say
-// why. 137 is 128+SIGKILL, which covers both an OOM kill and an ordinary stop
-// that outran its timeout. Docker's State.OOMKilled is the only thing that
-// separates them, and HostConfig.Memory separates a host kill from a cgroup one.
-// ---------------------------------------------------------------------------
+// Why a container stopped. Exit 137 alone can't tell an OOM kill from a slow stop; State.OOMKilled can.
 
 import type { ContainerInfo } from "./client";
 
@@ -15,11 +8,7 @@ export function parseExitCode(status: string): number | null {
   return m ? Number(m[1]) : null;
 }
 
-/**
- * "oom-host" is the kernel picking a victim because the machine ran out —
- * capacity. "oom-limit" is the container hitting its own cgroup cap — a limit
- * set too low. They call for different responses and must not be merged.
- */
+/** "oom-host": the machine ran out. "oom-limit": the container hit its own cap. Keep them distinct. */
 export type ExitReasonKind = "oom-host" | "oom-limit" | "signal" | "failed";
 
 export type ExitReason = {
@@ -33,17 +22,10 @@ export type ExitReason = {
   at: string;
 };
 
-/**
- * How long an OOM kill outlives the container coming back up. A crash loop is
- * running on the ticks between restarts, and the kill is still the answer.
- */
+/** How long an OOM kill stays the reason after the container comes back up. */
 export const OOM_STICKY_MS = 10 * 60_000;
 
-/**
- * Whether a stored kill still explains an app that is running again. Only the
- * same container restarting in place — a redeploy is a new container and has
- * answered for itself.
- */
+/** Whether a stored OOM kill still explains a running app. Only the same container restarting in place. */
 export function reasonSurvivesRestart(
   prev: ExitReason | null | undefined,
   running: { id: string; startedAt: Date | null } | null,
@@ -75,10 +57,7 @@ export type TerminalState = {
   finishedAt: string;
 };
 
-/**
- * Why one container stopped, or null for a clean exit. A signal exit is not a
- * fault — a stop that outran its grace period lands here and reads as routine.
- */
+/** Why one container stopped, or null for a clean exit. Signal exits read as routine. */
 export function exitReasonFor(c: TerminalState, now: Date): ExitReason | null {
   if (!c.oomKilled && c.exitCode === 0) return null;
 
@@ -128,10 +107,7 @@ export function worstExitReason(reasons: ExitReason[]): ExitReason | null {
   }, null);
 }
 
-/**
- * Containers worth inspecting for a reason. A clean exit needs no explanation,
- * and a running container has not ended — inspecting either only costs a call.
- */
+/** Stopped containers with a non-zero exit, plus restarting or dead ones. */
 export function exitCandidates(containers: ContainerInfo[]): ContainerInfo[] {
   return containers.filter((c) => {
     if (c.state === "running") return false;

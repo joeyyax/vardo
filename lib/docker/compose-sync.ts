@@ -1,12 +1,4 @@
-// ---------------------------------------------------------------------------
-// Compose Decomposition: sync child app records from compose YAML services
-//
-// After a compose-based deploy succeeds, this module parses the compose YAML
-// and creates/updates/cleans up child app records for each service. The compose
-// file stays the single source of truth -- nothing is split. The decomposition
-// is purely presentational so each service gets its own card with metrics,
-// logs, status, and dependency relationships.
-// ---------------------------------------------------------------------------
+// Syncs display-only child app records from a compose file's services. The compose file stays the source of truth.
 
 import { db } from "@/lib/db";
 import { statusChange } from "@/lib/db/app-status";
@@ -22,10 +14,7 @@ type SyncResult = {
   removed: string[];
 };
 
-/**
- * Extract volume declarations from a compose service.
- * Returns in the same format as apps.persistentVolumes.
- */
+/** A service's named volumes, shaped like apps.persistentVolumes. */
 function parseServiceVolumes(
   svc: ComposeService,
 ): { name: string; mountPath: string }[] {
@@ -37,7 +26,6 @@ function parseServiceVolumes(
     if (parts.length >= 2) {
       const volName = parts[0];
       const mountPath = parts[1];
-      // Only include named volumes (not bind mounts)
       if (!volName.startsWith("/") && !volName.startsWith("./") && !volName.startsWith("../")) {
         result.push({ name: volName, mountPath });
       }
@@ -46,10 +34,7 @@ function parseServiceVolumes(
   return result;
 }
 
-/**
- * Extract port mappings from a compose service's ports directive.
- * Returns in the same format as apps.exposedPorts.
- */
+/** A service's port mappings, shaped like apps.exposedPorts. */
 function parseServicePorts(
   svc: ComposeService,
 ): { internal: number; external?: number; protocol?: string }[] {
@@ -59,7 +44,6 @@ function parseServicePorts(
   for (const raw of svc.ports) {
     const parsed = parsePortString(raw);
     if (!parsed) continue;
-    // Extract protocol if present (e.g. "8080:3000/udp")
     const protocolMatch = String(raw).match(/\/(tcp|udp)$/i);
     const protocol = protocolMatch ? protocolMatch[1].toLowerCase() : undefined;
     result.push({
@@ -71,10 +55,7 @@ function parseServicePorts(
   return result;
 }
 
-/**
- * Humanize a docker-compose service name into a display name.
- * e.g. "redis-cache" -> "Redis Cache", "postgres" -> "Postgres"
- */
+/** "redis-cache" -> "Redis Cache". */
 function humanizeServiceName(name: string): string {
   return name
     .split(/[-_]/)
@@ -82,21 +63,7 @@ function humanizeServiceName(name: string): string {
     .join(" ");
 }
 
-/**
- * Sync child app records from a parsed compose file after a successful deploy.
- *
- * For each service in the compose YAML:
- * - If a child record exists (matched by parentAppId + composeService), update it
- * - If not, create one with name, status, dependencies, volumes, resource limits
- * - If a previous child record's service was removed from the YAML, mark it stopped
- *
- * @param parentAppId - The parent compose app's ID
- * @param organizationId - The org scope
- * @param projectId - The project this app belongs to
- * @param compose - Parsed compose file
- * @param parentAppName - The parent app's name (used for generating child names/container names)
- * @param log - Optional logger
- */
+/** Create, update or stop child app records to match the compose services after a successful deploy. */
 export async function syncComposeServices(opts: {
   parentAppId: string;
   organizationId: string;
@@ -107,7 +74,7 @@ export async function syncComposeServices(opts: {
 }): Promise<SyncResult> {
   const { parentAppId, organizationId, projectId, compose, parentAppName, log } = opts;
 
-  // Validate required fields - protects against undefined values being coerced to null in Drizzle transactions
+  // Undefined values would be coerced to null in Drizzle transactions.
   if (!organizationId) {
     throw new Error("syncComposeServices: organizationId is required but was undefined or empty");
   }
@@ -122,9 +89,8 @@ export async function syncComposeServices(opts: {
 
   const serviceNames = Object.keys(compose.services);
 
-  // Skip decomposition for single-service compose files -- there's nothing to decompose
   if (serviceNames.length <= 1) {
-    // Still clean up any orphaned children from a previous multi-service compose
+    // Single service: stop children left from a previous multi-service compose.
     const existingChildren = await db.query.apps.findMany({
       where: and(
         eq(apps.parentAppId, parentAppId),
@@ -148,15 +114,13 @@ export async function syncComposeServices(opts: {
     return result;
   }
 
-  // Children inherit the parent's system-managed flag — the guards that refuse
-  // edits and deletes read the child row, not the stack it belongs to.
+  // Edit/delete guards read the child row, so children inherit the system-managed flag.
   const parent = await db.query.apps.findFirst({
     where: eq(apps.id, parentAppId),
     columns: { isSystemManaged: true },
   });
   const isSystemManaged = parent?.isSystemManaged ?? false;
 
-  // Fetch existing child records for this parent
   const existingChildren = await db.query.apps.findMany({
     where: and(
       eq(apps.parentAppId, parentAppId),
@@ -170,8 +134,7 @@ export async function syncComposeServices(opts: {
     },
   });
 
-  // Also fetch any existing records by name that might be orphaned (no parentAppId)
-  // This handles cleanup from previous failed attempts
+  // Records orphaned by earlier failed attempts (no parentAppId).
   const childNames = serviceNames.map((svc) => `${parentAppName}-${svc}`);
   const existingByName = childNames.length > 0
     ? await db.query.apps.findMany({
@@ -189,21 +152,17 @@ export async function syncComposeServices(opts: {
       })
     : [];
 
-  // Merge: childByService for matching by composeService
   const childByService = new Map(
     existingChildren
       .filter((c) => c.composeService)
       .map((c) => [c.composeService!, c])
   );
 
-  // childByName for matching by generated name (catches orphaned records)
   const childByName = new Map(
     existingByName.map((c) => [c.name, c])
   );
 
-  // Process each service in the compose file
-  // NOTE: Not using db.transaction() due to postgres-js parameter binding issues
-  // These are display-only child records, so atomicity is less critical than correctness
+  // No db.transaction(): postgres-js parameter binding issues.
   for (const [serviceName, svc] of Object.entries(compose.services)) {
     const childName = `${parentAppName}-${serviceName}`;
     const containerName = `${parentAppName}-${serviceName}-1`;
@@ -211,8 +170,6 @@ export async function syncComposeServices(opts: {
     const volumes = parseServiceVolumes(svc);
     const servicePorts = parseServicePorts(svc);
 
-    // Map compose depends_on to child app names (prefixed with parent).
-    // depends_on may be a string[] or an object keyed by service name.
     const dependsOnRaw = svc.depends_on;
     const dependsOnServiceNames = dependsOnRaw
       ? Array.isArray(dependsOnRaw)
@@ -224,7 +181,6 @@ export async function syncComposeServices(opts: {
     const existing = childByService.get(serviceName) ?? childByName.get(childName);
 
     if (existing) {
-      // Update existing child record (may be orphaned from previous failed attempt)
       await db
         .update(apps)
         .set({
@@ -232,16 +188,14 @@ export async function syncComposeServices(opts: {
           displayName,
           containerName,
           imageName: svc.image || null,
-          // cpuLimit/memoryLimit: UI-set overrides, same as the parent app. Sync
-          // never writes them; buildVardoOverlay reads the compose limit directly.
+          // cpuLimit/memoryLimit are UI overrides; sync never writes them.
           persistentVolumes: volumes.length > 0 ? volumes : null,
-          // Only overwrite exposedPorts if compose defines ports for this service.
-          // This preserves ports set via the UI when compose has no port directives.
+          // Keep UI-set ports when compose declares none.
           ...(servicePorts.length > 0 ? { exposedPorts: servicePorts } : {}),
           dependsOn,
           projectId,
-          parentAppId, // Re-parent if it was orphaned
-          composeService: serviceName, // Set if it was missing
+          parentAppId,
+          composeService: serviceName,
           isSystemManaged,
         })
         .where(eq(apps.id, existing.id));
@@ -250,8 +204,7 @@ export async function syncComposeServices(opts: {
       childByService.delete(serviceName);
       childByName.delete(childName);
     } else {
-      // Create new child record
-      // NOTE: Using raw SQL to bypass Drizzle/postgres-js parameter binding issues
+      // Raw SQL bypasses Drizzle/postgres-js parameter binding issues.
       const id = nanoid();
       const now = new Date().toISOString();
       const volsJson = volumes.length > 0 ? JSON.stringify(volumes) : null;
@@ -278,8 +231,7 @@ export async function syncComposeServices(opts: {
     }
   }
 
-  // Mark orphaned children (services removed from compose YAML) as stopped
-  // Deduplicate by child ID since the same record can appear in both maps
+  // Stop children whose service left the compose file, deduped by ID across both maps.
   const orphanedById = new Map<string, { serviceName: string; child: typeof existingChildren[0] }>();
   for (const [serviceName, child] of childByService) {
     orphanedById.set(child.id, { serviceName, child });

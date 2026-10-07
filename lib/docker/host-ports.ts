@@ -1,14 +1,8 @@
 import type { ComposeFile } from "./compose-types";
 
 /**
- * Whether any service publishes a host port.
- *
- * Two slots can only run at once when nothing binds the host: a published port
- * is exclusive, so the second slot fails with "port is already allocated".
- * Traefik-routed services publish nothing and can overlap.
- *
- * Every form of `ports` publishes, including the bare `"80"` short form, which
- * takes an ephemeral host port. `expose` does not publish and is ignored.
+ * Whether any service publishes a host port, which blocks running two slots at once ("port is already allocated").
+ * Every `ports` form publishes, including bare `"80"`; `expose` doesn't.
  */
 export function publishesHostPorts(services: ComposeFile["services"]): boolean {
   return Object.values(services ?? {}).some(
