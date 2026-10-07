@@ -5,20 +5,17 @@ const log = logger.child("init");
 const globalForInit = globalThis as unknown as { __vardo_initialized?: boolean };
 
 export async function register() {
-  // Node runtime only — instrumentation also loads in the Edge runtime.
-  // Next never calls register() during a build, so no build guard is needed here.
+  // Instrumentation also loads in the Edge runtime.
   if (process.env.NEXT_RUNTIME === "nodejs") {
-    // Dedup guard — prevents duplicate schedulers on hot reload
+    // Prevents duplicate schedulers on hot reload.
     if (globalForInit.__vardo_initialized) return;
     globalForInit.__vardo_initialized = true;
 
-    // Bounded drain on SIGTERM. Registered first so a signal during the rest
-    // of startup is still handled.
+    // Registered first so a SIGTERM during startup is still handled.
     const { installShutdownHandlers } = await import("./lib/shutdown");
     installShutdownHandlers();
 
-    // Verify data directories are writable — must run first so deploys don't
-    // fail with cryptic EACCES errors later.
+    // Verifies data directories are writable.
     const { ensureDataDirs } = await import("./lib/paths");
     const badDirs = await ensureDataDirs();
     if (badDirs.length > 0) {
@@ -28,14 +25,13 @@ export async function register() {
       );
     }
 
-    // Load feature flags into sync cache — must run early so isFeatureEnabled()
-    // returns real values instead of defaults for the rest of startup
+    // Must run early so isFeatureEnabled() returns real values for the rest of startup.
     const { loadFeatureFlags } = await import("./lib/config/features");
     await loadFeatureFlags().catch((err) =>
       log.warn("Failed to load feature flags:", err)
     );
 
-    // Sign-in methods, same deal — buildAuth() reads them synchronously.
+    // buildAuth() reads sign-in methods synchronously.
     const { loadAuthMethods } = await import("./lib/config/auth-methods");
     await loadAuthMethods().catch((err) =>
       log.warn("Failed to load sign-in methods:", err)
@@ -45,7 +41,6 @@ export async function register() {
       log.warn("Failed to read setup state:", err)
     );
 
-    // Check encryption key — must run first, before any other initialization
     const { checkEncryptionKey } = await import("./lib/crypto/encrypt");
     const keyCheck = checkEncryptionKey();
     if (!keyCheck.ok) {
@@ -58,8 +53,7 @@ export async function register() {
     const { checkKeyEscrowAtStartup } = await import("./lib/crypto/key-escrow");
     const escrow = await checkKeyEscrowAtStartup();
 
-    // Credentials written before they were encrypted on write. Before the
-    // backup scheduler, which reads them.
+    // Encrypts legacy plaintext credentials. Must run before the backup scheduler.
     try {
       const { canEncryptStoredCredentials, encryptStoredCredentials } = await import(
         "./lib/crypto/encrypt-stored-credentials"
@@ -73,7 +67,7 @@ export async function register() {
       log.error("Credential encryption failed:", err);
     }
 
-    // OAuth tokens stored before Better Auth encrypted them. Uses its secret, not the master key.
+    // Encrypts legacy OAuth tokens with Better Auth's secret, not the master key.
     try {
       const { auth } = await import("./lib/auth");
       const { encryptStoredOAuthTokens } = await import("./lib/auth/oauth-tokens");
@@ -82,8 +76,7 @@ export async function register() {
       log.error("OAuth token encryption failed:", err);
     }
 
-    // Hand back the rows of the retired GlitchTip integration. Writes an
-    // encrypted marker, so it runs after the key check above.
+    // Writes an encrypted marker, so it runs after the key check.
     try {
       const { retireGlitchTip } = await import("./lib/infra/retire-glitchtip");
       await retireGlitchTip();
@@ -91,7 +84,7 @@ export async function register() {
       log.error("GlitchTip retirement failed:", err);
     }
 
-    // Apps transferred before secrets were re-encrypted on accept.
+    // Re-encrypts secrets stranded by app transfers.
     if (keyCheck.ok) {
       try {
         const { repairTransferredSecrets } = await import("./lib/transfers/engine");
@@ -102,7 +95,7 @@ export async function register() {
       }
     }
 
-    // A run that loaded its apps before a transfer records the old org.
+    // Moves backups recorded under an app's pre-transfer org.
     try {
       const { realignBackupOrgs } = await import("./lib/backups/org-backup");
       const moved = await realignBackupOrgs();
@@ -111,7 +104,7 @@ export async function register() {
       log.error("Backup org realignment failed:", err);
     }
 
-    // Apps transferred before accept released them from the source org's jobs.
+    // Repairs backup job links left in a transferred app's source org.
     try {
       const { repairForeignJobLinks } = await import("./lib/backups/transfer");
       const repaired = await repairForeignJobLinks();
@@ -120,7 +113,7 @@ export async function register() {
       log.error("Backup job link repair failed:", err);
     }
 
-    // Ensure backup target exists first (sequential dependency for scheduler)
+    // The backup scheduler waits on the target.
     let backupTargetReady: Promise<void> | undefined;
     try {
       const { ensureHostBackupTarget, ensureSystemBackupJob } = await import("./lib/backups/auto-backup");
@@ -129,7 +122,6 @@ export async function register() {
         .then(async (target) => {
           if (target) {
             log.info(`Vardo backup target ready: ${target.name} (${target.type})`);
-            // Create system backup job for Vardo's own database
             await ensureSystemBackupJob(target.id);
           } else {
             log.info("No backup storage configured (add backup section to vardo.yml or configure in admin settings)");
@@ -147,9 +139,7 @@ export async function register() {
       log.error("Failed to import backup modules:", err);
     }
 
-    // Provision infrastructure services (cAdvisor, Loki, Promtail) as managed
-    // apps based on feature flags. Runs before feature registration so the
-    // backing containers are available when collectors start.
+    // Provisions cAdvisor, Loki and Promtail before feature registration so collectors find them.
     try {
       const { ensureInfraServices } = await import("./lib/infra/provision");
       await ensureInfraServices();
@@ -157,8 +147,7 @@ export async function register() {
       log.error("Infrastructure provisioning failed:", err);
     }
 
-    // Register feature subsystems — consumers, schedulers, monitors.
-    // Each register function checks its feature flag before initializing.
+    // Each register function checks its own feature flag.
     const features: [string, () => Promise<void>][] = [
       ["notifications", async () => { const m = await import("./lib/notifications/register"); await m.registerNotificationsPlugin(); }],
       ["metrics", async () => { const m = await import("./lib/metrics/register"); await m.registerMetricsPlugin(); }],
@@ -179,7 +168,7 @@ export async function register() {
       }
     }
 
-    // Core startup tasks — not plugins, fundamental to the platform
+    // Core startup tasks.
     const tasks: Promise<unknown>[] = [];
 
     if (backupTargetReady) {
@@ -187,7 +176,7 @@ export async function register() {
     }
 
     tasks.push(
-      // Deploy sweeper — cleans up stuck queued deployments
+      // Cleans up stuck queued deployments.
       import("./lib/deploy/scheduler")
         .then(({ startDeploySweeper }) => {
           startDeploySweeper();
@@ -195,7 +184,6 @@ export async function register() {
         })
         .catch((err) => log.error("Failed to start deploy sweeper:", err)),
 
-      // Mesh heartbeat — core networking, not a plugin
       import("./lib/mesh/scheduler")
         .then(({ startMeshHeartbeatScheduler }) => {
           startMeshHeartbeatScheduler();
@@ -203,7 +191,7 @@ export async function register() {
         })
         .catch((err) => log.error("Failed to start mesh heartbeat scheduler:", err)),
 
-      // Preview sweeper — expired preview environments are never otherwise removed
+      // Nothing else removes expired preview environments.
       import("./lib/config/features")
         .then(({ isFeatureEnabledAsync }) => isFeatureEnabledAsync("previews"))
         .then(async (enabled) => {
@@ -214,14 +202,12 @@ export async function register() {
         })
         .catch((err) => log.error("Failed to start preview sweeper:", err)),
 
-      // Self-registration — Vardo managing itself, core feature
       import("./lib/docker/self-register")
         .then(({ ensureVardoProject }) => ensureVardoProject())
         .then(() => log.info("Vardo self-registration complete"))
         .catch((err) => log.warn("Vardo self-registration skipped:", err)),
 
-      // App directory ownership — directories only stay attributable while
-      // top-level app names are globally unique, so stamp them while they are.
+      // Stamps app directory owners while top-level app names are still globally unique.
       import("./lib/docker/app-dir-owner")
         .then(({ stampAppDirOwnersAtStartup }) => stampAppDirOwnersAtStartup())
         .catch((err) => log.warn("App directory ownership pass skipped:", err)),

@@ -1,17 +1,4 @@
-/**
- * Feature flags for Vardo.
- *
- * Controls which features are available system-wide. Useful for:
- * - Simplified UX (disable environments, previews)
- * - Pre-release/testing (gate new features)
- * - Toggling optional subsystems (backups, terminal, cron, etc.)
- *
- * Resolution: config file (vardo.yml) > DB system_settings > default (true).
- * Core features (projects, apps, deployments) cannot be disabled.
- *
- * Sign-in methods live in lib/config/auth-methods.ts, which still reads the
- * retired passwordAuth key from here as an alias.
- */
+// System-wide feature flags. Resolution: env var > vardo.yml > DB system_settings > default (true).
 
 export type FeatureFlag =
   | "ui"
@@ -66,15 +53,11 @@ type FlagConfig = {
   description: string;
   defaultValue?: boolean;
   group: FlagGroup;
-  /** Settable only from vardo.yml or an env var — never rendered on the admin page. */
+  /** Settable only from vardo.yml or an env var. */
   configOnly?: boolean;
   /** Flag this one can't work without. When it's off, this one reads as unavailable. */
   dependsOn?: FeatureFlag;
-  /**
-   * Turns on a core service shared by the whole instance rather than a per-org
-   * capability. One container, one app row, every organization reading it — so
-   * the flag governs both provisioning the service and access to it.
-   */
+  /** Governs provisioning and access for one instance-wide service every org reads. */
   sharedService?: boolean;
 };
 
@@ -237,19 +220,10 @@ const FLAG_CONFIG: Record<FeatureFlag, FlagConfig> = {
   },
 };
 
-// ---------------------------------------------------------------------------
-// Env var overrides
-//
-// Every flag maps to VARDO_FEATURE_<NAME>, where <NAME> is the flag name
-// upper-snake-cased: hyphens become underscores and camelCase word boundaries
-// gain one. So error-tracking -> VARDO_FEATURE_ERROR_TRACKING and
-// bindMounts -> VARDO_FEATURE_BIND_MOUNTS.
-// ---------------------------------------------------------------------------
-
 const TRUTHY = new Set(["1", "true", "yes", "on", "enabled"]);
 const FALSY = new Set(["0", "false", "no", "off", "disabled"]);
 
-/** Env var name that pins a flag, e.g. "error-tracking" -> VARDO_FEATURE_ERROR_TRACKING. */
+/** Env var that pins a flag, e.g. bindMounts -> VARDO_FEATURE_BIND_MOUNTS. */
 export function featureFlagEnvVar(flag: FeatureFlag): string {
   const name = flag
     .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
@@ -268,38 +242,25 @@ export function featureFlagFromEnv(flag: FeatureFlag): boolean | undefined {
   return undefined;
 }
 
-// ---------------------------------------------------------------------------
-// Sync cache — populated by loadFeatureFlags() at startup and refreshed
-// by every isFeatureEnabledAsync() call. Sync callers read from this.
-// ---------------------------------------------------------------------------
+// Sync cache, loaded at startup and refreshed by isFeatureEnabledAsync().
 
 let flagCache: Record<string, boolean> | null = null;
 
-/**
- * Populate the sync flag cache. Call once at startup (instrumentation.ts).
- * After this, isFeatureEnabled() returns real values instead of defaults.
- */
+/** Populates the sync flag cache at startup. */
 export async function loadFeatureFlags(): Promise<void> {
   const { getFeatureFlagsConfig } = await import("@/lib/system-settings");
   flagCache = (await getFeatureFlagsConfig()) ?? {};
 }
 
-/**
- * Clear the sync flag cache and reload from the DB.
- * Call after writing feature flags.
- */
+/** Reloads the sync flag cache after flags are written. */
 export async function invalidateFlagCache(): Promise<void> {
   flagCache = null;
   await loadFeatureFlags().catch(() => {
-    // Best-effort reload — sync callers will use defaults until next async call
+    // Sync callers use defaults until the next async call.
   });
 }
 
-/**
- * Check if a feature is enabled (synchronous).
- * Reads the env var, then the in-memory cache populated by loadFeatureFlags().
- * If the cache hasn't loaded yet (early startup), falls back to the default.
- */
+/** Sync check: env var, then the cache, then the default. */
 export function isFeatureEnabled(flag: FeatureFlag): boolean {
   const fromEnv = featureFlagFromEnv(flag);
   if (fromEnv !== undefined) return fromEnv;
@@ -307,11 +268,7 @@ export function isFeatureEnabled(flag: FeatureFlag): boolean {
   return FLAG_CONFIG[flag]?.defaultValue ?? true;
 }
 
-/**
- * Check if a feature is enabled (async, authoritative).
- * Resolution: env var > vardo.yml > DB > default.
- * Also refreshes the sync cache as a side effect.
- */
+/** Authoritative check. Also refreshes the sync cache. */
 export async function isFeatureEnabledAsync(flag: FeatureFlag): Promise<boolean> {
   const fromEnv = featureFlagFromEnv(flag);
   if (fromEnv !== undefined) return fromEnv;
@@ -319,32 +276,25 @@ export async function isFeatureEnabledAsync(flag: FeatureFlag): Promise<boolean>
   const { getFeatureFlagsConfig } = await import("@/lib/system-settings");
   const flags = await getFeatureFlagsConfig();
 
-  // Merge into sync cache (don't replace — preserve flags not in this result)
+  // Merge, so flags missing from this result survive.
   if (flags) flagCache = { ...flagCache, ...flags };
 
   if (flags && flag in flags) return flags[flag];
   return FLAG_CONFIG[flag]?.defaultValue ?? true;
 }
 
-/**
- * Get the flag config metadata (label, description) for a flag.
- */
+/** Label, description and other metadata for a flag. */
 export function getFlagConfig(flag: FeatureFlag): FlagConfig {
   return FLAG_CONFIG[flag];
 }
 
-/**
- * Subset of feature flags relevant to UI tab gating in app detail views.
- * Passed from server components to client components as a serializable object.
- */
+/** Flags that gate app detail tabs, serializable for client components. */
 export type FeatureFlags = Record<
   "terminal" | "cron" | "backups" | "metrics" | "logging" | "environments" | "imageUpdates",
   boolean
 >;
 
-/**
- * Get feature flags needed for UI tab gating.
- */
+/** Flags needed for app detail tab gating. */
 export async function getFeatureFlags(): Promise<FeatureFlags> {
   const [terminal, cron, backups, metrics, logging, environments, imageUpdates] = await Promise.all([
     isFeatureEnabledAsync("terminal"),
@@ -400,10 +350,7 @@ export function resolveFeatureFlag(
   return { enabled: FLAG_CONFIG[flag]?.defaultValue ?? true, source: "default" };
 }
 
-/**
- * Every admin-settable flag with its state, source and metadata.
- * Config-only flags (the dashboard kill switch) are left out.
- */
+/** Every admin-settable flag with its state, source and metadata. */
 export async function getAllFeatureFlags(): Promise<FeatureFlagInfo[]> {
   const { getFeatureFlagLayers } = await import("@/lib/system-settings");
   const layers = await getFeatureFlagLayers();

@@ -36,8 +36,7 @@ export function stopCronScheduler(): void {
 }
 
 /**
- * Run security scans for all orgs once per day at 2 AM server time.
- * Checks every hour and fires when the current hour matches.
+ * Runs security scans for all orgs daily at 2 AM server time.
  */
 function startDailySecurityScans(): void {
   if (dailyInterval) return;
@@ -74,9 +73,7 @@ function startDailySecurityScans(): void {
       }
     }
 
-    // Clean up self-preview containers that have been running too long.
-    // Handles missed PR close webhooks — containers join the production network
-    // and must not run indefinitely.
+    // Self-preview containers join the production network; reap them if a PR close webhook was missed.
     if (isFeatureEnabled("selfManagement") && isFeatureEnabled("previews")) {
       try {
         const cleaned = await cleanupStaleSelfPreviews();

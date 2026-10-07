@@ -16,10 +16,9 @@ import { requirePlugin } from "@/lib/api/require-plugin";
 
 const log = logger.child("webhook");
 
-// POST /api/v1/github/webhook — GitHub App webhook receiver
+// POST /api/v1/github/webhook: GitHub App webhook receiver.
 async function handler(request: NextRequest) {
-  // Recursion guard: preview instances receive the same webhooks but must not
-  // attempt to spin up further previews (infinite loop prevention).
+  // Preview instances receive the same webhooks and must not spawn further previews.
   if (process.env.VARDO_PREVIEW === "true") {
     return NextResponse.json({ ok: true, skipped: "preview instance" });
   }
@@ -32,9 +31,7 @@ async function handler(request: NextRequest) {
     const event = request.headers.get("x-github-event");
     const signature = request.headers.get("x-hub-signature-256");
 
-    // Verify webhook signature — mandatory.
-    // Prefer DB config (setup-wizard deployments), then GITHUB_WEBHOOK_SECRET env var.
-    // No fallback to BETTER_AUTH_SECRET — secret isolation must be maintained.
+    // Signature is mandatory. DB config, then GITHUB_WEBHOOK_SECRET; never fall back to BETTER_AUTH_SECRET.
     const githubConfig = await getGitHubAppConfig();
     const secret = githubConfig?.webhookSecret;
     if (!secret) {
@@ -59,12 +56,10 @@ async function handler(request: NextRequest) {
 
     const payload = JSON.parse(body);
 
-    // Handle pull request events (previews)
     if (event === "pull_request") {
       return handlePullRequest(payload);
     }
 
-    // Handle push events (auto-deploy)
     if (event === "push") {
       return handlePush(payload);
     }
@@ -90,7 +85,6 @@ async function handlePush(payload: Record<string, unknown>): Promise<NextRespons
 
   log.info(`Push to ${repoFullName}:${branch} by ${pusher} — ${commitSha?.slice(0, 7)} ${commitMessage?.split("\n")[0]}`);
 
-  // Find all apps that match this repo + branch with autoDeploy enabled
   const gitUrl = `https://github.com/${repoFullName}.git`;
   const allApps = await db.query.apps.findMany({
     where: and(
@@ -99,9 +93,7 @@ async function handlePush(payload: Record<string, unknown>): Promise<NextRespons
     ),
   });
 
-  // Filter to matching branch, excluding system-managed apps — those are
-  // managed by the self-preview path and must not go through the generic
-  // deploy engine.
+  // System-managed apps go through the self-preview path, never the generic deploy engine.
   const matching = allApps.filter(
     (a) => !a.isSystemManaged && (a.gitBranch || "main") === branch
   );
@@ -111,7 +103,6 @@ async function handlePush(payload: Record<string, unknown>): Promise<NextRespons
     return NextResponse.json({ ok: true, skipped: "no matching apps" });
   }
 
-  // Trigger deploys
   const results = [];
   for (const app of matching) {
     log.info(`Auto-deploying ${app.displayName} (${app.name})`);
@@ -157,12 +148,8 @@ async function handlePullRequest(payload: Record<string, unknown>): Promise<Next
     return NextResponse.json({ ok: true, skipped: "invalid PR number" });
   }
 
-  // Anyone with a GitHub account can open a fork PR against a public repo, and
-  // GitHub signs that webhook like any other. Building from it would let an
-  // outsider trigger deploys — and, when the fork's branch name matches one in
-  // the base repo, publish a preview URL for an internal branch on their PR.
-  // Teardown is deliberately left below this: a PR that became a fork after a
-  // preview existed must still be cleaned up.
+  // Fork PRs are signed like any other; building them would let outsiders trigger deploys.
+  // Teardown stays below this so a PR that became a fork still gets cleaned up.
   const headRepo = (pr.head as Record<string, unknown>)?.repo as Record<string, unknown> | null;
   const refusal = action === "closed" ? null : previewRefusalReason({
     baseRepoFullName: repoFullName,
@@ -176,15 +163,13 @@ async function handlePullRequest(payload: Record<string, unknown>): Promise<Next
 
   log.info(`PR #${prNumber} ${action} on ${repoFullName}:${branch} by ${author}`);
 
-  // Previews off: no create or deploy. A close still removes an existing
-  // preview, and teardown only touches resources labelled as that PR's preview.
+  // Previews off: a close still removes an existing preview, touching only resources labeled as that PR's.
   const previewsEnabled = await isFeatureEnabledAsync("previews");
   if (!previewsEnabled && action === "closed") {
     log.info(`Previews are off; PR #${prNumber} closed, removing any existing preview`);
   }
 
-  // Vardo self-preview: if selfManagement is enabled and this repo is a
-  // system-managed app, deploy a frontend-only preview instead of the generic flow.
+  // System-managed repos get a frontend-only self-preview when selfManagement is on.
   if (isFeatureEnabled("selfManagement")) {
     const vardoApp = await getSystemManagedApp(repoFullName);
     if (vardoApp) {
@@ -220,8 +205,7 @@ async function handlePullRequest(payload: Record<string, unknown>): Promise<Next
     }
   }
 
-  // A create runs for minutes and GitHub gives up after ten seconds, so both
-  // run after the response. preview.ts serializes them per PR.
+  // Runs after the response; GitHub times out after ten seconds. preview.ts serializes per PR.
   if (previewsEnabled && (action === "opened" || action === "reopened" || action === "synchronize")) {
     after(async () => {
       try {
@@ -272,9 +256,7 @@ async function handlePullRequest(payload: Record<string, unknown>): Promise<Next
 
 export const POST = withRateLimit(handler, { tier: "public", key: "webhook" });
 
-/**
- * Post preview environment URLs as a GitHub PR comment.
- */
+/** Posts preview environment URLs as a GitHub PR comment. */
 async function postPreviewComment(
   repoFullName: string,
   prNumber: number,
@@ -282,8 +264,7 @@ async function postPreviewComment(
 ): Promise<void> {
   const { getInstallationToken } = await import("@/lib/git-integration/app");
 
-  // Find a GitHub installation token for this repo
-  // Look through all users' installations to find one with access
+  // First installation token with access to this repo.
   const allInstallations = await db.query.githubAppInstallations.findMany();
 
   let token: string | null = null;
