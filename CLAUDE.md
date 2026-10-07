@@ -17,7 +17,7 @@ pnpm start              # Production start (runs drizzle migrations first)
 # Database (PostgreSQL via Drizzle ORM)
 pnpm db:push            # Push schema changes to database
 pnpm db:generate        # Generate migration files
-pnpm db:migrate         # Run migrations
+pnpm db:migrate         # Run migrations (scripts/migrate.mjs, as in production)
 pnpm db:studio          # Open Drizzle Studio
 
 # Code quality
