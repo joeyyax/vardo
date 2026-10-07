@@ -44,7 +44,6 @@ vi.mock("@/lib/redis-lock", () => ({
 vi.mock("@/lib/stream/producer", () => ({ addEvent: vi.fn().mockResolvedValue("1-0") }));
 vi.mock("@/lib/activity", () => ({ recordActivity: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("@/lib/notifications/dispatch", () => ({ emit: emitMock }));
-vi.mock("@/lib/hooks/execute", () => ({ executeHooks: vi.fn().mockResolvedValue({ allowed: true }) }));
 vi.mock("@/lib/cron/engine", () => ({ syncCronJobs: vi.fn().mockResolvedValue(0) }));
 vi.mock("@/lib/docker/deploy", () => ({
   checkEndpoint: vi.fn().mockResolvedValue(true),

@@ -21,7 +21,6 @@ const {
   backupsFindMany,
   backupsFindFirst,
   execFileMock,
-  executeHooksMock,
   emitMock,
   uploadMock,
   listContainersMock,
@@ -34,7 +33,6 @@ const {
   backupsFindMany: vi.fn(),
   backupsFindFirst: vi.fn(),
   execFileMock: vi.fn(),
-  executeHooksMock: vi.fn(),
   emitMock: vi.fn(),
   uploadMock: vi.fn(),
   listContainersMock: vi.fn(),
@@ -65,7 +63,6 @@ vi.mock("@/lib/db", () => ({
   },
 }));
 vi.mock("child_process", () => ({ execFile: execFileMock }));
-vi.mock("@/lib/hooks/execute", () => ({ executeHooks: executeHooksMock }));
 vi.mock("@/lib/notifications/dispatch", () => ({ emit: emitMock }));
 vi.mock("@/lib/docker/client", () => ({
   listContainers: listContainersMock,
@@ -185,7 +182,6 @@ beforeEach(() => {
   volumesFindMany.mockReset();
   backupsFindMany.mockReset().mockResolvedValue([]);
   backupsFindFirst.mockReset().mockResolvedValue(undefined);
-  executeHooksMock.mockReset().mockResolvedValue({ allowed: true, results: [] });
   listContainersMock.mockReset().mockResolvedValue([]);
   resolveDefaultEnvMock.mockReset().mockResolvedValue({ id: "env-1", name: "production" });
   uploadMock.mockClear();

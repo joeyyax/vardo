@@ -69,9 +69,6 @@ vi.mock("child_process", async (importOriginal) => ({
   ...(await importOriginal<typeof import("child_process")>()),
   execFile: execFileMock,
 }));
-vi.mock("@/lib/hooks/execute", () => ({
-  executeHooks: vi.fn().mockResolvedValue({ allowed: true, results: [] }),
-}));
 vi.mock("@/lib/notifications/dispatch", () => ({ emit: vi.fn() }));
 vi.mock("@/lib/docker/client", () => ({
   listContainers: vi.fn().mockResolvedValue([]),

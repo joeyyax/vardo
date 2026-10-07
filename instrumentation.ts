@@ -82,15 +82,6 @@ export async function register() {
       log.error("OAuth token encryption failed:", err);
     }
 
-    // Carry existing hook registrations onto the new hooks flag. Needs the
-    // encryption key, so it runs after the check above.
-    try {
-      const { backfillHooksFlag } = await import("./lib/hooks/backfill-flag");
-      await backfillHooksFlag();
-    } catch (err) {
-      log.error("Hooks flag backfill failed:", err);
-    }
-
     // Hand back the rows of the retired GlitchTip integration. Writes an
     // encrypted marker, so it runs after the key check above.
     try {
@@ -166,15 +157,12 @@ export async function register() {
       log.error("Infrastructure provisioning failed:", err);
     }
 
-    // Register feature subsystems — hooks, consumers, schedulers, monitors.
+    // Register feature subsystems — consumers, schedulers, monitors.
     // Each register function checks its feature flag before initializing.
     const features: [string, () => Promise<void>][] = [
       ["notifications", async () => { const m = await import("./lib/notifications/register"); await m.registerNotificationsPlugin(); }],
       ["metrics", async () => { const m = await import("./lib/metrics/register"); await m.registerMetricsPlugin(); }],
-      ["backups", async () => { const m = await import("./lib/backups/register"); await m.registerBackupsPlugin(); }],
-      ["security", async () => { const m = await import("./lib/security/register"); await m.registerSecurityPlugin(); }],
       ["monitoring", async () => { const m = await import("./lib/monitoring/register"); await m.registerMonitoringPlugin(); }],
-      ["ssl", async () => { const m = await import("./lib/ssl/register"); await m.registerSslPlugin(); }],
       ["cron", async () => { const m = await import("./lib/cron/register"); await m.registerCronPlugin(); }],
       ["domain-monitoring", async () => { const m = await import("./lib/domain-monitoring/register"); await m.registerDomainMonitoringPlugin(); }],
       ["digest", async () => { const m = await import("./lib/digest/register"); await m.registerDigestPlugin(); }],

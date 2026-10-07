@@ -761,17 +761,6 @@ export async function runBackup(
     ? job.backupJobVolumes.filter((bjv) => bjv.volume.appId && scope.has(bjv.volume.appId))
     : job.backupJobVolumes;
 
-  const { executeHooks } = await import("@/lib/hooks/execute");
-  const hookResult = await executeHooks("before.backup.run", {
-    jobId,
-    organizationId: job.organizationId,
-    apps: jobApps.map((bja) => ({ id: bja.app.id, name: bja.app.name })),
-  }, { organizationId: job.organizationId ?? undefined });
-
-  if (!hookResult.allowed) {
-    throw new Error(`Backup blocked by hook: ${hookResult.blockedBy?.hookName}`);
-  }
-
   const storage = createBackupStorage(job.target);
   const ts = timestamp();
   await ensureDir(BACKUPS_DIR);
@@ -1603,17 +1592,6 @@ export async function restoreBackup(
     : await db.query.volumes.findFirst({
         where: and(isNull(volumes.appId), eq(volumes.name, backup.volumeName)),
       });
-
-  const { executeHooks } = await import("@/lib/hooks/execute");
-  const restoreHookResult = await executeHooks("before.backup.restore", {
-    backupId,
-    appId: backup.appId,
-    volumeName: backup.volumeName,
-  }, { organizationId: backup.target.organizationId ?? undefined });
-
-  if (!restoreHookResult.allowed) {
-    throw new Error(`Restore blocked by hook: ${restoreHookResult.blockedBy?.hookName}`);
-  }
 
   const storage = createBackupStorage(backup.target);
   const logLines: string[] = [];

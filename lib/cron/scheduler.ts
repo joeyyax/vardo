@@ -52,24 +52,26 @@ function startDailySecurityScans(): void {
     if (lastScanDate === today) return; // Already ran today
     lastScanDate = today;
 
-    try {
-      const { db } = await import("@/lib/db");
-      const { runScheduledScans } = await import("@/lib/security/scanner");
+    if (isFeatureEnabled("security")) {
+      try {
+        const { db } = await import("@/lib/db");
+        const { runScheduledScans } = await import("@/lib/security/scanner");
 
-      const orgs = await db.query.organizations.findMany({
-        columns: { id: true },
-        limit: 500,
-      });
-
-      log.info(`Daily security scan: scanning ${orgs.length} organizations`);
-
-      for (const org of orgs) {
-        await runScheduledScans(org.id).catch((err) => {
-          log.error(`Daily scan failed for org ${org.id}:`, err);
+        const orgs = await db.query.organizations.findMany({
+          columns: { id: true },
+          limit: 500,
         });
+
+        log.info(`Daily security scan: scanning ${orgs.length} organizations`);
+
+        for (const org of orgs) {
+          await runScheduledScans(org.id).catch((err) => {
+            log.error(`Daily scan failed for org ${org.id}:`, err);
+          });
+        }
+      } catch (err) {
+        log.error("Daily security scan error:", err);
       }
-    } catch (err) {
-      log.error("Daily security scan error:", err);
     }
 
     // Clean up self-preview containers that have been running too long.

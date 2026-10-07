@@ -346,33 +346,6 @@ export async function runDeployment(
       projectAllowBindMounts = true;
     }
 
-    // Execute before.deploy.start hooks — approval gates, pre-flight checks
-    try {
-      const { executeHooks } = await import("@/lib/hooks/execute");
-      const hookResult = await executeHooks("before.deploy.start", {
-        appId: opts.appId,
-        appName: app.displayName || app.name,
-        organizationId: opts.organizationId,
-        deploymentId,
-        deployType: app.deployType,
-        trigger: opts.trigger,
-        triggeredBy: opts.triggeredBy,
-      }, {
-        organizationId: opts.organizationId,
-        appId: opts.appId,
-        deployId: deploymentId,
-      });
-
-      if (!hookResult.allowed) {
-        throw new DeployBlockedError(
-          `Blocked by hook "${hookResult.blockedBy?.hookName}": ${hookResult.blockedBy?.reason || "Hook rejected the deploy"}`
-        );
-      }
-    } catch (err) {
-      if (err instanceof DeployBlockedError) throw err;
-      log(`[deploy] Warning: pre-deploy hooks — ${err instanceof Error ? err.message : err}`);
-    }
-
     stage("clone", "running");
     log(`[deploy] App: ${app.displayName} (${app.name})`);
     log(`[deploy] Source: ${app.source}, Type: ${app.deployType}`);
@@ -734,9 +707,6 @@ export async function sendDeployNotification(
         gitMessage: deployment?.gitMessage ?? undefined,
         triggeredBy: triggeredByName,
       });
-
-      // Security scan, backup, monitoring hooks are handled by plugins
-      // via executeHooks("after.deploy.success") in post-deploy step.
     } else {
       emit(app.organizationId, {
         type: "deploy.failed",

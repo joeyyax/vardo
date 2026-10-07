@@ -32,7 +32,6 @@ vi.mock("child_process", async (importOriginal) => ({
   ...(await importOriginal<typeof import("child_process")>()),
   spawn: spawnMock,
 }));
-vi.mock("@/lib/hooks/execute", () => ({ executeHooks: vi.fn().mockResolvedValue({ allowed: true }) }));
 vi.mock("@/lib/docker/client", () => ({
   listContainers: vi.fn().mockResolvedValue([]),
   inspectContainer: vi.fn(),

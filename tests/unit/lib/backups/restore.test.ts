@@ -27,7 +27,6 @@ const {
   backupsFindFirst,
   volumesFindFirst,
   execFileMock,
-  executeHooksMock,
   listContainersMock,
   inspectContainerMock,
   resolveDefaultEnvMock,
@@ -46,7 +45,6 @@ const {
     const cb = args[args.length - 1];
     if (typeof cb === "function") (cb as (e: unknown, r: unknown) => void)(null, { stdout: "", stderr: "" });
   }),
-  executeHooksMock: vi.fn().mockResolvedValue({ allowed: true, results: [] }),
   listContainersMock: vi.fn(),
   inspectContainerMock: vi.fn(),
   resolveDefaultEnvMock: vi.fn(),
@@ -68,7 +66,6 @@ vi.mock("child_process", async (importOriginal) => ({
   ...(await importOriginal<typeof import("child_process")>()),
   execFile: execFileMock,
 }));
-vi.mock("@/lib/hooks/execute", () => ({ executeHooks: executeHooksMock }));
 vi.mock("@/lib/docker/client", () => ({
   listContainers: listContainersMock,
   inspectContainer: inspectContainerMock,
@@ -132,7 +129,6 @@ beforeEach(() => {
   execFileMock.mockImplementation(execSuccess);
   backupsFindFirst.mockReset();
   volumesFindFirst.mockReset();
-  executeHooksMock.mockResolvedValue({ allowed: true, results: [] });
   // Default: no running container (resolver falls through to name derivation).
   listContainersMock.mockReset().mockResolvedValue([]);
   inspectContainerMock.mockReset().mockResolvedValue({ mounts: [] });
@@ -191,15 +187,6 @@ describe("restoreBackup — corrupted/mismatched archive is rejected", () => {
     expect(result.success).toBe(false);
     expect(result.log).toMatch(/Checksum mismatch/);
     // The data-loss guarantee: no tar extract / dump pipe was ever executed.
-    expect(restoreCommandRan()).toBe(false);
-  });
-
-  it("is blocked by a denying before.backup.restore hook", async () => {
-    backupsFindFirst.mockResolvedValue(backupRow());
-    volumesFindFirst.mockResolvedValue({ backupStrategy: "tar", backupMeta: null });
-    executeHooksMock.mockResolvedValue({ allowed: false, blockedBy: { hookName: "guard" }, results: [] });
-
-    await expect(restoreBackup("bk-1")).rejects.toThrow(/blocked by hook/i);
     expect(restoreCommandRan()).toBe(false);
   });
 

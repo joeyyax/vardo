@@ -3,12 +3,12 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // ---------------------------------------------------------------------------
 // postDeploy — work left undone behind a successful cutover
 //
-// The tail after the success row is where hooks run and the old slot stops. A
+// The tail after the success row is where the old slot stops. A
 // failure there does not fail the deploy, but it must not vanish either: an
 // old slot that never stopped is still holding its containers.
 // ---------------------------------------------------------------------------
 
-const { dbMock, writes, emitMock, execCalls, execFails, hooksMock, queueDrained, commitFails, drainMock, endDrainMock } = vi.hoisted(() => {
+const { dbMock, writes, emitMock, execCalls, execFails, queueDrained, commitFails, drainMock, endDrainMock } = vi.hoisted(() => {
   const drainMock = vi.fn().mockResolvedValue([]);
   const endDrainMock = vi.fn();
   type Write = { table: unknown; values: Record<string, unknown> };
@@ -16,7 +16,6 @@ const { dbMock, writes, emitMock, execCalls, execFails, hooksMock, queueDrained,
   const execCalls: string[] = [];
   const execFails = { stop: false };
   const emitMock = vi.fn();
-  const hooksMock = vi.fn().mockResolvedValue({ allowed: true });
   const queueDrained = vi.fn().mockResolvedValue(true);
   const commitFails = { value: false };
 
@@ -39,7 +38,7 @@ const { dbMock, writes, emitMock, execCalls, execFails, hooksMock, queueDrained,
     },
   };
 
-  return { dbMock, writes, emitMock, execCalls, execFails, hooksMock, queueDrained, commitFails, drainMock, endDrainMock };
+  return { dbMock, writes, emitMock, execCalls, execFails, queueDrained, commitFails, drainMock, endDrainMock };
 });
 
 vi.mock("@/lib/db", () => ({ db: dbMock }));
@@ -53,7 +52,6 @@ vi.mock("@/lib/redis-lock", () => ({
 vi.mock("@/lib/stream/producer", () => ({ addEvent: vi.fn().mockResolvedValue("1-0") }));
 vi.mock("@/lib/activity", () => ({ recordActivity: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("@/lib/notifications/dispatch", () => ({ emit: emitMock }));
-vi.mock("@/lib/hooks/execute", () => ({ executeHooks: hooksMock }));
 vi.mock("@/lib/cron/engine", () => ({ syncCronJobs: vi.fn().mockResolvedValue(0) }));
 vi.mock("@/lib/docker/deploy", () => ({
   checkEndpoint: vi.fn().mockResolvedValue(true),
@@ -187,7 +185,6 @@ describe("postDeploy tail work", () => {
     commitFails.value = false;
     vi.mocked(removeContainer).mockClear();
     emitMock.mockClear();
-    hooksMock.mockResolvedValue({ allowed: true });
     queueDrained.mockResolvedValue(true);
   });
 
@@ -248,18 +245,6 @@ describe("postDeploy tail work", () => {
 
     expect(stopOldSlot).toHaveBeenCalled();
     expect(unfinishedReasons()).toEqual([]);
-  });
-
-  it("reports an after.deploy.success hook that failed", async () => {
-    hooksMock.mockResolvedValue({
-      allowed: false,
-      blockedBy: { hookName: "nightly-backup", reason: "webhook returned 500" },
-    });
-
-    await postDeploy(makeContext());
-
-    expect(unfinishedReasons()[0]).toContain("nightly-backup");
-    expect(unfinishedReasons()[0]).toContain("webhook returned 500");
   });
 
   it("stops the old slot only after the deploy commits", async () => {

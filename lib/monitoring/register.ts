@@ -1,4 +1,3 @@
-import { registerInternalHandler } from "@/lib/hooks/registry";
 import { isFeatureEnabled } from "@/lib/config/features";
 import { logger } from "@/lib/logger";
 
@@ -9,31 +8,6 @@ export async function registerMonitoringPlugin(): Promise<void> {
     log.info("Monitoring disabled, skipping registration");
     return;
   }
-
-  // Kept so an existing hook registration still resolves. The grace period is
-  // reconciled by the deploy sweeper from the deployment rows, not from here.
-  registerInternalHandler("monitoring:start-rollback-monitor", async () => ({
-    allowed: true,
-    reason: "Auto-rollback is reconciled by the deploy sweeper",
-  }));
-
-  registerInternalHandler("monitoring:drift-check", async (context) => {
-    try {
-      const { runPostDeployDriftCheck } = await import("@/lib/volumes/drift-check");
-      await runPostDeployDriftCheck({
-        appId: context.appId as string,
-        organizationId: context.organizationId as string,
-        appName: context.appName as string,
-        // Without this the check falls back to the app's default environment,
-        // so a staging deploy reads production's containers.
-        envName: context.envName as string | undefined,
-        log: () => "", // Drift check is non-blocking, logs to its own output
-      });
-      return { allowed: true, reason: "Drift check completed" };
-    } catch (err) {
-      return { allowed: true, reason: `Drift check failed: ${err}` };
-    }
-  });
 
   // Start system health monitor
   try {
@@ -76,5 +50,5 @@ export async function registerMonitoringPlugin(): Promise<void> {
     .then(({ reportStoredComposeConfigs }) => reportStoredComposeConfigs())
     .catch((err) => log.warn("Compose audit failed to start:", err));
 
-  log.info("Monitoring hooks and system health monitor registered");
+  log.info("Monitoring started");
 }

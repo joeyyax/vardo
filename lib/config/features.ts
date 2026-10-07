@@ -36,7 +36,6 @@ export type FeatureFlag =
   | "container-import"
   | "digest"
   | "monitoring"
-  | "hooks"
   | "image-updates"
   | "teams"
   | "templates"
@@ -186,13 +185,6 @@ const FLAG_CONFIG: Record<FeatureFlag, FlagConfig> = {
     description: "Model Context Protocol endpoint at /api/mcp, letting AI tools manage apps and deployments.",
     group: "advanced",
     dependsOn: "api-tokens",
-  },
-  hooks: {
-    label: "Lifecycle hooks",
-    description:
-      "Run registered hooks at deploy and backup checkpoints. Script hooks execute arbitrary commands on the host as the Vardo process — a sharp tool, equivalent to shell access for anyone who can register one. Disabled by default; webhook and internal hooks stop firing too.",
-    defaultValue: false,
-    group: "advanced",
   },
   "domain-monitoring": {
     label: "Domain monitoring",

@@ -59,7 +59,6 @@ vi.mock("@/lib/redis", () => ({
 }));
 vi.mock("@/lib/stream/producer", () => ({ addEvent: addEventMock }));
 vi.mock("@/lib/activity", () => ({ recordActivity: vi.fn().mockResolvedValue(undefined) }));
-vi.mock("@/lib/hooks/execute", () => ({ executeHooks: vi.fn().mockResolvedValue({ allowed: true }) }));
 vi.mock("@/lib/docker/deploy-logger", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/docker/deploy-logger")>()),
   createDeployLogger: () => ({
@@ -113,7 +112,7 @@ describe("a deploy whose post-deploy work did not finish", () => {
     vi.mocked(postDeploy).mockImplementation(async (ctx) => {
       ctx.succeeded = true;
       ctx.stage("done", "success");
-      throw new Error("after.deploy.success hooks did not run");
+      throw new Error("the drift check did not run");
     });
   });
 
@@ -122,7 +121,7 @@ describe("a deploy whose post-deploy work did not finish", () => {
 
     expect(result.success).toBe(true);
     expect(result.status).toBe("success");
-    expect(result.postDeployError).toContain("hooks did not run");
+    expect(result.postDeployError).toContain("drift check did not run");
   });
 
   it("never overwrites the success the deploy already recorded", async () => {
@@ -154,7 +153,7 @@ describe("a deploy whose post-deploy work did not finish", () => {
     expect(emitMock.mock.calls.at(-1)?.[1]).toMatchObject({
       appId: "app-1",
       deploymentId: "dep-1",
-      reason: expect.stringContaining("hooks did not run"),
+      reason: expect.stringContaining("drift check did not run"),
     });
   });
 });

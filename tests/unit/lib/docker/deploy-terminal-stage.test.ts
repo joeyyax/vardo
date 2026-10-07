@@ -9,7 +9,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // so a process killed mid-deploy leaves something behind.
 // ---------------------------------------------------------------------------
 
-const { dbMock, events, hooksMock, dockerCalls } = vi.hoisted(() => {
+const { dbMock, events, dockerCalls } = vi.hoisted(() => {
   type Event = { kind: "stage" | "log-flush" | "row"; detail: string };
   const events: Event[] = [];
   const dockerCalls: string[] = [];
@@ -54,9 +54,8 @@ const { dbMock, events, hooksMock, dockerCalls } = vi.hoisted(() => {
     select: vi.fn().mockReturnValue({ from: () => ({ where: () => Promise.resolve([]) }) }),
   };
 
-  const hooksMock = vi.fn().mockResolvedValue({ allowed: true });
 
-  return { dbMock, events, hooksMock, dockerCalls };
+  return { dbMock, events, dockerCalls };
 });
 
 vi.mock("@/lib/db", () => ({ db: dbMock }));
@@ -65,7 +64,6 @@ vi.mock("@/lib/redis", () => ({
 }));
 vi.mock("@/lib/stream/producer", () => ({ addEvent: vi.fn().mockResolvedValue("1-0") }));
 vi.mock("@/lib/activity", () => ({ recordActivity: vi.fn().mockResolvedValue(undefined) }));
-vi.mock("@/lib/hooks/execute", () => ({ executeHooks: hooksMock }));
 vi.mock("@/lib/docker/deploy-logger", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/docker/deploy-logger")>()),
   createDeployLogger: () => ({
@@ -137,7 +135,6 @@ describe("runDeployment terminal stages", () => {
   beforeEach(() => {
     events.length = 0;
     onStage.mockClear();
-    hooksMock.mockResolvedValue({ allowed: true });
     vi.mocked(build).mockImplementation(async (ctx) => ctx);
   });
 
@@ -173,19 +170,6 @@ describe("runDeployment terminal stages", () => {
     expect(result.status).toBe("superseded");
   });
 
-  it("emits a failed stage when a hook blocks the deploy", async () => {
-    hooksMock.mockResolvedValue({
-      allowed: false,
-      blockedBy: { hookName: "approval", reason: "needs sign-off" },
-    });
-
-    const result = await runDeployment("dep-1", { ...OPTS, onStage });
-
-    expect(stageCalls().at(-1)?.[1]).toBe("failed");
-    expect(result.status).toBe("failed");
-    expect(result.error).toContain("approval");
-  });
-
   it("reports success without a failed stage", async () => {
     const result = await runDeployment("dep-1", { ...OPTS, onStage });
 
@@ -214,7 +198,6 @@ describe("runDeployment log persistence", () => {
   beforeEach(() => {
     events.length = 0;
     onStage.mockClear();
-    hooksMock.mockResolvedValue({ allowed: true });
     vi.mocked(build).mockImplementation(async (ctx) => ctx);
   });
 
@@ -266,7 +249,6 @@ describe("runDeployment failures between phases", () => {
   beforeEach(() => {
     dockerCalls.length = 0;
     onStage.mockClear();
-    hooksMock.mockResolvedValue({ allowed: true });
     vi.mocked(prepareRepo).mockImplementation(async (ctx) => ctx);
     vi.mocked(build).mockImplementation(async (ctx) => ctx);
     vi.mocked(swap).mockImplementation(async (ctx) => {
@@ -342,7 +324,6 @@ describe("runDeployment failures after the deploy reported success", () => {
   beforeEach(() => {
     dockerCalls.length = 0;
     onStage.mockClear();
-    hooksMock.mockResolvedValue({ allowed: true });
     vi.mocked(prepareRepo).mockImplementation(async (ctx) => ctx);
     vi.mocked(build).mockImplementation(async (ctx) => ctx);
     vi.mocked(swap).mockImplementation(async (ctx) => {

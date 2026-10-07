@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // #874: the first deploy that finds an app's volumes enrolls it in backups
-// directly. Hooks are mocked to do nothing, as they do with the flag off.
+// directly.
 
-const { dbMock, writes, emitMock, execCalls, execFails, hooksMock, queueDrained, drainMock, endDrainMock, enrollNewApp, enrollNewVolumes } = vi.hoisted(() => {
+const { dbMock, writes, emitMock, execCalls, execFails, queueDrained, drainMock, endDrainMock, enrollNewApp, enrollNewVolumes } = vi.hoisted(() => {
   const drainMock = vi.fn().mockResolvedValue([]);
   const endDrainMock = vi.fn();
   type Write = { table: unknown; values: Record<string, unknown> };
@@ -11,7 +11,6 @@ const { dbMock, writes, emitMock, execCalls, execFails, hooksMock, queueDrained,
   const execCalls: string[] = [];
   const execFails = { stop: false };
   const emitMock = vi.fn();
-  const hooksMock = vi.fn().mockResolvedValue({ allowed: true });
   const queueDrained = vi.fn().mockResolvedValue(true);
 
   function makeUpdateChain(table: unknown) {
@@ -34,7 +33,7 @@ const { dbMock, writes, emitMock, execCalls, execFails, hooksMock, queueDrained,
   };
 
   return {
-    dbMock, writes, emitMock, execCalls, execFails, hooksMock, queueDrained, drainMock, endDrainMock,
+    dbMock, writes, emitMock, execCalls, execFails, queueDrained, drainMock, endDrainMock,
     enrollNewApp: vi.fn().mockResolvedValue({ status: "covered", jobId: "job-1" }),
     enrollNewVolumes: vi.fn().mockResolvedValue(undefined),
   };
@@ -52,7 +51,6 @@ vi.mock("@/lib/redis-lock", () => ({
 vi.mock("@/lib/stream/producer", () => ({ addEvent: vi.fn().mockResolvedValue("1-0") }));
 vi.mock("@/lib/activity", () => ({ recordActivity: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("@/lib/notifications/dispatch", () => ({ emit: emitMock }));
-vi.mock("@/lib/hooks/execute", () => ({ executeHooks: hooksMock }));
 vi.mock("@/lib/cron/engine", () => ({ syncCronJobs: vi.fn().mockResolvedValue(0) }));
 vi.mock("@/lib/docker/deploy", () => ({
   checkEndpoint: vi.fn().mockResolvedValue(true),
@@ -193,7 +191,6 @@ describe("postDeploy backup enrollment", () => {
 
     await postDeploy(makeContext());
 
-    expect(hooksMock).toHaveBeenCalled();
     expect(enrollNewApp).toHaveBeenCalledWith(
       expect.objectContaining({ appId: "app-1", organizationId: "org-1", measure: true }),
     );

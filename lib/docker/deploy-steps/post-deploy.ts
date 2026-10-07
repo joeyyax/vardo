@@ -1,8 +1,7 @@
 // ---------------------------------------------------------------------------
 // Deploy Steps 10-12: HTTP health check, volume detection, cron sync, compose
 // decomposition and config snapshot, then the commit. After it: active slot
-// recording, old slot stop, import cleanup, image pruning, notifications and
-// hooks.
+// recording, old slot stop, import cleanup, image pruning and notifications.
 // ---------------------------------------------------------------------------
 
 import { db } from "@/lib/db";
@@ -465,41 +464,6 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
   // Whatever was held from before the commit lands here, behind the success.
   for (const reason of pendingUnfinished.splice(0)) {
     await recordPostDeployIncomplete(ctx, reason);
-  }
-
-  // Execute after.deploy.success hooks — plugins handle backup, security scan,
-  // rollback monitor, drift check, and any user-registered hooks.
-  try {
-    const { executeHooks } = await import("@/lib/hooks/execute");
-    const hookResult = await executeHooks("after.deploy.success", {
-      appId: ctx.appId,
-      appName: app.name,
-      organizationId: ctx.organizationId,
-      deploymentId: ctx.deploymentId,
-      deployType: app.deployType,
-      activeSlot,
-      newSlot,
-      isLocalEnv,
-      envName: ctx.envName,
-      autoRollback: app.autoRollback,
-      rollbackGracePeriod: app.rollbackGracePeriod,
-      app,
-    }, {
-      organizationId: ctx.organizationId,
-      appId: ctx.appId,
-      deployId: ctx.deploymentId,
-    });
-
-    // A failing after.* hook returns rather than throws — backup, security scan
-    // and the rollback monitor all hang off this event.
-    if (!hookResult.allowed) {
-      const { hookName, reason } = hookResult.blockedBy ?? {};
-      await unfinishedWork(`the "${hookName ?? "after.deploy.success"}" hook failed — ${reason ?? "no reason given"}`);
-    }
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    log(`[deploy] Warning: post-deploy hooks — ${message}`);
-    await unfinishedWork(`the after.deploy.success hooks did not run — ${message}`);
   }
 
   // Auto-rollback watches from inside Vardo, so it cannot watch Vardo: the
