@@ -3,7 +3,7 @@ import { SkeletonGroup } from "@/components/ui/skeleton";
 export default function AppDetailLoading() {
   return (
     <SkeletonGroup className="space-y-6">
-      {/* App header: icon + name + status badge */}
+      {/* App header */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex items-center gap-3">
           <div className="h-10 w-10 bg-muted animate-pulse rounded-xl shrink-0" />
@@ -29,7 +29,7 @@ export default function AppDetailLoading() {
         ))}
       </div>
 
-      {/* Content area: deployment list placeholder */}
+      {/* Content */}
       <div className="space-y-3">
         {Array.from({ length: 4 }).map((_, i) => (
           <div key={i} className="flex items-center gap-4 rounded-lg bg-card px-4 py-3 shadow-card dark:border">

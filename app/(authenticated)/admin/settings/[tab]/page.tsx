@@ -19,10 +19,7 @@ import { ExternalRoutesSettings } from "@/components/ssl/external-routes-setting
 import { MaintenanceSettings } from "../maintenance-settings";
 import { BackupPage } from "@/components/backups/backup-page";
 
-// ---------------------------------------------------------------------------
-// Tab registry — maps URL slugs to components and optional feature gates.
-// When a gate is set, the tab returns 404 if that feature flag is disabled.
-// ---------------------------------------------------------------------------
+// Maps URL slugs to tabs. A gated tab 404s when its feature flag is off.
 
 type TabEntry = {
   component: React.ComponentType;
@@ -45,10 +42,6 @@ const TABS: Record<string, TabEntry> = {
   config:             { component: ConfigSettings },
 };
 
-// ---------------------------------------------------------------------------
-// Page
-// ---------------------------------------------------------------------------
-
 export default async function AdminSettingsTabPage({
   params,
 }: {
@@ -59,12 +52,11 @@ export default async function AdminSettingsTabPage({
   const entry = TABS[tab];
   if (!entry) notFound();
 
-  // Check feature flag gate
   if (entry.gate && !(await isFeatureEnabledAsync(entry.gate))) {
     notFound();
   }
 
-  // Backup tab — special case: full BackupPage with admin scope
+  // Backup renders the full BackupPage with admin scope.
   if (tab === "backup") {
     const orgData = await getCurrentOrg();
     const orgId = orgData?.organization.id;

@@ -93,7 +93,6 @@ export function AppTerminal({ appId, orgId }: AppTerminalProps) {
     };
   }, [containersUrl, applyContainers]);
 
-  // Send input to the terminal session
   const sendInput = useCallback(
     async (data: string) => {
       const sessionId = sessionIdRef.current;
@@ -116,7 +115,6 @@ export function AppTerminal({ appId, orgId }: AppTerminalProps) {
     [baseUrl],
   );
 
-  // Send resize to the terminal session
   const sendResize = useCallback(
     async (cols: number, rows: number) => {
       const sessionId = sessionIdRef.current;
@@ -140,7 +138,6 @@ export function AppTerminal({ appId, orgId }: AppTerminalProps) {
     [baseUrl],
   );
 
-  // Connect to terminal
   const connect = useCallback(
     (containerId: string) => {
       // Clean up any existing connection
@@ -198,7 +195,6 @@ export function AppTerminal({ appId, orgId }: AppTerminalProps) {
       const term = xtermRef.current;
       if (!term) return;
 
-      // Clear terminal for new session
       term.clear();
       term.reset();
 
@@ -258,7 +254,6 @@ export function AppTerminal({ appId, orgId }: AppTerminalProps) {
         }
       };
 
-      // Handle user input
       term.onData((data) => {
         sendInput(data);
       });

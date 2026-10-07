@@ -454,7 +454,7 @@ function IgnoredList({
   );
 }
 
-/** What the batch actually did, per app. Failures are named, not summed away. */
+/** What the batch did per app, with failures named. */
 function BatchOutcome({ report }: { report: BatchReport }) {
   return (
     <section

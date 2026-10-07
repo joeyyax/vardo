@@ -27,10 +27,6 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { RelativeTime } from "@/components/relative-time";
 import { authClient, useSession, passkey as passkeyMethods } from "@/lib/auth/client";
 
-// ---------------------------------------------------------------------------
-// Account Info
-// ---------------------------------------------------------------------------
-
 export function AccountInfo() {
   const { data: sessionData, isPending } = useSession();
   const sessionName = sessionData?.user?.name ?? "";
@@ -102,10 +98,6 @@ export function AccountInfo() {
     </Card>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Password Management
-// ---------------------------------------------------------------------------
 
 export function PasswordManagement() {
   const [currentPassword, setCurrentPassword] = useState("");
@@ -226,10 +218,6 @@ export function PasswordManagement() {
     </Card>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Two-Factor Authentication
-// ---------------------------------------------------------------------------
 
 export function TwoFactorAuth() {
   const { data: sessionData } = useSession();
@@ -448,10 +436,6 @@ export function TwoFactorAuth() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Passkey Management
-// ---------------------------------------------------------------------------
-
 type PasskeyInfo = {
   id: string;
   name: string | null;
@@ -601,10 +585,6 @@ export function PasskeyManager() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Linked Accounts (OAuth providers)
-// ---------------------------------------------------------------------------
-
 type LinkedAccount = {
   id: string;
   providerId: string;
@@ -711,10 +691,6 @@ export function LinkedAccounts() {
     </Card>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Active Sessions
-// ---------------------------------------------------------------------------
 
 type SessionInfo = {
   id: string;
@@ -845,10 +821,6 @@ export function ActiveSessions() {
     </Card>
   );
 }
-
-// ---------------------------------------------------------------------------
-// API Tokens
-// ---------------------------------------------------------------------------
 
 type ApiToken = {
   id: string;

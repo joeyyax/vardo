@@ -44,13 +44,12 @@ export function InProgressDeployCard({
   onToggleExpand: () => void;
   onAbort?: () => void;
   canAbort?: boolean;
-  /** A cancel has been signalled and the engine is finishing its current phase. */
+  /** A cancel was signaled; the engine is finishing its current phase. */
   cancelling?: boolean;
   trigger?: string;
   /** End-to-end time of this app's last successful deploy, for comparison. */
   typicalElapsedMs?: number | null;
 }) {
-  // Build a screen-reader announcement for the current deploy state
   const hasStages = Object.keys(stages).length > 0;
   // The phases in the stream name the run: only a rollback reports rollback phases.
   const isRollback = ROLLBACK_STAGE_KEYS.some((s) => stages[s]);
@@ -60,8 +59,7 @@ export function InProgressDeployCard({
   const runningStage = stageKeys.find((s) => stages[s] === "running");
   const failedStage = stageKeys.find((s) => stages[s] === "failed");
   const allDone = hasStages && stageKeys.filter((s) => stages[s]).every((s) => stages[s] === "success" || stages[s] === "skipped");
-  // Only announce once a stage has actually transitioned — empty string on
-  // initial mount so the assertive live region doesn't interrupt immediately.
+  // Empty until a stage transitions so the assertive live region doesn't fire on mount.
   const liveAnnouncement = failedStage
     ? `${noun} failed at ${STAGE_LABELS[failedStage]} stage`
     : allDone
@@ -85,8 +83,7 @@ export function InProgressDeployCard({
             <Loader2 className="mr-1 size-3 animate-spin" />
             {cancelling ? "Cancelling" : isRollback ? "Rolling back" : "Deploying"}
           </Badge>
-          {/* One axis of emphasis: only the phase in flight carries color, so
-              finished work reads as context rather than as news. */}
+          {/* Only the phase in flight carries color. */}
           <div className="flex items-center gap-1.5 flex-wrap">
             {stageKeys.map((s, i) => {
               const status = stages[s];
@@ -107,7 +104,6 @@ export function InProgressDeployCard({
                   }`}>
                     {STAGE_LABELS[s]}
                   </span>
-                  {/* Shape and color are the only cues left on the row. */}
                   <span className="sr-only">{STAGE_STATUS_WORDS[status ?? "pending"]}</span>
                   {running && timing && (
                     <Timer since={timing.startedAt} className="text-xs text-status-info/70" />

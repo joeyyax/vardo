@@ -94,10 +94,6 @@ const AppTerminal = dynamic(
   { ssr: false },
 );
 
-// ---------------------------------------------------------------------------
-// Service rows for the Services tab
-// ---------------------------------------------------------------------------
-
 /** The tag half of an image ref, or null when the image is untagged. */
 function imageTag(imageName: string | null): string | null {
   if (!imageName) return null;
@@ -106,9 +102,7 @@ function imageTag(imageName: string | null): string | null {
   return colon > slash ? imageName.slice(colon + 1) : null;
 }
 
-// Repo de-emphasized, tag as a discrete badge. The badge carries
-// data-slot="image-tag" so the image update checker can annotate it.
-// Labeled because compose can pin a different tag than the one deployed.
+// Tag renders as a badge with data-slot="image-tag" for the image update checker.
 function ImageRef({ imageName }: { imageName: string }) {
   const tag = imageTag(imageName);
   const repo = tag ? imageName.slice(0, imageName.lastIndexOf(":")) : imageName;
@@ -166,9 +160,7 @@ function formatPorts(service: ChildApp): string | null {
   return ports.length > 2 ? `${shown} +${ports.length - 2}` : shown;
 }
 
-// Stack containers are labeled with the parent app's name, so per-service
-// metrics come from the parent stream's container breakdown, narrowed by
-// compose service. Containers with no service label fall back to the name.
+// Per-service metrics come from the parent stream, narrowed by compose service.
 function matchServiceContainers(containers: ContainerPoint[], service: ChildApp): ContainerPoint[] {
   if (service.composeService) {
     const labeled = containers.filter((c) => c.composeService === service.composeService);
@@ -187,8 +179,7 @@ function matchServiceContainers(containers: ContainerPoint[], service: ChildApp)
   );
 }
 
-// A service has no compose project of its own: restart names it inside the
-// parent's, and everything else on the stack belongs to the parent.
+// Restart names the service inside the parent's compose project.
 function ServiceMenu({ service, orgId }: { service: ChildApp; orgId: string }) {
   const router = useRouter();
   const [restarting, setRestarting] = useState(false);
@@ -290,8 +281,7 @@ function ServiceRowCard({
   );
 }
 
-// Live per-service stats from the parent app's stream. Mounted only while the
-// Services tab is active.
+// Live per-service stats from the parent app's stream.
 function ComposeServices({
   appId,
   services,
@@ -345,8 +335,7 @@ function ComposeServices({
     return { stats, histories };
   }, [snapshots, services]);
 
-  // One line per service, problems first. The row carries the image reference
-  // itself; everything else the card carried moves to the hover card.
+  // One line per service, problems first.
   return (
     <div className="@container squircle rounded-lg bg-card p-1.5 shadow-card dark:border">
       {[...services]
@@ -373,7 +362,7 @@ function ComposeServices({
                 />
               </TooltipTrigger>
               <TooltipContent
-                /* Anchored under the row: side="right" collided and flipped onto the nav rail. */
+                /* side="right" collided with the nav rail. */
                 side="bottom"
                 align="start"
                 sideOffset={4}
@@ -392,10 +381,6 @@ function ComposeServices({
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Shared service selector buttons
-// ---------------------------------------------------------------------------
 
 function ServiceSelector({
   services,
@@ -427,12 +412,7 @@ function ServiceSelector({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Per-service tabs — one service at a time, picked from a selector
-// ---------------------------------------------------------------------------
-
-// For concepts that only exist per container. Aggregating them across a stack
-// would misattribute the result to services it did not come from.
+// Per-service tabs for concepts that only exist per container.
 function PerService({
   services,
   emptyMessage,
@@ -463,10 +443,7 @@ function PerService({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Networking tab — stack domains, plus where each service's own domains live
-// ---------------------------------------------------------------------------
-
+// Networking tab: stack domains plus links to each service's own.
 function ComposeNetworking({
   app,
   services,
@@ -526,12 +503,7 @@ function ComposeNetworking({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Security tab — stack scan, plus where each service's own scan lives
-// ---------------------------------------------------------------------------
-
-// A scan checks one app's own domain and ports, so services holding their own
-// domain are scanned on their own page rather than by the stack's scan.
+// Security tab: stack scan. Services with their own domain are scanned on their own page.
 function ComposeSecurity({
   app,
   services,
@@ -575,10 +547,6 @@ function ComposeSecurity({
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Compose editor tab
-// ---------------------------------------------------------------------------
 
 function ComposeEditor({
   app,
@@ -679,10 +647,6 @@ function ComposeEditor({
   );
 }
 
-// ---------------------------------------------------------------------------
-// ComposeDetail — main component for compose parent apps
-// ---------------------------------------------------------------------------
-
 export function ComposeDetail({
   app,
   orgId,
@@ -734,8 +698,6 @@ export function ComposeDetail({
     router.refresh();
   }, [orgId, app.id, router]);
 
-  // Same endpoint as Restart: the route reads the app's status and brings a
-  // stopped one up rather than restarting nothing.
   const handleStart = useCallback(async () => {
     try {
       const res = await fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/restart`, { method: "POST" });
@@ -871,8 +833,6 @@ export function ComposeDetail({
   // Set when the API would 403 the stop, so the menu offers it disabled with the reason.
   const stopRefusal = systemManagedRefusal(app, "stop");
 
-  // Same for delete, which the Danger Zone states rather than offering a button
-  // that fails.
   const deleteRefusal = systemManagedRefusal(app, "delete");
 
   // Newest success other than the one serving — what a rollback would restore.
@@ -928,8 +888,7 @@ export function ComposeDetail({
     };
   })();
 
-  // Opens the rebuild-from-a-deployment sheet, which lives in the Deployments
-  // section alongside the rest of the history.
+  // Opens the rebuild sheet in the Deployments section.
   function handleRollback() {
     if (!rollbackTargetId) return;
     setActiveTabAndUrl("deployments");
@@ -967,8 +926,7 @@ export function ComposeDetail({
   function renderAction(item: AppActionItem, index: number) {
     const { action, disabled } = item;
     const { icon: Icon, label } = ACTION_LABEL[action];
-    // One reason under a run of rows sharing it, rather than the same
-    // sentence repeated three times.
+    // One reason under a run of rows sharing it.
     const showReason = !!disabled && actions[index + 1]?.disabled !== disabled;
     return (
       <Fragment key={action}>
@@ -999,7 +957,6 @@ export function ComposeDetail({
       <PageToolbar
         actions={
           <div className="flex items-center gap-2">
-            {/* One action for a never-deployed stack is a button, not a menu. */}
             {actions.length === 1 && actions[0].action === "deploy" ? (
               <Button size="sm" disabled={deploy.deploying} onClick={handleDeployClick}>
                 {deploy.deploying ? (
@@ -1033,8 +990,7 @@ export function ComposeDetail({
         </EntityTitle>
       </PageToolbar>
 
-      {/* Failure detail — the stack's own deploy log when it failed, otherwise
-          the services that are actually down, each linked to its page. */}
+      {/* Failure detail */}
       {(() => {
         const banner = deployFailureBanner(app.status, app.deployments);
         if (!banner) return null;
@@ -1103,8 +1059,6 @@ export function ComposeDetail({
         );
       })()}
 
-      {/* Same shell as a single-service app: identity header + section rail.
-          A stack is an app page identified as a stack, not a different page. */}
       <AppHeader
         app={app}
         orgId={orgId}
@@ -1121,7 +1075,7 @@ export function ComposeDetail({
       />
 
 
-      {/* Sections — vertical nav rail on lg+, scroll strip below */}
+      {/* Sections */}
       <Tabs
         value={activeTab}
         onValueChange={setActiveTabAndUrl}

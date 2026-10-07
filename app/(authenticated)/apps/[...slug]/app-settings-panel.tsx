@@ -29,10 +29,7 @@ import { can } from "@/lib/auth/permissions";
 /** Said under every field the container only picks up when it is recreated. */
 const REDEPLOY_NOTE = "Requires a redeploy to take effect.";
 
-/**
- * The app's settings fields, one page of them at a time. The only writer of
- * these fields — a page is a subset of the same form, never a copy of it.
- */
+/** The app's settings fields, one page at a time. */
 export function AppSettingsPanel({
   app,
   orgId,
@@ -55,14 +52,11 @@ export function AppSettingsPanel({
   const router = useRouter();
   const [saving, setSaving] = useState(false);
 
-  // Vardo rewrites these rows on every boot, and the API refuses the PATCH, so
-  // the fields are shown as a record rather than offered as an editor.
+  // Vardo rewrites these rows on every boot and the API refuses the PATCH.
   const refusal = systemManagedRefusal(app, "edit");
   const locked = refusal !== null;
 
-  // Decomposed compose service: build/deploy/networking are controlled by the
-  // parent compose app, so those settings are hidden here. Per-service config
-  // (resources, GPU, priority, health) stays editable. (#745)
+  // Decomposed compose services hide build, deploy and networking settings (#745).
   const isChildService = !!app.parentAppId;
 
   // Edit form state
@@ -84,8 +78,7 @@ export function AppSettingsPanel({
   const [cpuLimit, setCpuLimit] = useState(app.cpuLimit?.toString() || "");
   const [memoryLimit, setMemoryLimit] = useState(app.memoryLimit?.toString() || "");
   const [gpuEnabled, setGpuEnabled] = useState(app.gpuEnabled ?? false);
-  // A decomposed child can inherit the parent's tier (priority === null → the
-  // "inherit" sentinel here). Non-child apps always have a concrete tier.
+  // A decomposed child can inherit the parent's tier (priority === null).
   const [priority, setPriority] = useState<"critical" | "standard" | "disposable" | "inherit">(
     isChildService ? (app.priority ?? "inherit") : (app.priority ?? "standard"),
   );
@@ -108,8 +101,7 @@ export function AppSettingsPanel({
   async function handleSave() {
     setSaving(true);
     try {
-      // Only fields the panel showed are written — a hidden one would send back
-      // whatever it was seeded with, and each page hides the other pages'.
+      // Write only the fields this page showed; hidden ones would overwrite other pages.
       const body: Record<string, unknown> = {};
       if (fields.identity) {
         body.displayName = displayName.trim();
@@ -155,8 +147,7 @@ export function AppSettingsPanel({
         body.rollbackGracePeriod = rollbackGracePeriod ? parseInt(rollbackGracePeriod, 10) : 60;
       }
 
-      // Resource limits, GPU and priority reach the container through the
-      // compose overlay, so they only apply when it is recreated.
+      // Resource limits, GPU and priority apply when the container is recreated.
       const stored: Record<string, unknown> = {
         deployType: app.deployType,
         gitBranch: app.gitBranch || "",
@@ -218,8 +209,6 @@ export function AppSettingsPanel({
         </p>
       )}
 
-      {/* Resources is nearly all redeploy-required, so the page says it once
-          instead of repeating it under five fields. */}
       {page === "resources" && (
         <p className="text-sm text-muted-foreground">
           Restart policy, limits, priority and GPU are written into the compose
@@ -251,8 +240,8 @@ export function AppSettingsPanel({
         </div>
       )}
 
-      {/* A child service hides what its parent stack controls (#745); a compose
-          parent hides what only a single container has (#87). */}
+      {/* Child services hide stack-controlled fields (#745); compose parents hide
+          single-container ones (#87). */}
 
       {/* Image */}
       {fields.image && (

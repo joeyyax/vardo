@@ -59,7 +59,7 @@ export function GitHubConnection() {
   async function handleConnect() {
     setConnecting(true);
     try {
-      // Phase 1: if no installations yet, try syncing existing ones first
+      // With no installations, try syncing existing ones first.
       if (installations.length === 0) {
         try {
           const syncRes = await fetch("/api/v1/github/installations/sync");
@@ -77,7 +77,7 @@ export function GitHubConnection() {
         }
       }
 
-      // Phase 2: no existing installations found (or user already has some) — redirect to GitHub
+      // Otherwise redirect to GitHub.
       const res = await fetch("/api/v1/github/connect");
       if (!res.ok) {
         const data = await res.json();

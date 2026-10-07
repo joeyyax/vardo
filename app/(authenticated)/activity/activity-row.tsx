@@ -28,7 +28,7 @@ function SubjectName({ subject }: { subject: ActivitySubjectRef }) {
   );
 }
 
-/** Fleet rows name the subjects rather than reducing them to a number. */
+/** Fleet rows name their subjects. */
 function Subjects({ subjects }: { subjects: ActivitySubjectRef[] }) {
   const labels = subjects.map((s) => s.label);
   const { shown, remainder } = subjectSummary(labels);

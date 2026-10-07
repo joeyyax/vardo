@@ -37,9 +37,7 @@ export default async function ProjectDetailPage({
   const { slug } = await params;
   const projectSlug = slug[0];
 
-  // URL patterns:
-  //   /projects/{slug}
-  //   /projects/{slug}/{tab}
+  // /projects/{slug}[/{tab}]
   let tabSegment: string | undefined;
 
   if (slug.length === 2) {
@@ -152,7 +150,6 @@ export default async function ProjectDetailPage({
 
   const instanceAdmin = await isAppAdmin();
 
-  // Fetch flags + mesh data in parallel
   const [meshEnabled, loggingEnabled, environmentsEnabled, meshPeers, meshInstances, containerImport] = await Promise.all([
     isFeatureEnabledAsync("mesh"),
     isFeatureEnabledAsync("logging"),

@@ -4,10 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "@/lib/messenger";
 import type { SlotStatus } from "../types";
 
-/**
- * Cancels the running or queued deploy. The engine stops after the phase it is
- * in, so a running deploy reports "cancelling" rather than a finished cancel.
- */
+/** Cancels the running or queued deploy. A running deploy reports "cancelling" until its phase ends. */
 export function useCancelDeploy(orgId: string, appId: string) {
   const [cancelling, setCancelling] = useState(false);
   const [cancelRequested, setCancelRequested] = useState(false);
@@ -62,10 +59,7 @@ export function useCancelDeploy(orgId: string, appId: string) {
   return { cancelling, cancelRequested, setCancelRequested, cancelDeploy };
 }
 
-/**
- * Blue/green slot state for the app. Refetched whenever `refreshKey` changes,
- * because a deploy replaces the standby.
- */
+/** Blue/green slot state, refetched when `refreshKey` changes. */
 export function useSlotStatus(
   orgId: string,
   appId: string,

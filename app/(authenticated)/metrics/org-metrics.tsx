@@ -47,7 +47,7 @@ type AppMeta = {
   containers: { containerId: string; cpuPercent: number; memoryUsage: number; memoryLimit: number; networkRx: number; networkTx: number }[];
 };
 
-/* ── Stable tooltip components (outside render to avoid re-creation) ── */
+// Defined outside render so they aren't recreated.
 
 function CpuTooltip(props: { active?: boolean; payload?: Array<{ dataKey?: string; name?: string; value?: number; color?: string }>; label?: string }) {
   return (
@@ -218,7 +218,6 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
   const [showIdle, setShowIdle] = useState(false);
   const [sort, setSort] = useState(DEFAULT_SORT);
 
-  // Build per-app stats lookup from SSE apps data
   const appStats = useMemo(() => {
     const map: Record<string, AppMeta> = {};
     if (metaApps) {
@@ -262,8 +261,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
       });
   }, [displayApps, appStats]);
 
-  // Running apps carry every number in the table; an idle app is six dashes.
-  // Sorted rows first, then the idle tail behind a toggle.
+  // Running apps first, then the idle tail behind a toggle.
   const [runningApps, idleApps] = useMemo(() => [
     sortAppRows(appRows.filter((a) => a.isActive), sort.key, sort.direction),
     sortAppRows(appRows.filter((a) => !a.isActive), "name", "asc"),
@@ -272,8 +270,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
   // Totals from latest point or from meta apps containers
   const totals = useMemo(() => {
     if (metaApps && metaApps.length > 0) {
-      // Each app carries its own breakdown, and a stack child's containers are
-      // also listed under its parent — flattening them counts those twice.
+      // Stack children are also listed under their parent; flattening counts them twice.
       const allContainers = dedupeByContainer(metaApps.map((a) => a.containers));
       return {
         cpu: allContainers.reduce((s, c) => s + c.cpuPercent, 0),
@@ -304,7 +301,6 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
   const cpuCeiling: CpuCeiling = cpuCores > 0 ? { kind: "capacity", cores: cpuCores } : { kind: "none" };
   const cpu = cpuDisplay(hasSamples ? totals.cpu : null, cpuCeiling);
 
-  // Memoized chart data with network rate computation
   const chartPoints = useMemo(() => {
     const rates = networkRates(points);
     return points.map((p, i) => ({
@@ -314,7 +310,6 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
     }));
   }, [points]);
 
-  // Memoized sparkline data arrays
   const cpuSparkData = useMemo(() => points.map((p) => p.cpu), [points]);
   const memSparkData = useMemo(() => points.map((p) => p.memory), [points]);
   const diskSparkData = useMemo(() => points.map((p) => p.diskTotal), [points]);
@@ -389,7 +384,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
         </div>
       )}
 
-      {/* Summary cards with sparklines */}
+      {/* Summary cards */}
       <div className="grid grid-cols-2 @2xl:grid-cols-3 @5xl:grid-cols-5 gap-5">
         <div className="squircle relative rounded-lg bg-card px-4 py-3 shadow-card dark:border overflow-hidden">
           {points.length > 1 && (
@@ -468,8 +463,6 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
           <p className="type-numeral text-2xl mt-1">
             {loading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : containerCountKnown ? totals.containers : <NoValue />}
           </p>
-          {/* App counts live in the Apps breakdown below — a container count and an
-              app count never match, and side by side they read as one figure. */}
           <p className="text-xs text-muted-foreground mt-0.5">
             reporting to cAdvisor now · {scopeNote}
           </p>
@@ -559,7 +552,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
           </div>
       </div>
 
-      {/* Infrastructure overview — share-of-total bars, table below */}
+      {/* Infrastructure overview */}
       {(() => {
         const MAX_SLICES = 8;
         const appColors = [

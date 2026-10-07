@@ -59,7 +59,6 @@ import { useAppEvents } from "@/hooks/use-app-events";
 import { isRefreshEvent } from "@/lib/bus/refresh";
 import type { BusEvent } from "@/lib/bus/events";
 
-// Extracted modules
 import { Uptime } from "./timer";
 import { AppHeader } from "./app-header";
 import { AppUpdatesPanel } from "./app-updates";
@@ -109,8 +108,8 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
   const [newEnvOpen, setNewEnvOpen] = useState(false);
   const [newEnvCloneDefault, setNewEnvCloneDefault] = useState<string>("__production");
 
-  // Environment selection — persist via URL path segment (/apps/{slug}/{env}/{tab})
-  // With the environments flag off, the app is pinned to production.
+  // Selected environment persists in the URL (/apps/{slug}/{env}/{tab}).
+  // Pinned to production with the environments flag off.
   const envsEnabled = featureFlags?.environments !== false;
   const productionEnv = app.environments.find((e) => e.type === "production");
   const initialEnvId = (() => {
@@ -135,7 +134,6 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
     window.history.replaceState({}, "", buildAppPath(app.name, app.environments, selectedEnvId, tab));
   }, [app.name, app.environments, selectedEnvId]);
 
-  // Wrap setSelectedEnvId to also update URL path
   const setSelectedEnvId = useCallback((envId: string | undefined) => {
     setSelectedEnvIdRaw(envId);
     window.history.replaceState({}, "", buildAppPath(app.name, app.environments, envId, activeTab));
@@ -150,8 +148,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
   }, [selectedEnvIdRaw, selectedEnvId, app.name, app.environments, activeTab]);
 
   const isProduction = !selectedEnv || selectedEnv.type === "production";
-  // Filter deployments by selected environment
-  // Legacy deploys (environmentId=null) only show under production
+  // Legacy deploys (environmentId=null) only show under production.
   const filteredDeployments = selectedEnvId
     ? app.deployments.filter((d) =>
         d.environmentId === selectedEnvId ||
@@ -159,8 +156,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
       )
     : app.deployments;
 
-  // Detect in-progress deployment from server data (arrived mid-deploy)
-  // Note: the deploy hook handles the "don't re-attach if already deploying" logic internally
+  // Detect a deploy already in progress on load.
   const serverRunningDeploy = app.deployments.find((d) => d.status === "running" || d.status === "queued") ?? null;
 
   const deploy = useDeploy({
@@ -177,8 +173,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
     try {
       const res = await fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/restart`, { method: "POST" });
       const data = await res.json();
-      // Compose can exit clean and leave the app crashed, and a restart never
-      // applies pending config. Either one makes a bare "Restarted" a lie.
+      // Compose can exit clean and leave the app crashed, and a restart never applies pending config.
       const notes = [
         data.observed && data.observed !== "active" ? `Docker reports it ${data.observed}.` : null,
         app.needsRedeploy ? "Config changed since the last deploy — deploy to apply it." : null,
@@ -197,8 +192,6 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
     router.refresh();
   }, [orgId, app.id, app.needsRedeploy, router]);
 
-  // Same endpoint as Restart: the route reads the app's status and brings a
-  // stopped one up rather than restarting nothing.
   const handleStart = useCallback(async () => {
     try {
       const res = await fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/restart`, { method: "POST" });
@@ -249,8 +242,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
   // Child services are stack-level operations managed from the parent
   const isChildService = !!app.parentAppId;
 
-  // Decides which settings pages have anything to show, so an empty one keeps
-  // out of the rail.
+  // Which settings pages have anything to show.
   const settingsFieldContext = {
     isComposeParent: false,
     isChildService,
@@ -259,7 +251,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
     source: app.source,
   };
 
-  // Instant rollback is only offered when the standby slot can actually serve.
+  // Instant rollback is only offered when the standby slot can serve.
   const slotStatus = useSlotStatus(orgId, app.id, {
     enabled: !isChildService,
     refreshKey: deploy.deploying,
@@ -341,8 +333,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
     }
   }
 
-  // Compose parents share the app-page shell; ComposeDetail supplies the
-  // stack-specific sections and aggregates.
+  // Compose parents render ComposeDetail in the same shell.
   if (app.childApps && app.childApps.length > 0) {
     return (
       <ComposeDetail
@@ -365,8 +356,6 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
   // Set when the API would 403 the stop, so the menu offers it disabled with the reason.
   const stopRefusal = systemManagedRefusal(app, "stop");
 
-  // Same for delete, which the Danger Zone states rather than offering a button
-  // that fails.
   const deleteRefusal = systemManagedRefusal(app, "delete");
 
   // Newest success other than the one serving — what a rollback would restore.
@@ -395,9 +384,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
     if (app.status === "active") {
       const lastDeploy = app.deployments.find((d) => d.status === "success");
       return {
-        // Quiet when healthy. This corner is a control, and a fill it wears on
-        // every healthy app says nothing — color here is reserved for the
-        // states that want a human. The dot still carries the reading.
+        // Quiet when healthy; the dot carries the reading.
         className: app.needsRedeploy
           ? "bg-status-warning-muted text-status-warning hover:ring-status-warning/40"
           : "bg-status-neutral-muted text-foreground hover:ring-status-neutral/40",
@@ -430,8 +417,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
     };
   })();
 
-  // Opens the rebuild-from-a-deployment sheet, which lives in the Deployments
-  // section alongside the rest of the history.
+  // Opens the rebuild sheet in the Deployments section.
   function handleRollback() {
     if (!rollbackTargetId) return;
     setActiveTab("deployments");
@@ -473,8 +459,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
   function renderAction(item: AppActionItem, index: number) {
     const { action, disabled } = item;
     const { icon: Icon, label } = ACTION_LABEL[action];
-    // One reason under a run of rows sharing it, rather than the same
-    // sentence repeated three times.
+    // One reason under a run of rows sharing it.
     const showReason = !!disabled && actions[index + 1]?.disabled !== disabled;
     return (
       <Fragment key={action}>
@@ -498,14 +483,13 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
 
   return (
     <div className="space-y-6">
-      {/* Visually-hidden live region for deploy outcome announcements */}
+      {/* Deploy outcome live region */}
       <span className="sr-only" aria-live="assertive" aria-atomic="true">
         {deploy.deployAnnouncement}
       </span>
       <PageToolbar
         actions={
           <div className="flex items-center gap-2">
-            {/* One action for a never-deployed app is a button, not a menu. */}
             {actions.length === 1 && actions[0].action === "deploy" ? (
               <Button size="sm" disabled={deploy.deploying} onClick={handleDeploy}>
                 {deploy.deploying ? (
@@ -589,7 +573,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         </EntityTitle>
       </PageToolbar>
 
-      {/* Failure banner — the app is down, or a deploy failed and the previous release absorbed it */}
+      {/* Failure banner */}
       {(() => {
         const banner = deployFailureBanner(app.status, filteredDeployments);
         if (!banner) return null;
@@ -642,7 +626,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         );
       })()}
 
-      {/* Import rollback banner — shown when an import deploy failed and the original container was restored */}
+      {/* Import rollback banner */}
       {app.importedContainerId && (() => {
         const latestDeploy = filteredDeployments[0];
         if (!latestDeploy || latestDeploy.status !== "rolled_back") return null;
@@ -663,7 +647,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         );
       })()}
 
-      {/* Environment context banner */}
+      {/* Environment banner */}
       {selectedEnv && !isProduction && (
         <div className={`flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm ${
           selectedEnv.type === "staging"
@@ -678,7 +662,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         </div>
       )}
 
-      {/* Heading section — identity + at-a-glance health, persistent across sections */}
+      {/* Heading */}
       <AppHeader
         app={app}
         orgId={orgId}
@@ -693,7 +677,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
       />
 
 
-      {/* Sections — vertical nav rail on lg+, scroll strip below */}
+      {/* Sections */}
       <Tabs
         value={activeTab}
         onValueChange={setActiveTab}

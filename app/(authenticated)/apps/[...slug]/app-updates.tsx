@@ -31,10 +31,7 @@ import type {
 type AppUpdates = AppUpdateStatus;
 type Severity = ServiceUpdateStatus["severity"];
 
-/**
- * One in-flight request per app, shared by the header stat and the panel.
- * The endpoint reads a cache, but two mounts should not mean two round trips.
- */
+/** One in-flight request per app, shared by the header stat and the panel. */
 const inflight = new Map<string, Promise<AppUpdates>>();
 
 function load(orgId: string, appId: string): Promise<AppUpdates> {
@@ -98,10 +95,7 @@ export function AppUpdateStat({ orgId, appId }: { orgId: string; appId: string }
   );
 }
 
-/**
- * Inline update list. Renders nothing when every image is current, so a
- * healthy app carries no chrome for this.
- */
+/** Inline update list. Renders nothing when every image is current. */
 export function AppUpdatesPanel({
   orgId,
   appId,
@@ -126,8 +120,7 @@ export function AppUpdatesPanel({
   const [migration, setMigration] = useState<MigrationPrompt | null>(null);
   const [migrationPlan, setMigrationPlan] = useState<MigrationPlan | null>(null);
 
-  // A stopped deploy opens the dialog on arrival — it is a decision, not a
-  // notice — and leaves the row behind once it is closed.
+  // A stopped deploy opens the dialog on arrival.
   const blocked = data?.blockedMigration ?? null;
   const blockedId = blocked?.deploymentId ?? null;
   const [gateOpen, setGateOpen] = useState(blockedId !== null);
@@ -215,7 +208,6 @@ export function AppUpdatesPanel({
     );
   }
 
-  // Its own tab, so it answers rather than disappears when there is no work.
   if (actionable.length === 0 && unverified.length === 0 && ignored.length === 0) {
     return (
       <section
@@ -403,7 +395,7 @@ function BlockedDeployNote({
   onReview,
 }: {
   block: MajorGateBlock;
-  /** Omit where the pin would be refused — the note is then a statement, not an offer. */
+  /** Omit where the pin would be refused. */
   onReview?: () => void;
 }) {
   const entry = block.services[0];

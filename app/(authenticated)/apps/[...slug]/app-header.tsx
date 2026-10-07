@@ -54,10 +54,7 @@ const STATUS_META: Record<string, { label: string; className: string }> = {
   missing: { label: "No container", className: "text-status-warning" },
 };
 
-/**
- * Persistent heading block for the app detail page: identity, at-a-glance
- * health stats, tags and deploy dependencies. Shown above every section.
- */
+/** App detail heading: identity, health stats, tags and deploy dependencies. */
 export function AppHeader({
   app,
   orgId,
@@ -317,7 +314,7 @@ export function AppHeader({
       {/* At-a-glance stats */}
       <dl className="flex flex-wrap gap-x-10 gap-y-4">
         <HeaderStat label="Status">
-          {/* A deploy replaces the roll-up — mid-deploy the counts describe nothing. */}
+          {/* A deploy replaces the roll-up. */}
           {isDeploying ? (
             <span className="flex items-center gap-1.5 text-status-info">
               <span aria-hidden="true" className="size-2 rounded-full bg-current animate-pulse" />
@@ -336,8 +333,6 @@ export function AppHeader({
             </span>
           )}
         </HeaderStat>
-        {/* Status says what Docker is doing now; this says whether that has
-            been holding. Two apps both "Running" separate here. */}
         <HeaderStat
           label="Stability"
           hint="Crashes, crash loops, failed deploys and rollbacks recorded for this app, against the period before. Docker's restart count is not history — a new container resets it — but a count the live container is still carrying holds the verdict off Stable."
@@ -407,7 +402,7 @@ export function AppHeader({
         </HeaderStat>
       </dl>
 
-      {/* Deploy dependencies — only for apps in a project with siblings */}
+      {/* Deploy dependencies */}
       {app.projectId && siblings.length > 0 && (
         <DependencySelector
           appId={app.id}

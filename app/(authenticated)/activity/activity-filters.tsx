@@ -19,7 +19,7 @@ import type {
 
 type ActivityFiltersProps = {
   filters: ActivityFilters;
-  /** Families with rows in the loaded set, so no chip leads to an empty view. */
+  /** Families with rows in the loaded set. */
   available: ActivityFamily[];
   counts: Record<ActivityOutcome, number>;
 };
@@ -83,8 +83,7 @@ export function ActivityFilterBar({
   return (
     <div className="flex flex-wrap items-center gap-2">
       <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Filter by outcome">
-        {/* A zero-count chip can only ever produce an empty list. It stays when
-            already selected, so turning it off is still possible. */}
+        {/* Zero-count chips stay while selected so they can be turned off. */}
         {OUTCOME_CHIPS.filter(
           (outcome) => counts[outcome] > 0 || filters.outcomes.includes(outcome),
         ).map((outcome) => (

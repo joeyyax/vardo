@@ -40,8 +40,7 @@ export function FeatureFlagsSettings() {
   const [groups, setGroups] = useState<FlagGroup[]>([]);
   const [pending, setPending] = useState<Record<string, boolean>>({});
 
-  // Per-flag write counter. A response only wins if it's still the latest
-  // write for that flag, so rapid flips settle on what was clicked last.
+  // Per-flag write counter; the last click wins.
   const writeSeq = useRef<Record<string, number>>({});
 
   const fetchFlags = useCallback(async () => {
@@ -88,7 +87,7 @@ export function FeatureFlagsSettings() {
       message = "Couldn't reach the server";
     }
 
-    // A newer flip for this flag has already been sent — let it settle instead.
+    // A newer flip for this flag is in flight.
     if (writeSeq.current[flag.flag] !== seq) return;
 
     setPending((prev) => {
@@ -99,7 +98,7 @@ export function FeatureFlagsSettings() {
 
     if (ok) {
       toast.success(`${flag.label} ${next ? "enabled" : "disabled"}`);
-      // Dependents render as unavailable off the server's view, so refetch.
+      // Refetch so dependents reflect the server's view.
       if (flags.some((f) => f.dependsOn?.flag === flag.flag)) {
         await fetchFlags().catch(() => {});
       }
@@ -107,7 +106,7 @@ export function FeatureFlagsSettings() {
       return;
     }
 
-    // Reset to server truth rather than leaving a switch the server rejected.
+    // Reset to server state.
     toast.error(message);
     await fetchFlags().catch(() => {
       setFlags((prev) => prev.map((f) => (f.flag === flag.flag ? { ...f, enabled: !next } : f)));

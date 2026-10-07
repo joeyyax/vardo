@@ -16,7 +16,7 @@ import { NetworkChart } from "@/components/network-chart";
 import type { ContainerPoint } from "@/lib/metrics/types";
 import { useMetricsStream } from "@/hooks/use-metrics-stream";
 
-/** Two points draw a line between two dots — not a trend anyone can read. */
+/** Fewer points don't make a readable trend. */
 const MIN_CHART_POINTS = 3;
 const CHART_HEIGHT = 200;
 
@@ -43,7 +43,7 @@ type ChartPoint = NetworkBarPoint & {
   gpuTemperature: number;
 };
 
-/* ── Stable tooltip components (outside render to avoid re-creation) ── */
+// Tooltip components live outside render to avoid re-creation.
 
 function CpuTooltip(props: { active?: boolean; payload?: Array<{ dataKey?: string; name?: string; value?: number; color?: string }>; label?: string }) {
   return (
@@ -115,7 +115,7 @@ function Collecting({ count }: { count: number }) {
   );
 }
 
-/** Every sample came back empty — a flat line here would be a byte axis over nothing. */
+/** Every sample came back empty. */
 function NoSamples() {
   return (
     <div
@@ -195,8 +195,7 @@ export function AppMetrics({ orgId, appId, environmentName, gpuEnabled, cpuLimit
     }));
   }, [points]);
 
-  // Determine if GPU data is actually present in the stream (covers live containers
-  // that have GPU even if gpuEnabled flag isn't set on the app record yet)
+  // GPU data in the stream, even when gpuEnabled isn't set on the app.
   const hasGpuData = useMemo(
     () => gpuEnabled || containers.some((c) => c.gpuMemoryTotal > 0),
     [gpuEnabled, containers],
@@ -237,7 +236,7 @@ export function AppMetrics({ orgId, appId, environmentName, gpuEnabled, cpuLimit
   const latestMemoryLimit = chartData.length > 0 ? chartData[chartData.length - 1].memoryLimit : 0;
   const latestGpuMemTotal = chartData.length > 0 ? chartData[chartData.length - 1].gpuMemoryTotal : 0;
 
-  // Every figure below is zero until the first frame lands — skeleton until it does.
+  // Skeleton until the first frame lands.
   const awaitingFirstFrame = !hasLiveFrame;
   const sparse = chartData.length < MIN_CHART_POINTS;
   const noSamples = !sparse && chartData.every(
@@ -366,7 +365,7 @@ export function AppMetrics({ orgId, appId, environmentName, gpuEnabled, cpuLimit
         )}
       </ChartCard>
 
-      {/* GPU Charts — only rendered when gpuEnabled or live GPU data present */}
+      {/* GPU charts */}
       {hasGpuData && (
         <>
           <ChartCard title="GPU Utilization" icon={Microchip} value={headerValue(`${latest.gpuUtilization.toFixed(1)}%`)}>

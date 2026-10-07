@@ -3,8 +3,7 @@ import { FileQuestion } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 
-// The root not-found serves unmatched hostnames and keeps the ghost. Inside the
-// console a 404 is a wrong link or a deleted app, so it says so and offers a way on.
+// A 404 inside the console: a wrong link or a deleted app.
 export default function AuthenticatedNotFound() {
   return (
     <div className="mx-auto flex max-w-md flex-col items-center gap-4 py-16 text-center">

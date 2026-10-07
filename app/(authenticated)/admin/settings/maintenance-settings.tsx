@@ -113,7 +113,7 @@ type ReclaimState = {
   } | null;
 };
 
-/** Exclusions worth showing by default — the rest are routine. */
+/** Exclusions shown by default. */
 const NOTABLE_SKIPS = new Set([
   "stateful-floating",
   "floating-tag",
@@ -182,8 +182,7 @@ export function MaintenanceSettings() {
   const [idleDaysInput, setIdleDaysInput] = useState("30");
   const [savingImages, setSavingImages] = useState(false);
   const [reclaimingImages, setReclaimingImages] = useState(false);
-  // Slot generations are opt-in per run, matching the API — a plain run cannot
-  // reach a generation nobody previewed.
+  // Slot generations are opt-in per run, matching the API.
   const [includeSlots, setIncludeSlots] = useState(false);
   const [showAllSkips, setShowAllSkips] = useState(false);
   const [owners, setOwners] = useState<OwnerReport | null>(null);
@@ -205,7 +204,7 @@ export function MaintenanceSettings() {
         setStatus(await res.json());
       }
     } catch {
-      // silently fail — service list stays empty
+      // Service list stays empty.
     } finally {
       setLoadingStatus(false);
     }
@@ -237,7 +236,7 @@ export function MaintenanceSettings() {
         setBuildCache(await res.json());
       }
     } catch {
-      // leave buildCache as-is — unknown, not zero
+      // Leave buildCache as-is: unknown, not zero.
     } finally {
       setLoadingBuildCache(false);
     }
@@ -382,16 +381,16 @@ export function MaintenanceSettings() {
       const data = await res.json();
       toast.success(data.message ?? "Restart initiated");
       if (!service || service === "vardo-frontend") {
-        // Keep the button disabled through the reload window — don't clear restarting
+        // Stay disabled through the reload window.
         setTimeout(() => window.location.reload(), 6000);
         return;
       }
-      // Re-fetch status so per-service badge reflects the new state
+      // Refresh per-service badges.
       void fetchStatus();
     } catch {
       toast.error(service ? `Failed to restart ${service}` : "Failed to restart services");
     } finally {
-      // Only clear restarting if we're not waiting on a page reload
+      // Clear restarting unless a page reload is pending.
       if (service && service !== "vardo-frontend") {
         setRestarting(null);
       }
@@ -422,8 +421,7 @@ export function MaintenanceSettings() {
     e.preventDefault();
     setSavingMounts(true);
     try {
-      // Send all fields — empty string clears the mount, non-empty sets it.
-      // Fields that aren't valid source:destination pairs are omitted to avoid a 400.
+      // Empty string clears a mount. Invalid source:destination pairs are omitted to avoid a 400.
       const payload: Record<string, string> = {};
       if (mounts.vardoData.source && mounts.vardoData.destination) {
         payload.vardoData = `${mounts.vardoData.source}:${mounts.vardoData.destination}`;
@@ -920,7 +918,7 @@ export function MaintenanceSettings() {
         </CardContent>
       </Card>
 
-      {/* App directory ownership */}
+      {/* Directory ownership */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">

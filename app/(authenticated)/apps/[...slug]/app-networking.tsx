@@ -656,7 +656,7 @@ export function AppNetworking({
                             </button>
                           </div>
                         </div>
-                        {/* Option 2: CNAME (if there's a non-localhost base domain to point to) */}
+                        {/* Option 2: CNAME */}
                         {autoDomain && !autoDomain.endsWith(".localhost") && (
                           <div className="grid grid-cols-3 gap-4 px-4 py-3 text-sm font-mono">
                             <span>CNAME</span>

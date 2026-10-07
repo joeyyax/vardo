@@ -225,7 +225,7 @@ export function ImportDialog({
   const isHostNetwork = (detail?.networkMode ?? container?.networkMode) === "host";
 
   // Port auto-detection fails when there's no Traefik label and no exposed ports.
-  // Only relevant for non-host-network containers since host networking has no port routing.
+  // Host networking has no port routing.
   const portAutoDetected =
     !detail ||
     isHostNetwork ||

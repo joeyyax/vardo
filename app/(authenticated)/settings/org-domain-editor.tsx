@@ -162,8 +162,7 @@ export function OrgDomainEditor({
       const data = await res.json();
 
       if (data.configured) {
-        // Mark as verified via PATCH (re-use toggle endpoint conceptually;
-        // we'll refetch to get fresh state)
+        // Marks the domain verified locally.
         setDomains((ds) =>
           ds.map((d) => (d.id === domain.id ? { ...d, verified: true } : d))
         );

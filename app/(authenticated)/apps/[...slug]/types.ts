@@ -104,7 +104,7 @@ export type ChildApp = {
   needsRedeploy: boolean | null;
   restartCount?: number | null;
   domains: { domain: string; isPrimary: boolean | null }[];
-  /** Marked x-vardo-shared in compose — read off the stored YAML, not a column. */
+  /** Marked x-vardo-shared in compose, read from the stored YAML. */
   isShared?: boolean;
 };
 
@@ -147,9 +147,9 @@ export type App = {
   status: "active" | "stopped" | "error" | "deploying" | "missing";
   /** When the live container started. Null on a compose parent, which has none. */
   containerStartedAt: Date | null;
-  /** Null until the app's first transition — render no duration rather than a wrong one. */
+  /** Null until the app's first transition. */
   statusChangedAt: Date | null;
-  /** Declared off on purpose. Nothing about it being down is worth saying. */
+  /** Declared off on purpose. */
   parked: boolean;
   needsRedeploy: boolean | null;
   importedContainerId: string | null;

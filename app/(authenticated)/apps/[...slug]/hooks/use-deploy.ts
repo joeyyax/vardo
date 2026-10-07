@@ -19,14 +19,14 @@ const TERMINAL_MESSAGES: Record<string, string> = {
   rolled_back: "Deployment rolled back",
 };
 
-/** Cancels and supersedes are outcomes, not faults — they don't warrant an error toast. */
+/** Cancels and supersedes don't warrant an error toast. */
 export const NOT_A_FAULT = new Set(["cancelled", "superseded"]);
 
 export function terminalMessage(status?: string, error?: string): string {
   return error || (status ? TERMINAL_MESSAGES[status] : undefined) || "Deployment failed";
 }
 
-/** A deploy that landed. Warns instead of celebrating when its tail did not finish. */
+/** A deploy that landed. Warns when its tail didn't finish. */
 function toastDeployed(durationMs?: number | null, postDeployError?: string | null) {
   const text = durationMs ? `Deployed in ${formatDuration(durationMs)}` : "Deployed";
   if (!postDeployError) {
@@ -51,7 +51,7 @@ export function useDeploy({
   serverRunningDeploy: Deployment | null | undefined;
   onDeployStarted?: () => void;
 }) {
-  // Keep stable refs for callbacks to avoid re-triggering effects
+  // Stable refs so callbacks don't re-trigger effects.
   const onDeployStartedRef = useRef(onDeployStarted);
   useEffect(() => {
     onDeployStartedRef.current = onDeployStarted;
@@ -88,14 +88,12 @@ export function useDeploy({
   }, []);
   const [viewingLogId, setViewingLogId] = useState<string | null>(null);
 
-  // Rollback state
   const [rollbackTarget, setRollbackTarget] = useState<string | null>(null);
   const [rollbackPreview, setRollbackPreview] = useState<RollbackPreview | null>(null);
   const [rollbackIncludeEnv, setRollbackIncludeEnv] = useState(false);
   const [rollbackLoading, setRollbackLoading] = useState(false);
 
-  // If a deploy is already running (e.g. auto-deploy on creation),
-  // show the in-progress UI and poll for updates until it finishes
+  // A deploy already running (e.g. auto-deploy on creation) shows progress until it finishes.
   const runningDeployId = serverRunningDeploy?.id ?? null;
   const [seenRunningId, setSeenRunningId] = useState<string | null>(null);
   const [attachedDeployId, setAttachedDeployId] = useState<string | null>(null);
@@ -114,7 +112,7 @@ export function useDeploy({
     if (!attachedDeployId) return;
     onDeployStartedRef.current?.();
 
-    // Connect to the deploy stream SSE endpoint for real-time logs
+    // Streams deploy logs over SSE.
     const streamUrl = `/api/v1/organizations/${orgId}/apps/${appId}/deploy/stream`;
     const es = new EventSource(streamUrl);
     let finished = false;
@@ -170,7 +168,7 @@ export function useDeploy({
     });
 
     es.onerror = () => {
-      // SSE connection failed -- fall back to polling
+      // Falls back to polling.
       es.close();
       if (finished) return;
       let stopped = false;
@@ -198,7 +196,6 @@ export function useDeploy({
                 if (NOT_A_FAULT.has(dep.status)) toast.info(message);
                 else toast.error(message);
               } else {
-                // Extract last error line from deploy log for the toast
                 const errorLine = dep.log
                   ?.split("\n")
                   .reverse()
@@ -345,7 +342,6 @@ export function useDeploy({
     setRollbackTarget(null);
     setRollbackPreview(null);
 
-    // Reuse the same SSE deploy flow
     setDeploying(true);
     onDeployStartedRef.current?.();
     setDeployLog([]);

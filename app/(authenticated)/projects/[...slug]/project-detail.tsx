@@ -70,10 +70,6 @@ import { tabPanelSurface } from "@/lib/ui/tab-panel";
 import { cn } from "@/lib/utils";
 import type { MeshPeerSummary, ProjectInstanceSummary } from "@/lib/mesh/types";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
 type GroupEnvironment = {
   id: string;
   name: string;
@@ -170,10 +166,6 @@ type Project = {
   groupEnvironments: GroupEnvironment[];
 };
 
-// ---------------------------------------------------------------------------
-// App list — one ledger row per app, compose services indented beneath
-// ---------------------------------------------------------------------------
-
 function AppLedgerRow({
   app,
   href,
@@ -217,7 +209,7 @@ function AppLedgerRow({
         />
       </TooltipTrigger>
       <TooltipContent
-        /* Anchored under the row: side="right" collided and flipped onto the nav rail. */
+        /* side="right" flips onto the nav rail. */
         side="bottom"
         align="start"
         sideOffset={4}
@@ -230,10 +222,6 @@ function AppLedgerRow({
   );
 }
 
-
-// ---------------------------------------------------------------------------
-// Deployments Tab (merged across apps)
-// ---------------------------------------------------------------------------
 
 function ProjectDeployments({ apps, color }: { apps: ProjectApp[]; color: string }) {
   const [viewingLogId, setViewingLogId] = useState<string | null>(null);
@@ -383,10 +371,6 @@ function ProjectDeployments({ apps, color }: { apps: ProjectApp[]; color: string
   );
 }
 
-// ---------------------------------------------------------------------------
-// Variables Tab (per-app editors)
-// ---------------------------------------------------------------------------
-
 function ProjectVariables({ apps, orgId }: { apps: ProjectApp[]; orgId: string }) {
   const [expandedApp, setExpandedApp] = useState<string | null>(
     apps.length === 1 ? apps[0].id : null
@@ -436,10 +420,6 @@ function ProjectVariables({ apps, orgId }: { apps: ProjectApp[]; orgId: string }
   );
 }
 
-// ---------------------------------------------------------------------------
-// Logs Tab (per-app log streams)
-// ---------------------------------------------------------------------------
-
 function ProjectLogs({ apps, orgId }: { apps: ProjectApp[]; orgId: string }) {
   const [selectedApp, setSelectedApp] = useState<string>(apps[0]?.id || "");
 
@@ -482,10 +462,6 @@ function ProjectLogs({ apps, orgId }: { apps: ProjectApp[]; orgId: string }) {
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Metrics Tab (combined + individual)
-// ---------------------------------------------------------------------------
 
 function ProjectMetricsTab({ apps, orgId, projectId }: { apps: ProjectApp[]; orgId: string; projectId: string }) {
   const [selected, setSelected] = useState<string>("combined");
@@ -543,10 +519,6 @@ function ProjectMetricsTab({ apps, orgId, projectId }: { apps: ProjectApp[]; org
   );
 }
 
-// ---------------------------------------------------------------------------
-// ProjectDetail
-// ---------------------------------------------------------------------------
-
 export function ProjectDetail({
   project,
   orgId,
@@ -573,7 +545,7 @@ export function ProjectDetail({
   projectInstances?: ProjectInstanceSummary[];
 }) {
   const router = useRouter();
-  const color = "#a1a1aa"; // neutral — project color is unused
+  const color = "#a1a1aa"; // Project color is unused.
   const { metrics, history } = useAppMetrics(orgId);
   const updates = useImageUpdates(orgId);
   const updatesByApp = useMemo(
@@ -600,8 +572,7 @@ export function ProjectDetail({
   const [editSaving, setEditSaving] = useState(false);
   const [stopAllOpen, setStopAllOpen] = useState(false);
 
-  // Vardo rewrites its own project row on every boot and the API refuses both
-  // verbs, so Settings shows the refusal rather than controls that fail.
+  // The API refuses both verbs on Vardo's own project.
   const editRefusal = systemManagedRefusal(project, "edit");
   const deleteRefusal = systemManagedRefusal(project, "delete");
 
@@ -652,11 +623,8 @@ export function ProjectDetail({
     };
   }, []);
 
-  // Subscribe to per-app SSE events for real-time deploy status updates.
-  // Sets all apps to "deploying", then waits for a terminal deploy event on
-  // each. Falls back to polling if SSE fails.
+  // Tracks per-app deploy status over SSE, falling back to polling.
   const subscribeToDeployEvents = useCallback(() => {
-    // Clean up any previous subscriptions
     eventSourcesRef.current.forEach((es) => es.close());
     eventSourcesRef.current = [];
     if (pollTimerRef.current) {
@@ -664,7 +632,6 @@ export function ProjectDetail({
       pollTimerRef.current = null;
     }
 
-    // Set all top-level apps to "deploying" status
     const overrides = new Map<string, string>();
     for (const app of topLevelApps) {
       overrides.set(app.id, "deploying");
@@ -692,7 +659,6 @@ export function ProjectDetail({
       }
     }
 
-    // Try SSE for each app
     for (const app of topLevelApps) {
       try {
         const eventsUrl = `/api/v1/organizations/${orgId}/apps/${app.id}/events`;
@@ -743,7 +709,7 @@ export function ProjectDetail({
       }, POLL_INTERVAL);
     }, POLL_DELAY);
 
-    // Safety timeout: if deploys haven't finished after 3 minutes, clean up
+    // Gives up after 3 minutes.
     setTimeout(() => {
       if (completedCount < totalApps) {
         eventSourcesRef.current.forEach((es) => es.close());
@@ -759,8 +725,7 @@ export function ProjectDetail({
     }, 180000);
   }, [topLevelApps, orgId, project.id, router]);
 
-  // Rows either side of a dependency edge from the hovered row. Neutral, not
-  // hued — direction is spelled out in the hover card instead.
+  // Rows either side of a dependency edge from the hovered row.
   const isRelated = useCallback(
     (appName: string): boolean => {
       if (!hoveredAppName || appName === hoveredAppName) return false;
@@ -957,8 +922,7 @@ export function ProjectDetail({
     <div className="space-y-6">
       <PageToolbar
         actions={
-          // No wrapper of its own: the toolbar already lays these out, and a
-          // second flex row that cannot wrap clips "Add app" at 320px.
+          // No wrapper: a second flex row clips "Add app" at 320px.
           <>
             {topLevelApps.length > 0 && (() => {
               const allActive = topLevelApps.every((a) => a.status === "active");
@@ -1021,7 +985,7 @@ export function ProjectDetail({
             {project.displayName}
           </h1>
           {project.isSystemManaged && <SystemBadge />}
-          {/* Environment switcher — nothing to switch when environments are off */}
+          {/* Environment switcher */}
           {environmentsEnabled && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -1062,7 +1026,7 @@ export function ProjectDetail({
         <p className="text-muted-foreground">{project.description}</p>
       )}
 
-      {/* Sections — vertical nav rail on lg+, scroll strip below */}
+      {/* Sections */}
       <Tabs
         value={activeTab}
         onValueChange={handleTabChange}
@@ -1116,8 +1080,7 @@ export function ProjectDetail({
               action={<AddAppDropdown projectId={project.id} align="center" canImportContainers={canImportContainers} />}
             />
           ) : (
-            /* One line per app, problems first, compose services indented under
-               their stack. Everything the card carried is on the hover card. */
+            /* One row per app, problems first, compose services under their stack. */
             <div className="@container squircle rounded-lg bg-card p-1.5 shadow-card dark:border">
               {sortedApps.map((app) => (
                 <Fragment key={app.id}>
@@ -1139,8 +1102,7 @@ export function ProjectDetail({
                         x.displayName.localeCompare(y.displayName),
                     )
                     .map((child) => (
-                      /* A stopped stack cascades to every child. The parent row
-                         states it; a child only speaks when it differs. */
+                      /* A child row only shows status that differs from its stack. */
                       <AppLedgerRow
                         key={child.id}
                         app={child}

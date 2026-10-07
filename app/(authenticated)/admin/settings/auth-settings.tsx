@@ -121,10 +121,6 @@ export function AuthSettings() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Sign-in methods
-// ---------------------------------------------------------------------------
-
 type MethodState = {
   method: string;
   label: string;
@@ -147,7 +143,7 @@ function SignInMethods() {
   const [methods, setMethods] = useState<MethodState[]>([]);
   const [pending, setPending] = useState<Record<string, boolean>>({});
 
-  // Per-method write counter, so rapid flips settle on what was clicked last.
+  // Per-method write counter; the last click wins.
   const writeSeq = useRef<Record<string, number>>({});
 
   const fetchMethods = useCallback(async () => {

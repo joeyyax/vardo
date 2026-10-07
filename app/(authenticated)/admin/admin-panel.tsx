@@ -43,7 +43,7 @@ export function AdminPanel({ activeTab, orgId, metricsEnabled, metricsFlag }: Ad
         <h1 className="type-h1">Admin</h1>
       </PageToolbar>
 
-      {/* Sections — vertical nav rail on lg+, scroll strip below */}
+      {/* Sections */}
       <Tabs
         value={activeTab}
         onValueChange={setActiveTab}

@@ -27,11 +27,7 @@ type Response = {
 const WINDOW_MINUTES = Math.round(WINDOW_MS / 60_000);
 const BASELINE_DAYS = Math.round(BASELINE_MS / 86_400_000);
 
-/**
- * Whether this app is logging errors faster than it normally does. Nothing
- * classifies or groups the errors — that needs an SDK inside the app. Counting
- * and comparing works on any image, including ones nobody here built.
- */
+/** Whether this app is logging errors faster than it normally does. */
 export function AppErrors({
   appName,
   appId,
@@ -69,8 +65,7 @@ export function AppErrors({
 
   const reading = data?.reading;
   const samples = data?.samples ?? [];
-  // Windowed off the newest sample, not the wall clock — the day shown is the
-  // day that was collected.
+  // Windowed off the newest sample, not the wall clock.
   const newest = samples.length > 0 ? samples[samples.length - 1].at : 0;
   const lastDay = samples.filter((s) => s.at > newest - 86_400_000);
 

@@ -3,10 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { toast } from "@/lib/messenger";
 
-/**
- * Shared hook for loading and saving a system setting panel.
- * Handles fetch, save, loading/saving states, and error toasts.
- */
+/** Loads and saves a system setting panel. */
 async function requestConfig<T>(endpoint: string) {
   try {
     const res = await fetch(endpoint);
@@ -72,7 +69,7 @@ export function useSystemSetting<T extends Record<string, unknown>>(
         toast.error(
           err instanceof Error ? err.message : `Failed to save ${opts.label.toLowerCase()}`,
         );
-        // Reload server state so optimistic UI updates roll back
+        // Reload server state to roll back optimistic updates.
         fetchConfig();
       } finally {
         setSaving(false);

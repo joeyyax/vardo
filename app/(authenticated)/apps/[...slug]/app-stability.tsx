@@ -45,11 +45,7 @@ export function useNow(): number {
   return now;
 }
 
-/**
- * Whether this app is stable now, whether it has been getting worse, and what
- * happened the last time it was not. Nothing here is newly measured — the
- * signals were already being collected and thrown away.
- */
+/** Whether this app is stable now, its trend and its last incident. */
 export function AppStability({
   app,
   incidents,
@@ -113,7 +109,6 @@ export function AppStability({
         </HeaderStat>
       </dl>
 
-      {/* The trend label only earns a line when it says more than the zeros above. */}
       <p className="text-xs text-muted-foreground">
         {restartCaption(restarts, now)}.{trend.direction === "quiet" ? "" : ` ${trend.label}.`}
       </p>

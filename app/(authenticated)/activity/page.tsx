@@ -43,8 +43,7 @@ export default async function ActivityPage({ searchParams }: PageProps) {
   ]);
 
   return (
-    // Rows accumulated by "load more" belong to the filters that fetched them,
-    // so a filter change starts a new list rather than appending to the old one.
+    // A filter change starts a new list.
     <ActivityFeed
       key={filtersToQuery(filters)}
       rows={rows}

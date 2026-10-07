@@ -29,10 +29,7 @@ const IMPORT_CARD: Card = {
   body: "Adopt the containers already running on this host. Nothing restarts.",
 };
 
-/**
- * First thing a new install shows. Each card is an entry to a flow that
- * already exists, so there is no wizard to keep in sync.
- */
+/** First thing a new install shows. Each card opens an existing flow. */
 export function FirstRun({ canImportContainers }: { canImportContainers: boolean }) {
   const cards = canImportContainers
     ? [IMPORT_CARD, TEMPLATE_CARD, GIT_CARD]

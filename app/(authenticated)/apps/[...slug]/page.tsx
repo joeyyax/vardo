@@ -26,14 +26,7 @@ type PageProps = {
 export default async function AppDetailPage({ params }: PageProps) {
   const { slug } = await params;
 
-  // URL patterns:
-  //   /apps/{slug}
-  //   /apps/{slug}/{tab}
-  //   /apps/{slug}/{tab}/{subView}
-  //   /apps/{slug}/{env}
-  //   /apps/{slug}/{env}/{tab}
-  //   /apps/{slug}/{env}/{tab}/{subView}
-  // Disambiguate: if segment 2 is a known tab, it's a tab. Otherwise it's an env name.
+  // /apps/{slug}[/{env}][/{tab}[/{subView}]]. Segment 2 is a tab if it names one, otherwise an env.
   const appSlug = slug[0];
   let envSegment: string | undefined;
   let tabSegment: string | undefined;
@@ -62,7 +55,7 @@ export default async function AppDetailPage({ params }: PageProps) {
     ? (tabSegment as ValidTab)
     : undefined;
 
-  // If there's a tab segment that doesn't match, or too many segments, 404
+  // Unknown tab or too many segments 404s.
   if (tabSegment && !tab) {
     notFound();
   }
@@ -136,8 +129,8 @@ export default async function AppDetailPage({ params }: PageProps) {
     },
   } as const;
 
-  // Look up by name (slug) or ID — supports clean URLs like /apps/redis.
-  // The organization predicate is what scopes this, not the global name index.
+  // Looks up by name or ID.
+  // The organization predicate scopes this, not the global name index.
   const [app, allTags, allApps, orgVars] = await Promise.all([
     db.query.apps.findFirst({
       where: and(
@@ -164,7 +157,7 @@ export default async function AppDetailPage({ params }: PageProps) {
     notFound();
   }
 
-  // Backfill: ensure production environment exists (safe to remove after all apps have been visited)
+  // Backfills a missing production environment. Safe to remove once every app has been visited.
   if (!app.environments.some((e) => e.type === "production")) {
     const [created] = await db
       .insert(environments)
@@ -184,26 +177,25 @@ export default async function AppDetailPage({ params }: PageProps) {
 
   const featureFlags = await getFeatureFlags();
 
-  // Validate environment segment against actual environments
   if (envSegment && !app.environments.some((e) => e.name === envSegment)) {
     notFound();
   }
 
-  // Strip "production" from URL — it's the default, no need to spell it out.
-  // With environments off, every env segment collapses to production the same way.
+  // Production is the default, so it's stripped from the URL.
+  // With environments off, every env segment collapses to it.
   if (envSegment === "production" || (envSegment && !featureFlags.environments)) {
     const tabPath = tab ? `/${tab}` : "";
     redirect(`/apps/${app.name}${tabPath}`);
   }
 
-  // If accessed by ID, redirect to the clean slug URL
+  // Redirects ID URLs to the slug URL.
   if (appSlug === app.id && appSlug !== app.name) {
     const envPath = envSegment ? `/${envSegment}` : "";
     const tabPath = tab ? `/${tab}` : "";
     redirect(`/apps/${app.name}${envPath}${tabPath}`);
   }
 
-  // Load sibling apps if this app belongs to a project (includes dependsOn for circular dep detection)
+  // Sibling apps, with dependsOn for circular dependency checks.
   let siblings: {
     id: string;
     name: string;
@@ -233,7 +225,6 @@ export default async function AppDetailPage({ params }: PageProps) {
       }));
   }
 
-  // Build project options list from the projects table
   const allProjectsList = await db.query.projects.findMany({
     where: eq(projects.organizationId, orgId),
     columns: { id: true, name: true, color: true },
@@ -241,7 +232,7 @@ export default async function AppDetailPage({ params }: PageProps) {
   const allParentApps = allProjectsList
     .map((p) => ({ id: p.id, name: p.name, color: p.color || "#6366f1" }));
 
-  // Fetch parent app for breadcrumb when this is a compose child service
+  // Parent app for a compose child's breadcrumb.
   let parentApp: { id: string; name: string; displayName: string } | null = null;
   if (app.parentAppId) {
     parentApp = await db.query.apps.findFirst({

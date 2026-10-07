@@ -13,10 +13,7 @@ type NavItem = {
   gate?: FeatureFlag;
 };
 
-/**
- * All settings tabs in display order. Items with a `gate` only appear
- * when that feature flag is enabled.
- */
+/** Settings tabs in display order. */
 const ALL_NAV_ITEMS: NavItem[] = [
   { label: "General", href: "/admin/settings/general", order: 0 },
   { label: "Email", href: "/admin/settings/email", order: 5, gate: "notifications" },
@@ -43,7 +40,6 @@ export default async function AdminSettingsLayout({
 
   if (!(await isAppAdmin())) redirect("/projects");
 
-  // Filter by feature flag gates
   const navItems: { label: string; href: string }[] = [];
   for (const item of ALL_NAV_ITEMS) {
     if (item.gate && !(await isFeatureEnabledAsync(item.gate))) continue;

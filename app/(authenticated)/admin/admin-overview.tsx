@@ -14,8 +14,7 @@ type Stats = {
   templateCount: number;
 };
 
-// Each figure covers the whole instance — the subtitle says so, since the same
-// names on /metrics and /projects count one org.
+// Figures cover the whole instance.
 const statCardConfig = [
   {
     key: "userCount" as const, label: "Users", sparklineKey: "users", color: "oklch(0.65 0.18 290)",
@@ -47,7 +46,6 @@ export function AdminOverview() {
     fetch("/api/v1/admin/overview")
       .then((r) => r.json())
       .then((data) => {
-        // Set each piece as it arrives from the single response
         setStats(data.stats);
         setSparklines(data.sparklines);
         setResources(data.resources);
@@ -58,7 +56,7 @@ export function AdminOverview() {
 
   return (
     <div>
-      {/* Stat cards — show structure immediately, fill in data */}
+      {/* Stat cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {statCardConfig.map((stat) => {
           const sparklineData = sparklines && stat.sparklineKey
@@ -87,7 +85,7 @@ export function AdminOverview() {
         })}
       </div>
 
-      {/* Resource bars — show when ready */}
+      {/* Resource bars */}
       <div className="grid gap-4 sm:grid-cols-3 mt-4">
         {resources ? (
           resources.map((res) => (
@@ -127,7 +125,7 @@ export function AdminOverview() {
         )}
       </div>
 
-      {/* Service dots — each one opens its own check detail */}
+      {/* Service dots */}
       <div className="flex flex-wrap items-center gap-3 mt-4 min-h-[20px]">
         {services ? (
           services.map((svc) => (

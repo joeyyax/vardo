@@ -156,8 +156,7 @@ export function AppSecurity({ appId, orgId }: AppSecurityProps) {
     };
   }, [scansUrl, applyScans]);
 
-  // Auto-poll while the latest scan is still running (e.g. triggered by a
-  // deploy or scheduled job before the user opened this tab).
+  // Poll while the latest scan is still running.
   useEffect(() => {
     if (!scans || scans[0]?.status !== "running") return;
     const timer = setInterval(() => void fetchScans(), 5_000);

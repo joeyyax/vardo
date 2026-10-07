@@ -92,7 +92,6 @@ export function NewEnvironmentSheet({
         onOpenChange(false);
         router.refresh();
 
-        // Auto-deploy the new environment
         toast.success(`Environment "${envName}" created — deploying...`);
         fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/deploy`, {
           method: "POST",

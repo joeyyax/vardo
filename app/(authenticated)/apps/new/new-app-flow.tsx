@@ -121,11 +121,9 @@ export function NewAppFlow({ orgId, templates, parentApps = [], baseDomain: base
   const [creating, setCreating] = useState(false);
   const [slugEdited, setSlugEdited] = useState(false);
 
-  // What was selected
   const [selectedSource, setSelectedSource] = useState<SourceOption | null>(null);
   const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
 
-  // Form fields
   const [displayName, setDisplayName] = useState("");
   const [name, setName] = useState("");
   const [slugStatus, setSlugStatus] = useState<
@@ -164,15 +162,13 @@ export function NewAppFlow({ orgId, templates, parentApps = [], baseDomain: base
   const [showComposeReview, setShowComposeReview] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
 
-  // Domain
   const [generateDomain, setGenerateDomain] = useState(true);
   const [wordPair, setWordPair] = useState(() => generateWordPair());
   const baseDomain = baseDomainProp || "example.com";
 
-  // Environment variables as raw .env content
+  // Raw .env content.
   const [envContent, setEnvContent] = useState("");
 
-  // GitHub state
   const [installations, setInstallations] = useState<Installation[]>([]);
   const [installationsLoading, setInstallationsLoading] = useState(false);
   const [selectedInstallation, setSelectedInstallation] = useState("");
@@ -337,8 +333,7 @@ export function NewAppFlow({ orgId, templates, parentApps = [], baseDomain: base
       case "public-git":
         setSource("git"); setDeployType("compose"); setGitMode("manual");
         setGitUrl(""); setGitBranch("main"); setAdvancedOpen(false);
-        // Clear shared path state so a stale value from a prior source isn't
-        // silently submitted when the Advanced panel is never opened.
+        // Clears shared path state so a stale value isn't submitted with Advanced closed.
         setComposeFilePath("docker-compose.yml"); setDockerfilePath("Dockerfile"); setRootDirectory("");
         break;
       case "compose":
@@ -361,14 +356,14 @@ export function NewAppFlow({ orgId, templates, parentApps = [], baseDomain: base
     setSlugStatus(null);
   }
 
-  // The slug is the subdomain the server creates — no second random suffix.
+  // The slug is the subdomain the server creates.
   const domainPreview = `${name || "my-app"}.${baseDomain}`;
 
   const isConfiguring = selectedSource !== null || selectedTemplate !== null;
   const missingRequiredEnv = missingRequiredEnvKeys(selectedTemplate, envContent);
   const projectReady = !!parentId && (parentId !== NEW_PROJECT || !!newProjectName.trim());
 
-  // Reserved slugs are caught locally so the field turns red before the blur check.
+  // Catches reserved slugs before the blur check.
   const locallyReserved = generateDomain && !!name && isReservedSlug(name);
   const slugUnavailable = slugStatus?.available === false || locallyReserved;
   const slugMessage =
@@ -441,8 +436,8 @@ export function NewAppFlow({ orgId, templates, parentApps = [], baseDomain: base
         projectName = created.name;
       }
 
-      // Opting into a repo makes this a git app. The URL is predictable from the
-      // account and slug, so the app can be created before the repo exists.
+      // Opting into a repo makes this a git app.
+      // The repo URL is predictable, so the app is created before the repo exists.
       const repoOwner =
         createRepo && installations.length > 0
           ? installations.find((i) => i.id === selectedInstallation) ?? installations[0]
@@ -489,7 +484,7 @@ export function NewAppFlow({ orgId, templates, parentApps = [], baseDomain: base
 
       const { app } = await res.json();
 
-      // After the app exists, so a rejected slug leaves no orphaned repo behind.
+      // Runs after the app exists so a rejected slug leaves no orphaned repo.
       const repoReady = repoOwner ? await createRepoForApp(app.id, repoOwner.id) : true;
 
       // Bulk-create env vars from .env content
@@ -500,13 +495,12 @@ export function NewAppFlow({ orgId, templates, parentApps = [], baseDomain: base
         });
       }
 
-      // Trigger deploy via API so the app detail page can pick up the SSE stream
       const deploying = autoDeploy && repoReady;
       if (deploying) {
         fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/deploy`, {
           method: "POST",
         }).catch(() => {
-          // Deploy started server-side — client will see it on the detail page
+          // The detail page shows the deploy.
         });
         toast.success("App created — deploying...");
       } else {
@@ -520,7 +514,6 @@ export function NewAppFlow({ orgId, templates, parentApps = [], baseDomain: base
     finally { setCreating(false); }
   }
 
-  // Group templates by category
   const templatesByCategory = templates.reduce<Record<string, Template[]>>((acc, t) => {
     const cat = t.category || "custom";
     if (!acc[cat]) acc[cat] = [];
@@ -535,9 +528,9 @@ export function NewAppFlow({ orgId, templates, parentApps = [], baseDomain: base
       </PageToolbar>
 
       {!isConfiguring ? (
-        /* ─── Step 1: Pick source or template ─── */
+        /* Step 1: source */
         <div className="space-y-8 max-w-4xl">
-          {/* Source options row */}
+          {/* Sources */}
           <div>
             <h2 className="type-h3 text-muted-foreground mb-3">
               Start from
@@ -616,7 +609,7 @@ export function NewAppFlow({ orgId, templates, parentApps = [], baseDomain: base
           ))}
         </div>
       ) : (
-        /* ─── Step 2: Configure ─── */
+        /* Step 2: configure */
         <div className="max-w-2xl space-y-6">
           {/* Back + title */}
           <div className="flex items-center gap-3">
@@ -636,7 +629,7 @@ export function NewAppFlow({ orgId, templates, parentApps = [], baseDomain: base
           </div>
 
           <div className="grid gap-5">
-            {/* GitHub: repo picker comes FIRST */}
+            {/* GitHub repo picker */}
             {selectedSource === "github" && (
               <>
                 {installationsLoading ? (
@@ -727,7 +720,7 @@ export function NewAppFlow({ orgId, templates, parentApps = [], baseDomain: base
               </>
             )}
 
-            {/* Only show the rest of the form once we have context (repo selected, or non-github source) */}
+            {/* Rest of the form waits for a repo or a non-GitHub source */}
             {(selectedSource !== "github" || selectedRepo) && (
               <>
             {/* Name row */}
@@ -780,7 +773,7 @@ export function NewAppFlow({ orgId, templates, parentApps = [], baseDomain: base
               </div>
             </div>
 
-            {/* Public URL toggle + domain preview */}
+            {/* Public URL */}
             <div className="squircle rounded-lg bg-background-deep px-4 py-3 space-y-2">
               <div className="flex items-center gap-3">
                 <Switch
@@ -820,7 +813,7 @@ export function NewAppFlow({ orgId, templates, parentApps = [], baseDomain: base
               )}
             </div>
 
-            {/* Branch — for GitHub, shown after repo selected */}
+            {/* Branch */}
             {selectedSource === "github" && selectedRepo && (
               <div className="grid gap-2 sm:w-1/3">
                 <Label>Branch</Label>
@@ -832,7 +825,7 @@ export function NewAppFlow({ orgId, templates, parentApps = [], baseDomain: base
               </div>
             )}
 
-            {/* Image name — for "Image" source */}
+            {/* Image name */}
             {selectedSource === "image" && (
               <div className="grid gap-2">
                 <Label htmlFor="image-name">Image</Label>
@@ -978,7 +971,7 @@ export function NewAppFlow({ orgId, templates, parentApps = [], baseDomain: base
               </div>
             )}
 
-            {/* Deploy Type — for GitHub and compose sources */}
+            {/* Deploy type */}
             {(selectedSource === "github" || selectedSource === "compose") && (
               <div className="grid gap-4">
                 <div className="grid gap-2 sm:w-1/2">
@@ -1075,7 +1068,7 @@ export function NewAppFlow({ orgId, templates, parentApps = [], baseDomain: base
               </div>
             </div>
 
-            {/* Root directory — only for git/repo sources */}
+            {/* Root directory */}
             {(selectedSource === "github" || (selectedSource === "compose" && contentMode === "url")) && (
               <div className="grid gap-2 sm:w-2/3">
                 <Label htmlFor="root-dir">Root Directory</Label>
@@ -1116,7 +1109,7 @@ export function NewAppFlow({ orgId, templates, parentApps = [], baseDomain: base
                 <Label htmlFor="auto-deploy">Auto Deploy</Label>
               </div>
 
-              {/* Create GitHub repo — only for non-git sources with GitHub connected */}
+              {/* Create GitHub repo */}
               {installations.length > 0 && source !== "git" && (
                 <div className="space-y-3">
                   <div className="flex items-center gap-3">
@@ -1201,7 +1194,7 @@ export function NewAppFlow({ orgId, templates, parentApps = [], baseDomain: base
             )}
             <Button
               onClick={() => {
-                // Show compose review dialog when there's compose content to analyze
+                // Compose content goes through the review dialog first.
                 if (!selectedTemplate && deployType === "compose" && composeContent.trim()) {
                   setShowComposeReview(true);
                 } else {

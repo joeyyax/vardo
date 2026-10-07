@@ -25,7 +25,6 @@ export default async function NewAppPage({
 
   const [templatesEnabled, parentAppList, instanceConfig, containerImportEnabled, lastApp] = await Promise.all([
     isFeatureEnabledAsync("templates"),
-    // Load projects for grouping
     db.query.projects.findMany({
       where: eq(projects.organizationId, orgId),
       columns: { id: true, name: true, color: true },
@@ -49,7 +48,7 @@ export default async function NewAppPage({
     color: p.color || "#6366f1",
   }));
 
-  // Strip non-serialisable properties before passing to client component
+  // Strips non-serializable properties for the client component.
   const cleanTemplates = JSON.parse(JSON.stringify(templateList));
 
   return (

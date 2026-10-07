@@ -28,7 +28,7 @@ type ActivityFeedProps = {
   rows: ActivityRowData[];
   orgId: string;
   filters: ActivityFilters;
-  /** Counted across the window, not the loaded page, so chips stay switchable. */
+  /** Counted across the window, not the loaded page. */
   facets: ActivityFacets;
   /** Events matching the filters, of which `rows` is the first page. */
   total: number;
@@ -117,8 +117,7 @@ export function ActivityFeed({
   const [loading, setLoading] = useState(false);
   const [exhausted, setExhausted] = useState(initialRows.length >= total);
 
-  // Day boundaries depend on the reader's timezone, so grouping happens here
-  // rather than on the server.
+  // Day boundaries depend on the reader's timezone.
   const now = useMemo(() => new Date(), []);
 
   const classified = useMemo(() => classifyAll(rows), [rows]);
@@ -180,8 +179,6 @@ export function ActivityFeed({
         <div className="space-y-8">
           {days.map((day) => (
             <section key={day.label}>
-              {/* A date stamp repeating down the feed, not a title — the label
-                  voice separates it from the rows without shouting once a day. */}
               <h2 className="mb-3 type-label text-muted-foreground">
                 {day.label}
               </h2>

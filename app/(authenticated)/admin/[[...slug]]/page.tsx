@@ -14,8 +14,7 @@ type PageProps = {
 export default async function AdminPage({ params }: PageProps) {
   const { slug } = await params;
 
-  // Maintenance lives under system settings — the tab here only ever held the
-  // Docker prune button.
+  // Maintenance lives under system settings.
   if (slug?.[0] === "maintenance") redirect("/admin/settings/maintenance");
 
   const activeTab: ValidTab = (slug?.[0] && VALID_TABS.includes(slug[0] as ValidTab))

@@ -8,7 +8,7 @@ export default function ActivityLoading() {
         <div className="h-8 w-24 bg-muted animate-pulse rounded-lg" />
       </div>
 
-      {/* Filter chips skeleton */}
+      {/* Filter chips */}
       <div className="flex flex-wrap gap-1.5">
         {[16, 20, 14, 12, 16].map((width, i) => (
           <div
@@ -19,7 +19,7 @@ export default function ActivityLoading() {
         ))}
       </div>
 
-      {/* Activity feed skeleton */}
+      {/* Activity feed */}
       <div className="space-y-1">
         {Array.from({ length: 8 }).map((_, i) => (
           <div key={i} className="flex items-start gap-3 rounded-lg px-3 py-3">

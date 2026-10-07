@@ -68,9 +68,9 @@ export interface AppDeployPanelProps {
   source: string;
   autoDeploy: boolean | null;
   deploy: ReturnType<typeof useDeploy>;
-  /** Same action the toolbar button runs, so the empty state can offer it. */
+  /** The toolbar button's action. */
   onDeploy: () => void;
-  /** Wording of the toolbar button, mirrored in the empty state. */
+  /** The toolbar button's label. */
   deployActionLabel: string;
   /** Restarts, stops and starts an operator ran, newest first. */
   lifecycleEvents?: LifecycleEvent[];
@@ -82,10 +82,7 @@ const LIFECYCLE_ICONS: Record<LifecycleKind, LucideIcon> = {
   started: Play,
 };
 
-/**
- * One thing done to the app that was not a deploy. Deliberately a line and not
- * a card — it belongs on this timeline but must never be mistaken for a release.
- */
+/** A non-deploy action on the app's timeline. */
 function LifecycleLine({ event }: { event: LifecycleEvent }) {
   const Icon = LIFECYCLE_ICONS[event.kind];
   return (
@@ -243,8 +240,7 @@ export function AppDeployPanel({
     }
   }, [orgId, appId, router, setConfirmRollbackOpen]);
 
-  // The stream stays open: the engine reports the cancel when it stops, and
-  // closing here is what made a cancel that never landed look successful.
+  // The stream stays open: the engine reports the cancel when it stops.
   const handleAbortDeploy = useCallback(async (deploymentId?: string) => {
     await cancelDeploy(deploymentId);
     router.refresh();
@@ -275,13 +271,10 @@ export function AppDeployPanel({
   const completedDeployments = filteredDeployments
     .filter((d) => d.status !== "queued" && d.status !== "running");
 
-  // What this app's last green deploy took end to end — the yardstick for the
-  // live timer, which also runs from the request rather than from execution.
+  // Duration of the last green deploy, the yardstick for the live timer.
   const typicalMs = typicalElapsedMs(completedDeployments);
 
-  // "deploying" is included: the old slot serves throughout a deploy and through
-  // a failed one's rollback, so hiding this card is what made a failure read as
-  // an outage.
+  // Old slot keeps serving during a deploy.
   const liveDeploy = completedDeployments.find(
     (d) =>
       d.status === "success" &&
@@ -291,8 +284,6 @@ export function AppDeployPanel({
         appStatus === "deploying")
   );
 
-  // A crashed app is when the swap back to the standby matters most, so "error"
-  // shows this card rather than hiding it.
   const showRollbackAction =
     slotStatus?.standbyAvailable && (appStatus === "active" || appStatus === "error");
 
@@ -309,8 +300,7 @@ export function AppDeployPanel({
     (d) => d.id !== liveDeploy?.id && d.id !== instantRollbackDeploy?.id
   );
 
-  // Lifecycle actions after the live release happened to it, so they read above
-  // that card. The rest sit in history between the deploys they fall between.
+  // Lifecycle actions after the live release read above that card.
   const lifecycle = partitionLifecycle(
     lifecycleEvents,
     liveDeploy?.finishedAt ?? liveDeploy?.startedAt ?? null,
@@ -644,7 +634,7 @@ export function AppDeployPanel({
                 </div>
               )}
 
-              {/* Done to the live release since it shipped */}
+              {/* Since release */}
               {lifecycle.since.map((event) => (
                 <LifecycleLine key={event.id} event={event} />
               ))}
@@ -687,7 +677,7 @@ export function AppDeployPanel({
         )}
       </div>
 
-      {/* Instant rollback confirmation */}
+      {/* Rollback confirmation */}
       <AlertDialog open={confirmRollbackOpen} onOpenChange={setConfirmRollbackOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -706,7 +696,7 @@ export function AppDeployPanel({
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Rebuild preview bottom sheet (full rebuild path) */}
+      {/* Rebuild preview */}
       <BottomSheet open={!!rollbackTarget} onOpenChange={(open) => { if (!open) { setRollbackTarget(null); setRollbackPreview(null); } }}>
         <BottomSheetContent>
           <BottomSheetHeader>

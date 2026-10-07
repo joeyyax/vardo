@@ -30,7 +30,7 @@ export function DependencySelector({
   const [saving, setSaving] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
 
-  // Transitive circular dependency prevention — walk the full graph
+  // Excludes transitive circular dependencies.
   function wouldCreateCycle(candidateDep: string): boolean {
     const visited = new Set<string>();
     const queue = [candidateDep];

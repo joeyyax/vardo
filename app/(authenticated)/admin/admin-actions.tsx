@@ -14,10 +14,6 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { RelativeTime } from "@/components/relative-time";
 
-// ---------------------------------------------------------------------------
-// Invite User
-// ---------------------------------------------------------------------------
-
 type UserInfo = {
   id: string;
   name: string | null;

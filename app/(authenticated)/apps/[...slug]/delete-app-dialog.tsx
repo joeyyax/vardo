@@ -34,7 +34,6 @@ async function fetchPreview<T>(orgId: string, appId: string, query = ""): Promis
   }
 }
 
-/** Reads the same endpoint the app's backup tab does. */
 async function fetchBackupStatus(orgId: string, appId: string): Promise<BackupStatus> {
   try {
     const res = await fetch(`/api/v1/organizations/${orgId}/backups?appId=${appId}`);
@@ -70,7 +69,6 @@ export function DeleteAppDialog({
   onOpenChange: (open: boolean) => void;
   orgId: string;
   app: { id: string; name: string; displayName: string };
-  /** Matches the Danger Zone trigger. */
   noun?: "app" | "stack";
   onDeleted: () => void;
 }) {
@@ -89,7 +87,7 @@ export function DeleteAppDialog({
       setPreview(p);
       setPreviewFailed(p === null);
       if (!p || p.volumes.length + p.bindMounts.length === 0) return;
-      // Sizes arrive later, or not at all; the list never waits on them.
+      // Sizes arrive later, or not at all.
       fetchPreview<Omit<Preview, "project">>(orgId, app.id, "?sizes=1").then((sized) => {
         if (cancelled || !sized) return;
         setPreview((prev) => (prev ? { ...prev, ...sized } : prev));

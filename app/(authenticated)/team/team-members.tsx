@@ -47,7 +47,7 @@ type TeamMembersProps = {
   currentRole: string;
   currentUserId: string;
   organizations: Organization[];
-  /** When true, skip the page header (used when embedded in settings) */
+  /** Skips the page header when embedded in settings. */
   embedded?: boolean;
 };
 

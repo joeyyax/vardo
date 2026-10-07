@@ -86,20 +86,6 @@ type AppGridProps = {
   emptyProjects?: EmptyProject[];
 };
 
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// Sub-components
-// ---------------------------------------------------------------------------
-
-
-// ---------------------------------------------------------------------------
-// ProjectCard — groups multiple apps under one project
-// ---------------------------------------------------------------------------
-
 function ProjectCard({
   project,
   projectApps,
@@ -115,10 +101,9 @@ function ProjectCard({
   historyTick: number;
   updatesByApp: Map<string, number>;
 }) {
-  const color = "#a1a1aa"; // neutral zinc-400 — project color is unused
+  const color = "#a1a1aa"; // Project color is unused.
 
-  // Aggregate status: healthy is quiet, deviation is loud. All-running shows a
-  // muted count; crashes show a red count; a mix shows an honest count.
+  // Aggregate status: healthy is quiet, deviation is loud.
   const activeCount = projectApps.filter((a) => a.status === "active").length;
   const errorCount = projectApps.filter((a) => a.status === "error").length;
   const allActive = activeCount === projectApps.length;
@@ -150,9 +135,7 @@ function ProjectCard({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectApps, historyTick]);
 
-  // Aggregated live metrics. The memory limit is the sum of per-app limits and
-  // only honest when every running app has one — partial sums would understate
-  // the ceiling.
+  // Memory limit is the sum of per-app limits, shown only when every running app has one.
   const { agg, memoryLimitTotal, anyMetrics } = useMemo(() => {
     const agg: AppMetrics = { cpuPercent: 0, memoryUsage: 0, memoryLimit: 0, diskUsage: 0, networkRx: 0, networkTx: 0 };
     let limitSum = 0;
@@ -189,7 +172,6 @@ function ProjectCard({
 
   const updateCount = projectApps.reduce((n, a) => n + (updatesByApp.get(a.id) ?? 0), 0);
 
-  // Collect unique icons
   const icons = useMemo(() => {
     const seen = new Set<string>();
     const result: string[] = [];
@@ -226,10 +208,9 @@ function ProjectCard({
         className="absolute inset-0 z-0"
         aria-label={project.displayName}
       />
-      {/* Raised panel: identity + aggregate state */}
+      {/* Identity and aggregate state */}
       <div className="p-6 @lg:p-7">
         <div className="flex gap-4">
-        {/* One icon — a collage of the same marks on every card is noise */}
         {icons.length === 0 ? (
           <div className="size-12 shrink-0 rounded-md flex items-center justify-center" style={{ backgroundColor: `${color}20` }}>
             <span className="size-3 rounded-full" style={{ backgroundColor: color }} />
@@ -241,7 +222,6 @@ function ProjectCard({
         )}
 
         <div className="flex-1 min-w-0">
-          {/* Wraps rather than truncating: the title outranks the rollup beside it. */}
           <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
             <div className="flex items-center gap-2 min-w-0">
               <h3 className="type-h3 truncate">{project.displayName}</h3>
@@ -250,9 +230,6 @@ function ProjectCard({
                 <EndpointsPopover endpoints={projectApps.flatMap((a) => a.domains.map((d) => ({ label: a.displayName, domain: d.domain })))} />
               </span>
             </div>
-            {/* Reach and health are separate facts — an app can be running and
-                crash-looping, and hiding either behind the other is what made
-                this header read as less informative than the list below it. */}
             {projectApps.length === 0 ? (
               <span className="text-xs text-muted-foreground">Empty</span>
             ) : (
@@ -289,7 +266,7 @@ function ProjectCard({
               </span>
             )}
           </div>
-          {/* What changed — deploy recency and pending updates */}
+          {/* Recent deploys and pending updates */}
           {(deployFragment || updateCount > 0) && (
             <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
               {deployFragment}
@@ -306,7 +283,7 @@ function ProjectCard({
         </div>
       </div>
 
-      {/* Recessed app list — rows sit on a lower surface, problems sort first */}
+      {/* App list, problems first */}
       <div className="flex-1 bg-background-deep px-3 py-3 @md:px-4">
         {projectApps.length === 0 ? (
           <Link
@@ -317,8 +294,6 @@ function ProjectCard({
             Add app
           </Link>
         ) : (
-          /* One app per row: two columns halved the width available to a name,
-             its status word and its badges, which is what truncated first. */
           <div className="@container grid content-start">
             {[...projectApps]
               .sort(
@@ -339,7 +314,7 @@ function ProjectCard({
                 />
                 </TooltipTrigger>
                 <TooltipContent
-                  /* Anchored under the row: side="right" collided and flipped onto the nav rail. */
+                  /* side="right" flips onto the nav rail. */
                   side="bottom"
                   align="start"
                   sideOffset={4}
@@ -358,8 +333,7 @@ function ProjectCard({
         )}
       </div>
 
-      {/* Aggregate resource footer — space is held while stats stream in, and a
-          card with nothing running says so rather than ending mid-air */}
+      {/* Resource footer */}
       {projectApps.length > 0 && (
         <MetricsBand
           metrics={anyMetrics ? agg : undefined}
@@ -371,10 +345,6 @@ function ProjectCard({
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
-// AppGrid
-// ---------------------------------------------------------------------------
 
 export function AppGrid({
   apps,
@@ -393,9 +363,8 @@ export function AppGrid({
     [updates],
   );
 
-  // Bus events drive this list. This is the backstop for container state that
-  // changed outside Vardo — the reconciler discovers it on a 60s poll and emits
-  // nothing, so there is no point refreshing faster than that.
+  // Backstop for container state changed outside Vardo.
+  // The reconciler polls every 60s, so refreshing faster gains nothing.
   useEffect(() => {
     const interval = setInterval(() => {
       if (document.visibilityState === "visible") router.refresh();
@@ -415,7 +384,6 @@ export function AppGrid({
     return filterApps(list, query);
   }, [apps, activeTagIds, query]);
 
-  // Group apps by project for rendering
   const projectCards = useMemo(() => {
     const byProject = new Map<string, { project: AppWithRelations["project"]; apps: AppWithRelations[] }>();
 
@@ -441,7 +409,7 @@ export function AppGrid({
   return (
     <div className="space-y-10">
       <div className="space-y-3">
-      {/* Find and order — the grid is the only path to an app that isn't the palette */}
+      {/* Search and sort */}
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative min-w-[14rem] flex-1 sm:max-w-sm">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -519,10 +487,6 @@ export function AppGrid({
         </div>
       )}
 
-      {/* Multi-column, not grid: app counts range from one to a dozen, and grid
-          rows take the taller card's height, leaving a void under the shorter
-          one. Column width drives the count, so a two-project install still
-          fills the row. */}
       <div className="columns-[26rem] gap-6">
         {projectCards.map(({ project, apps: projectApps }) => (
           <div key={project.id} className="mb-4 break-inside-avoid">
