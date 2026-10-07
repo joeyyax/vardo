@@ -56,7 +56,22 @@ export async function register() {
 
     // Whether the running key is the one this database's ciphertext belongs to.
     const { checkKeyEscrowAtStartup } = await import("./lib/crypto/key-escrow");
-    await checkKeyEscrowAtStartup();
+    const escrow = await checkKeyEscrowAtStartup();
+
+    // Credentials written before they were encrypted on write. Before the
+    // backup scheduler, which reads them.
+    try {
+      const { canEncryptStoredCredentials, encryptStoredCredentials } = await import(
+        "./lib/crypto/encrypt-stored-credentials"
+      );
+      if (canEncryptStoredCredentials(escrow)) {
+        await encryptStoredCredentials();
+      } else if (keyCheck.ok) {
+        log.warn("Left stored credentials unencrypted — the running key isn't confirmed for this database");
+      }
+    } catch (err) {
+      log.error("Credential encryption failed:", err);
+    }
 
     // Carry existing hook registrations onto the new hooks flag. Needs the
     // encryption key, so it runs after the check above.

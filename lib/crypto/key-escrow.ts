@@ -9,7 +9,8 @@
 // ---------------------------------------------------------------------------
 
 import { db } from "@/lib/db";
-import { apps, systemSettings } from "@/lib/db/schema";
+import { apps, backupTargets, systemSettings } from "@/lib/db/schema";
+import { probeTargetSecrets } from "@/lib/backups/target-config";
 import { invalidateSettingsCache } from "@/lib/system-settings";
 import { eq } from "drizzle-orm";
 import { decryptOrFallback, decryptSystemOrFallback, runningKeyFingerprint } from "./encrypt";
@@ -50,7 +51,7 @@ export type DecryptProbe = {
   encrypted: number;
   /** Of those, the ones the running key could not decrypt. */
   undecryptable: number;
-  /** App names behind the failures, capped. */
+  /** Names behind the failures, capped. */
   samples: string[];
 };
 
@@ -81,6 +82,18 @@ export async function probeDecryptability(): Promise<DecryptProbe> {
     if (result.decryptFailed) {
       probe.undecryptable++;
       if (probe.samples.length < MAX_SAMPLES) probe.samples.push(`setting:${row.key}`);
+    }
+  }
+
+  const targets = await db
+    .select({ name: backupTargets.name, organizationId: backupTargets.organizationId, config: backupTargets.config })
+    .from(backupTargets);
+  for (const row of targets) {
+    const result = probeTargetSecrets(row);
+    probe.encrypted += result.encrypted;
+    if (result.undecryptable > 0) {
+      probe.undecryptable += result.undecryptable;
+      if (probe.samples.length < MAX_SAMPLES) probe.samples.push(`target:${row.name}`);
     }
   }
 
@@ -151,8 +164,8 @@ export function describeKeyEscrow(state: KeyEscrowState): {
   }
 }
 
-/** Reconcile and log. Startup path — never throws. */
-export async function checkKeyEscrowAtStartup(): Promise<void> {
+/** Reconcile and log. Startup path — never throws; null when the check failed. */
+export async function checkKeyEscrowAtStartup(): Promise<KeyEscrowState | null> {
   try {
     const state = await reconcileKeyFingerprint();
     const { severity, headline } = describeKeyEscrow(state);
@@ -166,7 +179,9 @@ export async function checkKeyEscrowAtStartup(): Promise<void> {
     } else {
       log.info(headline);
     }
+    return state;
   } catch (err) {
     log.warn("Encryption key check skipped:", err);
+    return null;
   }
 }

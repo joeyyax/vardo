@@ -31,11 +31,12 @@ const { describeKeyEscrow, probeDecryptability, readRecordedFingerprint, reconci
 const RUNNING = fingerprintMasterKey(process.env.ENCRYPTION_MASTER_KEY!);
 const FOREIGN = "k1:fedcba9876543210";
 
-/** db.select(...).from(table) returns whichever rows the table was seeded with. */
-function seed(appRows: unknown[], settingRows: unknown[]) {
+/** db.select(...).from(table) returns whichever rows the table was seeded with: apps, settings, targets. */
+function seed(appRows: unknown[], settingRows: unknown[], targetRows: unknown[] = []) {
+  const tables = [appRows, settingRows, targetRows];
   let call = 0;
   selectMock.mockImplementation(() => ({
-    from: () => (call++ === 0 ? appRows : settingRows),
+    from: () => tables[call++] ?? [],
   }));
 }
 
@@ -88,6 +89,26 @@ describe("probeDecryptability", () => {
     );
     const probe = await probeDecryptability();
     expect(probe).toMatchObject({ encrypted: 3, undecryptable: 1, samples: ["blog"] });
+  });
+});
+
+describe("probeDecryptability — backup targets", () => {
+  it("counts each encrypted credential and names the target that won't open", async () => {
+    seed(
+      [],
+      [],
+      [
+        {
+          name: "offsite",
+          organizationId: "org-1",
+          config: { bucket: "b", accessKeyId: encrypt("AK", "org-1"), secretAccessKey: encrypt("SK", "another-org") },
+        },
+        { name: "system", organizationId: null, config: { host: "h", privateKey: encryptSystem("PEM") } },
+        { name: "legacy", organizationId: "org-1", config: { accessKeyId: "AK", secretAccessKey: "SK" } },
+        { name: "local", organizationId: "org-1", config: { path: "/backups" } },
+      ],
+    );
+    expect(await probeDecryptability()).toEqual({ encrypted: 3, undecryptable: 1, samples: ["target:offsite"] });
   });
 });
 
