@@ -7,8 +7,7 @@ import type { McpAuthContext } from "../auth";
 import { accessDenied, canAccessOrg } from "../scope";
 import { scrubEnvValues } from "./get-deploy-logs";
 
-// Tail the last 10KB of the log for status checks — enough context
-// without bloating the MCP response payload.
+// Last 10KB of the log.
 const LOG_TAIL = 10 * 1024;
 
 export function registerGetDeployStatus(

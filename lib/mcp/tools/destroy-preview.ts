@@ -6,8 +6,6 @@ import type { McpAuthContext } from "../auth";
 import { resolveOrgPreview, previewNotFound, previewsDisabled } from "./preview-helpers";
 
 // 10 destroys per 10 minutes per user/org pair.
-// destroyGroupEnvironment does real Docker work (container teardown, network
-// cleanup) — rate-limiting prevents hammering the daemon in a create/destroy loop.
 const DESTROY_RATE_LIMIT = 10;
 const DESTROY_RATE_WINDOW_MS = 10 * 60 * 1000;
 

@@ -39,7 +39,6 @@ export function registerListPreviews(
         orgFilter(projects.organizationId, orgIds)
       );
 
-      // Fire the page query and total count in parallel.
       const [rows, [totalRow]] = await Promise.all([
         db
           .select({

@@ -5,17 +5,8 @@ import type { PgColumn } from "drizzle-orm/pg-core";
 import { can, type Capability } from "@/lib/auth/permissions";
 import type { McpAuthContext } from "./auth";
 
-/**
- * Organization scoping for MCP tools.
- *
- * A token reaches an organization only while its user holds a live membership
- * there whose role holds the tool's capability. A normal token is additionally pinned to the organization it was
- * minted for; a cross-org token is not. Both are re-checked against the
- * database on every request, so removing a membership revokes access at once.
- *
- * WARNING: every tool's tenancy boundary runs through canAccessOrg and
- * accessibleOrgIds. Widening either widens all MCP tools at once.
- */
+// Organization scoping for MCP tools, checked against live memberships on every request.
+// Every tool's tenancy boundary runs through canAccessOrg and accessibleOrgIds; widening either widens all tools.
 
 /** True when the token may act on `orgId` with `cap`. */
 export async function canAccessOrg(
@@ -55,10 +46,7 @@ export async function accessibleOrgIds(
     : memberOrgIds.filter((id) => id === context.organizationId);
 }
 
-/**
- * Resolve the organization to create a new resource in. `requestedOrgId` is
- * caller-supplied and is only honored after a membership check.
- */
+/** Org to create a resource in. A caller-supplied `requestedOrgId` is honored only after a membership check. */
 export async function resolveTargetOrg(
   context: McpAuthContext,
   requestedOrgId: string | null | undefined,
@@ -80,7 +68,7 @@ export function accessDenied(resource: string) {
   };
 }
 
-/** Resolve the organization an app belongs to, or null if out of scope. */
+/** The app's org, or null if out of scope. */
 export async function resolveAppOrg(
   context: McpAuthContext,
   appId: string,
@@ -97,7 +85,7 @@ export async function resolveAppOrg(
     : null;
 }
 
-/** Resolve the organization a project belongs to, or null if out of scope. */
+/** The project's org, or null if out of scope. */
 export async function resolveProjectOrg(
   context: McpAuthContext,
   projectId: string,
@@ -114,10 +102,7 @@ export async function resolveProjectOrg(
     : null;
 }
 
-/**
- * Restrict a column to the token's organizations. A single-org token collapses
- * to the equality filter it uses today.
- */
+/** Restricts a column to the token's organizations. */
 export function orgFilter(column: PgColumn, orgIds: string[]): SQL {
   if (orgIds.length === 0) return sql`false`;
   return orgIds.length === 1 ? eq(column, orgIds[0]) : inArray(column, orgIds);
@@ -125,7 +110,7 @@ export function orgFilter(column: PgColumn, orgIds: string[]): SQL {
 
 export type OrgLabel = { id: string; name: string; slug: string };
 
-/** Org id → name/slug, so aggregated list results say which org each row is in. */
+/** Org id to name/slug for labeling aggregated results. */
 export async function orgLabels(
   orgIds: string[]
 ): Promise<Map<string, OrgLabel>> {

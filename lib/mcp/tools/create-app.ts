@@ -48,9 +48,7 @@ export function registerCreateApp(
         .default("main")
         .describe("Branch to deploy (default 'main')"),
       deployType: z
-        // The tool always creates a git-sourced app, so only build-from-repo
-        // strategies are coherent. "image" is excluded — it needs an imageName
-        // (which this tool does not accept) and would ignore the git source.
+        // Git-sourced apps only, so "image" is excluded.
         .enum(["compose", "dockerfile", "static", "nixpacks", "railpack"])
         .default("compose")
         .describe(
@@ -116,9 +114,7 @@ export function registerCreateApp(
         };
       }
 
-      // Reject duplicate slugs up front for a clean error (the DB also enforces it).
-      // Only an app in this org can be named back — one held by another org
-      // must stay invisible.
+      // Never reveal an app held by another org.
       const existing = await db.query.apps.findFirst({
         where: and(eq(apps.organizationId, orgId), eq(apps.name, name)),
         columns: { id: true },

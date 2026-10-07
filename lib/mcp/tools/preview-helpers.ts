@@ -17,10 +17,7 @@ export interface OrgPreview {
   organizationId: string;
 }
 
-/**
- * Fetch a preview environment and confirm the token may act on the
- * organization that owns it.
- */
+/** Fetches a preview environment and confirms the token may act on its owning org. */
 export async function resolveOrgPreview(
   previewId: string,
   context: McpAuthContext,

@@ -47,8 +47,7 @@ export function registerAdoptApp(server: McpServer, context: McpAuthContext) {
       if (!parsed.success) return fail(parsed.error.issues[0].message);
       const data = parsed.data;
 
-      // An existing project pins the org; otherwise the requested org, after a
-      // membership check. Same bar as REST: membership, any role.
+      // An existing project pins the org; otherwise the requested org after a membership check.
       const orgId = data.projectId
         ? await resolveProjectOrg(context, data.projectId, "app.create")
         : await resolveTargetOrg(context, organizationId, "app.create");

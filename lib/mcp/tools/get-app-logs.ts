@@ -54,7 +54,6 @@ export function registerGetAppLogs(
         return accessDenied("App");
       }
 
-      // Try Loki first
       if (await isLokiAvailable()) {
         const query = buildLogQLQuery({
           project: app.name,
@@ -98,7 +97,7 @@ export function registerGetAppLogs(
         };
       }
 
-      // Docker direct fallback
+      // Docker fallback.
       const containers = await listContainers(app);
 
       if (containers.length === 0) {
@@ -168,10 +167,10 @@ const UNIT_MS: Record<string, number> = {
 
 const DEFAULT_SINCE_MS = UNIT_MS.h;
 
-/** Deepest window Loki still holds — the log viewer's widest lookback, which retention is sized to. */
+/** Deepest window Loki holds; matches the log viewer's widest lookback. */
 export const MAX_SINCE_MS = Math.max(...LOOKBACK_MS);
 
-/** The window a request actually covers, and whether that is less than it asked for. */
+/** The window a request covers and whether it's shorter than requested. */
 export type SinceWindow = { start: string; since: string; clamped: boolean };
 
 /** Requested span in ms. An unparseable duration falls back to an hour. */
@@ -180,11 +179,7 @@ function parseSince(duration: string): number {
   return match ? parseInt(match[1]) * UNIT_MS[match[2]] : DEFAULT_SINCE_MS;
 }
 
-/**
- * The same window for the Docker fallback, as the Unix seconds the daemon takes.
- * Nothing caps it — Docker serves whatever it still holds, so the answer covers
- * the window asked for or stops where the container's retained log does.
- */
+/** The same window for the Docker fallback, in Unix seconds. Uncapped. */
 export function dockerSince(
   duration: string,
   now: number = Date.now()
@@ -207,7 +202,7 @@ export function resolveSince(duration: string, now: number = Date.now()): SinceW
   };
 }
 
-/** Largest whole unit the span divides into, so 30 days reads as "30d". */
+/** Formats a span in its largest whole unit ("30d"). */
 function formatDuration(ms: number): string {
   for (const unit of ["d", "h", "m", "s"]) {
     if (ms >= UNIT_MS[unit] && ms % UNIT_MS[unit] === 0) return `${ms / UNIT_MS[unit]}${unit}`;

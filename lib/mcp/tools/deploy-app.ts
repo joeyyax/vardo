@@ -8,11 +8,7 @@ import { slidingWindowRateLimit } from "@/lib/api/rate-limit";
 import type { McpAuthContext } from "../auth";
 import { accessDenied, canAccessOrg } from "../scope";
 
-// Coarse abuse ceiling: 60 deploys per minute per user/org pair.
-// Bursts are never rejected as a cooldown — requestDeploy serializes rapid
-// deploys via per-app cancel-and-replace (latest commit wins) and the
-// system-level FIFO concurrency queue (#682). This limit only stops a runaway
-// loop from creating unbounded deployment records.
+// Abuse ceiling only: 60 deploys per minute per user/org pair. Bursts are serialized by requestDeploy (#682).
 const DEPLOY_RATE_LIMIT = 60;
 const DEPLOY_RATE_WINDOW_MS = 60 * 1000;
 
@@ -60,8 +56,7 @@ export function registerDeployApp(
         return accessDenied("App");
       }
 
-      // Create the deployment record. The deploy worker picks it up
-      // asynchronously — we return the ID immediately for polling.
+      // Returns the ID immediately for polling.
       const deploymentId = await createDeployment({
         appId,
         organizationId: app.organizationId,
@@ -70,8 +65,7 @@ export function registerDeployApp(
         environmentId,
       });
 
-      // Fire the actual deploy in the background. Import requestDeploy
-      // to handle cancel-and-replace semantics.
+      // requestDeploy handles cancel-and-replace.
       const { requestDeploy } = await import("@/lib/docker/deploy-cancel");
       requestDeploy({
         appId,
@@ -81,8 +75,7 @@ export function registerDeployApp(
         deploymentId,
         environmentId,
       }).catch(() => {
-        // Deploy failures are recorded on the deployment record — the
-        // caller polls vardo_get_deploy_status to observe them.
+        // Failures are recorded on the deployment record.
       });
 
       return {

@@ -83,7 +83,7 @@ export function registerGetEnvVars(
         };
       }
 
-      // If data was plaintext (unmigrated), encrypt it on read
+      // Encrypts unmigrated plaintext on read.
       if (!wasEncrypted && decrypted) {
         const encrypted = encrypt(decrypted, app.organizationId);
         await db.update(apps).set({ envContent: encrypted }).where(eq(apps.id, appId));

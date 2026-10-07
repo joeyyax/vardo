@@ -6,23 +6,10 @@ import { eq, sql } from "drizzle-orm";
 import type { McpAuthContext } from "../auth";
 import { accessDenied, canAccessOrg } from "../scope";
 
-// Cap log output at 100KB of characters. Build logs (Nixpacks/Railpack) can
-// easily reach 10MB+. Fetching the full column for every MCP request would
-// load that into memory and bloat the response payload. right() in Postgres
-// is character-based, which is close enough for log truncation purposes.
+// Characters, not bytes; build logs can exceed 10MB.
 const LOG_CAP = 100 * 1024;
 
-/**
- * Scrub env var values from build log output.
- *
- * Nixpacks and Railpack may echo variable assignments during the build
- * (e.g. `SECRET_KEY=abc123` or `Setting DATABASE_URL=postgres://...`).
- * This replaces the value portion of any ALL_CAPS=value token so secrets
- * don't leak to any org member with MCP access.
- *
- * Pattern: word boundary, 3+ uppercase/underscore name, `=`, non-whitespace value.
- * Intentionally broad — better to over-redact than expose credentials.
- */
+/** Redacts the value of every ALL_CAPS=value token in build logs. Broad on purpose. */
 export function scrubEnvValues(log: string): string {
   return log.replace(/\b([A-Z_][A-Z0-9_]{2,})=([^\s"'\n]+)/g, "$1=[redacted]");
 }
@@ -40,9 +27,7 @@ export function registerGetDeployLogs(
         .describe("The deployment ID to get logs for"),
     },
     async ({ deployment_id }) => {
-      // Join to apps to verify org scope. Fetch only the last LOG_CAP
-      // characters of the log column so large build logs don't load into
-      // memory in full. logLength is fetched separately to detect truncation.
+      // Org-scoped via apps; fetches only the last LOG_CAP characters.
       const result = await db
         .select({
           id: deployments.id,

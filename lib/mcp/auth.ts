@@ -12,15 +12,7 @@ export type McpAuthContext = {
   crossOrg: boolean;
 };
 
-/**
- * Authenticate an MCP request using a Bearer token.
- *
- * Standalone function that takes a raw Request — no dependency on
- * Next.js AsyncLocalStorage (headers()/cookies()).
- *
- * Returns the resolved user + org context, or null if invalid or if the
- * api-tokens feature is off.
- */
+/** Authenticates a raw MCP Request by Bearer token. Null if invalid or api-tokens is off. */
 export async function authenticateRequest(
   request: Request
 ): Promise<McpAuthContext | null> {
@@ -36,7 +28,6 @@ export async function authenticateRequest(
 
   if (!token) return null;
 
-  // Verify the user still exists
   const tokenUser = await db.query.user.findFirst({
     where: eq(user.id, token.userId),
     columns: { id: true },
@@ -44,7 +35,7 @@ export async function authenticateRequest(
 
   if (!tokenUser) return null;
 
-  // Update lastUsedAt in the background — fire and forget
+  // Fire and forget.
   db.update(apiTokens)
     .set({ lastUsedAt: new Date() })
     .where(eq(apiTokens.id, token.id))

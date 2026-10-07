@@ -68,8 +68,7 @@ export function registerRestartApp(
         trigger: "mcp",
       });
 
-      // Nothing on disk to bring up, so a deploy is the only thing that can
-      // produce containers. It records itself as a deploy, not as a start.
+      // Nothing on disk to bring up, so deploy instead.
       if (result.failure === "no-slot") {
         const deployTargetId = app.parentAppId ?? app.id;
 
@@ -80,8 +79,7 @@ export function registerRestartApp(
           triggeredBy: context.userId,
         });
 
-        // Fire the deploy in the background — return the ID immediately so the
-        // caller polls vardo_get_deploy_status, matching vardo_deploy_app.
+        // Returns the ID immediately for polling.
         const { requestDeploy } = await import("@/lib/docker/deploy-cancel");
         requestDeploy({
           appId: deployTargetId,
@@ -90,7 +88,7 @@ export function registerRestartApp(
           triggeredBy: context.userId,
           deploymentId,
         }).catch(() => {
-          // Failures are recorded on the deployment record — poll to observe.
+          // Failures are recorded on the deployment record.
         });
 
         return {

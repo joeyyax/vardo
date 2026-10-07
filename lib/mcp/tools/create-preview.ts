@@ -10,7 +10,6 @@ import type { McpAuthContext } from "../auth";
 import { canAccessOrg } from "../scope";
 
 // 5 preview deployments per 10 minutes per user/org pair.
-// Each call spins up Docker containers — this caps resource exhaustion.
 const PREVIEW_RATE_LIMIT = 5;
 const PREVIEW_RATE_WINDOW_MS = 10 * 60 * 1000;
 
@@ -53,8 +52,7 @@ export function registerCreatePreview(
       const disabled = await previewsDisabled();
       if (disabled) return disabled;
 
-      // Rate limit: cap preview deployments to prevent resource exhaustion.
-      // Keyed per user+org so one bad actor can't starve the whole organization.
+      // Keyed per user+org.
       const rl = await slidingWindowRateLimit(
         `${context.userId}:${context.organizationId}`,
         "mcp:create-preview",
@@ -75,7 +73,6 @@ export function registerCreatePreview(
         };
       }
 
-      // Verify the token reaches an app tracking the given repo
       const gitUrl = `https://github.com/${repo}.git`;
 
       const matching = await db.query.apps.findMany({
@@ -101,8 +98,7 @@ export function registerCreatePreview(
         };
       }
 
-      // createPreview re-resolves the repo with no org filter, so refuse
-      // anything it could resolve outside this token's reach or across orgs.
+      // createPreview resolves the repo with no org filter; refuse anything outside this token's reach.
       const candidateOrgs = [
         ...new Set(
           matching.filter((a) => a.projectId).map((a) => a.organizationId)

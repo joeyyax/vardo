@@ -23,9 +23,7 @@ export function registerGetPreviewUrl(
       const disabled = await previewsDisabled();
       if (disabled) return disabled;
 
-      // Single query: resolve the owning org and fetch environment URLs in one
-      // JOIN. LEFT JOINs on environments/apps so a preview with no environments
-      // still resolves rather than returning not-found.
+      // LEFT JOINs so a preview with no environments still resolves.
       const rows = await db
         .select({
           organizationId: projects.organizationId,

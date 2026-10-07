@@ -23,10 +23,7 @@ export function registerGetPreviewStatus(
       const disabled = await previewsDisabled();
       if (disabled) return disabled;
 
-      // Single query: resolve the owning org and fetch environments in one JOIN.
-      // groupEnvironments → projects (owning org) → environments → apps.
-      // LEFT JOINs on environments/apps so a preview with no environments still
-      // returns the preview metadata rather than an empty result set.
+      // LEFT JOINs so a preview with no environments still returns its metadata.
       const rows = await db
         .select({
           organizationId: projects.organizationId,

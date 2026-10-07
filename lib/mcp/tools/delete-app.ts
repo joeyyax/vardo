@@ -6,7 +6,6 @@ import type { McpAuthContext } from "../auth";
 import { accessDenied, canAccessOrg, resolveAppOrg } from "../scope";
 
 // 5 deletes per 10 minutes per user/org pair.
-// Deletion does real Docker teardown — rate-limit to avoid hammering the daemon.
 const DELETE_RATE_LIMIT = 5;
 const DELETE_RATE_WINDOW_MS = 10 * 60 * 1000;
 

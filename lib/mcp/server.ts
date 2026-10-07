@@ -2,11 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { McpAuthContext } from "./auth";
 import { registerAllTools } from "./tools";
 
-/**
- * Create a configured MCP server instance with all tools registered.
- *
- * Each request gets a fresh instance — stateless by design.
- */
+/** Creates a fresh MCP server with all tools registered, one per request. */
 export function createMcpServer(context: McpAuthContext): McpServer {
   const server = new McpServer({
     name: "vardo",

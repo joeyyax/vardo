@@ -24,9 +24,7 @@ import { registerStopApp } from "./stop-app";
 import { registerRollbackApp } from "./rollback-app";
 import { registerAdoptApp } from "./adopt-app";
 
-/**
- * Register all MCP tools on the server instance.
- */
+/** Registers all MCP tools on the server. */
 export function registerAllTools(
   server: McpServer,
   context: McpAuthContext

@@ -60,8 +60,7 @@ export function registerListApps(
         offset,
       });
 
-      // Single-org tokens see the shape they always have; aggregated results
-      // are labeled, because an unlabeled cross-org list is ambiguous.
+      // Cross-org results are labeled with their org.
       const labels = context.crossOrg ? await orgLabels(orgIds) : null;
       const result = appList.map(({ organizationId, ...app }) =>
         labels ? { ...app, organization: labels.get(organizationId) ?? { id: organizationId } } : app

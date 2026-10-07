@@ -88,8 +88,7 @@ export function registerUpdateApp(
         return accessDenied("App");
       }
 
-      // Refiling an app into a foreign project would hand it that project's
-      // bind-mount and docker-socket privileges on the next deploy.
+      // A foreign project would grant its bind-mount and docker-socket privileges on next deploy.
       if (config.projectId) {
         const project = await db.query.projects.findFirst({
           where: and(
@@ -119,8 +118,7 @@ export function registerUpdateApp(
         };
       }
 
-      // The marker only survives as a boolean; a quoted one is dropped by the
-      // parser at deploy time and the service gets blue/green'd.
+      // Must be a boolean; a quoted marker is dropped at deploy and the service gets blue/green'd.
       const markerErrors = config.composeContent
         ? sharedMarkerTypeErrors(config.composeContent)
         : [];

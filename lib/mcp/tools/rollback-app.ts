@@ -60,7 +60,7 @@ export function registerRollbackApp(
         return accessDenied("App");
       }
 
-      // Local environments don't support rollback — no blue-green slots to swap
+      // Local environments have no blue-green slots.
       const defaultEnv = await db.query.environments.findFirst({
         where: and(
           eq(environments.appId, appId),
@@ -82,7 +82,6 @@ export function registerRollbackApp(
         };
       }
 
-      // Verify the target deployment exists, belongs to this app, and was successful
       const targetDeployment = await db.query.deployments.findFirst({
         where: and(
           eq(deployments.id, deploymentId),
@@ -117,10 +116,7 @@ export function registerRollbackApp(
 
       const configSnapshot = targetDeployment.configSnapshot as ConfigSnapshot | null;
 
-      // The snapshot now drives the deploy, so restoring GPU passthrough here
-      // grants host hardware access — gate it like enabling GPU directly.
-      // The role that counts is the one held in the app's own org, never the
-      // token's home org — a cross-org token must not import admin rights.
+      // Restoring GPU passthrough grants host hardware access; gate on the role in the app's own org.
       if (configSnapshot?.gpuEnabled === true) {
         if (!(await canAccessOrg(context, app.organizationId, "app.gpu"))) {
           return {
@@ -137,7 +133,6 @@ export function registerRollbackApp(
         }
       }
 
-      // Create the rollback deployment record and fire it asynchronously
       const newDeploymentId = await createDeployment({
         appId,
         organizationId: app.organizationId,
@@ -154,7 +149,6 @@ export function registerRollbackApp(
         deploymentId: newDeploymentId,
         rollback: { targetDeploymentId: deploymentId, includeEnvVars },
       }).then(async (result) => {
-        // Tag the new deployment with rollback source
         try {
           await db
             .update(deployments)
@@ -162,8 +156,7 @@ export function registerRollbackApp(
             .where(eq(deployments.id, newDeploymentId));
         } catch { /* best-effort */ }
 
-        // The deploy already ran on the snapshot — write the app record only
-        // once it succeeded, so a failed rollback leaves the row untouched.
+        // Written only after success so a failed rollback leaves the row untouched.
         if (!result.success) return;
 
         const appUpdates: Record<string, unknown> = { updatedAt: new Date() };
@@ -201,7 +194,7 @@ export function registerRollbackApp(
 
         await db.update(apps).set(appUpdates).where(eq(apps.id, appId)).catch(() => {});
       }).catch(() => {
-        // Failures recorded on the deployment record
+        // Failures are recorded on the deployment record.
       });
 
       return {
