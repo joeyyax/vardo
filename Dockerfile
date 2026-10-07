@@ -45,7 +45,7 @@ RUN apt-get update -qq && \
     curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
     echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian bookworm stable" > /etc/apt/sources.list.d/docker.list && \
     apt-get update -qq && \
-    apt-get install -y --no-install-recommends docker-ce-cli docker-buildx-plugin iproute2 gosu && \
+    apt-get install -y --no-install-recommends docker-ce-cli docker-buildx-plugin iproute2 gosu tini && \
     curl -sSL https://nixpacks.com/install.sh | NIXPACKS_VERSION=${NIXPACKS_VERSION} bash && \
     ARCH=$(uname -m) && \
     if [ "$ARCH" = "aarch64" ]; then RAILPACK_ARCH="arm64"; else RAILPACK_ARCH="x86_64"; fi && \
@@ -81,4 +81,5 @@ STOPSIGNAL SIGTERM
 
 # Entrypoint runs as root to set up mesh routing, then drops to nextjs for the app.
 # NET_ADMIN capability is required in docker-compose for the ip route command.
-ENTRYPOINT ["./scripts/entrypoint.sh"]
+# tini is PID 1 so orphaned grandchildren get reaped; Node doesn't.
+ENTRYPOINT ["/usr/bin/tini", "--", "./scripts/entrypoint.sh"]

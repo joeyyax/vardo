@@ -34,6 +34,6 @@ chown -R nextjs:nodejs "$TRAEFIK_DYNAMIC_DIR"
 # Run migrations as the app user.
 gosu nextjs node scripts/migrate.mjs
 
-# Start the server as PID 1. A `sh -c` or npx wrapper here leaves Node as a
-# child and SIGTERM never reaches it, so the container gets SIGKILLed instead.
+# exec so tini's SIGTERM reaches Node. A `sh -c` or npx wrapper here swallows
+# it and the container gets SIGKILLed instead.
 exec gosu nextjs node node_modules/next/dist/bin/next start
