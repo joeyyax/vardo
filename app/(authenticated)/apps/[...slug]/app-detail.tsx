@@ -865,7 +865,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
 
         {featureFlags?.cron !== false && (
           <TabsContent value="cron" className={tabPanelSurface}>
-            <CronManager appId={app.id} orgId={orgId} />
+            <CronManager appId={app.id} orgId={orgId} userRole={userRole} />
           </TabsContent>
         )}
 

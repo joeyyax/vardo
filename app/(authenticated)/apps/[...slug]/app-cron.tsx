@@ -35,6 +35,7 @@ import {
   BottomSheetDescription,
 } from "@/components/ui/bottom-sheet";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
+import { isOrgAdmin } from "@/lib/auth/permissions";
 import { RelativeTime } from "@/components/relative-time";
 
 type CronJob = {
@@ -53,6 +54,7 @@ type CronJob = {
 type Props = {
   appId: string;
   orgId: string;
+  userRole: string;
 };
 
 const SCHEDULE_PRESETS = [
@@ -96,7 +98,8 @@ async function requestJobs(url: string): Promise<CronJob[] | null> {
   }
 }
 
-export function CronManager({ appId, orgId }: Props) {
+export function CronManager({ appId, orgId, userRole }: Props) {
+  const canManage = isOrgAdmin(userRole);
   const [jobs, setJobs] = useState<CronJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -265,10 +268,12 @@ export function CronManager({ appId, orgId }: Props) {
               Run commands or hit URLs on a recurring schedule.
             </p>
           </div>
-          <Button size="sm" onClick={openCreate}>
-            <Plus className="mr-1.5 size-4" />
-            Add Job
-          </Button>
+          {canManage && (
+            <Button size="sm" onClick={openCreate}>
+              <Plus className="mr-1.5 size-4" />
+              Add Job
+            </Button>
+          )}
         </div>
 
         {jobs.length === 0 ? (
@@ -277,10 +282,12 @@ export function CronManager({ appId, orgId }: Props) {
             title="No scheduled jobs"
             body="Add a cron job to run commands or hit URLs on a recurring schedule."
             action={
-              <Button size="sm" onClick={openCreate}>
-                <Plus className="mr-1.5 size-4" />
-                Add job
-              </Button>
+              canManage ? (
+                <Button size="sm" onClick={openCreate}>
+                  <Plus className="mr-1.5 size-4" />
+                  Add job
+                </Button>
+              ) : undefined
             }
           />
         ) : (
@@ -341,29 +348,31 @@ export function CronManager({ appId, orgId }: Props) {
                       </pre>
                     )}
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => openEdit(job)}
-                    >
-                      Edit
-                    </Button>
-                    <Switch
-                      checked={job.enabled}
-                      onCheckedChange={(checked) =>
-                        toggleEnabled(job.id, checked)
-                      }
-                    />
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="text-destructive hover:text-destructive"
-                      onClick={() => setDeleteId(job.id)}
-                    >
-                      <Trash2 className="size-3.5" />
-                    </Button>
-                  </div>
+                  {canManage && (
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => openEdit(job)}
+                      >
+                        Edit
+                      </Button>
+                      <Switch
+                        checked={job.enabled}
+                        onCheckedChange={(checked) =>
+                          toggleEnabled(job.id, checked)
+                        }
+                      />
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-destructive hover:text-destructive"
+                        onClick={() => setDeleteId(job.id)}
+                      >
+                        <Trash2 className="size-3.5" />
+                      </Button>
+                    </div>
+                  )}
                 </div>
               </div>
             ))}

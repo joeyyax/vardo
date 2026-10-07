@@ -1353,7 +1353,7 @@ export function ComposeDetail({
             </p>
             <PerService services={services} emptyMessage="No services to schedule jobs for.">
               {(service) => (
-                <CronManager key={`cron-${service.id}`} orgId={orgId} appId={service.id} />
+                <CronManager key={`cron-${service.id}`} orgId={orgId} appId={service.id} userRole={userRole} />
               )}
             </PerService>
           </TabsContent>
