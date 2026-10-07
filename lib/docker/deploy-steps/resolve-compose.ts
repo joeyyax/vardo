@@ -30,6 +30,7 @@ import type { DeployContext } from "../deploy-context";
 import type { ServiceConfigOverride } from "../compose-types";
 import { appScope } from "@/lib/infra/instance-apps";
 import { handWrittenRoute, isolateCompose } from "../environment-isolation";
+import { nonRotatingServices } from "../slot-partition";
 
 const NETWORK_NAME = VARDO_NETWORK;
 
@@ -297,6 +298,9 @@ export async function resolveCompose(ctx: DeployContext): Promise<DeployContext>
   // tenant — Promtail and Loki quote other organizations' stream labels in
   // their errors, and an org tenant is the wrong place for that.
   const scope = appScope(app.name);
+  // A shared service outlives the deploy, and a per-deploy label would change
+  // its config hash every time, so the swap would see drift on every deploy.
+  const shared = nonRotatingServices(compose);
 
   for (const [svcName, svc] of Object.entries(compose.services)) {
     compose.services[svcName] = {
@@ -306,7 +310,7 @@ export async function resolveCompose(ctx: DeployContext): Promise<DeployContext>
         "vardo.project": app.name,
         "vardo.project.id": app.id,
         "vardo.organization": ctx.organizationId,
-        "vardo.deployment.id": ctx.deploymentId,
+        ...(shared.has(svcName) ? {} : { "vardo.deployment.id": ctx.deploymentId }),
         "vardo.environment": ctx.envName,
         "vardo.managed": "true",
         "vardo.scope": scope,
