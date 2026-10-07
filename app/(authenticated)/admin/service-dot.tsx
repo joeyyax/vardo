@@ -39,7 +39,7 @@ export function ServiceDot({ service, onChecked }: ServiceDotProps) {
       if (next.status === "healthy") toast.success(`${next.name} is healthy`);
       else toast.error(`${next.name} is still down`, { description: next.error });
     } catch {
-      toast.error(`Could not check ${service.name}`);
+      toast.error(`Couldn't check ${service.name}`);
     } finally {
       setChecking(false);
     }

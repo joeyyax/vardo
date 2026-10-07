@@ -57,7 +57,7 @@ export function TargetCard({
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        toast.error(data.error ?? "Failed to delete target");
+        toast.error(data.error ?? "Couldn't delete target");
         if (data.usage) setUsage(data.usage);
         return;
       }
@@ -68,7 +68,7 @@ export function TargetCard({
       setDeleteOpen(false);
       onRefresh();
     } catch {
-      toast.error("Failed to delete target");
+      toast.error("Couldn't delete target");
     } finally {
       setDeleting(false);
     }

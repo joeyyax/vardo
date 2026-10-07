@@ -167,10 +167,10 @@ export function TargetForm({
         onCreated();
       } else {
         const err = await res.json();
-        toast.error(err.error || `Failed to ${isEditing ? "update" : "create"} target`);
+        toast.error(err.error || `Couldn't ${isEditing ? "update" : "create"} target`);
       }
     } catch {
-      toast.error(`Failed to ${isEditing ? "update" : "create"} target`);
+      toast.error(`Couldn't ${isEditing ? "update" : "create"} target`);
     } finally {
       setSaving(false);
     }
@@ -182,7 +182,7 @@ export function TargetForm({
         <BottomSheetHeader>
           <BottomSheetTitle>{isEditing ? "Edit storage target" : "Add storage target"}</BottomSheetTitle>
           <BottomSheetDescription>
-            Configure where backups will be stored. Supports S3-compatible storage, Backblaze B2, and SSH/SFTP targets.
+            Configure where backups will be stored. Supports S3-compatible storage, Backblaze B2 and SSH/SFTP targets.
           </BottomSheetDescription>
         </BottomSheetHeader>
 

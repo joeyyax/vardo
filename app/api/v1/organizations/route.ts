@@ -15,7 +15,7 @@ const log = logger.child("api:organizations");
 
 const createOrgSchema = z.object({
   name: z.string().min(1, "Organization name is required").max(100).trim(),
-  slug: z.string().max(100).regex(/^[a-z0-9-]*$/, "Slug must contain only lowercase letters, numbers, and hyphens").optional(),
+  slug: z.string().max(100).regex(/^[a-z0-9-]*$/, "Slug must contain only lowercase letters, numbers and hyphens").optional(),
 }).strict();
 
 /** GET /api/v1/organizations — orgs the user belongs to. */
@@ -49,7 +49,7 @@ export async function GET() {
   } catch (error) {
     log.error("Error fetching organizations:", error);
     return NextResponse.json(
-      { error: "Failed to fetch organizations" },
+      { error: "Couldn't fetch organizations" },
       { status: 500 }
     );
   }
@@ -100,7 +100,7 @@ async function handlePost(request: NextRequest) {
   } catch (error) {
     log.error("Error creating organization:", error);
     return NextResponse.json(
-      { error: "Failed to create organization" },
+      { error: "Couldn't create organization" },
       { status: 500 }
     );
   }

@@ -28,7 +28,7 @@ async function requestContainers(orgId: string): Promise<DiscoverResult> {
     }
     return { data: await res.json() };
   } catch (err) {
-    return { error: err instanceof Error ? err.message : "Failed to load containers" };
+    return { error: err instanceof Error ? err.message : "Couldn't load containers" };
   }
 }
 

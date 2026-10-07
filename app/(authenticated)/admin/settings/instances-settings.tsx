@@ -158,12 +158,12 @@ export function InstancesSettings() {
       });
       const json = await res.json();
       if (!res.ok) {
-        setInviteError(json.error || "Failed to generate invite");
+        setInviteError(json.error || "Couldn't generate invite");
         return;
       }
       setInviteToken(json.token);
     } catch {
-      setInviteError("Failed to generate invite");
+      setInviteError("Couldn't generate invite");
     } finally {
       setInviteLoading(false);
     }
@@ -187,7 +187,7 @@ export function InstancesSettings() {
       });
       const json = await res.json();
       if (!res.ok) {
-        setJoinError(json.error || "Failed to join mesh");
+        setJoinError(json.error || "Couldn't join mesh");
         return;
       }
       toast.success("Connected to mesh");
@@ -196,7 +196,7 @@ export function InstancesSettings() {
       setJoinError(null);
       fetchPeers(true);
     } catch {
-      setJoinError("Failed to join mesh");
+      setJoinError("Couldn't join mesh");
     } finally {
       setJoinLoading(false);
     }
@@ -212,13 +212,13 @@ export function InstancesSettings() {
       );
       if (!res.ok) {
         const json = await res.json();
-        toast.error(json.error || "Failed to remove peer");
+        toast.error(json.error || "Couldn't remove peer");
         return;
       }
       setPeers((prev) => prev.filter((p) => p.id !== deleteTarget.id));
       toast.success(`Removed ${deleteTarget.name}`);
     } catch {
-      toast.error("Failed to remove peer");
+      toast.error("Couldn't remove peer");
     } finally {
       setDeleting(false);
       setDeleteTarget(null);
@@ -232,13 +232,13 @@ export function InstancesSettings() {
         method: "DELETE",
       });
       if (!res.ok) {
-        toast.error("Failed to cancel invite");
+        toast.error("Couldn't cancel invite");
         return;
       }
       setInvites((prev) => prev.filter((i) => i.code !== code));
       toast.success("Invite cancelled");
     } catch {
-      toast.error("Failed to cancel invite");
+      toast.error("Couldn't cancel invite");
     } finally {
       setCancellingCode(null);
     }
@@ -532,7 +532,7 @@ export function InstancesSettings() {
           ) : inviteError ? (
             <>
               <DialogHeader>
-                <DialogTitle>Could not generate invite</DialogTitle>
+                <DialogTitle>Couldn&apos;t generate invite</DialogTitle>
                 <DialogDescription>{inviteError}</DialogDescription>
               </DialogHeader>
               <DialogFooter>

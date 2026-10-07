@@ -26,7 +26,7 @@ export default function AppError({
           <p className="text-sm text-muted-foreground">
             {error.message && error.message !== "An error occurred in the Server Components render."
               ? error.message
-              : "An unexpected error occurred. Please try again or contact support if the problem persists."}
+              : "Something went wrong. Try again."}
           </p>
         </div>
         {error.digest && (

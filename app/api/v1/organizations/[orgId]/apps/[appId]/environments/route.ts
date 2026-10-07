@@ -94,7 +94,7 @@ const createEnvironmentSchema = z.object({
     .max(100)
     .regex(
       /^[a-z0-9][a-z0-9-]*[a-z0-9]$/,
-      "Name must be lowercase alphanumeric with hyphens, and cannot start or end with a hyphen"
+      "Name must be lowercase alphanumeric with hyphens, and can't start or end with a hyphen"
     ),
   type: z.enum(["production", "staging", "preview", "local"]),
   domain: z.string().optional(),
@@ -145,7 +145,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     if (appRecord?.projectId) {
       if (parsed.data.type === "production") {
         return NextResponse.json(
-          { error: "Cannot create additional production environments for a grouped app" },
+          { error: "Can't create additional production environments for a grouped app" },
           { status: 400 }
         );
       }
@@ -297,7 +297,7 @@ async function handleDelete(request: NextRequest, { params }: RouteParams) {
 
     if (env.type === "production") {
       return NextResponse.json(
-        { error: "Cannot delete the production environment" },
+        { error: "Can't delete the production environment" },
         { status: 400 }
       );
     }

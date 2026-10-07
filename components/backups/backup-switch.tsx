@@ -60,12 +60,12 @@ async function writeJson<T>(url: string, enabled: boolean | null): Promise<T | n
     });
     const body = await res.json().catch(() => null);
     if (!res.ok) {
-      toast.error(body?.error ?? "Could not save");
+      toast.error(body?.error ?? "Couldn't save");
       return null;
     }
     return body as T;
   } catch {
-    toast.error("Could not save");
+    toast.error("Couldn't save");
     return null;
   }
 }

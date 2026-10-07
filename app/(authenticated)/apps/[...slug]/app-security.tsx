@@ -116,11 +116,11 @@ function ScanSummary({ scan }: { scan: Scan }) {
 async function requestScans(url: string): Promise<Scan[]> {
   try {
     const res = await fetch(url);
-    if (!res.ok) throw new Error("Failed to load");
+    if (!res.ok) throw new Error("Couldn't load");
     const data = await res.json();
     return data.scans;
   } catch {
-    toast.error("Failed to load security scans");
+    toast.error("Couldn't load security scans");
     return [];
   }
 }
@@ -192,7 +192,7 @@ export function AppSecurity({ appId, orgId }: AppSecurityProps) {
         <div className="space-y-1">
           <p className="text-sm text-muted-foreground">
             Scans run automatically after each deploy and daily. Results surface exposed files, missing
-            security headers, open sensitive ports, and TLS issues.
+            security headers, open sensitive ports and TLS issues.
           </p>
         </div>
         <Button

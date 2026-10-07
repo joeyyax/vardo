@@ -129,7 +129,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     }
 
     if (!jobId) {
-      return fail("NO_BACKUP_JOB", "Could not resolve a backup job for this app", 500);
+      return fail("NO_BACKUP_JOB", "Couldn't resolve a backup job for this app", 500);
     }
 
     const job = await db.query.backupJobs.findFirst({
@@ -138,7 +138,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     });
 
     if (!job) {
-      return fail("NO_BACKUP_JOB", "Could not resolve a backup job for this app", 500);
+      return fail("NO_BACKUP_JOB", "Couldn't resolve a backup job for this app", 500);
     }
 
     // A second concurrent run would tar the same volume twice.
@@ -179,7 +179,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
         assessment,
         warnings: assessment.needsManualCopy
           ? [
-              `${assessment.bindMounts} bind mount(s) will not be captured — copy those host paths manually`,
+              `${assessment.bindMounts} bind mount(s) won't be captured — copy those host paths manually`,
             ]
           : [],
         poll: {

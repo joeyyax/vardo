@@ -139,7 +139,7 @@ export function FleetUpdates({ orgId }: { orgId: string }) {
         body: JSON.stringify({ appId: app.appId, service: entry.service, ...choice }),
       });
       const body = await res.json();
-      if (!res.ok) throw new Error(body.error ?? "Could not ignore that update");
+      if (!res.ok) throw new Error(body.error ?? "Couldn't ignore that update");
       setSelected((prev) => {
         const copy = new Set(prev);
         copy.delete(rowKey(app.appId, entry.service));
@@ -150,7 +150,7 @@ export function FleetUpdates({ orgId }: { orgId: string }) {
       );
       await refresh();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not ignore that update");
+      toast.error(error instanceof Error ? error.message : "Couldn't ignore that update");
     }
   }
 
@@ -162,11 +162,11 @@ export function FleetUpdates({ orgId }: { orgId: string }) {
         body: JSON.stringify({ appId: entry.appId, service: entry.service.service }),
       });
       const body = await res.json();
-      if (!res.ok) throw new Error(body.error ?? "Could not restore that update");
+      if (!res.ok) throw new Error(body.error ?? "Couldn't restore that update");
       toast.success(`${entry.service.service ?? entry.displayName} is back in the list`);
       await refresh();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not restore that update");
+      toast.error(error instanceof Error ? error.message : "Couldn't restore that update");
     }
   }
 
@@ -275,7 +275,7 @@ export function FleetUpdates({ orgId }: { orgId: string }) {
 
   if (!data) {
     return (
-      <p className="type-body-sm text-status-error">Could not read update status for this org.</p>
+      <p className="type-body-sm text-status-error">Couldn&apos;t read update status for this org.</p>
     );
   }
 
@@ -324,7 +324,7 @@ export function FleetUpdates({ orgId }: { orgId: string }) {
           </p>
           {data.unknownCount > 0 && (
             <p className="type-body-sm mt-1 text-muted-foreground/70">
-              {data.unknownCount} image{data.unknownCount === 1 ? "" : "s"} could not be checked.
+              {data.unknownCount} image{data.unknownCount === 1 ? "" : "s"} couldn&apos;t be checked.
             </p>
           )}
         </section>
@@ -393,7 +393,7 @@ export function FleetUpdates({ orgId }: { orgId: string }) {
 
       {data.unknownCount > 0 && data.apps.length > 0 && (
         <p className="type-body-sm text-muted-foreground">
-          {data.unknownCount} image{data.unknownCount === 1 ? "" : "s"} could not be checked and are
+          {data.unknownCount} image{data.unknownCount === 1 ? "" : "s"} couldn&apos;t be checked and are
           not listed.
         </p>
       )}

@@ -73,7 +73,7 @@ export function AppTerminal({ appId, orgId }: AppTerminalProps) {
       if (list.length > 0) setSelectedContainer((prev) => prev || list[0].id);
     } else {
       setContainers([]);
-      setErrorMessage("Failed to fetch containers");
+      setErrorMessage("Couldn't fetch containers");
     }
     setLoadingContainers(false);
   }, []);
@@ -412,7 +412,7 @@ export function AppTerminal({ appId, orgId }: AppTerminalProps) {
 
       {/* Ephemeral notice */}
       <Callout variant="warning">
-        Ephemeral session — filesystem changes will not persist unless written to a persistent volume.
+        Ephemeral session — filesystem changes won&apos;t persist unless written to a persistent volume.
       </Callout>
 
       {/* Terminal */}

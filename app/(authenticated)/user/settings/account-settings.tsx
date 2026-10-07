@@ -46,12 +46,12 @@ export function AccountInfo() {
     try {
       const { error } = await authClient.updateUser({ name: name.trim() });
       if (error) {
-        toast.error(error.message || "Failed to update name");
+        toast.error(error.message || "Couldn't update name");
       } else {
         toast.success("Name updated");
       }
     } catch {
-      toast.error("Failed to update name");
+      toast.error("Couldn't update name");
     } finally {
       setSaving(false);
     }
@@ -110,7 +110,7 @@ export function PasswordManagement() {
   async function handleChangePassword(e: React.FormEvent) {
     e.preventDefault();
     if (newPassword !== confirmPassword) {
-      toast.error("Passwords do not match");
+      toast.error("Passwords don't match");
       return;
     }
     if (newPassword.length < 8) {
@@ -126,7 +126,7 @@ export function PasswordManagement() {
         revokeOtherSessions: false,
       });
       if (error) {
-        toast.error(error.message || "Failed to change password");
+        toast.error(error.message || "Couldn't change password");
       } else {
         toast.success("Password changed");
         setCurrentPassword("");
@@ -134,7 +134,7 @@ export function PasswordManagement() {
         setConfirmPassword("");
       }
     } catch {
-      toast.error("Failed to change password");
+      toast.error("Couldn't change password");
     } finally {
       setSaving(false);
     }
@@ -239,7 +239,7 @@ export function TwoFactorAuth() {
         password: "",
       });
       if (error) {
-        toast.error(error.message || "Failed to enable 2FA");
+        toast.error(error.message || "Couldn't enable 2FA");
         setEnabling(false);
         return;
       }
@@ -248,7 +248,7 @@ export function TwoFactorAuth() {
         setBackupCodes(data.backupCodes);
       }
     } catch {
-      toast.error("Failed to enable 2FA");
+      toast.error("Couldn't enable 2FA");
     } finally {
       setEnabling(false);
     }
@@ -268,7 +268,7 @@ export function TwoFactorAuth() {
         setVerifyCode("");
       }
     } catch {
-      toast.error("Failed to verify code");
+      toast.error("Couldn't verify code");
     } finally {
       setVerifying(false);
     }
@@ -285,14 +285,14 @@ export function TwoFactorAuth() {
         password: disablePassword,
       });
       if (error) {
-        toast.error(error.message || "Failed to disable 2FA");
+        toast.error(error.message || "Couldn't disable 2FA");
       } else {
         toast.success("Two-factor authentication disabled");
         setShowDisable(false);
         setDisablePassword("");
       }
     } catch {
-      toast.error("Failed to disable 2FA");
+      toast.error("Couldn't disable 2FA");
     } finally {
       setDisabling(false);
     }
@@ -500,7 +500,7 @@ export function PasskeyManager() {
       setPasskeys((prev) => prev.filter((p) => p.id !== id));
       toast.success("Passkey removed");
     } catch {
-      toast.error("Failed to remove passkey");
+      toast.error("Couldn't remove passkey");
     } finally {
       setDeleting(null);
     }
@@ -705,12 +705,12 @@ async function requestSessions(): Promise<SessionInfo[] | null> {
   try {
     const { data, error } = await authClient.listSessions();
     if (error) {
-      toast.error("Failed to load sessions");
+      toast.error("Couldn't load sessions");
       return null;
     }
     return data ? (data as SessionInfo[]) : null;
   } catch {
-    toast.error("Failed to load sessions");
+    toast.error("Couldn't load sessions");
     return null;
   }
 }
@@ -733,13 +733,13 @@ export function ActiveSessions() {
     try {
       const { error } = await authClient.revokeSession({ token });
       if (error) {
-        toast.error(error.message || "Failed to revoke session");
+        toast.error(error.message || "Couldn't revoke session");
       } else {
         toast.success("Session revoked");
         setSessions((prev) => prev.filter((s) => s.token !== token));
       }
     } catch {
-      toast.error("Failed to revoke session");
+      toast.error("Couldn't revoke session");
     } finally {
       setRevoking(null);
     }
@@ -911,10 +911,10 @@ export function ApiTokens({ orgId }: { orgId: string }) {
         toast.success("Token created");
       } else {
         const data = await res.json();
-        toast.error(data.error || "Failed to create token");
+        toast.error(data.error || "Couldn't create token");
       }
     } catch {
-      toast.error("Failed to create token");
+      toast.error("Couldn't create token");
     } finally {
       setCreating(false);
     }
@@ -938,10 +938,10 @@ export function ApiTokens({ orgId }: { orgId: string }) {
         toast.success("Token scope updated");
       } else {
         const data = await res.json().catch(() => ({}));
-        toast.error(data.error || "Failed to update token scope");
+        toast.error(data.error || "Couldn't update token scope");
       }
     } catch {
-      toast.error("Failed to update token scope");
+      toast.error("Couldn't update token scope");
     } finally {
       setTogglingScope(null);
     }
@@ -962,10 +962,10 @@ export function ApiTokens({ orgId }: { orgId: string }) {
         setTokens((prev) => prev.filter((t) => t.id !== id));
         toast.success("Token deleted");
       } else {
-        toast.error("Failed to delete token");
+        toast.error("Couldn't delete token");
       }
     } catch {
-      toast.error("Failed to delete token");
+      toast.error("Couldn't delete token");
     } finally {
       setDeleting(null);
     }

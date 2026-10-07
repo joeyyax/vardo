@@ -70,7 +70,7 @@ export function AppBackupHistory({
       });
       const body = await res.json();
       if (!res.ok) {
-        toast.error(body.error || "Could not start a backup");
+        toast.error(body.error || "Couldn't start a backup");
         return;
       }
       const warning = (body.warnings ?? [])[0];
@@ -78,7 +78,7 @@ export function AppBackupHistory({
       // The run is async; the row appears once the engine writes it.
       setTimeout(fetchData, 2000);
     } catch {
-      toast.error("Could not reach the backup service");
+      toast.error("Couldn't reach the backup service");
     } finally {
       setBackingUp(false);
     }

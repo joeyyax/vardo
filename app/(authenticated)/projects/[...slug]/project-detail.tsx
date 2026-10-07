@@ -758,13 +758,13 @@ export function ProjectDetail({
       );
       if (!res.ok) {
         const data = await res.json();
-        toast.error(data.error || "Failed to delete project");
+        toast.error(data.error || "Couldn't delete project");
         return;
       }
       toast.success("Project deleted");
       router.push("/projects");
     } catch {
-      toast.error("Failed to delete project");
+      toast.error("Couldn't delete project");
     } finally {
       setDeleting(false);
     }
@@ -879,10 +879,10 @@ export function ProjectDetail({
         router.refresh();
       } else {
         const data = await res.json().catch(() => ({}));
-        toast.error(data.error || "Failed to update");
+        toast.error(data.error || "Couldn't update");
       }
     } catch {
-      toast.error("Failed to update");
+      toast.error("Couldn't update");
     } finally {
       setEditSaving(false);
     }
@@ -909,10 +909,10 @@ export function ProjectDetail({
         router.refresh();
       } else {
         const data = await res.json();
-        toast.error(data.error || "Failed to create environment");
+        toast.error(data.error || "Couldn't create environment");
       }
     } catch {
-      toast.error("Failed to create environment");
+      toast.error("Couldn't create environment");
     } finally {
       setNewEnvSaving(false);
     }
@@ -1241,7 +1241,7 @@ export function ProjectDetail({
                   deleteRefusal ??
                   (topLevelApps.length > 0
                     ? `Move or delete its ${topLevelApps.length} app${topLevelApps.length === 1 ? "" : "s"} first.`
-                    : "This cannot be undone.")
+                    : "This can't be undone.")
                 }
                 action={
                   <Button
@@ -1302,7 +1302,7 @@ export function ProjectDetail({
         onConfirm={handleDelete}
         loading={deleting}
         title="Delete project"
-        description={`Delete the project "${project.displayName}"? This action cannot be undone.`}
+        description={`Delete the project "${project.displayName}"? This action can't be undone.`}
       />
 
       {/* Stop all confirmation */}

@@ -58,7 +58,7 @@ export function useSystemSetting<T extends Record<string, unknown>>(
         });
         if (!res.ok) {
           const body = await res.json().catch(() => null);
-          const msg = body?.error ?? "Failed to save";
+          const msg = body?.error ?? "Couldn't save";
           throw new Error(msg);
         }
         toast.success(`${opts.label} saved`);
@@ -67,7 +67,7 @@ export function useSystemSetting<T extends Record<string, unknown>>(
         fetchConfig();
       } catch (err) {
         toast.error(
-          err instanceof Error ? err.message : `Failed to save ${opts.label.toLowerCase()}`,
+          err instanceof Error ? err.message : `Couldn't save ${opts.label.toLowerCase()}`,
         );
         // Reload server state to roll back optimistic updates.
         fetchConfig();

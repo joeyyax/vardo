@@ -87,7 +87,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
 
     if (domain === DEFAULT_DOMAIN) {
       return NextResponse.json(
-        { error: "Cannot add the default domain as a custom domain" },
+        { error: "Can't add the default domain as a custom domain" },
         { status: 400 }
       );
     }
@@ -215,7 +215,7 @@ async function handleDelete(request: NextRequest, { params }: RouteParams) {
 
     if (existing.isDefault) {
       return NextResponse.json(
-        { error: "Cannot delete the default domain" },
+        { error: "Can't delete the default domain" },
         { status: 400 }
       );
     }

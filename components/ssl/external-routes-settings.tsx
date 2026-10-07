@@ -152,7 +152,7 @@ export function ExternalRoutesSettings() {
       });
       const json = await res.json();
       if (!res.ok) {
-        setAddError(json.error || "Failed to create route");
+        setAddError(json.error || "Couldn't create route");
         return;
       }
       setRoutes((prev) => [...prev, json.route].sort((a, b) => a.hostname.localeCompare(b.hostname)));
@@ -160,7 +160,7 @@ export function ExternalRoutesSettings() {
       setAddOpen(false);
       setAddForm(defaultForm);
     } catch {
-      setAddError("Failed to create route");
+      setAddError("Couldn't create route");
     } finally {
       setAddSaving(false);
     }
@@ -188,7 +188,7 @@ export function ExternalRoutesSettings() {
       });
       const json = await res.json();
       if (!res.ok) {
-        setEditError(json.error || "Failed to update route");
+        setEditError(json.error || "Couldn't update route");
         return;
       }
       setRoutes((prev) =>
@@ -199,7 +199,7 @@ export function ExternalRoutesSettings() {
       toast.success(`Route for ${json.route.hostname} updated`);
       setEditTarget(null);
     } catch {
-      setEditError("Failed to update route");
+      setEditError("Couldn't update route");
     } finally {
       setEditSaving(false);
     }
@@ -214,13 +214,13 @@ export function ExternalRoutesSettings() {
       });
       if (!res.ok) {
         const json = await res.json();
-        toast.error(json.error || "Failed to delete route");
+        toast.error(json.error || "Couldn't delete route");
         return;
       }
       setRoutes((prev) => prev.filter((r) => r.id !== deleteTarget.id));
       toast.success(`Route for ${deleteTarget.hostname} deleted`);
     } catch {
-      toast.error("Failed to delete route");
+      toast.error("Couldn't delete route");
     } finally {
       setDeleting(false);
       setDeleteTarget(null);

@@ -38,7 +38,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
 
     if (destinationOrgId === orgId) {
       return NextResponse.json(
-        { error: "Cannot transfer an app to the same organization" },
+        { error: "Can't transfer an app to the same organization" },
         { status: 400 },
       );
     }

@@ -218,7 +218,7 @@ export function NewAppFlow({ orgId, templates, parentApps = [], baseDomain: base
       try {
         const res = await fetch(`/api/v1/github/repos?installationId=${selectedInstallation}`);
         if (res.ok && !cancelled) setRepos((await res.json()).repos || []);
-      } catch { if (!cancelled) toast.error("Failed to fetch repositories"); }
+      } catch { if (!cancelled) toast.error("Couldn't fetch repositories"); }
       finally { if (!cancelled) setReposLoading(false); }
     })();
     return () => { cancelled = true; };
@@ -390,7 +390,7 @@ export function NewAppFlow({ orgId, templates, parentApps = [], baseDomain: base
     });
     const data = await res.json();
     if (!res.ok) {
-      toast.error(data.error || "Failed to create project");
+      toast.error(data.error || "Couldn't create project");
       return null;
     }
     return { id: data.project.id, name: data.project.name };
@@ -410,7 +410,7 @@ export function NewAppFlow({ orgId, templates, parentApps = [], baseDomain: base
     });
     if (!repoRes.ok) {
       const err = await repoRes.json().catch(() => ({}));
-      toast.error(err.error || "Failed to create repository — the app has no source yet");
+      toast.error(err.error || "Couldn't create repository — the app has no source yet");
       return false;
     }
     const { repo } = await repoRes.json();
@@ -478,7 +478,7 @@ export function NewAppFlow({ orgId, templates, parentApps = [], baseDomain: base
       });
       if (!res.ok) {
         const data = await res.json();
-        toast.error(data.error || "Failed to create app");
+        toast.error(data.error || "Couldn't create app");
         return;
       }
 
@@ -510,7 +510,7 @@ export function NewAppFlow({ orgId, templates, parentApps = [], baseDomain: base
       router.push(
         deploying || !projectName ? `/apps/${app.name}` : `/projects/${projectName}`
       );
-    } catch (err) { toast.error(err instanceof Error ? err.message : "Failed to create app"); }
+    } catch (err) { toast.error(err instanceof Error ? err.message : "Couldn't create app"); }
     finally { setCreating(false); }
   }
 
@@ -659,9 +659,9 @@ export function NewAppFlow({ orgId, templates, parentApps = [], baseDomain: base
                               return;
                             }
                           }
-                          toast.error("Failed to start GitHub connection");
+                          toast.error("Couldn't start GitHub connection");
                         } catch {
-                          toast.error("Failed to connect GitHub");
+                          toast.error("Couldn't connect GitHub");
                         } finally {
                           setConnectingGithub(false);
                         }
@@ -767,7 +767,7 @@ export function NewAppFlow({ orgId, templates, parentApps = [], baseDomain: base
                   <p className="text-xs text-destructive">{slugMessage}</p>
                 ) : (
                   <p className="text-xs text-muted-foreground">
-                    Must be unique across the whole instance, not just this organization.
+                    Must be unique across the whole instance, not only this organization.
                   </p>
                 )}
               </div>

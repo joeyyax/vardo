@@ -155,7 +155,7 @@ export function AppNetworking({
         }
       }
     } catch {
-      toast.error("Failed to update primary domain");
+      toast.error("Couldn't update primary domain");
     }
   }
 
@@ -181,7 +181,7 @@ export function AppNetworking({
       );
       if (!res.ok) {
         const data = await res.json();
-        toast.error(data.error || "Failed to add domain");
+        toast.error(data.error || "Couldn't add domain");
         return;
       }
       toast.success("Domain added");
@@ -193,7 +193,7 @@ export function AppNetworking({
       setNewDomainRedirectCode("301");
       router.refresh();
     } catch {
-      toast.error("Failed to add domain");
+      toast.error("Couldn't add domain");
     } finally {
       setDomainSaving(false);
     }
@@ -212,13 +212,13 @@ export function AppNetworking({
       );
       if (!res.ok) {
         const data = await res.json();
-        toast.error(data.error || "Failed to delete domain");
+        toast.error(data.error || "Couldn't delete domain");
         return;
       }
       toast.success("Domain removed");
       router.refresh();
     } catch {
-      toast.error("Failed to delete domain");
+      toast.error("Couldn't delete domain");
     } finally {
       setDeletingDomainId(null);
     }
@@ -247,14 +247,14 @@ export function AppNetworking({
       );
       if (!res.ok) {
         const data = await res.json();
-        toast.error(data.error || "Failed to update domain");
+        toast.error(data.error || "Couldn't update domain");
         return;
       }
       toast.success("Domain updated");
       setEditingDomainId(null);
       router.refresh();
     } catch {
-      toast.error("Failed to update domain");
+      toast.error("Couldn't update domain");
     } finally {
       setDomainSaving(false);
     }
@@ -599,8 +599,8 @@ export function AppNetworking({
                     }`} />
                     <span className="text-sm">
                       {isLocal
-                        ? (status === "resolving" ? "Service is reachable" : status === "not-configured" ? "Service is not reachable" : "Checking...")
-                        : (status === "resolving" ? "Domain is correctly pointed to this server" : status === "not-configured" ? "Domain is not pointed to this server" : "Checking domain status...")}
+                        ? (status === "resolving" ? "Service is reachable" : status === "not-configured" ? "Service isn't reachable" : "Checking...")
+                        : (status === "resolving" ? "Domain is correctly pointed to this server" : status === "not-configured" ? "Domain isn't pointed to this server" : "Checking domain status...")}
                     </span>
                   <Button
                     size="xs"

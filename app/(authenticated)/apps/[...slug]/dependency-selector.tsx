@@ -65,14 +65,14 @@ export function DependencySelector({
         body: JSON.stringify({ dependsOn: updated.length > 0 ? updated : null }),
       });
       if (!res.ok) {
-        toast.error("Failed to update dependencies");
+        toast.error("Couldn't update dependencies");
         return;
       }
       setDeps(updated);
       toast.success("Dependencies updated");
       router.refresh();
     } catch {
-      toast.error("Failed to update dependencies");
+      toast.error("Couldn't update dependencies");
     } finally {
       setSaving(false);
     }

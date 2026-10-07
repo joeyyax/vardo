@@ -45,7 +45,7 @@ export function FeatureFlagsSettings() {
 
   const fetchFlags = useCallback(async () => {
     const res = await fetch("/api/setup/feature-flags");
-    if (!res.ok) throw new Error("Failed to fetch");
+    if (!res.ok) throw new Error("Couldn't fetch");
     const data = await res.json();
     setFlags(data.flags ?? []);
     setGroups(data.groups ?? []);

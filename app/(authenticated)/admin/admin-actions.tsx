@@ -77,10 +77,10 @@ export function UserManagement() {
         toast.success("User invited");
       } else {
         const data = await res.json();
-        toast.error(data.error || "Failed to invite user");
+        toast.error(data.error || "Couldn't invite user");
       }
     } catch {
-      toast.error("Failed to invite user");
+      toast.error("Couldn't invite user");
     } finally {
       setInviting(false);
     }

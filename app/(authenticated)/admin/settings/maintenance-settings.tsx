@@ -138,11 +138,11 @@ type OwnerReport = {
 };
 
 const GAP_LABELS: Record<OwnerGap["reason"], string> = {
-  unreadable: "Marker could not be read",
+  unreadable: "Ownership file couldn't be read",
   orphaned: "No app owns this directory",
   ambiguous: "More than one app claims the name",
-  unwritable: "Marker could not be written",
-  failed: "Could not be checked",
+  unwritable: "Ownership file couldn't be written",
+  failed: "Couldn't be checked",
 };
 
 type MountsConfig = {
@@ -248,13 +248,13 @@ export function MaintenanceSettings() {
       const res = await fetch("/api/v1/admin/maintenance/build-cache", { method: "POST" });
       const data = await res.json();
       if (!res.ok) {
-        toast.error(data.error ?? "Failed to reclaim build cache");
+        toast.error(data.error ?? "Couldn't reclaim build cache");
         return;
       }
       toast.success(`Reclaimed ${formatBytes(data.reclaimed)}`);
       void fetchBuildCache();
     } catch {
-      toast.error("Failed to reclaim build cache");
+      toast.error("Couldn't reclaim build cache");
     } finally {
       setReclaiming(false);
     }
@@ -290,13 +290,13 @@ export function MaintenanceSettings() {
       });
       if (!res.ok) {
         const data = await res.json();
-        toast.error(data.error ?? "Failed to save");
+        toast.error(data.error ?? "Couldn't save");
         return;
       }
       toast.success(enabled ? "Scheduled reclamation on" : "Scheduled reclamation off");
       void fetchImages();
     } catch {
-      toast.error("Failed to save reclamation settings");
+      toast.error("Couldn't save reclamation settings");
     } finally {
       setSavingImages(false);
     }
@@ -312,19 +312,19 @@ export function MaintenanceSettings() {
       });
       const data = await res.json();
       if (!res.ok) {
-        toast.error(data.error ?? "Failed to reclaim images");
+        toast.error(data.error ?? "Couldn't reclaim images");
         return;
       }
       const idle = data.result.reclaimed.length;
       const slots = data.slotResult?.reclaimed.length ?? 0;
       toast.success(`Removed ${idle + slots} image${idle + slots === 1 ? "" : "s"}`, {
         description: slots
-          ? `${idle} from idle apps, ${slots} from old slot generations. Volumes were not touched.`
-          : "Volumes were not touched.",
+          ? `${idle} from idle apps, ${slots} from old slot generations. Volumes weren't touched.`
+          : "Volumes weren't touched.",
       });
       void fetchImages();
     } catch {
-      toast.error("Failed to reclaim images");
+      toast.error("Couldn't reclaim images");
     } finally {
       setReclaimingImages(false);
     }
@@ -349,20 +349,20 @@ export function MaintenanceSettings() {
       const res = await fetch("/api/v1/admin/maintenance/app-dir-owners", { method: "POST" });
       const data = await res.json();
       if (!res.ok) {
-        toast.error(data.error ?? "Failed to stamp app directories");
+        toast.error(data.error ?? "Couldn't assign directory owners");
         return;
       }
       const report: OwnerReport = data;
       const owned = report.stamped + report.alreadyOwned;
-      toast.success(`${owned} of ${report.total} directories own a marker`, {
+      toast.success(`${owned} of ${report.total} directories have an owner`, {
         description:
           report.gaps.length > 0
-            ? `${report.stamped} stamped. ${report.gaps.length} still need attention.`
-            : `${report.stamped} stamped.`,
+            ? `${report.stamped} newly assigned. ${report.gaps.length} still need attention.`
+            : `${report.stamped} newly assigned.`,
       });
       setOwners(report);
     } catch {
-      toast.error("Failed to stamp app directories");
+      toast.error("Couldn't assign directory owners");
     } finally {
       setStampingOwners(false);
     }
@@ -388,7 +388,7 @@ export function MaintenanceSettings() {
       // Refresh per-service badges.
       void fetchStatus();
     } catch {
-      toast.error(service ? `Failed to restart ${service}` : "Failed to restart services");
+      toast.error(service ? `Couldn't restart ${service}` : "Couldn't restart services");
     } finally {
       // Clear restarting unless a page reload is pending.
       if (service && service !== "vardo-frontend") {
@@ -411,7 +411,7 @@ export function MaintenanceSettings() {
       });
       setTimeout(() => window.location.reload(), 30000);
     } catch {
-      toast.error("Failed to initiate update");
+      toast.error("Couldn't initiate update");
     } finally {
       setUpdating(false);
     }
@@ -443,14 +443,14 @@ export function MaintenanceSettings() {
       });
       if (!res.ok) {
         const data = await res.json();
-        toast.error(data.error ?? "Failed to save mounts");
+        toast.error(data.error ?? "Couldn't save mounts");
         return;
       }
       toast.success("Mount configuration saved", {
         description: "Restart the stack to apply the new mounts.",
       });
     } catch {
-      toast.error("Failed to save mount configuration");
+      toast.error("Couldn't save mount configuration");
     } finally {
       setSavingMounts(false);
     }
@@ -461,7 +461,7 @@ export function MaintenanceSettings() {
       <div className="space-y-1">
         <h2 className="type-h2">Maintenance</h2>
         <p className="text-sm text-muted-foreground">
-          Manage the Vardo stack — service status, restarts, updates, and volume mounts.
+          Manage the Vardo stack — service status, restarts, updates and volume mounts.
         </p>
       </div>
 
@@ -563,14 +563,14 @@ export function MaintenanceSettings() {
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            Pull the latest code from git, rebuild the frontend image, and restart the stack.
+            Pull the latest code from git, rebuild the frontend image and restart the stack.
             The current session will be interrupted while the container restarts.
           </p>
           {!loadingStatus && !status?.hasVardoDir && (
             <div className="flex items-start gap-2 text-sm text-status-warning">
               <AlertCircle className="size-4 shrink-0 mt-0.5" aria-hidden="true" />
               <span>
-                <code className="text-xs font-mono">VARDO_HOME_DIR</code> is not set. Update requires
+                <code className="text-xs font-mono">VARDO_HOME_DIR</code> isn&apos;t set. Update requires
                 access to the installation directory.
               </span>
             </div>
@@ -598,7 +598,7 @@ export function MaintenanceSettings() {
               <AlertDialogHeader>
                 <AlertDialogTitle>Pull and rebuild?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  This will run git pull, rebuild the frontend image, and restart the stack.
+                  This will run git pull, rebuild the frontend image and restart the stack.
                   All active sessions will be interrupted during the restart.
                 </AlertDialogDescription>
               </AlertDialogHeader>
@@ -624,7 +624,7 @@ export function MaintenanceSettings() {
         <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground">
             Docker build cache accumulates with every app build. Reclaiming it removes
-            unused layers and does not affect running services.
+            unused layers and doesn&apos;t affect running services.
           </p>
           {loadingBuildCache ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -634,7 +634,7 @@ export function MaintenanceSettings() {
           ) : buildCache?.reclaimable === null || buildCache?.reclaimable === undefined ? (
             <div className="flex items-center gap-2 text-sm text-status-warning">
               <AlertCircle className="size-4 shrink-0" aria-hidden="true" />
-              Reclaimable space is unknown — Docker did not report build cache usage.
+              Reclaimable space is unknown — Docker didn&apos;t report build cache usage.
             </div>
           ) : (
             <p className="text-sm">
@@ -669,8 +669,8 @@ export function MaintenanceSettings() {
                 <AlertDialogTitle>Reclaim build cache?</AlertDialogTitle>
                 <AlertDialogDescription>
                   {buildCache?.reclaimable != null
-                    ? `This will remove all unused build cache, freeing approximately ${formatBytes(buildCache.reclaimable)}. This cannot be undone.`
-                    : "Reclaimable space is currently unknown. This will remove all unused build cache. This cannot be undone."}
+                    ? `This removes all unused build cache, freeing about ${formatBytes(buildCache.reclaimable)}. This can't be undone.`
+                    : "Reclaimable space is unknown. This removes all unused build cache. This can't be undone."}
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
@@ -694,7 +694,7 @@ export function MaintenanceSettings() {
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            Removes the images of apps that have not run for a while. Each app pulls its
+            Removes the images of apps that haven&apos;t run for a while. Each app pulls its
             image again the next time it starts. Volumes are never touched.
           </p>
 
@@ -740,7 +740,7 @@ export function MaintenanceSettings() {
           ) : !images?.plan ? (
             <div className="flex items-center gap-2 text-sm text-status-warning">
               <AlertCircle className="size-4 shrink-0" aria-hidden="true" />
-              Could not read the image list — the plan is unavailable.
+              Couldn&apos;t read the image list — the plan is unavailable.
             </div>
           ) : images.plan.candidates.length === 0 ? (
             <p className="text-sm text-muted-foreground">
@@ -854,7 +854,7 @@ export function MaintenanceSettings() {
               {images.lastRun.imagesRemoved === 1 ? "" : "s"} from {images.lastRun.appsAffected} app
               {images.lastRun.appsAffected === 1 ? "" : "s"}, up to{" "}
               {formatBytes(images.lastRun.estimatedBytesFreed)}
-              {images.lastRun.failures > 0 && `, ${images.lastRun.failures} could not be removed`}.
+              {images.lastRun.failures > 0 && `, ${images.lastRun.failures} couldn't be removed`}.
             </p>
           )}
 
@@ -901,7 +901,7 @@ export function MaintenanceSettings() {
                             : ""
                         }.`
                       : null,
-                    "Volumes are not touched.",
+                    "Volumes aren't touched.",
                   ]
                     .filter(Boolean)
                     .join(" ")}
@@ -928,9 +928,9 @@ export function MaintenanceSettings() {
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            Each app directory carries a marker naming the app that owns it, so a destructive
-            operation can never hit another app&apos;s files. Directories created before markers
-            existed are matched by name and stamped.
+            Each app directory carries an ownership file naming the app that owns it, so a destructive
+            operation can never hit another app&apos;s files. Directories created before ownership
+            files existed are matched by name and assigned one.
           </p>
 
           {loadingOwners ? (
@@ -941,7 +941,7 @@ export function MaintenanceSettings() {
           ) : !owners ? (
             <div className="flex items-center gap-2 text-sm text-status-warning">
               <AlertCircle className="size-4 shrink-0" aria-hidden="true" />
-              Could not read the app directory — coverage is unknown.
+              Couldn&apos;t read the app directory — coverage is unknown.
             </div>
           ) : (
             <div className="space-y-2">
@@ -951,10 +951,10 @@ export function MaintenanceSettings() {
                   {owners.total}
                 </span>{" "}
                 <span className="text-muted-foreground">
-                  director{owners.total === 1 ? "y" : "ies"} own a marker
+                  director{owners.total === 1 ? "y has" : "ies have"} an owner
                 </span>
                 {owners.dryRun && owners.stamped > 0 && (
-                  <span className="text-muted-foreground">, {owners.stamped} ready to stamp</span>
+                  <span className="text-muted-foreground">, {owners.stamped} ready to assign</span>
                 )}
                 {owners.exempt > 0 && (
                   <span className="text-muted-foreground">, {owners.exempt} exempt</span>
@@ -993,12 +993,12 @@ export function MaintenanceSettings() {
             {stampingOwners ? (
               <>
                 <Loader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
-                Stamping...
+                Assigning owners...
               </>
             ) : (
               <>
                 <FileCheck className="size-4" aria-hidden="true" />
-                Stamp directories
+                Assign owners
               </>
             )}
           </Button>

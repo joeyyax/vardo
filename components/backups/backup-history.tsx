@@ -74,7 +74,7 @@ export function BackupHistory({
       );
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        toast.error(data.error ?? "Failed to delete backup");
+        toast.error(data.error ?? "Couldn't delete backup");
         return;
       }
       if (deleteAll) {
@@ -88,7 +88,7 @@ export function BackupHistory({
       setPendingDelete(null);
       onRefresh();
     } catch {
-      toast.error("Failed to delete backup");
+      toast.error("Couldn't delete backup");
     } finally {
       setDeleting(false);
     }

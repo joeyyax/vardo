@@ -57,7 +57,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
         const targetHost = new URL(parsed.data.redirectTo).hostname;
         if (targetHost === parsed.data.domain) {
           return NextResponse.json(
-            { error: "Redirect target cannot be the same domain (infinite redirect loop)" },
+            { error: "Redirect target can't be the same domain (infinite redirect loop)" },
             { status: 400 }
           );
         }
@@ -139,7 +139,7 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
       if (existing) {
         const redirectHost = new URL(updates.redirectTo).hostname;
         if (redirectHost === existing.domain) {
-          return NextResponse.json({ error: "Cannot redirect a domain to itself" }, { status: 400 });
+          return NextResponse.json({ error: "Can't redirect a domain to itself" }, { status: 400 });
         }
       }
     }

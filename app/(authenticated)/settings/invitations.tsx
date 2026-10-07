@@ -92,7 +92,7 @@ export function InvitationsPanel({
       body: JSON.stringify({ send: false }),
     }).then(async (res) => {
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to create an invite link");
+      if (!res.ok) throw new Error(data.error || "Couldn't create an invite link");
       return data.inviteUrl as string;
     });
 
@@ -104,7 +104,7 @@ export function InvitationsPanel({
       setCopiedId(invitationId);
       setTimeout(() => setCopiedId((id) => (id === invitationId ? null : id)), 2000);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to create an invite link");
+      toast.error(err instanceof Error ? err.message : "Couldn't create an invite link");
     } finally {
       setPendingAction(null);
     }
@@ -116,7 +116,7 @@ export function InvitationsPanel({
 
     const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailPattern.test(trimmedEmail)) {
-      toast.error("Please enter a valid email address");
+      toast.error("Enter a valid email address");
       return;
     }
 
@@ -135,13 +135,13 @@ export function InvitationsPanel({
       const data = await res.json();
 
       if (!res.ok) {
-        toast.error(data.error || "Failed to send invitation");
+        toast.error(data.error || "Couldn't send invitation");
         return;
       }
 
       if (!data.email?.configured) {
         toast.warning(`Invitation created for ${trimmedEmail}`, {
-          description: "Email is not configured, so no message was sent. Copy the invite link to share it.",
+          description: "Email isn't configured, so no message was sent. Copy the invite link to share it.",
         });
       } else if (!data.email.sent) {
         toast.warning(`Invitation created for ${trimmedEmail}`, {
@@ -156,7 +156,7 @@ export function InvitationsPanel({
       setInviteRole("member");
       router.refresh();
     } catch {
-      toast.error("Failed to send invitation");
+      toast.error("Couldn't send invitation");
     } finally {
       setInviting(false);
     }
@@ -177,7 +177,7 @@ export function InvitationsPanel({
       const data = await res.json();
 
       if (!res.ok) {
-        toast.error(data.error || "Failed to revoke invitation");
+        toast.error(data.error || "Couldn't revoke invitation");
         return;
       }
 
@@ -185,7 +185,7 @@ export function InvitationsPanel({
       setRevokedIds((prev) => [...prev, invitationId]);
       router.refresh();
     } catch {
-      toast.error("Failed to revoke invitation");
+      toast.error("Couldn't revoke invitation");
     } finally {
       setPendingAction(null);
     }
@@ -203,16 +203,16 @@ export function InvitationsPanel({
       const data = await res.json();
 
       if (!res.ok) {
-        toast.error(data.error || "Failed to resend invitation");
+        toast.error(data.error || "Couldn't resend invitation");
         return;
       }
 
       if (!data.email?.configured) {
         toast.warning("No email was sent", {
-          description: "Email is not configured. Copy the invite link to share it.",
+          description: "Email isn't configured. Copy the invite link to share it.",
         });
       } else if (!data.email.sent) {
-        toast.error(`Failed to resend to ${email}`, {
+        toast.error(`Couldn't resend to ${email}`, {
           description: data.email.error,
         });
       } else {
@@ -220,7 +220,7 @@ export function InvitationsPanel({
       }
       router.refresh();
     } catch {
-      toast.error("Failed to resend invitation");
+      toast.error("Couldn't resend invitation");
     } finally {
       setPendingAction(null);
     }
@@ -244,7 +244,7 @@ export function InvitationsPanel({
           <div className="flex items-start gap-2 rounded-lg bg-status-warning-muted px-4 py-2.5 text-sm text-status-warning">
             <AlertTriangle className="size-4 shrink-0 mt-0.5" aria-hidden="true" />
             <span className="flex-1">
-              Email is not configured, so invitations are not delivered. Copy each invite link and send it yourself, or set up a provider in notification settings.
+              Email isn&apos;t configured, so invitations aren&apos;t delivered. Copy each invite link and send it yourself, or set up a provider in notification settings.
             </span>
           </div>
         )}
@@ -376,7 +376,7 @@ export function InvitationsPanel({
             <BottomSheetDescription>
               {emailConfigured
                 ? "Send an invitation email. They'll get a link to join the organization."
-                : "Email is not configured, so nothing will be sent. You'll get a link to share yourself."}
+                : "Email isn't configured, so nothing will be sent. You'll get a link to share yourself."}
             </BottomSheetDescription>
           </BottomSheetHeader>
           <div className="flex-1 overflow-y-auto px-6 pb-6">
@@ -423,7 +423,7 @@ export function InvitationsPanel({
                 </div>
                 <p className="text-xs text-muted-foreground">
                   {inviteRole === "admin"
-                    ? "Admins can manage members, settings, and all projects."
+                    ? "Admins can manage members, settings and all projects."
                     : "Members can view and deploy projects."}
                 </p>
               </fieldset>

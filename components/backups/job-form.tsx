@@ -97,10 +97,10 @@ export function JobForm({
         onCreated();
       } else {
         const err = await res.json();
-        toast.error(err.error || "Failed to create job");
+        toast.error(err.error || "Couldn't create job");
       }
     } catch {
-      toast.error("Failed to create job");
+      toast.error("Couldn't create job");
     } finally {
       setSaving(false);
     }
@@ -112,7 +112,7 @@ export function JobForm({
         <BottomSheetHeader>
           <BottomSheetTitle>New backup job</BottomSheetTitle>
           <BottomSheetDescription>
-            Configure a scheduled backup for your apps. Select a storage target, schedule, and retention policy.
+            Configure a scheduled backup for your apps. Select a storage target, schedule and retention policy.
           </BottomSheetDescription>
         </BottomSheetHeader>
 

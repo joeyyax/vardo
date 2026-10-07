@@ -321,14 +321,14 @@ export function useDeploy({
       );
       if (!res.ok) {
         const data = await res.json();
-        toast.error(data.error || "Failed to load rollback preview");
+        toast.error(data.error || "Couldn't load rollback preview");
         setRollbackTarget(null);
         return;
       }
       const preview = await res.json();
       setRollbackPreview(preview);
     } catch {
-      toast.error("Failed to load rollback preview");
+      toast.error("Couldn't load rollback preview");
       setRollbackTarget(null);
     } finally {
       setRollbackLoading(false);

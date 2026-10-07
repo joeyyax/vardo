@@ -98,7 +98,7 @@ function TabContent({
           <div>
             <h2 className="type-h2">API tokens</h2>
             <p className="text-sm text-muted-foreground">
-              Create tokens for CI/CD pipelines, scripts, and external integrations.
+              Create tokens for CI/CD pipelines, scripts and external integrations.
             </p>
           </div>
           {!orgId ? (

@@ -394,7 +394,7 @@ export function CommandPalette({ orgId, teamsEnabled = true, activityEnabled = t
                     className="gap-2"
                   >
                     <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">{key}</code>
-                    <span className="text-xs text-muted-foreground ml-auto">Org variable</span>
+                    <span className="text-xs text-muted-foreground ml-auto">Organization variable</span>
                   </CommandItem>
                 ))}
               </CommandGroup>

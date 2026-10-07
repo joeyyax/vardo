@@ -82,7 +82,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 
     if (!dockerVolumeName) {
       return NextResponse.json(
-        { error: "Volume is not currently mounted. Deploy the app first." },
+        { error: "Volume isn't mounted. Deploy the app first." },
         { status: 400 },
       );
     }

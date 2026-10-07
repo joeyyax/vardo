@@ -93,7 +93,7 @@ async function handlePost(request: NextRequest) {
       });
     } catch {
       return NextResponse.json(
-        { error: "Could not reach the other instance. Check that it's online and accessible." },
+        { error: "Couldn't reach the other instance. Check that it's online and accessible." },
         { status: 502 }
       );
     }

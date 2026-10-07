@@ -45,7 +45,7 @@ async function guardAuthMethods(request: NextRequest): Promise<NextResponse | nu
 
   if (method === "password" && !isPasswordAuthAllowed()) {
     return NextResponse.json(
-      { error: "Password authentication is not available on this instance" },
+      { error: "Password authentication isn't available on this instance" },
       { status: 403 },
     );
   }

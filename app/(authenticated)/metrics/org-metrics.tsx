@@ -323,7 +323,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
         <div className="text-center space-y-1">
           <p className="type-h4">No apps deployed yet</p>
           <p className="text-sm text-muted-foreground">
-            Deploy an app to start seeing CPU, memory, network, and disk metrics.
+            Deploy an app to start seeing CPU, memory, network and disk metrics.
           </p>
         </div>
         <Button size="sm" asChild>
@@ -634,7 +634,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
           <div className="text-center space-y-1">
             <p className="type-h4">Metrics will appear here</p>
             <p className="text-sm text-muted-foreground">
-              Deploy your first app to see CPU, memory, network, and disk usage across your infrastructure.
+              Deploy your first app to see CPU, memory, network and disk usage across your infrastructure.
             </p>
           </div>
           <Button size="sm" asChild>

@@ -47,13 +47,13 @@ export function AdminOrganizations() {
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        throw new Error(data.error ?? "Failed to save");
+        throw new Error(data.error ?? "Couldn't save");
       }
 
       toast.success(value ? "Trusted environment enabled" : "Trusted environment disabled");
     } catch (err) {
       setOrgs((prev) => prev?.map((o) => o.id === orgId ? { ...o, trusted: !value } : o) ?? prev);
-      toast.error(err instanceof Error ? err.message : "Failed to save");
+      toast.error(err instanceof Error ? err.message : "Couldn't save");
     } finally {
       setSavingTrusted((prev) => ({ ...prev, [orgId]: false }));
     }
@@ -79,11 +79,11 @@ export function AdminOrganizations() {
 
   return (
     <div className="squircle rounded-lg bg-card overflow-x-auto shadow-card dark:border">
-      <div className="grid grid-cols-[1fr_70px_70px_70px_90px_100px_80px_80px] gap-3 px-4 py-2 bg-background-deep text-xs text-muted-foreground whitespace-nowrap min-w-[800px]">
+      <div className="grid grid-cols-[1fr_70px_70px_90px_90px_100px_80px_80px] gap-3 px-4 py-2 bg-background-deep text-xs text-muted-foreground whitespace-nowrap min-w-[800px]">
         <span>Organization</span>
         <span className="text-right">Members</span>
         <span className="text-right">Apps</span>
-        <span className="text-right">Deploys</span>
+        <span className="text-right">Deployments</span>
         <span className="text-right">CPU</span>
         <span className="text-right">Memory</span>
         <span className="text-right">Containers</span>
@@ -93,7 +93,7 @@ export function AdminOrganizations() {
         {orgs.map((org) => (
           <div
             key={org.id}
-            className="grid grid-cols-[1fr_70px_70px_70px_90px_100px_80px_80px] gap-3 px-4 py-3 items-center whitespace-nowrap min-w-[800px]"
+            className="grid grid-cols-[1fr_70px_70px_90px_90px_100px_80px_80px] gap-3 px-4 py-3 items-center whitespace-nowrap min-w-[800px]"
           >
             <div className="min-w-0">
               <p className="text-sm font-medium truncate">{org.name}</p>

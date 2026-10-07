@@ -574,10 +574,10 @@ function ComposeEditor({
         router.refresh();
       } else {
         const data = await res.json();
-        toast.error(data.error || "Failed to save");
+        toast.error(data.error || "Couldn't save");
       }
     } catch {
-      toast.error("Failed to save");
+      toast.error("Couldn't save");
     } finally {
       setSaving(false);
     }
@@ -719,10 +719,10 @@ export function ComposeDetail({
           body: JSON.stringify({ parked }),
         });
         const data = await res.json();
-        if (!res.ok) toast.error(data.error || "Could not change this");
+        if (!res.ok) toast.error(data.error || "Couldn't change this");
         else toast.success(parked ? "Parked" : "Unparked");
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Could not change this");
+        toast.error(err instanceof Error ? err.message : "Couldn't change this");
       }
       router.refresh();
     },
@@ -1381,7 +1381,7 @@ export function ComposeDetail({
         open={rollbackOpen}
         onOpenChange={setRollbackOpen}
         title="Roll back to standby"
-        description="Swaps live traffic to the standby slot, which is still running the previous release. The current release becomes the standby."
+        description="Sends traffic back to the previous release. The current one becomes the standby."
         confirmLabel="Roll back"
         loadingLabel="Rolling back..."
         variant="default"

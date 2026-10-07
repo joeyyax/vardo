@@ -28,14 +28,14 @@ export function SetupWizard() {
     try {
       const { error } = await signUp.email({ name, email, password });
       if (error) {
-        toast.error(error.message || "Failed to create account");
+        toast.error(error.message || "Couldn't create account");
         return;
       }
       toast.success("Account created — you're the admin");
       router.push("/projects");
     } catch (err) {
       toast.error(
-        err instanceof Error ? err.message : "Failed to create account",
+        err instanceof Error ? err.message : "Couldn't create account",
       );
     } finally {
       setLoading(false);

@@ -351,7 +351,7 @@ export function TeamMembers({ members: initialMembers, orgId, orgName, currentRo
                 </div>
                 <p className="text-xs text-muted-foreground">
                   {inviteRole === "admin"
-                    ? "Admins can manage members, settings, and all projects."
+                    ? "Admins can manage members, settings and all projects."
                     : "Members can view and deploy projects."}
                 </p>
               </div>

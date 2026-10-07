@@ -135,14 +135,14 @@ export function ActivityFeed({
         `/api/v1/organizations/${orgId}/activities?${params}`
       );
       if (!res.ok) {
-        toast.error("Could not load more activity");
+        toast.error("Couldn't load more activity");
         return;
       }
       const data = await res.json();
       setRows((prev) => [...prev, ...data.activities]);
       if (!data.pagination.hasMore) setExhausted(true);
     } catch {
-      toast.error("Could not load more activity");
+      toast.error("Couldn't load more activity");
     } finally {
       setLoading(false);
     }

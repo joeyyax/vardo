@@ -234,7 +234,7 @@ export function EnvEditor(props: EnvEditorProps) {
       );
       if (!res.ok) {
         const data = await res.json();
-        toast.error(data.error || "Failed to save");
+        toast.error(data.error || "Couldn't save");
         return false;
       }
       toast.success("Variables saved");
@@ -245,7 +245,7 @@ export function EnvEditor(props: EnvEditorProps) {
       setInherited(false);
       return true;
     } catch {
-      toast.error("Failed to save");
+      toast.error("Couldn't save");
       return false;
     } finally {
       setSaving(false);

@@ -48,7 +48,7 @@ const EVENT_LABELS: Record<BusEventType, string> = {
   "backup.failed": "Backup failed",
   "backup.progress": "Backup progress",
   "cron.failed": "Cron job failed",
-  "volume.drift": "Volume drift detected",
+  "volume.drift": "Volume differs from image",
   "disk.write-alert": "High disk writes",
   "org.invitation-sent": "Invitation sent",
   "org.invitation-accepted": "Invitation accepted",
@@ -152,7 +152,7 @@ export function UserNotificationPreferences({ orgId }: { orgId: string }) {
       });
       if (!res.ok) {
         const d = await res.json();
-        toast.error(d.error ?? "Failed to save preference");
+        toast.error(d.error ?? "Couldn't save preference");
         return;
       }
       setPrefs((prev) => {
@@ -172,7 +172,7 @@ export function UserNotificationPreferences({ orgId }: { orgId: string }) {
         ];
       });
     } catch {
-      toast.error("Failed to save preference");
+      toast.error("Couldn't save preference");
     } finally {
       setSaving(null);
     }
@@ -188,12 +188,12 @@ export function UserNotificationPreferences({ orgId }: { orgId: string }) {
       });
       if (!res.ok) {
         const d = await res.json();
-        toast.error(d.error ?? "Failed to save digest preference");
+        toast.error(d.error ?? "Couldn't save digest preference");
         return;
       }
       setDigestEnabled(enabled);
     } catch {
-      toast.error("Failed to save digest preference");
+      toast.error("Couldn't save digest preference");
     } finally {
       setSaving(null);
     }
@@ -212,7 +212,7 @@ export function UserNotificationPreferences({ orgId }: { orgId: string }) {
     return (
       <EmptyState
         icon={AlertCircle}
-        title="Failed to load notification preferences"
+        title="Couldn't load notification preferences"
         body={
           <>
             There was a problem fetching your preferences. Check your connection and{" "}

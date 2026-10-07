@@ -176,7 +176,7 @@ export function AppSettingsPanel({
 
       if (!res.ok) {
         const data = await res.json();
-        toast.error(data.error || "Failed to save");
+        toast.error(data.error || "Couldn't save");
         return;
       }
 
@@ -194,7 +194,7 @@ export function AppSettingsPanel({
 
       router.refresh();
     } catch {
-      toast.error("Failed to save");
+      toast.error("Couldn't save");
     } finally {
       setSaving(false);
     }

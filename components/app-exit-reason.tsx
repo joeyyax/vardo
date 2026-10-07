@@ -38,7 +38,7 @@ export function AppExitReason({
       <p className="mt-1.5 text-muted-foreground">
         {exitReasonSentence(reason)}{" "}
         {reason.kind === "oom-host"
-          ? "The host is short on memory — free some up, or give this app a limit so it is not the kernel's choice next time."
+          ? "The host is short on memory — free some up, or give this app a limit so it isn't the kernel's choice next time."
           : "Raise this app's memory limit, or find out what is using more than it was given."}
       </p>
     </div>

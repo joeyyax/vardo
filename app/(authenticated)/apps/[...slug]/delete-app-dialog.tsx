@@ -140,7 +140,7 @@ export function DeleteAppDialog({
       });
       const data: Partial<DeleteResult> & { error?: string } = await res.json().catch(() => ({}));
       if (!res.ok) {
-        toast.error(data.error || "Failed to delete");
+        toast.error(data.error || "Couldn't delete");
         return;
       }
 
@@ -158,7 +158,7 @@ export function DeleteAppDialog({
       handleOpenChange(false);
       onDeleted();
     } catch {
-      toast.error("Failed to delete");
+      toast.error("Couldn't delete");
     } finally {
       setDeleting(false);
     }

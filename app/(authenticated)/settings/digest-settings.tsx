@@ -68,7 +68,7 @@ export function DigestSettingsEditor({ orgId }: { orgId: string }) {
       setLoadError(false);
     } else {
       setLoadError(true);
-      toast.error("Failed to load digest settings");
+      toast.error("Couldn't load digest settings");
     }
     setLoading(false);
   }, []);
@@ -100,7 +100,7 @@ export function DigestSettingsEditor({ orgId }: { orgId: string }) {
         });
         if (!res.ok) {
           const d = await res.json();
-          toast.error(d.error || "Failed to save digest settings");
+          toast.error(d.error || "Couldn't save digest settings");
           // Revert optimistic update
           load();
           return;
@@ -108,7 +108,7 @@ export function DigestSettingsEditor({ orgId }: { orgId: string }) {
         const d = await res.json();
         setSettings(d.digestSettings);
       } catch {
-        toast.error("Failed to save digest settings");
+        toast.error("Couldn't save digest settings");
         load();
       } finally {
         setSaving(false);
@@ -129,7 +129,7 @@ export function DigestSettingsEditor({ orgId }: { orgId: string }) {
   if (loadError) {
     return (
       <p className="text-sm text-destructive py-8">
-        Could not load digest settings. Please refresh the page and try again.
+        Couldn&apos;t load digest settings. Refresh the page and try again.
       </p>
     );
   }
@@ -147,7 +147,7 @@ export function DigestSettingsEditor({ orgId }: { orgId: string }) {
             )}
           </div>
           <p className="text-sm text-muted-foreground">
-            Receive a weekly summary of deploys, backups, cron failures, and
+            Receive a weekly summary of deploys, backups, cron failures and
             alerts across all your projects. Sent to all enabled email
             notification channels.
           </p>

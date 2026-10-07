@@ -102,7 +102,7 @@ export function OrgSwitcher({ currentOrgId, organizations: initialOrganizations 
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || "Failed to create organization");
+        throw new Error(data.error || "Couldn't create organization");
       }
 
       const data = await res.json();
@@ -117,7 +117,7 @@ export function OrgSwitcher({ currentOrgId, organizations: initialOrganizations 
       router.push("/projects");
       router.refresh();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to create organization");
+      toast.error(err instanceof Error ? err.message : "Couldn't create organization");
     } finally {
       setCreating(false);
     }

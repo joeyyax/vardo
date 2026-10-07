@@ -155,13 +155,13 @@ function VolumeDiffSection({
       );
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        setError(data.error || "Failed to load diff");
+        setError(data.error || "Couldn't load diff");
         return;
       }
       const data = await res.json();
       setDiff(data.diff);
     } catch {
-      setError("Failed to load diff");
+      setError("Couldn't load diff");
     } finally {
       setLoading(false);
     }
@@ -191,7 +191,7 @@ function VolumeDiffSection({
           setSynced((prev) => new Set(prev).add(path));
           toast.success(`Synced ${path}`);
         } else {
-          toast.error(`Failed to sync ${path}`);
+          toast.error(`Couldn't sync ${path}`);
         }
       } else {
         toast.error("Sync failed");
@@ -234,10 +234,10 @@ function VolumeDiffSection({
         // Reload diff
         loadDiff();
       } else {
-        toast.error("Failed to add ignore pattern");
+        toast.error("Couldn't add ignore pattern");
       }
     } catch {
-      toast.error("Failed to add ignore pattern");
+      toast.error("Couldn't add ignore pattern");
     }
   }
 
@@ -283,7 +283,7 @@ function VolumeDiffSection({
 
           {diff && totalChanges === 0 && (
             <p className="text-xs text-muted-foreground">
-              No drift detected. Volume matches image contents.
+              Volume matches image contents.
             </p>
           )}
 
@@ -510,7 +510,7 @@ export function VolumesPanel({ appId, orgId }: Props) {
         );
       }
     } catch {
-      toast.error("Failed to update");
+      toast.error("Couldn't update");
     } finally {
       setSaving(false);
     }
@@ -562,7 +562,7 @@ export function VolumesPanel({ appId, orgId }: Props) {
         setNewMountPath("");
       }
     } catch {
-      toast.error("Failed to add volume");
+      toast.error("Couldn't add volume");
     } finally {
       setSaving(false);
     }
@@ -590,7 +590,7 @@ export function VolumesPanel({ appId, orgId }: Props) {
       );
       toast.success("Volume removed");
     } catch {
-      toast.error("Failed to remove volume");
+      toast.error("Couldn't remove volume");
     }
   }
 
@@ -640,10 +640,10 @@ export function VolumesPanel({ appId, orgId }: Props) {
         toast.success("Volume limit saved");
       } else {
         const data = await res.json().catch(() => ({}));
-        toast.error(data.error || "Failed to save limit");
+        toast.error(data.error || "Couldn't save limit");
       }
     } catch {
-      toast.error("Failed to save limit");
+      toast.error("Couldn't save limit");
     } finally {
       setLimitSaving(false);
     }
@@ -665,7 +665,7 @@ export function VolumesPanel({ appId, orgId }: Props) {
         toast.success("Volume limit removed");
       }
     } catch {
-      toast.error("Failed to remove limit");
+      toast.error("Couldn't remove limit");
     } finally {
       setLimitSaving(false);
     }

@@ -126,7 +126,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
 
     if (!dockerVolumeName) {
       return NextResponse.json(
-        { error: "Volume is not currently mounted." },
+        { error: "Volume isn't mounted." },
         { status: 400 },
       );
     }

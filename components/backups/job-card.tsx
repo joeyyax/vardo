@@ -50,10 +50,10 @@ export function JobCard({
         toast.success("Backup started");
         onRefresh();
       } else {
-        toast.error("Failed to start backup");
+        toast.error("Couldn't start backup");
       }
     } catch {
-      toast.error("Failed to start backup");
+      toast.error("Couldn't start backup");
     } finally {
       setRunning(false);
     }
@@ -71,7 +71,7 @@ export function JobCard({
         onRefresh();
       }
     } catch {
-      toast.error("Failed to update job");
+      toast.error("Couldn't update job");
     }
   }
 
@@ -86,10 +86,10 @@ export function JobCard({
         setDeleteOpen(false);
         onRefresh();
       } else {
-        toast.error("Failed to delete job");
+        toast.error("Couldn't delete job");
       }
     } catch {
-      toast.error("Failed to delete job");
+      toast.error("Couldn't delete job");
     } finally {
       setDeleting(false);
     }

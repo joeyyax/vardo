@@ -108,11 +108,11 @@ export function NewEnvironmentSheet({
           onOpenChange(false);
           toast.info("Environment already exists");
         } else {
-          toast.error(data.error || "Failed to create environment");
+          toast.error(data.error || "Couldn't create environment");
         }
       }
     } catch {
-      toast.error("Failed to create environment");
+      toast.error("Couldn't create environment");
     } finally {
       setSaving(false);
     }

@@ -34,7 +34,7 @@ export function GitHubConnection() {
     } else if (github === "pending") {
       toast.info("GitHub installation pending approval");
     } else if (github === "error") {
-      toast.error("Failed to connect GitHub account");
+      toast.error("Couldn't connect GitHub account");
     }
   }, [searchParams]);
 
@@ -81,14 +81,14 @@ export function GitHubConnection() {
       const res = await fetch("/api/v1/github/connect");
       if (!res.ok) {
         const data = await res.json();
-        toast.error(data.error || "Failed to generate connect URL");
+        toast.error(data.error || "Couldn't generate connect URL");
         setConnecting(false);
         return;
       }
       const { url } = await res.json();
       window.location.href = url;
     } catch {
-      toast.error("Failed to connect to GitHub");
+      toast.error("Couldn't connect to GitHub");
       setConnecting(false);
     }
   }
@@ -106,10 +106,10 @@ export function GitHubConnection() {
         toast.success("GitHub account disconnected");
       } else {
         const data = await res.json();
-        toast.error(data.error || "Failed to disconnect");
+        toast.error(data.error || "Couldn't disconnect");
       }
     } catch {
-      toast.error("Failed to disconnect GitHub account");
+      toast.error("Couldn't disconnect GitHub account");
     } finally {
       setRemoving(null);
     }

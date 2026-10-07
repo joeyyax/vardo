@@ -45,7 +45,7 @@ async function handlePost(request: NextRequest) {
   } catch (err) {
     log.error(`Failed to write ${envPath}: ${err}`);
     return NextResponse.json(
-      { error: "Saved to database but could not update .env — check server permissions" },
+      { error: "Saved to database but couldn't update .env — check server permissions" },
       { status: 500 },
     );
   }

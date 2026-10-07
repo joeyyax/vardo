@@ -23,7 +23,7 @@ export function TraefikSettings() {
     (async () => {
       try {
         const res = await fetch("/api/v1/admin/traefik");
-        if (!res.ok) throw new Error("Failed to fetch");
+        if (!res.ok) throw new Error("Couldn't fetch");
         const data = await res.json();
         setConfig(data);
       } catch {
@@ -43,12 +43,12 @@ export function TraefikSettings() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(config),
       });
-      if (!res.ok) throw new Error("Failed to save");
+      if (!res.ok) throw new Error("Couldn't save");
       toast.success("Settings saved. Restart Traefik to apply.");
       setRestartPending(true);
       setRestarted(false);
     } catch {
-      toast.error("Failed to save Traefik settings");
+      toast.error("Couldn't save Traefik settings");
     } finally {
       setSaving(false);
     }
@@ -58,11 +58,11 @@ export function TraefikSettings() {
     setRestarting(true);
     try {
       const res = await fetch("/api/v1/admin/traefik/restart", { method: "POST" });
-      if (!res.ok) throw new Error("Failed to restart");
+      if (!res.ok) throw new Error("Couldn't restart");
       setRestarted(true);
       setRestartPending(false);
     } catch {
-      toast.error("Failed to restart Traefik");
+      toast.error("Couldn't restart Traefik");
     } finally {
       setRestarting(false);
     }
@@ -151,9 +151,9 @@ export function TraefikSettings() {
             <p className="type-h4">Making external containers reachable</p>
             <p className="text-xs text-muted-foreground">
               When the network filter is removed, Traefik can <em>discover</em> any container
-              with <code className="font-mono">traefik.enable=true</code>. But to actually{" "}
+              with <code className="font-mono">traefik.enable=true</code>. But to{" "}
               <em>route traffic</em> to them, Traefik must share a network with the target
-              container. The simplest approach: add <code className="font-mono">vardo-network</code>{" "}
+              container. Add <code className="font-mono">vardo-network</code>{" "}
               to your external compose services.
             </p>
           </div>

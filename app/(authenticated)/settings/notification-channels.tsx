@@ -41,7 +41,7 @@ const EVENT_LABELS: Record<BusEventType, string> = {
   "backup.failed": "Backup failed",
   "backup.progress": "Backup progress",
   "cron.failed": "Cron job failed",
-  "volume.drift": "Volume drift detected",
+  "volume.drift": "Volume differs from image",
   "disk.write-alert": "High disk writes",
   "org.invitation-sent": "Invitation sent",
   "org.invitation-accepted": "Invitation accepted",
@@ -178,15 +178,15 @@ export function NotificationChannelsEditor({ orgId }: { orgId: string }) {
       const res = await fetch(`/api/v1/organizations/${orgId}/notifications`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, type, config, enabled: true }) });
       if (!res.ok) { const d = await res.json(); toast.error(d.error || "Failed"); return; }
       toast.success("Channel created"); reset(); load();
-    } catch (err) { toast.error(err instanceof Error ? err.message : "Failed to save channel"); } finally { setSaving(false); }
+    } catch (err) { toast.error(err instanceof Error ? err.message : "Couldn't save channel"); } finally { setSaving(false); }
   };
 
   const handleToggle = async (id: string, enabled: boolean) => {
-    try { const res = await fetch(`/api/v1/organizations/${orgId}/notifications/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled }) }); if (res.ok) setChannels(prev => prev.map(c => c.id === id ? { ...c, enabled } : c)); } catch { toast.error("Failed to toggle channel"); }
+    try { const res = await fetch(`/api/v1/organizations/${orgId}/notifications/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled }) }); if (res.ok) setChannels(prev => prev.map(c => c.id === id ? { ...c, enabled } : c)); } catch { toast.error("Couldn't toggle channel"); }
   };
 
   const handleDelete = async (id: string) => {
-    try { const res = await fetch(`/api/v1/organizations/${orgId}/notifications/${id}`, { method: "DELETE" }); if (res.ok) { setChannels(prev => prev.filter(c => c.id !== id)); toast.success("Deleted"); } } catch { toast.error("Failed to delete channel"); }
+    try { const res = await fetch(`/api/v1/organizations/${orgId}/notifications/${id}`, { method: "DELETE" }); if (res.ok) { setChannels(prev => prev.filter(c => c.id !== id)); toast.success("Deleted"); } } catch { toast.error("Couldn't delete channel"); }
   };
 
   const handleUpdateEvents = async (id: string, subscribedEvents: string[]) => {
@@ -200,7 +200,7 @@ export function NotificationChannelsEditor({ orgId }: { orgId: string }) {
         setChannels(prev => prev.map(c => c.id === id ? { ...c, subscribedEvents } : c));
       }
     } catch {
-      toast.error("Failed to update event filters");
+      toast.error("Couldn't update event filters");
     }
   };
 
@@ -210,7 +210,7 @@ export function NotificationChannelsEditor({ orgId }: { orgId: string }) {
     <Card>
       <CardContent className="space-y-4">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">Configure where notifications are sent for deploy, backup, and cron failures.</p>
+        <p className="text-sm text-muted-foreground">Configure where notifications are sent for deploy, backup and cron failures.</p>
         {!showForm && <Button size="sm" onClick={() => setShowForm(true)}><Plus className="h-4 w-4 mr-1" />Add channel</Button>}
       </div>
       {showForm && (

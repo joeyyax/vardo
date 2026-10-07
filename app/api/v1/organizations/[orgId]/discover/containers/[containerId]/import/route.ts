@@ -49,7 +49,7 @@ const importSchema = z.object({
         value: z
           .string()
           .max(65536, "Env value too long")
-          .refine((v) => !/[\x00-\x1f\x7f]/.test(v), "Value cannot contain control characters"),
+          .refine((v) => !/[\x00-\x1f\x7f]/.test(v), "Value can't contain control characters"),
       })
     )
     .max(500, "Too many environment variables")

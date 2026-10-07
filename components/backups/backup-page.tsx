@@ -149,7 +149,7 @@ export function BackupPage({
           <h2 className="type-h2">Backups</h2>
           <p className="text-sm text-muted-foreground">
             {scope === "admin"
-              ? "Manage system-wide backup targets, retention policies, and view backup history across all organizations."
+              ? "Manage system-wide backup targets, retention policies and view backup history across all organizations."
               : "Configure backup targets and schedules for this organization."}
           </p>
         </div>
@@ -288,11 +288,11 @@ export function BackupPage({
               </li>
               <li className="flex items-start gap-2.5">
                 <Info className="size-4 text-muted-foreground/50 shrink-0 mt-0.5" aria-hidden="true" />
-                <span className="text-muted-foreground">Does not include container images — they&apos;re pulled from your registry on deploy</span>
+                <span className="text-muted-foreground">Doesn&apos;t include container images — they&apos;re pulled from your registry on deploy</span>
               </li>
               <li className="flex items-start gap-2.5">
                 <Info className="size-4 text-muted-foreground/50 shrink-0 mt-0.5" aria-hidden="true" />
-                <span className="text-muted-foreground">Does not include the encryption master key — env vars restore as unreadable ciphertext without it</span>
+                <span className="text-muted-foreground">Doesn&apos;t include the encryption master key — env vars restore as unreadable ciphertext without it</span>
               </li>
             </ul>
           </div>

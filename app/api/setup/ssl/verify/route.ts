@@ -73,7 +73,7 @@ async function checkIssuer(
         issuer,
         label,
         ok: false,
-        message: `Could not reach ZeroSSL API: ${msg}`,
+        message: `Couldn't reach ZeroSSL API: ${msg}`,
       };
     }
   }
@@ -121,7 +121,7 @@ async function handlePost() {
     if (!envToken) {
       return NextResponse.json({
         ok: false,
-        message: "CF_DNS_API_TOKEN is not set in your environment — update .env and restart Traefik",
+        message: "CF_DNS_API_TOKEN isn't set in your environment — update .env and restart Traefik",
       });
     }
 

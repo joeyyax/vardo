@@ -148,7 +148,7 @@ function SignInMethods() {
 
   const fetchMethods = useCallback(async () => {
     const res = await fetch("/api/setup/auth-methods");
-    if (!res.ok) throw new Error("Failed to fetch");
+    if (!res.ok) throw new Error("Couldn't fetch");
     const data = await res.json();
     setMethods(data.methods ?? []);
   }, []);
@@ -215,7 +215,7 @@ function SignInMethods() {
         <h3 className="type-h4">Sign-in methods</h3>
         <p className="text-xs text-muted-foreground">
           Changes save as you flip them and take effect immediately — a disabled method is refused at
-          the API, not just hidden. At least one has to stay usable. A method set in vardo.yml or by a{" "}
+          the API, not only hidden. At least one has to stay usable. A method set in vardo.yml or by a{" "}
           <code className="bg-muted rounded px-1 py-0.5 text-xs">VARDO_AUTH_*</code> env var is shown
           here but can only be changed there.
         </p>

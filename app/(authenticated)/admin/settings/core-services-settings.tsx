@@ -47,14 +47,14 @@ export function CoreServicesSettings() {
 
   const fetchServices = useCallback(async () => {
     const res = await fetch("/api/v1/admin/core-services");
-    if (!res.ok) throw new Error("Failed to fetch");
+    if (!res.ok) throw new Error("Couldn't fetch");
     const data = await res.json();
     setServices(data.services ?? []);
   }, []);
 
   const fetchDiskMetrics = useCallback(async () => {
     const res = await fetch("/api/v1/admin/core-services/cadvisor-disk-metrics");
-    if (!res.ok) throw new Error("Failed to fetch");
+    if (!res.ok) throw new Error("Couldn't fetch");
     const data = await res.json();
     setDiskMetricsEnabled(data.diskMetricsEnabled ?? true);
   }, []);
@@ -139,7 +139,7 @@ export function CoreServicesSettings() {
           <Link href="/admin/settings/feature-flags" className="underline underline-offset-4">
             Feature flags
           </Link>
-          ; this page reports what provisioning actually did.
+          ; this page reports what provisioning did.
         </p>
       </div>
 

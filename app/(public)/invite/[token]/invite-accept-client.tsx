@@ -53,10 +53,10 @@ export function InviteAcceptClient({
         toast.error(result.error);
         return;
       }
-      toast.success("Invitation accepted!");
+      toast.success("Invitation accepted.");
       router.push("/projects");
     } catch {
-      toast.error("Failed to accept invitation");
+      toast.error("Couldn't accept invitation");
     } finally {
       setAccepting(false);
     }
@@ -70,12 +70,12 @@ export function InviteAcceptClient({
         callbackURL: window.location.pathname,
       });
       if (result?.error) {
-        toast.error(result.error.message ?? "Failed to send magic link");
+        toast.error(result.error.message ?? "Couldn't send magic link");
       } else {
         setMagicLinkSent(true);
       }
     } catch {
-      toast.error("Failed to send magic link");
+      toast.error("Couldn't send magic link");
     } finally {
       setSigningIn(null);
     }

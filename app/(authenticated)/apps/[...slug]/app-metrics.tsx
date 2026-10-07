@@ -207,7 +207,7 @@ export function AppMetrics({ orgId, appId, environmentName, gpuEnabled, cpuLimit
       <EmptyState
         icon={AlertTriangle}
         title="Metrics unavailable"
-        body="Could not connect to the metrics service. This may be a temporary issue."
+        body="Couldn't connect to the metrics service. This may be a temporary issue."
       />
     );
   }

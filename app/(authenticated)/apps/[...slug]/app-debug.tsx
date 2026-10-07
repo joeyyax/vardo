@@ -92,7 +92,7 @@ async function requestDebug(url: string): Promise<DebugResult> {
     }
     return { data: await res.json() };
   } catch (err) {
-    return { error: err instanceof Error ? err.message : "Failed to load debug info" };
+    return { error: err instanceof Error ? err.message : "Couldn't load debug info" };
   }
 }
 
@@ -150,7 +150,7 @@ export function AppDebug({
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
-          Generated config for this app — compose file, Traefik routing rules, and live container inspect data.
+          Generated config for this app — compose file, Traefik routing rules and live container inspect data.
         </p>
         <Button
           variant="outline"

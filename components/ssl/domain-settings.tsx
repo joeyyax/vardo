@@ -153,7 +153,7 @@ export function DomainSettings() {
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || "Failed to save");
+        throw new Error(data.error || "Couldn't save");
       }
       const { toast } = await import("sonner");
       toast.success("Domain settings saved");
@@ -161,7 +161,7 @@ export function DomainSettings() {
       recheckDns();
     } catch (err) {
       const { toast } = await import("sonner");
-      toast.error(err instanceof Error ? err.message : "Failed to save domain settings");
+      toast.error(err instanceof Error ? err.message : "Couldn't save domain settings");
     } finally {
       setSaving(false);
     }

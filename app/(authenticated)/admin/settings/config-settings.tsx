@@ -123,7 +123,7 @@ export function ConfigSettings() {
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground">
-                Full export includes encryption keys, API keys, and passwords. Keep it secure.
+                Full export includes encryption keys, API keys and passwords. Keep it secure.
               </p>
             </div>
           </CardContent>
@@ -171,7 +171,7 @@ export function ConfigSettings() {
             </li>
             <li className="flex items-start gap-2.5">
               <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
-              <span className="text-muted-foreground">Email, backup, and GitHub App configuration</span>
+              <span className="text-muted-foreground">Email, backup and GitHub App configuration</span>
             </li>
             <li className="flex items-start gap-2.5">
               <ShieldCheck className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
@@ -192,7 +192,7 @@ export function ConfigSettings() {
             </li>
             <li className="flex items-start gap-2.5">
               <Info className="size-4 text-muted-foreground/50 shrink-0 mt-0.5" aria-hidden="true" />
-              <span className="text-muted-foreground">Does not include user accounts, projects, or volume data</span>
+              <span className="text-muted-foreground">Doesn&apos;t include user accounts, projects or volume data</span>
             </li>
           </ul>
         </div>

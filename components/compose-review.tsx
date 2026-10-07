@@ -65,7 +65,7 @@ export function ComposeReview({
       body: JSON.stringify({ composeContent }),
     })
       .then(async (res) => {
-        if (!res.ok) throw new Error("Failed to analyze compose");
+        if (!res.ok) throw new Error("Couldn't analyze compose");
         return res.json();
       })
       .then(setAnalysis)
@@ -123,10 +123,10 @@ export function ComposeReview({
           },
         );
 
-        if (!putRes.ok) throw new Error("Failed to save env vars");
+        if (!putRes.ok) throw new Error("Couldn't save env vars");
         toast.success(`Imported ${newLines.length} env var${newLines.length > 1 ? "s" : ""}`);
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Failed to import env vars");
+        toast.error(err instanceof Error ? err.message : "Couldn't import env vars");
       } finally {
         setExtracting(false);
       }

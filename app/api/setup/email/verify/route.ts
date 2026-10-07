@@ -16,7 +16,7 @@ async function handlePost() {
   if (!config) {
     return NextResponse.json({
       ok: false,
-      message: "Email is not configured — save your settings first",
+      message: "Email isn't configured — save your settings first",
     });
   }
 
@@ -82,7 +82,7 @@ async function handlePost() {
 
       case "smtp": {
         if (!config.smtpHost) {
-          return NextResponse.json({ ok: false, message: "SMTP host is not set" });
+          return NextResponse.json({ ok: false, message: "SMTP host isn't set" });
         }
         const transport = nodemailer.createTransport({
           host: config.smtpHost,

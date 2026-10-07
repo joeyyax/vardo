@@ -12,7 +12,7 @@ import { eq } from "drizzle-orm";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
 const updateOrgSchema = z.object({
-  name: z.string().min(1, "Organization name cannot be empty").max(100).trim().optional(),
+  name: z.string().min(1, "Organization name can't be empty").max(100).trim().optional(),
   baseDomain: z.union([
     z.string().regex(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/, "Invalid domain format").transform(s => s.toLowerCase()),
     z.literal(""),

@@ -24,7 +24,7 @@ export async function GET() {
       db
         .select({
           appCount: sql<number>`count(*)`,
-          composeServiceCount: sql<number>`count(*) filter (where ${apps.parentAppId} is not null)`,
+          composeServiceCount: sql<number>`count(*) filter (where ${apps.parentAppId} isn't null)`,
         })
         .from(apps)
         .innerJoin(organizations, eq(apps.organizationId, organizations.id))

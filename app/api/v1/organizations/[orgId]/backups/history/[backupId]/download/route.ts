@@ -26,7 +26,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 
     if (backup.status !== "success" || !backup.storagePath) {
       return NextResponse.json(
-        { error: "Backup is not available for download" },
+        { error: "Backup isn't available for download" },
         { status: 400 },
       );
     }

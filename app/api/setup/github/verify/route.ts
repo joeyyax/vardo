@@ -16,7 +16,7 @@ async function handlePost() {
   if (!config?.appId || !config?.privateKey) {
     return NextResponse.json({
       ok: false,
-      message: "GitHub App is not configured — save your credentials first",
+      message: "GitHub App isn't configured — save your credentials first",
     });
   }
 

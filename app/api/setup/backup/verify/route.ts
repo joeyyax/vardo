@@ -16,7 +16,7 @@ async function handlePost() {
   if (!config) {
     return NextResponse.json({
       ok: false,
-      message: "Backup storage is not configured — save your settings first",
+      message: "Backup storage isn't configured — save your settings first",
     });
   }
 
@@ -62,7 +62,7 @@ async function handlePost() {
     if (msg.includes("404") || msg.includes("NotFound") || msg.includes("NoSuchBucket")) {
       return NextResponse.json({
         ok: false,
-        message: `Bucket "${config.bucket}" was not found — check the name and region`,
+        message: `Bucket "${config.bucket}" wasn't found — check the name and region`,
       });
     }
 

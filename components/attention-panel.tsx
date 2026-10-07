@@ -65,7 +65,7 @@ function Dot({ tone }: { tone: AttentionTone }) {
   return <span aria-hidden="true" className={`size-2 shrink-0 rounded-full ${DOT[tone]}`} />;
 }
 
-/** One line per subject: who, what is wrong, and how long it has been wrong. */
+/** One line per subject: who, what is wrong and how long it has been wrong. */
 function Subjects({ row, wide = false }: { row: AttentionRow; wide?: boolean }) {
   return (
     <div className="min-w-0 flex-1 space-y-1.5 pl-4 sm:pl-0">

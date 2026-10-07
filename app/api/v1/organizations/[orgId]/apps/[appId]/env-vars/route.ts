@@ -38,7 +38,7 @@ function mask(content: string): string {
     .join("\n");
 }
 
-const DECRYPT_ERROR = "Failed to decrypt env vars — check ENCRYPTION_MASTER_KEY";
+const DECRYPT_ERROR = "Couldn't decrypt env vars — check ENCRYPTION_MASTER_KEY";
 
 // GET /api/v1/organizations/[orgId]/apps/[appId]/env-vars[?environmentId=]
 // Returns decrypted env content. `inherited` marks an environment with no env of its own.

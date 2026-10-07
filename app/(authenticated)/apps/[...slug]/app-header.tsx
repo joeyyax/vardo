@@ -109,13 +109,13 @@ export function AppHeader({
       );
       if (!res.ok) {
         const data = await res.json();
-        toast.error(data.error || "Failed to update tag");
+        toast.error(data.error || "Couldn't update tag");
         return;
       }
       toast.success(isApplied ? "Tag removed" : "Tag added");
       router.refresh();
     } catch {
-      toast.error("Failed to update tag");
+      toast.error("Couldn't update tag");
     } finally {
       setTogglingTagId(null);
     }
@@ -335,7 +335,7 @@ export function AppHeader({
         </HeaderStat>
         <HeaderStat
           label="Stability"
-          hint="Crashes, crash loops, failed deploys and rollbacks recorded for this app, against the period before. Docker's restart count is not history — a new container resets it — but a count the live container is still carrying holds the verdict off Stable."
+          hint="Crashes, crash loops, failed deploys and rollbacks recorded for this app, against the period before. Docker's restart count isn't history — a new container resets it — but a count the live container is still carrying holds the verdict off Stable."
         >
           <button
             type="button"
@@ -373,13 +373,13 @@ export function AppHeader({
         </HeaderStat>
         {slotStatus && (
           <HeaderStat
-            label="Slot"
-            hint="Deploys run into one of two slots, blue and green. The active slot serves traffic while the other holds the previous version, so a rollback is a swap rather than a rebuild."
+            label="Release"
+            hint="Each deploy starts beside the live release. The previous version stays on standby, so a rollback is a swap rather than a rebuild."
           >
-            <span className="capitalize">{slotStatus.activeSlot}</span>
+            <span>Live</span>
             <span className="text-muted-foreground">
               {" · "}
-              {slotStatus.standbyAvailable ? "standby ready" : "no standby"}
+              {slotStatus.standbyAvailable ? "previous version ready" : "no previous version"}
             </span>
           </HeaderStat>
         )}

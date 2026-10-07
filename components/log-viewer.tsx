@@ -625,7 +625,7 @@ export function LogViewer({ streamUrl, maxLines = DEFAULT_SCROLLBACK, initialLev
       });
       setScrollback((prev) => Math.max(prev, depth));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not load older lines");
+      toast.error(err instanceof Error ? err.message : "Couldn't load older lines");
     }
   }, [lines.length, url]);
 

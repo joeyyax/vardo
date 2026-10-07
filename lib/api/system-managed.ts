@@ -26,7 +26,7 @@ export const IMAGE_UPDATE_REFUSAL =
 
 // Verbs that rewrite the record. Vardo owns those fields.
 const DEFINITION_REFUSALS: Partial<Record<SystemManagedAction, string>> = {
-  edit: "Vardo manages this and rewrites the record every time it restarts, so the change would not survive. Edit docker-compose.yml or the service template instead.",
+  edit: "Vardo manages this and rewrites the record every time it restarts, so the change wouldn't survive. Edit docker-compose.yml or the service template instead.",
   delete: "Vardo manages this and recreates it on the next restart. Remove it from docker-compose.yml, or turn off the feature that provisions it.",
   "env-vars":
     "Env vars for Vardo-managed apps come from docker-compose.yml and the host environment, and are rewritten on every restart.",

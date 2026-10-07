@@ -48,7 +48,7 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
 
     if (targetMembership.role === "owner") {
       return NextResponse.json(
-        { error: "Cannot change the owner's role" },
+        { error: "Can't change the owner's role" },
         { status: 403 }
       );
     }
@@ -96,14 +96,14 @@ async function handleDelete(request: NextRequest, { params }: RouteParams) {
 
     if (targetMembership.role === "owner") {
       return NextResponse.json(
-        { error: "Cannot remove the organization owner" },
+        { error: "Can't remove the organization owner" },
         { status: 403 }
       );
     }
 
     if (userId === org.session.user.id) {
       return NextResponse.json(
-        { error: "Cannot remove yourself" },
+        { error: "Can't remove yourself" },
         { status: 400 }
       );
     }

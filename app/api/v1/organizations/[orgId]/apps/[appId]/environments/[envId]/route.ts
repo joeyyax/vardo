@@ -95,14 +95,14 @@ async function handleDelete(_request: NextRequest, { params }: RouteParams) {
 
     if (env.type === "production") {
       return NextResponse.json(
-        { error: "Cannot delete a production environment" },
+        { error: "Can't delete a production environment" },
         { status: 400 }
       );
     }
 
     if (env.isDefault) {
       return NextResponse.json(
-        { error: "Cannot delete the default environment" },
+        { error: "Can't delete the default environment" },
         { status: 400 }
       );
     }

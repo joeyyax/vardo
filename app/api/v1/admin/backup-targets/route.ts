@@ -55,7 +55,7 @@ async function handlePost(request: NextRequest) {
     // Reject SSH/local targets if restricted by deployment config
     if (data.type === "ssh" && !isLocalBackupsAllowed()) {
       return NextResponse.json(
-        { error: "SSH/local backup targets are not available on this instance" },
+        { error: "SSH/local backup targets aren't available on this instance" },
         { status: 403 },
       );
     }

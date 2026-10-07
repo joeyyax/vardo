@@ -101,7 +101,7 @@ export function ImportDialog({
       signal: controller.signal,
     })
       .then((r) => {
-        if (!r.ok) throw new Error("Failed to fetch container details");
+        if (!r.ok) throw new Error("Couldn't fetch container details");
         return r.json();
       })
       .then((d: ContainerDetail) => {
@@ -125,7 +125,7 @@ export function ImportDialog({
       .catch((err: unknown) => {
         if (err instanceof Error && err.name === "AbortError") return;
         setDetailError(true);
-        toast.error("Failed to load container details");
+        toast.error("Couldn't load container details");
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoadingDetail(false);
@@ -280,7 +280,7 @@ export function ImportDialog({
                   className="font-mono text-sm"
                   aria-describedby="slug-hint"
                 />
-                <p id="slug-hint" className="text-xs text-muted-foreground">Lowercase letters, numbers, and hyphens only.</p>
+                <p id="slug-hint" className="text-xs text-muted-foreground">Lowercase letters, numbers and hyphens only.</p>
               </div>
             </div>
 
@@ -314,7 +314,7 @@ export function ImportDialog({
                   placeholder="e.g. 3000"
                 />
                 <p className="text-xs text-muted-foreground">
-                  Port could not be detected automatically. Enter the port your container listens on for HTTP traffic.
+                  Port couldn&apos;t be detected automatically. Enter the port your container listens on for HTTP traffic.
                 </p>
               </div>
             )}

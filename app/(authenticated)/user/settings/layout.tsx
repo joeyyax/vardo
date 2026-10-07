@@ -43,7 +43,7 @@ export default async function UserSettingsLayout({
           Account settings
         </h1>
         <p className="text-sm text-muted-foreground">
-          Manage your account, security, and preferences.
+          Manage your account, security and preferences.
         </p>
       </div>
 

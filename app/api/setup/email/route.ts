@@ -59,7 +59,7 @@ async function handlePost(request: NextRequest) {
   // Reject SMTP if restricted by deployment config
   if (provider === "smtp" && !isSmtpAllowed()) {
     return NextResponse.json(
-      { error: "SMTP is not available on this instance" },
+      { error: "SMTP isn't available on this instance" },
       { status: 403 },
     );
   }

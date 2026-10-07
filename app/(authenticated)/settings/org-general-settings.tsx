@@ -36,13 +36,13 @@ export function OrgGeneralSettings({ orgId, orgName }: OrgGeneralSettingsProps) 
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        throw new Error(data.error ?? "Failed to save");
+        throw new Error(data.error ?? "Couldn't save");
       }
 
       setSavedName(trimmed);
       toast.success("Organization name updated");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to save");
+      toast.error(err instanceof Error ? err.message : "Couldn't save");
     } finally {
       setSaving(false);
     }
@@ -53,7 +53,7 @@ export function OrgGeneralSettings({ orgId, orgName }: OrgGeneralSettingsProps) 
       <Card>
         <CardHeader>
           <CardTitle as="h2">General</CardTitle>
-          <CardDescription>The organization name appears in the sidebar, team invitations, and notification emails.</CardDescription>
+          <CardDescription>The organization name appears in the sidebar, team invitations and notification emails.</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSave} className="space-y-4 max-w-md">

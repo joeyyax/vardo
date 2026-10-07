@@ -215,10 +215,10 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
           body: JSON.stringify({ parked }),
         });
         const data = await res.json();
-        if (!res.ok) toast.error(data.error || "Could not change this");
+        if (!res.ok) toast.error(data.error || "Couldn't change this");
         else toast.success(parked ? "Parked" : "Unparked");
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Could not change this");
+        toast.error(err instanceof Error ? err.message : "Couldn't change this");
       }
       router.refresh();
     },
@@ -318,7 +318,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
 
       if (!res.ok) {
         const data = await res.json();
-        toast.error(data.error || "Failed to delete environment");
+        toast.error(data.error || "Couldn't delete environment");
         return;
       }
 
@@ -327,7 +327,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
       setDeleteEnvOpen(false);
       router.refresh();
     } catch {
-      toast.error("Failed to delete environment");
+      toast.error("Couldn't delete environment");
     } finally {
       setDeletingEnv(false);
     }
@@ -997,7 +997,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         open={rollbackOpen}
         onOpenChange={setRollbackOpen}
         title="Roll back to standby"
-        description="Swaps live traffic to the standby slot, which is still running the previous release. The current release becomes the standby."
+        description="Sends traffic back to the previous release. The current one becomes the standby."
         confirmLabel="Roll back"
         loadingLabel="Rolling back..."
         variant="default"
@@ -1018,7 +1018,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         open={deleteEnvOpen}
         onOpenChange={setDeleteEnvOpen}
         title={`Delete ${selectedEnv?.name} environment`}
-        description={`Are you sure you want to delete the "${selectedEnv?.name}" environment? This will remove its environment variables and deployments. The app itself will not be affected.`}
+        description={`Are you sure you want to delete the "${selectedEnv?.name}" environment? This will remove its environment variables and deployments. The app itself won't be affected.`}
         onConfirm={handleDeleteEnvironment}
         loading={deletingEnv}
       />

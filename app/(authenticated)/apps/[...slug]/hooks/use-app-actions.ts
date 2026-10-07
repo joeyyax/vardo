@@ -35,7 +35,7 @@ export function useCancelDeploy(orgId: string, appId: string) {
         );
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
-          toast.error(data.error || "Failed to cancel deployment");
+          toast.error(data.error || "Couldn't cancel deployment");
           return false;
         }
 
@@ -47,7 +47,7 @@ export function useCancelDeploy(orgId: string, appId: string) {
         }
         return true;
       } catch {
-        toast.error("Failed to cancel deployment");
+        toast.error("Couldn't cancel deployment");
         return false;
       } finally {
         setCancelling(false);

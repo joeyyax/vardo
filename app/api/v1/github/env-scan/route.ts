@@ -137,7 +137,7 @@ export async function GET(request: NextRequest) {
     }
     log.error("Error scanning for env files:", error);
     return NextResponse.json(
-      { error: "Failed to scan repository for env files" },
+      { error: "Couldn't scan repository for env files" },
       { status: 502 }
     );
   }

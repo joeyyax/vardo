@@ -129,7 +129,7 @@ export function OrgEnvVarsEditor({ orgId }: Props) {
       });
       if (!res.ok) {
         const data = await res.json();
-        toast.error(data.error || "Failed to save");
+        toast.error(data.error || "Couldn't save");
         return;
       }
       const data = await res.json();
@@ -139,7 +139,7 @@ export function OrgEnvVarsEditor({ orgId }: Props) {
       const next = await fetchContent();
       if (next !== null) setContent(next);
     } catch {
-      toast.error("Failed to save");
+      toast.error("Couldn't save");
     } finally {
       setSaving(false);
     }

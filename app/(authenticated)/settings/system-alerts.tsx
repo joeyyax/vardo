@@ -83,7 +83,7 @@ export function SystemAlertsPanel() {
       if (alertsRes.ok) {
         setAlertsData(await alertsRes.json());
       } else {
-        setError(`Failed to load alerts (${alertsRes.status})`);
+        setError(`Couldn't load alerts (${alertsRes.status})`);
       }
 
       if (healthRes.ok) {
@@ -91,10 +91,10 @@ export function SystemAlertsPanel() {
         setHealthData({ services: data.services ?? [], resources: data.resources ?? [] });
       } else {
         // Preserve the first error; only set if not already set
-        setError((prev) => prev ?? `Failed to load system health (${healthRes.status})`);
+        setError((prev) => prev ?? `Couldn't load system health (${healthRes.status})`);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load system status");
+      setError(err instanceof Error ? err.message : "Couldn't load system status");
     }
     setLoading(false);
   }, []);
@@ -113,17 +113,17 @@ export function SystemAlertsPanel() {
         if (alertsRes.ok) {
           setAlertsData(await alertsRes.json());
         } else {
-          setError(`Failed to load alerts (${alertsRes.status})`);
+          setError(`Couldn't load alerts (${alertsRes.status})`);
         }
         if (healthRes.ok) {
           const data = await healthRes.json();
           setHealthData({ services: data.services ?? [], resources: data.resources ?? [] });
         } else {
-          setError((prev) => prev ?? `Failed to load system health (${healthRes.status})`);
+          setError((prev) => prev ?? `Couldn't load system health (${healthRes.status})`);
         }
       } catch (err) {
         if (!controller.signal.aborted) {
-          setError(err instanceof Error ? err.message : "Failed to load system status");
+          setError(err instanceof Error ? err.message : "Couldn't load system status");
         }
       }
       if (!controller.signal.aborted) setLoading(false);

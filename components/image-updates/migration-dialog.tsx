@@ -45,7 +45,7 @@ function BackupBeforeMigration({ orgId, appId }: { orgId: string; appId: string 
       if (!res.ok) {
         // NO_VOLUMES and BIND_MOUNTS_ONLY are answers, not failures.
         setState("unavailable");
-        setDetail(body.error ?? "Could not start a backup");
+        setDetail(body.error ?? "Couldn't start a backup");
         return;
       }
       setGitSourced(Boolean(body.assessment?.gitSourced));
@@ -53,7 +53,7 @@ function BackupBeforeMigration({ orgId, appId }: { orgId: string; appId: string 
       setState("started");
     } catch {
       setState("unavailable");
-      setDetail("Could not reach the backup service");
+      setDetail("Couldn't reach the backup service");
     }
   }
 
@@ -122,7 +122,7 @@ function MigrationShell({
 
         {plan?.needsIntermediateSteps && (
           <p className="text-sm text-status-warning">
-            {plan.engine} cannot jump straight there. Land on {plan.hops.join(", then ")} in order.
+            {plan.engine} can&apos;t jump straight there. Land on {plan.hops.join(", then ")} in order.
           </p>
         )}
 
@@ -205,7 +205,7 @@ export function MigrationDialog({
       appId={appId}
       appName={appName}
       title={`${entry.currentTag} → ${tag} is a data migration`}
-      description={`${plan?.engine ?? entry.image} stores data in a format tied to its major version. Pinning this tag alone will not start — the new container refuses the existing data directory.`}
+      description={`${plan?.engine ?? entry.image} stores data in a format tied to its major version. Pinning this tag alone won't start — the new container refuses the existing data directory.`}
       plan={plan}
       confirm={{ label: `Pin ${tag}`, onClick: () => onConfirm(prompt) }}
       onClose={onClose}
@@ -237,7 +237,7 @@ export function MajorGateDialog({
       appId={block.appId}
       appName={block.appName}
       title={`${label} moved from major ${entry.from} to ${entry.to}`}
-      description={`The deploy stopped before the swap — ${block.appName} is still serving major ${entry.from} and nothing was replaced. A major ${entry.to} ${entry.engine} exits on its version check against a data directory written by ${entry.from}; the data is not altered by the attempt. Pin ${entry.from} to deploy what is already running, or migrate the data and pin ${entry.to}.`}
+      description={`The deploy stopped before the swap — ${block.appName} is still serving major ${entry.from} and nothing was replaced. A major ${entry.to} ${entry.engine} exits on its version check against a data directory written by ${entry.from}; the data isn't altered by the attempt. Pin ${entry.from} to deploy what is already running, or migrate the data and pin ${entry.to}.`}
       plan={entry.plan}
       secondary={{
         label: `Pin ${entry.from}`,

@@ -156,7 +156,7 @@ export function GroupImportDialog({
                 aria-describedby="group-slug-hint"
               />
               <p id="group-slug-hint" className="text-xs text-muted-foreground">
-                Lowercase letters, numbers, and hyphens only.
+                Lowercase letters, numbers and hyphens only.
               </p>
             </div>
           </div>

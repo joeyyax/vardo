@@ -149,7 +149,7 @@ export function AppUpdatesPanel({
         body,
       });
       const result = await res.json();
-      if (!res.ok) throw new Error(result.error ?? "Could not change that ignore rule");
+      if (!res.ok) throw new Error(result.error ?? "Couldn't change that ignore rule");
       toast.success(
         choice
           ? `Ignoring ${choice.scope === "major" ? "majors" : "updates"} for ${entry.service ?? "this image"}`
@@ -157,7 +157,7 @@ export function AppUpdatesPanel({
       );
       refresh();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not change that ignore rule");
+      toast.error(error instanceof Error ? error.message : "Couldn't change that ignore rule");
     }
   }
 
@@ -175,13 +175,13 @@ export function AppUpdatesPanel({
         }),
       });
       const body = await res.json();
-      if (!res.ok) throw new Error(body.error ?? "Could not pin that tag");
+      if (!res.ok) throw new Error(body.error ?? "Couldn't pin that tag");
       setGateOpen(false);
       toast.success(`Pinned ${service ?? "image"} to ${tag}`);
       refresh();
       onDeploy();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not pin that tag");
+      toast.error(error instanceof Error ? error.message : "Couldn't pin that tag");
     }
   }
 
@@ -332,7 +332,7 @@ export function AppUpdatesPanel({
 
       {unverified.length > 0 && (
         <p className="px-4 py-2.5 text-xs text-muted-foreground">
-          {unverified.length} image{unverified.length === 1 ? "" : "s"} could not be checked
+          {unverified.length} image{unverified.length === 1 ? "" : "s"} couldn&apos;t be checked
           {unverified[0].error ? ` — ${unverified[0].error}` : ""}.
         </p>
       )}

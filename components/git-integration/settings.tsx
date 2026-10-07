@@ -103,7 +103,7 @@ export function GitHubSettings() {
       <div className="space-y-1">
         <h2 className="type-h2">GitHub App</h2>
         <p className="text-sm text-muted-foreground">
-          Connect a GitHub App to import repositories, manage deploy keys, and trigger automatic deployments on push. Create the app in your GitHub account and paste the credentials below.
+          Connect a GitHub App to import repositories, manage deploy keys and trigger automatic deployments on push. Create the app in your GitHub account and paste the credentials below.
         </p>
       </div>
 

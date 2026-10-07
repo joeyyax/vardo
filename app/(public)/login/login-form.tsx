@@ -105,12 +105,12 @@ function LoginForm({ methods }: { methods: EnabledMethods }) {
         callbackURL: callbackUrl,
       });
       if (result?.error) {
-        setError(result.error.message ?? "Failed to send magic link");
+        setError(result.error.message ?? "Couldn't send magic link");
       } else {
         setMagicLinkSent(true);
       }
     } catch {
-      setError("Failed to send magic link");
+      setError("Couldn't send magic link");
     } finally {
       setIsLoading(null);
     }

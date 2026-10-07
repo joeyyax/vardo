@@ -33,14 +33,14 @@ export function PortsManager({
         body: JSON.stringify({ exposedPorts: updated }),
       });
       if (!res.ok) {
-        toast.error("Failed to update ports");
+        toast.error("Couldn't update ports");
         return;
       }
       setPorts(updated);
       toast.success("Ports updated — redeploy to apply");
       router.refresh();
     } catch {
-      toast.error("Failed to update ports");
+      toast.error("Couldn't update ports");
     } finally {
       setSaving(false);
     }

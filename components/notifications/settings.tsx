@@ -135,7 +135,7 @@ export function EmailSettings() {
       <div className="space-y-1">
         <h2 className="type-h2">Email</h2>
         <p className="text-sm text-muted-foreground">
-          Configure how your instance sends transactional emails — deploy notifications, invitations, and alerts.
+          Configure how your instance sends transactional emails — deploy notifications, invitations and alerts.
         </p>
       </div>
 
@@ -150,7 +150,7 @@ export function EmailSettings() {
 
           {!allowSmtp && provider === "smtp" && (
             <div className="surface-danger rounded-lg border px-3 py-2 text-xs text-destructive">
-              SMTP is restricted on this instance. Switch to Resend, Postmark, or Mailpace to continue sending email.
+              SMTP is restricted on this instance. Switch to Resend, Postmark or Mailpace to continue sending email.
             </div>
           )}
 
@@ -191,7 +191,7 @@ export function EmailSettings() {
               <p className="text-xs text-muted-foreground bg-muted/50 rounded-lg px-3 py-2">
                 SMTP provides no delivery tracking or bounce detection. If a
                 notification fails to send, you won&apos;t know. We recommend
-                Resend, Postmark, or Mailpace for reliable delivery.
+                Resend, Postmark or Mailpace for reliable delivery.
               </p>
               <ProviderGuide title="Common SMTP settings">
                 <div className="space-y-2">

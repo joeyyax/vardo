@@ -45,7 +45,7 @@ async function requestDomains(orgId: string): Promise<OrgDomain[] | null> {
     const data = await res.json();
     return data.domains;
   } catch {
-    toast.error("Failed to load domains");
+    toast.error("Couldn't load domains");
     return null;
   }
 }
@@ -105,7 +105,7 @@ export function OrgDomainEditor({
       if (!res.ok) {
         setDomains(prev);
         const data = await res.json();
-        toast.error(data.error || "Failed to update domain");
+        toast.error(data.error || "Couldn't update domain");
         return;
       }
 
@@ -116,7 +116,7 @@ export function OrgDomainEditor({
       router.refresh();
     } catch {
       setDomains(prev);
-      toast.error("Failed to update domain");
+      toast.error("Couldn't update domain");
     }
   }
 
@@ -133,7 +133,7 @@ export function OrgDomainEditor({
 
       if (!res.ok) {
         const data = await res.json();
-        toast.error(data.error || "Failed to add domain");
+        toast.error(data.error || "Couldn't add domain");
         return;
       }
 
@@ -143,7 +143,7 @@ export function OrgDomainEditor({
       fetchDomains();
       router.refresh();
     } catch {
-      toast.error("Failed to add domain");
+      toast.error("Couldn't add domain");
     } finally {
       setAdding(false);
     }
@@ -173,7 +173,7 @@ export function OrgDomainEditor({
         );
       }
     } catch {
-      toast.error("Failed to check DNS");
+      toast.error("Couldn't check DNS");
     } finally {
       setVerifying(null);
     }
@@ -191,7 +191,7 @@ export function OrgDomainEditor({
 
       if (!res.ok) {
         const data = await res.json();
-        toast.error(data.error || "Failed to remove domain");
+        toast.error(data.error || "Couldn't remove domain");
         return;
       }
 
@@ -199,7 +199,7 @@ export function OrgDomainEditor({
       setDomains((ds) => ds.filter((d) => d.id !== domain.id));
       router.refresh();
     } catch {
-      toast.error("Failed to remove domain");
+      toast.error("Couldn't remove domain");
     } finally {
       setDeleting(null);
     }

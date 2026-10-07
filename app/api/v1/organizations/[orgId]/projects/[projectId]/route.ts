@@ -209,7 +209,7 @@ async function handleDelete(_request: NextRequest, { params }: RouteParams) {
 
     if ((appCount[0]?.count ?? 0) > 0) {
       return NextResponse.json(
-        { error: "Cannot delete a project that contains apps. Move or delete the apps first." },
+        { error: "Can't delete a project that contains apps. Move or delete the apps first." },
         { status: 409 }
       );
     }

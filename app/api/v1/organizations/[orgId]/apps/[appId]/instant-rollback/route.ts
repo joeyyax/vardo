@@ -29,7 +29,7 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ org
     const env = await resolveDefaultEnv(appId);
 
     if (env.type === "local") {
-      return NextResponse.json({ error: "Instant rollback is not available for local environments" }, { status: 400 });
+      return NextResponse.json({ error: "Instant rollback isn't available for local environments" }, { status: 400 });
     }
 
     const result = await performInstantRollback({

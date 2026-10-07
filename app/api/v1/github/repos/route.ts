@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
     }
     log.error("Error fetching GitHub repos:", error);
     return NextResponse.json(
-      { error: "Failed to fetch repositories from GitHub" },
+      { error: "Couldn't fetch repositories from GitHub" },
       { status: 502 }
     );
   }
@@ -105,7 +105,7 @@ async function handlePost(request: NextRequest) {
     }
     log.error("Error creating GitHub repo:", error);
     return NextResponse.json(
-      { error: "Failed to create repository" },
+      { error: "Couldn't create repository" },
       { status: 502 }
     );
   }

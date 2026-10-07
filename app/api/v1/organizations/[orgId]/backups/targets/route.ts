@@ -68,14 +68,14 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     // Reject SSH/local targets if restricted by deployment config
     if (data.type === "ssh" && !isLocalBackupsAllowed()) {
       return NextResponse.json(
-        { error: "SSH/local backup targets are not available on this instance" },
+        { error: "SSH/local backup targets aren't available on this instance" },
         { status: 403 },
       );
     }
 
     if (data.type === "local" && !isLocalBackupsAllowed()) {
       return NextResponse.json(
-        { error: "Local backup targets are not available on this instance" },
+        { error: "Local backup targets aren't available on this instance" },
         { status: 403 },
       );
     }
@@ -86,7 +86,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
         await fs.access(data.config.path, fs.constants.W_OK);
       } catch {
         return NextResponse.json(
-          { error: `Directory "${data.config.path}" does not exist or is not writable` },
+          { error: `Directory "${data.config.path}" doesn't exist or isn't writable` },
           { status: 400 },
         );
       }
