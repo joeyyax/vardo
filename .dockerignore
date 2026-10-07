@@ -3,7 +3,7 @@
 **/.git
 **/.env*
 !.env.example
-**/coverage
+coverage
 **/test-results
 **/playwright-report
 **/.source
