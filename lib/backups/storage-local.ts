@@ -50,7 +50,12 @@ export class LocalBackupStorage implements BackupStorage {
 
   async delete(key: string): Promise<void> {
     const target = this.safePath(key);
-    await unlink(target);
+    try {
+      await unlink(target);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") throw new ArchiveMissingError();
+      throw err;
+    }
   }
 
   // No getDownloadUrl — same as SSH. Downloads stream through the server.

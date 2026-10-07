@@ -44,6 +44,11 @@ describe("a missing archive", () => {
     await expect(storage.download("gone.tar.gz", join(BACKUPS_ROOT, "x"))).rejects.toBeInstanceOf(ArchiveMissingError);
   });
 
+  it("is reported by the local adapter on delete", async () => {
+    const storage = new LocalBackupStorage({ path: TARGET_ROOT });
+    await expect(storage.delete("gone.tar.gz")).rejects.toBeInstanceOf(ArchiveMissingError);
+  });
+
   it("is reported by the SSH adapter from scp's stderr", async () => {
     execFileAsyncMock.mockRejectedValue(
       Object.assign(new Error("Command failed: scp"), { stderr: "scp: /srv/gone.tar.gz: No such file or directory\n" }),

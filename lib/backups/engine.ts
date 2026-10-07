@@ -13,7 +13,7 @@ import { pipeline } from "stream/promises";
 import { createGzip, createGunzip } from "zlib";
 import { mkdir, readFile, rename, rm, stat, writeFile } from "fs/promises";
 import { resolve, join } from "path";
-import type { BackupStorage } from "./storage-port";
+import { ArchiveMissingError, type BackupStorage } from "./storage-port";
 import { createBackupStorage } from "./storage-factory";
 import { assertSafeName } from "@/lib/docker/validate";
 import { isUncapturedSource, pausedDumpReason, uncapturedReason } from "./coverage";
@@ -1258,6 +1258,10 @@ export async function pruneBackups(jobId: string): Promise<number> {
       try {
         await storage.delete(backup.storagePath);
       } catch (err) {
+        if (err instanceof ArchiveMissingError) {
+          pruneIds.push(backup.id);
+          continue;
+        }
         const reason = err instanceof Error ? err.message : String(err);
         log.warn(`Failed to delete ${backup.storagePath} from storage: ${reason}`);
         undeleted++;
