@@ -5,15 +5,16 @@ import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { isOrgAdmin } from "@/lib/auth/permissions";
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
-import { findAppData } from "@/lib/docker/app-data";
+import { findAppData, measureAppData } from "@/lib/docker/app-data";
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
 };
 
 // GET /api/v1/organizations/[orgId]/apps/[appId]/delete-preview
-// What deleting the app would destroy or keep.
-export async function GET(_request: NextRequest, { params }: RouteParams) {
+// What deleting the app would destroy or keep. `?sizes=1` returns the same
+// volumes and paths with sizes, which can take a few seconds.
+export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
     const org = await verifyOrgAccess(orgId);
@@ -28,6 +29,10 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       with: { project: { columns: { id: true, name: true, displayName: true } } },
     });
     if (!app) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+    if (request.nextUrl.searchParams.get("sizes") === "1") {
+      return NextResponse.json(await measureAppData(await findAppData(app)));
+    }
 
     let project: { id: string; name: string } | null = null;
     if (app.project) {
@@ -45,8 +50,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       }
     }
 
-    const data = await findAppData(app, { sizes: true });
-    return NextResponse.json({ ...data, project });
+    return NextResponse.json({ ...(await findAppData(app)), project });
   } catch (error) {
     return handleRouteError(error, "Error previewing app delete");
   }

@@ -146,9 +146,13 @@ export async function scanAppDir(appName: string): Promise<{
   return { bindPaths: [...bindPaths].sort(), composeNames: [...composeNames] };
 }
 
+/** Docker's volume df walks every volume on the host; hundreds take tens of seconds. */
+export const VOLUME_SIZES_TIMEOUT_MS = 3000;
+export const PATH_SIZE_TIMEOUT_MS = 3000;
+
 async function measurePath(path: string): Promise<number | null> {
   try {
-    const { stdout } = await execFileAsync("du", ["-sb", path], { timeout: 5000 });
+    const { stdout } = await execFileAsync("du", ["-sb", path], { timeout: PATH_SIZE_TIMEOUT_MS });
     const bytes = parseInt(stdout.split("\t")[0], 10);
     return Number.isNaN(bytes) ? null : bytes;
   } catch {
@@ -162,7 +166,6 @@ async function measurePath(path: string): Promise<number | null> {
  */
 export async function findAppData(
   app: { id: string; name: string; parentAppId?: string | null },
-  opts: { sizes?: boolean } = {},
 ): Promise<AppData> {
   if (app.parentAppId) return { volumes: [], bindMounts: [] };
 
@@ -190,20 +193,39 @@ export async function findAppData(
     (p) => !scan.bindPaths.some((q) => q !== p && p.startsWith(q + sep)),
   );
 
-  if (!opts.sizes) {
-    return {
-      volumes: names.map((name) => ({ name, sizeBytes: null })),
-      bindMounts: outermost.map((path) => ({ path, sizeBytes: null })),
-    };
-  }
+  return {
+    volumes: names.map((name) => ({ name, sizeBytes: null })),
+    bindMounts: outermost.map((path) => ({ path, sizeBytes: null })),
+  };
+}
 
+/** Resolves to `fallback` once `ms` passes. */
+function within<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<T>((resolve) => {
+    timer = setTimeout(() => resolve(fallback), ms);
+  });
+  return Promise.race([promise.catch(() => fallback), timeout]).finally(() => clearTimeout(timer));
+}
+
+/**
+ * Fill in sizes, best effort. Each source is bounded; a size that isn't back in
+ * time stays null.
+ */
+export async function measureAppData(data: AppData): Promise<AppData> {
   const [volumeSizes, bindSizes] = await Promise.all([
-    getVolumeSizes().catch(() => new Map<string, number>()),
-    Promise.all(outermost.map(measurePath)),
+    within(
+      getVolumeSizes({ timeoutMs: VOLUME_SIZES_TIMEOUT_MS }),
+      VOLUME_SIZES_TIMEOUT_MS,
+      new Map<string, number>(),
+    ),
+    Promise.all(
+      data.bindMounts.map((b) => within(measurePath(b.path), PATH_SIZE_TIMEOUT_MS, null)),
+    ),
   ]);
   return {
-    volumes: names.map((name) => ({ name, sizeBytes: volumeSizes.get(name) ?? null })),
-    bindMounts: outermost.map((path, i) => ({ path, sizeBytes: bindSizes[i] })),
+    volumes: data.volumes.map((v) => ({ ...v, sizeBytes: volumeSizes.get(v.name) ?? null })),
+    bindMounts: data.bindMounts.map((b, i) => ({ ...b, sizeBytes: bindSizes[i] })),
   };
 }
 

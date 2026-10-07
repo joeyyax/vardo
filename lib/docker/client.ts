@@ -118,6 +118,7 @@ export async function dockerRequest<T = unknown>(
   method: string,
   path: string,
   body?: unknown,
+  opts: { timeoutMs?: number } = {},
 ): Promise<T> {
   const conn = getConnectionOptions();
   const payload = body ? JSON.stringify(body) : undefined;
@@ -169,6 +170,12 @@ export async function dockerRequest<T = unknown>(
         });
       },
     );
+
+    if (opts.timeoutMs) {
+      req.setTimeout(opts.timeoutMs, () => {
+        req.destroy(new Error(`timed out after ${opts.timeoutMs}ms`));
+      });
+    }
 
     req.on("error", (err) => {
       reject(
@@ -854,8 +861,13 @@ export function summarizeDiskUsage(raw: Partial<RawDiskUsage>): DiskUsage {
 }
 
 /** Bytes per volume name. Docker reports -1 for a size it hasn't measured, which is left out. */
-export async function getVolumeSizes(): Promise<Map<string, number>> {
-  const raw = await dockerRequest<Pick<RawDiskUsage, "Volumes">>("GET", "/system/df?type=volume");
+export async function getVolumeSizes(opts: { timeoutMs?: number } = {}): Promise<Map<string, number>> {
+  const raw = await dockerRequest<Pick<RawDiskUsage, "Volumes">>(
+    "GET",
+    "/system/df?type=volume",
+    undefined,
+    opts,
+  );
   const sizes = new Map<string, number>();
   for (const v of raw.Volumes ?? []) {
     const size = v.UsageData?.Size;
