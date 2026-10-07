@@ -69,6 +69,8 @@ async function handlePatch(req: NextRequest, { params }: RouteParams) {
     const org = await verifyOrgAccess(orgId);
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
+    requireOrgAdmin(org.membership.role);
+
     const parsed = patchSchema.safeParse(await req.json());
     if (!parsed.success) {
       return NextResponse.json(

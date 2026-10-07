@@ -7,6 +7,7 @@ import { z } from "zod";
 import { initiateTransfer, analyzeTransfer, rejectTransfer } from "@/lib/transfers/engine";
 import { recordActivity } from "@/lib/activity";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
+import { isOrgAdmin } from "@/lib/auth/permissions";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
@@ -141,6 +142,13 @@ async function handleDelete(_request: NextRequest, { params }: RouteParams) {
     const { orgId, appId } = await params;
     const org = await verifyOrgAccess(orgId);
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+    if (!isOrgAdmin(org.membership.role)) {
+      return NextResponse.json(
+        { error: "Only owners and admins can cancel transfers" },
+        { status: 403 },
+      );
+    }
 
     // Find the pending transfer for this app
     const transfer = await db.query.appTransfers.findFirst({
