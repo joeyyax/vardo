@@ -118,8 +118,14 @@ export const backups = pgTable("backup", {
   jobId: text("job_id")
     .notNull()
     .references(() => backupJobs.id, { onDelete: "cascade" }),
-  appId: text("app_id")
-    .references(() => apps.id, { onDelete: "cascade" }),
+  // No foreign key: history outlives the app. Null means a system volume, so
+  // never switch this to SET NULL.
+  appId: text("app_id"),
+  // Snapshots of the app at backup time.
+  appName: text("app_name"),
+  organizationId: text("organization_id").references(() => organizations.id, {
+    onDelete: "cascade",
+  }),
   targetId: text("target_id")
     .notNull()
     .references(() => backupTargets.id, { onDelete: "cascade" }),

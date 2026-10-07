@@ -498,6 +498,13 @@
       "when": 1791311412338,
       "tag": "0070_high_maggott",
       "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1791335844659,
+      "tag": "0071_rich_madripoor",
+      "breakpoints": true
     }
   ]
 }
