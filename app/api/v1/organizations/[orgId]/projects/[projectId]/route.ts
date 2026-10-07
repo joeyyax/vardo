@@ -43,12 +43,12 @@ async function findProject(orgId: string, projectId: string) {
 async function findProjectBasic(orgId: string, projectId: string) {
   let project = await db.query.projects.findFirst({
     where: and(eq(projects.organizationId, orgId), eq(projects.id, projectId)),
-    columns: { id: true, name: true, organizationId: true, isSystemManaged: true },
+    columns: { id: true, name: true, organizationId: true, isSystemManaged: true, allowBindMounts: true, allowDockerSocket: true },
   });
   if (!project) {
     project = await db.query.projects.findFirst({
       where: and(eq(projects.organizationId, orgId), eq(projects.name, projectId)),
-      columns: { id: true, name: true, organizationId: true, isSystemManaged: true },
+      columns: { id: true, name: true, organizationId: true, isSystemManaged: true, allowBindMounts: true, allowDockerSocket: true },
     });
   }
   return project;
@@ -108,18 +108,20 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Host mounts reach the host, so only instance admins may grant them.
-    if (
-      (parsed.data.allowBindMounts !== undefined || parsed.data.allowDockerSocket !== undefined) &&
-      !(await isAppAdmin())
-    ) {
-      return NextResponse.json({ error: "Only instance admins can change host mount settings" }, { status: 403 });
-    }
-
     const existing = await findProjectBasic(orgId, projectId);
 
     if (!existing) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 });
+    }
+
+    const bindMountsChanged =
+      parsed.data.allowBindMounts !== undefined && parsed.data.allowBindMounts !== existing.allowBindMounts;
+    const dockerSocketChanged =
+      parsed.data.allowDockerSocket !== undefined && parsed.data.allowDockerSocket !== existing.allowDockerSocket;
+
+    // Host mounts reach the host, so only instance admins may change them.
+    if ((bindMountsChanged || dockerSocketChanged) && !(await isAppAdmin())) {
+      return NextResponse.json({ error: "Only instance admins can change host mount settings" }, { status: 403 });
     }
 
     const refused = refuseSystemManaged(existing, "edit");
@@ -148,7 +150,7 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
         .where(eq(projects.id, existing.id))
         .returning();
 
-      if (parsed.data.allowBindMounts !== undefined) {
+      if (bindMountsChanged) {
         logger.info(
           { projectId: existing.id, userId: org.session.user.id, allowBindMounts: parsed.data.allowBindMounts },
           "allowBindMounts flag changed",
@@ -161,7 +163,7 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
         }).catch(() => {});
       }
 
-      if (parsed.data.allowDockerSocket !== undefined) {
+      if (dockerSocketChanged) {
         logger.info(
           { projectId: existing.id, userId: org.session.user.id, allowDockerSocket: parsed.data.allowDockerSocket },
           "allowDockerSocket flag changed",

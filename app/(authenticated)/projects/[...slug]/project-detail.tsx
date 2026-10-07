@@ -554,6 +554,7 @@ export function ProjectDetail({
   initialTab,
   isAdmin = false,
   canImportContainers = false,
+  isInstanceAdmin = false,
   meshEnabled = false,
   loggingEnabled = true,
   environmentsEnabled = true,
@@ -565,6 +566,7 @@ export function ProjectDetail({
   initialTab: string;
   isAdmin?: boolean;
   canImportContainers?: boolean;
+  isInstanceAdmin?: boolean;
   meshEnabled?: boolean;
   loggingEnabled?: boolean;
   environmentsEnabled?: boolean;
@@ -897,7 +899,7 @@ export function ProjectDetail({
         displayName: editDisplayName.trim(),
         description: editDescription.trim() || null,
       };
-      if (isAdmin) {
+      if (isInstanceAdmin) {
         body.allowBindMounts = editAllowBindMounts;
         body.allowDockerSocket = editAllowDockerSocket;
       }
@@ -1231,7 +1233,7 @@ export function ProjectDetail({
                 />
               </div>
             </div>
-            {isAdmin && (
+            {isInstanceAdmin && (
               <div className="flex items-center justify-between gap-4">
                 <div className="space-y-1">
                   <Label htmlFor="edit-bind-mounts">Allow bind mounts</Label>
@@ -1246,7 +1248,7 @@ export function ProjectDetail({
                 />
               </div>
             )}
-            {isAdmin && (
+            {isInstanceAdmin && (
               <div className="flex items-center justify-between gap-4">
                 <div className="space-y-1">
                   <Label htmlFor="edit-docker-socket">Allow Docker socket</Label>
