@@ -1,343 +1,80 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { db } from "@/lib/db";
-import { APP_NAME_TAKEN_ERROR, isTopLevelAppNameTaken } from "@/lib/db/app-name";
-import { apps, domains, environments, projects, user } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
-import { nanoid } from "nanoid";
-import {
-  parseCompose,
-  sanitizeCompose,
-  injectNetwork,
-  composeToYaml,
-  excludeServices,
-  sharedMarkerTypeErrors,
-} from "@/lib/docker/compose";
-import { readProjectConfig } from "@/lib/config/vardo-config";
-import { getSslConfig, getPrimaryIssuer } from "@/lib/system-settings";
-import { recordActivity } from "@/lib/activity";
-import { resolveProjectForImport } from "@/lib/docker/import";
-import { readFile } from "fs/promises";
-import { resolve, basename } from "path";
-import { slugify } from "@/lib/ui/slugify";
+import { slidingWindowRateLimit } from "@/lib/api/rate-limit";
+import { isFeatureEnabledAsync } from "@/lib/config/features";
+import { adoptCompose, adoptFields, adoptSchema } from "@/lib/docker/adopt";
 import type { McpAuthContext } from "../auth";
-import { resolveProjectOrg, resolveTargetOrg } from "../scope";
-import { isFeatureEnabled } from "@/lib/config/features";
-import { adoptAllowsBindMounts } from "@/lib/docker/adopt-policy";
-import { credentialMayAdmin } from "@/lib/auth/admin";
+import { accessDenied, resolveProjectOrg, resolveTargetOrg } from "../scope";
 
-/** Reading a caller-chosen host path is instance-admin power, and MCP callers hold a token. */
-async function mayReadHostPath(userId: string): Promise<boolean> {
-  if (!credentialMayAdmin({ authMethod: "token" })) return false;
-  const row = await db.query.user.findFirst({
-    where: eq(user.id, userId),
-    columns: { isAppAdmin: true },
-  });
-  return Boolean(row?.isAppAdmin);
+// Matches the REST adopt route's "mutation" tier: 60 per minute.
+const ADOPT_RATE_LIMIT = 60;
+const ADOPT_RATE_WINDOW_MS = 60 * 1000;
+
+function fail(error: string) {
+  return {
+    content: [{ type: "text" as const, text: JSON.stringify({ error }) }],
+    isError: true as const,
+  };
 }
 
-export function registerAdoptApp(
-  server: McpServer,
-  context: McpAuthContext
-) {
+export function registerAdoptApp(server: McpServer, context: McpAuthContext) {
   server.tool(
     "vardo_adopt_app",
-    "Adopt an existing project directory into Vardo. Reads docker-compose.yml and optional vardo.yml from the given path, creates the app with a local environment.",
+    "Adopt an existing Docker Compose project into Vardo. Send the CONTENTS of docker-compose.yml as composeContent (not a file path; the server never reads its own filesystem). Optionally send the parsed vardo.yml as projectConfig. Any member of the organization can adopt.",
     {
-      path: z
-        .string()
-        .min(1)
-        .describe(
-          "Filesystem path to the project directory containing docker-compose.yml"
-        ),
-      name: z
-        .string()
-        .optional()
-        .describe(
-          "App slug (lowercase, hyphens). Defaults to directory name."
-        ),
-      displayName: z
-        .string()
-        .optional()
-        .describe("Human-readable app name. Defaults to directory name."),
-      environmentType: z
-        .enum(["local", "production", "staging", "preview"])
-        .default("local")
-        .describe("Environment type to create (default: local)"),
-      projectId: z
-        .string()
-        .optional()
-        .describe("Existing project ID to link to"),
-      newProjectName: z
-        .string()
-        .optional()
-        .describe("Create a new project with this name"),
+      composeContent: adoptFields.composeContent.describe(
+        "The full text of docker-compose.yml. Required. Not a path."
+      ),
+      projectConfig: adoptFields.projectConfig.describe(
+        "Parsed vardo.yml as an object, e.g. { environments: { local: { domain, exclude: [service] } } }"
+      ),
+      name: adoptFields.name.describe("App slug (lowercase letters, digits, hyphens)"),
+      displayName: adoptFields.displayName.describe("Human-readable app name"),
+      environmentType: adoptFields.environmentType.describe("Environment type to create (default: local)"),
+      projectId: adoptFields.projectId.describe("Existing project ID to link to"),
+      newProjectName: adoptFields.newProjectName.describe("Create a new project with this name"),
       organizationId: z
         .string()
         .optional()
         .describe(
           "Organization to adopt into when creating a new project (default: the token's own organization). Ignored when projectId is given — the project's own organization wins."
         ),
-      domain: z
-        .string()
-        .optional()
-        .describe("Custom domain (default: <name>.localhost)"),
-      containerPort: z
-        .number()
-        .int()
-        .positive()
-        .optional()
-        .describe("Primary container port (default: 3000)"),
+      domain: adoptFields.domain.describe("Custom domain (default: <name>.localhost)"),
+      containerPort: adoptFields.containerPort.describe("Primary container port (default: 3000)"),
     },
-    async ({
-      path: dirPath,
-      name,
-      displayName,
-      environmentType,
-      projectId,
-      newProjectName,
-      organizationId,
-      domain,
-      containerPort,
-    }) => {
-      if (!(await mayReadHostPath(context.userId))) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({
-                error:
-                  "Adopting a host path takes an instance admin, and API tokens never carry that. Send the compose file to POST /api/v1/organizations/{orgId}/adopt instead.",
-              }),
-            },
-          ],
-          isError: true,
-        };
-      }
+    async ({ organizationId, ...fields }) => {
+      const parsed = adoptSchema.safeParse(fields);
+      if (!parsed.success) return fail(parsed.error.issues[0].message);
+      const data = parsed.data;
 
-      // Require a project
-      if (!projectId && !newProjectName) {
-        return {
-          content: [{ type: "text" as const, text: JSON.stringify({ error: "Either projectId or newProjectName is required" }) }],
-          isError: true,
-        };
-      }
-
-      // An existing project pins the org; otherwise fall back to the requested
-      // (membership-checked) org. Never trusts a caller-supplied id on its own.
-      const orgId = projectId
-        ? await resolveProjectOrg(context, projectId)
+      // An existing project pins the org; otherwise the requested org, after a
+      // membership check. Same bar as REST: membership, any role.
+      const orgId = data.projectId
+        ? await resolveProjectOrg(context, data.projectId)
         : await resolveTargetOrg(context, organizationId);
+      if (!orgId) return accessDenied("Project");
 
-      if (!orgId) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({ error: "Project not found or access denied" }),
-            },
-          ],
-          isError: true,
-        };
+      if (!(await isFeatureEnabledAsync("container-import"))) {
+        return fail('Feature "container-import" is not enabled.');
       }
 
-      // Read docker-compose.yml from the directory
-      const composePath = resolve(dirPath, "docker-compose.yml");
-      let composeContent: string;
+      const rl = await slidingWindowRateLimit(
+        `${context.userId}:${orgId}`,
+        "mcp:adopt-app",
+        ADOPT_RATE_LIMIT,
+        ADOPT_RATE_WINDOW_MS
+      );
+      if (rl.limited) return fail(`Rate limit exceeded. Try again in ${rl.retryAfterSeconds}s.`);
+
       try {
-        composeContent = await readFile(composePath, "utf-8");
-      } catch {
+        const result = await adoptCompose(data, { orgId, userId: context.userId, source: "mcp" });
         return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({
-                error: `No docker-compose.yml found at ${composePath}`,
-              }),
-            },
-          ],
-          isError: true,
+          content: [{ type: "text" as const, text: JSON.stringify(result.body, null, 2) }],
+          ...(result.ok ? {} : { isError: true as const }),
         };
+      } catch (err) {
+        return fail(err instanceof Error ? err.message : String(err));
       }
-
-      // Read optional vardo.yml
-      const projectConfig = await readProjectConfig(dirPath);
-
-      // Derive defaults from directory name
-      const dirName = basename(dirPath);
-      const effectiveName = name ?? slugify(dirName);
-      const effectiveDisplayName = displayName ?? dirName;
-
-      // Check for duplicate slug. Only an app in this org can be named back —
-      // one held by another org must stay invisible.
-      const existing = await db.query.apps.findFirst({
-        where: and(
-          eq(apps.organizationId, orgId),
-          eq(apps.name, effectiveName)
-        ),
-        columns: { id: true },
-      });
-      if (existing) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({
-                error: APP_NAME_TAKEN_ERROR,
-                appId: existing.id,
-              }),
-            },
-          ],
-          isError: true,
-        };
-      }
-      if (await isTopLevelAppNameTaken(effectiveName)) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify({ error: APP_NAME_TAKEN_ERROR }),
-            },
-          ],
-          isError: true,
-        };
-      }
-
-      // Before parseCompose, which drops a non-boolean marker and leaves no trace.
-      const markerErrors = sharedMarkerTypeErrors(composeContent);
-      if (markerErrors.length > 0) {
-        return {
-          content: [{ type: "text" as const, text: markerErrors.join("\n") }],
-          isError: true,
-        };
-      }
-
-      // Parse and process compose
-      let compose = parseCompose(composeContent);
-
-      // Apply exclusions from vardo.yml
-      const envConfig = projectConfig?.environments?.[environmentType];
-      const excludeList = envConfig?.exclude ?? [];
-      if (excludeList.length > 0) {
-        compose = excludeServices(compose, excludeList);
-      }
-
-      // Bind mounts follow the project, the same source the deploy path reads.
-      // Keying this on environmentType alone refused in production what deploy
-      // permits in production, for the same project (#767).
-      const adoptProject = projectId
-        ? await db.query.projects.findFirst({
-            where: and(eq(projects.id, projectId), eq(projects.organizationId, orgId)),
-            columns: { allowBindMounts: true },
-          })
-        : null;
-      const bindMountsEnabled = adoptAllowsBindMounts({
-        environmentType,
-        projectAllowBindMounts: adoptProject?.allowBindMounts,
-        featureEnabled: isFeatureEnabled("bindMounts"),
-      });
-
-      const { compose: sanitized, strippedMounts } = sanitizeCompose(compose, {
-        allowBindMounts: bindMountsEnabled,
-      });
-      compose = sanitized;
-
-      // Domain and port
-      const effectiveDomain =
-        domain ?? envConfig?.domain ?? `${effectiveName}.localhost`;
-      const effectivePort = containerPort ?? 3000;
-
-      // Inject shared network only - Traefik labels are handled by file-provider
-      // since autoTraefikLabels=true. This avoids conflicts between Docker provider
-      // discovery and explicit file config.
-      const sslConfig = await getSslConfig();
-      const certResolver = getPrimaryIssuer(sslConfig);
-      compose = injectNetwork(compose, "vardo-network");
-
-      const finalCompose = composeToYaml(compose);
-
-      // Create app + environment in a transaction
-      const result = await db.transaction(async (tx) => {
-        const resolvedProjectId = await resolveProjectForImport(
-          tx,
-          orgId,
-          projectId ?? null,
-          newProjectName
-        );
-
-        const appId = nanoid();
-        const [app] = await tx
-          .insert(apps)
-          .values({
-            id: appId,
-            organizationId: orgId,
-            name: effectiveName,
-            displayName: effectiveDisplayName,
-            source: "direct",
-            deployType: "compose",
-            composeContent: finalCompose,
-            autoTraefikLabels: true,
-            containerPort: effectivePort,
-            projectId: resolvedProjectId,
-            status: "active",
-          })
-          .returning();
-
-        await tx.insert(environments).values({
-          id: nanoid(),
-          appId,
-          name: environmentType,
-          type: environmentType,
-          domain: effectiveDomain,
-          isDefault: true,
-        });
-
-        await tx.insert(domains).values({
-          id: nanoid(),
-          appId,
-          domain: effectiveDomain,
-          port: effectivePort,
-          certResolver,
-          isPrimary: true,
-        });
-
-        return { app };
-      });
-
-      recordActivity({
-        organizationId: orgId,
-        action: "app.adopted",
-        appId: result.app.id,
-        userId: context.userId,
-        metadata: {
-          name: effectiveName,
-          displayName: effectiveDisplayName,
-          environmentType,
-          excludedServices: excludeList,
-          source: "mcp",
-        },
-      });
-
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify(
-              {
-                app: result.app,
-                environmentType,
-                domain: effectiveDomain,
-                excludedServices: excludeList,
-                // Named even when empty, so a caller can tell "nothing was
-                // stripped" from an older response that could not say.
-                strippedMounts,
-              },
-              null,
-              2
-            ),
-          },
-        ],
-      };
     }
   );
 }
