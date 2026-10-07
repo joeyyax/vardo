@@ -100,7 +100,16 @@ export function BackupHistory({
               <td className="px-4 py-3">
                 <StatusBadge status={backup.status} />
               </td>
-              <td className="px-4 py-3 font-medium">{backup.app.displayName}</td>
+              <td className="px-4 py-3 font-medium">
+                {backup.app ? (
+                  backup.app.displayName
+                ) : (
+                  <>
+                    {backup.appName ?? "Unknown app"}{" "}
+                    <span className="font-normal text-muted-foreground">(deleted)</span>
+                  </>
+                )}
+              </td>
               <td className="px-4 py-3 text-muted-foreground">{backup.job.name}</td>
               <td className="px-4 py-3 text-muted-foreground font-mono text-xs">
                 {formatDuration(backup.startedAt, backup.finishedAt)}
@@ -116,22 +125,24 @@ export function BackupHistory({
                   {/* Skipped and failed runs have no archive to act on. */}
                   {backup.storagePath && (
                     <>
-                      <Button
-                        size="icon-xs"
-                        variant="ghost"
-                        aria-label="Restore backup"
-                        disabled={restoringBackups.has(backup.id)}
-                        onClick={() => {
-                          setAcknowledged(false);
-                          setPendingRestore(backup);
-                        }}
-                      >
-                        {restoringBackups.has(backup.id) ? (
-                          <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
-                        ) : (
-                          <RotateCcw className="size-3.5" aria-hidden="true" />
-                        )}
-                      </Button>
+                      {backup.app && (
+                        <Button
+                          size="icon-xs"
+                          variant="ghost"
+                          aria-label="Restore backup"
+                          disabled={restoringBackups.has(backup.id)}
+                          onClick={() => {
+                            setAcknowledged(false);
+                            setPendingRestore(backup);
+                          }}
+                        >
+                          {restoringBackups.has(backup.id) ? (
+                            <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                          ) : (
+                            <RotateCcw className="size-3.5" aria-hidden="true" />
+                          )}
+                        </Button>
+                      )}
                       <Button size="icon-xs" variant="ghost" aria-label="Download backup" asChild>
                         <a href={`/api/v1/organizations/${orgId}/backups/history/${backup.id}/download`}>
                           <Download className="size-3.5" aria-hidden="true" />
@@ -159,7 +170,7 @@ export function BackupHistory({
         title="Restore this backup"
         description={
           pendingRestore
-            ? `This overwrites ${pendingRestore.app.displayName}'s current volume data with the archive from ${new Date(pendingRestore.startedAt).toLocaleString()}. Containers using a restored volume stop until it finishes. Anything written since is lost, and there is no undo.`
+            ? `This overwrites ${pendingRestore.app?.displayName}'s current volume data with the archive from ${new Date(pendingRestore.startedAt).toLocaleString()}. Containers using a restored volume stop until it finishes. Anything written since is lost, and there is no undo.`
             : ""
         }
         confirmLabel="Restore"

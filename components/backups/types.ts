@@ -55,7 +55,9 @@ export type RecentBackup = {
   storagePath: string | null;
   log: string | null;
   job: { id: string; name: string };
-  app: App;
+  /** Null once the app is deleted; appName keeps the label. */
+  app: App | null;
+  appName: string | null;
 };
 
 /** Where a live run has got to, from the latest backup.progress event. */
