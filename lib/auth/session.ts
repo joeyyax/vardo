@@ -104,7 +104,8 @@ export const getSession = cache(async (): Promise<SessionResult | null> => {
 
 /**
  * Get the current user's organization.
- * Token auth uses the token's bound org. Session auth uses cookie preference.
+ * Token auth uses the token's bound org and nothing else. Session auth uses
+ * cookie preference, then the first membership.
  */
 export const getCurrentOrg = cache(async () => {
   const session = await getSession();
@@ -113,10 +114,12 @@ export const getCurrentOrg = cache(async () => {
     return null;
   }
 
+  const isToken = session.authMethod === "token";
+
   // Determine preferred org: token's bound org > cookie > first membership
-  const preferredOrgId =
-    (session.authMethod === "token" ? session.tokenOrgId : undefined) ||
-    (await cookies()).get(CURRENT_ORG_COOKIE)?.value;
+  const preferredOrgId = isToken
+    ? session.tokenOrgId
+    : (await cookies()).get(CURRENT_ORG_COOKIE)?.value;
 
   // If there's a preferred org, verify user has access to it
   if (preferredOrgId) {
@@ -142,6 +145,9 @@ export const getCurrentOrg = cache(async () => {
       };
     }
   }
+
+  // A token is pinned to its org. Never fall back to another membership.
+  if (isToken) return null;
 
   // Fall back to first non-system membership (or any if selfManagement is on)
   const showSystemOrgs = await isFeatureEnabledAsync("selfManagement");
