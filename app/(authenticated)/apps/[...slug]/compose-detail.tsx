@@ -40,6 +40,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
+import { DeleteAppDialog } from "./delete-app-dialog";
 import { LogViewer } from "@/components/log-viewer";
 import { EnvEditor } from "@/components/env-editor";
 import { AppMetrics } from "./app-metrics";
@@ -714,7 +715,6 @@ export function ComposeDetail({
   const router = useRouter();
   const [activeTab, setActiveTab] = useState(initialTab);
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const [deleting, setDeleting] = useState(false);
   const [stopOpen, setStopOpen] = useState(false);
   const [rollbackOpen, setRollbackOpen] = useState(false);
   const [rollingBack, setRollingBack] = useState(false);
@@ -807,29 +807,6 @@ export function ComposeDetail({
       toast.error(err instanceof Error ? err.message : "Stop failed");
     }
     router.refresh();
-  }
-
-  async function handleDelete() {
-    setDeleting(true);
-    try {
-      const res = await fetch(
-        `/api/v1/organizations/${orgId}/apps/${app.id}`,
-        { method: "DELETE" }
-      );
-
-      if (!res.ok) {
-        const data = await res.json();
-        toast.error(data.error || "Failed to delete");
-        return;
-      }
-
-      toast.success("App deleted");
-      router.push("/projects");
-    } catch {
-      toast.error("Failed to delete");
-    } finally {
-      setDeleting(false);
-    }
   }
 
   const services = app.childApps;
@@ -1315,7 +1292,7 @@ export function ComposeDetail({
                 title="Delete stack"
                 description={
                   deleteRefusal ??
-                  `Stops and removes all ${services.length} service${services.length === 1 ? "" : "s"} and their data. This cannot be undone.`
+                  `Stops and removes all ${services.length} service${services.length === 1 ? "" : "s"}. Volumes are kept unless you choose otherwise.`
                 }
                 action={
                   <Button
@@ -1453,14 +1430,12 @@ export function ComposeDetail({
         onConfirm={handleInstantRollback}
       />
 
-      <ConfirmDeleteDialog
+      <DeleteAppDialog
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
-        title="Delete app"
-        description={`Are you sure you want to delete "${app.displayName}"? This will stop all services and remove all associated data. This action cannot be undone.`}
-        confirmLabel="Delete"
-        onConfirm={handleDelete}
-        loading={deleting}
+        orgId={orgId}
+        app={app}
+        onDeleted={() => router.push("/projects")}
       />
 
       {app.composeContent && (

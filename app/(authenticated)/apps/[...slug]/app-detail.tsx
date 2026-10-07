@@ -28,6 +28,7 @@ import { PageToolbar } from "@/components/page-toolbar";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
+import { DeleteAppDialog } from "./delete-app-dialog";
 import { LogViewer } from "@/components/log-viewer";
 import dynamic from "next/dynamic";
 import { envTypeDotColor } from "@/lib/ui/status-colors";
@@ -101,7 +102,6 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
   const [stopOpen, setStopOpen] = useState(false);
   const [rollbackOpen, setRollbackOpen] = useState(false);
   const [rollingBack, setRollingBack] = useState(false);
-  const [deleting, setDeleting] = useState(false);
   const [deletingEnv, setDeletingEnv] = useState(false);
 
   // New environment sheet state
@@ -306,29 +306,6 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
       toast.error(err instanceof Error ? err.message : "Stop failed");
     }
     router.refresh();
-  }
-
-  async function handleDelete() {
-    setDeleting(true);
-    try {
-      const res = await fetch(
-        `/api/v1/organizations/${orgId}/apps/${app.id}`,
-        { method: "DELETE" }
-      );
-
-      if (!res.ok) {
-        const data = await res.json();
-        toast.error(data.error || "Failed to delete");
-        return;
-      }
-
-      toast.success("App deleted");
-      router.push("/projects");
-    } catch {
-      toast.error("Failed to delete");
-    } finally {
-      setDeleting(false);
-    }
   }
 
   async function handleDeleteEnvironment() {
@@ -946,7 +923,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
                   deleteRefusal ??
                   (isChildService
                     ? "Managed by the parent stack — delete the stack to remove this service."
-                    : "Removes all environments, deployments, domains and variables. This cannot be undone.")
+                    : "Removes environments, deployments, domains and variables. Volumes are kept unless you choose otherwise.")
                 }
                 action={
                   <Button
@@ -1040,14 +1017,12 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         onConfirm={handleInstantRollback}
       />
 
-      {/* Delete Project Confirmation */}
-      <ConfirmDeleteDialog
+      <DeleteAppDialog
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
-        title="Delete app"
-        description={`Are you sure you want to delete "${app.displayName}"? This will remove all environments, deployments, domains, and environment variables. This action cannot be undone.`}
-        onConfirm={handleDelete}
-        loading={deleting}
+        orgId={orgId}
+        app={app}
+        onDeleted={() => router.push("/projects")}
       />
 
       {/* Delete Environment Confirmation */}
