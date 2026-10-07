@@ -120,7 +120,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     if (gate) return gate;
 
     const { orgId, targetId } = await params;
-    const org = await verifyOrgAccess(orgId, "backup.view");
+    const org = await verifyOrgAccess(orgId, "backup.targets.manage");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const { denied } = await guardTarget(orgId, targetId);

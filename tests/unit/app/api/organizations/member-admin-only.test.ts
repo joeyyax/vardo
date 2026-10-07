@@ -32,6 +32,7 @@ const ADMIN_ONLY: [string, string, string][] = [
   ["create a backup target", "backups/targets", "POST"],
   ["edit a backup target", "backups/targets/[targetId]", "PATCH"],
   ["delete a backup target", "backups/targets/[targetId]", "DELETE"],
+  ["see what deleting a backup target takes", "backups/targets/[targetId]", "GET"],
   ["create a backup job", "backups", "POST"],
   ["edit a backup job", "backups/jobs/[jobId]", "PATCH"],
   ["delete a backup job", "backups/jobs/[jobId]", "DELETE"],
