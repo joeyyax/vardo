@@ -53,7 +53,7 @@ export const CAPABILITIES = {
   "app.domains": MEMBERS,
   "app.deploy": MEMBERS,
   "app.terminal": MEMBERS,
-  "app.cron": ADMINS,
+  "app.cron": MEMBERS,
   "app.debug": ADMINS,
   "app.delete": ADMINS,
   "app.volumes.sync": ADMINS,

@@ -1,7 +1,7 @@
 // /api/v1/organizations/[orgId]/apps/[appId]/cron
 //
-// A cron job runs its command inside the app's container. Creating, editing
-// and deleting one all take an org admin.
+// Cron is app config. Creating, editing and deleting a job take a member;
+// a viewer is refused.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
@@ -79,15 +79,15 @@ beforeEach(() => {
 });
 
 describe.each(Object.entries(calls))("cron %s", (_method, call) => {
-  it("denies an org member", async () => {
-    as("member");
+  it("denies a viewer", async () => {
+    as("viewer");
     expect((await call()).status).toBe(403);
     expect(mockUpdate).not.toHaveBeenCalled();
     expect(mockDelete).not.toHaveBeenCalled();
     expect(mockInsert).not.toHaveBeenCalled();
   });
 
-  it.each(["admin", "owner"])("allows an org %s", async (role) => {
+  it.each(["member", "admin", "owner"])("allows an org %s", async (role) => {
     as(role);
     expect((await call()).status).toBeLessThan(300);
   });
