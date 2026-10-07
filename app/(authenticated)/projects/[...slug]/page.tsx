@@ -10,6 +10,22 @@ import { canImportContainers, isAppAdmin } from "@/lib/auth/admin";
 import { ProjectDetail } from "./project-detail";
 import type { MeshPeerSummary, ProjectInstanceSummary } from "@/lib/mesh/types";
 
+// Instance admins see every peer. Org admins see the peers bound to their org.
+async function visibleMeshPeers(
+  orgId: string,
+  role: string,
+  instanceAdmin: boolean,
+): Promise<MeshPeerSummary[]> {
+  if (!instanceAdmin && !can(role, "mesh.peers.view")) return [];
+  return db.query.meshPeers
+    .findMany({
+      where: instanceAdmin ? undefined : (p, { eq }) => eq(p.organizationId, orgId),
+      columns: { id: true, name: true, type: true, status: true, connectionType: true },
+    })
+    .then((p) => p as MeshPeerSummary[])
+    .catch(() => [] as MeshPeerSummary[]);
+}
+
 const VALID_TABS = ["apps", "deployments", "variables", "settings", "logs", "metrics", "backups", "instances"] as const;
 type ValidTab = (typeof VALID_TABS)[number];
 
@@ -134,23 +150,19 @@ export default async function ProjectDetailPage({
     redirect(`/projects/${project.name}${tabPath}`);
   }
 
+  const instanceAdmin = await isAppAdmin();
+
   // Fetch flags + mesh data in parallel
-  const [meshEnabled, loggingEnabled, environmentsEnabled, meshPeers, meshInstances, containerImport, instanceAdmin] = await Promise.all([
+  const [meshEnabled, loggingEnabled, environmentsEnabled, meshPeers, meshInstances, containerImport] = await Promise.all([
     isFeatureEnabledAsync("mesh"),
     isFeatureEnabledAsync("logging"),
     isFeatureEnabledAsync("environments"),
-    // Peers are system-level (not org-scoped) — admins only
-    can(role, "mesh.peers.view")
-      ? db.query.meshPeers.findMany({
-          columns: { id: true, name: true, type: true, status: true, connectionType: true },
-        }).then((p) => p as MeshPeerSummary[]).catch(() => [] as MeshPeerSummary[])
-      : Promise.resolve([] as MeshPeerSummary[]),
+    visibleMeshPeers(orgId, role, instanceAdmin),
     db.query.projectInstances.findMany({
       where: eq(projectInstances.projectId, project.id),
       columns: { id: true, environment: true, gitRef: true, status: true, meshPeerId: true, transferredAt: true },
     }).then((i) => i as ProjectInstanceSummary[]).catch(() => [] as ProjectInstanceSummary[]),
     canImportContainers(),
-    isAppAdmin(),
   ]);
 
   // Requesting a tab gated by a disabled flag falls back to apps

@@ -1200,6 +1200,7 @@ export function ProjectDetail({
               orgId={orgId}
               peers={meshPeers}
               instances={projectInstances}
+              canTransfer={isInstanceAdmin}
             />
           </TabsContent>
         )}

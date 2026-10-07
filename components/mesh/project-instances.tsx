@@ -33,11 +33,14 @@ export function ProjectInstances({
   orgId,
   peers,
   instances,
+  canTransfer = false,
 }: {
   projectId: string;
   orgId: string;
   peers: MeshPeerSummary[];
   instances: ProjectInstanceSummary[];
+  /** Promote, pull and clone require an instance admin. */
+  canTransfer?: boolean;
 }) {
   const router = useRouter();
   const [transferAction, setTransferAction] = useState<TransferAction | null>(null);
@@ -147,7 +150,7 @@ export function ProjectInstances({
           icon={Network}
           title="No deployments across instances"
           body="Promote, pull or clone this project to connected instances."
-          action={
+          action={canTransfer && (
             <Button
               variant="outline"
               size="sm"
@@ -159,9 +162,9 @@ export function ProjectInstances({
               <Copy className="size-3.5 mr-1.5" aria-hidden="true" />
               Clone to...
             </Button>
-          }
+          )}
         />
-        {renderDialog()}
+        {canTransfer && renderDialog()}
       </div>
     );
   }
@@ -286,7 +289,7 @@ export function ProjectInstances({
                   </td>
                   <td className="px-4 py-3 text-right">
                     <span className="flex justify-end gap-1">
-                      {inst.environment !== "production" && (
+                      {canTransfer && inst.environment !== "production" && (
                         <Button
                           variant="ghost"
                           size="sm"
@@ -301,7 +304,7 @@ export function ProjectInstances({
                           Promote
                         </Button>
                       )}
-                      {inst.environment !== "development" && (
+                      {canTransfer && inst.environment !== "development" && (
                         <Button
                           variant="ghost"
                           size="sm"
@@ -324,19 +327,23 @@ export function ProjectInstances({
         </table>
       </div>
 
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={() => {
-          setTransferAction("clone");
-          setTargetPeerId("");
-        }}
-      >
-        <Copy className="size-3.5 mr-1.5" aria-hidden="true" />
-        Clone to...
-      </Button>
+      {canTransfer && (
+        <>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setTransferAction("clone");
+              setTargetPeerId("");
+            }}
+          >
+            <Copy className="size-3.5 mr-1.5" aria-hidden="true" />
+            Clone to...
+          </Button>
 
-      {renderDialog()}
+          {renderDialog()}
+        </>
+      )}
     </div>
   );
 }
