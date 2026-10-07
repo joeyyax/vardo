@@ -3,11 +3,13 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { Pencil, Trash2 } from "lucide-react";
 import { toast } from "@/lib/messenger";
 import { TargetIcon, targetSubtitle } from "./constants";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
-import type { BackupTarget } from "./types";
+import { plural, usageSummary } from "./delete-copy";
+import type { BackupTarget, TargetUsage } from "./types";
 
 export function TargetCard({
   target,
@@ -24,27 +26,63 @@ export function TargetCard({
 }) {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [usage, setUsage] = useState<TargetUsage | null>(null);
+  const [usageFailed, setUsageFailed] = useState(false);
+  const [typed, setTyped] = useState("");
+
+  const url = `/api/v1/organizations/${orgId}/backups/targets/${target.id}`;
+  const inUse = !!usage && (usage.backups > 0 || usage.jobs > 0);
+
+  async function openDelete() {
+    setUsage(null);
+    setUsageFailed(false);
+    setTyped("");
+    setDeleteOpen(true);
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error();
+      setUsage((await res.json()).usage);
+    } catch {
+      setUsageFailed(true);
+    }
+  }
 
   async function deleteTarget() {
     setDeleting(true);
     try {
-      const res = await fetch(
-        `/api/v1/organizations/${orgId}/backups/targets/${target.id}`,
-        { method: "DELETE" }
-      );
-      if (res.ok) {
-        toast.success("Target deleted");
-        setDeleteOpen(false);
-        onRefresh();
-      } else {
-        toast.error("Failed to delete target");
+      const res = await fetch(url, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(inUse ? { confirm: typed } : {}),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data.error ?? "Failed to delete target");
+        if (data.usage) setUsage(data.usage);
+        return;
       }
+      toast.success("Target deleted");
+      if (data.archivesLeft > 0) {
+        toast.warning(`${plural(data.archivesLeft, "archive")} couldn't be deleted from storage`);
+      }
+      setDeleteOpen(false);
+      onRefresh();
     } catch {
       toast.error("Failed to delete target");
     } finally {
       setDeleting(false);
     }
   }
+
+  const description = usageFailed
+    ? "Couldn't check what uses this target."
+    : !usage
+      ? "Checking what uses this target…"
+      : usage.inProgress > 0
+        ? "A backup is writing to this target. Try again once it finishes."
+        : inUse
+          ? usageSummary(usage, !!target.isAppLevel)
+          : "Nothing uses this target. Its storage isn't touched.";
 
   return (
     <>
@@ -84,7 +122,7 @@ export function TargetCard({
                 size="icon-xs"
                 variant="ghost"
                 aria-label="Delete target"
-                onClick={() => setDeleteOpen(true)}
+                onClick={openDelete}
               >
                 <Trash2 className="size-3.5" />
               </Button>
@@ -96,11 +134,31 @@ export function TargetCard({
       <ConfirmDeleteDialog
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
-        title="Delete storage target"
-        description="This will remove the target. Existing backup files in storage won't be deleted, but jobs using this target will stop working."
+        title={`Delete ${target.name}`}
+        description={description}
         onConfirm={deleteTarget}
         loading={deleting}
-      />
+        confirmDisabled={
+          !usage || usage.inProgress > 0 || (inUse && typed !== target.name)
+        }
+      >
+        {inUse && usage.inProgress === 0 && (
+          <div className="space-y-1.5 text-sm">
+            <label htmlFor={`delete-target-${target.id}`} className="block">
+              Type <span className="font-mono font-medium">{target.name}</span> to delete it and
+              everything on it
+            </label>
+            <Input
+              id={`delete-target-${target.id}`}
+              value={typed}
+              onChange={(e) => setTyped(e.target.value)}
+              autoComplete="off"
+              spellCheck={false}
+              autoFocus
+            />
+          </div>
+        )}
+      </ConfirmDeleteDialog>
     </>
   );
 }

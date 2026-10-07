@@ -21,6 +21,16 @@ export type BackupTarget = {
   isAppLevel?: boolean;
 };
 
+/** What deleting a target takes with it. */
+export type TargetUsage = {
+  backups: number;
+  bytes: number;
+  inProgress: number;
+  jobs: number;
+  /** This org's jobs; other orgs' are counted only. */
+  jobNames: string[];
+};
+
 export type BackupHistoryEntry = {
   id: string;
   status: string;
@@ -57,6 +67,7 @@ export type RecentBackup = {
   /** Null once the job is deleted; jobName keeps the label. */
   job: { id: string; name: string } | null;
   jobName: string | null;
+  appId: string | null;
   /** Null once the app is deleted; appName keeps the label. */
   app: App | null;
   appName: string | null;

@@ -5,12 +5,13 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Archive, Download, Loader2, RotateCcw } from "lucide-react";
+import { Archive, Download, Loader2, RotateCcw, Trash2 } from "lucide-react";
 import { formatBytes } from "@/lib/metrics/format";
 import { MIN_VALID_GZIP_BYTES } from "@/lib/backups/archive";
 import { toast } from "@/lib/messenger";
 import { RelativeTime } from "@/components/relative-time";
 import { StatusBadge } from "./status-badge";
+import { deleteDescription, orphanScope, plural } from "./delete-copy";
 import type { RecentBackup } from "./types";
 
 function formatDuration(startedAt: string, finishedAt: string | null): string {
@@ -42,6 +43,57 @@ export function BackupHistory({
   const [restoringBackups, setRestoringBackups] = useState<Set<string>>(new Set());
   const [pendingRestore, setPendingRestore] = useState<RecentBackup | null>(null);
   const [acknowledged, setAcknowledged] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<RecentBackup | null>(null);
+  const [deleteAll, setDeleteAll] = useState(false);
+  const [orphanTotal, setOrphanTotal] = useState<{ backups: number; bytes: number } | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const pendingScope = pendingDelete ? orphanScope(pendingDelete) : null;
+
+  async function openDelete(backup: RecentBackup) {
+    setPendingDelete(backup);
+    setDeleteAll(false);
+    setOrphanTotal(null);
+    const scope = orphanScope(backup);
+    if (!scope) return;
+    try {
+      const res = await fetch(`/api/v1/organizations/${orgId}/backups/history?${scope.query}`);
+      if (res.ok) setOrphanTotal(await res.json());
+    } catch {
+      // The single delete still works.
+    }
+  }
+
+  async function deleteBackup() {
+    if (!pendingDelete) return;
+    setDeleting(true);
+    try {
+      const base = `/api/v1/organizations/${orgId}/backups/history`;
+      const res = await fetch(
+        deleteAll && pendingScope ? `${base}?${pendingScope.query}` : `${base}/${pendingDelete.id}`,
+        { method: "DELETE" },
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data.error ?? "Failed to delete backup");
+        return;
+      }
+      if (deleteAll) {
+        toast.success(`${plural(data.deleted, "backup")} deleted`);
+        if (data.kept > 0) {
+          toast.warning(`${plural(data.kept, "backup")} kept: storage wouldn't delete the archive`);
+        }
+      } else {
+        toast.success("Backup deleted");
+      }
+      setPendingDelete(null);
+      onRefresh();
+    } catch {
+      toast.error("Failed to delete backup");
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   async function restoreBackup(backupId: string) {
     setRestoringBackups((prev) => new Set([...prev, backupId]));
@@ -152,6 +204,16 @@ export function BackupHistory({
                       </Button>
                     </>
                   )}
+                  {backup.status !== "pending" && backup.status !== "running" && (
+                    <Button
+                      size="icon-xs"
+                      variant="ghost"
+                      aria-label="Delete backup"
+                      onClick={() => openDelete(backup)}
+                    >
+                      <Trash2 className="size-3.5" aria-hidden="true" />
+                    </Button>
+                  )}
                 </span>
               </td>
             </tr>
@@ -189,6 +251,36 @@ export function BackupHistory({
             I understand current data will be overwritten
           </span>
         </label>
+      </ConfirmDeleteDialog>
+
+      <ConfirmDeleteDialog
+        open={!!pendingDelete}
+        onOpenChange={(open) => {
+          if (!open) setPendingDelete(null);
+        }}
+        onConfirm={deleteBackup}
+        loading={deleting}
+        title="Delete backup"
+        description={
+          !pendingDelete
+            ? ""
+            : deleteAll && pendingScope && orphanTotal
+              ? `Deletes all ${plural(orphanTotal.backups, "backup")} of ${pendingScope.label} and their archives (${formatBytes(orphanTotal.bytes)}) from storage. This can't be undone.`
+              : deleteDescription(pendingDelete)
+        }
+      >
+        {pendingScope && orphanTotal && orphanTotal.backups > 1 && (
+          <label className="flex cursor-pointer select-none items-start gap-3">
+            <Checkbox
+              checked={deleteAll}
+              onCheckedChange={(checked) => setDeleteAll(checked === true)}
+              className="mt-0.5"
+            />
+            <span className="text-sm text-muted-foreground">
+              Delete all {orphanTotal.backups} backups of {pendingScope.label}
+            </span>
+          </label>
+        )}
       </ConfirmDeleteDialog>
     </div>
   );
