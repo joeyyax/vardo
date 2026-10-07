@@ -11,11 +11,13 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // userId -> orgIds the membership table says they belong to.
 let membershipTable: Record<string, string[]> = {};
+// "userId:orgId" -> role; owner when absent.
+let roleTable: Record<string, string> = {};
 
 const membershipFindFirst = vi.fn(async (args: { where: unknown }) => {
   const { userId, organizationId } = readMembershipFilter(args);
   return membershipTable[userId]?.includes(organizationId)
-    ? { id: `${userId}:${organizationId}`, role: "owner" }
+    ? { id: `${userId}:${organizationId}`, role: roleTable[`${userId}:${organizationId}`] ?? "owner" }
     : undefined;
 });
 
@@ -23,6 +25,7 @@ const membershipFindMany = vi.fn(async (args: { where: unknown }) => {
   const { userId } = readMembershipFilter(args);
   return (membershipTable[userId] ?? []).map((organizationId) => ({
     organizationId,
+    role: roleTable[`${userId}:${organizationId}`] ?? "owner",
   }));
 });
 
@@ -79,99 +82,118 @@ async function scope() {
 beforeEach(() => {
   vi.clearAllMocks();
   membershipTable = { u1: [HOME, OTHER] };
+  roleTable = {};
 });
 
 describe("canAccessOrg", () => {
   it("lets a normal token reach its own org", async () => {
     const { canAccessOrg } = await scope();
-    expect(await canAccessOrg(normalToken, HOME)).toBe(true);
+    expect(await canAccessOrg(normalToken, HOME, "org.view")).toBe(true);
   });
 
   it("refuses a normal token another org, even one its user belongs to", async () => {
     const { canAccessOrg } = await scope();
-    expect(await canAccessOrg(normalToken, OTHER)).toBe(false);
+    expect(await canAccessOrg(normalToken, OTHER, "org.view")).toBe(false);
   });
 
   it("lets a cross-org token reach an org its user belongs to", async () => {
     const { canAccessOrg } = await scope();
-    expect(await canAccessOrg(crossToken, OTHER)).toBe(true);
+    expect(await canAccessOrg(crossToken, OTHER, "org.view")).toBe(true);
   });
 
   it("refuses a cross-org token an org its user does not belong to", async () => {
     const { canAccessOrg } = await scope();
-    expect(await canAccessOrg(crossToken, FOREIGN)).toBe(false);
+    expect(await canAccessOrg(crossToken, FOREIGN, "org.view")).toBe(false);
   });
 
   it("revokes access as soon as the membership row is gone", async () => {
     const { canAccessOrg } = await scope();
-    expect(await canAccessOrg(crossToken, OTHER)).toBe(true);
+    expect(await canAccessOrg(crossToken, OTHER, "org.view")).toBe(true);
 
     membershipTable = { u1: [HOME] };
-    expect(await canAccessOrg(crossToken, OTHER)).toBe(false);
+    expect(await canAccessOrg(crossToken, OTHER, "org.view")).toBe(false);
   });
 
   it("revokes the token's own org when its user is removed from it", async () => {
     const { canAccessOrg } = await scope();
     membershipTable = { u1: [OTHER] };
 
-    expect(await canAccessOrg(normalToken, HOME)).toBe(false);
-    expect(await canAccessOrg(crossToken, HOME)).toBe(false);
+    expect(await canAccessOrg(normalToken, HOME, "org.view")).toBe(false);
+    expect(await canAccessOrg(crossToken, HOME, "org.view")).toBe(false);
   });
 
   it("checks the database on every call rather than caching the answer", async () => {
     const { canAccessOrg } = await scope();
-    await canAccessOrg(crossToken, OTHER);
-    await canAccessOrg(crossToken, OTHER);
+    await canAccessOrg(crossToken, OTHER, "org.view");
+    await canAccessOrg(crossToken, OTHER, "org.view");
 
     expect(membershipFindFirst).toHaveBeenCalledTimes(2);
+  });
+
+  it("refuses a capability the membership's role does not hold", async () => {
+    const { canAccessOrg } = await scope();
+    roleTable = { [`u1:${HOME}`]: "member" };
+
+    expect(await canAccessOrg(normalToken, HOME, "app.deploy")).toBe(true);
+    expect(await canAccessOrg(normalToken, HOME, "app.delete")).toBe(false);
   });
 });
 
 describe("accessibleOrgIds", () => {
   it("gives a normal token only its own org", async () => {
     const { accessibleOrgIds } = await scope();
-    expect(await accessibleOrgIds(normalToken)).toEqual([HOME]);
+    expect(await accessibleOrgIds(normalToken, "org.view")).toEqual([HOME]);
   });
 
   it("gives a cross-org token the union of its user's memberships", async () => {
     const { accessibleOrgIds } = await scope();
-    expect((await accessibleOrgIds(crossToken)).sort()).toEqual(
+    expect((await accessibleOrgIds(crossToken, "org.view")).sort()).toEqual(
       [HOME, OTHER].sort()
     );
   });
 
   it("never includes an org the user is not a member of", async () => {
     const { accessibleOrgIds } = await scope();
-    expect(await accessibleOrgIds(crossToken)).not.toContain(FOREIGN);
+    expect(await accessibleOrgIds(crossToken, "org.view")).not.toContain(FOREIGN);
   });
 
   it("returns nothing once the user's last membership is revoked", async () => {
     const { accessibleOrgIds } = await scope();
     membershipTable = { u1: [] };
 
-    expect(await accessibleOrgIds(normalToken)).toEqual([]);
-    expect(await accessibleOrgIds(crossToken)).toEqual([]);
+    expect(await accessibleOrgIds(normalToken, "org.view")).toEqual([]);
+    expect(await accessibleOrgIds(crossToken, "org.view")).toEqual([]);
+  });
+});
+
+describe("accessibleOrgIds by capability", () => {
+  it("drops an org whose role lacks the capability", async () => {
+    const { accessibleOrgIds } = await scope();
+    roleTable = { [`u1:${OTHER}`]: "member" };
+
+    expect(await accessibleOrgIds(crossToken, "app.delete")).toEqual([HOME]);
+    expect((await accessibleOrgIds(crossToken, "app.view")).sort()).toEqual([HOME, OTHER].sort());
   });
 });
 
 describe("resolveTargetOrg", () => {
   it("defaults to the token's own org", async () => {
     const { resolveTargetOrg } = await scope();
-    expect(await resolveTargetOrg(normalToken)).toBe(HOME);
+    expect(await resolveTargetOrg(normalToken, undefined, "org.view")).toBe(HOME);
   });
 
   it("refuses a caller-supplied org a normal token has no claim to", async () => {
     const { resolveTargetOrg } = await scope();
-    expect(await resolveTargetOrg(normalToken, OTHER)).toBeNull();
+    expect(await resolveTargetOrg(normalToken, OTHER, "org.view")).toBeNull();
   });
 
   it("honors a caller-supplied org a cross-org token's user belongs to", async () => {
     const { resolveTargetOrg } = await scope();
-    expect(await resolveTargetOrg(crossToken, OTHER)).toBe(OTHER);
+    expect(await resolveTargetOrg(crossToken, OTHER, "org.view")).toBe(OTHER);
   });
 
   it("refuses a caller-supplied org nobody vouches for", async () => {
     const { resolveTargetOrg } = await scope();
-    expect(await resolveTargetOrg(crossToken, FOREIGN)).toBeNull();
+    expect(await resolveTargetOrg(crossToken, FOREIGN, "org.view")).toBeNull();
   });
 });

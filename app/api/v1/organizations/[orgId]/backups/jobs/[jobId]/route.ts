@@ -40,7 +40,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     if (gate) return gate;
 
     const { orgId, jobId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "backup.view");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const job = await db.query.backupJobs.findFirst({
@@ -80,7 +80,7 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
     const gate = await requirePlugin("backups");
     if (gate) return gate;
     const { orgId, jobId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "backup.jobs.manage");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const body = await request.json();
@@ -183,15 +183,8 @@ async function handleDelete(_request: NextRequest, { params }: RouteParams) {
     const gate = await requirePlugin("backups");
     if (gate) return gate;
     const { orgId, jobId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "backup.jobs.delete");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-
-    if (org.membership.role !== "owner" && org.membership.role !== "admin") {
-      return NextResponse.json(
-        { error: "Only owners and admins can delete backup jobs" },
-        { status: 403 }
-      );
-    }
 
     const existing = await db.query.backupJobs.findFirst({
       where: and(

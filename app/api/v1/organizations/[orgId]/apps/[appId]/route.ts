@@ -9,7 +9,7 @@ import { deleteApp } from "@/lib/docker/delete-app";
 import { assertAppDirOwnership, AppDirOwnershipError } from "@/lib/docker/app-dir-owner";
 import { recordActivity } from "@/lib/activity";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
-import { isOrgAdmin } from "@/lib/auth/permissions";
+import { can } from "@/lib/auth/permissions";
 import { refuseSystemManaged } from "@/lib/api/system-managed";
 import { sharedMarkerTypeErrors } from "@/lib/docker/compose";
 
@@ -66,7 +66,7 @@ const deleteAppSchema = z.object({
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "app.view");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const app = await db.query.apps.findFirst({
@@ -100,7 +100,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 async function handlePatch(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "app.config");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const body = await request.json();
@@ -114,7 +114,7 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
     }
 
     // GPU passthrough grants direct host hardware access — restrict to owner/admin
-    if (parsed.data.gpuEnabled === true && !isOrgAdmin(org.membership.role)) {
+    if (parsed.data.gpuEnabled === true && !can(org.membership.role, "app.gpu")) {
       return NextResponse.json(
         { error: "Only owners and admins can enable GPU passthrough" },
         { status: 403 }
@@ -207,7 +207,7 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
 async function handleDelete(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "app.delete");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const raw = await request.text();
@@ -220,13 +220,6 @@ async function handleDelete(request: NextRequest, { params }: RouteParams) {
     const parsed = deleteAppSchema.safeParse(body);
     if (!parsed.success) {
       return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
-    }
-
-    if (!isOrgAdmin(org.membership.role)) {
-      return NextResponse.json(
-        { error: "Only owners and admins can delete apps" },
-        { status: 403 }
-      );
     }
 
     // Fetch app before deleting

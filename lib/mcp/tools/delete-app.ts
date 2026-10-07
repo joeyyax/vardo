@@ -2,9 +2,8 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { deleteApp } from "@/lib/docker/delete-app";
 import { slidingWindowRateLimit } from "@/lib/api/rate-limit";
-import { isOrgAdmin } from "@/lib/auth/permissions";
 import type { McpAuthContext } from "../auth";
-import { accessDenied, orgRole, resolveAppOrg } from "../scope";
+import { accessDenied, canAccessOrg, resolveAppOrg } from "../scope";
 
 // 5 deletes per 10 minutes per user/org pair.
 // Deletion does real Docker teardown — rate-limit to avoid hammering the daemon.
@@ -54,12 +53,11 @@ export function registerDeleteApp(
         };
       }
 
-      const orgId = await resolveAppOrg(context, appId);
+      const orgId = await resolveAppOrg(context, appId, "app.view");
       if (!orgId) return accessDenied("App");
 
       // The role held in the app's own org, never the token's home org.
-      const role = await orgRole(context, orgId);
-      if (!role || !isOrgAdmin(role)) {
+      if (!(await canAccessOrg(context, orgId, "app.delete"))) {
         return {
           content: [
             {

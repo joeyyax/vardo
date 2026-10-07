@@ -49,7 +49,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     if (gate) return gate;
 
     const { orgId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "org.tokens.manage");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const tokens = await db.query.apiTokens.findMany({
@@ -93,7 +93,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     if (gate) return gate;
 
     const { orgId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "org.tokens.manage");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const body = await request.json();
@@ -139,7 +139,7 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
     if (gate) return gate;
 
     const { orgId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "org.tokens.manage");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const body = await request.json();
@@ -191,7 +191,7 @@ async function handleDelete(request: NextRequest, { params }: RouteParams) {
     if (gate) return gate;
 
     const { orgId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "org.tokens.manage");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const body = await request.json();

@@ -44,7 +44,7 @@ export function registerDestroyPreview(
         };
       }
 
-      const preview = await resolveOrgPreview(preview_id, context);
+      const preview = await resolveOrgPreview(preview_id, context, "app.config");
       if (!preview) return previewNotFound();
 
       const result = await destroyGroupEnvironment(

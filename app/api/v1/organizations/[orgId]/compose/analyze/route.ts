@@ -23,7 +23,7 @@ const analyzeSchema = z.object({
 async function handlePost(req: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    await verifyOrgAccess(orgId);
+    await verifyOrgAccess(orgId, "app.create");
 
     const body = analyzeSchema.parse(await req.json());
 

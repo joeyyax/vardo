@@ -70,7 +70,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, containerId } = await params;
 
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "app.import");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     await requireAppAdmin();
 

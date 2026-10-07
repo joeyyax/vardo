@@ -35,7 +35,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     if (gate) return gate;
 
     const { orgId, appId, envId } = await params;
-    const app = await verifyAppAccess(orgId, appId);
+    const app = await verifyAppAccess(orgId, appId, "app.config");
 
     if (!app) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });

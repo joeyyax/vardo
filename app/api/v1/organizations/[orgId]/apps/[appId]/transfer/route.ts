@@ -7,7 +7,6 @@ import { z } from "zod";
 import { initiateTransfer, analyzeTransfer, rejectTransfer } from "@/lib/transfers/engine";
 import { recordActivity } from "@/lib/activity";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
-import { isOrgAdmin } from "@/lib/auth/permissions";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
@@ -25,15 +24,8 @@ const initiateTransferSchema = z.object({
 async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "org.transfers.manage");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-
-    if (org.membership.role !== "owner" && org.membership.role !== "admin") {
-      return NextResponse.json(
-        { error: "Only owners and admins can initiate transfers" },
-        { status: 403 },
-      );
-    }
 
     const body = await request.json();
     const parsed = initiateTransferSchema.safeParse(body);
@@ -140,15 +132,8 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
 async function handleDelete(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "org.transfers.manage");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-
-    if (!isOrgAdmin(org.membership.role)) {
-      return NextResponse.json(
-        { error: "Only owners and admins can cancel transfers" },
-        { status: 403 },
-      );
-    }
 
     // Find the pending transfer for this app
     const transfer = await db.query.appTransfers.findFirst({

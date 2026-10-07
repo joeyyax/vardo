@@ -27,7 +27,7 @@ export function registerCreateProject(
     },
     async ({ name, displayName, description, color, organizationId }) => {
       // Membership-checked; a caller-supplied org id is never taken on trust.
-      const orgId = await resolveTargetOrg(context, organizationId);
+      const orgId = await resolveTargetOrg(context, organizationId, "project.manage");
       if (!orgId) {
         return {
           content: [

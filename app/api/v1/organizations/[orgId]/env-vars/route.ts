@@ -38,7 +38,7 @@ const bulkSchema = z.object({
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "env.read");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const vars = await db.query.orgEnvVars.findMany({
@@ -61,7 +61,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "env.write");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const body = await request.json();
@@ -96,7 +96,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
 async function handlePut(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "env.write");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const body = await request.json();
@@ -169,7 +169,7 @@ async function handlePut(request: NextRequest, { params }: RouteParams) {
 async function handleDelete(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "env.write");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const { id } = await request.json();

@@ -14,7 +14,7 @@ type RouteParams = {
 async function handleGet(_request: Request, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "app.import");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     await requireAppAdmin();
 

@@ -52,7 +52,7 @@ type VolumeInfo = {
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "app.view");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const app = await db.query.apps.findFirst({
@@ -185,7 +185,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 async function handlePut(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "app.config");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const body = await request.json();

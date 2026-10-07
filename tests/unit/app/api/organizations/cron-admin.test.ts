@@ -16,10 +16,10 @@ const { mockVerifyOrgAccess, mockVerifyAppAccess, mockUpdate, mockDelete, mockIn
   }),
 );
 
-vi.mock("@/lib/api/verify-access", () => ({
-  verifyOrgAccess: mockVerifyOrgAccess,
-  verifyAppAccess: mockVerifyAppAccess,
-}));
+vi.mock("@/lib/api/verify-access", async () => {
+  const { gateOrgAccess } = await import("../../../helpers/verify-access");
+  return { verifyOrgAccess: gateOrgAccess(mockVerifyOrgAccess), verifyAppAccess: mockVerifyAppAccess };
+});
 vi.mock("@/lib/api/with-rate-limit", () => ({
   withRateLimit: (handler: (...args: unknown[]) => unknown) => handler,
 }));

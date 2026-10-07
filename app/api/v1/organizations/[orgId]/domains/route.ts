@@ -38,7 +38,7 @@ const patchSchema = z.object({
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "org.view");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const rows = await db.query.orgDomains.findMany({
@@ -77,7 +77,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "org.domains.manage");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const body = await request.json();
@@ -137,7 +137,7 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
   }
 
   try {
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "org.domains.manage");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     // If toggling the default domain that hasn't been persisted yet, create it
@@ -201,7 +201,7 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
 async function handleDelete(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "org.domains.manage");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const body = await request.json();

@@ -21,7 +21,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     const gate = await requirePlugin("backups");
     if (gate) return gate;
     const { orgId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "backup.view");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     // Return both org-level targets and app-level targets (organizationId IS NULL)
@@ -52,7 +52,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     const gate = await requirePlugin("backups");
     if (gate) return gate;
     const { orgId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "backup.targets.manage");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const body = await request.json();

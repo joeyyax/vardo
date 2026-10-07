@@ -11,7 +11,7 @@ type RouteParams = { params: Promise<{ orgId: string }> };
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   const { orgId } = await params;
   try {
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "org.view");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const session = await getSession();

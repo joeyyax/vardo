@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { invitations, user } from "@/lib/db/schema";
-import { requireOrgAdmin } from "@/lib/auth/permissions";
 import { eq, and } from "drizzle-orm";
 import { sendEmail, emailDelivery } from "@/lib/email/send";
 import { InviteEmail } from "@/lib/email/templates/invite";
@@ -23,13 +22,11 @@ async function handleDelete(
 ) {
   try {
     const { orgId, invitationId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "org.members.manage");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const gate = await requirePlugin("teams");
     if (gate) return gate;
-
-    requireOrgAdmin(org.membership.role);
 
     const invitation = await db.query.invitations.findFirst({
       where: and(
@@ -71,13 +68,11 @@ async function handlePatch(
 ) {
   try {
     const { orgId, invitationId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "org.members.manage");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const gate = await requirePlugin("teams");
     if (gate) return gate;
-
-    requireOrgAdmin(org.membership.role);
 
     const invitation = await db.query.invitations.findFirst({
       where: and(

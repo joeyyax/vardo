@@ -17,7 +17,7 @@ type RouteParams = {
 async function handlePost(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "app.deploy");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const app = await db.query.apps.findFirst({

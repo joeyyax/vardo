@@ -21,7 +21,7 @@ type RouteParams = {
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId, volumeName } = await params;
-    const appRecord = await verifyAppAccess(orgId, appId);
+    const appRecord = await verifyAppAccess(orgId, appId, "app.view");
     if (!appRecord) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }

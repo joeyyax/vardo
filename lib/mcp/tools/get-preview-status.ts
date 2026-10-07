@@ -52,7 +52,7 @@ export function registerGetPreviewStatus(
         .where(eq(groupEnvironments.id, preview_id));
 
       const first = rows[0];
-      if (!first || !(await canAccessOrg(context, first.organizationId))) {
+      if (!first || !(await canAccessOrg(context, first.organizationId, "app.view"))) {
         return previewNotFound();
       }
       const preview = {

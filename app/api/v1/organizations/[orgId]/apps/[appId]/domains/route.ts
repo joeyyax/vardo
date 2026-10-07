@@ -36,7 +36,7 @@ const deleteDomainSchema = z.object({
 async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
-    const app = await verifyAppAccess(orgId, appId);
+    const app = await verifyAppAccess(orgId, appId, "app.domains");
 
     if (!app) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -117,7 +117,7 @@ const updateDomainSchema = z.object({
 async function handlePatch(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
-    const app = await verifyAppAccess(orgId, appId);
+    const app = await verifyAppAccess(orgId, appId, "app.domains");
 
     if (!app) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -175,7 +175,7 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
 async function handleDelete(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
-    const app = await verifyAppAccess(orgId, appId);
+    const app = await verifyAppAccess(orgId, appId, "app.domains");
 
     if (!app) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });

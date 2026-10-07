@@ -38,7 +38,7 @@ const batchSchema = z
 async function handlePost(request: NextRequest, { params }: RouteParams) {
   const { orgId } = await params;
   try {
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "app.deploy");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const gate = await requirePlugin("image-updates");

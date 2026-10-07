@@ -17,7 +17,7 @@ async function handler(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
 
-    const app = await verifyAppAccess(orgId, appId);
+    const app = await verifyAppAccess(orgId, appId, "app.config");
     if (!app) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const scanId = await runSecurityScan({

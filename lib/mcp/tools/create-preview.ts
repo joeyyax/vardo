@@ -93,7 +93,7 @@ export function registerCreatePreview(
       });
 
       const reach = await Promise.all(
-        matching.map((a) => canAccessOrg(context, a.organizationId))
+        matching.map((a) => canAccessOrg(context, a.organizationId, "app.config"))
       );
 
       if (!reach.some(Boolean)) {
@@ -118,7 +118,7 @@ export function registerCreatePreview(
         ),
       ];
       const candidateReach = await Promise.all(
-        candidateOrgs.map((id) => canAccessOrg(context, id))
+        candidateOrgs.map((id) => canAccessOrg(context, id, "app.config"))
       );
 
       if (candidateOrgs.length > 1 || candidateReach.some((ok) => !ok)) {

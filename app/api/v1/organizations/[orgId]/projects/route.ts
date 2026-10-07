@@ -28,7 +28,7 @@ const createProjectSchema = z.object({
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "org.view");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const projectList = await db.query.projects.findMany({
@@ -53,7 +53,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "project.manage");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const body = await request.json();

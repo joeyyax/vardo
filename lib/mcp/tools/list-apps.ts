@@ -29,7 +29,7 @@ export function registerListApps(
         .describe("Offset for pagination"),
     },
     async ({ limit, offset }) => {
-      const orgIds = await accessibleOrgIds(context);
+      const orgIds = await accessibleOrgIds(context, "app.view");
 
       const appList = await db.query.apps.findMany({
         where: orgFilter(apps.organizationId, orgIds),

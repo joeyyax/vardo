@@ -4,7 +4,6 @@ import { db } from "@/lib/db";
 import { organizations } from "@/lib/db/schema";
 import { requireSession } from "@/lib/auth/session";
 import { isAppAdmin } from "@/lib/auth/admin";
-import { isOrgAdmin } from "@/lib/auth/permissions";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { handleRouteError } from "@/lib/api/error-response";
 import { recordActivity } from "@/lib/activity";
@@ -29,7 +28,7 @@ type RouteParams = {
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const access = await verifyOrgAccess(orgId);
+    const access = await verifyOrgAccess(orgId, "org.view");
     if (!access) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
@@ -64,8 +63,8 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
 
     const trustedOnly = Object.keys(parsed.data).every((k) => k === "trusted");
     if (!trustedOnly) {
-      const access = await verifyOrgAccess(orgId);
-      if (!access || !isOrgAdmin(access.membership.role)) {
+      const access = await verifyOrgAccess(orgId, "org.settings");
+      if (!access) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
       }
     }

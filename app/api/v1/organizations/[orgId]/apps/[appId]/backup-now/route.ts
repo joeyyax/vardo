@@ -36,7 +36,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     if (gate) return gate;
 
     const { orgId, appId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "backup.run");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     let body: unknown = {};

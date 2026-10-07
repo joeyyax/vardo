@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
-import { appTransfers, memberships } from "@/lib/db/schema";
+import { appTransfers } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
 import { acceptTransfer, rejectTransfer } from "@/lib/transfers/engine";
@@ -23,7 +23,7 @@ const respondSchema = z.object({
 async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, transferId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "org.transfers.manage");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const body = await request.json();
@@ -53,24 +53,6 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json(
         { error: "Transfer not found or not pending" },
         { status: 404 },
-      );
-    }
-
-    // Verify the current user is an owner/admin of the destination org
-    const destMembership = await db.query.memberships.findFirst({
-      where: and(
-        eq(memberships.userId, org.session.user.id),
-        eq(memberships.organizationId, orgId),
-      ),
-    });
-
-    if (
-      !destMembership ||
-      (destMembership.role !== "owner" && destMembership.role !== "admin")
-    ) {
-      return NextResponse.json(
-        { error: "Only owners and admins can accept or reject transfers" },
-        { status: 403 },
       );
     }
 

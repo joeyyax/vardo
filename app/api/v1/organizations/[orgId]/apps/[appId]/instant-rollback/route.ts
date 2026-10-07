@@ -13,7 +13,7 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ org
   const { orgId, appId } = await params;
 
   try {
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "app.deploy");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const app = await db.query.apps.findFirst({

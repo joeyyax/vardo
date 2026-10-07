@@ -14,7 +14,7 @@ type RouteParams = {
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "app.view");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const app = await db.query.apps.findFirst({

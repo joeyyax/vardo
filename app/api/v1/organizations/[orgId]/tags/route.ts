@@ -23,7 +23,7 @@ const createTagSchema = z.object({
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "org.view");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const tagList = await db.query.tags.findMany({
@@ -41,7 +41,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "org.tags.manage");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const body = await request.json();

@@ -3,7 +3,6 @@ import { handleRouteError } from "@/lib/api/error-response";
 import { requirePlugin } from "@/lib/api/require-plugin";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
-import { isOrgAdmin } from "@/lib/auth/permissions";
 import { deleteBackups, isInProgress } from "@/lib/backups/delete-backups";
 import { findOrgAppBackup } from "@/lib/backups/org-backup";
 
@@ -17,14 +16,8 @@ async function handleDelete(_request: NextRequest, { params }: RouteParams) {
     const gate = await requirePlugin("backups");
     if (gate) return gate;
     const { orgId, backupId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "backup.delete");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    if (!isOrgAdmin(org.membership.role)) {
-      return NextResponse.json(
-        { error: "Only owners and admins can delete backups" },
-        { status: 403 },
-      );
-    }
 
     const backup = await findOrgAppBackup(orgId, backupId);
     if (!backup) return NextResponse.json({ error: "Not found" }, { status: 404 });

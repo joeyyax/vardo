@@ -3,7 +3,7 @@ import { z } from "zod";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { invitations, user } from "@/lib/db/schema";
-import { isOrgAdmin, requireOrgAdmin } from "@/lib/auth/permissions";
+import { can } from "@/lib/auth/permissions";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import crypto from "crypto";
@@ -29,7 +29,7 @@ type RouteParams = {
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "org.view");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const gate = await requirePlugin("teams");
@@ -59,7 +59,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       orderBy: (t, { desc }) => [desc(t.createdAt)],
     });
 
-    const canManage = isOrgAdmin(org.membership.role);
+    const canManage = can(org.membership.role, "org.members.manage");
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
     const invitationList = pending.map((inv) =>
@@ -77,13 +77,11 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "org.members.manage");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const gate = await requirePlugin("teams");
     if (gate) return gate;
-
-    requireOrgAdmin(org.membership.role);
 
     const body = await request.json();
     const parsed = createInvitationSchema.safeParse(body);

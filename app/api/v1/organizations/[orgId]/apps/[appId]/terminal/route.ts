@@ -53,7 +53,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     if (termGate) return termGate;
 
     const { orgId, appId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "app.terminal");
     if (!org) return new Response("Forbidden", { status: 403 });
 
     const app = await db.query.apps.findFirst({
@@ -216,7 +216,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     if (termGate) return termGate;
 
     const { orgId, appId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "app.terminal");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const body = await request.json();

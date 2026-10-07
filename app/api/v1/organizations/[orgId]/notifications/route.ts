@@ -16,7 +16,7 @@ const createSchema = z.object({ name: z.string().min(1).max(100), type: z.enum([
 export async function GET(_req: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "org.view");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     const channels = await db.query.notificationChannels.findMany({ where: eq(notificationChannels.organizationId, orgId), orderBy: [asc(notificationChannels.createdAt)] });
     const masked = channels.map(maskChannelConfig);
@@ -27,7 +27,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
 async function handlePost(req: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "org.notifications.manage");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     const parsed = createSchema.safeParse(await req.json());
     if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });

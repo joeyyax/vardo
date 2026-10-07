@@ -2,13 +2,14 @@ import { db } from "@/lib/db";
 import { apps, memberships, organizations, projects } from "@/lib/db/schema";
 import { and, eq, inArray, sql, type SQL } from "drizzle-orm";
 import type { PgColumn } from "drizzle-orm/pg-core";
+import { can, type Capability } from "@/lib/auth/permissions";
 import type { McpAuthContext } from "./auth";
 
 /**
  * Organization scoping for MCP tools.
  *
  * A token reaches an organization only while its user holds a live membership
- * there. A normal token is additionally pinned to the organization it was
+ * there whose role holds the tool's capability. A normal token is additionally pinned to the organization it was
  * minted for; a cross-org token is not. Both are re-checked against the
  * database on every request, so removing a membership revokes access at once.
  *
@@ -16,10 +17,11 @@ import type { McpAuthContext } from "./auth";
  * accessibleOrgIds. Widening either widens all MCP tools at once.
  */
 
-/** True when the token may act on `orgId`. */
+/** True when the token may act on `orgId` with `cap`. */
 export async function canAccessOrg(
   context: McpAuthContext,
-  orgId: string
+  orgId: string,
+  cap: Capability
 ): Promise<boolean> {
   if (!context.crossOrg && orgId !== context.organizationId) return false;
 
@@ -28,42 +30,29 @@ export async function canAccessOrg(
       eq(memberships.userId, context.userId),
       eq(memberships.organizationId, orgId)
     ),
-    columns: { id: true },
+    columns: { role: true },
   });
 
-  return membership != null;
+  return can(membership?.role, cap);
 }
 
-/** Every organization the token may act on, resolved from live memberships. */
+/** Every organization the token may act on with `cap`, resolved from live memberships. */
 export async function accessibleOrgIds(
-  context: McpAuthContext
+  context: McpAuthContext,
+  cap: Capability
 ): Promise<string[]> {
   const rows = await db.query.memberships.findMany({
     where: eq(memberships.userId, context.userId),
-    columns: { organizationId: true },
+    columns: { organizationId: true, role: true },
   });
 
-  const memberOrgIds = [...new Set(rows.map((r) => r.organizationId))];
+  const memberOrgIds = [
+    ...new Set(rows.filter((r) => can(r.role, cap)).map((r) => r.organizationId)),
+  ];
 
   return context.crossOrg
     ? memberOrgIds
     : memberOrgIds.filter((id) => id === context.organizationId);
-}
-
-/** The token user's role in `orgId`, or null when they have no membership there. */
-export async function orgRole(
-  context: McpAuthContext,
-  orgId: string
-): Promise<string | null> {
-  const membership = await db.query.memberships.findFirst({
-    where: and(
-      eq(memberships.userId, context.userId),
-      eq(memberships.organizationId, orgId)
-    ),
-    columns: { role: true },
-  });
-
-  return membership?.role ?? null;
 }
 
 /**
@@ -72,10 +61,11 @@ export async function orgRole(
  */
 export async function resolveTargetOrg(
   context: McpAuthContext,
-  requestedOrgId?: string | null
+  requestedOrgId: string | null | undefined,
+  cap: Capability
 ): Promise<string | null> {
   const orgId = requestedOrgId || context.organizationId;
-  return (await canAccessOrg(context, orgId)) ? orgId : null;
+  return (await canAccessOrg(context, orgId, cap)) ? orgId : null;
 }
 
 export function accessDenied(resource: string) {
@@ -93,7 +83,8 @@ export function accessDenied(resource: string) {
 /** Resolve the organization an app belongs to, or null if out of scope. */
 export async function resolveAppOrg(
   context: McpAuthContext,
-  appId: string
+  appId: string,
+  cap: Capability
 ): Promise<string | null> {
   const app = await db.query.apps.findFirst({
     where: eq(apps.id, appId),
@@ -101,7 +92,7 @@ export async function resolveAppOrg(
   });
 
   if (!app) return null;
-  return (await canAccessOrg(context, app.organizationId))
+  return (await canAccessOrg(context, app.organizationId, cap))
     ? app.organizationId
     : null;
 }
@@ -109,7 +100,8 @@ export async function resolveAppOrg(
 /** Resolve the organization a project belongs to, or null if out of scope. */
 export async function resolveProjectOrg(
   context: McpAuthContext,
-  projectId: string
+  projectId: string,
+  cap: Capability
 ): Promise<string | null> {
   const project = await db.query.projects.findFirst({
     where: eq(projects.id, projectId),
@@ -117,7 +109,7 @@ export async function resolveProjectOrg(
   });
 
   if (!project) return null;
-  return (await canAccessOrg(context, project.organizationId))
+  return (await canAccessOrg(context, project.organizationId, cap))
     ? project.organizationId
     : null;
 }

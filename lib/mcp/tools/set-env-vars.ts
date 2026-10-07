@@ -55,7 +55,7 @@ export function registerSetEnvVars(
         },
       });
 
-      if (!app || !(await canAccessOrg(context, app.organizationId))) {
+      if (!app || !(await canAccessOrg(context, app.organizationId, "env.write"))) {
         return accessDenied("App");
       }
 

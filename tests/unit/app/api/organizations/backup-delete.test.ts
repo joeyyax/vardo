@@ -17,9 +17,12 @@ const h = vi.hoisted(() => ({
   storageDelete: vi.fn(),
 }));
 
-vi.mock("@/lib/api/verify-access", () => ({
-  verifyOrgAccess: vi.fn(async () => ({ organization: { id: "org-1" }, membership: { role: h.role } })),
-}));
+vi.mock("@/lib/api/verify-access", async () => {
+  const { gateOrgAccess } = await import("../../../helpers/verify-access");
+  return {
+    verifyOrgAccess: gateOrgAccess(async () => ({ organization: { id: "org-1" }, membership: { role: h.role } })),
+  };
+});
 vi.mock("@/lib/api/require-plugin", () => ({ requirePlugin: vi.fn().mockResolvedValue(null) }));
 vi.mock("@/lib/api/rate-limit", () => ({ rateLimit: vi.fn().mockResolvedValue(null) }));
 vi.mock("@/lib/auth/admin", () => ({ isAppAdmin: vi.fn().mockResolvedValue(false) }));

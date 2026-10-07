@@ -5,10 +5,9 @@ import { apps, deployments, environments } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { createDeployment } from "@/lib/docker/deploy";
 import { slidingWindowRateLimit } from "@/lib/api/rate-limit";
-import { isOrgAdmin } from "@/lib/auth/permissions";
 import type { ConfigSnapshot } from "@/lib/types/deploy-snapshot";
 import type { McpAuthContext } from "../auth";
-import { accessDenied, canAccessOrg, orgRole } from "../scope";
+import { accessDenied, canAccessOrg } from "../scope";
 
 // 3 rollbacks per 10 minutes per user/org pair.
 const ROLLBACK_RATE_LIMIT = 3;
@@ -57,7 +56,7 @@ export function registerRollbackApp(
         columns: { id: true, name: true, organizationId: true },
       });
 
-      if (!app || !(await canAccessOrg(context, app.organizationId))) {
+      if (!app || !(await canAccessOrg(context, app.organizationId, "app.deploy"))) {
         return accessDenied("App");
       }
 
@@ -123,8 +122,7 @@ export function registerRollbackApp(
       // The role that counts is the one held in the app's own org, never the
       // token's home org — a cross-org token must not import admin rights.
       if (configSnapshot?.gpuEnabled === true) {
-        const role = await orgRole(context, app.organizationId);
-        if (!role || !isOrgAdmin(role)) {
+        if (!(await canAccessOrg(context, app.organizationId, "app.gpu"))) {
           return {
             content: [
               {

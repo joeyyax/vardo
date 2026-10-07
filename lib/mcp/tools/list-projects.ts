@@ -14,7 +14,7 @@ export function registerListProjects(
     "List all projects in the organization. Projects group related apps together. Returns project name, description, color, and the apps within each project. A cross-org token lists projects across every organization its user belongs to, each labeled with the organization it lives in.",
     {},
     async () => {
-      const orgIds = await accessibleOrgIds(context);
+      const orgIds = await accessibleOrgIds(context, "org.view");
 
       const projectList = await db.query.projects.findMany({
         where: orgFilter(projects.organizationId, orgIds),

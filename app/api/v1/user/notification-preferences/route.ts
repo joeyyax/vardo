@@ -47,7 +47,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "orgId is required" }, { status: 400 });
     }
 
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "org.view");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     const userId = org.session.user.id;
 
@@ -108,7 +108,7 @@ async function handlePut(req: NextRequest) {
       );
     }
 
-    const org = await verifyOrgAccess(parsed.data.orgId);
+    const org = await verifyOrgAccess(parsed.data.orgId, "org.view");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     const userId = org.session.user.id;
 

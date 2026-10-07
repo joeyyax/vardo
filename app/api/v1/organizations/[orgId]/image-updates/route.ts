@@ -19,7 +19,7 @@ type RouteParams = { params: Promise<{ orgId: string }> };
 async function handleGet(request: NextRequest, { params }: RouteParams) {
   const { orgId } = await params;
   try {
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "org.view");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const gate = await requirePlugin("image-updates");
@@ -55,7 +55,7 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
 async function handlePost(_request: NextRequest, { params }: RouteParams) {
   const { orgId } = await params;
   try {
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "app.config");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const gate = await requirePlugin("image-updates");

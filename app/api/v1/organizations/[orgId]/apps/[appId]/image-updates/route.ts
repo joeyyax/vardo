@@ -31,7 +31,7 @@ const applySchema = z
 async function handleGet(_request: NextRequest, { params }: RouteParams) {
   const { orgId, appId } = await params;
   try {
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "app.view");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const app = await resolveUpdatableApp(orgId, appId);
@@ -47,7 +47,7 @@ async function handleGet(_request: NextRequest, { params }: RouteParams) {
 async function handlePost(request: NextRequest, { params }: RouteParams) {
   const { orgId, appId } = await params;
   try {
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "app.config");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const parsed = applySchema.safeParse(await request.json().catch(() => ({})));

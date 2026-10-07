@@ -3,7 +3,6 @@ import { z } from "zod";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { memberships, user } from "@/lib/db/schema";
-import { requireOrgAdmin } from "@/lib/auth/permissions";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
@@ -25,7 +24,7 @@ type RouteParams = {
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "org.view");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const orgMemberships = await db.query.memberships.findMany({
@@ -59,13 +58,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "org.members.manage");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const gate = await requirePlugin("teams");
     if (gate) return gate;
-
-    requireOrgAdmin(org.membership.role);
 
     const body = await request.json();
     const parsed = addMemberSchema.safeParse(body);

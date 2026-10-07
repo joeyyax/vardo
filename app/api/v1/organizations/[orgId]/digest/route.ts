@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { digestSettings, notificationChannels, organizations } from "@/lib/db/schema";
-import { requireOrgAdmin } from "@/lib/auth/permissions";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
@@ -29,7 +28,7 @@ const patchSchema = z
 export async function GET(_req: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "org.view");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const setting = await db.query.digestSettings.findFirst({
@@ -66,10 +65,8 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
 async function handlePatch(req: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "org.digest.manage");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-
-    requireOrgAdmin(org.membership.role);
 
     const parsed = patchSchema.safeParse(await req.json());
     if (!parsed.success) {
@@ -122,10 +119,8 @@ async function handlePatch(req: NextRequest, { params }: RouteParams) {
 async function handlePost(_req: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "org.digest.manage");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-
-    requireOrgAdmin(org.membership.role);
 
     const orgRecord = await db.query.organizations.findFirst({
       where: eq(organizations.id, orgId),

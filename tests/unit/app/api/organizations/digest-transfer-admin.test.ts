@@ -13,7 +13,10 @@ const { mockVerifyOrgAccess, upsert, rejectTransfer, transfersFindFirst } = vi.h
   transfersFindFirst: vi.fn(),
 }));
 
-vi.mock("@/lib/api/verify-access", () => ({ verifyOrgAccess: mockVerifyOrgAccess }));
+vi.mock("@/lib/api/verify-access", async () => {
+  const { gateOrgAccess } = await import("../../../helpers/verify-access");
+  return { verifyOrgAccess: gateOrgAccess(mockVerifyOrgAccess) };
+});
 vi.mock("@/lib/api/with-rate-limit", () => ({
   withRateLimit: (handler: (...args: unknown[]) => unknown) => handler,
 }));

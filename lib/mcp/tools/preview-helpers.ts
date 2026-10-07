@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { groupEnvironments, projects } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import type { McpAuthContext } from "../auth";
+import type { Capability } from "@/lib/auth/permissions";
 import { canAccessOrg } from "../scope";
 
 export interface OrgPreview {
@@ -21,7 +22,8 @@ export interface OrgPreview {
  */
 export async function resolveOrgPreview(
   previewId: string,
-  context: McpAuthContext
+  context: McpAuthContext,
+  cap: Capability
 ): Promise<OrgPreview | null> {
   const row = await db
     .select({
@@ -40,7 +42,7 @@ export async function resolveOrgPreview(
     .then((rows) => rows[0] ?? null);
 
   if (!row) return null;
-  if (!(await canAccessOrg(context, row.organizationId))) return null;
+  if (!(await canAccessOrg(context, row.organizationId, cap))) return null;
 
   return row;
 }

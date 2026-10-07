@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { memberships } from "@/lib/db/schema";
-import { requireOrgAdmin } from "@/lib/auth/permissions";
 import { eq, and } from "drizzle-orm";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { requirePlugin } from "@/lib/api/require-plugin";
@@ -17,13 +16,11 @@ type RouteParams = {
 async function handlePatch(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, userId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "org.members.manage");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const gate = await requirePlugin("teams");
     if (gate) return gate;
-
-    requireOrgAdmin(org.membership.role);
 
     const body = await request.json();
     const { role } = body;
@@ -78,13 +75,11 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
 async function handleDelete(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, userId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "org.members.manage");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const gate = await requirePlugin("teams");
     if (gate) return gate;
-
-    requireOrgAdmin(org.membership.role);
 
     // Find target membership
     const targetMembership = await db.query.memberships.findFirst({

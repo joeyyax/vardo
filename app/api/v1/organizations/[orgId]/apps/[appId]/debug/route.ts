@@ -4,7 +4,6 @@ import { db } from "@/lib/db";
 import { apps, volumes, projects } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
-import { isOrgAdmin } from "@/lib/auth/permissions";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import {
   buildComposePreview,
@@ -27,11 +26,8 @@ const CONTAINER_INSPECT_MAX_BYTES = 256 * 1024; // 256KB
 async function handler(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "app.debug");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    if (!isOrgAdmin(org.membership.role)) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
 
     const [app, appVolumes] = await Promise.all([
       db.query.apps.findFirst({

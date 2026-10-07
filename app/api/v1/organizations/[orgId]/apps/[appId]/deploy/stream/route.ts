@@ -26,7 +26,7 @@ type RouteParams = {
 async function handleGet(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "app.view");
     if (!org) return new Response("Forbidden", { status: 403 });
 
     const app = await db.query.apps.findFirst({

@@ -42,7 +42,7 @@ export function registerGetPreviewUrl(
         .leftJoin(apps, eq(environments.appId, apps.id))
         .where(eq(groupEnvironments.id, preview_id));
 
-      if (!rows[0] || !(await canAccessOrg(context, rows[0].organizationId))) {
+      if (!rows[0] || !(await canAccessOrg(context, rows[0].organizationId, "app.view"))) {
         return previewNotFound();
       }
 

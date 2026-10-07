@@ -30,7 +30,7 @@ export function registerGetEnvVars(
         },
       });
 
-      if (!app || !(await canAccessOrg(context, app.organizationId))) {
+      if (!app || !(await canAccessOrg(context, app.organizationId, "env.read"))) {
         return accessDenied("App");
       }
 

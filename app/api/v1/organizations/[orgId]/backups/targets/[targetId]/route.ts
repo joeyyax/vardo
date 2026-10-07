@@ -7,7 +7,6 @@ import { eq, and, or, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { isAppAdmin } from "@/lib/auth/admin";
-import { isOrgAdmin } from "@/lib/auth/permissions";
 import { deleteTargetAndBackups, targetInUse, targetUsage } from "@/lib/backups/delete-backups";
 import {
   mergeTargetConfig,
@@ -65,7 +64,7 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
     if (gate) return gate;
 
     const { orgId, targetId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "backup.targets.manage");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const body = await request.json();
@@ -121,7 +120,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     if (gate) return gate;
 
     const { orgId, targetId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "backup.view");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const { denied } = await guardTarget(orgId, targetId);
@@ -144,14 +143,8 @@ async function handleDelete(request: NextRequest, { params }: RouteParams) {
     if (gate) return gate;
 
     const { orgId, targetId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "backup.targets.delete");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    if (!isOrgAdmin(org.membership.role)) {
-      return NextResponse.json(
-        { error: "Only owners and admins can delete backup targets" },
-        { status: 403 },
-      );
-    }
 
     const parsed = deleteTargetSchema.safeParse(await request.json().catch(() => ({})));
     if (!parsed.success) {

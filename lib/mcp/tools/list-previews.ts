@@ -29,7 +29,7 @@ export function registerListPreviews(
         .describe("Offset for pagination"),
     },
     async ({ limit, offset }) => {
-      const orgIds = await accessibleOrgIds(context);
+      const orgIds = await accessibleOrgIds(context, "app.view");
       const orgPreviewFilter = and(
         eq(groupEnvironments.type, "preview"),
         orgFilter(projects.organizationId, orgIds)

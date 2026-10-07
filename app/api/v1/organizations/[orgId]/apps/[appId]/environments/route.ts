@@ -22,7 +22,7 @@ type RouteParams = {
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
-    const app = await verifyAppAccess(orgId, appId);
+    const app = await verifyAppAccess(orgId, appId, "app.view");
 
     if (!app) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -120,7 +120,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     if (gate) return gate;
 
     const { orgId, appId } = await params;
-    const app = await verifyAppAccess(orgId, appId);
+    const app = await verifyAppAccess(orgId, appId, "app.config");
 
     if (!app) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -155,7 +155,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
         );
       }
 
-      const orgAccess = await verifyOrgAccess(orgId);
+      const orgAccess = await verifyOrgAccess(orgId, "app.config");
       if (!orgAccess) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
       const result = await createGroupEnvironment({
         projectId: appRecord.projectId,
@@ -274,7 +274,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
 async function handleDelete(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
-    const app = await verifyAppAccess(orgId, appId);
+    const app = await verifyAppAccess(orgId, appId, "app.config");
 
     if (!app) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });

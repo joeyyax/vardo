@@ -42,7 +42,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     if (gate) return gate;
 
     const { orgId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "backup.view");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const jobs = await db.query.backupJobs.findMany({
@@ -108,7 +108,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     if (gate) return gate;
 
     const { orgId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "backup.jobs.manage");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const body = await request.json();

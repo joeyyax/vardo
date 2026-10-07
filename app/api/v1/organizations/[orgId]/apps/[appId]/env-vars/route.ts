@@ -45,7 +45,7 @@ const DECRYPT_ERROR = "Failed to decrypt env vars — check ENCRYPTION_MASTER_KE
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
-    const app = await verifyAppAccess(orgId, appId);
+    const app = await verifyAppAccess(orgId, appId, "env.read");
     if (!app) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
@@ -104,7 +104,7 @@ const putSchema = z.object({
 async function handlePut(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
-    const app = await verifyAppAccess(orgId, appId);
+    const app = await verifyAppAccess(orgId, appId, "env.write");
     if (!app) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }

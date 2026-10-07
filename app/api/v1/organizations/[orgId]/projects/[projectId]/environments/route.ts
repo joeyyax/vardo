@@ -26,7 +26,7 @@ const createEnvSchema = z.object({
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, projectId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "org.view");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const project = await db.query.projects.findFirst({
@@ -55,7 +55,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     if (gate) return gate;
 
     const { orgId, projectId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "project.manage");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const project = await db.query.projects.findFirst({

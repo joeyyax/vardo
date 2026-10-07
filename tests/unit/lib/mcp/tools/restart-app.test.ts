@@ -69,7 +69,7 @@ function app(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  membershipFindFirst.mockResolvedValue({ id: "m1" });
+  membershipFindFirst.mockResolvedValue({ id: "m1", role: "member" });
   createDeployment.mockResolvedValue("dep-1");
   requestDeploy.mockResolvedValue(undefined);
   startOrRestartApp.mockResolvedValue({

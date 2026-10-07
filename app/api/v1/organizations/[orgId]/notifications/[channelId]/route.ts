@@ -15,7 +15,7 @@ const updateSchema = z.object({ name: z.string().min(1).max(100).optional(), con
 export async function GET(_req: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, channelId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "org.view");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     const channel = await db.query.notificationChannels.findFirst({ where: and(eq(notificationChannels.id, channelId), eq(notificationChannels.organizationId, orgId)) });
     if (!channel) return NextResponse.json({ error: "Channel not found" }, { status: 404 });
@@ -26,7 +26,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
 async function handlePatch(req: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, channelId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "org.notifications.manage");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     const parsed = updateSchema.safeParse(await req.json());
     if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
@@ -44,7 +44,7 @@ async function handlePatch(req: NextRequest, { params }: RouteParams) {
 async function handleDelete(_req: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, channelId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "org.notifications.manage");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     const [deleted] = await db.delete(notificationChannels).where(and(eq(notificationChannels.id, channelId), eq(notificationChannels.organizationId, orgId))).returning({ id: notificationChannels.id });
     if (!deleted) return NextResponse.json({ error: "Channel not found" }, { status: 404 });

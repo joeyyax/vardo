@@ -35,7 +35,7 @@ vi.mock("@/lib/db", () => ({
           composeContent: null,
         })),
       },
-      memberships: { findFirst: vi.fn(async () => ({ id: "m1" })) },
+      memberships: { findFirst: vi.fn(async () => ({ id: "m1", role: "member" })) },
     },
     update: () => ({
       set: (values: unknown) => {

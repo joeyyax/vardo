@@ -50,8 +50,8 @@ export function registerAdoptApp(server: McpServer, context: McpAuthContext) {
       // An existing project pins the org; otherwise the requested org, after a
       // membership check. Same bar as REST: membership, any role.
       const orgId = data.projectId
-        ? await resolveProjectOrg(context, data.projectId)
-        : await resolveTargetOrg(context, organizationId);
+        ? await resolveProjectOrg(context, data.projectId, "app.create")
+        : await resolveTargetOrg(context, organizationId, "app.create");
       if (!orgId) return accessDenied("Project");
 
       if (!(await isFeatureEnabledAsync("container-import"))) {

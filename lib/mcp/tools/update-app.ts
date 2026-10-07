@@ -84,7 +84,7 @@ export function registerUpdateApp(
         },
       });
 
-      if (!existingApp || !(await canAccessOrg(context, existingApp.organizationId))) {
+      if (!existingApp || !(await canAccessOrg(context, existingApp.organizationId, "app.config"))) {
         return accessDenied("App");
       }
 

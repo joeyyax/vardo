@@ -31,7 +31,7 @@ export function registerGetAppConfig(
         },
       });
 
-      if (!app || !(await canAccessOrg(context, app.organizationId))) {
+      if (!app || !(await canAccessOrg(context, app.organizationId, "app.view"))) {
         return accessDenied("App");
       }
 

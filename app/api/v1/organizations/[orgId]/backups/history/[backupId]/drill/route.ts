@@ -16,7 +16,7 @@ async function handlePost(_request: NextRequest, { params }: RouteParams) {
     const gate = await requirePlugin("backups");
     if (gate) return gate;
     const { orgId, backupId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "backup.run");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const backup = await findOrgAppBackup(orgId, backupId);

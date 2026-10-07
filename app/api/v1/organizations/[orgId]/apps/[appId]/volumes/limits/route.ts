@@ -29,7 +29,7 @@ const volumeLimitSchema = z.object({
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
-    const app = await verifyAppAccess(orgId, appId);
+    const app = await verifyAppAccess(orgId, appId, "app.view");
 
     if (!app) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -60,7 +60,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 async function handlePut(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
-    const app = await verifyAppAccess(orgId, appId);
+    const app = await verifyAppAccess(orgId, appId, "app.config");
 
     if (!app) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -101,7 +101,7 @@ async function handlePut(request: NextRequest, { params }: RouteParams) {
 async function handleDelete(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
-    const app = await verifyAppAccess(orgId, appId);
+    const app = await verifyAppAccess(orgId, appId, "app.config");
 
     if (!app) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });

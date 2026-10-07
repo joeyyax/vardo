@@ -7,7 +7,6 @@ import { nanoid } from "nanoid";
 import { z } from "zod";
 import { verifyAppAccess } from "@/lib/api/verify-access";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
-import { isOrgAdmin } from "@/lib/auth/permissions";
 import { requirePlugin } from "@/lib/api/require-plugin";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
@@ -44,7 +43,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     if (gate) return gate;
 
     const { orgId, appId } = await params;
-    const app = await verifyAppAccess(orgId, appId);
+    const app = await verifyAppAccess(orgId, appId, "app.view");
 
     if (!app) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -68,12 +67,9 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     if (gate) return gate;
 
     const { orgId, appId } = await params;
-    const orgAccess = await verifyOrgAccess(orgId);
+    const orgAccess = await verifyOrgAccess(orgId, "app.cron");
     if (!orgAccess) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    if (!isOrgAdmin(orgAccess.membership.role)) {
-      return NextResponse.json({ error: "Admin access required" }, { status: 403 });
-    }
-    const app = await verifyAppAccess(orgId, appId);
+    const app = await verifyAppAccess(orgId, appId, "app.cron");
 
     if (!app) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -115,12 +111,9 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
     if (gate) return gate;
 
     const { orgId, appId } = await params;
-    const orgAccess = await verifyOrgAccess(orgId);
+    const orgAccess = await verifyOrgAccess(orgId, "app.cron");
     if (!orgAccess) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    if (!isOrgAdmin(orgAccess.membership.role)) {
-      return NextResponse.json({ error: "Admin access required" }, { status: 403 });
-    }
-    const app = await verifyAppAccess(orgId, appId);
+    const app = await verifyAppAccess(orgId, appId, "app.cron");
 
     if (!app) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -161,12 +154,9 @@ async function handleDelete(request: NextRequest, { params }: RouteParams) {
     if (gate) return gate;
 
     const { orgId, appId } = await params;
-    const orgAccess = await verifyOrgAccess(orgId);
+    const orgAccess = await verifyOrgAccess(orgId, "app.cron");
     if (!orgAccess) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    if (!isOrgAdmin(orgAccess.membership.role)) {
-      return NextResponse.json({ error: "Admin access required" }, { status: 403 });
-    }
-    const app = await verifyAppAccess(orgId, appId);
+    const app = await verifyAppAccess(orgId, appId, "app.cron");
 
     if (!app) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });

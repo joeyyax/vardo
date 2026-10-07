@@ -10,7 +10,7 @@ import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { decrypt, encrypt } from "@/lib/crypto/encrypt";
 import type { ConfigSnapshot } from "@/lib/types/deploy-snapshot";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
-import { isOrgAdmin } from "@/lib/auth/permissions";
+import { can } from "@/lib/auth/permissions";
 import { refuseSystemManaged } from "@/lib/api/system-managed";
 
 const rollbackSchema = z.object({
@@ -29,7 +29,7 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ org
   const { orgId, appId } = await params;
 
   try {
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "app.deploy");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     // Parse body
@@ -112,7 +112,7 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ org
 
     // Rolling back to a snapshot with GPU passthrough enabled restores host hardware
     // access — gate it the same way as enabling GPU via PATCH.
-    if (configSnapshot?.gpuEnabled === true && !isOrgAdmin(org.membership.role)) {
+    if (configSnapshot?.gpuEnabled === true && !can(org.membership.role, "app.gpu")) {
       return NextResponse.json(
         { error: "Only owners and admins can roll back to a snapshot with GPU passthrough enabled" },
         { status: 403 },
@@ -192,7 +192,7 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ org
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
-    const org = await verifyOrgAccess(orgId);
+    const org = await verifyOrgAccess(orgId, "app.view");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const deploymentId = request.nextUrl.searchParams.get("deploymentId");

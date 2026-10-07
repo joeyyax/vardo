@@ -64,7 +64,7 @@ export function registerGetDeployLogs(
         .where(eq(deployments.id, deployment_id))
         .then((rows) => rows[0] ?? null);
 
-      if (!result || !(await canAccessOrg(context, result.organizationId))) {
+      if (!result || !(await canAccessOrg(context, result.organizationId, "app.view"))) {
         return accessDenied("Deployment");
       }
 

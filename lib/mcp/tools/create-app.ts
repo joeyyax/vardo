@@ -103,7 +103,7 @@ export function registerCreateApp(
       }
 
       // The app is created in whichever org owns the project.
-      const orgId = await resolveProjectOrg(context, projectId);
+      const orgId = await resolveProjectOrg(context, projectId, "app.create");
       if (!orgId) {
         return {
           content: [

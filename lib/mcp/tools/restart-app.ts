@@ -57,7 +57,7 @@ export function registerRestartApp(
         },
       });
 
-      if (!app || !(await canAccessOrg(context, app.organizationId))) {
+      if (!app || !(await canAccessOrg(context, app.organizationId, "app.deploy"))) {
         return accessDenied("App");
       }
 

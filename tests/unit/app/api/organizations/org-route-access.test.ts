@@ -26,16 +26,20 @@ vi.mock("@/lib/auth/admin", () => ({
     if (!state.instanceAdmin) throw new Error("Forbidden");
   },
 }));
-vi.mock("@/lib/api/verify-access", () => ({
-  verifyOrgAccess: async (orgId: string) =>
-    state.access
-      ? {
-          organization: { id: orgId, name: "Org" },
-          membership: { id: "m1", role: state.access.role },
-          session: { user: { id: "u1" } },
-        }
-      : null,
-}));
+vi.mock("@/lib/api/verify-access", async () => {
+  const { gateOrgAccess } = await import("../../../helpers/verify-access");
+  return {
+    verifyOrgAccess: gateOrgAccess(async (orgId: string) =>
+      state.access
+        ? {
+            organization: { id: orgId, name: "Org" },
+            membership: { id: "m1", role: state.access.role },
+            session: { user: { id: "u1" } },
+          }
+        : null,
+    ),
+  };
+});
 vi.mock("@/lib/db", () => ({
   db: {
     query: {
