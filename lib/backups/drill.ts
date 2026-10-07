@@ -1,10 +1,4 @@
-// ---------------------------------------------------------------------------
-// Running a restore drill.
-//
-// Everything here happens in throwaway containers and volumes. A drill must
-// never be able to reach the live copy of anything — that is the one property
-// that makes it safe to run on a schedule.
-// ---------------------------------------------------------------------------
+// Restore drills run only in throwaway containers and volumes. Never let a drill reach live data.
 
 import { db } from "@/lib/db";
 import { backups, volumes } from "@/lib/db/schema";
@@ -58,12 +52,7 @@ async function waitForReady(container: string, readyArgv: string[]): Promise<boo
   return false;
 }
 
-/**
- * Feed a gzipped dump into a container's stdin and return its exit code.
- *
- * No shell: the argv goes to docker as data, so nothing here needs quoting and
- * nothing can be reinterpreted.
- */
+/** Feed a gzipped dump into a container's stdin, without a shell, and return its exit code. */
 async function streamInto(
   argv: string[],
   archivePath: string,
@@ -83,8 +72,7 @@ async function streamInto(
   try {
     await pipeline(createReadStream(archivePath), createGunzip(), child.stdin);
   } catch {
-    // A restore that rejects the stream closes stdin early; the exit code is
-    // the verdict, not this.
+    // A rejected stream closes stdin early. The exit code is the verdict.
   }
 
   const code = await exited;
@@ -92,10 +80,7 @@ async function streamInto(
   return code;
 }
 
-/**
- * Restore a dump into a scratch database of the same image and count what it
- * created. The scratch container is published nowhere and removed either way.
- */
+/** Restore a dump into an unpublished scratch database of the same image and count what it created. */
 async function drillDump(
   archivePath: string,
   vol: { appId: string | null; appName: string | null; backupSpec: { kind: string; service: string } | null },
@@ -106,8 +91,6 @@ async function drillDump(
     return { outcome: "unsupported", detail: "dump drill needs a backup spec and an app" };
   }
 
-  // The scratch instance mirrors the live one, so the dump's ownership and
-  // \connect lines resolve.
   const env = await resolveDefaultEnv(vol.appId);
   const live = await resolveDbContainer(spec as never, { id: vol.appId, name: vol.appName }, env?.name, logFn);
   if (!live) {
@@ -196,13 +179,7 @@ async function drillArchive(
   }
 }
 
-/**
- * Verify a backup is restorable, without touching anything live.
- *
- * Records the verdict on the backup row so "last verified" can be shown apart
- * from "last succeeded" — a job green for ninety days and never once restored
- * should not read the same as one drilled last week.
- */
+/** Verify a backup is restorable without touching anything live, and record the verdict on its row. */
 export async function runRestoreDrill(backupId: string): Promise<DrillResult> {
   const startedAt = Date.now();
   const lines: string[] = [];

@@ -1,10 +1,5 @@
-// ---------------------------------------------------------------------------
-// Backup target config: validation, encryption at rest and masking.
-//
-// Each credential field is encrypted on its own so the rest of the config stays
-// readable. Org targets use the org key; instance targets (no org) use the
-// system key.
-// ---------------------------------------------------------------------------
+// Backup target config: validation, per-field credential encryption and masking.
+// Org targets use the org key; instance targets use the system key.
 
 import { z } from "zod";
 import {
@@ -145,11 +140,7 @@ export function presentTarget<T extends { config: unknown }>(target: T): T {
   return { ...target, config: maskTargetConfig(target.config) };
 }
 
-/**
- * Apply an edit to a stored config. Non-credential fields are replaced
- * wholesale; a credential that's absent or masked keeps the stored value and
- * null clears it.
- */
+/** Apply an edit to a stored config. An absent or masked credential keeps its value; null clears it. */
 export function mergeTargetConfig(stored: TargetConfig, incoming: TargetConfig): TargetConfig {
   const merged: TargetConfig = {};
   for (const [key, value] of Object.entries(incoming)) {

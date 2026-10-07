@@ -1,11 +1,4 @@
-// ---------------------------------------------------------------------------
-// Encryption key guard for restores
-//
-// Vardo's own database dump carries every app's env vars as ciphertext, and the
-// key that wrote them is in no archive.
-//
-// Pure — shared by the engine (to refuse) and the UI (to explain).
-// ---------------------------------------------------------------------------
+// Key guard for restores of Vardo's own database, whose ciphertext needs a key no archive holds.
 
 /** Name of the system volume holding Vardo's own Postgres. */
 export const SYSTEM_DB_VOLUME_NAME = "postgres";
@@ -23,10 +16,7 @@ export type RestoreKeyVerdict =
   /** The archive's secrets were written with a different key. */
   | { kind: "blocked"; message: string };
 
-/**
- * Decide whether a restore may overwrite this instance's rows. Only archives
- * carrying Vardo's own ciphertext are gated.
- */
+/** Whether a restore may overwrite this instance's rows. Gates only archives of Vardo's own ciphertext. */
 export function checkRestoreKey(args: {
   archiveFingerprint: string | null;
   runningFingerprint: string | null;

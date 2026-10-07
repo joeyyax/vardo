@@ -5,10 +5,7 @@ import { dirname } from "path";
 import { getBackupDownloadUrl, downloadBackupToTemp } from "./engine";
 import { ArchiveMissingError } from "./storage-port";
 
-/**
- * Redirect to a presigned URL where the target has one, otherwise stream the
- * archive through the server. A missing archive is a 404.
- */
+/** Redirect to a presigned URL, or stream the archive through the server. Missing is a 404. */
 export async function backupDownloadResponse(backupId: string, fileName: string): Promise<Response> {
   let tempPath: string;
   try {

@@ -1,25 +1,12 @@
-// ---------------------------------------------------------------------------
-// Archive shape
-//
-// The shell that produces and consumes a volume's tar.gz, plus the facts needed
-// to judge one valid. No server imports, so the UI can read the same threshold.
-// ---------------------------------------------------------------------------
+// Shell scripts that write and read a volume's tar.gz. No server imports: the UI shares the threshold.
 
-/**
- * A tar.gz holding at least one file clears this comfortably; busybox tar emits
- * 87 bytes for an empty directory. Only ever waived on a confirmed-empty source.
- */
+/** Minimum size of a non-empty tar.gz. Waived only on a confirmed-empty source. */
 export const MIN_VALID_GZIP_BYTES = 100;
 
 /** Printed by the backup script when the source directory held nothing. */
 export const EMPTY_SOURCE_MARKER = "vardo:empty-source";
 
-/**
- * Printed when the archive holds at least one non-directory member.
- *
- * The size floor cannot stand in for this once exclusions exist: a pattern
- * matching every file still leaves the directory tree, which clears 100 bytes.
- */
+/** Printed when the archive holds at least one non-directory member. */
 export const ARCHIVE_HAS_FILES_MARKER = "vardo:archive-has-files";
 
 /** Written by the backup script, inside the backup dir: what tar left out. */
@@ -31,15 +18,8 @@ export const PROTECT_LIST_FILE = "protect.list";
 const RESTORE_STAGE_DIR = ".vardo-restore-staging";
 
 /**
- * Shell script for a tar backup: archive the volume, then report whether the
- * source was empty. Size alone cannot separate an empty volume from a truncated
- * archive, so this marker is what the size guard consults.
- *
- * Exclusions arrive as positional arguments — `find` predicates built by
- * `buildFindExclusionArgv`. Operator patterns are never interpolated into this
- * string, and tar only ever sees the literal paths `find` resolved them to.
- *
- * Paths are parameterized so tests can drive the real script against temp dirs.
+ * Shell script for a tar backup: archive the volume, then report whether the source was empty.
+ * Exclusions arrive as `find` argv. Never interpolate operator patterns into this string.
  */
 export function buildTarBackupScript(dataDir = "/data", backupDir = "/backup"): string {
   return [
@@ -62,13 +42,7 @@ export const DIRECTORY_SOURCE_MARKER = "vardo:source-is-directory";
 /** Printed when the mounted source is a regular file. */
 export const FILE_SOURCE_MARKER = "vardo:source-is-file";
 
-/**
- * Where a single-file bind source is mounted inside the helper container.
- *
- * Fixed rather than the real basename, so the archive round-trips without the
- * name having to survive in the storage key, and so nothing derived from a
- * host path is ever interpolated into a shell script.
- */
+/** Fixed mount name for a single-file bind source, so no host path reaches a shell script. */
 export const FILE_PAYLOAD_NAME = "payload";
 
 /** Archive a single bind-mounted file. Mounted at `${dataDir}/${FILE_PAYLOAD_NAME}`. */
@@ -80,11 +54,8 @@ export function buildFileBackupScript(dataDir = "/data", backupDir = "/backup"):
 }
 
 /**
- * Restore a single bind-mounted file.
- *
- * The contents are written through the existing file rather than replacing it:
- * the path is a bind mount point, so `mv` over it fails with EBUSY. Extraction
- * happens first, so a bad archive leaves the original untouched.
+ * Restore a single bind-mounted file, writing through it after extraction.
+ * `mv` over a bind mount point fails with EBUSY.
  */
 export function buildFileRestoreScript(dataDir = "/data", backupDir = "/backup"): string {
   return [
@@ -100,16 +71,8 @@ export function buildFileRestoreScript(dataDir = "/data", backupDir = "/backup")
 }
 
 /**
- * Preflight for a bind source, run inside the one-shot container.
- *
- * It has to run here rather than in Node: Vardo speaks to the daemon over a
- * socket while `-v` is interpreted against the *host* filesystem, so an
- * `fs.stat` from this process inspects the wrong machine and answers
- * confidently about nothing.
- *
- * Docker creates a missing bind source as an empty root-owned directory rather
- * than failing, so "exists" is not evidence the path was right — emptiness is
- * reported and the caller decides.
+ * Preflight for a bind source, run inside the container since `-v` resolves on the host.
+ * Docker creates a missing source as an empty directory, so emptiness is reported.
  */
 export function buildBindPreflightScript(dataDir = "/data"): string {
   return [
@@ -122,21 +85,8 @@ export function buildBindPreflightScript(dataDir = "/data"): string {
 }
 
 /**
- * Shell script for a tar restore: extract into a staging dir inside the volume,
- * and only swap it over the live data once tar has fully succeeded.
- *
- * The contract is that restore replaces the archived portion and leaves the
- * paths the archive deliberately omitted as it found them. `protect.list` names
- * those paths; each is moved from the live copy into the staging tree before
- * the swap, so they survive it. Same filesystem, so the move is a rename, and a
- * failure part-way through leaves the volume intact because the clear has not
- * run yet.
- *
- * WARNING: the removal of live data must stay after the extract. Moving it
- * earlier (or back to a plain `rm -rf /data/*` before `tar xzf`) empties the
- * volume whenever the archive is unreadable or the wrong format.
- *
- * Paths are parameterized so tests can drive the real script against temp dirs.
+ * Shell script for a tar restore: extract to staging, carry over `protect.list` paths, then swap.
+ * Keep the removal of live data after the extract, or a bad archive empties the volume.
  */
 export function buildTarRestoreScript(dataDir = "/data", backupDir = "/backup"): string {
   return [

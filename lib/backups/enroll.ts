@@ -1,10 +1,4 @@
-// ---------------------------------------------------------------------------
-// Backup enrollment (#874)
-//
-// Enrolling an app classifies each volume (lib/backups/selection.ts), records
-// the result as `backup_selection`, and links the app to a job. New apps enroll
-// themselves; existing ones are listed for an admin to opt in.
-// ---------------------------------------------------------------------------
+// Backup enrollment: classify an app's volumes, record `backup_selection` and link the app to a job.
 
 import { readFile } from "fs/promises";
 import { db } from "@/lib/db";
@@ -84,10 +78,7 @@ export async function measureVolumeBytes(vol: SelectableVolume, appName: string)
   }
 }
 
-/**
- * Classify an app's volumes. With `measure`, sizes come from disk; without, the
- * volumes are taken as new and empty.
- */
+/** Classify an app's volumes. Without `measure`, volumes are taken as new and empty. */
 export async function planAppVolumes(
   app: { id: string; name: string },
   opts: {
@@ -109,7 +100,6 @@ export async function planAppVolumes(
     const vol = row as SelectableVolume;
     let decision = classifyVolume(vol, { otherBinds, hostMounts });
     let sizeBytes: number | null | undefined;
-    // Only a volume that would be included needs its size checked.
     if (opts.measure && decision.verdict === "include" && !row.backupSelection) {
       sizeBytes = await measureVolumeBytes(vol, app.name);
       decision = classifyVolume(vol, { otherBinds, hostMounts, sizeBytes });
@@ -119,11 +109,7 @@ export async function planAppVolumes(
   return planned;
 }
 
-/**
- * Record each planned volume's selection. `include` names the volumes an admin
- * chose; without it, the plan's verdict stands. Volumes already selected keep
- * their selection unless an admin named them.
- */
+/** Record each planned volume's selection. Existing selections stand unless named in `include`. */
 export async function applySelections(plan: PlannedVolume[], include?: Set<string>): Promise<void> {
   const toInclude: string[] = [];
   const toExclude: string[] = [];
@@ -150,11 +136,7 @@ export async function applySelections(plan: PlannedVolume[], include?: Set<strin
 
 const SAFE_NAME = /^[a-zA-Z0-9._-]+$/;
 
-/**
- * Rows imported before #757 carry the host path as their name, which breaks
- * the archive's storage key and named-volume lookup. Rename them the way new
- * rows are named, from the mount path.
- */
+/** Rename volumes named after their host path, using the mount path. */
 async function renameUnsafe(included: PlannedVolume[]): Promise<void> {
   const unsafe = included.filter((v) => !SAFE_NAME.test(v.name) && v.appId);
   if (unsafe.length === 0) return;
@@ -180,11 +162,7 @@ export type EnrollResult =
   | { status: "no-target" }
   | { status: "covered"; jobId: string | null };
 
-/**
- * Enroll a newly created, adopted or imported app. Respects the backups flag
- * and the app's backup switch; with no target the app stays uncovered and
- * raises "No backup job covers this app".
- */
+/** Enroll a newly created, adopted or imported app. Respects the backups flag and the app's switch. */
 export async function enrollNewApp(opts: {
   appId: string;
   appName: string;
@@ -207,10 +185,7 @@ export async function enrollNewApp(opts: {
   return (await resolveBackupTarget(opts.organizationId)) ? { status: "covered", jobId: null } : { status: "no-target" };
 }
 
-/**
- * Classify volumes a later deploy found on an app. Only an app already covered
- * by a job takes them in; an uncovered existing app waits for an admin.
- */
+/** Classify volumes a later deploy found. Only an app already covered by a job takes them in. */
 export async function enrollNewVolumes(opts: {
   appId: string;
   appName: string;
@@ -234,7 +209,7 @@ export async function optInApp(opts: {
   targetId: string;
   volumeIds?: string[];
 }): Promise<{ jobId: string; included: string[] }> {
-  // Without a chosen list, the default is what the uncovered list showed: measured.
+  // Without a chosen list, match what the uncovered list showed.
   const plan = await planAppVolumes({ id: opts.appId, name: opts.appName }, { measure: !opts.volumeIds });
   const include = new Set(
     opts.volumeIds?.filter((id) => plan.some((v) => v.id === id)) ??
@@ -255,9 +230,7 @@ export async function enrollQuietly(opts: Parameters<typeof enrollNewApp>[0]): P
   }
 }
 
-// ---------------------------------------------------------------------------
 // Uncovered apps
-// ---------------------------------------------------------------------------
 
 const SIZE_TTL_MS = 10 * 60_000;
 const MEASURE_CONCURRENCY = 6;
@@ -324,7 +297,6 @@ export async function listUncoveredApps(organizationId: string): Promise<Uncover
     })),
   );
 
-  // Only volumes that could be backed up are measured, a few at a time.
   const sizes = new Map<string, number | null>();
   const queue = plans.flatMap(({ app, plan }) =>
     plan.filter((v) => v.decision.verdict !== "exclude").map((vol) => ({ app, vol })),

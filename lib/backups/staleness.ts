@@ -1,12 +1,4 @@
-// ---------------------------------------------------------------------------
-// Backup job staleness
-//
-// lastRunAt only advances when a run captures something, so a job that has
-// quietly stopped producing archives leaves it behind. This turns that into a
-// verdict the attention surface can read, without asking why the job stopped.
-//
-// Pure — no server imports.
-// ---------------------------------------------------------------------------
+// Backup job staleness: jobs whose lastRunAt has fallen behind their schedule.
 
 import { Cron } from "croner";
 
@@ -32,14 +24,7 @@ export type OverdueBackupJob = {
   neverRan: boolean;
 };
 
-/**
- * Longest gap between the schedule's next few fires. Null when the expression
- * is unparseable or has no repeat left.
- *
- * The longest rather than the first: `0 2 * * 1-5` runs 24h apart most nights
- * and 72h apart over a weekend, and the shorter gap would call every Monday
- * morning overdue.
- */
+/** Longest gap between the schedule's next few fires, so weekday schedules span weekends. Null if unparseable. */
 export function scheduleIntervalMs(schedule: string, from: Date): number | null {
   if (!schedule.trim()) return null;
   try {
@@ -55,11 +40,7 @@ export function scheduleIntervalMs(schedule: string, from: Date): number | null 
   }
 }
 
-/**
- * Enabled jobs that have captured nothing for OVERDUE_INTERVALS of their own
- * schedule. A job that has never run is measured from when it was created, so
- * one made a minute ago is not overdue before its first fire.
- */
+/** Enabled jobs that have captured nothing for OVERDUE_INTERVALS of their schedule. */
 export function overdueBackupJobs(
   jobs: ScheduledBackupJob[],
   now: Date,

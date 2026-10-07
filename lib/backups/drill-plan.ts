@@ -1,17 +1,4 @@
-// ---------------------------------------------------------------------------
-// Restore drills
-//
-// The engine already proves an archive is well-formed — gzip integrity, a size
-// floor, a checksum re-checked on download. That proves the bytes survived the
-// round trip. It says nothing about whether the contents load: a pg_dump taken
-// against the wrong database, a torn SQLite file, and a dump truncated by an
-// OOM kill all produce a valid gzip with a matching checksum.
-//
-// A drill restores into somewhere disposable and asks the restored copy a
-// question only a real load can answer.
-//
-// Pure — the container work lives in drill.ts, the decisions live here.
-// ---------------------------------------------------------------------------
+// Restore drills: restore into something disposable and check the contents load. Container work is in drill.ts.
 
 import type { DatabaseKind } from "./durability";
 
@@ -29,12 +16,7 @@ export type ScratchDatabase = {
   countArgv: string[];
 };
 
-/**
- * A dump restored into a fresh instance of a *different* user or database name
- * fails on ownership and \connect lines, so the scratch instance is built from
- * the same values the dump was taken with. They come from the live container's
- * environment rather than anywhere they might have gone stale.
- */
+/** Scratch instance with the live container's user and database, so ownership and \connect lines resolve. */
 export function scratchDatabaseFor(
   kind: DatabaseKind,
   image: string,
@@ -51,8 +33,7 @@ export function scratchDatabaseFor(
     const database = read("POSTGRES_DB") || user;
     return {
       image,
-      // A throwaway password: the scratch container is never published, and
-      // reusing the real one would put it on a command line.
+      // Throwaway password, so the real one never reaches a command line.
       env: [`POSTGRES_USER=${user}`, `POSTGRES_DB=${database}`, "POSTGRES_PASSWORD=drill"],
       readyArgv: ["pg_isready", "-U", user, "-d", database],
       restoreArgv: ["psql", "-U", user, "-v", "ON_ERROR_STOP=1", "-d", database],
@@ -80,12 +61,7 @@ export function scratchDatabaseFor(
   return null;
 }
 
-/**
- * Whether a restored copy counts as verified.
- *
- * A restore that exits 0 having created nothing is the failure this exists to
- * catch — an empty dump applies cleanly and tells you nothing.
- */
+/** Whether a restored copy counts as verified. Exiting 0 having created nothing fails. */
 export function judgeDrill(input: {
   restoreExitCode: number;
   objectCount: number | null;

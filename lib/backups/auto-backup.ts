@@ -1,14 +1,4 @@
-// ---------------------------------------------------------------------------
-// Auto-Backup Configuration
-//
-// Provides three capabilities:
-// 1. ensureHostBackupTarget() — on app startup, auto-creates a system-level
-//    backup target from config file or DB settings if none exists.
-// 2. ensureSystemBackupJob() — creates a backup job for Vardo's own
-//    PostgreSQL database, linked via a system volume with pg_dump strategy.
-// 3. ensureAutoBackupJob() — once an app has volumes selected for backup,
-//    auto-creates a daily backup job linked to the app.
-// ---------------------------------------------------------------------------
+// Auto-created system backup target, Vardo's own database job and per-app daily jobs.
 
 import { db } from "@/lib/db";
 import { backupTargets, backupJobs, backupJobApps, backupJobVolumes, volumes } from "@/lib/db/schema";
@@ -23,19 +13,8 @@ import { sealTargetConfig } from "./target-config";
 
 const log = logger.child("auto-backup");
 
-// ---------------------------------------------------------------------------
-// 1. System-level backup target from config
-// ---------------------------------------------------------------------------
-
-/**
- * Check if a system-level backup target exists. If not, but backup storage
- * is configured (via config file or DB), auto-create one. This is the
- * global safety-net target that any org can fall back to.
- *
- * Returns the system-level target if one exists (or was created), null otherwise.
- */
+/** Return the system-level backup target, creating it from configured storage if missing. Null when none. */
 export async function ensureHostBackupTarget() {
-  // Check if a system-level target already exists (organizationId IS NULL)
   const existing = await db.query.backupTargets.findFirst({
     where: isNull(backupTargets.organizationId),
   });
@@ -44,13 +23,12 @@ export async function ensureHostBackupTarget() {
     return existing;
   }
 
-  // Use the canonical resolution chain: config file > DB > null
+  // Config file, then DB.
   const storageConfig = await getBackupStorageConfig();
   if (!storageConfig?.type || !storageConfig?.bucket || !storageConfig?.accessKey || !storageConfig?.secretKey) {
     return null;
   }
 
-  // Validate storage type
   const validTypes = ["s3", "r2", "b2"] as const;
   const type = storageConfig.type.toLowerCase() as (typeof validTypes)[number];
   if (!validTypes.includes(type)) {
@@ -60,7 +38,6 @@ export async function ensureHostBackupTarget() {
     return null;
   }
 
-  // Build the S3-compatible config
   const config = {
     bucket: storageConfig.bucket,
     region: storageConfig.region || "auto",
@@ -92,13 +69,7 @@ export async function ensureHostBackupTarget() {
   return target;
 }
 
-// ---------------------------------------------------------------------------
-// 2. System backup job for Vardo's own database
-// ---------------------------------------------------------------------------
-
-/**
- * Build dump/restore commands for Vardo's own Postgres from DATABASE_URL.
- */
+/** Build dump/restore commands for Vardo's own Postgres from DATABASE_URL. */
 function buildSystemDumpMeta(): { dumpCmd: string; restoreCmd: string } {
   const container = process.env.VARDO_PG_CONTAINER || "vardo-postgres";
   const dbUrl = process.env.DATABASE_URL || "";
@@ -108,24 +79,15 @@ function buildSystemDumpMeta(): { dumpCmd: string; restoreCmd: string } {
   assertSafeName(container);
   assertSafeName(user);
   assertSafeName(dbname);
-  // --clean --if-exists so the dump applies over a populated database rather
-  // than only into an empty one, and ON_ERROR_STOP so psql fails instead of
-  // skipping every statement it could not apply and exiting 0 (#783).
+  // --clean --if-exists applies over a populated database. ON_ERROR_STOP stops psql exiting 0 on failure.
   return {
     dumpCmd: `docker exec ${container} pg_dump -U ${user} --clean --if-exists ${dbname}`,
     restoreCmd: `docker exec -i ${container} psql -U ${user} -v ON_ERROR_STOP=1 -d ${dbname}`,
   };
 }
 
-/**
- * Ensure a system backup job exists for Vardo's PostgreSQL database.
- * Creates a system volume (appId=null) with pg_dump strategy and links
- * it to the backup job via backupJobVolumes.
- *
- * Call this after ensureHostBackupTarget() succeeds.
- */
+/** Ensure a backup job exists for Vardo's own database. Call after ensureHostBackupTarget() succeeds. */
 export async function ensureSystemBackupJob(targetId: string) {
-  // Check if a system volume for postgres already exists
   const existingVolume = await db.query.volumes.findFirst({
     where: and(isNull(volumes.appId), eq(volumes.name, "postgres")),
   });
@@ -135,7 +97,6 @@ export async function ensureSystemBackupJob(targetId: string) {
   if (existingVolume) {
     volumeId = existingVolume.id;
   } else {
-    // Create the system volume with dump strategy
     const meta = buildSystemDumpMeta();
     volumeId = nanoid();
     await db.insert(volumes).values({
@@ -151,7 +112,6 @@ export async function ensureSystemBackupJob(targetId: string) {
     log.info("Created system volume for Vardo database (dump)");
   }
 
-  // Check if a backup job is already linked to this volume
   const existingLink = await db.query.backupJobVolumes.findFirst({
     where: eq(backupJobVolumes.volumeId, volumeId),
   });
@@ -162,15 +122,14 @@ export async function ensureSystemBackupJob(targetId: string) {
     });
   }
 
-  // Create the backup job and link its volume atomically (see the orphan-job
-  // note in ensureAutoBackupJob — same partial-insert hazard, #757).
+  // Atomic, or a partial insert leaves an orphan job.
   const jobId = nanoid();
   const job = await db.transaction(async (tx) => {
     const [created] = await tx
       .insert(backupJobs)
       .values({
         id: jobId,
-        organizationId: null, // system-level, not org-scoped
+        organizationId: null,
         targetId,
         name: "Vardo database",
         schedule: staggeredSchedule("vardo-system-db"),
@@ -193,33 +152,16 @@ export async function ensureSystemBackupJob(targetId: string) {
   return job;
 }
 
-// ---------------------------------------------------------------------------
-// 3. Staggered schedule generation
-// ---------------------------------------------------------------------------
-
-/**
- * Generate a deterministic staggered cron schedule from a seed string.
- * Spreads backups across midnight–5 AM to avoid thundering herd.
- */
+/** Deterministic cron schedule between midnight and 5 AM, seeded by a string. */
 function staggeredSchedule(seed: string): string {
   const hash = createHash("md5").update(seed).digest();
-  const minute = hash[0] % 60;      // 0–59
-  const hour = hash[1] % 6;         // 0–5 (midnight to 5 AM)
+  const minute = hash[0] % 60;
+  const hour = hash[1] % 6;
   return `${minute} ${hour} * * *`;
 }
 
-// ---------------------------------------------------------------------------
-// 4. Auto-create backup job on deploy
-// ---------------------------------------------------------------------------
-
-/**
- * Resolve the best backup target for an organization:
- * 1. Org-level default target (takes precedence)
- * 2. System-level target (fallback safety net)
- * Returns null if no target is configured anywhere.
- */
+/** Backup target for an org: its default, then any org target, then the system target. Null if none. */
 export async function resolveBackupTarget(organizationId: string) {
-  // Check for org-level default target first
   const orgTarget = await db.query.backupTargets.findFirst({
     where: and(
       eq(backupTargets.organizationId, organizationId),
@@ -229,14 +171,12 @@ export async function resolveBackupTarget(organizationId: string) {
 
   if (orgTarget) return orgTarget;
 
-  // Fall back to any org-level target
   const anyOrgTarget = await db.query.backupTargets.findFirst({
     where: eq(backupTargets.organizationId, organizationId),
   });
 
   if (anyOrgTarget) return anyOrgTarget;
 
-  // Fall back to system-level target
   const hostTarget = await db.query.backupTargets.findFirst({
     where: isNull(backupTargets.organizationId),
   });
@@ -244,13 +184,7 @@ export async function resolveBackupTarget(organizationId: string) {
   return hostTarget ?? null;
 }
 
-/**
- * After a deploy detects persistent volumes, check if the app already has a
- * backup job. If not and a backup target exists (org-level or system-level),
- * auto-create a daily backup job.
- *
- * Returns the created job ID, or null if skipped.
- */
+/** Create a daily backup job for an app with backup-worthy volumes and no job. Returns its ID or null. */
 export async function ensureAutoBackupJob(opts: {
   appId: string;
   appName: string;
@@ -258,10 +192,7 @@ export async function ensureAutoBackupJob(opts: {
 }): Promise<string | null> {
   const { appId, appName, organizationId } = opts;
 
-  // Anything a backup run would capture. Not `persistent` — that means
-  // "survives a deploy", and a bind-mounted database is persistent = false
-  // while being the least replaceable thing the app has. Gating on it here left
-  // five live databases with no job at all (#790).
+  // Not `persistent`: a bind-mounted database is persistent = false and still needs a job.
   const appVolumes = await db.query.volumes.findMany({
     where: eq(volumes.appId, appId),
   });
@@ -280,26 +211,19 @@ export async function ensureAutoBackupJob(opts: {
   );
 
   if (existingLink) {
-    return null; // Already covered
+    return null;
   }
 
-  // Resolve the best backup target
   const target = await resolveBackupTarget(organizationId);
 
   if (!target) {
-    // No backup target configured anywhere -- skip silently
     return null;
   }
 
   return createAutoJob({ appId, appName, organizationId, targetId: target.id });
 }
 
-/**
- * Create a daily "Auto:" job on a target, linking the app atomically. A partial
- * insert (job row without its app link) would create an orphan job the
- * dedup-by-app-link guard can't see, so the next deploy would create yet
- * another — the source of the duplicate "Auto:" jobs (#757).
- */
+/** Create a daily "Auto:" job on a target, linking the app atomically so no orphan job is left. */
 async function createAutoJob(opts: {
   appId: string;
   appName: string;
@@ -331,11 +255,7 @@ async function createAutoJob(opts: {
   return jobId;
 }
 
-/**
- * Cover an app with a job on a chosen target. Reuses a job of the org on that
- * target that already links the app or is named "Auto: <app>"; otherwise
- * creates one. Returns the job ID.
- */
+/** Cover an app with a job on a target, reusing a linked or "Auto: <app>" job. Returns the job ID. */
 export async function ensureAutoBackupJobOnTarget(opts: {
   appId: string;
   appName: string;

@@ -1,9 +1,4 @@
-// ---------------------------------------------------------------------------
-// Which container a dump spec means, right now.
-//
-// The same resolution shape resolveDockerVolume already uses for tar: ask
-// Docker what is running rather than trusting a name that was true once.
-// ---------------------------------------------------------------------------
+// Resolves a dump spec to the container running it now.
 
 import { listContainers, inspectContainer } from "@/lib/docker/client";
 import type { DumpSpec } from "./dump-spec";
@@ -17,13 +12,7 @@ export type ResolvedDbContainer = {
   env: string[];
 };
 
-/**
- * Find the running container for a spec's compose service.
- *
- * Scoped to the app and environment, so a staging database is never dumped
- * into a production backup. Returns null when nothing is running, which is a
- * legitimate state for a stopped app and must not be reported as corruption.
- */
+/** Running container for a spec's compose service, scoped to app and environment. Null when stopped. */
 export async function resolveDbContainer(
   spec: DumpSpec,
   app: { id: string; name: string },

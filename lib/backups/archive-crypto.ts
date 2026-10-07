@@ -1,7 +1,4 @@
-// ---------------------------------------------------------------------------
-// Archive encryption
-//
-// Format v1, all integers big-endian:
+// Archive encryption. Format v1, big-endian:
 //
 //   header  magic "VARDOENC" (8) | version (1) | wrap scheme (1)
 //           | chunk size u32 (4) | nonce prefix (8)
@@ -9,16 +6,11 @@
 //           | wrapped key length (1) | wrapped key
 //   chunks  AES-256-GCM ciphertext (≤ chunk size) | tag (16), repeated
 //
-// - Data key: 32 random bytes per archive.
-// - Wrap scheme 1: the data key sealed with AES-256-GCM under a key derived from
-//   ENCRYPTION_MASTER_KEY. Wrapped key = iv (12) | ciphertext (32) | tag (16),
-//   AAD = key id. Key id is the master-key fingerprint.
+// - Data key: 32 random bytes per archive, wrapped with AES-256-GCM under ENCRYPTION_MASTER_KEY.
+//   Wrapped key = iv (12) | ciphertext (32) | tag (16), AAD = key id (master-key fingerprint).
 // - Chunk n: nonce = prefix | n as u32, AAD = header | n as u32 | final flag (1).
-//   Every chunk but the last is exactly chunk size. The last carries final = 1
-//   and may be empty, so truncation, reordering and appended data all fail.
-//
-// Anything without the magic is a legacy plaintext archive.
-// ---------------------------------------------------------------------------
+//   The last chunk carries final = 1, so truncation, reordering and appended data fail.
+// No magic means a legacy plaintext archive.
 
 import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from "crypto";
 import { createReadStream, createWriteStream } from "fs";
@@ -239,10 +231,7 @@ class ArchiveEncryptor extends Transform {
   }
 }
 
-/**
- * A stream that encrypts what is written to it. `key` is what the backup row
- * records; the same wrapped key is written into the header.
- */
+/** A stream that encrypts what is written to it. `key` is what the backup row records. */
 export function createArchiveEncryptor(
   masterKey: string,
   opts: { chunkSize?: number } = {},
@@ -261,10 +250,7 @@ export type DecryptOptions = {
   requireEncrypted?: boolean;
 };
 
-/**
- * A stream that decrypts an archive, or passes a legacy plaintext one through
- * unchanged. Fails at the first chunk that does not authenticate.
- */
+/** A stream that decrypts an archive or passes plaintext through. Fails on the first bad chunk. */
 class ArchiveDecryptor extends Transform {
   private queue = new ByteQueue();
   private mode: "sniff" | "header" | "chunks" | "plain" = "sniff";

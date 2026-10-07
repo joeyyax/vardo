@@ -1,9 +1,4 @@
-// ---------------------------------------------------------------------------
-// S3 Backup Storage Adapter
-//
-// Wraps S3-compatible storage (AWS S3, R2, B2, Minio) as a BackupStorage
-// implementation. Extracted from the original storage.ts module.
-// ---------------------------------------------------------------------------
+// S3-compatible backup storage adapter (AWS S3, R2, B2, Minio).
 
 import {
   S3Client,
@@ -21,10 +16,6 @@ import { promisify } from "util";
 const pipelineAsync = promisify(pipeline);
 import { ArchiveMissingError, type BackupStorage } from "./storage-port";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
 export type S3StorageConfig = {
   bucket: string;
   region: string;
@@ -39,10 +30,6 @@ function isMissing(err: unknown): boolean {
   const e = err as { name?: unknown; $metadata?: { httpStatusCode?: number } };
   return e?.name === "NoSuchKey" || e?.name === "NotFound" || e?.$metadata?.httpStatusCode === 404;
 }
-
-// ---------------------------------------------------------------------------
-// Adapter
-// ---------------------------------------------------------------------------
 
 export class S3BackupStorage implements BackupStorage {
   private client: S3Client;
@@ -61,7 +48,6 @@ export class S3BackupStorage implements BackupStorage {
     });
   }
 
-  /** Build the full S3 object key, prepending the optional prefix. */
   private fullKey(key: string): string {
     if (this.config.prefix) {
       const trimmed = this.config.prefix.replace(/^\/+|\/+$/g, "");
@@ -103,7 +89,7 @@ export class S3BackupStorage implements BackupStorage {
       throw new Error(`Empty response body for key: ${key}`);
     }
 
-    // Stream directly to disk to avoid OOM on large archives
+    // Stream to disk; archives don't fit in memory.
     const stream = response.Body as Readable;
     await pipelineAsync(stream, createWriteStream(destPath));
   }
@@ -117,7 +103,7 @@ export class S3BackupStorage implements BackupStorage {
     );
   }
 
-  /** Checks the object exists first; a presigned URL to nothing would 404 at the provider. */
+  /** Checks the object exists before presigning. */
   async getDownloadUrl(key: string, expiresIn = 3600): Promise<string> {
     await this.client
       .send(new HeadObjectCommand({ Bucket: this.config.bucket, Key: this.fullKey(key) }))

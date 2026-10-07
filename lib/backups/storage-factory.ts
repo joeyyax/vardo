@@ -1,10 +1,4 @@
-// ---------------------------------------------------------------------------
-// Backup Storage Factory
-//
-// Creates the appropriate BackupStorage adapter based on the backup target's
-// type field. The engine calls this once per operation and then works
-// exclusively through the BackupStorage interface.
-// ---------------------------------------------------------------------------
+// Creates the BackupStorage adapter for a target's type.
 
 import type { BackupStorage } from "./storage-port";
 import { LocalBackupStorage, type LocalStorageConfig } from "./storage-local";
@@ -19,10 +13,6 @@ type BackupTargetLike = {
   type: "s3" | "r2" | "b2" | "ssh" | "local";
   config: Record<string, unknown>;
 };
-
-// ---------------------------------------------------------------------------
-// Config validation
-// ---------------------------------------------------------------------------
 
 function requireString(
   config: Record<string, unknown>,
@@ -84,12 +74,7 @@ function validateS3Config(config: Record<string, unknown>): S3StorageConfig {
   return result;
 }
 
-// ---------------------------------------------------------------------------
-// Factory
-// ---------------------------------------------------------------------------
-
-// Every adapter is wrapped here rather than internally, so retry coverage
-// cannot be missed by a new adapter or a new call site.
+// Every adapter gets retry here, so a new adapter can't miss it.
 export function createBackupStorage(target: BackupTargetLike): BackupStorage {
   const config = openTargetConfig(target);
   if (target.type === "ssh") {
@@ -98,6 +83,6 @@ export function createBackupStorage(target: BackupTargetLike): BackupStorage {
   if (target.type === "local") {
     return withStorageRetry(new LocalBackupStorage(validateLocalConfig(config)));
   }
-  // s3, r2, and b2 all use S3-compatible APIs
+  // s3, r2 and b2 all use S3-compatible APIs.
   return withStorageRetry(new S3BackupStorage(validateS3Config(config)));
 }

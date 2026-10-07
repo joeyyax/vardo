@@ -1,9 +1,4 @@
-// ---------------------------------------------------------------------------
-// Backup Storage Retry
-//
-// Decorates any BackupStorage adapter with bounded retry and backoff, so one
-// transient network or DNS failure does not lose a whole nightly run.
-// ---------------------------------------------------------------------------
+// Bounded retry and backoff for any BackupStorage adapter.
 
 import type { BackupStorage } from "./storage-port";
 import { logger } from "@/lib/logger";
@@ -19,8 +14,7 @@ const MAX_DELAY_MS = 8_000;
 /** Wall-clock ceiling for a single operation including its retries. */
 export const RETRY_BUDGET_MS = 10 * 60 * 1_000;
 
-// Transient socket and resolver failures. EAI_AGAIN is the one killing nightly
-// runs; the AWS SDK's own transient list omits it.
+// Transient socket and resolver failures. The AWS SDK's own list omits EAI_AGAIN.
 const RETRYABLE_CODES = new Set([
   "EAI_AGAIN",
   "ECONNRESET",
@@ -56,18 +50,14 @@ function httpStatus(err: ErrorLike): number | undefined {
   return typeof status === "number" ? status : undefined;
 }
 
-/**
- * Transient failures only: network and resolver codes, 429, and 5xx.
- * Everything else — auth, 403, malformed requests — fails on the first attempt
- * rather than being buried under a longer timeout.
- */
+/** Transient failures only: network and resolver codes, 429 and 5xx. */
 export function isRetryableStorageError(err: unknown, depth = 0): boolean {
   if (!err || typeof err !== "object" || depth > MAX_CAUSE_DEPTH) return false;
   const e = err as ErrorLike;
 
   if (typeof e.code === "string" && RETRYABLE_CODES.has(e.code)) return true;
 
-  // An explicit status is authoritative — don't fall through to text matching.
+  // An explicit status is authoritative.
   const status = httpStatus(e);
   if (status !== undefined) return status === 429 || (status >= 500 && status <= 599);
 
@@ -78,13 +68,13 @@ export function isRetryableStorageError(err: unknown, depth = 0): boolean {
   return isRetryableStorageError(e.cause, depth + 1);
 }
 
-/** Equal jitter — half fixed, half random, so parallel volumes don't retry in lockstep. */
+/** Equal jitter: half fixed, half random. */
 export function backoffDelayMs(attempt: number, random: () => number = Math.random): number {
   const ceiling = Math.min(BASE_DELAY_MS * 2 ** (attempt - 1), MAX_DELAY_MS);
   return Math.round(ceiling / 2 + random() * (ceiling / 2));
 }
 
-/** Log-safe error tag. Target configs hold access keys and SSH private keys, so never log the raw error. */
+/** Log-safe error tag. Never log the raw error: target configs hold keys. */
 function describe(err: unknown): string {
   if (!err || typeof err !== "object") return "unknown error";
   const e = err as ErrorLike;
@@ -96,7 +86,7 @@ function describe(err: unknown): string {
   return parts.length > 0 ? parts.join(" ") : "unknown error";
 }
 
-/** Wraps the last failure so the operator sees that it retried, and how often. */
+/** Wraps the last failure with the retry count. */
 export class StorageRetryError extends Error {
   readonly attempts: number;
 
@@ -142,11 +132,7 @@ async function withRetry<T>(
   }
 }
 
-/**
- * Wrap an adapter so its network operations retry on transient failures.
- * Each attempt re-enters the adapter, so file handles and streams are rebuilt
- * rather than replayed.
- */
+/** Wrap an adapter so its network operations retry on transient failures. */
 export function withStorageRetry(storage: BackupStorage): BackupStorage {
   const wrapped: BackupStorage = {
     upload: (key, filePath) => withRetry("upload", key, () => storage.upload(key, filePath)),
@@ -154,7 +140,7 @@ export function withStorageRetry(storage: BackupStorage): BackupStorage {
     delete: (key) => withRetry("delete", key, () => storage.delete(key)),
   };
 
-  // Presigning checks the object exists first, which is a network call.
+  // Presigning checks the object exists first.
   if (storage.getDownloadUrl) {
     const getDownloadUrl = storage.getDownloadUrl.bind(storage);
     wrapped.getDownloadUrl = (key, expiresIn) =>

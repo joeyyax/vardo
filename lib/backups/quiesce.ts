@@ -1,8 +1,4 @@
-// ---------------------------------------------------------------------------
-// Quiesce: stop every running container that mounts a restore destination,
-// and start them again afterward. A restore that swaps files under a running
-// process hands it a mix of old and new data.
-// ---------------------------------------------------------------------------
+// Quiesce: stop the running containers that mount a restore destination, then start them again.
 
 import { hostname } from "os";
 import { dockerRequest, startContainer, stopContainer } from "@/lib/docker/client";
@@ -21,10 +17,7 @@ function trimSlash(p: string): string {
   return p.length > 1 ? p.replace(/\/+$/, "") : p;
 }
 
-/**
- * Whether a mount can write the destination. Read-only mounts and binds of a
- * parent directory are left alone: those are host-wide tools, not the app.
- */
+/** Whether a mount can write the destination. Read-only and parent-directory binds don't count. */
 export function mountTouches(mount: RawMount, dest: RestoreDestination): boolean {
   if (mount.RW === false) return false;
   if (dest.kind === "volume") return mount.Type === "volume" && mount.Name === dest.name;
@@ -49,9 +42,8 @@ export async function containersMounting(
 }
 
 /**
- * Stop what mounts the destination. `resume` starts them again and returns the
- * names that would not start. A stop that fails restarts whatever it already
- * stopped and throws, so nothing is restored under a live writer.
+ * Stop what mounts the destination. `resume` restarts them and returns names that won't start.
+ * A failed stop restarts what it stopped and throws, so nothing restores under a live writer.
  */
 export async function quiesce(
   dest: RestoreDestination,

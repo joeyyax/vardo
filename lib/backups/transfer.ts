@@ -11,10 +11,7 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 type MovedApp = { id: string; name: string };
 
-/**
- * Takes these apps out of the org's backup jobs: unlinks them, detaches their
- * history from those jobs and deletes their "Auto:" jobs once empty.
- */
+/** Take these apps out of the org's backup jobs and delete their emptied "Auto:" jobs. */
 export async function releaseAppsFromOrgJobs(
   tx: Tx,
   orgId: string,
@@ -35,7 +32,7 @@ export async function releaseAppsFromOrgJobs(
     .where(and(inArray(backupJobApps.appId, appIds), inArray(backupJobApps.backupJobId, jobIds)))
     .returning({ jobId: backupJobApps.backupJobId });
 
-  // The history belongs to the app's new org; the old org's jobs stop listing and pruning it.
+  // The history moves with the app; the old org's jobs stop pruning it.
   await tx
     .update(backups)
     .set({
@@ -63,10 +60,7 @@ export async function releaseAppsFromOrgJobs(
   return { unlinked: unlinked.length, deletedJobIds: deleted.map((d) => d.id) };
 }
 
-/**
- * Gives each app the backup coverage a new app in the org gets. Never throws;
- * an app left uncovered surfaces as the `backup-missing` condition.
- */
+/** Give each app the backup coverage a new app in the org gets. Never throws. */
 export async function coverAppsInOrg(orgId: string, moved: MovedApp[]): Promise<string[]> {
   if (!(await isFeatureEnabledAsync("backups"))) return [];
   const created: string[] = [];
@@ -81,10 +75,7 @@ export async function coverAppsInOrg(orgId: string, moved: MovedApp[]): Promise<
   return created;
 }
 
-/**
- * Releases apps from jobs of an org they no longer belong to, then covers them
- * in their own org. Instance-level jobs span orgs and are left alone.
- */
+/** Release apps from another org's jobs, then cover them in their own org. */
 export async function repairForeignJobLinks(): Promise<number> {
   const stale = await db
     .select({ jobOrgId: backupJobs.organizationId, appId: apps.id, appName: apps.name, appOrgId: apps.organizationId })

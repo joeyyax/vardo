@@ -1,19 +1,9 @@
-// ---------------------------------------------------------------------------
-// SSH/SCP Backup Storage Adapter
-//
-// Backs up to any SSH-accessible host (NAS over Tailscale, remote server,
-// etc.) using scp for file transfer and ssh for remote operations.
-// Implements the BackupStorage port interface.
-// ---------------------------------------------------------------------------
+// SSH/SCP backup storage adapter.
 
 import { stat, writeFile as fsWriteFile, unlink } from "fs/promises";
 import { nanoid } from "nanoid";
 import { ArchiveMissingError, type BackupStorage } from "./storage-port";
 import { execFileAsync } from "@/lib/utils/exec";
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 
 export type SshConfig = {
   host: string;
@@ -25,23 +15,12 @@ export type SshConfig = {
   path: string;
 };
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Escape a string for safe inclusion in a remote shell command.
- * Wraps in single quotes and escapes any embedded single quotes.
- */
+/** Single-quote a string for a remote shell command. */
 function shellEscape(value: string): string {
   return "'" + value.replace(/'/g, "'\\''") + "'";
 }
 
-/**
- * Build SSH/SCP flag arrays common to all commands.
- * Writes the private key to a temp file if provided.
- * Returns separate arrays for scp flags and ssh flags (they differ in port flag).
- */
+/** Build scp and ssh flags, writing the private key to a temp file if provided. */
 async function buildFlags(
   config: SshConfig
 ): Promise<{ scpFlags: string[]; sshFlags: string[]; keyFile?: string }> {
@@ -83,7 +62,6 @@ function remotePath(config: SshConfig, key: string): string {
   return `${base}/${key}`;
 }
 
-/** Ensure remote directory exists. */
 async function ensureRemoteDir(
   config: SshConfig,
   remoteDir: string
@@ -105,10 +83,6 @@ async function ensureRemoteDir(
   }
 }
 
-// ---------------------------------------------------------------------------
-// Adapter
-// ---------------------------------------------------------------------------
-
 export class SshBackupStorage implements BackupStorage {
   private config: SshConfig;
 
@@ -120,7 +94,6 @@ export class SshBackupStorage implements BackupStorage {
     const remote = remotePath(this.config, key);
     const remoteDir = remote.substring(0, remote.lastIndexOf("/"));
 
-    // Ensure remote directory structure exists
     await ensureRemoteDir(this.config, remoteDir);
 
     const { scpFlags, keyFile } = await buildFlags(this.config);
@@ -133,7 +106,7 @@ export class SshBackupStorage implements BackupStorage {
           filePath,
           `${this.config.username}@${this.config.host}:${shellEscape(remote)}`,
         ],
-        { timeout: 600_000 } // 10 minute timeout
+        { timeout: 600_000 }
       );
 
       const fileInfo = await stat(filePath);
@@ -190,6 +163,5 @@ export class SshBackupStorage implements BackupStorage {
     }
   }
 
-  // SSH targets don't support pre-signed URLs.
-  // getDownloadUrl is intentionally omitted from this adapter.
+  // No getDownloadUrl: SSH can't pre-sign URLs.
 }

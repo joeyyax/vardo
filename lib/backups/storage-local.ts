@@ -1,10 +1,4 @@
-// ---------------------------------------------------------------------------
-// Local Filesystem Backup Storage Adapter
-//
-// Stores backups on the server's local filesystem. Useful for development,
-// single-node setups, or as a staging area before replication.
-// Implements the BackupStorage port interface.
-// ---------------------------------------------------------------------------
+// Local filesystem backup storage adapter.
 
 import { copyFile, mkdir, unlink, stat } from "fs/promises";
 import { resolve, dirname } from "path";
@@ -21,7 +15,7 @@ export class LocalBackupStorage implements BackupStorage {
     this.basePath = resolve(config.path);
   }
 
-  /** Guard against path traversal — resolved dest must stay under basePath. */
+  /** Path traversal guard: resolved dest must stay under basePath. */
   private safePath(key: string): string {
     const dest = resolve(this.basePath, key);
     if (!dest.startsWith(this.basePath + "/")) {
@@ -58,5 +52,5 @@ export class LocalBackupStorage implements BackupStorage {
     }
   }
 
-  // No getDownloadUrl — same as SSH. Downloads stream through the server.
+  // No getDownloadUrl: downloads stream through the server.
 }

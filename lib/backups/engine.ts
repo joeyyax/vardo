@@ -61,24 +61,13 @@ import { execFileAsync } from "@/lib/utils/exec";
 
 const log = logger.child("backup");
 
-
-// Local staging dir for backup archives before upload. Must be writable by the
-// app user AND host-visible: the engine bind-mounts it into a one-shot `alpine`
-// container via `docker run -v`, so a path that only exists inside this
-// container (e.g. cwd /app) can't be mounted. In production the app runs as a
-// non-root user and /app is not writable, so default under VARDO_HOME_DIR — the
-// app-owned data dir that is bind-mounted at the same path on the host. Falls
-// back to ./.host/backups for local dev (where VARDO_HOME_DIR is unset).
+// Staging dir for archives. Must be host-visible: it's bind-mounted into a `docker run` container.
 const BACKUPS_DIR = resolve(
   process.env.VARDO_BACKUPS_DIR ||
     (process.env.VARDO_HOME_DIR
       ? join(process.env.VARDO_HOME_DIR, "backups-staging")
       : "./.host/backups"),
 );
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 
 /** skipped — the source is real but the engine cannot capture it (bind mount). */
 export type BackupOutcome = "success" | "failed" | "skipped";
@@ -142,10 +131,6 @@ type VolumeToBackup = {
   backupSelection: "include" | "exclude" | null;
 };
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
 function timestamp(): string {
   return new Date().toISOString().replace(/[:.]/g, "-");
 }
@@ -165,7 +150,7 @@ async function checksumFile(filePath: string): Promise<string> {
   });
 }
 
-/** Archive format encoded in the storage key. Fallback for rows written before `backup.strategy`. */
+/** Archive format encoded in the storage key. */
 export function strategyFromStoragePath(storagePath: string): ArchiveStrategy | null {
   if (storagePath.endsWith(".dump.gz")) return "dump";
   if (storagePath.endsWith(".tar.gz")) return "tar";
@@ -173,13 +158,8 @@ export function strategyFromStoragePath(storagePath: string): ArchiveStrategy | 
 }
 
 /**
- * Verify a gzipped archive is valid:
- * - Passes gzip integrity check (not truncated or corrupted)
- * - Holds at least one entry, unless the source was confirmed empty
- *
- * Pass `sourceWasEmpty` only on evidence from the source itself — an empty
- * volume and a broken pipe both produce a tiny file, and size cannot tell them
- * apart.
+ * Verify a gzipped archive passes `gzip -t` and holds an entry unless the source was confirmed empty.
+ * Pass `sourceWasEmpty` only on evidence from the source: an empty volume and a broken pipe look alike.
  */
 async function verifyArchive(
   filePath: string,
@@ -188,7 +168,6 @@ async function verifyArchive(
 ): Promise<number> {
   const info = await stat(filePath);
 
-  // gzip -t validates the entire compressed stream
   try {
     await execFileAsync("gzip", ["-t", filePath], { timeout: 300_000 });
   } catch (err) {
@@ -205,10 +184,7 @@ async function verifyArchive(
   return info.size;
 }
 
-/**
- * Encrypt a verified archive and upload it. Uploads plaintext only when no
- * master key is configured.
- */
+/** Encrypt a verified archive and upload it. Plaintext only when no master key is configured. */
 async function uploadArchive(
   archivePath: string,
   storageKey: string,
@@ -232,10 +208,7 @@ async function uploadArchive(
   return { sizeBytes, archiveKey };
 }
 
-/**
- * Download an archive into `destPath`, decrypted. A plaintext archive passes
- * through, unless the row records it as encrypted.
- */
+/** Download an archive into `destPath`, decrypted. Plaintext passes through unless the row says encrypted. */
 async function fetchArchive(
   storage: BackupStorage,
   backup: { storagePath: string; archiveKey: string | null },
@@ -262,16 +235,9 @@ async function fetchArchive(
   }
 }
 
-// ---------------------------------------------------------------------------
-// Core: backup strategies
-// ---------------------------------------------------------------------------
-
 /**
  * Run the tar backup script in a one-shot container and read back what it left out.
- *
- * Exclusion patterns reach the container as argv for `find`, never as text in
- * the script — a pattern is operator input and the script runs with the source
- * mounted.
+ * Exclusion patterns go in as argv, never script text: they're operator input.
  */
 async function runTarBackup(
   mountArgs: string[],
@@ -297,8 +263,7 @@ async function runTarBackup(
   const out = String(stdout);
   if (findArgv.length === 0) return { stdout: out, excludedPaths: [] };
 
-  // The archive still holds the directory tree when every file matched, and a
-  // tree clears the size floor. Nothing else catches a pattern that took it all.
+  // A pattern that matched every file still leaves a tree that clears the size floor.
   if (!out.includes(ARCHIVE_HAS_FILES_MARKER) && !out.includes(EMPTY_SOURCE_MARKER)) {
     throw new Error(
       `${label} excluded every file — refusing to record an archive that holds none`,
@@ -311,9 +276,7 @@ async function runTarBackup(
   };
 }
 
-/**
- * Strategy: tar — create a tar.gz of a Docker volume.
- */
+/** Create a tar.gz of a Docker volume. */
 async function backupVolumeTar(
   dockerVolumeName: string,
   storageKey: string,
@@ -340,8 +303,7 @@ async function backupVolumeTar(
       logFn(`Excluded ${excludedPaths.length} path(s) from ${excludePatterns.length} pattern(s)`);
     }
 
-    // The container's own verdict on the source. A container that dies
-    // mid-archive fails `docker run` rather than reaching here.
+    // The container's own verdict on the source.
     const sourceWasEmpty = stdout.includes(EMPTY_SOURCE_MARKER);
     if (sourceWasEmpty) {
       logFn(`Volume ${dockerVolumeName} is empty — archived 0 files`);
@@ -364,13 +326,7 @@ async function backupVolumeTar(
   }
 }
 
-/**
- * Strategy: dump — write a dump to stdout and gzip it.
- *
- * `run` receives the destination and issues the command. Two callers: a spec,
- * resolved to a container and argv when the run happens, and the legacy stored
- * shell string.
- */
+/** Write a dump to stdout and gzip it. `run` receives the destination and issues the command. */
 async function backupVolumeDump(
   run: (dumpFile: string, logFn: (msg: string) => void) => Promise<void>,
   storageKey: string,
@@ -401,13 +357,8 @@ async function backupVolumeDump(
 }
 
 /**
- * Stream a dump straight from `docker` into a gzip file.
- *
- * No shell, so the argv is data rather than something to be parsed. Streamed
- * rather than buffered, because a real database does not fit in memory.
- *
- * Both the exit code and the pipeline must succeed. Checking only the pipeline
- * stores whatever a failing pg_dump managed to write before it gave up.
+ * Stream a dump from `docker` into a gzip file, without a shell.
+ * Both the exit code and the pipeline must succeed, or a failed pg_dump's partial output gets stored.
  */
 async function streamDockerDump(
   argv: string[],
@@ -472,11 +423,8 @@ async function streamDockerRestore(
 export type BindSourceKind = "directory" | "file";
 
 /**
- * Establish what a bind source actually is, from inside the container.
- *
- * Has to run here rather than in Node: Vardo talks to the daemon over a socket
- * while `-v` resolves against the *host* filesystem, so `fs.stat` from this
- * process inspects the wrong machine and answers confidently about nothing.
+ * Establish what a bind source is, from inside the container.
+ * `-v` resolves on the host, so `fs.stat` here would inspect the wrong machine.
  */
 async function preflightBindSource(
   safeSource: string,
@@ -506,10 +454,7 @@ export class EmptyBindSourceError extends Error {
 
 const EMPTY_BIND_SKIP_REASON = "Bind source is empty, never backed up";
 
-/**
- * True when a bind volume has an archive on record. The preflight has always
- * refused empty bind sources, so any such archive held data.
- */
+/** True when a bind volume has an archive on record, so it has held data. */
 async function bindSourceHeldData(appId: string | null, volumeName: string): Promise<boolean> {
   const prior = await db.query.backups.findFirst({
     where: and(
@@ -523,12 +468,7 @@ async function bindSourceHeldData(appId: string | null, volumeName: string): Pro
   return prior !== undefined;
 }
 
-/**
- * Archive a host path, directory or single file.
- *
- * Mounted read-only throughout: this path only reads, and `:ro` means a bug
- * here cannot become a write to the host.
- */
+/** Archive a host path, directory or single file. Mounted `:ro` so a bug can't write to the host. */
 async function backupBindTar(
   hostSource: string,
   storageKey: string,
@@ -553,12 +493,10 @@ async function backupBindTar(
 
     const { kind, empty } = await preflightBindSource(safeSource);
 
-    // A bind source Docker just created from a typo looks like an empty
-    // directory. The caller decides whether that is a failure.
+    // A typo'd bind source looks like an empty directory. The caller decides.
     if (empty) throw new EmptyBindSourceError(safeSource);
 
-    // A single file has no paths to subtract. Applying the patterns anyway
-    // would be a no-op the operator reads as working.
+    // A single file has no paths to subtract.
     if (kind === "file" && excludePatterns.length > 0) {
       throw new Error(
         `${safeSource} is a single file — exclusion patterns cannot apply to it, remove them to back it up`,
@@ -620,20 +558,8 @@ async function dockerDataRoot(): Promise<string | null> {
 }
 
 /**
- * Resolve the real Docker volume name backing an app's volume.
- *
- * Persistent volumes are **env-scoped** (`${app}-${env}_${vol}`) and declared
- * `external: true` so they're shared across blue/green slots and survive swaps —
- * they are NOT slot-scoped. Resolution order (#756):
- *   1. **Inspect the app's running container(s) in this environment** and return
- *      the volume actually mounted at `mountPath`. Authoritative and
- *      naming-agnostic — backs up the volume Docker is really using, not a
- *      guessed name.
- *   2. **Derive the env-scoped name** `${app}-${env}_${vol}` (default env
- *      "production") and confirm it exists — covers a stopped app / fresh
- *      restore where there's no container to inspect.
- *   3. **Legacy slot names** `${app}-blue_${vol}` / `${app}-green_${vol}`.
- * Returns null if none resolve.
+ * Resolve the Docker volume backing an app's volume: the one mounted in a running container,
+ * then the env-scoped `${app}-${env}_${vol}`, then legacy slot names. Null if none resolve.
  */
 export async function resolveDockerVolume(
   appId: string | null,
@@ -645,11 +571,10 @@ export async function resolveDockerVolume(
   assertSafeName(appName);
   assertSafeName(volumeName);
 
-  // Every environment and slot shares `vardo.project`; `vardo.environment` is
-  // what separates them. Resolve it once and scope both lookups below by it.
+  // `vardo.environment` separates environments that share `vardo.project`.
   const env = appId ? await resolveDefaultEnv(appId) : null;
 
-  // 1. Authoritative: the volume Docker actually has mounted at mountPath.
+  // 1. The volume Docker has mounted at mountPath.
   if (mountPath) {
     try {
       const containers = await listContainers(
@@ -694,16 +619,7 @@ export async function resolveDockerVolume(
   return null;
 }
 
-// ---------------------------------------------------------------------------
-// Public API
-// ---------------------------------------------------------------------------
-
-/**
- * Execute a backup run for a given job.
- * Collects volumes from linked apps AND directly linked volumes,
- * then dispatches each by its backup strategy. Pass `appIds` to run a subset
- * of the job's apps.
- */
+/** Run a backup job over its linked apps and volumes. Pass `appIds` to run a subset of the apps. */
 export async function runBackup(
   jobId: string,
   options: RunBackupOptions = {},
@@ -735,19 +651,14 @@ export async function runBackup(
     throw new Error(`Backup job not found: ${jobId}`);
   }
 
-  // Defense in depth against a link written before the routes were scoped.
-  // An instance-level job has no org and legitimately spans them.
+  // Defense in depth against cross-org links. Instance-level jobs span orgs.
   const owned = job.organizationId
     ? job.backupJobApps.filter((bja) => bja.app.organizationId === job.organizationId)
     : job.backupJobApps;
 
   const scope = options.appIds ? new Set(options.appIds) : null;
   const scoped = scope ? owned.filter((bja) => scope.has(bja.app.id)) : owned;
-  // A retired app has no volumes left, so a scheduled run against it fails
-  // every night with nothing to fix. A stopped app still holds its data and is
-  // still backed up. An explicit request runs against either.
-  // A schedule skips apps whose backup switch is off; a job shared with them still runs for the rest.
-  // A failed settings read backs up rather than skips.
+  // Schedules skip retired apps and apps with backups switched off. A failed settings read backs up.
   const systemDefault = options.appIds ? true : await getSystemBackupsDefault().catch(() => true);
   const switchedOn = options.appIds
     ? scoped
@@ -765,13 +676,10 @@ export async function runBackup(
   const ts = timestamp();
   await ensureDir(BACKUPS_DIR);
 
-  // Collect all volumes to back up
   const volumesToBackup: VolumeToBackup[] = [];
-  // Deliberately left out by their durability class. Kept so a run that
-  // captures nothing because there was nothing to capture can say so.
+  // Sources left out by durability class.
   const excludedSources: { name: string; appName: string | null; reason: string }[] = [];
 
-  // From linked apps: find their persistent volumes
   for (const bja of jobApps) {
     const app = bja.app;
     const orgSlug = app.organization.slug;
@@ -782,8 +690,7 @@ export async function runBackup(
     const persistentVols = appVolumes.filter(isBackupSelected);
 
     for (const vol of persistentVols) {
-      // Classified as reconstructible or held elsewhere. Not a skip — the job
-      // does not cover it at all, so it gets no row and no archive.
+      // Not covered by the job: no row and no archive.
       const excluded = exclusionReason(vol.durability);
       if (excluded) {
         excludedSources.push({ name: vol.name, appName: app.name, reason: excluded });
@@ -811,7 +718,6 @@ export async function runBackup(
     }
   }
 
-  // From directly linked volumes (system volumes, etc.)
   for (const bjv of jobVolumes) {
     const vol = bjv.volume;
     const excluded = exclusionReason(vol.durability);
@@ -840,9 +746,7 @@ export async function runBackup(
   }
 
   if (volumesToBackup.length === 0) {
-    // Every source was classified out. The run did its whole job, so it must
-    // refresh lastRunAt — otherwise the stale-backup deploy condition flags
-    // this job forever for correctly archiving nothing.
+    // Every source was classified out. Refresh lastRunAt or the stale-backup check flags this forever.
     if (excludedSources.length > 0) {
       const finishedRunAt = new Date();
       await db
@@ -862,8 +766,7 @@ export async function runBackup(
     return [];
   }
 
-  // Live progress for the backups UI. Best-effort throughout: the import, the
-  // emit and anything they throw are contained so a bus fault cannot abort a run.
+  // Live progress for the backups UI. Best effort: a bus fault can't abort a run.
   const totalSources = volumesToBackup.length;
   let emitEvent: ((orgId: string, event: BusEvent) => void) | null = null;
   try {
@@ -894,7 +797,6 @@ export async function runBackup(
     }
   }
 
-  // Back up each volume
   const results: BackupResult[] = [];
   let sourceIndex = 0;
 
@@ -939,15 +841,13 @@ export async function runBackup(
       continue;
     }
 
-    // Determine storage key based on context
     const strategy: ArchiveStrategy = vol.backupStrategy === "dump" ? "dump" : "tar";
     const ext = strategy === "dump" ? "dump.gz" : "tar.gz";
     const storageKey = vol.appName && vol.orgSlug
       ? `${vol.orgSlug}/${vol.appName}/${vol.name}/${ts}.${ext}`
       : `vardo-system/${vol.name}/${ts}.${ext}`;
 
-    // Create backup record. The key fingerprint is stamped only where the
-    // archive carries this instance's own ciphertext.
+    // The key fingerprint is stamped only when the archive carries this instance's ciphertext.
     await db.insert(backups).values({
       id: backupId,
       jobId: job.id,
@@ -979,8 +879,7 @@ export async function runBackup(
           throw new Error(`Dump strategy requires a backupSpec or dumpCmd (volume: ${vol.name})`);
         }
 
-        // A spec resolves its container now; a stored command names one that
-        // was true when it was written. Prefer the spec whenever there is one.
+        // Prefer the spec: it resolves its container now.
         const runDump = spec
           ? async (dumpFile: string, logFn: (msg: string) => void) => {
               if (!vol.appId || !vol.appName) {
@@ -1026,7 +925,6 @@ export async function runBackup(
         sourceKind = bind.kind;
         excludedPaths = bind.excludedPaths;
       } else {
-        // tar strategy — need to resolve the Docker volume name
         if (!vol.appName) {
           throw new Error(`Tar backup requires an app name (volume: ${vol.name})`);
         }
@@ -1071,8 +969,7 @@ export async function runBackup(
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
 
-      // Empty and never held data: a legitimately unused directory. Once it
-      // has held data, empty means the mount went missing.
+      // Empty and never held data is fine. Once it has held data, empty means the mount went missing.
       if (err instanceof EmptyBindSourceError && !(await bindSourceHeldData(vol.appId, vol.name))) {
         log(`Skipping volume ${vol.name}: ${vol.source} is empty and has never been backed up with data`);
         const finishedAt = new Date();
@@ -1096,9 +993,7 @@ export async function runBackup(
 
       log(`Backup failed: ${errorMsg}`);
 
-      // Classified after the attempt, not before it: apps.status is a cached
-      // observation, so an app recorded as stopped whose container is in fact
-      // up still gets its dump.
+      // Classified after the attempt: apps.status is cached and may say stopped while the container is up.
       const paused = pausedDumpReason(vol);
       if (paused) log(paused);
 
@@ -1128,8 +1023,7 @@ export async function runBackup(
     }
   }
 
-  // lastRunAt feeds the stale-backup deploy condition, so only a run covering
-  // the whole job AND capturing at least one archive may refresh it.
+  // Only a full-job run that captured an archive may refresh lastRunAt.
   const coveredWholeJob =
     jobApps.length === job.backupJobApps.length - (scoped.length - switchedOn.length) &&
     jobVolumes.length === job.backupJobVolumes.length;
@@ -1143,16 +1037,13 @@ export async function runBackup(
       .where(eq(backupJobs.id, jobId));
   }
 
-  // Notifications
   try {
     const succeeded = results.filter((r) => r.outcome === "success");
     const failed = results.filter((r) => r.outcome === "failed");
     const allSkipped = results.filter((r) => r.outcome === "skipped");
     // Empty, never-populated bind sources don't count either way.
     const skipped = allSkipped.filter((r) => !r.emptySource);
-    // A run that captured nothing is not a success, unless everything it could
-    // not capture is a dump waiting on a stopped app. That is a state to show
-    // on the attention surface, not a fault to alert on every night.
+    // Capturing nothing is a failure, unless every miss is a dump waiting on a stopped app.
     const capturedNothing = succeeded.length === 0;
     const onlyPaused =
       capturedNothing &&
@@ -1182,7 +1073,6 @@ export async function runBackup(
         emit(job.organizationId, { type: "backup.success", title: `Backup successful: ${job.name}`, message: `${succeeded.length} backup(s) completed for: ${names}${skippedNote}`, jobId: job.id, jobName: job.name, totalCount: results.length, totalSize: results.reduce((sum, r) => sum + r.sizeBytes, 0) });
       }
     } else if (!job.organizationId) {
-      // System-level job — log to console
       if (hasFailures && job.notifyOnFailure) {
         log.error(`${job.name} FAILED — ${[...failed, ...skipped].map((r) => `${r.volumeName}: ${r.error}`).join("; ")}`);
       } else if (!hasFailures && job.notifyOnSuccess) {
@@ -1193,7 +1083,6 @@ export async function runBackup(
     log.error("Backup notification error:", err);
   }
 
-  // Enforce retention policy — prune old backups
   try {
     await pruneBackups(jobId);
   } catch (err) {
@@ -1203,9 +1092,7 @@ export async function runBackup(
   return results;
 }
 
-// ---------------------------------------------------------------------------
-// Retention / Pruning (GFS — Grandfather-Father-Son)
-// ---------------------------------------------------------------------------
+// Retention (GFS: grandfather-father-son)
 
 type RetentionPolicy = {
   keepAll: boolean;
@@ -1217,10 +1104,7 @@ type RetentionPolicy = {
   keepYearly: number | null;
 };
 
-/**
- * Decide which backup IDs to keep based on GFS retention rules.
- * Backups must be sorted newest-first.
- */
+/** Backup IDs to keep under GFS retention rules. Input must be sorted newest-first. */
 function selectKeepers(
   entries: { id: string; finishedAt: Date }[],
   policy: RetentionPolicy,
@@ -1229,7 +1113,7 @@ function selectKeepers(
     return new Set(entries.map((e) => e.id));
   }
 
-  // If no retention rules are set at all, keep everything (safe default)
+  // No retention rules: keep everything.
   const hasAnyRule =
     policy.keepLast != null || policy.keepHourly != null || policy.keepDaily != null ||
     policy.keepWeekly != null || policy.keepMonthly != null || policy.keepYearly != null;
@@ -1239,15 +1123,13 @@ function selectKeepers(
 
   const keep = new Set<string>();
 
-  // keepLast — most recent N
   if (policy.keepLast != null && policy.keepLast > 0) {
     for (const e of entries.slice(0, policy.keepLast)) {
       keep.add(e.id);
     }
   }
 
-  // GFS buckets: for each bucket type, keep the newest backup per time period,
-  // limited to the N most recent periods.
+  // Newest backup per period, for the N most recent periods.
   const bucketDefs: { key: (d: Date) => string; limit: number | null }[] = [
     {
       key: (d) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}T${String(d.getUTCHours()).padStart(2, "0")}`,
@@ -1279,7 +1161,6 @@ function selectKeepers(
   for (const { key, limit } of bucketDefs) {
     if (limit == null || limit <= 0) continue;
 
-    // Collect the newest entry per bucket (entries are sorted newest-first)
     const bucketRepresentatives = new Map<string, string>(); // bucketKey → backupId
     for (const e of entries) {
       const k = key(e.finishedAt);
@@ -1288,7 +1169,7 @@ function selectKeepers(
       }
     }
 
-    // Keep only the N most recent buckets (Map preserves insertion order = newest first)
+    // Map preserves insertion order, newest first.
     let kept = 0;
     for (const [, backupId] of bucketRepresentatives) {
       if (kept >= limit) break;
@@ -1300,12 +1181,7 @@ function selectKeepers(
   return keep;
 }
 
-/**
- * Apply the retention policy per app and volume. A job produces one archive
- * per volume per app each run, and each (app, volume) pair keeps its own
- * timeline. Volume names repeat across apps (`data`), so the name alone is not
- * a key. Entries must be sorted newest-first (selectKeepers relies on it).
- */
+/** Apply retention per (app, volume) pair. Entries must be sorted newest-first. */
 export function selectKeepersByVolume(
   entries: { id: string; finishedAt: Date; appId: string | null; volumeName: string | null }[],
   policy: RetentionPolicy,
@@ -1325,10 +1201,7 @@ export function selectKeepersByVolume(
   return keepers;
 }
 
-/**
- * Prune backups for a job according to its retention policy.
- * Deletes from storage and marks DB rows as "pruned".
- */
+/** Prune a job's backups by its retention policy: delete from storage, mark rows "pruned". */
 export async function pruneBackups(jobId: string): Promise<number> {
   const job = await db.query.backupJobs.findFirst({
     where: eq(backupJobs.id, jobId),
@@ -1347,13 +1220,11 @@ export async function pruneBackups(jobId: string): Promise<number> {
     keepYearly: job.keepYearly,
   };
 
-  // Only prune successful backups that are finished
   const allBackups = await db.query.backups.findMany({
     where: and(eq(backups.jobId, jobId), eq(backups.status, "success")),
     orderBy: [desc(backups.finishedAt)],
   });
 
-  // Filter to entries with valid finishedAt
   const eligible = allBackups.filter(
     (b): b is typeof b & { finishedAt: Date } => b.finishedAt !== null,
   );
@@ -1365,11 +1236,9 @@ export async function pruneBackups(jobId: string): Promise<number> {
 
   if (toPrune.length === 0) return 0;
 
-  // Delete from storage, then mark as pruned
   const storage = createBackupStorage(job.target);
 
-  // Only rows whose object is really gone may be marked pruned — otherwise the
-  // DB claims an object was deleted while it still exists and is still billed.
+  // Mark pruned only rows whose object is really gone.
   const pruneIds: string[] = [];
   let undeleted = 0;
 
@@ -1406,11 +1275,7 @@ export async function pruneBackups(jobId: string): Promise<number> {
   return pruneIds.length;
 }
 
-// ---------------------------------------------------------------------------
-// Restore
-// ---------------------------------------------------------------------------
-
-/** Where a failed rollback leaves the pre-restore copy, so the data is never only in a deleted temp dir. */
+/** Where a failed rollback leaves the pre-restore copy. */
 async function keepSnapshot(snapshotFile: string, backupId: string, log: (msg: string) => void) {
   const kept = join(BACKUPS_DIR, `pre-restore-${backupId}-${timestamp()}${snapshotFile.endsWith(".tar.gz") ? ".tar.gz" : ".gz"}`);
   try {
@@ -1421,10 +1286,7 @@ async function keepSnapshot(snapshotFile: string, backupId: string, log: (msg: s
   }
 }
 
-/**
- * Stop what mounts the destination, copy it aside, restore, and put the copy
- * back if the restore fails. The writers stay stopped until the data is final.
- */
+/** Stop the destination's writers, copy it aside, restore and put the copy back on failure. */
 async function restoreFilesWithSnapshot(opts: {
   backupId: string;
   dest: RestoreDestination | null;
@@ -1476,10 +1338,7 @@ async function restoreFilesWithSnapshot(opts: {
   }
 }
 
-/**
- * Dump restore for engines without a transactional restore. A fresh dump of
- * the live database is taken first and replayed if the restore fails.
- */
+/** Dump restore for engines without transactions: dump the live database first, replay it on failure. */
 async function restoreDumpWithSnapshot(opts: {
   backupId: string;
   kind: DumpSpec["kind"];
@@ -1518,18 +1377,11 @@ async function restoreDumpWithSnapshot(opts: {
   }
 }
 
-/**
- * Restore a backup — dispatches by the volume's backup strategy.
- * For tar: repopulates the Docker volume.
- * For pg_dump: pipes the dump into psql.
- */
+/** Restore a backup by its archive format. */
 export async function restoreBackup(
   backupId: string,
   opts: {
-    /**
-     * Restore an archive whose secrets were encrypted with a different master
-     * key. Every env var in it stays unreadable — only for recovering the rest.
-     */
+    /** Restore an archive from a different master key. Its env vars stay unreadable. */
     acceptKeyMismatch?: boolean;
   } = {},
 ): Promise<{ success: boolean; log: string }> {
@@ -1557,9 +1409,7 @@ export async function restoreBackup(
     throw new Error("Backup has no volume name");
   }
 
-  // The archive format is whatever was written, not whatever the volume is
-  // configured for now — that row may have been edited, renamed or deleted
-  // since. Guessing it wrong restores a dump as a tar and empties the volume.
+  // Use the format that was written, not the volume's current config: a wrong guess empties the volume.
   const strategy: ArchiveStrategy | null =
     (backup.strategy as ArchiveStrategy | null) ?? strategyFromStoragePath(backup.storagePath);
 
@@ -1569,8 +1419,7 @@ export async function restoreBackup(
     );
   }
 
-  // A restore of Vardo's own database replaces every app's env vars with
-  // ciphertext from the source instance, which the running key may not open.
+  // Restoring Vardo's own database brings ciphertext the running key may not open.
   const carriesInstanceSecrets = holdsInstanceSecrets({
     appId: backup.appId,
     name: backup.volumeName,
@@ -1603,8 +1452,7 @@ export async function restoreBackup(
   await ensureDir(tmpDir);
   const archivePath = join(tmpDir, strategy === "dump" ? "dump.gz" : "volume.tar.gz");
 
-  // Only an app's own data is quiesced. Stopping what mounts a system volume,
-  // or Vardo's own, would stop the process running this restore.
+  // Only app data is quiesced. Stopping a system volume's mounts would stop this process.
   const quiesceTarget = (dest: RestoreDestination): RestoreDestination | null => {
     if (backup.appId && backup.app && !isSelfApp(backup.app.name)) return dest;
     log("WARNING: restoring without stopping the containers that use this data");
@@ -1616,7 +1464,7 @@ export async function restoreBackup(
       log(`WARNING: ${keyVerdict.message}`);
     }
 
-    // 1. Download archive from storage
+    // 1. Download
     log(`Downloading backup from ${backup.storagePath}`);
     const { encrypted } = await fetchArchive(
       storage,
@@ -1626,9 +1474,7 @@ export async function restoreBackup(
     );
     log("Download complete");
 
-    // 2. Validate archive integrity. A row recorded below the floor was written
-    // from a source verified empty; the checksum below proves it came back intact.
-    // An encrypted archive's final-chunk tag already proves it complete.
+    // 2. Validate. Encrypted archives are proven complete by their final-chunk tag.
     const wasEmptyWhenWritten =
       encrypted || (backup.sizeBytes != null && backup.sizeBytes < MIN_VALID_GZIP_BYTES);
     await verifyArchive(archivePath, "Downloaded backup", wasEmptyWhenWritten);
@@ -1642,20 +1488,16 @@ export async function restoreBackup(
       log("Checksum verified");
     }
 
-    // 3. Paths this archive deliberately left out. The list is the archive's
-    // own record, never the volume's current patterns: a pattern removed since
-    // would leave that data in neither place, and the swap would delete it.
+    // 3. Excluded paths come from the archive's record, never current patterns, or the swap deletes data.
     const protectedPaths = (backup.excludedPaths ?? []).map(assertExcludedPath);
     if (strategy === "tar" && protectedPaths.length > 0) {
       await writeFile(join(tmpDir, PROTECT_LIST_FILE), protectListBody(protectedPaths));
       log(`Keeping ${protectedPaths.length} excluded path(s) as found at the destination`);
     }
 
-    // 4. Restore by strategy
+    // 4. Restore
     if (strategy === "dump") {
-      // Restore config is read live, the same as the dump side. A spec resolves
-      // the container now; a stored command names whatever was running when it
-      // was written.
+      // Restore config is read live. A spec resolves the container now.
       if (vol?.backupSpec) {
         const spec = vol.backupSpec;
         if (!backup.app || !backup.appId) {
@@ -1684,7 +1526,7 @@ export async function restoreBackup(
           log,
         });
       } else if (vol?.backupMeta?.restoreCmd) {
-        // restoreCmd receives the dump via stdin (e.g. "docker exec -i pg psql -U user db")
+        // restoreCmd receives the dump via stdin.
         log(`Restoring via: ${vol.backupMeta.restoreCmd}`);
         await execFileAsync(
           "bash",
@@ -1695,9 +1537,7 @@ export async function restoreBackup(
         throw new Error("Dump restore requires a backupSpec or restoreCmd on the volume");
       }
     } else if (vol?.type === "bind") {
-      // Restore is the destructive direction: the script deletes the
-      // destination's contents before writing. Three things must agree before
-      // that runs against a host path.
+      // The script deletes the destination first. Three checks must pass for a host path.
       if (!vol.source) {
         throw new Error("Bind restore has no host path recorded on the volume");
       }
@@ -1706,8 +1546,7 @@ export async function restoreBackup(
         label: "restore destination",
       });
 
-      // The volume row may have been edited since the archive was written.
-      // The archive's own record of where it came from is the authority.
+      // The archive's record of its source wins over the volume row.
       if (backup.resolvedSource && backup.resolvedSource !== safeSource) {
         throw new Error(
           `This archive was taken from ${backup.resolvedSource}, but the volume now points at ${safeSource} — refusing to restore into a different location`,
@@ -1719,8 +1558,7 @@ export async function restoreBackup(
         );
       }
 
-      // Never conjure the destination. For a named volume "missing" is
-      // recoverable; for a host path it means the path is wrong.
+      // Never create a missing host path: it means the path is wrong.
       const live = await preflightBindSource(safeSource);
       const archivedKind = backup.sourceKind ?? "directory";
       if (live.kind !== archivedKind) {
@@ -1746,7 +1584,6 @@ export async function restoreBackup(
         log,
       });
     } else {
-      // tar restore — need app context for volume name resolution
       if (!backup.app || !backup.appId) {
         throw new Error("Tar restore requires an app context");
       }
@@ -1761,9 +1598,7 @@ export async function restoreBackup(
         log,
       );
       if (!dockerVolumeName) {
-        // Nothing exists yet (restoring into a fresh app) — create the canonical
-        // env-scoped volume so the running app actually reads the restored data.
-        // (NOT a blue/green slot name, which the app would never mount — #756.)
+        // Fresh app: create the env-scoped volume, never a slot name the app won't mount.
         const env = await resolveDefaultEnv(backup.appId);
         dockerVolumeName = `${backup.app.name}-${env.name}_${backup.volumeName}`;
         assertSafeName(dockerVolumeName);
@@ -1786,8 +1621,7 @@ export async function restoreBackup(
 
     log("Restore complete");
 
-    // Whether the restored rows actually open. The only check an archive
-    // written before fingerprinting gets.
+    // Whether the restored rows open with the running key.
     if (carriesInstanceSecrets) {
       const { probeDecryptability } = await import("@/lib/crypto/key-escrow");
       const probe = await probeDecryptability();
@@ -1815,15 +1649,7 @@ export async function restoreBackup(
   }
 }
 
-// ---------------------------------------------------------------------------
-// Download helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Generate a pre-signed download URL for a backup archive.
- * Returns null if the storage backend doesn't support direct URLs
- * (e.g. SSH targets), in which case the caller should stream through the server.
- */
+/** Pre-signed download URL for an archive. Null when the backend can't sign or the archive is encrypted. */
 export async function getBackupDownloadUrl(
   backupId: string,
 ): Promise<string | null> {
@@ -1840,7 +1666,6 @@ export async function getBackupDownloadUrl(
     throw new Error("Backup has no storage path");
   }
 
-  // A presigned URL would hand over ciphertext; encrypted archives stream through the server.
   if (backup.archiveKey) return null;
 
   const storage = createBackupStorage(backup.target);
@@ -1852,10 +1677,7 @@ export async function getBackupDownloadUrl(
   return storage.getDownloadUrl(backup.storagePath, 3600);
 }
 
-/**
- * Download a backup to a local temp file, decrypted (for SSH targets or
- * server-side streaming). Returns the local path. Caller is responsible for cleanup.
- */
+/** Download a backup to a decrypted local temp file. Caller cleans it up. */
 export async function downloadBackupToTemp(
   backupId: string,
   logFn?: (msg: string) => void,

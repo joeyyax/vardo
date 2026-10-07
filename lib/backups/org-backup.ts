@@ -2,12 +2,8 @@ import { and, eq, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { apps, backups } from "@/lib/db/schema";
 
-/**
- * Backups the org owns: a live app's follow the app, the rest follow the row.
- * Exactly one org matches any backup.
- */
-// The subqueries name app columns as text: a relational query re-aliases
-// every column object to its root table.
+/** Backups the org owns: a live app's follow the app, the rest follow the row. */
+// App columns are named as text: a relational query re-aliases column objects.
 export function orgBackupScope(orgId: string) {
   return or(
     sql`${backups.appId} in (select "id" from "app" where "organization_id" = ${orgId})`,
@@ -26,10 +22,7 @@ export function backupOwnerOrgId(backup: {
   return backup.app ? backup.app.organizationId : backup.organizationId;
 }
 
-/**
- * An app backup owned by the org, including one whose app was deleted
- * (`app` is then null). System backups have no app and never match.
- */
+/** An app backup owned by the org, including one whose app was deleted. */
 export async function findOrgAppBackup(orgId: string, backupId: string) {
   const backup = await db.query.backups.findFirst({
     where: and(eq(backups.id, backupId), isNotNull(backups.appId), orgBackupScope(orgId)),

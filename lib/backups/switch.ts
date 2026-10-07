@@ -1,10 +1,4 @@
-// ---------------------------------------------------------------------------
-// Backup switch (#876)
-//
-// Whether an app is backed up is `app ?? org ?? system`. On enrolls the app
-// through the selection rules on the default target; off disables the jobs
-// the switch owns. Archives stay either way.
-// ---------------------------------------------------------------------------
+// Backup switch: `app ?? org ?? system`. On enrolls the app; off disables its jobs. Archives stay.
 
 import { db } from "@/lib/db";
 import { apps, backupJobApps, backupJobs, organizations } from "@/lib/db/schema";
@@ -121,10 +115,7 @@ export async function getAppBackupSwitchState(app: {
   };
 }
 
-/**
- * Bring one app's jobs in line with its switch. `reenable` turns back on jobs
- * the switch disabled; startup leaves a job someone disabled by hand alone.
- */
+/** Bring one app's jobs in line with its switch. `reenable` turns back on jobs the switch disabled. */
 export async function applyBackupSwitch(
   app: { id: string; name: string; organizationId: string },
   enabled: boolean,

@@ -1,28 +1,9 @@
-// ---------------------------------------------------------------------------
-// Backup exclusions
-//
-// A volume can name paths a backup leaves out — regenerable cache that would
-// otherwise dominate the payload. Two jobs live here: turning operator patterns
-// into `find` arguments, and vetting the literal paths that come back.
-//
-// Patterns are never interpreted by tar. `find` resolves them inside the
-// container to literal paths, that list is what tar excludes, and the same list
-// is recorded on the backup row so restore knows what the archive left behind.
-// One matcher, so backup and restore cannot drift.
-//
-// Pure — the container work lives in archive.ts.
-// ---------------------------------------------------------------------------
+// Backup exclusions: operator patterns to `find` argv, and vetting the literal paths that come back.
 
 export const MAX_EXCLUDE_PATTERNS = 100;
 export const MAX_EXCLUDE_PATTERN_LENGTH = 200;
 
-/**
- * Ceiling on how many paths one run may exclude.
- *
- * The list has to be recorded in full: a truncated one leaves paths that are
- * neither in the archive nor protected on the way back, and restore deletes
- * those. Over the ceiling the backup fails instead.
- */
+/** Max excluded paths per run. Never truncate the list: restore deletes unlisted paths. */
 export const MAX_EXCLUDED_PATHS = 10_000;
 
 export class InvalidExclusionError extends Error {
@@ -48,12 +29,7 @@ function assertSegments(pattern: string, original: string): string[] {
   return segments;
 }
 
-/**
- * Vet one operator pattern and return it relative to the volume root.
- *
- * Leading `/` and `./` are stripped, so a pattern can never name anything
- * outside the volume. A `..` segment is refused rather than resolved.
- */
+/** Vet one operator pattern and return it relative to the volume root. Refuses `..`. */
 export function normalizeExcludePattern(raw: string): string {
   const trimmed = raw.trim();
   if (!trimmed) {
@@ -79,20 +55,8 @@ export function normalizeExcludePattern(raw: string): string {
 }
 
 /**
- * `find` arguments that print every path the patterns exclude, topmost first.
- *
- * Matching semantics, which are `find`'s and are the same on busybox and GNU:
- * - No `/` in the pattern — it matches a whole **path segment** at any depth.
- *   `Cache` matches `./Cache` and `./config/Cache`.
- * - Any `/` in the pattern — it matches the **whole path** from the volume root.
- *   `config/Cache` matches only `./config/Cache`.
- * - `*` and `?` are shell globs and `*` spans `/`, so `uploads/*` covers every
- *   depth under `uploads` and `**` means nothing extra.
- * - A matched directory is pruned, so everything under it is excluded too and
- *   only the directory itself appears in the output.
- *
- * Returns an empty argv when there is nothing to exclude; the caller runs the
- * unmodified archive path in that case.
+ * `find` arguments that print every excluded path, topmost first. Empty when nothing is excluded.
+ * No `/` matches a segment at any depth; a `/` matches from the root; `*` spans `/`.
  */
 export function buildFindExclusionArgv(patterns: string[]): string[] {
   if (patterns.length > MAX_EXCLUDE_PATTERNS) {
@@ -114,12 +78,7 @@ export function buildFindExclusionArgv(patterns: string[]): string[] {
   return ["-mindepth", "1", "(", ...alternatives, ")", "-prune", "-print"];
 }
 
-/**
- * Vet one path the archive left out.
- *
- * Restore moves these back from the live copy into the staging tree, so a value
- * that climbed out of the volume root would write outside it.
- */
+/** Vet one path the archive left out. Restore writes to it, so it must stay inside the volume. */
 export function assertExcludedPath(raw: string): string {
   if (CONTROL_CHARS.test(raw)) {
     throw new InvalidExclusionError(`excluded path ${JSON.stringify(raw)} contains a control character`);

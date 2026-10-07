@@ -1,8 +1,4 @@
-// ---------------------------------------------------------------------------
-// Which volumes an enrolled app backs up by default (#874).
-//
-// Pure. The rules run in order and the first match decides.
-// ---------------------------------------------------------------------------
+// Which volumes an enrolled app backs up by default. The first matching rule decides.
 
 import { resolve } from "path";
 import type { Durability } from "./durability";
@@ -79,10 +75,7 @@ export type SelectionContext = {
   otherBinds: { appId: string; appName: string; source: string }[];
   /** Host mount table: mount point → filesystem type. Empty when unreadable. */
   hostMounts: Map<string, string>;
-  /**
-   * Measured size. Undefined means not measured (a new, empty volume); null
-   * means measuring failed.
-   */
+  /** Measured size. Undefined means not measured; null means measuring failed. */
   sizeBytes?: number | null;
   maxBytes?: number;
 };
@@ -184,10 +177,7 @@ export function classifyVolume(vol: SelectableVolume, ctx: SelectionContext): Se
   return { verdict: "include", reason: "App state" };
 }
 
-/**
- * Apps holding at least one volume an enrolled job would back up. Sizes are
- * not measured here, so a large volume still counts.
- */
+/** Apps holding at least one volume an enrolled job would back up, ignoring size. */
 export function appsWithBackupState(
   rows: (SelectableVolume & { appName: string })[],
   hostMounts: Map<string, string>,

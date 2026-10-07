@@ -1,20 +1,5 @@
-// ---------------------------------------------------------------------------
-// Database dump specs
-//
-// A dump command cannot be stored, because it has to name a container and app
-// container names carry the blue/green slot:
-//
-//     paperless-production-blue-paperless-db-1
-//
-// One deploy later that name is gone. What is stored instead is what the
-// database *is* — engine and compose service, both stable across slots — and
-// the container is resolved when the backup runs.
-//
-// Credentials are never stored either. They are already in the container's own
-// environment, which is the copy that is always current.
-//
-// Pure — no server imports, so the UI can explain a spec without running one.
-// ---------------------------------------------------------------------------
+// Database dump specs: engine and compose service, resolved to a container at run time.
+// Container names carry the slot, so never store them. Credentials come from the container's env.
 
 import type { DatabaseKind } from "./durability";
 
@@ -35,12 +20,7 @@ export function readEnv(env: ContainerEnv, key: string): string | null {
   return null;
 }
 
-/**
- * Shell fragments below interpolate **no** caller data — every one is a
- * constant, and the credential is read from the container's own environment by
- * the shell inside it. That keeps secrets off the host process list, where a
- * `docker exec -e PASSWORD=…` would put them.
- */
+/** Constant shell fragments. Never interpolate caller data; credentials stay off the host process list. */
 const MYSQL_DUMP =
   'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysqldump -u root --single-transaction --all-databases';
 const MYSQL_RESTORE = 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql -u root';
@@ -55,13 +35,7 @@ function postgresTarget(env: ContainerEnv): { user: string; database: string } {
   return { user, database: readEnv(env, "POSTGRES_DB") || user };
 }
 
-/**
- * `docker exec` arguments that write a dump to stdout.
- *
- * Postgres connects over the local socket, which the official image trusts, so
- * no password changes hands. `--clean --if-exists` is what makes the result
- * restorable over a populated database rather than only into an empty one.
- */
+/** `docker exec` arguments that write a dump to stdout. `--clean --if-exists` restores over a populated database. */
 export function buildDumpArgv(
   kind: DatabaseKind,
   containerId: string,
@@ -82,10 +56,7 @@ export function buildDumpArgv(
 
 /**
  * `docker exec` arguments that read a dump from stdin.
- *
- * `ON_ERROR_STOP=1` is the half that makes a failed restore *fail*. Without it
- * psql reports success after skipping every statement it could not apply.
- * `--single-transaction` makes that failure leave the database as it was.
+ * Keep `ON_ERROR_STOP=1`: without it psql reports success after skipping failed statements.
  */
 export function buildRestoreArgv(
   kind: DatabaseKind,

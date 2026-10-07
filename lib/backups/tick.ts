@@ -9,14 +9,7 @@ import { selectDrillCandidates, type DrillCandidate } from "./drill-schedule";
 
 const log = logger.child("backup");
 
-// ---------------------------------------------------------------------------
-// Public tick
-// ---------------------------------------------------------------------------
-
-/**
- * Check all enabled backup jobs and run any that are due.
- * Call this every minute from the backup scheduler.
- */
+/** Run any enabled backup jobs that are due. Call every minute. */
 export async function tickBackupJobs(): Promise<void> {
   const now = new Date();
 
@@ -26,18 +19,14 @@ export async function tickBackupJobs(): Promise<void> {
 
   for (const job of jobs) {
     try {
-      // Check if this job should run now based on its cron schedule
       if (!shouldRunNow(job.schedule, now)) continue;
 
-      // Acquire a distributed lock for this job+minute to prevent double-fire
+      // Per job+minute lock against double-fire.
       const minuteTs = Math.floor(now.getTime() / 60_000);
       const locked = await acquireLock(`lock:backup:${job.id}:${minuteTs}`, 61_000);
       if (!locked) continue;
 
-      // Skip a run that is genuinely in flight. Time-bounded like the manual
-      // path: a row left "running" by a crashed process would otherwise block
-      // this job forever. lastRunAt is left to runBackup, which only refreshes
-      // it for a run that actually captured something.
+      // Skip a run in flight. Time-bounded so a crashed run can't block the job forever.
       const runningBackup = await db.query.backups.findFirst({
         where: and(
           eq(backups.jobId, job.id),
@@ -66,24 +55,14 @@ export async function tickBackupJobs(): Promise<void> {
       );
     } catch (err) {
       log.error(`Job "${job.name}" (${job.id}) error:`, err);
-      // Continue to next job — don't let one failure crash the whole tick
     }
   }
 }
 
-// ---------------------------------------------------------------------------
-// Drill tick
-// ---------------------------------------------------------------------------
-
-/** How many drills one tick may start. Each costs a container and a download. */
+/** How many drills one tick may start. */
 const DRILLS_PER_TICK = 1;
 
-/**
- * Drill whichever archive's restorability is least known.
- *
- * Separate from the backup tick so a slow drill can never delay a backup, and
- * so turning drills off leaves backups untouched.
- */
+/** Drill whichever archive's restorability is least known. */
 export async function tickRestoreDrills(now = new Date()): Promise<void> {
   const locked = await acquireLock(`lock:drill:${Math.floor(now.getTime() / 60_000)}`, 61_000);
   if (!locked) return;

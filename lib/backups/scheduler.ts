@@ -6,12 +6,11 @@ const log = logger.child("backup");
 let interval: NodeJS.Timeout | null = null;
 let drillInterval: NodeJS.Timeout | null = null;
 
-// Drills are hourly, not per-minute. Each costs a container and a download,
-// and a verification stands for a week.
+// Drills run hourly.
 const DRILL_TICK_MS = 60 * 60_000;
 
 export function startBackupScheduler(): void {
-  if (interval) return; // Already running
+  if (interval) return;
 
   log.info("Scheduler started (60s interval)");
   interval = setInterval(async () => {
@@ -20,9 +19,9 @@ export function startBackupScheduler(): void {
     } catch (err) {
       log.error("Tick error:", err);
     }
-  }, 60_000); // Every minute
+  }, 60_000);
 
-  // On its own timer, so a slow drill cannot delay a backup.
+  // Own timer, so a slow drill can't delay a backup.
   drillInterval = setInterval(async () => {
     try {
       await tickRestoreDrills();

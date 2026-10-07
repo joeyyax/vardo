@@ -29,10 +29,7 @@ function holdsArchive(row: DeletableBackup) {
   return !!row.storagePath && row.status !== "pruned";
 }
 
-/**
- * Deletes each row's archive from the target. Returns the ids whose archive is
- * gone, including ones storage reports already missing.
- */
+/** Delete each row's archive from the target. Returns the ids whose archive is gone. */
 export async function removeArchives(target: Target, rows: DeletableBackup[]) {
   const removed: string[] = [];
   const failed: string[] = [];
@@ -69,10 +66,7 @@ export async function removeArchives(target: Target, rows: DeletableBackup[]) {
   return { removed, failed };
 }
 
-/**
- * Deletes each backup's archive, then its row. A row whose archive won't
- * delete is kept.
- */
+/** Delete each backup's archive, then its row. A row whose archive won't delete is kept. */
 export async function deleteBackups(rows: DeletableBackup[]) {
   const targetIds = [...new Set(rows.map((r) => r.targetId))];
   const targets = targetIds.length
@@ -128,10 +122,7 @@ export function targetInUse(usage: TargetUsage) {
   return usage.backups > 0 || usage.jobs > 0;
 }
 
-/**
- * Deletes a target with everything on it: archives best-effort, then its
- * backup rows, its jobs and the target. Returns archives left in storage.
- */
+/** Delete a target with its archives, rows and jobs. Returns archives left in storage. */
 export async function deleteTargetAndBackups(target: Target & { id: string }) {
   const rows = await db.query.backups.findMany({
     where: eq(backups.targetId, target.id),
