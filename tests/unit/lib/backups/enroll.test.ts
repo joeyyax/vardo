@@ -21,6 +21,7 @@ const { state, featureEnabled, execMock } = vi.hoisted(() => ({
 vi.mock("drizzle-orm", async (importOriginal) => ({
   ...(await importOriginal<typeof import("drizzle-orm")>()),
   inArray: (_col: unknown, ids: string[]) => ({ ids }),
+  eq: (_col: unknown, value: string) => ({ ids: [value] }),
   and: (...parts: unknown[]) => ({ and: parts }),
 }));
 
@@ -195,5 +196,16 @@ describe("optInApp", () => {
       ["data", "exclude"],
       ["big", "include"],
     ]);
+  });
+
+  it("renames a legacy host-path name so the archive key stays flat", async () => {
+    state.volumes = [
+      volume({ id: "cfg", name: "/mnt/docker/radarr/config", type: "bind", source: "/mnt/docker/radarr/config", mountPath: "/config", persistent: false }),
+      volume({ id: "other", name: "config" }),
+    ];
+
+    await optInApp({ ...APP, targetId: "tgt-r2", volumeIds: ["cfg"] });
+
+    expect(state.volumes.find((v) => v.id === "cfg")?.name).toBe("config-2");
   });
 });

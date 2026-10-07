@@ -137,12 +137,38 @@ export async function applySelections(plan: PlannedVolume[], include?: Set<strin
   const now = new Date();
   if (toInclude.length) {
     await db.update(volumes).set({ backupSelection: "include", updatedAt: now }).where(inArray(volumes.id, toInclude));
+    await renameUnsafe(plan.filter((v) => toInclude.includes(v.id)));
   }
   if (toExclude.length) {
     await db
       .update(volumes)
       .set({ backupSelection: "exclude", updatedAt: now })
       .where(and(inArray(volumes.id, toExclude), isNull(volumes.backupSelection)));
+  }
+}
+
+const SAFE_NAME = /^[a-zA-Z0-9._-]+$/;
+
+/**
+ * Rows imported before #757 carry the host path as their name, which breaks
+ * the archive's storage key and named-volume lookup. Rename them the way new
+ * rows are named, from the mount path.
+ */
+async function renameUnsafe(included: PlannedVolume[]): Promise<void> {
+  const unsafe = included.filter((v) => !SAFE_NAME.test(v.name) && v.appId);
+  if (unsafe.length === 0) return;
+  const siblings = await db.query.volumes.findMany({
+    where: eq(volumes.appId, unsafe[0].appId!),
+    columns: { name: true },
+  });
+  const taken = new Set(siblings.map((v) => v.name));
+  for (const vol of unsafe) {
+    const base = vol.mountPath.replace(/\//g, "-").replace(/^-+/, "").replace(/[^a-zA-Z0-9._-]/g, "-") || "volume";
+    let name = base;
+    for (let n = 2; taken.has(name); n++) name = `${base}-${n}`;
+    taken.add(name);
+    await db.update(volumes).set({ name }).where(eq(volumes.id, vol.id));
+    vol.name = name;
   }
 }
 
