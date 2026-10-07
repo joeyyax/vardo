@@ -78,3 +78,12 @@ export async function ensureVardoOrg(): Promise<{ id: string } | null> {
 
   return org;
 }
+
+/** The Vardo system org's ID, or null before it exists. */
+export async function findVardoOrgId(): Promise<string | null> {
+  const org = await db.query.organizations.findFirst({
+    where: eq(organizations.slug, VARDO_ORG_SLUG),
+    columns: { id: true },
+  });
+  return org?.id ?? null;
+}

@@ -6,6 +6,7 @@ import { requireAppAdmin } from "@/lib/auth/admin";
 import { requirePlugin } from "@/lib/api/require-plugin";
 import { eq } from "drizzle-orm";
 import { backupDownloadResponse } from "@/lib/backups/download-response";
+import { recordAdminBackupActivity } from "@/app/api/v1/admin/backups/record-activity";
 
 type RouteParams = {
   params: Promise<{ backupId: string }>;
@@ -16,7 +17,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
     const gate = await requirePlugin("backups");
     if (gate) return gate;
-    await requireAppAdmin();
+    const session = await requireAppAdmin();
     const { backupId } = await params;
 
     const backup = await db.query.backups.findFirst({
@@ -26,6 +27,8 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     if (!backup || backup.status !== "success" || !backup.storagePath) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
+
+    recordAdminBackupActivity("backup.downloaded", backup, session.user.id).catch(() => {});
 
     const fileName = `${backup.volumeName ?? "backup"}-${backup.startedAt.toISOString().slice(0, 10)}.tar.gz`;
     return await backupDownloadResponse(backupId, fileName);

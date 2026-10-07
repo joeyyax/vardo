@@ -6,6 +6,7 @@ import { requireAppAdmin } from "@/lib/auth/admin";
 import { requirePlugin } from "@/lib/api/require-plugin";
 import { eq } from "drizzle-orm";
 import { restoreBackup } from "@/lib/backups/engine";
+import { recordAdminBackupActivity } from "@/app/api/v1/admin/backups/record-activity";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
@@ -18,7 +19,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     const gate = await requirePlugin("backups");
     if (gate) return gate;
-    await requireAppAdmin();
+    const session = await requireAppAdmin();
     const { backupId } = await params;
 
     const backup = await db.query.backups.findFirst({
@@ -47,6 +48,8 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     // have. The env vars in it stay unreadable either way.
     const body = await request.json().catch(() => ({}));
     const acceptKeyMismatch = body?.acceptKeyMismatch === true;
+
+    recordAdminBackupActivity("backup.restore_started", backup, session.user.id).catch(() => {});
 
     const result = await restoreBackup(backupId, { acceptKeyMismatch });
 
