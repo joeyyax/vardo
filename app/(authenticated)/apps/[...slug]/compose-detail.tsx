@@ -45,6 +45,7 @@ import { LogViewer } from "@/components/log-viewer";
 import { EnvEditor } from "@/components/env-editor";
 import { AppMetrics } from "./app-metrics";
 import { AppBackupHistory } from "@/components/backups/app-backup-history";
+import { AppBackupSwitch } from "@/components/backups/backup-switch";
 import { StatusIndicator, Uptime } from "@/components/app-status";
 import { AppRow } from "@/components/app-row";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
@@ -1364,6 +1365,7 @@ export function ComposeDetail({
             <p className="text-sm text-muted-foreground">
               Volume snapshots for services in this stack. Download or restore any backup.
             </p>
+            <AppBackupSwitch orgId={orgId} appId={app.id} />
             {services.length > 0 ? (
               <div className="space-y-4">
                 {services.map((service) => (

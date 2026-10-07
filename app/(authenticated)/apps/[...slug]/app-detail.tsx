@@ -34,6 +34,7 @@ import dynamic from "next/dynamic";
 import { envTypeDotColor } from "@/lib/ui/status-colors";
 import { AppMetrics } from "./app-metrics";
 import { AppBackupHistory } from "@/components/backups/app-backup-history";
+import { AppBackupSwitch } from "@/components/backups/backup-switch";
 import { AppErrors } from "./app-errors";
 import { AppStability } from "./app-stability";
 
@@ -961,6 +962,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
             <p className="text-sm text-muted-foreground">
               Snapshots of this app&apos;s persistent volumes. Download or restore any backup.
             </p>
+            <AppBackupSwitch orgId={orgId} appId={app.id} />
             <AppBackupHistory orgId={orgId} appId={app.id} />
           </TabsContent>
         )}

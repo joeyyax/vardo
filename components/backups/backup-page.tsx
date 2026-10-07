@@ -13,6 +13,7 @@ import { TargetForm } from "./target-form";
 import { JobForm } from "./job-form";
 import { BackupHistory } from "./backup-history";
 import { KeyEscrowCard } from "./key-escrow-card";
+import { OrgBackupDefault, SystemBackupDefault } from "./backup-switch";
 import { NotBackedUp } from "./not-backed-up";
 import { useCan } from "@/components/capabilities-provider";
 import { useNotificationStream } from "@/hooks/use-notification-stream";
@@ -159,6 +160,8 @@ export function BackupPage({
 
       {/* The one thing a backup cannot restore */}
       <KeyEscrowCard heading={Heading} />
+
+      {scope === "admin" ? <SystemBackupDefault heading={Heading} /> : <OrgBackupDefault orgId={orgId} heading={Heading} />}
 
       {/* Two-column: Storage targets + Backup jobs */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
