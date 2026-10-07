@@ -56,10 +56,7 @@ type AppDomainEntry = {
   redirectCode: number | null;
 };
 
-/**
- * Build the Traefik HTTP router + middleware config for an app's domains.
- * Returns null when the domain list is empty.
- */
+/** Traefik router and middleware config for an app's domains. Null when there are none. */
 export function buildTraefikConfigYaml(
   appName: string,
   appDomains: AppDomainEntry[],
@@ -74,8 +71,7 @@ export function buildTraefikConfigYaml(
   const serversTransports: Record<string, TraefikServersTransportConfig> = {};
   const services: Record<string, TraefikServiceConfig> = {};
 
-  // Define the service inline so the file config is self-contained.
-  // Falls back to @docker only when the container name is unknown.
+  // Inline service; falls back to @docker when the container name is unknown.
   const protocol = backendProtocol === "https" ? "https" : "http";
   const port = containerPort ?? 3000;
   let serviceRef: string;
@@ -218,9 +214,7 @@ export function buildTraefikConfigYaml(
   return YAML.stringify(config);
 }
 
-/**
- * Remove the Traefik dynamic config file for an app.
- */
+/** Remove an app's Traefik config file. */
 export async function removeAppRouteConfig(appName: string): Promise<void> {
   const filePath = join(TRAEFIK_DYNAMIC_DIR, `${appName}.yml`);
   try {
@@ -230,6 +224,7 @@ export async function removeAppRouteConfig(appName: string): Promise<void> {
     if (err && typeof err === "object" && "code" in err && err.code !== "ENOENT") {
       throw err;
     }
-    // File doesn't exist — nothing to remove
+    // Already gone.
+
   }
 }

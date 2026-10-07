@@ -1,7 +1,5 @@
-/**
- * Switch the active organization via the server-side API.
- * Sets an HttpOnly cookie and returns success/failure.
- */
+/** Switch the active organization. The server sets an HttpOnly cookie. */
+
 export async function switchOrganization(orgId: string): Promise<{ ok: boolean; error?: string }> {
   const res = await fetch("/api/v1/organizations/switch", {
     method: "POST",

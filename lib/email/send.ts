@@ -59,10 +59,6 @@ export async function sendEmail({ to, subject, template, from, replyTo }: SendEm
   }
 }
 
-// ---------------------------------------------------------------------------
-// Mailpace
-// ---------------------------------------------------------------------------
-
 async function sendViaMailpace(
   config: EmailProviderConfig,
   msg: { to: string; subject: string; html: string; text: string; from: string; replyTo?: string },
@@ -95,10 +91,6 @@ async function sendViaMailpace(
   return { success: true };
 }
 
-// ---------------------------------------------------------------------------
-// Resend
-// ---------------------------------------------------------------------------
-
 async function sendViaResend(
   config: EmailProviderConfig,
   msg: { to: string; subject: string; html: string; text: string; from: string; replyTo?: string },
@@ -129,10 +121,6 @@ async function sendViaResend(
 
   return { success: true };
 }
-
-// ---------------------------------------------------------------------------
-// Postmark
-// ---------------------------------------------------------------------------
 
 async function sendViaPostmark(
   config: EmailProviderConfig,
@@ -167,10 +155,6 @@ async function sendViaPostmark(
   return { success: true };
 }
 
-// ---------------------------------------------------------------------------
-// SMTP (via nodemailer)
-// ---------------------------------------------------------------------------
-
 async function sendViaSmtp(
   config: EmailProviderConfig,
   msg: { to: string; subject: string; html: string; text: string; from: string; replyTo?: string },
@@ -185,7 +169,7 @@ async function sendViaSmtp(
     host: config.smtpHost,
     port,
     secure: port === 465,
-    requireTLS: port !== 465, // Enforce STARTTLS on non-implicit-TLS ports
+    requireTLS: port !== 465,
     auth: config.smtpUser
       ? { user: config.smtpUser, pass: config.smtpPass }
       : undefined,

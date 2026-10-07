@@ -11,19 +11,12 @@ import {
 } from "react-email";
 import type { CSSProperties, ReactNode } from "react";
 
-// ---------------------------------------------------------------------------
-// Design tokens (inline styles for email compatibility)
-// ---------------------------------------------------------------------------
-
+// Inline styles for email compatibility.
 const fontFamily =
   '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
 
 const monoFamily =
   '"SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace';
-
-// ---------------------------------------------------------------------------
-// Layout
-// ---------------------------------------------------------------------------
 
 export function EmailLayout({
   preview,
@@ -72,10 +65,6 @@ export function EmailLayout({
   );
 }
 
-// ---------------------------------------------------------------------------
-// CTA button
-// ---------------------------------------------------------------------------
-
 export function CTA({
   href,
   children,
@@ -101,10 +90,6 @@ export function CTA({
     </Button>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Semantic boxes
-// ---------------------------------------------------------------------------
 
 function BoxWrapper({
   bg,
@@ -162,10 +147,6 @@ export function SuccessBox({ children }: { children: ReactNode }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Code block (pre-formatted text)
-// ---------------------------------------------------------------------------
-
 export function CodeBlock({ children }: { children: ReactNode }) {
   return (
     <Text
@@ -187,10 +168,6 @@ export function CodeBlock({ children }: { children: ReactNode }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Label (uppercase, small, muted -- used above boxes/sections)
-// ---------------------------------------------------------------------------
-
 export function Label({ children }: { children: ReactNode }) {
   return (
     <Text
@@ -207,10 +184,6 @@ export function Label({ children }: { children: ReactNode }) {
     </Text>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Re-usable inline styles for template authors
-// ---------------------------------------------------------------------------
 
 export const styles = {
   h1: {

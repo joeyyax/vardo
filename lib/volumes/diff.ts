@@ -2,21 +2,14 @@ import { assertSafeName, assertSafeMountPath } from "@/lib/docker/validate";
 import { assertSafeSyncPath } from "@/lib/utils/exec";
 import { execFileAsync } from "@/lib/utils/exec";
 
-/**
- * Validate that an image reference contains only safe characters.
- * Image refs can include alphanumerics, dots, dashes, underscores,
- * slashes, colons, and @ (for digests).
- */
+/** Throws unless the image ref is alphanumerics, `.`, `-`, `_`, `/`, `:` or `@`. */
 function assertSafeImageRef(ref: string): void {
   if (!/^[a-zA-Z0-9._\-/:@]+$/.test(ref)) {
     throw new Error(`Invalid image reference: ${ref}`);
   }
 }
 
-/**
- * Simple glob pattern matcher supporting * and ** wildcards.
- * Converts a glob pattern to a regex for matching file paths.
- */
+/** Glob match supporting `*`, `**` and `?`. */
 function matchesAnyPattern(filePath: string, patterns: string[]): boolean {
   for (const pattern of patterns) {
     const regex = globToRegex(pattern);
@@ -60,10 +53,6 @@ function globToRegex(glob: string): RegExp {
   return new RegExp(result);
 }
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
 export type DiffEntry = {
   path: string;
   imageHash?: string;
@@ -78,23 +67,15 @@ export type VolumeDiffResult = {
   ignored: DiffEntry[];
 };
 
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
-
 type FileEntry = { path: string; hash: string; size: number };
 
-/**
- * Run a temp container from the given image and generate a file manifest
- * (path \t md5 \t size) for everything under `mountPath`.
- */
+/** File manifest (path, md5, size) of `mountPath` inside the image. */
 async function getImageManifest(
   imageName: string,
   mountPath: string,
 ): Promise<FileEntry[]> {
   assertSafeImageRef(imageName);
   assertSafeMountPath(mountPath);
-  // Use find + md5sum to enumerate all regular files under the mount path.
   const script = `find "${mountPath}" -type f -exec sh -c 'for f; do s=$(stat -c %s "$f" 2>/dev/null || stat -f %z "$f" 2>/dev/null); h=$(md5sum "$f" 2>/dev/null | cut -d" " -f1); echo "$f\\t$h\\t$s"; done' _ {} +`;
 
   try {
@@ -105,15 +86,12 @@ async function getImageManifest(
     );
     return parseManifest(stdout, mountPath);
   } catch {
-    // Image might not have the path at all — that's fine
+    // Image may not have the path.
     return [];
   }
 }
 
-/**
- * Run a temp container that mounts the named Docker volume and generates
- * the same manifest format.
- */
+/** File manifest of the named Docker volume. */
 async function getVolumeManifest(
   volumeDockerName: string,
 ): Promise<FileEntry[]> {
@@ -141,7 +119,6 @@ function parseManifest(raw: string, prefix: string): FileEntry[] {
     const fullPath = parts[0];
     const hash = parts[1];
     const size = parseInt(parts[2]) || 0;
-    // Normalise path to be relative
     const rel = fullPath.startsWith(prefix)
       ? fullPath.slice(prefix.length).replace(/^\//, "")
       : fullPath;
@@ -150,13 +127,8 @@ function parseManifest(raw: string, prefix: string): FileEntry[] {
   return entries;
 }
 
-// ---------------------------------------------------------------------------
-// Public API
-// ---------------------------------------------------------------------------
-
 /**
- * Compare the contents of a Docker image at `mountPath` against the
- * contents of a named Docker volume, returning a categorised diff.
+ * Diff an image's files at `mountPath` against a named Docker volume.
  *
  * @param imageName    Full image reference (e.g. "postgres:16")
  * @param volumeDockerName  Docker volume name (e.g. "myapp-production-blue_data")
@@ -186,7 +158,6 @@ export async function computeVolumeDiff(
   const missingFromDisk: DiffEntry[] = [];
   const ignored: DiffEntry[] = [];
 
-  // Files in the volume that differ from or don't exist in the image
   for (const [path, volFile] of volumeMap) {
     const entry: DiffEntry = {
       path,
@@ -205,7 +176,6 @@ export async function computeVolumeDiff(
         }
       }
     } else {
-      // File exists on disk but not in image
       if (isIgnored(path)) {
         ignored.push(entry);
       } else {
@@ -214,7 +184,6 @@ export async function computeVolumeDiff(
     }
   }
 
-  // Files in the image that are missing from the volume
   for (const [path, imgFile] of imageMap) {
     if (!volumeMap.has(path)) {
       const entry: DiffEntry = {
@@ -233,11 +202,7 @@ export async function computeVolumeDiff(
   return { modified, addedOnDisk, missingFromDisk, ignored };
 }
 
-/**
- * Copy specific files from an image into a named Docker volume.
- * Runs a temp container with the volume mounted, then copies files from the
- * image's filesystem into the volume mount.
- */
+/** Copy files from an image into a named Docker volume. */
 export async function syncFilesFromImage(
   imageName: string,
   volumeDockerName: string,
@@ -249,18 +214,14 @@ export async function syncFilesFromImage(
   assertSafeName(volumeDockerName);
   assertSafeMountPath(mountPath);
 
-  // Validate every path before building the shell script. assertSafeSyncPath
-  // rejects path traversal (..),  absolute paths, and shell metacharacters so
-  // the validated values are safe to interpolate into quoted shell strings.
+  // Paths are interpolated into a shell script; validate every one first.
   for (const p of paths) {
     assertSafeSyncPath(p);
   }
 
-  // Build a script that copies each file from the image path to the volume
   const copyCommands = paths.map((p) => {
     const src = `${mountPath}/${p}`;
     const dst = `/vol/${p}`;
-    // Ensure parent directory exists, then copy
     return `mkdir -p "$(dirname "${dst}")" && cp -f "${src}" "${dst}" && echo "OK:${p}" || echo "FAIL:${p}"`;
   });
 

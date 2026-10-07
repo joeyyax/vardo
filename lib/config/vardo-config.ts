@@ -1,20 +1,11 @@
 /**
- * Vardo config file loader.
- *
- * Two files:
- *   vardo.yml         — settings (shareable, safe to commit)
- *   vardo.secrets.yml — keys and passwords (0600, gitignored)
- *
- * Resolution: config file > DB system_settings > default
+ * Loads vardo.yml (settings, safe to commit) and vardo.secrets.yml (0600, gitignored).
+ * Resolution: config file, then DB system_settings, then default.
  */
 
 import { readFile, writeFile, chmod, access } from "fs/promises";
 import { resolve } from "path";
 import YAML from "yaml";
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 
 export type VardoConfig = {
   instance?: {
@@ -50,10 +41,7 @@ export type VardoConfig = {
     clientId?: string;
   };
   ssl?: {
-    /**
-     * Ordered list of active ACME issuers. First entry is the default for new
-     * domains. Replaces the legacy `defaultIssuer` single-value field.
-     */
+    /** Active ACME issuers in order. The first is the default for new domains. */
     activeIssuers?: ("le" | "google" | "zerossl")[];
     /** How many issuers to try in parallel when obtaining a certificate. */
     concurrentIssuers?: number;
@@ -64,10 +52,7 @@ export type VardoConfig = {
   };
   features?: Record<string, boolean>;
 
-  // ---------------------------------------------------------------------------
-  // Project-level fields (used in vardo.yml inside a user's app repo)
-  // ---------------------------------------------------------------------------
-
+  // Project fields, from vardo.yml in a user's app repo
   project?: {
     name?: string;
     environments?: Record<
@@ -87,10 +72,7 @@ export type VardoConfig = {
   };
 };
 
-/**
- * Per-environment config from a user's vardo.yml project section.
- * Used by config-as-code sync to manage domains and networking.
- */
+/** Per-environment config from a user's vardo.yml project section. */
 export type VardoEnvConfig = {
   domain?: string;
   exclude?: string[];
@@ -143,10 +125,6 @@ export type VardoFullConfig = {
   };
 };
 
-// ---------------------------------------------------------------------------
-// File paths
-// ---------------------------------------------------------------------------
-
 function configDir(): string {
   return process.env.VARDO_CONFIG_DIR || process.cwd();
 }
@@ -159,20 +137,12 @@ function secretsPath(): string {
   return resolve(configDir(), "vardo.secrets.yml");
 }
 
-// ---------------------------------------------------------------------------
-// Cache
-// ---------------------------------------------------------------------------
-
 const CACHE_TTL_MS = 30_000;
 let configCache: { value: VardoFullConfig | null; expiresAt: number } | null = null;
 
 export function invalidateConfigCache() {
   configCache = null;
 }
-
-// ---------------------------------------------------------------------------
-// Read
-// ---------------------------------------------------------------------------
 
 async function fileExists(path: string): Promise<boolean> {
   try {
@@ -192,10 +162,7 @@ async function readYaml<T>(path: string): Promise<T | null> {
   }
 }
 
-/**
- * Read and merge both config files. Cached for 30s.
- * Returns null if no config file exists.
- */
+/** Read and merge both config files, cached for 30s. Null without a config file. */
 export async function readVardoConfig(): Promise<VardoFullConfig | null> {
   if (configCache && Date.now() < configCache.expiresAt) {
     return configCache.value;
@@ -215,7 +182,6 @@ export async function readVardoConfig(): Promise<VardoFullConfig | null> {
     return null;
   }
 
-  // Merge secrets into config
   const merged: VardoFullConfig = {
     instance: config.instance,
     auth: config.auth,
@@ -235,14 +201,7 @@ export async function readVardoConfig(): Promise<VardoFullConfig | null> {
   return merged;
 }
 
-// ---------------------------------------------------------------------------
-// Write
-// ---------------------------------------------------------------------------
-
-/**
- * Write config and secrets to their respective files.
- * Secrets file gets 0600 permissions.
- */
+/** Write config and secrets files. The secrets file gets 0600. */
 export async function writeVardoConfig(
   config: VardoConfig,
   secrets: VardoSecrets
@@ -257,19 +216,12 @@ export async function writeVardoConfig(
   invalidateConfigCache();
 }
 
-// ---------------------------------------------------------------------------
-// Export: collect current settings into config objects
-// ---------------------------------------------------------------------------
-
-/**
- * Build exportable config + secrets from current system state.
- * Reads from DB system_settings (the canonical store).
- */
+/** Build exportable config and secrets from DB system_settings. */
 export async function systemSettingsToVardoConfig(): Promise<{
   config: VardoConfig;
   secrets: VardoSecrets;
 }> {
-  // Dynamic imports to avoid circular deps
+  // Dynamic imports avoid circular deps.
   const {
     getInstanceConfig,
     getAuthConfig,
@@ -381,14 +333,7 @@ export async function systemSettingsToVardoConfig(): Promise<{
   return { config, secrets: vardoSecrets };
 }
 
-// ---------------------------------------------------------------------------
-// Import: write config sections to system_settings DB
-// ---------------------------------------------------------------------------
-
-/**
- * Import a config into system_settings.
- * Returns the list of sections that were imported.
- */
+/** Import a config into system_settings. Returns the imported sections. */
 export async function importVardoConfig(
   full: VardoFullConfig
 ): Promise<string[]> {
@@ -447,7 +392,6 @@ export async function importVardoConfig(
   }
 
   if (full.ssl) {
-    // Resolve active issuers: prefer explicit array, fall back to legacy field
     const activeIssuers = full.ssl.activeIssuers?.length
       ? full.ssl.activeIssuers
       : full.ssl.defaultIssuer
@@ -473,14 +417,7 @@ export async function importVardoConfig(
   return imported;
 }
 
-// ---------------------------------------------------------------------------
-// Project config: read vardo.yml from an arbitrary directory (e.g. adopt target)
-// ---------------------------------------------------------------------------
-
-/**
- * Read a vardo.yml from the given directory and return its project section.
- * Returns null if the file doesn't exist or has no project section.
- */
+/** The project section of a directory's vardo.yml, or null. */
 export async function readProjectConfig(
   dir: string
 ): Promise<VardoConfig["project"] | null> {
@@ -490,9 +427,8 @@ export async function readProjectConfig(
   return config?.project ?? null;
 }
 
-/**
- * Check if a config file exists on disk.
- */
+/** Whether the config and secrets files exist on disk. */
+
 export async function configFileExists(): Promise<{
   config: boolean;
   secrets: boolean;

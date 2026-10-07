@@ -26,9 +26,7 @@ export type DigestData = {
   projects: DigestProjectRow[];
 };
 
-/**
- * Collect past 7 days of health data for a given org.
- */
+/** Collect the past 7 days of health data for an org. */
 export async function collectDigestData(
   orgId: string,
   orgName: string,
@@ -36,12 +34,11 @@ export async function collectDigestData(
   const now = new Date();
   const since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
-  // Week label e.g. "Mar 14 – Mar 20, 2026"
+  // e.g. "Mar 14 – Mar 20, 2026"
   const fmt = (d: Date) =>
     d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
   const weekLabel = `${fmt(since)} – ${fmt(now)}, ${now.getFullYear()}`;
 
-  // All apps in org
   const orgApps = await db.query.apps.findMany({
     where: eq(apps.organizationId, orgId),
     columns: { id: true, name: true, projectId: true },
@@ -61,7 +58,6 @@ export async function collectDigestData(
 
   const appIds = orgApps.map((a) => a.id);
 
-  // Fetch cron job ids scoped to this org's apps (needed before Promise.all)
   const orgCronJobs = await db.query.cronJobs.findMany({
     where: inArray(cronJobs.appId, appIds),
     columns: { id: true, name: true, appId: true },
@@ -69,16 +65,13 @@ export async function collectDigestData(
 
   const orgCronJobIds = orgCronJobs.map((j) => j.id);
 
-  // ---------------------------------------------------------------------------
-  // Run remaining queries in parallel
-  // ---------------------------------------------------------------------------
   const [
     deployCountRows,
     backupCountRows,
     cronRuns,
     alertCountRows,
   ] = await Promise.all([
-    // Deployment counts grouped by status — no full row loads
+    // Deployment counts by status
     db
       .select({ status: deployments.status, n: count() })
       .from(deployments)
@@ -90,7 +83,7 @@ export async function collectDigestData(
       )
       .groupBy(deployments.status),
 
-    // Backup counts grouped by status — no full row loads
+    // Backup counts by status
     db
       .select({ status: backups.status, n: count() })
       .from(backups)
@@ -102,8 +95,7 @@ export async function collectDigestData(
       )
       .groupBy(backups.status),
 
-    // Cron runs — only fetch if there are cron jobs; keep full rows for
-    // per-project breakdown (cronJobId needed)
+    // Cron runs, full rows for the per-project breakdown
     orgCronJobIds.length > 0
       ? db.query.cronJobRuns.findMany({
           where: and(
@@ -118,7 +110,7 @@ export async function collectDigestData(
         })
       : Promise.resolve([]),
 
-    // Alert counts — filter by action at the DB level
+    // Alert counts
     db
       .select({ action: activities.action, n: count() })
       .from(activities)
@@ -132,9 +124,6 @@ export async function collectDigestData(
       .groupBy(activities.action),
   ]);
 
-  // ---------------------------------------------------------------------------
-  // Aggregate deploy counts
-  // ---------------------------------------------------------------------------
   let deployTotal = 0;
   let deploySucceeded = 0;
   let deployFailed = 0;
@@ -144,9 +133,6 @@ export async function collectDigestData(
     if (row.status === "failed") deployFailed = row.n;
   }
 
-  // ---------------------------------------------------------------------------
-  // Aggregate backup counts
-  // ---------------------------------------------------------------------------
   let backupTotal = 0;
   let backupSucceeded = 0;
   let backupFailed = 0;
@@ -156,9 +142,6 @@ export async function collectDigestData(
     if (row.status === "failed") backupFailed = row.n;
   }
 
-  // ---------------------------------------------------------------------------
-  // Cron failures
-  // ---------------------------------------------------------------------------
   const cronJobById = new Map(orgCronJobs.map((j) => [j.id, j]));
 
   const failedCronRuns = cronRuns.filter((r) => r.status === "failed");
@@ -170,20 +153,13 @@ export async function collectDigestData(
     ),
   ];
 
-  // ---------------------------------------------------------------------------
-  // Alert counts (already aggregated from DB)
-  // ---------------------------------------------------------------------------
-  // Disk-write alerts are bus-only — nothing writes them to the activity log,
-  // so this stays 0 until they are recorded.
+  // Disk-write alerts aren't in the activity log yet, so this stays 0.
   const diskWriteAlerts = 0;
   let volumeDrifts = 0;
   for (const row of alertCountRows) {
     if (row.action === "volume.drift_detected") volumeDrifts = row.n;
   }
 
-  // ---------------------------------------------------------------------------
-  // Per-project breakdown
-  // ---------------------------------------------------------------------------
   const projectMap = new Map<string, DigestProjectRow>();
 
   for (const app of orgApps) {
@@ -199,8 +175,7 @@ export async function collectDigestData(
     }
   }
 
-  // For per-project deploy/backup breakdowns we need the appId → status rows.
-  // Re-use the same time window but fetch only appId + status (lightweight).
+  // appId and status rows for the per-project breakdown.
   const [deployRows, backupRows] = await Promise.all([
     deployTotal > 0
       ? db
@@ -239,7 +214,7 @@ export async function collectDigestData(
   }
 
   for (const bk of backupRows) {
-    if (!bk.appId) continue; // system backups don't belong to an app
+    if (!bk.appId) continue; // system backup
     const app = appById.get(bk.appId);
     if (!app) continue;
     const projectKey = app.projectId ?? `__no_project_${app.id}`;
@@ -259,7 +234,6 @@ export async function collectDigestData(
     row.cronFailures += 1;
   }
 
-  // Only include projects that had activity
   const projects = [...projectMap.values()].filter(
     (p) => p.deploys > 0 || p.failures > 0 || p.backupFailures > 0 || p.cronFailures > 0,
   );

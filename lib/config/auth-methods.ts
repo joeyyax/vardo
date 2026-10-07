@@ -1,12 +1,6 @@
 /**
- * Sign-in methods for Vardo.
- *
- * Each method switches independently and is enforced in lib/auth/index.ts, so
- * a disabled method can't authenticate rather than merely being hidden.
- * At least one method must stay usable — see assertMethodsRemain().
- *
- * Resolution: env var > vardo.yml (auth.methods) > DB (auth_methods) > default.
- * `password` also reads the retired passwordAuth feature flag at every layer.
+ * Sign-in methods, enforced in lib/auth/index.ts. Resolution: env var, vardo.yml, DB, default.
+ * `password` also reads the retired passwordAuth flag at every layer.
  */
 
 export type AuthMethod = "password" | "passkey" | "magic-link" | "totp" | "github";
@@ -61,12 +55,6 @@ const PREREQUISITE_REASON: Record<AuthPrerequisite, string> = {
   "github-app": "Needs a GitHub app, which isn't configured. Set one up first.",
 };
 
-// ---------------------------------------------------------------------------
-// Env var overrides
-//
-// Every method maps to VARDO_AUTH_<NAME>, where <NAME> is the method name
-// upper-snake-cased. So magic-link -> VARDO_AUTH_MAGIC_LINK.
-// ---------------------------------------------------------------------------
 
 const TRUTHY = new Set(["1", "true", "yes", "on", "enabled"]);
 const FALSY = new Set(["0", "false", "no", "off", "disabled"]);
@@ -102,10 +90,6 @@ export function authMethodFromEnv(method: AuthMethod): boolean | undefined {
   const legacy = legacyEnvVar(method);
   return legacy ? parseBool(process.env[legacy]) : undefined;
 }
-
-// ---------------------------------------------------------------------------
-// Layers and resolution
-// ---------------------------------------------------------------------------
 
 export type AuthMethodLayers = {
   /** vardo.yml auth.methods */
@@ -160,11 +144,7 @@ export function resolveAuthMethod(
   return { enabled: config.defaultValue ?? true, source: "default", envVar };
 }
 
-// ---------------------------------------------------------------------------
-// Sync cache — populated by loadAuthMethods() at startup and refreshed by
-// every isAuthMethodEnabledAsync() call. buildAuth() reads from this.
-// ---------------------------------------------------------------------------
-
+// Sync cache read by buildAuth(); loaded at startup and refreshed by async lookups.
 let methodCache: Record<string, boolean> | null = null;
 
 /** Populate the sync method cache. Call once at startup (instrumentation.ts). */
@@ -179,14 +159,11 @@ export async function loadAuthMethods(): Promise<void> {
 export async function invalidateAuthMethodCache(): Promise<void> {
   methodCache = null;
   await loadAuthMethods().catch(() => {
-    // Best-effort reload — sync callers use defaults until the next async call
+    // Best-effort; sync callers use defaults until the next async call.
   });
 }
 
-/**
- * Whether a sign-in method is enabled (synchronous).
- * Falls back to the default until loadAuthMethods() has run.
- */
+/** Whether a sign-in method is enabled (sync). Uses the default until loadAuthMethods() runs. */
 export function isAuthMethodEnabled(method: AuthMethod): boolean {
   const fromEnv = authMethodFromEnv(method);
   if (fromEnv !== undefined) return fromEnv;
@@ -215,10 +192,6 @@ export async function getAuthMethodStates(): Promise<Record<AuthMethod, boolean>
   return states;
 }
 
-// ---------------------------------------------------------------------------
-// Prerequisites
-// ---------------------------------------------------------------------------
-
 /** Which prerequisites are satisfied on this instance. */
 export async function checkPrerequisites(): Promise<Record<AuthPrerequisite, boolean>> {
   const { getGitHubAppConfig, getEmailProviderConfig } = await import("@/lib/system-settings");
@@ -233,10 +206,6 @@ export async function checkPrerequisites(): Promise<Record<AuthPrerequisite, boo
     "github-app": githubFromEnv || !!(github?.clientId && github?.clientSecret),
   };
 }
-
-// ---------------------------------------------------------------------------
-// Admin page view
-// ---------------------------------------------------------------------------
 
 export type AuthMethodInfo = {
   method: AuthMethod;
@@ -277,15 +246,8 @@ export async function getAllAuthMethods(): Promise<AuthMethodInfo[]> {
   });
 }
 
-// ---------------------------------------------------------------------------
-// Lockout guard
-// ---------------------------------------------------------------------------
+/** Error message when a write would leave no usable sign-in method, else null. Lockout needs DB access to undo. */
 
-/**
- * Reject a write that would leave no usable sign-in method. Recovering from
- * that needs direct database access, so it's refused rather than warned about.
- * Returns an error message, or null when the write is safe.
- */
 export async function assertMethodsRemain(
   changes: Partial<Record<AuthMethod, boolean>>,
 ): Promise<string | null> {

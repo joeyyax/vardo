@@ -27,10 +27,7 @@ export type HostConfig = {
 
 const CONFIG_FILES = ["host.toml", ".host.toml", "host.config.toml"];
 
-/**
- * Read host.toml from a project directory.
- * Tries host.toml, .host.toml, host.config.toml in order.
- */
+/** Read host.toml, .host.toml or host.config.toml from a project directory. */
 export async function readHostConfig(projectDir: string): Promise<HostConfig | null> {
   for (const filename of CONFIG_FILES) {
     try {
@@ -43,10 +40,8 @@ export async function readHostConfig(projectDir: string): Promise<HostConfig | n
   return null;
 }
 
-/**
- * Apply host.toml config to project settings during deploy.
- * Returns the fields that should be updated on the project.
- */
+/** Project fields to update from host.toml during deploy. */
+
 export function applyHostConfig(config: HostConfig): {
   containerPort?: number;
   autoDeploy?: boolean;

@@ -27,10 +27,7 @@ export function cronContainerScope(app: CronTargetApp): ContainerScope {
   };
 }
 
-/**
- * Running container a cron job execs into. A stack child shares the parent's
- * project label, so it is narrowed by compose service rather than app name.
- */
+/** Running container a cron job execs into. Stack children match by compose service. */
 export function selectCronContainer(
   app: CronTargetApp,
   containers: ContainerInfo[],
@@ -38,10 +35,7 @@ export function selectCronContainer(
   return matchContainers(app, containers).find((c) => c.state === "running") ?? null;
 }
 
-/**
- * Run a command inside an app's container.
- * Returns { success, log, durationMs }.
- */
+/** Run a command inside an app's container. */
 async function executeInContainer(
   app: CronTargetApp,
   command: string,
@@ -60,12 +54,11 @@ async function executeInContainer(
   }
 
   try {
-    // Pass command as a discrete argument to sh -c to avoid shell metacharacter
-    // interpretation at the Node.js level. JSON.stringify is not shell quoting.
+    // Pass the command as one argument to sh -c; JSON.stringify isn't shell quoting.
     const { stdout, stderr } = await execFileAsync(
       "docker",
       ["exec", running.id, "sh", "-c", command],
-      { timeout: 300_000 } // 5 minute timeout
+      { timeout: 300_000 }
     );
 
     const log = [stdout, stderr].filter(Boolean).join("\n").trim();
@@ -84,9 +77,7 @@ async function executeInContainer(
   }
 }
 
-/**
- * Hit a URL and return the result.
- */
+/** Hit a URL and return the result. */
 async function fetchUrl(
   url: string,
 ): Promise<{ success: boolean; log: string; durationMs: number }> {
@@ -115,10 +106,7 @@ async function fetchUrl(
   }
 }
 
-/**
- * Check all enabled cron jobs and run any that are due.
- * Call this every minute from a scheduler.
- */
+/** Run every enabled cron job that's due. Call once a minute. */
 export async function tickCronJobs(): Promise<void> {
   const now = new Date();
 
@@ -143,18 +131,15 @@ export async function tickCronJobs(): Promise<void> {
   });
 
   for (const job of jobs) {
-    // Skip if app isn't active
     if (job.app.status !== "active") continue;
 
-    // Check if this job should run now
     if (!shouldRunNow(job.schedule, now)) continue;
 
-    // Acquire a distributed lock for this job+minute to prevent double-fire
+    // Per-minute lock prevents double-firing across instances.
     const minuteTs = Math.floor(now.getTime() / 60_000);
     const locked = await acquireLock(`lock:cron:${job.id}:${minuteTs}`, 61_000);
     if (!locked) continue;
 
-    // Mark as running
     const runId = nanoid();
     const startedAt = new Date();
 
@@ -164,7 +149,6 @@ export async function tickCronJobs(): Promise<void> {
       updatedAt: now,
     }).where(eq(cronJobs.id, job.id));
 
-    // Execute based on type, catching unhandled errors
     let result: { success: boolean; log: string; durationMs: number };
     try {
       result = job.type === "url"
@@ -181,14 +165,12 @@ export async function tickCronJobs(): Promise<void> {
     const completedAt = new Date();
     const status = result.success ? "success" : "failed";
 
-    // Update cron job summary
     await db.update(cronJobs).set({
       lastStatus: status,
-      lastLog: result.log.slice(0, 10000), // Cap log size
+      lastLog: result.log.slice(0, 10000),
       updatedAt: completedAt,
     }).where(eq(cronJobs.id, job.id));
 
-    // Write run history record
     await db.insert(cronJobRuns).values({
       id: runId,
       cronJobId: job.id,
@@ -199,7 +181,7 @@ export async function tickCronJobs(): Promise<void> {
       error: result.success ? null : result.log.slice(0, 50000),
     });
 
-    // Retain last 500 runs per job — delete anything older than 30 days
+    // Delete runs older than 30 days.
     const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     await db.delete(cronJobRuns).where(
       and(
@@ -232,10 +214,8 @@ export async function tickCronJobs(): Promise<void> {
   }
 }
 
-/**
- * Create cron jobs for an app from template or config definitions.
- * Skips jobs that already exist (by name).
- */
+/** Create an app's cron jobs from template or config. Skips existing names. */
+
 export async function syncCronJobs(
   appId: string,
   definitions: { name: string; type?: "command" | "url"; schedule: string; command: string; enabled?: boolean }[],

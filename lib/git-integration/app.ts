@@ -74,11 +74,7 @@ export async function listInstallationRepos(installationId: number) {
   return repos;
 }
 
-/**
- * Create a new repository via a GitHub App installation.
- * If the installation is on a user account, creates a user repo.
- * If on an org, creates an org repo.
- */
+/** Create a repo under the installation's user or org account. */
 export async function createRepo(
   installationId: number,
   opts: {
@@ -126,9 +122,10 @@ export async function createRepo(
   };
 }
 
-// HMAC-signed state for CSRF protection during GitHub App installation flow
+// HMAC-signed state for CSRF protection during GitHub App installation.
 
-const STATE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+const STATE_TTL_MS = 10 * 60 * 1000;
+
 
 function getSigningKey() {
   const key = process.env.BETTER_AUTH_SECRET;

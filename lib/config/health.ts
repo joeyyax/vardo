@@ -6,10 +6,6 @@ import { CORE_SERVICE_FEATURES } from "@/lib/infra/core-services";
 import { formatDuration } from "@/lib/ui/service-health";
 import { cpuDisplay, formatBytes, sharePercent } from "@/lib/metrics/format";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
 export type ServiceStatus = {
   name: string;
   description: string;
@@ -18,7 +14,7 @@ export type ServiceStatus = {
   error?: string;
   /** ISO timestamp of the probe that produced this status. */
   checkedAt: string;
-  /** Bound on the probe, so a slow service reads differently from a dead one. */
+  /** Probe timeout. */
   timeoutMs: number;
   /** Logs page for the service, when the instance runs it as an app. */
   logsHref?: string;
@@ -30,9 +26,9 @@ export type ResourceStatus = {
   total: number;
   percent: number;
   unit: string;
-  /** The share, as rendered. */
+  /** Rendered share. */
   headline: string;
-  /** The line under the bar, in the unit the ceiling is set in. */
+  /** Line under the bar, in the ceiling's unit. */
   detail: string;
   status: "ok" | "warning" | "critical";
 };
@@ -64,27 +60,15 @@ export type SystemHealth = {
   auth: AuthConfig;
 };
 
-// ---------------------------------------------------------------------------
-// Thresholds
-// ---------------------------------------------------------------------------
-
 const THRESHOLDS = {
   cpu: { warning: 80, critical: 95 },
   memory: { warning: 80, critical: 95 },
   disk: { warning: 80, critical: 90 },
 };
 
-// ---------------------------------------------------------------------------
-// Service checks
-// ---------------------------------------------------------------------------
-
 const MAX_ERROR_LENGTH = 120;
 
-/**
- * Strip potentially sensitive info from raw library error messages before
- * surfacing them in the API response or admin UI. Removes connection strings,
- * IP addresses with ports, and pg role/database/user names.
- */
+/** Strip connection strings, hosts and pg role/database/user names from an error message. */
 export function sanitizeError(message: string): string {
   return message
     .replace(/redis:\/\/\S+/gi, "[url]")
@@ -97,13 +81,7 @@ export function sanitizeError(message: string): string {
     .slice(0, MAX_ERROR_LENGTH);
 }
 
-/**
- * The reason behind a wrapper error, or "" when there isn't one worth printing.
- *
- * `fetch` reports "fetch failed" and hangs the reason off the cause. On a
- * dual-stack host that cause is an AggregateError whose own message is empty —
- * the ECONNREFUSED sits one level further down, in `errors`.
- */
+/** Reason behind a wrapper error, or "". Dual-stack fetch failures nest it in AggregateError.errors. */
 function errorReason(err: Error): string {
   if (err.message) return err.message;
   const inner = (err as AggregateError).errors;
@@ -131,10 +109,7 @@ function isTimeout(err: unknown): boolean {
   return err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
 }
 
-/**
- * What the operator reads on a failed probe. A probe that ran out its budget
- * says so — "too slow" and "refused the connection" call for different work.
- */
+/** Operator-facing text for a failed probe; timeouts say so. */
 export function probeErrorText(err: unknown, timeoutMs: number): string {
   return isTimeout(err)
     ? `Timed out after ${formatDuration(timeoutMs)}`
@@ -163,10 +138,7 @@ const CORE_SERVICE_FLAG_BY_APP = new Map(
   CORE_SERVICE_FEATURES.flatMap((f) => f.services.map((s) => [s.name, f.flag] as const)),
 );
 
-/**
- * A probe for an instance-level core service. Gated on the flag that provisions
- * it, so a service the operator never installed reads as absent, not broken.
- */
+/** Probe for a core service, gated on the feature flag that provisions it. */
 function coreServiceProbe(app: string, probe: Omit<Probe, "logsApp" | "applies">): Probe {
   const flag = CORE_SERVICE_FLAG_BY_APP.get(app);
   if (!flag) throw new Error(`No core service feature flag for "${app}"`);
@@ -232,8 +204,7 @@ export const SERVICE_PROBES: Probe[] = [
     name: "Promtail",
     description: "Log shipper",
     timeoutMs: 5000,
-    // Promtail's HTTP server never joins vardo-network, so there is nothing to
-    // call. A running container is the only signal reachable from here.
+    // Promtail isn't on vardo-network; a running container is the only signal.
     run: async () => {
       const { listContainers } = await import("@/lib/docker/client");
       const running = await listContainers("promtail");
@@ -305,16 +276,13 @@ async function runProbe(probe: Probe): Promise<ServiceStatus> {
   }
 }
 
-/** Whether a probe runs. An unreadable flag still probes — unknown is not absent. */
+/** Whether a probe runs. An unreadable flag still probes. */
 async function probeApplies(probe: Probe): Promise<boolean> {
   if (!probe.applies) return true;
   return probe.applies().catch(() => true);
 }
 
-/**
- * Re-probe a single service by name. Returns null when the name is unknown or
- * the service does not apply to this instance.
- */
+/** Re-probe one service by name. Null when unknown or not applicable. */
 export async function checkServiceByName(name: string): Promise<ServiceStatus | null> {
   const probe = SERVICE_PROBES.find((p) => p.name.toLowerCase() === name.toLowerCase());
   if (!probe) return null;
@@ -324,11 +292,7 @@ export async function checkServiceByName(name: string): Promise<ServiceStatus | 
   return { ...status, logsHref: logsHrefs.get(probe.name) };
 }
 
-/**
- * Logs pages for services Vardo runs as system-managed apps. These are
- * instance-level singletons living in the Vardo system org, so the lookup spans
- * every org and app-admin is the gate rather than the viewer's active org.
- */
+/** Logs pages for system-managed core services. Spans every org; gated on app admin. */
 async function resolveLogsHrefs(): Promise<Map<string, string>> {
   const hrefs = new Map<string, string>();
   const slugs = SERVICE_PROBES.map((p) => p.logsApp).filter((s): s is string => !!s);
@@ -345,8 +309,7 @@ async function resolveLogsHrefs(): Promise<Map<string, string>> {
     const { isAppAdmin } = await import("@/lib/auth/admin");
     if (!(await isAppAdmin())) return hrefs;
 
-    // Core service names are unique instance-wide, so no org filter — scoping
-    // to the viewer's active org hid the link from every admin but one.
+    // No org filter: core services live in the system org.
     const { apps } = await import("@/lib/db/schema");
     const { and, eq, inArray } = await import("drizzle-orm");
     const rows = await db
@@ -361,15 +324,11 @@ async function resolveLogsHrefs(): Promise<Map<string, string>> {
       }
     }
   } catch {
-    // A missing logs link is not worth failing the health check over
+    // Non-fatal.
   }
 
   return hrefs;
 }
-
-// ---------------------------------------------------------------------------
-// Resource checks
-// ---------------------------------------------------------------------------
 
 function resourceStatus(percent: number, thresholds: { warning: number; critical: number }): "ok" | "warning" | "critical" {
   if (percent >= thresholds.critical) return "critical";
@@ -384,16 +343,14 @@ async function getResourceStatuses(): Promise<ResourceStatus[]> {
     const { getSystemInfo } = await import("@/lib/docker/client");
     const { getFleetTotals } = await import("@/lib/metrics/fleet-totals");
 
-    // Both cards need a real sample. Without one they are omitted rather than
-    // rendered at zero — an idle fleet and an unmeasured one look identical.
+    // Omit both cards without a real sample; zero would look like an idle fleet.
     const [systemInfo, totals] = await Promise.all([
       getSystemInfo().catch(() => null),
       getFleetTotals().catch(() => null),
     ]);
 
     if (systemInfo && totals) {
-      // Cores, the unit Docker takes limits in, through the formatter /metrics
-      // reads — cAdvisor's per-core percent means nothing against a 32-core host.
+      // In cores, matching /metrics.
       const cpu = cpuDisplay(totals.cpuPercent, { kind: "capacity", cores: systemInfo.cpus });
       const cpuPercent = cpu.share ?? 0;
       resources.push({
@@ -422,7 +379,7 @@ async function getResourceStatuses(): Promise<ResourceStatus[]> {
       });
     }
 
-    // Disk — use df directly (fast, ~50ms). Skip docker system df (3s+).
+    // df, not docker system df (3s+).
     try {
       const { execSync } = await import("child_process");
       const dfOutput = execSync("df -B1 /var/lib/docker 2>/dev/null || df -B1 / 2>/dev/null", {
@@ -452,19 +409,14 @@ async function getResourceStatuses(): Promise<ResourceStatus[]> {
       // df not available
     }
   } catch {
-    // Resource checks are best-effort
+    // Best-effort.
   }
 
   return resources;
 }
 
-// ---------------------------------------------------------------------------
-// Main
-// ---------------------------------------------------------------------------
+/** Health of infrastructure services, resource usage and auth config. */
 
-/**
- * Check health of all infrastructure services, resource usage, and auth config.
- */
 export async function getSystemHealth(): Promise<SystemHealth> {
   const [services, resources, logsHrefs] = await Promise.all([
     Promise.all(

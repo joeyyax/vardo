@@ -19,30 +19,20 @@ type DriftCheckOpts = {
   log?: (line: string) => void;
 };
 
-/**
- * Run a post-deploy drift check on all volumes for an app.
- * Updates driftCount on each volume record. Fires a notification
- * if unignored drift exceeds the threshold.
- *
- * This is designed to run in the background after deploy completes
- * and should never throw — all errors are caught internally.
- */
+/** Post-deploy drift check: updates each volume's driftCount and notifies past the threshold. Never throws. */
 export async function runPostDeployDriftCheck(opts: DriftCheckOpts): Promise<void> {
   const { appId, organizationId, appName, log } = opts;
 
   try {
-    // Load all volumes for this app
     const appVolumes = await db.query.volumes.findMany({
       where: eq(volumes.appId, appId),
     });
 
     if (appVolumes.length === 0) return;
 
-    // Every environment shares `vardo.project`; without the environment label a
-    // staging or preview container's volumes get counted against this app.
+    // Environments share `vardo.project`; scope to one or other environments' volumes count here.
     const envName = opts.envName ?? (await resolveDefaultEnv(appId)).name;
 
-    // Determine image name
     let imageName = opts.imageName;
     if (!imageName) {
       const app = await db.query.apps.findFirst({
@@ -66,7 +56,6 @@ export async function runPostDeployDriftCheck(opts: DriftCheckOpts): Promise<voi
       return;
     }
 
-    // Find Docker volume names from running containers
     const dockerVolumes = new Map<string, string>(); // mountPath -> dockerVolumeName
     try {
       const containers = await listContainers({ id: appId, name: appName }, envName);
@@ -103,7 +92,6 @@ export async function runPostDeployDriftCheck(opts: DriftCheckOpts): Promise<voi
         const driftCount =
           diff.modified.length + diff.addedOnDisk.length + diff.missingFromDisk.length;
 
-        // Update drift count on the volume record
         await db
           .update(volumes)
           .set({ driftCount, updatedAt: new Date() })
@@ -123,7 +111,6 @@ export async function runPostDeployDriftCheck(opts: DriftCheckOpts): Promise<voi
       }
     }
 
-    // Fire notification if drift exceeds threshold
     if (totalDrift >= DRIFT_NOTIFICATION_THRESHOLD) {
       try {
         const { emit } = await import("@/lib/notifications/dispatch");
@@ -136,7 +123,7 @@ export async function runPostDeployDriftCheck(opts: DriftCheckOpts): Promise<voi
           totalDrift,
         });
       } catch {
-        // Notification module may not exist yet — non-fatal
+        // Non-fatal.
       }
 
       recordActivity({
@@ -147,8 +134,8 @@ export async function runPostDeployDriftCheck(opts: DriftCheckOpts): Promise<voi
       }).catch(() => {});
     }
   } catch (err) {
-    // Entire drift check is best-effort
     log?.(
+
       `[drift] Drift check failed: ${err instanceof Error ? err.message : String(err)}`,
     );
   }

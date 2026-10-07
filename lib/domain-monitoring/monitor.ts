@@ -19,11 +19,7 @@ type DomainCheckResult = {
   error?: string;
 };
 
-/**
- * Check all domains across all active apps.
- * Probes up to MAX_CONCURRENCY domains in parallel.
- * Call this from a scheduled interval (e.g. every 5 minutes).
- */
+/** Probe every active app's domains, MAX_CONCURRENCY at a time. */
 export async function checkAllDomains(): Promise<DomainCheckResult[]> {
   const allDomains = await db.query.domains.findMany({
     with: {
@@ -39,8 +35,7 @@ export async function checkAllDomains(): Promise<DomainCheckResult[]> {
 
   if (eligible.length === 0) return [];
 
-  // Query the most recent check per eligible domain for state transition detection.
-  // Uses DISTINCT ON to avoid fetching the entire table.
+  // Latest check per domain, for state-transition detection.
   const domainIds = eligible.map((d) => d.id);
   const prevChecks = await db
     .select({
@@ -51,7 +46,6 @@ export async function checkAllDomains(): Promise<DomainCheckResult[]> {
     .where(inArray(domainChecks.domainId, domainIds))
     .orderBy(domainChecks.domainId, desc(domainChecks.checkedAt))
     .then((rows) => {
-      // Deduplicate to first (most recent) per domain
       const map = new Map<string, { reachable: boolean }>();
       for (const row of rows) {
         if (!map.has(row.domainId)) {
@@ -74,7 +68,7 @@ export async function checkAllDomains(): Promise<DomainCheckResult[]> {
     if (r.status === "fulfilled") checks.push(r.value);
   }
 
-  // Prune old checks — single statement deletes rows beyond 100 most recent per domain
+  // Keep the 100 most recent checks per domain.
   try {
     await db.execute(sql`
       DELETE FROM "domain_check"
@@ -88,7 +82,7 @@ export async function checkAllDomains(): Promise<DomainCheckResult[]> {
       )
     `);
   } catch {
-    // Pruning is best-effort
+    // Best-effort.
   }
 
   return checks;
@@ -114,7 +108,6 @@ async function probeDomain(
     reachable = res.status < 500;
     statusCode = res.status;
   } catch {
-    // Try HTTP fallback
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 10000);
@@ -132,7 +125,6 @@ async function probeDomain(
 
   const responseTimeMs = Date.now() - startTime;
 
-  // Store the check result
   await db.insert(domainChecks).values({
     id: nanoid(),
     domainId: d.id,
@@ -142,8 +134,8 @@ async function probeDomain(
     error: error ?? null,
   });
 
-  // State transition detection — compare against previous check (queried before probes started)
-  if (!reachable && (!prevCheck || prevCheck.reachable)) {
+  if
+ (!reachable && (!prevCheck || prevCheck.reachable)) {
     log.warn(
       `${d.domain} (app: ${d.app.name}) is unreachable` +
         (error ? ` — ${error}` : "") +

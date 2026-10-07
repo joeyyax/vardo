@@ -7,15 +7,12 @@ import { logger } from "@/lib/logger";
 
 const log = logger.child("digest");
 
-/**
- * Check all orgs with digest settings and fire the digest for any that are due.
- * Called every minute by the digest scheduler.
- */
+/** Send the digest for every org that's due. Runs every minute. */
 export async function tickDigestJobs(): Promise<void> {
   const now = new Date();
   const currentDay = now.getUTCDay(); // 0 = Sunday
   const currentHour = now.getUTCHours();
-  // Only fire once per hour — check minute is 0-4 to avoid drift issues
+  // Fire only in minutes 0-4 of the hour.
   const currentMinute = now.getUTCMinutes();
   if (currentMinute >= 5) return;
 
@@ -24,16 +21,14 @@ export async function tickDigestJobs(): Promise<void> {
     with: { organization: true },
   });
 
-  // Process all orgs concurrently — one failure won't block others
   await Promise.allSettled(
     settings.map(async (setting) => {
       try {
         if (setting.dayOfWeek !== currentDay) return;
         if (setting.hourOfDay !== currentHour) return;
 
-        // Atomic claim: update lastSentAt only if it hasn't been set in the past
-        // 50 minutes. If 0 rows are returned, another process already claimed this
-        // tick — skip to prevent duplicate emails in multi-instance deployments.
+        // Atomic claim; zero rows means another instance already sent this digest.
+
         const claimed = await db
           .update(digestSettings)
           .set({ lastSentAt: now, updatedAt: now })

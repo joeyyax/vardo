@@ -1,12 +1,5 @@
-/**
- * Static guidance data for setup wizard and admin settings.
- * Shared between the setup wizard steps and the admin settings pages
- * so users see the same helpful context in both places.
- */
+/** Provider guidance shared by the setup wizard and admin settings. */
 
-// ---------------------------------------------------------------------------
-// GitHub App
-// ---------------------------------------------------------------------------
 
 export const GITHUB_GUIDE = {
   createAppUrl: "https://github.com/settings/apps/new",
@@ -37,10 +30,6 @@ export function getWebhookUrl(appUrl: string): string {
   const base = appUrl.replace(/\/+$/, "");
   return `${base}/api/webhooks/github`;
 }
-
-// ---------------------------------------------------------------------------
-// Email Providers
-// ---------------------------------------------------------------------------
 
 export type EmailProviderGuide = {
   name: string;
@@ -87,10 +76,6 @@ export const SMTP_PRESETS = [
   { label: "Outlook", host: "smtp.office365.com", port: "587", note: "Requires an app password — account.microsoft.com/security" },
 ] as const;
 
-// ---------------------------------------------------------------------------
-// Backup Storage
-// ---------------------------------------------------------------------------
-
 export type BackupProviderGuide = {
   name: string;
   consoleUrl: string;
@@ -126,10 +111,6 @@ export const BACKUP_PROVIDER_GUIDES: Record<string, BackupProviderGuide> = {
     requiredPermissions: "Read and Write access scoped to the backup bucket",
   },
 } as const;
-
-// ---------------------------------------------------------------------------
-// Domain / DNS
-// ---------------------------------------------------------------------------
 
 export type DnsRecord = {
   type: string;

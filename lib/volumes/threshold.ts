@@ -1,11 +1,7 @@
 export type ThresholdLevel = "normal" | "warning" | "critical";
 
-/**
- * Returns the threshold level for a volume's usage percentage.
- *   - "critical" when usage exceeds 100% of the limit
- *   - "warning"  when usage >= warnAtPercent
- *   - "normal"   otherwise
- */
+/** Critical over 100% of the limit, warning at `warnAtPercent`, else normal. */
+
 export function volumeThreshold(
   sizeBytes: number,
   maxSizeBytes: number,

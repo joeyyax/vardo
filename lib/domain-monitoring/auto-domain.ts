@@ -1,6 +1,5 @@
-// Server-side only — reads from VARDO_BASE_DOMAIN env var.
-// Client components should receive baseDomain as a prop from the server
-// (via getInstanceConfig().baseDomain) rather than calling this directly.
+// Server only. Client components get baseDomain as a prop from getInstanceConfig().
+
 export const DEFAULT_BASE_DOMAIN = process.env.VARDO_BASE_DOMAIN || "localhost";
 
 const ADJECTIVES = [

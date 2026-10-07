@@ -10,10 +10,6 @@ import {
   styles,
 } from "./components";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
 export type DigestDeploySummary = {
   total: number;
   succeeded: number;
@@ -55,18 +51,10 @@ export type WeeklyDigestEmailProps = {
   dashboardUrl: string;
 };
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
 function pct(n: number, total: number): string {
   if (total === 0) return "0%";
   return `${Math.round((n / total) * 100)}%`;
 }
-
-// ---------------------------------------------------------------------------
-// Template
-// ---------------------------------------------------------------------------
 
 export function WeeklyDigestEmail({
   orgName,

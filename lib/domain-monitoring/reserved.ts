@@ -1,7 +1,5 @@
-/**
- * Reserved subdomains that cannot be used as project slugs.
- * Admins can bypass this list.
- */
+/** Subdomains reserved from project slugs. Admins can bypass. */
+
 export const RESERVED_SLUGS = new Set([
   // Infrastructure
   "api",
