@@ -73,6 +73,15 @@ export async function register() {
       log.error("Credential encryption failed:", err);
     }
 
+    // OAuth tokens stored before Better Auth encrypted them. Uses its secret, not the master key.
+    try {
+      const { auth } = await import("./lib/auth");
+      const { encryptStoredOAuthTokens } = await import("./lib/auth/oauth-tokens");
+      await encryptStoredOAuthTokens((await auth.$context).secretConfig);
+    } catch (err) {
+      log.error("OAuth token encryption failed:", err);
+    }
+
     // Carry existing hook registrations onto the new hooks flag. Needs the
     // encryption key, so it runs after the check above.
     try {

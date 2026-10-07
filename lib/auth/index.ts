@@ -172,6 +172,8 @@ function buildAuth() {
       enabled: true,
       trustedProviders: ["github"],
     },
+    // Rows stored before this was on are encrypted at startup (lib/auth/oauth-tokens.ts).
+    encryptOAuthTokens: true,
   },
 
   // Every sign-up path (password, magic link, OAuth) creates users through here.
