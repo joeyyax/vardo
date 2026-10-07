@@ -6,8 +6,8 @@
 import { db } from "@/lib/db";
 import { orgEnvVars, apps } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
-import { mkdir, writeFile, readFile, rm, symlink, copyFile, stat, readdir } from "fs/promises";
-import { join } from "path";
+import { mkdir, writeFile, readFile, rm, symlink, copyFile, stat, readdir, chmod } from "fs/promises";
+import { dirname, join } from "path";
 import { decryptOrFallback } from "@/lib/crypto/encrypt";
 import { DeployBlockedError } from "../errors";
 import { parseEnvToMap } from "@/lib/env/parse-env";
@@ -29,6 +29,8 @@ import type { DeployContext } from "../deploy-context";
 import { detectActiveSlot } from "../slots";
 import { crossBoundaryVolumeName, volumesByOwner } from "../shared-volumes";
 import { isSelfApp, seedSelfEnv } from "../self-env";
+import { nonRotatingServices } from "../slot-partition";
+import { anchorSharedPaths, sharedPathsDir } from "../shared-paths";
 import {
   DEFAULT_NETWORK,
   networkCreateArgs,
@@ -84,7 +86,7 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
   if (repoDir) {
     const entries = await readdir(repoDir);
     for (const entry of entries) {
-      if (entry === "docker-compose.yml" || entry === "docker-compose.yaml" || entry === "compose.yml" || entry === "compose.yaml" || entry === ".env") continue;
+      if (!isLinkedRepoEntry(entry)) continue;
       const source = join(repoDir, entry);
       const target = join(slotDir, entry);
       const sourceSt = await stat(source);
@@ -363,6 +365,8 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
     log(`[deploy] Warning: no .env found to seed — compose defaults would apply`);
   }
 
+  await anchorSharedServicePaths(ctx);
+
   const overlayCompose = buildVardoOverlay({
     fullCompose: compose,
     networkName: NETWORK_NAME,
@@ -389,4 +393,50 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
   }
 
   return ctx;
+}
+
+/** Repo entries the slot links or copies. Compose files and .env are Vardo's own. */
+function isLinkedRepoEntry(entry: string): boolean {
+  return !["docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml", ".env"].includes(entry);
+}
+
+/**
+ * Point shared services' relative paths somewhere neither slot owns, so their
+ * definition is the same from blue and green. A file Vardo wrote into the slot
+ * (the .env) is copied across; a directory is never moved, and one still
+ * sitting in a slot is recorded so the swap holds the service.
+ */
+export async function anchorSharedServicePaths(ctx: DeployContext): Promise<void> {
+  const shared = nonRotatingServices(ctx.compose);
+  if (shared.size === 0) return;
+  const sharedDir = sharedPathsDir(ctx.appDir);
+  const repoEntries = ctx.repoDir
+    ? new Set((await readdir(ctx.repoDir).catch(() => [] as string[])).filter(isLinkedRepoEntry))
+    : new Set<string>();
+  const opts = { repoDir: ctx.repoDir, repoEntries, sharedDir };
+
+  const anchored = anchorSharedPaths(ctx.compose, shared, opts);
+  if (ctx.bareCompose !== ctx.compose) anchorSharedPaths(ctx.bareCompose, shared, opts);
+
+  const isFile = (path: string) => stat(path).then((st) => st.isFile(), () => false);
+  const exists = (path: string) => stat(path).then(() => true, () => false);
+
+  for (const path of anchored) {
+    ctx.log(`[deploy] Shared service ${path.service}: ${path.kind} ./${path.rel} → ${path.to}`);
+    if (path.inRepo) continue;
+    const inSlot = join(ctx.slotDir, path.rel);
+    if (await isFile(inSlot)) {
+      await mkdir(dirname(path.to), { recursive: true });
+      await copyFile(inSlot, path.to);
+      await chmod(path.to, (await stat(inSlot)).mode & 0o777);
+      continue;
+    }
+    if (path.kind !== "volume" || (await exists(path.to))) continue;
+    for (const slot of ["blue", "green"]) {
+      const old = join(ctx.appDir, slot, path.rel);
+      if (await exists(old)) {
+        ((ctx.sharedPathMoves ??= {})[path.service] ??= []).push(`${old} → ${path.to}`);
+      }
+    }
+  }
 }

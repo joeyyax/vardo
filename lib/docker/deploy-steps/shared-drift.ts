@@ -170,6 +170,8 @@ export async function reconcileSharedServices(
     intervalMs: number;
     stableMs: number;
     sleep: (ms: number) => Promise<void>;
+    /** Services whose bind data has to move out of a slot before a recreate. */
+    pendingMoves?: Record<string, string[]>;
   },
 ): Promise<SharedOutcome[]> {
   const { shared, project, composeFileArgs, cwd, exec, timeout, log } = opts;
@@ -192,6 +194,16 @@ export async function reconcileSharedServices(
         service: name,
         result: "unknown",
         reason: state === "missing" ? "no running container" : "no definition hash to compare",
+      });
+      continue;
+    }
+
+    const moves = opts.pendingMoves?.[name];
+    if (moves?.length) {
+      outcomes.push({
+        service: name,
+        result: "held",
+        reason: `its data is still in a slot dir — move ${moves.join(", ")} first`,
       });
       continue;
     }

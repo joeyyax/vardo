@@ -191,6 +191,25 @@ describe("reconcileSharedServices", () => {
     expect(stateReads).toHaveLength(3);
   });
 
+  it("holds a service whose bind data still sits in a slot dir", async () => {
+    const exec = docker({
+      desired: { postgres: A, redis: A, traefik: B },
+      running: { "vardo-postgres": A, "vardo-redis": A, "vardo-traefik": A },
+    });
+    const outcomes = await reconcileSharedServices({
+      ...base(exec),
+      log: () => {},
+      upTimeout: 1000,
+      readyTimeout: () => 1000,
+      intervalMs: 1,
+      stableMs: 0,
+      sleep: async () => {},
+      pendingMoves: { traefik: ["/a/blue/conf → /a/shared/conf"] },
+    });
+    expect(outcomes.find((o) => o.service === "traefik")).toMatchObject({ result: "held", reason: expect.stringContaining("/a/blue/conf") });
+    expect(upCalls(exec)).toEqual([]);
+  });
+
   it("throws naming the service when the recreate fails", async () => {
     const exec = docker({
       desired: { postgres: A, redis: A, traefik: B },

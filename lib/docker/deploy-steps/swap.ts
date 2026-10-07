@@ -670,6 +670,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
         stableMs: HEALTH_STABLE_WINDOW_MS,
         sleep,
         log,
+        pendingMoves: ctx.sharedPathMoves,
       });
       for (const outcome of outcomes) {
         log(describeSharedOutcome(outcome));

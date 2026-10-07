@@ -205,6 +205,13 @@ export type DeployContext = {
    */
   unfinished?: string[];
 
+  /**
+   * Shared services whose relative bind source still sits in a slot dir while
+   * its slot-independent path is empty. The swap holds them rather than
+   * recreating onto an empty directory.
+   */
+  sharedPathMoves?: Record<string, string[]>;
+
   /** Set once the deploy records success — from here the new slot is live, not disposable. */
   succeeded?: boolean;
 
