@@ -19,6 +19,7 @@ import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { getSslConfig, getPrimaryIssuer } from "@/lib/system-settings";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
+import { enrollQuietly } from "@/lib/backups/enroll";
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
@@ -215,6 +216,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
           persistent: true,
         });
       }
+      await enrollQuietly({ appId, appName: data.name, organizationId: orgId });
     }
 
     // Auto-create domain if requested

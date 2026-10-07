@@ -24,6 +24,7 @@ import { getPgConstraint, isUniqueViolation } from "@/lib/api/error-response";
 import { APP_NAME_TAKEN_ERROR, isTopLevelAppNameTaken } from "@/lib/db/app-name";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
+import { enrollQuietly } from "@/lib/backups/enroll";
 
 type RouteParams = {
   params: Promise<{ orgId: string; containerId: string }>;
@@ -280,6 +281,9 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
 
     const { app } = result;
     const appId = app.id;
+
+    // Imported mounts hold existing data, so sizes are measured off the request.
+    void enrollQuietly({ appId, appName: app.name, organizationId: orgId, measure: true });
 
     const warnings: string[] = [];
 

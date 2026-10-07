@@ -6,7 +6,7 @@
 //    backup target from config file or DB settings if none exists.
 // 2. ensureSystemBackupJob() — creates a backup job for Vardo's own
 //    PostgreSQL database, linked via a system volume with pg_dump strategy.
-// 3. ensureAutoBackupJob() — after deploy detects persistent volumes,
+// 3. ensureAutoBackupJob() — once an app has volumes selected for backup,
 //    auto-creates a daily backup job linked to the app.
 // ---------------------------------------------------------------------------
 
@@ -291,16 +291,28 @@ export async function ensureAutoBackupJob(opts: {
     return null;
   }
 
-  // Create a daily backup job with staggered schedule, linking the app
-  // atomically. A partial insert (job row without its app link) would create an
-  // orphan job the dedup-by-app-link guard above can't see, so the next deploy
-  // would create yet another — the source of the duplicate "Auto:" jobs (#757).
+  return createAutoJob({ appId, appName, organizationId, targetId: target.id });
+}
+
+/**
+ * Create a daily "Auto:" job on a target, linking the app atomically. A partial
+ * insert (job row without its app link) would create an orphan job the
+ * dedup-by-app-link guard can't see, so the next deploy would create yet
+ * another — the source of the duplicate "Auto:" jobs (#757).
+ */
+async function createAutoJob(opts: {
+  appId: string;
+  appName: string;
+  organizationId: string;
+  targetId: string;
+}): Promise<string> {
+  const { appId, appName, organizationId, targetId } = opts;
   const jobId = nanoid();
   await db.transaction(async (tx) => {
     await tx.insert(backupJobs).values({
       id: jobId,
       organizationId,
-      targetId: target.id,
+      targetId,
       name: `Auto: ${appName}`,
       schedule: staggeredSchedule(appId),
       enabled: true,
@@ -317,4 +329,35 @@ export async function ensureAutoBackupJob(opts: {
   });
 
   return jobId;
+}
+
+/**
+ * Cover an app with a job on a chosen target. Reuses a job of the org on that
+ * target that already links the app or is named "Auto: <app>"; otherwise
+ * creates one. Returns the job ID.
+ */
+export async function ensureAutoBackupJobOnTarget(opts: {
+  appId: string;
+  appName: string;
+  organizationId: string;
+  targetId: string;
+}): Promise<string> {
+  const { appId, appName, organizationId, targetId } = opts;
+
+  const onTarget = await db.query.backupJobs.findMany({
+    where: and(eq(backupJobs.organizationId, organizationId), eq(backupJobs.targetId, targetId)),
+    columns: { id: true, name: true },
+    with: { backupJobApps: { columns: { appId: true } } },
+  });
+
+  const linked = onTarget.find((j) => j.backupJobApps.some((a) => a.appId === appId));
+  if (linked) return linked.id;
+
+  const named = onTarget.find((j) => j.name === `Auto: ${appName}`);
+  if (named) {
+    await db.insert(backupJobApps).values({ backupJobId: named.id, appId }).onConflictDoNothing();
+    return named.id;
+  }
+
+  return createAutoJob(opts);
 }

@@ -5,6 +5,7 @@
 // ---------------------------------------------------------------------------
 
 import { resolve } from "path";
+import type { Durability } from "./durability";
 
 /** Above this, a volume is listed for opt-in rather than backed up. */
 export const AUTO_INCLUDE_MAX_BYTES = 10 * 1024 ** 3;
@@ -68,7 +69,7 @@ export type SelectableVolume = {
   type: "named" | "bind";
   source: string | null;
   persistent: boolean;
-  durability: string | null;
+  durability: Durability | null;
   backupStrategy: string;
   backupSelection: "include" | "exclude" | null;
 };

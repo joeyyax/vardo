@@ -17,7 +17,9 @@ import {
   backupJobs,
   domainCertChecks,
   domains,
+  volumes,
 } from "@/lib/db/schema";
+import { appsWithBackupState, type SelectableVolume } from "@/lib/backups/selection";
 import type { ConditionInput } from "./conditions";
 
 export type AdvisoryInput = {
@@ -61,6 +63,28 @@ export async function loadAdvisoryInputs(now: number): Promise<Map<string, Advis
       .innerJoin(backupJobs, eq(backupJobApps.backupJobId, backupJobs.id));
     const { covered, lastRunByApp } = backupCoverage(appRows, jobRows);
 
+    const volumeRows = await db
+      .select({
+        id: volumes.id,
+        appId: volumes.appId,
+        appName: apps.name,
+        name: volumes.name,
+        mountPath: volumes.mountPath,
+        type: volumes.type,
+        source: volumes.source,
+        persistent: volumes.persistent,
+        durability: volumes.durability,
+        backupStrategy: volumes.backupStrategy,
+        backupSelection: volumes.backupSelection,
+      })
+      .from(volumes)
+      .innerJoin(apps, eq(apps.id, volumes.appId));
+    const { readHostMounts } = await import("@/lib/backups/enroll");
+    const withState = appsWithBackupState(
+      volumeRows as (SelectableVolume & { appName: string })[],
+      await readHostMounts(),
+    );
+
     const scanByApp = await latestScans(appRows.map((a) => a.id));
     const certByApp = soonestCertPerApp(
       await db
@@ -79,7 +103,7 @@ export async function loadAdvisoryInputs(now: number): Promise<Map<string, Advis
       byApp.set(app.id, {
         security: scanByApp.get(app.id) ?? null,
         backup: {
-          hasVolumes: (app.persistentVolumes?.length ?? 0) > 0,
+          hasVolumes: withState.has(app.id) || (app.persistentVolumes?.length ?? 0) > 0,
           configured: covered.has(app.id),
           lastRunAt: lastRunByApp.get(app.id) ?? null,
         },

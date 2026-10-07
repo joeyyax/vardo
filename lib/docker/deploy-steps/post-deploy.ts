@@ -137,8 +137,22 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
       const currentVolumes = await db.query.volumes.findMany({
         where: eq(volumes.appId, ctx.appId),
       });
-      const existingPaths = new Set(currentVolumes.map((v) => v.mountPath));
-      const newDetected = detectedVolumes.filter((v) => !existingPaths.has(v.mountPath));
+      const existingByPath = new Map(currentVolumes.map((v) => [v.mountPath, v]));
+      const newDetected = detectedVolumes.filter((v) => !existingByPath.has(v.mountPath));
+      const touchedIds: string[] = [];
+
+      // A mount path whose source changed is a different volume. Its old
+      // backup selection no longer applies.
+      for (const vol of detectedVolumes) {
+        const row = existingByPath.get(vol.mountPath);
+        if (!row || (row.type === vol.type && (vol.type !== "bind" || row.source === vol.source))) continue;
+        await db
+          .update(volumes)
+          .set({ type: vol.type, source: vol.source, backupSelection: null, updatedAt: new Date() })
+          .where(eq(volumes.id, row.id));
+        touchedIds.push(row.id);
+        log(`[deploy] ${vol.mountPath} now mounts ${vol.source ?? vol.name}`);
+      }
 
       if (newDetected.length > 0) {
         for (const vol of newDetected) {
@@ -160,8 +174,10 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
               ? { kind: proposal.kind, service: vol.service }
               : null;
 
+          const volumeId = nanoid();
+          touchedIds.push(volumeId);
           await db.insert(volumes).values({
-            id: nanoid(),
+            id: volumeId,
             appId: ctx.appId,
             organizationId: ctx.organizationId,
             name: vol.name,
@@ -185,6 +201,10 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
           }
         }
         log(`[deploy] Detected ${newDetected.length} volume(s): ${newDetected.map((v) => v.mountPath).join(", ")}`);
+      }
+
+      if (touchedIds.length > 0) {
+        await enrollDetectedVolumes(ctx, app.name, currentVolumes.length === 0, touchedIds, log);
       }
     }
   } catch {
@@ -511,4 +531,42 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
   }
 
   return ctx;
+}
+
+/**
+ * Back up what a deploy found. A first deploy enrolls the app; later ones add
+ * new volumes to a job the app already has. Never blocks the deploy.
+ */
+async function enrollDetectedVolumes(
+  ctx: DeployContext,
+  appName: string,
+  firstDetection: boolean,
+  volumeIds: string[],
+  log: (line: string) => void,
+): Promise<void> {
+  try {
+    const { enrollNewApp, enrollNewVolumes } = await import("@/lib/backups/enroll");
+    if (firstDetection) {
+      const result = await enrollNewApp({
+        appId: ctx.appId,
+        appName,
+        organizationId: ctx.organizationId,
+        measure: true,
+      });
+      if (result.status === "covered" && result.jobId) log(`[deploy] Backups: added to job ${result.jobId}`);
+      if (result.status === "no-target") log("[deploy] Backups: no target configured — app is not backed up");
+      return;
+    }
+    const { backupJobApps } = await import("@/lib/db/schema");
+    const links = await db.query.backupJobApps.findMany({
+      where: eq(backupJobApps.appId, ctx.appId),
+      with: { backupJob: { columns: { organizationId: true } } },
+    });
+    const covered = links.some(
+      (l) => l.backupJob.organizationId === ctx.organizationId || l.backupJob.organizationId === null,
+    );
+    await enrollNewVolumes({ appId: ctx.appId, appName, volumeIds, covered });
+  } catch (err) {
+    log(`[deploy] Warning: backup enrollment — ${err instanceof Error ? err.message : err}`);
+  }
 }

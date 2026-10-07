@@ -34,6 +34,7 @@ import {
 } from "@/lib/docker/import";
 import { isUniqueViolation } from "@/lib/api/error-response";
 import { APP_NAME_TAKEN_ERROR, isTopLevelAppNameTaken } from "@/lib/db/app-name";
+import { enrollQuietly } from "@/lib/backups/enroll";
 
 type RouteParams = {
   params: Promise<{ orgId: string; composeProject: string }>;
@@ -478,6 +479,9 @@ async function handler(request: NextRequest, { params }: RouteParams) {
 
     const { app } = result;
     const appId = app.id;
+
+    // Imported mounts hold existing data, so sizes are measured off the request.
+    void enrollQuietly({ appId, appName: app.name, organizationId: orgId, measure: true });
 
     // Warn about local images, host networking, and @file provider references
     for (const detail of validDetails) {
