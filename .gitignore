@@ -67,3 +67,7 @@ node-compile-cache/
 
 # screenshots
 .screenshots/
+
+# tool output
+.vitest/
+screenshots/
