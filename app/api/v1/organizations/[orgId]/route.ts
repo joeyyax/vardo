@@ -1,16 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { organizations, memberships } from "@/lib/db/schema";
-import { getSession } from "@/lib/auth/session";
-import { requireAppAdmin } from "@/lib/auth/admin";
+import { organizations } from "@/lib/db/schema";
+import { requireSession } from "@/lib/auth/session";
+import { isAppAdmin } from "@/lib/auth/admin";
+import { isOrgAdmin } from "@/lib/auth/permissions";
+import { verifyOrgAccess } from "@/lib/api/verify-access";
+import { handleRouteError } from "@/lib/api/error-response";
 import { recordActivity } from "@/lib/activity";
-import { eq, and } from "drizzle-orm";
-import { logger } from "@/lib/logger";
+import { eq } from "drizzle-orm";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
-
-const log = logger.child("api:organizations");
 
 const updateOrgSchema = z.object({
   name: z.string().min(1, "Organization name cannot be empty").max(100).trim().optional(),
@@ -26,58 +26,27 @@ type RouteParams = {
   params: Promise<{ orgId: string }>;
 };
 
-async function verifyOrgAccess(userId: string, orgId: string) {
-  return db.query.memberships.findFirst({
-    where: and(
-      eq(memberships.userId, userId),
-      eq(memberships.organizationId, orgId)
-    ),
-  });
-}
-
-export async function GET(request: NextRequest, { params }: RouteParams) {
+export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
-    const session = await getSession();
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
     const { orgId } = await params;
-    const membership = await verifyOrgAccess(session.user.id, orgId);
-    if (!membership) {
+    const access = await verifyOrgAccess(orgId);
+    if (!access) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    const org = await db.query.organizations.findFirst({
-      where: eq(organizations.id, orgId),
-    });
-
-    if (!org) {
-      return NextResponse.json({ error: "Organization not found" }, { status: 404 });
-    }
-
     return NextResponse.json({
-      organization: org,
-      membership: { id: membership.id, role: membership.role },
+      organization: access.organization,
+      membership: { id: access.membership.id, role: access.membership.role },
     });
   } catch (error) {
-    log.error("Error fetching organization:", error);
-    return NextResponse.json({ error: "Failed to fetch organization" }, { status: 500 });
+    return handleRouteError(error, "Error fetching organization");
   }
 }
 
 async function handlePatch(request: NextRequest, { params }: RouteParams) {
   try {
-    const session = await getSession();
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
+    const session = await requireSession();
     const { orgId } = await params;
-    const membership = await verifyOrgAccess(session.user.id, orgId);
-    if (!membership || (membership.role !== "owner" && membership.role !== "admin")) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
 
     const body = await request.json();
     const parsed = updateOrgSchema.safeParse(body);
@@ -88,11 +57,15 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // trusted is a security boundary — only platform admins may change it
-    if (parsed.data.trusted !== undefined) {
-      try {
-        await requireAppAdmin();
-      } catch {
+    // trusted is a security boundary. Instance admins set it on any org from the admin panel.
+    if (parsed.data.trusted !== undefined && !(await isAppAdmin())) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    const trustedOnly = Object.keys(parsed.data).every((k) => k === "trusted");
+    if (!trustedOnly) {
+      const access = await verifyOrgAccess(orgId);
+      if (!access || !isOrgAdmin(access.membership.role)) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
       }
     }
@@ -116,6 +89,10 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
       .where(eq(organizations.id, orgId))
       .returning();
 
+    if (!org) {
+      return NextResponse.json({ error: "Organization not found" }, { status: 404 });
+    }
+
     if (parsed.data.trusted !== undefined) {
       recordActivity({
         organizationId: orgId,
@@ -127,8 +104,7 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ organization: org });
   } catch (error) {
-    log.error("Error updating organization:", error);
-    return NextResponse.json({ error: "Failed to update organization" }, { status: 500 });
+    return handleRouteError(error, "Error updating organization");
   }
 }
 
