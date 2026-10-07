@@ -13,6 +13,7 @@ import { TargetForm } from "./target-form";
 import { JobForm } from "./job-form";
 import { BackupHistory } from "./backup-history";
 import { KeyEscrowCard } from "./key-escrow-card";
+import { NotBackedUp } from "./not-backed-up";
 import { useCan } from "@/components/capabilities-provider";
 import { useNotificationStream } from "@/hooks/use-notification-stream";
 import { applyBackupEvent, type ProgressByJob } from "./progress-state";
@@ -258,6 +259,10 @@ export function BackupPage({
           </CardContent>
         </Card>
       </div>
+
+      {scope === "org" && can("backup.jobs.manage") && (
+        <NotBackedUp orgId={orgId} targets={targets} heading={Heading} onChanged={fetchData} />
+      )}
 
       {/* Backup history */}
       <Card>

@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // #874: the first deploy that finds an app's volumes enrolls it in backups
 // directly. Hooks are mocked to do nothing, as they do with the flag off.
 
-const { dbMock, writes, emitMock, execCalls, execFails, hooksMock, queueDrained, commitFails, drainMock, endDrainMock, enrollNewApp, enrollNewVolumes } = vi.hoisted(() => {
+const { dbMock, writes, emitMock, execCalls, execFails, hooksMock, queueDrained, drainMock, endDrainMock, enrollNewApp, enrollNewVolumes } = vi.hoisted(() => {
   const drainMock = vi.fn().mockResolvedValue([]);
   const endDrainMock = vi.fn();
   type Write = { table: unknown; values: Record<string, unknown> };
@@ -13,7 +13,6 @@ const { dbMock, writes, emitMock, execCalls, execFails, hooksMock, queueDrained,
   const emitMock = vi.fn();
   const hooksMock = vi.fn().mockResolvedValue({ allowed: true });
   const queueDrained = vi.fn().mockResolvedValue(true);
-  const commitFails = { value: false };
 
   function makeUpdateChain(table: unknown) {
     const where = vi.fn().mockResolvedValue(undefined);
@@ -35,7 +34,7 @@ const { dbMock, writes, emitMock, execCalls, execFails, hooksMock, queueDrained,
   };
 
   return {
-    dbMock, writes, emitMock, execCalls, execFails, hooksMock, queueDrained, commitFails, drainMock, endDrainMock,
+    dbMock, writes, emitMock, execCalls, execFails, hooksMock, queueDrained, drainMock, endDrainMock,
     enrollNewApp: vi.fn().mockResolvedValue({ status: "covered", jobId: "job-1" }),
     enrollNewVolumes: vi.fn().mockResolvedValue(undefined),
   };
