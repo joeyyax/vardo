@@ -4,10 +4,10 @@
 **/.env*
 !.env.example
 coverage
-**/test-results
-**/playwright-report
-**/.source
-**/out
+test-results
+playwright-report
+.source
+out
 .claude
 docs
 .github
