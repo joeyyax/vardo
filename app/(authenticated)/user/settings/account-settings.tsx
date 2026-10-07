@@ -1000,7 +1000,7 @@ export function ApiTokens({ orgId }: { orgId: string }) {
         <div className="flex items-center justify-between">
           <div>
             <CardTitle>API tokens</CardTitle>
-            <CardDescription>Tokens authenticate API requests. Treat them like passwords — they grant full access to your organization. Turn on &quot;all my organizations&quot; to let a token act on every organization you belong to. A token has no instance-admin access unless you grant it.</CardDescription>
+            <CardDescription>Tokens authenticate API requests. Treat them like passwords — they grant full access to your organization. Turn on &quot;all my organizations&quot; to let a token act on every organization you belong to. Tokens never carry instance-admin access.</CardDescription>
           </div>
           <Button
             size="sm"
