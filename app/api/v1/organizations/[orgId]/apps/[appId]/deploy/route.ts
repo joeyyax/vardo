@@ -34,7 +34,6 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ org
     const refused = refuseSystemManaged(app, "deploy");
     if (refused) return refused;
 
-    // Parse optional environmentId, groupEnvironmentId, and deployAll flag from body
     let environmentId: string | undefined;
     let groupEnvironmentId: string | undefined;
     let deployAll = false;
@@ -47,9 +46,7 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ org
       // No body or invalid JSON — deploy to default (production)
     }
 
-    // Group deploy: triggered by deployAll flag or explicit groupEnvironmentId
     if (app.projectId && (deployAll || groupEnvironmentId)) {
-      // Group deploy via project
       return createSSEResponse(request, async (sendEvent) => {
         const result = await deployGroup({
           projectId: app.projectId!,
@@ -72,15 +69,8 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ org
       });
     }
 
-    // Single app deploy. requestDeploy handles cancel-and-replace: if a build
-    // is already in progress for this app, it is cancelled (pre-build stages)
-    // or waited on (post-build stages) before the new deploy starts.
-    //
-    // NOTE: Do NOT pass request.signal to requestDeploy. The request signal
-    // fires when the SSE connection drops (client navigates away, reconnects,
-    // or hits backpressure), which is not the same as the user pressing
-    // "abort". Passing it through caused deploys to report "aborted" when the
-    // SSE connection briefly reset after the build step.
+    // requestDeploy cancels or waits on an in-progress build.
+    // Don't pass request.signal: it fires when SSE drops, not on abort.
     return createSSEResponse(request, async (sendEvent) => {
       const result = await requestDeploy({
         appId: appId,
@@ -105,9 +95,5 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ org
   }
 }
 
-// Deploys use the higher-ceiling "mutation" tier rather than "critical".
-// A burst of rapid deploys must never be rejected: requestDeploy already
-// serializes them via per-app cancel-and-replace (latest commit wins) and the
-// system-level FIFO concurrency queue (#682). The limit here is only a coarse
-// abuse ceiling, not a per-deploy cooldown.
+// Coarse abuse ceiling; requestDeploy already serializes deploys.
 export const POST = withRateLimit(handler, { tier: "mutation", key: "deploy" });

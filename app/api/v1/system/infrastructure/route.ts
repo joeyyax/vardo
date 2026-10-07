@@ -7,11 +7,7 @@ import { getSession } from "@/lib/auth/session";
 
 /**
  * GET — state of Vardo's own stack and the shared core services.
- *
- * Deliberately outside /organizations: this is the platform every org runs on,
- * so it takes no org id and reads none. What it returns is a fixed set of
- * infrastructure named in the codebase, never a tenant's apps, which is why
- * any authenticated session may read it without widening org scope.
+ * Platform-level and tenant-free, so any authenticated session may read it.
  */
 export async function GET() {
   try {

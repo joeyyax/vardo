@@ -146,12 +146,10 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
 
     // Update app associations if provided
     if (uniqueAppIds) {
-      // Remove existing
       await db
         .delete(backupJobApps)
         .where(eq(backupJobApps.backupJobId, jobId));
 
-      // Insert new
       if (uniqueAppIds.length > 0) {
         await db.insert(backupJobApps).values(
           uniqueAppIds.map((appId) => ({
@@ -162,7 +160,7 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
       }
     }
 
-    // Runs prune too, but a paused job has none, so apply a new policy now.
+    // A paused job doesn't prune, so apply a new policy now.
     if (RETENTION_FIELDS.some((field) => field in updateData)) {
       try {
         await pruneBackups(jobId);

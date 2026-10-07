@@ -20,8 +20,7 @@ export async function GET() {
       sparklines,
     ] = await Promise.all([
       db.select({ userCount: sql<number>`count(*)` }).from(user),
-      // Vardo's own stack and the core services live in the system org. Counting
-      // them here put this tile 15 apps above the same fleet on /metrics.
+      // Excludes the system org (Vardo's stack and core services).
       db
         .select({
           appCount: sql<number>`count(*)`,
@@ -35,8 +34,6 @@ export async function GET() {
       buildSparklines(30),
     ]);
 
-    // Health checks run in parallel but don't block the response shape
-    // Resource checks (docker system df) are slow (~3s), service checks are fast
     const { resources, services, runtime } = await getSystemHealth();
 
     return NextResponse.json({

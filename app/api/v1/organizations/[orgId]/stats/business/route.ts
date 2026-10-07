@@ -40,7 +40,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     const metrics = requestedMetrics?.filter((m) => VALID_METRICS.includes(m)) ?? VALID_METRICS;
 
-    // Historical query
     if (from && to) {
       const fromMs = parseInt(from);
       const toMs = parseInt(to);
@@ -57,7 +56,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       });
     }
 
-    // Latest values
     const results = await Promise.all(
       metrics.map(async (metric) => ({
         metric,

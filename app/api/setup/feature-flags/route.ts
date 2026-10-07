@@ -31,7 +31,7 @@ async function handlePost(request: NextRequest) {
 
   const body = await request.json();
 
-  // Validate: boolean values only, and only flags we actually declare
+  // Booleans for declared flags only.
   const flagsSchema = z.record(z.string(), z.boolean());
   const parsed = flagsSchema.safeParse(body);
   if (!parsed.success) {
@@ -52,8 +52,8 @@ async function handlePost(request: NextRequest) {
 
   const layers = await getFeatureFlagLayers();
 
-  // Refuse writes that wouldn't take effect: the dashboard kill switch is
-  // config-only, and env vars or vardo.yml outrank whatever we'd store here.
+  // Refuse writes that wouldn't take effect: the dashboard kill switch is config-only
+  // and env vars or vardo.yml outrank stored values.
   const pinned: string[] = [];
   for (const flag of Object.keys(parsed.data) as FeatureFlag[]) {
     if (getFlagConfig(flag).configOnly) {
@@ -82,16 +82,12 @@ async function handlePost(request: NextRequest) {
 
   await setSystemSetting("feature_flags", JSON.stringify(merged));
 
-  // Bust all caches so the new flags take effect immediately
+  // Bust caches so the new flags take effect.
   invalidateSettingsCache("feature_flags");
   await invalidateFlagCache();
   revalidatePath("/", "layout");
 
-  // Provision core services for changed flags. Enabling awaits the first deploy
-  // and rolls back on failure (provisionForFlag throws), so a failed integration
-  // never lingers as a connected-but-broken app (#741). On failure we revert
-  // that flag and relay why, so turning something on never reports success
-  // while the service isn't there.
+  // Provision services for changed flags. A failed enable reverts that flag and returns why.
   const failed: string[] = [];
   const reasons: string[] = [];
   for (const [flag, enabled] of Object.entries(parsed.data)) {

@@ -9,13 +9,8 @@ import { resolveVardoComposeFile } from "@/lib/paths";
 
 const log = logger.child("admin:maintenance:restart");
 
-// POST /api/v1/admin/maintenance/restart
-//
-// Restarts one or all Vardo stack services via `docker compose up -d`.
-// Body: { service?: string } — omit service to restart all services.
-//
-// Uses docker compose up -d rather than docker restart so that config
-// changes and image updates are picked up on recreate.
+// POST /api/v1/admin/maintenance/restart — recreates one or all stack services with `docker compose up -d`.
+// Body: { service?: string }. Omit service to restart all.
 async function handlePost(request: NextRequest) {
   try {
     await requireAppAdmin();

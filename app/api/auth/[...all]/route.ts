@@ -7,9 +7,8 @@ import { isAuthMethodEnabledAsync, getAuthMethodConfig, type AuthMethod } from "
 
 const handler = toNextJsHandler(auth);
 
-// Endpoint prefixes owned by each sign-in method. Checked against the path
-// under /api/auth, so a disabled method is refused even if a stale auth
-// instance still has its routes mounted.
+// Endpoint prefixes owned by each sign-in method.
+// Refuses a disabled method even if a stale auth instance still mounts its routes.
 const METHOD_PATHS: [AuthMethod, string[]][] = [
   ["password", ["/sign-in/email", "/sign-up/email", "/forget-password", "/reset-password", "/change-password"]],
   ["passkey", ["/passkey", "/sign-in/passkey"]],
@@ -36,10 +35,7 @@ async function socialProviderMethod(request: NextRequest, authPath: string): Pro
   }
 }
 
-/**
- * Refuse requests to a sign-in method that is switched off. Creating the first
- * user bypasses the password check, since setup has no other way in.
- */
+/** Refuses requests to a disabled sign-in method. First-user setup skips the password check. */
 async function guardAuthMethods(request: NextRequest): Promise<NextResponse | null> {
   const url = new URL(request.url);
   const authPath = url.pathname.replace(/^\/api\/auth/, "");

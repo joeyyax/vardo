@@ -14,12 +14,7 @@ const promoteSchema = z.object({
   includeEnvVars: z.boolean().default(false),
 }).strict();
 
-/**
- * POST /api/v1/admin/mesh/promote — promote a project to a target instance.
- *
- * Orchestration endpoint called by the admin UI. Builds a project bundle
- * locally, then POSTs it to the target peer's /api/v1/mesh/promote endpoint.
- */
+/** POST /api/v1/admin/mesh/promote — builds a project bundle and sends it to the target peer. */
 async function handlePost(request: NextRequest) {
   try {
     await requireAppAdmin();
@@ -35,13 +30,11 @@ async function handlePost(request: NextRequest) {
 
     const { projectId, targetPeerId, environment, includeEnvVars } = parsed.data;
 
-    // Build the project bundle from local data
     const bundle = await buildProjectBundle(projectId, {
       transferType: "promote",
       includeEnvVars,
     });
 
-    // Send to the target peer
     const result = await meshJsonFetch(
       targetPeerId,
       "/api/v1/mesh/promote",

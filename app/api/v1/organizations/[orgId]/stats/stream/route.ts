@@ -38,8 +38,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     let orgApps = await loadApps();
 
-    // Denominator for the CPU figure — container percentages sum past 100 on a
-    // multi-core host.
+    // CPU denominator; container percentages sum past 100 on multi-core hosts.
     let cpuCount = 0;
     try {
       cpuCount = (await getSystemInfo()).cpus;
@@ -52,7 +51,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     return createSSEResponse(request, async (sendEvent) => {
       let tickCount = 0;
 
-      // Slow data cache — org-scoped (per-app disk only, no system-wide stats)
+      // Org-scoped slow cache: per-app disk only.
       let cachedAppDisk: Record<string, number> = {};
 
       async function refreshAppDisk() {
@@ -71,15 +70,13 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         } catch { /* skip */ }
       }
 
-      // App rows carry status, so a connection held open for hours would
-      // otherwise render whatever the statuses were when it opened.
+      // Refreshes app statuses on long-lived connections.
       async function refreshApps() {
         try {
           orgApps = await loadApps();
         } catch { /* skip */ }
       }
 
-      // Start app disk fetch in background
       refreshAppDisk();
 
       const unsubscribe = subscribe((allMetrics) => {

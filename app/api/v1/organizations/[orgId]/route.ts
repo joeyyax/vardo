@@ -56,7 +56,7 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // trusted is a security boundary. Instance admins set it on any org from the admin panel.
+    // trusted is a security boundary. Only instance admins set it.
     if (parsed.data.trusted !== undefined && !(await isAppAdmin())) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }

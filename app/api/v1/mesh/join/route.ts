@@ -24,12 +24,7 @@ const joinSchema = z.object({
   outboundToken: z.string().optional(),
 }).strict();
 
-/**
- * POST /api/v1/mesh/join — join the mesh using an invite code.
- *
- * No session auth — the invite code is the credential.
- * Rate limited: 5 attempts per minute per IP.
- */
+/** POST /api/v1/mesh/join — the invite code is the credential. Rate limited to 5/min per IP. */
 async function handler(request: NextRequest) {
   try {
     const body = await request.json();
@@ -58,7 +53,7 @@ async function handler(request: NextRequest) {
       getInstanceId(),
     ]);
 
-    // Store the joiner's outbound token so we can call their API
+    // The joiner's token for calling its API.
     if (joinerOutboundToken) {
       await db
         .update(meshPeers)

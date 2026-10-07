@@ -28,12 +28,10 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    // Fetch environments with env var counts
     const envs = await db.query.environments.findMany({
       where: eq(environments.appId, appId),
     });
 
-    // Get env var counts per environment
     const varCounts = await db
       .select({
         environmentId: envVars.environmentId,
@@ -47,7 +45,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       varCounts.map((v) => [v.environmentId, v.count])
     );
 
-    // Also count vars with no environment (null)
+    // Vars with no environment.
     const nullCount = countMap.get(null) ?? 0;
 
     const result = envs.map((env) => ({
@@ -55,7 +53,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       envVarCount: countMap.get(env.id) ?? 0,
     }));
 
-    // Check if app belongs to a project — if so, include group environments
+    // Apps in a project include group environments.
     const appRecord = await db.query.apps.findFirst({
       where: eq(apps.id, appId),
       columns: { projectId: true },
@@ -141,7 +139,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       if (previewGate) return previewGate;
     }
 
-    // Check if this app belongs to a project — if so, create a group environment
+    // Apps in a project get a group environment.
     const appRecord = await db.query.apps.findFirst({
       where: eq(apps.id, appId),
       columns: { projectId: true },
@@ -169,7 +167,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json(result, { status: 201 });
     }
 
-    // Check if this is the first environment — make it default
+    // The first environment is the default.
     const existingCount = await db
       .select({ count: sql<number>`count(*)::int` })
       .from(environments)
@@ -192,7 +190,6 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       })
       .returning();
 
-    // Clone env vars from source environment
     if (parsed.data.cloneFrom) {
       const sourceVars = await db.query.envVars.findMany({
         where: and(
@@ -201,7 +198,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
         ),
       });
 
-      // Also include base vars (environmentId IS NULL) if cloning from production
+      // Cloning production includes base vars.
       const sourceEnv = await db.query.environments.findFirst({
         where: and(
           eq(environments.id, parsed.data.cloneFrom),
@@ -216,7 +213,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
             sql`${envVars.environmentId} IS NULL`,
           ),
         });
-        // Base vars first, env-specific override
+        // Base vars first so env-specific ones override.
         const merged = new Map<string, typeof sourceVars[0]>();
         for (const v of baseVars) merged.set(v.key, v);
         for (const v of sourceVars) merged.set(v.key, v);
@@ -308,7 +305,7 @@ async function handleDelete(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Delete the environment (cascades to env vars via FK)
+    // Cascades to env vars.
     await db
       .delete(environments)
       .where(eq(environments.id, environmentId));

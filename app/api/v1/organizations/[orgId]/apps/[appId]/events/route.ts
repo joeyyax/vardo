@@ -15,13 +15,8 @@ type RouteParams = {
 };
 
 // GET /api/v1/organizations/[orgId]/apps/[appId]/events
-// SSE stream of app state changes (deploy status, container status, etc.)
-//
-// Reads from the org-scoped event stream and filters to events matching
-// the requested appId. Uses Redis Streams (readStream) for catchup + live tail.
-//
-// Query params:
-//   lastId — resume from this stream entry ID (for reconnection)
+// SSE stream of this app's state changes, filtered from the org event stream.
+// Query: lastId resumes from a stream entry.
 async function handleGet(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
@@ -82,7 +77,6 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
         const unregister = closeOnShutdown(cleanup);
         request.signal.addEventListener("abort", cleanup);
 
-        // Read from the org event stream, filtering to this app's events
         (async () => {
           try {
             const entries = readStream(eventStream(orgId), {
@@ -93,7 +87,6 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
             for await (const entry of entries) {
               const { fields } = entry;
 
-              // Parse the BusEvent payload and filter by appId
               let busEvent: BusEvent;
               try {
                 busEvent = JSON.parse(fields.payload) as BusEvent;
@@ -101,16 +94,11 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
                 continue; // Skip malformed entries
               }
 
-              // Only forward events that belong to this app
               if (!("appId" in busEvent) || busEvent.appId !== appId) {
                 continue;
               }
 
-              // Map BusEvent type to SSE event name for frontend compatibility.
-              // The old pub/sub system used event names like "deploy:complete",
-              // "deploy:stage", etc. BusEvents use dot notation (deploy.success,
-              // deploy.failed). Map to the "update" event with the full payload
-              // to maintain the same shape the frontend expects.
+              // Forwarded as an "update" event, the shape the frontend expects.
               sendEvent("update", {
                 ...busEvent,
                 event: busEvent.type,

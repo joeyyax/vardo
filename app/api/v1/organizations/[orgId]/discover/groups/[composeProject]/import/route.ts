@@ -48,9 +48,7 @@ const importGroupSchema = z.object({
     .string()
     .min(1, "Name is required")
     .regex(/^[a-z0-9-]+$/, "Name must be lowercase alphanumeric with hyphens"),
-  // Optional git URL for compose projects that need to build from source.
-  // When provided, Vardo clones the repo and uses docker-compose.yml with
-  // build: directives instead of pulling pre-built images.
+  // Git URL for stacks that build from source.
   gitUrl: z.string().url().optional(),
   gitBranch: z.string().max(255).optional(),
 }).refine(
@@ -70,7 +68,7 @@ async function handler(request: NextRequest, { params }: RouteParams) {
     const gate = await requirePlugin("container-import");
     if (gate) return gate;
 
-    // Validate composeProject — only allow safe identifiers
+    // Only safe identifiers.
     if (!/^[a-zA-Z0-9_-]{1,128}$/.test(composeProject)) {
       return NextResponse.json({ error: "Invalid compose project name" }, { status: 400 });
     }
@@ -83,11 +81,7 @@ async function handler(request: NextRequest, { params }: RouteParams) {
 
     const data = parsed.data;
 
-    // Guard against re-importing the same compose group. Check both the
-    // compose project name (importedComposeProject) and the requested slug
-    // (name) so the client gets a useful error in both cases. Explicit checks
-    // here give better errors and avoid unnecessary container inspection work;
-    // the unique constraints catch any race condition at DB level.
+    // Blocks re-importing by compose project or slug. Unique constraints catch races.
     const existingByGroup = await db.query.apps.findFirst({
       where: and(
         eq(apps.organizationId, orgId),
@@ -102,8 +96,7 @@ async function handler(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Only an app in this org can be named in the response — one held by
-    // another org must stay invisible.
+    // An app held by another org must stay invisible.
     const existingBySlug = await db.query.apps.findFirst({
       where: and(eq(apps.organizationId, orgId), eq(apps.name, data.name)),
       columns: { id: true },
@@ -118,7 +111,6 @@ async function handler(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: APP_NAME_TAKEN_ERROR }, { status: 409 });
     }
 
-    // Discover all unmanaged containers and find those in this compose group
     const discovery = await discoverContainers();
     const group = discovery.groups.find((g) => g.composeProject === composeProject);
     if (!group || group.containers.length === 0) {
@@ -128,7 +120,6 @@ async function handler(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Inspect each container for full detail (env, mounts, labels, etc.)
     const details = await Promise.all(
       group.containers.map((c) => getContainerDetail(c.id))
     );
@@ -141,8 +132,7 @@ async function handler(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Auto-detect git URL from compose project directory if not provided.
-    // Uses container labels to find the original compose file location.
+    // Detects the git URL from container labels when none is given.
     let effectiveGitUrl = data.gitUrl;
     let effectiveGitBranch = data.gitBranch;
     let autoDetectedGit = false;
@@ -163,30 +153,16 @@ async function handler(request: NextRequest, { params }: RouteParams) {
     const sslConfig = await getSslConfig();
     const certResolver = getPrimaryIssuer(sslConfig);
 
-    // Build a multi-service compose file by merging individual container configs.
-    // Use the com.docker.compose.service label as the service name, falling back
-    // to the container name slugified.
-    //
-    // Domain detection: each service may already carry Traefik routing labels
-    // (preserved via ALLOWED_LABEL_PREFIXES in generateComposeFromContainer).
-    // For services that have a detectable domain + container port but no existing
-    // Traefik labels, we inject them so Vardo-managed deploys keep the routing.
-    // autoTraefikLabels is set to false on the app record because the Traefik
-    // config is captured in the compose content rather than generated at deploy time.
+    // Merges each container into one compose file, keyed by service label or slugified name.
     const merged: ComposeFile = { services: {} };
 
-    // Collect per-service domain info for DB records (created after insert).
     type ServiceDomain = { serviceName: string; domain: string; port: number };
     const serviceDomains: ServiceDomain[] = [];
 
-    // Collect all mounts across services for volume DB records.
     type ServiceMount = { appId: string; mount: { name: string; source: string; destination: string; type: string } };
     const allMounts: Omit<ServiceMount, "appId">["mount"][] = [];
 
-    // Sensitive env vars collected across all services for encrypted envContent.
-    // All services with sensitive vars will reference the shared .env file.
-    // When multiple services define the same key with different values, the last
-    // service processed wins — a known limitation of the single envContent field.
+    // Sensitive vars from every service share one encrypted .env. The last duplicate key wins.
     const allSensitiveVars: Record<string, string> = {};
 
     const warnings: string[] = [];
@@ -195,8 +171,7 @@ async function handler(request: NextRequest, { params }: RouteParams) {
       const serviceName =
         (detail.labels["com.docker.compose.service"] ?? slugify(detail.name)) || slugify(detail.name);
 
-      // Parse env vars from the running container. Values containing ${...} are
-      // skipped to avoid Docker Compose variable substitution breaking the file.
+      // Skips values containing ${...}, which Compose would substitute.
       const { vars: envVars, skippedKeys } = parseContainerEnvVars(detail.env);
       if (skippedKeys.length > 0) {
         warnings.push(
@@ -204,8 +179,7 @@ async function handler(request: NextRequest, { params }: RouteParams) {
         );
       }
 
-      // Split env vars into sensitive (routed to encrypted envContent) and
-      // non-sensitive (inlined in the compose environment: block).
+      // Sensitive vars go to the encrypted .env; the rest inline.
       const publicVars: Record<string, string> = {};
       const sensitiveVars: Record<string, string> = {};
       for (const [k, v] of Object.entries(envVars)) {
@@ -215,15 +189,9 @@ async function handler(request: NextRequest, { params }: RouteParams) {
           publicVars[k] = v;
         }
       }
-      // Accumulate sensitive vars for the shared envContent written after the loop.
       Object.assign(allSensitiveVars, sensitiveVars);
 
-      // Strip the compose-project default network from networkMode so the
-      // generated compose doesn't declare an external network that will be
-      // orphaned after the original containers are removed. Docker Compose
-      // creates a shared default network for all services in the same file,
-      // so inter-service DNS resolution works without explicitly preserving
-      // the old project's network.
+      // Drops the old project's default network; the new compose creates its own.
       const effectiveNetworkMode = isComposeProjectNetwork(detail.networkMode, composeProject)
         ? ""
         : detail.networkMode;
@@ -253,34 +221,25 @@ async function handler(request: NextRequest, { params }: RouteParams) {
         entrypoint: detail.entrypoint,
         command: detail.command,
         labels: detail.labels,
-        // hasEnvVars adds env_file: [".env"] to the service. Set it when this
-        // service has sensitive vars that will be written to the encrypted env file.
+        // Adds env_file: [".env"] for services with sensitive vars.
         hasEnvVars: Object.keys(sensitiveVars).length > 0,
       });
 
-      // Reconstruct depends_on from Docker Compose labels. The container label
-      // com.docker.compose.depends_on encodes the original dependency graph
-      // (e.g. "redis:service_started:false,postgres:service_healthy:false").
-      // The object form preserves health-check conditions (service_healthy).
+      // Rebuilds depends_on, health conditions included, from com.docker.compose.depends_on.
       const dependsOn = parseComposeDependsOn(detail.labels);
       if (Object.keys(dependsOn).length > 0) {
         singleFile.services[serviceName].depends_on = dependsOn;
       }
 
-      // Inline non-sensitive env vars for this service directly in the compose.
       const composeSvc = singleFile.services[serviceName];
       if (composeSvc && Object.keys(publicVars).length > 0) {
         composeSvc.environment = publicVars;
       }
 
-      // Inject Traefik labels for services that have a detectable domain but no
-      // existing Traefik router labels. Services that already carry traefik.*
-      // labels (preserved from the original container) keep their own config.
+      // Services with their own traefik.* labels keep them.
       const hasExistingTraefikRouter = Object.keys(detail.labels).some(
         (k) => /^traefik\.http\.routers\..+\.rule$/.test(k)
       );
-      // Container port — resolved by detectContainerPort in getContainerDetail:
-      // Traefik labels → ExposedPorts → PortBindings fallback chain.
       const containerPort = detail.containerPort;
 
       if (detail.domain && containerPort && !hasExistingTraefikRouter) {
@@ -291,7 +250,6 @@ async function handler(request: NextRequest, { params }: RouteParams) {
           serviceName,
           certResolver,
         });
-        // Merge labels back so the rest of the loop picks them up
         singleFile.services[serviceName] = injected.services[serviceName];
       }
 
@@ -299,27 +257,19 @@ async function handler(request: NextRequest, { params }: RouteParams) {
         serviceDomains.push({ serviceName, domain: detail.domain, port: containerPort });
       }
 
-      // Merge this service's compose file into the combined file.
-      // Networks matching the compose project's default pattern are excluded —
-      // they are ephemeral and will not exist after the original containers
-      // are removed.
+      // Skips the old project's default networks; they go away with the original containers.
       mergeComposeFile(merged, singleFile, composeProject);
 
-      // Accumulate mounts for volume DB records
       for (const mount of detail.mounts) {
         allMounts.push(mount);
       }
     }
 
-    // Clean up empty network declarations
     if (merged.networks && Object.keys(merged.networks).length === 0) {
       delete merged.networks;
     }
 
-    // Extract containerPort and backendProtocol from the primary service's
-    // Traefik labels. The deploy engine strips and regenerates Traefik labels
-    // from these app-record fields, so they must be set correctly for features
-    // like serversTransport (HTTPS backends) to survive the round-trip.
+    // Deploy regenerates Traefik labels from these app fields.
     let importedContainerPort: number | null = null;
     let importedBackendProtocol: "http" | "https" | null = null;
     if (serviceDomains.length > 0) {
@@ -334,14 +284,12 @@ async function handler(request: NextRequest, { params }: RouteParams) {
         break;
       }
     }
-    // Auto-detect from port if scheme label wasn't set
     if (!importedBackendProtocol && importedContainerPort && (importedContainerPort === 443 || importedContainerPort === 8443)) {
       importedBackendProtocol = "https";
     }
 
     const composeContent = composeToYaml(merged);
 
-    // Encrypt sensitive vars collected across all services.
     let envContent: string | null = null;
     if (Object.keys(allSensitiveVars).length > 0) {
       const envLines = Object.entries(allSensitiveVars)
@@ -350,15 +298,12 @@ async function handler(request: NextRequest, { params }: RouteParams) {
       envContent = encrypt(envLines, orgId);
     }
 
-    // When gitUrl is provided (or auto-detected), use git source so Vardo
-    // clones the repo and builds from docker-compose.yml with build: directives.
-    // Otherwise fall back to direct source using the generated compose with image: refs.
+    // A git URL builds from the repo; otherwise deploy uses the generated compose.
     const useGitSource = !!effectiveGitUrl;
 
     let result: { app: (typeof apps)["$inferSelect"] };
     try {
       result = await db.transaction(async (tx) => {
-        // Resolve projectId — create new project if requested
         const resolvedProjectId = await resolveProjectForImport(
           tx,
           orgId,
@@ -366,7 +311,6 @@ async function handler(request: NextRequest, { params }: RouteParams) {
           data.newProjectName,
         );
 
-        // Insert parent app record for the compose stack
         const appId = nanoid();
         const [app] = await tx
           .insert(apps)
@@ -377,15 +321,11 @@ async function handler(request: NextRequest, { params }: RouteParams) {
             displayName: data.displayName,
             source: useGitSource ? "git" : "direct",
             deployType: "compose",
-            // When using git source, don't store composeContent — let deploy
-            // read the compose file from the cloned repo instead.
+            // Git source reads compose from the cloned repo.
             composeContent: useGitSource ? null : composeContent,
             gitUrl: effectiveGitUrl ?? null,
             gitBranch: effectiveGitBranch ?? null,
-            // autoTraefikLabels is false — Traefik config is baked into the
-            // compose content either from the original container labels or via
-            // explicit injectTraefikLabels above. Regenerating at deploy time
-            // would overwrite service-specific routing configs.
+            // Traefik config lives in the compose; regenerating it would overwrite per-service routing.
             autoTraefikLabels: false,
             containerPort: importedContainerPort,
             backendProtocol: importedBackendProtocol,
@@ -396,7 +336,6 @@ async function handler(request: NextRequest, { params }: RouteParams) {
           })
           .returning();
 
-        // Auto-create production environment
         await tx.insert(environments).values({
           id: nanoid(),
           appId,
@@ -405,8 +344,7 @@ async function handler(request: NextRequest, { params }: RouteParams) {
           isDefault: true,
         });
 
-        // Create domain records for services where a domain was detected.
-        // These appear in the Vardo UI and are used for TLS cert tracking.
+        // Domain records drive the UI and TLS cert tracking.
         if (serviceDomains.length > 0) {
           await tx.insert(domains).values(
             serviceDomains.map((sd, i) => ({
@@ -420,9 +358,7 @@ async function handler(request: NextRequest, { params }: RouteParams) {
           );
         }
 
-        // Create volume records for all mounts across all services.
-        // Deduplicate by mountPath to avoid unique-constraint violations when
-        // multiple services share the same host path.
+        // Deduped by mountPath; services can share a host path.
         const seenMountPaths = new Set<string>();
         const volumeRows: (typeof volumes)["$inferInsert"][] = [];
         for (const mount of allMounts) {
@@ -436,7 +372,7 @@ async function handler(request: NextRequest, { params }: RouteParams) {
             mountPath: mount.destination,
             type: mount.type === "bind" ? "bind" : "named",
             source: mount.source || null,
-            // Bind mounts are flagged as non-persistent — Vardo can't manage host paths
+            // Bind mounts aren't persistent; Vardo can't manage host paths.
             persistent: mount.type !== "bind",
           });
         }
@@ -450,9 +386,7 @@ async function handler(request: NextRequest, { params }: RouteParams) {
       if (txError instanceof Error && txError.message === "PROJECT_NOT_FOUND") {
         return NextResponse.json({ error: "Project not found" }, { status: 400 });
       }
-      // Race condition: another request inserted between our pre-check and insert.
-      // Do the same lookup as the pre-checks so the client can redirect to the
-      // existing app. Try by slug first, then by compose project.
+      // Lost a race to another insert. Return the existing app so the client can redirect.
       if (isUniqueViolation(txError)) {
         const existing =
           (await db.query.apps.findFirst({
@@ -483,11 +417,11 @@ async function handler(request: NextRequest, { params }: RouteParams) {
     // Imported mounts hold existing data, so sizes are measured off the request.
     void enrollQuietly({ appId, appName: app.name, organizationId: orgId, measure: true });
 
-    // Warn about local images, host networking, and @file provider references
+    // Warn about local images, host networking and @file provider references
     for (const detail of validDetails) {
       const svcName =
         (detail.labels["com.docker.compose.service"] ?? slugify(detail.name)) || slugify(detail.name);
-      // Only warn about local images if we're not using git source (which will build them)
+      // Git source builds local images.
       if (isLocalImage(detail.image) && !useGitSource) {
         warnings.push(
           `Service "${svcName}" uses a local image — Vardo won't be able to redeploy without pushing to a registry first.`
@@ -519,7 +453,6 @@ async function handler(request: NextRequest, { params }: RouteParams) {
       },
     });
 
-    // Pre-create deployment record, then migrate async
     const deploymentId = await createDeployment({
       appId,
       organizationId: orgId,

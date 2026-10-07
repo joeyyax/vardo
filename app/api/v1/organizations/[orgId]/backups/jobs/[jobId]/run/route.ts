@@ -23,7 +23,6 @@ async function handlePost(_request: NextRequest, { params }: RouteParams) {
     const org = await verifyOrgAccess(orgId, "backup.run");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    // Verify job exists and belongs to org
     const job = await db.query.backupJobs.findFirst({
       where: and(
         eq(backupJobs.id, jobId),
@@ -35,7 +34,6 @@ async function handlePost(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    // Run the backup (this will create history records)
     const results = await runBackup(jobId);
 
     return NextResponse.json({

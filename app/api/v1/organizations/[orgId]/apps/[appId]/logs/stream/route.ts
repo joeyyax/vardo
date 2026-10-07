@@ -70,8 +70,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     return createSSEResponse(request, async (sendEvent) => {
       const target = await resolveComposeTarget(scope.project, environmentName);
 
-      // Follow first, backfill second: anything written while history is read
-      // is held here rather than lost between the two calls.
+      // Follow first, then backfill, so nothing written in between is lost.
       const pending: ServiceLine[] = [];
       let live = false;
 
@@ -86,8 +85,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         ...(scope.prefixed ? [] : ["--no-log-prefix", ...(scope.service ? [scope.service] : [])]),
       ], { cwd: target.slotDir });
 
-      // Whole chunks go out as one event — a per-line loop outruns the SSE
-      // queue and the surplus lines are dropped.
+      // Send whole chunks; a per-line loop outruns the SSE queue.
       function forward(chunk: Buffer) {
         const raw = chunk.toString().split("\n").filter(Boolean);
         if (raw.length === 0) return;
@@ -124,8 +122,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 }
 
 /**
- * Source, service list and backfill in a single event. The SSE queue only
- * admits one chunk before the client pulls, so opening sends must not be split.
+ * Source, service list and backfill in one event.
+ * The SSE queue admits one chunk before the client pulls, so don't split it.
  */
 async function sendInit(
   sendEvent: SendEvent,

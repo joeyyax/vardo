@@ -37,9 +37,8 @@ async function handlePost(request: NextRequest) {
   await setSystemSetting("traefik_config", JSON.stringify(parsed.data));
   invalidateSettingsCache("traefik_config");
 
-  // Write TRAEFIK_DOCKER_NETWORK to the host .env file so the Traefik
-  // container picks it up on restart. Empty value = no network filter
-  // (external routing); "vardo-network" = restrict to vardo-network only.
+  // Writes TRAEFIK_DOCKER_NETWORK to the host .env for Traefik's next restart.
+  // Empty means no network filter; "vardo-network" restricts routing to it.
   const envPath = join(VARDO_HOME_DIR, ".env");
   const networkValue = parsed.data.externalRouting ? "" : "vardo-network";
 

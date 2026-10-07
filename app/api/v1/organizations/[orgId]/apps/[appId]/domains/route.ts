@@ -54,7 +54,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Validate: redirect domains cannot be self-referencing
+    // Redirect domains can't self-reference.
     if (parsed.data.redirectTo) {
       try {
         const targetHost = new URL(parsed.data.redirectTo).hostname;
@@ -69,7 +69,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       }
     }
 
-    // Use the caller-specified resolver, or fall back to the system primary issuer
+    // Caller's resolver, or the system primary issuer.
     const certResolver = parsed.data.certResolver
       ?? getPrimaryIssuer(await getSslConfig());
 
@@ -87,8 +87,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       })
       .returning();
 
-    // Mark app for redeploy — Traefik labels are the source of truth for routing,
-    // so domain changes take effect on the next deploy.
+    // Traefik labels route traffic, so domain changes need a redeploy.
     await db.update(apps).set({ needsRedeploy: true, updatedAt: new Date() }).where(eq(apps.id, appId));
 
     return NextResponse.json({ domain: created }, { status: 201 });

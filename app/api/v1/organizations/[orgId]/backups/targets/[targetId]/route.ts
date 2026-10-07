@@ -22,11 +22,7 @@ type RouteParams = {
   params: Promise<{ orgId: string; targetId: string }>;
 };
 
-/**
- * Gate mutations on a target. App-level targets (organizationId NULL) are
- * visible to the org but only app admins may modify them.
- * Returns a response to send, or the target when the caller may proceed.
- */
+/** Gates mutations. App-level targets (organizationId NULL) need an app admin. */
 async function guardTarget(orgId: string, targetId: string) {
   const target = await db.query.backupTargets.findFirst({
     where: and(

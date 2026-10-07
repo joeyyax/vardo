@@ -17,13 +17,7 @@ const promoteSchema = z.object({
   orgId: z.string().optional(),
 }).strict();
 
-/**
- * POST /api/v1/mesh/promote — receive a project bundle and deploy it.
- *
- * Called by a peer instance over WireGuard. The source instance builds
- * the bundle and POSTs it here. This endpoint imports the bundle and
- * creates/updates the project on this instance.
- */
+/** POST /api/v1/mesh/promote — import a peer's project bundle and deploy it. */
 async function handlePost(request: NextRequest) {
   try {
     const peer = await requireMeshPeer(request);

@@ -12,12 +12,7 @@ type RouteParams = {
   params: Promise<{ orgId: string; appId: string; volumeName: string }>;
 };
 
-/**
- * GET — Compare image contents vs volume contents at the mount path.
- *
- * Runs a temp container from the app's current image, generates file lists
- * with checksums from both image and volume, and returns a categorised diff.
- */
+/** GET — diff the image's contents against the volume at its mount path. */
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId, volumeName } = await params;
@@ -26,7 +21,6 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    // Load the volume record
     const volume = await db.query.volumes.findFirst({
       where: and(eq(volumes.appId, appId), eq(volumes.name, volumeName)),
     });
@@ -34,7 +28,6 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Volume not found" }, { status: 404 });
     }
 
-    // Get the app's image name
     const app = await db.query.apps.findFirst({
       where: and(eq(apps.id, appId), eq(apps.organizationId, orgId)),
       columns: {
@@ -53,10 +46,9 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "App not found" }, { status: 404 });
     }
 
-    // Determine the image to diff against
     let imageName = app.imageName;
     if (!imageName) {
-      // For built images, try to detect from running container
+      // For built images, detect from the running container.
       try {
         const containers = await listAppContainers(app);
         if (containers.length > 0) {

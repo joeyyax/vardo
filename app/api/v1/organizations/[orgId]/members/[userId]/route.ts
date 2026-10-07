@@ -32,7 +32,6 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Find target membership
     const targetMembership = await db.query.memberships.findFirst({
       where: and(
         eq(memberships.organizationId, orgId),
@@ -81,7 +80,6 @@ async function handleDelete(request: NextRequest, { params }: RouteParams) {
     const gate = await requirePlugin("teams");
     if (gate) return gate;
 
-    // Find target membership
     const targetMembership = await db.query.memberships.findFirst({
       where: and(
         eq(memberships.organizationId, orgId),

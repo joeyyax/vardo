@@ -20,7 +20,7 @@ type RouteParams = {
 };
 
 // GET /api/v1/organizations/[orgId]/deploy-keys
-// List all deploy keys for this org (public keys only -- never expose private keys)
+// Public keys only.
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
@@ -54,7 +54,6 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 }
 
 // POST /api/v1/organizations/[orgId]/deploy-keys
-// Generate a new SSH deploy key
 async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
@@ -71,11 +70,9 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     }
     const { name } = parsed.data;
 
-    // Generate Ed25519 keypair
     const comment = `host/${name.trim()}`;
     const keypair = generateDeployKeypair(comment);
 
-    // Encrypt the private key before storage
     const encryptedPrivateKey = encrypt(keypair.privateKey, orgId);
 
     const id = nanoid();
@@ -109,7 +106,6 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
 }
 
 // DELETE /api/v1/organizations/[orgId]/deploy-keys
-// Delete a deploy key
 async function handleDelete(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;

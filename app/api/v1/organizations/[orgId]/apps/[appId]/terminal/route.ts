@@ -13,9 +13,7 @@ import { recordActivity } from "@/lib/activity";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { closeOnShutdown } from "@/lib/shutdown";
 
-// ---------------------------------------------------------------------------
-// Session store — maps sessionId to exec socket and metadata
-// ---------------------------------------------------------------------------
+// Maps sessionId to exec socket and metadata.
 
 type ExecSession = {
   socket: net.Socket;
@@ -44,9 +42,7 @@ type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
 };
 
-// ---------------------------------------------------------------------------
-// GET — SSE stream for terminal output + initial session setup
-// ---------------------------------------------------------------------------
+// GET — SSE stream for terminal output and session setup.
 
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
@@ -102,13 +98,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Create exec instance
     const execId = await createExec(containerId, ["/bin/sh"]);
     const socket = await startExec(execId);
 
-    // No initial command — let the shell start naturally
+    // No initial command; the shell starts on its own.
 
-    // Generate session ID
     const sessionId = crypto.randomUUID();
 
     recordActivity({
@@ -119,7 +113,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       metadata: { containerId },
     }).catch(() => {});
 
-    // Store the session
     sessions.set(sessionId, {
       socket,
       execId,
@@ -129,7 +122,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       createdAt: Date.now(),
     });
 
-    // Create SSE stream
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
       start(controller) {
@@ -148,7 +140,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         // Forward socket output to SSE
         socket.on("data", (chunk: Buffer) => {
           try {
-            // Send as base64 to handle binary/control chars
+            // Base64 handles binary and control chars.
             const b64 = chunk.toString("base64");
             controller.enqueue(
               encoder.encode(`event: output\ndata: ${JSON.stringify(b64)}\n\n`),
@@ -215,9 +207,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// POST — Send input to terminal or resize
-// ---------------------------------------------------------------------------
+// POST — send input or resize.
 
 async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
@@ -259,7 +249,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     }
 
     if (type === "input" && data) {
-      // data is base64 encoded from the client
+      // The client sends data base64-encoded.
       const buf = Buffer.from(data, "base64");
       session.socket.write(buf);
       return NextResponse.json({ ok: true });

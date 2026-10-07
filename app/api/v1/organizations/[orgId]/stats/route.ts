@@ -32,7 +32,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const to = searchParams.get("to");
     const bucket = searchParams.get("bucket");
 
-    // Historical query
     if (from && to) {
       const fromMs = parseInt(from);
       const toMs = parseInt(to);
@@ -55,7 +54,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           activeApps.map(async (p) => {
             const { project, service } = scopeOf(p);
             if (metricFilter === "cpu") {
-              // Fast path: only fetch CPU for sparklines
+              // Fast path: CPU only, for sparklines
               const cpu = await queryMetrics(project, "cpu", fromMs, toMs, { type: "avg", bucketMs }, service);
               result[p.id] = { cpu };
             } else {
@@ -74,13 +73,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         return NextResponse.json({ apps: result });
       }
 
-      // Aggregate across all projects — stack children share their parent's series.
+      // Stack children share their parent's series.
       const perAppPoints = await Promise.all(
         activeApps
           .filter((app) => !app.parentAppId)
           .map((app) => queryMetricsPoints(app.name, fromMs, toMs, bucketMs, app.gpuEnabled))
       );
-      // Merge all apps' points by timestamp
       const pointMap = new Map<number, MetricsPoint>();
       for (const appPoints of perAppPoints) {
         for (const p of appPoints) {
@@ -102,7 +100,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ points });
     }
 
-    // Live snapshot
     try {
       const byApp = groupMetricsByApp(orgApps, await fetchAllMetrics());
 
@@ -114,7 +111,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         timestamp: new Date().toISOString(),
       });
     } catch {
-      // cAdvisor not available — return projects without stats
+      // cAdvisor unavailable; return projects without stats
       return NextResponse.json({
         projects: orgApps.map((p) => ({ ...p, containers: [] })),
         timestamp: new Date().toISOString(),

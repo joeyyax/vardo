@@ -23,7 +23,6 @@ type RouteParams = {
 };
 
 // GET /api/v1/organizations/[orgId]/invitations
-// List pending invitations for the org
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
@@ -62,7 +61,6 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 }
 
 // POST /api/v1/organizations/[orgId]/invitations
-// Create an invitation and send an email
 async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
@@ -84,11 +82,10 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     const { email, role } = parsed.data;
     const normalizedEmail = email.trim().toLowerCase();
 
-    // scope and targetId are always derived from the route — never from the request body
+    // scope and targetId come from the route, never the body.
     const scope = "org";
     const targetId = orgId;
 
-    // Fetch inviter name for the email (outside transaction — read-only)
     const inviter = await db.query.user.findFirst({
       where: eq(user.id, org.session.user.id),
       columns: { name: true },
@@ -97,7 +94,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     const token = generateInvitationToken();
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
 
-    // Duplicate check and insert are wrapped in a transaction to prevent races
+    // One transaction for the duplicate check and insert.
     const invitation = await db.transaction(async (tx) => {
       const existing = await tx.query.invitations.findFirst({
         where: and(

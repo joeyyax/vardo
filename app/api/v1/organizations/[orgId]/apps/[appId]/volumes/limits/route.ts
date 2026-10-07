@@ -24,8 +24,7 @@ const volumeLimitSchema = z.object({
   warnAtPercent: z.number().int().min(1).max(100).default(80),
 }).strict();
 
-// GET — return the aggregate volume limit for an app
-// (reads maxSizeBytes/warnAtPercent from the first volume that has a limit set)
+// GET — the app's volume limit, read from the first volume that has one.
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
@@ -35,7 +34,6 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    // Find any volume with a limit set
     const volWithLimit = await db.query.volumes.findFirst({
       where: eq(volumes.appId, appId),
       columns: { maxSizeBytes: true, warnAtPercent: true },
@@ -76,7 +74,6 @@ async function handlePut(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Apply limit to all volumes for this app
     await db
       .update(volumes)
       .set({

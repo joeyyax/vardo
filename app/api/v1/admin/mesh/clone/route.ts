@@ -17,11 +17,8 @@ const cloneSchema = z.object({
 }).strict();
 
 /**
- * POST /api/v1/admin/mesh/clone — clone a project from a source instance.
- *
- * Fetches the bundle from the source peer, then either imports locally
- * or forwards to a target peer. Clones always create fresh deployments
- * with unique names and no env vars.
+ * POST /api/v1/admin/mesh/clone — clone a project from a source peer, locally or to a target peer.
+ * Clones get fresh names and no env vars.
  */
 async function handlePost(request: NextRequest) {
   try {
@@ -38,7 +35,7 @@ async function handlePost(request: NextRequest) {
 
     const { sourcePeerId, projectId, orgId, targetPeerId } = parsed.data;
 
-    // Fetch the bundle from the source peer (without env vars — clone is fresh)
+    // Fetch the bundle without env vars.
     const { bundle } = await meshJsonFetch<{ bundle: ProjectBundle }>(
       sourcePeerId,
       "/api/v1/mesh/pull",

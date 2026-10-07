@@ -24,7 +24,7 @@ const patchSchema = z
   });
 
 // GET /api/v1/organizations/[orgId]/digest
-// Returns the digest settings for the org, creating defaults if missing.
+// Returns the org's digest settings, or unsaved defaults.
 export async function GET(_req: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
@@ -36,7 +36,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
     });
 
     if (!setting) {
-      // Return defaults without persisting — settings are created on first PATCH
+      // Settings are persisted on the first PATCH.
       return NextResponse.json({
         digestSettings: {
           enabled: false,
@@ -61,7 +61,6 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
 }
 
 // PATCH /api/v1/organizations/[orgId]/digest
-// Creates or updates digest settings for the org.
 async function handlePatch(req: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
@@ -78,7 +77,6 @@ async function handlePatch(req: NextRequest, { params }: RouteParams) {
 
     const now = new Date();
 
-    // Upsert — eliminates the read-then-write race condition
     const [upserted] = await db
       .insert(digestSettings)
       .values({
@@ -114,8 +112,7 @@ async function handlePatch(req: NextRequest, { params }: RouteParams) {
 }
 
 // POST /api/v1/organizations/[orgId]/digest
-// Trigger an immediate on-demand digest send for the org.
-// Requires admin or owner role. Returns the collected digest data as a preview.
+// Sends a digest now and returns its data as a preview. Admins and owners only.
 async function handlePost(_req: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
@@ -148,7 +145,6 @@ async function handlePost(_req: NextRequest, { params }: RouteParams) {
       cronFailed: data.cron.totalFailures,
     };
 
-    // Send synchronously so the caller gets an accurate result
     const channels = await db.query.notificationChannels.findMany({
       where: and(
         eq(notificationChannels.organizationId, orgId),

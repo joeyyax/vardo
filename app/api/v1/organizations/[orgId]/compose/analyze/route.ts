@@ -17,9 +17,7 @@ const analyzeSchema = z.object({
 });
 
 // POST /api/v1/organizations/[orgId]/compose/analyze
-//
-// Analyze a compose file and return structured findings about what Vardo
-// will normalize during deploy. Used by the import-time review dialog.
+// Lists what Vardo will normalize in a compose file during deploy.
 async function handlePost(req: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;

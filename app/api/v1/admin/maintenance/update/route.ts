@@ -9,12 +9,8 @@ import { VARDO_HOME_DIR } from "@/lib/paths";
 
 const log = logger.child("admin:maintenance:update");
 
-// POST /api/v1/admin/maintenance/update
-//
-// Delegates to install.sh update running on the host. install.sh handles
-// the full blue/green update cycle: pull into inactive slot, build, health
-// check, swap the current symlink, and stop the old slot. The API returns
-// immediately — the update runs detached in the background.
+// POST /api/v1/admin/maintenance/update — runs install.sh update on the host, detached.
+// install.sh handles the blue/green swap. The API returns immediately.
 async function handlePost(_request: NextRequest) {
   try {
     await requireAppAdmin();

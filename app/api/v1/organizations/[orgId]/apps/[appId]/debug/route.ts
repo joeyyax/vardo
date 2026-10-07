@@ -19,7 +19,7 @@ type RouteParams = {
 };
 
 const NETWORK_NAME = "vardo-network";
-// Cap the serialized container inspect payload to avoid returning MB+ for multi-service apps
+// Caps the serialized container inspect payload.
 const CONTAINER_INSPECT_MAX_BYTES = 256 * 1024; // 256KB
 
 // GET /api/v1/organizations/[orgId]/apps/[appId]/debug
@@ -47,7 +47,7 @@ async function handler(_request: NextRequest, { params }: RouteParams) {
       .filter((v) => v.persistent)
       .map((v) => ({ name: v.name, mountPath: v.mountPath }));
 
-    // Resolve per-project bind mount permission so the preview matches deploy.
+    // Resolve per-project bind mount permission as deploy does.
     const orgTrusted = org.organization.trusted ?? false;
     let projectAllowBindMounts = false;
     if (orgTrusted) {
@@ -66,7 +66,6 @@ async function handler(_request: NextRequest, { params }: RouteParams) {
       app.containerPort ?? 3000,
     );
 
-    // Generate compose preview
     const composeParsed = buildComposePreview(
       {
         name: app.name,
@@ -97,7 +96,6 @@ async function handler(_request: NextRequest, { params }: RouteParams) {
 
     const compose = composeParsed ? composeToYaml(composeParsed) : null;
 
-    // Generate Traefik config
     const traefikConfig = buildTraefikConfigYaml(
       app.name,
       app.domains.map((d) => ({
@@ -111,8 +109,6 @@ async function handler(_request: NextRequest, { params }: RouteParams) {
       resolvedProtocol,
     );
 
-    // Get container inspect data — env vars are stripped to avoid exposing
-    // secrets that are encrypted at rest in the database.
     let containers: unknown[] = [];
     try {
       const containerList = await listContainers(app);
@@ -123,7 +119,7 @@ async function handler(_request: NextRequest, { params }: RouteParams) {
       containers = inspectResults
         .filter((r): r is PromiseFulfilledResult<Awaited<ReturnType<typeof inspectContainer>>> => r.status === "fulfilled")
         .flatMap((r) => {
-          // Strip env — secrets are encrypted at rest and must not be exposed here
+          // Strip env; it holds secrets.
            
           const { env, ...rest } = r.value;
           const serialized = JSON.stringify(rest);

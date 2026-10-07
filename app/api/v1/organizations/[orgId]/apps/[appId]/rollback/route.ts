@@ -32,7 +32,6 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ org
     const org = await verifyOrgAccess(orgId, "app.deploy");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    // Parse body
     let body: { deploymentId?: string; includeEnvVars?: boolean };
     try {
       body = await request.json();
@@ -49,7 +48,6 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ org
     }
     const { deploymentId, includeEnvVars } = parsed.data;
 
-    // Fetch the app
     const app = await db.query.apps.findFirst({
       where: and(
         eq(apps.id, appId),
@@ -81,7 +79,6 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ org
     const refused = refuseSystemManaged(app, "rollback");
     if (refused) return refused;
 
-    // Fetch the target deployment (the one we are rolling back to)
     const targetDeployment = await db.query.deployments.findFirst({
       where: and(
         eq(deployments.id, deploymentId),
@@ -110,8 +107,7 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ org
 
     const configSnapshot = targetDeployment.configSnapshot as ConfigSnapshot | null;
 
-    // Rolling back to a snapshot with GPU passthrough enabled restores host hardware
-    // access — gate it the same way as enabling GPU via PATCH.
+    // A GPU-enabled snapshot restores host hardware access; gate it like PATCH.
     if (configSnapshot?.gpuEnabled === true && !can(org.membership.role, "app.gpu")) {
       return NextResponse.json(
         { error: "Only owners and admins can roll back to a snapshot with GPU passthrough enabled" },
@@ -119,9 +115,7 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ org
       );
     }
 
-    // Trigger a new deploy through the normal blue-green flow. The deploy runs
-    // against the target's snapshot; the app record is only rewritten after it
-    // succeeds, so a failed rollback leaves the app row untouched.
+    // Deploys the target's snapshot; the app row is only rewritten on success.
     return createSSEResponse(request, async (sendEvent) => {
       const result = await requestDeploy({
         appId,
@@ -200,7 +194,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "deploymentId query param required" }, { status: 400 });
     }
 
-    // Fetch app current state
     const app = await db.query.apps.findFirst({
       where: and(eq(apps.id, appId), eq(apps.organizationId, orgId)),
       columns: {
@@ -225,7 +218,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "App not found" }, { status: 404 });
     }
 
-    // Fetch target deployment
     const targetDeployment = await db.query.deployments.findFirst({
       where: and(
         eq(deployments.id, deploymentId),
@@ -245,7 +237,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Deployment not found" }, { status: 404 });
     }
 
-    // Build config diff
     const configSnapshot = targetDeployment.configSnapshot as ConfigSnapshot | null;
 
     const configChanges: { field: string; from: string | null; to: string | null }[] = [];
@@ -280,7 +271,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       }
     }
 
-    // Build env var diff (key-level only, no values exposed)
+    // Env var diff: keys only, no values.
     let envKeyChanges: { added: string[]; removed: string[]; changed: string[] } | null = null;
 
     if (targetDeployment.envSnapshot) {

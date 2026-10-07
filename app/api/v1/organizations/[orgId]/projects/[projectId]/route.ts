@@ -55,7 +55,6 @@ async function findProjectBasic(orgId: string, projectId: string) {
 }
 
 // GET /api/v1/organizations/[orgId]/projects/[projectId]
-// Returns a single project with its apps
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, projectId } = await params;
@@ -91,7 +90,6 @@ const updateSchema = z.object({
 }).strict();
 
 // PATCH /api/v1/organizations/[orgId]/projects/[projectId]
-// Updates a project's displayName, description, or color
 async function handlePatch(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, projectId } = await params;
@@ -127,7 +125,6 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
     const refused = refuseSystemManaged(existing, "edit");
     if (refused) return refused;
 
-    // Check for name conflicts when renaming
     if (parsed.data.name && parsed.data.name !== existing.name) {
       const conflict = await db.query.projects.findFirst({
         where: and(
@@ -192,7 +189,7 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
 }
 
 // DELETE /api/v1/organizations/[orgId]/projects/[projectId]
-// Blocks deletion if the project still contains apps.
+// Blocks deletion while the project has apps.
 async function handleDelete(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, projectId } = await params;
@@ -208,7 +205,6 @@ async function handleDelete(_request: NextRequest, { params }: RouteParams) {
     const refused = refuseSystemManaged(existing, "delete");
     if (refused) return refused;
 
-    // Block deletion when apps still exist in this project
     const appCount = await db
       .select({ count: sql<number>`count(*)::int` })
       .from(apps)
@@ -221,7 +217,6 @@ async function handleDelete(_request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Delete the project
     await db
       .delete(projects)
       .where(eq(projects.id, existing.id));

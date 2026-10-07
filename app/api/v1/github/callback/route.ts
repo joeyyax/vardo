@@ -13,9 +13,7 @@ export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
-  // GitHub sends different params depending on the flow:
-  // - Installation flow: installation_id, setup_action, state
-  // - OAuth authorization during install: code, installation_id, setup_action, state
+  // Installs send installation_id, setup_action and state. OAuth during install adds code.
   const installationId = searchParams.get("installation_id");
   const setupAction = searchParams.get("setup_action");
   const state = searchParams.get("state");
@@ -59,7 +57,6 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // Fetch installation details from GitHub
     const octokit = await getAppOctokit();
     const { data: installation } = await octokit.rest.apps.getInstallation({
       installation_id: parseInt(installationId, 10),
@@ -71,14 +68,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(`${baseUrl}/user/settings/connections?github=error`);
     }
 
-    // Extract account info — handle both User/Org and Enterprise account types
+    // Account shape differs between User/Org and Enterprise.
     const accountLogin =
       "login" in account ? account.login : account.slug ?? "unknown";
     const accountType =
       "type" in account ? (account.type ?? "User") : "Enterprise";
     const accountAvatarUrl = account.avatar_url || null;
 
-    // Upsert installation (handles reinstalls gracefully)
+    // Upsert handles reinstalls.
     await db
       .insert(githubAppInstallations)
       .values({

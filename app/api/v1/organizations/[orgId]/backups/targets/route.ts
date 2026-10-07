@@ -25,7 +25,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     const org = await verifyOrgAccess(orgId, "backup.view");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    // Return both org-level targets and app-level targets (organizationId IS NULL)
+    // Org-level and app-level (organizationId IS NULL) targets.
     const targets = await db.query.backupTargets.findMany({
       where: or(
         eq(backupTargets.organizationId, orgId),
@@ -83,7 +83,6 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Validate the local path is writable before saving
     if (data.type === "local") {
       try {
         const fs = await import("fs/promises");

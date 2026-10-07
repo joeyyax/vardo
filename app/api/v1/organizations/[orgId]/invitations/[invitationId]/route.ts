@@ -16,7 +16,7 @@ type RouteParams = {
 };
 
 // DELETE /api/v1/organizations/[orgId]/invitations/[invitationId]
-// Revoke/cancel a pending invitation
+// Revokes a pending invitation
 async function handleDelete(
   _request: NextRequest,
   { params }: RouteParams

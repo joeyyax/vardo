@@ -43,7 +43,6 @@ function callerScope(session: { authMethod: string; tokenScope?: TokenScope }): 
 }
 
 // GET /api/v1/organizations/[orgId]/tokens
-// List all API tokens for the current user in this org
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
     const gate = await requirePlugin("api-tokens");
@@ -87,7 +86,6 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 }
 
 // POST /api/v1/organizations/[orgId]/tokens
-// Create a new API token
 async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     const gate = await requirePlugin("api-tokens");
@@ -133,7 +131,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       metadata: { tokenId, name: parsed.data.name, crossOrg: parsed.data.crossOrg },
     }).catch(() => {});
 
-    // Return the raw token only once
+    // The raw token is returned only once.
     return NextResponse.json({ token: rawToken }, { status: 201 });
   } catch (error) {
     return handleRouteError(error, "Error creating token");
@@ -193,7 +191,6 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
 }
 
 // DELETE /api/v1/organizations/[orgId]/tokens
-// Delete an API token
 async function handleDelete(request: NextRequest, { params }: RouteParams) {
   try {
     const gate = await requirePlugin("api-tokens");

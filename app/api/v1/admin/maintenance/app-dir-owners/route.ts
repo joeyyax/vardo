@@ -7,9 +7,7 @@ import { logger } from "@/lib/logger";
 
 const log = logger.child("admin:maintenance:app-dir-owners");
 
-// GET /api/v1/admin/maintenance/app-dir-owners
-//
-// Surveys ownership coverage across $VARDO_HOME/apps without writing anything.
+// GET /api/v1/admin/maintenance/app-dir-owners — ownership coverage of $VARDO_HOME/apps, read-only.
 export async function GET() {
   try {
     await requireAppAdmin();
@@ -19,10 +17,8 @@ export async function GET() {
   }
 }
 
-// POST /api/v1/admin/maintenance/app-dir-owners
-//
-// Stamps every unmarked app directory with the app that claims its name and
-// returns the coverage, naming each directory it could not resolve.
+// POST /api/v1/admin/maintenance/app-dir-owners — stamps unmarked app directories with the app claiming each name.
+// Returns coverage and the directories it couldn't resolve.
 async function handlePost() {
   try {
     await requireAppAdmin();

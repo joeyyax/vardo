@@ -7,12 +7,8 @@ import { logger } from "@/lib/logger";
 
 const log = logger.child("admin:maintenance:build-cache");
 
-// GET /api/v1/admin/maintenance/build-cache
-//
-// Returns Docker build cache size and reclaimable space from `docker system
-// df`. Docker's /system/df has been seen to 404/500 on hosts with leaked
-// containers — on failure both fields are null (unknown), never 0, so the
-// UI can't mistake "couldn't check" for "nothing to reclaim".
+// GET /api/v1/admin/maintenance/build-cache — build cache size and reclaimable space.
+// Both are null (unknown) on failure, never 0.
 export async function GET() {
   try {
     await requireAppAdmin();
@@ -32,12 +28,7 @@ export async function GET() {
   }
 }
 
-// POST /api/v1/admin/maintenance/build-cache
-//
-// Runs the equivalent of `docker builder prune -af` via the Docker Engine
-// API and returns the space actually reclaimed. Awaits the prune rather
-// than backgrounding it — the request can take a while on a large cache,
-// but the caller needs a real result, not an optimistic guess.
+// POST /api/v1/admin/maintenance/build-cache — prunes the build cache and returns the space reclaimed.
 async function handlePost() {
   try {
     await requireAppAdmin();

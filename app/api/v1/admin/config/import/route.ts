@@ -13,7 +13,6 @@ import {
   type VardoSecrets,
 } from "@/lib/config/vardo-config";
 
-// Zod schema for config validation
 const configSchema = z.object({
   instance: z.object({
     id: z.string().optional(),
@@ -68,21 +67,11 @@ const secretsSchema = z.object({
 }).passthrough();
 
 /**
- * POST /api/v1/admin/config/import?persist=true|false
- *
- * Import configuration from YAML or ZIP.
- *
- * Accepts:
- *   - application/x-yaml: single YAML file (config or full config+secrets)
- *   - application/zip: vardo.zip with vardo.yml + vardo.secrets.yml
- *   - multipart/form-data: file upload
- *
- * Auth: requireAdminAuth OR needsSetup (for onboarding import).
- * ?persist=true writes files to disk alongside DB import.
+ * POST /api/v1/admin/config/import?persist=true|false — import YAML, a zip or a file upload.
+ * Admin or first-run setup. Only admins can persist to disk.
  */
 async function handlePost(request: NextRequest) {
   try {
-    // Auth: admin or fresh install (no users exist yet)
     const { needsSetup } = await import("@/lib/setup");
     const isSetup = await needsSetup();
 
@@ -127,7 +116,6 @@ async function handlePost(request: NextRequest) {
       config = YAML.parse(text) || {};
     }
 
-    // Validate parsed data
     const configResult = configSchema.safeParse(config);
     if (!configResult.success) {
       return NextResponse.json(
@@ -163,15 +151,13 @@ async function handlePost(request: NextRequest) {
       },
     };
 
-    // Import to DB
     const imported = await importVardoConfig(full);
 
-    // Optionally persist to disk
     if (persist) {
       await writeVardoConfig(config, secrets);
     }
 
-    // Report which secrets are missing (so the UI can prompt)
+    // Report missing secrets so the UI can prompt.
     const missingSecrets: string[] = [];
     if (!secrets.encryptionKey) missingSecrets.push("encryptionKey");
     if (!secrets.authSecret) missingSecrets.push("authSecret");

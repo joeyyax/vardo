@@ -8,8 +8,7 @@ import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { publishKillSignal, clearActiveInRedis, deployRegistration } from "@/lib/docker/deploy-cancel";
 import { addEvent } from "@/lib/stream/producer";
 import { releaseConcurrencySlot, removeFromQueue } from "@/lib/docker/deploy-concurrency";
-// Container cleanup for force-cancelled deploys is handled by the sweeper
-// (lib/deploy/sweeper.ts), which can safely resolve the correct slot.
+// The sweeper (lib/deploy/sweeper.ts) cleans up force-cancelled containers.
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
@@ -17,15 +16,12 @@ type RouteParams = {
   params: Promise<{ orgId: string; appId: string; deploymentId: string }>;
 };
 
-/** How long a signalled deploy has to write its own cancelled row before we do. */
+/** How long a signalled deploy has to write its own cancelled row before it's forced. */
 const UNRESPONSIVE_GRACE_MS = 60_000;
 
 /**
  * Last resort for a deploy whose process died holding the record.
- *
- * A live engine finishes the phase it is in and writes the row itself, which can
- * take minutes on a build — so this only fires once the registry no longer names
- * the deploy, meaning nothing is running it.
+ * Fires only once the registry no longer names the deploy.
  */
 async function forceCancel(deploymentId: string, appId: string, orgId: string): Promise<void> {
   await new Promise((r) => setTimeout(r, UNRESPONSIVE_GRACE_MS));
@@ -58,8 +54,7 @@ async function forceCancel(deploymentId: string, appId: string, orgId: string): 
     .set(statusChange("stopped", now))
     .where(and(eq(apps.id, appId), eq(apps.status, "deploying")));
 
-  // Release the concurrency slot, clear the active deploy marker, and remove
-  // from queue so the next deploy can start immediately.
+  // Release the slot, clear the active marker and dequeue.
   await clearActiveInRedis(appId, deploymentId).catch(() => {});
   await releaseConcurrencySlot(deploymentId).catch(() => {});
   await removeFromQueue(deploymentId).catch(() => {});
@@ -77,7 +72,7 @@ async function forceCancel(deploymentId: string, appId: string, orgId: string): 
 }
 
 // DELETE /api/v1/organizations/[orgId]/apps/[appId]/deployments/[deploymentId]
-// Cancel a queued or running deployment
+// Cancel a queued or running deployment.
 async function handleDelete(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId, deploymentId } = await params;
@@ -111,9 +106,7 @@ async function handleDelete(_request: NextRequest, { params }: RouteParams) {
     }
 
     if (deployment.status === "running") {
-      // The engine stops at the end of the phase it is in and writes the row
-      // itself. Marking it cancelled here is what let a later success overwrite
-      // the cancel and made the button lie.
+      // The engine writes the cancelled row itself at the end of its phase.
       await publishKillSignal(deploymentId);
       forceCancel(deploymentId, appId, orgId).catch(() => {});
       return NextResponse.json({ ok: true, cancelling: true });
@@ -125,7 +118,7 @@ async function handleDelete(_request: NextRequest, { params }: RouteParams) {
       .set({ status: "cancelled", finishedAt: new Date() })
       .where(eq(deployments.id, deploymentId));
 
-    // Remove from the concurrency queue so it doesn't block other deploys.
+    // Remove from the concurrency queue.
     await removeFromQueue(deploymentId).catch(() => {});
 
     return NextResponse.json({ ok: true });

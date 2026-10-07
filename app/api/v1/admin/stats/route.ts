@@ -8,9 +8,7 @@ import { queryAllPoints } from "@/lib/metrics/store";
 import { isMetricsEnabled } from "@/lib/metrics/config";
 import { requireAppAdmin } from "@/lib/auth/admin";
 
-// GET /api/v1/admin/stats
-// System-wide metrics: all containers across all orgs
-// Supports live snapshot or historical query via ?from=&to=
+// GET /api/v1/admin/stats — system-wide metrics, live or historical via ?from=&to=
 export async function GET(request: NextRequest) {
   try {
     await requireAppAdmin();
@@ -28,7 +26,7 @@ export async function GET(request: NextRequest) {
       const fromMs = parseInt(from);
       const toMs = parseInt(to);
       const bucket = parseInt(searchParams.get("bucket") || "30000");
-      // Admin sees all metrics — always include GPU series (returns zeros when no GPU data)
+      // Admin includes GPU series, zeros without GPU data.
       const points = await queryAllPoints(fromMs, toMs, bucket, true);
 
       return NextResponse.json({ points });
@@ -39,8 +37,7 @@ export async function GET(request: NextRequest) {
       db.query.apps.findMany({
         columns: { ...METRICS_APP_COLUMNS, displayName: true },
       }),
-      // Only fetch fast data synchronously — disk and system info are slow (3s+)
-      // and will arrive via the SSE stream instead
+      // Disk and system info are slow (3s+) and arrive via the SSE stream.
       fetchAllMetrics(),
     ]);
 

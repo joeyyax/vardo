@@ -21,9 +21,8 @@ async function markSeen(membershipId: string, at: Date) {
 }
 
 // GET /api/v1/organizations/[orgId]/away-summary
-// What happened since this member was last here. Returns summary: null when
-// there is nothing worth interrupting for, and advances the anchor in that case
-// so the window does not grow.
+// What happened since this member was last here. Null when nothing's worth interrupting for;
+// the anchor still advances so the window doesn't grow.
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;

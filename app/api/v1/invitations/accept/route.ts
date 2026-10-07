@@ -13,8 +13,7 @@ import { withRateLimit } from "@/lib/api/with-rate-limit";
 
 const acceptSchema = z.object({ token: z.string().min(1, "Token is required") }).strict();
 
-// POST /api/v1/invitations/accept
-// Accept an invitation by token
+// POST /api/v1/invitations/accept — accept an invitation by token
 async function handlePost(request: NextRequest) {
   try {
     const gate = await requirePlugin("teams");
@@ -53,7 +52,6 @@ async function handlePost(request: NextRequest) {
       return NextResponse.json({ error: "Invitation has expired" }, { status: 410 });
     }
 
-    // Check if there's a logged-in user
     const session = await getSession();
 
     if (!session?.user?.id) {
@@ -63,7 +61,7 @@ async function handlePost(request: NextRequest) {
       );
     }
 
-    // User is logged in — verify email matches
+    // A logged-in user's email must match.
     if (session.user.email !== invitation.email) {
       return NextResponse.json(
         {
@@ -74,9 +72,7 @@ async function handlePost(request: NextRequest) {
       );
     }
 
-    // Accept the invitation
     if (invitation.scope === "org" && invitation.targetId) {
-      // Check if already a member
       const existingMembership = await db.query.memberships.findFirst({
         where: and(
           eq(memberships.organizationId, invitation.targetId),

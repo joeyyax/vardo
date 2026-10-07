@@ -66,8 +66,7 @@ async function handlePost(request: NextRequest) {
     webhookSecret: resolveSecret(webhookSecret, existing?.webhookSecret),
   }));
 
-  // Rebuild the Better Auth instance with updated GitHub OAuth credentials
-  // so GitHub login works immediately without a server restart.
+  // Rebuild the auth instance so GitHub login works without a restart.
   if (clientId && resolvedClientSecret) {
     refreshGitHubOAuthCredentials(clientId, resolvedClientSecret);
   }

@@ -54,12 +54,11 @@ const importSchema = z.object({
     )
     .max(500, "Too many environment variables")
     .default([]),
-  // Array of container-side destination paths to import; empty array = no mounts.
-  // If omitted, falls back to importVolumes for backward compatibility.
+  // Container paths to import; empty imports none. Omitted falls back to importVolumes.
   selectedMountDestinations: z.array(z.string().max(4096, "Mount destination too long")).max(100, "Too many mount destinations").optional(),
-  // Deprecated: use selectedMountDestinations. Kept for backward compatibility.
+  // Deprecated: use selectedMountDestinations.
   importVolumes: z.boolean().default(true),
-  // User-supplied port when auto-detection fails (no Traefik labels, no exposed ports).
+  // Port to use when none can be detected.
   containerPort: z.number().int().min(1).max(65535).optional(),
 }).refine(
   (data) => !!data.projectId || !!data.newProjectName,
@@ -90,7 +89,6 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
 
     const data = parsed.data;
 
-    // Check for duplicate import
     const existing = await db.query.apps.findFirst({
       where: and(
         eq(apps.organizationId, orgId),
@@ -109,7 +107,6 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: APP_NAME_TAKEN_ERROR }, { status: 409 });
     }
 
-    // Inspect container server-side
     const detail = await getContainerDetail(containerId);
     if (!detail) {
       return NextResponse.json(
@@ -118,11 +115,9 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Determine container port via the priority chain:
-    //   Traefik label → first exposed internal port → user-supplied → null
+    // Port priority: Traefik label, first exposed port, user-supplied, null.
     const containerPort = resolveContainerPort(detail, data.containerPort);
 
-    // Resolve which mounts to import
     const selectedDests =
       data.selectedMountDestinations !== undefined
         ? new Set(data.selectedMountDestinations)
@@ -135,7 +130,6 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
         ? detail.mounts
         : detail.mounts.filter((m) => selectedDests.has(m.destination));
 
-    // Generate compose file from the full container spec.
     let compose = generateComposeFromContainer(data.name, {
       image: detail.image,
       ports: detail.ports,
@@ -164,7 +158,6 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       hasEnvVars: data.envVars.length > 0,
     });
 
-    // Inject Traefik labels if a domain was found.
     // TODO: if container import ever produces multi-service or host-network compose files,
     // pass serviceName here (the first bridge-network service) as deploy.ts does.
     const sslConfig = await getSslConfig();
@@ -177,8 +170,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       });
     }
 
-    // Detect backendProtocol from Traefik labels or port number so the deploy
-    // engine can reconstruct serversTransport for HTTPS backends.
+    // Lets the deploy engine rebuild serversTransport for HTTPS backends.
     let importedBackendProtocol: "http" | "https" | null = null;
     const schemeLabel = Object.entries(detail.labels).find(
       ([k]) => /^traefik\.http\.services\..+\.loadbalancer\.server\.scheme$/.test(k)
@@ -191,7 +183,6 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
 
     const composeContent = composeToYaml(compose);
 
-    // Build env content string from user-reviewed vars
     let envContent: string | null = null;
     if (data.envVars.length > 0) {
       const envLines = data.envVars.map(({ key, value }) => `${key}=${value}`).join("\n");
@@ -201,7 +192,6 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     let result: { app: (typeof apps)["$inferSelect"] };
     try {
       result = await db.transaction(async (tx) => {
-        // Resolve projectId — create new project if requested
         const resolvedProjectId = await resolveProjectForImport(
           tx,
           orgId,
@@ -209,7 +199,6 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
           data.newProjectName,
         );
 
-        // Insert app record
         const appId = nanoid();
         const [app] = await tx
           .insert(apps)
@@ -232,7 +221,6 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
           })
           .returning();
 
-        // Auto-create production environment
         await tx.insert(environments).values({
           id: nanoid(),
           appId,
@@ -241,7 +229,6 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
           isDefault: true,
         });
 
-        // Create domain record if Traefik domain was found
         if (detail.domain && containerPort) {
           await tx.insert(domains).values({
             id: nanoid(),
@@ -253,7 +240,6 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
           });
         }
 
-        // Create volume records for selected mounts
         if (mountsToImport.length > 0) {
           for (const mount of mountsToImport) {
             await tx.insert(volumes).values({
@@ -264,7 +250,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
               mountPath: mount.destination,
               type: mount.type === "bind" ? "bind" : "named",
               source: mount.source || null,
-              // Bind mounts are flagged as non-persistent — Vardo can't manage host paths
+              // Bind mounts aren't persistent; Vardo can't manage host paths.
               persistent: mount.type !== "bind",
             });
           }
@@ -325,10 +311,8 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       },
     });
 
-    // Pre-create the deployment record so the client has an ID to poll.
-    // Then fire the migration (stop → deploy → remove) async so the HTTP
-    // response is not held open while waiting for a lock or running the
-    // build. On any deploy failure the original container is restarted.
+    // The client polls this deployment ID while the migration runs async.
+    // On deploy failure the original container restarts.
 
     const deploymentId = await createDeployment({
       appId,
@@ -345,8 +329,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       userId: org.session.user.id,
       displayName: data.displayName,
       activityMetadata: { containerId, source: "import" },
-      // Bail if stop fails — deploying with the original container still running
-      // would likely fail due to port conflicts, so there is nothing useful to do.
+      // The original container would still hold its ports.
       bailOnFirstStopFailure: true,
     });
 

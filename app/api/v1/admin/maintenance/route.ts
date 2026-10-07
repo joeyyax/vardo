@@ -14,10 +14,7 @@ type ServiceStatus = {
   image: string;
 };
 
-// GET /api/v1/admin/maintenance
-//
-// Returns the status of all Vardo stack services by inspecting running containers
-// with the "vardo-" name prefix via docker ps.
+// GET /api/v1/admin/maintenance — status of the vardo-* stack containers.
 export async function GET() {
   try {
     await requireAppAdmin();

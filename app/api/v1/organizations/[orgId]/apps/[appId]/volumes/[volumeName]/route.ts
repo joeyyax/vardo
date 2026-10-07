@@ -42,9 +42,7 @@ const patchSchema = z.object({
   durability: z.enum(["stateful", "rebuildable", "external"]).nullable().optional(),
 }).strict();
 
-/**
- * PATCH — Update volume metadata (ignore patterns, description).
- */
+/** PATCH — update volume metadata. */
 async function handlePatch(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId, volumeName } = await params;

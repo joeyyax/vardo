@@ -9,20 +9,13 @@ import { withRateLimit } from "@/lib/api/with-rate-limit";
 
 const log = logger.child("admin:restart");
 
-// POST /api/v1/admin/restart
-//
-// Restarts the Vardo container. Requires app admin.
-//
-// Container identity: reads CONTAINER_ID env var first (set this explicitly if
-// the container runs with a custom hostname), falls back to os.hostname() which
-// matches Docker's default naming scheme. The value is passed as a positional
-// arg to `docker restart` — not interpolated into a shell string.
+// POST /api/v1/admin/restart — restarts the Vardo container. Requires app admin.
+// The container ID is a positional arg to `docker restart`, never interpolated into a shell string.
 async function handlePost() {
   try {
     await requireAppAdmin();
 
-    // CONTAINER_ID lets operators override the default hostname-based lookup.
-    // Useful when the container is started with a custom --hostname or hostname: key.
+    // CONTAINER_ID overrides the hostname-based lookup.
     const containerId = process.env.CONTAINER_ID ?? hostname();
 
     setTimeout(() => {

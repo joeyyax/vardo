@@ -21,7 +21,7 @@ async function handlePost() {
       );
     }
 
-    // Bootstrap WireGuard if needed (generates keypair, writes config, brings up wg0)
+    // Bootstrap WireGuard if needed.
     const publicKey = await ensureHubConfig(HUB_IP);
 
     const port = process.env.WIREGUARD_PORT || "51820";

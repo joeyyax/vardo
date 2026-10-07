@@ -5,14 +5,7 @@ import { systemSettingsToVardoConfig } from "@/lib/config/vardo-config";
 import YAML from "yaml";
 import JSZip from "jszip";
 
-/**
- * GET /api/v1/admin/config/export?include=config|full|secrets
- *
- * Export system configuration as YAML.
- * - config (default): vardo.yml only (safe to share)
- * - full: vardo.zip with both files
- * - secrets: vardo.secrets.yml only
- */
+/** GET /api/v1/admin/config/export?include=config|full|secrets — export config as YAML or a zip. */
 export async function GET(request: NextRequest) {
   try {
     await requireAdminAuth(request);
@@ -40,7 +33,6 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Full export — zip both files
     const zip = new JSZip();
     zip.file("vardo.yml", YAML.stringify(config, { indent: 2 }));
     zip.file("vardo.secrets.yml", YAML.stringify(secrets, { indent: 2 }));

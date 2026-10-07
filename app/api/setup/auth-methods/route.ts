@@ -48,8 +48,7 @@ async function handlePost(request: NextRequest) {
   const changes = parsed.data as Partial<Record<AuthMethod, boolean>>;
   const layers = await getAuthMethodConfigLayers();
 
-  // Refuse writes that wouldn't take effect — env vars and vardo.yml outrank
-  // whatever we'd store here.
+  // Refuse writes that wouldn't take effect: env vars and vardo.yml outrank stored values.
   const pinned: string[] = [];
   for (const method of Object.keys(changes) as AuthMethod[]) {
     if (authMethodFromEnv(method) !== undefined) {

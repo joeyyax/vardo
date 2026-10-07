@@ -14,10 +14,7 @@ type RouteParams = {
 
 /**
  * GET /api/v1/organizations/[orgId]/apps/name-available?name=foo&generateDomain=true
- *
- * Answers the same question POST /apps enforces: is this slug free instance-wide,
- * and is the domain it would claim free too. Membership in the org is all the
- * caller needs — the response says nothing about who holds a taken name.
+ * Whether the slug and its domain are free instance-wide. Never says who holds a taken name.
  */
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {

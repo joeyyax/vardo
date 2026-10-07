@@ -17,8 +17,7 @@ const createUserSchema = z.object({
   name: z.string().min(1).max(100).optional(),
 }).strict();
 
-// GET /api/v1/admin/users
-// List all users (admin only)
+// GET /api/v1/admin/users — list all users
 export async function GET() {
   try {
     await requireAppAdmin();
@@ -55,8 +54,7 @@ export async function GET() {
   }
 }
 
-// POST /api/v1/admin/users
-// Invite a user — creates account, sends magic link for first login
+// POST /api/v1/admin/users — invite a user with a magic link
 async function handlePost(request: NextRequest) {
   try {
     await requireAppAdmin();
@@ -73,7 +71,6 @@ async function handlePost(request: NextRequest) {
     const { email, name } = parsed.data;
     const normalizedEmail = email.trim().toLowerCase();
 
-    // Check if user already exists
     const existing = await db.query.user.findFirst({
       where: eq(user.email, normalizedEmail),
       columns: { id: true },
@@ -86,7 +83,7 @@ async function handlePost(request: NextRequest) {
       );
     }
 
-    // Create user directly — no password (users sign in via magic link or passkey)
+    // No password. Users sign in with a magic link or passkey.
     const userId = nanoid();
 
     await db.insert(user).values({
@@ -98,7 +95,6 @@ async function handlePost(request: NextRequest) {
       updatedAt: new Date(),
     });
 
-    // Send invitation with magic link
     let emailSent = false;
     try {
       const { sendEmail } = await import("@/lib/email/send");

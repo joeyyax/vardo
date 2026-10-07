@@ -26,12 +26,8 @@ import { SLOT_SKIP_COPY } from "@/lib/docker/image-reclaim/slot-policy";
 
 const log = logger.child("admin:maintenance:image-reclaim");
 
-// GET /api/v1/admin/maintenance/image-reclaim
-//
-// The plan that a run would execute, plus the last run's outcome. Sizes are an
-// upper bound — images share layers, so the per-image sums double-count. This
-// deliberately does not report `docker system df` reclaimable, which counts
-// images a stopped app still needs.
+// GET /api/v1/admin/maintenance/image-reclaim — the plan a run would execute, plus the last run's outcome.
+// Sizes are an upper bound since images share layers.
 export async function GET() {
   try {
     await requireAppAdmin();
@@ -67,10 +63,8 @@ export async function GET() {
   }
 }
 
-// POST /api/v1/admin/maintenance/image-reclaim
-//
-// Runs the plan. `dryRun` returns what would be removed without calling Docker.
-// Volumes are never in scope — the executor's only Docker call removes images.
+// POST /api/v1/admin/maintenance/image-reclaim — runs the plan. `dryRun` returns what would be removed.
+// Volumes are never in scope.
 async function handlePost(request: NextRequest) {
   try {
     await requireAppAdmin();
@@ -93,8 +87,7 @@ async function handlePost(request: NextRequest) {
       log.info(`Manual reclaim removed ${result.reclaimed.length} image(s)`);
     }
 
-    // The slot sweep is opt-in per request, so a plain run cannot reach a
-    // generation an operator has not previewed.
+    // Opt-in per request so a plain run can't reach an unpreviewed generation.
     let slotResult = null;
     if (parsed.data.slots) {
       const slotPlan = await buildSlotReclaimPlan();

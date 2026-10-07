@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
     const alerts = getAlertState();
 
     const active = alerts.filter((a) => {
-      // Consider an alert "active" if fired in the last 24h
+      // Active means fired in the last 24h.
       const elapsed = Date.now() - a.lastFired.getTime();
       return elapsed < 24 * 60 * 60 * 1000;
     });

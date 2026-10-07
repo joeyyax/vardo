@@ -76,7 +76,7 @@ async function handlePatch(
 
     const updates = parsed.data;
 
-    // Validate that the merged state still has at least one of targetUrl or redirectUrl
+    // The merged state needs a targetUrl or redirectUrl.
     const mergedTargetUrl = updates.targetUrl !== undefined ? updates.targetUrl : existing.targetUrl;
     const mergedRedirectUrl = updates.redirectUrl !== undefined ? updates.redirectUrl : existing.redirectUrl;
     if (!mergedTargetUrl && !mergedRedirectUrl) {

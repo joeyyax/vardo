@@ -7,13 +7,8 @@ import { requireMeshPeer } from "@/lib/mesh/auth";
 import { getInstanceId } from "@/lib/constants";
 
 /**
- * GET /api/v1/mesh/sync?orgId=xxx — return this instance's project manifest.
- *
- * Authenticated via mesh bearer token. Any authenticated peer can request
- * any org's manifest — this is intentional for hub-spoke topology where
- * the hub is the source of truth and all peers are trusted members of the
- * mesh network (authenticated over WireGuard + bearer token). Org-level
- * ACLs can be added later if multi-tenant peer isolation is needed.
+ * GET /api/v1/mesh/sync?orgId=xxx — this instance's project manifest.
+ * Any authenticated peer can read any org's manifest. Peers are trusted.
  */
 export async function GET(request: NextRequest) {
   try {

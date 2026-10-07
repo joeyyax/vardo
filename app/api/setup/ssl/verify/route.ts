@@ -116,9 +116,7 @@ async function handlePost() {
       }
     }
 
-    // CF_DNS_API_TOKEN must be set in the environment — it's what Traefik reads.
-    // The token stored in the DB is for UI management only; it does not propagate
-    // to Traefik automatically. Without this env var, Traefik cannot issue certs.
+    // Traefik reads CF_DNS_API_TOKEN from the environment. The DB copy never reaches it.
     const envToken = process.env.CF_DNS_API_TOKEN;
     if (!envToken) {
       return NextResponse.json({

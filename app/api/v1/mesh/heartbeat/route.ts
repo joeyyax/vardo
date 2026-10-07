@@ -10,13 +10,7 @@ import { getInstanceConfig } from "@/lib/system-settings";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
-/**
- * POST /api/v1/mesh/heartbeat — peer health check.
- *
- * Authenticated via mesh bearer token. Marks the calling peer as online in the
- * local DB. Returns the full peer manifest so the caller can see all mesh members,
- * not just its direct connections.
- */
+/** POST /api/v1/mesh/heartbeat — marks the calling peer online and returns the full peer manifest. */
 async function handlePost(request: NextRequest) {
   try {
     const peer = await requireMeshPeer(request);
@@ -30,10 +24,7 @@ async function handlePost(request: NextRequest) {
       })
       .where(eq(meshPeers.id, peer.id));
 
-    // Return the full peer list so the caller can see all mesh members.
-    // Exclude the calling peer itself and strip sensitive fields.
-    // instanceId and publicKey are included so the receiver can upsert
-    // visible peers into its own DB without ambiguity.
+    // Every peer except the caller, without sensitive fields.
     const allPeers = await db.query.meshPeers.findMany({
       where: ne(meshPeers.id, peer.id),
       columns: {

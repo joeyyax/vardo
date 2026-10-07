@@ -26,10 +26,7 @@ export async function GET() {
   }
 }
 
-// POST /api/v1/admin/core-services/cadvisor-disk-metrics
-//
-// Saves the setting and, when cAdvisor is already installed, redeploys it
-// immediately so the toggle takes effect without waiting for a restart.
+// POST /api/v1/admin/core-services/cadvisor-disk-metrics — saves the setting and redeploys cAdvisor if installed.
 async function handlePost(request: NextRequest) {
   try {
     await requireAppAdmin();

@@ -21,7 +21,6 @@ function parseEnvFile(content: string): EnvVar[] {
   for (const raw of content.split("\n")) {
     const line = raw.trim();
 
-    // Skip blank lines and comments
     if (!line || line.startsWith("#")) continue;
 
     const eqIndex = line.indexOf("=");
@@ -37,7 +36,6 @@ function parseEnvFile(content: string): EnvVar[] {
     if (!key) continue;
 
     const rawValue = line.slice(eqIndex + 1).trim();
-    // Strip surrounding quotes if present
     const value = rawValue.replace(/^["']|["']$/g, "");
     vars.push({ key, defaultValue: value || null });
   }
@@ -95,7 +93,6 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Try each candidate filename, stop at first found
     for (const filename of ENV_CANDIDATES) {
       const path = rootDirectory
         ? `${rootDirectory.replace(/\/$/, "")}/${filename}`
@@ -109,7 +106,7 @@ export async function GET(request: NextRequest) {
           ...(branch ? { ref: branch } : {}),
         });
 
-        // getContent can return a directory listing — we only want files
+        // getContent can return a directory listing.
         if (Array.isArray(data) || data.type !== "file" || !data.content) {
           continue;
         }
@@ -119,7 +116,7 @@ export async function GET(request: NextRequest) {
 
         return NextResponse.json({ envVars, filename });
       } catch (err: unknown) {
-        // 404 means file doesn't exist — try the next candidate
+        // 404: try the next candidate.
         if (
           err &&
           typeof err === "object" &&
@@ -132,7 +129,6 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // No env template file found
     return NextResponse.json({ envVars: [], filename: null });
   } catch (error) {
     if (error instanceof Error && error.message === "Unauthorized") {

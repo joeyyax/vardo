@@ -34,7 +34,7 @@ const patchSchema = z.object({
   enabled: z.boolean(),
 }).strict();
 
-// GET — list all org domains (includes default even if not yet in table)
+// GET — org domains, including the default before it's persisted
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
@@ -45,10 +45,8 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       where: eq(orgDomains.organizationId, orgId),
     });
 
-    // Ensure the default app domain is always present in the response
     const hasDefault = rows.some((r) => r.isDefault);
     if (!hasDefault) {
-      // Synthesize the default domain row (not yet persisted)
       rows.unshift({
         id: "__default__",
         organizationId: orgId,
@@ -60,7 +58,6 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       });
     }
 
-    // Sort: default first, then by createdAt
     rows.sort((a, b) => {
       if (a.isDefault && !b.isDefault) return -1;
       if (!a.isDefault && b.isDefault) return 1;
@@ -91,7 +88,6 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
 
     const domain = parsed.data.domain;
 
-    // Don't allow adding the default domain as a custom domain
     if (domain === DEFAULT_DOMAIN) {
       return NextResponse.json(
         { error: "Cannot add the default domain as a custom domain" },
@@ -140,7 +136,7 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
     const org = await verifyOrgAccess(orgId, "org.domains.manage");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    // If toggling the default domain that hasn't been persisted yet, create it
+    // The default domain is created on its first toggle.
     if (parsed.data.id === "__default__") {
       const [created] = await db
         .insert(orgDomains)
@@ -175,7 +171,7 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ domain: updated });
   } catch (error) {
     if (isUniqueViolation(error)) {
-      // Default domain already persisted — race condition, just update it
+      // Persisted by a concurrent request; update it.
       try {
         const [updated] = await db
           .update(orgDomains)
@@ -190,14 +186,13 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
 
         if (updated) return NextResponse.json({ domain: updated });
       } catch {
-        // Fall through to handleRouteError
       }
     }
     return handleRouteError(error);
   }
 }
 
-// DELETE — remove a custom domain (cannot delete default)
+// DELETE — remove a custom domain. The default can't be deleted.
 async function handleDelete(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
@@ -216,7 +211,6 @@ async function handleDelete(request: NextRequest, { params }: RouteParams) {
 
     const { id } = parsed.data;
 
-    // Check if trying to delete the default domain
     const existing = await db.query.orgDomains.findFirst({
       where: and(
         eq(orgDomains.id, id),

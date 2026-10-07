@@ -28,7 +28,6 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    // Get all domains for this app
     const appDomains = await db.query.domains.findMany({
       where: eq(domains.appId, appId),
       columns: { id: true, domain: true },
@@ -40,7 +39,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 
     const domainIds = appDomains.map((d) => d.id);
 
-    // Get recent checks for each domain (last 10 per domain)
+    // Last 10 checks per domain.
     const checks = await db.query.domainChecks.findMany({
       where: inArray(domainChecks.domainId, domainIds),
       orderBy: [desc(domainChecks.checkedAt)],

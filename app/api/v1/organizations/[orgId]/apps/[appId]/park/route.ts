@@ -37,8 +37,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     const refused = refuseSystemManaged(app, "park");
     if (refused) return refused;
 
-    // The parent owns the declaration for the whole stack, so a service cannot
-    // park itself out from under it.
+    // A service can't park itself; the parent owns the stack.
     if (app.parentAppId) {
       return NextResponse.json(
         { error: "This service is part of a compose stack. Park the stack instead." },

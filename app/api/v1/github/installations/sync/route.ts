@@ -18,12 +18,10 @@ export async function GET() {
 
     const octokit = await getAppOctokit();
 
-    // List all installations of this GitHub App
     const { data } = await octokit.rest.apps.listInstallations({
       per_page: 100,
     });
 
-    // Get existing installations for this user
     const existing = await db.query.githubAppInstallations.findMany({
       where: eq(githubAppInstallations.userId, userId),
     });
@@ -74,7 +72,6 @@ export async function GET() {
 
     log.info(`Synced ${synced} installation(s) for user ${userId}`);
 
-    // Return the updated list
     const installations = await db.query.githubAppInstallations.findMany({
       where: eq(githubAppInstallations.userId, userId),
     });

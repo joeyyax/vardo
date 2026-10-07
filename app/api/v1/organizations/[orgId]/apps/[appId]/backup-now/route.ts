@@ -78,7 +78,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       volumes: appVolumes.map((v) => ({ type: v.type, persistent: v.persistent })),
     });
 
-    // What a run would actually capture, opted-in bind mounts included.
+    // What a run would capture, opted-in bind mounts included.
     const captured = appVolumes.filter((v) => isBackupSelected(v) && !isUncapturedSource(v));
 
     if (!assessment.worthBackingUp && captured.length === 0) {
@@ -90,8 +90,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // The engine tars named Docker volumes; a bind-mount-only app would produce
-    // nothing but failed backup rows.
+    // The engine only tars named Docker volumes.
     if (captured.length === 0) {
       return fail(
         "BIND_MOUNTS_ONLY",
@@ -110,10 +109,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Reuse the job this app is already covered by, otherwise let the
-    // auto-backup helper create one. Both pre-conditions it checks (volumes,
-    // target) are already satisfied above, so a null here means another request
-    // won the race — re-read the link in that case.
+    // Reuse the app's job or create one; null means another request won the race.
     let jobId = await ensureAutoBackupJob({
       appId: app.id,
       appName: app.name,
@@ -166,9 +162,8 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
 
     const startedAt = new Date();
 
-    // Not awaited: a volume backup runs tar, gzip and an upload that can take
-    // many minutes. The client polls the backup history instead. Scoped to this
-    // app — a shared job also covers sibling apps nobody asked to back up.
+    // Not awaited: a volume backup can take minutes, so the client polls history.
+    // Scoped to this app since a shared job also covers its siblings.
     void runBackup(job.id, { appIds: [app.id] }).catch((err) => {
       log.error(`Manual backup failed for app ${app.name} (job ${job.id}):`, err);
     });

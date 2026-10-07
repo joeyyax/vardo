@@ -20,7 +20,7 @@ const initiateTransferSchema = z.object({
 }).strict();
 
 // POST /api/v1/organizations/[orgId]/apps/[appId]/transfer
-// Initiate an app transfer to another organization
+// Initiate an app transfer to another organization.
 async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
@@ -46,8 +46,8 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Existence only — the destination accepts or rejects, so membership in it
-    // is not required. Its contents must not reach this response.
+    // Existence only; the destination accepts or rejects.
+    // Its contents must not reach this response.
     const destinationOrg = await db.query.organizations.findFirst({
       where: eq(organizations.id, destinationOrgId),
       columns: { id: true },
@@ -60,7 +60,6 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Verify the app exists in this org
     const app = await db.query.apps.findFirst({
       where: and(
         eq(apps.id, appId),
@@ -73,7 +72,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "App not found" }, { status: 404 });
     }
 
-    // Check there isn't already a pending transfer for this app
+    // One pending transfer per app.
     const existing = await db.query.appTransfers.findFirst({
       where: and(
         eq(appTransfers.appId, appId),
@@ -88,7 +87,6 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Run analysis and create the transfer
     const analysis = await analyzeTransfer(appId);
 
     const transferId = await initiateTransfer({
@@ -128,14 +126,13 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
 }
 
 // DELETE /api/v1/organizations/[orgId]/apps/[appId]/transfer
-// Cancel a pending transfer (only the initiator can cancel)
+// Cancel a pending transfer. Only the initiator can cancel.
 async function handleDelete(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
     const org = await verifyOrgAccess(orgId, "org.transfers.manage");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    // Find the pending transfer for this app
     const transfer = await db.query.appTransfers.findFirst({
       where: and(
         eq(appTransfers.appId, appId),

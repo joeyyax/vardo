@@ -16,12 +16,7 @@ const cloneSchema = z.object({
   orgId: z.string().optional(),
 }).strict();
 
-/**
- * POST /api/v1/mesh/clone — receive a project bundle as a fresh clone.
- *
- * Creates a new independent deployment with unique names. No env vars
- * are carried over — the clone starts fresh.
- */
+/** POST /api/v1/mesh/clone — receive a bundle as a fresh clone with unique names and no env vars. */
 async function handlePost(request: NextRequest) {
   try {
     const orgId = peerOrganizationId(await requireMeshPeer(request));

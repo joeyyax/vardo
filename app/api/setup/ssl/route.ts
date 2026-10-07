@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
 
   const config = await getSslConfig();
 
-  // ZeroSSL requires EAB credentials — only report it as configured when they exist
+  // ZeroSSL counts as configured only with EAB credentials.
   const zerosslConfigured = !!(config.zerosslEabKid && config.zerosslEabHmac);
 
   return NextResponse.json({

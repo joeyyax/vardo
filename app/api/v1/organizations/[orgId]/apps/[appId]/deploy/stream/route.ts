@@ -15,14 +15,8 @@ type RouteParams = {
 };
 
 // GET /api/v1/organizations/[orgId]/apps/[appId]/deploy/stream
-//
 // SSE stream of deploy log lines and stage transitions via Redis Streams.
-// Works identically for live deploys and historical viewing — the stream
-// is the single source of truth. No polling, no race conditions.
-//
-// Query params:
-//   deploymentId — specific deploy to stream (optional, defaults to latest running)
-//   lastId — resume from this stream entry ID (for reconnection)
+// Query: deploymentId (defaults to latest), lastId (resume).
 async function handleGet(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
@@ -38,7 +32,6 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
       return new Response("Not found", { status: 404 });
     }
 
-    // Determine which deploy to stream
     const url = new URL(request.url);
     let deploymentId = url.searchParams.get("deploymentId");
     const lastId = url.searchParams.get("lastId") || undefined;
@@ -68,7 +61,7 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
       }
     }
 
-    // Check if stream exists; if not, fall back to DB log for historical deploys
+    // Fall back to the DB log when the stream is gone.
     const streamKey = deployStream(deploymentId);
     const streamExists = await (async () => {
       try {
@@ -77,7 +70,6 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
       } catch { return false; }
     })();
 
-    // If stream is empty/evicted, serve historical log from DB
     if (!streamExists) {
       const deploy = await db.query.deployments.findFirst({
         where: eq(deployments.id, deploymentId),
@@ -91,7 +83,6 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
         });
       }
 
-      // Serve the DB log as a completed SSE stream
       const encoder = new TextEncoder();
       const fallbackStream = new ReadableStream({
         start(ctrl) {
@@ -119,7 +110,7 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
 
     const stream = new ReadableStream({
       start(controller) {
-        // Keepalive to prevent proxy/browser timeouts
+        // Keepalive for proxy and browser timeouts.
         const keepalive = setInterval(() => {
           try {
             controller.enqueue(encoder.encode(": keepalive\n\n"));
@@ -154,7 +145,7 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
         const unregister = closeOnShutdown(cleanup);
         request.signal.addEventListener("abort", cleanup);
 
-        // Read from Redis Stream — history and live in one continuous flow
+        // Read from the Redis Stream: history, then live.
         (async () => {
           try {
             const entries = readStream(streamKey, {

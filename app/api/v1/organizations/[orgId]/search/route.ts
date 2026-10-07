@@ -10,8 +10,7 @@ type RouteParams = {
 };
 
 // GET /api/v1/organizations/[orgId]/search
-// Returns a lightweight index of all searchable entities for the command palette.
-// Cached for 30s to avoid re-querying on every Cmd+K open.
+// Searchable entity index for the command palette, cached 30s.
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
@@ -47,8 +46,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       }),
     ]);
 
-    // Compose children share a display name across stacks — three services all
-    // read "Redis" — so each carries the parent that tells them apart.
+    // Compose children share names across stacks, so each carries its parent.
     const byId = new Map(orgApps.map((app) => [app.id, app]));
 
     const response = NextResponse.json({

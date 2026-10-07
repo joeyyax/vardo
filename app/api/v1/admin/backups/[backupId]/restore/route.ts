@@ -44,8 +44,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Opt-in to restoring an archive encrypted with a key this host does not
-    // have. The env vars in it stay unreadable either way.
+    // Opt-in to restore an archive encrypted with another host's key. Its env vars stay unreadable.
     const body = await request.json().catch(() => ({}));
     const acceptKeyMismatch = body?.acceptKeyMismatch === true;
 

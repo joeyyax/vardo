@@ -9,10 +9,7 @@ import { apps } from "@/lib/db/schema";
 import { isLokiAvailable } from "@/lib/logging/client";
 import { readErrorRate } from "@/lib/logging/error-rate";
 
-/**
- * How this app's error rate compares to its own past. Read on demand rather
- * than stored — the samples behind it are what the collector writes.
- */
+/** How this app's error rate compares to its own past. */
 async function handler(
   _request: NextRequest,
   { params }: { params: Promise<{ orgId: string; appId: string }> },

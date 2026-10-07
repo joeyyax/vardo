@@ -11,8 +11,7 @@ type RouteParams = {
 };
 
 // GET /api/v1/organizations/[orgId]/apps/[appId]/delete-preview
-// What deleting the app would destroy or keep. `?sizes=1` returns the same
-// volumes and paths with sizes, which can take a few seconds.
+// What deleting the app would destroy or keep. `?sizes=1` adds sizes.
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
@@ -32,7 +31,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     let project: { id: string; name: string } | null = null;
     if (app.project) {
-      // The app's own compose children go with it, so they don't keep the project.
+      // The app's compose children go with it.
       const other = await db.query.apps.findFirst({
         where: and(
           eq(apps.projectId, app.project.id),

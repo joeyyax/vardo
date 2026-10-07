@@ -10,8 +10,7 @@ type RouteParams = {
 
 /**
  * GET /api/v1/organizations/[orgId]/apps/[appId]/security
- *
- * Returns the most recent security scans for an app (up to 10).
+ * The app's 10 most recent security scans.
  */
 export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {

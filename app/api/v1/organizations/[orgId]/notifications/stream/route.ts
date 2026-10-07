@@ -19,11 +19,8 @@ function streamIdMs(id: string): number {
 }
 
 // GET /api/v1/organizations/[orgId]/notifications/stream
-// SSE stream of org-level bus events (deploy, backup, cron, system alerts, etc.)
-// Reads from Redis Streams with catchup + live tail.
-//
-// Note: The unified SSE gateway at /api/v1/sse is the preferred endpoint
-// for new integrations. This endpoint is kept for backward compatibility.
+// SSE stream of org bus events from Redis Streams, catch-up then live tail.
+// Kept for compatibility; new integrations use /api/v1/sse.
 async function handleGet(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
@@ -31,9 +28,7 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
     if (!org) return new Response("Forbidden", { status: 403 });
 
     const url = new URL(request.url);
-    // Catch-up covers a dropped connection, not days away. Replaying an old
-    // cursor toasted every event the user missed, so anything past the window
-    // starts live instead; the notification panel is where history belongs.
+    // Cursors past the window start live, so a reconnect doesn't toast every missed event.
     const connectedAt = Date.now();
     const requestedLastId = url.searchParams.get("lastId");
     const withinCatchup =
@@ -74,7 +69,6 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
         const unregister = closeOnShutdown(cleanup);
         request.signal.addEventListener("abort", cleanup);
 
-        // Read from Redis Stream — catchup + live tail
         (async () => {
           try {
             for await (const entry of readStream(eventStream(orgId), {
@@ -90,8 +84,7 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
                     `event: notification\ndata: ${JSON.stringify({
                       ...payload,
                       streamId: entry.id,
-                      // Delivered by catch-up, not live — the client keeps it
-                      // out of the toast queue.
+                      // Catch-up events stay out of the toast queue.
                       historical: streamIdMs(entry.id) < connectedAt,
                     })}\n\n`,
                   ),

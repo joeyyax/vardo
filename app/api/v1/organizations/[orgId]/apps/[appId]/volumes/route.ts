@@ -75,17 +75,14 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    // Load saved volumes from the volumes table
     const savedVolumes = await db.query.volumes.findMany({
       where: eq(volumes.appId, appId),
     });
     const savedByName = new Map(savedVolumes.map((v) => [v.name, v]));
-    // Rows are named from the mount path (#757), Docker names a mount by its
-    // volume or host path, so the mount path is what matches them.
+    // Docker names a mount by volume or host path, so match rows on mount path.
     const savedByPath = new Map(savedVolumes.map((v) => [v.mountPath, v]));
 
-    // Get volumes from running containers. A stack's services can share a
-    // mount, so each volume is listed once.
+    // A stack's services can share a mount; list each volume once.
     const dockerVolumes: VolumeInfo[] = [];
     const seenMounts = new Set<string>();
     try {
@@ -202,7 +199,6 @@ async function handlePut(request: NextRequest, { params }: RouteParams) {
     }
     const incoming = parsed.data;
 
-    // Verify app exists
     const app = await db.query.apps.findFirst({
       where: and(eq(apps.id, appId), eq(apps.organizationId, orgId)),
       columns: { id: true },
@@ -211,21 +207,18 @@ async function handlePut(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    // Load existing volumes
     const existing = await db.query.volumes.findMany({
       where: eq(volumes.appId, appId),
     });
     const existingByName = new Map(existing.map((v) => [v.name, v]));
     const incomingNames = new Set(incoming.map((v) => v.name));
 
-    // Delete volumes not in the incoming list
     for (const vol of existing) {
       if (!incomingNames.has(vol.name)) {
         await db.delete(volumes).where(eq(volumes.id, vol.id));
       }
     }
 
-    // Upsert incoming volumes
     for (const vol of incoming) {
       const prev = existingByName.get(vol.name);
       if (prev) {
@@ -256,7 +249,7 @@ async function handlePut(request: NextRequest, { params }: RouteParams) {
       }
     }
 
-    // Keep legacy JSONB in sync during migration period
+    // Keep legacy JSONB in sync during migration.
     const persistentList = incoming
       .filter((v) => v.persistent)
       .map((v) => ({ name: v.name, mountPath: v.mountPath }));

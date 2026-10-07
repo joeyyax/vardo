@@ -9,17 +9,12 @@ import { startGateway } from "@/lib/sse/gateway";
 import { closeOnShutdown } from "@/lib/shutdown";
 
 // GET /api/v1/sse?org={orgId}&deploy={deployId}&lastEventId=&lastDeployId=&lastToastId=
-//
-// Unified SSE endpoint. Multiplexes org events, deploy logs, and user toasts
-// into a single connection. The client receives typed events:
-//
+// Multiplexes org events, deploy logs and user toasts into one connection:
 //   event: event       — org-level events (deploy status, backup, system alerts)
 //   event: deploy-log  — deploy log lines (when deploy param provided)
 //   event: deploy-stage — deploy stage transitions
 //   event: toast       — user toasts (temp, progress, persistent)
-//
-// Reconnection: pass lastEventId/lastDeployId/lastToastId to resume
-// from where you left off. No missed events, no duplicates.
+// Pass lastEventId/lastDeployId/lastToastId to resume.
 export async function GET(request: NextRequest) {
   try {
     const session = await getSession();
@@ -95,7 +90,6 @@ export async function GET(request: NextRequest) {
         const unregister = closeOnShutdown(cleanup);
         request.signal.addEventListener("abort", cleanup);
 
-        // Start the gateway — reads from multiple streams, dispatches via send()
         startGateway(
           {
             orgId,

@@ -22,7 +22,6 @@ export async function GET() {
   const services: Record<string, string> = {};
   let healthy = true;
 
-  // Check PostgreSQL
   try {
     await withTimeout(db.execute(sql`SELECT 1`), "postgres");
     services.postgres = "ok";
@@ -35,7 +34,6 @@ export async function GET() {
     );
   }
 
-  // Check Redis
   try {
     const pong = await withTimeout(redis.ping(), "redis");
     services.redis = pong === "PONG" ? "ok" : "unexpected response";

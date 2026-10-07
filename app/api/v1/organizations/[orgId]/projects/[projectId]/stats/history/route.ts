@@ -46,12 +46,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const to = parseInt(searchParams.get("to") || String(Date.now()));
     const bucket = parseInt(searchParams.get("bucket") || "30000");
 
-    // Query all apps in parallel, then merge points
     const perAppPoints = await Promise.all(
       projectApps.map((app) => queryMetricsPoints(app.name, from, to, bucket, app.gpuEnabled))
     );
 
-    // Merge by summing at each timestamp
     const pointMap = new Map<number, MetricsPoint>();
     for (const appPoints of perAppPoints) {
       for (const p of appPoints) {

@@ -34,11 +34,8 @@ const syncSchema = z.object({
 }).strict();
 
 /**
- * POST — Sync specific files from the image into the volume.
- *
- * Runs a temp container, copies the specified files from the image's
- * filesystem into the named volume. Destructive syncs (deleting many files)
- * require `{ confirm: true }` in the body.
+ * POST — copy files from the image into the volume.
+ * Destructive syncs require `{ confirm: true }`.
  */
 async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
@@ -61,7 +58,6 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
 
     const { paths, confirm } = parsed.data;
 
-    // Require confirmation for destructive operations
     if (paths.length >= DESTRUCTIVE_THRESHOLD && !confirm) {
       return NextResponse.json(
         {
@@ -73,7 +69,6 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Load the volume record
     const volume = await db.query.volumes.findFirst({
       where: and(eq(volumes.appId, appId), eq(volumes.name, volumeName)),
     });
@@ -81,7 +76,6 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Volume not found" }, { status: 404 });
     }
 
-    // Get the app's image name
     const app = await db.query.apps.findFirst({
       where: and(eq(apps.id, appId), eq(apps.organizationId, orgId)),
       columns: {
@@ -118,7 +112,6 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Find Docker volume name
     let dockerVolumeName: string | null = null;
     try {
       const containers = await listAppContainers(app);
@@ -148,7 +141,6 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       paths,
     );
 
-    // Record activity
     recordActivity({
       organizationId: app.organizationId,
       action: "volume.sync",

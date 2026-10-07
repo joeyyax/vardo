@@ -33,7 +33,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ branches: [] });
     }
 
-    // Extract owner/repo from git URL (handles both HTTPS and SSH)
+    // Extract owner/repo from an HTTPS or SSH git URL.
     let owner: string | null = null;
     let repo: string | null = null;
 
@@ -57,7 +57,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ branches: [] });
     }
 
-    // Find a working GitHub installation — same approach as deploy engine
+    // Find a GitHub installation with access to the repo.
     const orgMembers = await db.query.memberships.findMany({
       where: eq(memberships.organizationId, orgId),
       columns: { userId: true },
@@ -79,12 +79,11 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
           });
           return NextResponse.json({ branches: data.map((b) => b.name) });
         } catch {
-          // This installation doesn't have access to this repo, try next
+          // No access; try the next installation.
         }
       }
     }
 
-    // No installation found or none had access
     return NextResponse.json({ branches: [] });
   } catch (error) {
     return handleRouteError(error, "Error fetching branches");

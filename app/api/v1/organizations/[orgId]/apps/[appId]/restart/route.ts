@@ -39,8 +39,7 @@ async function handlePost(_request: NextRequest, { params }: RouteParams) {
     const refused = refuseSystemManaged(app, "restart");
     if (refused) return refused;
 
-    // The UI's Start button posts here too — the app's prior status is the only
-    // thing that tells the two apart.
+    // The Start button posts here too; prior status tells them apart.
     const result = await startOrRestartApp({
       organizationId: orgId,
       app,
@@ -52,9 +51,8 @@ async function handlePost(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Parent app not found" }, { status: 404 });
     }
 
-    // Callers render `error`; without it the reason never reaches the operator.
-    // `observed` is what Docker reported once the command returned — compose can
-    // exit clean and leave the app crashed.
+    // Callers render `error`. `observed` is Docker's state after the command;
+    // compose can exit clean and leave the app crashed.
     return NextResponse.json({
       success: result.success,
       log: result.log,

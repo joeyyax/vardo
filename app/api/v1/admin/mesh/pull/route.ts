@@ -16,12 +16,7 @@ const pullSchema = z.object({
   includeEnvVars: z.boolean().default(false),
 }).strict();
 
-/**
- * POST /api/v1/admin/mesh/pull — pull a project from a source instance.
- *
- * Orchestration endpoint called by the admin UI. Calls the source peer's
- * /api/v1/mesh/pull endpoint to get the bundle, then imports it locally.
- */
+/** POST /api/v1/admin/mesh/pull — fetches a bundle from the source peer and imports it. */
 async function handlePost(request: NextRequest) {
   try {
     await requireAppAdmin();
@@ -37,7 +32,6 @@ async function handlePost(request: NextRequest) {
 
     const { sourcePeerId, projectId, orgId, environment, includeEnvVars } = parsed.data;
 
-    // Fetch the bundle from the source peer
     const { bundle } = await meshJsonFetch<{ bundle: ProjectBundle }>(
       sourcePeerId,
       "/api/v1/mesh/pull",
@@ -48,7 +42,6 @@ async function handlePost(request: NextRequest) {
       { requireTls: includeEnvVars },
     );
 
-    // Import locally
     const result = await importProjectBundle(orgId, bundle, environment);
 
     return NextResponse.json(result, { status: 201 });

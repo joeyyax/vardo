@@ -28,13 +28,11 @@ async function handlePut(request: NextRequest, { params }: RouteParams) {
 
     const { domainId } = await request.json();
 
-    // Clear all primary flags for this app
     await db
       .update(domains)
       .set({ isPrimary: false })
       .where(eq(domains.appId, appId));
 
-    // Set the selected domain as primary
     await db
       .update(domains)
       .set({ isPrimary: true })

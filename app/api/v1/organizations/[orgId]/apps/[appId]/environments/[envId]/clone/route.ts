@@ -56,7 +56,6 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       if (previewGate) return previewGate;
     }
 
-    // Get the source environment
     const sourceEnv = await db.query.environments.findFirst({
       where: and(
         eq(environments.id, envId),
@@ -71,7 +70,6 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Get the source environment's env vars
     const sourceVars = await db.query.envVars.findMany({
       where: and(
         eq(envVars.appId, appId),
@@ -82,7 +80,6 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     const newEnvId = nanoid();
 
     await db.transaction(async (tx) => {
-      // Create the new environment
       await tx.insert(environments).values({
         id: newEnvId,
         appId,
@@ -93,7 +90,6 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
         clonedFromId: envId,
       });
 
-      // Clone env vars
       if (sourceVars.length > 0) {
         await tx.insert(envVars).values(
           sourceVars.map((v) => ({

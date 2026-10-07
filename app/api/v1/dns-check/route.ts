@@ -7,7 +7,6 @@ const BASE_DOMAIN = process.env.VARDO_BASE_DOMAIN || "localhost";
 
 // GET /api/v1/dns-check?domain=example.com&expected=auto-generated.localhost
 export async function GET(request: NextRequest) {
-  // Require authentication
   const { getSession } = await import("@/lib/auth/session");
   const session = await getSession();
   if (!session?.user?.id) {
@@ -69,13 +68,13 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Check if CNAME points to our base domain or the expected auto-generated domain
+    // CNAME points to the base domain or the expected generated domain.
     const cnameCorrect = cnameRecords.some((r) =>
       r.endsWith(`.${BASE_DOMAIN}`) || r.endsWith(`.${BASE_DOMAIN}.`) ||
       (expected && (r === expected || r === `${expected}.`))
     );
 
-    // Check if A record points to this server's IP
+    // A record points to this server's IP.
     const serverIp = await getServerIP();
     const aCorrect = serverIp ? aRecords.some((ip) => ip === serverIp) : false;
 

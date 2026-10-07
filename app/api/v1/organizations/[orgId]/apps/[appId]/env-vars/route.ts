@@ -41,8 +41,7 @@ function mask(content: string): string {
 const DECRYPT_ERROR = "Failed to decrypt env vars — check ENCRYPTION_MASTER_KEY";
 
 // GET /api/v1/organizations/[orgId]/apps/[appId]/env-vars[?environmentId=]
-// Returns the decrypted env file content. `inherited` marks an environment
-// with no env of its own, which deploys with the app's.
+// Returns decrypted env content. `inherited` marks an environment with no env of its own.
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
@@ -112,7 +111,7 @@ const putSchema = z.object({
 }).strict();
 
 // PUT /api/v1/organizations/[orgId]/apps/[appId]/env-vars
-// Save the entire env file content (encrypted), to the app or one of its environments
+// Saves the whole env file, encrypted.
 async function handlePut(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;

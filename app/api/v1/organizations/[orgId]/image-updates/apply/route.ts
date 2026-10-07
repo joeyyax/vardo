@@ -9,7 +9,7 @@ import { summarizeBatch, type BatchItemResult } from "@/lib/docker/image-updates
 
 type RouteParams = { params: Promise<{ orgId: string }> };
 
-/** Cap per request. Above this the caller should page rather than hold a request open. */
+/** Cap per request. Callers page above it. */
 const MAX_ITEMS = 100;
 
 const batchSchema = z
@@ -49,8 +49,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
     }
 
-    // Serial on purpose: two services of one compose file rewrite the same
-    // document, and running them together loses whichever writes first.
+    // Serial: parallel writes to one compose file lose all but the last.
     const results: BatchItemResult[] = [];
     for (const item of parsed.data.updates) {
       const outcome = await applyImageUpdate({
@@ -82,7 +81,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     }
 
     const report = summarizeBatch(results);
-    // 207: some landed, some did not. The body carries which.
+    // 207: partial success. The body says which.
     return NextResponse.json(report, { status: report.failed > 0 && report.applied > 0 ? 207 : 200 });
   } catch (error) {
     return handleRouteError(error, "Error applying image updates");

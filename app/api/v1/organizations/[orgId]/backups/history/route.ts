@@ -13,10 +13,7 @@ type RouteParams = {
   params: Promise<{ orgId: string }>;
 };
 
-/**
- * The history of a deleted app (?appId=) or deleted job (?jobName=). Returns
- * a response to send when the request can't name one.
- */
+/** The history of a deleted app (?appId=) or job (?jobName=), or an error response. */
 async function deletedHistoryScope(request: NextRequest, orgId: string) {
   const appId = request.nextUrl.searchParams.get("appId");
   const jobName = request.nextUrl.searchParams.get("jobName");

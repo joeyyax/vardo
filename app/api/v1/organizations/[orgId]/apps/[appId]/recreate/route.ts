@@ -33,8 +33,7 @@ async function handlePost(_request: NextRequest, { params }: RouteParams) {
     const refused = refuseSystemManaged(app, "recreate");
     if (refused) return refused;
 
-    // Slot directories and compose projects are environment-scoped; without
-    // the name this resolves to the legacy layout and finds nothing.
+    // Needs the environment name; without it this finds nothing.
     const env = await resolveDefaultEnv(appId);
     const result = await recreateProject(appId, app.name, env.name);
     // Force-recreate replaces every container, so the row's start time is stale.

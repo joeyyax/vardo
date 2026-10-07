@@ -9,12 +9,7 @@ import { withRateLimit } from "@/lib/api/with-rate-limit";
 
 type RouteParams = { params: Promise<{ id: string }> };
 
-/**
- * DELETE /api/v1/user/notification-preferences/:id
- *
- * Removes a preference row, reverting to the channel-type default for
- * that event.
- */
+/** DELETE — removes a preference, reverting the event to the channel-type default. */
 async function handleDelete(
   _req: NextRequest,
   { params }: RouteParams,

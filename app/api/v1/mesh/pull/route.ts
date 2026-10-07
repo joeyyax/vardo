@@ -11,13 +11,7 @@ const pullSchema = z.object({
   includeEnvVars: z.boolean().default(false),
 }).strict();
 
-/**
- * POST /api/v1/mesh/pull — return a project bundle to the requesting peer.
- *
- * Called by a peer instance over WireGuard. The requesting instance wants
- * to pull this project for local development/testing. This endpoint builds
- * the bundle and returns it.
- */
+/** POST /api/v1/mesh/pull — return a project bundle to the requesting peer. */
 async function handlePost(request: NextRequest) {
   try {
     const organizationId = peerOrganizationId(await requireMeshPeer(request));

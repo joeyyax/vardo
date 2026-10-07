@@ -89,8 +89,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
 
     const data = parsed.data;
 
-    // A quoted x-vardo-shared is dropped by the parser, so it has to be caught
-    // against the raw YAML — before the compose is stored.
+    // The parser drops a quoted x-vardo-shared, so check the raw YAML before storing.
     const markerErrors = sharedMarkerTypeErrors(data.composeContent ?? "");
     if (markerErrors.length > 0) {
       return NextResponse.json(
@@ -99,9 +98,9 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Check reserved slugs — only when generating a subdomain on our base domain
+    // Reserved slugs apply only to subdomains on the base domain.
     if (data.generateDomain && isReservedSlug(data.name)) {
-      // Allow admins to bypass
+      // Admins bypass.
       const { isAppAdmin } = await import("@/lib/auth/admin");
       if (!(await isAppAdmin())) {
         return NextResponse.json(
@@ -115,13 +114,12 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: APP_NAME_TAKEN_ERROR }, { status: 409 });
     }
 
-    // Fetch org for baseDomain
     const orgRecord = await db.query.organizations.findFirst({
       where: eq(organizations.id, orgId),
       columns: { slug: true, baseDomain: true },
     });
 
-    // The slug is the subdomain, so what the form previewed is what gets created.
+    // The slug is the subdomain.
     const autoDomain = data.generateDomain
       ? `${data.name}.${getBaseDomain(orgRecord?.baseDomain)}`
       : null;
@@ -141,7 +139,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
 
     const appId = nanoid();
 
-    // Validate projectId — must exist in same org
+    // projectId must exist in this org.
     const project = await db.query.projects.findFirst({
       where: and(eq(projects.id, data.projectId), eq(projects.organizationId, orgId)),
       columns: { id: true },

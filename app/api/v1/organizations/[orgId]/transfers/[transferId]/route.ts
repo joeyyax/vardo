@@ -61,7 +61,6 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     if (action === "accept") {
       await acceptTransfer(transferId, org.session.user.id);
 
-      // Record activity on both orgs
       recordActivity({
         organizationId: transfer.destinationOrgId,
         action: "transfer.accepted",

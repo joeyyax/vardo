@@ -9,9 +9,7 @@ type RouteParams = {
 
 /**
  * POST /api/v1/organizations/[orgId]/apps/[appId]/security/scan
- *
- * Trigger an on-demand security scan for an app. Runs the scan inline
- * and returns the scan ID when complete.
+ * Runs an on-demand scan inline and returns its ID.
  */
 async function handler(_request: NextRequest, { params }: RouteParams) {
   try {

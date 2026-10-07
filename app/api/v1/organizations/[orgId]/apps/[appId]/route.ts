@@ -113,7 +113,7 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // GPU passthrough grants direct host hardware access — restrict to owner/admin
+    // GPU passthrough grants host hardware access; owner/admin only.
     if (parsed.data.gpuEnabled === true && !can(org.membership.role, "app.gpu")) {
       return NextResponse.json(
         { error: "Only owners and admins can enable GPU passthrough" },
@@ -132,8 +132,7 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
     const refused = refuseSystemManaged(existingApp, "edit");
     if (refused) return refused;
 
-    // A quoted x-vardo-shared is dropped by the parser, so it has to be caught
-    // against the raw YAML — before the compose is stored.
+    // The parser drops a quoted x-vardo-shared, so check the raw YAML before storing.
     const markerErrors = sharedMarkerTypeErrors(parsed.data.composeContent ?? "");
     if (markerErrors.length > 0) {
       return NextResponse.json(
@@ -142,7 +141,7 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Validate projectId changes — must belong to same org
+    // projectId must belong to this org.
     let oldProjectId: string | null = null;
     if ("projectId" in parsed.data) {
       if (parsed.data.projectId) {
@@ -174,7 +173,7 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
       )
       .returning();
 
-    // Clean up empty projects after moving an app
+    // Clean up empty projects after a move.
     if (oldProjectId && oldProjectId !== updated?.projectId) {
       const remaining = await db.query.apps.findFirst({
         where: eq(apps.projectId, oldProjectId),
@@ -222,7 +221,6 @@ async function handleDelete(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
     }
 
-    // Fetch app before deleting
     const app = await db.query.apps.findFirst({
       where: and(eq(apps.id, appId), eq(apps.organizationId, orgId)),
       columns: { id: true, name: true, projectId: true, isSystemManaged: true, parentAppId: true },
@@ -235,8 +233,7 @@ async function handleDelete(request: NextRequest, { params }: RouteParams) {
     const refused = refuseSystemManaged(app, "delete");
     if (refused) return refused;
 
-    // A decomposed compose child is managed by its parent stack — refuse
-    // independent deletes (the compose declares it; a deploy would recreate it).
+    // A compose child is managed by its parent stack; a deploy would recreate it.
     if (app.parentAppId) {
       return NextResponse.json(
         { error: "This service is part of a compose stack and can't be deleted on its own. Remove it from the stack's compose file and redeploy." },

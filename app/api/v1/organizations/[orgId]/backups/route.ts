@@ -176,7 +176,6 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       })
       .returning();
 
-    // Create app associations
     if (appIds.length > 0) {
       await db.insert(backupJobApps).values(
         appIds.map((appId) => ({

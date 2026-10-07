@@ -42,7 +42,6 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       orderBy: (t, { desc }) => [desc(t.createdAt)],
     });
 
-    // Tag each transfer as incoming or outgoing relative to this org
     const tagged = transfers.map((t) => ({
       ...t,
       direction: t.sourceOrgId === orgId ? "outgoing" : "incoming",

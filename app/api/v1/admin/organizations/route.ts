@@ -42,8 +42,7 @@ export async function GET() {
 
     const result = allOrgs.map((org) => {
       const orgApps = allApps.filter((a) => a.organizationId === org.id);
-      // A stack child's containers are a subset of its parent's — dedupe or the
-      // org total counts them twice.
+      // A stack child's containers are a subset of its parent's, so dedupe.
       const orgMetrics = dedupeMetrics(orgApps.map((a) => metricsByApp.get(a.id) ?? []));
       let cpu = 0, memory = 0, networkRx = 0, networkTx = 0, containers = 0;
       for (const m of orgMetrics) {

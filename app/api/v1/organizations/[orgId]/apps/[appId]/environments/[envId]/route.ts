@@ -85,7 +85,6 @@ async function handleDelete(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    // Check if this is the default/production environment
     const env = await db.query.environments.findFirst({
       where: and(
         eq(environments.id, envId),
@@ -111,7 +110,7 @@ async function handleDelete(_request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Cascading delete handles env vars via FK constraint
+    // Cascading delete removes env vars.
     const [deleted] = await db
       .delete(environments)
       .where(

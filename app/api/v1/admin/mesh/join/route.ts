@@ -28,7 +28,7 @@ const joinResponseSchema = z.object({
   }).passthrough(),
   token: z.string(),
   hub: z.object({
-    /** Absent from hubs older than this field — see the fallback below. */
+    /** Absent from older hubs. */
     instanceId: z.string().min(1).max(128).optional(),
     publicKey: z.string(),
     endpoint: z.string().nullable().optional(),
@@ -38,15 +38,8 @@ const joinResponseSchema = z.object({
 });
 
 /**
- * POST /api/v1/admin/mesh/join — join a mesh using an invite token.
- *
- * This runs on the *joining* instance. It decodes the token to get the
- * hub URL + code, bootstraps local WireGuard, generates a token for the
- * hub to call us, then calls the hub's public join endpoint with this
- * instance's details.
- *
- * During initial setup (no users exist), auth is bypassed so the join
- * can happen before account creation.
+ * POST /api/v1/admin/mesh/join — runs on the joining instance and calls the hub's join endpoint.
+ * Skips auth during initial setup so the join can precede account creation.
  */
 async function handlePost(request: NextRequest) {
   try {
@@ -77,17 +70,15 @@ async function handlePost(request: NextRequest) {
       return NextResponse.json({ error: urlCheck.error }, { status: 400 });
     }
 
-    // Bootstrap local WireGuard with a temporary address (just to get the keypair).
-    // The correct address will be set by rebuildAndSync after the hub assigns our IP.
+    // Temporary address for the keypair. rebuildAndSync sets the one the hub assigns.
     const localPublicKey = await ensureHubConfig("10.99.0.254");
 
     const instanceId = await getInstanceId();
     const hostname = (await getInstanceDisplayName()) ?? osHostname();
 
-    // Generate a token the hub can use to call our API
+    // Token the hub uses to call this instance.
     const { raw: ourToken, hash: ourTokenHash } = generateMeshToken();
 
-    // Call the hub's join endpoint
     let joinRes: Response;
     try {
       joinRes = await fetch(`${decoded.hubApiUrl}/api/v1/mesh/join`, {
@@ -118,7 +109,7 @@ async function handlePost(request: NextRequest) {
       );
     }
 
-    // Validate and parse the hub's response — clamps hub.name to 255 chars at the parse layer
+    // Clamps hub.name to 255 chars.
     const joinParsed = joinResponseSchema.safeParse(rawJoinData);
     if (!joinParsed.success) {
       return NextResponse.json(
@@ -128,13 +119,9 @@ async function handlePost(request: NextRequest) {
     }
     const joinData = joinParsed.data;
 
-    // The hub allocated an IP for us: joinData.peer.internalIp
-    // The hub's own mesh IP: joinData.hub.internalIp
-    // The hub's WireGuard endpoint: joinData.hub.endpoint (IP:port for UDP)
     const ourMeshIp = joinData.peer.internalIp;
 
-    // Register the hub as a peer on our side. instanceId identifies the hub, not
-    // us — a self-id here collides the next time this instance pairs with anything.
+    // instanceId identifies the hub. A self-id collides the next time this instance pairs.
     await db.insert(meshPeers).values({
       id: nanoid(),
       instanceId: joinData.hub.instanceId ?? `hub:${joinData.hub.publicKey}`,
@@ -152,7 +139,7 @@ async function handlePost(request: NextRequest) {
       lastSeenAt: new Date(),
     });
 
-    // Rebuild WireGuard config with the hub as a peer and our correct mesh IP
+    // Rebuild WireGuard with the hub as a peer and the assigned mesh IP.
     try {
       const { isWireguardRunning } = await import("@/lib/mesh/wireguard");
       if (await isWireguardRunning()) {
@@ -167,7 +154,6 @@ async function handlePost(request: NextRequest) {
     try {
       inheritedConfig = await inheritConfigFromHub(decoded.hubApiUrl, joinData.token);
     } catch {
-      // Config inheritance is best-effort — don't fail the join
     }
 
     return NextResponse.json({

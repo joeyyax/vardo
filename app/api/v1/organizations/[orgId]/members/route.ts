@@ -20,7 +20,6 @@ type RouteParams = {
 };
 
 // GET /api/v1/organizations/[orgId]/members
-// Returns all members of the organization
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
@@ -54,7 +53,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 }
 
 // POST /api/v1/organizations/[orgId]/members
-// Add a member by email (user must already have an account)
+// Adds an existing user by email.
 async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
@@ -75,7 +74,6 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
 
     const { email, role } = parsed.data;
 
-    // Find the user by email
     const targetUser = await db.query.user.findFirst({
       where: eq(user.email, email.trim().toLowerCase()),
       columns: { id: true, name: true, email: true },
@@ -88,7 +86,6 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Check if already a member
     const existing = await db.query.memberships.findFirst({
       where: and(
         eq(memberships.organizationId, orgId),
@@ -103,7 +100,6 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Create membership
     await db.insert(memberships).values({
       id: nanoid(),
       userId: targetUser.id,

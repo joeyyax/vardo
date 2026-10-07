@@ -36,7 +36,7 @@ async function handleDelete(request: NextRequest) {
       );
     }
 
-    // Find the installation (must belong to current user)
+    // Must belong to the current user.
     const installation = await db.query.githubAppInstallations.findFirst({
       where: and(
         eq(githubAppInstallations.id, id),
@@ -51,12 +51,11 @@ async function handleDelete(request: NextRequest) {
       );
     }
 
-    // Remove from our database
     await db
       .delete(githubAppInstallations)
       .where(eq(githubAppInstallations.id, id));
 
-    // Attempt to remove from GitHub (best-effort)
+    // Best-effort removal on GitHub.
     try {
       const octokit = await getAppOctokit();
       await octokit.rest.apps.deleteInstallation({

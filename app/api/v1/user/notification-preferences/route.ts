@@ -15,10 +15,7 @@ import { ALL_EVENT_TYPES } from "@/lib/bus/events";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
-/**
- * Discriminated union for PUT — the `type` field routes the request cleanly
- * without ambiguous fallthrough between digest and preference updates.
- */
+/** PUT body, discriminated by `type`. */
 const putSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("preference"),
@@ -34,12 +31,7 @@ const putSchema = z.discriminatedUnion("type", [
   }),
 ]);
 
-/**
- * GET /api/v1/user/notification-preferences?orgId=xxx
- *
- * Returns the current user's notification preferences for all channels in
- * the given org, plus their digest preference.
- */
+/** GET ?orgId= — the user's preferences for every channel in the org, plus their digest preference. */
 export async function GET(req: NextRequest) {
   try {
     const orgId = req.nextUrl.searchParams.get("orgId");
@@ -87,13 +79,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
-/**
- * PUT /api/v1/user/notification-preferences
- *
- * Upserts a single preference row (type: "preference") or updates the
- * digest toggle (type: "digest"). The `type` discriminant ensures clean
- * routing with no ambiguous fallthrough.
- */
+/** PUT — upserts a preference (type: "preference") or the digest toggle (type: "digest"). */
 async function handlePut(req: NextRequest) {
   try {
     await requireSession();

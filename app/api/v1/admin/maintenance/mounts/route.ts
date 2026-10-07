@@ -11,11 +11,8 @@ import { withRateLimit } from "@/lib/api/with-rate-limit";
 
 const log = logger.child("admin:maintenance:mounts");
 
-// GET /api/v1/admin/maintenance/mounts
-//
-// Returns the current host mount configuration from environment variables.
-// Each mount is returned as { source, destination } if set, or null if not configured.
-// Handles both new source:destination:ro format and legacy single-path format.
+// GET /api/v1/admin/maintenance/mounts — host mounts from env, each { source, destination } or null.
+// Reads source:destination:ro and the legacy single-path format.
 
 export async function GET() {
   try {
@@ -32,17 +29,10 @@ export async function GET() {
   }
 }
 
-// POST /api/v1/admin/maintenance/mounts
-//
-// Updates host mount configuration by writing to the .env file.
-// Requires a Vardo restart to take effect.
-// Each mount is sent as { source, destination } and stored as "source:destination".
-// For docker-compose compatibility, we append :ro to make it "source:destination:ro".
+// POST /api/v1/admin/maintenance/mounts — writes mounts to .env as source:destination:ro. Needs a restart.
 function formatMountForEnv(value: string | undefined): string {
   if (!value) return "";
-  // If already has :ro suffix, return as-is
   if (value.endsWith(":ro")) return value;
-  // Append :ro for read-only mount
   return `${value}:ro`;
 }
 

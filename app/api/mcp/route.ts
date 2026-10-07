@@ -5,15 +5,8 @@ import { createMcpServer } from "@/lib/mcp/server";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
-/**
- * POST /api/mcp — Streamable HTTP transport for MCP.
- *
- * Handles initialize, tools/list, and tools/call JSON-RPC requests.
- * Stateless: fresh McpServer instance per request, authenticated via
- * Bearer token bound to an organization.
- */
+/** POST /api/mcp — stateless Streamable HTTP transport, authenticated by an org-bound bearer token. */
 async function handlePost(request: NextRequest) {
-  // Check if MCP plugin is enabled
   const { requirePlugin } = await import("@/lib/api/require-plugin");
   const gate = await requirePlugin("mcp");
   if (gate) return gate;
@@ -37,12 +30,7 @@ async function handlePost(request: NextRequest) {
   return transport.handleRequest(request);
 }
 
-/**
- * GET /api/mcp — SSE endpoint for server-initiated notifications.
- *
- * Required by the MCP Streamable HTTP spec. In stateless mode we reject
- * these since there's no persistent session to attach to.
- */
+/** GET /api/mcp — rejected, since stateless mode has no session for SSE. */
 export async function GET() {
   return new Response(
     JSON.stringify({
@@ -55,11 +43,7 @@ export async function GET() {
   );
 }
 
-/**
- * DELETE /api/mcp — Session teardown.
- *
- * No-op in stateless mode — each request is independent.
- */
+/** DELETE /api/mcp — no-op in stateless mode. */
 async function handleDelete() {
   return new Response(null, { status: 204 });
 }

@@ -17,10 +17,7 @@ const createOrgSchema = z.object({
   slug: z.string().max(100).regex(/^[a-z0-9-]*$/, "Slug must contain only lowercase letters, numbers, and hyphens").optional(),
 }).strict();
 
-/**
- * GET /api/v1/organizations
- * List all organizations the authenticated user belongs to.
- */
+/** GET /api/v1/organizations — orgs the user belongs to. */
 export async function GET() {
   try {
     const session = await getSession();
@@ -57,10 +54,7 @@ export async function GET() {
   }
 }
 
-/**
- * POST /api/v1/organizations
- * Create a new organization for the authenticated user.
- */
+/** POST /api/v1/organizations — creates an org owned by the user. */
 async function handlePost(request: NextRequest) {
   try {
     const session = await getSession();
@@ -80,16 +74,14 @@ async function handlePost(request: NextRequest) {
 
     const { name: trimmedName, slug: providedSlug } = parsed.data;
 
-    // Use provided slug or generate from name
     const baseSlug = (providedSlug || trimmedName)
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-|-$/g, "");
 
-    // Add a short suffix to ensure uniqueness
+    // A short suffix keeps the slug unique.
     const slug = `${baseSlug}-${Math.random().toString(36).substring(2, 8)}`;
 
-    // Create the organization
     const [org] = await db
       .insert(organizations)
       .values({
@@ -99,7 +91,6 @@ async function handlePost(request: NextRequest) {
       })
       .returning();
 
-    // Create the membership (user is owner)
     await db.insert(memberships).values({
       id: nanoid(),
       userId: session.user.id,
