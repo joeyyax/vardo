@@ -12,6 +12,7 @@
 
 import { access, readdir, rm } from "fs/promises";
 import { constants } from "fs";
+import { join, sep } from "path";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
@@ -135,7 +136,24 @@ export type AppDirRemoval = {
   removed: boolean;
   /** Why the directory survived. */
   reason?: string;
+  /** Paths left in place because `keep` named them. */
+  kept?: string[];
 };
+
+/** Remove everything under `dir` except the `keep` paths and the directories holding them. */
+async function removeAllExcept(dir: string, keep: string[]): Promise<void> {
+  if (keep.includes(dir)) return;
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    const path = join(dir, entry.name);
+    if (keep.includes(path)) continue;
+    // Never descend through a link: its target is kept or removed on its own.
+    if (entry.isDirectory() && keep.some((k) => k.startsWith(path + sep))) {
+      await removeAllExcept(path, keep);
+      continue;
+    }
+    await rm(path, { recursive: true, force: true });
+  }
+}
 
 /**
  * Remove an app's base directory and drop its ownership record.
@@ -155,8 +173,11 @@ export type AppDirRemoval = {
 export async function removeAppDir(opts: {
   appId: string;
   appName: string;
+  /** Absolute paths inside the directory to leave in place. */
+  keep?: string[];
 }): Promise<AppDirRemoval> {
   const { appId, appName } = opts;
+  const keep = opts.keep ?? [];
   if (isSelfApp(appName)) return { removed: false, reason: "Vardo's own directory" };
 
   try {
@@ -167,8 +188,16 @@ export async function removeAppDir(opts: {
 
   let removed = true;
   let reason: string | undefined;
+  let kept: string[] | undefined;
   try {
-    await rm(appBaseDir(appName), { recursive: true, force: true });
+    if (keep.length > 0) {
+      await removeAllExcept(appBaseDir(appName), keep);
+      removed = false;
+      reason = "Kept bind-mounted data";
+      kept = keep;
+    } else {
+      await rm(appBaseDir(appName), { recursive: true, force: true });
+    }
   } catch (err) {
     removed = false;
     reason = errText(err);
@@ -182,6 +211,7 @@ export async function removeAppDir(opts: {
     log.warn(`Could not drop the ownership record for ${appName}:`, err);
   }
 
+  if (kept) return { removed, reason, kept };
   return removed ? { removed } : { removed, reason };
 }
 

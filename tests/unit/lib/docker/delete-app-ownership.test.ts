@@ -9,6 +9,7 @@ const {
   stopProjectMock,
   assertOwnershipMock,
   removeAppDirMock,
+  appBindPathsMock,
 } = vi.hoisted(() => {
   const deleteWhere = vi.fn().mockResolvedValue(undefined);
   return {
@@ -20,6 +21,7 @@ const {
     stopProjectMock: vi.fn().mockResolvedValue({ success: true, log: "" }),
     assertOwnershipMock: vi.fn().mockResolvedValue(undefined),
     removeAppDirMock: vi.fn().mockResolvedValue({ removed: true }),
+    appBindPathsMock: vi.fn().mockResolvedValue([]),
   };
 });
 
@@ -33,6 +35,10 @@ vi.mock("@/lib/db", () => ({
   },
 }));
 vi.mock("@/lib/docker/deploy", () => ({ stopProject: stopProjectMock }));
+vi.mock("@/lib/docker/app-data", () => ({
+  findAppData: vi.fn().mockResolvedValue({ volumes: [], bindMounts: [] }),
+  appBindPaths: appBindPathsMock,
+}));
 vi.mock("@/lib/docker/client", () => ({
   listVolumes: vi.fn().mockResolvedValue([]),
   removeVolume: vi.fn(),
@@ -69,6 +75,7 @@ beforeEach(() => {
   stopProjectMock.mockResolvedValue({ success: true, log: "" });
   assertOwnershipMock.mockResolvedValue(undefined);
   removeAppDirMock.mockResolvedValue({ removed: true });
+  appBindPathsMock.mockResolvedValue([]);
 });
 
 describe("deleteApp ownership guard", () => {
@@ -78,7 +85,7 @@ describe("deleteApp ownership guard", () => {
     );
 
     await expect(
-      deleteApp({ appId: "app-1", organizationId: "org-1", pruneVolumes: true }),
+      deleteApp({ appId: "app-1", organizationId: "org-1", deleteVolumes: true }),
     ).rejects.toThrow(AppDirOwnershipError);
 
     expect(stopProjectMock).not.toHaveBeenCalled();
@@ -104,7 +111,7 @@ describe("deleteApp directory removal", () => {
   it("removes the app directory before the row is deleted", async () => {
     const result = await deleteApp({ appId: "app-1", organizationId: "org-1" });
 
-    expect(removeAppDirMock).toHaveBeenCalledWith({ appId: "app-1", appName: "api" });
+    expect(removeAppDirMock).toHaveBeenCalledWith({ appId: "app-1", appName: "api", keep: [] });
     expect(removeAppDirMock.mock.invocationCallOrder[0]).toBeLessThan(
       deleteMock.mock.invocationCallOrder[0],
     );
@@ -136,5 +143,23 @@ describe("deleteApp directory removal", () => {
 
     expect(removeAppDirMock).not.toHaveBeenCalled();
     expect(result.removedAppDir).toBe(false);
+  });
+});
+
+describe("deleteApp bind-mounted data", () => {
+  const DATA = "/apps/api/production/blue/uploads";
+
+  it("keeps it by default", async () => {
+    appBindPathsMock.mockResolvedValue([DATA]);
+    await deleteApp({ appId: "app-1", organizationId: "org-1" });
+
+    expect(removeAppDirMock).toHaveBeenCalledWith(expect.objectContaining({ keep: [DATA] }));
+  });
+
+  it("removes it with deleteVolumes", async () => {
+    appBindPathsMock.mockResolvedValue([DATA]);
+    await deleteApp({ appId: "app-1", organizationId: "org-1", deleteVolumes: true });
+
+    expect(removeAppDirMock).toHaveBeenCalledWith(expect.objectContaining({ keep: [] }));
   });
 });

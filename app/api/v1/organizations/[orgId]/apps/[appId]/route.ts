@@ -5,8 +5,8 @@ import { apps, projects } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
 import { repoFilePathSchema } from "@/lib/api/create-app-schema";
-import { stopProject } from "@/lib/docker/deploy";
-import { assertAppDirOwnership, AppDirOwnershipError, removeAppDir } from "@/lib/docker/app-dir-owner";
+import { deleteApp } from "@/lib/docker/delete-app";
+import { assertAppDirOwnership, AppDirOwnershipError } from "@/lib/docker/app-dir-owner";
 import { recordActivity } from "@/lib/activity";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { isOrgAdmin } from "@/lib/auth/permissions";
@@ -55,6 +55,11 @@ const updateAppSchema = z.object({
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
   cloneStrategy: z.enum(["clone", "clone_data", "empty", "skip"]).optional(),
   dependsOn: z.array(z.string()).nullable().optional(),
+}).strict();
+
+// Only an explicit `true` destroys volumes and bind-mounted data.
+const deleteAppSchema = z.object({
+  deleteVolumes: z.boolean().optional().default(false),
 }).strict();
 
 // GET /api/v1/organizations/[orgId]/apps/[appId]
@@ -199,11 +204,23 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
 }
 
 // DELETE /api/v1/organizations/[orgId]/apps/[appId]
-async function handleDelete(_request: NextRequest, { params }: RouteParams) {
+async function handleDelete(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
     const org = await verifyOrgAccess(orgId);
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+    const raw = await request.text();
+    let body: unknown = {};
+    try {
+      body = raw.trim() ? JSON.parse(raw) : {};
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    }
+    const parsed = deleteAppSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
+    }
 
     if (!isOrgAdmin(org.membership.role)) {
       return NextResponse.json(
@@ -234,8 +251,7 @@ async function handleDelete(_request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // The stop below swallows failures, so the ownership refusal is surfaced
-    // here — deleting the row anyway would strand another app's containers.
+    // deleteApp checks this too; checked here so the refusal returns 409.
     try {
       await assertAppDirOwnership({ appId, appName: app.name, operation: "delete" });
     } catch (err) {
@@ -245,38 +261,23 @@ async function handleDelete(_request: NextRequest, { params }: RouteParams) {
       throw err;
     }
 
-    // Stop containers and remove volumes before deleting
-    try {
-      await stopProject(appId, app.name, undefined, true);
-    } catch { /* containers may not be running */ }
-
-    // Runs before the row is deleted — the guard resolves the name against the
-    // database. A directory owned by another uid is left behind, not fatal.
-    const { removed: removedAppDir } = await removeAppDir({ appId, appName: app.name });
-
-    await db
-      .delete(apps)
-      .where(and(eq(apps.id, appId), eq(apps.organizationId, orgId)));
-
-    // Clean up empty projects — if this was the last app, delete the project
-    if (app.projectId) {
-      const remaining = await db.query.apps.findFirst({
-        where: eq(apps.projectId, app.projectId),
-        columns: { id: true },
-      });
-      if (!remaining) {
-        await db.delete(projects).where(eq(projects.id, app.projectId));
-      }
-    }
-
-    recordActivity({
+    const result = await deleteApp({
+      appId,
       organizationId: orgId,
-      action: "app.deleted",
       userId: org.session.user.id,
-      metadata: { name: app.name, removedAppDir },
+      deleteVolumes: parsed.data.deleteVolumes,
+      source: "api",
     });
 
-    return NextResponse.json({ success: true, removedAppDir });
+    return NextResponse.json({
+      success: true,
+      removedVolumes: result.removedVolumes,
+      keptVolumes: result.keptVolumes,
+      skippedVolumes: result.skippedVolumes,
+      keptPaths: result.keptPaths,
+      removedAppDir: result.removedAppDir,
+      deletedProject: result.deletedProject,
+    });
   } catch (error) {
     return handleRouteError(error, "Error deleting app");
   }

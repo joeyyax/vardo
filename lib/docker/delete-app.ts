@@ -1,9 +1,10 @@
 import { db } from "@/lib/db";
-import { apps, projects, volumes } from "@/lib/db/schema";
+import { apps, projects } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { stopProject } from "./deploy";
 import { assertAppDirOwnership, removeAppDir } from "./app-dir-owner";
-import { listVolumes, removeVolume, stripDockerProjectPrefix } from "./client";
+import { removeVolume, stripDockerProjectPrefix } from "./client";
+import { appBindPaths, findAppData } from "./app-data";
 import { appBaseDir } from "@/lib/paths";
 import { recordActivity } from "@/lib/activity";
 
@@ -11,58 +12,41 @@ export type DeleteAppResult = {
   deleted: boolean;
   appId: string;
   appName: string;
-  pruneVolumes: boolean;
+  deleteVolumes: boolean;
   /** Docker volumes actually removed. */
   removedVolumes: string[];
-  /** Volumes matched by keepVolumes and deliberately preserved. */
+  /** Volumes left in place: all of them unless deleteVolumes, plus keepVolumes matches. */
   keptVolumes: string[];
-  /** Candidate volumes left in place because removal failed (e.g. still in use). */
+  /** Volumes left in place because removal failed (e.g. still in use). */
   skippedVolumes: string[];
+  /** Bind-mounted paths inside the app directory left in place. */
+  keptPaths: string[];
   /** Child app records removed alongside a parent compose app. */
   removedChildApps: string[];
   /** Whether the app's directory under PROJECTS_DIR was removed. */
   removedAppDir: boolean;
+  /** The project removed because this was its last app. */
+  deletedProject: { id: string; name: string } | null;
   log: string;
 };
 
 /**
- * Strip a trailing blue/green slot suffix from a compose project name so that
- * `agents`, `agents-blue` and `agents-green` all resolve to the same base.
- * Leaves environment-scoped projects (e.g. `agents-pr-166`) untouched so they
- * are never matched when deleting the base app.
- */
-function stripSlotSuffix(project: string): string {
-  return project.replace(/-(blue|green)$/, "");
-}
-
-/**
- * Delete a compose app and (optionally) its named volumes.
+ * Delete an app, keeping its data unless asked otherwise.
  *
- * Volume handling is conservative by design — destroying the wrong volume is
- * unrecoverable:
- *
- *   - `pruneVolumes: false` (default) removes NO volumes. Containers and
- *     networks are torn down with `docker compose down` (no `--volumes`); every
- *     named volume survives. This is the safe path for deleting an app whose
- *     data (or a sibling's data, e.g. an OAuth credential volume) must persist.
- *
- *   - `pruneVolumes: true` removes only the volumes this app *declares* (its
- *     `persistentVolumes` / `volumes` table rows, plus those of its compose
- *     children when deleting a parent), scoped to the app's own compose project.
- *     Volumes Vardo does not know the app declared — including unrelated stack
- *     volumes — are never touched. Names listed in `keepVolumes` are preserved
- *     even when pruning. A volume still in use by a running container is left in
- *     place (reported under `skippedVolumes`) rather than force-removed.
- *
- * `keepVolumes` entries match either the full Docker volume name
- * (`agents_claude-auth`) or the compose-stripped suffix (`claude-auth`).
+ * `deleteVolumes: false` (default) keeps every volume the app owns and every
+ * bind-mounted path inside its directory; the rest of the directory goes.
+ * `deleteVolumes: true` removes them, except names listed in `keepVolumes`
+ * (full Docker name or the compose-stripped suffix). A volume still in use is
+ * left in place and reported under `skippedVolumes`.
  */
 export async function deleteApp(opts: {
   appId: string;
   organizationId: string;
   userId?: string;
-  pruneVolumes?: boolean;
+  deleteVolumes?: boolean;
   keepVolumes?: string[];
+  /** Recorded in the activity log. */
+  source?: "api" | "mcp" | "system";
   /**
    * Allow deleting a system-managed app. Off by default so user-facing delete
    * paths can't remove platform/integration apps; the integration-install
@@ -78,7 +62,7 @@ export async function deleteApp(opts: {
   allowChildDelete?: boolean;
 }): Promise<DeleteAppResult> {
   const { appId, organizationId } = opts;
-  const pruneVolumes = opts.pruneVolumes ?? false;
+  const deleteVolumes = opts.deleteVolumes === true;
   const keepVolumes = opts.keepVolumes ?? [];
   const logs: string[] = [];
 
@@ -90,7 +74,6 @@ export async function deleteApp(opts: {
       projectId: true,
       parentAppId: true,
       isSystemManaged: true,
-      persistentVolumes: true,
     },
   });
 
@@ -99,8 +82,7 @@ export async function deleteApp(opts: {
     throw new Error("System-managed apps cannot be deleted");
   }
 
-  // Resolve the compose project base name. A decomposed child's containers and
-  // volumes live under the parent's compose project, so prune against that.
+  // A decomposed child's containers live under the parent's compose project.
   let baseProject = app.name;
   if (app.parentAppId) {
     const parent = await db.query.apps.findFirst({
@@ -127,7 +109,7 @@ export async function deleteApp(opts: {
       eq(apps.parentAppId, appId),
       eq(apps.organizationId, organizationId)
     ),
-    columns: { id: true, name: true, persistentVolumes: true },
+    columns: { id: true, name: true },
   });
 
   // Throws before anything is torn down or removed from the database, so a
@@ -138,71 +120,51 @@ export async function deleteApp(opts: {
     operation: "delete",
   });
 
-  // Bring containers down WITHOUT removing volumes — always safe first step.
+  // Read before teardown: the compose files name the bind mounts.
+  const data = await findAppData(app);
+  const bindPaths = app.parentAppId ? [] : await appBindPaths(app.name);
+
+  // Containers come down without --volumes; removal below is per volume.
   const stop = await stopProject(appId, app.name, undefined, false);
   if (stop.log.trim()) logs.push(stop.log.trim());
 
   const removedVolumes: string[] = [];
   const keptVolumes: string[] = [];
   const skippedVolumes: string[] = [];
+  const keepSet = new Set(keepVolumes);
 
-  if (pruneVolumes) {
-    // The set of short volume names this app (and its children) declared.
-    const declaredShortNames = new Set<string>();
-    const appIds = [appId, ...childApps.map((c) => c.id)];
-    for (const pv of app.persistentVolumes ?? []) declaredShortNames.add(pv.name);
-    for (const c of childApps) {
-      for (const pv of c.persistentVolumes ?? []) declaredShortNames.add(pv.name);
+  for (const { name } of data.volumes) {
+    if (!deleteVolumes || keepSet.has(name) || keepSet.has(stripDockerProjectPrefix(name))) {
+      keptVolumes.push(name);
+      continue;
     }
-    const volumeRows = await db.query.volumes.findMany({
-      where: eq(volumes.organizationId, organizationId),
-      columns: { name: true, appId: true },
-    });
-    for (const row of volumeRows) {
-      if (row.appId && appIds.includes(row.appId)) declaredShortNames.add(row.name);
-    }
-
-    const keepSet = new Set(keepVolumes);
-
-    // Only ever consider volumes that (a) belong to this app's compose project
-    // and (b) are a volume this app declared. Everything else is left alone.
-    const dockerVolumes = await listVolumes();
-    for (const vol of dockerVolumes) {
-      const project = vol.labels["com.docker.compose.project"];
-      if (!project) continue;
-      if (stripSlotSuffix(project) !== baseProject) continue;
-
-      const suffix = stripDockerProjectPrefix(vol.name);
-      if (!declaredShortNames.has(suffix)) continue;
-
-      if (keepSet.has(vol.name) || keepSet.has(suffix)) {
-        keptVolumes.push(vol.name);
-        continue;
-      }
-
-      try {
-        await removeVolume(vol.name);
-        removedVolumes.push(vol.name);
-        logs.push(`Removed volume ${vol.name}`);
-      } catch (err) {
-        // In use by a running container, or already gone — keep it.
-        skippedVolumes.push(vol.name);
-        logs.push(
-          `Kept volume ${vol.name} (removal failed: ${err instanceof Error ? err.message : String(err)})`
-        );
-      }
+    try {
+      await removeVolume(name);
+      removedVolumes.push(name);
+      logs.push(`Removed volume ${name}`);
+    } catch (err) {
+      skippedVolumes.push(name);
+      logs.push(
+        `Kept volume ${name} (removal failed: ${err instanceof Error ? err.message : String(err)})`
+      );
     }
   }
 
   // A decomposed child has no directory of its own — the parent owns it.
   let removedAppDir = false;
+  const keptPaths: string[] = [];
   if (!app.parentAppId) {
-    const removal = await removeAppDir({ appId, appName: app.name });
+    const removal = await removeAppDir({
+      appId,
+      appName: app.name,
+      keep: deleteVolumes ? [] : bindPaths,
+    });
     removedAppDir = removal.removed;
+    keptPaths.push(...(removal.kept ?? []));
     logs.push(
       removal.removed
         ? `Removed ${appBaseDir(app.name)}`
-        : `Kept ${appBaseDir(app.name)} (removal failed: ${removal.reason})`,
+        : `Kept ${appBaseDir(app.name)} (${removal.reason})`,
     );
   }
 
@@ -224,13 +186,18 @@ export async function deleteApp(opts: {
     .where(and(eq(apps.id, appId), eq(apps.organizationId, organizationId)));
 
   // Clean up the project if this was its last app.
+  let deletedProject: DeleteAppResult["deletedProject"] = null;
   if (app.projectId) {
     const remaining = await db.query.apps.findFirst({
       where: eq(apps.projectId, app.projectId),
       columns: { id: true },
     });
     if (!remaining) {
-      await db.delete(projects).where(eq(projects.id, app.projectId));
+      const [row] = await db
+        .delete(projects)
+        .where(eq(projects.id, app.projectId))
+        .returning({ id: projects.id, name: projects.name });
+      deletedProject = row ?? null;
     }
   }
 
@@ -240,10 +207,11 @@ export async function deleteApp(opts: {
     userId: opts.userId,
     metadata: {
       name: app.name,
-      source: "mcp",
-      pruneVolumes,
+      source: opts.source ?? "system",
+      deleteVolumes,
       removedVolumes,
       keptVolumes,
+      keptPaths,
       removedChildApps,
       removedAppDir,
     },
@@ -253,12 +221,14 @@ export async function deleteApp(opts: {
     deleted: true,
     appId,
     appName: app.name,
-    pruneVolumes,
+    deleteVolumes,
     removedVolumes,
     keptVolumes,
     skippedVolumes,
+    keptPaths,
     removedChildApps,
     removedAppDir,
+    deletedProject,
     log: logs.join("\n"),
   };
 }

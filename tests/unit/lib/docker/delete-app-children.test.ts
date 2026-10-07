@@ -29,6 +29,10 @@ vi.mock("@/lib/db", () => ({
   },
 }));
 vi.mock("@/lib/docker/deploy", () => ({ stopProject: stopProjectMock }));
+vi.mock("@/lib/docker/app-data", () => ({
+  findAppData: vi.fn().mockResolvedValue({ volumes: [], bindMounts: [] }),
+  appBindPaths: vi.fn().mockResolvedValue([]),
+}));
 vi.mock("@/lib/docker/client", () => ({
   listVolumes: vi.fn().mockResolvedValue([]),
   removeVolume: vi.fn(),

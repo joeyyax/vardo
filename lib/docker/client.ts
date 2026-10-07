@@ -853,6 +853,17 @@ export function summarizeDiskUsage(raw: Partial<RawDiskUsage>): DiskUsage {
   };
 }
 
+/** Bytes per volume name. Docker reports -1 for a size it hasn't measured, which is left out. */
+export async function getVolumeSizes(): Promise<Map<string, number>> {
+  const raw = await dockerRequest<Pick<RawDiskUsage, "Volumes">>("GET", "/system/df?type=volume");
+  const sizes = new Map<string, number>();
+  for (const v of raw.Volumes ?? []) {
+    const size = v.UsageData?.Size;
+    if (typeof size === "number" && size >= 0) sizes.set(v.Name, size);
+  }
+  return sizes;
+}
+
 export async function getSystemDiskUsage(): Promise<DiskUsage> {
   return summarizeDiskUsage(await dockerRequest<RawDiskUsage>("GET", "/system/df"));
 }

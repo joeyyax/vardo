@@ -16,23 +16,23 @@ export function registerDeleteApp(
 ) {
   server.tool(
     "vardo_delete_app",
-    "Delete a compose app: tears down its containers, removes its deployment directory and removes the app record (and its compose child records when deleting a parent). Bind-mounted host paths outside that directory are never touched. Named volumes are PRESERVED by default. Set pruneVolumes=true to also remove the app's own declared volumes; pass keepVolumes to protect specific named volumes even when pruning. Volumes Vardo does not know the app declared (e.g. a separate OAuth/credential volume) are never touched. A volume still in use by a running container is left in place.",
+    "Delete an app: tears down its containers, removes its deployment directory and the app record (and its compose child records when deleting a parent). Volumes and bind-mounted data inside the app directory are KEPT by default. Set deleteVolumes=true to destroy them too; pass keepVolumes to protect specific volumes. A volume still in use by a running container is left in place.",
     {
       appId: z.string().describe("The app ID to delete"),
-      pruneVolumes: z
+      deleteVolumes: z
         .boolean()
         .default(false)
         .describe(
-          "When true, also remove the app's own declared named volumes. Default false preserves all volumes."
+          "When true, also destroy the app's volumes and bind-mounted data. Default false keeps them."
         ),
       keepVolumes: z
         .array(z.string())
         .default([])
         .describe(
-          "Named volumes to preserve even when pruneVolumes is true. Matches the full Docker volume name (e.g. 'agents_claude-auth') or the compose-stripped suffix (e.g. 'claude-auth')."
+          "Volumes to keep even when deleteVolumes is true. Matches the full Docker volume name (e.g. 'agents-production_claude-auth') or the compose-stripped suffix (e.g. 'claude-auth')."
         ),
     },
-    async ({ appId, pruneVolumes, keepVolumes }) => {
+    async ({ appId, deleteVolumes, keepVolumes }) => {
       const rl = await slidingWindowRateLimit(
         `${context.userId}:${context.organizationId}`,
         "mcp:delete-app",
@@ -61,8 +61,9 @@ export function registerDeleteApp(
           appId,
           organizationId: orgId,
           userId: context.userId,
-          pruneVolumes,
+          deleteVolumes,
           keepVolumes,
+          source: "mcp",
         });
 
         return {
