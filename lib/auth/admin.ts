@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { user } from "@/lib/db/schema";
 import { getSession, requireSession } from "@/lib/auth/session";
 import { eq } from "drizzle-orm";
+import { isFeatureEnabledAsync } from "@/lib/config/features";
 
 /** Instance-admin power needs a signed-in session; API tokens never carry it. */
 export function credentialMayAdmin(session: { authMethod: "token" | "session" }): boolean {
@@ -18,6 +19,11 @@ export async function isAppAdmin(): Promise<boolean> {
     columns: { isAppAdmin: true },
   });
   return Boolean(dbUser?.isAppAdmin);
+}
+
+/** Container discovery reads every host container's env, so it is instance-admin only. */
+export async function canImportContainers(): Promise<boolean> {
+  return (await isFeatureEnabledAsync("container-import")) && (await isAppAdmin());
 }
 
 /**

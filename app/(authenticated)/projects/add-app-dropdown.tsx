@@ -15,6 +15,7 @@ interface AddAppDropdownProps {
   align?: "end" | "center" | "start";
   label?: string;
   size?: "default" | "sm";
+  canImportContainers?: boolean;
 }
 
 export function AddAppDropdown({
@@ -22,6 +23,7 @@ export function AddAppDropdown({
   align = "end",
   label = "Add app",
   size = "sm",
+  canImportContainers = false,
 }: AddAppDropdownProps) {
   const newAppHref = `/apps/new?project=${projectId}`;
   const discoverHref = `/discover?project=${projectId}`;
@@ -42,12 +44,14 @@ export function AddAppDropdown({
             Create new app
           </Link>
         </DropdownMenuItem>
-        <DropdownMenuItem asChild>
-          <Link href={discoverHref}>
-            <Container className="mr-2 size-4" />
-            Import existing container
-          </Link>
-        </DropdownMenuItem>
+        {canImportContainers && (
+          <DropdownMenuItem asChild>
+            <Link href={discoverHref}>
+              <Container className="mr-2 size-4" />
+              Import existing container
+            </Link>
+          </DropdownMenuItem>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );

@@ -553,6 +553,7 @@ export function ProjectDetail({
   orgId,
   initialTab,
   isAdmin = false,
+  canImportContainers = false,
   meshEnabled = false,
   loggingEnabled = true,
   environmentsEnabled = true,
@@ -563,6 +564,7 @@ export function ProjectDetail({
   orgId: string;
   initialTab: string;
   isAdmin?: boolean;
+  canImportContainers?: boolean;
   meshEnabled?: boolean;
   loggingEnabled?: boolean;
   environmentsEnabled?: boolean;
@@ -1010,7 +1012,7 @@ export function ProjectDetail({
                 </Button>
               );
             })()}
-            {!project.isSystemManaged && <AddAppDropdown projectId={project.id} />}
+            {!project.isSystemManaged && <AddAppDropdown projectId={project.id} canImportContainers={canImportContainers} />}
           </>
         }
       >
@@ -1111,7 +1113,7 @@ export function ProjectDetail({
               icon={Boxes}
               title="Add your first app"
               body="Connect a Git repo, Docker image or compose file to start deploying."
-              action={<AddAppDropdown projectId={project.id} align="center" />}
+              action={<AddAppDropdown projectId={project.id} align="center" canImportContainers={canImportContainers} />}
             />
           ) : (
             /* One line per app, problems first, compose services indented under

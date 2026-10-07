@@ -6,6 +6,7 @@ import { getCurrentOrg } from "@/lib/auth/session";
 import { eq, and, or, desc, type AnyColumn } from "drizzle-orm";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { isOrgAdmin } from "@/lib/auth/permissions";
+import { canImportContainers } from "@/lib/auth/admin";
 import { ProjectDetail } from "./project-detail";
 import type { MeshPeerSummary, ProjectInstanceSummary } from "@/lib/mesh/types";
 
@@ -134,7 +135,7 @@ export default async function ProjectDetailPage({
   }
 
   // Fetch flags + mesh data in parallel
-  const [meshEnabled, loggingEnabled, environmentsEnabled, meshPeers, meshInstances] = await Promise.all([
+  const [meshEnabled, loggingEnabled, environmentsEnabled, meshPeers, meshInstances, containerImport] = await Promise.all([
     isFeatureEnabledAsync("mesh"),
     isFeatureEnabledAsync("logging"),
     isFeatureEnabledAsync("environments"),
@@ -148,6 +149,7 @@ export default async function ProjectDetailPage({
       where: eq(projectInstances.projectId, project.id),
       columns: { id: true, environment: true, gitRef: true, status: true, meshPeerId: true, transferredAt: true },
     }).then((i) => i as ProjectInstanceSummary[]).catch(() => [] as ProjectInstanceSummary[]),
+    canImportContainers(),
   ]);
 
   // Requesting a tab gated by a disabled flag falls back to apps
@@ -169,6 +171,7 @@ export default async function ProjectDetailPage({
       orgId={orgId}
       initialTab={effectiveTab}
       isAdmin={userIsAdmin}
+      canImportContainers={containerImport}
       meshEnabled={meshEnabled}
       loggingEnabled={loggingEnabled}
       environmentsEnabled={environmentsEnabled}

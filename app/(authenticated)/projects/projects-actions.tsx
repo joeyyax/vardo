@@ -10,7 +10,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-export function ProjectsActions() {
+export function ProjectsActions({ canImportContainers }: { canImportContainers: boolean }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -27,12 +27,14 @@ export function ProjectsActions() {
             Create new
           </Link>
         </DropdownMenuItem>
-        <DropdownMenuItem asChild>
-          <Link href="/discover">
-            <Container className="mr-2 size-4" />
-            Import from Docker
-          </Link>
-        </DropdownMenuItem>
+        {canImportContainers && (
+          <DropdownMenuItem asChild>
+            <Link href="/discover">
+              <Container className="mr-2 size-4" />
+              Import from Docker
+            </Link>
+          </DropdownMenuItem>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );

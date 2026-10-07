@@ -6,6 +6,7 @@ import { and, asc, desc, eq, isNotNull } from "drizzle-orm";
 import { loadTemplates } from "@/lib/templates/load";
 import { getInstanceConfig } from "@/lib/system-settings";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
+import { canImportContainers } from "@/lib/auth/admin";
 import { NewAppFlow } from "./new-app-flow";
 
 export default async function NewAppPage({
@@ -31,7 +32,7 @@ export default async function NewAppPage({
       orderBy: [asc(projects.name)],
     }),
     getInstanceConfig(),
-    isFeatureEnabledAsync("container-import"),
+    canImportContainers(),
     // Most recently used project, for preselection
     db.query.apps.findFirst({
       where: and(eq(apps.organizationId, orgId), isNotNull(apps.projectId)),

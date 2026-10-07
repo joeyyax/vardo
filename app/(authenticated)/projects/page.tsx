@@ -8,6 +8,7 @@ import { PageToolbar } from "@/components/page-toolbar";
 import { OrgSwitcher } from "@/components/layout/org-switcher";
 import { AppGrid } from "./app-grid";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
+import { canImportContainers } from "@/lib/auth/admin";
 import { FirstRun } from "./first-run";
 import { ProjectsActions } from "./projects-actions";
 
@@ -53,7 +54,7 @@ export default async function ProjectsPage() {
       where: eq(projects.organizationId, orgId),
       columns: { id: true, name: true, displayName: true, color: true, isSystemManaged: true },
     }),
-    isFeatureEnabledAsync("container-import"),
+    canImportContainers(),
   ]);
 
   const teamsEnabled = await isFeatureEnabledAsync("teams");
@@ -70,7 +71,7 @@ export default async function ProjectsPage() {
 
   return (
     <div className="space-y-6">
-      <PageToolbar actions={<ProjectsActions />}>
+      <PageToolbar actions={<ProjectsActions canImportContainers={containerImportEnabled} />}>
         <div className="flex items-center gap-3">
           <h1 className="type-h1">Projects</h1>
           {teamsEnabled && (
