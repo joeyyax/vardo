@@ -1034,6 +1034,7 @@ export function ApiTokens({ orgId }: { orgId: string }) {
               <Button
                 size="sm"
                 variant="ghost"
+                aria-label="Copy token"
                 onClick={async () => {
                   if (await copyToClipboard(createdToken)) {
                     toast.success("Copied to clipboard");
