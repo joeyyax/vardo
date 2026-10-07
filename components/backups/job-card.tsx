@@ -182,7 +182,7 @@ export function JobCard({
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
         title="Delete backup job"
-        description="This will stop scheduled backups. Existing backup files in storage won't be deleted."
+        description="Scheduled backups stop. Its backup history stays listed and downloadable."
         onConfirm={deleteJob}
         loading={deleting}
       />

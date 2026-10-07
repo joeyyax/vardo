@@ -140,7 +140,7 @@ export function BackupPage({
         <AutoBackupBanner
           target={autoTarget}
           jobs={autoJobs}
-          recent={history.filter((h) => autoJobs.some((j) => j.id === h.job.id))}
+          recent={history.filter((h) => autoJobs.some((j) => j.id === h.job?.id))}
           running={autoJobs.map((j) => progress[j.id]).filter((p) => p !== undefined)}
         />
       ) : showIntro ? (

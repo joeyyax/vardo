@@ -110,7 +110,9 @@ export function BackupHistory({
                   </>
                 )}
               </td>
-              <td className="px-4 py-3 text-muted-foreground">{backup.job.name}</td>
+              <td className="px-4 py-3 text-muted-foreground">
+                {backup.job ? backup.job.name : `${backup.jobName ?? "Unknown job"} (deleted)`}
+              </td>
               <td className="px-4 py-3 text-muted-foreground font-mono text-xs">
                 {formatDuration(backup.startedAt, backup.finishedAt)}
               </td>

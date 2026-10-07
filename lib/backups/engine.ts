@@ -827,6 +827,7 @@ export async function runBackup(
       await db.insert(backups).values({
         id: backupId,
         jobId: job.id,
+        jobName: job.name,
         appId: vol.appId,
         appName: vol.appName,
         organizationId: vol.orgId ?? job.organizationId,
@@ -862,6 +863,7 @@ export async function runBackup(
     await db.insert(backups).values({
       id: backupId,
       jobId: job.id,
+      jobName: job.name,
       appId: vol.appId,
       appName: vol.appName,
       organizationId: vol.orgId ?? job.organizationId,

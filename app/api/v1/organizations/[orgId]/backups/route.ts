@@ -78,26 +78,24 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       orderBy: [desc(backupJobs.createdAt)],
     });
 
-    // Also fetch recent backup history across all jobs for this org
-    // Optional ?appId= filter for scoped views (project/app detail tabs)
+    // Scoped by the org on the row, so history whose job or app was deleted
+    // still lists. Optional ?appId= filter for project/app detail tabs.
     const filterAppId = request.nextUrl.searchParams.get("appId");
-    const jobIds = jobs.map((j) => j.id);
-    const recentHistory =
-      jobIds.length > 0
-        ? await db.query.backups.findMany({
-            where: filterAppId
-              ? and(inArray(backups.jobId, jobIds), eq(backups.appId, filterAppId))
-              : inArray(backups.jobId, jobIds),
-            orderBy: [desc(backups.startedAt)],
-            limit: 20,
-            with: {
-              job: { columns: { id: true, name: true } },
-              app: {
-                columns: { id: true, name: true, displayName: true },
-              },
-            },
-          })
-        : [];
+    const rows = await db.query.backups.findMany({
+      where: filterAppId
+        ? and(eq(backups.organizationId, orgId), eq(backups.appId, filterAppId))
+        : eq(backups.organizationId, orgId),
+      orderBy: [desc(backups.startedAt)],
+      limit: 20,
+      with: {
+        job: { columns: { id: true, name: true } },
+        app: {
+          columns: { id: true, name: true, displayName: true, organizationId: true },
+        },
+      },
+    });
+    // A live app now in another org takes its history with it, as in findOrgAppBackup.
+    const recentHistory = rows.filter((b) => !b.app || b.app.organizationId === orgId);
 
     return NextResponse.json({ jobs, recentHistory });
   } catch (error) {

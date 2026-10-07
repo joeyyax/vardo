@@ -240,6 +240,7 @@ export async function collectAway(opts: CollectOptions): Promise<AwayInput> {
           );
 
         for (const row of rows) {
+          if (!row.jobId) continue;
           if (row.status !== "success" && row.status !== "failed") continue;
           const failed = row.status === "failed";
           if (row.startedAt < since) {

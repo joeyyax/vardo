@@ -115,9 +115,9 @@ export const backupJobVolumes = pgTable(
 
 export const backups = pgTable("backup", {
   id: text("id").primaryKey(),
-  jobId: text("job_id")
-    .notNull()
-    .references(() => backupJobs.id, { onDelete: "cascade" }),
+  // Null once the job is deleted; the history stays.
+  jobId: text("job_id").references(() => backupJobs.id, { onDelete: "set null" }),
+  jobName: text("job_name"),
   // No foreign key: history outlives the app. Null means a system volume, so
   // never switch this to SET NULL.
   appId: text("app_id"),

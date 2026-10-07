@@ -54,7 +54,9 @@ export type RecentBackup = {
   finishedAt: string | null;
   storagePath: string | null;
   log: string | null;
-  job: { id: string; name: string };
+  /** Null once the job is deleted; jobName keeps the label. */
+  job: { id: string; name: string } | null;
+  jobName: string | null;
   /** Null once the app is deleted; appName keeps the label. */
   app: App | null;
   appName: string | null;
