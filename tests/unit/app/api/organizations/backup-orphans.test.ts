@@ -13,8 +13,10 @@ const { backupsFindFirst, restoreBackupMock, downloadUrlMock } = vi.hoisted(() =
 }));
 
 vi.mock("@/lib/api/verify-access", () => ({
-  verifyOrgAccess: vi.fn().mockResolvedValue({ id: "org-1" }),
+  verifyOrgAccess: vi.fn().mockResolvedValue({ id: "org-1", session: { user: { id: "u1" } } }),
 }));
+const recordActivity = vi.hoisted(() => vi.fn(async () => {}));
+vi.mock("@/lib/activity", () => ({ recordActivity }));
 vi.mock("@/lib/api/require-plugin", () => ({ requirePlugin: vi.fn().mockResolvedValue(null) }));
 vi.mock("@/lib/api/rate-limit", () => ({ rateLimit: vi.fn().mockResolvedValue(null) }));
 vi.mock("@/lib/db", () => ({ db: { query: { backups: { findFirst: backupsFindFirst } } } }));
@@ -61,6 +63,7 @@ function lookupWhere() {
 
 beforeEach(() => {
   backupsFindFirst.mockReset();
+  recordActivity.mockClear();
   restoreBackupMock.mockReset();
   downloadUrlMock.mockReset().mockResolvedValue("https://s3.example/signed");
 });
@@ -73,6 +76,9 @@ describe("a deleted app's backup", () => {
 
     expect(res.status).toBe(307);
     expect(res.headers.get("location")).toBe("https://s3.example/signed");
+    expect(recordActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "backup.downloaded", userId: "u1", organizationId: "org-1" }),
+    );
   });
 
   it("is looked up by the org on the backup row, not the app", async () => {
@@ -148,5 +154,8 @@ describe("a live app's backup", () => {
 
     expect(res.status).toBe(200);
     expect(restoreBackupMock).toHaveBeenCalledWith("b-1");
+    expect(recordActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "backup.restore_started", appId: "app-1", userId: "u1" }),
+    );
   });
 });

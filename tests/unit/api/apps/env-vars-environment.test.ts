@@ -34,7 +34,12 @@ vi.mock("@/lib/docker/environment-env", () => ({
   loadEnvironmentEnv: vi.fn(async () => state.own),
   saveEnvironmentEnv: saveMock,
 }));
-vi.mock("@/lib/api/verify-access", () => ({ verifyAppAccess: vi.fn().mockResolvedValue({ id: "app-1" }) }));
+vi.mock("@/lib/api/verify-access", () => ({
+  verifyOrgAccess: vi.fn().mockResolvedValue({ session: { user: { id: "u1" } } }),
+  verifyAppAccess: vi.fn().mockResolvedValue({ id: "app-1" }),
+}));
+const recordActivity = vi.hoisted(() => vi.fn(async () => {}));
+vi.mock("@/lib/activity", () => ({ recordActivity }));
 vi.mock("@/lib/api/system-managed", () => ({ refuseSystemManaged: () => null }));
 vi.mock("@/lib/api/with-rate-limit", () => ({
   withRateLimit: (handler: (...args: never[]) => unknown) => handler,
@@ -70,6 +75,20 @@ describe("env-vars for an environment", () => {
     const res = await get("&environmentId=env-pr-7");
 
     expect(await res.json()).toEqual({ content: "A=preview" });
+  });
+
+  it("records who revealed the env", async () => {
+    await get("&environmentId=env-pr-7");
+
+    expect(recordActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "app.env_revealed", appId: "app-1", userId: "u1" }),
+    );
+  });
+
+  it("records nothing for the masked env", async () => {
+    await GET(new NextRequest("http://localhost/api/v1/organizations/org-1/apps/app-1/env-vars"), params);
+
+    expect(recordActivity).not.toHaveBeenCalled();
   });
 
   it("returns the app's env marked inherited when the environment has none", async () => {

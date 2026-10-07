@@ -4,7 +4,8 @@ import { db } from "@/lib/db";
 import { apps, environments } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
-import { verifyAppAccess } from "@/lib/api/verify-access";
+import { verifyAppAccess, verifyOrgAccess } from "@/lib/api/verify-access";
+import { recordActivity } from "@/lib/activity";
 import { encrypt, decryptOrFallback } from "@/lib/crypto/encrypt";
 import { refuseSystemManaged } from "@/lib/api/system-managed";
 import { loadEnvironmentEnv, saveEnvironmentEnv } from "@/lib/docker/environment-env";
@@ -45,8 +46,9 @@ const DECRYPT_ERROR = "Failed to decrypt env vars — check ENCRYPTION_MASTER_KE
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
-    const app = await verifyAppAccess(orgId, appId, "env.read");
-    if (!app) {
+    const org = await verifyOrgAccess(orgId, "env.read");
+    const app = org && (await verifyAppAccess(orgId, appId, "env.read"));
+    if (!org || !app) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
@@ -58,6 +60,16 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const env = await targetEnvironment(appId, request.nextUrl.searchParams.get("environmentId"));
     if (env === false) {
       return NextResponse.json({ error: "Environment not found" }, { status: 404 });
+    }
+
+    if (reveal) {
+      recordActivity({
+        organizationId: orgId,
+        action: "app.env_revealed",
+        appId,
+        userId: org.session.user.id,
+        metadata: env ? { environmentId: env.id } : undefined,
+      }).catch(() => {});
     }
     const own = env ? await loadEnvironmentEnv(env.id) : null;
     if (own !== null) {

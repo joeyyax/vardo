@@ -14,6 +14,8 @@ const { mockVerifyOrgAccess, mockInsert, mockUpdate, inserted } = vi.hoisted(() 
 }));
 
 vi.mock("@/lib/api/verify-access", () => ({ verifyOrgAccess: mockVerifyOrgAccess }));
+const recordActivity = vi.hoisted(() => vi.fn(async () => {}));
+vi.mock("@/lib/activity", () => ({ recordActivity }));
 vi.mock("@/lib/api/require-plugin", () => ({ requirePlugin: vi.fn().mockResolvedValue(null) }));
 vi.mock("@/lib/api/with-rate-limit", () => ({
   withRateLimit: (handler: (...args: unknown[]) => unknown) => handler,
@@ -88,6 +90,19 @@ describe("minting a token", () => {
     expect(inserted[0]).toMatchObject({ crossOrg: false });
     expect(inserted[0]).not.toHaveProperty("adminAccess");
     expect((inserted[0].expiresAt as Date).toISOString()).toBe(expiresAt);
+    expect(recordActivity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "token.created",
+        userId: "u1",
+        metadata: expect.objectContaining({ tokenId: inserted[0].id, name: "ci" }),
+      }),
+    );
+  });
+
+  it("records nothing for a refused mint", async () => {
+    asToken();
+    await POST(req("POST", { name: "wide", crossOrg: true }), params);
+    expect(recordActivity).not.toHaveBeenCalled();
   });
 
   it("rejects an expiry in the past", async () => {

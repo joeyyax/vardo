@@ -42,6 +42,14 @@ const PHRASES: Record<string, Phrase> = {
   "app.recovered": { text: "confirmed recovery of" },
   "app.self_healed": { text: "restarted an unhealthy container on" },
 
+  "app.terminal_opened": { text: "opened a terminal on" },
+  "app.env_revealed": { text: "revealed env vars for" },
+
+  "backup.downloaded": { text: "downloaded a backup of" },
+  "backup.restore_started": { text: "started restoring a backup of" },
+
+  "token.created": { text: "created an API token", standalone: true },
+
   "volume.sync": { text: "synced volumes on" },
   "volume.drift_detected": { text: "detected volume drift on" },
 

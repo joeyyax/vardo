@@ -5,6 +5,7 @@ import { apps } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { decryptOrFallback, encrypt } from "@/lib/crypto/encrypt";
 import { systemManagedRefusal } from "@/lib/api/system-managed";
+import { recordActivity } from "@/lib/activity";
 import type { McpAuthContext } from "../auth";
 import { accessDenied, canAccessOrg } from "../scope";
 
@@ -41,6 +42,14 @@ export function registerGetEnvVars(
           isError: true,
         };
       }
+
+      recordActivity({
+        organizationId: app.organizationId,
+        action: "app.env_revealed",
+        appId,
+        userId: context.userId,
+        metadata: { source: "mcp" },
+      }).catch(() => {});
 
       if (!app.envContent) {
         return {

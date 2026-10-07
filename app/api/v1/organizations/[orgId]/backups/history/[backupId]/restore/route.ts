@@ -4,6 +4,7 @@ import { requirePlugin } from "@/lib/api/require-plugin";
 import { APP_DELETED_RESTORE_ERROR, restoreBackup } from "@/lib/backups/engine";
 import { findOrgAppBackup } from "@/lib/backups/org-backup";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
+import { recordActivity } from "@/lib/activity";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
@@ -34,6 +35,14 @@ async function handlePost(_request: NextRequest, { params }: RouteParams) {
         { status: 400 },
       );
     }
+
+    recordActivity({
+      organizationId: orgId,
+      action: "backup.restore_started",
+      appId: backup.app.id,
+      userId: org.session.user.id,
+      metadata: { backupId, volumeName: backup.volumeName },
+    }).catch(() => {});
 
     const result = await restoreBackup(backupId);
 

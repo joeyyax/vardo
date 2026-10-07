@@ -7,6 +7,7 @@ import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { randomBytes } from "crypto";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
+import { recordActivity } from "@/lib/activity";
 import { hashApiToken, scopeCeilingViolation, type TokenScope } from "@/lib/auth/api-token";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
@@ -114,8 +115,9 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     const rawToken = `vardo_${randomBytes(32).toString("hex")}`;
     const tokenHash = hashApiToken(rawToken);
 
+    const tokenId = nanoid();
     await db.insert(apiTokens).values({
-      id: nanoid(),
+      id: tokenId,
       userId: org.session.user.id,
       organizationId: orgId,
       name: parsed.data.name,
@@ -123,6 +125,13 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       crossOrg: parsed.data.crossOrg,
       expiresAt: parsed.data.expiresAt,
     });
+
+    recordActivity({
+      organizationId: orgId,
+      action: "token.created",
+      userId: org.session.user.id,
+      metadata: { tokenId, name: parsed.data.name, crossOrg: parsed.data.crossOrg },
+    }).catch(() => {});
 
     // Return the raw token only once
     return NextResponse.json({ token: rawToken }, { status: 201 });

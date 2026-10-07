@@ -17,6 +17,8 @@ const { mockVerifyOrgAccess, appsFindFirst, mockListContainers, mockCreateExec, 
   }));
 
 vi.mock("@/lib/api/verify-access", () => ({ verifyOrgAccess: mockVerifyOrgAccess }));
+const recordActivity = vi.hoisted(() => vi.fn(async () => {}));
+vi.mock("@/lib/activity", () => ({ recordActivity }));
 vi.mock("@/lib/api/require-plugin", () => ({ requirePlugin: vi.fn().mockResolvedValue(null) }));
 vi.mock("@/lib/api/with-rate-limit", () => ({
   withRateLimit: (handler: (...args: unknown[]) => unknown) => handler,
@@ -73,7 +75,7 @@ const serverChild = {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockVerifyOrgAccess.mockResolvedValue({ organization: { id: ORG_ID } });
+  mockVerifyOrgAccess.mockResolvedValue({ organization: { id: ORG_ID }, session: { user: { id: "u1" } } });
   appsFindFirst.mockResolvedValue(serverChild);
   mockListContainers.mockResolvedValue(stack);
   mockCreateExec.mockResolvedValue("exec-1");
@@ -87,6 +89,9 @@ describe("GET terminal — stack child container scope", () => {
     expect(res.status).toBe(200);
     expect(mockListContainers).toHaveBeenCalledWith({ id: "parent-immich", name: "immich" });
     expect(mockCreateExec).toHaveBeenCalledWith("c-server", ["/bin/sh"]);
+    expect(recordActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "app.terminal_opened", userId: "u1", metadata: { containerId: "c-server" } }),
+    );
   });
 
   it("refuses a sibling's container id", async () => {

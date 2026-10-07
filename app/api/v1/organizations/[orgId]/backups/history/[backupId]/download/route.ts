@@ -3,6 +3,7 @@ import { handleRouteError } from "@/lib/api/error-response";
 import { requirePlugin } from "@/lib/api/require-plugin";
 import { backupDownloadResponse } from "@/lib/backups/download-response";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
+import { recordActivity } from "@/lib/activity";
 import { findOrgAppBackup } from "@/lib/backups/org-backup";
 
 type RouteParams = {
@@ -29,6 +30,14 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
         { status: 400 },
       );
     }
+
+    recordActivity({
+      organizationId: orgId,
+      action: "backup.downloaded",
+      appId: backup.app?.id,
+      userId: org.session.user.id,
+      metadata: { backupId, volumeName: backup.volumeName },
+    }).catch(() => {});
 
     const fileName = `${backup.app?.name ?? backup.appName ?? "vardo"}-${backup.volumeName ?? "backup"}-${backup.startedAt.toISOString().slice(0, 10)}.tar.gz`;
     return await backupDownloadResponse(backupId, fileName);

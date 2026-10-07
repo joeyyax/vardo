@@ -8,6 +8,7 @@ import { createExec, startExec, resizeExec } from "@/lib/docker/exec";
 import { requirePlugin } from "@/lib/api/require-plugin";
 import net from "node:net";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
+import { recordActivity } from "@/lib/activity";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { closeOnShutdown } from "@/lib/shutdown";
@@ -109,6 +110,14 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     // Generate session ID
     const sessionId = crypto.randomUUID();
+
+    recordActivity({
+      organizationId: orgId,
+      action: "app.terminal_opened",
+      appId,
+      userId: org.session.user.id,
+      metadata: { containerId },
+    }).catch(() => {});
 
     // Store the session
     sessions.set(sessionId, {
