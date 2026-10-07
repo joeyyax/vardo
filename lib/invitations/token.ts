@@ -1,7 +1,4 @@
-// ---------------------------------------------------------------------------
-// Invitation tokens. Only the SHA-256 hash is stored; the raw token lives in
-// the link and is shown once, when it's issued.
-// ---------------------------------------------------------------------------
+// Invitation tokens. Only the SHA-256 hash is stored; the raw token is shown once.
 
 import { createHash, randomBytes } from "crypto";
 

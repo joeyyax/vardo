@@ -1,15 +1,10 @@
-// ---------------------------------------------------------------------------
-// Group health roll-up
-//
-// A compose stack and a project are the same idea: a group of apps shown as one
-// health entity. Both headers roll up through this.
-// ---------------------------------------------------------------------------
+// Health roll-up for a compose stack or project.
 
 import type { AppCondition } from "@/lib/docker/conditions";
 
 export type RollupMember = {
   status: string;
-  /** Set on a compose child. Its parent already counts it, so it is skipped here. */
+  /** Set on a compose child, which is skipped. */
   parentAppId?: string | null;
   priority?: "critical" | "standard" | "disposable" | null;
   conditions?: AppCondition[] | null;
@@ -25,24 +20,20 @@ export type HealthRollup = {
   deploying: number;
   stopped: number;
   missing: number;
-  /** Members on the critical QoS tier — auto-restarted, memory limit required. */
+  /** Members on the critical QoS tier. */
   critical: number;
   /** Members carrying a warning or critical condition. */
   attention: number;
-  /** Declared off on purpose. Part of `total`, absent from every other count. */
+  /** Declared off on purpose. Counted only in `total`. */
   parked: number;
 };
 
-/** Members expected to be doing something. Nothing else is judged against them. */
+/** Members not parked. */
 export function liveTotal(rollup: HealthRollup): number {
   return rollup.total - rollup.parked;
 }
 
-/**
- * Counts a group one level deep. Rows nested under a parent in the same list
- * are dropped, the way project totals exclude `parentAppId` rows — pass a
- * stack's children directly and every one of them counts.
- */
+/** Counts a group one level deep, skipping rows with `parentAppId`. */
 export function rollupHealth(members: RollupMember[]): HealthRollup {
   const rollup: HealthRollup = {
     total: 0,
@@ -60,8 +51,7 @@ export function rollupHealth(members: RollupMember[]): HealthRollup {
     if (member.parentAppId) continue;
     rollup.total++;
     if (member.priority === "critical") rollup.critical++;
-    // A parked member is inventory. Counting its state would put a group at
-    // "2/3" or "1 crashed" over something nobody is waiting on.
+    // Parked members don't count toward state.
     if (member.parked) {
       rollup.parked++;
       continue;
@@ -79,11 +69,7 @@ export function rollupHealth(members: RollupMember[]): HealthRollup {
   return rollup;
 }
 
-/**
- * Newest container start among the running members — how long every one of them
- * has been up, so the group never claims more than its shortest-lived member.
- * Null when nothing in the group is running.
- */
+/** Newest container start among running members, or null when none run. */
 export function rollupUptimeSince(members: RollupMember[]): Date | null {
   let newest: Date | null = null;
   for (const member of members) {
@@ -108,12 +94,10 @@ export function rollupTone(rollup: HealthRollup): string {
 export function rollupLabel(rollup: HealthRollup, noun: string): string {
   const plural = `${noun}s`;
   if (rollup.total === 0) return `No ${plural}`;
-  // Everything shelved reads as the declaration, not as a group that failed.
   const live = liveTotal(rollup);
   if (live === 0) return "Parked";
   if (rollup.errors > 0) return `${rollup.errors} crashed`;
   if (rollup.deploying > 0) return `${rollup.deploying} deploying`;
-  // A fully stopped group reads as its state, not as a count of zero.
   if (rollup.stopped === live) return "Stopped";
   return `${rollup.active}/${live} ${live === 1 ? noun : plural}`;
 }

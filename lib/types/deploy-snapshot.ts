@@ -1,8 +1,4 @@
-/**
- * Shape of the config snapshot stored on each successful deployment.
- * Used by the deploy engine (to write), rollback API (to read/restore),
- * and the schema definition (jsonb column type).
- */
+/** Config snapshot stored on each successful deployment, used for rollback. */
 export type ConfigSnapshot = {
   cpuLimit: number | null;
   memoryLimit: number | null;
@@ -15,13 +11,10 @@ export type ConfigSnapshot = {
   restartPolicy: string | null;
   autoTraefikLabels: boolean | null;
   backendProtocol: "http" | "https" | null;
-  /** Compose content for direct-source apps. Absent on snapshots taken before it was captured. */
+  /** Compose content for direct-source apps. Absent on older snapshots. */
   composeContent?: string | null;
   /** Pinned `repo@sha256:...` ref for image apps, so rollback restores the exact image. */
   imageDigest?: string | null;
-  /**
-   * Engine major each major-locked service ran, keyed by compose service ("" when
-   * single-image). The deploy gate's baseline when the old image is no longer local.
-   */
+  /** Engine major per major-locked service, keyed by compose service ("" when single-image). */
   imageMajors?: Record<string, number>;
 };

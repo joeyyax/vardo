@@ -33,13 +33,12 @@ function parseCidr(cidr: string): { base: number; mask: number } {
 
 const parsedRanges = CLOUDFLARE_IPV4_RANGES.map(parseCidr);
 
-/** Convert a dotted-quad IPv4 string to a 32-bit unsigned integer. */
 function ipToNum(ip: string): number {
   const parts = ip.split(".").map(Number);
   return ((parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3]) >>> 0;
 }
 
-/** Returns true if the given IPv4 address belongs to a Cloudflare range. */
+/** Whether an IPv4 address is in a Cloudflare range. */
 export function isCloudflareIp(ip: string): boolean {
   const num = ipToNum(ip);
   return parsedRanges.some(({ base, mask }) => (num & mask) === base);

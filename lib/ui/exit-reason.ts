@@ -1,6 +1,6 @@
 import type { ExitReason, ExitReasonKind } from "@/lib/docker/exit-reason";
 
-/** Categorical name, for the label column beside the detail text. */
+/** Categorical name. */
 export function exitReasonLabel(kind: ExitReasonKind): string {
   switch (kind) {
     case "oom-host":
@@ -14,7 +14,7 @@ export function exitReasonLabel(kind: ExitReasonKind): string {
   }
 }
 
-/** What happened, in a sentence a person can act on. */
+/** What happened, as a sentence. */
 export function exitReasonDetail(reason: ExitReason): string {
   switch (reason.kind) {
     case "oom-host":
@@ -28,7 +28,7 @@ export function exitReasonDetail(reason: ExitReason): string {
   }
 }
 
-/** Short enough to sit inline after an app name in a list row. */
+/** Short form for list rows. */
 export function exitReasonShort(reason: ExitReason): string {
   switch (reason.kind) {
     case "oom-host":
@@ -42,7 +42,7 @@ export function exitReasonShort(reason: ExitReason): string {
   }
 }
 
-/** An OOM kill is an incident; every other ending is a fact about a stopped app. */
+/** Error for OOM kills, muted otherwise. */
 export function exitReasonTone(kind: ExitReasonKind): "error" | "muted" {
   return kind === "oom-host" || kind === "oom-limit" ? "error" : "muted";
 }

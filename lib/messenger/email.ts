@@ -1,9 +1,4 @@
-/**
- * Email adapter — wraps lib/email/send.ts for direct email sending.
- *
- * For event-driven notifications (deploy, backup, cron failures), use
- * `notify.event()` instead — it routes through org notification channels.
- */
+// Direct email sending. Event notifications go through emit, which routes to org channels.
 
 import { sendEmail } from "@/lib/email/send";
 import type { ReactElement } from "react";

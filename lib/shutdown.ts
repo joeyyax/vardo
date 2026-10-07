@@ -13,8 +13,7 @@ type ShutdownState = {
   installed: boolean;
 };
 
-// Next compiles instrumentation and route handlers into separate bundles, so
-// module-level state is duplicated. The registry has to live on globalThis.
+// Must live on globalThis; Next duplicates module state across bundles.
 const globalForShutdown = globalThis as unknown as { __vardo_shutdown?: ShutdownState };
 
 const state: ShutdownState = (globalForShutdown.__vardo_shutdown ??= {
@@ -23,10 +22,7 @@ const state: ShutdownState = (globalForShutdown.__vardo_shutdown ??= {
   installed: false,
 });
 
-/**
- * Register a closer to run when shutdown starts.
- * Returns an unregister function — call it when the resource closes normally.
- */
+/** Register a closer to run on shutdown. Returns an unregister function. */
 export function closeOnShutdown(closer: Closer): () => void {
   installShutdownHandlers();
   if (state.shuttingDown) {
@@ -59,14 +55,12 @@ function shutdown(signal: string) {
 
   log.info(`${signal} received, draining (${DRAIN_MS}ms max)`);
 
-  // Nothing registered here ends on its own — SSE streams hold the listener
-  // open and monitor intervals keep ticking until they are told to stop.
   const pending = state.closers.size;
   for (const closer of [...state.closers]) runCloser(closer);
   state.closers.clear();
   if (pending > 0) log.info(`Closed ${pending} registered resource(s)`);
 
-  // Backstop. Next closes the listener and exits 0 once in-flight requests finish.
+  // Backstop if in-flight requests don't finish.
   const deadline = setTimeout(() => {
     log.warn("Drain deadline reached, exiting");
     process.exit(0);

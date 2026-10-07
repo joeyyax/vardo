@@ -1,5 +1,4 @@
-// Shared between the new-app form and its regression test: the form state a
-// template produces, and the create-app request body that state submits.
+// Template form state and the create-app request body it submits.
 
 import type { Template } from "./load";
 import { isSecretKey } from "@/lib/env/is-secret-key";
@@ -125,7 +124,7 @@ export function buildCreateAppBody(form: AppFormState): Record<string, unknown> 
   }
   if (form.deployType === "image") body.imageName = form.imageName;
 
-  // The server defaults both paths, so only a custom one is worth sending.
+  // The server defaults both paths.
   if (form.composeFilePath && form.composeFilePath !== "docker-compose.yml") {
     body.composeFilePath = form.composeFilePath;
   }
@@ -167,9 +166,7 @@ export function templateEnvContent(template: Template): string {
   return lines.join("\n");
 }
 
-// Prefixed keys are matched by suffix so GITEA_DOMAIN resolves like DOMAIN.
-// Bare `_url` and `_host` are left out: DATABASE_URL and WORDPRESS_DB_HOST point
-// at compose services, not at the app.
+// Prefixed keys match by suffix. Bare `_url` and `_host` are excluded; they usually point at compose services.
 const URL_KEYS = ["url", "base_url", "app_url", "site_url", "public_url", "nextauth_url"];
 const URL_SUFFIXES = ["_base_url", "_app_url", "_site_url", "_public_url"];
 const DOMAIN_KEYS = ["domain", "hostname", "host", "virtual_host", "server_name"];

@@ -1,5 +1,4 @@
-// QoS tier. Classification, not health — its own hues, never a state stop.
-// Critical apps are auto-restarted when unhealthy and must carry a memory limit.
+// QoS tier display. Critical apps auto-restart when unhealthy and need a memory limit.
 
 import { ShieldCheck, Trash2, type LucideIcon } from "lucide-react";
 
@@ -27,7 +26,7 @@ const META: Record<Exclude<AppPriority, "standard">, PriorityMeta> = {
   },
 };
 
-/** Null for the standard tier, which is the default and needs no cue. */
+/** Null for the standard tier. */
 export function priorityMeta(priority: string | null | undefined): PriorityMeta | null {
   if (priority === "critical" || priority === "disposable") return META[priority];
   return null;

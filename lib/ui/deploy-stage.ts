@@ -1,5 +1,4 @@
-// Deploy phases, named once. The header states the stage a deploy is in, the
-// in-progress card walks the same list.
+// Deploy phases shared by the app header and the in-progress card.
 
 export const STAGE_LABELS: Record<string, string> = {
   clone: "Clone",
@@ -17,13 +16,10 @@ export const STAGE_LABELS: Record<string, string> = {
 
 export const DEPLOY_STAGE_KEYS = ["clone", "compose", "build", "deploy", "healthcheck", "routing", "cleanup"];
 
-/** An auto-rollback restores a built slot, so it reports its own phases. */
+/** Auto-rollback phases. */
 export const ROLLBACK_STAGE_KEYS = ["stop", "restore", "route", "verify"];
 
-/**
- * Position of a run through its phase list — "3 of 7". Reads the phase in
- * flight, falling back to how many have resolved once none is.
- */
+/** Position through the phase list, like "3 of 7". */
 export function stageProgress(
   stages: Record<string, string> | undefined,
   keys: string[],

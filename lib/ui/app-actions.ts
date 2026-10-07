@@ -20,15 +20,14 @@ export type AppActionItem = { action: AppAction; disabled?: string };
 
 export type AppActionContext = {
   status: "active" | "stopped" | "error" | "deploying" | "missing";
-  /** Compose child service — the parent owns the compose project. */
+  /** Compose child service. */
   isChildService: boolean;
   /** Already declared off on purpose. */
   parked: boolean;
   /** A deploy is running or queued for this app. */
   deploying: boolean;
-  /** A warm standby slot is up, so a rollback is a swap rather than a rebuild. */
+  /** A warm standby slot is up. */
   standbyAvailable: boolean;
-  /** This app has deployment records. */
   hasDeployed: boolean;
   /** An earlier successful deployment exists to roll back to. */
   rollbackTarget: boolean;
@@ -42,18 +41,11 @@ const DEPLOY_IN_FLIGHT = "A deploy is running. Cancel it first.";
 const NO_ROLLBACK_TARGET = "No successful deployment to roll back to.";
 
 /**
- * Rows the toolbar menu renders for this app, in order.
- *
- * Start, restart and recreate are dropped when they do not apply — the status
- * badge already says why, and disabling them adds dead rows to every menu.
- * Rollback stays visible and disabled instead: it is what people hunt for under
- * pressure, so the reason answers the question. Instant rollback goes the other
- * way and hides, because the standby disappears on the next deploy and a
- * disabled row would flicker in and out.
+ * Toolbar menu rows for this app, in order. Inapplicable start, restart, recreate
+ * and instant rollback are hidden; rollback stays visible with its reason.
  */
 export function appActionMenu(ctx: AppActionContext): AppActionItem[] {
-  // Deploy and stop act on the parent's whole compose project: one would
-  // redeploy the stack, the other would leave it half up.
+  // Deploy and stop act on the parent's whole compose project.
   if (ctx.isChildService) return [{ action: "restart" }, { action: "logs" }];
 
   if (ctx.deploying || ctx.status === "deploying") {
@@ -65,8 +57,7 @@ export function appActionMenu(ctx: AppActionContext): AppActionItem[] {
     ];
   }
 
-  // Nothing has ever run from here, so there is no slot directory for the
-  // container-level actions to act on and no history to teach.
+  // Never deployed: no slot directory and no history.
   if (!ctx.hasDeployed && (ctx.status === "stopped" || ctx.status === "missing")) {
     return [{ action: "deploy" }];
   }
@@ -83,9 +74,7 @@ export function appActionMenu(ctx: AppActionContext): AppActionItem[] {
     { action: "stop", ...(ctx.stopRefusal ? { disabled: ctx.stopRefusal } : {}) },
   ];
 
-  // Unpark is offered wherever it is true, so a running parked app can always be
-  // made loud again. Park is offered only on an app that is already off — there
-  // is nothing to declare about one that is doing its job.
+  // Unpark whenever parked; park only when already off.
   const parkItem: AppActionItem[] = ctx.parked
     ? [{ action: "unpark" }]
     : ctx.status === "active"
@@ -106,7 +95,6 @@ export function appActionMenu(ctx: AppActionContext): AppActionItem[] {
         ...park,
         ...stop,
       ];
-    // A swap back to the standby beats rebuilding the version that crashed.
     case "error":
       return [
         ...instantRollback,
@@ -117,8 +105,7 @@ export function appActionMenu(ctx: AppActionContext): AppActionItem[] {
         ...park,
         ...stop,
       ];
-    // The slot directory is still on disk, so compose can start the containers
-    // in place instead of rebuilding them.
+    // The slot directory is still on disk, so compose starts containers in place.
     case "stopped":
       return [
         { action: "start" },
@@ -127,7 +114,6 @@ export function appActionMenu(ctx: AppActionContext): AppActionItem[] {
         ...rollback,
         ...park,
       ];
-    // No container to start, and nothing to restart.
     case "missing":
       return [{ action: "recreate" }, { action: "deploy" }, ...rollback, ...park];
     default:

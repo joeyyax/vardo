@@ -1,11 +1,4 @@
-// ---------------------------------------------------------------------------
-// System settings helpers
-//
-// Read order: config file (vardo.yml) → DB system_settings → hardcoded default.
-// Config file takes highest priority when present. DB stores values set via
-// the admin UI. No env var fallbacks — only DATABASE_URL, REDIS_URL, and
-// NODE_ENV remain as env vars (infrastructure connections).
-// ---------------------------------------------------------------------------
+// System settings. Read order: vardo.yml, then DB system_settings, then default.
 
 import { db } from "@/lib/db";
 import { systemSettings } from "@/lib/db/schema";
@@ -17,24 +10,17 @@ import { DEFAULT_APP_NAME } from "@/lib/constants";
 
 const log = logger.child("system-settings");
 
-// Dynamic import to avoid pulling fs (via vardo-config.ts) into client bundles.
-// system-settings re-exports DEFAULT_APP_NAME which client components use,
-// so all static imports in this file end up in client bundles.
+// Dynamic import keeps fs out of client bundles, which import this file for DEFAULT_APP_NAME.
 async function getVardoConfig() {
   const { readVardoConfig } = await import("@/lib/config/vardo-config");
   return readVardoConfig();
 }
 
-// Short-TTL in-memory cache for system settings. These change rarely (admin
-// panel only), so a 30s cache eliminates repeated DB + decrypt calls when
-// multiple config readers fan out within the same request or tick cycle.
+// 30s in-memory cache of decrypted settings.
 const CACHE_TTL_MS = 30_000;
 const cache = new Map<string, { value: string | null; expiresAt: number }>();
 
-/**
- * Read a system_settings row and decrypt its value.
- * Returns null if the row does not exist. Results are cached for 30s.
- */
+/** Read and decrypt a system_settings value, or null when absent. Cached for 30s. */
 export async function getSystemSettingRaw(key: string): Promise<string | null> {
   const cached = cache.get(key);
   if (cached && Date.now() < cached.expiresAt) {
@@ -50,10 +36,7 @@ export async function getSystemSettingRaw(key: string): Promise<string | null> {
   return value;
 }
 
-/**
- * Invalidate the settings cache. Call after writing to system_settings
- * so subsequent reads pick up the new values immediately.
- */
+/** Invalidate the settings cache. Call after writing to system_settings. */
 export function invalidateSettingsCache(key?: string) {
   if (key) {
     cache.delete(key);
@@ -62,10 +45,7 @@ export function invalidateSettingsCache(key?: string) {
   }
 }
 
-/**
- * Upsert a system_settings row and invalidate the cache for that key.
- * Encrypts the value before writing.
- */
+/** Encrypt and upsert a system_settings row, then invalidate its cache entry. */
 export async function setSystemSetting(key: string, value: string) {
   const encrypted = encryptSystem(value);
   await db
@@ -78,10 +58,6 @@ export async function setSystemSetting(key: string, value: string) {
   cache.delete(key);
 }
 
-// ---------------------------------------------------------------------------
-// Helper: parse JSON from DB, return null on failure
-// ---------------------------------------------------------------------------
-
 function parseJson<T>(raw: string, label: string): T | null {
   try {
     return JSON.parse(raw) as T;
@@ -90,10 +66,6 @@ function parseJson<T>(raw: string, label: string): T | null {
     return null;
   }
 }
-
-// ---------------------------------------------------------------------------
-// Instance config (general settings)
-// ---------------------------------------------------------------------------
 
 export type InstanceConfig = {
   instanceName: string;
@@ -107,7 +79,6 @@ export async function getInstanceConfig(): Promise<InstanceConfig> {
   const dbConfig = await getSystemSettingRaw("instance_config")
     .then((raw) => raw ? parseJson<InstanceConfig>(raw, "instance_config") : null);
 
-  // Merge: config file fields > DB fields > defaults
   return {
     instanceName: fileConfig?.instance?.name ?? dbConfig?.instanceName ?? DEFAULT_APP_NAME,
     baseDomain: fileConfig?.instance?.baseDomain ?? dbConfig?.baseDomain ?? "",
@@ -116,18 +87,11 @@ export async function getInstanceConfig(): Promise<InstanceConfig> {
   };
 }
 
-/**
- * Returns the configured display name for this instance: instanceName > domain > null.
- * Callers that always need a non-null value can provide a fallback, e.g. `os.hostname()`.
- */
+/** Instance display name: instanceName, then domain, then null. */
 export async function getInstanceDisplayName(): Promise<string | null> {
   const config = await getInstanceConfig();
   return config.instanceName || config.domain || null;
 }
-
-// ---------------------------------------------------------------------------
-// GitHub App
-// ---------------------------------------------------------------------------
 
 export type GitHubAppConfig = {
   appId: string;
@@ -139,7 +103,6 @@ export type GitHubAppConfig = {
 };
 
 export async function getGitHubAppConfig(): Promise<GitHubAppConfig | null> {
-  // Config file takes priority
   const fileConfig = await getVardoConfig();
   if (fileConfig?.github?.appId) {
     return {
@@ -160,10 +123,6 @@ export async function getGitHubAppConfig(): Promise<GitHubAppConfig | null> {
   return null;
 }
 
-// ---------------------------------------------------------------------------
-// Email provider
-// ---------------------------------------------------------------------------
-
 export type EmailProviderConfig = {
   provider: "smtp" | "mailpace" | "resend" | "postmark";
   smtpHost?: string;
@@ -176,7 +135,6 @@ export type EmailProviderConfig = {
 };
 
 export async function getEmailProviderConfig(): Promise<EmailProviderConfig | null> {
-  // Config file takes priority
   const fileConfig = await getVardoConfig();
   if (fileConfig?.email?.provider) {
     return {
@@ -199,10 +157,6 @@ export async function getEmailProviderConfig(): Promise<EmailProviderConfig | nu
   return null;
 }
 
-// ---------------------------------------------------------------------------
-// Backup storage
-// ---------------------------------------------------------------------------
-
 export type BackupStorageConfig = {
   type: "s3" | "r2" | "b2" | "ssh";
   bucket?: string;
@@ -213,7 +167,6 @@ export type BackupStorageConfig = {
 };
 
 export async function getBackupStorageConfig(): Promise<BackupStorageConfig | null> {
-  // Config file takes priority
   const fileConfig = await getVardoConfig();
   if (fileConfig?.backup?.type) {
     return {
@@ -234,14 +187,7 @@ export async function getBackupStorageConfig(): Promise<BackupStorageConfig | nu
   return null;
 }
 
-// ---------------------------------------------------------------------------
-// Feature flags (DB-stored overrides)
-// ---------------------------------------------------------------------------
-
-/**
- * Feature flags from each source, unmerged. Callers that need to tell an
- * admin which source is pinning a flag read this.
- */
+/** Feature flags from each source, unmerged. */
 export async function getFeatureFlagLayers(): Promise<{
   config: Record<string, boolean>;
   database: Record<string, boolean>;
@@ -261,18 +207,10 @@ export async function getFeatureFlagsConfig(): Promise<Record<string, boolean> |
   return Object.keys(merged).length > 0 ? merged : null;
 }
 
-// ---------------------------------------------------------------------------
-// SSL / ACME certificate issuer
-// ---------------------------------------------------------------------------
-
 export type SslIssuer = "le" | "google" | "zerossl";
 
 export type SslConfig = {
-  /**
-   * Ordered list of active issuers. The first entry is used as the default
-   * cert resolver for new domains. Multiple issuers can be active at once
-   * so Traefik can issue certificates from any of them.
-   */
+  /** Active issuers in order. The first is the default resolver for new domains. */
   activeIssuers: SslIssuer[];
   /** How many issuers to try in parallel when obtaining a certificate. */
   concurrentIssuers: number;
@@ -292,10 +230,7 @@ export const ISSUER_LABELS: Record<SslIssuer, string> = {
   zerossl: "ZeroSSL",
 };
 
-/**
- * The primary issuer — the first active issuer, or "le" as a safe default.
- * Use this when a single cert resolver value is needed (e.g. new domain defaults).
- */
+/** The first active issuer, or "le". */
 export function getPrimaryIssuer(config: SslConfig): SslIssuer {
   return config.activeIssuers[0] ?? "le";
 }
@@ -306,7 +241,7 @@ export async function getSslConfig(): Promise<SslConfig> {
   type StoredSslConfig = {
     activeIssuers?: string[];
     concurrentIssuers?: number;
-    /** Legacy field — migrated on read */
+    /** Legacy; migrated on read. */
     defaultIssuer?: string;
     challengeType?: string;
     dnsProvider?: "cloudflare";
@@ -318,7 +253,7 @@ export async function getSslConfig(): Promise<SslConfig> {
   const dbConfig = await getSystemSettingRaw("ssl_config")
     .then((raw) => raw ? parseJson<StoredSslConfig>(raw, "ssl_config") : null);
 
-  // Resolve active issuers: config file > DB > legacy defaultIssuer field > default
+  // Config file, then DB, then legacy defaultIssuer, then "le".
   let activeIssuers: SslIssuer[];
 
   const fileIssuers = fileConfig?.ssl?.activeIssuers;
@@ -327,7 +262,6 @@ export async function getSslConfig(): Promise<SslConfig> {
   } else if (dbConfig?.activeIssuers && dbConfig.activeIssuers.length > 0) {
     activeIssuers = dbConfig.activeIssuers.filter((i): i is SslIssuer => VALID_ISSUERS.includes(i as SslIssuer));
   } else if (dbConfig?.defaultIssuer && VALID_ISSUERS.includes(dbConfig.defaultIssuer as SslIssuer)) {
-    // Migrate legacy single-issuer config to array format
     activeIssuers = [dbConfig.defaultIssuer as SslIssuer];
   } else {
     activeIssuers = ["le"];
@@ -352,19 +286,12 @@ export async function getSslConfig(): Promise<SslConfig> {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Authentication config
-// ---------------------------------------------------------------------------
-
 export type AuthConfig = {
   registrationMode: "closed" | "open" | "approval";
   sessionDurationDays: number;
 };
 
-/**
- * Sign-in method overrides from each source, unmerged. Resolution and the
- * read-through to the retired passwordAuth flag live in lib/config/auth-methods.
- */
+/** Sign-in method overrides from each source, unmerged. Resolved in lib/config/auth-methods. */
 export async function getAuthMethodConfigLayers(): Promise<{
   config: Record<string, boolean>;
   database: Record<string, boolean>;
@@ -384,22 +311,16 @@ export async function getAuthConfig(): Promise<AuthConfig> {
   const dbConfig = await getSystemSettingRaw("auth_config")
     .then((raw) => raw ? parseJson<Partial<AuthConfig>>(raw, "auth_config") : null);
 
-  // Validate registrationMode from config file
   const fileRegMode = fileConfig?.auth?.registrationMode;
   const validRegMode = fileRegMode && VALID_REGISTRATION_MODES.includes(fileRegMode)
     ? fileRegMode
     : undefined;
 
-  // Merge: config file fields > DB fields > defaults
   return {
     registrationMode: validRegMode ?? dbConfig?.registrationMode ?? "closed",
     sessionDurationDays: fileConfig?.auth?.sessionDurationDays ?? dbConfig?.sessionDurationDays ?? 7,
   };
 }
-
-// ---------------------------------------------------------------------------
-// Traefik config
-// ---------------------------------------------------------------------------
 
 export type TraefikConfig = {
   externalRouting: boolean;

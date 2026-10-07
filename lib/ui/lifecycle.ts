@@ -1,14 +1,5 @@
-// ---------------------------------------------------------------------------
-// App lifecycle events
-//
-// The Deployments tab answers "what has been done to this app". A deploy is
-// most of that answer; a restart, a stop and a start are the rest, and they
-// left no record anywhere before this.
-//
-// Only operator actions land here. Docker's restart policy and Vardo's own
-// self-heal restart are things that happened to the app, not things done to
-// it — they belong to Stability, which reads them from their own sources.
-// ---------------------------------------------------------------------------
+// Operator restart, stop and start events for the Deployments timeline.
+// Docker and self-heal restarts belong to Stability, not here.
 
 import { toDate, type DateInput } from "@/lib/ui/relative-time";
 
@@ -20,13 +11,13 @@ export type LifecycleKind = "restarted" | "stopped" | "started";
 /** What one click acted on: the app, one compose service, or a whole stack. */
 export type LifecycleScope = "app" | "service" | "stack";
 
-/** How the action reached Vardo. The UI is the unmarked case. */
+/** How the action reached Vardo. Absent means the UI. */
 export type LifecycleTrigger = "api" | "mcp";
 
 /** What Docker reported once the command returned. Mirrors ObservedStatus. */
 export type LifecycleStatus = "active" | "error" | "stopped" | "missing";
 
-/** Something worth saying about how the action ended. Matches AppRow's `note` shape. */
+/** Matches AppRow's `note` shape. */
 export type LifecycleNote = { label: string; tone: string; title?: string };
 
 export type LifecycleRow = {
@@ -40,15 +31,14 @@ export type LifecycleRow = {
 export type LifecycleEvent = {
   id: string;
   kind: LifecycleKind;
-  /** Epoch ms, so ordering never parses twice. */
+  /** Epoch ms. */
   at: number;
-  /** What was done, in one phrase. */
   label: string;
   /** Who did it and how, or null when neither is known. */
   detail: string | null;
   /** How long the command took, or null on a row that recorded no span. */
   durationMs: number | null;
-  /** How it ended, worst first. Empty when there is nothing to add. */
+  /** How it ended, worst first. */
   notes: LifecycleNote[];
 };
 
@@ -97,7 +87,7 @@ function read(metadata: unknown, key: string): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
-/** A span in milliseconds, or undefined for anything that is not one. */
+/** A non-negative millisecond span, or undefined. */
 function readMs(metadata: unknown, key: string): number | undefined {
   const value = field(metadata, key);
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
@@ -110,7 +100,7 @@ function readStatus(metadata: unknown): LifecycleStatus | undefined {
   return value && STATUSES.has(value) ? (value as LifecycleStatus) : undefined;
 }
 
-/** What the phrase names: the app itself, one service inside a stack, or the stack. */
+/** Action phrase naming the app, a service or the stack. */
 export function lifecycleLabel(
   kind: LifecycleKind,
   scope: LifecycleScope,
@@ -122,11 +112,7 @@ export function lifecycleLabel(
   return verb;
 }
 
-/**
- * "by Joey", "by Joey via API", "by Vardo". Naming the actor is what makes the
- * line worth reading — a restart someone chose is not the same event as one
- * Vardo ran on its own.
- */
+/** "by Joey", "by Joey via API" or "by Vardo". */
 export function lifecycleDetail(
   actor: { name: string | null; email: string } | null,
   trigger?: string | null,
@@ -136,14 +122,7 @@ export function lifecycleDetail(
   return how ? `by ${who} via ${how}` : `by ${who}`;
 }
 
-/**
- * How the action ended, worst first. A status the action did not intend is the
- * point of the row — a restart that came back crashed must not read like one
- * that came back healthy.
- *
- * Empty for a row that recorded no status: absent is not success. Every row
- * written before this was recorded is one of those.
- */
+/** Notes on how the action ended, worst first. A missing status adds no note; absent isn't success. */
 export function lifecycleNotes(
   kind: LifecycleKind,
   status?: LifecycleStatus | null,
@@ -191,11 +170,7 @@ export function buildLifecycleEvents(rows: LifecycleRow[]): LifecycleEvent[] {
   return events.sort((a, b) => b.at - a.at);
 }
 
-/**
- * Events split by the release currently serving. Those after it happened to
- * the live deploy and read above it; the rest belong in history alongside the
- * deploys they sit between.
- */
+/** Split events into those since the live deploy and those before it. */
 export function partitionLifecycle(
   events: LifecycleEvent[],
   liveAt: DateInput,
@@ -213,10 +188,7 @@ export type TimelineItem<T> =
   | { kind: "deploy"; deploy: T }
   | { kind: "lifecycle"; event: LifecycleEvent };
 
-/**
- * Deploy cards and the lifecycle lines between them, newest first. A deploy
- * wins a tie so a restart never renders above the deploy that caused it.
- */
+/** Deploys and lifecycle events merged newest first. Deploys win ties. */
 export function interleaveHistory<T>(
   deploys: T[],
   events: LifecycleEvent[],

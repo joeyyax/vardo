@@ -1,6 +1,6 @@
 import type { AppCondition, ConditionSeverity } from "@/lib/docker/conditions";
 
-/** Short enough to sit inline after an app name in a list row. */
+/** Short form for list rows. */
 export function conditionLabel(c: AppCondition): string {
   switch (c.kind) {
     case "crash-looping":
@@ -28,7 +28,7 @@ export function conditionLabel(c: AppCondition): string {
   }
 }
 
-/** Categorical name, for use next to the condition's own detail text. */
+/** Categorical name. */
 export function conditionKindLabel(kind: AppCondition["kind"]): string {
   switch (kind) {
     case "crash-looping":

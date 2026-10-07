@@ -7,7 +7,7 @@ const WEEK = 7 * DAY;
 const YEAR = 365 * DAY;
 const MONTH = YEAR / 12;
 
-/** Each unit runs until the next one reads as at least two of itself. */
+/** Each unit runs until the next reads as at least two. */
 const UNITS: { limit: number; div: number; label: string }[] = [
   { limit: MINUTE, div: 1, label: "s" },
   { limit: HOUR, div: MINUTE, label: "m" },

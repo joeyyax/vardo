@@ -90,7 +90,6 @@ export async function loadTemplates(): Promise<Template[]> {
     }
   }
 
-  // Sort by category then name
   const categoryOrder = ["database", "cache", "monitoring", "web", "tool", "custom"];
   templates.sort((a, b) => {
     const catDiff = categoryOrder.indexOf(a.category) - categoryOrder.indexOf(b.category);
@@ -102,7 +101,7 @@ export async function loadTemplates(): Promise<Template[]> {
   return templates;
 }
 
-// Clear cache (for dev hot reload)
+// For dev hot reload.
 export function clearTemplateCache() {
   cached = null;
 }

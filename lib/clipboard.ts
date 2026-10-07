@@ -3,9 +3,8 @@ import { toast } from "@/lib/messenger";
 export const COPY_FAILED_MESSAGE = "Copy failed — select and copy it manually";
 
 /**
- * Writes to the clipboard. Toasts and returns false when the write is refused.
- * A promise is written through ClipboardItem so the write keeps the click's
- * permission while the text is fetched; a promise that rejects isn't toasted.
+ * Write to the clipboard; toast and return false when refused.
+ * Promises go through ClipboardItem to keep the click's permission while the text loads.
  */
 export async function copyToClipboard(text: string | Promise<string>): Promise<boolean> {
   try {

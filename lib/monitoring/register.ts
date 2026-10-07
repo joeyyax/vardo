@@ -9,7 +9,6 @@ export async function registerMonitoringPlugin(): Promise<void> {
     return;
   }
 
-  // Start system health monitor
   try {
     const { startSystemAlertMonitor } = await import("@/lib/system-alerts/monitor");
     startSystemAlertMonitor();
@@ -18,7 +17,7 @@ export async function registerMonitoringPlugin(): Promise<void> {
     log.error("Failed to start system health monitor:", err);
   }
 
-  // Start container health monitor (auto-restart unhealthy app containers)
+  // Auto-restarts unhealthy app containers.
   try {
     const { startHealthMonitor } = await import("@/lib/docker/health-monitor");
     startHealthMonitor();
@@ -27,7 +26,7 @@ export async function registerMonitoringPlugin(): Promise<void> {
     log.error("Failed to start container health monitor:", err);
   }
 
-  // Start app status reconciler (apps.status vs actual container state)
+  // Reconciles apps.status with container state.
   try {
     const { startStatusReconciler } = await import("@/lib/docker/status-reconcile");
     startStatusReconciler();
@@ -36,7 +35,7 @@ export async function registerMonitoringPlugin(): Promise<void> {
     log.error("Failed to start app status reconciler:", err);
   }
 
-  // Start Traefik routing drift monitor (stale backend IPs after a daemon restart)
+  // Catches stale Traefik backend IPs after a daemon restart.
   try {
     const { startTraefikDriftMonitor } = await import("@/lib/docker/traefik-drift");
     startTraefikDriftMonitor();
@@ -45,7 +44,7 @@ export async function registerMonitoringPlugin(): Promise<void> {
     log.error("Failed to start Traefik drift monitor:", err);
   }
 
-  // Audit stored compose configs for silently-ignored settings
+  // Audits stored compose configs for silently ignored settings.
   import("@/lib/docker/compose-audit")
     .then(({ reportStoredComposeConfigs }) => reportStoredComposeConfigs())
     .catch((err) => log.warn("Compose audit failed to start:", err));

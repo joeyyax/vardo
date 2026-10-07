@@ -1,5 +1,4 @@
-// Outcome summary for bulk actions that fire one request per app. System-managed
-// apps refuse some verbs, so a mixed result is routine and has to be named.
+// Outcome summary for per-app bulk actions.
 
 export type BulkOutcome = {
   tone: "success" | "warning" | "error";

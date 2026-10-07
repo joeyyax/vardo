@@ -1,4 +1,4 @@
-/** Runtime health. State hues only — classification never borrows from here. */
+/** Runtime health dot color. */
 export function statusDotColor(status: string) {
   return status === "active"
     ? "bg-status-success"
@@ -11,11 +11,7 @@ export function statusDotColor(status: string) {
           : "bg-status-neutral";
 }
 
-/**
- * Environment tier. One hue of its own, three depths — solid production, half
- * staging, hollow for the ephemeral tiers. Health dots are always solid and
- * always a state hue, so the two read apart in the same header.
- */
+/** Environment tier dot: solid production, half staging, hollow ephemeral. */
 export function envTypeDotColor(type: string) {
   return type === "production"
     ? "bg-env-tier"

@@ -12,10 +12,6 @@ export function isSortKey(value: string): value is SortKey {
   return SORT_OPTIONS.some((o) => o.key === value);
 }
 
-// ---------------------------------------------------------------------------
-// Filtering
-// ---------------------------------------------------------------------------
-
 export type FilterableProject = {
   name: string;
   displayName: string;
@@ -28,7 +24,7 @@ export type FilterableApp = {
   project: FilterableProject;
 };
 
-/** Every term has to match something, so "web prod" narrows rather than widens. */
+/** Every term must match. */
 function terms(query: string): string[] {
   return query.toLowerCase().split(/\s+/).filter(Boolean);
 }
@@ -44,10 +40,7 @@ export function matchesProject(project: FilterableProject, query: string): boole
   return matchesAll([project.name, project.displayName], query);
 }
 
-/**
- * An app matches on its own name, its domains, or its project's name — so a
- * project searched for by name keeps all of its apps rather than none.
- */
+/** Match on the app's name, domains or project name. */
 export function matchesApp(app: FilterableApp, query: string): boolean {
   return matchesAll(
     [app.name, app.displayName, app.project.name, app.project.displayName,
@@ -60,10 +53,6 @@ export function filterApps<T extends FilterableApp>(apps: T[], query: string): T
   if (terms(query).length === 0) return apps;
   return apps.filter((a) => matchesApp(a, query));
 }
-
-// ---------------------------------------------------------------------------
-// Sorting
-// ---------------------------------------------------------------------------
 
 export type SortableApp = {
   status: string;
@@ -81,11 +70,7 @@ const ATTENTION_CRITICAL = 0;
 const ATTENTION_WARNING = 1;
 const ATTENTION_NONE = 2;
 
-/**
- * Lower sorts first: crashes, then warnings, then everything quiet. A stopped
- * app is a deliberate state, not something to answer for, and a parked one is
- * that said out loud — nothing it does raises the card it sits on.
- */
+/** Lower sorts first: crashes, then warnings, then quiet. Stopped and parked apps don't raise rank. */
 export function attentionRank(card: SortableCard): number {
   let rank = ATTENTION_NONE;
   for (const app of card.apps) {
@@ -118,7 +103,7 @@ export function sortProjectCards<T extends SortableCard>(cards: T[], sort: SortK
   return [...cards].sort((a, b) => {
     if (sort === "name") return byName(a, b);
     if (sort === "deployed") {
-      // Never deployed sorts last rather than as the oldest.
+      // Never deployed sorts last.
       const at = lastDeployedAt(a);
       const bt = lastDeployedAt(b);
       if (at === null && bt === null) return byName(a, b);

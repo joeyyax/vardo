@@ -3,7 +3,7 @@ import { systemSettings, user } from "@/lib/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { setSystemSetting } from "@/lib/system-settings";
 
-/** Presence of this row is the record that first-run setup already happened. */
+/** This row's presence records that first-run setup happened. */
 const SETUP_COMPLETED_KEY = "setup_completed";
 
 /** Writes the latch. Idempotent. */
@@ -20,9 +20,8 @@ async function setupLatched(): Promise<boolean> {
 }
 
 /**
- * Whether first-run setup is still open. Latches shut the first time an account
- * is seen and never reopens, so an empty user table cannot hand out a new admin.
- * Throws rather than guessing when the count is unreadable.
+ * Whether first-run setup is still open. Latches shut once an account exists and never reopens,
+ * so an empty user table can't hand out a new admin. Throws when the count is unreadable.
  */
 export async function needsSetup(): Promise<boolean> {
   if (await setupLatched()) return false;

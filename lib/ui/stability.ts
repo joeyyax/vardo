@@ -1,21 +1,5 @@
-// ---------------------------------------------------------------------------
-// Per-app stability
-//
-// Nothing here detects anything. The health monitor, the status reconciler and
-// the deploy engine already decide what went wrong; this assembles their output
-// into three answers: is the app stable now, has it been getting worse, and
-// what happened the last time it was not.
-//
-// Durability matters to every number below. Docker's RestartCount is cumulative
-// for one container and resets the moment that container is replaced, so it is
-// reported with the point it resets from and never as a trend. The trend is
-// computed only from rows that survive a deploy — activity events and
-// deployment history.
-//
-// Not durable is not the same as not evidence. A live count is true of the
-// container running now whatever a deploy later erases, so it withholds
-// "Stable" without ever being counted as history — watch at most, never worse.
-// ---------------------------------------------------------------------------
+// Per-app stability: current verdict, trend and incident timeline from existing monitor output.
+// Trends use only durable rows; Docker's RestartCount resets per container, so it never feeds a trend.
 
 import type { AppCondition } from "@/lib/docker/conditions";
 import { worstCondition } from "@/lib/docker/conditions";
@@ -28,10 +12,6 @@ export const TREND_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** A fault this recent still colors an app that is running again. */
 export const RECENT_FAULT_MS = 24 * 60 * 60 * 1000;
-
-// ---------------------------------------------------------------------------
-// Incidents
-// ---------------------------------------------------------------------------
 
 export type IncidentKind =
   | "crashed"
@@ -49,10 +29,7 @@ export type Incident = {
   detail: string;
 };
 
-/**
- * A recovery closes an incident and a self-heal answers one; counting either
- * would double the fault it followed. Everything else counts.
- */
+/** Recoveries and self-heals aren't faults; counting them would double the fault they followed. */
 const NON_FAULTS = new Set<IncidentKind>(["recovered", "self-healed"]);
 
 export function isFault(kind: IncidentKind): boolean {
@@ -73,10 +50,7 @@ export function incidentLabel(kind: IncidentKind): string {
   return INCIDENT_LABELS[kind];
 }
 
-/**
- * A recovery is good news and every fault reads in the error hue. A self-heal
- * is neither — it is what Vardo did between the two, so it stays unpainted.
- */
+/** Text tone for an incident: success for recovery, muted for self-heal, error otherwise. */
 export function incidentTone(kind: IncidentKind): string {
   if (kind === "self-healed") return "text-muted-foreground";
   return kind === "recovered" ? "text-status-success" : "text-status-error";
@@ -146,10 +120,7 @@ function fromDeployment(d: StabilityDeployment): Incident | null {
   return null;
 }
 
-/**
- * One timeline from both durable sources, newest first. Activity rows carry
- * container faults; deployment rows carry the release ones.
- */
+/** Incidents from activity and deployment rows, newest first. */
 export function buildIncidents(
   activity: StabilityActivityRow[],
   deployments: StabilityDeployment[],
@@ -162,18 +133,14 @@ export function buildIncidents(
   return incidents.sort((a, b) => b.at - a.at);
 }
 
-// ---------------------------------------------------------------------------
-// Restart count
-// ---------------------------------------------------------------------------
-
 export type RestartReading = {
   /** Docker RestartCount summed across the app's containers. */
   count: number;
-  /** Creation time of the oldest of those containers — where the count restarts from. */
+  /** Creation time of the oldest of those containers. */
   since: string | null;
 };
 
-/** Restarts one container absorbs without meaning anything: a host reboot, a daemon upgrade. */
+/** Restarts a container can absorb without meaning anything. */
 export const RESTART_ORDINARY = 2;
 
 /** Whether the live count is high enough to withhold a clean verdict. */
@@ -181,12 +148,12 @@ export function restartsElevated(reading: RestartReading | null): reading is Res
   return reading !== null && reading.count > RESTART_ORDINARY;
 }
 
-/** The restart figure's hue. Ordinary counts stay in the body colour. */
+/** The restart figure's text tone. */
 export function restartTone(reading: RestartReading | null): string {
   return restartsElevated(reading) ? "text-status-warning" : "text-foreground";
 }
 
-/** Shape a ledger row's condition column takes. Matches AppRow's `note` prop. */
+/** Matches AppRow's `note` prop. */
 export type RestartCue = { label: string; tone: string; title: string };
 
 /** Row-width cue for a container that has been restarting, or null when it has not. */
@@ -199,10 +166,7 @@ export function restartCue(reading: RestartReading | null): RestartCue | null {
   };
 }
 
-/**
- * The restart figure and the sentence that stops it being read as history.
- * Docker zeroes RestartCount on a new container, so every deploy erases it.
- */
+/** Caption explaining the restart count resets with each deploy. */
 export function restartCaption(reading: RestartReading | null, now: number): string {
   if (!reading) return "Docker was not reachable";
   const since = toDate(reading.since);
@@ -210,11 +174,7 @@ export function restartCaption(reading: RestartReading | null, now: number): str
   return `Since the oldest container was created ${formatRelativeTime(since, new Date(now))}. A deploy replaces them and the count restarts at zero`;
 }
 
-// ---------------------------------------------------------------------------
-// Trend
-// ---------------------------------------------------------------------------
-
-/** "unknown" is what a window with no durable history behind it earns. */
+/** "unknown" when no durable history covers the window. */
 export type TrendDirection = "quiet" | "improving" | "steady" | "worsening" | "unknown";
 
 export type StabilityTrend = {
@@ -226,12 +186,7 @@ export type StabilityTrend = {
   label: string;
 };
 
-/**
- * Faults in the last window against the one before it. `historyFrom` is the
- * earliest point durable history exists for — with the prior window only
- * partly covered there is nothing to compare against, and saying "improving"
- * would only mean the app is young.
- */
+/** Faults in the last window against the one before it. Unknown until history covers both windows. */
 export function stabilityTrend(
   incidents: Incident[],
   now: number,
@@ -273,10 +228,7 @@ export function trendBadge(trend: StabilityTrend, windowMs: number = TREND_WINDO
   return `${trend.recent} in ${days}d${trend.direction === "worsening" ? ", up" : ""}`;
 }
 
-/**
- * What qualifies the verdict in the width a header stat has. Durable incidents
- * win; the live restart count speaks only when they have nothing to say.
- */
+/** Short verdict qualifier: the trend badge, else an elevated restart count. */
 export function stabilityCue(
   trend: StabilityTrend,
   restarts: RestartReading | null,
@@ -287,7 +239,7 @@ export function stabilityCue(
   return restartsElevated(restarts) ? plural(restarts.count, "restart") : null;
 }
 
-/** Worsening is the only direction that carries a state hue. */
+/** Text tone for a trend direction. */
 export function trendTone(direction: TrendDirection): string {
   if (direction === "worsening") return "text-status-warning";
   if (direction === "improving") return "text-status-success";
@@ -298,15 +250,11 @@ function plural(n: number, noun: string): string {
   return `${n} ${noun}${n === 1 ? "" : "s"}`;
 }
 
-// ---------------------------------------------------------------------------
-// Verdict
-// ---------------------------------------------------------------------------
-
 export type StabilityLevel = "stable" | "watch" | "unstable" | "down" | "unknown";
 
 export type StabilityVerdict = {
   level: StabilityLevel;
-  /** The answer to "is this app stable right now", in one or two words. */
+  /** One or two words. */
   headline: string;
   /** What makes it that, or null when nothing qualifies the headline. */
   detail: string | null;
@@ -375,8 +323,7 @@ export function stabilityVerdict(input: VerdictInput): StabilityVerdict {
         : `${input.trend.label} — clean right now`,
     };
   }
-  // Nothing durable to go on, but the container running now has been restarting.
-  // Enough to withhold "Stable", never enough to claim more than watch.
+  // Live restarts withhold "Stable" but never escalate past watch.
   if (restarting) {
     return {
       level: "watch",
@@ -385,7 +332,6 @@ export function stabilityVerdict(input: VerdictInput): StabilityVerdict {
     };
   }
 
-  // The stats below carry the last incident date; repeating it here says nothing.
   return { level: "stable", headline: "Stable", detail: null };
 }
 
@@ -414,14 +360,7 @@ export function stabilitySurface(level: StabilityLevel): string {
   return LEVEL_SURFACE[level];
 }
 
-// ---------------------------------------------------------------------------
-// State duration
-// ---------------------------------------------------------------------------
-
-/**
- * How long the app has held its current status. Null on a row that has not
- * transitioned since the stamp landed — no duration beats a wrong one.
- */
+/** How long the app has held its current status, or null when unknown or under 10 seconds. */
 export function heldFor(statusChangedAt: DateInput, now: number): string | null {
   const since = toDate(statusChangedAt);
   if (!since) return null;

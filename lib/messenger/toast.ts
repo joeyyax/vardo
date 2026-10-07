@@ -1,16 +1,6 @@
 import { toast as sonnerToast, type ExternalToast } from "sonner";
 
-/**
- * Toast adapter — thin wrapper around sonner's `toast`.
- *
- * Provides a single swap-point if the underlying library changes, and a place
- * to add side effects (error logging, analytics) without touching call sites.
- *
- * The API mirrors sonner exactly so migration is mechanical:
- *   - `toast.success(msg)` -> `notify.toast.success(msg)`
- *   - `toast.error(msg, { description })` -> `notify.toast.error(msg, { description })`
- *   - `toast.promise(p, opts)` -> `notify.toast.promise(p, opts)`
- */
+/** Toast adapter over sonner's `toast`, with the same API. */
 
 type ToastMessage = string | React.ReactNode;
 

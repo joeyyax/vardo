@@ -12,7 +12,6 @@ type CacheEntry = {
   fetchedAt: number;
 };
 
-// Module-level cache to avoid hammering GitHub API
 let cache: CacheEntry | null = null;
 
 export function parseVersion(v: string): number[] {
@@ -66,8 +65,7 @@ export async function getVersionData(): Promise<VersionData> {
       }
     }
   } catch {
-    // Network error or timeout — return current version as latest so no
-    // false-positive update banner appears.
+    // Treat as up to date so no false update banner appears.
     latestVersion = currentVersion;
   }
 
@@ -82,9 +80,7 @@ export async function getVersionData(): Promise<VersionData> {
   return data;
 }
 
-// ---------------------------------------------------------------------------
-// Commit update check — installs track main, so a new commit is a new release
-// ---------------------------------------------------------------------------
+// Commit update check. Installs track main, so a new commit is a new release.
 
 const UPDATE_BRANCH = "main";
 // Unauthenticated GitHub API allows 60 requests an hour per IP.

@@ -3,31 +3,30 @@ import type { ExitReason } from "@/lib/docker/exit-reason";
 import { conditionKindLabel } from "@/lib/ui/conditions";
 import { exitReasonShort } from "@/lib/ui/exit-reason";
 
-/** "activity" is routine — something running right now, not a problem. */
+/** "activity" is routine work in progress, not a problem. */
 export type AttentionTone = "error" | "warning" | "neutral" | "activity";
 
 export type AttentionItem = {
   id: string;
   name: string;
-  /** Omitted when the viewer has no route to the subject — the line still renders. */
+  /** Omitted when the viewer has no route to the subject. */
   href?: string;
-  /** What is wrong with this subject. */
   detail?: string;
   /** ISO timestamp of first confirmation, rendered as "for 5 hours". */
   since?: string;
-  /** Opens in a new tab — release notes and other off-instance links. */
+  /** Opens in a new tab. */
   external?: boolean;
 };
 
-/** Serializable: rows cross the API boundary, so no ReactNode in here. */
+/** Serializable; rows cross the API boundary, so no ReactNode. */
 export type AttentionRow = {
   key: string;
   label: string;
   tone: AttentionTone;
   items: AttentionItem[];
-  /** Sentence under the subjects — what to do about it. */
+  /** What to do about it. */
   footer?: string;
-  /** Link beside the footer, for a page that handles the whole row at once. */
+  /** Link to a page that handles the whole row. */
   action?: { label: string; href: string };
 };
 
@@ -41,11 +40,7 @@ export function presentRows(rows: AttentionRow[]): AttentionRow[] {
     .sort((a, b) => TONE_RANK[a.tone] - TONE_RANK[b.tone] || a.label.localeCompare(b.label));
 }
 
-/**
- * Instance rows first, then org rows with any subject the instance already
- * reported removed. The two sources are built not to overlap; this is the
- * guarantee that a change to either one cannot start showing an event twice.
- */
+/** Instance rows, then org rows minus subjects the instance already reported. */
 export function mergeAttentionRows(
   instanceRows: AttentionRow[],
   orgRows: AttentionRow[],
@@ -57,7 +52,7 @@ export function mergeAttentionRows(
   return [...instanceRows, ...deduped];
 }
 
-/** One sentence per row for a screen reader, or empty when there is nothing to say. */
+/** One sentence per row for screen readers. */
 export function announceAttention(rows: AttentionRow[]): string {
   return presentRows(rows)
     .map((row) => {
@@ -67,29 +62,26 @@ export function announceAttention(rows: AttentionRow[]): string {
     .join(" ");
 }
 
-/** Only error and warning rows are faults — neutral facts and activity are listed but not counted. */
+/** Only error and warning rows count as faults. */
 export function faultCount(rows: AttentionRow[]): number {
   return rows
     .filter((r) => r.tone === "error" || r.tone === "warning")
     .reduce((n, r) => n + r.items.length, 0);
 }
 
-/** Faults this few are named in the collapsed bar rather than hidden behind it. */
+/** Up to this many faults are named in the collapsed bar. */
 export const BAR_SUBJECT_LIMIT = 2;
 
 export type BarSummary = {
   rows: AttentionRow[];
   faults: number;
   worst: AttentionTone | null;
-  /** Named outright when there are few enough to fit; otherwise counted by kind. */
+  /** Named when few enough to fit, otherwise counted by kind. */
   subjects: AttentionItem[];
   kinds: { key: string; label: string; tone: AttentionTone; count: number }[];
 };
 
-/**
- * What the one-line bar says before anyone clicks it. A single fault reads as
- * itself — expanding to find one chip is the failure this replaces.
- */
+/** Collapsed bar summary. A single fault is named outright. */
 export function summarize(rows: AttentionRow[]): BarSummary {
   const present = presentRows(rows);
   const faults = faultCount(present);
@@ -110,7 +102,7 @@ export function summarize(rows: AttentionRow[]): BarSummary {
   };
 }
 
-/** Rows this short list their subjects outright; longer ones collapse. */
+/** Rows up to this length list their subjects; longer ones collapse. */
 export const INLINE_SUBJECT_LIMIT = 5;
 
 export function isInlineRow(row: AttentionRow): boolean {
@@ -124,7 +116,7 @@ type ConditionSubject = {
   conditions: AppCondition[] | null;
 };
 
-/** One row per condition kind across the fleet, worst severity setting the tone. */
+/** One row per condition kind across the fleet, toned by worst severity. */
 export function conditionRows(apps: ConditionSubject[]): AttentionRow[] {
   const byKind = new Map<AppCondition["kind"], AttentionRow>();
 
@@ -158,24 +150,14 @@ type ExitSubject = {
   exitReason: ExitReason | null;
 };
 
-/**
- * Apps the kernel killed for memory. Two rows, not one: a host kill is capacity
- * and a cgroup kill is a limit set too low, and the fix differs.
- *
- * Nothing else that stops reaches here. A container that exits 137 from a stop
- * that outran its grace period is indistinguishable by exit code and is not an
- * incident, so only Docker's own OOMKilled flag counts.
- */
-/**
- * Whether the kernel picked a victim on this host recently. Containers with no
- * limit are the pool it picks from, so this promotes that row out of neutral.
- */
+/** Whether the host OOM killer hit any of these apps within the window. */
 export function hadRecentHostOom(apps: ExitSubject[], now: number, windowMs: number): boolean {
   return apps.some(
     (a) => a.exitReason?.kind === "oom-host" && now - Date.parse(a.exitReason.at) <= windowMs,
   );
 }
 
+/** OOM-killed apps, split into host-capacity and cgroup-limit rows. Only Docker's OOMKilled counts, never exit 137. */
 export function oomRows(apps: ExitSubject[], now: number, windowMs: number): AttentionRow[] {
   const host: AttentionItem[] = [];
   const limit: AttentionItem[] = [];

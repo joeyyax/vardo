@@ -1,14 +1,5 @@
-// ---------------------------------------------------------------------------
-// Unified SSE Gateway
-//
-// Multiplexes multiple Redis Streams into a single SSE connection:
-//   - Org events (deploy status, backup status, system alerts)
-//   - Deploy logs (per-deploy, when deployId is provided)
-//   - User toasts (per-user, always)
-//
-// Metrics stay on their existing RedisTimeSeries path and are NOT
-// multiplexed here — they have different cadence and data shape.
-// ---------------------------------------------------------------------------
+// Multiplexes org events, user toasts and deploy logs from Redis Streams into one SSE connection.
+// Metrics aren't multiplexed here.
 
 import { readStream } from "@/lib/stream/consumer";
 import { eventStream, deployStream, toastStream } from "@/lib/stream/keys";
@@ -20,26 +11,20 @@ const log = logger.child("sse-gateway");
 export type GatewayOpts = {
   orgId: string;
   userId: string;
-  /** Subscribe to a specific deploy's log stream */
+  /** Subscribe to this deploy's log stream. */
   deployId?: string;
-  /** Resume from last seen event IDs (for reconnection) */
+  /** Last seen event IDs, for reconnection. */
   lastEventId?: string;
   lastDeployId?: string;
   lastToastId?: string;
-  /** Abort signal — stops all readers when the client disconnects */
+  /** Stops all readers on client disconnect. */
   signal: AbortSignal;
 };
 
 type SendFn = (event: string, data: unknown) => void;
 
-/**
- * Start reading from all relevant streams and dispatch events via `send`.
- *
- * Each stream reader runs as an independent async loop. All stop
- * when the signal aborts (client disconnect, timeout, etc.).
- */
+/** Read every relevant stream and dispatch events via `send` until the signal aborts. */
 export function startGateway(opts: GatewayOpts, send: SendFn): void {
-  // Org events — deploy status, backup status, system alerts
   readAndDispatch(
     eventStream(opts.orgId),
     opts.lastEventId,
@@ -52,7 +37,6 @@ export function startGateway(opts: GatewayOpts, send: SendFn): void {
     },
   );
 
-  // User toasts — temp, progress, persistent
   readAndDispatch(
     toastStream(opts.userId),
     opts.lastToastId,
@@ -62,7 +46,6 @@ export function startGateway(opts: GatewayOpts, send: SendFn): void {
     },
   );
 
-  // Deploy logs — only if a deployId is provided
   if (opts.deployId) {
     readAndDispatch(
       deployStream(opts.deployId),

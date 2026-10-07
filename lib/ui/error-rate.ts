@@ -1,44 +1,27 @@
-// ---------------------------------------------------------------------------
-// Error rate, not errors.
-//
-// On a real fleet sonarr, radarr and prowlarr log errors constantly and are
-// perfectly healthy. "This app logged an error" is permanently true and would
-// train people to ignore the bar. The only actionable statement is "this app is
-// logging errors far faster than it normally does", so everything here is a
-// comparison against the app's own past rather than a threshold.
-//
-// Three guards, each with a distinct job, and all three must agree:
-//   ratio      — a chatty app is judged against its own chattiness
-//   percentile — a rare but periodic burst is not new, so it must clear the
-//                worst half-hour of the whole week, not just the median
-//   floor      — nobody acts on four errors, whatever the multiple
-//
-// A fourth guard compares the error share of total output. Errors are log
-// lines, so a genuine regression lifts the share on its own; only a rise driven
-// by total volume leaves it flat. That is what a traffic spike looks like.
-// ---------------------------------------------------------------------------
+// Error rate against the app's own baseline. Elevated only when ratio, percentile,
+// floor and error-share guards all agree.
 
 /** How often the collector writes a sample. */
 export const SAMPLE_MS = 5 * 60_000;
 
-/** Samples per evaluation window — the last 30 minutes against every other 30 minutes. */
+/** Samples per 30-minute evaluation window. */
 export const WINDOW_SAMPLES = 6;
 export const WINDOW_MS = WINDOW_SAMPLES * SAMPLE_MS;
 
 /** How far back the comparison reaches. Matches the metrics store's retention. */
 export const BASELINE_MS = 7 * 24 * 60 * 60 * 1000;
 
-/** Baseline coverage below either of these says nothing rather than guessing. */
+/** Minimum baseline coverage before judging. */
 export const MIN_BASELINE_SPAN_MS = 3 * 24 * 60 * 60 * 1000;
 export const MIN_BASELINE_WINDOWS = 288;
 
-/** No sample this recent means nothing is being collected, not that the rate is zero. */
+/** No sample within this means collection stopped, not a zero rate. */
 export const STALE_AFTER_MS = 3 * SAMPLE_MS;
 
 /** How long a deploy or restart keeps replaying startup logging. */
 export const SETTLE_MS = 15 * 60_000;
 
-/** Cap on an unfinished deploy, so a hung row does not suppress the app forever. */
+/** Cap on an unfinished deploy's quiet window. */
 export const DEPLOY_MAX_MS = 30 * 60_000;
 
 const RATIO = 4;
@@ -58,10 +41,7 @@ function ms(value: Date | string | number): number {
   return value instanceof Date ? value.getTime() : typeof value === "number" ? value : Date.parse(value);
 }
 
-/**
- * Spans a deploy or a container restart makes the rate meaningless over. Both
- * replay startup logging, and a release legitimately changes log volume.
- */
+/** Spans after deploys and restarts where the rate isn't judged. */
 export function quietWindows(
   deploys: DeployWindow[],
   restarts: (Date | string | number | null)[],
@@ -92,11 +72,7 @@ export function overlapsQuiet(from: number, to: number, windows: QuietWindow[]):
 
 export type RateWindow = { at: number; errors: number; lines: number };
 
-/**
- * Rolling sums over `WINDOW_SAMPLES` contiguous samples, stamped at the last
- * sample in each. A gap in collection breaks the run rather than being summed
- * across, so a window is always the span it claims to be.
- */
+/** Rolling sums over `WINDOW_SAMPLES` contiguous samples. Windows spanning a gap are skipped. */
 export function windowSums(samples: RateSample[]): RateWindow[] {
   const sorted = [...samples].sort((a, b) => a.at - b.at);
   const out: RateWindow[] = [];
@@ -125,7 +101,7 @@ export function median(values: number[]): number {
   return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
-/** Nearest-rank percentile. Small samples land on a real observation, not an interpolation. */
+/** Nearest-rank percentile. */
 export function percentile(values: number[], p: number): number {
   if (values.length === 0) return 0;
   const sorted = [...values].sort((a, b) => a - b);
@@ -148,7 +124,7 @@ export type ErrorRateReading = {
 
 export type ReadingInput = {
   now: number;
-  /** Ascending or not — sorted here. */
+  /** Any order. */
   samples: RateSample[];
   quiet: QuietWindow[];
 };
@@ -240,15 +216,14 @@ function isStepChange(current: RateWindow, baseline: RateWindow[], usual: number
   const usualShare = median(baseline.filter((w) => w.lines > 0).map((w) => w.errors / w.lines));
   if (usualShare > 0) {
     const share = current.lines > 0 ? current.errors / current.lines : 1;
-    // Errors are log lines, so a real regression lifts the share on its own.
-    // A flat share means the app is only busier.
+    // A flat error share means the app is only busier.
     if (share <= usualShare * SHARE_GUARD) return false;
   }
 
   return true;
 }
 
-/** Elevated is the only status that carries a state hue. */
+/** Text tone for an error-rate status. */
 export function errorRateTone(status: ErrorRateStatus): string {
   return status === "elevated" ? "text-status-warning" : status === "normal" ? "text-status-success" : "text-muted-foreground";
 }

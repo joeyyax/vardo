@@ -1,10 +1,6 @@
 export type PreviewStatus = "loading" | "ready" | "failed";
 
-/**
- * The delete dialog's confirm button. Blocked until the volume check settles,
- * so nobody confirms without having seen the list. Volumes are only destroyed
- * when there are some, the box is checked and the name is typed.
- */
+/** Delete dialog confirm state. Blocked until the volume check settles. */
 export function deleteConfirmState(opts: {
   preview: PreviewStatus;
   hasData: boolean;

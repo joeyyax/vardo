@@ -1,16 +1,10 @@
-// ---------------------------------------------------------------------------
-// Ledger row
-//
-// Fixed columns, tabular alignment, colour reserved for the abnormal. Ten
-// healthy apps read as ten quiet lines so the crashed one is the only thing the
-// eye lands on.
-// ---------------------------------------------------------------------------
+// App ledger row: fixed columns, color only for abnormal state.
 
 import { worstCondition, type AppCondition } from "@/lib/docker/conditions";
 import { conditionLabel, conditionTone } from "@/lib/ui/conditions";
 import { restartCue } from "@/lib/ui/stability";
 
-/** How loud a row is allowed to be. Only warning and critical earn a rail. */
+/** Row severity. Only warning and critical get a rail. */
 export type RowSeverity = "none" | "info" | "warning" | "critical";
 
 const SEVERITY_RANK: Record<RowSeverity, number> = {
@@ -26,7 +20,7 @@ const STATUS_SEVERITY: Record<string, RowSeverity> = {
   deploying: "info",
 };
 
-/** The worst thing true of a row: its status, its conditions, its pending config. */
+/** Worst severity across status, conditions and pending config. */
 export function rowSeverity(
   status: string,
   conditions?: AppCondition[] | null,
@@ -43,14 +37,14 @@ export function rowSeverity(
   return severity;
 }
 
-/** Left rail. Problem rows only — a healthy row carries no rail at all. */
+/** Left rail class, or null for rows without a problem. */
 export function railClass(severity: RowSeverity): string | null {
   if (severity === "critical") return "bg-status-error";
   if (severity === "warning") return "bg-status-warning";
   return null;
 }
 
-/** Trailing sparkline. Neutral until the state is abnormal, never by metric. */
+/** Sparkline tone by row severity. */
 export function sparklineTone(severity: RowSeverity): string {
   switch (severity) {
     case "critical":
@@ -71,12 +65,7 @@ const STATUS_WORD: Record<string, string> = {
   stopped: "stopped",
 };
 
-/**
- * The word beside the name. Healthy rows drop it — the dot already says it —
- * and so does any row matching the status its header already states. Parked
- * beats the status word: which shape of off it is stops mattering once someone
- * has said it is off on purpose.
- */
+/** Status word beside the name. Null when active or matching the header's status; parked wins. */
 export function statusWord(
   status: string,
   sharedStatus?: string | null,
@@ -104,13 +93,13 @@ const STATUS_RANK: Record<string, number> = {
   active: 4,
 };
 
-/** Parked sorts below everything, running included — it is the quietest row there is. */
+/** Sort rank. Parked sorts last. */
 export function statusRank(status: string, parked = false): number {
   if (parked) return 5;
   return STATUS_RANK[status] ?? 3;
 }
 
-/** One unit, so the column stays narrow: 12d, 4h, 37m, 8s. */
+/** Single-unit uptime: 12d, 4h, 37m, 8s. */
 export function compactUptime(since: Date | string | number, now = Date.now()): string {
   const started = new Date(since).getTime();
   if (!Number.isFinite(started)) return "—";
@@ -127,10 +116,7 @@ export function compactUptime(since: Date | string | number, now = Date.now()): 
 
 export type SparkPath = { d: string; end: [number, number] };
 
-/**
- * Trailing sparkline geometry. Min-max normalized so a steady series reads as a
- * centered flat line rather than pinning to an edge. Null below two points.
- */
+/** Min-max normalized sparkline path. Null below two points. */
 export function sparkPath(values: number[], w = 64, h = 18, pad = 2): SparkPath | null {
   const points = values.filter((v) => Number.isFinite(v));
   if (points.length < 2) return null;
@@ -151,7 +137,7 @@ export function sparkPath(values: number[], w = 64, h = 18, pad = 2): SparkPath 
   };
 }
 
-/** A reading that was never taken is n/a. Zero is a measurement, not an absence. */
+/** "n/a" for a missing reading. Zero is a reading. */
 export function readingLabel(
   value: number | null | undefined,
   format: (n: number) => string,
@@ -159,23 +145,16 @@ export function readingLabel(
   return value === null || value === undefined ? "n/a" : format(value);
 }
 
-/** Plain lowercase, no chrome. Two fit the column; the rest become a count. */
+/** Lowercased tags, the first `max` shown and the rest counted. */
 export function tagLabels(names: string[], max = 2): { shown: string[]; overflow: number } {
   const clean = names.map((n) => n.trim().toLowerCase()).filter(Boolean);
   return { shown: clean.slice(0, max), overflow: Math.max(0, clean.length - max) };
 }
 
-// ---------------------------------------------------------------------------
-// The note beside the name
-// ---------------------------------------------------------------------------
-
 /** The one thing worth saying about a row beyond its status. */
 export type RowNote = { label: string; tone: string; detail?: string };
 
-/**
- * Worst condition first, then pending config, then whatever the caller offers.
- * The row and its hover card read this so the two never disagree.
- */
+/** Worst condition, then pending config, then the fallback. Shared by the row and its hover card. */
 export function rowNote(
   conditions?: AppCondition[] | null,
   needsRedeploy?: boolean | null,
@@ -185,8 +164,7 @@ export function rowNote(
   if (worst) {
     return { label: conditionLabel(worst), tone: conditionTone(worst.severity), detail: worst.detail };
   }
-  // Restart cannot clear this. `compose restart` reuses the containers, so env,
-  // labels and compose changes only land when a deploy recreates them.
+  // Restart can't clear this; `compose restart` reuses containers.
   if (needsRedeploy) {
     return {
       label: "deploy needed",
@@ -197,24 +175,14 @@ export function rowNote(
   return fallback ?? null;
 }
 
-/**
- * The restart cue as a note, or null when the count is unread or ordinary. A
- * row carries the count alone; the anchor it resets from is a detail-page fact.
- */
+/** The restart cue as a note, or null when the count is unread or ordinary. */
 export function restartNote(count: number | null | undefined): RowNote | null {
   if (count === null || count === undefined) return null;
   const cue = restartCue({ count, since: null });
   return cue && { label: cue.label, tone: cue.tone, detail: cue.title };
 }
 
-// ---------------------------------------------------------------------------
-// Middle columns
-// ---------------------------------------------------------------------------
-
-/**
- * What the row runs: the image without its registry host, or the git repo.
- * Also what tells a compose parent apart from the child that shares its name.
- */
+/** The image without its registry host, or the git repo path. */
 export function sourceRef(app: {
   imageName?: string | null;
   gitUrl?: string | null;
@@ -222,7 +190,7 @@ export function sourceRef(app: {
   const image = app.imageName?.trim();
   if (image) {
     const parts = image.split("/");
-    // A first segment carrying a dot or a port is a registry host, not a namespace.
+    // A first segment with a dot or port is a registry host.
     if (parts.length > 1 && /[.:]/.test(parts[0])) parts.shift();
     return parts.join("/") || null;
   }
@@ -236,7 +204,7 @@ export function sourceRef(app: {
   );
 }
 
-/** Where the row answers. The primary domain, else the first one it has. */
+/** The primary domain, else the first. */
 export function primaryDomain(
   domains?: { domain: string; isPrimary?: boolean | null }[] | null,
 ): string | null {
@@ -244,16 +212,10 @@ export function primaryDomain(
   return (domains.find((d) => d.isPrimary) ?? domains[0]).domain ?? null;
 }
 
-// ---------------------------------------------------------------------------
-// Truncation order
-//
-// A row that runs out of width must destroy its columns in order of least
-// worth, and the name is worth the most. CSS decides that by flex-shrink x
-// flex-basis, which is why `flex-1` (basis 0) on a neighbour is a trap: it
-// weighs nothing, absorbs no shrinkage, and leaves the name to take all of it.
-// ---------------------------------------------------------------------------
+// Cells shrink by flex-shrink x flex-basis; the name truncates last.
+// Don't use `flex-1` on a neighbor: basis 0 absorbs no shrinkage and the name takes it all.
 
-/** Cell classes, shared with the component so the order below is the real one. */
+/** Cell classes, shared with the component. */
 export const ROW_NAME_CELL = "min-w-0 shrink truncate";
 export const ROW_NOTE_CELL = "min-w-0 shrink-[9999] truncate";
 export const ROW_SOURCE_CELL = "min-w-0 w-44 shrink-[9999] truncate hidden @[40rem]:block";
@@ -263,22 +225,10 @@ export const ROW_UPTIME_CELL = "w-9 shrink-0 text-right tabular-nums";
 export const ROW_SPARKLINE_CELL =
   "hidden h-[18px] w-16 shrink-0 items-center justify-end @[26rem]:flex";
 export const ROW_ICONS_CELL = "flex shrink-0 items-center justify-end gap-1.5 @[26rem]:w-14";
-/**
- * Holds the fixed columns. No min-w-0: min-content is the width of its own
- * shrink-0 children, so it squeezes the middle columns flat, freezes there, and
- * only then does the name start losing characters.
- */
+/** Holds the fixed columns. No min-w-0, so the middle columns collapse before the name truncates. */
 export const ROW_TRAILING_CELL = "ml-auto flex shrink-[9999] items-center gap-2.5";
 
-// ---------------------------------------------------------------------------
-// Column gates
-//
-// The container is the ledger card, not the viewport, and the page caps it: a
-// 1280px shell less 80px of gutter, a 192px rail, a 32px gap and 12px of card
-// padding leave 964px however wide the display is. A gate above that never opens.
-// ---------------------------------------------------------------------------
-
-/** Widest the card's content box ever gets, in px. */
+/** Widest the ledger card's content box gets, in px. A container gate above this never opens. */
 export const LEDGER_CARD_MAX_PX = 964;
 
 /** The @[…rem] width a cell waits for, in px. Null when it never hides. */
@@ -295,7 +245,7 @@ export function containerGatePx(className: string, rootFontSize = 16): number | 
 
 const SPACING_PX = 4;
 
-/** flex-shrink x flex-basis, the factor CSS shares shrinkage out by. */
+/** flex-shrink x flex-basis. */
 export function shrinkWeight(className: string, contentWidth = 100): number {
   let shrink = 1;
   let basis: number | null = null;
@@ -312,7 +262,7 @@ export function shrinkWeight(className: string, contentWidth = 100): number {
 
 export type RowCell = { id: string; className: string; width?: number };
 
-/** Which cells give up width first. Heaviest first; the last one truncates last. */
+/** Cell ids in the order they give up width. */
 export function truncationOrder(cells: RowCell[]): string[] {
   return cells
     .map((cell, index) => ({ ...cell, index, weight: shrinkWeight(cell.className, cell.width) }))

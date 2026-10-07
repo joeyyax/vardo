@@ -1,17 +1,12 @@
-// ---------------------------------------------------------------------------
-// Secret redaction for text that leaves the process — error messages, command
-// lines, captured stderr, deployment logs.
-//
-// A match is replaced whole: no length, no prefix, no suffix survives.
-// ---------------------------------------------------------------------------
+// Secret redaction for text that leaves the process. Matches are replaced whole.
 
 export const REDACTED = "[redacted]";
 
-/** Shortest value worth redacting by exact match — below this it is noise. */
+/** Shortest value redacted by exact match. */
 const MIN_VALUE_LENGTH = 6;
 
 const PATTERNS: { pattern: RegExp; replacement: string }[] = [
-  // PEM blocks — the whole body, not just the header.
+  // PEM blocks, whole body.
   {
     pattern: /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z0-9 ]*PRIVATE KEY-----/g,
     replacement: REDACTED,
@@ -25,7 +20,7 @@ const PATTERNS: { pattern: RegExp; replacement: string }[] = [
     pattern: /([a-z][a-z0-9+.-]*:\/\/)[^/\s:@]+@/gi,
     replacement: `$1${REDACTED}@`,
   },
-  // Provider token shapes, which travel outside any recognisable key/value form.
+  // Provider token shapes.
   { pattern: /\bgh[pousr]_[A-Za-z0-9]{16,}/g, replacement: REDACTED },
   { pattern: /\bgithub_pat_[A-Za-z0-9_]{20,}/g, replacement: REDACTED },
   { pattern: /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g, replacement: REDACTED },
@@ -68,13 +63,10 @@ export function redactSecrets(text: string, values: Iterable<string> = []): stri
   return out;
 }
 
-/** Fields a failed child process carries the command line and its output in. */
+/** Error fields that can carry the command line and its output. */
 const ERROR_TEXT_FIELDS = ["message", "cmd", "stdout", "stderr", "stack"] as const;
 
-/**
- * Rewrites an error's text in place so a credential on argv cannot survive
- * into whatever logs it. Non-errors are returned untouched.
- */
+/** Redact an error's text fields in place. Non-objects are returned untouched. */
 export function redactError<T>(error: T, values: Iterable<string> = []): T {
   if (!error || typeof error !== "object") return error;
 
@@ -85,7 +77,7 @@ export function redactError<T>(error: T, values: Iterable<string> = []): T {
     try {
       target[field] = redactSecrets(value, values);
     } catch {
-      // Frozen or getter-only field — the remaining fields still get cleaned.
+      // Frozen or getter-only field.
     }
   }
   return error;

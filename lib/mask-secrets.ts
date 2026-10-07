@@ -1,56 +1,30 @@
-/**
- * Unique sentinel prefix used to identify masked values in transit.
- * The UI displays a friendly "••••" to the user, but the actual value sent
- * over the wire uses this unambiguous prefix so real passwords starting
- * with "••••" are never misidentified.
- */
+/** Prefix marking masked values in transit, so real values starting with "••••" aren't mistaken for masks. */
 export const MASK_SENTINEL = "__MASKED__:";
 
-/**
- * Display prefix shown to users in the UI for masked fields.
- */
+/** Display prefix for masked fields. */
 export const MASK_DISPLAY = "••••";
 
-/**
- * Mask a secret string for API responses.
- * Returns `null` for empty/undefined values.
- * The returned value uses the sentinel prefix so the server can recognise
- * untouched fields on save.
- */
+/** Mask a secret for API responses. Null for empty values. */
 export function maskSecret(value: string | undefined | null): string | null {
   if (!value) return null;
   const tail = value.length <= 4 ? "" : value.slice(-4);
   return `${MASK_SENTINEL}${tail}`;
 }
 
-/**
- * Convert a sentinel-prefixed masked value to a user-friendly display string.
- * Example: `__MASKED__:ab12` → `••••ab12`
- */
+/** `__MASKED__:ab12` → `••••ab12`. */
 export function maskDisplay(value: string | undefined | null): string {
   if (!value) return "";
   if (!value.startsWith(MASK_SENTINEL)) return value;
   return `${MASK_DISPLAY}${value.slice(MASK_SENTINEL.length)}`;
 }
 
-/**
- * Returns `true` only when the value is a sentinel-prefixed masked
- * placeholder — meaning the user did not edit the field.
- *
- * Empty string, `null`, and `undefined` return `false` (the user
- * cleared the field intentionally).
- */
+/** Whether the value is an unedited masked placeholder. Empty values mean the field was cleared. */
 export function isMasked(value: string | undefined | null): boolean {
   if (typeof value !== "string") return false;
   return value.startsWith(MASK_SENTINEL);
 }
 
-/**
- * Resolve a secret field from a save request.
- * If the incoming value is a masked sentinel, the existing stored value is
- * kept unchanged. Otherwise the incoming value replaces it (null/undefined
- * means the user intentionally cleared the field).
- */
+/** Keep the stored secret when the incoming value is masked; otherwise use the incoming value. */
 export function resolveSecret(
   incoming: string | undefined | null,
   existing: string | undefined | null,

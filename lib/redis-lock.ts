@@ -1,11 +1,6 @@
 import { redis } from "@/lib/redis";
 
-/**
- * Attempt to acquire a distributed lock using Redis SET NX PX.
- * Returns true if the lock was acquired, false if it already exists.
- *
- * The lock expires automatically after `ttlMs` — no explicit release needed.
- */
+/** Acquire a Redis lock (SET NX PX) that expires after `ttlMs`. False if already held. */
 export async function acquireLock(
   key: string,
   ttlMs: number,
@@ -14,10 +9,7 @@ export async function acquireLock(
   return result === "OK";
 }
 
-/**
- * Explicitly release a lock before its TTL expires.
- * Safe to call even if the lock no longer exists.
- */
+/** Release a lock before its TTL expires. */
 export async function releaseLock(key: string): Promise<void> {
   await redis.del(key);
 }

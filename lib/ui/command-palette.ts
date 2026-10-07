@@ -1,11 +1,7 @@
 /** cmdk keys items by lowercased value, so two apps named Gitea and gitea collide. */
 export const ID_SEP = "\u241f";
 
-/**
- * Name matches beat keyword matches, and nothing matches loosely. cmdk's default
- * is fuzzy, which ranked plextraktsync above plex for "plex" and returned Kroki
- * for "loki" — on a fleet this size the noise costs more than the typo tolerance.
- */
+/** Rank a cmdk item: name matches beat keyword matches. No fuzzy matching. */
 export function rankResult(value: string, search: string, keywords?: string[]): number {
   const q = search.trim().toLowerCase();
   if (!q) return 1;
@@ -23,7 +19,7 @@ export function rankResult(value: string, search: string, keywords?: string[]): 
   return 0;
 }
 
-/** cmdk hides non-matches but keeps source order, so relevance is sorted here. */
+/** Sort by relevance; cmdk keeps source order. */
 export function byRelevance<T>(
   items: T[],
   search: string,
@@ -41,7 +37,7 @@ export type CommandActionId = "restart" | "deploy" | "logs" | "rollback";
 
 export type CommandActionDef = {
   id: CommandActionId;
-  /** Matched first, and the label before an app is chosen. */
+  /** Matched first; the label before an app is chosen. */
   verb: string;
   keywords: string[];
   /** Placeholder while the second step picks the app. */

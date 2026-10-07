@@ -1,7 +1,4 @@
-/**
- * Detect app type, icon, and brand color from app metadata.
- * Single source of truth for type-based styling across the UI.
- */
+// App type, icon and brand color for type-based styling.
 
 type AppTypeInfo = {
   type: string;
@@ -40,10 +37,7 @@ const APP_TYPES: { pattern: RegExp; type: string; icon: string | null; color: st
 
 const FALLBACK: AppTypeInfo = { type: "unknown", icon: null, color: "#a1a1aa" }; // zinc-400
 
-/**
- * Detect app type, icon URL, and brand color from app metadata.
- * Falls back to project color if provided, otherwise zinc-400.
- */
+/** Detect app type, icon URL and brand color. Falls back to the project color, then zinc-400. */
 export function detectAppType(opts: {
   imageName?: string | null;
   gitUrl?: string | null;
@@ -62,12 +56,10 @@ export function detectAppType(opts: {
     }
   }
 
-  // GitHub repo
   if (opts.gitUrl?.includes("github.com")) {
     return { type: "github", icon: "https://cdn.simpleicons.org/github/8B949E", color: fallbackColor || "#8B949E" };
   }
 
-  // Docker generic
   if (opts.deployType === "compose" || opts.deployType === "image") {
     return { type: "docker", icon: "https://cdn.simpleicons.org/docker/2496ED", color: fallbackColor || "#2496ED" };
   }

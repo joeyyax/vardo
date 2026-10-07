@@ -1,10 +1,4 @@
-// ---------------------------------------------------------------------------
-// Which failure banner the app header shows
-//
-// "crashed" is the app itself being down. "recovered" is a failed deploy that
-// blue/green absorbed — the previous release kept serving, so the status never
-// left active and nothing else in the header says the deploy failed.
-// ---------------------------------------------------------------------------
+// App header failure banner. "recovered" is a failed deploy the previous release kept serving through.
 
 export type DeployFailureVariant = "crashed" | "recovered";
 

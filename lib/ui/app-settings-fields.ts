@@ -1,18 +1,17 @@
-/** What an app's shape decides about the settings panel's fields. */
+/** App shape that decides which settings fields show. */
 export type AppSettingsFieldContext = {
-  /** Has decomposed child apps — the row is a stack, not a container. */
+  /** Has decomposed child apps. */
   isComposeParent: boolean;
-  /** Has a parentAppId — one service inside a stack. */
+  /** Has a parentAppId. */
   isChildService: boolean;
   /** Deploy type currently selected in the form, not the stored one. */
   deployType: string;
-  /** Stored deploy type, which decides whether there is an image to name. */
+  /** Stored deploy type. */
   storedDeployType: string;
   source: string | null;
 };
 
 export type AppSettingsFields = {
-  /** Display name and description. */
   identity: boolean;
   image: boolean;
   gitSource: boolean;
@@ -34,21 +33,17 @@ export type AppSettingsFields = {
   project: boolean;
 };
 
-/**
- * Fields the settings panel shows for this app. A child service hides what its
- * parent stack controls; a compose parent hides what only a single container has.
- */
+/** Fields the settings panel shows for this app. */
 export function appSettingsFields(ctx: AppSettingsFieldContext): AppSettingsFields {
   const { isComposeParent, isChildService } = ctx;
-  // Build, deploy and ingress belong to the stack, so a child service shows none.
+  // Build, deploy and ingress belong to the stack.
   const ownsBuild = !isChildService;
 
   return {
     identity: true,
-    // A stack has an image per service, named in its compose file.
     image: ownsBuild && !isComposeParent && ctx.storedDeployType === "image",
     gitSource: ownsBuild && ctx.source === "git",
-    // A row with children is compose by definition; switching it orphans them.
+    // Switching a compose parent's type orphans its children.
     deployType: ownsBuild && !isComposeParent,
     composeFilePath: ownsBuild && ctx.deployType === "compose",
     dockerfilePath: ownsBuild && !isComposeParent && ctx.deployType === "dockerfile",
@@ -56,8 +51,7 @@ export function appSettingsFields(ctx: AppSettingsFieldContext): AppSettingsFiel
     backendProtocol: ownsBuild,
     restartPolicy: true,
     resourceLimits: true,
-    // Alerts match a container by name, and every service's name belongs to a
-    // child row — a stack-level threshold would never be read.
+    // Alerts match containers by name, which belong to child rows.
     diskWriteAlert: !isComposeParent,
     priority: true,
     priorityInherit: isChildService,
@@ -74,10 +68,10 @@ export const APP_SETTINGS_PAGES = ["networking", "build", "resources", "settings
 
 export type AppSettingsPage = (typeof APP_SETTINGS_PAGES)[number];
 
-/** Every field, minus the modifiers that only change how one is offered. */
+/** Every field except modifiers. */
 export type AppSettingsFieldName = Exclude<keyof AppSettingsFields, "priorityInherit">;
 
-/** The page each field is edited on. One field, one page. */
+/** The page each field is edited on. */
 export const APP_SETTINGS_FIELD_PAGE: Record<AppSettingsFieldName, AppSettingsPage> = {
   identity: "settings",
   project: "settings",
@@ -98,10 +92,7 @@ export const APP_SETTINGS_FIELD_PAGE: Record<AppSettingsFieldName, AppSettingsPa
   gpu: "resources",
 };
 
-/**
- * PATCH body keys the container only picks up when it is recreated. Saving one
- * of these earns the "Redeploy now" prompt; everything else applies on save.
- */
+/** PATCH body keys that need a redeploy to take effect. */
 export const APP_SETTINGS_REDEPLOY_KEYS: readonly string[] = [
   "deployType",
   "gitBranch",
@@ -116,7 +107,7 @@ export const APP_SETTINGS_REDEPLOY_KEYS: readonly string[] = [
   "gpuEnabled",
 ];
 
-/** This app's fields narrowed to one page — the rest read as hidden, so unwritten. */
+/** This app's fields narrowed to one page. */
 export function appSettingsPageFields(
   page: AppSettingsPage,
   ctx: AppSettingsFieldContext,
@@ -129,7 +120,7 @@ export function appSettingsPageFields(
   return narrowed;
 }
 
-/** Whether the page has anything to show — an empty one gets no rail entry. */
+/** Whether the page has any fields to show. */
 export function hasAppSettingsPageFields(
   page: AppSettingsPage,
   ctx: AppSettingsFieldContext,

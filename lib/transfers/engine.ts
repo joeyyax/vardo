@@ -42,9 +42,8 @@ async function environmentEnvRows(tx: Tx, appIds: string[]) {
 }
 
 /**
- * Move the org-keyed secrets of these apps from one org's key to another's.
- * Throws when a live secret cannot be read, so the move never strands one.
- * A deployment snapshot that is already unreadable is left as it is.
+ * Re-encrypt these apps' org-keyed secrets under another org's key.
+ * Throws when a live secret can't be read, so the move never strands one.
  */
 async function reencryptAppSecrets(
   tx: Tx,
@@ -116,11 +115,7 @@ async function reencryptAppSecrets(
   }
 }
 
-/**
- * The id of a deploy key `toOrgId` can use in place of `keyId`: the key itself
- * when the org already owns it, otherwise a copy re-encrypted under the org's key.
- * Null when the key is gone or unreadable.
- */
+/** A deploy key `toOrgId` can use in place of `keyId`, copying it if needed. Null when unreadable. */
 async function adoptDeployKey(tx: Tx, keyId: string, toOrgId: string): Promise<string | null> {
   const key = await tx.query.deployKeys.findFirst({ where: eq(deployKeys.id, keyId) });
   if (!key) return null;
@@ -170,15 +165,12 @@ type CrossProjectRef = {
   currentValue: string;
 };
 
-/**
- * Analyze what would happen if an app is transferred.
- * Reads the source app only; which refs actually freeze is decided on accept.
- */
+/** Preview a transfer from the source app. Which refs freeze is decided on accept. */
 export async function analyzeTransfer(appId: string): Promise<{
   crossProjectRefs: CrossProjectRef[];
   warnings: string[];
 }> {
-  // Load app's env vars (base-level, no environment override)
+  // Base-level env vars only.
   const vars = await db.query.envVars.findMany({
     where: and(eq(envVars.appId, appId), isNull(envVars.environmentId)),
   });
@@ -231,9 +223,7 @@ async function resolveFrozenRefs(
     }));
 }
 
-/**
- * Initiate a transfer -- creates a pending transfer record.
- */
+/** Create a pending transfer record. */
 export async function initiateTransfer(opts: {
   appId: string;
   sourceOrgId: string;
@@ -256,10 +246,7 @@ export async function initiateTransfer(opts: {
   return id;
 }
 
-/**
- * Accept a transfer -- move the app to the destination org.
- * Freezes unresolvable cross-project refs by replacing expressions with literal values.
- */
+/** Move the app to the destination org, freezing unresolvable cross-project refs to literal values. */
 export async function acceptTransfer(
   transferId: string,
   respondedBy: string,
@@ -272,7 +259,6 @@ export async function acceptTransfer(
     throw new Error("Transfer not found or not pending");
   }
 
-  // Freeze cross-project refs that won't resolve in the new org
   const frozenRefs = await resolveFrozenRefs(
     transfer.appId,
     transfer.destinationOrgId,
@@ -327,13 +313,11 @@ export async function acceptTransfer(
     const moved = [...(parent ? [{ id: parent.id, name: parent.name }] : []), ...children];
     const appIds = [transfer.appId, ...children.map((c) => c.id)];
 
-    // Secrets are encrypted under a key derived from the org id. Moving the row
-    // without rewriting them leaves them unreadable in the destination org.
+    // Secrets are keyed to the org id; moving without re-encrypting leaves them unreadable.
     await reencryptAppSecrets(tx, appIds, transfer.sourceOrgId, transfer.destinationOrgId);
     // Deploy keys are org-owned; the source org keeps its own copy.
     await moveAppDeployKeys(tx, appIds, transfer.destinationOrgId);
 
-    // Ensure a "Default" project exists in the destination org
     const [destProject] = await tx
       .insert(projects)
       .values({
@@ -379,10 +363,8 @@ export async function acceptTransfer(
 }
 
 /**
- * Repair apps accepted before transfers re-encrypted secrets: anything still
- * encrypted under the source org's key is rewritten under the app's current org,
- * and a deploy key still owned by another org is copied into the app's org.
- * Only values the source key authenticates are touched, so it is idempotent.
+ * Repair apps transferred before secrets were re-encrypted: rewrite values under the
+ * current org's key and copy foreign deploy keys. Idempotent.
  */
 export async function repairTransferredSecrets(): Promise<number> {
   const accepted = await db.query.appTransfers.findMany({
@@ -447,9 +429,7 @@ async function repairAppSecrets(tx: Tx, appId: string, fromOrgId: string, toOrgI
   return count;
 }
 
-/**
- * Reject or cancel a transfer.
- */
+/** Reject or cancel a transfer. */
 export async function rejectTransfer(
   transferId: string,
   respondedBy: string,

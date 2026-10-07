@@ -79,7 +79,7 @@ export function availableAppTabs(ctx: AppTabContext): AppTab[] {
     ...(ctx.hasConnectionInfo ? (["connect"] as const) : []),
     "variables",
     "networking",
-    // A child service builds nothing of its own — the stack owns its build.
+    // The stack owns a child service's build.
     ...(ctx.isChildService ? [] : (["build"] as const)),
     "resources",
     ...(f.cron ? (["cron"] as const) : []),
@@ -112,7 +112,7 @@ export function resolveAppTab(requested: string | undefined, ctx: AppTabContext)
     : defaultAppTab(ctx);
 }
 
-/** The tab the shell's URL builder omits, so its path is the bare app path. */
+/** The tab served at the bare app path. */
 export function rootAppTab(ctx: AppTabContext): AppTab {
   return ctx.isComposeParent ? "services" : "deployments";
 }

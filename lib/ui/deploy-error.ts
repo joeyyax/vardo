@@ -1,9 +1,4 @@
-// ---------------------------------------------------------------------------
-// Failure detail for a header banner
-//
-// A plain app reads its failure off the deploy log. A stack whose last deploy
-// succeeded reads it off whichever service is down.
-// ---------------------------------------------------------------------------
+// Failure detail for the app header banner: from the deploy log, or from down services in a stack.
 
 const FAILURE_MARKERS = ["ERROR", "FATAL", "failed", "crashed"];
 
@@ -26,12 +21,12 @@ export type CrashableMember = { id: string; name: string; displayName: string; s
 
 export type CrashSummary = {
   crashed: CrashableMember[];
-  /** Members that are neither up nor crashed — usually stopped in the same incident. */
+  /** Members neither up nor crashed. */
   down: number;
   message: string;
 };
 
-/** Names the services that are actually down, for a stack whose deploy log says nothing. */
+/** Names the services that are down in a stack. */
 export function crashSummary(members: CrashableMember[]): CrashSummary | null {
   const crashed = members.filter((m) => m.status === "error");
   const down = members.filter((m) => m.status === "stopped" || m.status === "missing").length;
