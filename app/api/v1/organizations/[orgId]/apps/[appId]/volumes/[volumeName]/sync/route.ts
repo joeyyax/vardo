@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { apps, volumes } from "@/lib/db/schema";
-import { verifyAppAccess } from "@/lib/api/verify-access";
+import { verifyAppAccess, verifyOrgAccess } from "@/lib/api/verify-access";
 import { eq, and } from "drizzle-orm";
 import { syncFilesFromImage } from "@/lib/volumes/diff";
 import { inspectContainer, resolveVolumeName } from "@/lib/docker/client";
@@ -43,6 +43,8 @@ const syncSchema = z.object({
 async function handlePost(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId, volumeName } = await params;
+    const org = await verifyOrgAccess(orgId, "app.volumes.sync");
+    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     const appRecord = await verifyAppAccess(orgId, appId, "app.volumes.sync");
     if (!appRecord) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });

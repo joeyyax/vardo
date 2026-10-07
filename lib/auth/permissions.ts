@@ -53,7 +53,7 @@ export const CAPABILITIES = {
   "app.cron": ADMINS,
   "app.debug": ADMINS,
   "app.delete": ADMINS,
-  "app.volumes.sync": MEMBERS,
+  "app.volumes.sync": ADMINS,
 
   // Env vars
   "env.read": MEMBERS,
