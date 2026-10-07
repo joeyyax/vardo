@@ -35,7 +35,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -584,7 +583,6 @@ export function ProjectDetail({
   const [activeTab, setActiveTab] = useState(initialTab);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [deleteOrphanAcknowledged, setDeleteOrphanAcknowledged] = useState(false);
   const [selectedEnv, setSelectedEnv] = useState<string>("production");
   const [newEnvOpen, setNewEnvOpen] = useState(false);
   const [newEnvName, setNewEnvName] = useState("");
@@ -1279,14 +1277,14 @@ export function ProjectDetail({
                 description={
                   deleteRefusal ??
                   (topLevelApps.length > 0
-                    ? `Its ${topLevelApps.length} app${topLevelApps.length === 1 ? "" : "s"} keep running but become unassigned.`
+                    ? `Move or delete its ${topLevelApps.length} app${topLevelApps.length === 1 ? "" : "s"} first.`
                     : "This cannot be undone.")
                 }
                 action={
                   <Button
                     size="sm"
                     variant="destructive"
-                    disabled={deleteRefusal !== null}
+                    disabled={deleteRefusal !== null || topLevelApps.length > 0}
                     onClick={() => setDeleteOpen(true)}
                   >
                     <Trash2 className="mr-1.5 size-4" />
@@ -1337,33 +1335,12 @@ export function ProjectDetail({
       {/* Delete confirmation */}
       <ConfirmDeleteDialog
         open={deleteOpen}
-        onOpenChange={(open) => {
-          setDeleteOpen(open);
-          if (!open) setDeleteOrphanAcknowledged(false);
-        }}
+        onOpenChange={setDeleteOpen}
         onConfirm={handleDelete}
         loading={deleting}
         title="Delete project"
-        description={
-          topLevelApps.length > 0
-            ? `Deleting "${project.displayName}" will not stop or delete its ${topLevelApps.length} app${topLevelApps.length === 1 ? "" : "s"}. They'll remain running but will no longer be grouped together. You can reassign them to another project from each app's settings.`
-            : `Delete the project "${project.displayName}"? This action cannot be undone.`
-        }
-        confirmDisabled={topLevelApps.length > 0 && !deleteOrphanAcknowledged}
-      >
-        {topLevelApps.length > 0 && (
-          <label className="flex items-start gap-3 cursor-pointer select-none">
-            <Checkbox
-              checked={deleteOrphanAcknowledged}
-              onCheckedChange={(checked) => setDeleteOrphanAcknowledged(checked === true)}
-              className="mt-0.5"
-            />
-            <span className="text-sm text-muted-foreground">
-              I understand the {topLevelApps.length === 1 ? "app" : `${topLevelApps.length} apps`} will become unassigned
-            </span>
-          </label>
-        )}
-      </ConfirmDeleteDialog>
+        description={`Delete the project "${project.displayName}"? This action cannot be undone.`}
+      />
 
       {/* Stop all confirmation */}
       <ConfirmDeleteDialog
