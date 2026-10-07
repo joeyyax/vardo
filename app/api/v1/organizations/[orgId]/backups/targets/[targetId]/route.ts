@@ -7,6 +7,8 @@ import { eq, and, or, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { isAppAdmin } from "@/lib/auth/admin";
+import { isOrgAdmin } from "@/lib/auth/permissions";
+import { deleteTargetAndBackups, targetInUse, targetUsage } from "@/lib/backups/delete-backups";
 import {
   mergeTargetConfig,
   presentTarget,
@@ -111,8 +113,9 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
   }
 }
 
-// DELETE /api/v1/organizations/[orgId]/backups/targets/[targetId]
-async function handleDelete(_request: NextRequest, { params }: RouteParams) {
+// GET /api/v1/organizations/[orgId]/backups/targets/[targetId]
+// What deleting the target would take with it.
+export async function GET(_request: NextRequest, { params }: RouteParams) {
   try {
     const gate = await requirePlugin("backups");
     if (gate) return gate;
@@ -123,6 +126,59 @@ async function handleDelete(_request: NextRequest, { params }: RouteParams) {
 
     const { denied } = await guardTarget(orgId, targetId);
     if (denied) return denied;
+
+    return NextResponse.json({ usage: await targetUsage(targetId, orgId) });
+  } catch (error) {
+    return handleRouteError(error, "Error fetching backup target usage");
+  }
+}
+
+const deleteTargetSchema = z.object({ confirm: z.string().optional() }).strict();
+
+// DELETE /api/v1/organizations/[orgId]/backups/targets/[targetId]
+// A target with jobs or backups is deleted only when `confirm` repeats its
+// name, and then takes its archives, backups and jobs with it.
+async function handleDelete(request: NextRequest, { params }: RouteParams) {
+  try {
+    const gate = await requirePlugin("backups");
+    if (gate) return gate;
+
+    const { orgId, targetId } = await params;
+    const org = await verifyOrgAccess(orgId);
+    if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!isOrgAdmin(org.membership.role)) {
+      return NextResponse.json(
+        { error: "Only owners and admins can delete backup targets" },
+        { status: 403 },
+      );
+    }
+
+    const parsed = deleteTargetSchema.safeParse(await request.json().catch(() => ({})));
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
+    }
+
+    const { denied, target } = await guardTarget(orgId, targetId);
+    if (denied) return denied;
+
+    const usage = await targetUsage(targetId, orgId);
+    if (usage.inProgress > 0) {
+      return NextResponse.json(
+        { error: "A backup is writing to this target. Try again once it finishes.", usage },
+        { status: 409 },
+      );
+    }
+
+    if (targetInUse(usage)) {
+      if (parsed.data.confirm !== target.name) {
+        return NextResponse.json(
+          { error: "This target has jobs or backups. Confirm with its name to delete them too.", usage },
+          { status: 409 },
+        );
+      }
+      const result = await deleteTargetAndBackups(target);
+      return NextResponse.json({ ok: true, jobs: usage.jobs, ...result });
+    }
 
     const deleted = await db
       .delete(backupTargets)
@@ -136,7 +192,7 @@ async function handleDelete(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Target not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, jobs: 0, backups: 0, archivesLeft: 0 });
   } catch (error) {
     return handleRouteError(error, "Error deleting backup target");
   }

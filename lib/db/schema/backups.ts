@@ -59,9 +59,10 @@ export const backupJobs = pgTable("backup_job", {
   id: text("id").primaryKey(),
   organizationId: text("organization_id")
     .references(() => organizations.id, { onDelete: "cascade" }),
+  // Deleting a target with jobs or backups is an explicit choice, never a cascade.
   targetId: text("target_id")
     .notNull()
-    .references(() => backupTargets.id, { onDelete: "cascade" }),
+    .references(() => backupTargets.id),
   name: text("name").notNull(),
   schedule: text("schedule").notNull().default("0 2 * * *"),
   enabled: boolean("enabled").default(true).notNull(),
@@ -126,9 +127,10 @@ export const backups = pgTable("backup", {
   organizationId: text("organization_id").references(() => organizations.id, {
     onDelete: "cascade",
   }),
+  // Deleting a target with jobs or backups is an explicit choice, never a cascade.
   targetId: text("target_id")
     .notNull()
-    .references(() => backupTargets.id, { onDelete: "cascade" }),
+    .references(() => backupTargets.id),
   status: backupStatusEnum("status").notNull().default("pending"),
   volumeName: text("volume_name"),
   sizeBytes: bigint("size_bytes", { mode: "number" }),

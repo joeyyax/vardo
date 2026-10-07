@@ -512,6 +512,13 @@
       "when": 1791336545729,
       "tag": "0072_flawless_payback",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1791338617803,
+      "tag": "0073_certain_lethal_legion",
+      "breakpoints": true
     }
   ]
 }
