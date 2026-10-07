@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Vardo is a self-hosted PaaS for managing Docker Compose deployments. This is the main console application — a single Next.js instance that combines the dashboard UI, REST API, and Docker orchestration engine.
+Vardo is a self-hosted PaaS for managing Docker Compose deployments. This is the main console application — a single Next.js instance that combines the dashboard UI, REST API and Docker orchestration engine.
 
 ## Commands
 
@@ -12,12 +12,12 @@ Vardo is a self-hosted PaaS for managing Docker Compose deployments. This is the
 # Development
 pnpm dev                # Start dev server (Turbopack)
 pnpm build              # Production build
-pnpm start              # Production start (runs drizzle migrations first)
+pnpm start              # Production start (runs migrations first)
 
 # Database (PostgreSQL via Drizzle ORM)
-pnpm db:push            # Push schema changes to database
-pnpm db:generate        # Generate migration files
 pnpm db:migrate         # Run migrations (scripts/migrate.mjs, as in production)
+pnpm db:generate        # Generate migration files
+pnpm db:push            # Prototype only: push schema without a migration
 pnpm db:studio          # Open Drizzle Studio
 
 # Code quality
@@ -27,9 +27,8 @@ pnpm test               # Full suite: typecheck + lint + vitest
 pnpm test:e2e           # Playwright end-to-end tests
 
 # Infrastructure
-docker compose up -d              # Start Postgres + Redis + Traefik + cAdvisor + Loki
-docker compose down               # Stop all services
-COMPOSE_PROFILES=gpu docker compose up -d  # Include GPU metrics (NVIDIA hosts only)
+docker compose up -d postgres redis   # Local dev (plain `up -d` also starts Traefik and WireGuard)
+docker compose down                   # Stop all services
 ```
 
 ## Architecture
@@ -44,9 +43,9 @@ COMPOSE_PROFILES=gpu docker compose up -d  # Include GPU metrics (NVIDIA hosts o
 ### Core Systems (under `lib/`)
 
 - **`lib/db/schema/`** — Drizzle ORM schema. All data is multi-tenant, scoped by `organizationId`.
-- **`lib/auth/`** — Better Auth config. Supports passkey (WebAuthn), TOTP 2FA, magic link, password, and GitHub OAuth. First user auto-promoted to admin.
+- **`lib/auth/`** — Better Auth config. Supports passkey (WebAuthn), TOTP 2FA, magic link, password and GitHub OAuth. First user auto-promoted to admin.
 - **`lib/docker/`** — Docker orchestration engine. Blue-green deployments with automatic rollback, compose parsing, container discovery, PR preview environments.
-- **`lib/backup/`** — Backup system with S3, B2, SSH, and local storage adapters. Scheduled via cron with retention policies.
+- **`lib/backups/`** — Backup system with S3, R2, B2, SSH and local storage adapters. Scheduled via cron with retention policies.
 - **`lib/mesh/`** — Wireguard mesh networking for multi-node deployments. Peer management, heartbeats, config inheritance.
 - **`lib/metrics/`** — Time-series metrics from cAdvisor. In-memory store with SSE streaming to frontend.
 - **`lib/notifications/`** — Alert dispatch to email and webhook channels.
@@ -54,16 +53,18 @@ COMPOSE_PROFILES=gpu docker compose up -d  # Include GPU metrics (NVIDIA hosts o
 ### Key Patterns
 
 - **API-first**: All data flows through `/api/v1/` endpoints. Organization-scoped with membership-based access control.
-- **Real-time**: SSE streams for deployment logs, container metrics, and notifications.
-- **Secrets encryption**: AES-256-GCM via `ENCRYPTION_MASTER_KEY` for env vars, backup credentials, and deployment snapshots.
+- **Real-time**: SSE streams for deployment logs, container metrics and notifications.
+- **Secrets encryption**: AES-256-GCM via `ENCRYPTION_MASTER_KEY` for env vars, backup credentials and deployment snapshots.
 - **Deployments**: Store `envSnapshot` (encrypted) and `configSnapshot` (JSON) for rollback capability.
 - **Compose decomposition**: Multi-service compose files create parent + child apps linked via `parentAppId` + `composeService`.
 
 ### Infrastructure (docker-compose.yml)
 
-Full stack: PostgreSQL 17, Redis Stack 7.4, Traefik v3 (automatic TLS via DNS-01), cAdvisor, Loki + Promtail, Wireguard. Production Dockerfile installs Docker CLI, Nixpacks, and Railpack for build support.
+Dev needs `.env` with `ENCRYPTION_MASTER_KEY` set (`openssl rand -hex 32`).
 
-## UI Components
+Compose stack: PostgreSQL 17, Redis Stack 7.4, Traefik v3 (automatic TLS via DNS-01), Wireguard. cAdvisor, Loki and Promtail are deployed as managed apps by Vardo. Production Dockerfile installs Docker CLI, Nixpacks and Railpack for build support.
+
+## UI components
 
 ### Toasts
 
@@ -76,7 +77,7 @@ toast.success("Changes saved");
 toast.error("Failed to save");
 ```
 
-### Squircle Styling
+### Squircle styling
 
 The `squircle` class provides consistent rounded corners. Base UI components (Button, Card, Dialog, etc.) should have it built into their component definitions — don't add it manually on every usage. If a component is missing it, fix the component.
 

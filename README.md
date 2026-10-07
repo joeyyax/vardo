@@ -1,16 +1,16 @@
 # Vardo
 
-Self-hosted PaaS for managing Docker Compose deployments. Deploy anything with Docker — from a GitHub repo, Docker image, or Compose file — with automatic TLS, blue-green deployments, and a web dashboard.
+Self-hosted PaaS for managing Docker Compose deployments. Deploy anything with Docker, from a GitHub repo, Docker image or Compose file, with automatic TLS, blue-green deployments and a web dashboard.
 
 ## Features
 
-- Deploy from GitHub, Docker images, or inline Compose files
+- Deploy from GitHub, Docker images or inline Compose files
 - Automatic TLS via Let's Encrypt (Traefik)
 - Blue-green deployments with zero-downtime rollback
 - Preview environments from pull requests
 - Built-in container metrics (cAdvisor) and log aggregation (Loki, one tenant per org)
 - Multi-tenant with org-scoped access control
-- Scheduled backups to S3, R2, or B2
+- Scheduled backups to S3, R2, B2, SSH and local storage
 - Cron job management per app
 - Domain monitoring with state transition alerts
 
@@ -20,7 +20,7 @@ Self-hosted PaaS for managing Docker Compose deployments. Deploy anything with D
 curl -fsSL https://vardo.run/install.sh | sudo bash
 ```
 
-Requires Ubuntu 22.04+ or Debian 12+, 1 GB RAM, and a domain with DNS pointing to your server.
+Requires Ubuntu 22.04+ or Debian 12+, 1 GB RAM and a domain with DNS pointing to your server.
 
 ## What you get
 
@@ -42,11 +42,11 @@ Requires Ubuntu 22.04+ or Debian 12+, 1 GB RAM, and a domain with DNS pointing t
 
 ## Documentation
 
-- [Installation](docs/installation.md)
-- [Getting started](docs/getting-started.md)
-- [Concepts](docs/concepts.md)
-- [Configuration](docs/configuration.md)
-- [API reference](docs/api.md)
+- [Installation](https://vardo.run/docs/installation)
+- [Getting started](https://vardo.run/docs/getting-started)
+- [Concepts](https://vardo.run/docs/concepts)
+- [Configuration](https://vardo.run/docs/configuration)
+- [API reference](https://vardo.run/docs/api-reference)
 - [Disaster recovery](docs/disaster-recovery.md)
 - [Migrating Vardo's own stack to the deploy engine](docs/self-deploy-migration.md)
 
@@ -54,10 +54,16 @@ Requires Ubuntu 22.04+ or Debian 12+, 1 GB RAM, and a domain with DNS pointing t
 
 ```bash
 pnpm install
-docker compose up -d    # Postgres + Redis
-pnpm db:push            # Apply schema
-pnpm dev                # Start dev server
+cp .env.example .env
+openssl rand -hex 32    # paste into ENCRYPTION_MASTER_KEY in .env
+docker compose up -d postgres redis
+pnpm db:migrate
+pnpm dev
 ```
+
+`docker compose up -d` without service names also starts Traefik and WireGuard, which local dev doesn't need.
+
+`scripts/db-snapshot.sh` saves and restores the app, project and domain tables for local dev. Run it without arguments for usage.
 
 ## Contributing
 
