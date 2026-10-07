@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { isNavActive } from "@/lib/ui/nav-active";
 
 type SettingsNavItem = {
   label: string;
@@ -26,7 +27,7 @@ export function SettingsNav({ items }: SettingsNavProps) {
       )}
     >
       {items.map((item) => {
-        const isActive = pathname === item.href;
+        const isActive = isNavActive(pathname, item.href);
         return (
           <Link
             key={item.href}

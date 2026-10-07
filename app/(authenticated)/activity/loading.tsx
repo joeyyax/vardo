@@ -1,6 +1,8 @@
+import { SkeletonGroup } from "@/components/ui/skeleton";
+
 export default function ActivityLoading() {
   return (
-    <div className="space-y-6">
+    <SkeletonGroup className="space-y-6">
       {/* PageToolbar skeleton */}
       <div className="flex items-center gap-4">
         <div className="h-8 w-24 bg-muted animate-pulse rounded-lg" />
@@ -35,6 +37,6 @@ export default function ActivityLoading() {
           </div>
         ))}
       </div>
-    </div>
+    </SkeletonGroup>
   );
 }

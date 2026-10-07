@@ -1,6 +1,8 @@
+import { SkeletonGroup } from "@/components/ui/skeleton";
+
 export default function MetricsLoading() {
   return (
-    <div className="space-y-6">
+    <SkeletonGroup className="space-y-6">
       {/* PageToolbar skeleton */}
       <div className="flex items-center justify-between gap-4">
         <div className="h-8 w-24 bg-muted animate-pulse rounded-lg" />
@@ -38,6 +40,6 @@ export default function MetricsLoading() {
           <div className="h-56 w-full bg-muted/50 animate-pulse rounded-lg" />
         </div>
       </div>
-    </div>
+    </SkeletonGroup>
   );
 }

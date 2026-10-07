@@ -1,6 +1,8 @@
+import { SkeletonGroup } from "@/components/ui/skeleton";
+
 export default function ProjectsLoading() {
   return (
-    <div className="space-y-6">
+    <SkeletonGroup className="space-y-6">
       {/* PageToolbar skeleton */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex flex-1 flex-wrap items-center gap-3">
@@ -53,6 +55,6 @@ export default function ProjectsLoading() {
           </div>
         ))}
       </div>
-    </div>
+    </SkeletonGroup>
   );
 }

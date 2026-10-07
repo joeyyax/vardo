@@ -1,6 +1,8 @@
+import { SkeletonGroup } from "@/components/ui/skeleton";
+
 export default function UserSettingsLoading() {
   return (
-    <div className="space-y-6">
+    <SkeletonGroup className="space-y-6">
       {/* Header */}
       <div className="space-y-1">
         <div className="h-8 w-48 bg-muted animate-pulse rounded-lg" />
@@ -27,6 +29,6 @@ export default function UserSettingsLoading() {
           <div className="h-9 w-24 bg-muted animate-pulse rounded-lg pt-2" />
         </div>
       </div>
-    </div>
+    </SkeletonGroup>
   );
 }

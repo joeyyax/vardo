@@ -1,6 +1,8 @@
+import { SkeletonGroup } from "@/components/ui/skeleton";
+
 export default function AppDetailLoading() {
   return (
-    <div className="space-y-6">
+    <SkeletonGroup className="space-y-6">
       {/* App header: icon + name + status badge */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex items-center gap-3">
@@ -41,6 +43,6 @@ export default function AppDetailLoading() {
           </div>
         ))}
       </div>
-    </div>
+    </SkeletonGroup>
   );
 }

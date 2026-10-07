@@ -1,6 +1,8 @@
+import { SkeletonGroup } from "@/components/ui/skeleton";
+
 export default function SettingsLoading() {
   return (
-    <div className="space-y-6">
+    <SkeletonGroup className="space-y-6">
       {/* Header: title + org switcher */}
       <div className="flex items-center gap-3">
         <div className="h-8 w-24 bg-muted animate-pulse rounded-lg" />
@@ -31,6 +33,6 @@ export default function SettingsLoading() {
         ))}
         <div className="h-9 w-36 bg-muted animate-pulse rounded-lg" />
       </div>
-    </div>
+    </SkeletonGroup>
   );
 }
