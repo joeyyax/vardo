@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { backupJobs } from "@/lib/db/schema";
 import { requirePlugin } from "@/lib/api/require-plugin";
 import { eq, and } from "drizzle-orm";
-import { runBackup } from "@/lib/backups/engine";
+import { runBackup, runSucceeded } from "@/lib/backups/engine";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
@@ -38,12 +38,8 @@ async function handlePost(_request: NextRequest, { params }: RouteParams) {
     // Run the backup (this will create history records)
     const results = await runBackup(jobId);
 
-    // Skipped sources captured nothing, so they can't count towards success.
-    const succeeded = results.filter((r) => r.outcome === "success");
-    const allSucceeded = succeeded.length === results.length && results.length > 0;
-
     return NextResponse.json({
-      success: allSucceeded,
+      success: runSucceeded(results),
       skipped: results.filter((r) => r.outcome === "skipped").length,
       results,
     });

@@ -19,6 +19,7 @@ const {
   backupJobsFindFirst,
   volumesFindMany,
   backupsFindMany,
+  backupsFindFirst,
   execFileMock,
   executeHooksMock,
   emitMock,
@@ -31,6 +32,7 @@ const {
   backupJobsFindFirst: vi.fn(),
   volumesFindMany: vi.fn(),
   backupsFindMany: vi.fn(),
+  backupsFindFirst: vi.fn(),
   execFileMock: vi.fn(),
   executeHooksMock: vi.fn(),
   emitMock: vi.fn(),
@@ -46,7 +48,7 @@ vi.mock("@/lib/db", () => ({
     query: {
       backupJobs: { findFirst: backupJobsFindFirst },
       volumes: { findMany: volumesFindMany },
-      backups: { findMany: backupsFindMany },
+      backups: { findMany: backupsFindMany, findFirst: backupsFindFirst },
     },
     insert: () => ({
       values: async (values: Record<string, unknown>) => {
@@ -77,8 +79,12 @@ vi.mock("@/lib/backups/storage-factory", () => ({
   createBackupStorage: () => ({ upload: uploadMock, delete: vi.fn(), download: vi.fn() }),
 }));
 
-import { runBackup } from "@/lib/backups/engine";
-import { EMPTY_SOURCE_MARKER } from "@/lib/backups/archive";
+import { runBackup, runSucceeded } from "@/lib/backups/engine";
+import {
+  ARCHIVE_HAS_FILES_MARKER,
+  DIRECTORY_SOURCE_MARKER,
+  EMPTY_SOURCE_MARKER,
+} from "@/lib/backups/archive";
 import { backupJobs } from "@/lib/db/schema";
 
 // Stands in for docker/bash: writes the archive the engine then verifies.
@@ -178,6 +184,7 @@ beforeEach(() => {
   emitMock.mockReset();
   volumesFindMany.mockReset();
   backupsFindMany.mockReset().mockResolvedValue([]);
+  backupsFindFirst.mockReset().mockResolvedValue(undefined);
   executeHooksMock.mockReset().mockResolvedValue({ allowed: true, results: [] });
   listContainersMock.mockReset().mockResolvedValue([]);
   resolveDefaultEnvMock.mockReset().mockResolvedValue({ id: "env-1", name: "production" });
@@ -652,5 +659,103 @@ describe("runBackup — deleted apps (#867)", () => {
     expect(results).toEqual([]);
     expect(updated.filter((u) => u.set.status === "pruned")).toHaveLength(1);
     expect(emitted("backup.failed")).toHaveLength(0);
+  });
+});
+
+// Opted-in bind dirs are often legitimately empty. Empty only fails once the
+// source has held data, which is what a missing mount looks like.
+describe("runBackup — empty bind sources", () => {
+  const bindVolume = (overrides: Record<string, unknown> = {}) =>
+    volume({
+      name: "data",
+      type: "bind",
+      source: "/mnt/docker/outline/data",
+      backupSelection: "include",
+      ...overrides,
+    });
+
+  /** Answers the bind preflight with the given emptiness; archives otherwise. */
+  function stubBind(empty: boolean) {
+    execFileMock.mockImplementation((...args: unknown[]) => {
+      const [file, argv] = args as [string, string[]];
+      const cb = args[args.length - 1] as (e: unknown, r: unknown) => void;
+      if (file === "docker" && argv[0] === "run" && argv.some((a) => a.endsWith(":/data:ro"))) {
+        const mount = argv.find((a) => a.endsWith(":/backup"));
+        if (!mount) {
+          const stdout = `${DIRECTORY_SOURCE_MARKER}\n${empty ? `${EMPTY_SOURCE_MARKER}\n` : ""}`;
+          return cb(null, { stdout, stderr: "" });
+        }
+        writeFileSync(join(mount.slice(0, -":/backup".length), "volume.tar.gz"), ARCHIVE_BYTES);
+        return cb(null, { stdout: `${ARCHIVE_HAS_FILES_MARKER}\n`, stderr: "" });
+      }
+      execImpl(...args);
+    });
+  }
+
+  it("skips an empty source that has never been backed up", async () => {
+    backupJobsFindFirst.mockResolvedValue(job());
+    volumesPerApp([bindVolume()]);
+    stubBind(true);
+
+    const results = await runBackup("job-1");
+
+    expect(results[0]).toMatchObject({
+      outcome: "skipped",
+      emptySource: true,
+      error: expect.stringMatching(/empty, never backed up/),
+    });
+    expect(uploadMock).not.toHaveBeenCalled();
+    const row = updated.find((u) => u.set.status === "skipped")!;
+    expect(String(row.set.log)).toMatch(/has never been backed up with data/);
+    expect(updated.some((u) => u.set.status === "failed")).toBe(false);
+    expect(emitted("backup.failed")).toHaveLength(0);
+  });
+
+  it("fails an empty source that has held data before", async () => {
+    backupJobsFindFirst.mockResolvedValue(job());
+    volumesPerApp([bindVolume()]);
+    backupsFindFirst.mockResolvedValue({ id: "b-prior" });
+    stubBind(true);
+
+    const results = await runBackup("job-1");
+
+    expect(results[0].outcome).toBe("failed");
+    expect(results[0].error).toMatch(/is empty — refusing to record/);
+    expect(emitted("backup.failed")).toHaveLength(1);
+  });
+
+  it("archives a non-empty source as before", async () => {
+    backupJobsFindFirst.mockResolvedValue(job());
+    volumesPerApp([bindVolume()]);
+    stubBind(false);
+
+    const results = await runBackup("job-1");
+
+    expect(results[0].outcome).toBe("success");
+    expect(uploadMock).toHaveBeenCalledTimes(1);
+    expect(backupsFindFirst).not.toHaveBeenCalled();
+  });
+
+  it("leaves the job's success alone", async () => {
+    backupJobsFindFirst.mockResolvedValue(job({ notifyOnSuccess: true }));
+    volumesPerApp([volume({ id: "vol-1", name: "pgdata" }), bindVolume({ id: "vol-2" })]);
+    stubBind(true);
+
+    const results = await runBackup("job-1");
+
+    expect(results.map((r) => [r.volumeName, r.outcome])).toEqual([
+      ["pgdata", "success"],
+      ["data", "skipped"],
+    ]);
+    expect(runSucceeded(results)).toBe(true);
+    expect(emitted("backup.failed")).toHaveLength(0);
+    expect(emitted("backup.success")).toHaveLength(1);
+    expect(updated.some((u) => u.table === backupJobs && u.set.lastRunAt instanceof Date)).toBe(true);
+  });
+
+  it("still counts other skips against the job", () => {
+    const base = { backupId: "b", appId: "a", volumeName: "v", sizeBytes: 0, storagePath: "", durationMs: 0 };
+    expect(runSucceeded([{ ...base, outcome: "success" }, { ...base, outcome: "skipped" }])).toBe(false);
+    expect(runSucceeded([])).toBe(false);
   });
 });

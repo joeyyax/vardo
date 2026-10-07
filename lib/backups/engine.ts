@@ -4,7 +4,7 @@ import {
   backups,
   volumes,
 } from "@/lib/db/schema";
-import { eq, and, isNull, desc, inArray } from "drizzle-orm";
+import { eq, and, isNull, isNotNull, desc, inArray } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { createHash } from "crypto";
 import { createReadStream, createWriteStream } from "fs";
@@ -101,8 +101,18 @@ export type BackupResult = {
   error?: string;
   /** Skipped because the app is stopped, not because anything went wrong. */
   paused?: boolean;
+  /** Skipped because the bind source is empty and has never held data. */
+  emptySource?: boolean;
   durationMs: number;
 };
+
+/**
+ * Whether a run captured every source it covers. Skips count against it, except
+ * an empty bind source that never held data.
+ */
+export function runSucceeded(results: BackupResult[]): boolean {
+  return results.length > 0 && results.every((r) => r.emptySource || r.outcome === "success");
+}
 
 export type RunBackupOptions = {
   /** Restrict the run to these apps. Other apps on the job are left alone. */
@@ -485,6 +495,33 @@ async function preflightBindSource(
   );
 }
 
+/** A bind source with nothing in it. */
+export class EmptyBindSourceError extends Error {
+  constructor(source: string) {
+    super(`${source} is empty — refusing to record a backup that would restore as nothing`);
+    this.name = "EmptyBindSourceError";
+  }
+}
+
+const EMPTY_BIND_SKIP_REASON = "Bind source is empty, never backed up";
+
+/**
+ * True when a bind volume has an archive on record. The preflight has always
+ * refused empty bind sources, so any such archive held data.
+ */
+async function bindSourceHeldData(appId: string | null, volumeName: string): Promise<boolean> {
+  const prior = await db.query.backups.findFirst({
+    where: and(
+      appId ? eq(backups.appId, appId) : isNull(backups.appId),
+      eq(backups.volumeName, volumeName),
+      inArray(backups.status, ["success", "pruned"]),
+      isNotNull(backups.resolvedSource),
+    ),
+    columns: { id: true },
+  });
+  return prior !== undefined;
+}
+
 /**
  * Archive a host path, directory or single file.
  *
@@ -515,14 +552,9 @@ async function backupBindTar(
 
     const { kind, empty } = await preflightBindSource(safeSource);
 
-    // For a named volume an empty source is believable — something already
-    // proved the volume exists. A bind source Docker just created from a typo
-    // looks identical, so this is a failure rather than a waiver.
-    if (empty) {
-      throw new Error(
-        `${safeSource} is empty — refusing to record a backup that would restore as nothing`,
-      );
-    }
+    // A bind source Docker just created from a typo looks like an empty
+    // directory. The caller decides whether that is a failure.
+    if (empty) throw new EmptyBindSourceError(safeSource);
 
     // A single file has no paths to subtract. Applying the patterns anyway
     // would be a no-op the operator reads as working.
@@ -1040,6 +1072,30 @@ export async function runBackup(
       });
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
+
+      // Empty and never held data: a legitimately unused directory. Once it
+      // has held data, empty means the mount went missing.
+      if (err instanceof EmptyBindSourceError && !(await bindSourceHeldData(vol.appId, vol.name))) {
+        log(`Skipping volume ${vol.name}: ${vol.source} is empty and has never been backed up with data`);
+        const finishedAt = new Date();
+        await db
+          .update(backups)
+          .set({ status: "skipped", log: logLines.join("\n"), finishedAt })
+          .where(eq(backups.id, backupId));
+        results.push({
+          backupId,
+          appId: vol.appId || "",
+          volumeName: vol.name,
+          outcome: "skipped",
+          sizeBytes: 0,
+          storagePath: "",
+          error: EMPTY_BIND_SKIP_REASON,
+          emptySource: true,
+          durationMs: finishedAt.getTime() - startedAt.getTime(),
+        });
+        continue;
+      }
+
       log(`Backup failed: ${errorMsg}`);
 
       // Classified after the attempt, not before it: apps.status is a cached
@@ -1080,7 +1136,8 @@ export async function runBackup(
     jobApps.length === job.backupJobApps.length &&
     jobVolumes.length === job.backupJobVolumes.length;
   const capturedSomething = results.some((r) => r.outcome === "success");
-  if (coveredWholeJob && capturedSomething) {
+  const onlyEmptySources = results.length > 0 && results.every((r) => r.emptySource);
+  if (coveredWholeJob && (capturedSomething || onlyEmptySources)) {
     const finishedRunAt = new Date();
     await db
       .update(backupJobs)
@@ -1092,23 +1149,28 @@ export async function runBackup(
   try {
     const succeeded = results.filter((r) => r.outcome === "success");
     const failed = results.filter((r) => r.outcome === "failed");
-    const skipped = results.filter((r) => r.outcome === "skipped");
+    const allSkipped = results.filter((r) => r.outcome === "skipped");
+    // Empty, never-populated bind sources don't count either way.
+    const skipped = allSkipped.filter((r) => !r.emptySource);
     // A run that captured nothing is not a success, unless everything it could
     // not capture is a dump waiting on a stopped app. That is a state to show
     // on the attention surface, not a fault to alert on every night.
     const capturedNothing = succeeded.length === 0;
     const onlyPaused =
-      capturedNothing && failed.length === 0 && skipped.length > 0 && skipped.every((r) => r.paused);
+      capturedNothing &&
+      failed.length === 0 &&
+      allSkipped.length > 0 &&
+      skipped.every((r) => r.paused);
     const hasFailures = failed.length > 0 || (capturedNothing && !onlyPaused);
     const allSuccess = !hasFailures;
     const notes = [
-      skipped.length > 0 ? `${skipped.length} skipped` : null,
+      allSkipped.length > 0 ? `${allSkipped.length} skipped` : null,
       excludedSources.length > 0 ? `${excludedSources.length} excluded by durability` : null,
     ].filter(Boolean);
     const skippedNote = notes.length > 0 ? ` (${notes.join(", ")})` : "";
 
     if (onlyPaused) {
-      log.info(`${job.name}: nothing captured — every source is waiting on a stopped app`);
+      log.info(`${job.name}: nothing captured — every source is waiting on a stopped app or empty`);
     } else if (job.organizationId && ((hasFailures && job.notifyOnFailure) || (allSuccess && job.notifyOnSuccess))) {
       const { emit } = await import("@/lib/notifications/dispatch");
       const names = jobApps.map((bja) => bja.app.name).join(", ") || job.name;
