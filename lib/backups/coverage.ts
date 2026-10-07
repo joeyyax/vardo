@@ -9,20 +9,22 @@ export type CoverableVolume = {
   backupStrategy: string;
   source?: string | null;
   durability?: string | null;
+  backupSelection?: string | null;
 };
 
 /**
  * True when the engine cannot capture this source.
  *
- * A bind mount is capturable two ways: a dump replaces the archive step
- * entirely, or the volume is explicitly `stateful`, which is what opts a host
- * path into being tarred. Anything else stays uncaptured — bind mounts are
+ * A bind mount is capturable three ways: a dump replaces the archive step
+ * entirely, the volume is explicitly `stateful`, or it was selected for backup
+ * when its app was enrolled. Anything else stays uncaptured — bind mounts are
  * where the multi-terabyte media libraries live, so this is opt-in and stays
  * opt-in.
  */
 export function isUncapturedSource(vol: CoverableVolume): boolean {
   if (vol.type !== "bind") return false;
   if (vol.backupStrategy === "dump") return false;
+  if (vol.backupSelection === "include") return false;
   return vol.durability !== "stateful";
 }
 

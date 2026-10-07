@@ -1,0 +1,1 @@
+ALTER TABLE "volume" ADD COLUMN IF NOT EXISTS "backup_selection" text;

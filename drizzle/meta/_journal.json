@@ -519,6 +519,13 @@
       "when": 1791338617803,
       "tag": "0073_certain_lethal_legion",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1791342041458,
+      "tag": "0074_panoramic_northstar",
+      "breakpoints": true
     }
   ]
 }

@@ -47,6 +47,9 @@ export const volumes = pgTable(
     durability: text("durability", {
       enum: ["stateful", "rebuildable", "external"],
     }),
+    // Whether a backup job captures this volume. Null follows the legacy rule
+    // (persistent or stateful); written when an app is enrolled (#874).
+    backupSelection: text("backup_selection", { enum: ["include", "exclude"] }),
     // Backup strategy: "tar" (default) for file volumes, "dump" for databases
     backupStrategy: text("backup_strategy").default("tar").notNull(),
     // For "dump" strategy: { dumpCmd, restoreCmd } — shell commands run via docker exec.

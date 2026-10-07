@@ -50,8 +50,10 @@ export function isBackupCandidate(durability: Durability | null | undefined): bo
 export function isBackupSelected(vol: {
   persistent: boolean;
   durability: Durability | null | undefined;
+  backupSelection?: "include" | "exclude" | null;
 }): boolean {
   if (!isBackupCandidate(vol.durability)) return false;
+  if (vol.backupSelection) return vol.backupSelection === "include";
   return vol.durability === "stateful" || vol.persistent;
 }
 

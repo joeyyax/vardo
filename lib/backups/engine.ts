@@ -122,6 +122,7 @@ type VolumeToBackup = {
   durability: string | null;
   /** Paths the archive leaves out. Read live, then recorded on the backup row. */
   backupExcludePatterns: string[] | null;
+  backupSelection: "include" | "exclude" | null;
 };
 
 // ---------------------------------------------------------------------------
@@ -720,6 +721,7 @@ export async function runBackup(
         backupSpec: vol.backupSpec,
         durability: vol.durability,
         backupExcludePatterns: vol.backupExcludePatterns,
+        backupSelection: vol.backupSelection,
       });
     }
   }
@@ -748,6 +750,7 @@ export async function runBackup(
       backupSpec: vol.backupSpec,
       durability: vol.durability,
       backupExcludePatterns: vol.backupExcludePatterns,
+      backupSelection: vol.backupSelection,
     });
   }
 
