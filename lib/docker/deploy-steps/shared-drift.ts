@@ -1,11 +1,5 @@
-// ---------------------------------------------------------------------------
 // Shared services whose running container no longer matches the compose file.
-//
-// Shared services come up `--no-recreate`, so a changed definition never
-// reaches a running container on its own. Compose stamps every container with
-// the hash of the definition it was created from; comparing that label against
-// `config --hash` is the test compose's own `up` uses to decide on a recreate.
-// ---------------------------------------------------------------------------
+// Shared `up` is `--no-recreate`, so drift is detected by comparing the config-hash label to `config --hash`.
 
 import type { ComposeService } from "../compose-types";
 import { ownsDataDirectory } from "../image-updates/stateful-image";
@@ -37,11 +31,7 @@ export function parseConfigHashes(output: string): Map<string, string> {
 
 /**
  * Whether a deploy may recreate a drifted shared service on its own.
- *
- * A data store is held: recreating it drops every connection to it, including
- * this deploy's, and a definition change there is the operator's call.
- * Anything else is recreated — Traefik, BuildKit and WireGuard restart in
- * seconds and hold nothing a restart loses.
+ * Data stores are always held; recreating one drops every app connected to it.
  */
 export function sharedPolicy(
   service: ComposeService,
@@ -72,7 +62,7 @@ export async function sharedDrift(
   const names = Object.keys(shared);
   const states = new Map<string, DriftState>();
 
-  // `--profile *` so a profiled service (buildkit) is hashed rather than refused.
+  // `--profile *` or compose refuses to hash a profiled service (buildkit).
   let desired: Map<string, string>;
   try {
     const { stdout } = await exec(
@@ -105,11 +95,8 @@ export async function sharedDrift(
 }
 
 /**
- * Wait for a recreated container to be ready. Resolves null when it is, or
- * the reason it is not.
- *
- * With a Docker healthcheck that means healthy; without one, running for
- * `stableMs` in a row.
+ * Wait for a recreated container to be healthy, or running for `stableMs` without a healthcheck.
+ * Resolves null when ready, else the reason.
  */
 export async function waitForContainer(
   container: string,
@@ -158,9 +145,8 @@ export class SharedRecreateError extends Error {
 }
 
 /**
- * Recreate each drifted shared service the policy allows, one at a time, each
- * ready before the next. Held and unreadable services are reported, not
- * touched. Throws SharedRecreateError on the first recreate that fails.
+ * Recreate drifted shared services the policy allows, one at a time, each ready before the next.
+ * Held and unreadable services are reported, not touched.
  */
 export async function reconcileSharedServices(
   opts: DriftOpts & {

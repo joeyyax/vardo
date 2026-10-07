@@ -1,6 +1,4 @@
-// ---------------------------------------------------------------------------
 // Resolves `${app.VAR}` references to another app in the same org.
-// ---------------------------------------------------------------------------
 
 import { db } from "@/lib/db";
 import { apps, environments, environmentEnv } from "@/lib/db/schema";

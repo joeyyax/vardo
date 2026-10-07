@@ -1,10 +1,4 @@
-// ---------------------------------------------------------------------------
-// Reading engine majors around the pre-pull.
-//
-// Both reads are `docker inspect` against the local daemon — the "before" image
-// is the one the app is running, and the "after" image is what the pull just
-// wrote over the same tag. No registry config blob is fetched.
-// ---------------------------------------------------------------------------
+// Engine-major reads around the pre-pull, both via `docker inspect` on the local daemon.
 
 import { extractImageMajor, type ImageMajor } from "../image-updates/image-major";
 import {
@@ -40,10 +34,7 @@ export async function readMajors(candidates: MajorGateCandidate[]): Promise<Majo
   return reads;
 }
 
-/**
- * A recorded major stands in when the old image is no longer on this host —
- * a prune between deploys otherwise turns every gate into "cannot say".
- */
+/** Fall back to the recorded major when the old image was pruned from this host. */
 export function withRecordedBaseline(
   candidates: MajorGateCandidate[],
   reads: MajorReads,
@@ -85,10 +76,7 @@ export function gateCandidates(ctx: DeployContext, pullServices: string[]): Majo
   );
 }
 
-/**
- * The major each major-locked service just deployed on, for the snapshot. Read
- * after the swap, so it records what is actually serving.
- */
+/** Major each major-locked service deployed on, read after the swap for the snapshot. */
 export async function observedMajors(ctx: DeployContext): Promise<Record<string, number>> {
   const candidates = gateCandidates(ctx, Object.keys(ctx.compose.services));
   if (candidates.length === 0) return {};
@@ -138,10 +126,7 @@ async function lastMajors(ctx: DeployContext): Promise<Record<string, number> | 
 
 /**
  * Stops the deploy when the pull crossed a major.
- *
- * Called after the pre-pull and before the old slot is touched: the images are
- * local, nothing serving has been replaced, and throwing here leaves the app
- * exactly as it was.
+ * Runs before the old slot is touched, so throwing leaves the app as it was.
  */
 export async function majorGateAfter(ctx: DeployContext, state: MajorGateState): Promise<void> {
   if (state.candidates.length === 0) return;

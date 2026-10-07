@@ -1,8 +1,4 @@
-// ---------------------------------------------------------------------------
-// Deploy Steps 10-12: HTTP health check, volume detection, cron sync, compose
-// decomposition and config snapshot, then the commit. After it: active slot
-// recording, old slot stop, import cleanup, image pruning and notifications.
-// ---------------------------------------------------------------------------
+// Deploy steps 10-12: post-swap checks and syncs, the commit, then old-slot stop, cleanup and notifications.
 
 import { db } from "@/lib/db";
 import { statusChange } from "@/lib/db/app-status";
@@ -58,8 +54,7 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
 
   ctx.stage("cleanup", "running");
 
-  // Work this step could not finish. Held until the deploy commits — before
-  // that there is no success for it to qualify.
+  // Unfinished work, held until the deploy commits.
   const pendingUnfinished: string[] = [];
   const unfinishedWork = async (reason: string) => {
     if (!ctx.succeeded) {
@@ -69,7 +64,7 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
     await recordPostDeployIncomplete(ctx, reason);
   };
 
-  // Raised by the swap, which ran before there was a success to qualify them.
+  // Raised by the swap.
   for (const reason of ctx.unfinished?.splice(0) ?? []) {
     await unfinishedWork(reason);
   }
@@ -88,14 +83,14 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
     return stopped.ok;
   };
 
-  // Step 12: HTTP health check on domains
+  // Step 12: HTTP check on domains.
   for (const domain of app.domains) {
     const ok = await checkEndpoint(domain.domain, logs);
     if (ok) logs.push(`[health] ${domain.domain} responding`);
     else logs.push(`[health] ${domain.domain} not yet reachable (DNS/TLS propagation)`);
   }
 
-  // Auto-detect persistent volumes from running containers. Rows describe the default environment.
+  // Detect volumes from running containers. Rows describe the default environment.
   if (!ctx.envIsolated) try {
     const runningContainers = await listContainers({ id: ctx.appId, name: app.name }, ctx.envName);
     const detectedVolumes: {
@@ -113,9 +108,7 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
       for (const mount of info.mounts) {
         if (seen.has(mount.destination)) continue;
 
-        // Bind mounts are recorded too. Only the import path used to do this,
-        // so an app deployed normally with host mounts had no volume rows at
-        // all and could never opt them into backup (#763).
+        // Bind mounts are recorded too (#763).
         const isBind = mount.type === "bind";
         const isNamed = mount.type === "volume" && !isAnonymousVolume(mount.name);
         if (!isBind && !isNamed) continue;
@@ -140,8 +133,7 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
       const newDetected = detectedVolumes.filter((v) => !existingByPath.has(v.mountPath));
       const touchedIds: string[] = [];
 
-      // A mount path whose source changed is a different volume. Its old
-      // backup selection no longer applies.
+      // A mount path whose source changed is a different volume; reset its backup selection.
       for (const vol of detectedVolumes) {
         const row = existingByPath.get(vol.mountPath);
         if (!row || (row.type === vol.type && (vol.type !== "bind" || row.source === vol.source))) continue;
@@ -155,8 +147,7 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
 
       if (newDetected.length > 0) {
         for (const vol of newDetected) {
-          // Only a `stateful` proposal is written unprompted. A wrong
-          // `stateful` costs storage; a wrong `rebuildable` costs the data.
+          // Only `stateful` is applied unprompted; a wrong `rebuildable` would cost data.
           const proposal = proposeDurability({
             image: vol.image,
             mountPath: vol.mountPath,
@@ -165,9 +156,7 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
           const durability =
             proposal && isSafeToApply(null, proposal.durability) ? proposal.durability : null;
 
-          // A recognized database gets dumped rather than archived. The spec
-          // stores the compose service, which survives the blue/green swap that
-          // a container name would not.
+          // Recognized databases are dumped, keyed by compose service so the spec survives slot swaps.
           const spec =
             durability === "stateful" && proposal?.kind && vol.service
               ? { kind: proposal.kind, service: vol.service }
@@ -183,9 +172,7 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
             mountPath: vol.mountPath,
             type: vol.type,
             source: vol.source,
-            // A bind mount survives a deploy because it lives on the host, so
-            // there is nothing for Vardo to externalize. That is what
-            // `persistent` records — not whether the data matters.
+            // `persistent` means Vardo externalized it, not whether the data matters.
             persistent: vol.type !== "bind",
             durability,
             backupStrategy: spec ? "dump" : "tar",
@@ -207,10 +194,10 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
       }
     }
   } catch {
-    // Volume detection is best-effort
+    // Best-effort.
   }
 
-  // Sync cron jobs from template and/or host.toml
+  // Sync cron jobs from the template and host.toml.
   if (!ctx.envIsolated) try {
     const { syncCronJobs } = await import("@/lib/cron/engine");
     const cronDefs: { name: string; schedule: string; command: string }[] = [];
@@ -238,7 +225,7 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
     log(`[deploy] Warning: cron sync — ${err instanceof Error ? err.message : err}`);
   }
 
-  // Sync compose decomposition. A preview's compose must never add or remove production's children.
+  // A preview's compose must never add or remove production's children.
   if (!ctx.envIsolated && app.deployType === "compose" && Object.keys(compose.services).length > 0) {
     try {
       const syncResult = await syncComposeServices({
@@ -259,17 +246,16 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
   }
 
   if (!ctx.envIsolated) {
-    // Mark app as active
     await db
       .update(apps)
       .set({ ...statusChange("active"), needsRedeploy: false })
       .where(eq(apps.id, ctx.appId));
 
-    // A deploy that landed is a decision to run this, so it stops being parked.
+    // A successful deploy unparks the app.
     await setParked(ctx.appId, false);
   }
 
-  // Snapshot current config onto deployment record for rollback
+  // Config snapshot for rollback.
   let envSnapshot: string | null = null;
   if (app.envContent) {
     try {
@@ -285,8 +271,7 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
       ? await inspectImageDigest(app.imageName)
       : null;
 
-  // Engine majors for the deploy gate's baseline, and the block it may have
-  // written last time — this deploy is the answer to it.
+  // Record engine majors as the gate baseline and clear any previous block.
   const imageMajors = await observedMajors(ctx).catch(() => ({}));
   if (!ctx.envIsolated) await clearMajorGateBlock(ctx.appId);
 
@@ -337,8 +322,7 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
     await stopOldSlot();
   }
 
-  // The imported original is the last copy of the app outside Vardo, so it
-  // goes only once the deploy has committed.
+  // The imported original is removed only after the deploy commits.
   if (app.importedContainerId && !ctx.envIsolated) {
     try {
       const info = await inspectContainer(app.importedContainerId).catch(() => null);
@@ -348,11 +332,11 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
       }
       await db.update(apps).set({ importedContainerId: null, updatedAt: new Date() }).where(eq(apps.id, ctx.appId));
     } catch {
-      // Best effort
+      // Best-effort.
     }
   }
 
-  // Prune old Docker images
+  // Prune old images.
   try {
     const { formatBytes } = await import("@/lib/metrics/format");
 
@@ -375,10 +359,7 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
       }
     }
 
-    // The dangling prune and build-cache prune are host-global. Running them
-    // while another deploy is pulling deletes layers that pull is still writing
-    // ("failed commit on ref ... no such file or directory"). Defer until this
-    // is the last deploy in flight; the deploy that finishes last does it.
+    // Host-global prunes delete layers other in-flight pulls are writing; only the last deploy prunes.
     if (!(await isDeployQueueDrained())) {
       log("[deploy] Deferring image prune — other deploys are still in flight");
     } else if (!(await acquireLock(PRUNE_LOCK_KEY, PRUNE_LOCK_TTL_MS))) {
@@ -391,8 +372,7 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
         }
 
         try {
-          // A size ceiling, not an age window. An age window reclaims nothing on
-          // a host deploying several times a day, because nothing gets that old.
+          // Size ceiling, not age window.
           const { spaceReclaimed: cacheReclaimed } = await pruneBuildCache(undefined, {
             keepStorage: BUILD_CACHE_MAX_BYTES,
           });
@@ -403,12 +383,11 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
             );
           }
         } catch {
-          // Build cache pruning is optional
+          // Best-effort.
         }
 
         try {
-          // Railpack's cache lives in the buildkit daemon's own store, on its
-          // own volume, and the prune above never reaches it.
+          // Railpack's cache lives in the buildkit daemon, out of reach of the prune above.
           const { spaceReclaimed: buildKitReclaimed } = await pruneBuildKitCache(
             process.env.BUILDKIT_HOST || DEFAULT_BUILDKIT_HOST,
             BUILDKIT_CACHE_MAX_BYTES,
@@ -420,9 +399,7 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
             );
           }
         } catch (err) {
-          // Logged rather than swallowed: buildctl is deprecating
-          // --keep-storage, and a silent failure reads exactly like a cache
-          // that never needed pruning.
+          // Logged: buildctl is deprecating --keep-storage.
           log(`[deploy] BuildKit cache prune failed: ${err instanceof Error ? err.message : err}`);
         }
       } finally {
@@ -430,17 +407,15 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
       }
     }
   } catch {
-    // Image pruning is best-effort
+    // Best-effort.
   }
 
   ctx.stage("cleanup", "success");
 
-  // Closes the deploy stream. It goes after the write so a client that reloads
-  // on this event reads the finished row rather than racing it.
+  // Closes the deploy stream; must follow the success write.
   ctx.stage("done", "success");
 
-  // The three below announce the success row above. A dropped announcement
-  // leaves nothing running, so none of them is post-deploy work left unfinished.
+  // Announcements are fire-and-forget.
   addEvent(ctx.organizationId, {
     type: "deploy.status",
     title: "Deploy succeeded",
@@ -461,28 +436,21 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
 
   sendDeployNotification(app, ctx.deploymentId, true, durationMs).catch(() => {});
 
-  // Whatever was held from before the commit lands here, behind the success.
   for (const reason of pendingUnfinished.splice(0)) {
     await recordPostDeployIncomplete(ctx, reason);
   }
 
-  // Auto-rollback watches from inside Vardo, so it cannot watch Vardo: the
-  // watcher dies with the slot it would replace. Say so rather than let the
-  // app's setting imply cover it does not have.
+  // Auto-rollback can't watch Vardo itself; the watcher dies with the slot.
   if (app.autoRollback && isSelfApp(app.name) && activeSlot) {
     log(
       `[deploy] Auto-rollback is not armed for Vardo itself — use instant rollback (${activeSlot} is a warm standby) if this release misbehaves`,
     );
   }
 
-  // The old slot is running this process, so this stop ends the deploy. It goes
-  // last, after every write above is durable. Anything that throws earlier
-  // leaves the old slot serving alongside the new one.
+  // The old slot runs this process, so this stop must stay last.
   if (ctx.stopOldSlot && ctx.stopOldSlotEndsDeploy) {
-    // The `finally` that normally hands back the concurrency slot never runs,
-    // and a deploy queued here needs it to finish before the stop.
+    // The usual `finally` release never runs once this process stops.
     await releaseConcurrencySlot(ctx.deploymentId).catch(() => {});
-    // The stop ends this process and every deploy running in it.
     const cutOff = await drainForSelfStop(ctx.appId, log).catch(() => [] as string[]);
     if (cutOff.length > 0) {
       await unfinishedWork(
@@ -490,17 +458,14 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
       );
     }
     log(`[deploy] Stopping the slot running this deploy — ${newSlot} is serving`);
-    // A slot that would not stop keeps serving, so it must take deploys again.
+    // A slot that won't stop keeps serving, so it takes deploys again.
     if (!(await stopOldSlot())) endSelfDrain();
   }
 
   return ctx;
 }
 
-/**
- * Back up what a deploy found. A first deploy enrolls the app; later ones add
- * new volumes to a job the app already has. Never blocks the deploy.
- */
+/** Enroll detected volumes in backups. Never blocks the deploy. */
 async function enrollDetectedVolumes(
   ctx: DeployContext,
   appName: string,

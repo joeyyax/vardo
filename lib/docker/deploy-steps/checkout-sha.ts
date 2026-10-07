@@ -1,14 +1,9 @@
-// ---------------------------------------------------------------------------
-// Rollback checkout — pin the working clone to an exact commit.
-//
-// The deploy clone is shallow at the branch tip, so the rollback target's
-// object usually isn't present and has to be fetched first.
-// ---------------------------------------------------------------------------
+// Pins the shallow deploy clone to a rollback commit, fetching it first when missing.
 
 import { assertSafeGitSha } from "../validate";
 import { DeployBlockedError } from "../errors";
 
-/** Injectable git runner — the real implementation shells out to `git -C <repo>`. */
+/** Injectable git runner. */
 export type GitRunner = (args: string[]) => Promise<{ stdout: string }>;
 
 async function hasCommit(git: GitRunner, sha: string): Promise<boolean> {
@@ -20,10 +15,7 @@ async function hasCommit(git: GitRunner, sha: string): Promise<boolean> {
   }
 }
 
-/**
- * Check out `sha` in the working clone. Throws if the commit can't be resolved —
- * a rollback that falls through to the branch tip ships the wrong code.
- */
+/** Check out `sha` in the working clone. Throws if it can't be resolved; never fall back to the branch tip. */
 export async function checkoutRollbackSha(
   git: GitRunner,
   sha: string,

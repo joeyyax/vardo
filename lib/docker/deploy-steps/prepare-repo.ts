@@ -1,10 +1,4 @@
-// ---------------------------------------------------------------------------
-// Deploy Step 1: Prepare repository and generate/fetch compose file
-//
-// Handles: git auth (GitHub App token, SSH deploy key), clone/pull,
-// host.toml parsing, compose file discovery, image-based compose generation,
-// direct compose content, and Nixpacks/Railpack/Dockerfile builds.
-// ---------------------------------------------------------------------------
+// Deploy step 1: auth, clone, host.toml and compose discovery, or a local image build.
 
 import { db } from "@/lib/db";
 import {
@@ -57,10 +51,6 @@ import { deployments } from "@/lib/db/schema";
 import { execFileAsync } from "@/lib/utils/exec";
 import { boundedBuild, buildKitLimit, explainBuildOom } from "../build-memory";
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
 type ParseAndSanitizeOpts = {
   allowBindMounts?: boolean;
   allowDockerSocket?: boolean;
@@ -68,15 +58,12 @@ type ParseAndSanitizeOpts = {
 };
 
 export function parseAndSanitize(yaml: string, log: (msg: string) => void, opts?: ParseAndSanitizeOpts): ComposeFile {
-  // Before parseCompose, which drops a non-boolean marker and leaves no trace.
-  // The save routes check too, but compose read out of a git clone reaches
-  // deploy without passing through any of them.
+  // Check markers before parseCompose drops non-boolean ones; git compose skips the save-route checks.
   for (const warning of sharedMarkerWarnings(yaml)) {
     log(`[deploy] Warning: ${warning}`);
   }
   const markerErrors = sharedMarkerTypeErrors(yaml);
   if (markerErrors.length > 0) {
-    // A rollback checks out a commit nobody can edit, so name the way out.
     throw new DeployBlockedError(
       `${markerErrors.join("\n")}\n` +
         `If this is a rollback, the commit cannot be edited — use instant rollback, ` +
@@ -90,7 +77,7 @@ export function parseAndSanitize(yaml: string, log: (msg: string) => void, opts?
   for (const warning of unmarkedSharedVolumeWarnings(compose)) {
     log(`[deploy] Warning: ${warning}`);
   }
-  // Trusted orgs bypass all mount restrictions — no sanitization, no deny list.
+  // Trusted orgs bypass all mount restrictions.
   if (opts?.orgTrusted) {
     const { valid, errors } = validateCompose(compose, { allowBindMounts: true, skipMountChecks: true });
     if (!valid) {
@@ -121,10 +108,7 @@ export function parseAndSanitize(yaml: string, log: (msg: string) => void, opts?
   return sanitized.compose;
 }
 
-/**
- * Detect named volumes from a parsed compose file and persist any new ones to the DB.
- * Shared by git-sourced and direct compose deploy paths.
- */
+/** Persist new named volumes from a parsed compose file. */
 async function detectAndPersistComposeVolumes(
   compose: ComposeFile,
   appId: string,
@@ -166,10 +150,6 @@ async function detectAndPersistComposeVolumes(
   }
 }
 
-// ---------------------------------------------------------------------------
-// buildFromRepo — local image builds (Nixpacks, Railpack, Dockerfile)
-// ---------------------------------------------------------------------------
-
 import { spawn as nodeSpawn } from "child_process";
 import { BUILD_TIMEOUT } from "../constants";
 
@@ -197,7 +177,7 @@ function spawnStream(
       try {
         process.kill(-proc.pid, "SIGTERM");
       } catch {
-        // Process may have already exited — ignore
+        // Already exited.
       }
     }
 
@@ -252,8 +232,7 @@ async function buildFromRepo(
   dockerfilePath?: string,
   signal?: AbortSignal,
 ): Promise<void> {
-  // A Dockerfile can name a private base image, so every builder runs against
-  // the configured registry credentials.
+  // Base images may be private, so builders get registry credentials.
   await withRegistryAuth(async (authEnv) => {
     const buildEnv = { ...authEnv, ...envVars };
 
@@ -271,10 +250,7 @@ async function buildFromRepo(
     }
 
     if (deployType === "railpack") {
-      // Railpack builds through BuildKit rather than the Docker daemon, and exits
-      // non-zero with only a hint if it cannot find one. Default to the daemon
-      // Vardo documents, and check it is actually there before spending a deploy
-      // on discovering it is not.
+      // Railpack needs BuildKit; fail fast when it isn't reachable.
       if (!buildEnv.BUILDKIT_HOST) buildEnv.BUILDKIT_HOST = DEFAULT_BUILDKIT_HOST;
       await assertBuildKitReachable(buildEnv.BUILDKIT_HOST, signal);
 
@@ -314,21 +290,16 @@ async function buildFromRepo(
   });
 }
 
-// ---------------------------------------------------------------------------
-// Step entry point
-// ---------------------------------------------------------------------------
-
 export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
   const { app, log, logs, envMap, signal } = ctx;
   const orgTrusted = ctx.orgTrusted;
   const projectAllowBindMounts = ctx.projectAllowBindMounts;
   const projectAllowDockerSocket = ctx.projectAllowDockerSocket;
 
-  // Both this step and the build step recursively delete name-derived paths,
-  // so refuse before either touches a directory another app owns.
+  // Refuse before recursively deleting a directory another app owns.
   await assertAppDirOwnership({ appId: ctx.appId, appName: app.name, operation: "deploy" });
 
-  // App-level dir holds the repo; env-level dir holds slots
+  // App-level dir holds the repo; env-level dir holds slots.
   const appBase = appBaseDir(app.name);
   const appDir = appEnvDir(app.name, ctx.envName);
   await ensureWritableDir(appDir);
@@ -336,7 +307,6 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
   ctx.appBase = appBase;
   ctx.appDir = appDir;
 
-  // Load volumes from the volumes table
   const appVolumes = await db.query.volumes.findMany({
     where: eq(volumes.appId, ctx.appId),
   });
@@ -344,7 +314,7 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
   ctx.appVolumes = appVolumes;
   ctx.volumesList = volumesList;
 
-  // Auto-upgrade to git source when compose has build: directives but source is direct
+  // Direct compose with `build:` directives switches to git source.
   let effectiveSource = app.source;
   if (app.source === "direct" && app.composeContent && app.deployType === "compose") {
     try {
@@ -372,7 +342,6 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
   let compose: ComposeFile;
 
   if (app.deployType === "image" && app.imageName) {
-    // Image deploy — no clone needed
     ctx.stage("clone", "skipped");
     ctx.stage("compose", "running");
     if (app.composeContent) {
@@ -394,7 +363,6 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
       log(`[deploy] Generated compose for image: ${app.imageName}`);
     }
   } else if (effectiveSource === "git" && app.gitUrl) {
-    // Git source — clone/pull repo with GitHub App auth if needed
     const repoDir = join(appBase, "repo");
     ctx.repoDir = repoDir;
     const branch = ctx.envBranchOverride || app.gitBranch || "main";
@@ -405,12 +373,12 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
       throw new DeployBlockedError(err instanceof Error ? err.message : String(err));
     }
 
-    // Build authenticated clone URL/env for private repos
+    // Authenticated clone URL for private repos.
     let cloneUrl = app.gitUrl;
     const gitEnv: Record<string, string> = {};
     let sshKeyFile: string | null = null;
 
-    // Strategy 1: GitHub App token (for github.com URLs)
+    // GitHub App token for github.com URLs.
     if (cloneUrl.includes("github.com")) {
       try {
         const orgMembers = await db.query.memberships.findMany({
@@ -445,7 +413,7 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
       }
     }
 
-    // Strategy 2: SSH deploy key
+    // Otherwise an SSH deploy key.
     if (cloneUrl === app.gitUrl && app.gitKeyId) {
       try {
         const privateKeyPem = await getDecryptedPrivateKey(app.gitKeyId, app.organizationId);
@@ -513,7 +481,6 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
       }
     }
 
-    // Capture git SHA + commit message
     try {
       const { stdout: sha } = await execFileAsync("git", ["-C", repoDir, "rev-parse", "HEAD"], { timeout: GIT_METADATA_TIMEOUT });
       const { stdout: msg } = await execFileAsync("git", ["-C", repoDir, "log", "-1", "--format=%s"], { timeout: GIT_METADATA_TIMEOUT });
@@ -526,7 +493,6 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
         .where(eq(deployments.id, ctx.deploymentId));
     } catch { /* not critical */ }
 
-    // Read host.toml config if present
     const { readHostConfig, applyHostConfig } = await import("@/lib/config/host-config");
     const hostConfig = await readHostConfig(repoDir);
     ctx.hostConfig = hostConfig;
@@ -565,7 +531,6 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
       }
     }
 
-    // Find compose file
     const root = app.rootDirectory
       ? join(repoDir, app.rootDirectory)
       : hostConfig?.project?.rootDirectory
@@ -598,7 +563,7 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
       compose = parseAndSanitize(composeContent, log, { allowBindMounts: projectAllowBindMounts, allowDockerSocket: projectAllowDockerSocket, orgTrusted });
       await detectAndPersistComposeVolumes(compose, ctx.appId, ctx.organizationId, new Set(appVolumes.map(v => v.name)), log);
     } else {
-      // Build from repo — Nixpacks, Dockerfile, or auto-detect
+      // Build from repo: Dockerfile, Railpack or Nixpacks.
       const imageName = `host/${app.name}:${ctx.deploymentId.slice(0, 8)}`;
       let buildType = app.deployType;
 
@@ -609,11 +574,7 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
           buildType = "dockerfile";
           log(`[deploy] No compose file, found ${dockerfileToCheck}`);
         } catch {
-          // Railpack is the better builder on this repo shape — measurably
-          // faster and roughly half the image — but it needs BuildKit, which is
-          // opt-in because the daemon is privileged. Prefer it only when the
-          // daemon is actually there, so an instance without the profile still
-          // deploys instead of failing.
+          // Prefer Railpack when the opt-in BuildKit daemon is reachable.
           const buildKitHost = process.env.BUILDKIT_HOST || DEFAULT_BUILDKIT_HOST;
           if (await isBuildKitReachable(buildKitHost, ctx.signal)) {
             buildType = "railpack";
@@ -625,7 +586,6 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
         }
       }
 
-      // Apply preventive compatibility fixes
       const preventiveFixes = await detectPreventiveFixes(root);
       if (preventiveFixes.length > 0) {
         for (const fix of preventiveFixes) {
@@ -634,11 +594,9 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
         Object.assign(envMap, applyCompatFixes(envMap, preventiveFixes));
       }
 
-      // The image is produced here for this path, not in the swap step.
       ctx.stage("compose", "success");
       ctx.stage("build", "running");
 
-      // First build attempt
       const customDockerfile = app.dockerfilePath && app.dockerfilePath !== "Dockerfile" ? app.dockerfilePath : undefined;
       try {
         await buildFromRepo(root, imageName, buildType, logs, envMap, customDockerfile, signal);
@@ -662,9 +620,7 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
       }
 
       ctx.builtLocally = true;
-      // Record the locally-built image so the swap pre-pull skips it — it lives
-      // only in the local daemon (no registry), and the generated compose
-      // references it via `image:` with no `build:` directive.
+      // Local-only image; the swap pre-pull must skip it.
       ctx.builtImageRefs.push(imageName);
       compose = generateComposeForImage({
         projectName: app.name,
@@ -676,7 +632,6 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
       });
     }
   } else if (app.composeContent) {
-    // Direct compose content — nothing to clone
     ctx.stage("clone", "skipped");
     ctx.stage("compose", "running");
     compose = parseAndSanitize(app.composeContent, log, { allowBindMounts: projectAllowBindMounts, allowDockerSocket: projectAllowDockerSocket, orgTrusted });

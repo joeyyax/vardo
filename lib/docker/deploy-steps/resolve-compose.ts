@@ -1,7 +1,4 @@
-// ---------------------------------------------------------------------------
-// Deploy Steps 2-3: Port detection, Traefik label injection, network injection,
-// GPU injection, and app labels.
-// ---------------------------------------------------------------------------
+// Deploy steps 2-3: port detection plus Traefik, network, GPU and app-label injection.
 
 import {
   injectTraefikLabels,
@@ -34,10 +31,7 @@ import { nonRotatingServices } from "../slot-partition";
 
 const NETWORK_NAME = VARDO_NETWORK;
 
-/**
- * Ports each service's image exposes. Best-effort — an image that isn't pulled
- * yet contributes nothing, and the caller falls through to weaker signals.
- */
+/** Ports each service's image exposes. Best-effort; unpulled images contribute nothing. */
 async function imagePortsByService(
   compose: ComposeFile,
 ): Promise<Record<string, number[]>> {
@@ -51,7 +45,7 @@ async function imagePortsByService(
         const ports = await detectExposedPorts(svc.image!);
         if (ports.length > 0) result[name] = ports;
       } catch {
-        // Image not present locally — no signal from it.
+        // Image not local.
       }
     }),
   );
@@ -62,13 +56,11 @@ export async function resolveCompose(ctx: DeployContext): Promise<DeployContext>
   const { app, log, envMap } = ctx;
   let compose = ctx.compose;
 
-  // Capture the bare compose before any Vardo injections. Strip any
-  // existing Traefik/vardo labels that came in via import.
+  // Bare compose before Vardo injections, minus imported Traefik/vardo labels.
   const bareCompose = stripVardoInjections(compose, NETWORK_NAME);
   ctx.bareCompose = bareCompose;
 
-  // The repo's routing belongs to production. Route the environment's own
-  // hostname where those labels pointed, and drop the labels themselves.
+  // Repo routing labels belong to production; route the environment's hostname to their target instead.
   if (ctx.envIsolated) {
     const route = handWrittenRoute(compose);
     if (route) {
@@ -82,14 +74,7 @@ export async function resolveCompose(ctx: DeployContext): Promise<DeployContext>
     log(`[deploy] ${ctx.envName}: production routing labels removed`);
   }
 
-  // Normalize: treat the user's compose as intent, produce safe runtime config.
-  // Host ports are intentionally KEPT. Vardo writes the user's bare compose to
-  // disk (`ctx.bareCompose`) and layers Traefik routing on top via an override —
-  // and a Compose override can't un-publish a port, so stripping here never
-  // reached the running container; it only produced a misleading "host port
-  // removed" line in the deploy log. Slot cutover already tears down the old
-  // slot before starting the new one, so a kept host port never collides
-  // between blue/green.
+  // Host ports are kept: a Compose override can't un-publish them, and cutover stops the old slot first.
   const normalized = normalizeCompose(compose, {
     keepHostPorts: true,
     restartPolicy: app.restartPolicy,
@@ -99,11 +84,7 @@ export async function resolveCompose(ctx: DeployContext): Promise<DeployContext>
     log(`[deploy] Normalize: ${change.service}.${change.field} ${change.action}${change.before ? ` (was: ${change.before})` : ""} — ${change.reason}`);
   }
 
-  // Per-service config from decomposed child app rows. A decomposed compose
-  // app has a child app per service (parentAppId + composeService); the child
-  // carries its own resources/GPU that the deploy must honor — otherwise
-  // toggling e.g. GPU on a child is a silent no-op (#745). Empty for
-  // non-decomposed apps, which keep using the parent's global values.
+  // Per-service resources and GPU from decomposed child apps (#745).
   const children = await db.query.apps.findMany({
     where: and(
       eq(apps.parentAppId, app.id),
@@ -119,25 +100,17 @@ export async function resolveCompose(ctx: DeployContext): Promise<DeployContext>
     const child = childByService.get(name);
     if (!child) continue;
     serviceConfig[name] = {
-      // Child value wins; fall back to the parent global when the child has none.
       cpuLimit: child.cpuLimit ?? app.cpuLimit,
       memoryLimit: child.memoryLimit ?? app.memoryLimit,
-      // GPU is opt-in either level: parent-wide flag OR the child's own toggle.
+      // GPU is on if the parent or the child enables it.
       gpuEnabled: !!app.gpuEnabled || child.gpuEnabled,
-      // Priority inherits the parent when the child's is null (the default for
-      // new children), so a critical parent's services stay critical unless a
-      // child explicitly overrides its tier.
       priority: child.priority ?? app.priority,
     };
   }
   ctx.serviceConfig = serviceConfig;
 
   if (app.gpuEnabled) {
-    // Skip GPU reservations for services that mount a top-level named
-    // volume — those are stateful infrastructure (postgres, redis, etc.)
-    // and don't benefit from NVIDIA device access. A service that needs
-    // GPU alongside a named volume can always declare its own reservation
-    // in the source compose; injectGpuDevices preserves those.
+    // Skip services with a top-level named volume (stateful infrastructure).
     const statefulSkip = getServicesWithExternalizedVolumes(compose);
     compose = injectGpuDevices(compose, { skip: statefulSkip });
     if (statefulSkip.size > 0) {
@@ -145,8 +118,7 @@ export async function resolveCompose(ctx: DeployContext): Promise<DeployContext>
     }
   }
 
-  // Per-child GPU toggles: attach the device to exactly those services, even
-  // stateful ones — the user opted in on that specific service (#745).
+  // Per-child GPU toggles apply even to stateful services (#745).
   const childGpuServices = new Set(
     children.filter((c) => c.gpuEnabled && c.composeService).map((c) => c.composeService!),
   );
@@ -198,13 +170,10 @@ export async function resolveCompose(ctx: DeployContext): Promise<DeployContext>
   const allServicesCustomNetwork = servicesWithCustomNetwork.length === Object.keys(compose.services).length;
 
   if (!allServicesCustomNetwork && app.domains.length > 0) {
-    // Vardo owns routing once the app has a domain. Inbound Traefik labels
-    // otherwise reach the overlay and declare a second backend for the same
-    // Traefik service.
+    // Vardo owns routing once the app has a domain; inbound labels would add a second backend.
     compose = stripTraefikLabels(compose);
 
-    // Only worth inspecting images when compose itself doesn't say which
-    // service serves the port.
+    // Inspect images only when compose doesn't say which service serves the port.
     const needsImagePorts = app.domains.some(
       (d) =>
         !["override", "sole-candidate", "declared-port"].includes(
@@ -224,9 +193,7 @@ export async function resolveCompose(ctx: DeployContext): Promise<DeployContext>
         narrowedProtocol,
         port,
       );
-      // A domain added on a decomposed child app is tagged with that child's
-      // compose service (deploy.ts) and routes there; otherwise pick the
-      // service that serves the port.
+      // A child app's domain routes to its compose service; otherwise pick the one serving the port.
       const selection = selectRoutedService(compose, {
         containerPort: port,
         override: domain.composeService,
@@ -259,25 +226,13 @@ export async function resolveCompose(ctx: DeployContext): Promise<DeployContext>
       }
     }
 
-    // Clean up any stale file-provider config from before this change
+    // Remove stale file-provider config.
     if (!ctx.envIsolated) removeAppRouteConfig(app.name).catch(() => {});
   } else if (allServicesCustomNetwork) {
     log(`[deploy] Skipping Traefik labels — all services use custom network modes: ${servicesWithCustomNetwork.join(", ")}`);
   }
-  // Only attach vardo-network to services that carry Traefik router labels
-  // (i.e. those that need to be reachable from vardo-traefik). Databases,
-  // workers, sidecars, and caches stay on the compose project's private
-  // network so their per-project aliases ("postgres", "redis") can't
-  // collide with identically-named services in sibling apps that also
-  // share vardo-network.
-  //
-  // When no service is Traefik-routed — e.g. a worker-only stack with no
-  // ingress — we attach NOTHING to vardo-network. The previous behaviour
-  // ("attach everywhere") was the exact condition that caused the
-  // production outage: every sibling app's postgres/redis ended up on
-  // vardo-network with the same DNS alias. Cross-project DNS discovery
-  // through vardo-network is not a supported pattern; apps that genuinely
-  // need it should route through vardo-traefik via a Host() label.
+  // Only Traefik-routed services join vardo-network, never all of them.
+  // Shared aliases like "postgres" would collide across sibling apps.
   const traefikRouted = getTraefikRoutedServices(compose);
   if (traefikRouted.size > 0) {
     compose = injectNetwork(compose, NETWORK_NAME, { attachTo: traefikRouted });
@@ -291,15 +246,9 @@ export async function resolveCompose(ctx: DeployContext): Promise<DeployContext>
     log(`[deploy] vardo-network: no Traefik-routed service — skipping injection (app stays on its project-private network)`);
   }
 
-  // Step 3: Add app labels
-  //
-  // vardo.scope separates the platform's own containers from a tenant's. Log
-  // shipping reads it to keep instance infrastructure out of an organization's
-  // tenant — Promtail and Loki quote other organizations' stream labels in
-  // their errors, and an org tenant is the wrong place for that.
+  // Step 3: app labels. vardo.scope keeps instance infrastructure logs out of org tenants.
   const scope = appScope(app.name);
-  // A shared service outlives the deploy, and a per-deploy label would change
-  // its config hash every time, so the swap would see drift on every deploy.
+  // No deployment-id label on shared services; it would change their config hash every deploy.
   const shared = nonRotatingServices(compose);
 
   for (const [svcName, svc] of Object.entries(compose.services)) {

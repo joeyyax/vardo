@@ -1,11 +1,4 @@
-// ---------------------------------------------------------------------------
-// Images the shared project needs, decided before anything is stopped.
-//
-// A shared service is the one thing that cannot be run twice — Traefik holds
-// :80 and :443 for every site on the host. There is no second copy to serve
-// while a pull runs, so a pull issued after the old container is gone is total
-// downtime, and an unreachable registry makes it open-ended.
-// ---------------------------------------------------------------------------
+// Shared-service images, resolved before anything stops. Traefik can't run twice, so a pull after stop is downtime.
 
 import type { ComposeService } from "../compose-types";
 
@@ -13,12 +6,8 @@ import type { ComposeService } from "../compose-types";
 export type ImageProbe = (image: string) => Promise<boolean>;
 
 /**
- * Shared services whose image has to come from a registry.
- *
- * An image already on the host is skipped. The shared `up` runs
- * `--no-recreate`, so re-pulling a tag would move it without replacing the
- * container running the old one; a digest-pinned ref that is local is by
- * definition the image the compose file names.
+ * Shared services whose image has to come from a registry; images already on the host are skipped.
+ * Shared `up` runs `--no-recreate`, so re-pulling a tag would only move it.
  */
 export async function sharedPullTargets(
   shared: Record<string, ComposeService>,

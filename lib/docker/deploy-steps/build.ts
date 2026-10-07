@@ -1,7 +1,4 @@
-// ---------------------------------------------------------------------------
-// Deploy Steps 4-5: Blue-green slot management, compose file writing,
-// volume externalization, and .env resolution.
-// ---------------------------------------------------------------------------
+// Deploy steps 4-5: slot selection, compose files, volume externalization and .env.
 
 import { db } from "@/lib/db";
 import { orgEnvVars, apps } from "@/lib/db/schema";
@@ -57,10 +54,7 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
     ctx.newProjectName = `${app.name}-${ctx.envName}`;
     ctx.slotDir = join(appDir, "local");
   } else {
-    // Resolve the active slot from the symlink, then Docker ground-truth, then
-    // the legacy file. Detecting a still-running old slot is what lets the swap
-    // step tear it down before starting the new slot — without this, a stale
-    // slot holding a host port causes "port already allocated".
+    // A stale running slot must be detected so swap can stop it; otherwise host ports collide.
     activeSlot = await detectActiveSlot(appDir, `${app.name}-${ctx.envName}`);
 
     newSlot = activeSlot === "blue" ? "green" : "blue";
@@ -76,12 +70,7 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
   ctx.checkAbort();
   log(`[deploy] Active slot: ${activeSlot || "none"}, deploying to: ${newSlot}`);
 
-  // Step 5: Write compose file
-  // Link repo contents into the slot dir for build contexts and relative mounts.
-  // Directories are symlinked to repoDir (auto-fresh on every git reset).
-  // Regular files are copied — and on every deploy we replace the slot's copy
-  // from repoDir, otherwise stale files (e.g. a Dockerfile from the first
-  // deploy) would shadow the freshly-pulled commit.
+  // Step 5: link repo contents into the slot. Directories are symlinked; files are recopied every deploy.
   if (repoDir) {
     const entries = await readdir(repoDir);
     for (const entry of entries) {
@@ -101,7 +90,7 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
       }
     }
 
-    // Remove stale entries in the slot dir that no longer exist in the repo
+    // Remove slot entries no longer in the repo.
     const repoEntrySet = new Set(entries);
     const MANAGED_FILES = new Set(["docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml", "docker-compose.override.yml", ".env"]);
     try {
@@ -121,8 +110,7 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
   ctx.stableVolumePrefix = stableVolumePrefix;
   if (compose.volumes && Object.keys(compose.volumes).length > 0) {
     const externalized: string[] = [];
-    // Volumes belonging only to non-rotating services keep compose-native
-    // naming, so a pinned shared project still finds the data it created.
+    // Shared-only volumes keep compose-native names so the shared project still finds its data.
     const { sharedOnly, crossBoundary } = volumesByOwner(compose);
 
     for (const volName of Object.keys(compose.volumes)) {
@@ -145,8 +133,7 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
     }
   }
 
-  // Step 5a2: Externalize networks a shared service attaches to, so the shared
-  // and slot projects join one network instead of each declaring their own.
+  // Step 5a2: externalize networks a shared service attaches to, so both projects join one network.
   const sharedNets = sharedNetworks(compose);
   if (sharedNets.size > 0) {
     compose.networks ??= {};
@@ -162,10 +149,8 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
       } catch { /* already exists — fine */ }
       const external = { external: true, name: externalName };
       compose.networks[netName] = external;
-      // The bare file is written separately and would otherwise still declare
-      // the network, so compose creates a second one and a pinned subnet clashes.
+      // The bare file must reference the external network too, or a pinned subnet clashes.
       // Key presence, not truthiness: `internal:` with no config parses to null.
-      // The implicit default is never a key, and is the one both projects need.
       if (netName === DEFAULT_NETWORK || netName in ctx.bareCompose.networks) {
         ctx.bareCompose.networks[netName] = external;
       }
@@ -173,7 +158,7 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
     log(`[deploy] Shared network(s): ${[...sharedNets].join(", ")}`);
   }
 
-  // Step 5b: Write the two physical compose files
+  // Step 5b: write the bare and override compose files.
   const bareComposePath = join(slotDir, "docker-compose.yml");
   const overridePath = join(slotDir, "docker-compose.override.yml");
 
@@ -181,12 +166,7 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
     try { await rm(stale, { force: true }); } catch { /* gone already */ }
   }
 
-  // Rewrite every service's build context to the absolute repoDir build
-  // root. The slot dir is full of symlinks pointing OUT to repoDir, and
-  // BuildKit refuses to traverse symlinks that escape the build context —
-  // so a `context: .` resolved relative to slotDir would yield an empty
-  // build with all source dirs missing. Pointing the context at repoDir
-  // directly sidesteps the symlink trap entirely.
+  // Build contexts point at repoDir, not the slot: BuildKit won't follow the slot's symlinks out of the context.
   if (repoDir) {
     const buildRoot = app.rootDirectory
       ? join(repoDir, app.rootDirectory)
@@ -198,7 +178,6 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
       for (const service of Object.values(composeFile.services)) {
         if (!service.build) continue;
         if (typeof service.build === "string") {
-          // Shorthand `build: ./path` → resolve relative to buildRoot
           const ctxPath = service.build === "." || service.build === ""
             ? buildRoot
             : join(buildRoot, service.build);
@@ -217,11 +196,9 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
     rewriteBuildContext(ctx.bareCompose);
   }
 
-  // Fetch exposed ports + per-service env vars from child app records.
+  // Exposed ports and per-service env from child app records.
   const serviceExposedPorts: Record<string, { internal: number; external?: number; protocol?: string }[]> = {};
-  // Raw (decrypted, parsed, not yet template-resolved) env per service from
-  // decomposed child apps. Resolved during env resolution and folded into the
-  // overlay below. Empty for non-decomposed apps → no behavior change.
+  // Decrypted, unresolved env per decomposed child service.
   const serviceEnvRaw: Record<string, Record<string, string>> = {};
   if (Object.keys(compose.services).length > 1) {
     const childApps = await db.query.apps.findMany({
@@ -258,7 +235,7 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
       }
     }
   }
-  // Also check the parent app's own exposedPorts (for single-service or the primary service)
+  // The parent's exposedPorts apply to the primary service.
   if (app.exposedPorts) {
     const parentPorts = app.exposedPorts as { internal: number; external?: number; protocol?: string }[];
     if (parentPorts.length > 0) {
@@ -281,14 +258,9 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
     );
   }
 
-  // Per-service env (decomposed children) can reference templates/secrets, so it
-  // is resolved during env resolution below, then folded into the overlay. The
-  // overlay itself is built after that so resolved values are available.
   const resolvedServiceEnv: Record<string, Record<string, string>> = {};
 
-  // Write .env — resolve template expressions using the full resolution engine.
-  // Runs when the parent has env vars OR any child service does (the resolution
-  // context is shared between both).
+  // Resolve templates and write .env; child service env shares the same context.
   if (Object.keys(envMap).length > 0 || Object.keys(serviceEnvRaw).length > 0) {
     const orgVarRows = await db.query.orgEnvVars.findMany({
       where: eq(orgEnvVars.organizationId, ctx.organizationId),
@@ -345,15 +317,12 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
       await writeFile(join(slotDir, ".env"), envContent, "utf-8");
     }
 
-    // Resolve each decomposed child service's env through the same engine so its
-    // values can reference templates/secrets/org vars, then inject per-service.
     for (const [service, raw] of Object.entries(serviceEnvRaw)) {
       resolvedServiceEnv[service] = await resolveAllEnvVars(raw, resolveCtx);
     }
   }
 
-  // Vardo's own secrets live on the host, not in its database, so the write
-  // above is skipped and compose would silently fall back to its defaults.
+  // Vardo's own secrets live on the host, not in its database.
   const seededEnv = await seedSelfEnv(app.name, appDir, slotDir, activeSlot);
   if (seededEnv) {
     log(`[deploy] Seeded slot .env from ${seededEnv}`);
@@ -397,10 +366,8 @@ function isLinkedRepoEntry(entry: string): boolean {
 }
 
 /**
- * Point shared services' relative paths somewhere neither slot owns, so their
- * definition is the same from blue and green. A file Vardo wrote into the slot
- * (the .env) is copied across; a directory is never moved, and one still
- * sitting in a slot is recorded so the swap holds the service.
+ * Point shared services' relative paths outside both slots so blue and green match.
+ * Directories are never moved; one still in a slot is recorded so swap holds the service.
  */
 export async function anchorSharedServicePaths(ctx: DeployContext): Promise<void> {
   const shared = nonRotatingServices(ctx.compose);

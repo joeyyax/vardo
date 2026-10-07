@@ -1,25 +1,7 @@
 import type { ComposeFile } from "../compose-types";
 import { isSharedService } from "../slot-partition";
 
-/**
- * Split compose services into those that build locally (have a `build:`
- * directive) and those whose image must be pulled from a registry.
- *
- * Build and pull are complementary, not exclusive: a compose file can mix
- * services that build locally (the user's own app) with services pulled from a
- * registry (sidecars like postgres, traefik). Pull only the services that have
- * no `build:` directive so we don't ask the registry for an image compose
- * intends to build.
- *
- * `builtImageRefs` lists images this deploy built locally (e.g.
- * `host/<app>:<sha>` from a Dockerfile/Nixpacks/Railpack build). They exist
- * only in the local daemon, referenced via `image:` with no `build:`, so they
- * must be excluded from the pull set — pulling them 404s and aborts the deploy.
- *
- * Services marked `x-vardo-shared` are excluded too. They get their own
- * pre-pull, keyed on the image being absent from the host — see
- * `sharedPullTargets`.
- */
+/** Split services into build vs pull. Locally built images and x-vardo-shared services are never pulled. */
 export function classifyComposeServices(
   services: ComposeFile["services"],
   builtImageRefs: string[] = [],

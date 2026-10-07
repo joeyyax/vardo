@@ -1,7 +1,4 @@
-// ---------------------------------------------------------------------------
-// Deploy Steps 6-9: Network setup, old slot teardown, compose up,
-// health check, and container name update.
-// ---------------------------------------------------------------------------
+// Deploy steps 6-9: network, old-slot stop, compose up, health check and container names.
 
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
@@ -49,7 +46,7 @@ const NETWORK_NAME = VARDO_NETWORK;
 const DEFAULT_HEALTH_CHECK_TIMEOUT_MS = DEFAULT_HEALTH_CHECK_TIMEOUT;
 const HEALTH_CHECK_INTERVAL_MS = 2000;
 
-/** Node kills the child once a stream passes this. A cold build's log is well over the 1MB default. */
+/** Cold build logs exceed Node's 1MB default, which kills the child. */
 const EXEC_MAX_BUFFER = 10 * 1024 * 1024;
 
 /**
@@ -61,23 +58,14 @@ export function deferSlotStop(canOverlapSlots: boolean, appName: string): boolea
 }
 
 /**
- * Whether the old slot can be routed away from before it stops.
- *
- * Only when both slots are up, so there is a proven backend to hand the traffic
- * to. The deferred self-deploy pins too: its stop kills this process before the
- * release, leaving the pin behind on the slot that is now serving. Every deploy
- * clears it on the way in, and an instant rollback clears it before flipping.
+ * Whether the old slot can be routed away from before it stops: only when both slots are up.
+ * A self-deploy leaves its pin behind; the next deploy or instant rollback clears it.
  */
 export function canPinCutover(canOverlapSlots: boolean): boolean {
   return canOverlapSlots;
 }
 
-/**
- * Take the old slot out of Traefik, stop it, then hand routing back.
- *
- * The pin is confirmed live before the stop is issued and released after it
- * returns, so no request is ever addressed to a slot that has already gone.
- */
+/** Pin Traefik away from the old slot, stop it, then release the pin. */
 export async function drainThenStop<T>(
   drain: () => Promise<CutoverGuard>,
   stop: () => Promise<T>,
@@ -95,9 +83,7 @@ function alreadyGone(message: string): boolean {
   return /no such container|no container found for project/i.test(message);
 }
 
-/**
- * Parse a Docker duration string (e.g. "1m", "30s", "1m30s", "500ms") to milliseconds.
- */
+/** Docker duration ("1m30s", "500ms") to milliseconds. */
 function parseDuration(d: string | undefined): number {
   if (!d) return 0;
   let ms = 0;
@@ -117,7 +103,7 @@ function parseDuration(d: string | undefined): number {
   return ms;
 }
 
-/** How long a recreated shared service gets to report ready. Docker's defaults fill in a partial healthcheck. */
+/** How long a recreated shared service gets to report ready. */
 export function sharedReadyTimeout(service: ComposeService): number {
   const hc = service.healthcheck;
   if (!hc || hc.disable) return DEFAULT_HEALTH_CHECK_TIMEOUT_MS;
@@ -164,11 +150,8 @@ export function routedPort(service: ComposeService | undefined): number | null {
 }
 
 /**
- * Wait for the new slot to be ready. Fails closed: a timeout is a failure.
- *
- * A service with a Docker healthcheck is ready when Docker says healthy. One
- * without must stay running, and the probe must keep succeeding, for
- * HEALTH_STABLE_WINDOW_MS in a row.
+ * Wait for the new slot to be ready; a timeout fails. Healthchecked services must be healthy;
+ * others must stay running, with the probe passing, for HEALTH_STABLE_WINDOW_MS.
  */
 export async function waitForHealthy(
   projectName: string,
@@ -264,9 +247,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
 
   await checkVolumeLimits(ctx);
 
-  // Services marked x-vardo-shared sit outside the rotation, in their own
-  // compose project. Everything below operates on the slotted set only; the
-  // shared set is brought up once, further down, and never stopped by a swap.
+  // x-vardo-shared services run in their own project and are never stopped by a swap.
   const { shared, slotted } = partitionBySlot(compose);
   const sharedNames = Object.keys(shared);
   const slottedNames = Object.keys(slotted);
@@ -274,41 +255,26 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
 
   const onlySlotted = slotScopeArgs({ shared, slotted });
 
-  // Stop ALL services in the old slot before starting the new one. This
-  // prevents port conflicts from any service with host port bindings (not
-  // just services with externalized volumes). Without this, services like
-  // Redis that expose host ports but don't mount named volumes would keep
-  // running, causing "port already allocated" errors in the new slot.
   const mustStopOldSlot = activeSlot !== null && !isLocalEnv;
 
-  // Nothing binds the host, so both slots can run at once. Traefik treats the
-  // two as backends of one service and drains to the survivor, which turns the
-  // cutover from a gap into an overlap. Anything publishing a port keeps the
-  // stop-then-start order — the second bind would fail. Only the rotating
-  // services are asked: a shared postgres holds its port across the swap.
+  // Slots overlap only when no slotted service publishes a host port; otherwise the second bind fails.
   const canOverlapSlots = mustStopOldSlot && !publishesHostPorts(slotted);
   const stopOldBeforeUp = mustStopOldSlot && !canOverlapSlots;
 
-  // Vardo deploying Vardo is the exception: the old slot is running this
-  // process, so stopping it here kills the deploy before it records itself.
-  // The stop is deferred to the end of post-deploy, once every write is durable.
+  // A self-deploy's old slot runs this process, so its stop waits until post-deploy writes are durable.
   const deferStopToPostDeploy = deferSlotStop(canOverlapSlots, app.name);
   let pinCutover = canPinCutover(canOverlapSlots);
 
-  // Appended to whichever failure the new slot hits. A slotted service on a
-  // directory the old slot still holds is the likeliest cause, and the one the
-  // compose output never names.
+  // Appended to new-slot failures.
   const overlapDiagnosis = () => slotOverlapDiagnosis(compose, slotted, canOverlapSlots);
 
-  // Bounds the window an OOM kill has to land in to belong to this deploy.
+  // OOM kills after this belong to this deploy.
   const swapStartedAt = new Date();
 
-  // A pin from a deploy that was killed mid-cutover would hold this app on a
-  // slot this deploy is about to replace.
+  // Clear a pin left by a deploy killed mid-cutover.
   await clearCutoverPin(app.name, ctx.envName).catch(() => {});
 
-  // Pre-clean the new slot to remove orphaned containers from any previous
-  // failed deploy that didn't fully clean up (process crash, timeout, etc.).
+  // Remove leftovers from a previous failed deploy in the new slot.
   try {
     await execFileAsync(
       "docker",
@@ -316,25 +282,16 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
       { cwd: slotDir, timeout: COMPOSE_DOWN_TIMEOUT }
     );
   } catch {
-    // No containers to clean up — expected on first deploy
+    // Nothing to clean up.
   }
 
-  // Step 6a: Pre-build and pre-pull new-slot images WITHOUT stopping anything.
-  // This is the slowest and most failure-prone phase (dockerfiles can fail,
-  // registries can 404, network blips can bite). Doing it before we touch
-  // the old slot means the old slot keeps serving if we never get here.
-  //
-  // Build and pull are complementary, not exclusive: a compose file can mix
-  // services that build locally (the user's own app) with services that pull
-  // from a registry (sidecars like go2rtc, traefik, postgres). Run both phases.
-  // Images this deploy built locally (ctx.builtImageRefs) are excluded from the
-  // pull set — they live only in the local daemon, so pulling them 404s.
+  // Step 6a: build and pull new-slot images while the old slot keeps serving.
   const { buildServices, pullServices } = classifyComposeServices(
     compose.services,
     ctx.builtImageRefs,
   );
 
-  /** Whether the host already holds an image, so no registry is involved. */
+  /** Whether the host already holds an image. */
   const imageIsLocal = async (image: string): Promise<boolean> => {
     try {
       await execFileAsync("docker", ["image", "inspect", "--format", "{{.Id}}", image], {
@@ -346,16 +303,12 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
     }
   };
 
-  // Shared images are fetched here rather than by the `up` further down, which
-  // runs after the old slot may already be stopped. Only the ones missing from
-  // this host: a re-pull on every deploy would slow all of them down and move
-  // tags under containers `--no-recreate` will not replace.
+  // Shared images missing from the host are pulled now, before the old slot may stop.
   const sharedPulls = await sharedPullTargets(shared, ctx.builtImageRefs, imageIsLocal);
 
   let majorGate: MajorGateState = { candidates: [], before: new Map() };
   try {
-    // Both phases reach registries — a `build:` service pulls the bases its
-    // Dockerfile names — so both run against the configured credentials.
+    // Builds pull base images too, so both phases use registry credentials.
     await withRegistryAuth(async (env) => {
       if (buildServices.length > 0) {
         log(`[deploy] Pre-building ${newSlot} slot images (old slot still serving)...`);
@@ -375,8 +328,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
         }
       }
       if (pullServices.length > 0) {
-        // Read the engine majors off the local images first. After the pull the
-        // tag points somewhere else and the old major is unreadable.
+        // Read engine majors before the pull moves the tag.
         majorGate = await majorGateBefore(ctx, pullServices);
         log(`[deploy] Pre-pulling ${newSlot} slot images (old slot still serving)...`);
         const { stdout, stderr } = await execFileAsync(
@@ -415,19 +367,15 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
     );
   }
 
-  // A major-locked engine on a tag that names no version can change major on
-  // the pull alone. Compared here, where a stop costs nothing: the old slot is
-  // still serving and nothing has been replaced.
+  // Block an unversioned tag that crossed an engine major, while nothing has been replaced.
   await majorGateAfter(ctx, majorGate);
 
-  // Every image this deploy needs now exists locally. Nothing serving has been
-  // touched yet, so this is the last point at which a cancel is free.
+  // Last point at which a cancel is free.
   ctx.checkAbort();
   ctx.stage("build", "success");
   ctx.stage("deploy", "running");
 
-  // Step 6b: NOW stop old-slot services. Images are already local,
-  // so the window where the old slot is down is as short as possible.
+  // Step 6b: stop the old slot when it can't overlap.
   const oldSlotDir = activeSlot ? join(appDir, activeSlot) : null;
   const oldProjectName = activeSlot
     ? `${app.name}-${ctx.envName}-${activeSlot}`
@@ -440,12 +388,10 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
     return oldComposeFileArgsCache;
   };
 
-  // Services we actually stopped — used by the rollback path below to restart
-  // them if the new slot fails to come up.
+  // Stopped services, restarted if the new slot fails.
   const stoppedOldServices: string[] = [];
 
-  // Whether the old slot was pinned to `restart: no`. Tracked apart from the
-  // stop, which runs after the demote and can fail on its own.
+  // Whether the old slot was demoted to `restart: no`; tracked apart from the stop.
   let demotedOldSlot = false;
 
   /** Whether the old slot still runs any of these services. */
@@ -473,13 +419,10 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
 
     const stop = async (): Promise<SlotStopOutcome> => {
       try {
-        // Demote before stopping, not after — when the old slot is running this
-        // process there is no "after". Never move this below the stop.
+        // Demote before stopping: a self-deploy has no "after". Never move this below the stop.
         demotedOldSlot = true;
         await demoteStandbyRestart(oldComposeFileArgs, oldProjectName, oldSlotDir);
-        // `stop`, not `down` — the old slot stays as a warm standby, keeping its
-        // containers and their logs for rollback. It is removed by the pre-clean
-        // above on the next deploy that reuses this slot dir.
+        // `stop`, not `down`: the old slot stays as a warm standby for rollback.
         await execFileAsync(
           "docker",
           ["compose", ...oldComposeFileArgs, "-p", oldProjectName, "stop"],
@@ -512,8 +455,6 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
         )
       : await stop();
 
-    // While both slots are up the kernel can pick either. A kill that lands on
-    // the one already going away is indistinguishable from this teardown.
     await reportOomDuringDeploy(
       { organizationId: ctx.organizationId, appId: ctx.appId, appName: app.displayName || app.name },
       oldProjectName,
@@ -524,8 +465,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
     return outcome;
   };
 
-  // A slot that would not stop keeps its containers, and a daemon restart can
-  // bring them back as a second live backend behind Traefik.
+  // A slot that won't stop can return as a second Traefik backend after a daemon restart.
   const noteStopFailure = (outcome: SlotStopOutcome) => {
     if (outcome.ok) return;
     (ctx.unfinished ??= []).push(
@@ -533,29 +473,19 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
     );
   };
 
-  // An app last deployed before a service stopped rotating still runs it in the
-  // old slot, on the volume the shared project is about to claim. Nothing may
-  // overlap that, so the old slot goes down first — the same order a published
-  // host port forces. Only ever the first deploy after the service left the
-  // rotation; Vardo's own shared services carry container_name and have never
-  // been in a slot project, so the deferred self-deploy is left alone.
+  // An old slot still running a now-shared service must stop before the shared project claims its volume.
   const oldSlotHoldsShared =
     mustStopOldSlot && !deferStopToPostDeploy && sharedNames.length > 0
       ? await oldSlotRuns(sharedNames)
       : false;
 
-  // A named volume is externalized to a name carrying no slot, so both slots
-  // address one directory. Suppressed for the whole app: sequencing only the
-  // service holding it leaves the old slot serving without its database. Vardo
-  // deploying itself is exempt — its old slot is running this process.
+  // Externalized volumes are shared by both slots, so overlap is off for the whole app. Self-deploy exempt.
   const slottedOnExternalizedVolumes =
     canOverlapSlots && !deferStopToPostDeploy
       ? [...getServicesWithExternalizedVolumes(compose)].filter((name) => name in slotted)
       : [];
 
-  // The overlap holds two copies of this app's memory. Read here, after the
-  // build, so it describes the host the new slot is about to start on. Vardo
-  // deploying itself is exempt — its old slot is running this process.
+  // Overlap runs two copies of the app; check memory after the build. Self-deploy exempt.
   const overlapFitsMemory =
     canOverlapSlots &&
     !deferStopToPostDeploy &&
@@ -576,20 +506,14 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
     if (slottedOnExternalizedVolumes.length > 0) {
       log(`[deploy] Volume both slots would hold, mounted by ${slottedOnExternalizedVolumes.join(", ")} — stopping ${activeSlot} before ${newSlot} starts`);
     }
-    // Every branch here stops the old slot before the new one starts, so there
-    // is no proven second backend to pin to and guardCutover would only burn
-    // PIN_CONFIRM_TIMEOUT waiting for one.
+    // No second backend to pin to when stopping first.
     pinCutover = false;
     noteStopFailure(await stopOldSlot());
   } else if (canOverlapSlots) {
     log(`[deploy] No published host ports — ${activeSlot} keeps serving until ${newSlot} is healthy`);
   }
 
-  // The old slot's compose predates the externalized network and still names
-  // the one its own project created. Its services come back there, so the
-  // shared containers have to join it or the restored web half has no database.
-  // Only after a transition deploy fails — every later slot names the external
-  // network itself.
+  // A pre-shared old slot uses its own project network; shared containers must rejoin it on restore.
   const rejoinOldSlotNetworks = async () => {
     if (!oldProjectName) return;
     const networks = projectScopedNetworkNames(compose, oldProjectName);
@@ -601,26 +525,14 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
           "docker",
           ["network", "connect", "--alias", name, network, container],
           { timeout: COMPOSE_QUERY_TIMEOUT },
-        ).catch(() => { /* already attached, or the network is gone with the slot */ });
+        ).catch(() => { /* already attached or gone */ });
       }
     }
     log(`[deploy] Reattached ${sharedNames.join(", ")} to ${networks.join(", ")}`);
   };
 
-  // Local helper — restart any old-slot services we stopped, so the old slot
-  // keeps serving if the new slot cutover fails. Best-effort; logs but never
-  // throws, because we're already in the failure path.
-  //
-  // We use `up -d --no-recreate --pull never <services>` instead of the more
-  // obvious `start`. Reason: `start` only works if the containers still
-  // exist, so if anything cleaned them up between the stop and the
-  // restore (docker runtime restart, manual ops, system prune), `start`
-  // fails silently and the old slot stays dead. `up --no-recreate` will
-  // recreate missing containers from the already-present compose files
-  // while leaving anything currently running untouched — strict superset
-  // of `start` semantics for this use case.
-  //
-  // Reached whenever the old slot was demoted, not only when it was stopped.
+  // Restart the old slot after a failed cutover. Best-effort, never throws.
+  // Uses `up --no-recreate`, not `start`, so containers removed since the stop come back.
   const restoreOldSlot = async (reason: string) => {
     if (!oldSlotDir || !oldProjectName) return;
     if (stoppedOldServices.length === 0 && !demotedOldSlot) return;
@@ -628,7 +540,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
     log(`[deploy] Restoring old-slot services after ${reason}: ${serviceNames.length > 0 ? serviceNames.join(", ") : "all"}`);
     try {
       const oldComposeFileArgs = await getOldComposeFileArgs();
-      // Ahead of the up, so the database answers by the time anything asks.
+      // Rejoin before the up so the database is reachable.
       if (oldSlotHoldsShared) await rejoinOldSlotNetworks();
       await execFileAsync(
         "docker",
@@ -644,17 +556,14 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
         ],
         { cwd: oldSlotDir, timeout: COMPOSE_UP_TIMEOUT }
       );
-      // It is serving again, so it needs its own restart policy back.
       await restoreSlotRestart(oldComposeFileArgs, oldProjectName, oldSlotDir);
-      // Idempotent: calling restoreOldSlot twice is safe because compose up
-      // --no-recreate is a no-op for already-running services.
+      // Idempotent.
     } catch (err) {
       log(`[deploy] Warning: failed to restore old-slot services — ${err instanceof Error ? err.message : err}`);
     }
   };
 
-  // A definition change is applied here or reported, never dropped. A recreate
-  // that fails puts the service back on the old slot's definition.
+  // A failed recreate puts the service back on the old slot's definition.
   const reconcileShared = async () => {
     try {
       const outcomes = await reconcileSharedServices({
@@ -690,7 +599,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
     }
   };
 
-  // Best effort: the old slot's compose holds the definition the service ran.
+  // Best effort, from the old slot's compose.
   const restoreSharedDefinition = async (service: string) => {
     if (!oldSlotDir) return;
     try {
@@ -713,16 +622,11 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
     }
   };
 
-  // Step 6b2: Bring up the shared services. --no-recreate means an already
-  // running database is left exactly as it is; only a missing one is created.
-  // A changed definition is then recreated or held by reconcileShared.
-  // Runs before the new slot so anything depending on it can connect.
+  // Step 6b2: start missing shared services before the new slot. `--no-recreate` never touches a running data store.
   if (sharedNames.length > 0) {
     log(`[deploy] Shared services (not rotated): ${sharedNames.join(", ")}`);
     try {
-      // `--pull never`: every image was fetched above, while the old slot was
-      // still serving. Reaching a registry here is what turns a slow pull into
-      // an outage, so it is taken away rather than relied on not to happen.
+      // `--pull never`: a registry pull here would be downtime.
       const { stdout, stderr } = await execFileAsync(
         "docker",
         [
@@ -749,14 +653,10 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
     await reconcileShared();
   }
 
-  // Step 6c: Pre-create and chown bind-mount targets to each service's non-root
-  // uid. Without this, the daemon creates missing host paths root-owned and
-  // non-root containers can't write under them (#738). Runs after images exist
-  // (Step 6a) so the uid can be read from them, and before compose up.
+  // Step 6c: chown bind-mount targets to non-root uids (#738). Needs the images.
   await prepareBindMountOwnership(ctx);
 
-  // Step 7: Start the new slot. Images are already local from Step 6a, so we
-  // skip --build and set --pull never to make this deterministic and fast.
+  // Step 7: start the new slot from local images.
   const composeUpTimeout = buildServices.length > 0 ? COMPOSE_BUILD_UP_TIMEOUT : COMPOSE_UP_TIMEOUT;
   log(`[deploy] Starting ${newSlot} slot...`);
   try {
@@ -787,7 +687,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
     );
   }
 
-  // Step 8: Health check
+  // Step 8: health check.
   ctx.checkAbort();
   ctx.stage("deploy", "success");
   ctx.stage("healthcheck", "running");
@@ -809,16 +709,13 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
     }
   }
 
-  // Probe the container Traefik was pointed at; a probe against the wrong
-  // container fails open and reports the deploy healthy.
+  // Probe the container Traefik routes to; the wrong one fails open.
   const routed = getTraefikRoutedServices(compose);
   const routedName =
     [...routed][0] ?? selectRoutedService(compose, { containerPort }).service;
-  // A shared routed service is never replaced, so the deploy would prove
-  // nothing. Validation rejects it on save; this catches apps saved earlier.
+  // A shared routed service isn't replaced, so probing it proves nothing.
   const primarySvcName = sharedNames.includes(routedName) ? undefined : routedName;
-  // Only a Traefik-routed service joins vardo-network, so only it can be reached
-  // from here. Anything else is held to the running window alone.
+  // Only Traefik-routed services are reachable on vardo-network.
   const probePort = primarySvcName
     ? routedPort(compose.services[primarySvcName]) ?? containerPort
     : 0;
@@ -841,7 +738,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
           log(`[deploy][crash] ${line}`);
         }
       }
-    } catch { /* couldn't get logs */ }
+    } catch { /* no logs */ }
 
     log(`[deploy] Tearing down ${newSlot}`);
     await execFileAsync(
@@ -863,19 +760,17 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
   ctx.stage("routing", "running");
   log(`[deploy] ${newSlot} healthy`);
 
-  // Invariant: an old slot still serving here is stopped only after the deploy
-  // commits. Until then a failure can drop the new slot and leave the old one.
+  // Invariant: an old slot still serving is stopped only after the deploy commits.
   if (mustStopOldSlot && !stoppedOldSlot) {
     ctx.stopOldSlot = stopOldSlot;
     ctx.stopOldSlotEndsDeploy = deferStopToPostDeploy;
     ctx.oldSlotServing = () => oldSlotRuns(slottedNames);
   }
 
-  // Step 9: Update container names in DB. The row names the default environment's containers.
+  // Step 9: record container names for the default environment.
   if (!isLocalEnv && !ctx.envIsolated) {
     try {
       const serviceNames = Object.keys(compose.services);
-      // A shared service keeps its own project name; only slotted ones move.
       const projectFor = (svc: string) =>
         sharedNames.includes(svc) ? sharedProject : newProjectName;
       const primaryServiceName = slottedNames[0] ?? serviceNames[0];
