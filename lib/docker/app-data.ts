@@ -8,7 +8,7 @@ import { readdir, readFile, realpath, lstat } from "fs/promises";
 import { join, relative, isAbsolute, sep } from "path";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { apps, environments } from "@/lib/db/schema";
+import { environments } from "@/lib/db/schema";
 import { appBaseDir } from "@/lib/paths";
 import { execFileAsync } from "@/lib/utils/exec";
 import { getVolumeSizes, listVolumes, type VolumeInfo } from "./client";
