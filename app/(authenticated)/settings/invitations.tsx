@@ -1,5 +1,6 @@
 "use client";
 
+import { copyToClipboard } from "@/lib/clipboard";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "@/lib/messenger";
@@ -85,13 +86,9 @@ export function InvitationsPanel({
   const canManage = isOrgAdmin(currentRole);
 
   async function copyInviteLink(invitationId: string, url: string) {
-    try {
-      await navigator.clipboard.writeText(url);
-      setCopiedId(invitationId);
-      setTimeout(() => setCopiedId((id) => (id === invitationId ? null : id)), 2000);
-    } catch {
-      toast.error("Failed to copy invite link");
-    }
+    if (!(await copyToClipboard(url))) return;
+    setCopiedId(invitationId);
+    setTimeout(() => setCopiedId((id) => (id === invitationId ? null : id)), 2000);
   }
 
   async function handleInvite() {

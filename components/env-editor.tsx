@@ -1,5 +1,6 @@
 "use client";
 
+import { copyToClipboard } from "@/lib/clipboard";
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, AlertTriangle, ClipboardCheck } from "lucide-react";
@@ -23,8 +24,8 @@ import "./surface-terminal.css";
 
 const clipboardIcon = <ClipboardCheck className="size-4" />;
 
-function copyToast(value: string) {
-  navigator.clipboard.writeText(value);
+async function copyToast(value: string) {
+  if (!(await copyToClipboard(value))) return;
   toast.success("Copied to clipboard", {
     icon: clipboardIcon,
     description: value,

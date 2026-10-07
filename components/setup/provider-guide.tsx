@@ -1,7 +1,7 @@
 "use client";
 
+import { copyToClipboard } from "@/lib/clipboard";
 import { useState } from "react";
-import { toast } from "@/lib/messenger";
 import { ChevronDown, ExternalLink, Copy, Check } from "lucide-react";
 import {
   Collapsible,
@@ -100,13 +100,9 @@ export function CopyableField({
   const [copied, setCopied] = useState(false);
 
   async function handleCopy() {
-    try {
-      await navigator.clipboard.writeText(value);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      toast.error(`Failed to copy ${label} — please select and copy manually`);
-    }
+    if (!(await copyToClipboard(value))) return;
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   }
 
   return (

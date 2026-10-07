@@ -1,5 +1,6 @@
 "use client";
 
+import { copyToClipboard } from "@/lib/clipboard";
 import { useEffect, useLayoutEffect, useRef, useState, useMemo, useCallback } from "react";
 import {
   Loader2, Pause, Play, ArrowDown, ArrowUp, X, Copy, Check, Download,
@@ -244,11 +245,10 @@ export function TerminalOutput({
     return visibleLines.map((l) => (l.service ? `${l.service} | ${l.text}` : l.text)).join("\n");
   }
 
-  function copyToClipboard() {
-    navigator.clipboard.writeText(plainText()).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
+  async function copyLogs() {
+    if (!(await copyToClipboard(plainText()))) return;
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   }
 
   function download() {
@@ -375,7 +375,7 @@ export function TerminalOutput({
                   : lines.length.toLocaleString()} lines
               </span>
               <button
-                onClick={copyToClipboard}
+                onClick={copyLogs}
                 className="text-muted-foreground hover:text-foreground p-0.5 transition-colors"
                 title="Copy to clipboard"
               >

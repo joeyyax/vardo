@@ -1,5 +1,6 @@
 "use client";
 
+import { copyToClipboard } from "@/lib/clipboard";
 import { useState, useEffect } from "react";
 import {
   Loader2,
@@ -62,13 +63,8 @@ type MeshInviteStatus = {
   status: "pending" | "expired";
 };
 
-async function copyToClipboard(text: string, label: string) {
-  try {
-    await navigator.clipboard.writeText(text);
-    toast.success(`${label} copied`);
-  } catch {
-    toast.error("Failed to copy to clipboard");
-  }
+async function copyWithToast(text: string, label: string) {
+  if (await copyToClipboard(text)) toast.success(`${label} copied`);
 }
 
 /** A peer that has never checked in has no timestamp to format. */
@@ -339,7 +335,7 @@ export function InstancesSettings() {
                           size="sm"
                           className="size-8 p-0"
                           aria-label="Copy invite token"
-                          onClick={() => copyToClipboard(invite.token, "Invite token")}
+                          onClick={() => copyWithToast(invite.token, "Invite token")}
                         >
                           <Copy className="size-3.5" />
                         </Button>
@@ -440,7 +436,7 @@ export function InstancesSettings() {
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
                               <DropdownMenuItem
-                                onClick={() => copyToClipboard(peer.publicKey, "Public key")}
+                                onClick={() => copyWithToast(peer.publicKey, "Public key")}
                               >
                                 <Copy className="size-4" />
                                 Copy public key
@@ -563,7 +559,7 @@ export function InstancesSettings() {
                   size="sm"
                   className="shrink-0"
                   aria-label="Copy invite token"
-                  onClick={() => copyToClipboard(inviteToken, "Invite token")}
+                  onClick={() => copyWithToast(inviteToken, "Invite token")}
                 >
                   <Copy className="size-4" />
                 </Button>

@@ -1,5 +1,6 @@
 "use client";
 
+import { copyToClipboard } from "@/lib/clipboard";
 import { useState, useCallback, useEffect, useMemo } from "react";
 import { Copy, Check, RefreshCw, ChevronDown, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -30,9 +31,9 @@ function CodeBlock({
 }) {
   const [copied, setCopied] = useState(false);
 
-  const handleCopy = useCallback(() => {
+  const handleCopy = useCallback(async () => {
     if (!content) return;
-    navigator.clipboard.writeText(content);
+    if (!(await copyToClipboard(content))) return;
     setCopied(true);
     toast.success("Copied");
     setTimeout(() => setCopied(false), 2000);

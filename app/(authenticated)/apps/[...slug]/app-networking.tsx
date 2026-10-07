@@ -1,5 +1,6 @@
 "use client";
 
+import { copyToClipboard } from "@/lib/clipboard";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -646,9 +647,8 @@ export function AppNetworking({
                           <div className="flex items-center gap-2 min-w-0">
                             <span className="truncate text-muted-foreground">{serverIP || "your server IP"}</span>
                             <button
-                              onClick={() => {
-                                navigator.clipboard.writeText(serverIP || "");
-                                toast.success("Copied");
+                              onClick={async () => {
+                                if (await copyToClipboard(serverIP || "")) toast.success("Copied");
                               }}
                               className="shrink-0 p-1 rounded text-muted-foreground hover:text-foreground"
                             >
@@ -664,9 +664,8 @@ export function AppNetworking({
                             <div className="flex items-center gap-2 min-w-0">
                               <span className="truncate">{autoDomain}</span>
                               <button
-                                onClick={() => {
-                                  navigator.clipboard.writeText(autoDomain);
-                                  toast.success("Copied");
+                                onClick={async () => {
+                                  if (await copyToClipboard(autoDomain)) toast.success("Copied");
                                 }}
                                 className="shrink-0 p-1 rounded text-muted-foreground hover:text-foreground"
                               >

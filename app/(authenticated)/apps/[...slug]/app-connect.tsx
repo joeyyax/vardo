@@ -1,5 +1,6 @@
 "use client";
 
+import { copyToClipboard } from "@/lib/clipboard";
 import { useState } from "react";
 import { Copy } from "lucide-react";
 import { toast } from "@/lib/messenger";
@@ -72,9 +73,8 @@ export function AppConnect({
                   </span>
                   <button
                     type="button"
-                    onClick={() => {
-                      navigator.clipboard.writeText(copyValue);
-                      toast.success(`Copied ${copyValue}`);
+                    onClick={async () => {
+                      if (await copyToClipboard(copyValue)) toast.success(`Copied ${copyValue}`);
                     }}
                     className="shrink-0 p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
                     title={`Copy: ${copyValue}`}
@@ -107,9 +107,8 @@ export function AppConnect({
                     </span>
                     <button
                       type="button"
-                      onClick={() => {
-                        navigator.clipboard.writeText(`localhost:${p.external}`);
-                        toast.success("Copied");
+                      onClick={async () => {
+                        if (await copyToClipboard(`localhost:${p.external}`)) toast.success("Copied");
                       }}
                       className="shrink-0 p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
                     >
