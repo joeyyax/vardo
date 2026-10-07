@@ -16,6 +16,7 @@ import {
   markRestartFailed,
   type PendingRecoveryState,
 } from "@/lib/docker/health-monitor";
+import { resolveSelfHeal } from "@/lib/docker/desired-state";
 
 const NOW = 1_000_000_000;
 
@@ -68,6 +69,33 @@ describe("effectiveAutoRestart", () => {
   it("explicit setting overrides the priority default", () => {
     expect(effectiveAutoRestart({ autoRestartUnhealthy: false, priority: "critical" })).toBe(false);
     expect(effectiveAutoRestart({ autoRestartUnhealthy: true, priority: "standard" })).toBe(true);
+  });
+});
+
+describe("effectiveAutoRestart for a compose child", () => {
+  const unset = { autoRestartUnhealthy: null };
+
+  it("restarts a critical child inside a standard stack", () => {
+    const parent = { ...unset, priority: "standard" };
+    const child = { ...unset, priority: "critical" };
+    expect(effectiveAutoRestart(resolveSelfHeal(parent, child))).toBe(true);
+  });
+
+  it("leaves a standard child inside a critical stack alone", () => {
+    const parent = { ...unset, priority: "critical" };
+    const child = { ...unset, priority: "standard" };
+    expect(effectiveAutoRestart(resolveSelfHeal(parent, child))).toBe(false);
+  });
+
+  it("follows the child's own explicit setting over the parent's", () => {
+    const parent = { priority: "critical", autoRestartUnhealthy: true };
+    const child = { priority: null, autoRestartUnhealthy: false };
+    expect(effectiveAutoRestart(resolveSelfHeal(parent, child))).toBe(false);
+  });
+
+  it("inherits the parent's tier when the child sets none", () => {
+    const parent = { ...unset, priority: "critical" };
+    expect(effectiveAutoRestart(resolveSelfHeal(parent, { ...unset, priority: null }))).toBe(true);
   });
 });
 

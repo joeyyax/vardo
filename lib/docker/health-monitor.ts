@@ -9,7 +9,7 @@ import {
   startContainer,
   type ContainerInfo,
 } from "./client";
-import { decideDesiredState, keepsRunning, resolvePriority } from "./desired-state";
+import { decideDesiredState, keepsRunning, resolveSelfHeal } from "./desired-state";
 import { stopIntentFor, type IntentApp } from "./stop-intent";
 import { fetchAllMetrics } from "@/lib/metrics/provider";
 import { emit } from "@/lib/notifications/dispatch";
@@ -287,6 +287,10 @@ export async function tickHealthMonitor(): Promise<void> {
     where: (t, { inArray }) => inArray(t.id, appIds),
   });
   const appsById = new Map(appRows.map((a) => [a.id, a]));
+  const childRows = await db.query.apps.findMany({
+    columns: { parentAppId: true, composeService: true, priority: true, autoRestartUnhealthy: true },
+    where: (t, { inArray }) => inArray(t.parentAppId, appIds),
+  });
 
   // One cAdvisor read for the whole fleet, keyed by the container id the loop
   // below already has.
@@ -342,7 +346,10 @@ export async function tickHealthMonitor(): Promise<void> {
       memory: usageByContainer.get(shortId(c.id)) ?? null,
     });
 
-    if (!effectiveAutoRestart(app)) {
+    const service = c.labels["com.docker.compose.service"];
+    const child =
+      childRows.find((ch) => ch.parentAppId === app.id && ch.composeService === service) ?? null;
+    if (!effectiveAutoRestart(resolveSelfHeal(app, child))) {
       unhealthyStreak.delete(c.id);
       continue;
     }
@@ -633,10 +640,7 @@ async function tickDesiredState(all: ContainerInfo[], running: ContainerInfo[], 
     if (!app) continue;
     const service = c.labels["com.docker.compose.service"];
     const child = children.find((ch) => ch.parentAppId === app.id && ch.composeService === service) ?? null;
-    const critical = keepsRunning({
-      priority: resolvePriority(app, child),
-      autoRestartUnhealthy: child?.autoRestartUnhealthy ?? app.autoRestartUnhealthy,
-    });
+    const critical = keepsRunning(resolveSelfHeal(app, child));
     if (!critical) continue;
 
     let info;

@@ -26,6 +26,17 @@ export function resolvePriority(
   return child?.priority ?? app.priority ?? "standard";
 }
 
+/** A container's self-heal settings, a compose child's own over its parent's. */
+export function resolveSelfHeal(
+  app: { priority: string | null; autoRestartUnhealthy: boolean | null },
+  child?: { priority: string | null; autoRestartUnhealthy: boolean | null } | null,
+): { priority: string; autoRestartUnhealthy: boolean | null } {
+  return {
+    priority: resolvePriority(app, child),
+    autoRestartUnhealthy: child?.autoRestartUnhealthy ?? app.autoRestartUnhealthy,
+  };
+}
+
 /** Whether a stopped container of this app is kept running. Explicitly
  *  disabling auto-restart opts a critical app out. */
 export function keepsRunning(opts: {
