@@ -96,7 +96,7 @@ export function UserManagement() {
       <div className="rounded-lg bg-card p-4 space-y-4 shadow-card dark:border">
         <div className="flex items-center gap-2">
           <UserPlus className="size-4 text-muted-foreground" />
-          <p className="type-h4">Invite User</p>
+          <p className="type-h4">Invite user</p>
         </div>
         <p className="text-xs text-muted-foreground">
           Create an account for a new user. Since public registration is disabled, this

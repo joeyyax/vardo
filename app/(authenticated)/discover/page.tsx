@@ -8,7 +8,7 @@ import { eq } from "drizzle-orm";
 import { PageToolbar } from "@/components/page-toolbar";
 import { DiscoverView } from "./discover-view";
 
-export const metadata: Metadata = { title: "Discover Containers" };
+export const metadata: Metadata = { title: "Discover containers" };
 
 export default async function DiscoverPage({
   searchParams,

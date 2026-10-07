@@ -8,7 +8,7 @@ type SystemBadgeProps = {
 };
 
 /** Marks a project, stack or app that Vardo manages itself. */
-export function SystemBadge({ label = "System Managed", compact = false, className }: SystemBadgeProps) {
+export function SystemBadge({ label = "System managed", compact = false, className }: SystemBadgeProps) {
   return (
     <Badge
       variant="warning"

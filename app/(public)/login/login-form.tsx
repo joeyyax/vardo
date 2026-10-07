@@ -178,7 +178,7 @@ function LoginForm({ methods }: { methods: EnabledMethods }) {
           ) : (
             <KeyRound className="w-4 h-4 mr-2" />
           )}
-          Sign in with Passkey
+          Sign in with passkey
         </Button>
         )}
 

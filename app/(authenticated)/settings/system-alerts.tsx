@@ -42,11 +42,11 @@ type HealthData = {
 
 function alertTypeLabel(type: string): string {
   const labels: Record<string, string> = {
-    "service-degraded": "Service Degraded",
-    "disk-space": "Disk Space",
-    "host-restarted": "Vardo Restarted",
-    "cert-expiring": "Certificate Expiring",
-    "update-available": "Update Available",
+    "service-degraded": "Service degraded",
+    "disk-space": "Disk space",
+    "host-restarted": "Vardo restarted",
+    "cert-expiring": "Certificate expiring",
+    "update-available": "Update available",
   };
   return labels[type] ?? type;
 }
@@ -159,7 +159,7 @@ export function SystemAlertsPanel() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="type-h4">System Health</h3>
+          <h3 className="type-h4">System health</h3>
           <p className="text-xs text-muted-foreground mt-0.5">
             Infrastructure services and active alerts
           </p>
@@ -261,7 +261,7 @@ export function SystemAlertsPanel() {
       {alertsData && (
         <div className="space-y-2">
           <h4 className="type-label text-muted-foreground">
-            Active Alerts
+            Active alerts
             {alertsData.active.length > 0 && (
               <span className="ml-1.5 inline-flex items-center justify-center h-4 w-4 rounded-full bg-destructive text-background text-xs font-semibold">
                 {alertsData.active.length}
@@ -308,7 +308,7 @@ export function SystemAlertsPanel() {
       {alertsData && alertsData.history.length > 0 && (
         <div className="space-y-2">
           <h4 className="type-label text-muted-foreground">
-            Recent Alert History
+            Recent alert history
           </h4>
           <div className="rounded-lg bg-card divide-y shadow-card dark:border">
             {alertsData.history.slice(0, 10).map((alert) => (

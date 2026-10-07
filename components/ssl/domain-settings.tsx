@@ -346,22 +346,22 @@ export function DomainSettings() {
                             </a>
                           </p>
                           <div className="space-y-2">
-                            <Label htmlFor="zerossl-kid">EAB Key ID</Label>
+                            <Label htmlFor="zerossl-kid">EAB key ID</Label>
                             <Input
                               id="zerossl-kid"
                               value={maskDisplay(zerosslKid)}
                               onChange={(e) => setZerosslKid(e.target.value)}
-                              placeholder="EAB Key ID from ZeroSSL dashboard"
+                              placeholder="EAB key ID from ZeroSSL dashboard"
                               className="font-mono text-sm"
                             />
                           </div>
                           <div className="space-y-2">
-                            <Label htmlFor="zerossl-hmac">EAB HMAC Key</Label>
+                            <Label htmlFor="zerossl-hmac">EAB HMAC key</Label>
                             <Input
                               id="zerossl-hmac"
                               value={maskDisplay(zerosslHmac)}
                               onChange={(e) => setZerosslHmac(e.target.value)}
-                              placeholder="EAB HMAC Key from ZeroSSL dashboard"
+                              placeholder="EAB HMAC key from ZeroSSL dashboard"
                               className="font-mono text-sm"
                             />
                           </div>

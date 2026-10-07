@@ -274,7 +274,7 @@ export function CommandPalette({ orgId, teamsEnabled = true, activityEnabled = t
     <>
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogHeader className="sr-only">
-        <DialogTitle>Command Palette</DialogTitle>
+        <DialogTitle>Command palette</DialogTitle>
         <DialogDescription>Search for commands and navigate</DialogDescription>
       </DialogHeader>
       <DialogContent className="overflow-hidden p-0 sm:max-w-[550px]" showCloseButton={false}>
@@ -384,7 +384,7 @@ export function CommandPalette({ orgId, teamsEnabled = true, activityEnabled = t
 
             {/* Org environment variables */}
             {!pendingAction && orgEnvKeys.length > 0 && (
-              <CommandGroup heading="Shared Variables">
+              <CommandGroup heading="Shared variables">
                 {orgEnvKeys.map((key) => (
                   <CommandItem
                     key={key}
@@ -493,7 +493,7 @@ export function CommandPalette({ orgId, teamsEnabled = true, activityEnabled = t
                 className="gap-2"
               >
                 <Server className="size-4" />
-                <span>System Health</span>
+                <span>System health</span>
               </CommandItem>
               <CommandItem
                 value="Admin Maintenance Docker Cleanup"

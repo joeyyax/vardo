@@ -854,14 +854,14 @@ export function VolumesPanel({ appId, orgId }: Props) {
         <div className="space-y-3">
           <div className="flex items-center gap-2">
             <Gauge className="size-4 text-muted-foreground" />
-            <h3 className="type-h4">Storage Limit</h3>
+            <h3 className="type-h4">Storage limit</h3>
           </div>
 
           {limitEditing ? (
             <div className="squircle rounded-lg bg-background-deep p-4 space-y-4">
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="grid gap-2">
-                  <Label htmlFor="limit-size">Max Size</Label>
+                  <Label htmlFor="limit-size">Max size</Label>
                   <div className="flex gap-2">
                     <Input
                       id="limit-size"
@@ -931,7 +931,7 @@ export function VolumesPanel({ appId, orgId }: Props) {
                   {limitSaving ? (
                     <><Loader2 className="mr-2 size-4 animate-spin" />Saving...</>
                   ) : (
-                    "Save Limit"
+                    "Save limit"
                   )}
                 </Button>
                 <Button
@@ -1019,7 +1019,7 @@ export function VolumesPanel({ appId, orgId }: Props) {
           <div className="flex-1 overflow-y-auto px-6 pb-6">
             <div className="grid gap-4 py-4">
               <div className="grid gap-2">
-                <Label htmlFor="vol-name">Volume Name</Label>
+                <Label htmlFor="vol-name">Volume name</Label>
                 <Input
                   id="vol-name"
                   placeholder="data"
@@ -1031,7 +1031,7 @@ export function VolumesPanel({ appId, orgId }: Props) {
                 />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="vol-path">Container Path</Label>
+                <Label htmlFor="vol-path">Container path</Label>
                 <Input
                   id="vol-path"
                   placeholder="/var/lib/data"

@@ -177,13 +177,13 @@ export function AppDebug({
           loading={loading}
         />
         <CodeBlock
-          label="Traefik Config"
+          label="Traefik config"
           content={data?.traefikConfig ?? null}
           loading={loading}
           defaultOpen={false}
         />
         <CodeBlock
-          label="Container Inspect"
+          label="Container inspect"
           content={containerJson}
           loading={loading}
           defaultOpen={false}

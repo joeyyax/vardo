@@ -166,7 +166,7 @@ export function InviteAcceptClient({
                 ) : (
                   <KeyRound className="w-4 h-4 mr-2" />
                 )}
-                Sign in with Passkey
+                Sign in with passkey
               </Button>
 
               <Button

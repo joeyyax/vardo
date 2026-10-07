@@ -530,7 +530,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
           <div className="squircle rounded-lg bg-card shadow-card dark:border overflow-hidden">
             <div className="flex items-center gap-2 px-4 pt-3">
               <HardDrive className="size-4 text-muted-foreground" />
-              <h3 className="type-h4">Disk Usage</h3>
+              <h3 className="type-h4">Disk usage</h3>
             </div>
             <div className="p-4">
               <ResponsiveContainer width="100%" height={180}>

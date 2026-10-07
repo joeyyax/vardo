@@ -303,7 +303,7 @@ export function AppMetrics({ orgId, appId, environmentName, gpuEnabled, cpuLimit
       </div>
 
       {/* CPU Chart */}
-      <ChartCard title="CPU Usage" icon={Cpu} value={headerValue(cpu.compact)}>
+      <ChartCard title="CPU usage" icon={Cpu} value={headerValue(cpu.compact)}>
         {sparse ? <Collecting count={chartData.length} /> : noSamples ? <NoSamples /> : (
         <ResponsiveContainer width="100%" height={CHART_HEIGHT}>
           <AreaChart data={chartData}>
@@ -324,7 +324,7 @@ export function AppMetrics({ orgId, appId, environmentName, gpuEnabled, cpuLimit
       </ChartCard>
 
       {/* Memory Chart */}
-      <ChartCard title="Memory Usage" icon={MemoryStick} value={headerValue(formatBytes(latest.memory))}>
+      <ChartCard title="Memory usage" icon={MemoryStick} value={headerValue(formatBytes(latest.memory))}>
         {latestMemoryLimit > 0 && (
           <p className="text-xs text-muted-foreground mb-1" style={{ color: CHART_COLORS.memoryLimit }}>
             Limit: {formatBytes(latestMemoryLimit, 0)}
@@ -368,7 +368,7 @@ export function AppMetrics({ orgId, appId, environmentName, gpuEnabled, cpuLimit
       {/* GPU charts */}
       {hasGpuData && (
         <>
-          <ChartCard title="GPU Utilization" icon={Microchip} value={headerValue(`${latest.gpuUtilization.toFixed(1)}%`)}>
+          <ChartCard title="GPU utilization" icon={Microchip} value={headerValue(`${latest.gpuUtilization.toFixed(1)}%`)}>
             {sparse ? <Collecting count={chartData.length} /> : noSamples ? <NoSamples /> : (
             <ResponsiveContainer width="100%" height={CHART_HEIGHT}>
               <AreaChart data={chartData}>
@@ -388,7 +388,7 @@ export function AppMetrics({ orgId, appId, environmentName, gpuEnabled, cpuLimit
             )}
           </ChartCard>
 
-          <ChartCard title="GPU Memory" icon={MemoryStick} value={headerValue(formatBytes(latest.gpuMemoryUsed))}>
+          <ChartCard title="GPU memory" icon={MemoryStick} value={headerValue(formatBytes(latest.gpuMemoryUsed))}>
             {latestGpuMemTotal > 0 && (
               <p className="text-xs text-muted-foreground mb-1" style={{ color: CHART_COLORS.memoryLimit }}>
                 Total: {formatBytes(latestGpuMemTotal, 0)}
@@ -419,7 +419,7 @@ export function AppMetrics({ orgId, appId, environmentName, gpuEnabled, cpuLimit
           </ChartCard>
 
           <ChartCard
-            title="GPU Temperature"
+            title="GPU temperature"
             icon={Thermometer}
             value={headerValue(`${Math.round(latest.gpuTemperature)}°C`)}
           >

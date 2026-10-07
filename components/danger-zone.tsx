@@ -8,7 +8,7 @@ export function DangerZone({ children }: { children: ReactNode }) {
       className="surface-danger squircle grid gap-4 rounded-lg border p-4 sm:p-6"
     >
       <h2 id="danger-zone-heading" className="type-h3 text-destructive">
-        Danger Zone
+        Danger zone
       </h2>
       {children}
     </section>

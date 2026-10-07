@@ -134,7 +134,7 @@ export function GitHubConnection() {
             ) : (
               <Github className="mr-1.5 size-4" />
             )}
-            {installations.length > 0 ? "Add Account" : "Connect GitHub"}
+            {installations.length > 0 ? "Add account" : "Connect GitHub"}
           </Button>
         </div>
       </CardHeader>

@@ -98,9 +98,9 @@ type Props = {
 
 const CATEGORY_LABELS: Record<string, string> = {
   database: "Databases",
-  cache: "Cache & Queues",
+  cache: "Cache & queues",
   monitoring: "Monitoring",
-  web: "Web Servers",
+  web: "Web servers",
   tool: "Tools",
   custom: "Custom",
 };
@@ -888,7 +888,7 @@ export function NewAppFlow({ orgId, templates, parentApps = [], baseDomain: base
                   {advancedOpen && (
                     <div className="grid gap-4 sm:grid-cols-3">
                       <div className="grid gap-2">
-                        <Label htmlFor="adv-compose-file-path">Compose File</Label>
+                        <Label htmlFor="adv-compose-file-path">Compose file</Label>
                         <Input
                           id="adv-compose-file-path"
                           placeholder="docker-compose.yml"
@@ -908,7 +908,7 @@ export function NewAppFlow({ orgId, templates, parentApps = [], baseDomain: base
                         />
                       </div>
                       <div className="grid gap-2">
-                        <Label htmlFor="adv-root-dir">Root Directory</Label>
+                        <Label htmlFor="adv-root-dir">Root directory</Label>
                         <Input
                           id="adv-root-dir"
                           placeholder="./ (default)"
@@ -926,7 +926,7 @@ export function NewAppFlow({ orgId, templates, parentApps = [], baseDomain: base
             {selectedSource === "compose" && (
               <div className="grid gap-3">
                 <div className="flex items-center gap-2">
-                  <Label>Compose File</Label>
+                  <Label>Compose file</Label>
                   <div className="flex gap-1 rounded-lg border p-0.5 ml-auto">
                     <button
                       type="button"
@@ -975,7 +975,7 @@ export function NewAppFlow({ orgId, templates, parentApps = [], baseDomain: base
             {(selectedSource === "github" || selectedSource === "compose") && (
               <div className="grid gap-4">
                 <div className="grid gap-2 sm:w-1/2">
-                  <Label>Deploy Type</Label>
+                  <Label>Deploy type</Label>
                   <Select value={deployType} onValueChange={(v) => setDeployType(v as DeployType)}>
                     <SelectTrigger>
                       <SelectValue />
@@ -1002,7 +1002,7 @@ export function NewAppFlow({ orgId, templates, parentApps = [], baseDomain: base
                 </div>
                 {deployType === "compose" && selectedSource !== "compose" && (
                   <div className="grid gap-2 sm:w-1/2">
-                    <Label htmlFor="compose-file-path">Compose File</Label>
+                    <Label htmlFor="compose-file-path">Compose file</Label>
                     <Input
                       id="compose-file-path"
                       placeholder="docker-compose.yml"
@@ -1029,7 +1029,7 @@ export function NewAppFlow({ orgId, templates, parentApps = [], baseDomain: base
 
             {/* Environment Variables */}
             <div className="grid gap-2">
-              <Label>Environment Variables</Label>
+              <Label>Environment variables</Label>
               <EnvEditor
                 standalone
                 initialContent={envContent}
@@ -1054,15 +1054,15 @@ export function NewAppFlow({ orgId, templates, parentApps = [], baseDomain: base
             {/* Resource Limits */}
             <div className="grid gap-4 sm:grid-cols-3">
               <div className="grid gap-2">
-                <Label htmlFor="cpu-limit">CPU Limit (cores)</Label>
+                <Label htmlFor="cpu-limit">CPU limit (cores)</Label>
                 <Input id="cpu-limit" type="number" step="0.1" min="0.1" placeholder="No limit" value={cpuLimit} onChange={(e) => setCpuLimit(e.target.value)} />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="memory-limit">Memory Limit (MB)</Label>
+                <Label htmlFor="memory-limit">Memory limit (MB)</Label>
                 <Input id="memory-limit" type="number" step="64" min="64" placeholder="No limit" value={memoryLimit} onChange={(e) => setMemoryLimit(e.target.value)} />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="disk-write-threshold">Disk Write Alert (GB/hr)</Label>
+                <Label htmlFor="disk-write-threshold">Disk write alert (GB/hr)</Label>
                 <Input id="disk-write-threshold" type="number" step="0.5" min="0.1" placeholder="Default: 1 GB" value={diskWriteAlertThreshold} onChange={(e) => setDiskWriteAlertThreshold(e.target.value)} />
                 <p className="text-xs text-muted-foreground">{diskWriteAlertThreshold ? diskWriteAlertThreshold + " GB/hr" : "Default: 1 GB/hr"}</p>
               </div>
@@ -1071,7 +1071,7 @@ export function NewAppFlow({ orgId, templates, parentApps = [], baseDomain: base
             {/* Root directory */}
             {(selectedSource === "github" || (selectedSource === "compose" && contentMode === "url")) && (
               <div className="grid gap-2 sm:w-2/3">
-                <Label htmlFor="root-dir">Root Directory</Label>
+                <Label htmlFor="root-dir">Root directory</Label>
                 <Input id="root-dir" placeholder="./ (default)" value={rootDirectory} onChange={(e) => setRootDirectory(e.target.value)} />
               </div>
             )}
@@ -1087,7 +1087,7 @@ export function NewAppFlow({ orgId, templates, parentApps = [], baseDomain: base
               <div className="flex items-center gap-3">
                 <Switch id="persist-data" checked={persistData} onCheckedChange={setPersistData} />
                 <div>
-                  <Label htmlFor="persist-data">Persistent Storage</Label>
+                  <Label htmlFor="persist-data">Persistent storage</Label>
                   {templateVolumes.length > 0 && persistData && (
                     <p className="text-xs text-muted-foreground mt-0.5">
                       {templateVolumes.map((v) => v.mountPath).join(", ")}
@@ -1098,7 +1098,7 @@ export function NewAppFlow({ orgId, templates, parentApps = [], baseDomain: base
               <div className="flex items-center gap-3">
                 <Switch id="expose-port" checked={exposePort} onCheckedChange={setExposePort} />
                 <div>
-                  <Label htmlFor="expose-port">Expose Port</Label>
+                  <Label htmlFor="expose-port">Expose port</Label>
                   <p className="text-xs text-muted-foreground mt-0.5">
                     Map to a public host port for external access (e.g. database tools)
                   </p>
@@ -1106,7 +1106,7 @@ export function NewAppFlow({ orgId, templates, parentApps = [], baseDomain: base
               </div>
               <div className="flex items-center gap-3">
                 <Switch id="auto-deploy" checked={autoDeploy} onCheckedChange={setAutoDeploy} />
-                <Label htmlFor="auto-deploy">Auto Deploy</Label>
+                <Label htmlFor="auto-deploy">Auto deploy</Label>
               </div>
 
               {/* Create GitHub repo */}
@@ -1127,7 +1127,7 @@ export function NewAppFlow({ orgId, templates, parentApps = [], baseDomain: base
                   </div>
                   {createRepo && installations.length > 1 && (
                     <div className="grid gap-2 ml-10">
-                      <Label>GitHub Account</Label>
+                      <Label>GitHub account</Label>
                       <Select
                         value={selectedInstallation || installations[0]?.id}
                         onValueChange={setSelectedInstallation}

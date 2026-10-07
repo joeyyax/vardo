@@ -74,7 +74,7 @@ export function PortsManager({
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="type-h4">Exposed Ports</h3>
+          <h3 className="type-h4">Exposed ports</h3>
           <p className="text-xs text-muted-foreground mt-0.5">Map container ports to host ports for external access.</p>
         </div>
         <Button size="sm" onClick={() => setAdding(!adding)} disabled={saving}>
@@ -86,7 +86,7 @@ export function PortsManager({
       {adding && (
         <div className="flex items-end gap-3 rounded-lg bg-background-deep p-4">
           <div className="grid gap-1.5">
-            <label htmlFor="port-container" className="text-xs text-muted-foreground">Container Port</label>
+            <label htmlFor="port-container" className="text-xs text-muted-foreground">Container port</label>
             <input
               id="port-container"
               type="number"
@@ -97,7 +97,7 @@ export function PortsManager({
             />
           </div>
           <div className="grid gap-1.5">
-            <label htmlFor="port-host" className="text-xs text-muted-foreground">Host Port</label>
+            <label htmlFor="port-host" className="text-xs text-muted-foreground">Host port</label>
             <input
               id="port-host"
               type="number"

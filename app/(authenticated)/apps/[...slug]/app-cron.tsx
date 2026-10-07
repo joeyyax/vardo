@@ -268,7 +268,7 @@ export function CronManager({ appId, orgId, userRole }: Props) {
           {canManage && (
             <Button size="sm" onClick={openCreate}>
               <Plus className="mr-1.5 size-4" />
-              Add Job
+              Add job
             </Button>
           )}
         </div>

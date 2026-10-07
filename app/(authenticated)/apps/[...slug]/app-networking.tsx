@@ -584,7 +584,7 @@ export function AppNetworking({
           }}>
             <BottomSheetContent>
               <BottomSheetHeader>
-                <BottomSheetTitle>{isLocal ? "Domain Status" : "DNS Configuration"}</BottomSheetTitle>
+                <BottomSheetTitle>{isLocal ? "Domain status" : "DNS configuration"}</BottomSheetTitle>
                 <BottomSheetDescription>
                   <span className="font-mono">{dnsDomain.domain}</span>
                 </BottomSheetDescription>
@@ -632,7 +632,7 @@ export function AppNetworking({
                   /* External domain DNS config */
                   <>
                     <div className="space-y-3">
-                      <h3 className="type-h4">Required DNS Record</h3>
+                      <h3 className="type-h4">Required DNS record</h3>
                       <p className="text-xs text-muted-foreground">Use one of the following options:</p>
                       <div className="rounded-lg bg-background-deep divide-y">
                         <div className="grid grid-cols-3 gap-4 px-4 py-2 text-xs text-muted-foreground">
@@ -678,7 +678,7 @@ export function AppNetworking({
                     </div>
 
                     <div className="space-y-2">
-                      <h3 className="type-h4">Setup Instructions</h3>
+                      <h3 className="type-h4">Setup instructions</h3>
                       <ol className="text-sm text-muted-foreground space-y-1.5 list-decimal list-inside">
                         <li>Go to your domain registrar or DNS provider</li>
                         <li>Add an <span className="font-mono text-foreground">A</span> record pointing to {serverIP || "your server IP"}{autoDomain && !autoDomain.endsWith(".localhost") && <>, or a <span className="font-mono text-foreground">CNAME</span> pointing to <span className="font-mono text-foreground">{autoDomain}</span></>}</li>

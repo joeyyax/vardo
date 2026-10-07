@@ -140,7 +140,7 @@ export function ComposeReview({
     <Dialog open={open} onOpenChange={(v) => { if (v) fetchAnalysis(); onOpenChange(v); }}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Compose Review</DialogTitle>
+          <DialogTitle>Compose review</DialogTitle>
           <DialogDescription>
             {loading
               ? "Analyzing your compose file..."

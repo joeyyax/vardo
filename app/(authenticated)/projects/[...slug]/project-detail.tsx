@@ -1177,7 +1177,7 @@ export function ProjectDetail({
             )}
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="grid gap-2">
-                <Label htmlFor="edit-name">Display Name</Label>
+                <Label htmlFor="edit-name">Display name</Label>
                 <Input
                   id="edit-name"
                   value={editDisplayName}
@@ -1289,7 +1289,7 @@ export function ProjectDetail({
               Cancel
             </Button>
             <Button onClick={handleCreateEnv} disabled={newEnvSaving || !newEnvName.trim()}>
-              {newEnvSaving ? "Creating..." : "Create Environment"}
+              {newEnvSaving ? "Creating..." : "Create environment"}
             </Button>
           </BottomSheetFooter>
         </BottomSheetContent>

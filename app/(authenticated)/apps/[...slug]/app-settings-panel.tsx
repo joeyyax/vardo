@@ -221,7 +221,7 @@ export function AppSettingsPanel({
       {fields.identity && (
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="grid gap-2">
-            <Label htmlFor="edit-display-name">Display Name</Label>
+            <Label htmlFor="edit-display-name">Display name</Label>
             <Input
               id="edit-display-name"
               value={displayName}
@@ -272,7 +272,7 @@ export function AppSettingsPanel({
             <p className="text-xs text-muted-foreground">{REDEPLOY_NOTE}</p>
           </div>
           <div className="grid gap-2">
-            <Label htmlFor="edit-root-directory">Root Directory</Label>
+            <Label htmlFor="edit-root-directory">Root directory</Label>
             <Input
               id="edit-root-directory"
               placeholder="./"
@@ -289,7 +289,7 @@ export function AppSettingsPanel({
         <div className="grid gap-4">
           {fields.deployType && (
             <div className="grid gap-2 sm:w-1/2">
-              <Label>Deploy Type</Label>
+              <Label>Deploy type</Label>
               <Select value={editDeployType} onValueChange={(v) => setEditDeployType(v as typeof editDeployType)}>
                 <SelectTrigger>
                   <SelectValue />
@@ -308,7 +308,7 @@ export function AppSettingsPanel({
           )}
           {fields.composeFilePath && (
             <div className="grid gap-2 sm:w-1/2">
-              <Label htmlFor="edit-compose-file-path">Compose File</Label>
+              <Label htmlFor="edit-compose-file-path">Compose file</Label>
               <Input
                 id="edit-compose-file-path"
                 placeholder="docker-compose.yml"
@@ -341,7 +341,7 @@ export function AppSettingsPanel({
       {/* Port */}
       {fields.containerPort && (
         <div className="grid gap-2 sm:w-1/2">
-          <Label>Container Port</Label>
+          <Label>Container port</Label>
           <div className="flex items-center gap-3">
             <Switch
               id="edit-auto-port"
@@ -377,7 +377,7 @@ export function AppSettingsPanel({
       {/* Backend Protocol */}
       {fields.backendProtocol && (
         <div className="grid gap-2 sm:w-1/2">
-          <Label>Backend Protocol</Label>
+          <Label>Backend protocol</Label>
           <Select value={backendProtocol} onValueChange={(v) => setBackendProtocol(v as "auto" | "http" | "https")}>
             <SelectTrigger>
               <SelectValue placeholder="Auto-detect" />
@@ -398,15 +398,15 @@ export function AppSettingsPanel({
       {/* Restart policy */}
       {fields.restartPolicy && (
         <div className="grid gap-2 sm:w-1/2">
-          <Label>Restart Policy</Label>
+          <Label>Restart policy</Label>
           <Select value={restartPolicy} onValueChange={setRestartPolicy}>
             <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="unless-stopped">Unless Stopped</SelectItem>
+              <SelectItem value="unless-stopped">Unless stopped</SelectItem>
               <SelectItem value="always">Always</SelectItem>
-              <SelectItem value="on-failure">On Failure</SelectItem>
+              <SelectItem value="on-failure">On failure</SelectItem>
               <SelectItem value="no">Never</SelectItem>
             </SelectContent>
           </Select>
@@ -418,18 +418,18 @@ export function AppSettingsPanel({
         <div className="grid gap-2">
           <div className={fields.diskWriteAlert ? "grid gap-4 sm:grid-cols-3" : "grid gap-4 sm:grid-cols-2"}>
             <div className="grid gap-2">
-              <Label htmlFor="edit-cpu-limit">CPU Limit (cores)</Label>
+              <Label htmlFor="edit-cpu-limit">CPU limit (cores)</Label>
               <Input id="edit-cpu-limit" type="number" step="0.1" min="0.1" placeholder="No limit" value={cpuLimit} onChange={(e) => setCpuLimit(e.target.value)} />
               <p className="text-xs text-muted-foreground">{cpuLimit ? cpuLimit + " CPU core(s)" : "No limit"}</p>
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="edit-memory-limit">Memory Limit (MB)</Label>
+              <Label htmlFor="edit-memory-limit">Memory limit (MB)</Label>
               <Input id="edit-memory-limit" type="number" step="64" min="64" placeholder="No limit" value={memoryLimit} onChange={(e) => setMemoryLimit(e.target.value)} />
               <p className="text-xs text-muted-foreground">{memoryLimit ? memoryLimit + " MB" : "No limit"}</p>
             </div>
             {fields.diskWriteAlert && (
               <div className="grid gap-2">
-                <Label htmlFor="edit-disk-write-threshold">Disk Write Alert (GB/hr)</Label>
+                <Label htmlFor="edit-disk-write-threshold">Disk write alert (GB/hr)</Label>
                 <Input id="edit-disk-write-threshold" type="number" step="0.5" min="0.1" placeholder="Default: 1 GB" value={diskWriteAlertThreshold} onChange={(e) => setDiskWriteAlertThreshold(e.target.value)} />
                 <p className="text-xs text-muted-foreground">{diskWriteAlertThreshold ? diskWriteAlertThreshold + " GB/hr" : "Default: 1 GB/hr"}</p>
               </div>
@@ -478,7 +478,7 @@ export function AppSettingsPanel({
       {/* Health Check Timeout */}
       {fields.healthCheckTimeout && (
         <div className="grid gap-2 sm:w-1/2">
-          <Label htmlFor="edit-health-timeout">Health Check Timeout (seconds)</Label>
+          <Label htmlFor="edit-health-timeout">Health check timeout (seconds)</Label>
           <Input
             id="edit-health-timeout"
             type="number"
@@ -505,7 +505,7 @@ export function AppSettingsPanel({
                 checked={autoDeploy}
                 onCheckedChange={setAutoDeploy}
               />
-              <Label htmlFor="edit-auto-deploy">Auto Deploy</Label>
+              <Label htmlFor="edit-auto-deploy">Auto deploy</Label>
             </div>
           )}
           {fields.autoRollback && (
@@ -515,7 +515,7 @@ export function AppSettingsPanel({
                 checked={autoRollback}
                 onCheckedChange={setAutoRollback}
               />
-              <Label htmlFor="edit-auto-rollback">Auto Rollback</Label>
+              <Label htmlFor="edit-auto-rollback">Auto rollback</Label>
             </div>
           )}
           {fields.gpu && (
@@ -527,7 +527,7 @@ export function AppSettingsPanel({
                 disabled={!canUseGpu}
               />
               <div className="grid gap-0.5">
-                <Label htmlFor="edit-gpu-enabled">GPU Access</Label>
+                <Label htmlFor="edit-gpu-enabled">GPU access</Label>
                 <p className="text-xs text-muted-foreground">
                   {canUseGpu
                     ? <>Pass all NVIDIA GPUs through to {isComposeParent ? "every service that has no named volume" : "the container"} via <span className="font-mono">deploy.resources.reservations.devices</span>. Requires the NVIDIA Container Toolkit on the host.</>
@@ -538,7 +538,7 @@ export function AppSettingsPanel({
           )}
           {fields.autoRollback && autoRollback && (
             <div className="grid gap-2 pl-10">
-              <Label htmlFor="edit-rollback-grace">Grace Period (seconds)</Label>
+              <Label htmlFor="edit-rollback-grace">Grace period (seconds)</Label>
               <Input
                 id="edit-rollback-grace"
                 type="number"

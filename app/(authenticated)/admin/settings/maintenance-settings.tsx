@@ -618,7 +618,7 @@ export function MaintenanceSettings() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Trash2 className="size-4" aria-hidden="true" />
-            Build Cache
+            Build cache
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -689,7 +689,7 @@ export function MaintenanceSettings() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <PackageX className="size-4" aria-hidden="true" />
-            Idle App Images
+            Idle app images
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -923,7 +923,7 @@ export function MaintenanceSettings() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <FileCheck className="size-4" aria-hidden="true" />
-            App Directory Ownership
+            App directory ownership
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -1010,7 +1010,7 @@ export function MaintenanceSettings() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <HardDrive className="size-4" aria-hidden="true" />
-            Host Mounts
+            Host mounts
           </CardTitle>
         </CardHeader>
         <CardContent>

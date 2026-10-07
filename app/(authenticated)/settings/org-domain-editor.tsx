@@ -340,7 +340,7 @@ export function OrgDomainEditor({
       <BottomSheet open={addOpen} onOpenChange={setAddOpen}>
         <BottomSheetContent>
           <BottomSheetHeader>
-            <BottomSheetTitle>Add Custom Domain</BottomSheetTitle>
+            <BottomSheetTitle>Add custom domain</BottomSheetTitle>
             <BottomSheetDescription>
               Add a custom domain for project URLs. You will need to configure
               wildcard DNS for the domain.
@@ -369,7 +369,7 @@ export function OrgDomainEditor({
             </div>
 
             <div className="squircle rounded-lg bg-background-deep px-4 py-3 space-y-3">
-              <p className="type-h4">DNS Setup Instructions</p>
+              <p className="type-h4">DNS setup instructions</p>
               <div className="space-y-2">
                 <p className="text-xs text-muted-foreground">
                   Add a wildcard DNS record pointing to this server. Choose one

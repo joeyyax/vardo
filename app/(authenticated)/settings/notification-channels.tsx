@@ -221,7 +221,7 @@ export function NotificationChannelsEditor({ orgId }: { orgId: string }) {
           </div>
           {type === "email" && <div className="space-y-2"><Label>Recipients (comma-separated)</Label><Input value={recipients} onChange={e => setRecipients(e.target.value)} placeholder="alice@example.com, bob@example.com" /></div>}
           {type === "webhook" && <div className="space-y-4"><div className="space-y-2"><Label>URL</Label><Input value={webhookUrl} onChange={e => setWebhookUrl(e.target.value)} placeholder="https://example.com/webhook" /></div><div className="space-y-2"><Label>Secret <span className="text-muted-foreground">(optional)</span></Label><Input value={webhookSecret} onChange={e => setWebhookSecret(e.target.value)} placeholder="HMAC signing secret" type="password" /></div></div>}
-          {type === "slack" && <div className="space-y-2"><Label>Slack Webhook URL</Label><Input value={slackUrl} onChange={e => setSlackUrl(e.target.value)} placeholder="https://hooks.slack.com/services/..." /></div>}
+          {type === "slack" && <div className="space-y-2"><Label>Slack webhook URL</Label><Input value={slackUrl} onChange={e => setSlackUrl(e.target.value)} placeholder="https://hooks.slack.com/services/..." /></div>}
           <div className="flex gap-2"><Button size="sm" onClick={handleCreate} disabled={saving || !name}>{saving && <Loader2 className="h-4 w-4 animate-spin mr-1" />}Create</Button><Button size="sm" variant="ghost" onClick={reset}>Cancel</Button></div>
         </div>
       )}
