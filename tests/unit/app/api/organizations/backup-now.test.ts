@@ -106,4 +106,15 @@ describe("POST /apps/[appId]/backup-now — job reuse", () => {
     await expect(res.json()).resolves.toMatchObject({ code: "BIND_MOUNTS_ONLY" });
     expect(mockRunBackup).not.toHaveBeenCalled();
   });
+
+  it("runs an app whose bind mounts were opted in (#874)", async () => {
+    volumesFindMany.mockResolvedValue([
+      { type: "bind", persistent: false, backupStrategy: "tar", backupSelection: "include" },
+    ]);
+
+    const res = await POST(request(), params);
+
+    expect(res.status).toBe(202);
+    expect(mockRunBackup).toHaveBeenCalledWith("job-1", { appIds: [APP_ID] });
+  });
 });

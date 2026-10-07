@@ -10,6 +10,8 @@ import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { runBackup, STALE_RUN_MS } from "@/lib/backups/engine";
 import { ensureAutoBackupJob, resolveBackupTarget } from "@/lib/backups/auto-backup";
 import { assessPreMigrationBackup } from "@/lib/backups/pre-migration";
+import { isBackupSelected } from "@/lib/backups/durability";
+import { isUncapturedSource } from "@/lib/backups/coverage";
 import { logger } from "@/lib/logger";
 
 const log = logger.child("backup-now");
@@ -61,7 +63,13 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
 
     const appVolumes = await db.query.volumes.findMany({
       where: eq(volumes.appId, appId),
-      columns: { type: true, persistent: true },
+      columns: {
+        type: true,
+        persistent: true,
+        durability: true,
+        backupStrategy: true,
+        backupSelection: true,
+      },
     });
 
     const assessment = assessPreMigrationBackup({
@@ -69,7 +77,10 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       volumes: appVolumes.map((v) => ({ type: v.type, persistent: v.persistent })),
     });
 
-    if (!assessment.worthBackingUp) {
+    // What a run would actually capture, opted-in bind mounts included.
+    const captured = appVolumes.filter((v) => isBackupSelected(v) && !isUncapturedSource(v));
+
+    if (!assessment.worthBackingUp && captured.length === 0) {
       return fail(
         "NO_VOLUMES",
         "This app has no persistent volumes to back up",
@@ -80,7 +91,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
 
     // The engine tars named Docker volumes; a bind-mount-only app would produce
     // nothing but failed backup rows.
-    if (assessment.namedVolumes === 0) {
+    if (captured.length === 0) {
       return fail(
         "BIND_MOUNTS_ONLY",
         "This app's only persistent data is on bind mounts, which must be copied from the host",
