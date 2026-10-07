@@ -2,7 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { APP_NAME_TAKEN_ERROR, isTopLevelAppNameTaken } from "@/lib/db/app-name";
-import { apps, domains, environments, projects } from "@/lib/db/schema";
+import { apps, domains, environments, projects, user } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import {
@@ -24,6 +24,17 @@ import type { McpAuthContext } from "../auth";
 import { resolveProjectOrg, resolveTargetOrg } from "../scope";
 import { isFeatureEnabled } from "@/lib/config/features";
 import { adoptAllowsBindMounts } from "@/lib/docker/adopt-policy";
+import { credentialMayAdmin } from "@/lib/auth/admin";
+
+/** Reading a caller-chosen host path is instance-admin power, and MCP callers hold a token. */
+async function mayReadHostPath(userId: string): Promise<boolean> {
+  if (!credentialMayAdmin({ authMethod: "token" })) return false;
+  const row = await db.query.user.findFirst({
+    where: eq(user.id, userId),
+    columns: { isAppAdmin: true },
+  });
+  return Boolean(row?.isAppAdmin);
+}
 
 export function registerAdoptApp(
   server: McpServer,
@@ -89,6 +100,21 @@ export function registerAdoptApp(
       domain,
       containerPort,
     }) => {
+      if (!(await mayReadHostPath(context.userId))) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                error:
+                  "Adopting a host path takes an instance admin, and API tokens never carry that. Send the compose file to POST /api/v1/organizations/{orgId}/adopt instead.",
+              }),
+            },
+          ],
+          isError: true,
+        };
+      }
+
       // Require a project
       if (!projectId && !newProjectName) {
         return {
