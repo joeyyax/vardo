@@ -9,7 +9,7 @@
 // ---------------------------------------------------------------------------
 
 import { db } from "@/lib/db";
-import { apps, backupTargets, meshPeers, notificationChannels, systemSettings } from "@/lib/db/schema";
+import { apps, backupTargets, meshPeers, notificationChannels, orgEnvVars, systemSettings } from "@/lib/db/schema";
 import { probeTargetSecrets } from "@/lib/backups/target-config";
 import { probeChannelSecrets } from "@/lib/notifications/channel-config";
 import { invalidateSettingsCache } from "@/lib/system-settings";
@@ -123,6 +123,19 @@ export async function probeDecryptability(): Promise<DecryptProbe> {
     if (result.undecryptable > 0) {
       probe.undecryptable += result.undecryptable;
       if (probe.samples.length < MAX_SAMPLES) probe.samples.push(`channel:${row.name}`);
+    }
+  }
+
+  const envVars = await db
+    .select({ key: orgEnvVars.key, organizationId: orgEnvVars.organizationId, value: orgEnvVars.value })
+    .from(orgEnvVars);
+  for (const row of envVars) {
+    const result = decryptOrFallback(row.value, row.organizationId);
+    if (!result.wasEncrypted) continue;
+    probe.encrypted++;
+    if (result.decryptFailed) {
+      probe.undecryptable++;
+      if (probe.samples.length < MAX_SAMPLES) probe.samples.push(`org-env:${row.key}`);
     }
   }
 

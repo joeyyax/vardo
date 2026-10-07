@@ -5,6 +5,7 @@ import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "@/lib/messenger";
+import { SECRET_MASK, orgEnvToContent } from "@/lib/env/org-env-content";
 import "@/components/surface-terminal.css";
 
 type Props = {
@@ -28,28 +29,23 @@ export function OrgEnvVarsEditor({ orgId }: Props) {
   const [cursorPosition, setCursorPosition] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  useEffect(() => {
-    async function load() {
-      try {
-        const res = await fetch(`/api/v1/organizations/${orgId}/env-vars`);
-        if (res.ok) {
-          const data = await res.json();
-          const vars = data.envVars || [];
-          if (vars.length > 0) {
-            setContent(
-              vars
-                .map((v: { key: string; value: string; isSecret: boolean | null }) =>
-                  v.isSecret ? `${v.key}=` : `${v.key}=${v.value}`
-                )
-                .join("\n")
-            );
-          }
-        }
-      } catch { /* start empty */ }
-      setLoaded(true);
-    }
-    load();
+  const fetchContent = useCallback(async (): Promise<string | null> => {
+    try {
+      const res = await fetch(`/api/v1/organizations/${orgId}/env-vars`);
+      if (res.ok) return orgEnvToContent((await res.json()).envVars || []);
+    } catch { /* start empty */ }
+    return null;
   }, [orgId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchContent().then((next) => {
+      if (cancelled) return;
+      if (next !== null) setContent(next);
+      setLoaded(true);
+    });
+    return () => { cancelled = true; };
+  }, [fetchContent]);
 
   const buildSuggestions = useCallback((text: string, cursor: number) => {
     const beforeCursor = text.slice(0, cursor);
@@ -139,6 +135,9 @@ export function OrgEnvVarsEditor({ orgId }: Props) {
       const data = await res.json();
       toast.success(`${data.created} added, ${data.updated} updated`);
       setModified(false);
+      // Re-mask any secret typed in.
+      const next = await fetchContent();
+      if (next !== null) setContent(next);
     } catch {
       toast.error("Failed to save");
     } finally {
@@ -175,7 +174,7 @@ export function OrgEnvVarsEditor({ orgId }: Props) {
       <div className="flex items-center justify-between">
         <p className="text-xs text-muted-foreground">
           Shared across all projects. Reference with{" "}
-          <code className="bg-muted px-1 py-0.5 rounded">{"${org.KEY}"}</code>. Press Tab for autocomplete.
+          <code className="bg-muted px-1 py-0.5 rounded">{"${org.KEY}"}</code>. Secrets show as {SECRET_MASK}; leave them to keep the value. Press Tab for autocomplete.
         </p>
         <Button size="sm" onClick={handleSave} disabled={saving || !modified}>
           {saving ? (

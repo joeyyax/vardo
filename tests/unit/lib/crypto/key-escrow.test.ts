@@ -31,15 +31,16 @@ const { describeKeyEscrow, probeDecryptability, readRecordedFingerprint, reconci
 const RUNNING = fingerprintMasterKey(process.env.ENCRYPTION_MASTER_KEY!);
 const FOREIGN = "k1:fedcba9876543210";
 
-/** db.select(...).from(table) returns whichever rows the table was seeded with: apps, settings, targets, peers, channels. */
+/** db.select(...).from(table) returns whichever rows the table was seeded with: apps, settings, targets, peers, channels, org env vars. */
 function seed(
   appRows: unknown[],
   settingRows: unknown[],
   targetRows: unknown[] = [],
   peerRows: unknown[] = [],
   channelRows: unknown[] = [],
+  envRows: unknown[] = [],
 ) {
-  const tables = [appRows, settingRows, targetRows, peerRows, channelRows];
+  const tables = [appRows, settingRows, targetRows, peerRows, channelRows, envRows];
   let call = 0;
   selectMock.mockImplementation(() => ({
     from: () => tables[call++] ?? [],
@@ -95,6 +96,17 @@ describe("probeDecryptability", () => {
     );
     const probe = await probeDecryptability();
     expect(probe).toMatchObject({ encrypted: 3, undecryptable: 1, samples: ["blog"] });
+  });
+});
+
+describe("probeDecryptability — org env vars", () => {
+  it("counts encrypted values and names the var that won't open", async () => {
+    seed([], [], [], [], [], [
+      { key: "API_TOKEN", organizationId: "org-1", value: encrypt("t", "another-org") },
+      { key: "LOG_LEVEL", organizationId: "org-1", value: encrypt("info", "org-1") },
+      { key: "LEGACY", organizationId: "org-1", value: "plain" },
+    ]);
+    expect(await probeDecryptability()).toEqual({ encrypted: 2, undecryptable: 1, samples: ["org-env:API_TOKEN"] });
   });
 });
 

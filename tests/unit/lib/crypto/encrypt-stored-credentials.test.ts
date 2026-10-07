@@ -7,7 +7,7 @@ process.env.ENCRYPTION_MASTER_KEY ??= "d".repeat(64);
 type Row = Record<string, unknown> & { id: string };
 
 const { db, rows, settingRows } = vi.hoisted(() => {
-  const rows: Record<string, Row[]> = { backup_target: [], mesh_peer: [], notification_channel: [] };
+  const rows: Record<string, Row[]> = { backup_target: [], mesh_peer: [], notification_channel: [], org_env_var: [] };
   const settingRows: { key: string; value: string }[] = [];
   const nameOf = (table: object) => (table as Record<symbol, string>)[Symbol.for("drizzle:Name")];
   // eq() and and() are mocked to plain data, so the row id is read off the where clause.
@@ -65,6 +65,7 @@ const REGISTRY = JSON.stringify({ "ghcr.io": { username: "u", password: "ghp_tok
 const targetRows = rows.backup_target as unknown as { id: string; organizationId: string | null; config: Record<string, unknown> }[];
 const peerRows = rows.mesh_peer as unknown as { id: string; outboundToken: string | null }[];
 const channelRows = rows.notification_channel as unknown as { id: string; organizationId: string; config: Record<string, unknown> }[];
+const envRows = rows.org_env_var as unknown as { id: string; organizationId: string; value: string }[];
 
 function seed() {
   for (const list of Object.values(rows)) list.length = 0;
@@ -81,6 +82,10 @@ function seed() {
     { id: "local", organizationId: "org-1", config: { path: "/backups" } },
   );
   settingRows.push({ key: "registry_credentials", value: REGISTRY });
+  envRows.push(
+    { id: "plain-env", organizationId: "org-1", value: "info" },
+    { id: "sealed-env", organizationId: "org-2", value: encrypt("hunter2", "org-2") },
+  );
 }
 
 beforeEach(() => {
@@ -116,7 +121,7 @@ describe("encryptStoredCredentials", () => {
 
     const rerun = await encryptStoredCredentials();
 
-    expect(rerun).toEqual({ targets: 0, settings: 0, peers: 0, channels: 0 });
+    expect(rerun).toEqual({ targets: 0, settings: 0, peers: 0, channels: 0, orgEnvVars: 0 });
     expect(db.update).not.toHaveBeenCalled();
     expect(JSON.stringify({ rows, settingRows })).toBe(after);
   });
@@ -161,6 +166,18 @@ describe("encryptStoredCredentials — mesh peers and notification channels", ()
     expect(decrypt(hook.config.secret as string, "org-1")).toBe("whsec");
     expect(decrypt(slack.config.webhookUrl as string, "org-2")).toBe("https://hooks.slack.com/T/B/x");
     expect(mail.config).toEqual({ recipients: ["a@example.com"] });
+  });
+});
+
+describe("encryptStoredCredentials — org env vars", () => {
+  it("encrypts plaintext values under the owning org's key", async () => {
+    const sealed = envRows[1].value;
+
+    const result = await encryptStoredCredentials();
+
+    expect(result.orgEnvVars).toBe(1);
+    expect(decrypt(envRows[0].value, "org-1")).toBe("info");
+    expect(envRows[1].value).toBe(sealed);
   });
 });
 

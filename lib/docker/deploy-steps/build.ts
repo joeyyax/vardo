@@ -294,18 +294,15 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
       where: eq(orgEnvVars.organizationId, ctx.organizationId),
     });
     const orgEnvVarMap: Record<string, string> = {};
+    // Legacy rows may still be plaintext.
     for (const v of orgVarRows) {
-      if (v.isSecret) {
-        const { content, decryptFailed } = decryptOrFallback(v.value, ctx.organizationId);
-        if (decryptFailed) {
-          throw new Error(
-            `[deploy] Failed to decrypt org env var '${v.key}' — wrong key or corrupted data. Deploy aborted.`
-          );
-        }
-        orgEnvVarMap[v.key] = content;
-      } else {
-        orgEnvVarMap[v.key] = v.value;
+      const { content, decryptFailed } = decryptOrFallback(v.value, ctx.organizationId);
+      if (decryptFailed) {
+        throw new Error(
+          `[deploy] Failed to decrypt org env var '${v.key}' — wrong key or corrupted data. Deploy aborted.`
+        );
       }
+      orgEnvVarMap[v.key] = content;
     }
 
     const primaryDomain = app.domains[0]?.domain ?? null;
