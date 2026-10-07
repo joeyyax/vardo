@@ -111,6 +111,15 @@ export async function register() {
       log.error("Backup org realignment failed:", err);
     }
 
+    // Apps transferred before accept released them from the source org's jobs.
+    try {
+      const { repairForeignJobLinks } = await import("./lib/backups/transfer");
+      const repaired = await repairForeignJobLinks();
+      log.info(`Repaired ${repaired} backup job link(s) left in another org by earlier app transfers`);
+    } catch (err) {
+      log.error("Backup job link repair failed:", err);
+    }
+
     // Ensure backup target exists first (sequential dependency for scheduler)
     let backupTargetReady: Promise<void> | undefined;
     try {
