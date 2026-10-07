@@ -1,4 +1,3 @@
-// Barrel re-export — relations are co-located with their schema files
 export * from "./auth-relations";
 export * from "./organizations-relations";
 export * from "./projects-relations";

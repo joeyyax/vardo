@@ -9,9 +9,7 @@ import { transferStatusEnum } from "./enums";
 import { apps } from "./apps";
 import { organizations } from "./organizations";
 
-// ---------------------------------------------------------------------------
-// App Transfers (move apps between organizations)
-// ---------------------------------------------------------------------------
+// Moves of apps between organizations.
 
 export const appTransfers = pgTable("app_transfer", {
   id: text("id").primaryKey(),

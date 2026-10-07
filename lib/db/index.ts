@@ -4,8 +4,7 @@ import * as schema from "./schema";
 
 const connectionString = process.env.DATABASE_URL!;
 
-// Cached on globalThis so a hot reload reuses the pool. Without this every HMR
-// pass opens a new one and dev hits "too many clients" within minutes.
+// Cached on globalThis so hot reloads reuse the pool instead of exhausting connections.
 const globalForDb = globalThis as unknown as {
   vardoPgClient?: ReturnType<typeof postgres>;
 };

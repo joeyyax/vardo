@@ -6,9 +6,7 @@ import {
   timestamp,
 } from "drizzle-orm/pg-core";
 
-// ---------------------------------------------------------------------------
-// Better Auth tables (snake_case columns, matching Scope's working schema)
-// ---------------------------------------------------------------------------
+// Better Auth tables with snake_case columns.
 
 export const user = pgTable("user", {
   id: text("id").primaryKey(),

@@ -31,9 +31,8 @@ function ownHosts(headers: HeaderSource, env: NodeJS.ProcessEnv): Set<string> {
 }
 
 /**
- * Why a request riding a session cookie looks cross-site, or null to let it
- * through. Bearer requests and requests without a session cookie carry no
- * ambient credential and are never blocked. Better Auth checks its own routes.
+ * Why a session-cookie request looks cross-site, or null to allow it.
+ * Requests without a session cookie are never blocked. Better Auth checks its own routes.
  */
 export function csrfRejection(
   req: { method: string; pathname: string; headers: HeaderSource },

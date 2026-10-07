@@ -1,10 +1,4 @@
-// ---------------------------------------------------------------------------
-// Top-level app name uniqueness
-//
-// A top-level app's name is its runtime namespace: the on-disk directory, the
-// compose project, the metrics key and the Loki selector. It is therefore
-// unique instance-wide, not per organization.
-// ---------------------------------------------------------------------------
+// Top-level app names are unique instance-wide: they're the directory, compose project, metrics key and Loki selector.
 
 import { and, eq, isNull, ne } from "drizzle-orm";
 import { db } from "@/lib/db";
@@ -17,17 +11,11 @@ export const TOP_LEVEL_NAME_CONSTRAINT = "app_top_level_name_uniq";
 /** Legacy per-organization constraint on app(organization_id, name). */
 export const ORG_NAME_CONSTRAINT = "app_org_name_uniq";
 
-/**
- * Shown when a name is taken. Deliberately says nothing about which
- * organization holds it.
- */
+/** Shown when a name is taken. Never names the organization that holds it. */
 export const APP_NAME_TAKEN_ERROR =
   "That app name is already taken. App names must be unique across the whole instance.";
 
-/**
- * True when any top-level app already uses this name, in any organization.
- * Pass `excludeAppId` when checking a rename against the app's own row.
- */
+/** Whether any top-level app in any organization uses this name. */
 export async function isTopLevelAppNameTaken(
   name: string,
   excludeAppId?: string
@@ -47,8 +35,7 @@ export async function isTopLevelAppNameTaken(
 export function isAppNameViolation(error: unknown): boolean {
   if (!isUniqueViolation(error)) return false;
   const constraint = getPgConstraint(error);
-  // A driver that drops the constraint name leaves us unable to tell which
-  // unique index fired, so fall back to treating it as a name clash.
+  // No constraint name: treat it as a name clash.
   if (constraint === null) return true;
   return (
     constraint === TOP_LEVEL_NAME_CONSTRAINT || constraint === ORG_NAME_CONSTRAINT

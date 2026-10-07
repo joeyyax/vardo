@@ -9,10 +9,6 @@ import {
 import { user } from "./auth";
 import { invitationScopeEnum, invitationStatusEnum } from "./enums";
 
-// ---------------------------------------------------------------------------
-// Organizations
-// ---------------------------------------------------------------------------
-
 export const organizations = pgTable("organization", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
@@ -39,8 +35,7 @@ export const memberships = pgTable(
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
     role: text("role").notNull(),
-    // Anchor for the "while you were away" summary. Advanced when the summary
-    // is dismissed, or immediately when there was nothing to report.
+    // Anchor for the "while you were away" summary.
     lastSeenAt: timestamp("last_seen_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
@@ -50,9 +45,7 @@ export const memberships = pgTable(
   ]
 );
 
-// ---------------------------------------------------------------------------
-// Organization Environment Variables (shared across apps)
-// ---------------------------------------------------------------------------
+// Env vars shared across an org's apps.
 
 export const orgEnvVars = pgTable(
   "org_env_var",
@@ -71,10 +64,6 @@ export const orgEnvVars = pgTable(
   (t) => [unique("org_env_var_org_key_uniq").on(t.organizationId, t.key)]
 );
 
-// ---------------------------------------------------------------------------
-// Organization Domains (additive domain list)
-// ---------------------------------------------------------------------------
-
 export const orgDomains = pgTable(
   "org_domain",
   {
@@ -90,10 +79,6 @@ export const orgDomains = pgTable(
   },
   (t) => [unique("org_domain_uniq").on(t.organizationId, t.domain)]
 );
-
-// ---------------------------------------------------------------------------
-// Invitations
-// ---------------------------------------------------------------------------
 
 export const invitations = pgTable(
   "invitation",

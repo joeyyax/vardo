@@ -26,10 +26,6 @@ import { deployKeys } from "./config";
 import type { AppCondition } from "@/lib/docker/conditions";
 import type { ExitReason } from "@/lib/docker/exit-reason";
 
-// ---------------------------------------------------------------------------
-// Apps (deployable Docker units)
-// ---------------------------------------------------------------------------
-
 export const apps = pgTable(
   "app",
   {
@@ -55,9 +51,7 @@ export const apps = pgTable(
     autoTraefikLabels: boolean("auto_traefik_labels").default(false),
     containerPort: integer("container_port"),
     autoDeploy: boolean("auto_deploy").default(false),
-    // DEPRECATED: persistentVolumes JSONB replaced by the `volumes` table.
-    // Column retained temporarily for migration; will be dropped once all data
-    // has been migrated via `scripts/migrate-volumes.ts`.
+    /** @deprecated Replaced by the `volumes` table. */
     persistentVolumes: jsonb("persistent_volumes").$type<
       { name: string; mountPath: string }[]
     >(),
@@ -77,31 +71,23 @@ export const apps = pgTable(
     templateName: text("template_name"),
     templateVersion: text("template_version"),
     status: appStatusEnum("status").notNull().default("stopped"),
-    // When status last became what it is now. Written only by statusChange(),
-    // never by an ordinary write — unlike updatedAt. Null until the first
-    // transition, which reads as "how long is unknown".
+    // When status last changed. Written only by statusChange(). Null until the first transition.
     statusChangedAt: timestamp("status_changed_at"),
-    // Declared off on purpose. Set and cleared only by setParked() — stopping an
-    // app does not imply it, starting or deploying one clears it.
+    // Set and cleared only by setParked(). Starting or deploying clears it.
     parked: boolean("parked").notNull().default(false),
     // Container State.StartedAt, written by the status reconciler. Null when nothing is running.
     containerStartedAt: timestamp("container_started_at"),
     // Running container's cgroup memory limit in bytes. 0 means unlimited.
     containerMemoryLimit: bigint("container_memory_limit", { mode: "number" }),
-    // Docker's RestartCount across this app's containers, written by the status
-    // reconciler. Null means there was no counter to read — no container, or one
-    // Docker would not answer for. Zero means it was read and is zero.
+    // Docker's RestartCount across this app's containers. Null means there was no counter to read.
     containerRestartCount: integer("container_restart_count"),
-    // Creation time of the oldest container the count covers — the point Docker
-    // last reset it from. Null when there was no container to read.
+    // Creation time of the oldest container the count covers.
     containerRestartSince: timestamp("container_restart_since"),
     // Last time the reconciler compared this app against Docker.
     statusCheckedAt: timestamp("status_checked_at"),
-    // Last tick the reconciler observed this app running. Never cleared, so it
-    // survives the container going away — unlike containerStartedAt.
+    // Last tick the reconciler saw this app running. Never cleared.
     lastRunningAt: timestamp("last_running_at"),
-    // Image reclamation for idle apps. "never" pins the app; "always" opts a
-    // floating tag in, accepting that the next start pulls whatever it resolves to.
+    // Image reclamation for idle apps. "never" pins the app; "always" includes floating tags.
     imageReclaimPolicy: text("image_reclaim_policy", {
       enum: ["auto", "never", "always"],
     })
@@ -109,46 +95,39 @@ export const apps = pgTable(
       .default("auto"),
     // Days idle before this app's images may be reclaimed. Null uses the instance default.
     imageReclaimIdleDays: integer("image_reclaim_idle_days"),
-    // How a running app is behaving, written by the health monitor. Separate
-    // from status, which only records what Docker did with the container.
+    // How a running app is behaving, written by the health monitor.
     conditions: jsonb("conditions").$type<AppCondition[]>(),
-    // Why this app's containers stopped, written by the status reconciler and
-    // cleared once anything is running again. Null while the app is up.
+    // Why this app's containers stopped. Null while the app is up.
     exitReason: jsonb("exit_reason").$type<ExitReason>(),
     needsRedeploy: boolean("needs_redeploy").default(false),
     cpuLimit: real("cpu_limit"), // CPU cores (e.g. 0.5, 1, 2)
     memoryLimit: integer("memory_limit"), // Memory in MB (e.g. 256, 512, 1024)
-    priority: appPriorityEnum("priority").default("standard"), // QoS tier → oom_score_adj, mem_reservation, cpu_shares in the Vardo overlay. Nullable: a decomposed child with null priority inherits its parent's tier; null on a non-child resolves to "standard".
-    gpuEnabled: boolean("gpu_enabled").notNull().default(false), // GPU passthrough via deploy.resources.reservations.devices
+    priority: appPriorityEnum("priority").default("standard"), // QoS tier. Null on a child inherits the parent's tier.
+    gpuEnabled: boolean("gpu_enabled").notNull().default(false),
     backupsEnabled: boolean("backups_enabled"), // null = inherit the org's, then the system's default
     diskWriteAlertThreshold: bigint("disk_write_alert_threshold", { mode: "number" }), // bytes/hour, null = default 1GB
-    healthCheckTimeout: integer("health_check_timeout"), // Seconds to wait for healthy containers (null = system default 60s)
-    autoRollback: boolean("auto_rollback").default(false), // Rollback on crash after deploy
+    healthCheckTimeout: integer("health_check_timeout"), // Seconds; null = system default 60s
+    autoRollback: boolean("auto_rollback").default(false),
     rollbackGracePeriod: integer("rollback_grace_period").default(60), // Seconds to monitor after deploy
-    autoRestartUnhealthy: boolean("auto_restart_unhealthy"), // Restart container when its healthcheck reports unhealthy. null = default (on for critical priority, off otherwise)
-    isSystemManaged: boolean("is_system_managed").default(false).notNull(), // Managed by Vardo itself — deploy engine blocked
-    backendProtocol: text("backend_protocol", { enum: ["http", "https"] }), // Backend scheme Traefik uses to reach the container. Null = auto (https if port 443/8443)
-    envContent: text("env_content"), // Encrypted env file blob (AES-256-GCM)
-    // Compose decomposition: child service records point to parent compose app.
-    // Cascade — children die with the parent and are rebuilt from its compose
-    // file on the next deploy. Never switch this to set null: that promotes
-    // children into app_top_level_name_uniq's scope and the delete can fail on
-    // an unrelated app's name.
+    autoRestartUnhealthy: boolean("auto_restart_unhealthy"), // null = on for critical priority, off otherwise
+    isSystemManaged: boolean("is_system_managed").default(false).notNull(), // Deploy engine blocked
+    backendProtocol: text("backend_protocol", { enum: ["http", "https"] }), // Null = auto (https on 443/8443)
+    envContent: text("env_content"), // Encrypted
+    // Compose child to parent. Must cascade: set null moves children into app_top_level_name_uniq's scope.
     parentAppId: text("parent_app_id").references((): AnyPgColumn => apps.id, {
       onDelete: "cascade",
     }),
     composeService: text("compose_service"), // service name from compose YAML
-    containerName: text("container_name"), // computed: {projectName}-{serviceName}-1
-    importedContainerId: text("imported_container_id"), // original container ID when imported from Docker
-    importedComposeProject: text("imported_compose_project"), // original compose project name when imported as a group
-    configSource: text("config_source"), // "vardo.yml" when managed by config-as-code, null for UI-managed
+    containerName: text("container_name"), // {projectName}-{serviceName}-1
+    importedContainerId: text("imported_container_id"),
+    importedComposeProject: text("imported_compose_project"),
+    configSource: text("config_source"), // "vardo.yml" when managed by config-as-code
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (t) => [
     unique("app_org_name_uniq").on(t.organizationId, t.name),
-    // A top-level app's name is its on-disk directory and compose project, so it
-    // must be unique instance-wide. Do not scope this to the organization.
+    // Top-level names are directories and compose projects: unique instance-wide, never per org.
     uniqueIndex("app_top_level_name_uniq").on(t.name).where(sql`parent_app_id is null`),
     unique("app_imported_container_uniq").on(t.organizationId, t.importedContainerId),
     unique("app_imported_compose_project_uniq").on(t.organizationId, t.importedComposeProject),
@@ -159,7 +138,6 @@ export const apps = pgTable(
   ]
 );
 
-// Re-export split modules for backwards compatibility
 export { deployments } from "./deployments";
 export { envVars } from "./env-vars";
 export { domains, domainChecks } from "./domains";

@@ -8,10 +8,6 @@ import {
 } from "drizzle-orm/pg-core";
 import { deployTypeEnum, sourceEnum, templateCategoryEnum } from "./enums";
 
-// ---------------------------------------------------------------------------
-// Templates
-// ---------------------------------------------------------------------------
-
 export const templates = pgTable("template", {
   id: text("id").primaryKey(),
   name: text("name").notNull().unique(),

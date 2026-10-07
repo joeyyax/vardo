@@ -1,27 +1,16 @@
-// ---------------------------------------------------------------------------
-// Master key fingerprint
-//
-// A one-way identifier for ENCRYPTION_MASTER_KEY. Safe to store beside the
-// ciphertext it identifies and to show in the UI — the key itself never leaves
-// the host.
-//
-// Pure — shared by the crypto layer (to stamp), the backup engine (to gate a
-// restore) and the UI (to display).
-// ---------------------------------------------------------------------------
+// One-way fingerprint of ENCRYPTION_MASTER_KEY. Safe to store and display.
 
 import { hkdfSync } from "crypto";
 
 /** Version marker. Bump alongside any change to the derivation below. */
 const FINGERPRINT_VERSION = "k1";
 
-/** Hex characters kept from the derived digest. 64 bits — collision-free in practice. */
+/** Hex characters kept from the derived digest. */
 const FINGERPRINT_HEX_CHARS = 16;
 
 /**
- * Turn a configured key string into the 32 bytes every derivation starts from.
- *
- * WARNING: the empty salt on the raw-string path is load-bearing. Changing it
- * derives a different key and orphans every value encrypted before the change.
+ * Turns a configured key string into the 32 bytes every derivation starts from.
+ * Don't change the empty salt on the raw-string path; it orphans existing ciphertext.
  */
 export function normalizeMasterKey(key: string): Buffer {
   if (key.length === 64) return Buffer.from(key, "hex");
@@ -47,17 +36,12 @@ export type KeyFingerprintStatus =
   | { kind: "ok"; fingerprint: string }
   /** No ENCRYPTION_MASTER_KEY is set. */
   | { kind: "unconfigured" }
-  /** Nothing recorded yet — a fresh install, or an instance predating this check. */
+  /** Nothing recorded yet. */
   | { kind: "unrecorded"; running: string }
   /** The running key cannot decrypt anything this database holds. */
   | { kind: "mismatch"; recorded: string; running: string };
 
-/**
- * Compare the fingerprint a database recorded against the running key's.
- *
- * A mismatch is the restored-onto-a-new-host case: the rows are ciphertext from
- * one key and the instance holds another.
- */
+/** Compares the fingerprint a database recorded against the running key's. */
 export function evaluateKeyFingerprint(
   recorded: string | null,
   running: string | null,

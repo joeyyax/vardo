@@ -1,9 +1,5 @@
 import { pgEnum } from "drizzle-orm/pg-core";
 
-// ---------------------------------------------------------------------------
-// Enums
-// ---------------------------------------------------------------------------
-
 export const sourceEnum = pgEnum("source", ["git", "direct"]);
 
 export const deployTypeEnum = pgEnum("deploy_type", [
@@ -151,8 +147,7 @@ export const invitationStatusEnum = pgEnum("invitation_status", [
   "revoked",
 ]);
 
-// Must stay in step with ActivityFamily/ActivityOutcome — asserted in
-// tests/unit/lib/activity/taxonomy.test.ts.
+// Must match ActivityFamily/ActivityOutcome (tests/unit/lib/activity/taxonomy.test.ts).
 export const activityFamilyEnum = pgEnum("activity_family", [
   "deploy",
   "backup",

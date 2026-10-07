@@ -1,10 +1,4 @@
-// ---------------------------------------------------------------------------
-// Where the outbound allowlist comes from.
-//
-// Reaching an internal service on purpose is a legitimate thing to want on a
-// homelab, so the block is escapable — but only by naming the host, never by
-// turning the check off.
-// ---------------------------------------------------------------------------
+// Outbound allowlist source. The block is escapable only by naming a host, never by turning it off.
 
 import { getSystemSettingRaw } from "@/lib/system-settings";
 import type { OutboundPolicy } from "./ssrf";

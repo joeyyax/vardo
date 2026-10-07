@@ -7,9 +7,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { organizations } from "./organizations";
 
-// ---------------------------------------------------------------------------
-// Projects (groups of related apps)
-// ---------------------------------------------------------------------------
+// Groups of related apps.
 
 export const projects = pgTable(
   "project",

@@ -10,9 +10,7 @@ import { apps } from "./apps";
 import { organizations } from "./organizations";
 import { activityFamilyEnum, activityOutcomeEnum } from "./enums";
 
-// ---------------------------------------------------------------------------
-// Activities (audit trail)
-// ---------------------------------------------------------------------------
+// Audit trail.
 
 export const activities = pgTable(
   "activity",
@@ -48,17 +46,9 @@ export const activities = pgTable(
   ]
 );
 
-// ---------------------------------------------------------------------------
-// Self-heal state (survives a Vardo restart)
-// ---------------------------------------------------------------------------
-
 /**
- * Restart budget the health monitor spends when auto-restarting an unhealthy
- * container, plus the marker written when it gives up.
- *
- * Keyed by container id: `docker restart` keeps the id, a recreate mints a new
- * one and so gets a fresh budget. Rows are dropped once `updated_at` falls
- * outside the rolling window.
+ * Health monitor restart budget per container id, plus the marker written when it gives up.
+ * A recreate mints a new id and a fresh budget.
  */
 export const containerSelfHeal = pgTable(
   "container_self_heal",

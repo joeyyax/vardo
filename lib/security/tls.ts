@@ -5,10 +5,7 @@ import type { SecurityFinding } from "./types";
 const TLS_EXPIRY_WARNING_DAYS = 14;
 const CONNECT_TIMEOUT_MS = 5_000;
 
-/**
- * Verify TLS certificate validity and check for upcoming expiry on a domain.
- * Returns SecurityFinding[] for cert errors or imminent expiry.
- */
+/** Checks a domain's TLS certificate for errors and imminent expiry. */
 export async function checkTls(domain: string): Promise<SecurityFinding[]> {
   await assertPublicDomain(domain);
 
@@ -82,7 +79,7 @@ export async function checkTls(domain: string): Promise<SecurityFinding[]> {
             });
           }
         } catch {
-          // Cert inspection failed — not fatal for the overall scan
+          // Not fatal for the scan.
         }
 
         done();
@@ -91,8 +88,7 @@ export async function checkTls(domain: string): Promise<SecurityFinding[]> {
 
     socket.on("error", () => {
       clearTimeout(timer);
-      // TLS connection errors (e.g. port 443 not open) are not surfaced as findings —
-      // the app may not use TLS directly (behind a reverse proxy). Skip silently.
+      // Connection errors aren't findings: the app may sit behind a reverse proxy.
       done();
     });
   });

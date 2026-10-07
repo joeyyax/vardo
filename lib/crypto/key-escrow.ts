@@ -1,12 +1,5 @@
-// ---------------------------------------------------------------------------
-// Master key escrow state
-//
-// The database records which master key its ciphertext belongs to, and every
-// startup checks the running key against it.
-//
-// WARNING: the recorded fingerprint must stay unencrypted. A value that needs
-// the key to read answers nothing about whether the key is right.
-// ---------------------------------------------------------------------------
+// Records which master key the database's ciphertext belongs to; startup checks the running key against it.
+// Keep the recorded fingerprint unencrypted, or it can't say whether the key is right.
 
 import { db } from "@/lib/db";
 import { apps, backupTargets, meshPeers, notificationChannels, orgEnvVars, systemSettings } from "@/lib/db/schema";
@@ -46,9 +39,9 @@ export async function recordFingerprint(fingerprint: string): Promise<void> {
   invalidateSettingsCache(KEY_FINGERPRINT_SETTING);
 }
 
-/** What the running key can actually open. */
+/** What the running key can open. */
 export type DecryptProbe = {
-  /** Values recognised as ciphertext. */
+  /** Values recognized as ciphertext. */
   encrypted: number;
   /** Of those, the ones the running key could not decrypt. */
   undecryptable: number;
@@ -147,10 +140,7 @@ export type KeyEscrowState = {
   probe: DecryptProbe;
 };
 
-/**
- * Compare the running key against what this database recorded, recording it
- * when nothing is on file and the key opens everything already here.
- */
+/** Compares the running key against the recorded one. Records it when none is on file and it decrypts everything. */
 export async function reconcileKeyFingerprint(): Promise<KeyEscrowState> {
   const running = runningKeyFingerprint();
   const recorded = await readRecordedFingerprint();
@@ -206,7 +196,7 @@ export function describeKeyEscrow(state: KeyEscrowState): {
   }
 }
 
-/** Reconcile and log. Startup path — never throws; null when the check failed. */
+/** Reconciles and logs. Never throws; null when the check failed. */
 export async function checkKeyEscrowAtStartup(): Promise<KeyEscrowState | null> {
   try {
     const state = await reconcileKeyFingerprint();

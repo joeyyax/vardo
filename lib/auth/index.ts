@@ -11,35 +11,24 @@ import { REGISTRATION_CLOSED_MESSAGE, registrationAllowed, shouldCreateDefaultOr
 import { isAuthMethodEnabled } from "@/lib/config/auth-methods";
 import { isPasswordAuthAllowed } from "@/lib/config/provider-restrictions";
 
-// GitHub OAuth credentials are stored in the database (system_settings).
-// Better Auth requires credentials at init time, so we cache them and
-// rebuild the auth instance when they change. The cache is populated by
-// the admin settings API after saving GitHub config.
+// GitHub OAuth credentials from system_settings, cached because Better Auth reads them at init.
 let _cachedGitHubClientId = process.env.GITHUB_CLIENT_ID ?? "";
 let _cachedGitHubClientSecret = process.env.GITHUB_CLIENT_SECRET ?? "";
 let _authInstance: ReturnType<typeof buildAuth> | null = null;
 let _dbCredentialsLoaded = false;
 
-/**
- * Update the cached GitHub OAuth credentials and force the auth
- * instance to be rebuilt on next access. Call this after saving
- * GitHub App config in the admin UI.
- */
+/** Updates the cached GitHub OAuth credentials and rebuilds auth on next access. */
 export function refreshGitHubOAuthCredentials(clientId: string, clientSecret: string) {
   _cachedGitHubClientId = clientId;
   _cachedGitHubClientSecret = clientSecret;
   _authInstance = null;
 }
 
-/**
- * Load GitHub OAuth credentials from the database if not already loaded
- * and no env vars are set. Called lazily on first auth access.
- */
+/** Loads GitHub OAuth credentials from the database when env vars don't set them. */
 export async function ensureGitHubCredentials() {
   if (_dbCredentialsLoaded) return;
   _dbCredentialsLoaded = true;
 
-  // If env vars already provide credentials, no need to hit the DB
   if (_cachedGitHubClientId && _cachedGitHubClientSecret) return;
 
   try {
@@ -48,27 +37,22 @@ export async function ensureGitHubCredentials() {
     if (config?.clientId && config?.clientSecret) {
       _cachedGitHubClientId = config.clientId;
       _cachedGitHubClientSecret = config.clientSecret;
-      _authInstance = null; // Force rebuild with DB credentials
+      _authInstance = null;
     }
   } catch {
-    // DB may not be ready yet (e.g., during migrations). That's fine —
-    // GitHub OAuth will simply be unavailable until credentials are loaded.
+    // DB may not be ready yet; GitHub OAuth stays off until it is.
   }
 }
 
-/**
- * Drop the cached auth instance so the next access rebuilds it against the
- * current sign-in methods. Call after writing to auth_methods.
- */
+/** Rebuilds auth on next access. Call after writing to auth_methods. */
 export function refreshAuthMethods() {
   _authInstance = null;
 }
 
-// Creating the first user always uses a password, so the email endpoints stay
-// available while the instance has no accounts even if the method is off.
+// Email endpoints stay open while the instance has no users, since the first user signs up with a password.
 let _setupPending = false;
 
-/** Re-read whether the instance still has no users. Called at startup. */
+/** Re-reads whether the instance still has no users. */
 export async function refreshSetupState() {
   const { needsSetup } = await import("@/lib/setup");
   _setupPending = await needsSetup().catch(() => false);
@@ -103,7 +87,6 @@ function magicLinkPlugin() {
 }
 
 function buildAuth() {
-  // Build socialProviders conditionally — only include GitHub if credentials exist
   const socialProviders: Record<string, unknown> = {};
   if (isAuthMethodEnabled("github") && _cachedGitHubClientId && _cachedGitHubClientSecret) {
     socialProviders.github = {
@@ -113,7 +96,6 @@ function buildAuth() {
   }
 
   // A disabled method's plugin is left out, so its endpoints don't exist.
-  // The cast keeps the inferred API surface the same whichever are on.
   const plugins = [
     ...(isAuthMethodEnabled("passkey") ? [passkey()] : []),
     ...(isAuthMethodEnabled("totp") ? [twoFactor({ issuer: "Vardo" })] : []),
@@ -144,8 +126,7 @@ function buildAuth() {
 
   plugins,
 
-  // Expose isAppAdmin on the session user object so callers don't need
-  // a separate DB query. This field is already in the user table schema.
+  // Exposes isAppAdmin on the session user.
   user: {
     additionalFields: {
       isAppAdmin: {
@@ -156,17 +137,13 @@ function buildAuth() {
     },
   },
 
-  // Session configuration
   session: {
-    // Sessions stored in database via Drizzle adapter
     expiresIn: 60 * 60 * 24 * 7, // 7 days
-    updateAge: 60 * 60 * 24, // Update session every 24 hours
+    updateAge: 60 * 60 * 24, // 24 hours
   },
 
-  // Social login providers — built dynamically based on available credentials
   socialProviders,
 
-  // Account configuration
   account: {
     accountLinking: {
       enabled: true,
@@ -195,15 +172,13 @@ function buildAuth() {
     },
   },
 
-  // Advanced security options
   advanced: {
-    // Generate secure cookies
     useSecureCookies: process.env.NODE_ENV === "production",
   },
 });
 }
 
-// Lazy singleton — rebuilt when GitHub credentials change via refreshGitHubOAuthCredentials()
+// Lazy singleton, rebuilt by refreshGitHubOAuthCredentials() and refreshAuthMethods().
 type AuthInstance = ReturnType<typeof buildAuth>;
 
 function getAuthInstance(): AuthInstance {
@@ -222,5 +197,4 @@ export const auth = new Proxy({} as AuthInstance, {
   },
 });
 
-// Export type for use in other files
 export type Auth = typeof auth;

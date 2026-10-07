@@ -14,10 +14,6 @@ import { sql } from "drizzle-orm";
 import { apps } from "./apps";
 import { organizations } from "./organizations";
 
-// ---------------------------------------------------------------------------
-// Volumes (first-class volume records with integrated limits)
-// ---------------------------------------------------------------------------
-
 export const volumes = pgTable(
   "volume",
   {
@@ -28,36 +24,28 @@ export const volumes = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" }),
     name: text("name").notNull(), // e.g. "data", "uploads"
     mountPath: text("mount_path").notNull(), // e.g. "/var/lib/postgresql/data"
-    type: text("type", { enum: ["named", "bind"] }).notNull().default("named"), // mount type — persisted so bind mounts display correctly when container is stopped
-    source: text("source"), // nullable — host path for bind mounts, Docker volume name for named; persisted so Host: label survives container stop
+    type: text("type", { enum: ["named", "bind"] }).notNull().default("named"),
+    source: text("source"), // Host path for bind mounts, Docker volume name for named
     persistent: boolean("persistent").default(true).notNull(), // survives deploys
     shared: boolean("shared").default(false).notNull(), // can be mounted by other apps in project
     description: text("description"),
     maxSizeBytes: bigint("max_size_bytes", { mode: "number" }), // nullable = no limit
     warnAtPercent: integer("warn_at_percent").default(80),
-    ignorePatterns: jsonb("ignore_patterns").$type<string[]>(), // glob patterns to ignore in diff (e.g. "uploads/**")
-    // Paths a backup leaves out. Deliberately not `ignorePatterns`: that column
-    // means "differs from the image, not drift", which is the mark of runtime
-    // state — the last thing a backup should drop.
+    ignorePatterns: jsonb("ignore_patterns").$type<string[]>(), // Globs to ignore in diff (e.g. "uploads/**")
+    // Paths a backup leaves out. Never reuse ignorePatterns: those mark runtime state, which backups must keep.
     backupExcludePatterns: jsonb("backup_exclude_patterns").$type<string[]>(),
     driftCount: integer("drift_count").default(0), // unignored file drift after last deploy
-    // Whether the contents are irreplaceable, separate from whether they
-    // survive a deploy. Null means unclassified and is backed up, so adding
-    // this column cannot drop anything from an existing job.
+    // Whether the contents are irreplaceable. Null means unclassified and is backed up.
     durability: text("durability", {
       enum: ["stateful", "rebuildable", "external"],
     }),
-    // Whether a backup job captures this volume. Null follows the legacy rule
-    // (persistent or stateful); written when an app is enrolled (#874).
+    // Whether a backup job captures this volume. Null follows the legacy rule (persistent or stateful).
     backupSelection: text("backup_selection", { enum: ["include", "exclude"] }),
-    // Backup strategy: "tar" (default) for file volumes, "dump" for databases
+    // "tar" for file volumes, "dump" for databases.
     backupStrategy: text("backup_strategy").default("tar").notNull(),
-    // For "dump" strategy: { dumpCmd, restoreCmd } — shell commands run via docker exec.
-    // Legacy. A stored command names a container, and app container names carry
-    // the blue/green slot, so one deploy invalidates it. Prefer backupSpec.
+    // Legacy dump commands run via docker exec. Container names carry the blue/green slot, so prefer backupSpec.
     backupMeta: jsonb("backup_meta").$type<{ dumpCmd: string; restoreCmd: string }>(),
-    // For "dump" strategy: what the database is, resolved to a container and
-    // credentials when the backup runs.
+    // Dump target, resolved to a container and credentials at backup time.
     backupSpec: jsonb("backup_spec").$type<{
       kind: "postgres" | "mysql" | "mariadb" | "mongo";
       service: string;
@@ -77,7 +65,7 @@ export const volumes = pgTable(
   ]
 );
 
-// DEPRECATED: kept for migration only — will be dropped after migrate-volumes.ts runs
+/** @deprecated Kept for migrate-volumes.ts only. */
 export const volumeLimits = pgTable("volume_limit", {
   id: text("id").primaryKey(),
   appId: text("app_id")

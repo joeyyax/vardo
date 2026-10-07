@@ -1,6 +1,4 @@
-// ---------------------------------------------------------------------------
-// Role constants — single source of truth for org-level roles
-// ---------------------------------------------------------------------------
+// Org-level roles.
 
 export const ROLES = {
   OWNER: "owner",
@@ -15,9 +13,7 @@ export const VIEWER = "viewer";
 
 export type Role = OrgRole | typeof VIEWER;
 
-// ---------------------------------------------------------------------------
-// Capabilities — what each role may do in an org
-// ---------------------------------------------------------------------------
+// What each role may do in an org.
 
 const OWNER_ONLY: readonly Role[] = [ROLES.OWNER];
 const ADMINS: readonly Role[] = [ROLES.OWNER, ROLES.ADMIN];
@@ -87,7 +83,7 @@ export const INSTANCE_ADMIN_CAPABILITIES: ReadonlySet<Capability> = new Set<Capa
 
 type Grant = { instanceAdmin?: boolean };
 
-/** True when `role` holds `cap`. Unknown or missing roles hold nothing. */
+/** Whether `role` holds `cap`. Unknown or missing roles hold nothing. */
 export function can(role: string | null | undefined, cap: Capability, grant: Grant = {}): boolean {
   if (!role) return false;
   if (grant.instanceAdmin && INSTANCE_ADMIN_CAPABILITIES.has(cap)) return true;

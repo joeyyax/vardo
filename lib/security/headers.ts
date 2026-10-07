@@ -58,10 +58,7 @@ const HEADER_CHECKS: HeaderCheck[] = [
 
 const TIMEOUT_MS = 5_000;
 
-/**
- * Check HTTP security headers on a deployed domain.
- * Returns SecurityFinding[] for each missing or misconfigured header.
- */
+/** Checks a deployed domain for missing or misconfigured security headers. */
 export async function checkSecurityHeaders(domain: string): Promise<SecurityFinding[]> {
   await assertPublicDomain(domain);
 
@@ -81,7 +78,7 @@ export async function checkSecurityHeaders(domain: string): Promise<SecurityFind
     clearTimeout(timer);
     headers = res.headers;
   } catch {
-    // Network error — skip header check silently
+    // Network error: skip.
     return findings;
   }
 
@@ -91,7 +88,7 @@ export async function checkSecurityHeaders(domain: string): Promise<SecurityFind
   for (const check of HEADER_CHECKS) {
     const value = headers.get(check.header);
 
-    // X-Frame-Options check: satisfied by either X-Frame-Options or CSP frame-ancestors
+    // Satisfied by X-Frame-Options or CSP frame-ancestors.
     if (check.header === "x-frame-options") {
       if (!value && !hasFrameAncestors) {
         findings.push({

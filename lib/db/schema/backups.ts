@@ -13,9 +13,7 @@ import { apps } from "./apps";
 import { volumes } from "./volumes";
 import { jsonb } from "drizzle-orm/pg-core";
 
-// ---------------------------------------------------------------------------
-// Backup Targets (where backups are stored)
-// ---------------------------------------------------------------------------
+// Where backups are stored.
 
 export const backupTargets = pgTable("backup_target", {
   id: text("id").primaryKey(),
@@ -51,9 +49,7 @@ export const backupTargets = pgTable("backup_target", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
-// ---------------------------------------------------------------------------
-// Backup Jobs (scheduled backup configurations)
-// ---------------------------------------------------------------------------
+// Scheduled backup configurations.
 
 export const backupJobs = pgTable("backup_job", {
   id: text("id").primaryKey(),
@@ -66,7 +62,6 @@ export const backupJobs = pgTable("backup_job", {
   name: text("name").notNull(),
   schedule: text("schedule").notNull().default("0 2 * * *"),
   enabled: boolean("enabled").default(true).notNull(),
-  // Proxmox-style retention
   keepAll: boolean("keep_all").default(false),
   keepLast: integer("keep_last"),
   keepHourly: integer("keep_hourly"),
@@ -74,7 +69,6 @@ export const backupJobs = pgTable("backup_job", {
   keepWeekly: integer("keep_weekly"),
   keepMonthly: integer("keep_monthly"),
   keepYearly: integer("keep_yearly"),
-  // Notification settings
   notifyOnSuccess: boolean("notify_on_success").default(false),
   notifyOnFailure: boolean("notify_on_failure").default(true),
   lastRunAt: timestamp("last_run_at"),
@@ -82,7 +76,7 @@ export const backupJobs = pgTable("backup_job", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
-// Many-to-many: which apps are included in a backup job
+// Apps included in a backup job.
 export const backupJobApps = pgTable(
   "backup_job_app",
   {
@@ -96,7 +90,7 @@ export const backupJobApps = pgTable(
   (t) => [primaryKey({ columns: [t.backupJobId, t.appId] })]
 );
 
-// Many-to-many: direct volume links for backup jobs (system volumes, etc.)
+// Volumes linked directly to a backup job, such as system volumes.
 export const backupJobVolumes = pgTable(
   "backup_job_volume",
   {
@@ -110,17 +104,14 @@ export const backupJobVolumes = pgTable(
   (t) => [primaryKey({ columns: [t.backupJobId, t.volumeId] })]
 );
 
-// ---------------------------------------------------------------------------
-// Backup History (individual backup runs)
-// ---------------------------------------------------------------------------
+// Individual backup runs.
 
 export const backups = pgTable("backup", {
   id: text("id").primaryKey(),
   // Null once the job is deleted; the history stays.
   jobId: text("job_id").references(() => backupJobs.id, { onDelete: "set null" }),
   jobName: text("job_name"),
-  // No foreign key: history outlives the app. Null means a system volume, so
-  // never switch this to SET NULL.
+  // No foreign key: history outlives the app. Null means a system volume; never SET NULL.
   appId: text("app_id"),
   // Snapshots of the app at backup time.
   appName: text("app_name"),
@@ -135,32 +126,23 @@ export const backups = pgTable("backup", {
   volumeName: text("volume_name"),
   sizeBytes: bigint("size_bytes", { mode: "number" }),
   storagePath: text("storage_path"),
-  // Archive format as written ("tar" | "dump"). Restore reads this, never the
-  // volume's current config — that can change after the archive exists.
+  // Archive format as written ("tar" | "dump"). Restore reads this, never the volume's current config.
   strategy: text("strategy"),
-  checksum: text("checksum"), // sha256 hash of the archive before upload
-  // Host path a bind archive was taken from. Restore compares against this
-  // rather than the volume row, which may have been edited since.
+  checksum: text("checksum"), // sha256 of the archive before upload
+  // Host path a bind archive was taken from. Restore compares against this, not the volume row.
   resolvedSource: text("resolved_source"),
-  // "directory" or "file" for a bind archive. Restore refuses when the
-  // destination is no longer the shape the archive was taken from.
+  // "directory" or "file" for a bind archive. Restore refuses a destination of another shape.
   sourceKind: text("source_kind"),
-  // Fingerprint of the master key whose ciphertext this archive carries. Set
-  // only on Vardo's own database dump; null everywhere else. Restore refuses
-  // when it does not match the running key.
+  // Master key fingerprint on Vardo's own database dump only. Restore refuses a mismatch with the running key.
   keyFingerprint: text("key_fingerprint"),
-  // The archive's data key, wrapped by the master key (base64). The header
-  // holds the same copy. Null for a plaintext archive and once pruned.
+  // The archive's data key wrapped by the master key (base64). Null for a plaintext archive and once pruned.
   archiveKey: text("archive_key"),
   // Fingerprint of the key that wrapped archiveKey.
   archiveKeyFingerprint: text("archive_key_fingerprint"),
-  // Literal paths this archive left out, relative to the volume root. Restore
-  // carries them over from the live copy instead of deleting them. Recorded per
-  // archive, never re-derived: a pattern dropped afterwards would leave the data
-  // in neither the archive nor this list.
+  // Paths this archive left out, relative to the volume root. Restore keeps the live copies.
+  // Recorded per archive and never re-derived, or dropped patterns lose data.
   excludedPaths: jsonb("excluded_paths").$type<string[]>(),
-  // Drill results. Kept apart from status: a backup that succeeded is not the
-  // same as one that has been shown to restore.
+  // Restore drill results.
   verifiedAt: timestamp("verified_at"),
   verifyOutcome: text("verify_outcome"),
   verifyDetail: text("verify_detail"),

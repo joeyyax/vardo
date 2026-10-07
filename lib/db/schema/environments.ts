@@ -14,9 +14,7 @@ import {
 import { apps } from "./apps";
 import { projects } from "./projects";
 
-// ---------------------------------------------------------------------------
-// Group Environments (staging/preview environments spanning a group)
-// ---------------------------------------------------------------------------
+// Staging and preview environments spanning a group.
 
 export const groupEnvironments = pgTable(
   "group_environment",
@@ -36,10 +34,6 @@ export const groupEnvironments = pgTable(
   },
   (t) => [unique("group_env_project_name_uniq").on(t.projectId, t.name)]
 );
-
-// ---------------------------------------------------------------------------
-// Environments
-// ---------------------------------------------------------------------------
 
 export const environments = pgTable(
   "environment",
@@ -64,15 +58,13 @@ export const environments = pgTable(
   (t) => [unique("env_app_name_uniq").on(t.appId, t.name)]
 );
 
-// ---------------------------------------------------------------------------
-// Environment env (a non-default environment's own env file)
-// ---------------------------------------------------------------------------
+// A non-default environment's own env file.
 
 export const environmentEnv = pgTable("environment_env", {
   environmentId: text("environment_id")
     .primaryKey()
     .references(() => environments.id, { onDelete: "cascade" }),
-  envContent: text("env_content").notNull(), // AES-256-GCM, same format as apps.env_content
+  envContent: text("env_content").notNull(), // Encrypted like apps.env_content
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

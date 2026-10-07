@@ -2,10 +2,6 @@ import { index, integer, jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-
 import { apps } from "./apps";
 import { organizations } from "./organizations";
 
-// ---------------------------------------------------------------------------
-// Security scan findings type (stored as JSONB)
-// ---------------------------------------------------------------------------
-
 export type SecurityFinding = {
   type: "file-exposure" | "missing-header" | "exposed-port" | "tls";
   severity: "critical" | "warning" | "info";
@@ -13,10 +9,6 @@ export type SecurityFinding = {
   description: string;
   detail?: string;
 };
-
-// ---------------------------------------------------------------------------
-// App Security Scans
-// ---------------------------------------------------------------------------
 
 export const appSecurityScans = pgTable(
   "app_security_scan",

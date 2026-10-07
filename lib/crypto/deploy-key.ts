@@ -7,10 +7,7 @@ import { join } from "path";
 import { tmpdir } from "os";
 import { nanoid } from "nanoid";
 
-/**
- * Fetch and decrypt a deploy key's private key.
- * Returns the PEM-encoded private key string or null if not found.
- */
+/** Decrypted PEM private key for a deploy key, or null if not found. */
 export async function getDecryptedPrivateKey(
   keyId: string,
   orgId: string
@@ -26,41 +23,30 @@ export async function getDecryptedPrivateKey(
     return decrypt(key.privateKey, orgId);
   }
 
-  // Fallback for any unencrypted keys (should not happen, but defensive)
+  // Unencrypted legacy key.
   return key.privateKey;
 }
 
-/**
- * Write a temporary SSH key file and return the file path.
- * The file is created with mode 0600 (owner read-only) as required by SSH.
- *
- * Caller is responsible for cleaning up with cleanupKeyFile().
- */
+/** Writes a 0600 temporary SSH key file and returns its path. Clean up with cleanupKeyFile(). */
 export async function writeTemporaryKeyFile(privateKeyPem: string): Promise<string> {
   const filename = `.host-deploy-key-${nanoid(8)}`;
   const filepath = join(tmpdir(), filename);
   await writeFile(filepath, privateKeyPem, { mode: 0o600 });
-  // Explicitly set permissions (writeFile mode doesn't always apply on all systems)
+  // writeFile's mode isn't always applied.
   await chmod(filepath, 0o600);
   return filepath;
 }
 
-/**
- * Remove a temporary SSH key file.
- */
+/** Removes a temporary SSH key file. */
 export async function cleanupKeyFile(filepath: string): Promise<void> {
   try {
     await unlink(filepath);
   } catch {
-    // Best-effort cleanup
+    // Best effort.
   }
 }
 
-/**
- * Build the GIT_SSH_COMMAND for use with a deploy key.
- * Uses accept-new with a persistent known_hosts so host keys are
- * trusted on first connection and verified on subsequent ones.
- */
+/** GIT_SSH_COMMAND for a deploy key. Trusts host keys on first use and verifies them after. */
 export function buildGitSshCommand(keyFilePath: string): string {
   return `ssh -i "${keyFilePath}" -o StrictHostKeyChecking=accept-new`;
 }

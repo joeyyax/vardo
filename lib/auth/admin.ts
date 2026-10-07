@@ -9,7 +9,7 @@ export function credentialMayAdmin(session: { authMethod: "token" | "session" })
   return session.authMethod === "session";
 }
 
-/** Non-throwing admin check, for deciding whether to show admin-only affordances. */
+/** Non-throwing admin check. */
 export async function isAppAdmin(): Promise<boolean> {
   const session = await getSession();
   if (!session?.user?.id) return false;
@@ -21,17 +21,12 @@ export async function isAppAdmin(): Promise<boolean> {
   return Boolean(dbUser?.isAppAdmin);
 }
 
-/** Container discovery reads every host container's env, so it is instance-admin only. */
+/** Instance admin only: container discovery reads every host container's env. */
 export async function canImportContainers(): Promise<boolean> {
   return (await isFeatureEnabledAsync("container-import")) && (await isAppAdmin());
 }
 
-/**
- * Require the current user to be an app admin, signed in with a session.
- *
- * Throws `Error("Unauthorized")` when no credential is present.
- * Throws `Error("Forbidden")` when credentials are valid but the caller is not an admin.
- */
+/** Requires an app admin signed in with a session. Throws "Unauthorized" or "Forbidden". */
 export async function requireAppAdmin() {
   const session = await requireSession();
   if (!credentialMayAdmin(session)) throw new Error("Forbidden");
@@ -45,9 +40,7 @@ export async function requireAppAdmin() {
   return session;
 }
 
-/**
- * Require app-admin access. The request param is unused and kept for callers.
- */
+/** Requires app-admin access. The request param is unused. */
 export async function requireAdminAuth(_request?: unknown): Promise<void> {
   await requireAppAdmin();
 }

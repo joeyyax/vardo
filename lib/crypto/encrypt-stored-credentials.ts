@@ -1,9 +1,4 @@
-// ---------------------------------------------------------------------------
-// Encrypt credentials stored before they were encrypted on write: backup target
-// configs, the registry_credentials setting, mesh outbound tokens, notification
-// channel secrets and org env var values. Runs on every startup; values already encrypted
-// are left alone.
-// ---------------------------------------------------------------------------
+// Encrypts stored plaintext credentials on startup. Values already encrypted are left alone.
 
 import { db } from "@/lib/db";
 import { backupTargets, meshPeers, notificationChannels, orgEnvVars, systemSettings } from "@/lib/db/schema";
@@ -29,10 +24,7 @@ export type CredentialMigration = {
   orgEnvVars: number;
 };
 
-/**
- * Only a key this database already trusts may encrypt. Sealing under a wrong
- * key strands the value once the right key is restored.
- */
+/** Only a key this database already trusts may encrypt, or values are stranded under the wrong key. */
 export function canEncryptStoredCredentials(state: KeyEscrowState | null): boolean {
   return state?.status.kind === "ok" && state.probe.undecryptable === 0;
 }

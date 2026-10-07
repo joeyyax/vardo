@@ -8,19 +8,12 @@ const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 12;
 const TAG_LENGTH = 16;
 
-/**
- * Prefix that marks an encrypted blob. All values produced by encrypt() and
- * encryptSystem() start with this string, making detection unambiguous and
- * immune to false-positives on plaintext that happens to contain two colons.
- */
+/** Prefix on every value from encrypt() and encryptSystem(). */
 export const ENCRYPTED_PREFIX = "enc:v1:";
 
 let _masterKeyChecked = false;
 
-/**
- * Check that the encryption master key is configured.
- * Call on startup to fail fast rather than at first encrypt/decrypt.
- */
+/** Checks that the encryption master key is configured. Call on startup. */
 export function checkEncryptionKey(): { ok: boolean; error?: string } {
   const key = process.env.ENCRYPTION_MASTER_KEY;
   if (!key) {
@@ -41,10 +34,7 @@ function getMasterKey(): Buffer {
   return normalizeMasterKey(key);
 }
 
-/**
- * Fingerprint of the running master key, or null when none is configured.
- * Identifies which key a body of ciphertext belongs to without exposing it.
- */
+/** Fingerprint of the running master key, or null when none is configured. */
 export function runningKeyFingerprint(): string | null {
   const key = process.env.ENCRYPTION_MASTER_KEY;
   return key ? fingerprintMasterKey(key) : null;
@@ -55,10 +45,7 @@ function deriveOrgKey(orgId: string): Buffer {
   return Buffer.from(hkdfSync("sha256", master, orgId, "host-env-encryption", 32));
 }
 
-/**
- * Encrypt plaintext for a specific org.
- * Returns a string in the format: enc:v1:iv:ciphertext:authTag (all hex-encoded)
- */
+/** Encrypts plaintext for an org as enc:v1:iv:ciphertext:authTag (hex). */
 export function encrypt(plaintext: string, orgId: string): string {
   const key = deriveOrgKey(orgId);
   const iv = randomBytes(IV_LENGTH);
@@ -71,13 +58,8 @@ export function encrypt(plaintext: string, orgId: string): string {
   return `${ENCRYPTED_PREFIX}${iv.toString("hex")}:${encrypted}:${tag}`;
 }
 
-/**
- * Decrypt a value encrypted with encrypt().
- * Accepts both the current enc:v1:iv:ciphertext:tag format and the legacy
- * iv:ciphertext:tag format (for rows encrypted before the prefix was added).
- */
+/** Decrypts a value from encrypt(). Accepts the legacy unprefixed iv:ciphertext:tag format. */
 export function decrypt(encrypted: string, orgId: string): string {
-  // Strip prefix if present
   const payload = encrypted.startsWith(ENCRYPTED_PREFIX)
     ? encrypted.slice(ENCRYPTED_PREFIX.length)
     : encrypted;
@@ -101,16 +83,9 @@ export function decrypt(encrypted: string, orgId: string): string {
   return decrypted;
 }
 
-/**
- * Check if a value is an encrypted blob.
- * The canonical format is enc:v1:iv:ciphertext:authTag. The legacy format
- * (iv:ciphertext:authTag with no prefix) is also recognised for rows written
- * before the prefix was introduced, but is increasingly unlikely to match
- * plaintext by accident.
- */
+/** Whether a value is an encrypted blob, prefixed or legacy unprefixed. */
 export function isEncrypted(value: string): boolean {
   if (value.startsWith(ENCRYPTED_PREFIX)) {
-    // Current format — unambiguous
     const payload = value.slice(ENCRYPTED_PREFIX.length);
     const parts = payload.split(":");
     if (parts.length !== 3) return false;
@@ -122,7 +97,7 @@ export function isEncrypted(value: string): boolean {
       /^[0-9a-f]+$/i.test(tagHex)
     );
   }
-  // Legacy format — stricter validation to reduce false-positives
+  // Legacy format: stricter validation to avoid matching plaintext.
   const parts = value.split(":");
   if (parts.length !== 3) return false;
   const [ivHex, cipherHex, tagHex] = parts;
@@ -136,38 +111,24 @@ export function isEncrypted(value: string): boolean {
   );
 }
 
-/**
- * Try to decrypt, falling back to plaintext for unmigrated data.
- * Returns { content, wasEncrypted, decryptFailed } so callers can distinguish:
- *   - wasEncrypted=false, decryptFailed=false → plaintext (unmigrated row)
- *   - wasEncrypted=true,  decryptFailed=false → successfully decrypted
- *   - wasEncrypted=true,  decryptFailed=true  → recognised as encrypted but
- *     decryption failed (wrong key / corrupted data); content is empty
- */
+/** Decrypts, or returns plaintext as-is. On a failed decrypt, content is empty and decryptFailed is set. */
 export function decryptOrFallback(
   value: string,
   orgId: string
 ): { content: string; wasEncrypted: boolean; decryptFailed?: boolean } {
   if (!isEncrypted(value)) {
-    // Plaintext — unmigrated data
     return { content: value, wasEncrypted: false };
   }
 
   try {
     return { content: decrypt(value, orgId), wasEncrypted: true };
   } catch {
-    // Decryption failed — wrong key or corrupted data
     log.error(`Decryption failed for org ${orgId} — wrong key or corrupted data`);
     return { content: "", wasEncrypted: true, decryptFailed: true };
   }
 }
 
-// ---------------------------------------------------------------------------
-// System-level encryption (not org-scoped)
-// Used for systemSettings rows that contain secrets (backup creds, GitHub
-// App private key, email API tokens). Uses a fixed "system" scope so that
-// the derived key is deterministic but separate from all org keys.
-// ---------------------------------------------------------------------------
+// System-level encryption for secrets in systemSettings, keyed separately from every org.
 
 const SYSTEM_SCOPE = "host-system-settings";
 
@@ -176,10 +137,7 @@ function deriveSystemKey(): Buffer {
   return Buffer.from(hkdfSync("sha256", master, SYSTEM_SCOPE, "host-system-encryption", 32));
 }
 
-/**
- * Encrypt a plaintext string at the system level (not org-scoped).
- * Returns enc:v1:iv:ciphertext:authTag (hex-encoded), same format as encrypt().
- */
+/** Encrypts plaintext with the system key, in the same format as encrypt(). */
 export function encryptSystem(plaintext: string): string {
   const key = deriveSystemKey();
   const iv = randomBytes(IV_LENGTH);
@@ -192,13 +150,8 @@ export function encryptSystem(plaintext: string): string {
   return `${ENCRYPTED_PREFIX}${iv.toString("hex")}:${encrypted}:${tag}`;
 }
 
-/**
- * Decrypt a value encrypted with encryptSystem().
- * Accepts both the current enc:v1:iv:ciphertext:tag format and the legacy
- * iv:ciphertext:tag format (for rows encrypted before the prefix was added).
- */
+/** Decrypts a value from encryptSystem(). Accepts the legacy unprefixed format. */
 export function decryptSystem(encrypted: string): string {
-  // Strip prefix if present
   const payload = encrypted.startsWith(ENCRYPTED_PREFIX)
     ? encrypted.slice(ENCRYPTED_PREFIX.length)
     : encrypted;
@@ -222,15 +175,7 @@ export function decryptSystem(encrypted: string): string {
   return decrypted;
 }
 
-/**
- * Try to decrypt a system setting, falling back to plaintext for
- * rows written before encryption was added.
- * Returns { content, wasEncrypted, decryptFailed } so callers can distinguish:
- *   - wasEncrypted=false, decryptFailed=false → plaintext (unmigrated row)
- *   - wasEncrypted=true,  decryptFailed=false → successfully decrypted
- *   - wasEncrypted=true,  decryptFailed=true  → recognised as encrypted but
- *     decryption failed (wrong key / corrupted data); content is empty
- */
+/** System-key decryptOrFallback(). */
 export function decryptSystemOrFallback(value: string): { content: string; wasEncrypted: boolean; decryptFailed?: boolean } {
   if (!isEncrypted(value)) {
     return { content: value, wasEncrypted: false };

@@ -10,19 +10,13 @@ import {
 import { user } from "./auth";
 import { organizations } from "./organizations";
 
-// ---------------------------------------------------------------------------
-// System Settings (key-value store for setup wizard + global config)
-// ---------------------------------------------------------------------------
+// Key-value store for setup and global config.
 
 export const systemSettings = pgTable("system_settings", {
   key: text("key").primaryKey(),
   value: text("value").notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
-
-// ---------------------------------------------------------------------------
-// API Tokens
-// ---------------------------------------------------------------------------
 
 export const apiTokens = pgTable(
   "api_token",
@@ -36,9 +30,7 @@ export const apiTokens = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     tokenHash: text("token_hash").notNull(),
-    // Lets the token act on any organization its user is a member of, checked
-    // per request. Must stay false by default — flipping the default widens
-    // every existing token at once.
+    // Lets the token act on any of its user's organizations. Keep the default false; flipping it widens every token.
     crossOrg: boolean("cross_org").default(false).notNull(),
     // Unused: tokens never carry instance-admin power.
     adminAccess: boolean("admin_access").default(false).notNull(),
@@ -53,10 +45,6 @@ export const apiTokens = pgTable(
   ]
 );
 
-// ---------------------------------------------------------------------------
-// Deploy Keys
-// ---------------------------------------------------------------------------
-
 export const deployKeys = pgTable("deploy_key", {
   id: text("id").primaryKey(),
   organizationId: text("organization_id")
@@ -64,13 +52,9 @@ export const deployKeys = pgTable("deploy_key", {
     .references(() => organizations.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   publicKey: text("public_key").notNull(),
-  privateKey: text("private_key").notNull(), // AES-256-GCM encrypted
+  privateKey: text("private_key").notNull(), // Encrypted
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
-
-// ---------------------------------------------------------------------------
-// GitHub App Installations
-// ---------------------------------------------------------------------------
 
 export const githubAppInstallations = pgTable(
   "github_app_installation",

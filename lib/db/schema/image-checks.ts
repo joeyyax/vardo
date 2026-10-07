@@ -10,11 +10,7 @@ import {
 import { apps } from "./apps";
 import { organizations } from "./organizations";
 
-/**
- * Registry facts, cached per image reference rather than per app so several
- * apps on the same image cost one request. Not org-scoped — nothing here is
- * tenant data, and sharing it keeps registry traffic down.
- */
+/** Registry facts cached per image reference. Not org-scoped: nothing here is tenant data. */
 export const imageUpdateChecks = pgTable(
   "image_update_check",
   {
@@ -25,14 +21,14 @@ export const imageUpdateChecks = pgTable(
     })
       .notNull()
       .default("unknown"),
-    /** Newer tag we can defend, for pinned refs. */
+    /** Newer tag for pinned refs. */
     latestTag: text("latest_tag"),
     severity: text("severity", {
       enum: ["patch", "minor", "major", "build", "unknown"],
     }),
     /** Manifest-list digest the tag resolved to at check time. */
     remoteDigest: text("remote_digest"),
-    /** Tags we could not order, surfaced so a miss is visible. */
+    /** Tags that couldn't be ordered. */
     unorderable: jsonb("unorderable").$type<string[]>().default([]),
     /** Newer tags to choose from, newest first. */
     available: jsonb("available").$type<string[]>().default([]),
@@ -47,10 +43,7 @@ export const imageUpdateChecks = pgTable(
   (t) => [index("image_update_check_checked_at_idx").on(t.checkedAt)],
 );
 
-/**
- * Updates the org has chosen not to be told about, one row per app and compose
- * service. Org-scoped, unlike the check cache: this is a decision, not a fact.
- */
+/** Ignored updates, one row per app and compose service. */
 export const imageUpdateIgnores = pgTable(
   "image_update_ignore",
   {
@@ -71,8 +64,7 @@ export const imageUpdateIgnores = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => [
-    // One rule per target, so re-ignoring replaces rather than stacks. A
-    // single-image app has no service, and two nulls must collide.
+    // One rule per target. Two null services must collide.
     unique("image_update_ignore_target_key")
       .on(t.appId, t.composeService)
       .nullsNotDistinct(),

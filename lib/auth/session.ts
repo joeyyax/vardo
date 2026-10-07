@@ -9,11 +9,7 @@ import { eq, and } from "drizzle-orm";
 
 export const CURRENT_ORG_COOKIE = "host_current_org";
 
-/**
- * Auth method discriminator for session results.
- * Token auth stashes the bound orgId so getCurrentOrg can use it
- * without relying on cookies.
- */
+/** Auth method on a session result. Token auth carries its bound orgId. */
 type TokenAuthMeta = {
   authMethod: "token";
   tokenOrgId: string;
@@ -23,23 +19,15 @@ type TokenAuthMeta = {
 type SessionAuthMeta = { authMethod: "session" };
 type AuthMeta = TokenAuthMeta | SessionAuthMeta;
 
-// Augmented session type returned by getSession
 type SessionResult = Awaited<ReturnType<typeof auth.api.getSession>> & AuthMeta;
 
 /**
- * Get the current session on the server.
- *
- * Resolution order:
- *  1. `Authorization: Bearer <token>` header — resolves to the token owner's session,
- *     without instance-admin power, and only when the api-tokens feature is enabled
- *  2. Session cookie via Better Auth
- *
- * Returns null if not authenticated.
+ * Current session from a Bearer token (when api-tokens is enabled), then the session cookie. Null if unauthenticated.
+ * Token sessions never carry instance-admin power.
  */
 export const getSession = cache(async (): Promise<SessionResult | null> => {
   const reqHeaders = await headers();
 
-  // Check for Bearer token first (API token auth)
   const authHeader = reqHeaders.get("authorization");
   if (authHeader?.startsWith("Bearer ") && (await isFeatureEnabledAsync("api-tokens"))) {
     const rawToken = authHeader.slice(7).trim();
@@ -52,7 +40,6 @@ export const getSession = cache(async (): Promise<SessionResult | null> => {
         });
 
         if (tokenUser) {
-          // Update lastUsedAt in the background
           db.update(apiTokens)
             .set({ lastUsedAt: new Date() })
             .where(eq(apiTokens.id, token.id))
@@ -89,7 +76,6 @@ export const getSession = cache(async (): Promise<SessionResult | null> => {
     }
   }
 
-  // Fall back to session cookie
   const sessionResult = await auth.api.getSession({
     headers: reqHeaders,
   });
@@ -102,11 +88,7 @@ export const getSession = cache(async (): Promise<SessionResult | null> => {
   } as SessionResult;
 });
 
-/**
- * Get the current user's organization.
- * Token auth uses the token's bound org and nothing else. Session auth uses
- * cookie preference, then the first membership.
- */
+/** Current org: the token's bound org, or the cookie preference then first membership. */
 export const getCurrentOrg = cache(async () => {
   const session = await getSession();
 
@@ -116,12 +98,10 @@ export const getCurrentOrg = cache(async () => {
 
   const isToken = session.authMethod === "token";
 
-  // Determine preferred org: token's bound org > cookie > first membership
   const preferredOrgId = isToken
     ? session.tokenOrgId
     : (await cookies()).get(CURRENT_ORG_COOKIE)?.value;
 
-  // If there's a preferred org, verify user has access to it
   if (preferredOrgId) {
     const membership = await db.query.memberships.findFirst({
       where: and(
@@ -133,7 +113,6 @@ export const getCurrentOrg = cache(async () => {
       },
     });
 
-    // Skip system-managed orgs when selfManagement is off
     const showSystemOrgs = await isFeatureEnabledAsync("selfManagement");
     if (membership && (showSystemOrgs || !membership.organization.isSystemManaged)) {
       return {
@@ -149,7 +128,6 @@ export const getCurrentOrg = cache(async () => {
   // A token is pinned to its org. Never fall back to another membership.
   if (isToken) return null;
 
-  // Fall back to first non-system membership (or any if selfManagement is on)
   const showSystemOrgs = await isFeatureEnabledAsync("selfManagement");
   const allMemberships = await db.query.memberships.findMany({
     where: eq(memberships.userId, session.user.id),
@@ -175,10 +153,7 @@ export const getCurrentOrg = cache(async () => {
   };
 });
 
-/**
- * Require a session - throws if not authenticated.
- * Use this in API routes where auth is required.
- */
+/** Returns the session or throws if unauthenticated. */
 export async function requireSession() {
   const session = await getSession();
 
@@ -189,10 +164,7 @@ export async function requireSession() {
   return session;
 }
 
-/**
- * Require an organization - throws if not authenticated or no org.
- * Use this in API routes that need org context.
- */
+/** Returns session and org or throws. */
 export async function requireOrg() {
   const session = await requireSession();
   const orgData = await getCurrentOrg();
@@ -207,10 +179,7 @@ export async function requireOrg() {
   };
 }
 
-/**
- * Get all organizations the current user has access to.
- * Returns an empty array if not authenticated.
- */
+/** Organizations the current user belongs to. */
 export const getUserOrganizations = cache(async () => {
   const session = await getSession();
 

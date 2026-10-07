@@ -8,10 +8,6 @@ import {
 } from "drizzle-orm/pg-core";
 import { apps } from "./apps";
 
-// ---------------------------------------------------------------------------
-// Domains
-// ---------------------------------------------------------------------------
-
 export const domains = pgTable("domain", {
   id: text("id").primaryKey(),
   appId: text("app_id")
@@ -33,9 +29,7 @@ export const domains = pgTable("domain", {
   ]
 );
 
-// ---------------------------------------------------------------------------
-// Domain Checks (health monitoring history)
-// ---------------------------------------------------------------------------
+// Domain health check history.
 
 export const domainChecks = pgTable(
   "domain_check",
@@ -55,19 +49,14 @@ export const domainChecks = pgTable(
   ]
 );
 
-// ---------------------------------------------------------------------------
-// Domain Certificate Observations
-// ---------------------------------------------------------------------------
-
-// Latest TLS certificate seen for a domain, one row per domain. Overwritten by
-// each probe — only the current expiry matters.
+// Latest TLS certificate seen per domain, overwritten by each probe.
 export const domainCertChecks = pgTable("domain_cert_check", {
   domainId: text("domain_id")
     .primaryKey()
     .references(() => domains.id, { onDelete: "cascade" }),
   /** Certificate notAfter. Null when the probe read no usable certificate. */
   expiresAt: timestamp("expires_at"),
-  /** SHA-256 of the peer certificate, so domains sharing one cert can be grouped. */
+  /** SHA-256 of the peer certificate. */
   fingerprint: text("fingerprint"),
   /** Verdict kind: ok, expiring, expired, not-issued or unknown. */
   status: text("status").notNull(),

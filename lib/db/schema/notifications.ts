@@ -13,10 +13,6 @@ import { notificationChannelTypeEnum } from "./enums";
 import { organizations } from "./organizations";
 import { user } from "./auth";
 
-// ---------------------------------------------------------------------------
-// Notification Channels
-// ---------------------------------------------------------------------------
-
 export const notificationChannels = pgTable(
   "notification_channel",
   {
@@ -33,9 +29,7 @@ export const notificationChannels = pgTable(
   (t) => [index("notification_channel_org_idx").on(t.organizationId)]
 );
 
-// ---------------------------------------------------------------------------
-// Weekly Digest Settings (per-org)
-// ---------------------------------------------------------------------------
+// Weekly digest settings per org.
 
 export const digestSettings = pgTable("digest_setting", {
   id: text("id").primaryKey(),
@@ -53,9 +47,7 @@ export const digestSettings = pgTable("digest_setting", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
-// ---------------------------------------------------------------------------
-// User Notification Preferences (per-user, per-org, per-channel, per-event)
-// ---------------------------------------------------------------------------
+// Notification preferences per user, org, channel and event.
 
 export const userNotificationPreferences = pgTable(
   "user_notification_preference",
@@ -90,10 +82,7 @@ export const userNotificationPreferences = pgTable(
   ]
 );
 
-// ---------------------------------------------------------------------------
-// User Digest Preferences (per-user, per-org)
-// Weekly digest opt-in — additive to real-time notifications.
-// ---------------------------------------------------------------------------
+// Weekly digest opt-in per user and org.
 
 export const userDigestPreferences = pgTable(
   "user_digest_preference",
@@ -116,9 +105,7 @@ export const userDigestPreferences = pgTable(
   ]
 );
 
-// ---------------------------------------------------------------------------
-// Notification log — records every delivery attempt + result
-// ---------------------------------------------------------------------------
+// Every delivery attempt and its result.
 
 export const notificationLogs = pgTable(
   "notification_log",
@@ -135,7 +122,7 @@ export const notificationLogs = pgTable(
     eventType: text("event_type").notNull(), // deploy.success, backup.failed, etc.
     eventTitle: text("event_title").notNull(),
     status: text("status").notNull(), // success, failed
-    error: text("error"), // error message if failed
+    error: text("error"),
     attempt: integer("attempt").notNull().default(1),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },

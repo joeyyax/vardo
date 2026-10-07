@@ -20,12 +20,7 @@ type RunScanOpts = {
   trigger: ScanTrigger;
 };
 
-/**
- * Run a full security scan for an app. Persists the scan record and emits
- * a notification if critical findings are found.
- *
- * Safe to call fire-and-forget — errors are caught internally.
- */
+/** Runs a security scan for an app, persists it and notifies on findings. Never throws. */
 export async function runSecurityScan(opts: RunScanOpts): Promise<string | null> {
   const { appId, organizationId, trigger } = opts;
 
@@ -45,7 +40,6 @@ export async function runSecurityScan(opts: RunScanOpts): Promise<string | null>
   const scanId = nanoid();
   const startedAt = new Date();
 
-  // Create the scan record in "running" state
   await db.insert(appSecurityScans).values({
     id: scanId,
     appId,
@@ -59,7 +53,7 @@ export async function runSecurityScan(opts: RunScanOpts): Promise<string | null>
   });
 
   try {
-    // Load app with domains and exposed ports, scoped to the org for defense-in-depth.
+    // Scoped to the org for defense in depth.
     const app = await db.query.apps.findFirst({
       where: and(eq(apps.id, appId), eq(apps.organizationId, organizationId)),
       columns: { id: true, name: true, displayName: true, exposedPorts: true },
@@ -86,13 +80,11 @@ export async function runSecurityScan(opts: RunScanOpts): Promise<string | null>
 
     const allFindings: SecurityFinding[] = [];
 
-    // Port exposure — static check, always run
     if (app.exposedPorts && (app.exposedPorts as { internal: number }[]).length > 0) {
       const portFindings = checkExposedPorts(app.exposedPorts as { internal: number; external?: number }[]);
       allFindings.push(...portFindings);
     }
 
-    // Network-based checks — only if the app has a domain
     if (primaryDomain) {
       const domain = primaryDomain.domain;
 
@@ -117,7 +109,6 @@ export async function runSecurityScan(opts: RunScanOpts): Promise<string | null>
     const criticalCount = allFindings.filter((f) => f.severity === "critical").length;
     const warningCount = allFindings.filter((f) => f.severity === "warning").length;
 
-    // Persist completed scan
     await db
       .update(appSecurityScans)
       .set({
@@ -134,7 +125,6 @@ export async function runSecurityScan(opts: RunScanOpts): Promise<string | null>
       `[${appName}] Scan complete — ${criticalCount} critical, ${warningCount} warning, ${allFindings.length} total findings`,
     );
 
-    // Emit notification for critical or warning findings
     if (criticalCount > 0 || warningCount > 0) {
       try {
         const { emit } = await import("@/lib/notifications/dispatch");
@@ -158,7 +148,6 @@ export async function runSecurityScan(opts: RunScanOpts): Promise<string | null>
       }
     }
 
-    // Prune old scans — keep last 10 per app
     await pruneOldScans(appId);
 
     return scanId;
@@ -173,9 +162,7 @@ export async function runSecurityScan(opts: RunScanOpts): Promise<string | null>
   }
 }
 
-/**
- * Keep only the most recent 10 completed scans per app.
- */
+/** Keeps the 10 most recent completed scans per app. */
 async function pruneOldScans(appId: string): Promise<void> {
   try {
     const recent = await db.query.appSecurityScans.findMany({
@@ -194,10 +181,7 @@ async function pruneOldScans(appId: string): Promise<void> {
   }
 }
 
-/**
- * Run security scans for all active apps in an organization that have domains.
- * Used by the daily scheduled scan.
- */
+/** Scans every active app with a domain in an organization. */
 export async function runScheduledScans(organizationId: string): Promise<void> {
   const activeApps = await db.query.apps.findMany({
     where: eq(apps.organizationId, organizationId),

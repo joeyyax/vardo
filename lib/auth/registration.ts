@@ -18,10 +18,7 @@ async function hasPendingInvitation(email: string): Promise<boolean> {
   return row !== undefined;
 }
 
-/**
- * Whether a new account may be created for this email. "approval" has no queue
- * behind it, so it refuses like "closed".
- */
+/** Whether a new account may be created for this email. "approval" refuses like "closed". */
 export async function registrationAllowed(email: string): Promise<boolean> {
   if (await needsSetup()) return true;
   const { registrationMode } = await getAuthConfig();

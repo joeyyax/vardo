@@ -1,8 +1,4 @@
-// ---------------------------------------------------------------------------
-// OAuth access and refresh tokens on `account`, encrypted by Better Auth
-// (account.encryptOAuthTokens). Rows stored before that was on are encrypted
-// on startup in Better Auth's own format.
-// ---------------------------------------------------------------------------
+// Encrypts plaintext OAuth tokens on `account` at startup, in Better Auth's format.
 
 import { symmetricEncrypt, type SecretConfig } from "better-auth/crypto";
 import { and, eq, ne, or, isNotNull } from "drizzle-orm";
@@ -26,7 +22,7 @@ async function seal(value: string | null, secret: string | SecretConfig): Promis
   return symmetricEncrypt({ key: secret, data: value });
 }
 
-/** Encrypt OAuth tokens stored as plaintext. Returns the number of accounts updated. */
+/** Encrypts plaintext OAuth tokens. Returns the number of accounts updated. */
 export async function encryptStoredOAuthTokens(secret: string | SecretConfig): Promise<number> {
   const rows = await db
     .select({ id: account.id, accessToken: account.accessToken, refreshToken: account.refreshToken })

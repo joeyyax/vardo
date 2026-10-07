@@ -9,35 +9,28 @@ export const authClient = createAuthClient({
   baseURL: process.env.NEXT_PUBLIC_BETTER_AUTH_URL ?? "http://localhost:3000",
 
   plugins: [
-    // Passkey client
     passkeyClient(),
 
-    // Two-factor authentication client
     twoFactorClient({
       onTwoFactorRedirect() {
-        // Redirect to 2FA verification page when needed
         const url = new URL("/login/2fa", window.location.origin);
         window.location.assign(url);
       },
     }),
 
-    // Magic link client
     magicLinkClient(),
 
-    // Infer additional user fields (isAppAdmin) from server config
+    // Infers isAppAdmin from the server config.
     inferAdditionalFields<typeof auth>(),
   ],
 });
 
-// Export commonly used hooks and functions
 export const {
   signIn,
   signOut,
   signUp,
   useSession,
   getSession,
-  // Passkey methods
   passkey,
-  // Two-factor methods
   twoFactor,
 } = authClient;

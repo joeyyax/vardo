@@ -5,11 +5,7 @@ import type { SecurityFinding } from "./types";
 
 const log = logger.child("security");
 
-/**
- * Paths to probe for sensitive file exposure after deploy.
- * Each entry optionally includes a content heuristic — if provided,
- * the response body must match for the path to count as exposed.
- */
+/** Paths to probe after deploy. A heuristic, when set, must match the body to count as exposed. */
 const PROBE_PATHS: { path: string; heuristic?: (body: string) => boolean }[] = [
   { path: "/.env", heuristic: (b) => b.includes("=") },
   { path: "/.git/config", heuristic: (b) => b.includes("[core]") },
@@ -27,24 +23,19 @@ const PROBE_PATHS: { path: string; heuristic?: (body: string) => boolean }[] = [
   { path: "/dump.sql", heuristic: (b) => b.includes("INSERT INTO") || b.includes("CREATE TABLE") },
   { path: "/.npmrc", heuristic: (b) => b.includes("registry") || b.includes("//") },
   { path: "/.docker/config.json", heuristic: (b) => b.includes("auths") },
-  // Match YAML key-value lines (word-char key followed by colon+space or colon+newline)
-  // to avoid matching every HTML/JSON/XML response.
+  // YAML key-value lines only, not any HTML/JSON/XML response.
   { path: "/config.yml", heuristic: (b) => /^[\w-]+\s*:/m.test(b) },
 ];
 
-/** Paths that are critical (private keys, credentials) vs warning-level */
+/** Critical paths; the rest are warnings. */
 const CRITICAL_PATHS = new Set(["/.env", "/.git/config", "/.git/HEAD", "/server.key", "/.ssh/id_rsa", "/wp-config.php"]);
 
 const TIMEOUT_MS = 3_000;
 const CONCURRENCY = 5;
 
-/** Maximum response body size to read — guards against large/slow responses. */
-const MAX_BODY_BYTES = 64 * 1024; // 64 KB
+const MAX_BODY_BYTES = 64 * 1024;
 
-/**
- * Probe a deployed domain for commonly exposed sensitive files.
- * Returns SecurityFinding[] for each exposed path found.
- */
+/** Probes a deployed domain for commonly exposed sensitive files. */
 export async function checkFileExposure(domain: string): Promise<SecurityFinding[]> {
   await assertPublicDomain(domain);
 
@@ -67,7 +58,6 @@ export async function checkFileExposure(domain: string): Promise<SecurityFinding
 
         if (res.status !== 200) return;
 
-        // Read response body with a hard size cap to prevent unbounded memory use.
         const buffer = await res.arrayBuffer();
         if (buffer.byteLength === 0) return;
 
@@ -88,7 +78,7 @@ export async function checkFileExposure(domain: string): Promise<SecurityFinding
           detail: path,
         });
       } catch {
-        // Timeout or network error — not exposed
+        // Timeout or network error: not exposed.
       }
     }),
   );

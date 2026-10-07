@@ -7,9 +7,7 @@ import {
 import { organizations } from "./organizations";
 import { apps } from "./apps";
 
-// ---------------------------------------------------------------------------
-// Tags (flat labels for filtering)
-// ---------------------------------------------------------------------------
+// Flat labels for filtering.
 
 export const tags = pgTable(
   "tag",

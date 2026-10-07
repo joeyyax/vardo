@@ -7,10 +7,7 @@ type PortRule = {
   description: string;
 };
 
-/**
- * Ports that should never be publicly exposed.
- * Grouped by category for clear messaging.
- */
+/** Ports that should never be publicly exposed. */
 const PORT_RULES: PortRule[] = [
   {
     ports: [5432, 5433],
@@ -103,10 +100,7 @@ type ExposedPort = {
   external?: number;
 };
 
-/**
- * Check an app's exposed port configuration for sensitive or dangerous ports.
- * This is a static check against the configured port mappings — no active scanning.
- */
+/** Flags sensitive ports in an app's configured port mappings. */
 export function checkExposedPorts(exposedPorts: ExposedPort[]): SecurityFinding[] {
   const findings: SecurityFinding[] = [];
   const reported = new Set<string>();
@@ -115,7 +109,7 @@ export function checkExposedPorts(exposedPorts: ExposedPort[]): SecurityFinding[
     const rule = portMap.get(internal);
     if (!rule) continue;
 
-    // Deduplicate by title in case multiple ports match the same rule
+    // Several ports can match one rule.
     if (reported.has(rule.title)) continue;
     reported.add(rule.title);
 

@@ -8,10 +8,6 @@ import {
 import { apps } from "./apps";
 import { environments } from "./environments";
 
-// ---------------------------------------------------------------------------
-// Environment Variables
-// ---------------------------------------------------------------------------
-
 export const envVars = pgTable(
   "env_var",
   {
@@ -20,7 +16,7 @@ export const envVars = pgTable(
       .notNull()
       .references(() => apps.id, { onDelete: "cascade" }),
     key: text("key").notNull(),
-    value: text("value").notNull(), // AES-256-GCM encrypted
+    value: text("value").notNull(), // Encrypted
     environmentId: text("environment_id").references(() => environments.id, {
       onDelete: "cascade",
     }),

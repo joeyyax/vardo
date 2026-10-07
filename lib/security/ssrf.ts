@@ -1,15 +1,5 @@
-// ---------------------------------------------------------------------------
-// Outbound URL policy
-//
-// Webhooks, url-type cron jobs and hook callbacks all fetch a URL somebody
-// typed into a form. Without a check that reaches the cloud metadata service
-// and every host on the internal network — a boundary the person setting the
-// URL has no account on.
-//
-// Addresses are judged after DNS resolution, so decimal, octal and hex host
-// encodings (http://2130706433/) need no special handling: they resolve to the
-// address they always meant, and the address is what gets checked.
-// ---------------------------------------------------------------------------
+// Outbound URL policy for user-supplied URLs. Blocks metadata and internal hosts.
+// Addresses are checked after DNS resolution, which covers decimal, octal and hex host encodings.
 
 import { lookup } from "dns/promises";
 
@@ -20,10 +10,6 @@ export class BlockedUrlError extends Error {
     this.name = "BlockedUrlError";
   }
 }
-
-// ---------------------------------------------------------------------------
-// Address parsing
-// ---------------------------------------------------------------------------
 
 /** Parse dotted-quad IPv4 into 4 bytes, or null if it is not one. */
 export function parseIPv4(address: string): number[] | null {
@@ -39,12 +25,7 @@ export function parseIPv4(address: string): number[] | null {
   return bytes;
 }
 
-/**
- * Parse IPv6 into 16 bytes, expanding `::`. Returns null if it is not one.
- *
- * IPv4-mapped and NAT64 forms keep their trailing dotted quad, which lands in
- * the last four bytes — exactly where the mapped-address check looks for it.
- */
+/** Parse IPv6 into 16 bytes, expanding `::`. Returns null if it is not one. A trailing dotted quad fills the last four bytes. */
 export function parseIPv6(address: string): number[] | null {
   let text = address;
   const zone = text.indexOf("%");
@@ -80,11 +61,7 @@ export function parseIPv6(address: string): number[] | null {
   return [...head, ...new Array(gap).fill(0), ...tail];
 }
 
-// ---------------------------------------------------------------------------
-// Policy
-// ---------------------------------------------------------------------------
-
-/** [first byte(s), prefix length, why] — IPv4 ranges that must not be reached. */
+/** IPv4 ranges that must not be reached. */
 const BLOCKED_V4: { cidr: string; reason: string }[] = [
   { cidr: "0.0.0.0/8", reason: "this network" },
   { cidr: "10.0.0.0/8", reason: "private network" },
@@ -133,17 +110,13 @@ export function inRange(bytes: number[], net: number[], bits: number): boolean {
   return true;
 }
 
-// Full 16 bytes — inRange compares equal-length arrays, and only the first 96
-// bits are examined. The trailing zeros are padding, not part of the prefix.
+// 16 bytes for inRange; only the first 96 bits are compared.
 const V4_MAPPED_PREFIX = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff, 0, 0, 0, 0];
 const NAT64_PREFIX = [0, 0x64, 0xff, 0x9b, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 
 /**
  * Why this address is refused, or null when it may be reached.
- *
- * IPv4-mapped (`::ffff:169.254.169.254`) and NAT64 forms are unwrapped and
- * judged as the IPv4 address they carry. Skipping that unwrap is the standard
- * way these filters get walked through.
+ * IPv4-mapped and NAT64 forms are judged as their IPv4 address; skipping that unwrap bypasses the filter.
  */
 export function blockedAddressReason(address: string): string | null {
   const v4 = parseIPv4(address);
@@ -167,16 +140,8 @@ export function blockedAddressReason(address: string): string | null {
   return null;
 }
 
-// ---------------------------------------------------------------------------
-// URL checking
-// ---------------------------------------------------------------------------
-
 export type OutboundPolicy = {
-  /**
-   * Hostnames permitted to resolve into a blocked range. Exact match, or a
-   * leading "." for a suffix match. For deliberately reaching an internal
-   * service, which is a legitimate thing to want on a homelab.
-   */
+  /** Hostnames permitted to resolve into a blocked range. Exact match, or a leading "." for a suffix match. */
   allowlist?: string[];
 };
 
@@ -191,12 +156,8 @@ function isAllowlisted(hostname: string, allowlist: string[] | undefined): boole
 }
 
 /**
- * Parse and vet a URL for an outbound request.
- *
- * Throws BlockedUrlError for a non-HTTP scheme, a host that will not resolve,
- * or any resolved address inside a blocked range. **Every** address the host
- * resolves to is checked — a name with one public and one private record
- * cannot be used to slip past a first-record-only check.
+ * Parse and vet a URL for an outbound request. Throws BlockedUrlError when refused.
+ * Checks every resolved address, not only the first.
  */
 export async function assertOutboundUrlAllowed(
   raw: string,
@@ -217,8 +178,7 @@ export async function assertOutboundUrlAllowed(
 
   if (isAllowlisted(url.hostname, policy.allowlist)) return url;
 
-  // A bare address needs no lookup, and passing one to the resolver would only
-  // add a way for it to answer differently.
+  // A bare address skips the resolver.
   const literal = url.hostname.replace(/^\[|\]$/g, "");
   if (parseIPv4(literal) || parseIPv6(literal)) {
     const reason = blockedAddressReason(literal);

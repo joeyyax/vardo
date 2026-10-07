@@ -1,10 +1,7 @@
 import { promises as dns } from "dns";
 import { isIP } from "net";
 
-/**
- * Private / link-local / loopback IP ranges that must never be contacted
- * during an outbound security scan (SSRF protection).
- */
+/** IP ranges the scanner must never contact. */
 const PRIVATE_IP_PATTERNS = [
   /^127\./,           // 127.0.0.0/8  loopback
   /^10\./,            // 10.0.0.0/8   private
@@ -28,21 +25,9 @@ function isPrivateIp(ip: string): boolean {
   return PRIVATE_IP_PATTERNS.some((r) => r.test(ip));
 }
 
-/**
- * Validate that a domain is safe to contact from the scanner.
- *
- * Rejects:
- * - Loopback hostnames (localhost, ::1)
- * - Private / link-local IP literals (10.x, 172.16-31.x, 192.168.x, 169.254.x, …)
- * - Domains that resolve via DNS to any private IP
- *
- * Throws an Error if the domain should be blocked. Does nothing if safe.
- */
+/** Throws if a domain is loopback, a private IP or resolves to one. */
 export async function assertPublicDomain(domain: string): Promise<void> {
-  // If the input is already a bare IP (including IPv6), use it directly.
-  // Otherwise strip the port suffix from "hostname:port" or "1.2.3.4:port".
-  // Note: IPv6 literals contain colons, so split(":")[0] would mangle them —
-  // hence the isIP check first.
+  // Check isIP first: splitting an IPv6 literal on ":" would mangle it.
   const host = isIP(domain) !== 0
     ? domain.toLowerCase()
     : domain.split(":")[0].toLowerCase();
@@ -51,7 +36,6 @@ export async function assertPublicDomain(domain: string): Promise<void> {
     throw new Error(`SSRF: blocked hostname "${host}"`);
   }
 
-  // If the domain is already an IP literal, check it directly.
   if (isIP(host) !== 0) {
     if (isPrivateIp(host)) {
       throw new Error(`SSRF: blocked private IP "${host}"`);
@@ -59,7 +43,7 @@ export async function assertPublicDomain(domain: string): Promise<void> {
     return;
   }
 
-  // Resolve the domain and check all returned addresses.
+  // Check every resolved address.
   const v4 = await dns.resolve4(host).catch(() => [] as string[]);
   const v6 = await dns.resolve6(host).catch(() => [] as string[]);
 

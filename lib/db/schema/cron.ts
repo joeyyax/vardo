@@ -8,10 +8,6 @@ import {
 import { cronJobRunStatusEnum, cronJobStatusEnum, cronJobTypeEnum } from "./enums";
 import { apps } from "./apps";
 
-// ---------------------------------------------------------------------------
-// Cron Jobs (scheduled tasks)
-// ---------------------------------------------------------------------------
-
 export const cronJobs = pgTable("cron_job", {
   id: text("id").primaryKey(),
   appId: text("app_id")
@@ -20,7 +16,7 @@ export const cronJobs = pgTable("cron_job", {
   name: text("name").notNull(),
   type: cronJobTypeEnum("type").notNull().default("command"),
   schedule: text("schedule").notNull(), // cron expression
-  command: text("command").notNull(), // shell command or URL depending on type
+  command: text("command").notNull(), // Shell command or URL, by type
   enabled: boolean("enabled").default(true).notNull(),
   lastRunAt: timestamp("last_run_at"),
   lastStatus: cronJobStatusEnum("last_status"),
@@ -29,9 +25,7 @@ export const cronJobs = pgTable("cron_job", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
-// ---------------------------------------------------------------------------
-// Cron Job Runs (execution history)
-// ---------------------------------------------------------------------------
+// Cron job execution history.
 
 export const cronJobRuns = pgTable(
   "cron_job_run",

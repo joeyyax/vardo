@@ -1,11 +1,4 @@
-// ---------------------------------------------------------------------------
-// Outbound fetch
-//
-// Vetting a URL once is not enough when redirects are followed: a public host
-// answering 302 to http://169.254.169.254/ walks straight through a check that
-// only looked at what the operator typed. Redirects are followed here instead,
-// one hop at a time, each vetted like the first.
-// ---------------------------------------------------------------------------
+// Outbound fetch that vets every redirect hop, since a public host can 302 to a private address.
 
 import { assertOutboundUrlAllowed, BlockedUrlError, type OutboundPolicy } from "./ssrf";
 
@@ -26,11 +19,8 @@ export type SafeFetchOptions = RequestInit & {
 };
 
 /**
- * fetch() that refuses to reach private, loopback or link-local addresses, on
- * the first request and on every redirect it follows.
- *
- * A redirect that changes host drops credentials and signatures — the new host
- * was not who the payload was signed for.
+ * fetch() that refuses private, loopback and link-local addresses on every hop.
+ * A redirect to another host drops credentials and signatures.
  */
 export async function safeFetch(
   rawUrl: string,
@@ -66,8 +56,7 @@ export async function safeFetch(
 
     if (validated.host !== url.host) headers = stripSensitive(headers);
 
-    // 303 always becomes GET; 301 and 302 do so for anything that was not one,
-    // matching what every other client does. 307 and 308 keep method and body.
+    // 303 always becomes GET; 301 and 302 do for non-GET/HEAD. 307 and 308 keep method and body.
     if (response.status === 303 || ((response.status === 301 || response.status === 302) && method !== "GET" && method !== "HEAD")) {
       method = "GET";
       body = undefined;
