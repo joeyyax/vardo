@@ -9,6 +9,7 @@ import { redeemInvite } from "@/lib/mesh/invite";
 import { registerPeer } from "@/lib/mesh/peers";
 import { getInstanceDisplayName } from "@/lib/system-settings";
 import { getInstanceId } from "@/lib/constants";
+import { sealOutboundToken } from "@/lib/mesh/outbound-token";
 
 const WG_KEY_RE = /^[A-Za-z0-9+/]{43}=$/;
 
@@ -61,7 +62,7 @@ async function handler(request: NextRequest) {
     if (joinerOutboundToken) {
       await db
         .update(meshPeers)
-        .set({ outboundToken: joinerOutboundToken })
+        .set({ outboundToken: sealOutboundToken(joinerOutboundToken) })
         .where(eq(meshPeers.id, peer.id));
     }
 

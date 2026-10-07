@@ -15,6 +15,7 @@ import { db } from "@/lib/db";
 import { meshPeers } from "@/lib/db/schema";
 import { nanoid } from "nanoid";
 import { toCidr } from "@/lib/mesh/ip-allocator";
+import { sealOutboundToken } from "@/lib/mesh/outbound-token";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
@@ -146,7 +147,7 @@ async function handlePost(request: NextRequest) {
       apiUrl: `http://${joinData.hub.internalIp}:3000`,
       publicApiUrl: decoded.hubApiUrl,
       tokenHash: ourTokenHash,
-      outboundToken: joinData.token,
+      outboundToken: sealOutboundToken(joinData.token),
       status: "online",
       lastSeenAt: new Date(),
     });

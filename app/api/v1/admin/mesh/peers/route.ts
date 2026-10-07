@@ -35,6 +35,7 @@ export async function GET() {
       db.query.meshPeers.findMany({
         columns: {
           tokenHash: false,
+          outboundToken: false,
         },
       }),
       listInvites(apiUrl),

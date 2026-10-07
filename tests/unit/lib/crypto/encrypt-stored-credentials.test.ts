@@ -4,52 +4,77 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 process.env.ENCRYPTION_MASTER_KEY ??= "d".repeat(64);
 
-const { db, targetRows, settingRows } = vi.hoisted(() => {
-  const targetRows: { id: string; organizationId: string | null; config: Record<string, unknown> }[] = [];
+type Row = Record<string, unknown> & { id: string };
+
+const { db, rows, settingRows } = vi.hoisted(() => {
+  const rows: Record<string, Row[]> = { backup_target: [], mesh_peer: [], notification_channel: [] };
   const settingRows: { key: string; value: string }[] = [];
+  const nameOf = (table: object) => (table as Record<symbol, string>)[Symbol.for("drizzle:Name")];
+  // eq() and and() are mocked to plain data, so the row id is read off the where clause.
+  const idOf = (where: unknown) =>
+    (where as { col: { name: string }; val: string }[]).find((c) => c.col.name === "id")!.val;
   const db = {
-    select: () => ({ from: async () => targetRows.map((r) => ({ ...r, config: { ...r.config } })) }),
+    select: () => ({
+      from: (table: object) => {
+        const copy = () => rows[nameOf(table)].map((r) => structuredClone(r));
+        return Object.assign(Promise.resolve(copy()), { where: async () => copy() });
+      },
+    }),
     query: {
       systemSettings: {
         findFirst: vi.fn(async () => settingRows[0]),
       },
     },
-    // Writes land on the row the test seeded; the where guard isn't modeled.
-    update: vi.fn(() => ({
+    update: vi.fn((table: object) => ({
       set: (data: Record<string, unknown>) => ({
-        where: () => {
-          if ("config" in data) {
-            const row = targetRows[db.__targetCursor++];
-            row.config = data.config as Record<string, unknown>;
-            return { returning: async () => [{ id: row.id }] };
+        where: (where: unknown) => {
+          const name = nameOf(table);
+          if (name === "system_settings") {
+            settingRows[0].value = data.value as string;
+            return Promise.resolve();
           }
-          settingRows[0].value = data.value as string;
-          return Promise.resolve();
+          const row = rows[name].find((r) => r.id === idOf(where))!;
+          Object.assign(row, data);
+          return { returning: async () => [{ id: row.id }] };
         },
       }),
     })),
-    __targetCursor: 0,
   };
-  return { db, targetRows, settingRows };
+  return { db, rows, settingRows };
 });
 
+vi.mock("drizzle-orm", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("drizzle-orm")>()),
+  eq: (col: unknown, val: unknown) => ({ col, val }),
+  and: (...conds: unknown[]) => conds,
+  isNotNull: () => undefined,
+}));
 vi.mock("@/lib/db", () => ({ db }));
 vi.mock("@/lib/system-settings", () => ({ invalidateSettingsCache: vi.fn() }));
 vi.mock("@/lib/logger", () => ({
   logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }) },
 }));
 
-const { encrypt, decrypt, decryptSystem, isEncrypted } = await import("@/lib/crypto/encrypt");
+const { encrypt, encryptSystem, decrypt, decryptSystem, isEncrypted } = await import("@/lib/crypto/encrypt");
 const { canEncryptStoredCredentials, encryptStoredCredentials } = await import(
   "@/lib/crypto/encrypt-stored-credentials"
 );
 
 const REGISTRY = JSON.stringify({ "ghcr.io": { username: "u", password: "ghp_token" } });
 
+const targetRows = rows.backup_target as unknown as { id: string; organizationId: string | null; config: Record<string, unknown> }[];
+const peerRows = rows.mesh_peer as unknown as { id: string; outboundToken: string | null }[];
+const channelRows = rows.notification_channel as unknown as { id: string; organizationId: string; config: Record<string, unknown> }[];
+
 function seed() {
-  targetRows.length = 0;
+  for (const list of Object.values(rows)) list.length = 0;
   settingRows.length = 0;
-  db.__targetCursor = 0;
+  peerRows.push({ id: "hub", outboundToken: "raw-hub-token" }, { id: "visible", outboundToken: null });
+  channelRows.push(
+    { id: "hook", organizationId: "org-1", config: { url: "https://hooks.example/x", secret: "whsec" } },
+    { id: "slack", organizationId: "org-2", config: { webhookUrl: "https://hooks.slack.com/T/B/x" } },
+    { id: "mail", organizationId: "org-1", config: { recipients: ["a@example.com"] } },
+  );
   targetRows.push(
     { id: "plain-org", organizationId: "org-1", config: { bucket: "b", region: "r", accessKeyId: "AK", secretAccessKey: "SK" } },
     { id: "plain-system", organizationId: null, config: { host: "h", username: "u", path: "/p", privateKey: "PEM" } },
@@ -86,15 +111,14 @@ describe("encryptStoredCredentials", () => {
 
   it("leaves ciphertext alone on a rerun", async () => {
     await encryptStoredCredentials();
-    const after = JSON.stringify({ targetRows, settingRows });
-    db.__targetCursor = 0;
+    const after = JSON.stringify({ rows, settingRows });
     db.update.mockClear();
 
     const rerun = await encryptStoredCredentials();
 
-    expect(rerun).toEqual({ targets: 0, settings: 0 });
+    expect(rerun).toEqual({ targets: 0, settings: 0, peers: 0, channels: 0 });
     expect(db.update).not.toHaveBeenCalled();
-    expect(JSON.stringify({ targetRows, settingRows })).toBe(after);
+    expect(JSON.stringify({ rows, settingRows })).toBe(after);
   });
 
   it("encrypts only the fields still in plaintext", async () => {
@@ -106,6 +130,37 @@ describe("encryptStoredCredentials", () => {
 
     expect(targetRows[0].config.secretAccessKey).toBe(sealed);
     expect(decrypt(targetRows[0].config.accessKeyId as string, "org-1")).toBe("AK");
+  });
+});
+
+describe("encryptStoredCredentials — mesh peers and notification channels", () => {
+  it("encrypts plaintext outbound tokens under the system key", async () => {
+    const result = await encryptStoredCredentials();
+
+    expect(result.peers).toBe(1);
+    expect(decryptSystem(peerRows[0].outboundToken!)).toBe("raw-hub-token");
+    expect(peerRows[1].outboundToken).toBeNull();
+  });
+
+  it("leaves an already encrypted outbound token alone", async () => {
+    const sealed = encryptSystem("raw-hub-token");
+    peerRows[0].outboundToken = sealed;
+
+    const result = await encryptStoredCredentials();
+
+    expect(result.peers).toBe(0);
+    expect(peerRows[0].outboundToken).toBe(sealed);
+  });
+
+  it("encrypts channel URLs and secrets under the owning org's key", async () => {
+    const result = await encryptStoredCredentials();
+
+    expect(result.channels).toBe(2);
+    const [hook, slack, mail] = channelRows;
+    expect(decrypt(hook.config.url as string, "org-1")).toBe("https://hooks.example/x");
+    expect(decrypt(hook.config.secret as string, "org-1")).toBe("whsec");
+    expect(decrypt(slack.config.webhookUrl as string, "org-2")).toBe("https://hooks.slack.com/T/B/x");
+    expect(mail.config).toEqual({ recipients: ["a@example.com"] });
   });
 });
 

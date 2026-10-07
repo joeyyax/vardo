@@ -9,8 +9,9 @@
 // ---------------------------------------------------------------------------
 
 import { db } from "@/lib/db";
-import { apps, backupTargets, systemSettings } from "@/lib/db/schema";
+import { apps, backupTargets, meshPeers, notificationChannels, systemSettings } from "@/lib/db/schema";
 import { probeTargetSecrets } from "@/lib/backups/target-config";
+import { probeChannelSecrets } from "@/lib/notifications/channel-config";
 import { invalidateSettingsCache } from "@/lib/system-settings";
 import { eq } from "drizzle-orm";
 import { decryptOrFallback, decryptSystemOrFallback, runningKeyFingerprint } from "./encrypt";
@@ -94,6 +95,34 @@ export async function probeDecryptability(): Promise<DecryptProbe> {
     if (result.undecryptable > 0) {
       probe.undecryptable += result.undecryptable;
       if (probe.samples.length < MAX_SAMPLES) probe.samples.push(`target:${row.name}`);
+    }
+  }
+
+  const peers = await db.select({ name: meshPeers.name, outboundToken: meshPeers.outboundToken }).from(meshPeers);
+  for (const row of peers) {
+    if (!row.outboundToken) continue;
+    const result = decryptSystemOrFallback(row.outboundToken);
+    if (!result.wasEncrypted) continue;
+    probe.encrypted++;
+    if (result.decryptFailed) {
+      probe.undecryptable++;
+      if (probe.samples.length < MAX_SAMPLES) probe.samples.push(`peer:${row.name}`);
+    }
+  }
+
+  const channels = await db
+    .select({
+      name: notificationChannels.name,
+      organizationId: notificationChannels.organizationId,
+      config: notificationChannels.config,
+    })
+    .from(notificationChannels);
+  for (const row of channels) {
+    const result = probeChannelSecrets(row);
+    probe.encrypted += result.encrypted;
+    if (result.undecryptable > 0) {
+      probe.undecryptable += result.undecryptable;
+      if (probe.samples.length < MAX_SAMPLES) probe.samples.push(`channel:${row.name}`);
     }
   }
 

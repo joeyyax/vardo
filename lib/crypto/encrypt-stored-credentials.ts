@@ -1,14 +1,17 @@
 // ---------------------------------------------------------------------------
 // Encrypt credentials stored before they were encrypted on write: backup target
-// configs and the registry_credentials setting. Runs on every startup; values
-// already encrypted are left alone.
+// configs, the registry_credentials setting, mesh outbound tokens and
+// notification channel secrets. Runs on every startup; values already encrypted
+// are left alone.
 // ---------------------------------------------------------------------------
 
 import { db } from "@/lib/db";
-import { backupTargets, systemSettings } from "@/lib/db/schema";
-import { and, eq } from "drizzle-orm";
+import { backupTargets, meshPeers, notificationChannels, systemSettings } from "@/lib/db/schema";
+import { and, eq, isNotNull } from "drizzle-orm";
 import { encryptSystem, isEncrypted } from "./encrypt";
 import { plaintextSecretKeys, sealTargetConfig } from "@/lib/backups/target-config";
+import { sealOutboundToken } from "@/lib/mesh/outbound-token";
+import { plaintextChannelSecretKeys, sealChannelConfig } from "@/lib/notifications/channel-config";
 import { invalidateSettingsCache } from "@/lib/system-settings";
 import { logger } from "@/lib/logger";
 import type { KeyEscrowState } from "./key-escrow";
@@ -18,7 +21,7 @@ const log = logger.child("crypto");
 /** Settings that hold credentials but have no writer that encrypts them. */
 const CREDENTIAL_SETTINGS = ["registry_credentials"];
 
-export type CredentialMigration = { targets: number; settings: number };
+export type CredentialMigration = { targets: number; settings: number; peers: number; channels: number };
 
 /**
  * Only a key this database already trusts may encrypt. Sealing under a wrong
@@ -29,7 +32,7 @@ export function canEncryptStoredCredentials(state: KeyEscrowState | null): boole
 }
 
 export async function encryptStoredCredentials(): Promise<CredentialMigration> {
-  const result: CredentialMigration = { targets: 0, settings: 0 };
+  const result: CredentialMigration = { targets: 0, settings: 0, peers: 0, channels: 0 };
 
   const targets = await db
     .select({ id: backupTargets.id, organizationId: backupTargets.organizationId, config: backupTargets.config })
@@ -58,8 +61,45 @@ export async function encryptStoredCredentials(): Promise<CredentialMigration> {
     result.settings++;
   }
 
-  if (result.targets > 0 || result.settings > 0) {
-    log.info(`Encrypted stored credentials: ${result.targets} backup target(s), ${result.settings} setting(s)`);
+  const peers = await db
+    .select({ id: meshPeers.id, outboundToken: meshPeers.outboundToken })
+    .from(meshPeers)
+    .where(isNotNull(meshPeers.outboundToken));
+
+  for (const peer of peers) {
+    if (!peer.outboundToken || isEncrypted(peer.outboundToken)) continue;
+    const updated = await db
+      .update(meshPeers)
+      .set({ outboundToken: sealOutboundToken(peer.outboundToken), updatedAt: new Date() })
+      .where(and(eq(meshPeers.id, peer.id), eq(meshPeers.outboundToken, peer.outboundToken)))
+      .returning({ id: meshPeers.id });
+    if (updated.length > 0) result.peers++;
+  }
+
+  const channels = await db
+    .select({
+      id: notificationChannels.id,
+      organizationId: notificationChannels.organizationId,
+      config: notificationChannels.config,
+    })
+    .from(notificationChannels);
+
+  for (const channel of channels) {
+    if (plaintextChannelSecretKeys(channel.config).length === 0) continue;
+    const sealed = sealChannelConfig(channel.config, channel.organizationId);
+    const updated = await db
+      .update(notificationChannels)
+      .set({ config: sealed, updatedAt: new Date() })
+      .where(and(eq(notificationChannels.id, channel.id), eq(notificationChannels.config, channel.config)))
+      .returning({ id: notificationChannels.id });
+    if (updated.length > 0) result.channels++;
+  }
+
+  if (Object.values(result).some((n) => n > 0)) {
+    log.info(
+      `Encrypted stored credentials: ${result.targets} backup target(s), ${result.settings} setting(s), ` +
+        `${result.peers} mesh peer(s), ${result.channels} notification channel(s)`,
+    );
   }
   return result;
 }

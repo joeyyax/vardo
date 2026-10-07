@@ -6,7 +6,7 @@ import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { eq, asc } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
-import { maskChannelConfig } from "@/lib/notifications/mask-config";
+import { presentChannel, sealChannelConfig } from "@/lib/notifications/channel-config";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
@@ -19,7 +19,7 @@ export async function GET(_req: NextRequest, { params }: RouteParams) {
     const org = await verifyOrgAccess(orgId, "org.view");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     const channels = await db.query.notificationChannels.findMany({ where: eq(notificationChannels.organizationId, orgId), orderBy: [asc(notificationChannels.createdAt)] });
-    const masked = channels.map(maskChannelConfig);
+    const masked = channels.map(presentChannel);
     return NextResponse.json({ channels: masked });
   } catch (error) { return handleRouteError(error, "Error fetching notification channels"); }
 }
@@ -31,8 +31,8 @@ async function handlePost(req: NextRequest, { params }: RouteParams) {
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     const parsed = createSchema.safeParse(await req.json());
     if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
-    const [channel] = await db.insert(notificationChannels).values({ id: nanoid(), organizationId: orgId, name: parsed.data.name, type: parsed.data.type, config: parsed.data.config, enabled: parsed.data.enabled, subscribedEvents: parsed.data.subscribedEvents }).returning();
-    return NextResponse.json({ channel: maskChannelConfig(channel) }, { status: 201 });
+    const [channel] = await db.insert(notificationChannels).values({ id: nanoid(), organizationId: orgId, name: parsed.data.name, type: parsed.data.type, config: sealChannelConfig(parsed.data.config, orgId), enabled: parsed.data.enabled, subscribedEvents: parsed.data.subscribedEvents }).returning();
+    return NextResponse.json({ channel: presentChannel(channel) }, { status: 201 });
   } catch (error) { return handleRouteError(error, "Error creating notification channel"); }
 }
 

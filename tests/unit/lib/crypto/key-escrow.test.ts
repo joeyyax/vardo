@@ -31,9 +31,15 @@ const { describeKeyEscrow, probeDecryptability, readRecordedFingerprint, reconci
 const RUNNING = fingerprintMasterKey(process.env.ENCRYPTION_MASTER_KEY!);
 const FOREIGN = "k1:fedcba9876543210";
 
-/** db.select(...).from(table) returns whichever rows the table was seeded with: apps, settings, targets. */
-function seed(appRows: unknown[], settingRows: unknown[], targetRows: unknown[] = []) {
-  const tables = [appRows, settingRows, targetRows];
+/** db.select(...).from(table) returns whichever rows the table was seeded with: apps, settings, targets, peers, channels. */
+function seed(
+  appRows: unknown[],
+  settingRows: unknown[],
+  targetRows: unknown[] = [],
+  peerRows: unknown[] = [],
+  channelRows: unknown[] = [],
+) {
+  const tables = [appRows, settingRows, targetRows, peerRows, channelRows];
   let call = 0;
   selectMock.mockImplementation(() => ({
     from: () => tables[call++] ?? [],
@@ -109,6 +115,41 @@ describe("probeDecryptability — backup targets", () => {
       ],
     );
     expect(await probeDecryptability()).toEqual({ encrypted: 3, undecryptable: 1, samples: ["target:offsite"] });
+  });
+});
+
+describe("probeDecryptability — mesh peers and notification channels", () => {
+  function encryptSystemUnderOtherKey(value: string) {
+    const running = process.env.ENCRYPTION_MASTER_KEY;
+    process.env.ENCRYPTION_MASTER_KEY = "e".repeat(64);
+    try {
+      return encryptSystem(value);
+    } finally {
+      process.env.ENCRYPTION_MASTER_KEY = running;
+    }
+  }
+
+  it("counts outbound tokens and channel secrets and names the ones that won't open", async () => {
+    seed(
+      [],
+      [],
+      [],
+      [
+        { name: "hub", outboundToken: encryptSystem("t1") },
+        { name: "spoke", outboundToken: encryptSystemUnderOtherKey("t2") },
+        { name: "legacy", outboundToken: "plain" },
+        { name: "visible", outboundToken: null },
+      ],
+      [
+        { name: "ops", organizationId: "org-1", config: { url: encrypt("https://h", "org-1"), secret: encrypt("s", "org-2") } },
+        { name: "mail", organizationId: "org-1", config: { recipients: ["a@b.c"] } },
+      ],
+    );
+    expect(await probeDecryptability()).toEqual({
+      encrypted: 4,
+      undecryptable: 2,
+      samples: ["peer:spoke", "channel:ops"],
+    });
   });
 });
 

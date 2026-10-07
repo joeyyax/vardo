@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { meshPeers } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
+import { openOutboundToken } from "./outbound-token";
 
 /**
  * Make an authenticated request to a mesh peer's API.
@@ -38,9 +39,17 @@ export async function meshFetch(
     );
   }
 
+  const outboundToken = openOutboundToken(peer.outboundToken);
+  if (!outboundToken) {
+    throw new MeshClientError(
+      `Outbound token for peer "${peer.name}" can't be decrypted with the running ENCRYPTION_MASTER_KEY`,
+      "NO_TOKEN"
+    );
+  }
+
   const authHeaders = {
     ...options.headers,
-    Authorization: `Bearer ${peer.outboundToken}`,
+    Authorization: `Bearer ${outboundToken}`,
   };
 
   // Try mesh URL first (WireGuard tunnel) with a short timeout
