@@ -23,7 +23,7 @@ vi.mock("@/lib/db", () => ({
 
 type Handler = (req: NextRequest, ctx: { params: Promise<Record<string, string>> }) => Promise<Response>;
 
-const params = { orgId: "org-1", appId: "app-1", backupId: "b-1", jobId: "j-1", targetId: "t-1", volumeName: "data" };
+const params = { orgId: "org-1", appId: "app-1", backupId: "b-1", jobId: "j-1", targetId: "t-1", volumeName: "data", projectId: "p-1" };
 
 // [label, route module, method]
 const ADMIN_ONLY: [string, string, string][] = [
@@ -36,12 +36,14 @@ const ADMIN_ONLY: [string, string, string][] = [
   ["edit a backup job", "backups/jobs/[jobId]", "PATCH"],
   ["delete a backup job", "backups/jobs/[jobId]", "DELETE"],
   ["sync files into a volume", "apps/[appId]/volumes/[volumeName]/sync", "POST"],
+  ["delete a project", "projects/[projectId]", "DELETE"],
 ];
 
 const modules: Record<string, () => Promise<Record<string, unknown>>> = {
   "backups/history/[backupId]/restore": () => import("@/app/api/v1/organizations/[orgId]/backups/history/[backupId]/restore/route"),
   "backups/history/[backupId]/download": () => import("@/app/api/v1/organizations/[orgId]/backups/history/[backupId]/download/route"),
   "apps/[appId]/volumes/[volumeName]/sync": () => import("@/app/api/v1/organizations/[orgId]/apps/[appId]/volumes/[volumeName]/sync/route"),
+  "projects/[projectId]": () => import("@/app/api/v1/organizations/[orgId]/projects/[projectId]/route"),
   "backups": () => import("@/app/api/v1/organizations/[orgId]/backups/route"),
   "backups/jobs/[jobId]": () => import("@/app/api/v1/organizations/[orgId]/backups/jobs/[jobId]/route"),
   "backups/targets": () => import("@/app/api/v1/organizations/[orgId]/backups/targets/route"),

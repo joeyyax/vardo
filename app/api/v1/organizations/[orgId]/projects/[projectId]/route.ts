@@ -196,7 +196,7 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
 async function handleDelete(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, projectId } = await params;
-    const org = await verifyOrgAccess(orgId, "project.manage");
+    const org = await verifyOrgAccess(orgId, "project.delete");
     if (!org) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const existing = await findProjectBasic(orgId, projectId);
