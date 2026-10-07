@@ -12,7 +12,6 @@
 
 # testing
 /coverage
-**/coverage
 /test-results
 **/test-results
 /playwright-report
