@@ -79,6 +79,9 @@ export type BackupOutcome = "success" | "failed" | "skipped";
 /** Archive format. Fixed when the archive is written; restore must not re-derive it. */
 export type ArchiveStrategy = "tar" | "dump";
 
+export const APP_DELETED_RESTORE_ERROR =
+  "The app this backup belongs to was deleted. Download the archive instead.";
+
 /** A backup row still `running` after this long is abandoned, not in flight. */
 export const STALE_RUN_MS = 60 * 60 * 1000;
 
@@ -762,6 +765,12 @@ export async function runBackup(
         `${job.name}: nothing to capture — ${excludedSources.length} source(s) excluded by durability`,
       );
     }
+    // A job whose apps were all deleted still holds their history.
+    try {
+      await pruneBackups(jobId);
+    } catch (err) {
+      log.error("Backup retention pruning error:", err);
+    }
     return [];
   }
 
@@ -819,6 +828,8 @@ export async function runBackup(
         id: backupId,
         jobId: job.id,
         appId: vol.appId,
+        appName: vol.appName,
+        organizationId: vol.orgId ?? job.organizationId,
         targetId: job.target.id,
         status: "skipped",
         volumeName: vol.name,
@@ -852,6 +863,8 @@ export async function runBackup(
       id: backupId,
       jobId: job.id,
       appId: vol.appId,
+      appName: vol.appName,
+      organizationId: vol.orgId ?? job.organizationId,
       targetId: job.target.id,
       status: "running",
       volumeName: vol.name,
@@ -1404,6 +1417,10 @@ export async function restoreBackup(
 
   if (!backup) {
     throw new Error(`Backup not found: ${backupId}`);
+  }
+
+  if (backup.appId && !backup.app) {
+    throw new Error(APP_DELETED_RESTORE_ERROR);
   }
 
   if (!backup.storagePath) {

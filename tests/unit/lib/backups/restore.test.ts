@@ -202,6 +202,15 @@ describe("restoreBackup — corrupted/mismatched archive is rejected", () => {
     await expect(restoreBackup("bk-1")).rejects.toThrow(/blocked by hook/i);
     expect(restoreCommandRan()).toBe(false);
   });
+
+  // The app is gone, so there is nothing to restore into.
+  it("refuses a backup whose app was deleted", async () => {
+    backupsFindFirst.mockResolvedValue(backupRow({ app: null }));
+    volumesFindFirst.mockResolvedValue({ backupStrategy: "tar", backupMeta: null });
+
+    await expect(restoreBackup("bk-1")).rejects.toThrow(/was deleted/);
+    expect(restoreCommandRan()).toBe(false);
+  });
 });
 
 // Restoring Vardo's own database dump replaces every app's env vars with

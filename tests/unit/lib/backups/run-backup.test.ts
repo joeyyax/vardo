@@ -622,3 +622,35 @@ describe("runBackup — cross-org links", () => {
     expect(results).toHaveLength(2);
   });
 });
+
+describe("runBackup — deleted apps (#867)", () => {
+  it("snapshots the app's name and org on each row", async () => {
+    backupJobsFindFirst.mockResolvedValue(job());
+    volumesPerApp([volume()]);
+
+    await runBackup("job-1");
+
+    expect(inserted[0]).toMatchObject({ appId: "app-a", appName: "app-a", organizationId: "org-1" });
+  });
+
+  it("still applies retention once every app on the job is deleted", async () => {
+    backupJobsFindFirst.mockResolvedValue(job({ backupJobApps: [], keepLast: 1 }));
+    const day = (d: number) => new Date(Date.UTC(2026, 0, d));
+    backupsFindMany.mockResolvedValue(
+      [3, 2, 1].map((d) => ({
+        id: `b-${d}`,
+        appId: "app-gone",
+        volumeName: "data",
+        status: "success",
+        storagePath: `gone/data-${d}.tar.gz`,
+        finishedAt: day(d),
+      })),
+    );
+
+    const results = await runBackup("job-1");
+
+    expect(results).toEqual([]);
+    expect(updated.filter((u) => u.set.status === "pruned")).toHaveLength(1);
+    expect(emitted("backup.failed")).toHaveLength(0);
+  });
+});
