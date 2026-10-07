@@ -15,7 +15,6 @@ type Definition = { kind: string; name: string; file: string; guarded: boolean }
 const PATTERNS: [RegExp, string][] = [
   [/CREATE INDEX (IF NOT EXISTS )?"([^"]+)"/g, "index"],
   [/CREATE TABLE (IF NOT EXISTS )?"([^"]+)"/g, "table"],
-  [/ADD COLUMN (IF NOT EXISTS )?"([^"]+)"/g, "column"],
   [/ADD VALUE (IF NOT EXISTS )?'([^']+)'/g, "enum value"],
 ];
 
@@ -27,6 +26,10 @@ function definitions(): Definition[] {
       for (const match of sql.matchAll(pattern)) {
         found.push({ kind, name: match[2], file, guarded: Boolean(match[1]) });
       }
+    }
+    // Columns are named per table.
+    for (const match of sql.matchAll(/ALTER TABLE "([^"]+)" ADD COLUMN (IF NOT EXISTS )?"([^"]+)"/g)) {
+      found.push({ kind: "column", name: `${match[1]}.${match[3]}`, file, guarded: Boolean(match[2]) });
     }
     // A constraint has no IF NOT EXISTS; the guard is dropping it first.
     for (const match of sql.matchAll(/ADD CONSTRAINT "([^"]+)"/g)) {
