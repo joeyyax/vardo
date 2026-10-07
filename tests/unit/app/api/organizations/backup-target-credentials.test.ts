@@ -182,6 +182,7 @@ describe("creating a target", () => {
         type: "s3",
         config: { ...S3, accessKeyId: "AKIASYSTEM", secretAccessKey: SYSTEM_SECRET },
       }),
+      { params: Promise.resolve({}) },
     );
     expect(res.status).toBe(201);
     const config = inserted[0].config as Record<string, string>;
