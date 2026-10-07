@@ -8,6 +8,12 @@ import { requirePlugin } from "@/lib/api/require-plugin";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
+import { pruneBackups } from "@/lib/backups/engine";
+import { logger } from "@/lib/logger";
+
+const log = logger.child("backup");
+
+const RETENTION_FIELDS = ["keepLast", "keepDaily", "keepWeekly", "keepMonthly"] as const;
 
 type RouteParams = {
   params: Promise<{ orgId: string; jobId: string }>;
@@ -153,6 +159,15 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
             appId,
           }))
         );
+      }
+    }
+
+    // Runs prune too, but a paused job has none, so apply a new policy now.
+    if (RETENTION_FIELDS.some((field) => field in updateData)) {
+      try {
+        await pruneBackups(jobId);
+      } catch (err) {
+        log.error("Backup retention pruning error:", err);
       }
     }
 
