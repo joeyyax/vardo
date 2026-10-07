@@ -48,6 +48,8 @@ const PHRASES: Record<string, Phrase> = {
   "backup.downloaded": { text: "downloaded a backup of" },
   "backup.restore_started": { text: "started restoring a backup of" },
   "backup.app_enrolled": { text: "turned on backups for" },
+  "backup.app_unenrolled": { text: "turned off backups for" },
+  "backup.app_inherited": { text: "reset the backup setting for" },
 
   "token.created": { text: "created an API token", standalone: true },
 

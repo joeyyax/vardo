@@ -6,8 +6,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
 
-const { mockVerifyOrgAccess, appsFindFirst, targetsFindFirst, resolveBackupTarget, listUncoveredApps, optInApp } =
+const { mockVerifyOrgAccess, appsFindFirst, targetsFindFirst, resolveBackupTarget, listUncoveredApps, optInApp, appUpdates } =
   vi.hoisted(() => ({
+    appUpdates: [] as Record<string, unknown>[],
     mockVerifyOrgAccess: vi.fn(),
     appsFindFirst: vi.fn(),
     targetsFindFirst: vi.fn(),
@@ -31,6 +32,13 @@ vi.mock("@/lib/db", () => ({
       apps: { findFirst: appsFindFirst },
       backupTargets: { findFirst: targetsFindFirst },
     },
+    update: () => ({
+      set: (values: Record<string, unknown>) => ({
+        where: async () => {
+          appUpdates.push(values);
+        },
+      }),
+    }),
   },
 }));
 vi.mock("@/lib/backups/auto-backup", () => ({ resolveBackupTarget }));
@@ -57,6 +65,7 @@ function post(body: unknown) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  appUpdates.length = 0;
   asRole("admin");
   appsFindFirst.mockResolvedValue({ id: "app-1", name: "notes" });
   targetsFindFirst.mockResolvedValue({ id: "tgt-nas" });
@@ -94,6 +103,7 @@ describe("POST coverage", () => {
     expect(optInApp).toHaveBeenCalledWith(
       expect.objectContaining({ appId: "app-1", organizationId: ORG_ID, targetId: "tgt-r2" }),
     );
+    expect(appUpdates).toEqual([expect.objectContaining({ backupsEnabled: true })]);
   });
 
   it("uses the chosen target", async () => {

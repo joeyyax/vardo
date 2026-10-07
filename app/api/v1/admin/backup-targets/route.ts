@@ -10,6 +10,7 @@ import { isLocalBackupsAllowed } from "@/lib/config/provider-restrictions";
 import { createTargetVariant, presentTarget, sealTargetConfig } from "@/lib/backups/target-config";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
+import { reconcileInBackground } from "@/lib/backups/switch";
 
 // Local targets are org-only: their path is checked for writability on create.
 const createTargetSchema = z.discriminatedUnion("type", [
@@ -74,6 +75,8 @@ async function handlePost(request: NextRequest) {
       })
       .returning();
 
+    // Apps left "On, no target" are enrolled now that one exists.
+    reconcileInBackground({});
     return NextResponse.json({ target: presentTarget(target) }, { status: 201 });
   } catch (error) {
     if (error instanceof Error && error.message === "Forbidden") {

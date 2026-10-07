@@ -9,6 +9,7 @@ import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { runBackup, STALE_RUN_MS } from "@/lib/backups/engine";
 import { ensureAutoBackupJob, resolveBackupTarget } from "@/lib/backups/auto-backup";
+import { resolveAppBackupSwitch } from "@/lib/backups/switch";
 import { assessPreMigrationBackup } from "@/lib/backups/pre-migration";
 import { isBackupSelected } from "@/lib/backups/durability";
 import { isUncapturedSource } from "@/lib/backups/coverage";
@@ -119,6 +120,10 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       organizationId: orgId,
     });
     const createdJob = jobId !== null;
+    // An app switched off gets its one backup, not a schedule.
+    if (jobId && (await resolveAppBackupSwitch(app.id))?.enabled === false) {
+      await db.update(backupJobs).set({ enabled: false }).where(eq(backupJobs.id, jobId));
+    }
 
     if (!jobId) {
       const link = await db.query.backupJobApps.findFirst({

@@ -540,6 +540,13 @@
       "when": 1791346482394,
       "tag": "0076_quick_grim_reaper",
       "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1791347258494,
+      "tag": "0077_first_mikhail_rasputin",
+      "breakpoints": true
     }
   ]
 }

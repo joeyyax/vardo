@@ -120,6 +120,7 @@ export const apps = pgTable(
     memoryLimit: integer("memory_limit"), // Memory in MB (e.g. 256, 512, 1024)
     priority: appPriorityEnum("priority").default("standard"), // QoS tier → oom_score_adj, mem_reservation, cpu_shares in the Vardo overlay. Nullable: a decomposed child with null priority inherits its parent's tier; null on a non-child resolves to "standard".
     gpuEnabled: boolean("gpu_enabled").notNull().default(false), // GPU passthrough via deploy.resources.reservations.devices
+    backupsEnabled: boolean("backups_enabled"), // null = inherit the org's, then the system's default
     diskWriteAlertThreshold: bigint("disk_write_alert_threshold", { mode: "number" }), // bytes/hour, null = default 1GB
     healthCheckTimeout: integer("health_check_timeout"), // Seconds to wait for healthy containers (null = system default 60s)
     autoRollback: boolean("auto_rollback").default(false), // Rollback on crash after deploy

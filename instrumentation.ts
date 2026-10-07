@@ -145,6 +145,9 @@ export async function register() {
           }
           startBackupScheduler();
           log.info("Backup scheduler started");
+          // Enroll apps the backup switch has on and stop the ones it has off.
+          const { reconcileInBackground } = await import("./lib/backups/switch");
+          reconcileInBackground({});
         })
         .catch((err) => {
           log.error("Backup setup failed:", err);

@@ -555,6 +555,7 @@ async function enrollDetectedVolumes(
       });
       if (result.status === "covered" && result.jobId) log(`[deploy] Backups: added to job ${result.jobId}`);
       if (result.status === "no-target") log("[deploy] Backups: no target configured — app is not backed up");
+      if (result.status === "off") log("[deploy] Backups: off for this app");
       return;
     }
     const { backupJobApps } = await import("@/lib/db/schema");

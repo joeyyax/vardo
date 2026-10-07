@@ -85,6 +85,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       targetId: target.id,
       volumeIds,
     });
+    await db.update(apps).set({ backupsEnabled: true, updatedAt: new Date() }).where(eq(apps.id, app.id));
 
     recordActivity({
       organizationId: orgId,

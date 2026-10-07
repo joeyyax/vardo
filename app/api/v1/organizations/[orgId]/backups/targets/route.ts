@@ -10,6 +10,7 @@ import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { createTargetSchema, presentTarget, sealTargetConfig } from "@/lib/backups/target-config";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
+import { reconcileInBackground } from "@/lib/backups/switch";
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
@@ -107,6 +108,8 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       })
       .returning();
 
+    // Apps left "On, no target" are enrolled now that one exists.
+    reconcileInBackground({ organizationId: orgId });
     return NextResponse.json({ target: presentTarget(target) }, { status: 201 });
   } catch (error) {
     return handleRouteError(error, "Error creating backup target");

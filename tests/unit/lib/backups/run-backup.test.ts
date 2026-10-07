@@ -759,3 +759,40 @@ describe("runBackup — empty bind sources", () => {
     expect(runSucceeded([])).toBe(false);
   });
 });
+
+// #876: an app switched off stops being backed up on schedule, even on a job it shares.
+describe("runBackup — backup switch", () => {
+  const off = (id: string) => {
+    const row = jobApp(id);
+    return { app: { ...row.app, backupsEnabled: false } };
+  };
+
+  it("skips an app switched off on a scheduled run and refreshes lastRunAt for the rest", async () => {
+    backupJobsFindFirst.mockResolvedValue(job({ backupJobApps: [jobApp("app-a"), off("app-b")] }));
+    volumesPerApp([volume({ name: "a-data" })], [volume({ id: "vol-2", name: "b-data" })]);
+
+    const results = await runBackup("job-1");
+
+    expect(results.map((r) => r.volumeName)).toEqual(["a-data"]);
+    expect(updated.some((u) => u.table === backupJobs && u.set.lastRunAt instanceof Date)).toBe(true);
+  });
+
+  it("follows an org switched off", async () => {
+    const row = jobApp("app-a");
+    backupJobsFindFirst.mockResolvedValue(
+      job({ backupJobApps: [{ app: { ...row.app, organization: { slug: "acme", backupsEnabled: false } } }] }),
+    );
+    volumesPerApp([volume({ name: "a-data" })]);
+
+    expect(await runBackup("job-1")).toEqual([]);
+  });
+
+  it("still backs up an app switched off when asked by name", async () => {
+    backupJobsFindFirst.mockResolvedValue(job({ backupJobApps: [off("app-a")] }));
+    volumesPerApp([volume({ name: "a-data" })]);
+
+    const results = await runBackup("job-1", { appIds: ["app-a"] });
+
+    expect(results.map((r) => r.volumeName)).toEqual(["a-data"]);
+  });
+});

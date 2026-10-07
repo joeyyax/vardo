@@ -16,6 +16,7 @@ import { logger } from "@/lib/logger";
 import { isVardoManagedApp } from "@/lib/infra/instance-apps";
 import { ensureAutoBackupJob, ensureAutoBackupJobOnTarget, resolveBackupTarget } from "./auto-backup";
 import { isBackupSelected } from "./durability";
+import { resolveAppBackupSwitch } from "./switch";
 import {
   classifyVolume,
   parseMounts,
@@ -174,14 +175,15 @@ async function renameUnsafe(included: PlannedVolume[]): Promise<void> {
 
 export type EnrollResult =
   | { status: "disabled" }
+  | { status: "off" }
   | { status: "nothing-to-back-up" }
   | { status: "no-target" }
   | { status: "covered"; jobId: string | null };
 
 /**
- * Enroll a newly created, adopted or imported app. Respects the backups flag;
- * with no target the app stays uncovered and raises "No backup job covers
- * this app".
+ * Enroll a newly created, adopted or imported app. Respects the backups flag
+ * and the app's backup switch; with no target the app stays uncovered and
+ * raises "No backup job covers this app".
  */
 export async function enrollNewApp(opts: {
   appId: string;
@@ -190,6 +192,7 @@ export async function enrollNewApp(opts: {
   measure?: boolean;
 }): Promise<EnrollResult> {
   if (!(await isFeatureEnabledAsync("backups"))) return { status: "disabled" };
+  if (!(await resolveAppBackupSwitch(opts.appId))?.enabled) return { status: "off" };
 
   const plan = await planAppVolumes({ id: opts.appId, name: opts.appName }, { measure: opts.measure ?? false });
   if (!plan.some((v) => v.decision.verdict === "include")) return { status: "nothing-to-back-up" };

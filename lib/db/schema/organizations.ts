@@ -22,6 +22,8 @@ export const organizations = pgTable("organization", {
   sslEnabled: boolean("ssl_enabled").default(true),
   trusted: boolean("trusted").default(false).notNull(),
   isSystemManaged: boolean("is_system_managed").default(false).notNull(),
+  // Backups for apps that inherit. Null uses the system default.
+  backupsEnabled: boolean("backups_enabled"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

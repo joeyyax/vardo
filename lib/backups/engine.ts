@@ -30,6 +30,7 @@ import { assertSafeBindSource } from "@/lib/docker/mount-paths";
 import { buildDumpArgv, buildRestoreArgv, describeDumpSpec, type DumpSpec } from "./dump-spec";
 import { resolveDbContainer } from "./resolve-db-container";
 import { quiesce, type RestoreDestination } from "./quiesce";
+import { getSystemBackupsDefault, resolveBackupSwitch } from "./switch";
 import { isSelfApp } from "@/lib/docker/self-env";
 import {
   ARCHIVE_HAS_FILES_MARKER,
@@ -716,7 +717,7 @@ export async function runBackup(
           app: {
             with: {
               organization: {
-                columns: { slug: true },
+                columns: { slug: true, backupsEnabled: true },
               },
             },
           },
@@ -745,9 +746,17 @@ export async function runBackup(
   // A retired app has no volumes left, so a scheduled run against it fails
   // every night with nothing to fix. A stopped app still holds its data and is
   // still backed up. An explicit request runs against either.
+  // A schedule skips apps whose backup switch is off; a job shared with them still runs for the rest.
+  // A failed settings read backs up rather than skips.
+  const systemDefault = options.appIds ? true : await getSystemBackupsDefault().catch(() => true);
+  const switchedOn = options.appIds
+    ? scoped
+    : scoped.filter(
+        (bja) => resolveBackupSwitch(bja.app.backupsEnabled, bja.app.organization?.backupsEnabled, systemDefault).enabled,
+      );
   const jobApps = options.appIds
     ? scoped
-    : scoped.filter((bja) => bja.app.status !== "missing");
+    : switchedOn.filter((bja) => bja.app.status !== "missing");
   const jobVolumes = scope
     ? job.backupJobVolumes.filter((bjv) => bjv.volume.appId && scope.has(bjv.volume.appId))
     : job.backupJobVolumes;
@@ -1133,7 +1142,7 @@ export async function runBackup(
   // lastRunAt feeds the stale-backup deploy condition, so only a run covering
   // the whole job AND capturing at least one archive may refresh it.
   const coveredWholeJob =
-    jobApps.length === job.backupJobApps.length &&
+    jobApps.length === job.backupJobApps.length - (scoped.length - switchedOn.length) &&
     jobVolumes.length === job.backupJobVolumes.length;
   const capturedSomething = results.some((r) => r.outcome === "success");
   const onlyEmptySources = results.length > 0 && results.every((r) => r.emptySource);

@@ -13,6 +13,11 @@ const { state, featureEnabled, execMock } = vi.hoisted(() => ({
     target: undefined as Row | undefined,
     jobs: [] as (Row & { backupJobApps: { appId: string }[] })[],
     inserted: [] as { table: string; values: Row }[],
+    app: { backupsEnabled: null, organization: { backupsEnabled: null } } as {
+      backupsEnabled: boolean | null;
+      organization: { backupsEnabled: boolean | null };
+    },
+    systemDefault: null as string | null,
   },
   featureEnabled: vi.fn(),
   execMock: vi.fn(),
@@ -37,6 +42,7 @@ vi.mock("@/lib/db", async () => {
   const db = {
     query: {
       volumes: { findMany: async () => state.volumes },
+      apps: { findFirst: async () => state.app },
       backupJobApps: { findMany: async () => state.links },
       backupTargets: { findFirst: async () => state.target },
       backupJobs: { findMany: async () => state.jobs },
@@ -65,7 +71,11 @@ vi.mock("fs/promises", () => ({ readFile: async () => { throw new Error("no host
 vi.mock("@/lib/logger", () => ({
   logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }) },
 }));
-vi.mock("@/lib/system-settings", () => ({ getBackupStorageConfig: vi.fn() }));
+vi.mock("@/lib/system-settings", () => ({
+  getBackupStorageConfig: vi.fn(),
+  getSystemSettingRaw: async () => state.systemDefault,
+  setSystemSetting: vi.fn(),
+}));
 
 import { enrollNewApp, optInApp } from "@/lib/backups/enroll";
 
@@ -96,6 +106,8 @@ beforeEach(() => {
   state.jobs = [];
   state.inserted = [];
   state.target = { id: "tgt-r2", organizationId: "org-1" };
+  state.app = { backupsEnabled: null, organization: { backupsEnabled: null } };
+  state.systemDefault = null;
   featureEnabled.mockReset().mockResolvedValue(true);
   execMock.mockReset().mockResolvedValue({ stdout: "1024\t/data\n", stderr: "" });
 });
@@ -127,6 +139,30 @@ describe("enrollNewApp", () => {
 
     expect(await enrollNewApp(APP)).toEqual({ status: "disabled" });
     expect(state.inserted).toEqual([]);
+  });
+
+  it("leaves an app alone when its backup switch is off", async () => {
+    state.volumes = [volume()];
+    state.app = { backupsEnabled: false, organization: { backupsEnabled: true } };
+
+    expect(await enrollNewApp(APP)).toEqual({ status: "off" });
+    expect(state.inserted).toEqual([]);
+  });
+
+  it("follows an org default of off", async () => {
+    state.volumes = [volume()];
+    state.app = { backupsEnabled: null, organization: { backupsEnabled: false } };
+
+    expect(await enrollNewApp(APP)).toEqual({ status: "off" });
+  });
+
+  it("follows the system default when nothing else is set", async () => {
+    state.volumes = [volume()];
+    state.systemDefault = "false";
+    expect(await enrollNewApp(APP)).toEqual({ status: "off" });
+
+    state.systemDefault = null;
+    expect((await enrollNewApp(APP)).status).toBe("covered");
   });
 
   it("reports no target and creates no job", async () => {

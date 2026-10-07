@@ -199,6 +199,16 @@ describe("postDeploy backup enrollment", () => {
     );
   });
 
+  it("says so when the app's backup switch is off", async () => {
+    dbMock.query.volumes.findMany.mockResolvedValue([]);
+    enrollNewApp.mockResolvedValueOnce({ status: "off" });
+    const ctx = makeContext();
+
+    await postDeploy(ctx);
+
+    expect(ctx.logLines).toContain("[deploy] Backups: off for this app");
+  });
+
   it("hands volumes found later to the existing job only", async () => {
     dbMock.query.volumes.findMany.mockResolvedValue([
       { id: "old", appId: "app-1", mountPath: "/config", type: "bind", source: "/mnt/docker/app/config" },
