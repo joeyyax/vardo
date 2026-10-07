@@ -10,7 +10,7 @@ vi.mock("@/lib/db/schema", () => ({
   domains: {},
 }));
 
-import { soonestCertPerApp, type CertCheckRow } from "@/lib/docker/condition-inputs";
+import { backupCoverage, soonestCertPerApp, type CertCheckRow } from "@/lib/docker/condition-inputs";
 
 const CHECKED = new Date("2026-07-31T12:00:00.000Z");
 
@@ -61,5 +61,33 @@ describe("soonestCertPerApp", () => {
 
   it("carries the observation timestamp through for the staleness check", () => {
     expect(soonestCertPerApp([row()]).get("app-1")?.checkedAt).toBe(CHECKED.getTime());
+  });
+});
+
+describe("backupCoverage", () => {
+  const app = { id: "app-1", organizationId: "org-dest" };
+  const ran = new Date("2026-07-30T00:00:00.000Z");
+
+  it("ignores a leftover link from another org's job (#873)", () => {
+    const { covered } = backupCoverage([app], [
+      { appId: "app-1", jobOrgId: "org-src", enabled: true, lastRunAt: ran },
+    ]);
+    expect(covered.has("app-1")).toBe(false);
+  });
+
+  it("counts the app's own org and instance-level jobs", () => {
+    const own = backupCoverage([app], [{ appId: "app-1", jobOrgId: "org-dest", enabled: true, lastRunAt: ran }]);
+    const instance = backupCoverage([app], [{ appId: "app-1", jobOrgId: null, enabled: true, lastRunAt: null }]);
+    expect(own.covered.has("app-1")).toBe(true);
+    expect(own.lastRunByApp.get("app-1")).toBe(ran.getTime());
+    expect(instance.covered.has("app-1")).toBe(true);
+  });
+
+  it("takes the latest run from the app's own jobs only", () => {
+    const { lastRunByApp } = backupCoverage([app], [
+      { appId: "app-1", jobOrgId: "org-src", enabled: true, lastRunAt: new Date("2026-07-31T00:00:00.000Z") },
+      { appId: "app-1", jobOrgId: "org-dest", enabled: true, lastRunAt: ran },
+    ]);
+    expect(lastRunByApp.get("app-1")).toBe(ran.getTime());
   });
 });

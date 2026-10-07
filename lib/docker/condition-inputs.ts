@@ -47,30 +47,19 @@ export async function loadAdvisoryInputs(now: number): Promise<Map<string, Advis
   const byApp = new Map<string, AdvisoryInput>();
   try {
     const appRows = await db
-      .select({ id: apps.id, persistentVolumes: apps.persistentVolumes })
+      .select({ id: apps.id, organizationId: apps.organizationId, persistentVolumes: apps.persistentVolumes })
       .from(apps);
 
-    const covered = new Set<string>();
-    const lastRunByApp = new Map<string, number | null>();
     const jobRows = await db
       .select({
         appId: backupJobApps.appId,
+        jobOrgId: backupJobs.organizationId,
         enabled: backupJobs.enabled,
         lastRunAt: backupJobs.lastRunAt,
       })
       .from(backupJobApps)
       .innerJoin(backupJobs, eq(backupJobApps.backupJobId, backupJobs.id));
-
-    for (const row of jobRows) {
-      if (!row.enabled) continue;
-      covered.add(row.appId);
-      // Most recent run across every job covering this app.
-      const ts = row.lastRunAt ? row.lastRunAt.getTime() : null;
-      const seen = lastRunByApp.get(row.appId);
-      if (seen === undefined || (ts !== null && (seen === null || ts > seen))) {
-        lastRunByApp.set(row.appId, ts);
-      }
-    }
+    const { covered, lastRunByApp } = backupCoverage(appRows, jobRows);
 
     const scanByApp = await latestScans(appRows.map((a) => a.id));
     const certByApp = soonestCertPerApp(
@@ -103,6 +92,37 @@ export async function loadAdvisoryInputs(now: number): Promise<Map<string, Advis
 
   cache = { at: now, byApp };
   return byApp;
+}
+
+export type BackupJobLinkRow = {
+  appId: string;
+  jobOrgId: string | null;
+  enabled: boolean;
+  lastRunAt: Date | null;
+};
+
+/**
+ * Apps covered by an enabled job of their own org or an instance-level one,
+ * with the latest run across those jobs. Another org's job skips the app.
+ */
+export function backupCoverage(
+  appRows: { id: string; organizationId: string }[],
+  jobRows: BackupJobLinkRow[],
+): { covered: Set<string>; lastRunByApp: Map<string, number | null> } {
+  const orgByApp = new Map(appRows.map((a) => [a.id, a.organizationId]));
+  const covered = new Set<string>();
+  const lastRunByApp = new Map<string, number | null>();
+  for (const row of jobRows) {
+    if (!row.enabled) continue;
+    if (row.jobOrgId !== null && row.jobOrgId !== orgByApp.get(row.appId)) continue;
+    covered.add(row.appId);
+    const ts = row.lastRunAt ? row.lastRunAt.getTime() : null;
+    const seen = lastRunByApp.get(row.appId);
+    if (seen === undefined || (ts !== null && (seen === null || ts > seen))) {
+      lastRunByApp.set(row.appId, ts);
+    }
+  }
+  return { covered, lastRunByApp };
 }
 
 export type CertCheckRow = {
