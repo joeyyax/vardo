@@ -956,8 +956,19 @@ export function foreignPreviewContainers(psOutput: string, appId: string, envNam
 }
 
 /**
+ * Volumes a preview teardown may remove: labelled to the project and named
+ * `<project>_<volume>`. An explicit `name:` or `external` volume never qualifies.
+ */
+export function previewVolumesToRemove(lsOutput: string, project: string): string[] {
+  return lsOutput
+    .split("\n")
+    .map((name) => name.trim())
+    .filter((name) => name.startsWith(`${project}_`) && name.length > project.length + 1);
+}
+
+/**
  * Tear down one preview environment: both slots, its shared project, their
- * volumes and its directory, nothing else. Fails when any `down` fails, so the caller can keep its records.
+ * project-scoped volumes and its directory, nothing else. Fails when any `down` fails, so the caller can keep its records.
  */
 export async function stopPreviewEnvironment(
   appId: string,
@@ -996,10 +1007,21 @@ export async function stopPreviewEnvironment(
           failures.push(`refused to take down ${project}: not labelled as this preview (${foreign.join(", ")})`);
           return;
         }
-        const args = ["compose", ...(await slotComposeFiles(slotDir)), "-p", project, "down", "-v"];
+        // No `-v`: it would also remove volumes with an explicit `name:`, which production can share.
+        const args = ["compose", ...(await slotComposeFiles(slotDir)), "-p", project, "down"];
         const { stdout, stderr } = await execFileAsync("docker", args, { cwd: slotDir, timeout: COMPOSE_RESTART_TIMEOUT });
         if (stdout.trim()) logs.push(stdout.trim());
         if (stderr.trim()) logs.push(stderr.trim());
+
+        const { stdout: vols } = await execFileAsync("docker", [
+          "volume", "ls", "-q",
+          "--filter", `label=com.docker.compose.project=${project}`,
+        ], { timeout: 30_000 });
+        const owned = previewVolumesToRemove(vols, project);
+        if (owned.length > 0) {
+          await execFileAsync("docker", ["volume", "rm", ...owned], { timeout: 60_000 });
+          logs.push(`Removed volumes: ${owned.join(", ")}`);
+        }
       } catch (err) {
         failures.push(`${project}: ${err instanceof Error ? err.message : String(err)}`);
       }

@@ -62,7 +62,7 @@ vi.mock("@/lib/docker/app-dir-owner", async () => {
 });
 
 import { destroyGroupEnvironment, previewGroupStrays } from "@/lib/docker/clone";
-import { foreignPreviewContainers } from "@/lib/docker/deploy";
+import { foreignPreviewContainers, previewVolumesToRemove } from "@/lib/docker/deploy";
 
 const APP = "notes-api";
 
@@ -235,5 +235,70 @@ describe("foreignPreviewContainers", () => {
   it("flags another app, another environment and unlabelled containers", () => {
     const ps = ["x-1\tapp-2\tpr-25", "y-1\tapp-1\tproduction", "z-1\t\t"].join("\n");
     expect(foreignPreviewContainers(ps, "app-1", "pr-25")).toEqual(["x-1", "y-1", "z-1"]);
+  });
+});
+
+describe("preview teardown volumes", () => {
+  function seedNamedVolumeSlot() {
+    const dir = join(projectsDir, APP, "pr-25", "blue");
+    writeFileSync(
+      join(dir, "docker-compose.yml"),
+      [
+        "services:",
+        "  web:",
+        "    image: nginx",
+        "    volumes: [prod:/data, scratch:/tmp/scratch]",
+        "volumes:",
+        "  prod:",
+        "    name: prod_data",
+        "  scratch: {}",
+        "",
+      ].join("\n"),
+    );
+  }
+
+  function volumeCalls(sub: string): string[][] {
+    return execFileMock.mock.calls
+      .filter(([cmd, args]) => cmd === "docker" && (args as string[])[0] === "volume" && (args as string[])[1] === sub)
+      .map(([, args]) => args as string[]);
+  }
+
+  beforeEach(() => {
+    seedNamedVolumeSlot();
+    execFileMock.mockImplementation(async (_cmd: string, args: string[]) => {
+      // Even if prod_data had been created under the preview's project label, it must survive.
+      if (args[0] === "volume" && args[1] === "ls") {
+        const project = args.at(-1)!.split("=").at(-1);
+        return { stdout: `prod_data\n${project}_scratch\n`, stderr: "" };
+      }
+      return { stdout: "", stderr: "" };
+    });
+  });
+
+  it("never passes -v to compose down", async () => {
+    await destroyGroupEnvironment("ge-1", "org-1");
+
+    const downs = execFileMock.mock.calls.filter(([, args]) => (args as string[]).includes("down"));
+    expect(downs.length).toBeGreaterThan(0);
+    for (const [, args] of downs) expect(args).not.toContain("-v");
+  });
+
+  it("leaves a volume with an explicit name shared with production", async () => {
+    await destroyGroupEnvironment("ge-1", "org-1");
+
+    for (const args of volumeCalls("rm")) expect(args).not.toContain("prod_data");
+  });
+
+  it("removes the preview's own project-scoped volume", async () => {
+    await destroyGroupEnvironment("ge-1", "org-1");
+
+    expect(volumeCalls("rm").flat()).toContain(`${APP}-pr-25-blue_scratch`);
+  });
+});
+
+describe("previewVolumesToRemove", () => {
+  it("keeps only volumes prefixed with the slot project", () => {
+    const ls = ["prod_data", "a-pr-1-blue_data", "a-pr-1-blue_", "a-pr-1-bluex_data", "a-production-blue_data"].join("\n");
+    expect(previewVolumesToRemove(ls, "a-pr-1-blue")).toEqual(["a-pr-1-blue_data"]);
   });
 });

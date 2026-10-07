@@ -179,6 +179,9 @@ async function handlePullRequest(payload: Record<string, unknown>): Promise<Next
   // Previews off: no create or deploy. A close still removes an existing
   // preview, and teardown only touches resources labelled as that PR's preview.
   const previewsEnabled = await isFeatureEnabledAsync("previews");
+  if (!previewsEnabled && action === "closed") {
+    log.info(`Previews are off; PR #${prNumber} closed, removing any existing preview`);
+  }
 
   // Vardo self-preview: if selfManagement is enabled and this repo is a
   // system-managed app, deploy a frontend-only preview instead of the generic flow.
