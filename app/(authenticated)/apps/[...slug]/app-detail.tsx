@@ -53,7 +53,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { systemManagedRefusal } from "@/lib/api/system-managed";
-import { isOrgAdmin } from "@/lib/auth/permissions";
+import { can } from "@/lib/auth/permissions";
 import { useAppEvents } from "@/hooks/use-app-events";
 import { isRefreshEvent } from "@/lib/bus/refresh";
 import type { BusEvent } from "@/lib/bus/events";
@@ -295,7 +295,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
     onFallback: useCallback(() => router.refresh(), [router]),
   });
 
-  const canDelete = isOrgAdmin(userRole);
+  const canDelete = can(userRole, "app.delete");
 
   async function handleStop() {
     try {
@@ -746,7 +746,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
                   label: "Tools",
                   items: [
                     ...(featureFlags?.terminal !== false ? [{ value: "terminal", label: "Terminal" }] : []),
-                    ...(isOrgAdmin(userRole) ? [{ value: "debug", label: "Debug" }] : []),
+                    ...(can(userRole, "app.debug") ? [{ value: "debug", label: "Debug" }] : []),
                   ],
                 },
               ] satisfies SectionGroup[]}
@@ -973,7 +973,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
           <AppErrors appName={app.name} appId={app.id} orgId={orgId} />
         </TabsContent>
 
-        {isOrgAdmin(userRole) && (
+        {can(userRole, "app.debug") && (
           <TabsContent value="debug" className={tabPanelSurface}>
             <AppDebug orgId={orgId} appId={app.id} />
           </TabsContent>

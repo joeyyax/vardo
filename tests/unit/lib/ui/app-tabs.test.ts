@@ -23,7 +23,7 @@ function context(overrides: Partial<AppTabContext> = {}): AppTabContext {
     isComposeParent: false,
     isChildService: false,
     hasConnectionInfo: false,
-    isOrgAdmin: false,
+    canDebug: false,
     features: allFeatures,
     ...overrides,
   };
@@ -35,7 +35,7 @@ const childService = context({ isChildService: true });
 
 describe("availableAppTabs", () => {
   it("gives a compose parent the stack sections", () => {
-    expect(availableAppTabs(context({ isComposeParent: true, isOrgAdmin: true }))).toEqual([
+    expect(availableAppTabs(context({ isComposeParent: true, canDebug: true }))).toEqual([
       "services",
       "deployments",
       "updates",
@@ -89,7 +89,7 @@ describe("availableAppTabs", () => {
     const tabs = availableAppTabs(
       context({
         isComposeParent: true,
-        isOrgAdmin: true,
+        canDebug: true,
         features: { ...allFeatures, terminal: false, backups: false },
       }),
     );
@@ -102,7 +102,7 @@ describe("availableAppTabs", () => {
   it("only offers a compose parent debug to org admins", () => {
     expect(availableAppTabs(composeParent)).not.toContain("debug");
     expect(
-      availableAppTabs(context({ isComposeParent: true, isOrgAdmin: true })),
+      availableAppTabs(context({ isComposeParent: true, canDebug: true })),
     ).toContain("debug");
   });
 
@@ -146,7 +146,7 @@ describe("availableAppTabs", () => {
 
   it("only offers debug to org admins", () => {
     expect(availableAppTabs(plainApp)).not.toContain("debug");
-    expect(availableAppTabs(context({ isOrgAdmin: true }))).toContain("debug");
+    expect(availableAppTabs(context({ canDebug: true }))).toContain("debug");
   });
 
   it("drops tabs behind disabled feature flags", () => {

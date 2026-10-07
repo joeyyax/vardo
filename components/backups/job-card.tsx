@@ -13,6 +13,7 @@ import { NextRun } from "./next-run";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { RunProgressLine } from "./run-progress";
 import type { BackupJob, RunProgress } from "./types";
+import { useCan } from "@/components/capabilities-provider";
 
 export function JobCard({
   job,
@@ -30,6 +31,7 @@ export function JobCard({
   /** Live position of a run in flight, from the event stream. */
   progress?: RunProgress;
 }) {
+  const can = useCan();
   const [running, setRunning] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -133,22 +135,26 @@ export function JobCard({
                 )}
                 Run now
               </Button>
-              <Button
-                size="icon-xs"
-                variant="ghost"
-                onClick={toggleEnabled}
-                aria-label={job.enabled ? "Pause job" : "Enable job"}
-              >
-                {job.enabled ? <PowerOff className="size-3.5" /> : <Power className="size-3.5" />}
-              </Button>
-              <Button
-                size="icon-xs"
-                variant="ghost"
-                onClick={() => setDeleteOpen(true)}
-                aria-label="Delete job"
-              >
-                <Trash2 className="size-3.5" />
-              </Button>
+              {can("backup.jobs.manage") && (
+                <>
+                  <Button
+                    size="icon-xs"
+                    variant="ghost"
+                    onClick={toggleEnabled}
+                    aria-label={job.enabled ? "Pause job" : "Enable job"}
+                  >
+                    {job.enabled ? <PowerOff className="size-3.5" /> : <Power className="size-3.5" />}
+                  </Button>
+                  <Button
+                    size="icon-xs"
+                    variant="ghost"
+                    onClick={() => setDeleteOpen(true)}
+                    aria-label="Delete job"
+                  >
+                    <Trash2 className="size-3.5" />
+                  </Button>
+                </>
+              )}
             </div>
           )}
         </div>

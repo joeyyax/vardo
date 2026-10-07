@@ -35,7 +35,7 @@ import {
   BottomSheetDescription,
 } from "@/components/ui/bottom-sheet";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
-import { isOrgAdmin } from "@/lib/auth/permissions";
+import { can } from "@/lib/auth/permissions";
 import { RelativeTime } from "@/components/relative-time";
 
 type CronJob = {
@@ -99,7 +99,7 @@ async function requestJobs(url: string): Promise<CronJob[] | null> {
 }
 
 export function CronManager({ appId, orgId, userRole }: Props) {
-  const canManage = isOrgAdmin(userRole);
+  const canManage = can(userRole, "app.cron");
   const [jobs, setJobs] = useState<CronJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [sheetOpen, setSheetOpen] = useState(false);

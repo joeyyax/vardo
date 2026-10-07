@@ -552,7 +552,7 @@ export function ProjectDetail({
   project,
   orgId,
   initialTab,
-  isAdmin = false,
+  canDelete = false,
   canImportContainers = false,
   isInstanceAdmin = false,
   meshEnabled = false,
@@ -564,7 +564,7 @@ export function ProjectDetail({
   project: Project;
   orgId: string;
   initialTab: string;
-  isAdmin?: boolean;
+  canDelete?: boolean;
   canImportContainers?: boolean;
   isInstanceAdmin?: boolean;
   meshEnabled?: boolean;
@@ -1272,7 +1272,7 @@ export function ProjectDetail({
             )}
           </fieldset>
 
-          {isAdmin && (
+          {canDelete && (
             <DangerZone>
               <DangerZoneRow
                 title="Delete project"

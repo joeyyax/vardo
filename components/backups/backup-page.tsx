@@ -13,6 +13,7 @@ import { TargetForm } from "./target-form";
 import { JobForm } from "./job-form";
 import { BackupHistory } from "./backup-history";
 import { KeyEscrowCard } from "./key-escrow-card";
+import { useCan } from "@/components/capabilities-provider";
 import { useNotificationStream } from "@/hooks/use-notification-stream";
 import { applyBackupEvent, type ProgressByJob } from "./progress-state";
 import type { BusEvent } from "@/lib/bus/events";
@@ -50,6 +51,7 @@ export function BackupPage({
   /** False where the page already carries the title and description. */
   showIntro?: boolean;
 }) {
+  const can = useCan();
   const [loading, setLoading] = useState(true);
   const [targets, setTargets] = useState<BackupTarget[]>([]);
   const [jobs, setJobs] = useState<BackupJob[]>([]);
@@ -163,10 +165,12 @@ export function BackupPage({
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
             <CardTitle as={Heading}>Storage targets</CardTitle>
-            <Button size="sm" variant="outline" onClick={() => setTargetFormOpen(true)}>
-              <Plus className="mr-1.5 size-4" aria-hidden="true" />
-              Add target
-            </Button>
+            {can("backup.targets.manage") && (
+              <Button size="sm" variant="outline" onClick={() => setTargetFormOpen(true)}>
+                <Plus className="mr-1.5 size-4" aria-hidden="true" />
+                Add target
+              </Button>
+            )}
           </CardHeader>
           <CardContent>
             {!hasVisibleTargets ? (
@@ -186,6 +190,7 @@ export function BackupPage({
                     key={target.id}
                     target={target}
                     orgId={orgId}
+                    readOnly={!can("backup.targets.manage")}
                     onRefresh={fetchData}
                     onEdit={() => setEditingTargetId(target.id)}
                   />
@@ -202,10 +207,12 @@ export function BackupPage({
           )}
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
             <CardTitle as={Heading}>Backup jobs</CardTitle>
-            <Button size="sm" variant="outline" onClick={() => setJobFormOpen(true)} disabled={!hasVisibleTargets}>
-              <Plus className="mr-1.5 size-4" aria-hidden="true" />
-              New job
-            </Button>
+            {can("backup.jobs.manage") && (
+              <Button size="sm" variant="outline" onClick={() => setJobFormOpen(true)} disabled={!hasVisibleTargets}>
+                <Plus className="mr-1.5 size-4" aria-hidden="true" />
+                New job
+              </Button>
+            )}
           </CardHeader>
           <CardContent>
             {!hasVisibleTargets ? (
@@ -225,10 +232,12 @@ export function BackupPage({
                 title="No backup jobs configured"
                 body="Create one to schedule automatic backups."
                 action={
-                  <Button size="sm" variant="outline" onClick={() => setJobFormOpen(true)}>
-                    <Plus className="mr-1.5 size-4" aria-hidden="true" />
-                    New job
-                  </Button>
+                  can("backup.jobs.manage") && (
+                    <Button size="sm" variant="outline" onClick={() => setJobFormOpen(true)}>
+                      <Plus className="mr-1.5 size-4" aria-hidden="true" />
+                      New job
+                    </Button>
+                  )
                 }
               />
             ) : (

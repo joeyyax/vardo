@@ -7,14 +7,12 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const {
   mockGetCurrentOrg,
-  mockIsOrgAdmin,
   mockIsFeatureEnabledAsync,
   projectsFindFirst,
   meshPeersFindMany,
   projectInstancesFindMany,
 } = vi.hoisted(() => ({
   mockGetCurrentOrg: vi.fn(),
-  mockIsOrgAdmin: vi.fn(),
   mockIsFeatureEnabledAsync: vi.fn(),
   projectsFindFirst: vi.fn(),
   meshPeersFindMany: vi.fn(),
@@ -22,7 +20,6 @@ const {
 }));
 
 vi.mock("@/lib/auth/session", () => ({ getCurrentOrg: mockGetCurrentOrg }));
-vi.mock("@/lib/auth/permissions", () => ({ isOrgAdmin: mockIsOrgAdmin }));
 vi.mock("@/lib/config/features", () => ({ isFeatureEnabledAsync: mockIsFeatureEnabledAsync }));
 vi.mock("@/lib/auth/admin", () => ({
   canImportContainers: vi.fn(async () => false),
@@ -66,31 +63,35 @@ beforeEach(() => {
 async function render() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const el: any = await ProjectDetailPage({ params: Promise.resolve({ slug: ["my-project"] }) });
-  return el.props as { meshPeers: unknown[]; isAdmin: boolean };
+  return el.props as { meshPeers: unknown[]; canDelete: boolean };
+}
+
+function asRole(role: string) {
+  mockGetCurrentOrg.mockResolvedValue({ organization: { id: "org-1" }, membership: { role } });
 }
 
 describe("projects/[...slug] — mesh peer visibility", () => {
   it("gives a non-admin member no peers", async () => {
-    mockIsOrgAdmin.mockReturnValue(false);
+    asRole("member");
 
     const props = await render();
 
-    expect(props.isAdmin).toBe(false);
+    expect(props.canDelete).toBe(false);
     expect(props.meshPeers).toEqual([]);
     expect(meshPeersFindMany).not.toHaveBeenCalled();
   });
 
   it("gives an org admin the peer list", async () => {
-    mockIsOrgAdmin.mockReturnValue(true);
+    asRole("admin");
 
     const props = await render();
 
-    expect(props.isAdmin).toBe(true);
+    expect(props.canDelete).toBe(true);
     expect(props.meshPeers).toEqual(PEERS);
   });
 
   it("withholds peers from an admin when mesh is off", async () => {
-    mockIsOrgAdmin.mockReturnValue(true);
+    asRole("admin");
     mockIsFeatureEnabledAsync.mockImplementation(async (flag: string) => flag !== "mesh");
 
     const props = await render();

@@ -12,6 +12,7 @@ import { toast } from "@/lib/messenger";
 import { RelativeTime } from "@/components/relative-time";
 import { StatusBadge } from "./status-badge";
 import { deleteDescription, orphanScope, plural } from "./delete-copy";
+import { useCan } from "@/components/capabilities-provider";
 import type { RecentBackup } from "./types";
 
 function formatDuration(startedAt: string, finishedAt: string | null): string {
@@ -40,6 +41,7 @@ export function BackupHistory({
   orgId: string;
   onRefresh: () => void;
 }) {
+  const can = useCan();
   const [restoringBackups, setRestoringBackups] = useState<Set<string>>(new Set());
   const [pendingRestore, setPendingRestore] = useState<RecentBackup | null>(null);
   const [acknowledged, setAcknowledged] = useState(false);
@@ -179,7 +181,7 @@ export function BackupHistory({
                   {/* Skipped and failed runs have no archive to act on. */}
                   {backup.storagePath && (
                     <>
-                      {backup.app && (
+                      {backup.app && can("backup.restore") && (
                         <Button
                           size="icon-xs"
                           variant="ghost"
@@ -197,14 +199,16 @@ export function BackupHistory({
                           )}
                         </Button>
                       )}
-                      <Button size="icon-xs" variant="ghost" aria-label="Download backup" asChild>
-                        <a href={`/api/v1/organizations/${orgId}/backups/history/${backup.id}/download`}>
-                          <Download className="size-3.5" aria-hidden="true" />
-                        </a>
-                      </Button>
+                      {can("backup.download") && (
+                        <Button size="icon-xs" variant="ghost" aria-label="Download backup" asChild>
+                          <a href={`/api/v1/organizations/${orgId}/backups/history/${backup.id}/download`}>
+                            <Download className="size-3.5" aria-hidden="true" />
+                          </a>
+                        </Button>
+                      )}
                     </>
                   )}
-                  {backup.status !== "pending" && backup.status !== "running" && (
+                  {can("backup.delete") && backup.status !== "pending" && backup.status !== "running" && (
                     <Button
                       size="icon-xs"
                       variant="ghost"

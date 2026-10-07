@@ -38,9 +38,12 @@ export const CAPABILITIES = {
   "org.domains.manage": MEMBERS,
   "org.tags.manage": MEMBERS,
   "org.transfers.manage": ADMINS,
+  // Mesh peers are instance-wide.
+  "mesh.peers.view": ADMINS,
 
   // Projects and apps
   "project.manage": MEMBERS,
+  "project.delete": ADMINS,
   "app.view": EVERYONE,
   "app.create": MEMBERS,
   // Instance admin is also required.
@@ -80,20 +83,4 @@ export function can(role: string | null | undefined, cap: Capability): boolean {
 /** Every capability `role` holds, for passing to client components. */
 export function capabilitiesFor(role: string | null | undefined): Capability[] {
   return (Object.keys(CAPABILITIES) as Capability[]).filter((cap) => can(role, cap));
-}
-
-const ADMIN_ROLES: ReadonlySet<string> = new Set([ROLES.OWNER, ROLES.ADMIN]);
-
-/**
- * Throws "Forbidden" if the role doesn't have admin-level access.
- * Owner and admin roles are considered admin-level.
- */
-export function requireOrgAdmin(role: string) {
-  if (!ADMIN_ROLES.has(role)) {
-    throw new Error("Forbidden");
-  }
-}
-
-export function isOrgAdmin(role: string) {
-  return ADMIN_ROLES.has(role);
 }

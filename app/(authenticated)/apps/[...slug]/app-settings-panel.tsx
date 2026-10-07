@@ -24,6 +24,7 @@ import {
 } from "@/lib/ui/app-settings-fields";
 
 import type { App } from "./types";
+import { can } from "@/lib/auth/permissions";
 
 /** Said under every field the container only picks up when it is recreated. */
 const REDEPLOY_NOTE = "Requires a redeploy to take effect.";
@@ -102,7 +103,7 @@ export function AppSettingsPanel({
     source: app.source,
   });
 
-  const canUseGpu = userRole === "owner" || userRole === "admin";
+  const canUseGpu = can(userRole, "app.gpu");
 
   async function handleSave() {
     setSaving(true);

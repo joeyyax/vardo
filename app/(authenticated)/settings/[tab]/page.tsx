@@ -12,7 +12,7 @@ import { TeamMembers } from "@/app/(authenticated)/team/team-members";
 import { InvitationsPanel } from "../invitations";
 import { OrgGeneralSettings } from "../org-general-settings";
 import { BackupPage } from "@/components/backups/backup-page";
-import { isOrgAdmin } from "@/lib/auth/permissions";
+import { can } from "@/lib/auth/permissions";
 import { getEmailProviderConfig } from "@/lib/system-settings";
 
 const VALID_TABS = ["general", "variables", "domains", "backups", "notifications", "team", "invitations"] as const;
@@ -136,7 +136,7 @@ export default async function OrgSettingsTabPage({
       });
 
       // The token is the invite itself, so only admins — who can revoke it — see the link.
-      const canManage = isOrgAdmin(orgData.membership.role);
+      const canManage = can(orgData.membership.role, "org.members.manage");
       const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
       const invitationList = orgInvitations.map((inv) => ({

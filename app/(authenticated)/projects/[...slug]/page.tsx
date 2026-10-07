@@ -5,7 +5,7 @@ import { projects, projectInstances } from "@/lib/db/schema";
 import { getCurrentOrg } from "@/lib/auth/session";
 import { eq, and, or, desc, type AnyColumn } from "drizzle-orm";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
-import { isOrgAdmin } from "@/lib/auth/permissions";
+import { can } from "@/lib/auth/permissions";
 import { canImportContainers, isAppAdmin } from "@/lib/auth/admin";
 import { ProjectDetail } from "./project-detail";
 import type { MeshPeerSummary, ProjectInstanceSummary } from "@/lib/mesh/types";
@@ -41,7 +41,7 @@ export default async function ProjectDetailPage({
   const orgData = await getCurrentOrg();
   if (!orgData) redirect("/login");
   const orgId = orgData.organization.id;
-  const userIsAdmin = isOrgAdmin(orgData.membership.role);
+  const role = orgData.membership.role;
 
   const project = await db.query.projects.findFirst({
     where: and(
@@ -140,7 +140,7 @@ export default async function ProjectDetailPage({
     isFeatureEnabledAsync("logging"),
     isFeatureEnabledAsync("environments"),
     // Peers are system-level (not org-scoped) — admins only
-    userIsAdmin
+    can(role, "mesh.peers.view")
       ? db.query.meshPeers.findMany({
           columns: { id: true, name: true, type: true, status: true, connectionType: true },
         }).then((p) => p as MeshPeerSummary[]).catch(() => [] as MeshPeerSummary[])
@@ -171,7 +171,7 @@ export default async function ProjectDetailPage({
       project={{ ...project, apps: projectApps }}
       orgId={orgId}
       initialTab={effectiveTab}
-      isAdmin={userIsAdmin}
+      canDelete={can(role, "project.delete")}
       canImportContainers={containerImport}
       isInstanceAdmin={instanceAdmin}
       meshEnabled={meshEnabled}

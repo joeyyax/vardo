@@ -11,7 +11,7 @@ import { sharedServiceNames } from "@/lib/docker/compose";
 import { loadStabilityHistory } from "@/lib/docker/stability-history";
 import { loadLifecycleHistory } from "@/lib/activity/lifecycle";
 
-import { isOrgAdmin } from "@/lib/auth/permissions";
+import { can } from "@/lib/auth/permissions";
 import {
   APP_TABS as VALID_TABS,
   type AppTab as ValidTab,
@@ -254,7 +254,7 @@ export default async function AppDetailPage({ params }: PageProps) {
     isComposeParent: (app.childApps?.length ?? 0) > 0,
     isChildService: !!app.parentAppId,
     hasConnectionInfo: (app.connectionInfo?.length ?? 0) > 0,
-    isOrgAdmin: isOrgAdmin(orgData.membership.role),
+    canDebug: can(orgData.membership.role, "app.debug"),
     features: featureFlags,
   };
   const effectiveTab = resolveAppTab(tab, tabContext);

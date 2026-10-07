@@ -4,22 +4,22 @@ import { buildComposePreview } from "@/lib/docker/compose";
 // ---------------------------------------------------------------------------
 // debug endpoint — admin gate
 // ---------------------------------------------------------------------------
-// Mirrors the role check in:
+// The capability checked in:
 //   app/api/v1/organizations/[orgId]/apps/[appId]/debug/route.ts
 
-import { isOrgAdmin } from "@/lib/auth/permissions";
+import { can } from "@/lib/auth/permissions";
 
 describe("debug route admin gate", () => {
   it("allows owner", () => {
-    expect(isOrgAdmin("owner")).toBe(true);
+    expect(can("owner", "app.debug")).toBe(true);
   });
 
   it("allows admin", () => {
-    expect(isOrgAdmin("admin")).toBe(true);
+    expect(can("admin", "app.debug")).toBe(true);
   });
 
   it("blocks member", () => {
-    expect(isOrgAdmin("member")).toBe(false);
+    expect(can("member", "app.debug")).toBe(false);
   });
 });
 

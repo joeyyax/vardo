@@ -6,6 +6,8 @@ const ADMIN_ONLY: Capability[] = [
   "org.members.manage",
   "org.digest.manage",
   "org.transfers.manage",
+  "mesh.peers.view",
+  "project.delete",
   "app.gpu",
   "app.cron",
   "app.debug",

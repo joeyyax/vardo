@@ -34,7 +34,7 @@ export type AppTabContext = {
   isComposeParent: boolean;
   isChildService: boolean;
   hasConnectionInfo: boolean;
-  isOrgAdmin: boolean;
+  canDebug: boolean;
   features: FeatureToggles;
 };
 
@@ -70,7 +70,7 @@ export function availableAppTabs(ctx: AppTabContext): AppTab[] {
       "volumes",
       ...(f.backups ? (["backups"] as const) : []),
       ...(f.terminal ? (["terminal"] as const) : []),
-      ...(ctx.isOrgAdmin ? (["debug"] as const) : []),
+      ...(ctx.canDebug ? (["debug"] as const) : []),
     ];
   }
   return [
@@ -92,7 +92,7 @@ export function availableAppTabs(ctx: AppTabContext): AppTab[] {
     "volumes",
     ...(f.backups ? (["backups"] as const) : []),
     ...(f.terminal ? (["terminal"] as const) : []),
-    ...(ctx.isOrgAdmin ? (["debug"] as const) : []),
+    ...(ctx.canDebug ? (["debug"] as const) : []),
   ];
 }
 

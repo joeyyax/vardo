@@ -48,6 +48,7 @@ import {
 } from "@/components/ui/bottom-sheet";
 
 import { volumeThreshold, type ThresholdLevel } from "@/lib/volumes/threshold";
+import { useCan } from "@/components/capabilities-provider";
 
 type Volume = {
   id: string | null;
@@ -141,6 +142,7 @@ function VolumeDiffSection({
   const [loading, setLoading] = useState(false);
   const [diff, setDiff] = useState<DiffResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const can = useCan();
   const [syncing, setSyncing] = useState<Set<string>>(new Set());
   const [synced, setSynced] = useState<Set<string>>(new Set());
 
@@ -293,7 +295,7 @@ function VolumeDiffSection({
               entries={diff.modified}
               syncing={syncing}
               synced={synced}
-              onSync={syncFile}
+              onSync={can("app.volumes.sync") ? syncFile : undefined}
               onIgnore={ignorePattern}
             />
           )}
@@ -316,7 +318,7 @@ function VolumeDiffSection({
               entries={diff.missingFromDisk}
               syncing={syncing}
               synced={synced}
-              onSync={syncFile}
+              onSync={can("app.volumes.sync") ? syncFile : undefined}
               onIgnore={ignorePattern}
             />
           )}

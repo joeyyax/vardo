@@ -26,7 +26,7 @@ import {
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Card, CardContent } from "@/components/ui/card";
-import { isOrgAdmin } from "@/lib/auth/permissions";
+import { can } from "@/lib/auth/permissions";
 import { RelativeTime } from "@/components/relative-time";
 
 type Invitation = {
@@ -83,7 +83,7 @@ export function InvitationsPanel({
     revokedIds.includes(inv.id) ? { ...inv, status: "expired" as const } : inv
   );
 
-  const canManage = isOrgAdmin(currentRole);
+  const canManage = can(currentRole, "org.members.manage");
 
   async function copyInviteLink(invitationId: string, url: string) {
     if (!(await copyToClipboard(url))) return;

@@ -9,6 +9,8 @@ import { getSession, getCurrentOrg, getUserOrganizations } from "@/lib/auth/sess
 import { isFeatureEnabled, isFeatureEnabledAsync } from "@/lib/config/features";
 import { SessionFooter } from "@/components/layout/session-footer";
 import { AttentionBar } from "@/components/layout/attention-bar";
+import { CapabilitiesProvider } from "@/components/capabilities-provider";
+import { capabilitiesFor } from "@/lib/auth/permissions";
 
 
 export const metadata: Metadata = {
@@ -56,36 +58,38 @@ export default async function AppLayout({
   ]);
 
   return (
-    <TooltipProvider>
-      <div className="min-h-dvh flex flex-col bg-background">
-        <div className="sticky top-0 z-40 bg-sidebar">
-          <TopNav
-            currentOrgId={organization.id}
-            organizations={organizations}
-            teamsEnabled={teamsEnabled}
-            activityEnabled={activityEnabled}
-          />
-          <AttentionBar orgId={organization.id} />
+    <CapabilitiesProvider capabilities={capabilitiesFor(orgData.membership.role)}>
+      <TooltipProvider>
+        <div className="min-h-dvh flex flex-col bg-background">
+          <div className="sticky top-0 z-40 bg-sidebar">
+            <TopNav
+              currentOrgId={organization.id}
+              organizations={organizations}
+              teamsEnabled={teamsEnabled}
+              activityEnabled={activityEnabled}
+            />
+            <AttentionBar orgId={organization.id} />
+          </div>
+
+          <main className="flex-1">
+            <section className="py-10 sm:py-14">
+              <div className="container">
+                {children}
+              </div>
+            </section>
+          </main>
+
+          <SessionFooter />
         </div>
 
-        <main className="flex-1">
-          <section className="py-10 sm:py-14">
-            <div className="container">
-              {children}
-            </div>
-          </section>
-        </main>
-
-        <SessionFooter />
-      </div>
-
-      <CommandPalette
-        orgId={organization.id}
-        teamsEnabled={teamsEnabled}
-        activityEnabled={activityEnabled}
-      />
-      <KeyboardShortcuts />
-      <NotificationListener orgId={organization.id} />
-    </TooltipProvider>
+        <CommandPalette
+          orgId={organization.id}
+          teamsEnabled={teamsEnabled}
+          activityEnabled={activityEnabled}
+        />
+        <KeyboardShortcuts />
+        <NotificationListener orgId={organization.id} />
+      </TooltipProvider>
+    </CapabilitiesProvider>
   );
 }

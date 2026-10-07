@@ -26,7 +26,7 @@ import {
 } from "@/components/ui/bottom-sheet";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { Card, CardContent } from "@/components/ui/card";
-import { isOrgAdmin } from "@/lib/auth/permissions";
+import { can } from "@/lib/auth/permissions";
 import { OrgSwitcher } from "@/components/layout/org-switcher";
 import { getInitials } from "@/lib/initials";
 import type { Organization } from "@/lib/types";
@@ -67,7 +67,7 @@ export function TeamMembers({ members: initialMembers, orgId, orgName, currentRo
   const [removeTarget, setRemoveTarget] = useState<Member | null>(null);
   const [removing, setRemoving] = useState(false);
 
-  const canManage = isOrgAdmin(currentRole);
+  const canManage = can(currentRole, "org.members.manage");
 
   async function handleInvite() {
     if (!inviteEmail.trim()) return;

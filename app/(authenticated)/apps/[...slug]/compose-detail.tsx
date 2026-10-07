@@ -72,7 +72,7 @@ import { AppUpdatesPanel, useImageUpdates } from "./app-updates";
 import { pendingImageChange, type PendingImage } from "@/lib/docker/image-updates/pending";
 import { AppHeader } from "./app-header";
 import { SectionNav, type SectionGroup } from "@/components/section-nav";
-import { isOrgAdmin } from "@/lib/auth/permissions";
+import { can } from "@/lib/auth/permissions";
 import { useAppEvents } from "@/hooks/use-app-events";
 import { isRefreshEvent } from "@/lib/bus/refresh";
 import type { BusEvent } from "@/lib/bus/events";
@@ -719,7 +719,7 @@ export function ComposeDetail({
   const [rollbackOpen, setRollbackOpen] = useState(false);
   const [rollingBack, setRollingBack] = useState(false);
 
-  const canDelete = isOrgAdmin(userRole);
+  const canDelete = can(userRole, "app.delete");
 
   const handleRestart = useCallback(async () => {
     try {
@@ -1168,7 +1168,7 @@ export function ComposeDetail({
                   label: "Tools",
                   items: [
                     ...(featureFlags?.terminal !== false ? [{ value: "terminal", label: "Terminal" }] : []),
-                    ...(isOrgAdmin(userRole) ? [{ value: "debug", label: "Debug" }] : []),
+                    ...(can(userRole, "app.debug") ? [{ value: "debug", label: "Debug" }] : []),
                   ],
                 },
               ] satisfies SectionGroup[]}
@@ -1396,7 +1396,7 @@ export function ComposeDetail({
           </TabsContent>
         )}
 
-        {isOrgAdmin(userRole) && (
+        {can(userRole, "app.debug") && (
           <TabsContent value="debug" className={tabPanelSurface}>
             <AppDebug orgId={orgId} appId={app.id} />
           </TabsContent>
