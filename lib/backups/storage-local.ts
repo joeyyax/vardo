@@ -8,7 +8,7 @@
 
 import { copyFile, mkdir, unlink, stat } from "fs/promises";
 import { resolve, dirname } from "path";
-import type { BackupStorage } from "./storage-port";
+import { ArchiveMissingError, type BackupStorage } from "./storage-port";
 
 export type LocalStorageConfig = {
   path: string; // e.g. "/opt/vardo/backups"
@@ -40,7 +40,12 @@ export class LocalBackupStorage implements BackupStorage {
 
   async download(key: string, destPath: string): Promise<void> {
     const src = this.safePath(key);
-    await copyFile(src, destPath);
+    try {
+      await copyFile(src, destPath);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") throw new ArchiveMissingError();
+      throw err;
+    }
   }
 
   async delete(key: string): Promise<void> {

@@ -10,6 +10,7 @@ import {
   PutObjectCommand,
   GetObjectCommand,
   DeleteObjectCommand,
+  HeadObjectCommand,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { createReadStream, createWriteStream } from "fs";
@@ -18,7 +19,7 @@ import { Readable, pipeline } from "stream";
 import { promisify } from "util";
 
 const pipelineAsync = promisify(pipeline);
-import type { BackupStorage } from "./storage-port";
+import { ArchiveMissingError, type BackupStorage } from "./storage-port";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -32,6 +33,12 @@ export type S3StorageConfig = {
   secretAccessKey: string;
   prefix?: string;
 };
+
+/** GetObject reports NoSuchKey; HeadObject has no body, so only NotFound. */
+function isMissing(err: unknown): boolean {
+  const e = err as { name?: unknown; $metadata?: { httpStatusCode?: number } };
+  return e?.name === "NoSuchKey" || e?.name === "NotFound" || e?.$metadata?.httpStatusCode === 404;
+}
 
 // ---------------------------------------------------------------------------
 // Adapter
@@ -81,12 +88,16 @@ export class S3BackupStorage implements BackupStorage {
   }
 
   async download(key: string, destPath: string): Promise<void> {
-    const response = await this.client.send(
-      new GetObjectCommand({
-        Bucket: this.config.bucket,
-        Key: this.fullKey(key),
-      }),
-    );
+    const response = await this.client
+      .send(
+        new GetObjectCommand({
+          Bucket: this.config.bucket,
+          Key: this.fullKey(key),
+        }),
+      )
+      .catch((err) => {
+        throw isMissing(err) ? new ArchiveMissingError() : err;
+      });
 
     if (!response.Body) {
       throw new Error(`Empty response body for key: ${key}`);
@@ -106,7 +117,14 @@ export class S3BackupStorage implements BackupStorage {
     );
   }
 
+  /** Checks the object exists first; a presigned URL to nothing would 404 at the provider. */
   async getDownloadUrl(key: string, expiresIn = 3600): Promise<string> {
+    await this.client
+      .send(new HeadObjectCommand({ Bucket: this.config.bucket, Key: this.fullKey(key) }))
+      .catch((err) => {
+        throw isMissing(err) ? new ArchiveMissingError() : err;
+      });
+
     const command = new GetObjectCommand({
       Bucket: this.config.bucket,
       Key: this.fullKey(key),

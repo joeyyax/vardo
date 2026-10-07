@@ -25,6 +25,7 @@ vi.mock("@/lib/backups/engine", () => ({
   downloadBackupToTemp: vi.fn(),
 }));
 
+const { ArchiveMissingError } = await import("@/lib/backups/storage-port");
 const { GET: download } = await import(
   "@/app/api/v1/organizations/[orgId]/backups/history/[backupId]/download/route"
 );
@@ -93,6 +94,18 @@ describe("a deleted app's backup", () => {
     expect(res.status).toBe(409);
     expect((await res.json()).error).toMatch(/Download the archive/);
     expect(restoreBackupMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("a backup whose archive is missing", () => {
+  it("downloads as a 404 that says so", async () => {
+    backupsFindFirst.mockResolvedValue(orphan);
+    downloadUrlMock.mockRejectedValue(new ArchiveMissingError());
+
+    const res = await download(req(), ctx());
+
+    expect(res.status).toBe(404);
+    expect((await res.json()).error).toBe("This backup's archive is missing from storage");
   });
 });
 

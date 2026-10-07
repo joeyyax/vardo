@@ -154,10 +154,11 @@ export function withStorageRetry(storage: BackupStorage): BackupStorage {
     delete: (key) => withRetry("delete", key, () => storage.delete(key)),
   };
 
-  // Presigning signs locally and makes no network call, so there is nothing to retry.
+  // Presigning checks the object exists first, which is a network call.
   if (storage.getDownloadUrl) {
     const getDownloadUrl = storage.getDownloadUrl.bind(storage);
-    wrapped.getDownloadUrl = (key, expiresIn) => getDownloadUrl(key, expiresIn);
+    wrapped.getDownloadUrl = (key, expiresIn) =>
+      withRetry("presign", key, () => getDownloadUrl(key, expiresIn));
   }
 
   return wrapped;

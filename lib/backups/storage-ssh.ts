@@ -8,7 +8,7 @@
 
 import { stat, writeFile as fsWriteFile, unlink } from "fs/promises";
 import { nanoid } from "nanoid";
-import type { BackupStorage } from "./storage-port";
+import { ArchiveMissingError, type BackupStorage } from "./storage-port";
 import { execFileAsync } from "@/lib/utils/exec";
 
 // ---------------------------------------------------------------------------
@@ -158,6 +158,13 @@ export class SshBackupStorage implements BackupStorage {
         ],
         { timeout: 600_000 }
       );
+    } catch (err) {
+      // scp exits 1 for every failure, so the reason only exists as text.
+      const stderr = (err as { stderr?: unknown }).stderr;
+      if (typeof stderr === "string" && /no such file or directory/i.test(stderr)) {
+        throw new ArchiveMissingError();
+      }
+      throw err;
     } finally {
       await cleanupKeyFile(keyFile);
     }

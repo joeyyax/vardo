@@ -230,7 +230,7 @@ describe("withStorageRetry", () => {
     await expect(runWithoutWaiting(storage.delete("k"))).rejects.toThrow(/delete failed after/);
   });
 
-  it("passes presigning straight through — it signs locally and makes no request", async () => {
+  it("passes presigning through", async () => {
     const getDownloadUrl = vi.fn(async () => "https://example.test/signed");
     const storage = withStorageRetry(stubStorage({ getDownloadUrl }));
 

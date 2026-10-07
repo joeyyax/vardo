@@ -5,9 +5,7 @@ import { backups } from "@/lib/db/schema";
 import { requireAppAdmin } from "@/lib/auth/admin";
 import { requirePlugin } from "@/lib/api/require-plugin";
 import { eq } from "drizzle-orm";
-import { getBackupDownloadUrl, downloadBackupToTemp } from "@/lib/backups/engine";
-import { createReadStream } from "fs";
-import { rm } from "fs/promises";
+import { backupDownloadResponse } from "@/lib/backups/download-response";
 
 type RouteParams = {
   params: Promise<{ backupId: string }>;
@@ -29,44 +27,8 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    // Try pre-signed URL first (S3 targets)
-    const url = await getBackupDownloadUrl(backupId);
-    if (url) {
-      return NextResponse.redirect(url);
-    }
-
-    // SSH targets: download to temp and stream through server
-    const tempPath = await downloadBackupToTemp(backupId);
     const fileName = `${backup.volumeName ?? "backup"}-${backup.startedAt.toISOString().slice(0, 10)}.tar.gz`;
-
-    try {
-      const stream = createReadStream(tempPath);
-      const webStream = new ReadableStream({
-        start(controller) {
-          stream.on("data", (chunk) => controller.enqueue(chunk));
-          stream.on("end", () => {
-            controller.close();
-            rm(tempPath, { force: true }).catch(() => {});
-            const dir = tempPath.substring(0, tempPath.lastIndexOf("/"));
-            rm(dir, { recursive: true, force: true }).catch(() => {});
-          });
-          stream.on("error", (err) => {
-            controller.error(err);
-            rm(tempPath, { force: true }).catch(() => {});
-          });
-        },
-      });
-
-      return new Response(webStream, {
-        headers: {
-          "Content-Type": "application/gzip",
-          "Content-Disposition": `attachment; filename="${fileName}"`,
-        },
-      });
-    } catch {
-      await rm(tempPath, { force: true }).catch(() => {});
-      throw new Error("Failed to stream backup file");
-    }
+    return await backupDownloadResponse(backupId, fileName);
   } catch (error) {
     return handleRouteError(error, "Error downloading system backup");
   }

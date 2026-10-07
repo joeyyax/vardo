@@ -22,3 +22,11 @@ export interface BackupStorage {
    */
   getDownloadUrl?(key: string, expiresIn?: number): Promise<string>;
 }
+
+/** The archive a backup row points at is gone from its target. */
+export class ArchiveMissingError extends Error {
+  constructor() {
+    super("This backup's archive is missing from storage");
+    this.name = "ArchiveMissingError";
+  }
+}

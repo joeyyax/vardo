@@ -1750,6 +1750,11 @@ export async function downloadBackupToTemp(
   const destPath = join(tmpDir, "backup.tar.gz");
 
   const storage = createBackupStorage(backup.target);
-  await storage.download(backup.storagePath, destPath);
+  try {
+    await storage.download(backup.storagePath, destPath);
+  } catch (err) {
+    await rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+    throw err;
+  }
   return destPath;
 }
