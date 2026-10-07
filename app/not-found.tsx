@@ -3,8 +3,7 @@
 import { useState } from "react";
 import { AuroraText } from "@/components/ui/aurora-text";
 
-// Serves both a missing route and an unmatched hostname — Traefik rewrites
-// unknown hosts to /unknown-host, which throws notFound() into here.
+// Also serves unknown hosts, which Traefik rewrites to /unknown-host.
 export default function NotFound() {
   const [hovered, setHovered] = useState(false);
   const [clicked, setClicked] = useState(false);
@@ -38,7 +37,7 @@ export default function NotFound() {
           />
         </svg>
         <p className={`type-body-sm font-mono transition-opacity duration-300 ${clicked ? "opacity-100" : "opacity-0"}`}>
-          {/* Mid-tones only — the previous whites vanished on a light ground. */}
+          {/* Mid-tones only; white vanishes on a light ground. */}
           <AuroraText speed={0.5} colors={["#8a8a8a", "#5c5c5c", "#a3a3a3", "#8a8a8a"]}>there&apos;s nothing here</AuroraText>
         </p>
       </div>

@@ -12,14 +12,13 @@ export const metadata: Metadata = {
   },
 };
 
-// Which buttons appear comes from the database and changes without a rebuild.
+// Sign-in methods come from the database.
 export const dynamic = "force-dynamic";
 
 export default async function LoginPage() {
   const [methods, prerequisites] = await Promise.all([getAuthMethodStates(), checkPrerequisites()]);
 
-  // Password can also be shut off at the deployment level; the others need
-  // their prerequisite configured before they can appear.
+  // Methods without their prerequisite stay hidden.
   return (
     <LoginPageClient
       methods={{

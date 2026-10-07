@@ -15,7 +15,6 @@ export default function CreateOrgPage() {
   const [orgName, setOrgName] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // Redirect to login if not authenticated
   useEffect(() => {
     if (!isPending && !session) {
       router.replace("/login");

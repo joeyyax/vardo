@@ -4,8 +4,7 @@ import { ThemeProvider } from "next-themes";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
 
-// Body face. Designed by the Braille Institute for low-vision readers, so its
-// letterforms stay distinct at the sizes a console actually uses.
+// Body face.
 const bodySans = Atkinson_Hyperlegible_Next({
   variable: "--font-body-sans",
   subsets: ["latin"],

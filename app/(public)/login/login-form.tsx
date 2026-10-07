@@ -83,8 +83,7 @@ function LoginForm({ methods }: { methods: EnabledMethods }) {
       if (result?.error) {
         setError(result.error.message ?? "Invalid email or password");
       } else {
-        // If 2FA is enabled, the twoFactorClient plugin handles the redirect
-        // Otherwise, redirect to callback
+        // The twoFactorClient plugin handles the 2FA redirect.
         window.location.href = callbackUrl;
       }
     } catch {
@@ -166,7 +165,7 @@ function LoginForm({ methods }: { methods: EnabledMethods }) {
           </div>
         )}
 
-        {/* Passkey - Primary method */}
+        {/* Passkey */}
         {methods.passkey && (
         <Button
           variant="default"
@@ -227,7 +226,7 @@ function LoginForm({ methods }: { methods: EnabledMethods }) {
           </div>
         )}
 
-        {/* Email + password or magic link */}
+        {/* Email */}
         {!showEmailForm ? null : emailMethod === "password" ? (
           <form onSubmit={handlePasswordSignIn} className="space-y-3">
             <div className="space-y-2">

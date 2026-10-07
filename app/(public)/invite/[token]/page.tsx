@@ -91,7 +91,6 @@ export default async function InvitePage({ params }: Props) {
     );
   }
 
-  // Fetch org name for display
   let orgName: string | undefined;
   if (invitation.scope === "org" && invitation.targetId) {
     const org = await db.query.organizations.findFirst({
@@ -103,10 +102,9 @@ export default async function InvitePage({ params }: Props) {
 
   const session = await getSession();
 
-  // If user is logged in with the right email, auto-accept
+  // Auto-accept when the signed-in email matches.
   if (session?.user?.id && session.user.email === invitation.email) {
     if (invitation.status === "accepted") {
-      // Already accepted — redirect to org or dashboard
       if (invitation.scope === "org" && invitation.targetId) {
         redirect("/projects");
       }

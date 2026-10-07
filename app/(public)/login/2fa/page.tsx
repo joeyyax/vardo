@@ -44,7 +44,6 @@ function TwoFactorForm() {
           return;
         }
       } else {
-        // Backup code verification
         const { error: err } = await twoFactor.verifyBackupCode({
           code,
         });
