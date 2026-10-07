@@ -6,12 +6,17 @@ import { eq, sql } from "drizzle-orm";
 import { recordActivity } from "@/lib/activity";
 import type { DeployContext } from "./deploy-context";
 
+/** Log line for unfinished work. */
+export function incompleteLogLine(reason: string): string {
+  return `[deploy] Post-deploy work did not finish — ${reason}`;
+}
+
 /** Record unfinished post-deploy work against a successful deploy. Never throws. */
 export async function recordPostDeployIncomplete(
   ctx: DeployContext,
   reason: string,
 ): Promise<void> {
-  ctx.log(`[deploy] Post-deploy work did not finish — ${reason}`);
+  ctx.log(incompleteLogLine(reason));
 
   try {
     await db
@@ -26,6 +31,14 @@ export async function recordPostDeployIncomplete(
     // Best effort.
   }
 
+  await announcePostDeployIncomplete(ctx, reason);
+}
+
+/** Notify on unfinished work already written to the row. Never throws. */
+export async function announcePostDeployIncomplete(
+  ctx: DeployContext,
+  reason: string,
+): Promise<void> {
   const projectName = ctx.app.displayName || ctx.app.name;
 
   try {

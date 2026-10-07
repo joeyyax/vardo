@@ -38,7 +38,11 @@ import {
 } from "../constants";
 import type { ConfigSnapshot } from "@/lib/types/deploy-snapshot";
 import { checkEndpoint, sendDeployNotification } from "../deploy";
-import { recordPostDeployIncomplete } from "../deploy-incomplete";
+import {
+  announcePostDeployIncomplete,
+  incompleteLogLine,
+  recordPostDeployIncomplete,
+} from "../deploy-incomplete";
 import type { DeployContext, SlotStopOutcome } from "../deploy-context";
 import { isSelfApp } from "../self-env";
 import { proposeDurability, isSafeToApply } from "@/lib/backups/durability";
@@ -54,20 +58,11 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
 
   ctx.stage("cleanup", "running");
 
-  // Unfinished work, held until the deploy commits.
-  const pendingUnfinished: string[] = [];
-  const unfinishedWork = async (reason: string) => {
-    if (!ctx.succeeded) {
-      pendingUnfinished.push(reason);
-      return;
-    }
-    await recordPostDeployIncomplete(ctx, reason);
-  };
+  // Raised by the swap; written with the commit so a self-deploy's stop can't lose them.
+  const swapUnfinished = ctx.unfinished?.splice(0) ?? [];
+  for (const reason of swapUnfinished) log(incompleteLogLine(reason));
 
-  // Raised by the swap.
-  for (const reason of ctx.unfinished?.splice(0) ?? []) {
-    await unfinishedWork(reason);
-  }
+  const unfinishedWork = (reason: string) => recordPostDeployIncomplete(ctx, reason);
 
   const stopOldSlot = async () => {
     const stopped = await ctx.stopOldSlot!().then(
@@ -303,11 +298,14 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
       envSnapshot,
       configSnapshot,
       slot: ctx.newSlot,
+      ...(swapUnfinished.length > 0 && { postDeployError: swapUnfinished.join("\n") }),
     })
     .where(eq(deployments.id, ctx.deploymentId));
 
   // Committed. Nothing below may take the new slot down when it throws.
   ctx.succeeded = true;
+
+  for (const reason of swapUnfinished) await announcePostDeployIncomplete(ctx, reason);
 
   if (!isLocalEnv) {
     try {
@@ -435,10 +433,6 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
   }).catch(() => {});
 
   sendDeployNotification(app, ctx.deploymentId, true, durationMs).catch(() => {});
-
-  for (const reason of pendingUnfinished.splice(0)) {
-    await recordPostDeployIncomplete(ctx, reason);
-  }
 
   // Auto-rollback can't watch Vardo itself; the watcher dies with the slot.
   if (app.autoRollback && isSelfApp(app.name) && activeSlot) {

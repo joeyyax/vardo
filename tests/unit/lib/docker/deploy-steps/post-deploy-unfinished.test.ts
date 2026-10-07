@@ -214,17 +214,40 @@ describe("postDeploy tail work", () => {
     expect(unfinishedReasons()[0]).toContain("docker daemon unreachable");
   });
 
-  it("carries a stop the swap could not finish onto the row, behind the success", async () => {
+  it("carries a stop the swap could not finish onto the success row", async () => {
     const ctx = makeContext({
       unfinished: ["the old slot (green) is still running — docker daemon unreachable"],
     });
 
     await postDeploy(ctx);
 
-    const success = writes.findIndex((w) => w.table === deployments && w.values.status === "success");
-    const noted = writes.findIndex((w) => w.table === deployments && "postDeployError" in w.values);
+    const success = writes.find((w) => w.table === deployments && w.values.status === "success");
+    expect(success?.values.postDeployError).toContain("still running");
+    expect(success?.values.log).toContain("Post-deploy work did not finish");
     expect(unfinishedReasons()[0]).toContain("still running");
-    expect(noted).toBeGreaterThan(success);
+  });
+
+  it("records a held shared service before a self-deploy stops its own slot", async () => {
+    const held = "shared service postgres still runs its old definition (data store)";
+    let announcedBeforeStop: string[] = [];
+    const stopOldSlot = vi.fn(async () => {
+      announcedBeforeStop = unfinishedReasons();
+      return { ok: true as const };
+    });
+    const ctx = makeContext({
+      activeSlot: "green",
+      stopOldSlot,
+      stopOldSlotEndsDeploy: true,
+      unfinished: [held],
+    });
+    ctx.app.name = "vardo";
+
+    await postDeploy(ctx);
+
+    const success = writes.find((w) => w.table === deployments && w.values.status === "success");
+    expect(success?.values.postDeployError).toBe(held);
+    expect(announcedBeforeStop).toEqual([held]);
+    expect(unfinishedReasons()).toEqual([held]);
   });
 
   it("stays silent when the tail's announcements fail", async () => {
