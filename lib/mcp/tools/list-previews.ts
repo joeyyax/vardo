@@ -5,6 +5,7 @@ import { groupEnvironments, projects } from "@/lib/db/schema";
 import { eq, and, desc, count } from "drizzle-orm";
 import type { McpAuthContext } from "../auth";
 import { accessibleOrgIds, orgFilter, orgLabels } from "../scope";
+import { previewsDisabled } from "./preview-helpers";
 
 export function registerListPreviews(
   server: McpServer,
@@ -29,6 +30,9 @@ export function registerListPreviews(
         .describe("Offset for pagination"),
     },
     async ({ limit, offset }) => {
+      const disabled = await previewsDisabled();
+      if (disabled) return disabled;
+
       const orgIds = await accessibleOrgIds(context, "app.view");
       const orgPreviewFilter = and(
         eq(groupEnvironments.type, "preview"),

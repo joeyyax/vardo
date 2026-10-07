@@ -21,6 +21,7 @@ import { sharedProjectName } from "./slot-partition";
 import { readSlotPartition } from "./shared-project";
 import { recordActivity } from "@/lib/activity";
 import { DeployBlockedError } from "./errors";
+import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { createDeployLogger, DEPLOY_STAGE_ORDER } from "./deploy-logger";
 import { recordPostDeployIncomplete } from "./deploy-incomplete";
 import type { DeployStage } from "./deploy-logger";
@@ -227,6 +228,10 @@ export async function runDeployment(
     const envType = resolvedEnv.type;
     const envBranchOverride = resolvedEnv.gitBranch;
     log(`[deploy] Environment: ${envName} (${envType})`);
+
+    if (envType === "preview" && !(await isFeatureEnabledAsync("previews"))) {
+      throw new DeployBlockedError("Previews are disabled on this instance");
+    }
 
     ownsAppStatus = !!resolvedEnv.isDefault;
 
@@ -936,6 +941,21 @@ export function isPreviewProject(appName: string, envName: string, project: stri
 }
 
 /**
+ * Containers in a compose project that aren't labelled as this app's preview.
+ * Each `docker ps` line is `<name>\t<vardo.project.id>\t<vardo.environment>`.
+ */
+export function foreignPreviewContainers(psOutput: string, appId: string, envName: string): string[] {
+  return psOutput
+    .split("\n")
+    .filter((line) => line.trim())
+    .filter((line) => {
+      const [, id, env] = line.split("\t");
+      return id !== appId || env !== envName;
+    })
+    .map((line) => line.split("\t")[0]);
+}
+
+/**
  * Tear down one preview environment: both slots, its shared project, their
  * volumes and its directory, nothing else. Fails when any `down` fails, so the caller can keep its records.
  */
@@ -965,6 +985,17 @@ export async function stopPreviewEnvironment(
         return;
       }
       try {
+        // A name match isn't proof. Every container must carry this preview's labels.
+        const { stdout: ps } = await execFileAsync("docker", [
+          "ps", "-a",
+          "--filter", `label=com.docker.compose.project=${project}`,
+          "--format", '{{.Names}}\t{{.Label "vardo.project.id"}}\t{{.Label "vardo.environment"}}',
+        ], { timeout: 30_000 });
+        const foreign = foreignPreviewContainers(ps, appId, envName);
+        if (foreign.length > 0) {
+          failures.push(`refused to take down ${project}: not labelled as this preview (${foreign.join(", ")})`);
+          return;
+        }
         const args = ["compose", ...(await slotComposeFiles(slotDir)), "-p", project, "down", "-v"];
         const { stdout, stderr } = await execFileAsync("docker", args, { cwd: slotDir, timeout: COMPOSE_RESTART_TIMEOUT });
         if (stdout.trim()) logs.push(stdout.trim());

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { destroyGroupEnvironment } from "@/lib/docker/clone";
 import { slidingWindowRateLimit } from "@/lib/api/rate-limit";
 import type { McpAuthContext } from "../auth";
-import { resolveOrgPreview, previewNotFound } from "./preview-helpers";
+import { resolveOrgPreview, previewNotFound, previewsDisabled } from "./preview-helpers";
 
 // 10 destroys per 10 minutes per user/org pair.
 // destroyGroupEnvironment does real Docker work (container teardown, network
@@ -24,6 +24,9 @@ export function registerDestroyPreview(
         .describe("The preview environment ID (returned by vardo_create_preview)"),
     },
     async ({ preview_id }) => {
+      const disabled = await previewsDisabled();
+      if (disabled) return disabled;
+
       const rl = await slidingWindowRateLimit(
         `${context.userId}:${context.organizationId}`,
         "mcp:destroy-preview",

@@ -23,6 +23,7 @@ import { eq, and, asc } from "drizzle-orm";
 import { getInstanceConfig } from "@/lib/system-settings";
 import { logger } from "@/lib/logger";
 import { execFileAsync } from "@/lib/utils/exec";
+import { isFeatureEnabledAsync } from "@/lib/config/features";
 
 const log = logger.child("self-preview");
 
@@ -109,6 +110,10 @@ export async function createVardoPreview(
   opts: CreateVardoPreviewOpts
 ): Promise<VardoPreviewResult> {
   const { prNumber, branch, repoFullName } = opts;
+
+  if (!(await isFeatureEnabledAsync("previews")) || !(await isFeatureEnabledAsync("selfManagement"))) {
+    throw new Error("Vardo previews need both Previews and Self-management enabled");
+  }
 
   // Validate prNumber — used in filesystem paths and container names.
   if (!Number.isInteger(prNumber) || prNumber <= 0) {
@@ -246,6 +251,8 @@ export async function destroyVardoPreview(prNumber: number): Promise<void> {
 export async function cleanupStaleSelfPreviews(
   maxAgeHours = STALE_PREVIEW_MAX_AGE_HOURS
 ): Promise<number> {
+  if (!(await isFeatureEnabledAsync("previews"))) return 0;
+
   let stdout = "";
   try {
     ({ stdout } = await execFileAsync(

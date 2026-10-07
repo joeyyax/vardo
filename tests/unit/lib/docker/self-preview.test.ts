@@ -47,6 +47,7 @@ const { dbMock, execFileAsyncMock, execFileMock } = vi.hoisted(() => {
 });
 
 vi.mock("@/lib/db", () => ({ db: dbMock }));
+vi.mock("@/lib/config/features", () => ({ isFeatureEnabledAsync: vi.fn().mockResolvedValue(true) }));
 
 vi.mock("@/lib/system-settings", () => ({
   getInstanceConfig: vi.fn(async () => ({ baseDomain: "example.com" })),
@@ -68,6 +69,7 @@ vi.mock("fs/promises", () => ({
 
 import { rm, mkdir, writeFile } from "fs/promises";
 import { getInstanceConfig } from "@/lib/system-settings";
+import { isFeatureEnabledAsync } from "@/lib/config/features";
 
 import {
   buildEnvFile,
@@ -692,5 +694,35 @@ describe("createVardoPreview database guard", () => {
     delete process.env.VARDO_ALLOW_PREVIEW_PROD_DB;
     const { createVardoPreview } = await import("@/lib/docker/self-preview");
     await expect(createVardoPreview({ ...args, prNumber: -1 })).rejects.toThrow(/Invalid PR number/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Feature gates
+// ---------------------------------------------------------------------------
+
+describe("self-preview with a flag off", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it.each(["previews", "selfManagement"])("refuses to build when %s is off", async (flag) => {
+    vi.mocked(isFeatureEnabledAsync).mockImplementation(async (f) => f !== flag);
+
+    await expect(
+      createVardoPreview({ prNumber: 42, branch: "feat/test", repoFullName: "acme/vardo" }),
+    ).rejects.toThrow(/Previews and Self-management/);
+    expect(execFileAsyncMock).not.toHaveBeenCalled();
+  });
+
+  it("skips the stale sweep when previews are off", async () => {
+    vi.mocked(isFeatureEnabledAsync).mockImplementation(async (f) => f !== "previews");
+
+    await expect(cleanupStaleSelfPreviews()).resolves.toBe(0);
+    expect(execFileAsyncMock).not.toHaveBeenCalled();
+  });
+
+  afterEach(() => {
+    vi.mocked(isFeatureEnabledAsync).mockImplementation(async () => true);
   });
 });

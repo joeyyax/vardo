@@ -176,8 +176,8 @@ async function handlePullRequest(payload: Record<string, unknown>): Promise<Next
 
   log.info(`PR #${prNumber} ${action} on ${repoFullName}:${branch} by ${author}`);
 
-  // Closing a PR still tears down whatever is running, so turning previews
-  // off never strands a stack.
+  // Previews off: no create or deploy. A close still removes an existing
+  // preview, and teardown only touches resources labelled as that PR's preview.
   const previewsEnabled = await isFeatureEnabledAsync("previews");
 
   // Vardo self-preview: if selfManagement is enabled and this repo is a

@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { groupEnvironments, projects } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
+import { isFeatureEnabledAsync } from "@/lib/config/features";
 import type { McpAuthContext } from "../auth";
 import type { Capability } from "@/lib/auth/permissions";
 import { canAccessOrg } from "../scope";
@@ -38,13 +39,27 @@ export async function resolveOrgPreview(
     })
     .from(groupEnvironments)
     .innerJoin(projects, eq(groupEnvironments.projectId, projects.id))
-    .where(eq(groupEnvironments.id, previewId))
+    .where(and(eq(groupEnvironments.id, previewId), eq(groupEnvironments.type, "preview")))
     .then((rows) => rows[0] ?? null);
 
   if (!row) return null;
   if (!(await canAccessOrg(context, row.organizationId, cap))) return null;
 
   return row;
+}
+
+/** The error every preview tool returns while previews are off, or null when they're on. */
+export async function previewsDisabled() {
+  if (await isFeatureEnabledAsync("previews")) return null;
+  return {
+    content: [
+      {
+        type: "text" as const,
+        text: JSON.stringify({ error: "Previews are not enabled on this instance" }),
+      },
+    ],
+    isError: true as const,
+  };
 }
 
 export function previewNotFound() {

@@ -204,8 +204,11 @@ export async function register() {
         .catch((err) => log.error("Failed to start mesh heartbeat scheduler:", err)),
 
       // Preview sweeper — expired preview environments are never otherwise removed
-      import("./lib/docker/preview-sweeper")
-        .then(({ startPreviewSweeper }) => {
+      import("./lib/config/features")
+        .then(({ isFeatureEnabledAsync }) => isFeatureEnabledAsync("previews"))
+        .then(async (enabled) => {
+          if (!enabled) return;
+          const { startPreviewSweeper } = await import("./lib/docker/preview-sweeper");
           startPreviewSweeper();
           log.info("Preview sweeper started");
         })

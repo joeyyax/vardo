@@ -74,7 +74,10 @@ vi.mock("@/lib/docker/clone", () => ({
   }),
 }));
 
-import { createPreview, destroyPreview } from "@/lib/docker/preview";
+import { createPreview, destroyPreview, cleanupExpiredPreviews } from "@/lib/docker/preview";
+import { createGroupEnvironment, destroyGroupEnvironment } from "@/lib/docker/clone";
+import { isFeatureEnabledAsync } from "@/lib/config/features";
+import { db } from "@/lib/db";
 
 const REPO = "joeyyax/tools-api";
 const tick = () => new Promise((r) => setTimeout(r, 20));
@@ -132,4 +135,30 @@ describe("open and close a PR within seconds", () => {
 
     expect(live.size).toBe(1);
   }, 10_000);
+});
+
+describe("with previews off", () => {
+  it("creates nothing on open", async () => {
+    vi.mocked(isFeatureEnabledAsync).mockResolvedValueOnce(false);
+    await expect(open()).resolves.toBeNull();
+
+    expect(createGroupEnvironment).not.toHaveBeenCalled();
+    expect(deployGroupMock).not.toHaveBeenCalled();
+  });
+
+  it("sweeps nothing", async () => {
+    vi.mocked(isFeatureEnabledAsync).mockResolvedValueOnce(false);
+    await expect(cleanupExpiredPreviews()).resolves.toBe(0);
+
+    expect(destroyGroupEnvironment).not.toHaveBeenCalled();
+  });
+
+  it("tears down only a preview-type group environment on close", async () => {
+    vi.mocked(db.query.groupEnvironments.findFirst).mockClear();
+    await destroyPreview(REPO, 25);
+
+    const { where } = vi.mocked(db.query.groupEnvironments.findFirst).mock.calls[0][0] as { where: unknown };
+    expect(JSON.stringify(where, (_k, v) => (typeof v === "object" && v?.constructor?.name === "PgTable" ? undefined : v)))
+      .toContain('"preview"');
+  });
 });

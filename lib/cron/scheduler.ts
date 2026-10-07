@@ -77,7 +77,7 @@ function startDailySecurityScans(): void {
     // Clean up self-preview containers that have been running too long.
     // Handles missed PR close webhooks — containers join the production network
     // and must not run indefinitely.
-    if (isFeatureEnabled("selfManagement")) {
+    if (isFeatureEnabled("selfManagement") && isFeatureEnabled("previews")) {
       try {
         const cleaned = await cleanupStaleSelfPreviews();
         if (cleaned > 0) {

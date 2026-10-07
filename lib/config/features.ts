@@ -96,6 +96,7 @@ const FLAG_CONFIG: Record<FeatureFlag, FlagConfig> = {
     label: "PR previews",
     description:
       "Ephemeral preview environments for pull requests, created on PR open and torn down on close. Disabling leaves git deploys working without spinning up per-PR stacks. Previews of Vardo itself also need Self-management.",
+    defaultValue: false,
     group: "deployment",
   },
   "api-tokens": {

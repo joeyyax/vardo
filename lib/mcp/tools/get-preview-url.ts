@@ -5,7 +5,7 @@ import { groupEnvironments, environments, apps, projects } from "@/lib/db/schema
 import { eq } from "drizzle-orm";
 import type { McpAuthContext } from "../auth";
 import { canAccessOrg } from "../scope";
-import { previewNotFound } from "./preview-helpers";
+import { previewNotFound, previewsDisabled } from "./preview-helpers";
 
 export function registerGetPreviewUrl(
   server: McpServer,
@@ -20,6 +20,9 @@ export function registerGetPreviewUrl(
         .describe("The preview environment ID (returned by vardo_create_preview)"),
     },
     async ({ preview_id }) => {
+      const disabled = await previewsDisabled();
+      if (disabled) return disabled;
+
       // Single query: resolve the owning org and fetch environment URLs in one
       // JOIN. LEFT JOINs on environments/apps so a preview with no environments
       // still resolves rather than returning not-found.

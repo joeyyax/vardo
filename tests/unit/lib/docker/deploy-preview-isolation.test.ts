@@ -102,8 +102,11 @@ vi.mock("@/lib/docker/rollback-target", () => ({
   applyRollbackEnv: vi.fn(),
 }));
 vi.mock("@/lib/notifications/dispatch", () => ({ emit: vi.fn() }));
+vi.mock("@/lib/config/features", () => ({ isFeatureEnabledAsync: vi.fn().mockResolvedValue(true) }));
 
 import { runDeployment } from "@/lib/docker/deploy";
+import { prepareRepo } from "@/lib/docker/deploy-steps";
+import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { apps } from "@/lib/db/schema";
 
 const PREVIEW_ENV = {
@@ -197,5 +200,34 @@ describe("runDeployment app status", () => {
     await runDeployment("dep-5", { appId: "app-1", organizationId: "org-1", trigger: "manual" });
 
     expect(appStatusWrites()).toEqual(["deploying", "error"]);
+  });
+});
+
+describe("runDeployment with previews off", () => {
+  it("refuses a preview deploy before touching the repo", async () => {
+    vi.mocked(isFeatureEnabledAsync).mockResolvedValueOnce(false);
+    envRows.push(PREVIEW_ENV);
+
+    const result = await runDeployment("dep-6", {
+      appId: "app-1",
+      organizationId: "org-1",
+      trigger: "webhook",
+      environmentId: "env-pr-25",
+      groupEnvironmentId: "ge-1",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/Previews are disabled/);
+    expect(prepareRepo).not.toHaveBeenCalled();
+  });
+
+  it("still deploys production", async () => {
+    vi.mocked(isFeatureEnabledAsync).mockResolvedValue(false);
+    envRows.push(PRODUCTION_ENV, PRODUCTION_ENV);
+
+    await runDeployment("dep-7", { appId: "app-1", organizationId: "org-1", trigger: "manual" });
+
+    expect(prepareRepo).toHaveBeenCalled();
+    vi.mocked(isFeatureEnabledAsync).mockResolvedValue(true);
   });
 });

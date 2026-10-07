@@ -95,6 +95,7 @@ vi.mock("@/lib/docker/rollback-target", () => ({
   applyRollbackEnv: vi.fn(),
 }));
 vi.mock("@/lib/notifications/dispatch", () => ({ emit: vi.fn() }));
+vi.mock("@/lib/config/features", () => ({ isFeatureEnabledAsync: vi.fn().mockResolvedValue(true) }));
 
 import { runDeployment } from "@/lib/docker/deploy";
 import { encrypt } from "@/lib/crypto/encrypt";

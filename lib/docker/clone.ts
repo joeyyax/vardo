@@ -204,6 +204,29 @@ export async function createGroupEnvironment(
 // Destroy group environment
 // ---------------------------------------------------------------------------
 
+const PREVIEW_ENV_NAME = /^pr-(\d+)$/;
+
+/** What in a preview group isn't positively a preview. Empty means safe to tear down. */
+export function previewGroupStrays(groupEnv: {
+  name: string;
+  type: string;
+  prNumber: number | null;
+  environments: { name: string; type: string; isDefault?: boolean | null }[];
+}): string[] {
+  const strays: string[] = [];
+  const match = PREVIEW_ENV_NAME.exec(groupEnv.name);
+  if (groupEnv.type !== "preview" || !match) strays.push(`group ${groupEnv.name}`);
+  else if (groupEnv.prNumber != null && String(groupEnv.prNumber) !== match[1]) {
+    strays.push(`group ${groupEnv.name} is PR #${groupEnv.prNumber}`);
+  }
+  for (const env of groupEnv.environments) {
+    if (env.type !== "preview" || env.name !== groupEnv.name || env.isDefault) {
+      strays.push(`environment ${env.name} (${env.type})`);
+    }
+  }
+  return strays;
+}
+
 /**
  * Delete a group environment and all associated app environments,
  * env vars, domains, and containers.
@@ -240,6 +263,15 @@ export async function destroyGroupEnvironment(
     throw new Error("Forbidden");
   }
 
+  // Everything under a preview must itself be the PR's preview, or nothing is touched.
+  const isPreview = groupEnv.type === "preview";
+  if (isPreview) {
+    const strays = previewGroupStrays(groupEnv);
+    if (strays.length > 0) {
+      throw new Error(`Refusing to tear down ${groupEnv.name}: not a preview (${strays.join(", ")})`);
+    }
+  }
+
   const removed: string[] = [];
   const failed: string[] = [];
 
@@ -247,7 +279,7 @@ export async function destroyGroupEnvironment(
   for (const env of groupEnv.environments) {
     if (!env.app) continue;
     const result =
-      groupEnv.type === "preview"
+      isPreview
         ? await stopPreviewEnvironment(env.app.id, env.app.name, env.name)
         : await stopProject(env.app.id, env.app.name, env.name);
     if (result.success) removed.push(env.app.name);
@@ -261,7 +293,7 @@ export async function destroyGroupEnvironment(
 
   // Older releases stored the environment's hostname as a domain row on the app.
   for (const env of groupEnv.environments) {
-    if (env.domain) {
+    if (env.domain && !(isPreview && env.app && !env.domain.startsWith(`${env.app.name}-${env.name}.`))) {
       await db
         .delete(domains)
         .where(and(eq(domains.appId, env.appId), eq(domains.domain, env.domain)));

@@ -7,6 +7,7 @@ import {
   featureFlagEnvVar,
   featureFlagFromEnv,
   getFlagConfig,
+  isFeatureEnabled,
   resolveFeatureFlag,
   type FeatureFlag,
 } from "@/lib/config/features";
@@ -213,5 +214,29 @@ describe("resolveFeatureFlag", () => {
     expect(
       resolveFeatureFlag("backups", { config: { backups: true }, database: { backups: true } }),
     ).toEqual({ enabled: false, source: "env" });
+  });
+});
+
+describe("previews flag", () => {
+  const VAR = featureFlagEnvVar("previews");
+  afterEach(() => {
+    delete process.env[VAR];
+  });
+
+  it("defaults to off", () => {
+    expect(getFlagConfig("previews").defaultValue).toBe(false);
+    expect(resolveFeatureFlag("previews", { config: {}, database: {} })).toEqual({
+      enabled: false,
+      source: "default",
+    });
+  });
+
+  it("reads as off before the flag cache loads", () => {
+    expect(isFeatureEnabled("previews")).toBe(false);
+  });
+
+  it("turns on only when set", () => {
+    process.env[VAR] = "true";
+    expect(isFeatureEnabled("previews")).toBe(true);
   });
 });

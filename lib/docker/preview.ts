@@ -241,8 +241,8 @@ async function createPreviewLocked(
 /**
  * Destroy a preview environment when a PR is closed/merged.
  *
- * Not gated on the previews flag — turning previews off must not strand
- * stacks that are already running.
+ * Runs with previews off so a close still removes an existing preview. Only a
+ * `type: "preview"` group environment named `pr-<n>` is ever touched.
  */
 export async function destroyPreview(
   repoFullName: string,
@@ -278,7 +278,8 @@ async function destroyPreviewLocked(
   const groupEnv = await db.query.groupEnvironments.findFirst({
     where: and(
       eq(groupEnvironments.projectId, groupedApp.projectId),
-      eq(groupEnvironments.name, envName)
+      eq(groupEnvironments.name, envName),
+      eq(groupEnvironments.type, "preview")
     ),
   });
 
@@ -301,6 +302,8 @@ async function destroyPreviewLocked(
  * Call this from a cron job.
  */
 export async function cleanupExpiredPreviews(): Promise<number> {
+  if (!(await isFeatureEnabledAsync("previews"))) return 0;
+
   const now = new Date();
 
   const expired = await db.query.groupEnvironments.findMany({

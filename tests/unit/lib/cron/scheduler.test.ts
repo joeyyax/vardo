@@ -101,4 +101,13 @@ describe("selfManagement feature gate in daily scheduler", () => {
 
     expect(cleanupStaleSelfPreviewsMock).not.toHaveBeenCalled();
   });
+
+  it("skips cleanupStaleSelfPreviews when previews are off", async () => {
+    isFeatureEnabledMock.mockImplementation((flag: string) => flag === "selfManagement");
+
+    startCronScheduler();
+    await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
+
+    expect(cleanupStaleSelfPreviewsMock).not.toHaveBeenCalled();
+  });
 });

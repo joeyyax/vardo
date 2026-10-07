@@ -61,7 +61,8 @@ vi.mock("@/lib/docker/app-dir-owner", async () => {
   return { ...actual, assertAppDirOwnership: vi.fn().mockResolvedValue(undefined) };
 });
 
-import { destroyGroupEnvironment } from "@/lib/docker/clone";
+import { destroyGroupEnvironment, previewGroupStrays } from "@/lib/docker/clone";
+import { foreignPreviewContainers } from "@/lib/docker/deploy";
 
 const APP = "notes-api";
 
@@ -102,12 +103,14 @@ beforeEach(() => {
     id: "ge-1",
     name: "pr-25",
     type: "preview",
+    prNumber: 25,
     project: { organizationId: "org-1" },
     environments: [
       {
         id: "env-pr",
         appId: "app-1",
         name: "pr-25",
+        type: "preview",
         domain: "notes-api-pr-25.example.com",
         app: { id: "app-1", name: APP },
       },
@@ -156,5 +159,81 @@ describe("destroyGroupEnvironment", () => {
     await destroyGroupEnvironment("ge-1", "org-1");
 
     expect(deleteMock).toHaveBeenCalled();
+  });
+});
+
+describe("destroyGroupEnvironment on something that isn't a preview", () => {
+  const groupWith = (env: Record<string, unknown>) => ({
+    id: "ge-1",
+    name: "pr-25",
+    type: "preview",
+    prNumber: 25,
+    project: { organizationId: "org-1" },
+    environments: [{ appId: "app-1", app: { id: "app-1", name: APP }, ...env }],
+  });
+
+  it("refuses a preview group holding the production environment", async () => {
+    findGroupEnv.mockResolvedValue(groupWith({ name: "production", type: "production", isDefault: true }));
+
+    await expect(destroyGroupEnvironment("ge-1", "org-1")).rejects.toThrow(/not a preview/);
+    expect(composeProjects()).toEqual([]);
+    expect(deleteMock).not.toHaveBeenCalled();
+  });
+
+  it("stops a staging group named pr-25 without touching production", async () => {
+    findGroupEnv.mockResolvedValue({ ...groupWith({ name: "pr-25", type: "preview" }), type: "staging" });
+
+    await expect(destroyGroupEnvironment("ge-1", "org-1")).resolves.toBeDefined();
+    for (const p of composeProjects()) expect(p).not.toMatch(/production/);
+  });
+
+  it("won't down a compose project holding containers labelled for another environment", async () => {
+    execFileMock.mockImplementation(async (_cmd: string, args: string[]) => {
+      if (args[0] === "ps") return { stdout: "notes-api-production-web-1\tapp-1\tproduction\n", stderr: "" };
+      return { stdout: "", stderr: "" };
+    });
+
+    await expect(destroyGroupEnvironment("ge-1", "org-1")).rejects.toThrow(/not labelled as this preview/);
+    expect(downProjects()).toEqual([]);
+    expect(deleteMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps a production hostname stored on the preview environment", async () => {
+    findGroupEnv.mockResolvedValue(groupWith({ name: "pr-25", type: "preview", domain: "knowledge.example.com" }));
+
+    await destroyGroupEnvironment("ge-1", "org-1");
+
+    // Only the group row goes, never a domain row.
+    expect(deleteMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("previewGroupStrays", () => {
+  const env = { name: "pr-25", type: "preview", isDefault: false };
+
+  it("accepts a PR's own preview", () => {
+    expect(previewGroupStrays({ name: "pr-25", type: "preview", prNumber: 25, environments: [env] })).toEqual([]);
+  });
+
+  it.each([
+    ["staging group", { name: "pr-25", type: "staging", prNumber: 25, environments: [env] }],
+    ["unnamed group", { name: "qa", type: "preview", prNumber: 25, environments: [env] }],
+    ["mismatched PR", { name: "pr-25", type: "preview", prNumber: 26, environments: [env] }],
+    ["default env", { name: "pr-25", type: "preview", prNumber: 25, environments: [{ ...env, isDefault: true }] }],
+    ["other env name", { name: "pr-25", type: "preview", prNumber: 25, environments: [{ ...env, name: "production" }] }],
+    ["non-preview env", { name: "pr-25", type: "preview", prNumber: 25, environments: [{ ...env, type: "staging" }] }],
+  ])("flags a %s", (_label, group) => {
+    expect(previewGroupStrays(group)).not.toEqual([]);
+  });
+});
+
+describe("foreignPreviewContainers", () => {
+  it("passes containers labelled with this app and environment", () => {
+    expect(foreignPreviewContainers("a-pr-25-web-1\tapp-1\tpr-25\n", "app-1", "pr-25")).toEqual([]);
+  });
+
+  it("flags another app, another environment and unlabelled containers", () => {
+    const ps = ["x-1\tapp-2\tpr-25", "y-1\tapp-1\tproduction", "z-1\t\t"].join("\n");
+    expect(foreignPreviewContainers(ps, "app-1", "pr-25")).toEqual(["x-1", "y-1", "z-1"]);
   });
 });
