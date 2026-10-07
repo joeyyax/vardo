@@ -1441,6 +1441,38 @@ case "${1:-}" in
       exit 1
     fi
     ;;
+  backup)
+    shift
+    if [ "${1:-}" != "decrypt" ] || [ $# -ne 3 ]; then
+      echo "Usage: vardo backup decrypt <in> <out>" >&2
+      exit 2
+    fi
+    if [ -z "${ENCRYPTION_MASTER_KEY:-}" ]; then
+      if [ ! -r "$VARDO_DIR/.env" ]; then
+        echo "Set ENCRYPTION_MASTER_KEY, or run as root to read it from $VARDO_DIR/.env" >&2
+        exit 1
+      fi
+      ENCRYPTION_MASTER_KEY=$(grep '^ENCRYPTION_MASTER_KEY=' "$VARDO_DIR/.env" | cut -d= -f2-)
+    fi
+    export ENCRYPTION_MASTER_KEY
+    SRC="$VARDO_DIR/apps/vardo/env/current"
+    [ -f "$SRC/scripts/backup-decrypt.ts" ] || SRC="$VARDO_DIR"
+    if [ ! -f "$SRC/scripts/backup-decrypt.ts" ]; then
+      echo "Error: backup-decrypt.ts not found. Make sure Vardo is up to date." >&2
+      exit 1
+    fi
+    IN=$(realpath "$2")
+    OUT_DIR=$(realpath "$(dirname "$3")")
+    OUT_NAME=$(basename "$3")
+    if command -v tsx >/dev/null 2>&1; then
+      tsx "$SRC/scripts/backup-decrypt.ts" "$IN" "$OUT_DIR/$OUT_NAME"
+    else
+      # No host tsx: run it in a throwaway Node container. Needs no Vardo services.
+      docker run --rm -e ENCRYPTION_MASTER_KEY \
+        -v "$SRC:/src:ro" -v "$IN:/in:ro" -v "$OUT_DIR:/out" \
+        node:22-slim npx -y tsx /src/scripts/backup-decrypt.ts /in "/out/$OUT_NAME"
+    fi
+    ;;
   *)
     echo "Usage: vardo <command>"
     echo ""
@@ -1454,6 +1486,7 @@ case "${1:-}" in
     echo "  doctor           Run health checks"
     echo "  key              Print the encryption master key (escrow it)"
     echo "  adopt <path>     Onboard existing repo with vardo.yaml"
+    echo "  backup decrypt <in> <out>  Decrypt a backup archive"
     echo "  shell [cmd]      Open shell in frontend container"
     echo "  uninstall        Remove Vardo"
     ;;

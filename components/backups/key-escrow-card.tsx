@@ -58,7 +58,7 @@ export function KeyEscrowCard({ heading = "h3" }: { heading?: "h2" | "h3" }) {
         <p className="text-sm text-muted-foreground">
           ENCRYPTION_MASTER_KEY is deliberately not in any backup — an archive that held it would hand every secret
           to whoever holds the archive. Store it somewhere else, or a restore onto a new host leaves every env var
-          unreadable.
+          and every backup archive unreadable.
         </p>
 
         <p className="text-sm text-muted-foreground">
