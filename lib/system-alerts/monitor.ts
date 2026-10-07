@@ -5,8 +5,7 @@ import { shouldFire, markFired, clearFired, loadAlertState } from "./state";
 import { db } from "@/lib/db";
 import { domainCertChecks, systemSettings } from "@/lib/db/schema";
 import { sql } from "drizzle-orm";
-import { exec } from "child_process";
-import { promisify } from "util";
+import { execFileAsync } from "@/lib/utils/exec";
 import pLimit from "p-limit";
 import { logger } from "@/lib/logger";
 import { closeOnShutdown } from "@/lib/shutdown";
@@ -20,8 +19,6 @@ import {
 } from "./cert-expiry";
 
 const log = logger.child("system-alerts");
-
-const execAsync = promisify(exec);
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -334,12 +331,13 @@ async function checkCertAlerts(): Promise<void> {
 // Update available — check git remote
 // ---------------------------------------------------------------------------
 
-async function checkUpdateAlert(): Promise<void> {
+export async function checkUpdateAlert(): Promise<void> {
   try {
-    const [remoteResult, localResult] = await Promise.all([
-      execAsync("git ls-remote origin HEAD 2>/dev/null", { timeout: 10_000 }),
-      execAsync("git rev-parse HEAD 2>/dev/null", { timeout: 5_000 }),
-    ]);
+    // Outside a checkout, ls-remote orphans a shell that PID 1 has to reap.
+    const localResult = await execFileAsync("git", ["rev-parse", "HEAD"], { timeout: 5_000 });
+    const remoteResult = await execFileAsync("git", ["ls-remote", "origin", "HEAD"], {
+      timeout: 10_000,
+    });
 
     const remoteHead = remoteResult.stdout.split("\t")[0].trim();
     const localHead = localResult.stdout.trim();
