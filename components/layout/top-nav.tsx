@@ -33,7 +33,7 @@ export function TopNav({ currentOrgId, organizations, teamsEnabled = true, activ
   return (
     <header className="surface-sidebar bg-sidebar border-b shrink-0">
       <div className="container flex items-center h-16 gap-4">
-        {/* Left: hamburger (mobile) + brand */}
+        {/* Brand */}
         <div className="flex-1 flex items-center gap-2">
           <MobileSidebar
             currentOrgId={currentOrgId}
@@ -43,7 +43,7 @@ export function TopNav({ currentOrgId, organizations, teamsEnabled = true, activ
           <Brand />
         </div>
 
-        {/* Center: nav (hidden on mobile) */}
+        {/* Nav */}
         <nav className="hidden lg:flex items-center gap-1">
           {visibleNavItems.map((item) => {
             const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
@@ -65,7 +65,7 @@ export function TopNav({ currentOrgId, organizations, teamsEnabled = true, activ
           })}
         </nav>
 
-        {/* Right: search hint + user (hidden on mobile — available in sidebar) */}
+        {/* Actions */}
         <div className="flex-1 flex justify-end items-center gap-2">
           <button
             type="button"

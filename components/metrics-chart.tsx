@@ -25,9 +25,7 @@ type MetricsTooltipProps = {
   categoryLabels?: Record<string, string>;
 };
 
-/**
- * Tooltip shell shared by every metrics chart. Sits on the popover ground.
- */
+/** Tooltip shell shared by every metrics chart. */
 export function TooltipFrame({
   label,
   children,

@@ -12,7 +12,7 @@ type EmptyStateProps = {
   className?: string;
 };
 
-/** "Nothing here yet", as an inset tray rather than a fourth surface treatment. */
+/** "Nothing here yet" as an inset tray. */
 export function EmptyState({ icon: Icon, title, body, action, className }: EmptyStateProps) {
   return (
     <div

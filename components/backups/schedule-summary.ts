@@ -9,10 +9,7 @@ function time(hour: string, minute: string): string {
   return m === 0 ? `${hh}${suffix}` : `${hh}:${String(m).padStart(2, "0")}${suffix}`;
 }
 
-/**
- * A backup schedule in words. Covers the shapes the scheduler actually writes;
- * anything else falls back to the raw expression rather than guessing.
- */
+/** A backup schedule in words. Unknown shapes fall back to the raw expression. */
 export function describeSchedule(cron: string | null | undefined): string {
   if (!cron) return "No schedule";
   const parts = cron.trim().split(/\s+/);

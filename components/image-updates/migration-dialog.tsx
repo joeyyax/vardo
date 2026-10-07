@@ -25,8 +25,8 @@ export type MigrationPrompt = {
 };
 
 /**
- * Runs the backup the migration steps ask for, rather than only naming it.
- * Git-sourced apps still need this — the code is in git, the data is not.
+ * Runs the backup the migration steps ask for.
+ * Git-sourced apps still need it: the data isn't in git.
  */
 function BackupBeforeMigration({ orgId, appId }: { orgId: string; appId: string }) {
   const [state, setState] = useState<"idle" | "running" | "started" | "unavailable">("idle");
@@ -83,10 +83,7 @@ function BackupBeforeMigration({ orgId, appId }: { orgId: string; appId: string 
   );
 }
 
-/**
- * The recipe, the backup, and the acknowledgement, in front of whatever is
- * about to cross a major. Both entry points below render this.
- */
+/** Recipe, backup and acknowledgement shown before crossing a major. */
 function MigrationShell({
   orgId,
   appId,
@@ -104,9 +101,9 @@ function MigrationShell({
   title: ReactNode;
   description: ReactNode;
   plan: MigrationPlan | null;
-  /** Crosses the major, so it waits on the acknowledgement. */
+  /** Crosses the major; waits on the acknowledgement. */
   confirm: { label: string; onClick: () => void };
-  /** Stays on the current major, so it does not. */
+  /** Stays on the current major. */
   secondary?: { label: string; onClick: () => void };
   onClose: () => void;
 }) {
@@ -181,11 +178,7 @@ function MigrationShell({
   );
 }
 
-/**
- * Shown when a pick crosses a major on an image whose data directory is tied to
- * that major. The deploy would fail on the version check, so the recipe comes
- * before the confirm rather than after the outage.
- */
+/** Shown when a pick crosses a major on an image whose data directory is tied to that major. */
 export function MigrationDialog({
   prompt,
   orgId,
@@ -206,7 +199,7 @@ export function MigrationDialog({
 
   return (
     <MigrationShell
-      // Keyed per prompt so the acknowledgement never carries over to another row.
+      // Keyed per prompt so the acknowledgement never carries over.
       key={`${appId}:${entry.service}:${tag}`}
       orgId={orgId}
       appId={appId}
@@ -220,10 +213,7 @@ export function MigrationDialog({
   );
 }
 
-/**
- * Shown when the deploy gate stopped a pull that moved a major-locked engine
- * across a major. Same dialog, two exits: pin what is running, or migrate.
- */
+/** Shown when the deploy gate stopped a major-locked engine crossing a major. Pin or migrate. */
 export function MajorGateDialog({
   block,
   orgId,

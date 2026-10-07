@@ -7,13 +7,7 @@ type SystemBadgeProps = {
   className?: string;
 };
 
-/**
- * Marks a project, stack or app that Vardo manages itself. Appears in project
- * cards, project headers and app headers — one label everywhere.
- *
- * Thin wrapper around Badge using status-warning design tokens for consistency
- * with the rest of the status color system.
- */
+/** Marks a project, stack or app that Vardo manages itself. */
 export function SystemBadge({ label = "System Managed", compact = false, className }: SystemBadgeProps) {
   return (
     <Badge

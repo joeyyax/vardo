@@ -356,7 +356,7 @@ export function ExternalRoutesSettings() {
         </Card>
       )}
 
-      {/* Add route dialog */}
+      {/* Add dialog */}
       <Dialog open={addOpen} onOpenChange={(open) => { if (!addSaving) setAddOpen(open); }}>
         <DialogContent className="sm:max-w-lg">
           <form onSubmit={handleAdd}>
@@ -390,7 +390,7 @@ export function ExternalRoutesSettings() {
         </DialogContent>
       </Dialog>
 
-      {/* Edit route dialog */}
+      {/* Edit dialog */}
       <Dialog
         open={!!editTarget}
         onOpenChange={(open) => { if (!editSaving && !open) setEditTarget(null); }}

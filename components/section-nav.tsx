@@ -15,17 +15,14 @@ export type SectionGroup = {
   items: SectionItem[];
 };
 
-/**
- * Vertical rail on lg+, horizontal scroll strip below — the same shape as the
- * settings nav. Renders inside a Radix Tabs root.
- */
+/** Vertical rail on lg+, horizontal scroll strip below. Renders inside a Radix Tabs root. */
 export function SectionNav({ groups }: { groups: SectionGroup[] }) {
   return (
     <TabsPrimitive.List
       aria-label="App sections"
       className={cn(
         "flex items-center gap-1 overflow-x-auto scroll-smooth",
-        // Fades the cut edges so a half-visible tab reads as "more this way".
+        // Fades the cut edges.
         "[mask-image:linear-gradient(to_right,transparent,black_1rem,black_calc(100%-1rem),transparent)]",
         "lg:flex-col lg:items-stretch lg:gap-0.5 lg:overflow-visible lg:[mask-image:none]",
       )}
@@ -50,8 +47,7 @@ export function SectionNav({ groups }: { groups: SectionGroup[] }) {
                 "data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:font-medium",
                 "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
               )}
-              // The strip is narrower than its contents on phones, so the tab
-              // you are on can start off-screen with nothing to say so.
+              // Scroll the active tab into view on narrow screens.
               ref={(node) => {
                 if (node?.dataset.state === "active") {
                   node.scrollIntoView({ block: "nearest", inline: "center" });

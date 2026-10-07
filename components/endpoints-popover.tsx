@@ -17,9 +17,8 @@ type Endpoint = {
   domain: string;
 };
 
-// inline-flex, not the inline default an <a> takes: vertical margins are
-// ignored on an inline box, so the -m-2 would not cancel the p-2 and the
-// header row would grow by the padding.
+// inline-flex: an inline <a> ignores vertical margins, so -m-2 wouldn't
+// cancel p-2.
 const TRIGGER =
   "-m-2 inline-flex shrink-0 items-center p-2 text-muted-foreground transition-colors hover:text-foreground";
 

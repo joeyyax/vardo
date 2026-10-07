@@ -60,8 +60,7 @@ function SheetContent({
       <SheetPrimitive.Content
         data-slot="sheet-content"
         className={cn(
-          // The scrim and the shadow define the drawer. Dark keeps a hairline
-          // on the edge facing the page, where shadows barely read.
+          // Dark keeps a hairline on the page-facing edge; shadows barely read on dark.
           "bg-background data-[state=open]:animate-in data-[state=closed]:animate-out fixed z-50 flex flex-col gap-4 shadow-lg transition ease-in-out data-[state=closed]:duration-300 data-[state=open]:duration-500",
           side === "right" &&
             "data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right inset-y-0 right-0 h-full w-3/4 sm:max-w-sm dark:border-l",

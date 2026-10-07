@@ -31,12 +31,8 @@ const DOT: Record<AttentionTone, string> = {
 };
 
 /**
- * Instance-wide notices as page chrome — one line under the nav on every page,
- * expanding in place. It sits outside the content column so the page title
- * never moves when the fleet changes.
- *
- * Two sources: this org's notices, and the instance infrastructure every
- * session sees whatever org it is scoped to.
+ * Notices bar under the nav on every page, expanding in place.
+ * Shows this org's notices and instance infrastructure.
  */
 export function AttentionBar({ orgId }: { orgId: string }) {
   const [orgRows, setOrgRows] = useState<AttentionRow[]>([]);
@@ -55,14 +51,14 @@ export function AttentionBar({ orgId }: { orgId: string }) {
         if (res.ok) setOrgRows((await res.json()).rows ?? []);
       })
       .catch(() => {
-        // Leave the last known rows up rather than blanking the bar on a blip.
+        // Keep the last known rows.
       })
       .finally(() => {
         inFlight.current = false;
       });
   }, [orgId]);
 
-  // Refetch on navigation too — the layout persists, so nothing else would.
+  // Refetch on navigation; the layout persists.
   useEffect(() => {
     load();
   }, [load, pathname]);
@@ -96,13 +92,12 @@ export function AttentionBar({ orgId }: { orgId: string }) {
     [infra.rows, orgRows],
   );
 
-  // A self-deploy swapped the server out from under this page — pull fresh
-  // server data once it answers again rather than leaving the old render up.
+  // Refresh once the server answers again after a self-deploy.
   useEffect(() => {
     if (infra.resolvedAt !== null) router.refresh();
   }, [infra.resolvedAt, router]);
 
-  // Close on the transition to healthy so the panel does not linger empty.
+  // Close once healthy.
   if (open && summary.rows.length === 0) setOpen(false);
 
   const empty = summary.rows.length === 0;
@@ -112,13 +107,10 @@ export function AttentionBar({ orgId }: { orgId: string }) {
       ? "Nothing needs attention"
       : `${summary.faults} thing${summary.faults === 1 ? "" : "s"} need${summary.faults === 1 ? "s" : ""} attention`;
 
-  // Neutral ground on purpose: the bar sits on every page, and a permanent red
-  // wash stops being read as an alarm within a day. Card, not muted — muted is
-  // within 1 L of the page background in light mode, so the band vanishes.
+  // Card, not muted: muted vanishes against the light-mode page background.
   return (
     <div ref={containerRef} className="relative">
-      {/* Mounted even when healthy: a live region added at the same moment as
-          its content is not announced. */}
+      {/* Always mounted: a live region added with its content isn't announced. */}
       <span role="status" aria-live="polite" className="sr-only">
         {announceAttention(summary.rows)}
       </span>
@@ -140,14 +132,11 @@ export function AttentionBar({ orgId }: { orgId: string }) {
 
             <span className="shrink-0 font-medium">{headline}</span>
 
-            {/* Few enough to name: say which, so nobody expands to find one chip. */}
             {summary.subjects.length > 0 ? (
               <span className="min-w-0 truncate text-muted-foreground">
                 {summary.subjects.map((s) => s.name).join(", ")}
               </span>
             ) : (
-              /* Narrow screens get the worst kind rather than nothing — a bare
-                 count is the most alarming, least useful thing to show. */
               <span className="flex min-w-0 gap-x-3 truncate">
                 {summary.kinds.map((k, i) => (
                   <span

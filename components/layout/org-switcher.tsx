@@ -107,7 +107,6 @@ export function OrgSwitcher({ currentOrgId, organizations: initialOrganizations 
 
       const data = await res.json();
 
-      // Switch to the new org via API
       const switchResult = await switchOrganization(data.organization.id);
       if (!switchResult.ok) {
         throw new Error(switchResult.error);
@@ -124,8 +123,7 @@ export function OrgSwitcher({ currentOrgId, organizations: initialOrganizations 
     }
   };
 
-  // Never show a loading skeleton — render immediately with whatever data we have.
-  // The dropdown refetches on open, so stale data self-corrects.
+  // No loading skeleton. The dropdown refetches on open.
 
   return (
     <>

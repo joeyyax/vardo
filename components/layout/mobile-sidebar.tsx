@@ -42,7 +42,7 @@ export function MobileSidebar({ currentOrgId, organizations, teamsEnabled = true
             <SidebarNav orgId={currentOrgId} />
           </div>
 
-          {/* Footer - Org Switcher & User Menu */}
+          {/* Footer */}
           <div className="mt-auto bg-background-deep p-3">
             <div className="flex flex-col gap-1.5">
               {teamsEnabled && (

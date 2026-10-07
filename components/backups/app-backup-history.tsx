@@ -24,10 +24,7 @@ async function requestAppBackups(orgId: string, appId: string): Promise<AppBacku
   }
 }
 
-/**
- * Backup history scoped to a single app. Used in project and app detail tabs.
- * Fetches all org backup history and filters client-side by appId.
- */
+/** Backup history for one app, filtered client-side from the org's history. */
 export function AppBackupHistory({
   orgId,
   appId,
@@ -62,8 +59,7 @@ export function AppBackupHistory({
     };
   }, [orgId, appId, applyData]);
 
-  // Creates the backup job the app is missing, so an app on no schedule can
-  // still be backed up before a risky change.
+  // Creates the backup job the app is missing.
   const backupNow = useCallback(async () => {
     setBackingUp(true);
     try {

@@ -273,7 +273,7 @@ export function DomainSettings() {
         </CardContent>
       </Card>
 
-      {/* SSL certificate issuers */}
+      {/* SSL issuers */}
       <Card>
         <CardHeader>
           <CardTitle>
@@ -522,7 +522,7 @@ export function DomainSettings() {
         </CardContent>
       </Card>
 
-      {/* DNS resolution checks */}
+      {/* DNS checks */}
       <Card>
         <CardHeader>
           <CardTitle>DNS resolution</CardTitle>
@@ -599,7 +599,7 @@ export function DomainSettings() {
         </CardContent>
       </Card>
 
-      {/* DNS setup guidance */}
+      {/* DNS guidance */}
       <Card>
         <CardHeader>
           <CardTitle>DNS setup</CardTitle>

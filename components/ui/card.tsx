@@ -7,8 +7,7 @@ function Card({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="card"
       className={cn(
-        // Layers over borders — the surface and its shadow define the card.
-        // Dark keeps a hairline because shadows barely read on a dark ground.
+        // Dark keeps a hairline; shadows barely read on a dark ground.
         "bg-card text-card-foreground squircle rounded-lg @container flex flex-col gap-5 py-6 shadow-card dark:border",
         className
       )}
@@ -32,7 +31,7 @@ function CardHeader({ className, ...props }: React.ComponentProps<"div">) {
 
 type HeadingTag = "h1" | "h2" | "h3" | "h4" | "h5" | "h6"
 
-// A heading for the outline; the level is the call site's, the look stays type-h3.
+// Heading level comes from the call site; the look stays type-h3.
 function CardTitle({
   as: Tag = "h3",
   className,

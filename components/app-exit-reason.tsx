@@ -4,16 +4,12 @@ import type { ExitReason } from "@/lib/docker/exit-reason";
 import { exitReasonDetail, exitReasonLabel, exitReasonTone } from "@/lib/ui/exit-reason";
 import { formatRelativeTime } from "@/lib/ui/relative-time";
 
-/** The detail ends in an exit code, so the stamp needs a separator ahead of it. */
+/** The exit reason and when it happened, as one sentence. */
 export function exitReasonSentence(reason: ExitReason, now?: Date): string {
   return `${exitReasonDetail(reason)}, ${formatRelativeTime(reason.at, now)}.`;
 }
 
-/**
- * Why the app's containers are down. An OOM kill reads as an incident; an
- * ordinary stop stays a quiet line, because most 137s are a stop that outran
- * its grace period and nothing is wrong with them.
- */
+/** Why the app's containers are down. Only an OOM kill reads as an incident. */
 export function AppExitReason({
   reason,
   status,

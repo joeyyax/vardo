@@ -1,9 +1,6 @@
 import type { ReactNode } from "react";
 
-/**
- * Irreversible actions, at the bottom of a settings page rather than in the
- * header next to navigation.
- */
+/** Irreversible actions, at the bottom of a settings page. */
 export function DangerZone({ children }: { children: ReactNode }) {
   return (
     <section

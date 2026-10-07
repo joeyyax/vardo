@@ -84,9 +84,8 @@ function LegendChip({
 }
 
 /**
- * Throughput as a diverging bar chart: sent above the center line, received
- * below it, on a symmetric axis. A sample with no reading draws no bar at all,
- * so a gap never reads as idle.
+ * Throughput as a diverging bar chart: sent above the center line, received below.
+ * A sample with no reading draws no bar.
  */
 export function NetworkChart({
   data,
@@ -109,7 +108,7 @@ export function NetworkChart({
     function DivergingBar(props: BarShapeProps) {
       const { x = 0, y = 0, width = 0, height: barHeight = 0, payload } = props;
       const up = direction === "sent";
-      // Null is absent, not idle. Nothing is drawn, so the column reads as a gap.
+      // Null is absent, not idle.
       const rate = up ? payload?.sentRate : payload?.receivedRate;
       if (rate === null || rate === undefined) return <g />;
 

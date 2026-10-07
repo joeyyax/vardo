@@ -16,8 +16,7 @@ const badgeVariants = cva(
           "border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/80",
         outline: "text-foreground",
 
-        // Status chips. The edge carries the shape — on a hovered row or a bare
-        // page the fill matches the ground and only the hairline reads.
+        // Status chips. The hairline carries the shape where the fill matches the ground.
         success:
           "border-status-success-edge bg-status-success-muted text-status-success",
         warning:
@@ -34,7 +33,7 @@ const badgeVariants = cva(
         critical:
           "border-status-critical-edge bg-status-critical-muted text-status-critical",
 
-        // Classification, not health — which environment this belongs to.
+        // Environment classification, not health.
         "env-tier": "border-env-tier-edge bg-env-tier-muted text-env-tier",
       },
     },

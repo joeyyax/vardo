@@ -4,10 +4,6 @@ import { useState, useEffect } from "react";
 import { AlertTriangle } from "lucide-react";
 import { detectAppType } from "@/lib/ui/app-type";
 
-// ---------------------------------------------------------------------------
-// formatUptime + Uptime component
-// ---------------------------------------------------------------------------
-
 export function formatUptime(date: Date): string {
   const ms = Date.now() - new Date(date).getTime();
   const s = Math.floor(ms / 1000) % 60;
@@ -35,15 +31,7 @@ export function Uptime({ since }: { since: Date }) {
   return <span className="tabular-nums">{text}</span>;
 }
 
-// ---------------------------------------------------------------------------
-// StatusIndicator — shows running/error/deploying/missing/stopped with optional
-// needsRedeploy warning state. Accepts either "active" or "running" for
-// the running state (normalizes internally).
-//
-// startedAt is the container's start time, not a deployment timestamp — an app
-// with no running container must never render an uptime.
-// ---------------------------------------------------------------------------
-
+/** `startedAt` is the container's start time; no container means no uptime. */
 export function StatusIndicator({
   status,
   startedAt,
@@ -55,8 +43,7 @@ export function StatusIndicator({
 }) {
   const isRunning = status === "active" || status === "running";
 
-  // Restart cannot clear this — `compose restart` reuses the containers, so env,
-  // labels and compose changes only land when a deploy recreates them.
+  // Restart can't clear this; only a deploy recreates the containers.
   if (isRunning && needsRedeploy) {
     return (
       <span className="flex items-center gap-1.5 text-sm text-status-warning shrink-0">
@@ -86,7 +73,6 @@ export function StatusIndicator({
     </span>
   );
   if (status === "deploying") return <span className="text-sm text-status-info animate-pulse shrink-0">Deploying</span>;
-  // Dotless, this sat half a dot's width left of every other status on the page.
   return (
     <span className="flex items-center gap-1.5 text-sm text-status-neutral shrink-0">
       <span aria-hidden="true" className="size-2 rounded-full bg-status-neutral" />
@@ -94,10 +80,6 @@ export function StatusIndicator({
     </span>
   );
 }
-
-// ---------------------------------------------------------------------------
-// AppIcon — shows detected type icon or a colored dot fallback
-// ---------------------------------------------------------------------------
 
 export function AppIcon({
   app,
@@ -138,10 +120,6 @@ export function AppIcon({
   );
 }
 
-// ---------------------------------------------------------------------------
-// formatDuration — ms to human-readable
-// ---------------------------------------------------------------------------
-
 export function formatDuration(ms: number): string {
   if (ms < 1000) return `${ms}ms`;
   const s = Math.floor(ms / 1000);
@@ -149,10 +127,6 @@ export function formatDuration(ms: number): string {
   const m = Math.floor(s / 60);
   return `${m}m ${s % 60}s`;
 }
-
-// ---------------------------------------------------------------------------
-// StatusBadge — app-level status (active / deploying / error / stopped)
-// ---------------------------------------------------------------------------
 
 import { Badge } from "@/components/ui/badge";
 
@@ -175,10 +149,6 @@ export function StatusBadge({ status }: { status: string }) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// DeploymentStatusBadge
-// ---------------------------------------------------------------------------
-
 export function DeploymentStatusBadge({ status }: { status: "queued" | "running" | "success" | "failed" | "cancelled" | "rolled_back" | "superseded" }) {
   switch (status) {
     case "success":
@@ -200,10 +170,6 @@ export function DeploymentStatusBadge({ status }: { status: "queued" | "running"
   }
 }
 
-// ---------------------------------------------------------------------------
-// LiveBadge — the deployment currently serving traffic
-// ---------------------------------------------------------------------------
-
 export function LiveBadge({ label = "Live" }: { label?: string }) {
   return (
     <Badge variant="success" className="shrink-0">
@@ -216,10 +182,6 @@ export function LiveBadge({ label = "Live" }: { label?: string }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// ChartCard — shared wrapper for metric charts
-// ---------------------------------------------------------------------------
-
 export function ChartCard({
   title,
   icon: Icon,
@@ -228,7 +190,7 @@ export function ChartCard({
 }: {
   title: string;
   icon: React.ComponentType<{ className?: string }>;
-  /** Latest reading, shown in the header so the chart needs no stat tile beside it. */
+  /** Latest reading, shown in the header. */
   value?: React.ReactNode;
   children: React.ReactNode;
 }) {

@@ -22,10 +22,7 @@ const TONE: Record<ConditionSeverity, { border: string; surface: string; text: s
   },
 };
 
-/**
- * What needs a human on this app, above the fold. Renders nothing when the app
- * is behaving — a permanent "all clear" trains people to stop reading it.
- */
+/** What needs a human on this app. Renders nothing when the app is healthy. */
 export function AppConditionsPanel({ conditions }: { conditions: AppCondition[] | null }) {
   const list = conditions ?? [];
   if (list.length === 0) return null;

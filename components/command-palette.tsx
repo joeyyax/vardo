@@ -97,10 +97,7 @@ type SearchableProject = {
 /** An action holding at its confirm step. */
 type PendingConfirm = { action: CommandActionDef; app: SearchableApp };
 
-/**
- * Drains the deploy stream so the palette reports what the deploy did, not
- * that it dispatched one.
- */
+/** Drains the deploy stream so the palette reports the deploy's result. */
 async function runDeploy(orgId: string, app: SearchableApp) {
   const res = await fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/deploy`, {
     method: "POST",
@@ -195,7 +192,7 @@ export function CommandPalette({ orgId, teamsEnabled = true, activityEnabled = t
           toast.success(`Rolled ${app.displayName} back to the previous release`);
           router.refresh();
         } else if (action.id === "deploy") {
-          // Land on the app first, so the run has somewhere to be watched.
+          // Land on the app first so the run can be watched.
           router.push(`/apps/${app.name}/deployments`);
           toast.info(`Deploying ${app.displayName}…`);
           await runDeploy(orgId, app);
@@ -232,7 +229,7 @@ export function CommandPalette({ orgId, teamsEnabled = true, activityEnabled = t
     [pendingAction, router, runCommand],
   );
 
-  // Global keyboard listener for Cmd/Ctrl+K, plus an event for external triggers
+  // Cmd/Ctrl+K, plus an event for external triggers.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
@@ -251,7 +248,6 @@ export function CommandPalette({ orgId, teamsEnabled = true, activityEnabled = t
     };
   }, [open]);
 
-  // Fetch searchable data when opened
   useEffect(() => {
     if (!open || loaded || !orgId) return;
 
@@ -269,7 +265,6 @@ export function CommandPalette({ orgId, teamsEnabled = true, activityEnabled = t
   // Invalidate cache when dialog closes
   useEffect(() => {
     if (!open) {
-      // Reset after a delay so data is fresh next open
       const timer = setTimeout(() => setLoaded(false), 30000);
       return () => clearTimeout(timer);
     }
@@ -311,7 +306,7 @@ export function CommandPalette({ orgId, teamsEnabled = true, activityEnabled = t
           <CommandList className="max-h-[400px]">
             <CommandEmpty>No results found.</CommandEmpty>
 
-            {/* Actions — matched on the verb, with the app chosen next. */}
+            {/* Actions */}
             {!pendingAction && rankedActions.length > 0 && (
               <CommandGroup heading="Actions">
                 {rankedActions.map((action) => {
@@ -341,9 +336,8 @@ export function CommandPalette({ orgId, teamsEnabled = true, activityEnabled = t
                 {rankedApps.map((app) => (
                   <CommandItem
                     key={app.id}
-                    // Name is the value; everything else is a keyword. Folding
-                    // them into one string made cmdk score the blob, which put
-                    // plex sixth behind plextraktsync on a search for "plex".
+                    // Name is the value and the rest are keywords, so cmdk ranks
+                    // exact names first.
                     value={`${app.displayName}${ID_SEP}${app.id}`}
                     keywords={[
                       app.name,
@@ -359,8 +353,7 @@ export function CommandPalette({ orgId, teamsEnabled = true, activityEnabled = t
                     <span>
                       {pendingAction ? fillApp(`${pendingAction.verb} {app}`, app.displayName) : app.displayName}
                     </span>
-                    {/* Three stacks each have a service called Redis; the parent
-                        is what tells those rows apart. */}
+                    {/* The parent tells same-named services apart. */}
                     {(app.parentName || app.projectName) && (
                       <span className="text-xs text-muted-foreground ml-auto truncate">
                         {app.parentName ?? app.projectName}

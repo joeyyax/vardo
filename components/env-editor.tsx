@@ -18,10 +18,6 @@ import { tags } from "@lezer/highlight";
 import { createTheme } from "@uiw/codemirror-themes";
 import "./surface-terminal.css";
 
-// ---------------------------------------------------------------------------
-// Clipboard toast helper
-// ---------------------------------------------------------------------------
-
 const clipboardIcon = <ClipboardCheck className="size-4" />;
 
 async function copyToast(value: string) {
@@ -33,17 +29,11 @@ async function copyToast(value: string) {
   });
 }
 
-// ---------------------------------------------------------------------------
-// .env language mode
-// ---------------------------------------------------------------------------
-
 const envParser: StreamParser<{ inValue: boolean }> = {
   startState: () => ({ inValue: false }),
   token(stream, state) {
-    // Start of line
     if (stream.sol()) {
       state.inValue = false;
-      // Comment
       if (stream.match(/^#.*/)) return "comment";
     }
 
@@ -67,9 +57,7 @@ const envParser: StreamParser<{ inValue: boolean }> = {
 
 const envLang = new LanguageSupport(StreamLanguage.define(envParser));
 
-// ---------------------------------------------------------------------------
-// CodeMirror theme — reads the surface-terminal scope on the container below.
-// ---------------------------------------------------------------------------
+// Reads the surface-terminal scope on the container.
 
 const envTheme = createTheme({
   theme: "dark",
@@ -92,10 +80,6 @@ const envTheme = createTheme({
   ],
 });
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
 type EnvEditorProps = {
   appId: string;
   appName: string;
@@ -115,20 +99,12 @@ type EnvEditorProps = {
 
 import { isSecretKey } from "@/lib/env/is-secret-key";
 
-// ---------------------------------------------------------------------------
-// Editor extensions (stable reference)
-// ---------------------------------------------------------------------------
-
 const baseExtensions = [
   envLang,
   envTheme,
   EditorView.lineWrapping,
   EditorState.tabSize.of(2),
 ];
-
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
 
 export function EnvEditor(props: EnvEditorProps) {
   const isStandalone = "standalone" in props && props.standalone;
@@ -173,7 +149,6 @@ export function EnvEditor(props: EnvEditorProps) {
     setSelectedLineSet(lines);
   }, []);
 
-  // Extensions with selection listener
   const extensions = useMemo(
     () => [
       ...baseExtensions,
@@ -193,7 +168,7 @@ export function EnvEditor(props: EnvEditorProps) {
     }
   }
 
-  // Update content when initialContent prop changes (standalone mode — template switch)
+  // Standalone mode follows initialContent on template switch.
   const standaloneInitial = isStandalone ? props.initialContent : undefined;
   const prevInitialRef = useRef(standaloneInitial || "");
   useEffect(() => {
@@ -206,7 +181,6 @@ export function EnvEditor(props: EnvEditorProps) {
     }
   }, [isStandalone, standaloneInitial]);
 
-  // Load env content (skip in standalone mode)
   useEffect(() => {
     if (isStandalone) return;
     async function load() {
@@ -298,7 +272,7 @@ export function EnvEditor(props: EnvEditorProps) {
     }
   }
 
-  // Memoize line splits for copy chips (avoids re-split on mousemove renders)
+  // Memoized so mousemove renders don't re-split.
   const lines = useMemo(() => content.split("\n"), [content]);
 
   if (!loaded) {
@@ -383,8 +357,7 @@ export function EnvEditor(props: EnvEditorProps) {
 
   return (
     <div className="space-y-3">
-      {/* A restart reuses the containers, which keep the environment they were
-          created with. Only a deploy replaces them. */}
+      {/* Restart keeps the old environment; only a deploy replaces it. */}
       {!isStandalone && needsRedeploy && !modified && (
         <div className="squircle flex items-center gap-2 rounded-lg bg-status-warning-muted px-4 py-3 border border-status-warning-edge">
           <AlertTriangle className="size-4 text-status-warning shrink-0" />
@@ -447,8 +420,6 @@ export function EnvEditor(props: EnvEditorProps) {
           value={content}
           onChange={handleChange}
           extensions={extensions}
-          // One line — the multi-line placeholder collapsed into a single
-          // string that ran off the edge of the editor.
           placeholder="DATABASE_URL=postgres://localhost:5432/mydb"
           basicSetup={{
             lineNumbers: false,

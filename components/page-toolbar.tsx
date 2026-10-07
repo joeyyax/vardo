@@ -16,7 +16,7 @@ export function PageToolbar({ children, actions }: PageToolbarProps) {
         {children}
       </div>
       {actions && (
-        // Wraps rather than widening the page: two actions do not fit at 320px.
+        // Wraps: two actions don't fit at 320px.
         <div className="flex flex-wrap items-center justify-end gap-2">
           {actions}
         </div>

@@ -1,10 +1,7 @@
 import { ArrowRight, Lock } from "lucide-react";
 import { severityLabel, type ServiceUpdate } from "./update-row";
 
-/**
- * Core service rows, read-only. The registry check still runs so a maintainer
- * can see Vardo lagging upstream, but the tags come from files Vardo ships.
- */
+/** Core service rows, read-only. Tags come from files Vardo ships. */
 export function SelfManagedUpdates({
   title,
   services,

@@ -90,7 +90,7 @@ export function EmailSettings() {
     },
   });
 
-  // Finding 11: Reset provider-specific fields when provider changes
+  // Reset provider-specific fields when the provider changes.
   function handleProviderChange(next: string) {
     if (next !== provider) {
       if (provider === "smtp") {

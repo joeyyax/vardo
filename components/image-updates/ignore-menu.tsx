@@ -15,10 +15,7 @@ import { IGNORE_DURATIONS, type IgnoreScope } from "@/lib/docker/image-updates/i
 
 export type IgnoreChoice = { scope: IgnoreScope; days: number | null };
 
-/**
- * Silences one service, not the stack. Major-only is its own branch because it
- * is the common case: keep the patches, hold the postgres 16 → 18.
- */
+/** Silences one service, not the stack. Major-only keeps patches and holds majors. */
 export function IgnoreMenu({
   label,
   disabled,
@@ -43,8 +40,6 @@ export function IgnoreMenu({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-52">
-        {/* Grouped, not just headed: the two branches offer the same three
-            spans, and unlabeled groups read as six identical items. */}
         <DropdownMenuGroup aria-label="Ignore majors only">
           <DropdownMenuLabel className="type-label text-muted-foreground/60">
             Ignore majors only

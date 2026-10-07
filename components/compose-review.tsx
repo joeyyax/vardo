@@ -102,22 +102,18 @@ export function ComposeReview({
     if (selectedEnvKeys.size > 0 && appId) {
       setExtracting(true);
       try {
-        // Get current env content
         const getRes = await fetch(
           `/api/v1/organizations/${orgId}/apps/${appId}/env-vars?reveal=true`,
         );
         const { content: currentContent } = await getRes.json();
 
-        // Build new lines from selected candidates
         const newLines = envCandidates
           .filter((f) => selectedEnvKeys.has(f.detail.key as string))
           .map((f) => `${f.detail.key}=${f.detail.value}`);
 
-        // Append to existing content
         const separator = currentContent && !currentContent.endsWith("\n") ? "\n" : "";
         const updated = (currentContent || "") + separator + newLines.join("\n") + "\n";
 
-        // Save back
         const putRes = await fetch(
           `/api/v1/organizations/${orgId}/apps/${appId}/env-vars`,
           {

@@ -49,7 +49,7 @@ export function JobForm({
   const [schedule, setSchedule] = useState("0 2 * * *");
   const [appIds, setAppIds] = useState<string[]>(scope === "admin" ? apps.map((a) => a.id) : []);
 
-  // Retention — defaults: 1 last, 7 daily, 1 weekly, 1 monthly
+  // Retention
   const [keepLast, setKeepLast] = useState("1");
   const [keepDaily, setKeepDaily] = useState("7");
   const [keepWeekly, setKeepWeekly] = useState("1");

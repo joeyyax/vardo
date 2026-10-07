@@ -46,8 +46,6 @@ function toViewLines(input: { text: string; service?: string }[], previous?: Log
   }));
 }
 
-// --- Shared terminal output component ---
-
 const LEVEL_LABELS: Record<LogLevel, string> = {
   error: "Errors",
   warn: "Warnings",
@@ -154,8 +152,8 @@ export function TerminalOutput({
     userScrolledRef.current = true;
   }, [matches.length]);
 
-  // Center the current match without scrolling the page around it. Keyed on the
-  // line itself so streamed lines that leave the match in place don't re-center.
+  // Center the current match without scrolling the page.
+  // Keyed on the line so streamed lines don't re-center.
   const activeRow = active?.line;
   const activeLine = activeRow === undefined ? undefined : visibleLines[activeRow];
   const activeOrdinal = active?.ordinal;
@@ -338,7 +336,6 @@ export function TerminalOutput({
             <div className="flex items-center gap-1 flex-wrap">
               {CHIP_ORDER.map((level) => {
                 const count = levelCounts[level];
-                // A lone "Errors" chip on a clean stream reads as an alarm.
                 if (count === 0) return null;
                 const isActive = activeFilters.has(level);
                 return (
@@ -404,11 +401,11 @@ export function TerminalOutput({
           aria-label="Log output"
           style={fill && fillHeight ? { height: fillHeight } : undefined}
           onCopy={(e) => {
-            // Intercept copy to provide clean plain text instead of HTML spans
+            // Copy plain text, not HTML spans.
             const selection = window.getSelection();
             if (!selection || selection.isCollapsed) return;
 
-            // Walk selected nodes and extract the raw text from data attributes
+            // Read raw text from data attributes.
             const range = selection.getRangeAt(0);
             const fragment = range.cloneContents();
             const copied: string[] = [];
@@ -470,7 +467,7 @@ export function TerminalOutput({
           )}
         </div>
 
-        {/* Scroll to bottom indicator */}
+        {/* Scroll indicator */}
         {!autoScroll && (
           <button
             onClick={scrollToBottom}
@@ -484,8 +481,6 @@ export function TerminalOutput({
     </div>
   );
 }
-
-// --- Static log display (deployment logs) ---
 
 type StaticLogProps = {
   log: string;
@@ -505,8 +500,6 @@ export function DeploymentLog({ log, maxHeight = "max-h-96" }: StaticLogProps) {
   );
 }
 
-// --- Streaming log viewer ---
-
 type LogSource = "loki" | "docker" | null;
 
 type StreamLine = { text: string; service?: string };
@@ -520,7 +513,7 @@ type InitEvent = {
 type LogViewerProps = {
   streamUrl: string;
   maxLines?: number;
-  /** Level chips lit on mount, for a link that names what it wants to show. */
+  /** Level chips lit on mount. */
   initialLevels?: readonly LogLevel[];
 };
 
@@ -533,8 +526,7 @@ export function LogViewer({ streamUrl, maxLines = DEFAULT_SCROLLBACK, initialLev
   const [scrollback, setScrollback] = useState(maxLines);
   const [allServices, setAllServices] = useState(false);
   const [hasOlder, setHasOlder] = useState(true);
-  // Tagged with the stream it came from so a URL change clears it without a
-  // setState inside the connection effect.
+  // Tagged with its stream so a URL change clears it.
   const [sourceState, setSourceState] = useState<{ url: string; source: LogSource; services: string[] }>({
     url: streamUrl,
     source: null,

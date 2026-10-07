@@ -92,14 +92,14 @@ export function BackupPage({
     };
   }, [orgId, applyData]);
 
-  // A run started anywhere — cron or another tab — shows itself here as it goes.
+  // Shows runs started anywhere, cron or another tab.
   const onEvent = useCallback(
     (event: BusEvent & { historical?: boolean }) => {
       if (event.historical) return;
 
       setProgress((prev) => applyBackupEvent(prev, event));
 
-      // Pick up the `running` row the engine just wrote, then the finished run.
+      // Pick up the `running` row the engine wrote, then the finished run.
       if (event.type === "backup.progress" && event.index === 1) fetchData();
       if (event.type === "backup.success" || event.type === "backup.failed") fetchData();
     },
@@ -119,8 +119,7 @@ export function BackupPage({
   const systemTargets = targets.filter((t) => t.isAppLevel);
   const userTargets = targets.filter((t) => !t.isAppLevel);
 
-  // Org scope: only show user targets and jobs. System targets/jobs are hidden
-  // (represented by the auto-backup banner instead).
+  // Org scope hides system targets and jobs; the auto-backup banner stands in.
   const visibleTargets = scope === "admin" ? targets : userTargets;
   const systemJobIds = new Set(
     jobs.filter((j) => systemTargets.some((t) => t.id === j.target.id)).map((j) => j.id)
@@ -128,10 +127,8 @@ export function BackupPage({
   const visibleJobs = scope === "admin" ? jobs : jobs.filter((j) => !systemJobIds.has(j.id));
   const hasVisibleTargets = visibleTargets.length > 0;
 
-  // Auto-backup banner
   const autoTarget = systemTargets[0];
-  // The history below is full of runs from the target these cards hide, so an
-  // empty card has to say whose backups it is empty of.
+  // Lets an empty card say whose backups it lacks.
   const managed = scope === "org" && !!autoTarget;
   const autoJobs = autoTarget ? jobs.filter((j) => j.target.id === autoTarget.id) : [];
   // Sections sit under the intro's h2 when it renders, under the page h1 when it doesn't.
@@ -139,7 +136,7 @@ export function BackupPage({
 
   return (
     <div className="space-y-10">
-      {/* Auto-backup banner — only shown to org users when system backups exist */}
+      {/* Auto-backup banner */}
       {scope === "org" && autoTarget ? (
         <AutoBackupBanner
           target={autoTarget}
@@ -158,14 +155,13 @@ export function BackupPage({
         </div>
       ) : null}
 
-      {/* The one thing a backup cannot restore */}
+      {/* Key escrow */}
       <KeyEscrowCard heading={Heading} />
 
       {scope === "admin" ? <SystemBackupDefault heading={Heading} /> : <OrgBackupDefault orgId={orgId} heading={Heading} />}
 
-      {/* Two-column: Storage targets + Backup jobs */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Left: Storage targets */}
+        {/* Storage targets */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
             <CardTitle as={Heading}>Storage targets</CardTitle>
@@ -204,7 +200,7 @@ export function BackupPage({
           </CardContent>
         </Card>
 
-        {/* Right: Backup jobs */}
+        {/* Backup jobs */}
         <Card className={`${hasVisibleTargets && visibleJobs.length === 0 ? "relative overflow-hidden" : ""}`}>
           {hasVisibleTargets && visibleJobs.length === 0 && (
             <ShineBorder shineColor={["#A07CFE", "#FE8FB5", "#FFBE7B"]} duration={8} borderWidth={2} />

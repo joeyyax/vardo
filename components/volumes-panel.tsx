@@ -208,8 +208,7 @@ function VolumeDiffSection({
   }
 
   async function ignorePattern(path: string) {
-    // Add the exact file path as the ignore pattern.
-    // Users can manually add directory globs (e.g. "uploads/**") if they want broader ignores.
+    // Ignore the exact file path.
     const pattern = path;
 
     const currentPatterns = volume.ignorePatterns ?? [];
@@ -780,7 +779,7 @@ export function VolumesPanel({ appId, orgId }: Props) {
                           Volume: {vol.source}
                         </p>
                       )}
-                      {/* Per-volume usage vs limit */}
+                      {/* Usage vs limit */}
                       {vol.sizeBytes != null && vol.sizeBytes > 0 && limit && (() => {
                         const level = volumeThreshold(vol.sizeBytes!, limit.maxSizeBytes, limit.warnAtPercent ?? 80);
                         const percent = Math.round((vol.sizeBytes! / limit.maxSizeBytes) * 100);
@@ -821,7 +820,7 @@ export function VolumesPanel({ appId, orgId }: Props) {
                     </Button>
                   </div>
                 </div>
-                {/* Volume diff / changes section — only for Vardo-managed named volumes */}
+                {/* Volume diff */}
                 {vol.type !== "bind" && vol.persistent && (
                   <VolumeDiffSection
                     appId={appId}
@@ -850,7 +849,7 @@ export function VolumesPanel({ appId, orgId }: Props) {
         )}
       </div>
 
-      {/* Volume Size Limit */}
+      {/* Size limit */}
       {!limitLoading && (
         <div className="space-y-3">
           <div className="flex items-center gap-2">

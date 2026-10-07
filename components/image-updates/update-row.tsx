@@ -16,7 +16,7 @@ import type { ServiceUpdateStatus } from "@/lib/docker/image-updates/status";
 
 export type ServiceUpdate = ServiceUpdateStatus;
 
-/** Only a major bump earns color. A patch is routine and should read as routine. */
+/** Only a major bump gets color. */
 export function severityClass(severity: ServiceUpdate["severity"]): string {
   return severity === "major" ? "text-status-warning" : "text-foreground";
 }
@@ -35,7 +35,7 @@ const COLS = "sm:grid-cols-[minmax(6rem,10rem)_auto_1rem_13rem_minmax(0,1fr)_aut
 const COLS_SELECTABLE =
   "sm:grid-cols-[1.25rem_minmax(6rem,10rem)_auto_1rem_13rem_minmax(0,1fr)_auto_auto]";
 
-/** Names the fact in each column: these tags come from compose, not the running containers. */
+/** Column headers. Tags come from compose, not the running containers. */
 export function UpdateRowHeader({ selectable = false }: { selectable?: boolean }) {
   return (
     <div
@@ -123,8 +123,7 @@ export function UpdateRow({
             className="col-span-2 h-7 w-full font-mono sm:col-span-1"
             aria-label={`Version for ${entry.service ?? entry.image}`}
           >
-            {/* Children, not the selected item's own markup — otherwise the
-                dropdown's migration marker is echoed inside the trigger. */}
+            {/* Children, so the migration marker isn't echoed in the trigger. */}
             <SelectValue>{target}</SelectValue>
           </SelectTrigger>
           <SelectContent>
@@ -143,8 +142,7 @@ export function UpdateRow({
           {target ?? "rebuilt"}
         </span>
       )}
-      {/* Never hidden by breakpoint — this is the warning that stops a
-          datastore being pinned across a major it cannot start on. */}
+      {/* Never hide by breakpoint: this is the migration warning. */}
       <span className="type-label truncate text-muted-foreground/50">
         {migration ? (
           <span className="text-status-warning">Needs migration</span>

@@ -20,14 +20,11 @@ const LABEL: Record<AttentionTone, string> = {
   activity: "text-status-info",
 };
 
-/** Kind column, wide enough for the longest label. Subjects stack under it on phones. */
+/** Kind column width. Subjects stack under it on phones. */
 const LABEL_WIDTH = "sm:w-40";
 const LABEL_COL = `w-full shrink-0 ${LABEL_WIDTH}`;
 
-/**
- * The rows behind the attention bar. Short rows list their subjects outright;
- * long ones collapse so one broken domain does not scroll past forty updates.
- */
+/** The rows behind the attention bar. Long rows collapse. */
 export function AttentionRowList({ rows }: { rows: AttentionRow[] }) {
   return (
     <div className="divide-y">

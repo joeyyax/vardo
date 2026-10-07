@@ -9,10 +9,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 
-/**
- * Collapsible guidance panel for setup steps and admin settings.
- * Shows a title, optional description, and expandable detailed content.
- */
+/** Collapsible guidance panel for setup steps and admin settings. */
 export function ProviderGuide({
   title,
   description,
@@ -49,9 +46,7 @@ export function ProviderGuide({
   );
 }
 
-/**
- * A numbered step list for instructions.
- */
+/** Numbered step list. */
 export function StepList({ steps }: { steps: readonly string[] }) {
   return (
     <ol className="list-decimal list-inside space-y-1.5 text-xs text-muted-foreground">
@@ -62,9 +57,7 @@ export function StepList({ steps }: { steps: readonly string[] }) {
   );
 }
 
-/**
- * External link styled consistently for provider guides.
- */
+/** External link for provider guides. */
 export function GuideLink({
   href,
   children,
@@ -87,9 +80,7 @@ export function GuideLink({
   );
 }
 
-/**
- * Copyable read-only value field (e.g., webhook URL, IAM policy).
- */
+/** Copyable read-only value, e.g. a webhook URL or IAM policy. */
 export function CopyableField({
   label,
   value,
@@ -129,18 +120,14 @@ export function CopyableField({
   );
 }
 
-/**
- * Small helper text below a form field.
- */
+/** Helper text below a form field. */
 export function FieldHint({ children }: { children: React.ReactNode }) {
   return (
     <p className="text-xs text-muted-foreground">{children}</p>
   );
 }
 
-/**
- * Permission badge list.
- */
+/** Permission badge list. */
 export function PermissionList({
   permissions,
 }: {

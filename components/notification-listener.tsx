@@ -32,12 +32,8 @@ function showToast(event: BusEvent): void {
 }
 
 /**
- * Mounts in the app layout. Connects to the org notification SSE stream, maps
- * high-signal bus events to toasts and refreshes server data on anything that
- * changes app state — so a deploy started from the API, MCP or a webhook shows
- * up without a reload.
- *
- * Renders nothing visible — side-effect-only component.
+ * Maps org notification events to toasts and refreshes server data on app state changes.
+ * Renders nothing.
  */
 export function NotificationListener({ orgId }: { orgId: string }) {
   const router = useRouter();
@@ -53,11 +49,10 @@ export function NotificationListener({ orgId }: { orgId: string }) {
   }, [router]);
 
   const onEvent = useCallback((event: BusEvent & { historical?: boolean }) => {
-    // Catch-up events fire after a reconnect, when the rendered data is already
-    // behind — refresh for them, but don't replay their toasts.
+    // Catch-up events after a reconnect refresh but don't toast.
     if (isRefreshEvent(event.type)) {
       schedulerRef.current?.schedule();
-      // Infrastructure polls on its own clock; a local event brings it forward.
+      // Bring the infrastructure poll forward.
       window.dispatchEvent(new Event(INFRA_RECHECK_EVENT));
     }
     if (event.historical) return;

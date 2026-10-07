@@ -9,10 +9,6 @@ import {
 } from "@/components/ui/tooltip";
 import { formatBytes, formatCores } from "@/lib/metrics/format";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
 export type AppMetrics = {
   cpuPercent: number;
   memoryUsage: number;
@@ -31,10 +27,6 @@ export type MetricsHistory = {
   network: number[];
 };
 
-// ---------------------------------------------------------------------------
-// Constants & helpers
-// ---------------------------------------------------------------------------
-
 export const SPARKLINE_POINTS = 20;
 
 export const EMPTY_HISTORY: MetricsHistory = { cpu: [], memory: [], disk: [], network: [] };
@@ -50,11 +42,7 @@ export function pushHistory(h: MetricsHistory, m: AppMetrics) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Sparkline — tiny SVG chart from an array of numbers
-// ---------------------------------------------------------------------------
-
-// Build a smooth cubic bezier path through points (monotone spline like Recharts)
+// Smooth cubic bezier path through points.
 function smoothPath(pts: [number, number][]): string {
   if (pts.length < 2) return "";
   if (pts.length === 2) return `M${pts[0][0]},${pts[0][1]}L${pts[1][0]},${pts[1][1]}`;
@@ -94,9 +82,8 @@ export function Sparkline({
   const dataMax = Math.max(...plotData, 0.1);
   const w = 64;
   const h = 20;
-  // Wash: anchored at zero and kept shallow, it sits behind content. Line:
-  // min–max normalized so the shape fills the box and a steady series reads
-  // as a centered flat line instead of pinning to an edge.
+  // Wash anchors at zero. Line normalizes min–max, so a steady series sits
+  // centered.
   const dataMin = Math.min(...plotData);
   const range = dataMax - dataMin;
   const pad = variant === "line" ? 2 : 0;
@@ -110,7 +97,6 @@ export function Sparkline({
     });
 
   const linePath = smoothPath(pts);
-  // Closed fill path: line curve + straight bottom edge
   const fillPath = `${linePath}L${pts[pts.length - 1][0]},${h}L${pts[0][0]},${h}Z`;
 
   return (
@@ -143,10 +129,6 @@ export function Sparkline({
     </svg>
   );
 }
-
-// ---------------------------------------------------------------------------
-// MetricsBand — labeled stat cells with trend, a card's metrics footer
-// ---------------------------------------------------------------------------
 
 function StatCell({
   label,
@@ -191,10 +173,8 @@ function StatCell({
 }
 
 /**
- * Quiet stat footer: four labeled cells — CPU, memory, disk, network — each
- * with a trend strip. Memory shows a fill meter instead when the limit is
- * known. Renders at full size before data arrives — values fall back to
- * history, then to dashes — so cards don't shift when stats stream in.
+ * Stat footer: CPU, memory, disk and network, each with a trend strip.
+ * Renders full size before data arrives so cards don't shift.
  */
 export function MetricsBand({
   metrics,
@@ -209,8 +189,7 @@ export function MetricsBand({
   /** False when no container exists. */
   running?: boolean;
 }) {
-  // The collector reports zeros for a container that isn't there, and four
-  // cells of 0 B read as "measured and idle" rather than "not running".
+  // The collector reports zeros for a missing container.
   if (!running) {
     return (
       <div className="px-4 py-2.5">
@@ -222,12 +201,10 @@ export function MetricsBand({
   const last = (a?: number[]) => (a && a.length > 0 ? a[a.length - 1] : undefined);
   const cpu = metrics ? metrics.cpuPercent : last(history?.cpu);
   const mem = metrics ? metrics.memoryUsage : last(history?.memory);
-  // cAdvisor runs with --disable_metrics=disk, so the live snapshot always
-  // reports 0. Disk comes from Docker via the collector's per-project series.
+  // cAdvisor runs with --disable_metrics=disk, so disk comes from history.
   const disk = last(history?.disk) ?? metrics?.diskUsage ?? 0;
   const net = metrics ? metrics.networkRx + metrics.networkTx : last(history?.network);
   return (
-    /* Two up until four cells can hold a figure without clipping it. */
     <div className="grid grid-cols-2 gap-x-2 gap-y-3 @[22rem]:grid-cols-4">
       <StatCell label="CPU" value={formatCores(cpu)} data={history?.cpu} />
       <StatCell
@@ -250,10 +227,6 @@ export function MetricsBand({
     </div>
   );
 }
-
-// ---------------------------------------------------------------------------
-// MetricChip & MetricsLine
-// ---------------------------------------------------------------------------
 
 export function MetricChip({
   label,
@@ -319,16 +292,12 @@ export function MetricsLine({
   );
 }
 
-// ---------------------------------------------------------------------------
-// useAppMetrics hook — loads history from Redis, then updates via SSE
-// ---------------------------------------------------------------------------
-
 export function useAppMetrics(orgId: string) {
   const [metrics, setMetrics] = useState<Map<string, AppMetrics>>(new Map());
   const historyRef = useRef<Map<string, MetricsHistory>>(new Map());
   const [historyTick, setHistoryTick] = useState(0);
 
-  // Load last hour of per-app history for all metrics on mount
+  // Load the last hour of per-app history.
   useEffect(() => {
     async function loadHistory() {
       try {

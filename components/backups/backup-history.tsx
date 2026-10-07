@@ -22,10 +22,7 @@ function formatDuration(startedAt: string, finishedAt: string | null): string {
   return `${Math.round(ms / 1000)}s`;
 }
 
-/**
- * A stored archive under the floor only exists because the engine confirmed the
- * source empty, so show that rather than a byte count nobody can interpret.
- */
+/** An archive under the floor means the engine confirmed the source empty. */
 function formatArchiveSize(sizeBytes: number | null): string {
   if (sizeBytes == null) return "—";
   if (sizeBytes < MIN_VALID_GZIP_BYTES) return "Empty";

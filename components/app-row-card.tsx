@@ -43,16 +43,13 @@ export function memoryLimitLabel(containerMemoryLimit: number | null | undefined
   return `${formatBytes(containerMemoryLimit)} limit`;
 }
 
-/**
- * The row's restart cue restated, or null when the row carries none either.
- * Built from the row's own note, so the two cannot drift apart.
- */
+/** The row's restart cue for the card, or null when the row has none. */
 export function restartLine(count: number | null | undefined) {
   const note = restartNote(count);
   return note && { ...note, qualifier: "resets on deploy" };
 }
 
-/** `icon` mirrors the glyph on the app row, so this doubles as its legend. */
+/** `icon` mirrors the glyph on the app row. */
 function Row({
   label,
   icon: Icon,
@@ -102,8 +99,7 @@ export function AppRowCard({
         </span>
       </div>
 
-      {/* The row's note, restated first — a card leading with a green Running
-          while the row says deploy needed reads as a contradiction. */}
+      {/* The row's note comes first so the card can't contradict it. */}
       {(conditions.length > 0 || app.needsRedeploy || restarts) && (
         <ul className="space-y-1 rounded-md bg-background-deep px-2 py-1.5">
           {conditions.map((c) => (
@@ -137,7 +133,6 @@ export function AppRowCard({
 
       <dl className="space-y-1 pt-1">
         {app.imageName && <Row label="Image">{app.imageName}</Row>}
-        {/* Same reading as the row this card explains. */}
         {app.containerStartedAt && (
           <Row label="Uptime">{compactUptime(app.containerStartedAt)}</Row>
         )}

@@ -50,8 +50,7 @@ export type AppRowApp = {
 
 export type { RowNote };
 
-// Ticks slowly: the column reads in minutes and above, and a ledger renders a
-// hundred of these. Client-only so server and client never disagree.
+// Client-only so server and client never disagree.
 function RowUptime({ since }: { since: Date | string }) {
   const [text, setText] = useState<string | null>(null);
   useEffect(() => {
@@ -63,7 +62,7 @@ function RowUptime({ since }: { since: Date | string }) {
   return <>{text ?? ""}</>;
 }
 
-/** 64x18, single stroke, endpoint dot. Colour comes from the row's state. */
+/** 64x18, single stroke, endpoint dot. */
 function RowSparkline({ data }: { data: number[] }) {
   const path = sparkPath(data);
   if (!path) return null;
@@ -84,10 +83,8 @@ function RowSparkline({ data }: { data: number[] }) {
 }
 
 /**
- * One app or service on one ~30px line. Columns are fixed from the source
- * reference rightwards so a stack of rows aligns, and each column drops out at
- * the width where the columns left of it stop fitting — decoration first, the
- * name last.
+ * One app or service on one ~30px line. Columns drop out as width shrinks,
+ * the name last.
  */
 export function AppRow({
   app,
@@ -116,7 +113,7 @@ export function AppRow({
   trailing?: React.ReactNode;
   ref?: React.Ref<HTMLAnchorElement>;
 } & React.AnchorHTMLAttributes<HTMLAnchorElement>) {
-  // A parked row keeps its rail off, so the word and the color agree.
+  // A parked row keeps its rail off.
   const severity = app.parked
     ? "none"
     : rowSeverity(app.status, app.conditions, !!app.needsRedeploy);
@@ -124,8 +121,7 @@ export function AppRow({
   const word = statusWord(app.status, sharedStatus, !!app.parked);
   const running = app.status === "active";
 
-  // Restarts sit under both live signals and above the caller's own note: the
-  // weakest thing a row can say, and never in place of what is wrong now.
+  // Restarts rank below live signals and above the caller's note.
   const shownNote = rowNote(
     app.conditions,
     app.needsRedeploy,
@@ -137,8 +133,7 @@ export function AppRow({
 
   return (
     <div className={`relative flex items-center ${related ? "bg-accent/40" : ""}`}>
-      {/* The link is the row: hover and focus both land on it, so a tooltip
-          anchored here opens for the keyboard too. */}
+      {/* The link is the row, so a tooltip anchored here opens on focus too. */}
       <Link
         ref={ref}
         href={href}
@@ -151,7 +146,7 @@ export function AppRow({
             className={`absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full ${rail}`}
           />
         )}
-        {/* Compose children share their parent's name; the elbow says whose. */}
+        {/* Elbow marks a compose child. */}
         {indented && (
           <span
             aria-hidden="true"
@@ -165,7 +160,6 @@ export function AppRow({
         {running && <span className="sr-only">, Running</span>}
 
         {word && <span className={`shrink-0 font-normal ${statusWordTone(app.status)}`}>{word}</span>}
-        {/* Weighed to give up width long before the name does. */}
         {shownNote && (
           <span className={`${ROW_NOTE_CELL} font-normal ${shownNote.tone}`} title={shownNote.detail}>
             {shownNote.label}
@@ -173,7 +167,6 @@ export function AppRow({
         )}
 
         <span className={`${ROW_TRAILING_CELL} font-normal text-muted-foreground/70`}>
-          {/* The two facts that used to leave the middle of a wide row empty. */}
           <span className={ROW_SOURCE_CELL}>{source ?? ""}</span>
           <span className={ROW_DOMAIN_CELL}>{domain ?? ""}</span>
           {tags.shown.length > 0 && (
@@ -182,14 +175,12 @@ export function AppRow({
               {tags.overflow > 0 && ` +${tags.overflow}`}
             </span>
           )}
-          {/* The figure outranks the squiggle: uptime holds at every width. */}
           <span className={ROW_UPTIME_CELL}>
             {running && app.containerStartedAt ? <RowUptime since={app.containerStartedAt} /> : ""}
           </span>
           <span className={`${ROW_SPARKLINE_CELL} ${sparklineTone(severity)}`} aria-hidden="true">
             {series && <RowSparkline data={series} />}
           </span>
-          {/* Attributes stay achromatic; only the actionable update takes a hue. */}
           <span className={ROW_ICONS_CELL}>
             {updateCount > 0 && (
               <Package className="size-3 text-status-update" aria-label="Update available" />

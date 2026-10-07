@@ -8,15 +8,12 @@ type FeatureDisabledProps = {
   name: string;
   /** What the feature does once it's on. */
   description: string;
-  /** Show the link to Feature flags. App admins only — the page redirects everyone else. */
+  /** Show the link to Feature flags. App admins only. */
   canManage?: boolean;
   className?: string;
 };
 
-/**
- * Off state for a feature that was never turned on. Not an error — never
- * style it as one. Copy comes from the caller so this stays client-safe.
- */
+/** Off state for a feature that was never turned on. Never style it as an error. */
 export function FeatureDisabled({ name, description, canManage, className }: FeatureDisabledProps) {
   return (
     <div

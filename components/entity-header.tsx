@@ -42,7 +42,7 @@ export function RollupStatus({ rollup, noun }: { rollup: HealthRollup; noun: str
   );
 }
 
-/** Nothing for the standard tier — only the two tiers that change behavior show. */
+/** Shows only the two tiers that change behavior. */
 export function PriorityCue({ priority }: { priority: string | null | undefined }) {
   const meta = priorityMeta(priority);
   if (!meta) return null;

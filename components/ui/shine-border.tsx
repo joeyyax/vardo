@@ -22,11 +22,7 @@ interface ShineBorderProps extends React.HTMLAttributes<HTMLDivElement> {
   shineColor?: string | string[]
 }
 
-/**
- * Shine Border
- *
- * An animated background border effect component with configurable properties.
- */
+/** Animated background border effect. */
 export function ShineBorder({
   borderWidth = 1,
   duration = 14,

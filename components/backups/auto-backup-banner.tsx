@@ -6,7 +6,7 @@ import { describeSchedule } from "./schedule-summary";
 import { RunProgressLine } from "./run-progress";
 import type { BackupJob, BackupTarget, RecentBackup, RunProgress } from "./types";
 
-/** Anything not on this host leaves with the host if it dies. */
+/** Targets that live off this host. */
 const OFFSITE_TYPES = new Set(["s3", "r2", "b2", "ssh"]);
 
 export function AutoBackupBanner({
@@ -27,7 +27,7 @@ export function AutoBackupBanner({
   const offsite = OFFSITE_TYPES.has(target.type);
 
   const failures = recent.filter((r) => r.status === "failed");
-  // The attention bar counts apps, this counts runs — say both so they reconcile.
+  // Counts apps too, to match the attention bar.
   const failedApps = new Set(failures.map((r) => r.app?.displayName ?? r.appName)).size;
   const lastRun = recent[0];
   const healthy = failures.length === 0 && lastRun?.status === "success";
