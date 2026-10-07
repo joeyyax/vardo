@@ -4,10 +4,7 @@ import { db } from "@/lib/db";
 import { meshPeers } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 
-/**
- * Generate a mesh peer token (used for service-to-service auth over WireGuard).
- * Returns { raw, hash } — store the hash, give the raw token to the peer.
- */
+/** Generate a mesh peer token. Store the hash; give the raw token to the peer. */
 export function generateMeshToken(): { raw: string; hash: string } {
   const raw = randomBytes(32).toString("hex");
   const hash = createHash("sha256").update(raw).digest("hex");
@@ -19,10 +16,7 @@ export function hashMeshToken(raw: string): string {
   return createHash("sha256").update(raw).digest("hex");
 }
 
-/**
- * How long a dev peer's token stays valid without the peer being seen.
- * Dev instances are ephemeral; an abandoned one should not keep mesh access.
- */
+/** How long an unseen dev peer's token stays valid. */
 export const DEV_PEER_MAX_IDLE_MS =
   parseInt(process.env.VARDO_MESH_DEV_PEER_MAX_IDLE_DAYS || "30", 10) * 86_400_000;
 
@@ -37,11 +31,8 @@ export function isPeerTokenExpired(
 }
 
 /**
- * Authenticate a mesh peer request via Bearer token.
- * Returns the peer record if valid, throws otherwise.
- *
- * Rejects peers we have no tunnel to and dev peers that have gone idle past
- * the expiry window. Deleting a peer revokes its token immediately.
+ * Authenticate a mesh peer request via Bearer token. Throws on failure.
+ * Rejects peers with no tunnel and dev peers idle past the expiry window.
  */
 export async function requireMeshPeer(request: NextRequest) {
   const authHeader = request.headers.get("authorization");

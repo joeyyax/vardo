@@ -1,7 +1,4 @@
-// ---------------------------------------------------------------------------
-// Viewer buffer plumbing: scrollback trimming, older-page merging, and the
-// history URL that backs both.
-// ---------------------------------------------------------------------------
+// Viewer buffer: scrollback trimming, older-page merging and the history URL.
 
 export type BufferLine = { text: string };
 
@@ -15,10 +12,7 @@ export function capLines<T>(lines: T[], limit: number): T[] {
   return lines.length > limit ? lines.slice(-limit) : lines;
 }
 
-/**
- * Prepend an older page, dropping the tail it shares with what's already held.
- * The overlap is found by locating the current oldest lines inside the page.
- */
+/** Prepend an older page, dropping the overlap with what's already held. */
 export function mergeOlder<T extends BufferLine>(older: T[], existing: T[]): T[] {
   if (existing.length === 0) return older;
   if (older.length === 0) return existing;
@@ -32,10 +26,7 @@ export function mergeOlder<T extends BufferLine>(older: T[], existing: T[]): T[]
   return [...older, ...existing];
 }
 
-/**
- * The history endpoint for a log stream URL, carrying the stream's own query
- * params so environment and service scoping match.
- */
+/** History endpoint for a log stream URL, keeping the stream's query params. */
 export function historyUrlFor(streamUrl: string, params: Record<string, string> = {}): string {
   const [path, query] = streamUrl.split("?");
   const search = new URLSearchParams(query);

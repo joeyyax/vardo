@@ -1,7 +1,3 @@
-// ---------------------------------------------------------------------------
-// Plain-text log search: match location, stepping and match-only filtering.
-// ---------------------------------------------------------------------------
-
 export type MatchRange = { start: number; end: number };
 
 /** Non-overlapping, case-insensitive occurrences of `needle` in `haystack`. */
@@ -53,7 +49,7 @@ export function matchedLines(matches: LineMatch[]): Set<number> {
   return new Set(matches.map((m) => m.line));
 }
 
-/** Keep only lines containing a match. Losing context is the caller's choice, not the default. */
+/** Keep only lines containing a match. */
 export function filterToMatches<T>(lines: T[], matched: ReadonlySet<number>): T[] {
   return lines.filter((_, i) => matched.has(i));
 }

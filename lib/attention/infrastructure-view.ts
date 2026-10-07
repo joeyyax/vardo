@@ -1,13 +1,4 @@
-// ---------------------------------------------------------------------------
-// Infrastructure view state
-//
-// A self-deploy replaces the frontend, so the poll that reports it is the poll
-// that stops answering. This turns the last known payload plus the current
-// connection state into rows, so the gap reads as "restarting" rather than a
-// frozen row, and the deploy visibly resolves once the new instance answers.
-//
-// Pure and framework-free: the hook owns timers, this owns the meaning.
-// ---------------------------------------------------------------------------
+// Infrastructure view state: turns the last payload and connection state into rows, so a self-deploy reads as "restarting".
 
 import type { AttentionRow } from "@/lib/ui/attention";
 
@@ -33,7 +24,7 @@ export type InfrastructureView = {
   selfDeploy: boolean;
   /** Consecutive failed polls. */
   failures: number;
-  /** When a self-deploy we were watching stopped being reported. */
+  /** When a watched self-deploy stopped being reported. */
   resolvedAt: number | null;
 };
 
@@ -57,21 +48,17 @@ export function applyInfrastructurePayload(
   };
 }
 
-/** Fold a failed poll into the view. Keeps the last payload — it is still the best guess. */
+/** Fold a failed poll into the view, keeping the last payload. */
 export function applyInfrastructureFailure(state: InfrastructureView): InfrastructureView {
   return { ...state, failures: state.failures + 1 };
 }
 
-/** True once enough polls have failed in a row to say so out loud. */
+/** True once enough polls have failed in a row. */
 export function isUnreachable(state: InfrastructureView): boolean {
   return state.failures >= INFRA_FAILURES_BEFORE_UNREACHABLE;
 }
 
-/**
- * What to render. Unreachable replaces the stale rows rather than adding to
- * them — nothing we last read is worth asserting once the instance stopped
- * answering.
- */
+/** Rows to render. Unreachable replaces the stale rows. */
 export function infrastructureViewRows(state: InfrastructureView, now: number): AttentionRow[] {
   if (isUnreachable(state)) {
     return [state.selfDeploy ? restartingRow() : unreachableRow()];

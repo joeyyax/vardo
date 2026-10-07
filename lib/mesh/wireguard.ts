@@ -34,8 +34,7 @@ export async function generateKeypair(): Promise<{
   privateKey: string;
   publicKey: string;
 }> {
-  // Single exec: generate private key and derive public key in one shell call.
-  // No private key in process args — stays inside the container.
+  // One exec, so the private key never appears in process args.
   const { stdout } = await execFileAsync("docker", [
     "exec",
     WG_CONTAINER,
@@ -63,7 +62,6 @@ export function buildWgConfig(
     `PrivateKey = ${privateKey}`,
     `ListenPort = ${listenPort}`,
     `Address = ${address}/24`,
-    // Forward incoming mesh traffic to the frontend container
     `PostUp = iptables -t nat -A POSTROUTING -o wg0 -j MASQUERADE; iptables -t nat -A PREROUTING -i wg0 -p tcp --dport ${CONSOLE_PORT} -j DNAT --to-destination ${FRONTEND_MESH_IP}:${CONSOLE_PORT}; iptables -A FORWARD -i wg0 -p tcp --dport ${CONSOLE_PORT} -j ACCEPT`,
     `PostDown = iptables -t nat -D POSTROUTING -o wg0 -j MASQUERADE; iptables -t nat -D PREROUTING -i wg0 -p tcp --dport ${CONSOLE_PORT} -j DNAT --to-destination ${FRONTEND_MESH_IP}:${CONSOLE_PORT}; iptables -D FORWARD -i wg0 -p tcp --dport ${CONSOLE_PORT} -j ACCEPT`,
     "",
@@ -99,7 +97,7 @@ export async function writeWgConfig(config: string): Promise<void> {
 
 /** Hot-reload WireGuard config without dropping existing tunnels. */
 export async function syncConfig(): Promise<void> {
-  // Pipe approach works in busybox sh (no bash process substitution needed)
+  // Busybox sh: no process substitution.
   await execFileAsync("docker", [
     "exec",
     WG_CONTAINER,
@@ -110,18 +108,13 @@ export async function syncConfig(): Promise<void> {
 }
 
 /**
- * Rebuild wg0.conf from all peers in the database and hot-reload WireGuard.
- * Call this after any peer registration or removal.
- *
- * @param overrideAddress — if provided, use this as the local WireGuard address
- *   instead of reading from the existing config. Used when the joiner's address
- *   needs to change from the bootstrap HUB_IP to the hub-assigned IP.
+ * Rebuild wg0.conf from every peer in the database and hot-reload WireGuard.
+ * @param overrideAddress — local address overriding the existing config's.
  */
 export async function rebuildAndSync(overrideAddress?: string): Promise<void> {
   // Dynamic imports to avoid circular dependencies
   const { db } = await import("@/lib/db");
 
-  // Read the current private key from the running interface
   const { stdout: privKeyOut } = await execFileAsync("docker", [
     "exec", WG_CONTAINER, "sh", "-c",
     "cat /config/wg_confs/wg0.conf | grep PrivateKey | cut -d= -f2- | tr -d ' '",
@@ -145,7 +138,6 @@ export async function rebuildAndSync(overrideAddress?: string): Promise<void> {
     throw new Error(`Invalid WireGuard address: ${address}`);
   }
 
-  // Get all peers from the database
   const allPeers = await db.query.meshPeers.findMany({
     columns: { publicKey: true, endpoint: true, allowedIps: true },
   });
@@ -161,7 +153,7 @@ export async function rebuildAndSync(overrideAddress?: string): Promise<void> {
   await writeWgConfig(config);
 
   if (overrideAddress) {
-    // Address changed — syncconf can't update the interface address, need full restart
+    // syncconf can't change the interface address, so restart.
     await execFileAsync("docker", [
       "exec", WG_CONTAINER, "sh", "-c", "wg-quick down wg0; wg-quick up wg0",
     ]);
@@ -185,13 +177,8 @@ export async function isWireguardRunning(): Promise<boolean> {
   }
 }
 
-/**
- * Ensure the hub has a WireGuard config. If wg0 doesn't exist yet,
- * generate a keypair, write the initial config, and bring the interface up.
- * Returns the hub's public key.
- */
+/** Bootstrap wg0 if it doesn't exist and return the hub's public key. */
 export async function ensureHubConfig(hubIp: string): Promise<string> {
-  // Check if wg0 is already up
   try {
     const { stdout } = await execFileAsync("docker", [
       "exec", WG_CONTAINER, "sh", "-c", "wg show wg0 public-key",
@@ -202,13 +189,11 @@ export async function ensureHubConfig(hubIp: string): Promise<string> {
     // Interface doesn't exist — bootstrap below
   }
 
-  // Generate keypair and write initial config (no peers yet)
   const { privateKey, publicKey } = await generateKeypair();
   const port = parseInt(process.env.WIREGUARD_PORT || "51820", 10);
   const config = buildWgConfig(privateKey, port, hubIp, []);
   await writeWgConfig(config);
 
-  // Bring interface up
   await execFileAsync("docker", [
     "exec", WG_CONTAINER, "sh", "-c", "wg-quick up wg0",
   ]);
@@ -216,10 +201,7 @@ export async function ensureHubConfig(hubIp: string): Promise<string> {
   return publicKey;
 }
 
-/**
- * Read the hub's WireGuard interface address from the running container.
- * Falls back to HUB_IP if the interface isn't reachable (e.g. dev mode).
- */
+/** The hub's WireGuard address, or HUB_IP when the interface isn't reachable. */
 export async function getHubAddress(): Promise<string> {
   try {
     const { stdout } = await execFileAsync("docker", [
@@ -232,7 +214,6 @@ export async function getHubAddress(): Promise<string> {
     const ip = stdout.trim();
     if (ip && /^\d{1,3}(\.\d{1,3}){3}$/.test(ip)) return ip;
   } catch {
-    // WireGuard not running or not in container
   }
   return HUB_IP;
 }

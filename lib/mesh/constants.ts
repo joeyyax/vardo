@@ -1,7 +1,3 @@
-// ---------------------------------------------------------------------------
-// Mesh networking constants
-// ---------------------------------------------------------------------------
-
 /** Name of the Wireguard Docker container. */
 export const WG_CONTAINER = process.env.VARDO_WG_CONTAINER || "vardo-wireguard";
 

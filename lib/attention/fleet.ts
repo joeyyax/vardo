@@ -22,8 +22,7 @@ export async function getFleetAttention(orgId: string): Promise<FleetAttention> 
 }
 
 async function loadUnreachableDomains(orgId: string): Promise<FleetAttention["unreachableDomains"]> {
-  // Only running apps. The monitor already skips the rest, so a retired app's
-  // final failed check would otherwise sit here forever with nothing to act on.
+  // Only running apps, so a retired app's last failed check doesn't linger.
   const orgDomains = await db
     .select({ id: domains.id, domain: domains.domain, appName: apps.name })
     .from(domains)
@@ -32,8 +31,7 @@ async function loadUnreachableDomains(orgId: string): Promise<FleetAttention["un
 
   if (orgDomains.length === 0) return [];
 
-  // Latest check per domain. One query, then reduce — a lateral join per domain
-  // costs more than sorting a few hundred rows here.
+  // Latest check per domain: one query, reduced here.
   const ids = orgDomains.map((d) => d.id);
   const checks = await db
     .select({
@@ -46,9 +44,7 @@ async function loadUnreachableDomains(orgId: string): Promise<FleetAttention["un
     .where(inArray(domainChecks.domainId, ids))
     .orderBy(desc(domainChecks.checkedAt));
 
-  // Two most recent per domain. A single blip resolves by the next run, and
-  // calling one aborted request "unreachable" flapped domains that answered in
-  // under 100ms either side of it.
+  // Two most recent per domain, so a single aborted request doesn't read as unreachable.
   const recent = new Map<string, (typeof checks)[number][]>();
   for (const check of checks) {
     const seen = recent.get(check.domainId) ?? [];
@@ -68,10 +64,7 @@ async function loadUnreachableDomains(orgId: string): Promise<FleetAttention["un
     }));
 }
 
-/**
- * Services the health monitor is still alerting on. Instance-wide, so this
- * feeds the infrastructure rows rather than any one org's.
- */
+/** Services the health monitor is still alerting on. Instance-wide. */
 export async function getServicesDown(now = new Date()): Promise<ServiceDown[]> {
   const row = await db.query.systemSettings.findFirst({
     where: eq(systemSettings.key, ALERT_STATE_KEY),
@@ -87,4 +80,3 @@ export async function getServicesDown(now = new Date()): Promise<ServiceDown[]> 
 
   return selectActiveServiceAlerts(parsed, now);
 }
-

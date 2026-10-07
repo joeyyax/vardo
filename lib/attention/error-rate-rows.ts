@@ -4,10 +4,7 @@ export type ElevatedSubject = { appId: string; recent: number; baseline: number 
 
 type AppSubject = { id: string; name: string; displayName: string };
 
-/**
- * Apps logging errors far faster than they normally do. Warning, not error —
- * the app is up and serving, it is only noisier than it has ever been.
- */
+/** Apps logging errors far faster than normal. A warning; the app is still serving. */
 export function errorRateRows(apps: AppSubject[], elevated: ElevatedSubject[]): AttentionRow[] {
   const byId = new Map(apps.map((a) => [a.id, a]));
 

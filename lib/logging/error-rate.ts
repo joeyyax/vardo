@@ -35,17 +35,8 @@ type SampledApp = {
 };
 
 /**
- * One tick: count matching and total lines per organization, write a sample per
- * running app, then cache which apps have stepped up.
- *
- * Loki is tenanted by organization, so the fleet takes one pair of queries per
- * organization. An organization whose queries fail is skipped rather than
- * sampled at zero, which would read as a quiet app instead of a missing one.
- *
- * Every running app in an organization that answered gets a sample even when
- * Loki reported nothing for it, so a quiet app builds a real baseline of zeros.
- * An app that is not running gets none, which is what keeps its last rate from
- * reading as the current one.
+ * One tick: count matching and total lines per organization, sample every running app and cache the elevated ones.
+ * An organization whose queries fail is skipped, never sampled at zero.
  */
 export async function collectErrorRates(): Promise<number> {
   if (!(await isLokiAvailable())) return 0;
@@ -84,7 +75,6 @@ export async function collectErrorRates(): Promise<number> {
 
   if (sampled.length === 0) return 0;
 
-  // One grid for every app, so windows line up and gaps are visible as gaps.
   const at = Math.floor(Date.now() / SAMPLE_MS) * SAMPLE_MS;
 
   const results = await Promise.allSettled(
@@ -142,10 +132,7 @@ async function loadQuietWindows(appIds: string[], since: number): Promise<Map<st
   return new Map([...byApp].map(([appId, list]) => [appId, quietWindows(list, [])]));
 }
 
-/**
- * A child service has no deploy rows of its own — its containers are brought up
- * by the parent's deploy, so the parent's windows apply to it too.
- */
+/** A child service has no deploy rows, so the parent's windows apply to it. */
 function quietFor(
   app: { id: string; parentAppId: string | null; containerStartedAt: Date | null },
   byApp: Map<string, QuietWindow[]>,

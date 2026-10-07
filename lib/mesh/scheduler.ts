@@ -3,12 +3,9 @@ import { sendHeartbeatToPeer } from "./heartbeat";
 import { logger } from "@/lib/logger";
 
 const log = logger.child("mesh-heartbeat");
-const INTERVAL_MS = 30_000; // 30 seconds
+const INTERVAL_MS = 30_000;
 
-/**
- * Start the mesh heartbeat scheduler.
- * Pings all known peers at a regular interval to maintain liveness tracking.
- */
+/** Start the mesh heartbeat scheduler. */
 export function startMeshHeartbeatScheduler(): void {
   let ticking = false;
 

@@ -1,7 +1,4 @@
-// ---------------------------------------------------------------------------
-// Backfill for the log viewer: the last N lines of an app, from Loki when it
-// is available and `docker compose logs` otherwise.
-// ---------------------------------------------------------------------------
+// Log viewer backfill from Loki, or `docker compose logs` when Loki is unavailable.
 
 import { spawn } from "child_process";
 import { resolve } from "path";
@@ -130,10 +127,7 @@ export type HistoryResult = {
   lines: ServiceLine[];
 };
 
-/**
- * Backfill for one app. `project` is the compose project name — the parent's
- * name for a decomposed service — and `service` scopes it to one container.
- */
+/** Backfill for one app. `project` is the compose project; `service` scopes it to one container. */
 export async function readLogHistory(opts: {
   project: string;
   organizationId: string;
@@ -143,8 +137,7 @@ export async function readLogHistory(opts: {
   search?: string;
   tail: number;
 }): Promise<HistoryResult> {
-  // Checked before the try below, which would otherwise swallow it and read
-  // the containers instead of saying the tenant was missing.
+  // Checked outside the try so a missing tenant isn't swallowed.
   requireTenant(opts.organizationId);
 
   if (await isLokiAvailable()) {

@@ -1,10 +1,7 @@
 import { z } from "zod";
 import { gitBranchUpdateSchema, gitUrlUpdateSchema } from "@/lib/api/git-fields";
 
-/**
- * Shared Zod schema for app bundles in mesh transfers.
- * Used by promote, pull, and clone endpoints.
- */
+/** Zod schema for app bundles in mesh transfers. */
 export const appBundleSchema = z.object({
   name: z.string().min(1),
   displayName: z.string().min(1),

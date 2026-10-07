@@ -10,8 +10,7 @@ export async function registerLoggingFeature(): Promise<void> {
     return;
   }
 
-  // Verify Loki is reachable so log queries work from the start.
-  // Non-blocking — the client retries automatically on each request.
+  // Non-blocking Loki reachability check.
   try {
     const { isLokiAvailable } = await import("@/lib/logging/client");
     const ready = await isLokiAvailable();

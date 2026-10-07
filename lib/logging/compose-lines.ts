@@ -1,8 +1,4 @@
-// ---------------------------------------------------------------------------
-// Parsing for `docker compose logs` output across several services at once.
-// Compose emits `service-1  | 2026-08-02T03:02:54.218Z message` and groups the
-// backfill per container, so lines have to be split apart and re-ordered.
-// ---------------------------------------------------------------------------
+// Parsing for multi-service `docker compose logs` output.
 
 export type ServiceLine = {
   text: string;
@@ -26,10 +22,7 @@ export function parseComposeLine(line: string): ServiceLine {
   return { text, service: prefix[1], timestamp: stamp?.[1] };
 }
 
-/**
- * Order a batch by timestamp, keeping lines without one next to the line they
- * followed so stack traces stay intact.
- */
+/** Order a batch by timestamp, keeping untimestamped lines after the line they followed. */
 export function interleaveByTimestamp(lines: ServiceLine[]): ServiceLine[] {
   const groups: { key: string; lines: ServiceLine[] }[] = [];
   for (const line of lines) {

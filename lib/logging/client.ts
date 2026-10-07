@@ -1,28 +1,15 @@
-// ---------------------------------------------------------------------------
-// Loki HTTP client — queries persistent container logs
-//
-// Loki runs with auth_enabled, so a tenant is one organization and every read
-// names the organization it is asking for. A read with no organization throws.
-// ---------------------------------------------------------------------------
+// Loki HTTP client. Every read names its organization's tenant; a read with no organization throws.
 
 function lokiUrl(): string {
   return process.env.LOKI_URL || "http://loki:3100";
 }
 
-// ---------------------------------------------------------------------------
-// Tenancy
-// ---------------------------------------------------------------------------
-
 const TENANT_HEADER = "X-Scope-OrgID";
 
-/**
- * Tenant holding logs from containers with no owning organization. Contains a
- * dot, which the organization id alphabet does not, so no organization can
- * ever address it.
- */
+/** Tenant for logs from containers with no organization. The dot keeps any organization id from addressing it. */
 export const UNASSIGNED_TENANT = "vardo.unassigned";
 
-/** The tenant a read is scoped to. Throws rather than letting a blank one read every tenant. */
+/** The tenant a read is scoped to. Throws on a blank one, which would read every tenant. */
 export function requireTenant(organizationId: string): string {
   const tenant = organizationId?.trim();
   if (!tenant) throw new Error("Loki read requires an organization id");
@@ -33,10 +20,6 @@ export function requireTenant(organizationId: string): string {
 export function tenantHeaders(organizationId: string): Record<string, string> {
   return { [TENANT_HEADER]: requireTenant(organizationId) };
 }
-
-// ---------------------------------------------------------------------------
-// Availability check
-// ---------------------------------------------------------------------------
 
 let lokiReady: boolean | null = null;
 let lastCheck = 0;
@@ -54,10 +37,6 @@ export async function isLokiAvailable(): Promise<boolean> {
   lastCheck = now;
   return lokiReady;
 }
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 
 export type LogEntry = {
   timestamp: string; // nanosecond unix timestamp
@@ -78,10 +57,6 @@ type LokiQueryResponse = {
   };
 };
 
-// ---------------------------------------------------------------------------
-// Query helpers
-// ---------------------------------------------------------------------------
-
 export type QueryRangeOptions = {
   query: string;
   /** Organization whose logs this covers. */
@@ -92,10 +67,7 @@ export type QueryRangeOptions = {
   direction?: "forward" | "backward";
 };
 
-/**
- * Query historical logs from Loki.
- * Returns entries sorted by the requested direction.
- */
+/** Query historical logs from Loki, sorted by the requested direction. */
 export async function queryRange(opts: QueryRangeOptions): Promise<LogEntry[]> {
   const headers = tenantHeaders(opts.organizationId);
   const params = new URLSearchParams({
@@ -120,10 +92,6 @@ export async function queryRange(opts: QueryRangeOptions): Promise<LogEntry[]> {
   const body = (await res.json()) as LokiQueryResponse;
   return flattenStreams(body.data.result);
 }
-
-// ---------------------------------------------------------------------------
-// Instant metric queries
-// ---------------------------------------------------------------------------
 
 export type LokiVectorEntry = { labels: Record<string, string>; value: number };
 
@@ -155,10 +123,6 @@ export async function queryInstant(
   }));
 }
 
-// ---------------------------------------------------------------------------
-// Tail (WebSocket) — streams new entries via Loki's /tail endpoint
-// ---------------------------------------------------------------------------
-
 export type TailOptions = {
   query: string;
   /** Organization whose logs this covers. */
@@ -168,17 +132,13 @@ export type TailOptions = {
   start?: string;
 };
 
-/** Undici's WebSocket takes request headers; the DOM type it is declared as does not. */
+/** Undici's WebSocket takes request headers; its declared DOM type doesn't. */
 type WebSocketWithHeaders = new (
   url: string,
   init: { headers: Record<string, string> },
 ) => WebSocket;
 
-/**
- * Stream live logs from Loki via WebSocket.
- * Calls `onEntry` for each new log line.
- * Resolves when the AbortSignal fires.
- */
+/** Stream live logs from Loki's /tail WebSocket until the signal aborts. */
 export async function tailLogs(
   opts: TailOptions,
   onEntry: (entry: LogEntry) => void,
@@ -224,10 +184,6 @@ export async function tailLogs(
   });
 }
 
-// ---------------------------------------------------------------------------
-// LogQL query builder
-// ---------------------------------------------------------------------------
-
 export type LogQueryOptions = {
   project: string;
   environment?: string;
@@ -237,10 +193,7 @@ export type LogQueryOptions = {
 
 /**
  * Build a LogQL query from structured options.
- *
- * Examples:
- *   {project: "myapp"} → {project="myapp"}
- *   {project: "myapp", search: "error"} → {project="myapp"} |~ `(?i)error`
+ * `{project: "myapp", search: "error"}` → {project="myapp"} |~ `(?i)error`
  */
 export function buildLogQLQuery(opts: LogQueryOptions): string {
   const selectors: string[] = [`project="${opts.project}"`];
@@ -255,17 +208,12 @@ export function buildLogQLQuery(opts: LogQueryOptions): string {
   let query = `{${selectors.join(", ")}}`;
 
   if (opts.search) {
-    // Case-insensitive regex line filter
     const escaped = opts.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     query += ` |~ \`(?i)${escaped}\``;
   }
 
   return query;
 }
-
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
 
 function flattenStreams(streams: LokiStream[]): LogEntry[] {
   const entries: LogEntry[] = [];

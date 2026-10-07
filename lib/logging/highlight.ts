@@ -1,14 +1,9 @@
-// ---------------------------------------------------------------------------
-// Log syntax highlighting.
-//
-// Uses bright terminal-native colors (not design system tokens) because the
-// log viewer always renders on a zinc-950 background regardless of theme.
-// ---------------------------------------------------------------------------
+// Log syntax highlighting. Bright terminal colors, since the viewer is always on zinc-950.
 
 import { findRanges } from "./search";
 
 const PATTERNS: [RegExp, string][] = [
-  // Deploy stage markers — compound tags first to prevent partial matches
+  // Deploy stage markers; compound tags first to prevent partial matches
   [/\[deploy\]\[compose\]/g, "text-cyan-400 font-medium"],
   [/\[build\]\[nixpacks\]/g, "text-amber-400 font-medium"],
   [/\[build\]\[docker\]/g, "text-amber-400 font-medium"],
@@ -69,10 +64,7 @@ export function serviceColor(service: string): string {
   return SERVICE_COLORS[hash % SERVICE_COLORS.length];
 }
 
-/**
- * Render a line as HTML. When `query` is set its occurrences are marked, and
- * the `activeOrdinal`-th one on this line is marked as the current match.
- */
+/** Render a line as HTML, marking `query` matches and the `activeOrdinal`-th as current. */
 export function highlightLine(text: string, query = "", activeOrdinal = -1): string {
   let html = escapeHtml(text);
   const replacements: { start: number; end: number; replacement: string }[] = [];

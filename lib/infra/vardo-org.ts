@@ -1,12 +1,4 @@
-// ---------------------------------------------------------------------------
-// Vardo system organization
-//
-// A dedicated org for system-managed resources: infrastructure apps
-// (cAdvisor, Loki, Promtail) and the Vardo self-management project.
-//
-// Always created on first boot. Hidden from the UI unless the
-// selfManagement feature flag is enabled.
-// ---------------------------------------------------------------------------
+// Vardo system organization for system-managed apps. Hidden unless selfManagement is on.
 
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
@@ -21,11 +13,7 @@ const log = logger.child("vardo-org");
 
 export const VARDO_ORG_SLUG = "vardo";
 
-/**
- * Ensure the Vardo system org exists and return its ID.
- * Creates the org and adds the first admin as owner if needed.
- * Safe to call on every startup — all writes are idempotent.
- */
+/** Ensure the Vardo system org exists, with the first admin as owner, and return its ID. Idempotent. */
 export async function ensureVardoOrg(): Promise<{ id: string } | null> {
   const [org] = await db
     .insert(organizations)
@@ -49,8 +37,7 @@ export async function ensureVardoOrg(): Promise<{ id: string } | null> {
 
   if (!org) return null;
 
-  // Ensure the first app admin is a member so they can access it
-  // when selfManagement is turned on.
+  // First app admin joins so selfManagement can reach it.
   const admin = await db.query.user.findFirst({
     where: eq(user.isAppAdmin, true),
     columns: { id: true },

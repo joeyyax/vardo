@@ -1,10 +1,4 @@
-// ---------------------------------------------------------------------------
-// GlitchTip retirement
-//
-// GlitchTip is no longer a core service. Its rows stay pinned as system-managed,
-// which refuses delete — so unpin them once and hand the stack back. Containers
-// and volumes are left alone.
-// ---------------------------------------------------------------------------
+// GlitchTip retirement: unpin its system-managed rows once. Containers and volumes are left alone.
 
 import { and, eq, isNull, or } from "drizzle-orm";
 

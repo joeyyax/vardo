@@ -8,9 +8,9 @@ import { toCidr } from "./ip-allocator";
 
 const log = logger.child("mesh-heartbeat");
 
-// WireGuard Curve25519 public key — 32 bytes base64-encoded = 44 chars ending in =
+// WireGuard Curve25519 public key: 44 base64 chars ending in =
 const WG_KEY_RE = /^[A-Za-z0-9+/]{43}=$/;
-// Bare IPv4 or IPv4 CIDR (e.g. 10.99.0.2 or 10.99.0.2/32) — octets validated 0-255
+// Bare IPv4 or IPv4 CIDR with octets 0-255
 const IP_OR_CIDR_RE =
   /^(25[0-5]|2[0-4]\d|1\d{2}|[1-9]\d|\d)(\.(25[0-5]|2[0-4]\d|1\d{2}|[1-9]\d|\d)){3}(\/\d{1,2})?$/;
 
@@ -34,17 +34,8 @@ type HeartbeatResponse = {
 };
 
 /**
- * Send a heartbeat to a peer and update the peer's status locally on success.
- *
- * When this instance pings a peer and gets a 200, it marks the peer online in
- * the local DB. The peer's handler does the same for this instance when it
- * receives the request — that's the bidirectional liveness tracking.
- *
- * If the responding peer is a hub, it includes a full peer manifest in the
- * response. We upsert those as "visible" peers so the Instances page shows
- * all mesh members, not just direct connections.
- *
- * Returns true if the peer responded with ok, false if it was unreachable.
+ * Heartbeat a peer and mark it online locally on success; returns false when unreachable.
+ * A hub's response carries its peer manifest, synced in as visible peers.
  */
 export async function sendHeartbeatToPeer(peerId: string): Promise<boolean> {
   let ok = false;
@@ -60,7 +51,7 @@ export async function sendHeartbeatToPeer(peerId: string): Promise<boolean> {
       try {
         body = await res.json();
       } catch {
-        // Non-fatal — status update still proceeds
+        // Non-fatal.
       }
     }
   } catch {
@@ -76,7 +67,6 @@ export async function sendHeartbeatToPeer(peerId: string): Promise<boolean> {
     })
     .where(eq(meshPeers.id, peerId));
 
-  // If the hub returned a peer manifest, sync visible peers into our local DB.
   if (ok && body?.peers && body.peers.length > 0 && body.instance?.id) {
     try {
       await syncVisiblePeers(body.peers, body.instance.id);
@@ -89,23 +79,8 @@ export async function sendHeartbeatToPeer(peerId: string): Promise<boolean> {
 }
 
 /**
- * Upsert peers received from a hub's heartbeat response into the local DB as
- * "visible" entries. Visible peers are read-only — we know they exist in the
- * mesh but have no direct WireGuard tunnel to them.
- *
- * Rules:
- * - Validate hub-provided fields before touching the DB.
- * - Use a local nanoid() for the primary key — never adopt the hub's ID.
- * - Single atomic INSERT … ON CONFLICT DO UPDATE on instanceId — safe under
- *   concurrent heartbeats from multiple hubs with overlapping manifests.
- * - On conflict: update name/status/lastSeenAt only for visible peers.
- *   Direct peers keep all existing values untouched.
- * - Pre-delete stale visible rows whose publicKey or internalIp would collide
- *   with incoming data on a different instanceId (key rotation / reassignment).
- * - Prune visible peers sourced from this hub that are no longer in the manifest.
- *   Scoped to this hub only so we don't clobber entries provided by other hubs.
- * - All mutations run inside a single transaction to prevent races between
- *   concurrent heartbeat timers.
+ * Upsert a hub's peer manifest as read-only "visible" peers in one transaction.
+ * Local ids only; direct peers are never modified; pruning is scoped to this hub.
  */
 export async function syncVisiblePeers(
   peers: PeerManifestEntry[],
@@ -113,8 +88,7 @@ export async function syncVisiblePeers(
 ): Promise<void> {
   if (peers.length === 0) return;
 
-  // Validate hub-provided fields before inserting — reject obviously malformed
-  // entries to limit blast radius if a hub is misconfigured or compromised.
+  // Reject malformed entries from a misconfigured or compromised hub.
   const valid = peers.filter((p) => {
     if (!p.instanceId || p.instanceId.length > 128) {
       log.warn(`syncVisiblePeers: skipping peer — invalid instanceId`);
@@ -149,11 +123,8 @@ export async function syncVisiblePeers(
   const internalIps = valid.map((p) => p.internalIp);
 
   await db.transaction(async (tx) => {
-    // Remove stale visible rows whose publicKey or internalIp would collide
-    // with an incoming peer on a *different* instanceId (e.g. key rotation or
-    // IP reassignment on the hub). Without this, the batch upsert below would
-    // throw a unique-constraint violation that the ON CONFLICT clause doesn't
-    // cover (it only targets instanceId).
+    // Drop visible rows whose publicKey or internalIp collides on a different instanceId.
+    // ON CONFLICT only covers instanceId, so these would throw.
     await tx
       .delete(meshPeers)
       .where(
@@ -174,10 +145,7 @@ export async function syncVisiblePeers(
         )
       );
 
-    // Single atomic upsert — no read-then-write race under concurrent heartbeats.
-    // On conflict on instanceId:
-    //   direct peers  → all CASE branches fall through to existing values (no-op)
-    //   visible peers → name, status, sourceHubInstanceId, lastSeenAt, updatedAt refreshed
+    // On instanceId conflict, direct peers keep their values; visible peers are refreshed.
     await tx
       .insert(meshPeers)
       .values(
@@ -209,10 +177,7 @@ export async function syncVisiblePeers(
         },
       });
 
-    // Prune visible peers sourced from this hub that are no longer in the
-    // manifest. Scoped to this hub's entries only — other hubs' visible peers
-    // are untouched, which prevents heartbeats from one hub silently removing
-    // peers registered through another hub.
+    // Prune this hub's visible peers missing from the manifest. Other hubs' entries stay.
     await tx
       .delete(meshPeers)
       .where(

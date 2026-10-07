@@ -1,8 +1,4 @@
-/**
- * Recovery clears the entry, so presence means the service is down now. This
- * only guards against a monitor that died mid-outage and left the entry behind;
- * a live outage re-alerts daily, so the window has to outlast that.
- */
+/** Staleness guard for a monitor that died mid-outage. Must outlast the daily re-alert. */
 export const SERVICE_DOWN_STALE_MS = 26 * 60 * 60 * 1000;
 
 export const ALERT_STATE_KEY = "system_alert_state";

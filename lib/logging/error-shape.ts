@@ -1,15 +1,5 @@
-// ---------------------------------------------------------------------------
-// The line shape an error rate is counted from.
-//
-// A handful of tokens every runtime spells the same way, so nothing has to know
-// what language a container is written in. `error` and `exception` also match as
-// suffixes, which is what catches NullPointerException and ValueError.
-//
-// Precision is not the goal and cannot be: a node_modules path containing
-// `request-error` matches, and so does a structured `error=""` field on an INFO
-// line. What matters is that the same line matches every time, so a constant
-// false-positive floor settles into the app's own baseline instead of moving it.
-// ---------------------------------------------------------------------------
+// The line shape an error rate is counted from: tokens every runtime spells the same way.
+// Precision isn't the goal; a constant false-positive floor settles into the app's baseline.
 
 /** Go RE2, Loki's engine — no lookaround, no backreferences. */
 export const ERROR_SHAPE = "(?i)\\b(fatal|panic|critical|traceback)\\b|[a-z]*(error|exception)\\b";
@@ -20,10 +10,7 @@ const MANAGED = '{project_id=~".+"}';
 /** Labels the counts are grouped by — an app id, and the service inside its stack. */
 const COUNT_GROUPING = "project_id, service";
 
-/**
- * Lines matching the error shape per app and service, over the last `seconds`.
- * One instant query covers the whole fleet.
- */
+/** Lines matching the error shape per app and service over the last `seconds`. */
 export function errorCountQuery(seconds: number): string {
   return `sum by (${COUNT_GROUPING}) (count_over_time(${MANAGED} |~ \`${ERROR_SHAPE}\` [${seconds}s]))`;
 }
@@ -36,11 +23,7 @@ export function lineCountQuery(seconds: number): string {
 export type CountedSeries = { labels: Record<string, string>; value: number };
 export type CountedApp = { id: string; parentAppId: string | null; composeService: string | null };
 
-/**
- * Counts per app id. Promtail labels a stack's streams with the parent's app id,
- * so a series lands on the child that owns the service and on the parent, whose
- * number is the whole stack.
- */
+/** Counts per app id. A stack's series land on both the child service and the parent. */
 export function attributeCounts(series: CountedSeries[], apps: CountedApp[]): Map<string, number> {
   const children = new Map<string, string>();
   for (const app of apps) {

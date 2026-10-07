@@ -1,15 +1,4 @@
-// ---------------------------------------------------------------------------
-// Core services
-//
-// One row each, in the Vardo system org, running for every organization. Two
-// different reasons land them here:
-//
-//   host-agent — cAdvisor and Promtail read the whole host (privileged, /rootfs,
-//     the Docker socket), so a second copy duplicates every sample and log line.
-//   app — Loki is an ordinary stack that receives pushes. It runs with
-//     auth_enabled, so one instance holds a separate tenant per organization
-//     and a second would buy nothing.
-// ---------------------------------------------------------------------------
+// Core services: one row each in the Vardo system org, shared by every organization.
 
 import type { FeatureFlag } from "@/lib/config/features";
 import { logger } from "@/lib/logger";
@@ -19,17 +8,10 @@ const log = logger.child("core-services");
 /** system_settings key holding the last provisioning outcome per service. */
 export const CORE_SERVICES_STATUS_KEY = "core_services_status";
 
-/**
- * A feature flag and the core services it turns on. The flag governs both
- * provisioning the shared service and every org's access to it.
- */
-/**
- * Why a service is instance-wide: "host-agent" reads the whole host and a
- * second copy would duplicate its data; "app" is an ordinary stack that
- * separates organizations inside one instance.
- */
+/** Why a service is instance-wide: "host-agent" reads the whole host; "app" separates orgs inside one instance. */
 export type CoreServiceKind = "host-agent" | "app";
 
+/** A feature flag and the core services it turns on, governing provisioning and every org's access. */
 export type CoreServiceFeature = {
   flag: FeatureFlag;
   /** Template and app name of each service, in deploy order. */
@@ -63,7 +45,7 @@ export function isCoreServiceApp(name: string): boolean {
   return CORE_SERVICE_NAMES.includes(name);
 }
 
-/** Flags that provision a shared, instance-level service rather than a per-org one. */
+/** Flags that provision a shared, instance-level service. */
 export const CORE_SERVICE_FLAGS: FeatureFlag[] = CORE_SERVICE_FEATURES.map((f) => f.flag);
 
 /** True when this flag turns on a shared instance-level service. */
@@ -71,15 +53,10 @@ export function isCoreServiceFlag(flag: FeatureFlag): boolean {
   return CORE_SERVICE_FLAGS.includes(flag);
 }
 
-// ---------------------------------------------------------------------------
-// Status
-//
-// Startup provisioning can't raise a toast, so every outcome is recorded here
-// for the admin Core services page to read. Silence is not a success signal.
-// ---------------------------------------------------------------------------
+// Status. Startup provisioning can't raise a toast, so every outcome is recorded for the admin page.
 
 export type CoreServiceState =
-  /** Flag is off — nothing provisioned, nothing expected. */
+  /** Flag is off. */
   | "off"
   /** App row exists and its first deploy was requested or already done. */
   | "provisioned"
@@ -95,7 +72,7 @@ export type CoreServiceStatus = {
   displayName: string;
   flag: FeatureFlag;
   state: CoreServiceState;
-  /** Organization holding the app row — the Vardo system org on a clean install. */
+  /** Organization holding the app row. */
   organizationId: string | null;
   appId: string | null;
   /** Operator-facing explanation. Always set when the state isn't "provisioned". */
@@ -134,10 +111,7 @@ export async function recordCoreServiceStatus(
   }
 }
 
-/**
- * Every core service with its last recorded outcome, in declaration order.
- * Services never provisioned report as "off" with no detail.
- */
+/** Every core service with its last recorded outcome. Never-provisioned services report "off". */
 export function summarizeCoreServices(
   stored: StatusRecord,
   flagState: Record<string, boolean>,

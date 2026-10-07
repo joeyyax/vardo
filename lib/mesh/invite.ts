@@ -4,7 +4,7 @@ import { systemSettings } from "@/lib/db/schema";
 import { eq, like } from "drizzle-orm";
 
 const INVITE_PREFIX = "mesh_invite:";
-const INVITE_TTL_MS = 15 * 60 * 1000; // 15 minutes
+const INVITE_TTL_MS = 15 * 60 * 1000;
 
 interface MeshInvite {
   code: string;
@@ -14,23 +14,16 @@ interface MeshInvite {
   expiresAt: number;
 }
 
-/**
- * Generate an invite and return a self-contained token.
- * The token encodes the hub's API URL + the short code so the joining
- * instance knows where to call without any extra input.
- *
- * Format: base64url("hubApiUrl|code")
- */
+/** Generate an invite token: base64url("hubApiUrl|code"). */
 export async function createInvite(hub: {
   publicKey: string;
   endpoint: string;
   internalIp: string;
   apiUrl: string;
 }): Promise<string> {
-  // Clean up any expired invites while we're here
   await cleanExpiredInvites();
 
-  const code = randomBytes(4).toString("hex"); // 8-char hex code
+  const code = randomBytes(4).toString("hex");
 
   const invite: MeshInvite = {
     code,
@@ -55,7 +48,6 @@ export async function createInvite(hub: {
       },
     });
 
-  // Encode hub URL + code into a self-contained token
   const payload = `${hub.apiUrl}|${code}`;
   return Buffer.from(payload).toString("base64url");
 }
@@ -77,16 +69,12 @@ export function decodeInviteToken(
   }
 }
 
-/**
- * Redeem an invite code atomically.
- * DELETE...RETURNING ensures only one concurrent request can succeed.
- */
+/** Redeem an invite code. DELETE...RETURNING lets only one concurrent request succeed. */
 export async function redeemInvite(
   code: string
 ): Promise<Omit<MeshInvite, "code" | "expiresAt"> | null> {
   const key = `${INVITE_PREFIX}${code}`;
 
-  // Atomic delete — if two requests race, only one gets the row back
   const deleted = await db
     .delete(systemSettings)
     .where(eq(systemSettings.key, key))
@@ -97,7 +85,6 @@ export async function redeemInvite(
   const invite: MeshInvite = JSON.parse(deleted[0].value);
 
   if (Date.now() > invite.expiresAt) {
-    // Already deleted, and it was expired — return null
     return null;
   }
 
@@ -135,7 +122,7 @@ export async function listInvites(apiUrl: string): Promise<
     .filter((i): i is NonNullable<typeof i> => i !== null);
 }
 
-/** Cancel (delete) a pending invite by code. */
+/** Delete a pending invite by code. */
 export async function cancelInvite(code: string): Promise<boolean> {
   const key = `${INVITE_PREFIX}${code}`;
   const deleted = await db
@@ -161,7 +148,6 @@ async function cleanExpiredInvites(): Promise<void> {
           .where(eq(systemSettings.key, row.key));
       }
     } catch {
-      // Malformed entry — clean it up
       await db.delete(systemSettings).where(eq(systemSettings.key, row.key));
     }
   }

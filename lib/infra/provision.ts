@@ -1,13 +1,5 @@
-// ---------------------------------------------------------------------------
-// Core service provisioning
-//
-// cAdvisor, Loki and Promtail get one row each, in the Vardo system org, shared
-// by every organization — see core-services.ts for why each is instance-wide.
-// The lookup is by app name across the whole instance, so an existing row is
-// adopted wherever it already lives instead of being duplicated or skipped.
-//
-// Called at startup (instrumentation.ts) and on feature flag toggle.
-// ---------------------------------------------------------------------------
+// Core service provisioning: cAdvisor, Loki and Promtail, adopted by name across the instance.
+// Called at startup and on feature flag toggle.
 
 import { and, eq, isNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
@@ -53,10 +45,7 @@ function toStatus(outcome: Outcome) {
   };
 }
 
-/**
- * Ensure every enabled core service is provisioned.
- * Safe to call on every startup — all writes are idempotent.
- */
+/** Ensure every enabled core service is provisioned. Idempotent. */
 export async function ensureInfraServices(): Promise<void> {
   const org = await ensureVardoOrg();
   if (!org) {
@@ -106,13 +95,9 @@ export async function ensureInfraServices(): Promise<void> {
   await recordCoreServiceStatus(statuses);
 }
 
-/**
- * Provision the core services a feature flag turns on.
- * Called from the feature flags API route after a toggle. Throws with an
- * operator-readable message so the route can revert the flag and say why.
- */
+/** Provision the core services a feature flag turns on. Throws an operator-readable message on failure. */
 export async function provisionForFlag(flag: FeatureFlag, enabled: boolean): Promise<void> {
-  if (!enabled) return; // Containers keep running when feature is disabled
+  if (!enabled) return; // Containers keep running when disabled
 
   const feature = CORE_SERVICE_FEATURES.find((f) => f.flag === flag);
   if (!feature) return;
@@ -122,10 +107,7 @@ export async function provisionForFlag(flag: FeatureFlag, enabled: boolean): Pro
 
   const templates = await loadTemplates();
 
-  // Interactive toggle: wait for each first deploy and make the install
-  // all-or-nothing. ensureAppDeployed rolls back its own app if its deploy
-  // fails and throws; we then roll back any sibling apps already created in
-  // this call so a partially-installed integration never lingers (#741).
+  // Interactive toggle is all-or-nothing: roll back sibling apps if any deploy fails (#741).
   const created: { appId: string; organizationId: string }[] = [];
   const statuses: Parameters<typeof recordCoreServiceStatus>[0] = [];
   let failure: string | null = null;
@@ -171,10 +153,7 @@ export async function provisionForFlag(flag: FeatureFlag, enabled: boolean): Pro
   }
 }
 
-/**
- * Undo a provisioned core service app — used to roll back a failed first deploy.
- * Best-effort: a rollback failure is logged, never thrown.
- */
+/** Roll back a core service app after a failed first deploy. Logs, never throws. */
 async function rollbackInfraApp(appId: string, orgId: string): Promise<void> {
   try {
     await deleteApp({ appId, organizationId: orgId, allowSystemManaged: true });
@@ -182,10 +161,6 @@ async function rollbackInfraApp(appId: string, orgId: string): Promise<void> {
     log.error(`Failed to roll back core service app ${appId}:`, err);
   }
 }
-
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
 
 async function ensureProject(orgId: string, name: string, displayName: string) {
   const [project] = await db
@@ -213,13 +188,8 @@ async function ensureProject(orgId: string, name: string, displayName: string) {
 }
 
 /**
- * Adopt or create the single app row for a core service.
- *
- * The name is a top-level app name, unique instance-wide, so the lookup isn't
- * scoped to an org: an existing system-managed row is adopted wherever it sits,
- * and a row owned by a regular app is reported as a conflict rather than
- * skipped. With `waitForDeploy`, awaits the first deploy and — on failure —
- * rolls back the app it just created and throws.
+ * Adopt or create the single app row for a core service, looked up instance-wide.
+ * A row owned by a regular app is a conflict. With `waitForDeploy`, a failed deploy rolls back and throws.
  */
 async function ensureAppDeployed(
   orgId: string,
@@ -250,16 +220,14 @@ async function ensureAppDeployed(
   }
 
   if (existing) {
-    // For cadvisor: ensure gpuEnabled matches host GPU availability
+    // cadvisor: match gpuEnabled to host GPU availability
     if (template.name === "cadvisor") {
       const hasGpu = await detectNvidiaGpu();
       await db.update(apps).set({ gpuEnabled: hasGpu }).where(eq(apps.id, existing.id));
       if (hasGpu) log.info(`cAdvisor: GPU detected, enabled GPU metrics`);
     }
 
-    // The template is the only source of truth for a core service — the app
-    // API refuses edits to a system-managed row. Without this, a template fix
-    // reaches new installs only and every existing instance stays broken.
+    // The template is the source of truth; the app API refuses edits to system-managed rows.
     const composeStale = !!composeContent && existing.composeContent !== composeContent;
     if (composeStale) {
       await db
@@ -273,10 +241,7 @@ async function ensureAppDeployed(
       log.info(`Core service "${template.name}": compose refreshed from template`);
     }
 
-    // Existence was the only check, so a core service whose container went away
-    // stayed dead forever — the feature reads as enabled and silently does
-    // nothing. Redeploy it instead. "stopped" counts: a disabled feature never
-    // reaches here, so a stopped core service is one the flag still wants up.
+    // Redeploy a core service whose container went away. A disabled feature never gets here, so "stopped" counts.
     if (composeStale || DOWN_STATUSES.includes(existing.status)) {
       const reason = composeStale ? "compose changed" : `is ${existing.status}`;
       log.info(`Core service "${template.name}" ${reason} — redeploying`);
@@ -314,7 +279,7 @@ async function ensureAppDeployed(
   const project = await ensureProject(orgId, feature.project.name, feature.project.displayName);
   const appId = nanoid();
 
-  // For cadvisor: detect GPU to enable NVML-based metrics
+  // cadvisor: detect GPU for NVML metrics
   const gpuEnabled = template.name === "cadvisor" ? await detectNvidiaGpu() : false;
 
   try {
@@ -336,7 +301,7 @@ async function ensureAppDeployed(
       gpuEnabled,
     });
   } catch (err) {
-    // Unique constraint violation — a concurrent call already created it
+    // Unique constraint violation: a concurrent call created it.
     if (isAppNameViolation(err) || (err instanceof Error && err.message.includes("unique"))) {
       log.info(`Core service "${template.name}" already created by concurrent call`);
       return { state: "provisioned", appId: null, organizationId: orgId, detail: null, created: false };
@@ -344,7 +309,6 @@ async function ensureAppDeployed(
     throw err;
   }
 
-  // Create production environment
   await db.insert(environments).values({
     id: nanoid(),
     appId,
@@ -356,8 +320,7 @@ async function ensureAppDeployed(
   log.info(`Created core service "${template.name}", triggering deploy`);
 
   if (opts?.waitForDeploy) {
-    // Interactive install (#741): wait for the first deploy and roll back the
-    // app on failure so it isn't left as a connected-but-broken integration.
+    // Interactive install (#741): wait for the first deploy and roll back on failure.
     let result: Awaited<ReturnType<typeof requestDeploy>> | null = null;
     try {
       result = await requestDeploy({ appId, organizationId: orgId, trigger: "api" });
@@ -372,8 +335,7 @@ async function ensureAppDeployed(
     return { state: "provisioned", appId, organizationId: orgId, detail: null, created: true };
   }
 
-  // Startup reconcile: fire-and-forget so boot isn't blocked by a slow or
-  // failing deploy.
+  // Startup reconcile: fire-and-forget so boot isn't blocked.
   requestDeploy({
     appId,
     organizationId: orgId,
@@ -384,10 +346,7 @@ async function ensureAppDeployed(
   return { state: "provisioned", appId, organizationId: orgId, detail: null, created: true };
 }
 
-/**
- * Compose content to store for a template, adjusted for cadvisor's disk
- * metrics setting. Every other template passes through unchanged.
- */
+/** Compose content for a template, with cadvisor's disk metrics setting applied. */
 async function resolveComposeContent(template: Template): Promise<string | null> {
   if (template.name !== "cadvisor" || !template.composeContent) return template.composeContent;
   const { getCadvisorConfig, applyCadvisorDiskMetrics } = await import("@/lib/infra/cadvisor-config");

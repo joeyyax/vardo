@@ -1,10 +1,4 @@
-/**
- * WireGuard tunnel IP allocator.
- *
- * Uses a /24 subnet (default 10.99.0.0/24) for the mesh.
- * Hub gets .1, peers are assigned sequentially from .2.
- * All returned IPs include /32 CIDR notation for WireGuard AllowedIPs.
- */
+/** WireGuard tunnel IP allocator on a /24 (default 10.99.0.0/24). Hub is .1, peers from .2. */
 
 const DEFAULT_SUBNET = "10.99.0";
 const IP_RE = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(\/\d{1,2})?$/;
@@ -26,11 +20,10 @@ function lastOctet(ip: string): number {
   return octet;
 }
 
-/** Find the next available IP given a list of already-assigned IPs. Returns bare IP — use toCidr() for WireGuard AllowedIPs. */
+/** Next available IP. Returns a bare IP; use toCidr() for AllowedIPs. */
 export function allocateIp(assignedIps: string[]): string {
   const used = new Set(assignedIps.map(lastOctet));
 
-  // Start from .2 (hub is .1)
   for (let octet = 2; octet <= 254; octet++) {
     if (!used.has(octet)) {
       return `${DEFAULT_SUBNET}.${octet}`;

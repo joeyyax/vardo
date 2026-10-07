@@ -1,13 +1,5 @@
-// ---------------------------------------------------------------------------
-// Instance infrastructure
-//
-// Vardo's own stack and the shared core services. These are the platform every
-// organization runs on, not any one tenant's apps, so their state is reported
-// once at instance level rather than inside whichever org happens to hold the
-// rows. Identity is by name, not the is_system_managed flag — the flag is
-// backfilled onto compose children and a false one there must not unclassify
-// a Vardo container.
-// ---------------------------------------------------------------------------
+// Instance infrastructure: Vardo's stack and core services, reported at instance level.
+// Identity is by name; the is_system_managed flag is backfilled onto children and can be wrong.
 
 import { isVardoStack } from "@/lib/api/system-managed";
 import { isCoreServiceApp } from "./core-services";
@@ -18,20 +10,14 @@ export function isInstanceInfraApp(name: string | null | undefined): boolean {
   return isVardoStack(name) || isCoreServiceApp(name);
 }
 
-/**
- * Whose containers these are, stamped as `vardo.scope` at deploy time. Promtail
- * reads it to keep the platform's own logs out of an organization's tenant.
- */
+/** Scope stamped as `vardo.scope` at deploy time. Promtail uses it to keep platform logs out of org tenants. */
 export type AppScope = "instance" | "app";
 
 export function appScope(name: string | null | undefined): AppScope {
   return isInstanceInfraApp(name) ? "instance" : "app";
 }
 
-/**
- * True for anything Vardo pins itself. The flag catches the compose children of
- * a decomposed core service, whose names carry no instance-infra prefix.
- */
+/** True for anything Vardo pins itself, including children of a decomposed core service. */
 export function isVardoManagedApp(app: {
   name?: string | null;
   isSystemManaged?: boolean | null;
@@ -39,11 +25,7 @@ export function isVardoManagedApp(app: {
   return app.isSystemManaged === true || isInstanceInfraApp(app.name);
 }
 
-/**
- * Health-probe service names to the app row each one runs as. Lets a probe
- * failure and the app's own conditions collapse into one subject instead of
- * reporting the same outage twice under two names.
- */
+/** Health-probe service names to their app rows, so a probe failure and the app's conditions are one subject. */
 const PROBE_APP_NAMES: Record<string, string> = {
   PostgreSQL: "vardo-postgres",
   Redis: "vardo-redis",

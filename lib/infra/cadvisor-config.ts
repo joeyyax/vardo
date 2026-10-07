@@ -1,12 +1,4 @@
-// ---------------------------------------------------------------------------
-// cAdvisor disk metrics setting
-//
-// Filesystem and disk I/O collection walks every container's filesystem,
-// which is what pushes cAdvisor's own memory ceiling from 256m to 512m.
-// Turning it off trades per-container disk figures for a smaller footprint
-// on a memory-constrained host. cAdvisor has no per-metric interval, so this
-// is all-or-nothing — see --help, there's no slower cadence to fall back to.
-// ---------------------------------------------------------------------------
+// cAdvisor disk metrics setting. Off drops per-container disk figures and lowers cAdvisor's memory ceiling from 512m to 256m.
 
 import { getSystemSettingRaw, setSystemSetting, invalidateSettingsCache } from "@/lib/system-settings";
 import { logger } from "@/lib/logger";
@@ -39,15 +31,9 @@ export async function setCadvisorConfig(config: CadvisorConfig): Promise<void> {
   invalidateSettingsCache(KEY);
 }
 
-// ---------------------------------------------------------------------------
-// Compose transform
-//
-// The template ships with disk metrics on, so only the off state needs a
-// rewrite. Each swap replaces a comment + line pair so the compose an
-// operator reads back never contradicts what it's actually running.
-// ---------------------------------------------------------------------------
+// Compose transform. The template ships with disk metrics on, so only off needs a rewrite.
 
-/** Kept in step with templates/cadvisor.yaml — both markers below embed it. */
+/** Kept in step with templates/cadvisor.yaml; both markers below embed it. */
 const DISABLED_METRICS =
   "advtcp,cpu_topology,cpuset,hugetlb,memory_numa,percpu,process,referenced_memory,resctrl,sched,tcp,udp";
 
@@ -62,12 +48,7 @@ const MEM_ON = `    # Disk metrics walk every container's filesystem, so this is
 const MEM_OFF = `    # Disk metrics off — 256m is enough without filesystem walks.
     mem_limit: 256m`;
 
-/**
- * Rewrite the cAdvisor template's compose content to match the disk metrics
- * setting. Falls back to the unmodified (disk-on) content and logs an error
- * if the template no longer matches the expected markers, rather than
- * writing out compose that silently doesn't reflect the setting.
- */
+/** Rewrite cAdvisor compose for the disk metrics setting. Logs and returns it unmodified if the markers no longer match. */
 export function applyCadvisorDiskMetrics(composeContent: string, diskMetricsEnabled: boolean): string {
   if (diskMetricsEnabled) return composeContent;
 

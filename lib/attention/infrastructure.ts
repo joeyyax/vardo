@@ -18,12 +18,8 @@ const RUNNING_DEPLOYMENT_STATUSES = ["queued", "running"] as const;
 const coreParents = alias(apps, "core_parents");
 
 /**
- * State of Vardo's own stack and the shared core services. Never filtered by
- * organization: the caller's scope has no bearing on whether the console is
- * restarting.
- *
- * Compose children are included: a stack whose database container is down reads
- * "active" on the parent row, so the child is the only place the outage shows.
+ * State of Vardo's stack and core services. Never filtered by organization.
+ * Includes compose children, since a parent reads "active" while a child is down.
  */
 export async function getInfrastructureSnapshot(now = new Date()): Promise<InfrastructureSnapshot> {
   const rows = await db
@@ -52,8 +48,7 @@ export async function getInfrastructureSnapshot(now = new Date()): Promise<Infra
       ),
     );
 
-  // Children carry no instance-infra prefix in their names, so they are kept by
-  // parent instead.
+  // Children carry no instance-infra prefix, so they're kept by parent.
   const coreParentIds = new Set(
     rows.filter((a) => !a.parentAppId && isCoreServiceApp(a.name)).map((a) => a.id),
   );

@@ -1,4 +1,4 @@
-/** Lightweight peer summary for UI components. */
+/** Peer summary for UI components. */
 export type MeshPeerSummary = {
   id: string;
   name: string;
@@ -7,7 +7,7 @@ export type MeshPeerSummary = {
   connectionType: "direct" | "visible";
 };
 
-/** Lightweight project instance summary for UI components. */
+/** Project instance summary for UI components. */
 export type ProjectInstanceSummary = {
   id: string;
   environment: string;

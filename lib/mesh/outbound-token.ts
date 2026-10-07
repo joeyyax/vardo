@@ -1,6 +1,4 @@
-// ---------------------------------------------------------------------------
-// The bearer token a peer gave us, encrypted at rest under the system key.
-// ---------------------------------------------------------------------------
+// The bearer token a peer gave this instance, encrypted at rest under the system key.
 
 import { decryptSystemOrFallback, encryptSystem, isEncrypted } from "@/lib/crypto/encrypt";
 

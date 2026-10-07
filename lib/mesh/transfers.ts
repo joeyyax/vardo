@@ -6,23 +6,11 @@ import { getInstanceId } from "@/lib/constants";
 import { narrowBackendProtocol } from "@/lib/docker/compose";
 import { decrypt, decryptOrFallback, encrypt, isEncrypted } from "@/lib/crypto/encrypt";
 
-// ---------------------------------------------------------------------------
-// Dependencies
-// ---------------------------------------------------------------------------
-
-/**
- * Check if volume transfers are available.
- * Volume transfers rely on the backup engine — if backups are disabled,
- * only config transfers (compose, git ref, env vars) are possible.
- */
+/** Volume transfers need the backup engine. */
 export async function canTransferVolumes(): Promise<boolean> {
   const { isFeatureEnabledAsync } = await import("@/lib/config/features");
   return isFeatureEnabledAsync("backups");
 }
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 
 /** Serializable app config within a project bundle. */
 export type AppBundle = {
@@ -63,14 +51,7 @@ export type ProjectBundle = {
   volumeBackupIds?: string[];
 };
 
-// ---------------------------------------------------------------------------
-// Build: extract project data into a transferable bundle
-// ---------------------------------------------------------------------------
-
-/**
- * Build a project bundle for transfer to another instance.
- * Extracts project metadata, app configs, and optionally env vars.
- */
+/** Build a project bundle: metadata, app configs and optionally env vars. */
 export async function buildProjectBundle(
   projectId: string,
   options: {
@@ -176,18 +157,9 @@ export function sealBundleEnv(appName: string, envContent: string | null, orgId:
   }
 }
 
-// ---------------------------------------------------------------------------
-// Import: create project + apps from a received bundle
-// ---------------------------------------------------------------------------
-
 /**
- * Import a project bundle received from another instance.
- *
- * For promote/pull: finds existing project by name within the org, updates
- * apps if they exist (by name), creates if they don't.
- * For clone: always creates new project and apps with unique names.
- *
- * All operations run in a transaction — partial failures roll back cleanly.
+ * Import a project bundle in one transaction.
+ * Promote and pull update apps by name; clone always creates new ones.
  */
 export async function importProjectBundle(
   orgId: string,
@@ -198,7 +170,6 @@ export async function importProjectBundle(
   return db.transaction(async (tx) => {
     const isClone = bundle.transferType === "clone";
 
-    // Find existing project in this org by name (scoped to org)
     const existing = isClone
       ? null
       : await tx.query.projects.findFirst({
@@ -221,13 +192,11 @@ export async function importProjectBundle(
       });
     }
 
-    // Create or update apps
     const appIds: string[] = [];
     for (const appBundle of bundle.apps) {
       // Clones start without env.
       const envContent = isClone ? null : sealBundleEnv(appBundle.name, appBundle.envContent, orgId);
 
-      // For non-clone transfers, check if app already exists in this project
       const existingApp = isClone
         ? null
         : await tx.query.apps.findFirst({
@@ -236,7 +205,6 @@ export async function importProjectBundle(
           });
 
       if (existingApp) {
-        // Update existing app
         appIds.push(existingApp.id);
         await tx
           .update(apps)
@@ -251,7 +219,6 @@ export async function importProjectBundle(
           })
           .where(eq(apps.id, existingApp.id));
       } else {
-        // Create new app
         const appId = nanoid();
         appIds.push(appId);
 
@@ -259,8 +226,7 @@ export async function importProjectBundle(
           ? `${appBundle.name}-${nanoid(6)}`
           : appBundle.name;
 
-        // Top-level app names are unique instance-wide, so an app of this name
-        // in any other organization blocks the transfer.
+        // Top-level app names are unique instance-wide, so another org's app blocks the transfer.
         const nameTaken = await tx.query.apps.findFirst({
           where: (a, { and, eq: e, isNull: n }) =>
             and(e(a.name, appName), n(a.parentAppId)),
@@ -297,7 +263,6 @@ export async function importProjectBundle(
           status: "stopped",
         });
 
-        // Create volume records for new apps
         for (const vol of appBundle.volumes) {
           await tx.insert(volumes).values({
             id: nanoid(),
@@ -311,7 +276,6 @@ export async function importProjectBundle(
       }
     }
 
-    // Record the deployment in project_instances
     const composeSnapshot = bundle.apps
       .map((a) => a.composeContent)
       .filter(Boolean)
@@ -320,7 +284,7 @@ export async function importProjectBundle(
     await tx.insert(projectInstances).values({
       id: nanoid(),
       projectId,
-      meshPeerId: null, // local instance
+      meshPeerId: null,
       environment,
       gitRef: bundle.gitRef,
       composeContent: composeSnapshot || null,

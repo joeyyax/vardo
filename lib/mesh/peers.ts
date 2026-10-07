@@ -20,19 +20,17 @@ interface RegisterPeerResult {
   token: string;
 }
 
-/** Register a new mesh peer — shared between admin add and invite join flows. */
+/** Register a new mesh peer. */
 export async function registerPeer(
   input: RegisterPeerInput
 ): Promise<RegisterPeerResult> {
-  // Allocate a tunnel IP from the local peer table plus our own address.
-  // Only authoritative on the hub — a spoke can hand out an IP already assigned.
+  // Only authoritative on the hub; a spoke can hand out an IP already assigned.
   const allPeers = await db.query.meshPeers.findMany({
     columns: { internalIp: true },
   });
   const ownIp = await getHubAddress();
   const internalIp = allocateIp([...allPeers.map((p) => p.internalIp), ownIp]);
 
-  // Generate a service-to-service token
   const { raw: token, hash: tokenHash } = generateMeshToken();
 
   const peer = {
@@ -54,7 +52,6 @@ export async function registerPeer(
 
   await db.insert(meshPeers).values(peer);
 
-  // Rebuild WireGuard config with the new peer
   try {
     if (await isWireguardRunning()) {
       await rebuildAndSync();

@@ -19,10 +19,7 @@ function latestPerApp<T extends { appId: string }>(rows: T[]): T[] {
   return [...latest.values()];
 }
 
-/**
- * Deploys and backups in progress, one row per kind. Tone is "activity" —
- * this is routine, not a problem, and must never read like one.
- */
+/** Deploys and backups in progress, one row per kind, in the routine "activity" tone. */
 export function activityRows(apps: ActivitySubject[], activity: FleetActivity): AttentionRow[] {
   const byId = new Map(apps.map((a) => [a.id, a]));
   const rows: AttentionRow[] = [];

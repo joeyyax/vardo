@@ -3,13 +3,7 @@ import { meshPeers } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { openOutboundToken } from "./outbound-token";
 
-/**
- * Make an authenticated request to a mesh peer's API.
- *
- * Tries the WireGuard mesh URL first (fast, encrypted tunnel). If unreachable,
- * falls back to the peer's public API URL (works before tunnel routing is set up
- * or when the mesh is down).
- */
+/** Authenticated request to a mesh peer's API: WireGuard URL first, then the public API URL. */
 export async function meshFetch(
   peerId: string,
   path: string,
@@ -52,7 +46,6 @@ export async function meshFetch(
     Authorization: `Bearer ${outboundToken}`,
   };
 
-  // Try mesh URL first (WireGuard tunnel) with a short timeout
   if (peer.apiUrl) {
     try {
       const res = await fetch(`${peer.apiUrl}${path}`, {
@@ -62,11 +55,9 @@ export async function meshFetch(
       });
       return res;
     } catch {
-      // Mesh unreachable — fall through to public URL
     }
   }
 
-  // Fall back to public API URL
   if (peer.publicApiUrl) {
     if (requireTls && !peer.publicApiUrl.startsWith("https://")) {
       throw new MeshClientError(
@@ -88,10 +79,7 @@ export async function meshFetch(
   );
 }
 
-/**
- * Convenience wrapper — makes a JSON request and parses the response.
- * Throws on non-2xx responses with the error message from the peer.
- */
+/** JSON request to a mesh peer. Throws with the peer's error message on non-2xx. */
 export async function meshJsonFetch<T = unknown>(
   peerId: string,
   path: string,

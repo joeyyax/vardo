@@ -1,10 +1,4 @@
-// ---------------------------------------------------------------------------
-// Log level detection.
-//
-// Container output rarely follows one convention, so detection covers the
-// formats a fleet actually emits: nginx, redis, postgres, mysql, Python
-// tracebacks, JSON logs and Vardo's own [stage] deploy markers.
-// ---------------------------------------------------------------------------
+// Log level detection across nginx, redis, postgres, mysql, Python, JSON and Vardo deploy markers.
 
 export type LogLevel = "error" | "warn" | "info" | "debug" | "other";
 
@@ -50,10 +44,7 @@ export function httpStatus(text: string): number | null {
   return null;
 }
 
-/**
- * Classify a single line. Pass `previous` so continuation lines — stack frames,
- * wrapped SQL, postgres DETAIL — keep the level of the line they belong to.
- */
+/** Classify a single line. `previous` lets continuation lines keep their parent's level. */
 export function detectLevel(text: string, previous?: LogLevel): LogLevel {
   if (previous && (CONTINUATION_RE.test(text) || PG_DETAIL_RE.test(text))) return previous;
 

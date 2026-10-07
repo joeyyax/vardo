@@ -1,10 +1,4 @@
-// ---------------------------------------------------------------------------
-// Instance infrastructure rows
-//
-// Vardo's own stack and the shared core services, as attention rows that every
-// session sees regardless of the org it is scoped to. Pure: the database read
-// lives in ./infrastructure.
-// ---------------------------------------------------------------------------
+// Instance infrastructure rows: Vardo's stack and core services, shown to every session. Pure; the read lives in ./infrastructure.
 
 import { isVardoStack } from "@/lib/api/system-managed";
 import type { AppCondition, ConditionKind } from "@/lib/docker/conditions";
@@ -19,10 +13,7 @@ export const SELF_DEPLOY_ROW_KEY = "vardo-self-deploy";
 /** Runtime conditions worth interrupting every page for. The rest are app-level detail. */
 const REPORTED_CONDITIONS: ConditionKind[] = ["crash-looping", "unhealthy", "self-heal-exhausted"];
 
-/**
- * Statuses that mean the container is not doing its job, and how each reads.
- * A core service is only stopped on purpose by turning its feature off.
- */
+/** Broken statuses and how each reads. A core service only stops when its feature is off. */
 const STATUS_DETAIL: Record<string, string> = {
   error: "Container failed",
   missing: "No container on the host",
@@ -75,10 +66,7 @@ export function hasSelfDeploy(rows: AttentionRow[]): boolean {
   return rows.some((row) => row.key === SELF_DEPLOY_ROW_KEY && row.items.length > 0);
 }
 
-/**
- * Everything the instance needs to say about itself. Returns nothing on a
- * healthy instance — this renders on every page, so silence is the default.
- */
+/** Everything the instance needs to say about itself. Empty when healthy. */
 export function infrastructureRows(
   snapshot: InfrastructureSnapshot,
   { canLinkToAdmin }: InfrastructureOptions,
@@ -94,9 +82,7 @@ export function infrastructureRows(
 
   const selfDeploys: AttentionItem[] = [];
   const coreDeploys: AttentionItem[] = [];
-  // Apps whose health is not evidence of anything right now. A stack deploy
-  // replaces every container in it, so the whole stack goes quiet, not just the
-  // row the deployment is attached to.
+  // Apps mid-deploy. A stack deploy quiets the whole stack.
   const deploying = new Set<string>();
 
   for (const deployment of latestPerApp(snapshot.deployments)) {
@@ -141,8 +127,7 @@ export function infrastructureRows(
     });
   }
 
-  // One issue per subject, alerts first: a probe failure is a better account of
-  // an outage than the container status that follows from it.
+  // One issue per subject, alerts first.
   const issues = new Map<string, Issue>();
 
   for (const service of snapshot.servicesDown) {
@@ -170,8 +155,7 @@ export function infrastructureRows(
     if (issue) issues.set(app.id, issue);
   }
 
-  // Stopping a stack cascades to every service in it, and a probe failure
-  // already names the stack. One subject, not six.
+  // Stopping a stack cascades to every service. One subject, not six.
   for (const app of apps) {
     if (app.parentAppId && issues.has(app.parentAppId)) issues.delete(app.id);
   }
@@ -205,10 +189,7 @@ function latestPerApp(deployments: InfraDeployment[]): InfraDeployment[] {
   return [...latest.values()];
 }
 
-/**
- * Snapshot apps minus the core services whose feature flag is off, children
- * included. Provisioning skips a disabled feature before it looks at status.
- */
+/** Snapshot apps minus core services whose feature flag is off, children included. */
 function enabledApps(all: InfraApp[], off: Set<string>): InfraApp[] {
   if (off.size === 0) return all;
   const names = new Map(all.map((a) => [a.id, a.name]));
@@ -231,8 +212,7 @@ function appIssue(app: InfraApp, { name, core }: { name: string; core: boolean }
     };
   }
 
-  // A null stamp says no duration at all. updatedAt is the wrong clock — a
-  // compose refresh bumps it and would report a long outage as minutes old.
+  // updatedAt is the wrong clock: a compose refresh bumps it.
   const detail = STATUS_DETAIL[app.status];
   if (detail) {
     return {

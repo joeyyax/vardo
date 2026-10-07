@@ -1,20 +1,11 @@
-// ---------------------------------------------------------------------------
-// Tenant app status rows
-//
-// Apps whose container is not doing its job, as attention rows. Pure: the
-// database read lives in ./rows.
-// ---------------------------------------------------------------------------
+// Tenant app status rows: apps whose container isn't doing its job. Pure; the read lives in ./rows.
 
 import type { AttentionItem, AttentionRow } from "@/lib/ui/attention";
 
 /** A transition older than this is settled, not something to act on now. */
 export const APP_DOWN_WINDOW_HOURS = 48;
 
-/**
- * Statuses that mean the container is not doing its job, and how each reads.
- * "stopped" is absent: deriveStatus routes every broken shape to one of these,
- * so a stopped app was stopped on purpose. It gets its own neutral row below.
- */
+/** Broken statuses and how each reads. "stopped" gets its own neutral row. */
 const STATUS_DETAIL: Record<string, string> = {
   error: "Container failed",
   missing: "No container on the host",
@@ -27,18 +18,13 @@ export type StatusSubject = {
   status: string;
   /** When the status last became what it is now. Null until the first transition. */
   statusChangedAt: Date | null;
-  /** Declared off on purpose. Nothing about being down is news on one of these. */
+  /** Declared off on purpose. */
   parked: boolean;
   /** Set on a compose child. Its parent is a separate subject. */
   parentAppId: string | null;
 };
 
-/**
- * Apps that broke recently enough to still be news, plus any that are broken
- * with no stamp to date it. A null stamp is not evidence of anything — the app
- * has just not transitioned since the column landed — so it earns the row
- * without a duration rather than being dropped from it.
- */
+/** Apps that broke recently, plus broken ones with no stamp, shown without a duration. */
 export function appStatusRows(
   apps: StatusSubject[],
   now: number,
@@ -52,8 +38,7 @@ export function appStatusRows(
     if (!detail) continue;
     if (app.parked) continue;
 
-    // A stack deploy replaces every container in it, so a child reads missing
-    // partway through and is not evidence of anything.
+    // A stack deploy briefly reads children as missing.
     const parent = app.parentAppId ? byId.get(app.parentAppId) : undefined;
     if (parent?.status === "deploying") continue;
 
@@ -68,8 +53,7 @@ export function appStatusRows(
     });
   }
 
-  // Stopping a stack writes the status to the parent and then every child.
-  // One subject, not six.
+  // Stopping a stack writes the parent and every child. One subject, not six.
   for (const app of apps) {
     if (app.parentAppId && items.has(app.parentAppId)) items.delete(app.id);
   }
@@ -87,11 +71,7 @@ export function appStatusRows(
   ];
 }
 
-/**
- * Apps that are not running. Neutral, and deliberately unbounded by time: this
- * is an inventory rather than an alert, and a stack shelved in March is exactly
- * the one that would otherwise be impossible to find from the board.
- */
+/** Apps that aren't running. Neutral inventory, unbounded by time. */
 export function appStoppedRows(apps: StatusSubject[]): AttentionRow[] {
   const byId = new Map(apps.map((a) => [a.id, a]));
   const items = new Map<string, AttentionItem>();
@@ -110,8 +90,7 @@ export function appStoppedRows(apps: StatusSubject[]): AttentionRow[] {
     });
   }
 
-  // stopApp writes stopped to the parent and then every child. One subject, not
-  // six — the parent keeps the count of what came down with it.
+  // One subject per stack; the parent keeps the count.
   const services = new Map<string, number>();
   for (const app of apps) {
     if (!app.parentAppId || !items.has(app.parentAppId)) continue;
@@ -119,9 +98,7 @@ export function appStoppedRows(apps: StatusSubject[]): AttentionRow[] {
       services.set(app.parentAppId, (services.get(app.parentAppId) ?? 0) + 1);
     }
   }
-  // Parked reads beside the count rather than removing the row: the inventory
-  // is how a shelved stack stays findable, and saying why it is quiet is the
-  // whole point of the flag.
+  // Parked reads beside the count; the row stays so a shelved stack is findable.
   for (const [id, item] of items) {
     const parts: string[] = [];
     if (byId.get(id)?.parked) parts.push("parked");

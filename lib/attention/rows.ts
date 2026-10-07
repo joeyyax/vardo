@@ -41,7 +41,7 @@ function formatMb(mb: number): string {
   return mb >= 1024 ? `${(mb / 1024).toFixed(mb % 1024 === 0 ? 0 : 1)} GB` : `${mb} MB`;
 }
 
-/** Most recent failure per app, so one broken job is one row rather than seven. */
+/** Most recent failure per app, so one broken job is one row. */
 async function loadFailedBackups(appIds: string[]) {
   if (appIds.length === 0) return [];
   const since = new Date(Date.now() - BACKUP_FAILURE_WINDOW_HOURS * 3_600_000);
@@ -64,14 +64,7 @@ async function loadFailedBackups(appIds: string[]) {
   return [...latest.values()];
 }
 
-/**
- * Jobs that have captured nothing for several of their own schedule intervals,
- * with a route to the app when the job covers exactly one.
- *
- * Read straight from the jobs rather than from the apps they cover: the app
- * conditions are only evaluated for apps that have a container, which is every
- * app except the ones whose backups have quietly stopped.
- */
+/** Jobs that have captured nothing for several schedule intervals, read from the jobs, not the apps. */
 async function loadOverdueBackupJobs(orgId: string, now: Date) {
   const jobRows = await db
     .select({
@@ -113,11 +106,7 @@ async function loadOverdueBackupJobs(orgId: string, now: Date) {
   });
 }
 
-/**
- * Stopped apps whose database cannot be dumped until they run again. Their
- * other volumes are still archived on schedule — this is the one source a
- * stopped app cannot produce.
- */
+/** Stopped apps whose database can't be dumped until they run again. */
 async function loadPausedDumps(orgId: string) {
   const rows = await db
     .select({
@@ -155,10 +144,7 @@ async function loadPausedDumps(orgId: string) {
   return [...byApp.values()];
 }
 
-/**
- * Every app the kernel may have killed, children included — a compose service
- * that OOMs is the subject, not the parent that is otherwise fine.
- */
+/** Every app the kernel may have killed, children included. */
 async function loadExitReasons(orgId: string) {
   const rows = await db
     .select({
@@ -173,10 +159,7 @@ async function loadExitReasons(orgId: string) {
   return rows.filter((a) => !isVardoManagedApp(a));
 }
 
-/**
- * Every app, children included. A compose child holds its own status and
- * conditions — a stack whose database is down still reads active on the parent.
- */
+/** Every app, children included. A child holds its own status and conditions. */
 async function loadStatusSubjects(orgId: string) {
   const rows = await db
     .select({
@@ -196,14 +179,11 @@ async function loadStatusSubjects(orgId: string) {
 }
 
 type BuildOptions = {
-  /** Release availability is admin business — non-admins never see the row. */
+  /** Admin only. */
   isAppAdmin: boolean;
 };
 
-/**
- * Every notice the instance has, in one list. The chrome renders this on every
- * page, so it is built here rather than assembled per route.
- */
+/** Every notice the instance has, in one list. */
 export async function buildAttentionRows(
   orgId: string,
   { isAppAdmin }: BuildOptions,
@@ -227,8 +207,7 @@ export async function buildAttentionRows(
     .from(apps)
     .where(and(eq(apps.organizationId, orgId), isNull(apps.parentAppId)));
 
-  // Vardo's own stack and the core services report at instance level, to every
-  // session. Leaving them here too would give the Vardo org two rows per event.
+  // Vardo's stack and core services report at instance level; listing them here would duplicate rows.
   const appRows = orgApps.filter((a) => !isVardoManagedApp(a));
 
   const imageUpdatesEnabled = await isFeatureEnabledAsync("image-updates");
@@ -280,12 +259,7 @@ export async function buildAttentionRows(
     });
   }
 
-  // Containers running with no cgroup memory limit can take the whole host, and
-  // a JVM in one sizes its heap from the hypervisor's RAM, not the guest's.
-  //
-  // Neutral, not a fault: every app deployed before limits were injected lands
-  // here, so counting them buries the handful of things actually broken. A
-  // recent host kill promotes it — the kernel picks its victim from this pool.
+  // Containers with no memory limit can take the whole host. Neutral, unless a recent host kill promotes it.
   const unlimited = appRows.filter(
     (a) => a.status === "active" && a.containerMemoryLimit === 0,
   );

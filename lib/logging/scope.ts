@@ -1,10 +1,4 @@
-// ---------------------------------------------------------------------------
-// Which containers a log request covers.
-//
-// Compose decomposition gives a child app no deploy directory of its own — its
-// containers live under the parent's compose project — so log reads resolve
-// through the parent and scope by service name.
-// ---------------------------------------------------------------------------
+// Which containers a log request covers. A child app resolves through its parent's compose project.
 
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";

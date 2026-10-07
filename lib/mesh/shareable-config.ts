@@ -7,12 +7,8 @@ import {
 } from "@/lib/system-settings";
 
 /**
- * Config a mesh peer may read from this instance. Credential-free by
- * construction — every field is copied out explicitly.
- *
- * WARNING: never spread a whole config object in here. The source objects
- * carry the GitHub App private key, OAuth client secret, webhook secret,
- * SMTP password, backup access keys and the DNS-01 API token.
+ * Config a mesh peer may read from this instance, copied field by field.
+ * Never spread a whole config object here: the sources carry secrets.
  */
 export type ShareableMeshConfig = {
   email: {
@@ -41,10 +37,7 @@ export type ShareableMeshConfig = {
     challengeType: "http" | "dns";
     dnsProvider?: "cloudflare";
   };
-  /**
-   * Sections the peer inherited without their credential. An admin has to
-   * supply these locally before the section works.
-   */
+  /** Sections inherited without their credential. An admin must supply these locally. */
   credentialsRequired: string[];
 };
 

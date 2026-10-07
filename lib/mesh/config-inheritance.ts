@@ -24,10 +24,7 @@ export const EMPTY_INHERITED_CONFIG: InheritedConfig = {
 
 /**
  * Pull shareable config from a mesh hub and store it locally.
- *
- * The hub serves no credentials, so an inherited section is unusable until an
- * admin adds the secret here. Sections already configured locally are left alone
- * rather than overwritten with a credential-free copy.
+ * Sections already configured locally are left alone.
  */
 export async function inheritConfigFromHub(
   hubApiUrl: string,
@@ -64,7 +61,7 @@ export async function inheritConfigFromHub(
     }
   }
 
-  // Merge feature flags — don't overwrite local flags, only add missing ones
+  // Add missing feature flags without overwriting local ones.
   if (config.features) {
     const localFlags = (await getFeatureFlagsConfig()) ?? {};
     const merged = { ...config.features, ...localFlags };
@@ -92,10 +89,7 @@ const PRIVATE_IP_RANGES = [
   /^\[fd/,
 ];
 
-/**
- * Validate a hub API URL — must be HTTPS (or HTTP for local dev)
- * and must not point to private/link-local IP ranges.
- */
+/** Validate a hub API URL: HTTPS (or HTTP for local dev), no private or link-local IPs. */
 export function validateHubUrl(rawUrl: string): { valid: boolean; error?: string } {
   let url: URL;
   try {
