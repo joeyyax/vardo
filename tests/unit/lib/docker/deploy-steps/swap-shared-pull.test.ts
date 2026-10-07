@@ -62,7 +62,9 @@ function indexOf(match: (a: string[]) => boolean): number {
 
 const isSharedPull = (a: string[]) => a.includes("pull") && a.includes("app-production-shared");
 const isSharedUp = (a: string[]) =>
-  a.includes("up") && a.includes("app-production-shared") && !a.includes("--dry-run");
+  a.includes("up") && a.includes("app-production-shared") && a.includes("--no-recreate");
+const isSharedRecreate = (a: string[]) =>
+  a.includes("up") && a.includes("app-production-shared") && !a.includes("--no-recreate");
 const isOldSlotStop = (a: string[]) => a.includes("stop") && a.includes("app-production-blue");
 const isOldSlotRestore = (a: string[]) =>
   a.includes("up") && a.includes("app-production-blue") && a.includes("--no-recreate");
@@ -117,19 +119,31 @@ type DockerOpts = {
   pullFails?: boolean;
   /** Whether the shared `up` fails. */
   sharedUpFails?: boolean;
-  /** What a `--dry-run up` reports for the shared containers. */
-  dryRun?: string;
+  /** Hash `config --hash` reports for every shared service. */
+  desiredHash?: string;
+  /** Hash label on every running shared container. */
+  runningHash?: string;
+  /** Whether recreating a drifted shared service fails. */
+  recreateFails?: boolean;
   /** Whether the old slot still runs the shared service. */
   oldSlotHoldsShared?: boolean;
 };
 
 function dockerWith(opts: DockerOpts = {}) {
-  execFileAsyncMock.mockImplementation(async (_cmd: string, args: string[]) => {
+  execFileAsyncMock.mockImplementation(async (_cmd: string, args: string[], options?: { cwd?: string }) => {
     if (isImageInspect(args)) {
       if (opts.imageLocal === false) throw new Error("No such image: postgres:17");
       return { stdout: "sha256:abc\n", stderr: "" };
     }
-    if (args.includes("--dry-run")) return { stdout: opts.dryRun ?? "", stderr: "" };
+    if (args.includes("config") && args.includes("--hash")) {
+      const names = args[args.indexOf("--hash") + 1].split(",");
+      return { stdout: opts.desiredHash ? names.map((n) => `${n} ${opts.desiredHash}\n`).join("") : "", stderr: "" };
+    }
+    if (args[0] === "inspect") return { stdout: `${opts.runningHash ?? ""}\n`, stderr: "" };
+    // Only the new slot's definition fails; the old slot's comes back up.
+    if (isSharedRecreate(args) && opts.recreateFails && options?.cwd?.endsWith("/green")) {
+      throw new Error("port is already allocated");
+    }
     if (isSharedPull(args) && opts.pullFails) {
       throw new Error("toomanyrequests: You have reached your pull rate limit");
     }
@@ -209,24 +223,37 @@ describe("swap — fetching shared images", () => {
     expect(indexOf(isOldSlotRestore)).toBeGreaterThan(indexOf(isOldSlotStop));
   });
 
-  it("reports a shared service still running an older definition", async () => {
-    dockerWith({
-      imageLocal: true,
-      dryRun: " Container app-production-shared-postgres-1  Recreate ",
-    });
+  it("holds a drifted data store and leaves the deploy a warning", async () => {
+    dockerWith({ imageLocal: true, desiredHash: "b".repeat(64), runningHash: "a".repeat(64) });
     const ctx = context();
     await swap(ctx);
 
-    expect(ctx.logLines).toContainEqual(
-      "[deploy] postgres still runs an older definition — a deploy never recreates a shared service, so recreate it to apply the change",
-    );
+    expect(indexOf(isSharedRecreate)).toBe(-1);
+    expect(ctx.logLines.some((l) => l.startsWith("[deploy] Shared service postgres: definition changed, held"))).toBe(true);
+    expect(ctx.unfinished).toHaveLength(1);
+    expect(ctx.unfinished![0]).toContain("shared service postgres still runs its old definition");
   });
 
-  it("stays quiet when the running definition matches", async () => {
-    dockerWith({ imageLocal: true, dryRun: " Container app-production-shared-postgres-1  Running " });
+  it("logs an unchanged shared service and leaves the deploy clean", async () => {
+    dockerWith({ imageLocal: true, desiredHash: "a".repeat(64), runningHash: "a".repeat(64) });
     const ctx = context();
     await swap(ctx);
 
-    expect(ctx.logLines.some((l) => l.includes("older definition"))).toBe(false);
+    expect(ctx.logLines).toContainEqual("[deploy] Shared service postgres: unchanged");
+    expect(ctx.unfinished ?? []).toEqual([]);
+  });
+
+  it("puts a shared service that fails its recreate back on the old definition", async () => {
+    dockerWith({ imageLocal: true, desiredHash: "b".repeat(64), runningHash: "a".repeat(64), recreateFails: true });
+    const ctx = context();
+    delete ctx.compose.services.postgres;
+    ctx.compose.services.traefik = { name: "traefik", image: "traefik:v3", "x-vardo-shared": true } as never;
+
+    await expect(swap(ctx)).rejects.toThrow(/Shared service traefik failed after recreate/);
+    const restore = execFileAsyncMock.mock.calls.find(
+      (c) => isSharedRecreate(c[1] as string[]) && (c[2] as { cwd?: string })?.cwd?.endsWith("/blue"),
+    );
+    expect(restore).toBeDefined();
+    expect(ctx.logLines).toContainEqual("[deploy] Put traefik back on the blue slot's definition");
   });
 });

@@ -1,12 +1,10 @@
 // ---------------------------------------------------------------------------
-// Which shared images a deploy has to fetch, and which running shared services
-// no longer match the compose file.
+// Which shared images a deploy has to fetch.
 // ---------------------------------------------------------------------------
 
 import { describe, it, expect, vi } from "vitest";
 
 import {
-  driftedFromDryRun,
   sharedContainerNames,
   sharedPullTargets,
 } from "@/lib/docker/deploy-steps/shared-images";
@@ -88,31 +86,5 @@ describe("sharedContainerNames", () => {
   it("falls back to the name compose generates", () => {
     const names = sharedContainerNames(shared({ postgres: { image: "postgres:17" } }), "app-production-shared");
     expect(names.get("app-production-shared-postgres-1")).toBe("postgres");
-  });
-});
-
-describe("driftedFromDryRun", () => {
-  const containers = new Map([["vardo-traefik", "traefik"], ["vardo-redis", "redis"]]);
-
-  it("reads the service compose would replace", () => {
-    const output = " Container vardo-traefik  Recreate \n Container vardo-redis  Running ";
-    expect(driftedFromDryRun(output, containers)).toEqual(["traefik"]);
-  });
-
-  it("says nothing when every container matches its definition", () => {
-    expect(driftedFromDryRun(" Container vardo-traefik  Running ", containers)).toEqual([]);
-  });
-
-  it("ignores a container that does not exist yet", () => {
-    expect(driftedFromDryRun(" Container vardo-traefik  Creating ", containers)).toEqual([]);
-  });
-
-  it("ignores containers outside the shared set", () => {
-    expect(driftedFromDryRun(" Container other-thing  Recreate ", containers)).toEqual([]);
-  });
-
-  it("reports each service once", () => {
-    const output = " Container vardo-traefik  Recreate \n Container vardo-traefik  Recreate ";
-    expect(driftedFromDryRun(output, containers)).toEqual(["traefik"]);
   });
 });

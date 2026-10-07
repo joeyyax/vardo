@@ -29,7 +29,8 @@ import {
 import type { DeployContext, SlotStopOutcome } from "../deploy-context";
 import { classifyComposeServices } from "./classify-services";
 import type { ComposeService } from "../compose-types";
-import { driftedFromDryRun, sharedContainerNames, sharedPullTargets } from "./shared-images";
+import { sharedPullTargets } from "./shared-images";
+import { describeSharedOutcome, reconcileSharedServices, SharedRecreateError } from "./shared-drift";
 import { majorGateAfter, majorGateBefore, type MajorGateState } from "./major-gate";
 import { publishesHostPorts } from "../host-ports";
 import { getServicesWithExternalizedVolumes } from "../compose-inject";
@@ -114,6 +115,15 @@ function parseDuration(d: string | undefined): number {
     }
   }
   return ms;
+}
+
+/** How long a recreated shared service gets to report ready. Docker's defaults fill in a partial healthcheck. */
+export function sharedReadyTimeout(service: ComposeService): number {
+  const hc = service.healthcheck;
+  if (!hc || hc.disable) return DEFAULT_HEALTH_CHECK_TIMEOUT_MS;
+  const needed =
+    parseDuration(hc.start_period) + (parseDuration(hc.interval) || 30_000) * (hc.retries ?? 3) + POST_DEPLOY_DELAY;
+  return Math.max(DEFAULT_HEALTH_CHECK_TIMEOUT_MS, needed);
 }
 
 function sleep(ms: number): Promise<void> {
@@ -643,41 +653,68 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
     }
   };
 
-  // `--no-recreate` leaves a running shared service exactly as it is, so an
-  // edited healthcheck, command, environment or image tag never reaches it.
-  // Compose is asked what it would replace and the answer is logged, because a
-  // change that is silently dropped reads as a change that was applied.
-  const reportSharedDrift = async () => {
+  // A definition change is applied here or reported, never dropped. A recreate
+  // that fails puts the service back on the old slot's definition.
+  const reconcileShared = async () => {
     try {
-      const { stdout, stderr } = await execFileAsync(
+      const outcomes = await reconcileSharedServices({
+        shared,
+        project: sharedProject,
+        composeFileArgs,
+        cwd: slotDir,
+        exec: (args, opts) => execFileAsync("docker", args, { ...opts, maxBuffer: EXEC_MAX_BUFFER }),
+        timeout: COMPOSE_QUERY_TIMEOUT,
+        upTimeout: COMPOSE_UP_TIMEOUT,
+        readyTimeout: sharedReadyTimeout,
+        intervalMs: HEALTH_CHECK_INTERVAL_MS,
+        stableMs: HEALTH_STABLE_WINDOW_MS,
+        sleep,
+        log,
+      });
+      for (const outcome of outcomes) {
+        log(describeSharedOutcome(outcome));
+        if (outcome.result === "held") {
+          (ctx.unfinished ??= []).push(
+            `shared service ${outcome.service} still runs its old definition (${outcome.reason}) — apply it with: ` +
+              `cd ${slotDir} && docker compose ${composeFileArgs.join(" ")} -p ${sharedProject} up -d --no-deps ${outcome.service}`,
+          );
+        }
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      log(`[deploy] ${message}`);
+      if (err instanceof SharedRecreateError) await restoreSharedDefinition(err.service);
+      await restoreOldSlot("a shared service failing after recreate");
+      throw new Error(message);
+    }
+  };
+
+  // Best effort: the old slot's compose holds the definition the service ran.
+  const restoreSharedDefinition = async (service: string) => {
+    if (!oldSlotDir) return;
+    try {
+      await execFileAsync(
         "docker",
         [
           "compose",
-          "--dry-run",
-          ...composeFileArgs,
+          ...(await getOldComposeFileArgs()),
           "-p", sharedProject,
           "up", "-d",
           "--no-deps",
-          ...sharedNames,
+          "--pull", "never",
+          service,
         ],
-        { cwd: slotDir, timeout: COMPOSE_QUERY_TIMEOUT, maxBuffer: EXEC_MAX_BUFFER }
+        { cwd: oldSlotDir, timeout: COMPOSE_UP_TIMEOUT, maxBuffer: EXEC_MAX_BUFFER }
       );
-      const drifted = driftedFromDryRun(
-        `${stdout}\n${stderr}`,
-        sharedContainerNames(shared, sharedProject),
-      );
-      if (drifted.length > 0) {
-        log(
-          `[deploy] ${drifted.join(", ")} still ${drifted.length === 1 ? "runs" : "run"} an older definition — a deploy never recreates a shared service, so recreate ${drifted.length === 1 ? "it" : "them"} to apply the change`,
-        );
-      }
-    } catch {
-      // Nothing to report on a compose without --dry-run.
+      log(`[deploy] Put ${service} back on the ${activeSlot} slot's definition`);
+    } catch (err) {
+      log(`[deploy] Warning: could not put ${service} back on its previous definition — ${err instanceof Error ? err.message : err}`);
     }
   };
 
   // Step 6b2: Bring up the shared services. --no-recreate means an already
   // running database is left exactly as it is; only a missing one is created.
+  // A changed definition is then recreated or held by reconcileShared.
   // Runs before the new slot so anything depending on it can connect.
   if (sharedNames.length > 0) {
     log(`[deploy] Shared services (not rotated): ${sharedNames.join(", ")}`);
@@ -708,7 +745,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
       throw new Error(`Shared services failed to start: ${message}`);
     }
 
-    await reportSharedDrift();
+    await reconcileShared();
   }
 
   // Step 6c: Pre-create and chown bind-mount targets to each service's non-root

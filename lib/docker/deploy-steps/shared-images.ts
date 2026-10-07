@@ -48,17 +48,3 @@ export function sharedContainerNames(
   );
 }
 
-/**
- * Services a `--dry-run up` says it would replace, meaning the running
- * container no longer matches the compose file. Compose prints `Recreate` for
- * those and `Creating` for one that does not exist yet.
- */
-export function driftedFromDryRun(output: string, containers: Map<string, string>): string[] {
-  const drifted: string[] = [];
-  for (const line of output.split(/\r?\n/)) {
-    const container = /^\s*Container\s+(\S+)\s+Recreate\s*$/.exec(line)?.[1];
-    const service = container ? containers.get(container) : undefined;
-    if (service && !drifted.includes(service)) drifted.push(service);
-  }
-  return drifted;
-}
