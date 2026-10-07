@@ -149,6 +149,11 @@ export const backups = pgTable("backup", {
   // only on Vardo's own database dump; null everywhere else. Restore refuses
   // when it does not match the running key.
   keyFingerprint: text("key_fingerprint"),
+  // The archive's data key, wrapped by the master key (base64). The header
+  // holds the same copy. Null for a plaintext archive and once pruned.
+  archiveKey: text("archive_key"),
+  // Fingerprint of the key that wrapped archiveKey.
+  archiveKeyFingerprint: text("archive_key_fingerprint"),
   // Literal paths this archive left out, relative to the volume root. Restore
   // carries them over from the live copy instead of deleting them. Recorded per
   // archive, never re-derived: a pattern dropped afterwards would leave the data

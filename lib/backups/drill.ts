@@ -232,7 +232,7 @@ export async function runRestoreDrill(backupId: string): Promise<DrillResult> {
   let archivePath: string | null = null;
   try {
     logFn(`Downloading ${backup.storagePath}`);
-    archivePath = await downloadBackupToTemp(backupId);
+    archivePath = await downloadBackupToTemp(backupId, logFn);
 
     const verdict =
       strategy === "dump"

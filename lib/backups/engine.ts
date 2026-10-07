@@ -14,6 +14,12 @@ import { createGzip, createGunzip } from "zlib";
 import { mkdir, readFile, rename, rm, stat, writeFile } from "fs/promises";
 import { resolve, join } from "path";
 import { ArchiveMissingError, type BackupStorage } from "./storage-port";
+import {
+  decryptArchiveFile,
+  encryptArchiveFile,
+  isEncryptedArchiveFile,
+  type ArchiveKey,
+} from "./archive-crypto";
 import { createBackupStorage } from "./storage-factory";
 import { assertSafeName } from "@/lib/docker/validate";
 import { isUncapturedSource, pausedDumpReason, uncapturedReason } from "./coverage";
@@ -188,6 +194,63 @@ async function verifyArchive(
   return info.size;
 }
 
+/**
+ * Encrypt a verified archive and upload it. Uploads plaintext only when no
+ * master key is configured.
+ */
+async function uploadArchive(
+  archivePath: string,
+  storageKey: string,
+  storage: BackupStorage,
+  logFn: (msg: string) => void,
+): Promise<{ sizeBytes: number; archiveKey: ArchiveKey | null }> {
+  const masterKey = process.env.ENCRYPTION_MASTER_KEY;
+  let uploadPath = archivePath;
+  let archiveKey: ArchiveKey | null = null;
+  if (masterKey) {
+    uploadPath = `${archivePath}.enc`;
+    archiveKey = await encryptArchiveFile(archivePath, uploadPath, masterKey);
+    logFn(`Encrypted under master key ${archiveKey.keyFingerprint}`);
+  } else {
+    logFn("WARNING: ENCRYPTION_MASTER_KEY is not set — uploading the archive unencrypted");
+  }
+
+  logFn(`Uploading to ${storageKey}`);
+  const { sizeBytes } = await storage.upload(storageKey, uploadPath);
+  logFn(`Upload complete (${sizeBytes} bytes)`);
+  return { sizeBytes, archiveKey };
+}
+
+/**
+ * Download an archive into `destPath`, decrypted. A plaintext archive passes
+ * through, unless the row records it as encrypted.
+ */
+async function fetchArchive(
+  storage: BackupStorage,
+  backup: { storagePath: string; archiveKey: string | null },
+  destPath: string,
+  logFn: (msg: string) => void = () => {},
+): Promise<{ encrypted: boolean }> {
+  const sealedPath = `${destPath}.download`;
+  try {
+    await storage.download(backup.storagePath, sealedPath);
+
+    if (!backup.archiveKey && !(await isEncryptedArchiveFile(sealedPath))) {
+      await rename(sealedPath, destPath);
+      logFn("Archive is unencrypted");
+      return { encrypted: false };
+    }
+
+    await decryptArchiveFile(sealedPath, destPath, process.env.ENCRYPTION_MASTER_KEY, {
+      requireEncrypted: !!backup.archiveKey,
+    });
+    logFn("Archive decrypted and authenticated");
+    return { encrypted: true };
+  } finally {
+    await rm(sealedPath, { force: true }).catch(() => {});
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Core: backup strategies
 // ---------------------------------------------------------------------------
@@ -246,7 +309,7 @@ async function backupVolumeTar(
   storage: BackupStorage,
   logFn: (msg: string) => void,
   excludePatterns: string[] = [],
-): Promise<{ sizeBytes: number; checksum: string; excludedPaths: string[] }> {
+): Promise<{ sizeBytes: number; checksum: string; excludedPaths: string[]; archiveKey: ArchiveKey | null }> {
   const tmpDir = join(BACKUPS_DIR, `.tmp-${nanoid(8)}`);
   await ensureDir(tmpDir);
   const archiveFile = "volume.tar.gz";
@@ -279,11 +342,8 @@ async function backupVolumeTar(
     const checksum = await checksumFile(archivePath);
     logFn(`Checksum: sha256:${checksum.slice(0, 16)}...`);
 
-    logFn(`Uploading to ${storageKey}`);
-    const { sizeBytes } = await storage.upload(storageKey, archivePath);
-
-    logFn(`Upload complete (${sizeBytes} bytes)`);
-    return { sizeBytes, checksum, excludedPaths };
+    const { sizeBytes, archiveKey } = await uploadArchive(archivePath, storageKey, storage, logFn);
+    return { sizeBytes, checksum, excludedPaths, archiveKey };
   } finally {
     try {
       await rm(tmpDir, { recursive: true, force: true });
@@ -305,7 +365,7 @@ async function backupVolumeDump(
   storageKey: string,
   storage: BackupStorage,
   logFn: (msg: string) => void,
-): Promise<{ sizeBytes: number; checksum: string }> {
+): Promise<{ sizeBytes: number; checksum: string; archiveKey: ArchiveKey | null }> {
   const tmpDir = join(BACKUPS_DIR, `.tmp-${nanoid(8)}`);
   await ensureDir(tmpDir);
   const dumpFile = join(tmpDir, "dump.gz");
@@ -318,11 +378,8 @@ async function backupVolumeDump(
     const checksum = await checksumFile(dumpFile);
     logFn(`Checksum: sha256:${checksum.slice(0, 16)}...`);
 
-    logFn(`Uploading to ${storageKey}`);
-    const { sizeBytes } = await storage.upload(storageKey, dumpFile);
-
-    logFn(`Upload complete (${sizeBytes} bytes)`);
-    return { sizeBytes, checksum };
+    const { sizeBytes, archiveKey } = await uploadArchive(dumpFile, storageKey, storage, logFn);
+    return { sizeBytes, checksum, archiveKey };
   } finally {
     try {
       await rm(tmpDir, { recursive: true, force: true });
@@ -445,6 +502,7 @@ async function backupBindTar(
   checksum: string;
   kind: BindSourceKind;
   excludedPaths: string[];
+  archiveKey: ArchiveKey | null;
 }> {
   const tmpDir = join(BACKUPS_DIR, `.tmp-${nanoid(8)}`);
   await ensureDir(tmpDir);
@@ -507,11 +565,8 @@ async function backupBindTar(
     const checksum = await checksumFile(archivePath);
     logFn(`Checksum: sha256:${checksum.slice(0, 16)}...`);
 
-    logFn(`Uploading to ${storageKey}`);
-    const { sizeBytes } = await storage.upload(storageKey, archivePath);
-
-    logFn(`Upload complete (${sizeBytes} bytes)`);
-    return { sizeBytes, checksum, kind, excludedPaths };
+    const { sizeBytes, archiveKey } = await uploadArchive(archivePath, storageKey, storage, logFn);
+    return { sizeBytes, checksum, kind, excludedPaths, archiveKey };
   } finally {
     try {
       await rm(tmpDir, { recursive: true, force: true });
@@ -881,7 +936,7 @@ export async function runBackup(
     try {
       log(`Backing up volume ${vol.name} (strategy: ${strategy})`);
 
-      let result: { sizeBytes: number; checksum: string };
+      let result: { sizeBytes: number; checksum: string; archiveKey: ArchiveKey | null };
       let resolvedSource: string | null = null;
       let sourceKind: string | null = null;
       let excludedPaths: string[] = [];
@@ -964,6 +1019,8 @@ export async function runBackup(
           sizeBytes: result.sizeBytes,
           storagePath: storageKey,
           checksum: `sha256:${result.checksum}`,
+          archiveKey: result.archiveKey?.wrappedKey ?? null,
+          archiveKeyFingerprint: result.archiveKey?.keyFingerprint ?? null,
           resolvedSource,
           sourceKind,
           excludedPaths: excludedPaths.length > 0 ? excludedPaths : null,
@@ -1277,7 +1334,7 @@ export async function pruneBackups(jobId: string): Promise<number> {
   if (pruneIds.length > 0) {
     await db
       .update(backups)
-      .set({ status: "pruned" })
+      .set({ status: "pruned", archiveKey: null })
       .where(inArray(backups.id, pruneIds));
   }
 
@@ -1512,13 +1569,19 @@ export async function restoreBackup(
 
     // 1. Download archive from storage
     log(`Downloading backup from ${backup.storagePath}`);
-    await storage.download(backup.storagePath, archivePath);
+    const { encrypted } = await fetchArchive(
+      storage,
+      { storagePath: backup.storagePath, archiveKey: backup.archiveKey },
+      archivePath,
+      log,
+    );
     log("Download complete");
 
     // 2. Validate archive integrity. A row recorded below the floor was written
     // from a source verified empty; the checksum below proves it came back intact.
+    // An encrypted archive's final-chunk tag already proves it complete.
     const wasEmptyWhenWritten =
-      backup.sizeBytes != null && backup.sizeBytes < MIN_VALID_GZIP_BYTES;
+      encrypted || (backup.sizeBytes != null && backup.sizeBytes < MIN_VALID_GZIP_BYTES);
     await verifyArchive(archivePath, "Downloaded backup", wasEmptyWhenWritten);
     if (backup.checksum) {
       const downloadChecksum = `sha256:${await checksumFile(archivePath)}`;
@@ -1728,6 +1791,9 @@ export async function getBackupDownloadUrl(
     throw new Error("Backup has no storage path");
   }
 
+  // A presigned URL would hand over ciphertext; encrypted archives stream through the server.
+  if (backup.archiveKey) return null;
+
   const storage = createBackupStorage(backup.target);
 
   if (!storage.getDownloadUrl) {
@@ -1738,11 +1804,12 @@ export async function getBackupDownloadUrl(
 }
 
 /**
- * Download a backup to a local temp file (for SSH targets or server-side streaming).
- * Returns the local path. Caller is responsible for cleanup.
+ * Download a backup to a local temp file, decrypted (for SSH targets or
+ * server-side streaming). Returns the local path. Caller is responsible for cleanup.
  */
 export async function downloadBackupToTemp(
   backupId: string,
+  logFn?: (msg: string) => void,
 ): Promise<string> {
   const backup = await db.query.backups.findFirst({
     where: eq(backups.id, backupId),
@@ -1758,7 +1825,12 @@ export async function downloadBackupToTemp(
 
   const storage = createBackupStorage(backup.target);
   try {
-    await storage.download(backup.storagePath, destPath);
+    await fetchArchive(
+      storage,
+      { storagePath: backup.storagePath, archiveKey: backup.archiveKey },
+      destPath,
+      logFn,
+    );
   } catch (err) {
     await rm(tmpDir, { recursive: true, force: true }).catch(() => {});
     throw err;

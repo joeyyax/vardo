@@ -533,6 +533,13 @@
       "when": 1791345987815,
       "tag": "0075_spicy_toxin",
       "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1791346482394,
+      "tag": "0076_quick_grim_reaper",
+      "breakpoints": true
     }
   ]
 }

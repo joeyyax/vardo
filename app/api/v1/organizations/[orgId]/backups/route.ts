@@ -86,6 +86,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       where: filterAppId ? and(scope, eq(backups.appId, filterAppId)) : scope,
       orderBy: [desc(backups.startedAt)],
       limit: 20,
+      columns: { archiveKey: false },
       with: {
         job: { columns: { id: true, name: true } },
         app: {
