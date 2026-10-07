@@ -50,6 +50,7 @@ const {
 
 vi.mock("child_process", () => ({ execFile: execFileMock }));
 vi.mock("@/lib/db", () => ({ db: dbMock }));
+vi.mock("@/lib/docker/memory-headroom", () => ({ overlapFitsNow: vi.fn(async () => true) }));
 vi.mock("@/lib/docker/restart-policy", () => restartPolicyMock);
 vi.mock("@/lib/docker/traefik-cutover", () => cutoverMock);
 vi.mock("@/lib/docker/image-updates/registry", () => ({ getRegistryCredentials }));

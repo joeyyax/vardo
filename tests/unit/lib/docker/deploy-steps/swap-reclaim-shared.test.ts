@@ -26,6 +26,7 @@ const { dbMock, execFileAsyncMock, execFileMock } = vi.hoisted(() => {
 
 vi.mock("child_process", () => ({ execFile: execFileMock }));
 vi.mock("@/lib/db", () => ({ db: dbMock }));
+vi.mock("@/lib/docker/memory-headroom", () => ({ overlapFitsNow: vi.fn(async () => true) }));
 vi.mock("@/lib/docker/restart-policy", () => ({
   demoteStandbyRestart: vi.fn().mockResolvedValue(undefined),
   restoreSlotRestart: vi.fn().mockResolvedValue(undefined),
