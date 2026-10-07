@@ -5,12 +5,27 @@
 // reserve.
 // ---------------------------------------------------------------------------
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+
+const host = vi.hoisted(() => ({
+  getSystemInfo: vi.fn(),
+  isMetricsEnabled: vi.fn(),
+  getFleetTotals: vi.fn(),
+  getAppResources: vi.fn(),
+}));
+
+vi.mock("@/lib/docker/client", () => ({ getSystemInfo: host.getSystemInfo }));
+vi.mock("@/lib/metrics/config", () => ({ isMetricsEnabled: host.isMetricsEnabled }));
+vi.mock("@/lib/metrics/fleet-totals", () => ({ getFleetTotals: host.getFleetTotals }));
+vi.mock("@/lib/metrics/resources-query", () => ({ getAppResources: host.getAppResources }));
 
 import {
+  METRICS_READ_TIMEOUT_MS,
   MIN_OVERLAP_RESERVE,
   overlapFits,
+  overlapFitsNow,
   overlapReserve,
+  readMemory,
   type MemoryReading,
 } from "@/lib/docker/memory-headroom";
 
@@ -79,5 +94,49 @@ describe("overlapFits — incomplete readings fall open", () => {
   it("overlaps when Docker did not answer for the host", () => {
     expect(overlapFits(reading({ hostTotalBytes: null })).fits).toBe(true);
     expect(overlapFits(reading({ hostTotalBytes: 0 })).fits).toBe(true);
+  });
+});
+
+describe("overlapFitsNow — an unreachable metrics store", () => {
+  const never = () => new Promise<never>(() => {});
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    host.getSystemInfo.mockReset().mockResolvedValue({ memoryTotal: HOST_TOTAL });
+    host.isMetricsEnabled.mockReset().mockReturnValue(true);
+    host.getFleetTotals.mockReset().mockImplementation(never);
+    host.getAppResources.mockReset().mockImplementation(never);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("overlaps once the bound passes instead of waiting on Redis", async () => {
+    let verdict: boolean | undefined;
+    void overlapFitsNow("org", "app", () => {}).then((v) => (verdict = v));
+
+    await vi.advanceTimersByTimeAsync(METRICS_READ_TIMEOUT_MS);
+    expect(verdict).toBe(true);
+  });
+
+  it("leaves the store alone when metrics are off", async () => {
+    host.isMetricsEnabled.mockReturnValue(false);
+    host.getAppResources.mockResolvedValue(null);
+
+    expect(await readMemory("org", "app")).toMatchObject({ fleetUsedBytes: null });
+    expect(host.getFleetTotals).not.toHaveBeenCalled();
+  });
+
+  it("reads nothing else when Docker did not answer for the host", async () => {
+    host.getSystemInfo.mockRejectedValue(new Error("socket"));
+
+    expect(await readMemory("org", "app")).toEqual({
+      hostTotalBytes: null,
+      fleetUsedBytes: null,
+      appFootprintBytes: null,
+    });
+    expect(host.getFleetTotals).not.toHaveBeenCalled();
+    expect(host.getAppResources).not.toHaveBeenCalled();
   });
 });

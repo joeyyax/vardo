@@ -55,6 +55,23 @@ export function overlapFits(reading: MemoryReading): OverlapVerdict {
 // Reading the host
 // ---------------------------------------------------------------------------
 
+/** How long a deploy waits on the metrics store before overlapping anyway. */
+export const METRICS_READ_TIMEOUT_MS = 1000;
+
+/** Null once the bound passes. */
+async function bounded<T>(read: Promise<T | null>): Promise<T | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), METRICS_READ_TIMEOUT_MS);
+    timer.unref?.();
+  });
+  try {
+    return await Promise.race([read, timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function readHostTotal(): Promise<number | null> {
   try {
     const { getSystemInfo } = await import("./client");
@@ -67,6 +84,8 @@ async function readHostTotal(): Promise<number | null> {
 
 async function readFleetUsed(): Promise<number | null> {
   try {
+    const { isMetricsEnabled } = await import("@/lib/metrics/config");
+    if (!isMetricsEnabled()) return null;
     const { getFleetTotals } = await import("@/lib/metrics/fleet-totals");
     const totals = await getFleetTotals();
     return totals?.memoryBytes ?? null;
@@ -100,15 +119,22 @@ async function readAppFootprint(
   }
 }
 
-/** Host total, fleet usage and this app's footprint, each best-effort. */
+/**
+ * Host total, fleet usage and this app's footprint, each best-effort. Without
+ * a host total the verdict falls open, so the metrics store goes unread.
+ */
 export async function readMemory(
   organizationId: string,
   appId: string,
 ): Promise<MemoryReading> {
-  const [hostTotalBytes, fleetUsedBytes, appFootprintBytes] = await Promise.all([
-    readHostTotal(),
-    readFleetUsed(),
-    readAppFootprint(organizationId, appId),
+  const hostTotalBytes = await readHostTotal();
+  if (hostTotalBytes === null) {
+    return { hostTotalBytes, fleetUsedBytes: null, appFootprintBytes: null };
+  }
+
+  const [fleetUsedBytes, appFootprintBytes] = await Promise.all([
+    bounded(readFleetUsed()),
+    bounded(readAppFootprint(organizationId, appId)),
   ]);
   return { hostTotalBytes, fleetUsedBytes, appFootprintBytes };
 }
