@@ -526,6 +526,13 @@
       "when": 1791342041458,
       "tag": "0074_panoramic_northstar",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1791345987815,
+      "tag": "0075_spicy_toxin",
+      "breakpoints": true
     }
   ]
 }

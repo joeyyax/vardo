@@ -3,14 +3,12 @@ import { z } from "zod";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { invitations, user } from "@/lib/db/schema";
-import { can } from "@/lib/auth/permissions";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
-import crypto from "crypto";
 import { sendEmail, emailDelivery } from "@/lib/email/send";
 import { InviteEmail } from "@/lib/email/templates/invite";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
-import { serializeInvitation } from "@/lib/invitations/serialize";
+import { generateInvitationToken, invitationUrl } from "@/lib/invitations/token";
 import { requirePlugin } from "@/lib/api/require-plugin";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
@@ -40,14 +38,12 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
         eq(invitations.targetId, orgId),
         eq(invitations.scope, "org"),
       ),
-      // The token is the invite. Selected explicitly so it is never serialized
-      // to a member, who could otherwise accept an admin invitation.
+      // Selected explicitly so the token hash is never serialized.
       columns: {
         id: true,
         email: true,
         role: true,
         status: true,
-        token: true,
         createdAt: true,
         expiresAt: true,
       },
@@ -59,14 +55,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       orderBy: (t, { desc }) => [desc(t.createdAt)],
     });
 
-    const canManage = can(org.membership.role, "org.members.manage");
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-
-    const invitationList = pending.map((inv) =>
-      serializeInvitation(inv, { canManage, appUrl }),
-    );
-
-    return NextResponse.json({ invitations: invitationList });
+    return NextResponse.json({ invitations: pending });
   } catch (error) {
     return handleRouteError(error, "Error fetching invitations");
   }
@@ -105,7 +94,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       columns: { name: true },
     });
 
-    const token = crypto.randomBytes(32).toString("hex");
+    const token = generateInvitationToken();
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
 
     // Duplicate check and insert are wrapped in a transaction to prevent races
@@ -131,7 +120,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
           scope,
           targetId,
           role,
-          token,
+          tokenHash: token.hash,
           invitedBy: org.session.user.id,
           expiresAt,
         })
@@ -147,8 +136,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-    const inviteUrl = `${appUrl}/invite/${token}`;
+    const inviteUrl = invitationUrl(token.raw);
 
     const sent = await sendEmail({
       to: normalizedEmail,
@@ -161,8 +149,9 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       }),
     });
 
+    const { tokenHash: _hash, ...created } = invitation;
     return NextResponse.json(
-      { invitation: { ...invitation, inviteUrl }, email: emailDelivery(sent) },
+      { invitation: { ...created, inviteUrl }, email: emailDelivery(sent) },
       { status: 201 },
     );
   } catch (error) {

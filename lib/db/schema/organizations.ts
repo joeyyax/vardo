@@ -102,7 +102,7 @@ export const invitations = pgTable(
     targetId: text("target_id"), // orgId for org scope, projectId for project scope, null for platform
     role: text("role").notNull(), // "owner", "admin", "member"
     status: invitationStatusEnum("status").notNull().default("pending"),
-    token: text("token").notNull().unique(),
+    tokenHash: text("token_hash").notNull().unique(), // SHA-256 of the token in the invite link
     invitedBy: text("invited_by").references(() => user.id, { onDelete: "set null" }),
     expiresAt: timestamp("expires_at").notNull(),
     acceptedAt: timestamp("accepted_at"),

@@ -30,4 +30,31 @@ describe("copyToClipboard", () => {
     expect(await copyToClipboard("abc")).toBe(false);
     expect(error).toHaveBeenCalledTimes(1);
   });
+
+  it("writes pending text through ClipboardItem", async () => {
+    const write = vi.fn(async (items: { items: Record<string, Promise<Blob>> }[]) => {
+      expect(await (await items[0].items["text/plain"]).text()).toBe("later");
+    });
+    vi.stubGlobal("ClipboardItem", class { constructor(public items: Record<string, Promise<Blob>>) {} });
+    vi.stubGlobal("navigator", { clipboard: { write, writeText: vi.fn() } });
+    expect(await copyToClipboard(Promise.resolve("later"))).toBe(true);
+    expect(write).toHaveBeenCalledOnce();
+  });
+
+  it("falls back to writeText for pending text without ClipboardItem", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("ClipboardItem", undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    expect(await copyToClipboard(Promise.resolve("later"))).toBe(true);
+    expect(writeText).toHaveBeenCalledWith("later");
+  });
+
+  it("leaves a rejected text promise to the caller", async () => {
+    vi.stubGlobal("ClipboardItem", undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText: vi.fn() } });
+    const text = Promise.reject(new Error("no link"));
+    text.catch(() => {});
+    expect(await copyToClipboard(text)).toBe(false);
+    expect(error).not.toHaveBeenCalled();
+  });
 });

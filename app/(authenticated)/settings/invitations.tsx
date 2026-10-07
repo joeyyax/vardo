@@ -37,8 +37,6 @@ type Invitation = {
   createdAt: string;
   expiresAt: string;
   inviter: { id: string; name: string | null } | null;
-  /** Null for non-admins and for invitations that can no longer be used. */
-  inviteUrl?: string | null;
 };
 
 type InvitationsPanelProps = {
@@ -85,10 +83,31 @@ export function InvitationsPanel({
 
   const canManage = can(currentRole, "org.members.manage");
 
-  async function copyInviteLink(invitationId: string, url: string) {
-    if (!(await copyToClipboard(url))) return;
-    setCopiedId(invitationId);
-    setTimeout(() => setCopiedId((id) => (id === invitationId ? null : id)), 2000);
+  // Only the token's hash is stored, so copying issues a new link and retires the old one.
+  async function copyInviteLink(invitationId: string) {
+    setPendingAction(invitationId);
+    const link = fetch(`/api/v1/organizations/${orgId}/invitations/${invitationId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ send: false }),
+    }).then(async (res) => {
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to create an invite link");
+      return data.inviteUrl as string;
+    });
+
+    try {
+      const copied = await copyToClipboard(link);
+      await link;
+      if (!copied) return;
+      toast.success("New invite link copied", { description: "Earlier links for this invitation no longer work." });
+      setCopiedId(invitationId);
+      setTimeout(() => setCopiedId((id) => (id === invitationId ? null : id)), 2000);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to create an invite link");
+    } finally {
+      setPendingAction(null);
+    }
   }
 
   async function handleInvite() {
@@ -284,12 +303,13 @@ export function InvitationsPanel({
                   </div>
 
                   <div className="flex items-center gap-3 shrink-0">
-                    {isPending && invitation.inviteUrl && (
+                    {canManage && isPending && (
                       <Button
                         variant="outline"
                         size="sm"
                         className="h-7 gap-1.5 text-xs"
-                        onClick={() => copyInviteLink(invitation.id, invitation.inviteUrl!)}
+                        disabled={pendingAction === invitation.id}
+                        onClick={() => copyInviteLink(invitation.id)}
                       >
                         {copiedId === invitation.id ? (
                           <><Check className="size-3.5" />Copied</>

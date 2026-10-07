@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { invitations, organizations } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
+import { hashInvitationToken } from "@/lib/invitations/token";
 import { getSession } from "@/lib/auth/session";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { InviteAcceptClient } from "./invite-accept-client";
@@ -16,7 +17,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { token } = await params;
 
   const invitation = await db.query.invitations.findFirst({
-    where: eq(invitations.token, token),
+    where: eq(invitations.tokenHash, hashInvitationToken(token)),
     columns: { targetId: true, scope: true },
   });
 
@@ -56,7 +57,7 @@ export default async function InvitePage({ params }: Props) {
   const { token } = await params;
 
   const invitation = await db.query.invitations.findFirst({
-    where: eq(invitations.token, token),
+    where: eq(invitations.tokenHash, hashInvitationToken(token)),
     with: {
       inviter: {
         columns: { name: true },

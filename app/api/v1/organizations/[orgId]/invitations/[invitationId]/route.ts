@@ -7,6 +7,7 @@ import { sendEmail, emailDelivery } from "@/lib/email/send";
 import { InviteEmail } from "@/lib/email/templates/invite";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { requirePlugin } from "@/lib/api/require-plugin";
+import { generateInvitationToken, invitationUrl } from "@/lib/invitations/token";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
@@ -61,9 +62,9 @@ async function handleDelete(
 }
 
 // PATCH /api/v1/organizations/[orgId]/invitations/[invitationId]
-// Resend invitation email
+// Issue a new link, replacing the old one, and email it unless `send` is false
 async function handlePatch(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: RouteParams
 ) {
   try {
@@ -92,13 +93,30 @@ async function handlePatch(
       );
     }
 
+    const body = await request.json().catch(() => ({}));
+    const send = (body as { send?: unknown } | null)?.send !== false;
+
+    // Only the hash is stored, so a link can't be shown again; issue a new one.
+    const token = generateInvitationToken();
+    const [rotated] = await db
+      .update(invitations)
+      .set({ tokenHash: token.hash })
+      .where(and(eq(invitations.id, invitation.id), eq(invitations.status, "pending")))
+      .returning({ id: invitations.id });
+    if (!rotated) {
+      return NextResponse.json(
+        { error: "Only pending invitations can be resent" },
+        { status: 400 }
+      );
+    }
+    const inviteUrl = invitationUrl(token.raw);
+
+    if (!send) return NextResponse.json({ success: true, inviteUrl });
+
     const inviter = await db.query.user.findFirst({
       where: eq(user.id, org.session.user.id),
       columns: { name: true },
     });
-
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-    const inviteUrl = `${appUrl}/invite/${invitation.token}`;
 
     const sent = await sendEmail({
       to: invitation.email,

@@ -6,6 +6,7 @@ import { invitations, memberships } from "@/lib/db/schema";
 import { getSession } from "@/lib/auth/session";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { eq, and } from "drizzle-orm";
+import { hashInvitationToken } from "@/lib/invitations/token";
 import { nanoid } from "nanoid";
 
 export async function acceptInvitation(token: string): Promise<{ error?: string }> {
@@ -20,7 +21,7 @@ export async function acceptInvitation(token: string): Promise<{ error?: string 
   }
 
   const invitation = await db.query.invitations.findFirst({
-    where: eq(invitations.token, token),
+    where: eq(invitations.tokenHash, hashInvitationToken(token)),
   });
 
   if (!invitation) {

@@ -6,6 +6,7 @@ import { invitations, memberships } from "@/lib/db/schema";
 import { getSession } from "@/lib/auth/session";
 import { requirePlugin } from "@/lib/api/require-plugin";
 import { eq, and } from "drizzle-orm";
+import { hashInvitationToken } from "@/lib/invitations/token";
 import { nanoid } from "nanoid";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
@@ -30,7 +31,7 @@ async function handlePost(request: NextRequest) {
     const { token } = parsed.data;
 
     const invitation = await db.query.invitations.findFirst({
-      where: eq(invitations.token, token),
+      where: eq(invitations.tokenHash, hashInvitationToken(token)),
     });
 
     if (!invitation) {
