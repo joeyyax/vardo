@@ -326,6 +326,7 @@ export function BackupPage({
 
       {/* Forms */}
       <TargetForm
+        key={editingTargetId ?? "new"}
         open={targetFormOpen || !!editingTargetId}
         onOpenChange={(open) => {
           if (!open) {
