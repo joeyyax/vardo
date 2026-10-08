@@ -6,6 +6,8 @@ import { formatRelativeTime, formatSpan } from "@/lib/ui/relative-time";
 import { statusDotColor } from "@/lib/ui/status-colors";
 import { conditionLabel, conditionTone } from "@/lib/ui/conditions";
 import type { AppCondition } from "@/lib/docker/conditions";
+import { cardVariants } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 
 export type AppRowCardApp = {
   displayName: string;
@@ -101,7 +103,7 @@ export function AppRowCard({
 
       {/* The row's note comes first so the card can't contradict it. */}
       {(conditions.length > 0 || app.needsRedeploy || restarts) && (
-        <ul className="space-y-1 rounded-md bg-background-deep px-2 py-1.5">
+        <ul className={cn(cardVariants({ variant: "inset" }), "space-y-1 rounded-md px-2 py-1.5")}>
           {conditions.map((c) => (
             <li key={c.kind} className="flex items-baseline justify-between gap-3">
               <span className={`shrink-0 font-medium ${conditionTone(c.severity)}`}>

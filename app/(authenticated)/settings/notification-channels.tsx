@@ -214,7 +214,7 @@ export function NotificationChannelsEditor({ orgId }: { orgId: string }) {
         {!showForm && <Button size="sm" onClick={() => setShowForm(true)}><Plus className="h-4 w-4 mr-1" />Add channel</Button>}
       </div>
       {showForm && (
-        <div className="rounded-lg bg-background-deep p-4 space-y-4">
+        <Card variant="inset" className="p-4 space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2"><Label>Name</Label><Input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Team alerts" /></div>
             <div className="space-y-2"><Label>Type</Label><Select value={type} onValueChange={v => setType(v as ChannelType)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="email">Email</SelectItem><SelectItem value="webhook">Webhook</SelectItem><SelectItem value="slack">Slack</SelectItem></SelectContent></Select></div>
@@ -223,7 +223,7 @@ export function NotificationChannelsEditor({ orgId }: { orgId: string }) {
           {type === "webhook" && <div className="space-y-4"><div className="space-y-2"><Label>URL</Label><Input value={webhookUrl} onChange={e => setWebhookUrl(e.target.value)} placeholder="https://example.com/webhook" /></div><div className="space-y-2"><Label>Secret <span className="text-muted-foreground">(optional)</span></Label><Input value={webhookSecret} onChange={e => setWebhookSecret(e.target.value)} placeholder="HMAC signing secret" type="password" /></div></div>}
           {type === "slack" && <div className="space-y-2"><Label>Slack webhook URL</Label><Input value={slackUrl} onChange={e => setSlackUrl(e.target.value)} placeholder="https://hooks.slack.com/services/..." /></div>}
           <div className="flex gap-2"><Button size="sm" onClick={handleCreate} disabled={saving || !name}>{saving && <Loader2 className="h-4 w-4 animate-spin mr-1" />}Create</Button><Button size="sm" variant="ghost" onClick={reset}>Cancel</Button></div>
-        </div>
+        </Card>
       )}
       {channels.length === 0 && !showForm ? (
         <EmptyState
@@ -239,7 +239,7 @@ export function NotificationChannelsEditor({ orgId }: { orgId: string }) {
         />
       ) : (
         <div className="space-y-2">{channels.map(ch => (
-          <div key={ch.id} className="rounded-lg bg-background-deep p-3 space-y-2">
+          <Card variant="inset" key={ch.id} className="p-3 space-y-2">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3 min-w-0"><Switch checked={ch.enabled} onCheckedChange={checked => handleToggle(ch.id, checked)} /><div className="min-w-0"><div className="flex items-center gap-2"><span className="text-sm font-medium truncate">{ch.name}</span><span className="text-xs bg-muted px-1.5 py-0.5 rounded">{ch.type}</span></div></div></div>
               <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => handleDelete(ch.id)}><Trash2 className="h-4 w-4" /></Button>
@@ -248,7 +248,7 @@ export function NotificationChannelsEditor({ orgId }: { orgId: string }) {
               subscribedEvents={ch.subscribedEvents ?? []}
               onChange={(events) => handleUpdateEvents(ch.id, events)}
             />
-          </div>
+          </Card>
         ))}</div>
       )}
       </CardContent>

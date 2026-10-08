@@ -8,6 +8,7 @@ import { ComposeGroupCard } from "./compose-group-card";
 import { ImportDialog } from "./import-dialog";
 import { GroupImportDialog } from "./group-import-dialog";
 import type { DiscoveryResponse, DiscoveredContainer } from "@/lib/docker/discover";
+import { Card } from "@/components/ui/card";
 
 type Project = { id: string; name: string; displayName: string };
 
@@ -113,9 +114,9 @@ export function DiscoverView({ orgId, projects, defaultProjectId }: DiscoverView
       </div>
 
       {error && (
-        <div role="alert" className="surface-danger rounded-lg border p-4 text-sm text-destructive">
+        <Card variant="plain" role="alert" className="surface-danger border p-4 text-sm text-destructive">
           {error}
-        </div>
+        </Card>
       )}
 
       {!loading && !error && data && (

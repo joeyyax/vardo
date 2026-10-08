@@ -344,7 +344,7 @@ export function AppNetworking({
         </div>
 
         {domainOpen && (
-          <div className="flex items-end gap-3 rounded-lg bg-background-deep p-4">
+          <Card variant="inset" className="flex items-end gap-3 p-4">
             <div className="grid gap-1.5 flex-1">
               <label className="text-xs text-muted-foreground">Domain</label>
               <Input
@@ -412,7 +412,7 @@ export function AppNetworking({
             <Button size="sm" variant="ghost" onClick={() => setDomainOpen(false)}>
               Cancel
             </Button>
-          </div>
+          </Card>
         )}
 
         {domains.length === 0 && !domainOpen ? (
@@ -432,7 +432,7 @@ export function AppNetworking({
 
                 if (isEditing) {
                   return (
-                    <div key={domain.id} className="flex items-end gap-3 rounded-lg bg-background-deep p-4">
+                    <Card variant="inset" key={domain.id} className="flex items-end gap-3 p-4">
                       <div className="grid gap-1.5 flex-1">
                         <label className="text-xs text-muted-foreground">Domain</label>
                         <Input
@@ -499,7 +499,7 @@ export function AppNetworking({
                       <Button size="sm" variant="ghost" onClick={() => setEditingDomainId(null)}>
                         Cancel
                       </Button>
-                    </div>
+                    </Card>
                   );
                 }
 
@@ -713,7 +713,7 @@ export function AppNetworking({
                     <div className="space-y-3">
                       <h3 className="type-h4">Required DNS record</h3>
                       <p className="text-xs text-muted-foreground">Use one of the following options:</p>
-                      <div className="rounded-lg bg-background-deep divide-y">
+                      <Card variant="inset" className="divide-y">
                         <div className="grid grid-cols-3 gap-4 px-4 py-2 text-xs text-muted-foreground">
                           <span>Type</span>
                           <span>Name</span>
@@ -753,7 +753,7 @@ export function AppNetworking({
                             </div>
                           </div>
                         )}
-                      </div>
+                      </Card>
                     </div>
 
                     <div className="space-y-2">

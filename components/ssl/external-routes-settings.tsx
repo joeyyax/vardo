@@ -498,7 +498,7 @@ function RouteFormFields({ form, onChange, error }: RouteFormFieldsProps) {
         </p>
       </div>
 
-      <div className="flex items-center justify-between rounded-lg bg-background-deep p-3">
+      <Card variant="inset" className="flex items-center justify-between p-3">
         <div className="space-y-0.5">
           <Label htmlFor="tls" className="text-sm font-normal">
             Enable TLS
@@ -513,10 +513,10 @@ function RouteFormFields({ form, onChange, error }: RouteFormFieldsProps) {
           onCheckedChange={(checked) => onChange((prev) => ({ ...prev, tls: checked }))}
           aria-label={`${form.tls ? "Disable" : "Enable"} TLS`}
         />
-      </div>
+      </Card>
 
       {!isRedirect && (
-        <div className="flex items-center justify-between rounded-lg bg-background-deep p-3">
+        <Card variant="inset" className="flex items-center justify-between p-3">
           <div className="space-y-0.5">
             <Label htmlFor="insecureSkipVerify" className="text-sm font-normal">
               Skip TLS verification
@@ -533,11 +533,11 @@ function RouteFormFields({ form, onChange, error }: RouteFormFieldsProps) {
             }
             aria-label={`${form.insecureSkipVerify ? "Disable" : "Enable"} TLS skip verify`}
           />
-        </div>
+        </Card>
       )}
 
       {isRedirect && (
-        <div className="flex items-center justify-between rounded-lg bg-background-deep p-3">
+        <Card variant="inset" className="flex items-center justify-between p-3">
           <div className="space-y-0.5">
             <Label htmlFor="redirectPermanent" className="text-sm font-normal">
               Permanent redirect
@@ -554,7 +554,7 @@ function RouteFormFields({ form, onChange, error }: RouteFormFieldsProps) {
             }
             aria-label={`${form.redirectPermanent ? "Use temporary" : "Use permanent"} redirect`}
           />
-        </div>
+        </Card>
       )}
 
       {error && (

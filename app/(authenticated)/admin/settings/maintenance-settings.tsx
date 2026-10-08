@@ -3,7 +3,8 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, cardVariants } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -760,7 +761,7 @@ export function MaintenanceSettings() {
                   — an upper bound, since images share layers.
                 </span>
               </p>
-              <ul className="divide-y rounded-md bg-background-deep">
+              <ul className={cn(cardVariants({ variant: "inset" }), "divide-y rounded-md")}>
                 {images.plan.candidates.map((c) => (
                   <li key={c.appId} className="flex items-start justify-between gap-4 px-3 py-2">
                     <div className="min-w-0 space-y-0.5">
@@ -804,7 +805,7 @@ export function MaintenanceSettings() {
           )}
 
           {images?.slotPlan && images.slotPlan.candidates.length > 0 && (
-            <div className="space-y-2 rounded-md bg-background-deep p-3">
+            <Card variant="inset" className="space-y-2 rounded-md p-3">
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
                   <p className="type-h4">Previous deploys</p>
@@ -844,7 +845,7 @@ export function MaintenanceSettings() {
                   </li>
                 ))}
               </ul>
-            </div>
+            </Card>
           )}
 
           {images?.lastRun && (
@@ -972,7 +973,7 @@ export function MaintenanceSettings() {
                   <p id="owner-gaps" className="type-label text-muted-foreground">
                     Without an owner
                   </p>
-                  <ul aria-labelledby="owner-gaps" className="divide-y rounded-md bg-background-deep">
+                  <ul aria-labelledby="owner-gaps" className={cn(cardVariants({ variant: "inset" }), "divide-y rounded-md")}>
                     {owners.gaps.map((g) => (
                       <li key={g.dir} className="px-3 py-2 space-y-0.5">
                         <p className="text-sm font-medium">{g.appName}</p>

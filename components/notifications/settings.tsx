@@ -149,9 +149,9 @@ export function EmailSettings() {
           )}
 
           {!allowSmtp && provider === "smtp" && (
-            <div className="surface-danger rounded-lg border px-3 py-2 text-xs text-destructive">
+            <Card variant="plain" className="surface-danger border px-3 py-2 text-xs text-destructive">
               SMTP is restricted on this instance. Switch to Resend, Postmark or Mailpace to continue sending email.
-            </div>
+            </Card>
           )}
 
           <div className="max-w-md space-y-2">

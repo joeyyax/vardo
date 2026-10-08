@@ -347,7 +347,7 @@ export function TwoFactorAuth() {
 
         {/* TOTP Setup */}
         {totpUri && (
-          <div className="mt-4 space-y-3 rounded-lg bg-background-deep p-4">
+          <Card variant="inset" className="mt-4 space-y-3 p-4">
             <p className="text-sm text-muted-foreground">
               Scan this QR code with your authenticator app, then enter the code
               below.
@@ -397,12 +397,12 @@ export function TwoFactorAuth() {
                 </div>
               </div>
             )}
-          </div>
+          </Card>
         )}
 
         {/* Disable confirmation */}
         {showDisable && (
-          <div className="mt-4 space-y-3 rounded-lg bg-background-deep p-4">
+          <Card variant="inset" className="mt-4 space-y-3 p-4">
             <p className="text-sm text-muted-foreground">
               Enter your password to disable two-factor authentication.
             </p>
@@ -429,7 +429,7 @@ export function TwoFactorAuth() {
                 )}
               </Button>
             </div>
-          </div>
+          </Card>
         )}
       </CardContent>
     </Card>
@@ -547,9 +547,10 @@ export function PasskeyManager() {
         ) : (
           <div className="space-y-2">
             {passkeys.map((pk) => (
-              <div
+              <Card
+                variant="inset"
                 key={pk.id}
-                className="flex items-center justify-between rounded-lg bg-background-deep p-3"
+                className="flex items-center justify-between p-3"
               >
                 <div className="flex items-center gap-3 min-w-0">
                   <KeyRound className="size-4 shrink-0 text-muted-foreground" />
@@ -576,7 +577,7 @@ export function PasskeyManager() {
                     <Trash2 className="size-4 text-destructive" />
                   )}
                 </Button>
-              </div>
+              </Card>
             ))}
           </div>
         )}
@@ -664,9 +665,10 @@ export function LinkedAccounts() {
               const provider = PROVIDER_LABELS[acct.providerId];
               const Icon = provider?.icon ?? Github;
               return (
-                <div
+                <Card
+                  variant="inset"
                   key={acct.id}
-                  className="flex items-center justify-between rounded-lg bg-background-deep p-3"
+                  className="flex items-center justify-between p-3"
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     <Icon className="size-4 shrink-0 text-muted-foreground" />
@@ -682,7 +684,7 @@ export function LinkedAccounts() {
                   <Badge variant="secondary" className="text-xs">
                     Connected
                   </Badge>
-                </div>
+                </Card>
               );
             })}
           </div>
@@ -775,9 +777,10 @@ export function ActiveSessions() {
             {sessions.map((s) => {
               const isCurrentSession = s.token === sessionData?.session?.token;
               return (
-                <div
+                <Card
+                  variant="inset"
                   key={s.id}
-                  className="flex items-center justify-between rounded-lg bg-background-deep p-3"
+                  className="flex items-center justify-between p-3"
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     <Monitor className="size-4 shrink-0 text-muted-foreground" />
@@ -812,7 +815,7 @@ export function ActiveSessions() {
                       )}
                     </Button>
                   )}
-                </div>
+                </Card>
               );
             })}
           </div>
@@ -1084,9 +1087,10 @@ export function ApiTokens({ orgId }: { orgId: string }) {
         ) : (
           <div className="space-y-2">
             {tokens.map((token) => (
-              <div
+              <Card
+                variant="inset"
                 key={token.id}
-                className="flex items-center justify-between rounded-lg bg-background-deep p-3"
+                className="flex items-center justify-between p-3"
               >
                 <div className="min-w-0">
                   <p className="text-sm font-medium truncate">{token.name}</p>
@@ -1134,7 +1138,7 @@ export function ApiTokens({ orgId }: { orgId: string }) {
                     )}
                   </Button>
                 </div>
-              </div>
+              </Card>
             ))}
           </div>
         )}

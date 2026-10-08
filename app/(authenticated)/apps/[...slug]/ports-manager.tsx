@@ -7,6 +7,7 @@ import { toast } from "@/lib/messenger";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Card } from "@/components/ui/card";
 
 export function PortsManager({
   ports: initialPorts,
@@ -85,7 +86,7 @@ export function PortsManager({
       </div>
 
       {adding && (
-        <div className="flex items-end gap-3 rounded-lg bg-background-deep p-4">
+        <Card variant="inset" className="flex items-end gap-3 p-4">
           <div className="grid gap-1.5">
             <label htmlFor="port-container" className="text-xs text-muted-foreground">Container port</label>
             <Input
@@ -124,7 +125,7 @@ export function PortsManager({
           <Button size="sm" variant="ghost" onClick={() => setAdding(false)}>
             Cancel
           </Button>
-        </div>
+        </Card>
       )}
 
       {ports.length === 0 && !adding ? (
@@ -134,7 +135,7 @@ export function PortsManager({
           body="Container ports are reachable inside the Docker network by default. Expose one to reach this service directly."
         />
       ) : ports.length > 0 && (
-        <div className="divide-y rounded-lg bg-background-deep">
+        <Card variant="inset" className="divide-y">
           {ports.map((port, i) => (
             <div key={i} className="flex items-center justify-between gap-4 px-4 py-3">
               <div className="flex items-center gap-4">
@@ -160,7 +161,7 @@ export function PortsManager({
               </div>
             </div>
           ))}
-        </div>
+        </Card>
       )}
     </div>
   );

@@ -246,9 +246,9 @@ export function ImportDialog({
             Loading container details...
           </div>
         ) : detailError ? (
-          <div role="alert" className="surface-danger rounded-lg border p-4 text-sm text-destructive">
+          <Card variant="plain" role="alert" className="surface-danger border p-4 text-sm text-destructive">
             Failed to load container details. Close and try again.
-          </div>
+          </Card>
         ) : (
           <div className="space-y-5 py-1">
             {isHostNetwork && (
@@ -343,7 +343,7 @@ export function ImportDialog({
                 <p className="text-xs text-muted-foreground">No environment variables found.</p>
               )}
               {envVars.length > 0 && (
-                <div className="max-h-48 overflow-y-auto space-y-1.5 rounded-lg bg-background-deep p-2">
+                <Card variant="inset" className="max-h-48 overflow-y-auto space-y-1.5 p-2">
                   {envVars.map((v, i) => (
                     <div key={`${v.key}-${i}`} className="flex items-center gap-2 text-xs font-mono">
                       <span className="text-muted-foreground min-w-0 flex-1 truncate">
@@ -362,7 +362,7 @@ export function ImportDialog({
                       </button>
                     </div>
                   ))}
-                </div>
+                </Card>
               )}
             </div>
 
@@ -390,7 +390,7 @@ export function ImportDialog({
                   </div>
                 </div>
 
-                <div className="space-y-1.5 rounded-lg bg-background-deep p-2">
+                <Card variant="inset" className="space-y-1.5 p-2">
                   {mounts.map((m) => {
                     const isBind = m.type === "bind";
                     const isSelected = mountToggles[m.destination] ?? true;
@@ -447,7 +447,7 @@ export function ImportDialog({
                       </div>
                     );
                   })}
-                </div>
+                </Card>
 
                 {hasSelectedBindMounts && (
                   <Card variant="warning" role="alert" className="flex gap-2 p-4 text-xs text-status-warning">

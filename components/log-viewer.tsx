@@ -20,7 +20,7 @@ import { findMatches, matchedLines, filterToMatches, stepMatch, type LineMatch }
 import {
   capLines, mergeOlder, historyUrlFor, SCROLLBACK_OPTIONS, DEFAULT_SCROLLBACK,
 } from "@/lib/logging/buffer";
-import { cardVariants } from "@/components/ui/card";
+import { cardVariants, Card } from "@/components/ui/card";
 import "./surface-terminal.css";
 
 export { detectLevel as detectLogLevel };
@@ -708,16 +708,16 @@ export function LogViewer({ streamUrl, maxLines = DEFAULT_SCROLLBACK, initialLev
 
       {/* Terminal output */}
       {lines.length === 0 && !connected ? (
-        <div className="surface-terminal rounded-lg border bg-background p-4">
+        <Card variant="plain" className="surface-terminal border bg-background p-4">
           <p className="text-xs text-muted-foreground font-mono">No logs available. Is the project running?</p>
-        </div>
+        </Card>
       ) : lines.length === 0 && connected ? (
-        <div className="surface-terminal rounded-lg border bg-background p-4">
+        <Card variant="plain" className="surface-terminal border bg-background p-4">
           <div className="flex items-center gap-2 text-muted-foreground text-xs font-mono">
             <Loader2 className="size-3.5 animate-spin" />
             Waiting for output...
           </div>
-        </div>
+        </Card>
       ) : (
         <TerminalOutput lines={lines} fill initialLevels={initialLevels} onLoadOlder={loadOlder} hasOlder={hasOlder} />
       )}

@@ -20,6 +20,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { toast } from "@/lib/messenger";
 import type { Finding, ComposeAnalysis } from "@/lib/docker/compose-analyze";
+import { Card } from "@/components/ui/card";
 
 type ComposeReviewProps = {
   open: boolean;
@@ -270,7 +271,7 @@ export function ComposeReview({
 
 function FindingRow({ finding }: { finding: Finding }) {
   return (
-    <div className="flex items-start gap-2 rounded-md bg-background-deep px-3 py-2 text-sm">
+    <Card variant="inset" className="flex items-start gap-2 rounded-md px-3 py-2 text-sm">
       {severityIcon[finding.severity]}
       <div className="min-w-0">
         <p className="text-sm">{finding.message}</p>
@@ -280,7 +281,7 @@ function FindingRow({ finding }: { finding: Finding }) {
           </p>
         )}
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -296,8 +297,9 @@ function EnvFindingRow({
   onToggle: () => void;
 }) {
   return (
-    <div
-      className="flex items-start gap-2 rounded-md bg-background-deep px-3 py-2 text-sm cursor-pointer hover:bg-accent/50 transition-colors"
+    <Card
+      variant="inset"
+      className="flex items-start gap-2 rounded-md px-3 py-2 text-sm cursor-pointer hover:bg-accent/50 transition-colors"
       onClick={selectable ? onToggle : undefined}
     >
       {selectable ? (
@@ -315,6 +317,6 @@ function EnvFindingRow({
           {finding.detail.value as string}
         </p>
       </div>
-    </div>
+    </Card>
   );
 }

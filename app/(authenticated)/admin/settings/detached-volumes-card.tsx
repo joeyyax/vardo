@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import { AlertCircle, Database, Folder, Loader2, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, cardVariants } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -134,7 +135,7 @@ export function DetachedVolumesCard() {
         ) : rows!.length === 0 ? (
           <p className="text-sm text-muted-foreground">No detached volumes.</p>
         ) : (
-          <ul aria-label="Detached volumes" className="divide-y rounded-md bg-background-deep">
+          <ul aria-label="Detached volumes" className={cn(cardVariants({ variant: "inset" }), "divide-y rounded-md")}>
             {rows!.map((row) => (
               <li key={`${row.kind}:${row.name}`} className="flex items-center gap-3 px-3 py-2">
                 {row.kind === "volume" ? (

@@ -150,9 +150,9 @@ export function SystemAlertsPanel() {
 
   if (error) {
     return (
-      <div className="surface-danger rounded-lg border px-4 py-3 text-sm text-destructive" role="alert">
+      <Card variant="plain" className="surface-danger border px-4 py-3 text-sm text-destructive" role="alert">
         <span className="font-medium">Error:</span> {error}
-      </div>
+      </Card>
     );
   }
 

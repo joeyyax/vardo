@@ -421,7 +421,7 @@ export function DomainSettings() {
               </div>
 
               {challengeType === "dns" && (
-                <div className="max-w-md space-y-4 rounded-lg bg-background-deep p-4">
+                <Card variant="inset" className="max-w-md space-y-4 p-4">
                   <div className="space-y-2">
                     <Label htmlFor="dns-provider">DNS provider</Label>
                     <Select value={dnsProvider} disabled>
@@ -463,7 +463,7 @@ export function DomainSettings() {
                       {`CF_DNS_API_TOKEN=your-token-here\ndocker compose up -d traefik`}
                     </pre>
                   </div>
-                </div>
+                </Card>
               )}
 
               <div className="flex items-center gap-3">

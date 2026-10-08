@@ -183,7 +183,7 @@ export function OrgEnvVarsEditor({ orgId }: Props) {
         </Button>
       </div>
 
-      <div className="surface-terminal relative rounded-lg border bg-background min-h-[400px]">
+      <Card variant="plain" className="surface-terminal relative border bg-background min-h-[400px]">
         <div
           className="absolute inset-0 p-4 font-mono text-sm leading-6 whitespace-pre-wrap overflow-auto pointer-events-none"
           aria-hidden
@@ -226,7 +226,7 @@ export function OrgEnvVarsEditor({ orgId }: Props) {
             ))}
           </div>
         )}
-      </div>
+      </Card>
       </CardContent>
     </Card>
   );

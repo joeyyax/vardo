@@ -153,9 +153,10 @@ export function GitHubConnection() {
       ) : (
         <div className="space-y-2">
           {installations.map((installation) => (
-            <div
+            <Card
+              variant="inset"
               key={installation.id}
-              className="flex items-center gap-3 rounded-lg bg-background-deep p-3"
+              className="flex items-center gap-3 p-3"
             >
               {installation.accountAvatarUrl ? (
                 <img
@@ -204,7 +205,7 @@ export function GitHubConnection() {
                   )}
                 </Button>
               </div>
-            </div>
+            </Card>
           ))}
         </div>
       )}

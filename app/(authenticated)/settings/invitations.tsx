@@ -241,12 +241,12 @@ export function InvitationsPanel({
       <Card>
         <CardContent className="space-y-4">
         {canManage && !emailConfigured && (
-          <div className="flex items-start gap-2 rounded-lg bg-status-warning-muted px-4 py-2.5 text-sm text-status-warning">
+          <Card variant="warning" className="flex items-start gap-2 px-4 py-2.5 text-sm text-status-warning">
             <AlertTriangle className="size-4 shrink-0 mt-0.5" aria-hidden="true" />
             <span className="flex-1">
               Email isn&apos;t configured, so invitations aren&apos;t delivered. Copy each invite link and send it yourself, or set up a provider in notification settings.
             </span>
-          </div>
+          </Card>
         )}
 
         <div className="flex items-center justify-between">
@@ -276,7 +276,7 @@ export function InvitationsPanel({
             }
           />
         ) : (
-          <div className="divide-y rounded-lg bg-background-deep">
+          <Card variant="inset" className="divide-y">
             {invitations.map((invitation) => {
               const isPending = invitation.status === "pending";
               const isAccepted = invitation.status === "accepted";
@@ -363,7 +363,7 @@ export function InvitationsPanel({
                 </div>
               );
             })}
-          </div>
+          </Card>
         )}
         </CardContent>
       </Card>

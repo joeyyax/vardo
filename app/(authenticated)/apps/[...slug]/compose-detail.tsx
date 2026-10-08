@@ -252,10 +252,10 @@ function ServiceRowCard({
         />
       </div>
 
-      <div className="space-y-1 rounded-md bg-background-deep px-2 py-1.5">
+      <Card variant="inset" className="space-y-1 rounded-md px-2 py-1.5">
         {service.imageName && <ImageRef imageName={service.imageName} />}
         {pending && <PendingImageRef pending={pending} />}
-      </div>
+      </Card>
 
       <dl className="space-y-1 pt-1">
         <Detail label="Service">{service.composeService ?? service.name}</Detail>

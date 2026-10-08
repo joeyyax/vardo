@@ -409,9 +409,10 @@ export function EnvEditor(props: EnvEditorProps) {
         )}
       </div>
 
-      <div
+      <Card
+        variant="plain"
         ref={containerRef}
-        className="surface-terminal relative rounded-lg border bg-background overflow-hidden"
+        className="surface-terminal relative border bg-background overflow-hidden"
         onMouseMove={handleMouseMove}
         onMouseLeave={() => { hoveredLineRef.current = -1; setHoveredLine(-1); }}
       >
@@ -438,7 +439,7 @@ export function EnvEditor(props: EnvEditorProps) {
 
         {/* Copy chips overlay */}
         {content && renderCopyChips()}
-      </div>
+      </Card>
     </div>
   );
 }

@@ -35,6 +35,7 @@ import { AppBackupHistory } from "@/components/backups/app-backup-history";
 import { AppBackupSwitch } from "@/components/backups/backup-switch";
 import { AppErrors } from "./app-errors";
 import { AppStability } from "./app-stability";
+import { Card } from "@/components/ui/card";
 
 const AppTerminal = dynamic(
   () => import("./app-terminal").then((m) => m.AppTerminal),
@@ -604,7 +605,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         const latestDeploy = filteredDeployments[0];
         if (!latestDeploy || latestDeploy.status !== "rolled_back") return null;
         return (
-          <div className="flex items-start gap-2 rounded-lg bg-status-warning-muted px-4 py-2.5 text-sm text-status-warning">
+          <Card variant="warning" className="flex items-start gap-2 px-4 py-2.5 text-sm text-status-warning">
             <AlertTriangle className="size-4 shrink-0 mt-0.5" aria-hidden="true" />
             <span className="flex-1">
               Rolled back — original container restored. Deploy failed; your original container is running. Redeploy when you&apos;re ready.
@@ -616,7 +617,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
             >
               View log
             </button>
-          </div>
+          </Card>
         );
       })()}
 
