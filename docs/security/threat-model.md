@@ -19,7 +19,7 @@ Status: **fixed** (on main or in this branch), **open**, or **not a boundary**. 
 | Auth rate limit keyed on first `X-Forwarded-For` | open, verify | `lib/api/with-rate-limit.ts:24`, `proxy.ts:28`. Safe only while Traefik strips client-sent forwarding headers. |
 | Host header poisoning of auth links | not a boundary in prod | Better Auth reads `NEXT_PUBLIC_BETTER_AUTH_URL` (`docker-compose.yml:38`). Dev infers from the request. |
 | Postgres and Redis published on every interface, Redis has no password | branch | `docker-compose.yml:155,173` now bind to `127.0.0.1`. Docker's publishing skips ufw. |
-| Traefik dashboard | open, low | `--api.insecure=true` on `vardo-network`, not published (`docker-compose.yml:212`). Leaks every route to any routed app. |
+| Traefik API | fixed | #889: no `--api.insecure`; the API answers only a basic-auth router on the internal entrypoint, keyed from the master key (`lib/docker/traefik-api-access.ts`). Untrusted labels can't route to `@internal` services or the `traefik` entrypoint (`lib/docker/compose-policy.ts`). |
 
 ## 2. Tenant A to tenant B
 
@@ -116,6 +116,6 @@ Narrows:
 - Postgres and Redis no longer published beyond loopback (this branch).
 
 Widens or leaves open:
-- `vardo-network` includes the console, Traefik and WireGuard, so a routed app reaches `vardo-frontend:3000` and the Traefik API on `:8080` directly.
+- `vardo-network` includes the console, Traefik and WireGuard, so a routed app reaches `vardo-frontend:3000` directly. Traefik's `:8080` answers it only `/ping` (#889).
 - `no-new-privileges` only for untrusted orgs (#889). No `cap_drop`, `read_only` or non-root `user`. A cryptominer gets every core but one on the standard tier.
 - Redis has no password, so anything that joins `vardo_internal` owns it.

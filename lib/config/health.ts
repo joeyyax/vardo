@@ -215,9 +215,9 @@ export const SERVICE_PROBES: Probe[] = [
     name: "Traefik",
     description: "Reverse proxy and SSL",
     timeoutMs: 2000,
-    // Overridable: localhost is the frontend container itself, not the proxy.
+    // Overridable: localhost is the frontend container itself, not the proxy. /ping needs no credentials.
     run: (timeoutMs) =>
-      httpProbe(`${process.env.TRAEFIK_URL || "http://localhost:8080"}/api/overview`, timeoutMs),
+      httpProbe(`${process.env.TRAEFIK_URL || "http://localhost:8080"}/ping`, timeoutMs),
   },
   {
     name: "WireGuard",

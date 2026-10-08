@@ -67,6 +67,25 @@ describe("composePolicyErrors", () => {
     expect(composePolicyErrors(config(), untrusted)).toEqual([]);
   });
 
+  describe("Traefik's API (#889)", () => {
+    const labels = (extra: Obj) => ({ labels: { "traefik.enable": "true", ...extra } });
+
+    it("refuses routing a public host to api@internal", () => {
+      const cfg = config(labels({ "traefik.http.routers.x.rule": "Host(`a.example.com`)", "traefik.http.routers.x.service": "api@internal" }));
+      expect(composePolicyErrors(cfg, untrusted)).toEqual(['Service "web" routes to Traefik\'s internal "api@internal"']);
+    });
+
+    it("refuses a router on the internal entrypoint", () => {
+      const cfg = config(labels({ "traefik.http.routers.x.entrypoints": "websecure, traefik" }));
+      expect(composePolicyErrors(cfg, untrusted)).toEqual(['Service "web" routes on Traefik\'s internal entrypoint']);
+    });
+
+    it("passes the file-provider transport Vardo writes", () => {
+      const cfg = config(labels({ "traefik.http.services.web.loadbalancer.serversTransport": "blog-insecure@file" }));
+      expect(composePolicyErrors(cfg, untrusted)).toEqual([]);
+    });
+  });
+
   it("refuses nothing for a trusted org", () => {
     const everything = config({ privileged: true, ...bind("/") }, {
       networks: { internal: { name: "vardo_internal", external: true } },

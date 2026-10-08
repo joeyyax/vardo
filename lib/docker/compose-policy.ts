@@ -263,6 +263,16 @@ export function composePolicyErrors(config: unknown, policy: ComposePolicy): str
       if (!caps.includes("gpu")) errors.push(`${label} reserves a device other than a GPU`);
     }
 
+    // Traefik's API and its internal entrypoint are the console's (#889).
+    for (const [key, value] of entries(svc.labels)) {
+      if (!key.startsWith("traefik.")) continue;
+      const v = String(value);
+      if (v.includes("@internal")) errors.push(`${label} routes to Traefik's internal "${v}"`);
+      if (/\.entrypoints$/.test(key) && v.split(",").map((e) => e.trim()).includes("traefik")) {
+        errors.push(`${label} routes on Traefik's internal entrypoint`);
+      }
+    }
+
     if (svc.build !== undefined) errors.push(...buildErrors(label, svc.build, appFileProblem));
   }
 

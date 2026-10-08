@@ -26,6 +26,7 @@ const {
   ipsOf,
   liveContainers,
 } = await import("@/lib/docker/traefik-api");
+const { traefikApiPassword } = await import("@/lib/docker/traefik-api-access");
 
 function service(overrides: Record<string, unknown> = {}) {
   return {
@@ -54,12 +55,17 @@ function jsonResponse(body: unknown, ok = true, status = 200): Response {
   return { ok, status, json: async () => body } as unknown as Response;
 }
 
+const savedKey = process.env.ENCRYPTION_MASTER_KEY;
+
 beforeEach(() => {
   vi.clearAllMocks();
 });
 
 afterEach(() => {
   delete process.env.TRAEFIK_API_URL;
+  delete process.env.TRAEFIK_URL;
+  if (savedKey === undefined) delete process.env.ENCRYPTION_MASTER_KEY;
+  else process.env.ENCRYPTION_MASTER_KEY = savedKey;
   delete process.env.VARDO_TRAEFIK_CONTAINER;
 });
 
@@ -121,6 +127,23 @@ describe("fetchTraefikServices", () => {
     mockFetch.mockResolvedValue(jsonResponse([]));
     await fetchTraefikServices();
     expect(mockFetch.mock.calls[0][0]).toBe("http://localhost:9999/api/http/services");
+  });
+
+  it("falls back to TRAEFIK_URL, which the compose sets", async () => {
+    process.env.TRAEFIK_URL = "http://vardo-traefik:8081";
+    mockFetch.mockResolvedValue(jsonResponse([]));
+    await fetchTraefikServices();
+    expect(mockFetch.mock.calls[0][0]).toBe("http://vardo-traefik:8081/api/http/services");
+  });
+
+  it("authenticates with the key-derived password (#889)", async () => {
+    process.env.ENCRYPTION_MASTER_KEY = "a".repeat(64);
+    mockFetch.mockResolvedValue(jsonResponse([]));
+    await fetchTraefikServices();
+    const auth = (mockFetch.mock.calls[0][1] as RequestInit).headers as Record<string, string>;
+    const [user, password] = Buffer.from(auth.Authorization.replace(/^Basic /, ""), "base64").toString().split(":");
+    expect(user).toBe("vardo");
+    expect(password).toBe(traefikApiPassword());
   });
 
   it("requests uncached", async () => {

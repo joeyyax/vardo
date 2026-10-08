@@ -25,6 +25,10 @@ export async function register() {
       );
     }
 
+    // Traefik serves its API only through this router.
+    const { writeTraefikApiConfig } = await import("./lib/docker/traefik-api-access");
+    await writeTraefikApiConfig().catch((err) => log.warn("Failed to write the Traefik API router:", err));
+
     // Must run early so isFeatureEnabled() returns real values for the rest of startup.
     const { loadFeatureFlags } = await import("./lib/config/features");
     await loadFeatureFlags().catch((err) =>

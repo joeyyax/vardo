@@ -209,7 +209,9 @@ services:
     restart: unless-stopped
     mem_limit: ${VARDO_TRAEFIK_MEM:-256m}
     command:
-      - "--api.insecure=true"
+      # The API answers only through the console's basic-auth router (vardo-api.yaml) on this entrypoint.
+      - "--api=true"
+      - "--entrypoints.traefik.address=:8080"
       - "--accesslog=true"
       - "--accesslog.format=json"
       - "--accesslog.fields.headers.defaultmode=drop"

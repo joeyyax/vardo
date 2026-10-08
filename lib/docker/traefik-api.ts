@@ -2,11 +2,12 @@
 
 import { dockerRequest, listAllContainers } from "./client";
 import { logger } from "@/lib/logger";
+import { traefikApiHeaders } from "./traefik-api-access";
 
 const log = logger.child("traefik-api");
 
 function apiUrl(): string {
-  return process.env.TRAEFIK_API_URL ?? "http://vardo-traefik:8080";
+  return process.env.TRAEFIK_API_URL || process.env.TRAEFIK_URL || "http://vardo-traefik:8080";
 }
 
 export type TraefikBackend = { service: string; url: string; ip: string };
@@ -24,6 +25,7 @@ export type TraefikRouter = { name?: string; status?: string; provider?: string 
 async function fetchTraefik<T>(path: string): Promise<T[] | null> {
   try {
     const res = await fetch(`${apiUrl()}${path}`, {
+      headers: traefikApiHeaders(),
       // Next patches global fetch; never cache the routing table.
       cache: "no-store",
       signal: AbortSignal.timeout(5_000),
