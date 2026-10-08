@@ -6,10 +6,11 @@ import { join } from "path";
 import { tmpdir } from "os";
 import { createBackupStorage } from "@/lib/backups/storage-factory";
 import { targetConfigSchema, type TargetType } from "@/lib/backups/target-config";
-import { readArchiveKeyId } from "@/lib/backups/archive-crypto";
+import { decryptArchiveFile, readArchiveKeyId } from "@/lib/backups/archive-crypto";
 import { fingerprintMasterKey } from "@/lib/crypto/key-fingerprint";
 import { runningKeyFingerprint } from "@/lib/crypto/encrypt";
 import { getBackupStorageConfig } from "@/lib/system-settings";
+import { checkDumpAuthSecret, type AuthSecretCheck } from "./auth-secret";
 import { SYSTEM_BACKUP_PREFIX, checkKeyIds, systemBackupsFrom, type KeyCheck, type SystemBackup } from "./plan";
 
 export type RestoreTarget = { type: TargetType; config: Record<string, unknown> };
@@ -78,22 +79,33 @@ export async function listSystemBackups(target: RestoreTarget): Promise<SystemBa
   return systemBackupsFrom(await storage.list(SYSTEM_BACKUP_PREFIX));
 }
 
-/** Download a system backup far enough to read its Key ID, then compare it with the entered key. */
-export async function checkBackupKey(
+export type BackupCheck = {
+  key: KeyCheck;
+  /** Null until the key check passes, since the dump can't be read before then. */
+  authSecret: AuthSecretCheck | null;
+};
+
+/** Download a system backup, compare its Key ID with the entered key, then check the auth secret against it. */
+export async function checkSystemBackup(
   target: RestoreTarget,
   backupKey: string,
   masterKey: string,
-): Promise<KeyCheck> {
+): Promise<BackupCheck> {
   if (!backupKey.startsWith(SYSTEM_BACKUP_PREFIX)) throw new Error("That isn't a system backup");
   const dir = await mkdtemp(join(tmpdir(), "vardo-restore-check-"));
   try {
-    const path = join(dir, "archive");
-    await createBackupStorage({ ...target, organizationId: null }).download(backupKey, path);
-    return checkKeyIds({
-      archiveKeyId: await readArchiveKeyId(path),
+    const sealed = join(dir, "archive");
+    await createBackupStorage({ ...target, organizationId: null }).download(backupKey, sealed);
+    const key = checkKeyIds({
+      archiveKeyId: await readArchiveKeyId(sealed),
       enteredKeyId: fingerprintMasterKey(masterKey),
       runningKeyId: runningKeyFingerprint(),
     });
+    if (key.kind !== "match" && key.kind !== "unencrypted") return { key, authSecret: null };
+
+    const dump = join(dir, "dump.gz");
+    await decryptArchiveFile(sealed, dump, masterKey);
+    return { key, authSecret: await checkDumpAuthSecret(dump) };
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

@@ -1,6 +1,6 @@
 # Disaster recovery
 
-Restoring Vardo onto a new host needs two things: the backup archive, and the encryption master key. The archive alone is not enough.
+Restoring Vardo onto a new host needs the backup bucket plus two escrowed secrets: the encryption master key and the auth secret. The bucket alone is not enough.
 
 ## The encryption master key
 
@@ -14,7 +14,9 @@ So it has to be escrowed separately, once, by hand:
 sudo vardo key
 ```
 
-Store the output in a password manager. Do it at install time; there is no way to derive it later.
+It prints `ENCRYPTION_MASTER_KEY` and `BETTER_AUTH_SECRET`. Store both in a password manager at install time; neither can be derived later.
+
+`BETTER_AUTH_SECRET` encrypts two-factor secrets. Without it, users with two-factor sign-in can't sign in after a restore until it's reset.
 
 ### Key ID
 
@@ -33,19 +35,17 @@ A mismatch, or any value the running key cannot decrypt, is logged at error leve
 
 ## Restoring onto a new host
 
-1. Provision the new host with `install.sh`. It mints a **fresh** key, which is the wrong one.
-2. Replace the generated key with the escrowed one:
+1. Install with the restore flag. It asks for the escrowed secrets and the backup storage, or reads them from `ENCRYPTION_MASTER_KEY`, `BETTER_AUTH_SECRET` and `VARDO_BACKUP_*`:
 
    ```bash
-   sudo sed -i 's|^ENCRYPTION_MASTER_KEY=.*|ENCRYPTION_MASTER_KEY=<escrowed key>|' /opt/vardo/.env
-   sudo vardo restart
+   sudo ./install.sh --restore
    ```
 
-3. Confirm the Key ID on the backups page matches what you escrowed.
-4. Restore the `Vardo database` system backup from the admin backups page.
-5. Restart, and check the startup log reports the key matching.
+2. Open the setup page and choose **Restore from backup**. Pick a system backup and enter the master key. Nothing is restored until the backup's Key ID matches the key and its two-factor secrets open with the auth secret.
+3. Vardo's database comes back first. Sign in with an account from the backup to follow the apps as they restore and redeploy, in priority order.
+4. Backup and cron jobs stay paused. Resume them from the same page once the old host is off, or both write to the same bucket.
 
-Restoring the system backup before step 2 is refused: the archive records which key its secrets belong to, and Vardo will not overwrite the database with ciphertext it cannot open. Archives written before fingerprinting existed cannot be checked up front — those restore with a warning, and the restore log reports how many restored values actually decrypt.
+If the instance was installed without the escrowed secrets, load them with `sudo vardo key set` and reload the setup page. `vardo restart` doesn't pick up a changed `.env`; `key set` recreates the container so it does.
 
 ### If the key is lost
 

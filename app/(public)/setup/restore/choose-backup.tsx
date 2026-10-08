@@ -21,6 +21,8 @@ type KeyCheck =
   | { kind: "wrong-key"; archiveKeyId: string; enteredKeyId: string }
   | { kind: "not-loaded"; keyId: string; runningKeyId: string | null };
 
+type BackupCheck = { key: KeyCheck; authSecret: { kind: "none" | "match" | "mismatch" } | null };
+
 const TYPE_LABELS: Record<TargetType, string> = {
   r2: "Cloudflare R2",
   s3: "Amazon S3 or compatible",
@@ -57,7 +59,7 @@ export function ChooseBackup({
   const [backups, setBackups] = useState<FoundBackup[] | null>(null);
   const [picked, setPicked] = useState<string | null>(null);
   const [masterKey, setMasterKey] = useState("");
-  const [check, setCheck] = useState<KeyCheck | null>(null);
+  const [check, setCheck] = useState<BackupCheck | null>(null);
   const [busy, setBusy] = useState<"list" | "check" | "start" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -99,7 +101,7 @@ export function ChooseBackup({
   async function checkKey() {
     if (!picked) return;
     const result = await run("check", () =>
-      post<KeyCheck>("/api/setup/restore/check", { target, backupKey: picked, masterKey }),
+      post<BackupCheck>("/api/setup/restore/check", { target, backupKey: picked, masterKey }),
     );
     setCheck(result);
   }
@@ -115,7 +117,8 @@ export function ChooseBackup({
   const set = (key: keyof typeof fields) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setFields((f) => ({ ...f, [key]: e.target.value }));
 
-  const keyReady = check?.kind === "match" || check?.kind === "unencrypted";
+  const keyReady =
+    (check?.key.kind === "match" || check?.key.kind === "unencrypted") && check.authSecret?.kind !== "mismatch";
 
   return (
     <div className="space-y-4">
@@ -286,7 +289,14 @@ export function ChooseBackup({
                 Check Key ID
               </Button>
             </form>
-            {check && <KeyCheckResult check={check} />}
+            {check && <KeyCheckResult check={check.key} />}
+            {check?.authSecret?.kind === "mismatch" && (
+              <Callout variant="warning" label="Load the auth secret first">
+                Two-factor secrets in this backup don&apos;t open with this instance&apos;s BETTER_AUTH_SECRET. On the
+                host, run <code className="font-mono">sudo vardo key set</code>, paste both escrowed values, then
+                reload this page.
+              </Callout>
+            )}
             {keyReady && (
               <div className="flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-sm text-muted-foreground">
@@ -348,7 +358,7 @@ function KeyCheckResult({ check }: { check: KeyCheck }) {
         <Callout variant="warning" label="Load this key first">
           The key matches the backup, but this instance started with Key ID{" "}
           <code className="font-mono">{check.runningKeyId ?? "none"}</code>. On the host, run{" "}
-          <code className="font-mono">sudo vardo key set</code>, paste the key, then reload this page.
+          <code className="font-mono">sudo vardo key set</code>, paste the escrowed values, then reload this page.
         </Callout>
       );
   }

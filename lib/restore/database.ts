@@ -14,7 +14,7 @@ import { execFileAsync } from "@/lib/utils/exec";
 import { needsSetup } from "@/lib/setup";
 import { logger } from "@/lib/logger";
 import { backupTimeFromKey } from "./plan";
-import { checkBackupKey, type RestoreTarget } from "./source";
+import { checkSystemBackup, type RestoreTarget } from "./source";
 import { clearMarker, hashToken, readMarker, writeMarker, type RestoreMarker } from "./marker";
 import { buildRestoreQueue } from "./queue";
 import { kickRestoreWorker } from "./worker";
@@ -48,7 +48,7 @@ export async function startInstanceRestore(args: {
     throw new RestoreRefusedError("A restore is already running.");
   }
 
-  const check = await checkBackupKey(args.target, args.backupKey, args.masterKey);
+  const { key: check, authSecret } = await checkSystemBackup(args.target, args.backupKey, args.masterKey);
   if (check.kind === "wrong-key") {
     throw new RestoreRefusedError(
       `This backup was written with Key ID ${check.archiveKeyId}, but the key you entered is ${check.enteredKeyId}.`,
@@ -57,6 +57,12 @@ export async function startInstanceRestore(args: {
   if (check.kind === "not-loaded") {
     throw new RestoreRefusedError(
       `This instance is running Key ID ${check.runningKeyId ?? "none"}. Load key ${check.keyId} with sudo vardo key set, then reload this page.`,
+    );
+  }
+
+  if (authSecret?.kind === "mismatch") {
+    throw new RestoreRefusedError(
+      "This backup's two-factor secrets don't open with this instance's BETTER_AUTH_SECRET. Load the escrowed one with sudo vardo key set, then reload this page.",
     );
   }
 

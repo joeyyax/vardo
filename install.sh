@@ -1210,7 +1210,8 @@ generate_env() {
   auth_secret="${BETTER_AUTH_SECRET:-$(openssl rand -base64 32 | tr -d '/+=' | head -c 48)}"
   enc_key="${ENCRYPTION_MASTER_KEY:-$(openssl rand -hex 32)}"
   [[ "$enc_key" =~ ^[0-9a-fA-F]{64}$ ]] || fail "ENCRYPTION_MASTER_KEY must be 64 hex characters"
-  [[ "$auth_secret" =~ ^[A-Za-z0-9]{32,}$ ]] || fail "BETTER_AUTH_SECRET must be at least 32 letters and digits"
+  [[ "$auth_secret" =~ ^[A-Za-z0-9_+/=.-]{32,}$ ]] || fail "BETTER_AUTH_SECRET must be at least 32 characters with no spaces or quotes"
+  [ -n "${BETTER_AUTH_SECRET:-}" ] && log "Using the auth secret from BETTER_AUTH_SECRET"
   [ -n "${ENCRYPTION_MASTER_KEY:-}" ] && log "Using the master key from ENCRYPTION_MASTER_KEY"
   webhook_secret=$(openssl rand -hex 32)
   if command -v uuidgen &>/dev/null; then
@@ -1351,6 +1352,19 @@ ask() {
   printf -v "$var" '%s' "${answer:-$default}"
 }
 
+# --restore: the escrowed secrets, so the frontend starts with them.
+collect_restore_secrets() {
+  $RESTORE || return 0
+  step "Escrowed secrets"
+  ask ENCRYPTION_MASTER_KEY "Escrowed ENCRYPTION_MASTER_KEY" true
+  ask BETTER_AUTH_SECRET "Escrowed BETTER_AUTH_SECRET (blank if you don't have it)" true " "
+  BETTER_AUTH_SECRET="${BETTER_AUTH_SECRET// /}"
+  [ -n "$BETTER_AUTH_SECRET" ] || { unset BETTER_AUTH_SECRET; warn "No auth secret: users with two-factor sign-in will need it reset after the restore."; }
+  export ENCRYPTION_MASTER_KEY
+  [ -n "${BETTER_AUTH_SECRET:-}" ] && export BETTER_AUTH_SECRET
+  return 0
+}
+
 # --restore: record the backup storage so the setup page lists its backups.
 configure_restore_storage() {
   $RESTORE || return 0
@@ -1390,12 +1404,11 @@ configure_restore_storage() {
   chmod 600 "$env_file"
   log "Backup storage saved. The setup page lists the backups it holds."
 
-  local running_key
+  local running_key running_auth
   running_key=$(grep '^ENCRYPTION_MASTER_KEY=' "$env_file" | cut -d= -f2-)
-  if [ -n "${ENCRYPTION_MASTER_KEY:-}" ] && [ "$running_key" != "$ENCRYPTION_MASTER_KEY" ]; then
-    warn "$env_file already holds a different master key. Load the escrowed one with: sudo vardo key set"
-  elif [ -z "${ENCRYPTION_MASTER_KEY:-}" ]; then
-    warn "No escrowed master key given. Load it before restoring with: sudo vardo key set"
+  running_auth=$(grep '^BETTER_AUTH_SECRET=' "$env_file" | cut -d= -f2-)
+  if [ "$running_key" != "${ENCRYPTION_MASTER_KEY:-}" ] || { [ -n "${BETTER_AUTH_SECRET:-}" ] && [ "$running_auth" != "$BETTER_AUTH_SECRET" ]; }; then
+    warn "$env_file was written before this run and holds other secrets. Load the escrowed ones with: sudo vardo key set"
   fi
 }
 
@@ -1503,37 +1516,52 @@ case "${1:-}" in
   doctor)   shift; bash "$INSTALL_SH" doctor "$@" ;;
   key)
     if [ "${2:-}" = "set" ]; then
-      # For a rebuild: load the escrowed key before restoring a backup onto this instance.
+      # For a rebuild: load the escrowed secrets before restoring a backup onto this instance.
       [ -w "$VARDO_DIR/.env" ] || { echo "Cannot write $VARDO_DIR/.env — run as root." >&2; exit 1; }
       if [ -t 0 ]; then
-        read -rsp "Escrowed master key: " NEW_KEY; echo "" >&2
+        read -rsp "Escrowed ENCRYPTION_MASTER_KEY: " NEW_KEY; echo "" >&2
+        read -rsp "Escrowed BETTER_AUTH_SECRET (blank keeps the current one): " NEW_AUTH; echo "" >&2
       else
         read -r NEW_KEY
+        read -r NEW_AUTH || true
       fi
       [[ "$NEW_KEY" =~ ^[0-9a-fA-F]{64}$ ]] || { echo "The master key is 64 hex characters." >&2; exit 1; }
+      if [ -n "$NEW_AUTH" ] && ! [[ "$NEW_AUTH" =~ ^[A-Za-z0-9_+/=.-]{32,}$ ]]; then
+        echo "BETTER_AUTH_SECRET is at least 32 characters with no spaces or quotes." >&2
+        exit 1
+      fi
       echo "Anything this instance already encrypted becomes unreadable. Only do this on a fresh install." >&2
       if [ "${3:-}" != "--yes" ] && [ -t 0 ]; then
-        read -rp "Replace the master key? [y/N] " OK
+        read -rp "Replace the escrowed secrets? [y/N] " OK
         [[ "$OK" =~ ^[Yy] ]] || exit 1
       fi
-      TMP=$(mktemp)
-      awk -v v="$NEW_KEY" 'BEGIN { FS = OFS = "=" } $1 == "ENCRYPTION_MASTER_KEY" { print $1, v; next } { print }' "$VARDO_DIR/.env" > "$TMP"
-      cat "$TMP" > "$VARDO_DIR/.env" && rm -f "$TMP"
+      set_env() {
+        local tmp; tmp=$(mktemp)
+        if grep -q "^$1=" "$VARDO_DIR/.env"; then
+          awk -v k="$1" -v v="$2" 'BEGIN { FS = OFS = "=" } $1 == k { print k, v; next } { print }' "$VARDO_DIR/.env" > "$tmp"
+        else
+          { cat "$VARDO_DIR/.env"; printf '%s=%s\n' "$1" "$2"; } > "$tmp"
+        fi
+        cat "$tmp" > "$VARDO_DIR/.env" && rm -f "$tmp"
+      }
+      set_env ENCRYPTION_MASTER_KEY "$NEW_KEY"
+      [ -n "$NEW_AUTH" ] && set_env BETTER_AUTH_SECRET "$NEW_AUTH"
       # up -d recreates the container; restart would keep the old environment.
       docker compose -f "$COMPOSE_PATH" up -d frontend
-      echo "Master key loaded." >&2
+      echo "Escrowed secrets loaded." >&2
       exit 0
     fi
-    # The one secret no backup carries. Printed to the terminal only — writing
-    # it anywhere Vardo archives would put it beside the ciphertext it opens.
+    # The secrets no backup carries. Printed to the terminal only — writing
+    # them anywhere Vardo archives would put them beside the ciphertext they open.
     if [ ! -r "$VARDO_DIR/.env" ]; then
       echo "Cannot read $VARDO_DIR/.env — run as root." >&2
       exit 1
     fi
-    grep '^ENCRYPTION_MASTER_KEY=' "$VARDO_DIR/.env" | cut -d= -f2-
+    grep -E '^(ENCRYPTION_MASTER_KEY|BETTER_AUTH_SECRET)=' "$VARDO_DIR/.env"
     echo "" >&2
-    echo "Store this in a password manager. Without it, a restore onto a new host" >&2
-    echo "leaves every app's env vars encrypted and unrecoverable." >&2
+    echo "Store both in a password manager. Without the master key, a restore onto a new" >&2
+    echo "host leaves every app's env vars unreadable. Without the auth secret, two-factor" >&2
+    echo "sign-in stops working." >&2
     ;;
   uninstall) bash "$INSTALL_SH" uninstall "$@" ;;
   shell)    shift; docker compose -f "$COMPOSE_PATH" exec frontend "${@:-sh}" ;;
@@ -1589,8 +1617,8 @@ case "${1:-}" in
     echo "  ps               Show running containers"
     echo "  update           Pull latest and rebuild"
     echo "  doctor           Run health checks"
-    echo "  key              Print the encryption master key (escrow it)"
-    echo "  key set          Load an escrowed master key (fresh installs, before a restore)"
+    echo "  key              Print the master key and auth secret (escrow them)"
+    echo "  key set          Load escrowed secrets (fresh installs, before a restore)"
     echo "  adopt <path>     Onboard existing repo with vardo.yaml"
     echo "  backup decrypt <in> <out>  Decrypt a backup archive"
     echo "  shell [cmd]      Open shell in frontend container"
@@ -1653,7 +1681,7 @@ print_install_summary() {
   dimln "  vardo restart        Restart all services"
   dimln "  vardo update         Pull latest and rebuild"
   dimln "  vardo doctor         Run health checks"
-  dimln "  vardo key            Print the encryption master key"
+  dimln "  vardo key            Print the master key and auth secret"
   echo ""
 
   if $RESTORE; then
@@ -1661,10 +1689,10 @@ print_install_summary() {
     echo ""
   fi
 
-  echo -e "  ${BOLD}${YELLOW}Escrow the encryption key${RESET}"
-  dimln "  It encrypts every app's env vars, lives only in $VARDO_DIR/.env, and is in"
-  dimln "  no backup. Restoring a backup onto a host without it leaves every secret"
-  dimln "  unreadable. Run ${sudo_prefix}vardo key and store the output in a password manager."
+  echo -e "  ${BOLD}${YELLOW}Escrow the master key and auth secret${RESET}"
+  dimln "  ENCRYPTION_MASTER_KEY encrypts every app's env vars. BETTER_AUTH_SECRET encrypts"
+  dimln "  two-factor secrets. Both live only in $VARDO_DIR/.env and are in no backup."
+  dimln "  Run ${sudo_prefix}vardo key and store both lines in a password manager."
   echo ""
 }
 
@@ -1677,6 +1705,7 @@ do_install() {
   setup_swap
   install_packages
   clone_repo
+  collect_restore_secrets
   generate_env
   configure_restore_storage
   build_and_start
