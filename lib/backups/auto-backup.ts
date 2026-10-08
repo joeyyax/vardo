@@ -152,6 +152,13 @@ export async function ensureSystemBackupJob(targetId: string) {
   return job;
 }
 
+/** Create the system target and Vardo's database job if backup storage is now configured. Null when none. */
+export async function ensureSystemBackup() {
+  const target = await ensureHostBackupTarget();
+  if (!target) return null;
+  return (await ensureSystemBackupJob(target.id)) ?? null;
+}
+
 /** Deterministic cron schedule between midnight and 5 AM, seeded by a string. */
 function staggeredSchedule(seed: string): string {
   const hash = createHash("md5").update(seed).digest();

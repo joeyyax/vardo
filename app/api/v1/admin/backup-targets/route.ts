@@ -11,6 +11,10 @@ import { createTargetVariant, presentTarget, sealTargetConfig } from "@/lib/back
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { reconcileInBackground } from "@/lib/backups/switch";
+import { ensureSystemBackup } from "@/lib/backups/auto-backup";
+import { logger } from "@/lib/logger";
+
+const log = logger.child("admin-backup-targets");
 
 // Local targets are org-only: their path is checked for writability on create.
 const createTargetSchema = z.discriminatedUnion("type", [
@@ -71,6 +75,9 @@ async function handlePost(request: NextRequest) {
         isDefault: data.isDefault,
       })
       .returning();
+
+    // Vardo's own database needs a job the moment storage exists, not at the next boot.
+    await ensureSystemBackup().catch((err) => log.error("System backup job setup failed:", err));
 
     // Apps left "On, no target" are enrolled now that one exists.
     reconcileInBackground({});
