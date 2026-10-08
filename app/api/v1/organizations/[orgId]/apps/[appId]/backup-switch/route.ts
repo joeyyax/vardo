@@ -32,7 +32,7 @@ function stateOf(app: NonNullable<Awaited<ReturnType<typeof loadApp>>>) {
 }
 
 // GET /api/v1/organizations/[orgId]/apps/[appId]/backup-switch
-export async function GET(_request: NextRequest, { params }: RouteParams) {
+async function handleGet(_request: NextRequest, { params }: RouteParams) {
   try {
     const gate = await requirePlugin("backups");
     if (gate) return gate;
@@ -97,3 +97,5 @@ async function handlePut(request: NextRequest, { params }: RouteParams) {
 }
 
 export const PUT = withRateLimit(handlePut, { tier: "mutation", key: "backup-switch" });
+
+export const GET = withRateLimit(handleGet, { tier: "read", key: "get:v1/organizations/*/apps/*/backup-switch" });

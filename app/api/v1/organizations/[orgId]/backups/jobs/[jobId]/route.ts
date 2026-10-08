@@ -34,7 +34,7 @@ const updateJobSchema = z.object({
 }).strict();
 
 // GET /api/v1/organizations/[orgId]/backups/[jobId]
-export async function GET(_request: NextRequest, { params }: RouteParams) {
+async function handleGet(_request: NextRequest, { params }: RouteParams) {
   try {
     const gate = await requirePlugin("backups");
     if (gate) return gate;
@@ -206,3 +206,5 @@ async function handleDelete(_request: NextRequest, { params }: RouteParams) {
 
 export const PATCH = withRateLimit(handlePatch, { tier: "mutation", key: "backups-jobs" });
 export const DELETE = withRateLimit(handleDelete, { tier: "mutation", key: "backups-jobs" });
+
+export const GET = withRateLimit(handleGet, { tier: "read", key: "get:v1/organizations/*/backups/jobs/*" });

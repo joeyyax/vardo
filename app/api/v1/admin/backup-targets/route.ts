@@ -25,7 +25,7 @@ const createTargetSchema = z.discriminatedUnion("type", [
 ]);
 
 // GET /api/v1/admin/backup-targets — list app-level targets
-export async function GET() {
+async function handleGet() {
   try {
     await requireAppAdmin();
 
@@ -91,3 +91,5 @@ async function handlePost(request: NextRequest) {
 }
 
 export const POST = withRateLimit(handlePost, { tier: "admin", key: "admin-backup-targets" });
+
+export const GET = withRateLimit(handleGet, { tier: "read", key: "get:v1/admin/backup-targets" });

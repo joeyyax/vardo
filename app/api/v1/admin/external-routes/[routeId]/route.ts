@@ -24,7 +24,7 @@ const updateExternalRouteSchema = z.object({
 });
 
 /** GET /api/v1/admin/external-routes/[routeId] — fetch a single external route */
-export async function GET(
+async function handleGet(
   _request: Request,
   { params }: { params: Promise<{ routeId: string }> }
 ) {
@@ -152,3 +152,5 @@ async function handleDelete(
 
 export const PATCH = withRateLimit(handlePatch, { tier: "admin", key: "admin-external-routes" });
 export const DELETE = withRateLimit(handleDelete, { tier: "admin", key: "admin-external-routes" });
+
+export const GET = withRateLimit(handleGet, { tier: "read", key: "get:v1/admin/external-routes/*" });

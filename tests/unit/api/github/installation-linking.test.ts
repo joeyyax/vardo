@@ -1,3 +1,4 @@
+import { NextRequest } from "next/server";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const { state, listInstallations, insert } = vi.hoisted(() => ({
@@ -15,6 +16,7 @@ vi.mock("@/lib/auth/admin", () => ({
 vi.mock("@/lib/git-integration/app", () => ({
   getAppOctokit: async () => ({ rest: { apps: { listInstallations } } }),
 }));
+vi.mock("@/lib/api/rate-limit", () => ({ rateLimit: async () => null }));
 vi.mock("@/lib/db", () => ({
   db: {
     query: { githubAppInstallations: { findMany: async () => [] } },
@@ -35,7 +37,7 @@ beforeEach(() => {
 describe("GitHub installation sync", () => {
   it("refuses a signed-in non-admin, who would otherwise link every installation", async () => {
     state.admin = false;
-    const res = await GET();
+    const res = await GET(new NextRequest("http://localhost/test"));
     expect(res.status).toBe(403);
     expect(listInstallations).not.toHaveBeenCalled();
     expect(insert).not.toHaveBeenCalled();
@@ -43,7 +45,7 @@ describe("GitHub installation sync", () => {
 
   it("links installations for an instance admin", async () => {
     state.admin = true;
-    const res = await GET();
+    const res = await GET(new NextRequest("http://localhost/test"));
     expect(res.status).toBe(200);
     expect(insert).toHaveBeenCalledTimes(1);
   });

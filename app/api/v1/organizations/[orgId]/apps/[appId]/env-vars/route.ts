@@ -42,7 +42,7 @@ const DECRYPT_ERROR = "Couldn't decrypt env vars — check ENCRYPTION_MASTER_KEY
 
 // GET /api/v1/organizations/[orgId]/apps/[appId]/env-vars[?environmentId=]
 // Returns decrypted env content. `inherited` marks an environment with no env of its own.
-export async function GET(request: NextRequest, { params }: RouteParams) {
+async function handleGet(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
     const org = await verifyOrgAccess(orgId, "env.read");
@@ -158,3 +158,5 @@ async function handlePut(request: NextRequest, { params }: RouteParams) {
 }
 
 export const PUT = withRateLimit(handlePut, { tier: "mutation", key: "apps-env-vars" });
+
+export const GET = withRateLimit(handleGet, { tier: "read", key: "get:v1/organizations/*/apps/*/env-vars" });

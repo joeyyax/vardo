@@ -31,7 +31,7 @@ async function handlePost(request: NextRequest) {
 }
 
 /** GET /api/mcp — rejected, since stateless mode has no session for SSE. */
-export async function GET() {
+async function handleGet() {
   return new Response(
     JSON.stringify({
       error: "SSE not supported — this server is stateless. Use POST for all requests.",
@@ -50,3 +50,5 @@ async function handleDelete() {
 
 export const POST = withRateLimit(handlePost, { tier: "mutation", key: "api-mcp" });
 export const DELETE = withRateLimit(handleDelete, { tier: "mutation", key: "api-mcp" });
+
+export const GET = withRateLimit(handleGet, { tier: "read", key: "get:mcp" });

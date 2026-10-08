@@ -1,3 +1,4 @@
+import { withStreamCap } from "@/lib/api/stream-cap";
 import { NextRequest } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
@@ -210,4 +211,4 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
   }
 }
 
-export const GET = withRateLimit(handleGet, { tier: "read", key: "deploy-stream" });
+export const GET = withStreamCap(withRateLimit(handleGet, { tier: "read", key: "deploy-stream" }));

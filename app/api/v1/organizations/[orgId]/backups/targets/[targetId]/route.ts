@@ -107,7 +107,7 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
 
 // GET /api/v1/organizations/[orgId]/backups/targets/[targetId]
 // What deleting the target would take with it.
-export async function GET(_request: NextRequest, { params }: RouteParams) {
+async function handleGet(_request: NextRequest, { params }: RouteParams) {
   try {
     const gate = await requirePlugin("backups");
     if (gate) return gate;
@@ -186,3 +186,5 @@ async function handleDelete(request: NextRequest, { params }: RouteParams) {
 
 export const PATCH = withRateLimit(handlePatch, { tier: "mutation", key: "backups-targets" });
 export const DELETE = withRateLimit(handleDelete, { tier: "mutation", key: "backups-targets" });
+
+export const GET = withRateLimit(handleGet, { tier: "read", key: "get:v1/organizations/*/backups/targets/*" });

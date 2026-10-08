@@ -6,7 +6,7 @@ import { requireAppAdmin } from "@/lib/auth/admin";
 import { getSystemBackupsDefault, reconcileInBackground, setSystemBackupsDefault } from "@/lib/backups/switch";
 
 // GET /api/v1/admin/backup-default
-export async function GET() {
+async function handleGet() {
   try {
     await requireAppAdmin();
     return NextResponse.json({ enabled: await getSystemBackupsDefault() });
@@ -37,3 +37,5 @@ async function handlePut(request: NextRequest) {
 }
 
 export const PUT = withRateLimit(handlePut, { tier: "admin", key: "admin-backup-default" });
+
+export const GET = withRateLimit(handleGet, { tier: "read", key: "get:v1/admin/backup-default" });

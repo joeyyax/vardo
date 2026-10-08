@@ -17,7 +17,7 @@ const log = logger.child("admin:core-services:cadvisor");
 const bodySchema = z.object({ diskMetricsEnabled: z.boolean() });
 
 // GET /api/v1/admin/core-services/cadvisor-disk-metrics
-export async function GET() {
+async function handleGet() {
   try {
     await requireAppAdmin();
     return NextResponse.json(await getCadvisorConfig());
@@ -80,3 +80,5 @@ async function handlePost(request: NextRequest) {
 }
 
 export const POST = withRateLimit(handlePost, { tier: "admin", key: "core-services:cadvisor-disk-metrics" });
+
+export const GET = withRateLimit(handleGet, { tier: "read", key: "get:v1/admin/core-services/cadvisor-disk-metrics" });

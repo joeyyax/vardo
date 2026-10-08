@@ -1,3 +1,4 @@
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { appSecurityScans } from "@/lib/db/schema";
@@ -13,7 +14,7 @@ type RouteParams = {
  * GET /api/v1/organizations/[orgId]/apps/[appId]/security
  * The app's 10 most recent security scans.
  */
-export async function GET(_request: NextRequest, { params }: RouteParams) {
+async function handleGet(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
 
@@ -35,3 +36,5 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     return apiError.internal();
   }
 }
+
+export const GET = withRateLimit(handleGet, { tier: "poll", key: "get:v1/organizations/*/apps/*/security" });

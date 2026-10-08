@@ -40,7 +40,7 @@ async function deletedHistoryScope(request: NextRequest, orgId: string) {
 
 // GET /api/v1/organizations/[orgId]/backups/history?appId=|jobName=
 // What deleting that history would remove.
-export async function GET(request: NextRequest, { params }: RouteParams) {
+async function handleGet(request: NextRequest, { params }: RouteParams) {
   try {
     const gate = await requirePlugin("backups");
     if (gate) return gate;
@@ -93,3 +93,5 @@ async function handleDelete(request: NextRequest, { params }: RouteParams) {
 }
 
 export const DELETE = withRateLimit(handleDelete, { tier: "mutation", key: "backup-delete" });
+
+export const GET = withRateLimit(handleGet, { tier: "read", key: "get:v1/organizations/*/backups/history" });

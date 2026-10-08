@@ -25,7 +25,7 @@ const patchSchema = z
 
 // GET /api/v1/organizations/[orgId]/digest
 // Returns the org's digest settings, or unsaved defaults.
-export async function GET(_req: NextRequest, { params }: RouteParams) {
+async function handleGet(_req: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId, "org.view");
@@ -167,3 +167,5 @@ async function handlePost(_req: NextRequest, { params }: RouteParams) {
 
 export const PATCH = withRateLimit(handlePatch, { tier: "mutation", key: "organizations-digest" });
 export const POST = withRateLimit(handlePost, { tier: "mutation", key: "organizations-digest" });
+
+export const GET = withRateLimit(handleGet, { tier: "read", key: "get:v1/organizations/*/digest" });

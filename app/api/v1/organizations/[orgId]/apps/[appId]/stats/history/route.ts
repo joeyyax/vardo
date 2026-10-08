@@ -1,3 +1,4 @@
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { NextRequest, NextResponse } from "next/server";
 import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
@@ -13,7 +14,7 @@ type RouteParams = {
 
 // GET /api/v1/organizations/[orgId]/apps/[appId]/stats/history
 // Query params: from (ms), to (ms), metric (cpu|memory|networkRx|networkTx), bucket (ms)
-export async function GET(request: NextRequest, { params }: RouteParams) {
+async function handleGet(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
     const org = await verifyOrgAccess(orgId, "app.view");
@@ -56,3 +57,5 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     return handleRouteError(error, "Error fetching metrics history");
   }
 }
+
+export const GET = withRateLimit(handleGet, { tier: "read", key: "get:v1/organizations/*/apps/*/stats/history" });

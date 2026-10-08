@@ -32,7 +32,7 @@ const putSchema = z.discriminatedUnion("type", [
 ]);
 
 /** GET ?orgId= — the user's preferences for every channel in the org, plus their digest preference. */
-export async function GET(req: NextRequest) {
+async function handleGet(req: NextRequest) {
   try {
     const orgId = req.nextUrl.searchParams.get("orgId");
     if (!orgId) {
@@ -175,3 +175,5 @@ async function handlePut(req: NextRequest) {
 }
 
 export const PUT = withRateLimit(handlePut, { tier: "mutation", key: "user-notification-preferences" });
+
+export const GET = withRateLimit(handleGet, { tier: "read", key: "get:v1/user/notification-preferences" });

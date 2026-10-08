@@ -52,7 +52,7 @@ type VolumeInfo = {
 };
 
 // GET — list all volumes for this app (from Docker + volumes table)
-export async function GET(_request: NextRequest, { params }: RouteParams) {
+async function handleGet(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
     const org = await verifyOrgAccess(orgId, "app.view");
@@ -265,3 +265,5 @@ async function handlePut(request: NextRequest, { params }: RouteParams) {
 }
 
 export const PUT = withRateLimit(handlePut, { tier: "mutation", key: "apps-volumes" });
+
+export const GET = withRateLimit(handleGet, { tier: "read", key: "get:v1/organizations/*/apps/*/volumes" });

@@ -1,3 +1,4 @@
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { NextRequest, NextResponse } from "next/server";
 import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
@@ -13,7 +14,7 @@ type RouteParams = {
 };
 
 // GET /api/v1/organizations/[orgId]/projects/[projectId]/stats
-export async function GET(request: NextRequest, { params }: RouteParams) {
+async function handleGet(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, projectId } = await params;
     const org = await verifyOrgAccess(orgId, "org.view");
@@ -61,3 +62,5 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     return handleRouteError(error, "Error fetching project stats");
   }
 }
+
+export const GET = withRateLimit(handleGet, { tier: "read", key: "get:v1/organizations/*/projects/*/stats" });

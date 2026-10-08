@@ -1,3 +1,4 @@
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { NextRequest, NextResponse } from "next/server";
 import { setupTokenRefusal } from "@/lib/setup-token";
 import { needsSetup } from "@/lib/setup";
@@ -15,7 +16,7 @@ import { apiError } from "@/lib/api/error-response";
 
 // GET /api/setup/progress — returns completion status for each setup step.
 // Unauthenticated during setup (no user exists yet); requires admin after.
-export async function GET(request: NextRequest) {
+async function handleGet(request: NextRequest) {
   const refused = await setupTokenRefusal(request);
   if (refused) return refused;
   const setup = await needsSetup();
@@ -49,3 +50,5 @@ export async function GET(request: NextRequest) {
     instances: peerCount > 0,
   });
 }
+
+export const GET = withRateLimit(handleGet, { tier: "read", key: "get:setup/progress" });

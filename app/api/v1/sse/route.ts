@@ -1,3 +1,4 @@
+import { withStreamCap } from "@/lib/api/stream-cap";
 import { NextRequest } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { getSession } from "@/lib/auth/session";
@@ -15,7 +16,7 @@ import { closeOnShutdown } from "@/lib/shutdown";
 //   event: deploy-stage — deploy stage transitions
 //   event: toast       — user toasts (temp, progress, persistent)
 // Pass lastEventId/lastDeployId/lastToastId to resume.
-export async function GET(request: NextRequest) {
+async function handleGet(request: NextRequest) {
   try {
     const session = await getSession();
     if (!session) {
@@ -116,3 +117,5 @@ export async function GET(request: NextRequest) {
     return handleRouteError(error, "SSE gateway error");
   }
 }
+
+export const GET = withStreamCap(handleGet);

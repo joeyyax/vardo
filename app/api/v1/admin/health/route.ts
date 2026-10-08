@@ -1,3 +1,4 @@
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { NextResponse } from "next/server";
 import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { requireAppAdmin } from "@/lib/auth/admin";
@@ -5,7 +6,7 @@ import { getSystemHealth } from "@/lib/config/health";
 import { getAllFeatureFlags } from "@/lib/config/features";
 
 // GET /api/v1/admin/health
-export async function GET() {
+async function handleGet() {
   try {
     await requireAppAdmin();
 
@@ -25,3 +26,5 @@ export async function GET() {
     return handleRouteError(error, "Error fetching system health");
   }
 }
+
+export const GET = withRateLimit(handleGet, { tier: "read", key: "get:v1/admin/health" });

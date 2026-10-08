@@ -1,3 +1,4 @@
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { NextRequest, NextResponse } from "next/server";
 import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
@@ -19,7 +20,7 @@ function positiveInt(raw: string | null, fallback: number, max: number): number 
 // GET /api/v1/organizations/[orgId]/resources
 // Usage and limit for CPU, memory, disk, network and GPU, per app and per project.
 // Query params: window (ms of history), buckets (sparkline points)
-export async function GET(request: NextRequest, { params }: RouteParams) {
+async function handleGet(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId, "org.view");
@@ -36,3 +37,5 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     return handleRouteError(error, "Error fetching resource usage");
   }
 }
+
+export const GET = withRateLimit(handleGet, { tier: "read", key: "get:v1/organizations/*/resources" });

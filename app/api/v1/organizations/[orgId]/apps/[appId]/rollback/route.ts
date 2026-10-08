@@ -180,7 +180,7 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ org
 
 // GET /api/v1/organizations/[orgId]/apps/[appId]/rollback?deploymentId=xxx
 // Returns a diff preview of what will change if rolling back to the given deployment
-export async function GET(request: NextRequest, { params }: RouteParams) {
+async function handleGet(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
     const org = await verifyOrgAccess(orgId, "app.view");
@@ -316,3 +316,5 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 }
 
 export const POST = withRateLimit(handler, { tier: "critical", key: "rollback" });
+
+export const GET = withRateLimit(handleGet, { tier: "read", key: "get:v1/organizations/*/apps/*/rollback" });

@@ -9,7 +9,7 @@ import { getAppOctokit } from "@/lib/git-integration/app";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
 // GET /api/v1/github/installations — List current user's GitHub installations
-export async function GET() {
+async function handleGet() {
   try {
     const session = await requireSession();
 
@@ -72,3 +72,5 @@ async function handleDelete(request: NextRequest) {
 }
 
 export const DELETE = withRateLimit(handleDelete, { tier: "mutation", key: "github-installations" });
+
+export const GET = withRateLimit(handleGet, { tier: "read", key: "get:v1/github/installations" });

@@ -20,7 +20,7 @@ type RouteParams = {
 };
 
 // GET /api/v1/organizations/[orgId]/members
-export async function GET(request: NextRequest, { params }: RouteParams) {
+async function handleGet(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId, "org.view");
@@ -121,3 +121,5 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
 }
 
 export const POST = withRateLimit(handlePost, { tier: "mutation", key: "organizations-members" });
+
+export const GET = withRateLimit(handleGet, { tier: "read", key: "get:v1/organizations/*/members" });

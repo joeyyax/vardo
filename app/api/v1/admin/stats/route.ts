@@ -1,3 +1,4 @@
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { NextRequest, NextResponse } from "next/server";
 import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
@@ -9,7 +10,7 @@ import { isMetricsEnabled } from "@/lib/metrics/config";
 import { requireAppAdmin } from "@/lib/auth/admin";
 
 // GET /api/v1/admin/stats — system-wide metrics, live or historical via ?from=&to=
-export async function GET(request: NextRequest) {
+async function handleGet(request: NextRequest) {
   try {
     await requireAppAdmin();
 
@@ -68,3 +69,5 @@ export async function GET(request: NextRequest) {
     return handleRouteError(error, "Error fetching admin stats");
   }
 }
+
+export const GET = withRateLimit(handleGet, { tier: "read", key: "get:v1/admin/stats" });

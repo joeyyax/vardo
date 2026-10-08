@@ -157,7 +157,7 @@ async function handleDelete(request: NextRequest, { params }: RouteParams) {
   }
 }
 
-export const GET = handleGet;
+export const GET = withRateLimit(handleGet, { tier: "read", key: "get:v1/organizations/*/image-updates/ignores" });
 export const POST = withRateLimit(handlePost, { tier: "mutation", key: "image-update-ignores" });
 export const DELETE = withRateLimit(handleDelete, {
   tier: "mutation",

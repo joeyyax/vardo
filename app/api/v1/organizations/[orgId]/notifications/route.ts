@@ -13,7 +13,7 @@ import { withRateLimit } from "@/lib/api/with-rate-limit";
 type RouteParams = { params: Promise<{ orgId: string }> };
 const createSchema = z.object({ name: z.string().min(1).max(100), type: z.enum(["email", "webhook", "slack"]), config: z.union([z.object({ recipients: z.array(z.string().email()).min(1) }), z.object({ url: z.string().url(), secret: z.string().optional() }), z.object({ webhookUrl: z.string().url() })]), enabled: z.boolean().optional().default(true), subscribedEvents: z.array(z.string()).optional().default([]) }).strict();
 
-export async function GET(_req: NextRequest, { params }: RouteParams) {
+async function handleGet(_req: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId, "org.view");
@@ -37,3 +37,5 @@ async function handlePost(req: NextRequest, { params }: RouteParams) {
 }
 
 export const POST = withRateLimit(handlePost, { tier: "mutation", key: "organizations-notifications" });
+
+export const GET = withRateLimit(handleGet, { tier: "read", key: "get:v1/organizations/*/notifications" });

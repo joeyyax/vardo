@@ -87,7 +87,7 @@ describe("GET /api/v1/admin/core-services/cadvisor-disk-metrics", () => {
   it("returns the stored config", async () => {
     mockGetCadvisorConfig.mockResolvedValue({ diskMetricsEnabled: false });
 
-    const res = await GET();
+    const res = await GET(new NextRequest("http://localhost/test"));
     const body = await res.json();
 
     expect(body).toEqual({ diskMetricsEnabled: false });

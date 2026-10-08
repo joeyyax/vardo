@@ -1,10 +1,11 @@
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { NextRequest, NextResponse } from "next/server";
 import { getAlertState } from "@/lib/system-alerts/state";
 import { requireAdminAuth } from "@/lib/auth/admin";
 import { apiError, handleRouteError } from "@/lib/api/error-response";
 
 // GET /api/v1/system/alerts — platform-level, returns current alert state
-export async function GET(request: NextRequest) {
+async function handleGet(request: NextRequest) {
   try {
     await requireAdminAuth(request);
 
@@ -36,3 +37,5 @@ export async function GET(request: NextRequest) {
     return handleRouteError(error, "Error fetching system alerts");
   }
 }
+
+export const GET = withRateLimit(handleGet, { tier: "read", key: "get:v1/system/alerts" });

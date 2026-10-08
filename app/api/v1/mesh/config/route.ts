@@ -1,3 +1,4 @@
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { requireMeshPeer } from "@/lib/mesh/auth";
@@ -8,7 +9,7 @@ import { requirePlugin } from "@/lib/api/require-plugin";
  * GET /api/v1/mesh/config — credential-free config for authenticated peers.
  * Reachable on the public origin: add nothing you wouldn't hand any peer-token holder.
  */
-export async function GET(request: NextRequest) {
+async function handleGet(request: NextRequest) {
   try {
     await requireMeshPeer(request);
 
@@ -20,3 +21,5 @@ export async function GET(request: NextRequest) {
     return handleRouteError(error, "Error fetching mesh config");
   }
 }
+
+export const GET = withRateLimit(handleGet, { tier: "read", key: "get:v1/mesh/config" });

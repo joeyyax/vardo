@@ -36,7 +36,7 @@ const bulkSchema = z.object({
 });
 
 // GET — list org env vars (keys + descriptions, no secret values)
-export async function GET(_request: NextRequest, { params }: RouteParams) {
+async function handleGet(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId, "env.read");
@@ -181,3 +181,5 @@ async function handleDelete(request: NextRequest, { params }: RouteParams) {
 export const POST = withRateLimit(handlePost, { tier: "mutation", key: "organizations-env-vars" });
 export const PUT = withRateLimit(handlePut, { tier: "mutation", key: "organizations-env-vars" });
 export const DELETE = withRateLimit(handleDelete, { tier: "mutation", key: "organizations-env-vars" });
+
+export const GET = withRateLimit(handleGet, { tier: "read", key: "get:v1/organizations/*/env-vars" });

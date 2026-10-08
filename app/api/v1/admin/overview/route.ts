@@ -1,3 +1,4 @@
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { NextResponse } from "next/server";
 import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { requireAppAdmin } from "@/lib/auth/admin";
@@ -8,7 +9,7 @@ import { loadTemplates } from "@/lib/templates/load";
 import { getSystemHealth } from "@/lib/config/health";
 
 // GET /api/v1/admin/overview
-export async function GET() {
+async function handleGet() {
   try {
     await requireAppAdmin();
 
@@ -90,3 +91,5 @@ async function buildSparklines(days: number): Promise<Record<string, [number, nu
   }
   return sparklines;
 }
+
+export const GET = withRateLimit(handleGet, { tier: "read", key: "get:v1/admin/overview" });

@@ -1,3 +1,4 @@
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { NextRequest, NextResponse } from "next/server";
 import { resolve4, resolveCname } from "dns/promises";
 import { getServerIP } from "@/lib/server-ip";
@@ -9,7 +10,7 @@ import { blockedAddressReason } from "@/lib/security/ssrf";
 const BASE_DOMAIN = process.env.VARDO_BASE_DOMAIN || "localhost";
 
 // GET /api/v1/dns-check?domain=example.com&expected=auto-generated.localhost
-export async function GET(request: NextRequest) {
+async function handleGet(request: NextRequest) {
   const { getSession } = await import("@/lib/auth/session");
   const session = await getSession();
   if (!session?.user?.id) {
@@ -126,3 +127,5 @@ export async function GET(request: NextRequest) {
     });
   }
 }
+
+export const GET = withRateLimit(handleGet, { tier: "heavy", key: "get:v1/dns-check" });

@@ -64,7 +64,7 @@ describe("mesh routes and the mesh flag", () => {
   it("lets a request past the gate when the flag is on", async () => {
     vi.stubEnv("VARDO_FEATURE_MESH", "on");
     const mod = await import("@/app/api/v1/admin/mesh/peers/route");
-    const res = await mod.GET();
+    const res = await mod.GET(new NextRequest("http://localhost/test"));
     expect(res.status).not.toBe(404);
   });
 });

@@ -25,7 +25,7 @@ const volumeLimitSchema = z.object({
 }).strict();
 
 // GET — the app's volume limit, read from the first volume that has one.
-export async function GET(_request: NextRequest, { params }: RouteParams) {
+async function handleGet(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
     const app = await verifyAppAccess(orgId, appId, "app.view");
@@ -118,3 +118,5 @@ async function handleDelete(_request: NextRequest, { params }: RouteParams) {
 
 export const PUT = withRateLimit(handlePut, { tier: "mutation", key: "volumes-limits" });
 export const DELETE = withRateLimit(handleDelete, { tier: "mutation", key: "volumes-limits" });
+
+export const GET = withRateLimit(handleGet, { tier: "read", key: "get:v1/organizations/*/apps/*/volumes/limits" });

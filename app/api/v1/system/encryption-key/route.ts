@@ -1,3 +1,4 @@
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminAuth } from "@/lib/auth/admin";
 import { apiError, handleRouteError } from "@/lib/api/error-response";
@@ -5,7 +6,7 @@ import { describeKeyEscrow, reconcileKeyFingerprint } from "@/lib/crypto/key-esc
 
 // GET /api/v1/system/encryption-key — fingerprint and escrow state of the
 // master key. Never the key itself.
-export async function GET(request: NextRequest) {
+async function handleGet(request: NextRequest) {
   try {
     await requireAdminAuth(request);
 
@@ -36,3 +37,5 @@ export async function GET(request: NextRequest) {
     return handleRouteError(error, "Error reading encryption key state");
   }
 }
+
+export const GET = withRateLimit(handleGet, { tier: "read", key: "get:v1/system/encryption-key" });

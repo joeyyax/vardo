@@ -1,3 +1,4 @@
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { NextRequest, NextResponse } from "next/server";
 import { and, eq, ne, isNull, or } from "drizzle-orm";
 import { apiError, handleRouteError } from "@/lib/api/error-response";
@@ -12,7 +13,7 @@ type RouteParams = {
 
 // GET /api/v1/organizations/[orgId]/apps/[appId]/delete-preview
 // What deleting the app would destroy or keep. `?sizes=1` adds sizes.
-export async function GET(request: NextRequest, { params }: RouteParams) {
+async function handleGet(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
     const org = await verifyOrgAccess(orgId, "app.delete");
@@ -50,3 +51,5 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     return handleRouteError(error, "Error previewing app delete");
   }
 }
+
+export const GET = withRateLimit(handleGet, { tier: "read", key: "get:v1/organizations/*/apps/*/delete-preview" });

@@ -1,3 +1,4 @@
+import { withStreamCap } from "@/lib/api/stream-cap";
 import { NextRequest } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
@@ -13,7 +14,7 @@ import { groupMetricsByApp } from "@/lib/metrics/app-match";
 import { METRICS_APP_COLUMNS } from "@/lib/metrics/app-columns";
 
 // GET /api/v1/admin/stats/stream
-export async function GET(request: NextRequest) {
+async function handleGet(request: NextRequest) {
   try {
     await requireSession();
     if (!(await isAppAdmin())) {
@@ -93,3 +94,5 @@ export async function GET(request: NextRequest) {
     return handleRouteError(error, "Error streaming admin stats");
   }
 }
+
+export const GET = withStreamCap(handleGet);

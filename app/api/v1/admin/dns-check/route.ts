@@ -1,3 +1,4 @@
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { NextRequest, NextResponse } from "next/server";
 import { resolve4 } from "dns/promises";
 import { requireAdminAuth } from "@/lib/auth/admin";
@@ -16,7 +17,7 @@ type DnsCheck = {
   proxyProvider: "cloudflare" | null;
 };
 
-export async function GET(request: NextRequest) {
+async function handleGet(request: NextRequest) {
   try {
     await requireAdminAuth(request);
 
@@ -84,3 +85,5 @@ export async function GET(request: NextRequest) {
     return handleRouteError(error, "Error checking DNS");
   }
 }
+
+export const GET = withRateLimit(handleGet, { tier: "heavy", key: "get:v1/admin/dns-check" });

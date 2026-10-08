@@ -55,7 +55,7 @@ async function findProjectBasic(orgId: string, projectId: string) {
 }
 
 // GET /api/v1/organizations/[orgId]/projects/[projectId]
-export async function GET(_request: NextRequest, { params }: RouteParams) {
+async function handleGet(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, projectId } = await params;
     const org = await verifyOrgAccess(orgId, "org.view");
@@ -226,3 +226,5 @@ async function handleDelete(_request: NextRequest, { params }: RouteParams) {
 
 export const PATCH = withRateLimit(handlePatch, { tier: "mutation", key: "organizations-projects" });
 export const DELETE = withRateLimit(handleDelete, { tier: "mutation", key: "organizations-projects" });
+
+export const GET = withRateLimit(handleGet, { tier: "poll", key: "get:v1/organizations/*/projects/*" });

@@ -17,7 +17,7 @@ import {
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { apiError } from "@/lib/api/error-response";
 
-export async function GET(request: NextRequest) {
+async function handleGet(request: NextRequest) {
   const refused = await setupTokenRefusal(request);
   if (refused) return refused;
   await requireAdminAuth(request);
@@ -81,3 +81,5 @@ async function handlePost(request: NextRequest) {
 }
 
 export const POST = withRateLimit(handlePost, { tier: "admin", key: "setup-auth-methods" });
+
+export const GET = withRateLimit(handleGet, { tier: "read", key: "get:setup/auth-methods" });

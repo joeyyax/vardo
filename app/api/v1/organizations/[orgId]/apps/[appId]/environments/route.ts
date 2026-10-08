@@ -21,7 +21,7 @@ type RouteParams = {
 };
 
 // GET /api/v1/organizations/[orgId]/apps/[appId]/environments
-export async function GET(_request: NextRequest, { params }: RouteParams) {
+async function handleGet(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
     const app = await verifyAppAccess(orgId, appId, "app.view");
@@ -322,3 +322,5 @@ async function handleDelete(request: NextRequest, { params }: RouteParams) {
 
 export const POST = withRateLimit(handlePost, { tier: "mutation", key: "apps-environments" });
 export const DELETE = withRateLimit(handleDelete, { tier: "mutation", key: "apps-environments" });
+
+export const GET = withRateLimit(handleGet, { tier: "read", key: "get:v1/organizations/*/apps/*/environments" });

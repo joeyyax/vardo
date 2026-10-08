@@ -1,3 +1,4 @@
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { NextRequest, NextResponse } from "next/server";
 import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
@@ -13,7 +14,7 @@ type RouteParams = {
 };
 
 /** GET — diff the image's contents against the volume at its mount path. */
-export async function GET(_request: NextRequest, { params }: RouteParams) {
+async function handleGet(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId, volumeName } = await params;
     const appRecord = await verifyAppAccess(orgId, appId, "app.view");
@@ -111,3 +112,5 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     return handleRouteError(error, "Error computing volume diff");
   }
 }
+
+export const GET = withRateLimit(handleGet, { tier: "read", key: "get:v1/organizations/*/apps/*/volumes/*/diff" });

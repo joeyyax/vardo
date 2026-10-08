@@ -1,3 +1,4 @@
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { NextResponse } from "next/server";
 import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { requireAppAdmin } from "@/lib/auth/admin";
@@ -10,7 +11,7 @@ import { METRICS_APP_COLUMNS } from "@/lib/metrics/app-columns";
 import { isMetricsEnabled } from "@/lib/metrics/config";
 
 // GET /api/v1/admin/organizations
-export async function GET() {
+async function handleGet() {
   try {
     await requireAppAdmin();
 
@@ -73,3 +74,5 @@ export async function GET() {
     return handleRouteError(error, "Error fetching organizations");
   }
 }
+
+export const GET = withRateLimit(handleGet, { tier: "read", key: "get:v1/admin/organizations" });

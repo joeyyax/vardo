@@ -1,3 +1,4 @@
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { NextRequest, NextResponse } from "next/server";
 import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
@@ -11,7 +12,7 @@ type RouteParams = {
 };
 
 // GET /api/v1/organizations/[orgId]/apps/[appId]/branches
-export async function GET(_request: NextRequest, { params }: RouteParams) {
+async function handleGet(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
     const org = await verifyOrgAccess(orgId, "app.view");
@@ -89,3 +90,5 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     return handleRouteError(error, "Error fetching branches");
   }
 }
+
+export const GET = withRateLimit(handleGet, { tier: "heavy", key: "get:v1/organizations/*/apps/*/branches" });

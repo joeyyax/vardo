@@ -1,3 +1,4 @@
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
@@ -11,7 +12,7 @@ import { logger } from "@/lib/logger";
 const log = logger.child("github-installations-sync");
 
 // GET /api/v1/github/installations/sync: links every installation of the app, so instance admins only.
-export async function GET() {
+async function handleGet() {
   try {
     const session = await requireAppAdmin();
     const userId = session.user.id;
@@ -81,3 +82,5 @@ export async function GET() {
     return handleRouteError(error, "Error syncing GitHub installations");
   }
 }
+
+export const GET = withRateLimit(handleGet, { tier: "heavy", key: "get:v1/github/installations/sync" });

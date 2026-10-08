@@ -25,7 +25,7 @@ const TIERS = {
 export type Tier = keyof typeof TIERS;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type RouteHandler = (request: NextRequest, context: any) => Promise<Response | NextResponse>;
+type RouteHandler = (request: NextRequest, context?: any) => Promise<Response | NextResponse>;
 
 function clientIp(request: NextRequest): string {
   return (

@@ -63,7 +63,7 @@ async function guardAuthMethods(request: NextRequest): Promise<NextResponse | nu
   );
 }
 
-export async function GET(request: NextRequest) {
+async function handleGet(request: NextRequest) {
   await ensureGitHubCredentials();
   const blocked = await guardAuthMethods(request);
   if (blocked) return blocked;
@@ -79,3 +79,5 @@ async function handlePost(request: NextRequest) {
 }
 
 export const POST = withRateLimit(handlePost, { tier: "auth" });
+
+export const GET = withRateLimit(handleGet, { tier: "read", key: "get:auth/*" });

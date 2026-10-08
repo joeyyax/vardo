@@ -37,7 +37,7 @@ const patchSchema = z.object({
 }).strict();
 
 // GET — org domains, including the default before it's persisted
-export async function GET(_request: NextRequest, { params }: RouteParams) {
+async function handleGet(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId, "org.view");
@@ -255,3 +255,5 @@ async function handleDelete(request: NextRequest, { params }: RouteParams) {
 export const POST = withRateLimit(handlePost, { tier: "mutation", key: "organizations-domains" });
 export const PATCH = withRateLimit(handlePatch, { tier: "mutation", key: "organizations-domains" });
 export const DELETE = withRateLimit(handleDelete, { tier: "mutation", key: "organizations-domains" });
+
+export const GET = withRateLimit(handleGet, { tier: "read", key: "get:v1/organizations/*/domains" });

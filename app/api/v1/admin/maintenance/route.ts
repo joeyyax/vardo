@@ -1,3 +1,4 @@
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { NextResponse } from "next/server";
 import { requireAppAdmin } from "@/lib/auth/admin";
 import { handleRouteError } from "@/lib/api/error-response";
@@ -16,7 +17,7 @@ type ServiceStatus = {
 };
 
 // GET /api/v1/admin/maintenance — status of the vardo-* stack containers.
-export async function GET() {
+async function handleGet() {
   try {
     await requireAppAdmin();
 
@@ -48,3 +49,5 @@ export async function GET() {
     return handleRouteError(error);
   }
 }
+
+export const GET = withRateLimit(handleGet, { tier: "read", key: "get:v1/admin/maintenance" });

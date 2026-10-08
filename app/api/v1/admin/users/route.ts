@@ -18,7 +18,7 @@ const createUserSchema = z.object({
 }).strict();
 
 // GET /api/v1/admin/users — list all users
-export async function GET() {
+async function handleGet() {
   try {
     await requireAppAdmin();
 
@@ -129,3 +129,5 @@ async function handlePost(request: NextRequest) {
 }
 
 export const POST = withRateLimit(handlePost, { tier: "admin", key: "admin-users" });
+
+export const GET = withRateLimit(handleGet, { tier: "read", key: "get:v1/admin/users" });

@@ -8,7 +8,7 @@ import { logger } from "@/lib/logger";
 const log = logger.child("admin:maintenance:app-dir-owners");
 
 // GET /api/v1/admin/maintenance/app-dir-owners — ownership coverage of $VARDO_HOME/apps, read-only.
-export async function GET() {
+async function handleGet() {
   try {
     await requireAppAdmin();
     return NextResponse.json(await stampAllAppDirOwners({ dryRun: true }));
@@ -36,3 +36,5 @@ export const POST = withRateLimit(handlePost, {
   tier: "critical",
   key: "maintenance:app-dir-owners",
 });
+
+export const GET = withRateLimit(handleGet, { tier: "read", key: "get:v1/admin/maintenance/app-dir-owners" });

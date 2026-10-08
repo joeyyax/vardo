@@ -13,7 +13,7 @@ import { apiError } from "@/lib/api/error-response";
 const log = logger.child("github:repos");
 
 // GET /api/v1/github/repos?installationId=X — List repos for a user's installation
-export async function GET(request: NextRequest) {
+async function handleGet(request: NextRequest) {
   try {
     const session = await requireSession();
 
@@ -112,3 +112,5 @@ async function handlePost(request: NextRequest) {
 }
 
 export const POST = withRateLimit(handlePost, { tier: "mutation", key: "github-repos" });
+
+export const GET = withRateLimit(handleGet, { tier: "heavy", key: "get:v1/github/repos" });

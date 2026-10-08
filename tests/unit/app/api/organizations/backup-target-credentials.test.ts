@@ -206,7 +206,7 @@ describe("listing targets", () => {
     mockVerifyOrgAccess.mockResolvedValue({ organization: { id: ORG_ID }, membership: { role: "owner" } });
 
     expectNoSecrets(await (await listTargets(new NextRequest(targetUrl), orgParams)).json());
-    expectNoSecrets(await (await listAdminTargets()).json());
+    expectNoSecrets(await (await listAdminTargets(new NextRequest("http://localhost/test"))).json());
   });
 });
 

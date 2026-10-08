@@ -1,3 +1,4 @@
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { requireSession } from "@/lib/auth/session";
@@ -5,7 +6,7 @@ import { createInstallationState } from "@/lib/git-integration/app";
 import { getGitHubAppConfig } from "@/lib/system-settings";
 
 // GET /api/v1/github/connect — Generate GitHub App install URL for current user
-export async function GET() {
+async function handleGet() {
   try {
     const session = await requireSession();
 
@@ -28,3 +29,5 @@ export async function GET() {
     return handleRouteError(error, "Error generating GitHub connect URL");
   }
 }
+
+export const GET = withRateLimit(handleGet, { tier: "read", key: "get:v1/github/connect" });

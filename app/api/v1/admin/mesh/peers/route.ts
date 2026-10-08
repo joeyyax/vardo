@@ -23,7 +23,7 @@ const addPeerSchema = z.object({
 }).strict();
 
 /** GET /api/v1/admin/mesh/peers — list all mesh peers */
-export async function GET() {
+async function handleGet() {
   try {
     await requireAppAdmin();
 
@@ -86,3 +86,5 @@ async function handlePost(request: NextRequest) {
 }
 
 export const POST = withRateLimit(handlePost, { tier: "admin", key: "mesh-peers" });
+
+export const GET = withRateLimit(handleGet, { tier: "read", key: "get:v1/admin/mesh/peers" });

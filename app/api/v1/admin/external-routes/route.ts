@@ -28,7 +28,7 @@ const createExternalRouteSchema = z.object({
 );
 
 /** GET /api/v1/admin/external-routes — list all external routes */
-export async function GET() {
+async function handleGet() {
   try {
     await requireAppAdmin();
 
@@ -98,3 +98,5 @@ async function handlePost(request: NextRequest) {
 }
 
 export const POST = withRateLimit(handlePost, { tier: "admin", key: "admin-external-routes" });
+
+export const GET = withRateLimit(handleGet, { tier: "read", key: "get:v1/admin/external-routes" });

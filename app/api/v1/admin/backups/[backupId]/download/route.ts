@@ -1,3 +1,4 @@
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { NextRequest } from "next/server";
 import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
@@ -13,7 +14,7 @@ type RouteParams = {
 };
 
 // GET /api/v1/admin/backups/[backupId]/download
-export async function GET(_request: NextRequest, { params }: RouteParams) {
+async function handleGet(_request: NextRequest, { params }: RouteParams) {
   try {
     const gate = await requirePlugin("backups");
     if (gate) return gate;
@@ -36,3 +37,5 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
     return handleRouteError(error, "Error downloading system backup");
   }
 }
+
+export const GET = withRateLimit(handleGet, { tier: "heavy", key: "get:v1/admin/backups/*/download" });

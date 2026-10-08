@@ -28,7 +28,7 @@ const log = logger.child("admin:maintenance:image-reclaim");
 
 // GET /api/v1/admin/maintenance/image-reclaim — the plan a run would execute, plus the last run's outcome.
 // Sizes are an upper bound since images share layers.
-export async function GET() {
+async function handleGet() {
   try {
     await requireAppAdmin();
 
@@ -152,3 +152,5 @@ async function handlePatch(request: NextRequest) {
 export const POST = withRateLimit(handlePost, { tier: "critical", key: "maintenance:image-reclaim" });
 export const PUT = withRateLimit(handlePut, { tier: "admin", key: "maintenance:image-reclaim-config" });
 export const PATCH = withRateLimit(handlePatch, { tier: "admin", key: "maintenance:image-reclaim-app" });
+
+export const GET = withRateLimit(handleGet, { tier: "read", key: "get:v1/admin/maintenance/image-reclaim" });

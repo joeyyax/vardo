@@ -1,3 +1,4 @@
+import { withStreamCap } from "@/lib/api/stream-cap";
 import { NextRequest } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
@@ -16,7 +17,7 @@ type RouteParams = {
 };
 
 // GET /api/v1/organizations/[orgId]/projects/[projectId]/stats/stream
-export async function GET(request: NextRequest, { params }: RouteParams) {
+async function handleGet(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, projectId } = await params;
     const org = await verifyOrgAccess(orgId, "org.view");
@@ -59,3 +60,5 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     return handleRouteError(error, "Error streaming project stats");
   }
 }
+
+export const GET = withStreamCap(handleGet);

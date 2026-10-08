@@ -1,3 +1,4 @@
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
@@ -7,7 +8,7 @@ import { eq, and } from "drizzle-orm";
 import { getInstallationOctokit } from "@/lib/git-integration/app";
 
 // GET /api/v1/github/branches?installationId=X&repo=owner/repo
-export async function GET(request: NextRequest) {
+async function handleGet(request: NextRequest) {
   try {
     const session = await requireSession();
 
@@ -52,3 +53,5 @@ export async function GET(request: NextRequest) {
     return handleRouteError(error, "Error fetching branches");
   }
 }
+
+export const GET = withRateLimit(handleGet, { tier: "heavy", key: "get:v1/github/branches" });

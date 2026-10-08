@@ -1,3 +1,4 @@
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { githubAppInstallations } from "@/lib/db/schema";
@@ -10,7 +11,7 @@ import { logger } from "@/lib/logger";
 const log = logger.child("github-callback");
 
 // GET /api/v1/github/callback — GitHub redirects here after app installation
-export async function GET(request: NextRequest) {
+async function handleGet(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
@@ -115,3 +116,5 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${baseUrl}/user/settings/connections?github=error`);
   }
 }
+
+export const GET = withRateLimit(handleGet, { tier: "read", key: "get:v1/github/callback" });

@@ -1,3 +1,4 @@
+import { withStreamCap } from "@/lib/api/stream-cap";
 import { NextRequest, NextResponse } from "next/server";
 import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
@@ -44,7 +45,7 @@ type RouteParams = {
 
 // GET — SSE stream for terminal output and session setup.
 
-export async function GET(request: NextRequest, { params }: RouteParams) {
+async function handleGet(request: NextRequest, { params }: RouteParams) {
   try {
     const termGate = await requirePlugin("terminal");
     if (termGate) return termGate;
@@ -271,3 +272,5 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
 }
 
 export const POST = withRateLimit(handlePost, { tier: "mutation", key: "apps-terminal" });
+
+export const GET = withStreamCap(handleGet);

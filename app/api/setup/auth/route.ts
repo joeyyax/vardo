@@ -13,7 +13,7 @@ const authSchema = z.object({
   sessionDurationDays: z.number().int().min(1).max(365),
 }).strict();
 
-export async function GET(request: NextRequest) {
+async function handleGet(request: NextRequest) {
   const refused = await setupTokenRefusal(request);
   if (refused) return refused;
   await requireAdminAuth(request);
@@ -47,3 +47,5 @@ async function handlePost(request: NextRequest) {
 }
 
 export const POST = withRateLimit(handlePost, { tier: "admin", key: "setup-auth" });
+
+export const GET = withRateLimit(handleGet, { tier: "read", key: "get:setup/auth" });

@@ -1,3 +1,4 @@
+import { withStreamCap } from "@/lib/api/stream-cap";
 import { NextRequest } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
@@ -19,7 +20,7 @@ type RouteParams = {
 type SendEvent = (event: string, data: unknown) => void;
 
 // GET /api/v1/organizations/[orgId]/apps/[appId]/logs/stream
-export async function GET(request: NextRequest, { params }: RouteParams) {
+async function handleGet(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
     const org = await verifyOrgAccess(orgId, "app.view");
@@ -153,3 +154,5 @@ async function sendInit(
 
   sendEvent("init", { source, services: scope.services, lines });
 }
+
+export const GET = withStreamCap(handleGet);

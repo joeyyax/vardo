@@ -1,3 +1,4 @@
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
@@ -11,7 +12,7 @@ import { requirePlugin } from "@/lib/api/require-plugin";
  * GET /api/v1/mesh/sync?orgId=xxx — this instance's project manifest.
  * Any authenticated peer can read any org's manifest. Peers are trusted.
  */
-export async function GET(request: NextRequest) {
+async function handleGet(request: NextRequest) {
   try {
     const peer = await requireMeshPeer(request);
 
@@ -56,3 +57,5 @@ export async function GET(request: NextRequest) {
     return handleRouteError(error, "Error generating sync manifest");
   }
 }
+
+export const GET = withRateLimit(handleGet, { tier: "read", key: "get:v1/mesh/sync" });

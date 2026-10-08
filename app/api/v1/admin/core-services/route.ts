@@ -1,3 +1,4 @@
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { NextResponse } from "next/server";
 import { inArray } from "drizzle-orm";
 
@@ -13,7 +14,7 @@ import {
 } from "@/lib/infra/core-services";
 
 // GET /api/v1/admin/core-services
-export async function GET() {
+async function handleGet() {
   try {
     await requireAppAdmin();
 
@@ -46,3 +47,5 @@ export async function GET() {
     return handleRouteError(error, "core-services");
   }
 }
+
+export const GET = withRateLimit(handleGet, { tier: "read", key: "get:v1/admin/core-services" });

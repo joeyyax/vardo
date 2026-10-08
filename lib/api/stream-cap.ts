@@ -8,7 +8,7 @@ export const MAX_STREAMS_PER_USER = 60;
 const open = new Map<string, number>();
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type RouteHandler = (request: NextRequest, context: any) => Promise<Response>;
+type RouteHandler = (request: NextRequest, context?: any) => Promise<Response>;
 
 function release(id: string) {
   const n = (open.get(id) ?? 0) - 1;

@@ -42,7 +42,7 @@ beforeEach(() => {
 
 describe("admin backup default", () => {
   it("reads the default", async () => {
-    const res = await GET();
+    const res = await GET(new NextRequest("http://localhost/test"));
 
     expect(await res.json()).toEqual({ enabled: true });
   });

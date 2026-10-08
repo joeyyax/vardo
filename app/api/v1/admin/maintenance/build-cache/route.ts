@@ -9,7 +9,7 @@ const log = logger.child("admin:maintenance:build-cache");
 
 // GET /api/v1/admin/maintenance/build-cache — build cache size and reclaimable space.
 // Both are null (unknown) on failure, never 0.
-export async function GET() {
+async function handleGet() {
   try {
     await requireAppAdmin();
 
@@ -44,3 +44,5 @@ async function handlePost() {
 }
 
 export const POST = withRateLimit(handlePost, { tier: "critical", key: "maintenance:build-cache" });
+
+export const GET = withRateLimit(handleGet, { tier: "read", key: "get:v1/admin/maintenance/build-cache" });

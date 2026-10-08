@@ -1,3 +1,4 @@
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { githubAppInstallations } from "@/lib/db/schema";
@@ -45,7 +46,7 @@ function parseEnvFile(content: string): EnvVar[] {
 }
 
 // GET /api/v1/github/env-scan?installationId=X&repo=owner/repo&branch=main&rootDirectory=apps/web
-export async function GET(request: NextRequest) {
+async function handleGet(request: NextRequest) {
   try {
     const session = await requireSession();
 
@@ -142,3 +143,5 @@ export async function GET(request: NextRequest) {
     );
   }
 }
+
+export const GET = withRateLimit(handleGet, { tier: "heavy", key: "get:v1/github/env-scan" });

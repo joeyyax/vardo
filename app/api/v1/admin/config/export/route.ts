@@ -1,3 +1,4 @@
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { requireAdminAuth } from "@/lib/auth/admin";
@@ -6,7 +7,7 @@ import YAML from "yaml";
 import JSZip from "jszip";
 
 /** GET /api/v1/admin/config/export?include=config|full|secrets — export config as YAML or a zip. */
-export async function GET(request: NextRequest) {
+async function handleGet(request: NextRequest) {
   try {
     await requireAdminAuth(request);
 
@@ -49,3 +50,5 @@ export async function GET(request: NextRequest) {
     return handleRouteError(error, "Error exporting config");
   }
 }
+
+export const GET = withRateLimit(handleGet, { tier: "heavy", key: "get:v1/admin/config/export" });

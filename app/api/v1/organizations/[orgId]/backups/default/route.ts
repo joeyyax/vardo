@@ -19,7 +19,7 @@ async function stateOf(setting: boolean | null) {
 }
 
 // GET /api/v1/organizations/[orgId]/backups/default
-export async function GET(_request: NextRequest, { params }: RouteParams) {
+async function handleGet(_request: NextRequest, { params }: RouteParams) {
   try {
     const gate = await requirePlugin("backups");
     if (gate) return gate;
@@ -68,3 +68,5 @@ async function handlePut(request: NextRequest, { params }: RouteParams) {
 }
 
 export const PUT = withRateLimit(handlePut, { tier: "mutation", key: "backup-default" });
+
+export const GET = withRateLimit(handleGet, { tier: "read", key: "get:v1/organizations/*/backups/default" });

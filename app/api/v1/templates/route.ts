@@ -1,3 +1,4 @@
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { requireSession } from "@/lib/auth/session";
@@ -5,7 +6,7 @@ import { requirePlugin } from "@/lib/api/require-plugin";
 import { loadTemplates } from "@/lib/templates/load";
 
 // GET /api/v1/templates
-export async function GET(_request: NextRequest) {
+async function handleGet(_request: NextRequest) {
   try {
     await requireSession();
 
@@ -18,3 +19,5 @@ export async function GET(_request: NextRequest) {
     return handleRouteError(error);
   }
 }
+
+export const GET = withRateLimit(handleGet, { tier: "read", key: "get:v1/templates" });

@@ -1,3 +1,4 @@
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { NextResponse } from "next/server";
 
 import { apiError, handleRouteError } from "@/lib/api/error-response";
@@ -9,7 +10,7 @@ import { getSession } from "@/lib/auth/session";
  * GET — state of Vardo's own stack and the shared core services.
  * Platform-level and tenant-free, so any authenticated session may read it.
  */
-export async function GET() {
+async function handleGet() {
   try {
     const session = await getSession();
     if (!session) return apiError.unauthorized();
@@ -24,3 +25,5 @@ export async function GET() {
     return handleRouteError(error, "Error reading infrastructure status");
   }
 }
+
+export const GET = withRateLimit(handleGet, { tier: "poll", key: "get:v1/system/infrastructure" });

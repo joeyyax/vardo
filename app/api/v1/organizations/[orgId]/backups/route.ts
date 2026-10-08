@@ -36,7 +36,7 @@ const createJobSchema = z.object({
 }).strict();
 
 // GET /api/v1/organizations/[orgId]/backups
-export async function GET(request: NextRequest, { params }: RouteParams) {
+async function handleGet(request: NextRequest, { params }: RouteParams) {
   try {
     const gate = await requirePlugin("backups");
     if (gate) return gate;
@@ -189,3 +189,5 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
 }
 
 export const POST = withRateLimit(handlePost, { tier: "mutation", key: "organizations-backups" });
+
+export const GET = withRateLimit(handleGet, { tier: "read", key: "get:v1/organizations/*/backups" });

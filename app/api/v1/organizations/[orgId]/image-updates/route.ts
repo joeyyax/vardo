@@ -79,5 +79,5 @@ async function handlePost(_request: NextRequest, { params }: RouteParams) {
   }
 }
 
-export const GET = handleGet;
+export const GET = withRateLimit(handleGet, { tier: "read", key: "get:v1/organizations/*/image-updates" });
 export const POST = withRateLimit(handlePost, { tier: "mutation", key: "image-updates-refresh" });

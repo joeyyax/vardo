@@ -1,3 +1,4 @@
+import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { NextRequest, NextResponse } from "next/server";
 import { apiError, handleRouteError } from "@/lib/api/error-response";
 import {
@@ -26,7 +27,7 @@ const VALID_METRICS: BusinessMetricName[] = [
 //   metrics: comma-separated metric names (default: all)
 //   from/to: time range in ms (omit for latest values only)
 //   bucket: aggregation bucket in ms (default: 300000 = 5min)
-export async function GET(request: NextRequest, { params }: RouteParams) {
+async function handleGet(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId, "org.view");
@@ -72,3 +73,5 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     return handleRouteError(error, "Error fetching business metrics");
   }
 }
+
+export const GET = withRateLimit(handleGet, { tier: "read", key: "get:v1/organizations/*/stats/business" });

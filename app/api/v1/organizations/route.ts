@@ -19,7 +19,7 @@ const createOrgSchema = z.object({
 }).strict();
 
 /** GET /api/v1/organizations — orgs the user belongs to. */
-export async function GET() {
+async function handleGet() {
   try {
     const session = await getSession();
 
@@ -107,3 +107,5 @@ async function handlePost(request: NextRequest) {
 }
 
 export const POST = withRateLimit(handlePost, { tier: "mutation", key: "organizations" });
+
+export const GET = withRateLimit(handleGet, { tier: "read", key: "get:v1/organizations" });

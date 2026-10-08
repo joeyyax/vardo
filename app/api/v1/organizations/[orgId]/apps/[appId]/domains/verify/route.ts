@@ -14,7 +14,7 @@ type RouteParams = { params: Promise<{ orgId: string; appId: string }> };
 
 // GET /api/v1/organizations/[orgId]/apps/[appId]/domains/verify
 // Each domain's ownership state and the TXT record to add.
-export async function GET(_request: NextRequest, { params }: RouteParams) {
+async function handleGet(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
     const access = await verifyOrgAccess(orgId, "app.view");
@@ -82,3 +82,5 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
 }
 
 export const POST = withRateLimit(handlePost, { tier: "mutation", key: "apps-domains-verify" });
+
+export const GET = withRateLimit(handleGet, { tier: "heavy", key: "get:v1/organizations/*/apps/*/domains/verify" });

@@ -16,7 +16,7 @@ const traefikConfigSchema = z.object({
   externalRouting: z.boolean(),
 });
 
-export async function GET(request: NextRequest) {
+async function handleGet(request: NextRequest) {
   await requireAdminAuth(request);
 
   const config = await getTraefikConfig();
@@ -56,3 +56,5 @@ async function handlePost(request: NextRequest) {
 }
 
 export const POST = withRateLimit(handlePost, { tier: "admin", key: "admin-traefik" });
+
+export const GET = withRateLimit(handleGet, { tier: "read", key: "get:v1/admin/traefik" });

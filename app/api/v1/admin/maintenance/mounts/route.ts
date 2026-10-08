@@ -14,7 +14,7 @@ const log = logger.child("admin:maintenance:mounts");
 // GET /api/v1/admin/maintenance/mounts — host mounts from env, each { source, destination } or null.
 // Reads source:destination:ro and the legacy single-path format.
 
-export async function GET() {
+async function handleGet() {
   try {
     await requireAppAdmin();
 
@@ -87,3 +87,5 @@ async function handlePost(request: Request) {
 }
 
 export const POST = withRateLimit(handlePost, { tier: "admin", key: "maintenance-mounts" });
+
+export const GET = withRateLimit(handleGet, { tier: "read", key: "get:v1/admin/maintenance/mounts" });
