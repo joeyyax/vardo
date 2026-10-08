@@ -6,13 +6,17 @@ import { getBackupStorageConfig } from "@/lib/system-settings";
 import { maskSecret } from "@/lib/mask-secrets";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
-import { apiError } from "@/lib/api/error-response";
+import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { saveSystemBackupStorage, systemStorageSchema, SystemStorageConflict } from "@/lib/backups/system-storage";
 
 async function handleGet(request: NextRequest) {
   const refused = await setupTokenRefusal(request);
   if (refused) return refused;
-  await requireAdminAuth(request);
+  try {
+    await requireAdminAuth(request);
+  } catch (error) {
+    return handleRouteError(error);
+  }
 
   const config = await getBackupStorageConfig();
   if (!config) {
@@ -35,7 +39,11 @@ async function handlePost(request: NextRequest) {
   if (refused) return refused;
   const setup = await needsSetup();
   if (!setup) {
-    await requireAdminAuth(request);
+    try {
+      await requireAdminAuth(request);
+    } catch (error) {
+      return handleRouteError(error);
+    }
   }
 
   const parsed = systemStorageSchema.safeParse(await request.json());

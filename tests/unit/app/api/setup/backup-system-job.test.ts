@@ -3,14 +3,16 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
 
-const { ensureSystemBackup, setSystemSetting } = vi.hoisted(() => ({
+const { ensureSystemBackup, setSystemSetting, needsSetup, requireAdminAuth } = vi.hoisted(() => ({
+  needsSetup: vi.fn(),
+  requireAdminAuth: vi.fn(),
   ensureSystemBackup: vi.fn(),
   setSystemSetting: vi.fn(),
 }));
 
 vi.mock("@/lib/setup-token", () => ({ setupTokenRefusal: async () => null }));
-vi.mock("@/lib/setup", () => ({ needsSetup: async () => true }));
-vi.mock("@/lib/auth/admin", () => ({ requireAdminAuth: async () => {} }));
+vi.mock("@/lib/setup", () => ({ needsSetup }));
+vi.mock("@/lib/auth/admin", () => ({ requireAdminAuth }));
 vi.mock("@/lib/api/with-rate-limit", () => ({ withRateLimit: (h: unknown) => h }));
 vi.mock("@/lib/system-settings", () => ({
   getBackupStorageConfig: async () => null,
@@ -41,6 +43,8 @@ const req = () =>
 
 beforeEach(() => {
   vi.clearAllMocks();
+  needsSetup.mockResolvedValue(true);
+  requireAdminAuth.mockResolvedValue(undefined);
   ensureSystemBackup.mockResolvedValue(null);
 });
 
@@ -57,5 +61,22 @@ describe("setup backup save", () => {
     ensureSystemBackup.mockRejectedValue(new Error("boom"));
 
     expect((await POST(req())).status).toBe(200);
+  });
+});
+
+describe("setup backup auth after setup", () => {
+  it("returns 403 to a non-admin", async () => {
+    needsSetup.mockResolvedValue(false);
+    requireAdminAuth.mockRejectedValue(new Error("Forbidden"));
+
+    expect((await POST(req())).status).toBe(403);
+    expect(setSystemSetting).not.toHaveBeenCalled();
+  });
+
+  it("returns 401 when signed out", async () => {
+    needsSetup.mockResolvedValue(false);
+    requireAdminAuth.mockRejectedValue(new Error("Unauthorized"));
+
+    expect((await POST(req())).status).toBe(401);
   });
 });

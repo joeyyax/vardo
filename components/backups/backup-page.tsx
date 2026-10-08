@@ -284,15 +284,15 @@ export function BackupPage({
             <ul className="text-sm space-y-2">
               <li className="flex items-start gap-2.5">
                 <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
-                <span className="text-muted-foreground">App persistent volumes — databases, uploads, file storage</span>
+                <span className="text-muted-foreground">Volumes set to back up, and databases as logical dumps</span>
               </li>
               <li className="flex items-start gap-2.5">
                 <Info className="size-4 text-muted-foreground/50 shrink-0 mt-0.5" aria-hidden="true" />
-                <span className="text-muted-foreground">Doesn&apos;t include container images — they&apos;re pulled from your registry on deploy</span>
+                <span className="text-muted-foreground">Not container images. They&apos;re pulled from your registry on deploy</span>
               </li>
               <li className="flex items-start gap-2.5">
                 <Info className="size-4 text-muted-foreground/50 shrink-0 mt-0.5" aria-hidden="true" />
-                <span className="text-muted-foreground">Doesn&apos;t include the encryption master key — env vars restore as unreadable ciphertext without it</span>
+                <span className="text-muted-foreground">Not ENCRYPTION_MASTER_KEY or BETTER_AUTH_SECRET. Escrow both, or a restore can&apos;t read env vars or two-factor secrets</span>
               </li>
             </ul>
           </div>
@@ -303,15 +303,19 @@ export function BackupPage({
             <ul className="text-sm space-y-2">
               <li className="flex items-start gap-2.5">
                 <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
-                <span className="text-muted-foreground">Snapshots persistent volumes as tar.gz archives</span>
+                <span className="text-muted-foreground">Each archive is encrypted with its own key, wrapped by the master key</span>
               </li>
               <li className="flex items-start gap-2.5">
                 <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
-                <span className="text-muted-foreground">Uploaded offsite to your S3-compatible provider</span>
+                <span className="text-muted-foreground">Uploaded offsite to your storage target</span>
               </li>
               <li className="flex items-start gap-2.5">
                 <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
-                <span className="text-muted-foreground">Tiered retention — daily, weekly, monthly archives</span>
+                <span className="text-muted-foreground">Retention keeps the last, daily, weekly and monthly archives</span>
+              </li>
+              <li className="flex items-start gap-2.5">
+                <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
+                <span className="text-muted-foreground">Restore drills confirm an archive restores</span>
               </li>
             </ul>
           </div>
@@ -322,15 +326,15 @@ export function BackupPage({
             <ul className="text-sm space-y-2">
               <li className="flex items-start gap-2.5">
                 <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
-                <span className="text-muted-foreground">Runs live — no downtime, no container restarts</span>
+                <span className="text-muted-foreground">Runs live, with no downtime or container restarts</span>
               </li>
               <li className="flex items-start gap-2.5">
                 <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
-                <span className="text-muted-foreground">One-click restore from any snapshot</span>
+                <span className="text-muted-foreground">Restore any snapshot. A failed restore puts the previous data back</span>
               </li>
               <li className="flex items-start gap-2.5">
                 <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
-                <span className="text-muted-foreground">Manual backups can be triggered anytime</span>
+                <span className="text-muted-foreground">A new instance can restore Vardo&apos;s database from storage during setup</span>
               </li>
             </ul>
           </div>
