@@ -30,6 +30,7 @@ import { DeployBlockedError } from "../errors";
 import { assertBuildKitReachable, isBuildKitReachable, DEFAULT_BUILDKIT_HOST } from "../buildkit";
 import { assertAppDirOwnership } from "../app-dir-owner";
 import { getInstallationToken } from "@/lib/git-integration/app";
+import { githubTokenGitEnv } from "@/lib/git-integration/clone-auth";
 import {
   getDecryptedPrivateKey,
   writeTemporaryKeyFile,
@@ -377,9 +378,10 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
     let cloneUrl = app.gitUrl;
     const gitEnv: Record<string, string> = {};
     let sshKeyFile: string | null = null;
+    let tokenAuth = false;
 
     // GitHub App token for github.com URLs.
-    if (cloneUrl.includes("github.com")) {
+    if (cloneUrl.startsWith("https://github.com/")) {
       try {
         const orgMembers = await db.query.memberships.findMany({
           where: eq(memberships.organizationId, ctx.organizationId),
@@ -403,10 +405,9 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
         }
 
         if (installToken) {
-          cloneUrl = cloneUrl.replace(
-            "https://github.com/",
-            `https://x-access-token:${installToken}@github.com/`
-          );
+          // An env header, so the token never lands in .git/config inside the build context.
+          Object.assign(gitEnv, githubTokenGitEnv(installToken));
+          tokenAuth = true;
         }
       } catch (err) {
         log(`[deploy] Warning: GitHub auth — ${err instanceof Error ? err.message : err}`);
@@ -414,7 +415,7 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
     }
 
     // Otherwise an SSH deploy key.
-    if (cloneUrl === app.gitUrl && app.gitKeyId) {
+    if (!tokenAuth && app.gitKeyId) {
       try {
         const privateKeyPem = await getDecryptedPrivateKey(app.gitKeyId, app.organizationId);
         if (privateKeyPem) {
@@ -644,3 +645,4 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
   ctx.compose = compose;
   return ctx;
 }
+
