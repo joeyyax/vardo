@@ -18,6 +18,7 @@ import { TraefikSettings } from "@/components/ssl/traefik-settings";
 import { ExternalRoutesSettings } from "@/components/ssl/external-routes-settings";
 import { MaintenanceSettings } from "../maintenance-settings";
 import { BackupPage } from "@/components/backups/backup-page";
+import { SystemBackupSection } from "@/components/backups/system-backup-section";
 
 // Maps URL slugs to tabs. A gated tab 404s when its feature flag is off.
 
@@ -67,7 +68,12 @@ export default async function AdminSettingsTabPage({
       columns: { id: true, name: true, displayName: true },
     });
 
-    return <BackupPage scope="admin" orgId={orgId} apps={appList} />;
+    return (
+      <div className="space-y-12">
+        <SystemBackupSection />
+        <BackupPage scope="admin" orgId={orgId} apps={appList} />
+      </div>
+    );
   }
 
   const Component = entry.component;

@@ -1,26 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { setupTokenRefusal } from "@/lib/setup-token";
-import { z } from "zod";
 import { requireAdminAuth } from "@/lib/auth/admin";
 import { needsSetup } from "@/lib/setup";
-import { getBackupStorageConfig, setSystemSetting } from "@/lib/system-settings";
-import { maskSecret, resolveSecret } from "@/lib/mask-secrets";
+import { getBackupStorageConfig } from "@/lib/system-settings";
+import { maskSecret } from "@/lib/mask-secrets";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { apiError } from "@/lib/api/error-response";
-import { ensureSystemBackup } from "@/lib/backups/auto-backup";
-import { logger } from "@/lib/logger";
-
-const log = logger.child("setup:backup");
-
-const backupSchema = z.object({
-  type: z.enum(["s3", "r2", "b2"]),
-  bucket: z.string().min(1, "Bucket name is required"),
-  region: z.string().min(1, "Region is required"),
-  endpoint: z.string().optional(),
-  accessKey: z.string().optional(),
-  secretKey: z.string().optional(),
-}).strict();
+import { saveSystemBackupStorage, systemStorageSchema, SystemStorageConflict } from "@/lib/backups/system-storage";
 
 async function handleGet(request: NextRequest) {
   const refused = await setupTokenRefusal(request);
@@ -51,26 +38,17 @@ async function handlePost(request: NextRequest) {
     await requireAdminAuth(request);
   }
 
-  const body = await request.json();
-  const parsed = backupSchema.safeParse(body);
+  const parsed = systemStorageSchema.safeParse(await request.json());
   if (!parsed.success) {
     return apiError.validation(parsed.error, { details: true });
   }
 
-  const { type, bucket, region, endpoint, accessKey, secretKey } = parsed.data;
-
-  const existing = await getBackupStorageConfig();
-
-  await setSystemSetting("backup_storage", JSON.stringify({
-    type,
-    bucket,
-    region,
-    endpoint,
-    accessKey: resolveSecret(accessKey, existing?.accessKey),
-    secretKey: resolveSecret(secretKey, existing?.secretKey),
-  }));
-
-  await ensureSystemBackup().catch((err) => log.error("System backup job setup failed:", err));
+  try {
+    await saveSystemBackupStorage(parsed.data);
+  } catch (err) {
+    if (err instanceof SystemStorageConflict) return NextResponse.json({ error: err.message }, { status: 409 });
+    throw err;
+  }
 
   return NextResponse.json({ ok: true });
 }

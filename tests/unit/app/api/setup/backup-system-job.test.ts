@@ -17,6 +17,15 @@ vi.mock("@/lib/system-settings", () => ({
   setSystemSetting,
 }));
 vi.mock("@/lib/backups/auto-backup", () => ({ ensureSystemBackup }));
+vi.mock("@/lib/config/vardo-config", () => ({ readVardoConfig: async () => null }));
+vi.mock("@/lib/db", () => {
+  const chain: Record<string, unknown> = {};
+  for (const m of ["from", "innerJoin", "where"]) chain[m] = () => chain;
+  chain.limit = async () => [];
+  return {
+    db: { select: () => chain, query: { backupTargets: { findFirst: async () => undefined } } },
+  };
+});
 vi.mock("@/lib/logger", () => ({
   logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }) },
 }));

@@ -146,17 +146,17 @@ export function BackupPage({
         />
       ) : showIntro ? (
         <div className="space-y-1">
-          <h2 className="type-h2">Backups</h2>
+          <h2 className="type-h2">{scope === "admin" ? "Organization backups" : "Backups"}</h2>
           <p className="text-sm text-muted-foreground">
             {scope === "admin"
-              ? "Manage system-wide backup targets, retention policies and view backup history across all organizations."
+              ? "Targets, jobs and history for the organization you're in. Vardo's own database is above."
               : "Configure backup targets and schedules for this organization."}
           </p>
         </div>
       ) : null}
 
       {/* Key escrow */}
-      <KeyEscrowCard heading={Heading} />
+      {scope === "org" && <KeyEscrowCard heading={Heading} />}
 
       {scope === "admin" ? <SystemBackupDefault heading={Heading} /> : <OrgBackupDefault orgId={orgId} heading={Heading} />}
 

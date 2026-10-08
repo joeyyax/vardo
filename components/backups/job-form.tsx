@@ -176,7 +176,7 @@ export function JobForm({
 
             {scope === "admin" ? (
               <p className="text-xs text-muted-foreground">
-                System-level backups cover all apps across all organizations.
+                Covers all apps in this organization.
               </p>
             ) : (
               <div className="grid gap-2">
