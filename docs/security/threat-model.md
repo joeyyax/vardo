@@ -117,5 +117,5 @@ Narrows:
 
 Widens or leaves open:
 - `vardo-network` includes the console, Traefik and WireGuard, so a routed app reaches `vardo-frontend:3000` and the Traefik API on `:8080` directly.
-- No `no-new-privileges`, `cap_drop`, `read_only` or non-root `user`. A cryptominer gets every core but one on the standard tier.
+- `no-new-privileges` only for untrusted orgs (#889). No `cap_drop`, `read_only` or non-root `user`. A cryptominer gets every core but one on the standard tier.
 - Redis has no password, so anything that joins `vardo_internal` owns it.

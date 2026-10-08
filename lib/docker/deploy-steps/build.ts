@@ -346,6 +346,7 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
     serviceExposedPorts,
     serviceConfig: ctx.serviceConfig,
     serviceEnv: resolvedServiceEnv,
+    orgTrusted: ctx.orgTrusted,
   });
 
   await writeFile(bareComposePath, composeToYaml(ctx.bareCompose), "utf-8");

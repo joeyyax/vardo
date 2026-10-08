@@ -101,6 +101,8 @@ export function defaultCpuLimit(tier: QosTier, hostCpus: number = availableParal
 
 const DEFAULT_PIDS_LIMIT = 4096;
 
+const NO_NEW_PRIVILEGES = "no-new-privileges";
+
 /** Process cap per container when the compose sets none; null means none. Override with VARDO_DEFAULT_PIDS_LIMIT, 0 for none. */
 export function defaultPidsLimit(): number | null {
   const override = process.env.VARDO_DEFAULT_PIDS_LIMIT;
@@ -370,6 +372,8 @@ export function buildVardoOverlay(opts: {
   serviceEnv?: Record<string, Record<string, string>>;
   /** Cores the tier CPU default is sized from. Defaults to this host's. */
   hostCpus?: number;
+  /** Untrusted organizations get no-new-privileges on every service. */
+  orgTrusted?: boolean;
 }): ComposeFile {
   const {
     fullCompose,
@@ -384,6 +388,7 @@ export function buildVardoOverlay(opts: {
     serviceConfig = {},
     serviceEnv = {},
     hostCpus = availableParallelism(),
+    orgTrusted = true,
   } = opts;
 
   const overlayServices: Record<string, ComposeService> = {};
@@ -440,6 +445,10 @@ export function buildVardoOverlay(opts: {
     // The normalized restart policy only reaches the container through the overlay.
     if (svc.restart) {
       overlayService.restart = svc.restart;
+    }
+
+    if (!orgTrusted && !svc.security_opt?.some((o) => o.startsWith(NO_NEW_PRIVILEGES))) {
+      overlayService.security_opt = [`${NO_NEW_PRIVILEGES}:true`];
     }
 
     if (effCpus || effMemory || effPids !== undefined) {

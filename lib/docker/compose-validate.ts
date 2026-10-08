@@ -582,7 +582,8 @@ export function hostAccessErrors(compose: ComposeFile): string[] {
     if (svc.privileged) used.push("privileged");
     if (svc.cap_add?.length) used.push("cap_add");
     if (svc.devices?.length) used.push("devices");
-    if (svc.security_opt?.length) used.push("security_opt");
+    // no-new-privileges only narrows the container; Vardo sets it for these orgs anyway.
+    if (svc.security_opt?.some((o) => !/^no-new-privileges(:true)?$/.test(o))) used.push("security_opt");
     const nm = svc.network_mode;
     if (nm === "host" || nm?.startsWith("container:")) used.push(`network_mode: ${nm}`);
     if (used.length > 0) {
