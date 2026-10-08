@@ -38,6 +38,12 @@ vi.mock("@/lib/docker/client", () => ({
   removeVolume: vi.fn(),
   stripDockerProjectPrefix: (n: string) => n,
 }));
+vi.mock("@/lib/docker/delete-teardown", () => ({
+  removeAppContainersAndNetworks: vi.fn().mockResolvedValue({ containers: [], networks: [], log: [] }),
+  claimAppDirTopLevel: vi.fn(),
+  isPermissionError: () => false,
+}));
+vi.mock("@/lib/backups/auto-backup", () => ({ deleteEmptyAutoJobs: vi.fn().mockResolvedValue([]) }));
 vi.mock("@/lib/activity", () => ({ recordActivity: recordActivityMock }));
 vi.mock("@/lib/docker/app-dir-owner", async () => {
   const actual = await vi.importActual<typeof import("@/lib/docker/app-dir-owner")>(

@@ -1,8 +1,8 @@
 // Auto-created system backup target, Vardo's own database job and per-app daily jobs.
 
 import { db } from "@/lib/db";
-import { backupTargets, backupJobs, backupJobApps, backupJobVolumes, volumes } from "@/lib/db/schema";
-import { eq, and, isNull } from "drizzle-orm";
+import { backupTargets, backupJobs, backupJobApps, backupJobVolumes, backups, volumes } from "@/lib/db/schema";
+import { eq, and, isNull, inArray, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { createHash } from "crypto";
 import { getBackupStorageConfig } from "@/lib/system-settings";
@@ -287,4 +287,34 @@ export async function ensureAutoBackupJobOnTarget(opts: {
   }
 
   return createAutoJob(opts);
+}
+
+/** Delete the "Auto: <app>" jobs a deleted app left empty. History keeps the job name. */
+export async function deleteEmptyAutoJobs(organizationId: string, appNames: string[]): Promise<string[]> {
+  if (appNames.length === 0) return [];
+  const names = appNames.map((n) => `Auto: ${n}`);
+  return db.transaction(async (tx) => {
+    const empty = await tx
+      .select({ id: backupJobs.id })
+      .from(backupJobs)
+      .where(
+        and(
+          eq(backupJobs.organizationId, organizationId),
+          inArray(backupJobs.name, names),
+          sql`not exists (select 1 from "backup_job_app" where "backup_job_app"."backup_job_id" = "backup_job"."id")`,
+          sql`not exists (select 1 from "backup_job_volume" where "backup_job_volume"."backup_job_id" = "backup_job"."id")`,
+        ),
+      );
+    if (empty.length === 0) return [];
+    const ids = empty.map((j) => j.id);
+
+    await tx
+      .update(backups)
+      .set({
+        jobName: sql`coalesce(${backups.jobName}, (select "name" from "backup_job" where "backup_job"."id" = "backup"."job_id"))`,
+      })
+      .where(inArray(backups.jobId, ids));
+    await tx.delete(backupJobs).where(inArray(backupJobs.id, ids));
+    return ids;
+  });
 }

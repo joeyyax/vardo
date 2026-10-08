@@ -6,7 +6,12 @@ import { assertAppDirOwnership, removeAppDir } from "./app-dir-owner";
 import { removeVolume, stripDockerProjectPrefix } from "./client";
 import { appBindPaths, findAppData } from "./app-data";
 import { appBaseDir } from "@/lib/paths";
+import { removeAppContainersAndNetworks } from "./delete-teardown";
+import { deleteEmptyAutoJobs } from "@/lib/backups/auto-backup";
+import { logger } from "@/lib/logger";
 import { recordActivity } from "@/lib/activity";
+
+const log = logger.child("delete-app");
 
 export type DeleteAppResult = {
   deleted: boolean;
@@ -109,6 +114,10 @@ export async function deleteApp(opts: {
   const stop = await stopProject(appId, app.name, undefined, false);
   if (stop.log.trim()) logs.push(stop.log.trim());
 
+  // compose down misses exited and orphaned containers; the id label finds them in any state.
+  const leftovers = await removeAppContainersAndNetworks([appId, ...childApps.map((c) => c.id)]);
+  logs.push(...leftovers.log);
+
   const removedVolumes: string[] = [];
   const keptVolumes: string[] = [];
   const skippedVolumes: string[] = [];
@@ -163,6 +172,14 @@ export async function deleteApp(opts: {
   await db
     .delete(apps)
     .where(and(eq(apps.id, appId), eq(apps.organizationId, organizationId)));
+
+  // The app's links are gone, so its "Auto:" jobs are now empty.
+  try {
+    const removedJobs = await deleteEmptyAutoJobs(organizationId, [app.name, ...childApps.map((c) => c.name)]);
+    if (removedJobs.length > 0) logs.push(`Removed ${removedJobs.length} empty backup job(s)`);
+  } catch (err) {
+    log.warn(`Could not remove the empty backup job for ${app.name}:`, err);
+  }
 
   // Remove the project if this was its last app.
   let deletedProject: DeleteAppResult["deletedProject"] = null;

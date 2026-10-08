@@ -23,6 +23,7 @@ import {
   writeAppDirOwner,
 } from "@/lib/paths";
 import { APP_UID } from "./constants";
+import { claimAppDirTopLevel, isPermissionError } from "./delete-teardown";
 import { isSelfApp } from "./self-env";
 
 const log = logger.child("app-dir-owner");
@@ -161,14 +162,24 @@ export async function removeAppDir(opts: {
   let removed = true;
   let reason: string | undefined;
   let kept: string[] | undefined;
-  try {
+  const dir = appBaseDir(appName);
+  const remove = async () => {
     if (keep.length > 0) {
-      await removeAllExcept(appBaseDir(appName), keep);
+      await removeAllExcept(dir, keep);
       removed = false;
       reason = "Kept bind-mounted data";
       kept = keep;
     } else {
-      await rm(appBaseDir(appName), { recursive: true, force: true });
+      await rm(dir, { recursive: true, force: true });
+    }
+  };
+  try {
+    try {
+      await remove();
+    } catch (err) {
+      // A top level owned by another uid can't be unlinked from; take it over once and retry.
+      if (!isPermissionError(err) || !(await claimAppDirTopLevel(dir))) throw err;
+      await remove();
     }
   } catch (err) {
     removed = false;

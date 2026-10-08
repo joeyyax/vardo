@@ -5,11 +5,11 @@ import { join } from "path";
 
 // PROJECTS_DIR is resolved when @/lib/paths loads, so the home override has to
 // be in place before the imports below run.
-const { HOME, findManyMock, denied } = vi.hoisted(() => {
+const { HOME, findManyMock, denied, claimMock } = vi.hoisted(() => {
   const base = (process.env.TMPDIR || "/tmp").replace(/\/+$/, "");
   const home = `${base}/vardo-owner-test-${process.pid}`;
   process.env.VARDO_HOME_DIR = home;
-  return { HOME: home, findManyMock: vi.fn(), denied: new Set<string>() };
+  return { HOME: home, findManyMock: vi.fn(), denied: new Set<string>(), claimMock: vi.fn() };
 });
 
 // Denies writes under any path added to `denied`, the way an app directory
@@ -39,6 +39,10 @@ vi.mock("fs/promises", async (importOriginal) => {
 });
 
 vi.mock("@/lib/db", () => ({ db: { query: { apps: { findMany: findManyMock } } } }));
+vi.mock("@/lib/docker/delete-teardown", () => ({
+  claimAppDirTopLevel: claimMock,
+  isPermissionError: (e: unknown) => (e as { code?: string })?.code === "EACCES",
+}));
 vi.mock("@/lib/logger", () => ({
   logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }) },
 }));
@@ -239,6 +243,34 @@ describe("assertAppDirOwnership", () => {
 });
 
 describe("removeAppDir", () => {
+  beforeEach(() => {
+    claimMock.mockReset().mockResolvedValue(false);
+  });
+
+  it("takes over a top level it can't unlink from and removes the directory (#892)", async () => {
+    await makeAppDir("api");
+    await registerOwner("api", "app-1");
+    denied.add(appBaseDir("api"));
+    claimMock.mockImplementation(async () => {
+      denied.delete(appBaseDir("api"));
+      return true;
+    });
+
+    const result = await removeAppDir({ appId: "app-1", appName: "api" });
+
+    expect(claimMock).toHaveBeenCalledWith(appBaseDir("api"));
+    expect(result).toEqual({ removed: true });
+    expect(await exists(appBaseDir("api"))).toBe(false);
+  });
+
+  it("does not try to take over a directory for a non-permission failure", async () => {
+    await registerOwner("api", "app-1");
+
+    await removeAppDir({ appId: "app-1", appName: "api" });
+
+    expect(claimMock).not.toHaveBeenCalled();
+  });
+
   it("removes the directory and its registry record", async () => {
     await makeAppDir("api");
     await registerOwner("api", "app-1");
