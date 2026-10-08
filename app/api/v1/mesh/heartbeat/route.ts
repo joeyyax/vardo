@@ -9,11 +9,15 @@ import { getInstanceId } from "@/lib/constants";
 import { getInstanceConfig } from "@/lib/system-settings";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
+import { requirePlugin } from "@/lib/api/require-plugin";
 
 /** POST /api/v1/mesh/heartbeat — marks the calling peer online and returns the full peer manifest. */
 async function handlePost(request: NextRequest) {
   try {
     const peer = await requireMeshPeer(request);
+
+    const gate = await requirePlugin("mesh");
+    if (gate) return gate;
 
     await db
       .update(meshPeers)

@@ -7,6 +7,7 @@ import { meshPeers, organizations, projectInstances } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
+import { requirePlugin } from "@/lib/api/require-plugin";
 
 /** DELETE /api/v1/admin/mesh/peers/[peerId] — remove a peer from the mesh */
 async function handleDelete(
@@ -15,6 +16,9 @@ async function handleDelete(
 ) {
   try {
     await requireAppAdmin();
+
+    const gate = await requirePlugin("mesh");
+    if (gate) return gate;
 
     const { peerId } = await params;
 
@@ -52,6 +56,9 @@ async function handlePatch(
 ) {
   try {
     await requireAppAdmin();
+
+    const gate = await requirePlugin("mesh");
+    if (gate) return gate;
 
     const { peerId } = await params;
     const parsed = patchSchema.safeParse(await request.json());

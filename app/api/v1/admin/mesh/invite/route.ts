@@ -6,11 +6,15 @@ import { ensureHubConfig, HUB_IP } from "@/lib/mesh";
 import { getInstanceConfig } from "@/lib/system-settings";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
+import { requirePlugin } from "@/lib/api/require-plugin";
 
 /** POST /api/v1/admin/mesh/invite — generate an invite code for a new peer */
 async function handlePost() {
   try {
     await requireAppAdmin();
+
+    const gate = await requirePlugin("mesh");
+    if (gate) return gate;
 
     const config = await getInstanceConfig();
     const serverIp = config.serverIp || config.domain;

@@ -10,6 +10,7 @@ import { registerPeer } from "@/lib/mesh/peers";
 import { getInstanceDisplayName } from "@/lib/system-settings";
 import { getInstanceId } from "@/lib/constants";
 import { sealOutboundToken } from "@/lib/mesh/outbound-token";
+import { requirePlugin } from "@/lib/api/require-plugin";
 
 const WG_KEY_RE = /^[A-Za-z0-9+/]{43}=$/;
 
@@ -27,6 +28,9 @@ const joinSchema = z.object({
 /** POST /api/v1/mesh/join — the invite code is the credential. Rate limited to 5/min per IP. */
 async function handler(request: NextRequest) {
   try {
+    const gate = await requirePlugin("mesh");
+    if (gate) return gate;
+
     const body = await request.json();
     const parsed = joinSchema.safeParse(body);
     if (!parsed.success) {

@@ -10,6 +10,7 @@ import { listInvites } from "@/lib/mesh/invite";
 import { getInstanceConfig } from "@/lib/system-settings";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
+import { requirePlugin } from "@/lib/api/require-plugin";
 
 const WG_KEY_RE = /^[A-Za-z0-9+/]{43}=$/;
 
@@ -25,6 +26,9 @@ const addPeerSchema = z.object({
 export async function GET() {
   try {
     await requireAppAdmin();
+
+    const gate = await requirePlugin("mesh");
+    if (gate) return gate;
 
     const config = await getInstanceConfig();
     const serverIp = config.serverIp || config.domain || "localhost";
@@ -51,6 +55,9 @@ export async function GET() {
 async function handlePost(request: NextRequest) {
   try {
     await requireAppAdmin();
+
+    const gate = await requirePlugin("mesh");
+    if (gate) return gate;
 
     const body = await request.json();
     const parsed = addPeerSchema.safeParse(body);

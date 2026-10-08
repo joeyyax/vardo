@@ -18,6 +18,7 @@ import { toCidr } from "@/lib/mesh/ip-allocator";
 import { sealOutboundToken } from "@/lib/mesh/outbound-token";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
+import { requirePlugin } from "@/lib/api/require-plugin";
 
 const joinSchema = z.object({ token: z.string().min(1, "Invite token is required") }).strict();
 
@@ -47,6 +48,9 @@ async function handlePost(request: NextRequest) {
     if (!isSetup) {
       await requireAppAdmin();
     }
+
+    const gate = await requirePlugin("mesh");
+    if (gate) return gate;
 
     const body = await request.json();
     const parsed = joinSchema.safeParse(body);

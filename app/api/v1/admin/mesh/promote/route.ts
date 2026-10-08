@@ -6,6 +6,7 @@ import { buildProjectBundle } from "@/lib/mesh/transfers";
 import { MeshClientError, meshJsonFetch } from "@/lib/mesh/client";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
+import { requirePlugin } from "@/lib/api/require-plugin";
 
 const promoteSchema = z.object({
   projectId: z.string().min(1),
@@ -19,6 +20,9 @@ const promoteSchema = z.object({
 async function handlePost(request: NextRequest) {
   try {
     await requireAppAdmin();
+
+    const gate = await requirePlugin("mesh");
+    if (gate) return gate;
 
     const body = await request.json();
     const parsed = promoteSchema.safeParse(body);

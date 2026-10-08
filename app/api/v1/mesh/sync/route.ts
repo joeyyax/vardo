@@ -5,6 +5,7 @@ import { projects } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { requireMeshPeer } from "@/lib/mesh/auth";
 import { getInstanceId } from "@/lib/constants";
+import { requirePlugin } from "@/lib/api/require-plugin";
 
 /**
  * GET /api/v1/mesh/sync?orgId=xxx — this instance's project manifest.
@@ -13,6 +14,9 @@ import { getInstanceId } from "@/lib/constants";
 export async function GET(request: NextRequest) {
   try {
     const peer = await requireMeshPeer(request);
+
+    const gate = await requirePlugin("mesh");
+    if (gate) return gate;
 
     const orgId = request.nextUrl.searchParams.get("orgId");
     if (!orgId) {

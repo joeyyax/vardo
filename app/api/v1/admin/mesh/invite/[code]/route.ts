@@ -4,6 +4,7 @@ import { requireAppAdmin } from "@/lib/auth/admin";
 import { cancelInvite } from "@/lib/mesh/invite";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
+import { requirePlugin } from "@/lib/api/require-plugin";
 
 /** DELETE /api/v1/admin/mesh/invite/[code] — cancel a pending invite */
 async function handleDelete(
@@ -12,6 +13,9 @@ async function handleDelete(
 ) {
   try {
     await requireAppAdmin();
+
+    const gate = await requirePlugin("mesh");
+    if (gate) return gate;
 
     const { code } = await params;
     const deleted = await cancelInvite(code);

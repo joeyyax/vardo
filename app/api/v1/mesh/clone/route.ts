@@ -7,6 +7,7 @@ import { projectBundleSchema } from "@/lib/mesh/bundle-schema";
 import type { ProjectBundle } from "@/lib/mesh/transfers";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
+import { requirePlugin } from "@/lib/api/require-plugin";
 
 const cloneSchema = z.object({
   bundle: projectBundleSchema.extend({
@@ -20,6 +21,9 @@ const cloneSchema = z.object({
 async function handlePost(request: NextRequest) {
   try {
     const orgId = peerOrganizationId(await requireMeshPeer(request));
+
+    const gate = await requirePlugin("mesh");
+    if (gate) return gate;
 
     const body = await request.json();
     const parsed = cloneSchema.safeParse(body);

@@ -5,6 +5,7 @@ import { peerOrganizationId, requireMeshPeer } from "@/lib/mesh/auth";
 import { buildProjectBundle } from "@/lib/mesh/transfers";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
+import { requirePlugin } from "@/lib/api/require-plugin";
 
 const pullSchema = z.object({
   projectId: z.string().min(1),
@@ -15,6 +16,9 @@ const pullSchema = z.object({
 async function handlePost(request: NextRequest) {
   try {
     const organizationId = peerOrganizationId(await requireMeshPeer(request));
+
+    const gate = await requirePlugin("mesh");
+    if (gate) return gate;
 
     const body = await request.json();
     const parsed = pullSchema.safeParse(body);
