@@ -12,13 +12,17 @@ const TIERS = {
   mutation: { limit: 60, windowMs: 60_000 },
   /** List, get, search — high limit, low abuse risk */
   read: { limit: 120, windowMs: 60_000 },
+  /** Endpoints the UI polls every few seconds; sized for ~10 open tabs */
+  poll: { limit: 300, windowMs: 60_000 },
+  /** Downloads, exports and lookups that fan out to disk or third parties */
+  heavy: { limit: 30, windowMs: 60_000 },
   /** Admin settings, user management */
   admin: { limit: 30, windowMs: 60_000 },
   /** Deploy + rollback — extra protection */
   critical: { limit: 10, windowMs: 60_000 },
 } as const;
 
-type Tier = keyof typeof TIERS;
+export type Tier = keyof typeof TIERS;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type RouteHandler = (request: NextRequest, context: any) => Promise<Response | NextResponse>;
