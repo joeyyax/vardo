@@ -44,6 +44,7 @@ const input = { type: "s3" as const, bucket: "new", region: "auto", accessKey: "
 beforeEach(() => {
   vi.clearAllMocks();
   file.backup = undefined;
+  ensureSystemBackup.mockResolvedValue(null);
   findFirst.mockResolvedValue(undefined);
 });
 
