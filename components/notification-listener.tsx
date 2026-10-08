@@ -7,13 +7,18 @@ import { useNotificationStream } from "@/hooks/use-notification-stream";
 import { INFRA_RECHECK_EVENT } from "@/lib/attention/infrastructure-view";
 import { createRefreshScheduler, isRefreshEvent, type RefreshScheduler } from "@/lib/bus/refresh";
 import { toastSeverityFor } from "@/lib/bus/toasts";
+import { toastActionFor } from "@/lib/bus/toast-action";
 import type { BusEvent } from "@/lib/bus/events";
 
-function showToast(event: BusEvent): void {
+function showToast(event: BusEvent, canLinkToAdmin: boolean, navigate: (url: string) => void): void {
   const severity = toastSeverityFor(event);
   if (!severity) return;
 
-  const options = { description: event.message };
+  const link = toastActionFor(event, { canLinkToAdmin });
+  const options = {
+    description: event.message,
+    action: link ? { label: link.label, onClick: () => navigate(link.url) } : undefined,
+  };
 
   switch (severity) {
     case "success":
@@ -35,7 +40,13 @@ function showToast(event: BusEvent): void {
  * Maps org notification events to toasts and refreshes server data on app state changes.
  * Renders nothing.
  */
-export function NotificationListener({ orgId }: { orgId: string }) {
+export function NotificationListener({
+  orgId,
+  canLinkToAdmin = false,
+}: {
+  orgId: string;
+  canLinkToAdmin?: boolean;
+}) {
   const router = useRouter();
   const schedulerRef = useRef<RefreshScheduler | null>(null);
 
@@ -56,8 +67,8 @@ export function NotificationListener({ orgId }: { orgId: string }) {
       window.dispatchEvent(new Event(INFRA_RECHECK_EVENT));
     }
     if (event.historical) return;
-    showToast(event);
-  }, []);
+    showToast(event, canLinkToAdmin, (url) => router.push(url));
+  }, [canLinkToAdmin, router]);
 
   useNotificationStream({ orgId, onEvent });
 

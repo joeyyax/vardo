@@ -90,7 +90,7 @@ export default async function AppLayout({
           activityEnabled={activityEnabled}
         />
         <KeyboardShortcuts />
-        <NotificationListener orgId={organization.id} />
+        <NotificationListener orgId={organization.id} canLinkToAdmin={instanceAdmin} />
       </TooltipProvider>
     </CapabilitiesProvider>
   );
