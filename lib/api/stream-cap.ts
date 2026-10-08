@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { extractIdentifier } from "./with-rate-limit";
+import { extractIdentifier } from "./request-identity";
 
 /** Open SSE connections per session or token, across every stream route. */
 export const MAX_STREAMS_PER_USER = 60;
@@ -14,11 +14,6 @@ function release(id: string) {
   const n = (open.get(id) ?? 0) - 1;
   if (n > 0) open.set(id, n);
   else open.delete(id);
-}
-
-/** Counts open connections for tests. */
-export function openStreamCount(id: string): number {
-  return open.get(id) ?? 0;
 }
 
 /** Caps concurrent SSE connections per caller; the slot frees when the stream closes. */

@@ -56,7 +56,7 @@ function handlers(sf: ts.SourceFile, fns: Map<string, Fn>): Map<string, Fn | und
       for (const d of stmt.declarationList.declarations) {
         if (!ts.isIdentifier(d.name) || !METHODS.has(d.name.text) || !d.initializer) continue;
         let init: ts.Expression = d.initializer;
-        if (ts.isCallExpression(init)) init = init.arguments[0];
+        while (ts.isCallExpression(init)) init = init.arguments[0];
         if (ts.isIdentifier(init)) out.set(d.name.text, fns.get(init.text));
         else if (ts.isArrowFunction(init) || ts.isFunctionExpression(init)) out.set(d.name.text, init);
         else out.set(d.name.text, undefined);
