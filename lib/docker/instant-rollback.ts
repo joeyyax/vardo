@@ -24,6 +24,7 @@ import type { ResolvedEnv } from "./resolve-env";
 import { demoteStandbyRestart, restoreSlotRestart } from "./restart-policy";
 import { clearCutoverPin } from "./traefik-cutover";
 import { execFileAsync } from "@/lib/utils/exec";
+import { assertSlotWithinApp } from "./slot-guard";
 import { claimAppForOperation } from "./deploy-cancel";
 import { dockerEnv } from "@/lib/docker/docker-env";
 
@@ -148,6 +149,16 @@ async function rollbackClaimed(
       success: false, deploymentId: "", fromSlot: activeSlot, toSlot: standbySlot,
       durationMs: Date.now() - startTime,
       error: "No standby containers available — use standard rollback",
+    };
+  }
+
+  try {
+    await assertSlotWithinApp({ appName, envName: env.name, slotDir: standbyDir, composeProject: standbyProjectName, reuse: "rollback" });
+  } catch (err) {
+    return {
+      success: false, deploymentId: "", fromSlot: activeSlot, toSlot: standbySlot,
+      durationMs: Date.now() - startTime,
+      error: err instanceof Error ? err.message : String(err),
     };
   }
 

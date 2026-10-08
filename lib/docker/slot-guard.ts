@@ -1,4 +1,4 @@
-// #886 check for start, restart and recreate, which reuse the running slot's files without a deploy.
+// #886 check for start, restart, recreate and rollback, which reuse the running slot's files without a deploy.
 
 import { access } from "fs/promises";
 import { join } from "path";
@@ -16,7 +16,7 @@ export async function assertSlotWithinApp(opts: {
   envName: string;
   slotDir: string;
   composeProject: string;
-  reuse: "start" | "restart" | "recreate";
+  reuse: "start" | "restart" | "recreate" | "rollback";
 }): Promise<void> {
   const app = await db.query.apps.findFirst({
     where: and(eq(apps.name, opts.appName), isNull(apps.parentAppId)),

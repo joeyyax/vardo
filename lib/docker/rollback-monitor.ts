@@ -20,6 +20,7 @@ import type { RollbackStage, DeployStatus } from "./deploy-logger";
 import { recordActivity } from "@/lib/activity";
 import { logger } from "@/lib/logger";
 import { execFileAsync } from "@/lib/utils/exec";
+import { assertSlotWithinApp } from "./slot-guard";
 import { dockerEnv } from "@/lib/docker/docker-env";
 
 const log = logger.child("rollback-monitor");
@@ -178,6 +179,19 @@ export async function performRollback(opts: PerformRollbackOpts): Promise<boolea
     const prevProjectName = `${appName}-${envName}-${previousSlot}`;
     const prevComposeFileArgs = await slotComposeFiles(prevSlotDir);
     const prevPartition = await readSlotPartition(prevSlotDir);
+
+    // Refuse before touching the crashed slot: the restore would run the previous slot's files unchecked.
+    try {
+      await assertSlotWithinApp({ appName, envName, slotDir: prevSlotDir, composeProject: prevProjectName, reuse: "rollback" });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      log.error("Refused to restore the previous slot:", message);
+      rollbackLog(`[rollback] ERROR: ${message}`);
+      stage("restore", "failed");
+      await finish("failed", "error");
+      await sendRollbackNotification(organizationId, appId, appName, false);
+      return false;
+    }
 
     // Stop (not down) the crashed slot so its restart policy can't reclaim a host port.
     stage("stop", "running");

@@ -38,6 +38,7 @@ const { dbMock, execFileAsyncMock, execFileMock, cutoverMock, order, claimMock }
   };
 });
 
+vi.mock("@/lib/docker/slot-guard", () => ({ assertSlotWithinApp: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("child_process", () => ({ execFile: execFileMock }));
 vi.mock("@/lib/docker/deploy-cancel", () => ({ claimAppForOperation: claimMock }));
 vi.mock("@/lib/db", () => ({ db: dbMock }));

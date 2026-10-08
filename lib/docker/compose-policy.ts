@@ -340,7 +340,7 @@ export async function assertComposeWithinApp(ctx: {
   orgTrusted: boolean;
   projectAllowBindMounts: boolean;
   projectAllowDockerSocket: boolean;
-  reuse?: "start" | "restart" | "recreate";
+  reuse?: "start" | "restart" | "recreate" | "rollback";
 }): Promise<void> {
   if (ctx.orgTrusted) return;
   let config: unknown;
