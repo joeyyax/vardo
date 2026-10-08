@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
@@ -44,11 +44,20 @@ export function RestoreFlow() {
   }, [refresh, status?.phase]);
 
   return (
-    <div className="mx-auto w-full max-w-3xl px-4 py-10">
+    <div className="mx-auto w-full max-w-2xl px-4 py-8 sm:py-12">
+      {status?.phase === "choose" && (
+        <Link
+          href="/setup"
+          className="mb-6 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
+        >
+          <ArrowLeft className="size-4" aria-hidden />
+          Set up as new instead
+        </Link>
+      )}
       <div className="mb-6">
         <h1 className="type-h2">Restore from backup</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Vardo&apos;s own database comes back first, then each app with its data, then each app is redeployed.
+          The database comes back first, then each app with its data.
         </p>
       </div>
       {unreachable && (

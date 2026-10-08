@@ -167,15 +167,15 @@ export function ChooseBackup({
                 </Select>
               </div>
               {type === "local" ? (
-                <Field id="restore-path" label="Folder" value={fields.path} onChange={set("path")} placeholder="/opt/vardo/backups" />
+                <Field id="restore-path" label="Folder" autoFocus value={fields.path} onChange={set("path")} placeholder="/opt/vardo/backups" />
               ) : (
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <Field id="restore-bucket" label="Bucket" value={fields.bucket} onChange={set("bucket")} />
+                  <Field id="restore-bucket" label="Bucket" autoFocus value={fields.bucket} onChange={set("bucket")} />
                   <Field id="restore-region" label="Region" value={fields.region} onChange={set("region")} />
                   <div className="sm:col-span-2">
                     <Field
                       id="restore-endpoint"
-                      label="Endpoint"
+                      label="Endpoint (optional)"
                       value={fields.endpoint}
                       onChange={set("endpoint")}
                       placeholder="https://<account>.r2.cloudflarestorage.com"
@@ -192,7 +192,7 @@ export function ChooseBackup({
                   />
                 </div>
               )}
-              <div className="flex justify-end gap-2">
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                 {configuredTarget && (
                   <Button type="button" variant="ghost" onClick={() => { setUseConfigured(true); setBackups(null); }}>
                     Use storage from install

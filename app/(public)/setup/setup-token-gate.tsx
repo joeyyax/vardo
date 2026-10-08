@@ -16,6 +16,7 @@ export function SetupTokenGate({ unset = false }: { unset?: boolean }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const autoTried = useRef(false);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   async function submit(value: string) {
     setLoading(true);
@@ -37,6 +38,8 @@ export function SetupTokenGate({ unset = false }: { unset?: boolean }) {
       setError("Couldn't reach the server. Try again.");
     }
     setLoading(false);
+    inputRef.current?.focus();
+    inputRef.current?.select();
   }
 
   useEffect(() => {
@@ -54,11 +57,11 @@ export function SetupTokenGate({ unset = false }: { unset?: boolean }) {
     <div className="flex min-h-screen items-center justify-center px-4">
       <Card className="w-full max-w-md rounded-2xl">
         <CardHeader className="text-center">
-          <h1 className="type-h2">Welcome to Vardo</h1>
+          <h1 className="type-h2">Enter your setup token</h1>
           <CardDescription className="mt-1">
-            {unset
-              ? "This instance has no setup token. Run vardo setup-token on the host, then reload this page."
-              : "Enter the setup token the installer printed. Run vardo setup-token on the host to see it again."}
+            {unset ? "This instance has no setup token. Run " : "The installer printed it. To see it again, run "}
+            <code className="whitespace-nowrap font-mono text-foreground">vardo setup-token</code> on the host
+            {unset ? ", then reload this page." : "."}
           </CardDescription>
         </CardHeader>
         {!unset && (
@@ -71,9 +74,14 @@ export function SetupTokenGate({ unset = false }: { unset?: boolean }) {
               className="space-y-4"
             >
               <div className="space-y-2">
-                <Label htmlFor="setup-token">Setup token</Label>
+                <Label htmlFor="setup-token" className="sr-only">
+                  Setup token
+                </Label>
                 <Input
                   id="setup-token"
+                  ref={inputRef}
+                  className="font-mono"
+                  placeholder="Setup token"
                   value={token}
                   onChange={(e) => setToken(e.target.value)}
                   autoComplete="off"
