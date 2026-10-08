@@ -1096,45 +1096,6 @@ describe("composeToYaml — network_mode round-trip", () => {
 });
 
 // ---------------------------------------------------------------------------
-// x-vardo-shared — the marker has to survive parse and the slot dir round-trip
-// ---------------------------------------------------------------------------
-
-describe("parseCompose — x-vardo-shared", () => {
-  it("keeps the marker on the service that declares it", () => {
-    const parsed = parseCompose(`
-services:
-  web:
-    image: web
-  db:
-    image: postgres:17
-    x-vardo-shared: true
-`);
-    expect(parsed.services.db["x-vardo-shared"]).toBe(true);
-    expect(parsed.services.web["x-vardo-shared"]).toBeUndefined();
-  });
-
-  it("ignores a non-true value", () => {
-    const parsed = parseCompose(`
-services:
-  db:
-    image: postgres:17
-    x-vardo-shared: "yes"
-`);
-    expect(parsed.services.db["x-vardo-shared"]).toBeUndefined();
-  });
-
-  it("round-trips through the compose written to a slot directory", () => {
-    const parsed = parseCompose(composeToYaml(parseCompose(`
-services:
-  db:
-    image: postgres:17
-    x-vardo-shared: true
-`)));
-    expect(parsed.services.db["x-vardo-shared"]).toBe(true);
-  });
-});
-
-// ---------------------------------------------------------------------------
 // injectTraefikLabels — serviceName targeting
 // ---------------------------------------------------------------------------
 
@@ -3938,38 +3899,3 @@ describe("defaultMemoryLimitMb", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// parseCompose — x-vardo-shared
-// ---------------------------------------------------------------------------
-
-describe("parseCompose — x-vardo-shared", () => {
-  const yaml = `
-services:
-  web:
-    image: web
-  postgres:
-    image: postgres:17
-    x-vardo-shared: true
-`;
-
-  it("carries the marker through to the deploy pipeline", () => {
-    const compose = parseCompose(yaml);
-    expect(compose.services.postgres["x-vardo-shared"]).toBe(true);
-    expect(compose.services.web["x-vardo-shared"]).toBeUndefined();
-  });
-
-  it("drops a non-boolean marker rather than treating it as set", () => {
-    const compose = parseCompose(`
-services:
-  postgres:
-    image: postgres:17
-    x-vardo-shared: "true"
-`);
-    expect(compose.services.postgres["x-vardo-shared"]).toBeUndefined();
-  });
-
-  it("survives a YAML round-trip", () => {
-    const compose = parseCompose(composeToYaml(parseCompose(yaml)));
-    expect(compose.services.postgres["x-vardo-shared"]).toBe(true);
-  });
-});

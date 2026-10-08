@@ -31,11 +31,11 @@ describe("x-vardo-shared through the compose pipeline", () => {
     expect(Object.keys(slotted)).toEqual(["web"]);
   });
 
-  it("ignores a non-boolean value rather than guessing", () => {
+  it.each(["yes", "true"])("ignores the non-boolean value %j rather than guessing", (value) => {
     const compose = parseCompose(`services:
   db:
     image: postgres:17
-    x-vardo-shared: "yes"
+    x-vardo-shared: "${value}"
 `);
     expect(compose.services.db["x-vardo-shared"]).toBeUndefined();
   });
