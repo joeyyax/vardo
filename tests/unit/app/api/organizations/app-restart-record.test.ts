@@ -5,21 +5,22 @@
 // (tests/unit/lib/docker/start-app.test.ts).
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { NextRequest, NextResponse } from "next/server";
+import { dbMock } from "@/tests/helpers/db";
+import { jsonRequest, routeCtx } from "@/tests/helpers/request";
+import { NextResponse } from "next/server";
 
-const { mockVerifyOrgAccess, mockStartOrRestartApp, mockRefuseSystemManaged, appsFindFirst } =
+const { mockVerifyOrgAccess, mockStartOrRestartApp, mockRefuseSystemManaged } =
   vi.hoisted(() => ({
     mockVerifyOrgAccess: vi.fn(),
     mockStartOrRestartApp: vi.fn(),
     mockRefuseSystemManaged: vi.fn(),
-    appsFindFirst: vi.fn(),
   }));
 
 vi.mock("@/lib/api/verify-access", () => ({ verifyOrgAccess: mockVerifyOrgAccess }));
 vi.mock("@/lib/api/system-managed", () => ({ refuseSystemManaged: mockRefuseSystemManaged }));
-vi.mock("@/lib/api/rate-limit", () => ({ rateLimit: vi.fn().mockResolvedValue(null) }));
+vi.mock("@/lib/api/rate-limit", async () => (await import("@/tests/helpers/mocks")).rateLimitModule());
 vi.mock("@/lib/docker/start-app", () => ({ startOrRestartApp: mockStartOrRestartApp }));
-vi.mock("@/lib/db", () => ({ db: { query: { apps: { findFirst: appsFindFirst } } } }));
+vi.mock("@/lib/db", async () => (await import("@/tests/helpers/db")).dbModule());
 
 const { POST } = await import(
   "@/app/api/v1/organizations/[orgId]/apps/[appId]/restart/route"
@@ -27,12 +28,10 @@ const { POST } = await import(
 
 const ORG_ID = "org-1";
 const APP_ID = "app-a";
-const params = { params: Promise.resolve({ orgId: ORG_ID, appId: APP_ID }) };
+const params = routeCtx({ orgId: ORG_ID, appId: APP_ID });
 
 function request() {
-  return new NextRequest(`http://localhost/api/v1/organizations/${ORG_ID}/apps/${APP_ID}/restart`, {
-    method: "POST",
-  });
+  return jsonRequest("POST", `/api/v1/organizations/${ORG_ID}/apps/${APP_ID}/restart`);
 }
 
 function app(overrides: Record<string, unknown> = {}) {
@@ -48,6 +47,7 @@ function app(overrides: Record<string, unknown> = {}) {
 }
 
 beforeEach(() => {
+  dbMock.reset();
   vi.clearAllMocks();
   mockVerifyOrgAccess.mockResolvedValue({
     organization: { id: ORG_ID },
@@ -56,7 +56,7 @@ beforeEach(() => {
   });
   mockStartOrRestartApp.mockResolvedValue({ success: true, action: "restarted", log: "ok" });
   mockRefuseSystemManaged.mockReturnValue(null);
-  appsFindFirst.mockResolvedValue(app());
+  dbMock.query.apps.findFirst.mockResolvedValue(app());
 });
 
 describe("restart route", () => {
@@ -99,7 +99,7 @@ describe("restart route", () => {
   });
 
   it("404s when the child's parent is gone", async () => {
-    appsFindFirst.mockResolvedValue(app({ parentAppId: "p1", composeService: "db" }));
+    dbMock.query.apps.findFirst.mockResolvedValue(app({ parentAppId: "p1", composeService: "db" }));
     mockStartOrRestartApp.mockResolvedValue({
       success: false,
       action: "none",
@@ -124,7 +124,7 @@ describe("restart route", () => {
   });
 
   it("does nothing for an app that is not there", async () => {
-    appsFindFirst.mockResolvedValue(undefined);
+    dbMock.query.apps.findFirst.mockResolvedValue(undefined);
 
     const res = await POST(request(), params);
 

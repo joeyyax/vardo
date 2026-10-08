@@ -17,9 +17,7 @@ vi.mock("@/lib/api/verify-access", async () => {
   const { gateOrgAccess } = await import("../../../helpers/verify-access");
   return { verifyOrgAccess: gateOrgAccess(mockVerifyOrgAccess) };
 });
-vi.mock("@/lib/api/with-rate-limit", () => ({
-  withRateLimit: (handler: (...args: unknown[]) => unknown) => handler,
-}));
+vi.mock("@/lib/api/with-rate-limit", async () => (await import("@/tests/helpers/mocks")).withRateLimitModule());
 vi.mock("@/lib/activity", () => ({ recordActivity: vi.fn() }));
 vi.mock("@/lib/digest/collector", () => ({ collectDigestData: vi.fn() }));
 vi.mock("@/lib/notifications/factory", () => ({ createChannel: vi.fn() }));

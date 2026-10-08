@@ -5,12 +5,12 @@
 // before anything is exec'd into.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { dbMock } from "@/tests/helpers/db";
 import { NextRequest } from "next/server";
 
-const { mockVerifyOrgAccess, appsFindFirst, mockListContainers, mockCreateExec, mockStartExec } =
+const { mockVerifyOrgAccess, mockListContainers, mockCreateExec, mockStartExec } =
   vi.hoisted(() => ({
     mockVerifyOrgAccess: vi.fn(),
-    appsFindFirst: vi.fn(),
     mockListContainers: vi.fn(),
     mockCreateExec: vi.fn(),
     mockStartExec: vi.fn(),
@@ -20,9 +20,7 @@ vi.mock("@/lib/api/verify-access", () => ({ verifyOrgAccess: mockVerifyOrgAccess
 const recordActivity = vi.hoisted(() => vi.fn(async () => {}));
 vi.mock("@/lib/activity", () => ({ recordActivity }));
 vi.mock("@/lib/api/require-plugin", () => ({ requirePlugin: vi.fn().mockResolvedValue(null) }));
-vi.mock("@/lib/api/with-rate-limit", () => ({
-  withRateLimit: (handler: (...args: unknown[]) => unknown) => handler,
-}));
+vi.mock("@/lib/api/with-rate-limit", async () => (await import("@/tests/helpers/mocks")).withRateLimitModule());
 vi.mock("@/lib/docker/client", () => ({ listContainers: mockListContainers }));
 vi.mock("@/lib/docker/exec", () => ({
   createExec: mockCreateExec,
@@ -30,7 +28,7 @@ vi.mock("@/lib/docker/exec", () => ({
   resizeExec: vi.fn(),
 }));
 vi.mock("@/lib/shutdown", () => ({ closeOnShutdown: () => () => {} }));
-vi.mock("@/lib/db", () => ({ db: { query: { apps: { findFirst: appsFindFirst } } } }));
+vi.mock("@/lib/db", async () => (await import("@/tests/helpers/db")).dbModule());
 
 const { GET } = await import("@/app/api/v1/organizations/[orgId]/apps/[appId]/terminal/route");
 
@@ -74,9 +72,10 @@ const serverChild = {
 };
 
 beforeEach(() => {
+  dbMock.reset();
   vi.clearAllMocks();
   mockVerifyOrgAccess.mockResolvedValue({ organization: { id: ORG_ID }, session: { user: { id: "u1" } } });
-  appsFindFirst.mockResolvedValue(serverChild);
+  dbMock.query.apps.findFirst.mockResolvedValue(serverChild);
   mockListContainers.mockResolvedValue(stack);
   mockCreateExec.mockResolvedValue("exec-1");
   mockStartExec.mockResolvedValue({ on: vi.fn(), destroy: vi.fn(), destroyed: false });
@@ -102,7 +101,7 @@ describe("GET terminal — stack child container scope", () => {
   });
 
   it("still execs into a non-decomposed app's own container", async () => {
-    appsFindFirst.mockResolvedValue({
+    dbMock.query.apps.findFirst.mockResolvedValue({
       id: "app-1",
       name: "paperless",
       status: "active",

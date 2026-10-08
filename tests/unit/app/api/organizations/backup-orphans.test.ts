@@ -2,12 +2,12 @@
 // restorable, and never visible to another org (#867).
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { dbMock } from "@/tests/helpers/db";
 import { NextRequest } from "next/server";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 
-const { backupsFindFirst, restoreBackupMock, downloadUrlMock } = vi.hoisted(() => ({
-  backupsFindFirst: vi.fn(),
+const { restoreBackupMock, downloadUrlMock } = vi.hoisted(() => ({
   restoreBackupMock: vi.fn(),
   downloadUrlMock: vi.fn(),
 }));
@@ -18,8 +18,8 @@ vi.mock("@/lib/api/verify-access", () => ({
 const recordActivity = vi.hoisted(() => vi.fn(async () => {}));
 vi.mock("@/lib/activity", () => ({ recordActivity }));
 vi.mock("@/lib/api/require-plugin", () => ({ requirePlugin: vi.fn().mockResolvedValue(null) }));
-vi.mock("@/lib/api/rate-limit", () => ({ rateLimit: vi.fn().mockResolvedValue(null) }));
-vi.mock("@/lib/db", () => ({ db: { query: { backups: { findFirst: backupsFindFirst } } } }));
+vi.mock("@/lib/api/rate-limit", async () => (await import("@/tests/helpers/mocks")).rateLimitModule());
+vi.mock("@/lib/db", async () => (await import("@/tests/helpers/db")).dbModule());
 vi.mock("@/lib/backups/engine", () => ({
   APP_DELETED_RESTORE_ERROR: "The app this backup belongs to was deleted. Download the archive instead.",
   restoreBackup: restoreBackupMock,
@@ -57,12 +57,13 @@ function req(method = "GET") {
 
 /** The lookup's WHERE, rendered so the scoping can be asserted. */
 function lookupWhere() {
-  const where = backupsFindFirst.mock.calls[0][0].where as SQL;
+  const where = (dbMock.query.backups.findFirst.mock.calls[0][0] as { where: SQL }).where;
   return new PgDialect().sqlToQuery(where);
 }
 
 beforeEach(() => {
-  backupsFindFirst.mockReset();
+  dbMock.reset();
+  dbMock.query.backups.findFirst.mockReset();
   recordActivity.mockClear();
   restoreBackupMock.mockReset();
   downloadUrlMock.mockReset().mockResolvedValue("https://s3.example/signed");
@@ -70,7 +71,7 @@ beforeEach(() => {
 
 describe("a deleted app's backup", () => {
   it("downloads for its org", async () => {
-    backupsFindFirst.mockResolvedValue(orphan);
+    dbMock.query.backups.findFirst.mockResolvedValue(orphan);
 
     const res = await download(req(), ctx());
 
@@ -82,7 +83,7 @@ describe("a deleted app's backup", () => {
   });
 
   it("is looked up by the org on the backup row, not the app", async () => {
-    backupsFindFirst.mockResolvedValue(orphan);
+    dbMock.query.backups.findFirst.mockResolvedValue(orphan);
 
     await download(req(), ctx("org-1"));
 
@@ -93,7 +94,7 @@ describe("a deleted app's backup", () => {
   });
 
   it("refuses restore with a pointer to download", async () => {
-    backupsFindFirst.mockResolvedValue(orphan);
+    dbMock.query.backups.findFirst.mockResolvedValue(orphan);
 
     const res = await restore(req("POST"), ctx());
 
@@ -105,7 +106,7 @@ describe("a deleted app's backup", () => {
 
 describe("a backup whose archive is missing", () => {
   it("downloads as a 404 that says so", async () => {
-    backupsFindFirst.mockResolvedValue(orphan);
+    dbMock.query.backups.findFirst.mockResolvedValue(orphan);
     downloadUrlMock.mockRejectedValue(new ArchiveMissingError());
 
     const res = await download(req(), ctx());
@@ -117,7 +118,7 @@ describe("a backup whose archive is missing", () => {
 
 describe("a live app's backup", () => {
   it("is hidden from an org the app no longer belongs to", async () => {
-    backupsFindFirst.mockResolvedValue({
+    dbMock.query.backups.findFirst.mockResolvedValue({
       ...orphan,
       app: { id: "app-1", name: "web", organizationId: "org-2" },
     });
@@ -128,7 +129,7 @@ describe("a live app's backup", () => {
   });
 
   it("is found by the org the app was transferred to", async () => {
-    backupsFindFirst.mockResolvedValue({
+    dbMock.query.backups.findFirst.mockResolvedValue({
       ...orphan,
       organizationId: "org-1",
       app: { id: "app-1", name: "web", organizationId: "org-2" },
@@ -144,7 +145,7 @@ describe("a live app's backup", () => {
   });
 
   it("still restores", async () => {
-    backupsFindFirst.mockResolvedValue({
+    dbMock.query.backups.findFirst.mockResolvedValue({
       ...orphan,
       app: { id: "app-1", name: "web", organizationId: "org-1" },
     });

@@ -5,13 +5,13 @@
 // instance-admin only and works on any org.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { dbMock } from "@/tests/helpers/db";
 import { NextRequest } from "next/server";
 
 const state = vi.hoisted(() => ({
   access: null as null | { role: string },
   membershipRow: null as null | { id: string; role: string },
   instanceAdmin: false,
-  updated: vi.fn(),
 }));
 
 vi.mock("@/lib/api/with-rate-limit", () => ({ withRateLimit: (h: unknown) => h }));
@@ -40,20 +40,7 @@ vi.mock("@/lib/api/verify-access", async () => {
     ),
   };
 });
-vi.mock("@/lib/db", () => ({
-  db: {
-    query: {
-      memberships: { findFirst: async () => state.membershipRow },
-      organizations: { findFirst: async () => ({ id: "o1", name: "Org" }) },
-    },
-    update: () => ({
-      set: (values: unknown) => {
-        state.updated(values);
-        return { where: () => ({ returning: async () => [{ id: "o1", ...(values as object) }] }) };
-      },
-    }),
-  },
-}));
+vi.mock("@/lib/db", async () => (await import("@/tests/helpers/db")).dbModule());
 
 const { GET, PATCH } = await import("@/app/api/v1/organizations/[orgId]/route");
 
@@ -76,7 +63,10 @@ function as(role: string, { admitted = true, instanceAdmin = false } = {}) {
 }
 
 beforeEach(() => {
-  state.updated.mockReset();
+  dbMock.reset();
+  dbMock.query.memberships.findFirst.mockImplementation(async () => state.membershipRow);
+  dbMock.query.organizations.findFirst.mockResolvedValue({ id: "o1", name: "Org" });
+  dbMock.updateReturns([{ id: "o1" }]);
 });
 
 describe("GET org", () => {
@@ -95,25 +85,25 @@ describe("PATCH org", () => {
   it("refuses a member", async () => {
     as("member");
     expect((await patch({ name: "New" })).status).toBe(403);
-    expect(state.updated).not.toHaveBeenCalled();
+    expect(dbMock.update).not.toHaveBeenCalled();
   });
 
   it.each(["admin", "owner"])("lets an org %s rename it", async (role) => {
     as(role);
     expect((await patch({ name: "New" })).status).toBe(200);
-    expect(state.updated).toHaveBeenCalledWith(expect.objectContaining({ name: "New" }));
+    expect(dbMock.updates[0].set).toEqual(expect.objectContaining({ name: "New" }));
   });
 
   it("refuses an owner whose credential is pinned to another org", async () => {
     as("owner", { admitted: false });
     expect((await patch({ name: "New" })).status).toBe(403);
-    expect(state.updated).not.toHaveBeenCalled();
+    expect(dbMock.update).not.toHaveBeenCalled();
   });
 
   it("refuses trusted from an org owner who isn't an instance admin", async () => {
     as("owner");
     expect((await patch({ trusted: true })).status).toBe(403);
-    expect(state.updated).not.toHaveBeenCalled();
+    expect(dbMock.update).not.toHaveBeenCalled();
   });
 
   it("lets an instance admin set trusted on an org they don't belong to", async () => {
@@ -121,12 +111,12 @@ describe("PATCH org", () => {
     state.access = null;
     state.instanceAdmin = true;
     expect((await patch({ trusted: true })).status).toBe(200);
-    expect(state.updated).toHaveBeenCalledWith(expect.objectContaining({ trusted: true }));
+    expect(dbMock.updates[0].set).toEqual(expect.objectContaining({ trusted: true }));
   });
 
   it("still needs org admin for an instance admin's rename", async () => {
     as("member", { instanceAdmin: true });
     expect((await patch({ name: "New", trusted: true })).status).toBe(403);
-    expect(state.updated).not.toHaveBeenCalled();
+    expect(dbMock.update).not.toHaveBeenCalled();
   });
 });

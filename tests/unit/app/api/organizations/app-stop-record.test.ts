@@ -4,38 +4,37 @@
 // left was a record of who turned the app off.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { NextRequest } from "next/server";
+import { dbMock } from "@/tests/helpers/db";
+import { jsonRequest, routeCtx } from "@/tests/helpers/request";
 
-const { mockVerifyOrgAccess, mockStopProject, mockRecordLifecycle, appsFindFirst, mockSetParked } = vi.hoisted(
+const { mockVerifyOrgAccess, mockStopProject, mockRecordLifecycle, mockSetParked } = vi.hoisted(
   () => ({
     mockSetParked: vi.fn(),
     mockVerifyOrgAccess: vi.fn(),
     mockStopProject: vi.fn(),
     mockRecordLifecycle: vi.fn(),
-    appsFindFirst: vi.fn(),
   }),
 );
 
 vi.mock("@/lib/api/verify-access", () => ({ verifyOrgAccess: mockVerifyOrgAccess }));
-vi.mock("@/lib/api/rate-limit", () => ({ rateLimit: vi.fn().mockResolvedValue(null) }));
+vi.mock("@/lib/api/rate-limit", async () => (await import("@/tests/helpers/mocks")).rateLimitModule());
 vi.mock("@/lib/docker/deploy", () => ({ stopProject: mockStopProject }));
 vi.mock("@/lib/db/app-parked", () => ({ setParked: mockSetParked }));
 vi.mock("@/lib/activity/lifecycle", () => ({ recordLifecycle: mockRecordLifecycle }));
-vi.mock("@/lib/db", () => ({ db: { query: { apps: { findFirst: appsFindFirst } } } }));
+vi.mock("@/lib/db", async () => (await import("@/tests/helpers/db")).dbModule());
 
 const { POST } = await import("@/app/api/v1/organizations/[orgId]/apps/[appId]/stop/route");
 
 const ORG_ID = "org-1";
 const APP_ID = "app-a";
-const params = { params: Promise.resolve({ orgId: ORG_ID, appId: APP_ID }) };
+const params = routeCtx({ orgId: ORG_ID, appId: APP_ID });
 
 function request() {
-  return new NextRequest(`http://localhost/api/v1/organizations/${ORG_ID}/apps/${APP_ID}/stop`, {
-    method: "POST",
-  });
+  return jsonRequest("POST", `/api/v1/organizations/${ORG_ID}/apps/${APP_ID}/stop`);
 }
 
 beforeEach(() => {
+  dbMock.reset();
   vi.clearAllMocks();
   mockVerifyOrgAccess.mockResolvedValue({
     organization: { id: ORG_ID },
@@ -43,7 +42,7 @@ beforeEach(() => {
     session: { user: { id: "u1" }, authMethod: "session" },
   });
   mockStopProject.mockResolvedValue({ success: true, log: "ok" });
-  appsFindFirst.mockResolvedValue({
+  dbMock.query.apps.findFirst.mockResolvedValue({
     id: APP_ID,
     name: "it-tools",
     isSystemManaged: false,
@@ -77,7 +76,7 @@ describe("stop route", () => {
   });
 
   it("records nothing for a refused stop of Vardo's own stack", async () => {
-    appsFindFirst.mockResolvedValue({
+    dbMock.query.apps.findFirst.mockResolvedValue({
       id: APP_ID,
       name: "vardo",
       isSystemManaged: true,

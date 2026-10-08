@@ -5,25 +5,21 @@
 // The `deploy` param was equally unchecked.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { dbMock } from "@/tests/helpers/db";
 import { NextRequest } from "next/server";
 
-const { mockGetSession, mockVerifyOrgAccess, mockStartGateway, deploymentsFindFirst } =
+const { mockGetSession, mockVerifyOrgAccess, mockStartGateway } =
   vi.hoisted(() => ({
     mockGetSession: vi.fn(),
     mockVerifyOrgAccess: vi.fn(),
     mockStartGateway: vi.fn(),
-    deploymentsFindFirst: vi.fn(),
   }));
 
 vi.mock("@/lib/auth/session", () => ({ getSession: mockGetSession }));
 vi.mock("@/lib/api/verify-access", () => ({ verifyOrgAccess: mockVerifyOrgAccess }));
 vi.mock("@/lib/sse/gateway", () => ({ startGateway: mockStartGateway }));
-vi.mock("@/lib/logger", () => ({
-  logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }) },
-}));
-vi.mock("@/lib/db", () => ({
-  db: { query: { deployments: { findFirst: deploymentsFindFirst } } },
-}));
+vi.mock("@/lib/logger", async () => (await import("@/tests/helpers/mocks")).loggerModule());
+vi.mock("@/lib/db", async () => (await import("@/tests/helpers/db")).dbModule());
 
 const { GET } = await import("@/app/api/v1/sse/route");
 
@@ -35,12 +31,13 @@ function request(query: string) {
 }
 
 beforeEach(() => {
+  dbMock.reset();
   vi.clearAllMocks();
   mockGetSession.mockResolvedValue({ user: { id: "user-1" } });
   mockVerifyOrgAccess.mockImplementation(async (orgId: string) =>
     orgId === ORG_ID ? { organization: { id: ORG_ID } } : null,
   );
-  deploymentsFindFirst.mockResolvedValue(null);
+  dbMock.query.deployments.findFirst.mockResolvedValue(null);
 });
 
 afterEach(() => {
@@ -82,7 +79,7 @@ describe("GET /api/v1/sse — org access", () => {
 
 describe("GET /api/v1/sse — deploy log access", () => {
   it("rejects a deploy belonging to another org", async () => {
-    deploymentsFindFirst.mockResolvedValue({
+    dbMock.query.deployments.findFirst.mockResolvedValue({
       id: "deploy-x",
       app: { organizationId: OTHER_ORG },
     });
@@ -94,7 +91,7 @@ describe("GET /api/v1/sse — deploy log access", () => {
   });
 
   it("rejects a deploy that does not exist", async () => {
-    deploymentsFindFirst.mockResolvedValue(undefined);
+    dbMock.query.deployments.findFirst.mockResolvedValue(undefined);
 
     const res = await GET(request(`org=${ORG_ID}&deploy=nope`));
 
@@ -104,7 +101,7 @@ describe("GET /api/v1/sse — deploy log access", () => {
 
   it("streams a deploy owned by the caller's org", async () => {
     vi.useFakeTimers();
-    deploymentsFindFirst.mockResolvedValue({
+    dbMock.query.deployments.findFirst.mockResolvedValue({
       id: "deploy-1",
       app: { organizationId: ORG_ID },
     });

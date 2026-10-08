@@ -34,7 +34,7 @@ const {
 
 vi.mock("@/lib/api/verify-access", () => ({ verifyOrgAccess: mockVerifyOrgAccess }));
 vi.mock("@/lib/api/require-plugin", () => ({ requirePlugin: mockRequirePlugin }));
-vi.mock("@/lib/api/rate-limit", () => ({ rateLimit: vi.fn().mockResolvedValue(null) }));
+vi.mock("@/lib/api/rate-limit", async () => (await import("@/tests/helpers/mocks")).rateLimitModule());
 vi.mock("@/lib/auth/admin", () => ({ isAppAdmin: mockIsAppAdmin }));
 vi.mock("@/lib/db", () => ({
   db: {

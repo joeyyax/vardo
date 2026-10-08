@@ -5,35 +5,23 @@
 // readable through an app the caller did own.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { dbMock } from "@/tests/helpers/db";
 import { NextRequest } from "next/server";
 
-const { mockVerifyOrgAccess, appsFindFirst, deploymentsFindFirst, mockXlen, mockReadStream } =
+const { mockVerifyOrgAccess, mockXlen, mockReadStream } =
   vi.hoisted(() => ({
     mockVerifyOrgAccess: vi.fn(),
-    appsFindFirst: vi.fn(),
-    deploymentsFindFirst: vi.fn(),
     mockXlen: vi.fn(),
     mockReadStream: vi.fn(),
   }));
 
 vi.mock("@/lib/api/verify-access", () => ({ verifyOrgAccess: mockVerifyOrgAccess }));
-vi.mock("@/lib/api/with-rate-limit", () => ({
-  withRateLimit: (handler: (...args: unknown[]) => unknown) => handler,
-}));
+vi.mock("@/lib/api/with-rate-limit", async () => (await import("@/tests/helpers/mocks")).withRateLimitModule());
 vi.mock("@/lib/stream/consumer", () => ({ readStream: mockReadStream }));
 vi.mock("@/lib/stream/keys", () => ({ deployStream: (id: string) => `deploy:${id}` }));
 vi.mock("@/lib/redis", () => ({ redis: { xlen: mockXlen } }));
-vi.mock("@/lib/logger", () => ({
-  logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }) },
-}));
-vi.mock("@/lib/db", () => ({
-  db: {
-    query: {
-      apps: { findFirst: appsFindFirst },
-      deployments: { findFirst: deploymentsFindFirst },
-    },
-  },
-}));
+vi.mock("@/lib/logger", async () => (await import("@/tests/helpers/mocks")).loggerModule());
+vi.mock("@/lib/db", async () => (await import("@/tests/helpers/db")).dbModule());
 
 const { GET } = await import(
   "@/app/api/v1/organizations/[orgId]/apps/[appId]/deploy/stream/route"
@@ -50,9 +38,10 @@ function request(query = "") {
 }
 
 beforeEach(() => {
+  dbMock.reset();
   vi.clearAllMocks();
   mockVerifyOrgAccess.mockResolvedValue({ organization: { id: ORG_ID } });
-  appsFindFirst.mockResolvedValue({ id: APP_ID });
+  dbMock.query.apps.findFirst.mockResolvedValue({ id: APP_ID });
   mockXlen.mockResolvedValue(5);
   mockReadStream.mockReturnValue({
     async *[Symbol.asyncIterator]() {},
@@ -66,7 +55,7 @@ afterEach(() => {
 describe("GET deploy/stream — deployment ownership", () => {
   it("rejects a deploymentId belonging to another app", async () => {
     // Scoped lookup finds nothing — the deploy is not this app's.
-    deploymentsFindFirst.mockResolvedValue(undefined);
+    dbMock.query.deployments.findFirst.mockResolvedValue(undefined);
 
     const res = await GET(request("?deploymentId=deploy-other"), params);
 
@@ -78,7 +67,7 @@ describe("GET deploy/stream — deployment ownership", () => {
     // Redis stream evicted, so the old code served deployments.log verbatim.
     mockXlen.mockResolvedValue(0);
     // The scoped ownership lookup misses; the unscoped log lookup would hit.
-    deploymentsFindFirst.mockImplementation(
+    dbMock.query.deployments.findFirst.mockImplementation(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       async (query: any) =>
         query?.columns?.log
@@ -94,7 +83,7 @@ describe("GET deploy/stream — deployment ownership", () => {
 
   it("streams a deploymentId that belongs to the app", async () => {
     vi.useFakeTimers();
-    deploymentsFindFirst.mockResolvedValue({ id: "deploy-1" });
+    dbMock.query.deployments.findFirst.mockResolvedValue({ id: "deploy-1" });
 
     const res = await GET(request("?deploymentId=deploy-1"), params);
 
@@ -106,13 +95,13 @@ describe("GET deploy/stream — deployment ownership", () => {
 
   it("still defaults to the app's latest deploy when no id is given", async () => {
     vi.useFakeTimers();
-    deploymentsFindFirst.mockResolvedValue({ id: "deploy-latest", status: "running" });
+    dbMock.query.deployments.findFirst.mockResolvedValue({ id: "deploy-latest", status: "running" });
 
     const res = await GET(request(), params);
 
     expect(res.status).toBe(200);
     // The default path resolves the deploy from the app, so no extra check runs.
-    expect(deploymentsFindFirst).toHaveBeenCalledTimes(1);
+    expect(dbMock.query.deployments.findFirst).toHaveBeenCalledTimes(1);
 
     vi.clearAllTimers();
   });

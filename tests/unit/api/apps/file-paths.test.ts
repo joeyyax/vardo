@@ -1,10 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { dbMock } from "@/tests/helpers/db";
 import { NextRequest } from "next/server";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-
-const updated = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/api/with-rate-limit", () => ({ withRateLimit: (h: unknown) => h }));
 vi.mock("@/lib/api/rate-limit", () => ({ slidingWindowRateLimit: async () => ({ limited: false }) }));
@@ -22,29 +21,7 @@ vi.mock("@/lib/docker/app-dir-owner", () => ({
   removeAppDir: vi.fn(),
 }));
 vi.mock("@/lib/activity", () => ({ recordActivity: vi.fn() }));
-vi.mock("@/lib/db", () => ({
-  db: {
-    query: {
-      apps: {
-        findFirst: vi.fn(async () => ({
-          id: "a1",
-          name: "web",
-          organizationId: "o1",
-          projectId: null,
-          isSystemManaged: false,
-          composeContent: null,
-        })),
-      },
-      memberships: { findFirst: vi.fn(async () => ({ id: "m1", role: "member" })) },
-    },
-    update: () => ({
-      set: (values: unknown) => {
-        updated(values);
-        return { where: () => ({ returning: async () => [{ id: "a1", ...(values as object) }] }) };
-      },
-    }),
-  },
-}));
+vi.mock("@/lib/db", async () => (await import("@/tests/helpers/db")).dbModule());
 
 const { PATCH } = await import("@/app/api/v1/organizations/[orgId]/apps/[appId]/route");
 const { registerUpdateApp } = await import("@/lib/mcp/tools/update-app");
@@ -80,26 +57,38 @@ const BAD = [
   { dockerfilePath: "/etc/shadow" },
 ];
 
-beforeEach(() => updated.mockReset());
+beforeEach(() => {
+  dbMock.reset();
+  dbMock.query.apps.findFirst.mockResolvedValue({
+    id: "a1",
+    name: "web",
+    organizationId: "o1",
+    projectId: null,
+    isSystemManaged: false,
+    composeContent: null,
+  });
+  dbMock.query.memberships.findFirst.mockResolvedValue({ id: "m1", role: "member" });
+  dbMock.updateReturns([{ id: "a1" }]);
+});
 
 describe("app file paths on update", () => {
   for (const body of BAD) {
     it(`PATCH refuses ${JSON.stringify(body)}`, async () => {
       const res = await patch(body);
       expect(res.status).toBe(400);
-      expect(updated).not.toHaveBeenCalled();
+      expect(dbMock.update).not.toHaveBeenCalled();
     });
 
     it(`vardo_update_app refuses ${JSON.stringify(body)}`, async () => {
       const res = await mcpUpdate(body);
       expect(res.isError).toBe(true);
-      expect(updated).not.toHaveBeenCalled();
+      expect(dbMock.update).not.toHaveBeenCalled();
     });
   }
 
   it("vardo_update_app accepts paths inside the repo", async () => {
     const res = await mcpUpdate({ composeFilePath: "deploy/compose.yml", dockerfilePath: "docker/..Dockerfile" });
     expect(res.isError).toBeFalsy();
-    expect(updated).toHaveBeenCalled();
+    expect(dbMock.update).toHaveBeenCalled();
   });
 });

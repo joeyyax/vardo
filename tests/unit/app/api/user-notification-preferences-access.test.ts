@@ -31,12 +31,8 @@ const {
 
 vi.mock("@/lib/auth/session", () => ({ requireSession: mockRequireSession }));
 vi.mock("@/lib/api/verify-access", () => ({ verifyOrgAccess: mockVerifyOrgAccess }));
-vi.mock("@/lib/api/with-rate-limit", () => ({
-  withRateLimit: (handler: (...args: unknown[]) => unknown) => handler,
-}));
-vi.mock("@/lib/logger", () => ({
-  logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }) },
-}));
+vi.mock("@/lib/api/with-rate-limit", async () => (await import("@/tests/helpers/mocks")).withRateLimitModule());
+vi.mock("@/lib/logger", async () => (await import("@/tests/helpers/mocks")).loggerModule());
 vi.mock("@/lib/db", () => ({
   db: {
     query: {

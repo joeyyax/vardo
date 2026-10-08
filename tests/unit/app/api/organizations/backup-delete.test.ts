@@ -24,7 +24,7 @@ vi.mock("@/lib/api/verify-access", async () => {
   };
 });
 vi.mock("@/lib/api/require-plugin", () => ({ requirePlugin: vi.fn().mockResolvedValue(null) }));
-vi.mock("@/lib/api/rate-limit", () => ({ rateLimit: vi.fn().mockResolvedValue(null) }));
+vi.mock("@/lib/api/rate-limit", async () => (await import("@/tests/helpers/mocks")).rateLimitModule());
 vi.mock("@/lib/auth/admin", () => ({ isAppAdmin: vi.fn().mockResolvedValue(false) }));
 vi.mock("@/lib/backups/storage-factory", () => ({
   createBackupStorage: () => ({ delete: h.storageDelete }),

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { dbMock } from "@/tests/helpers/db";
 import { NextRequest } from "next/server";
 
 process.env.ENCRYPTION_MASTER_KEY = "1".repeat(64);
@@ -6,30 +7,16 @@ process.env.ENCRYPTION_MASTER_KEY = "1".repeat(64);
 // The Variables tab edits a non-default environment's own env. Production's
 // apps.env_content stays as it is.
 
-const { state, appUpdates, saveMock } = vi.hoisted(() => ({
+const { state, saveMock } = vi.hoisted(() => ({
   state: {
     env: undefined as { id: string; isDefault: boolean } | undefined,
     own: null as string | null,
     appEnv: null as string | null,
   },
-  appUpdates: [] as Record<string, unknown>[],
   saveMock: vi.fn(),
 }));
 
-vi.mock("@/lib/db", () => ({
-  db: {
-    query: {
-      environments: { findFirst: vi.fn(async () => state.env) },
-      apps: { findFirst: vi.fn(async () => ({ envContent: state.appEnv })) },
-    },
-    update: () => ({
-      set: (values: Record<string, unknown>) => {
-        appUpdates.push(values);
-        return { where: async () => undefined };
-      },
-    }),
-  },
-}));
+vi.mock("@/lib/db", async () => (await import("@/tests/helpers/db")).dbModule());
 vi.mock("@/lib/docker/environment-env", () => ({
   loadEnvironmentEnv: vi.fn(async () => state.own),
   saveEnvironmentEnv: saveMock,
@@ -62,7 +49,9 @@ const put = (body: Record<string, unknown>) =>
 
 beforeEach(() => {
   vi.clearAllMocks();
-  appUpdates.length = 0;
+  dbMock.reset();
+  dbMock.query.environments.findFirst.mockImplementation(async () => state.env);
+  dbMock.query.apps.findFirst.mockImplementation(async () => ({ envContent: state.appEnv }));
   state.env = { id: "env-pr-7", isDefault: false };
   state.own = null;
   state.appEnv = encrypt("A=prod", "org-1");
@@ -110,13 +99,13 @@ describe("env-vars for an environment", () => {
 
     expect(saveMock).toHaveBeenCalledTimes(1);
     expect(decrypt(saveMock.mock.calls[0][1], "org-1")).toBe("A=edited");
-    expect(appUpdates).toEqual([]);
+    expect(dbMock.updates).toEqual([]);
   });
 
   it("saves to the app without an environment", async () => {
     await put({ content: "A=edited" });
 
     expect(saveMock).not.toHaveBeenCalled();
-    expect(decrypt(appUpdates[0].envContent as string, "org-1")).toBe("A=edited");
+    expect(decrypt((dbMock.updates[0].set as { envContent: string }).envContent, "org-1")).toBe("A=edited");
   });
 });

@@ -17,7 +17,7 @@ vi.mock("@/lib/api/verify-access", () => ({
   verifyOrgAccess: vi.fn().mockResolvedValue({ id: "org-1", membership: { role: "owner" } }),
 }));
 vi.mock("@/lib/api/require-plugin", () => ({ requirePlugin: vi.fn().mockResolvedValue(null) }));
-vi.mock("@/lib/api/rate-limit", () => ({ rateLimit: vi.fn().mockResolvedValue(null) }));
+vi.mock("@/lib/api/rate-limit", async () => (await import("@/tests/helpers/mocks")).rateLimitModule());
 vi.mock("@/lib/db", () => ({
   db: {
     query: {

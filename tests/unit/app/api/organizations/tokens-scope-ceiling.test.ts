@@ -17,9 +17,7 @@ vi.mock("@/lib/api/verify-access", () => ({ verifyOrgAccess: mockVerifyOrgAccess
 const recordActivity = vi.hoisted(() => vi.fn(async () => {}));
 vi.mock("@/lib/activity", () => ({ recordActivity }));
 vi.mock("@/lib/api/require-plugin", () => ({ requirePlugin: vi.fn().mockResolvedValue(null) }));
-vi.mock("@/lib/api/with-rate-limit", () => ({
-  withRateLimit: (handler: (...args: unknown[]) => unknown) => handler,
-}));
+vi.mock("@/lib/api/with-rate-limit", async () => (await import("@/tests/helpers/mocks")).withRateLimitModule());
 vi.mock("@/lib/db", () => ({ db: { insert: mockInsert, update: mockUpdate, query: {} } }));
 
 const { POST, PATCH } = await import("@/app/api/v1/organizations/[orgId]/tokens/route");

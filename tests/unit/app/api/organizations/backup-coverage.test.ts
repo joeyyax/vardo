@@ -4,14 +4,12 @@
 // so a member is refused.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { dbMock } from "@/tests/helpers/db";
 import { NextRequest } from "next/server";
 
-const { mockVerifyOrgAccess, appsFindFirst, targetsFindFirst, resolveBackupTarget, listUncoveredApps, optInApp, appUpdates } =
+const { mockVerifyOrgAccess, resolveBackupTarget, listUncoveredApps, optInApp } =
   vi.hoisted(() => ({
-    appUpdates: [] as Record<string, unknown>[],
     mockVerifyOrgAccess: vi.fn(),
-    appsFindFirst: vi.fn(),
-    targetsFindFirst: vi.fn(),
     resolveBackupTarget: vi.fn(),
     listUncoveredApps: vi.fn(),
     optInApp: vi.fn(),
@@ -21,26 +19,10 @@ vi.mock("@/lib/api/verify-access", async () => {
   const { gateOrgAccess } = await import("../../../helpers/verify-access");
   return { verifyOrgAccess: gateOrgAccess(mockVerifyOrgAccess) };
 });
-vi.mock("@/lib/api/with-rate-limit", () => ({
-  withRateLimit: (handler: (...args: unknown[]) => unknown) => handler,
-}));
+vi.mock("@/lib/api/with-rate-limit", async () => (await import("@/tests/helpers/mocks")).withRateLimitModule());
 vi.mock("@/lib/api/require-plugin", () => ({ requirePlugin: vi.fn().mockResolvedValue(null) }));
 vi.mock("@/lib/activity", () => ({ recordActivity: vi.fn().mockResolvedValue(undefined) }));
-vi.mock("@/lib/db", () => ({
-  db: {
-    query: {
-      apps: { findFirst: appsFindFirst },
-      backupTargets: { findFirst: targetsFindFirst },
-    },
-    update: () => ({
-      set: (values: Record<string, unknown>) => ({
-        where: async () => {
-          appUpdates.push(values);
-        },
-      }),
-    }),
-  },
-}));
+vi.mock("@/lib/db", async () => (await import("@/tests/helpers/db")).dbModule());
 vi.mock("@/lib/backups/auto-backup", () => ({ resolveBackupTarget }));
 vi.mock("@/lib/backups/enroll", () => ({ listUncoveredApps, optInApp }));
 
@@ -65,10 +47,10 @@ function post(body: unknown) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  appUpdates.length = 0;
+  dbMock.reset();
   asRole("admin");
-  appsFindFirst.mockResolvedValue({ id: "app-1", name: "notes" });
-  targetsFindFirst.mockResolvedValue({ id: "tgt-nas" });
+  dbMock.query.apps.findFirst.mockResolvedValue({ id: "app-1", name: "notes" });
+  dbMock.query.backupTargets.findFirst.mockResolvedValue({ id: "tgt-nas" });
   resolveBackupTarget.mockResolvedValue({ id: "tgt-r2" });
   listUncoveredApps.mockResolvedValue([{ id: "app-1", name: "notes", status: "uncovered", volumes: [] }]);
   optInApp.mockResolvedValue({ jobId: "job-1", included: ["vol-1"] });
@@ -103,7 +85,7 @@ describe("POST coverage", () => {
     expect(optInApp).toHaveBeenCalledWith(
       expect.objectContaining({ appId: "app-1", organizationId: ORG_ID, targetId: "tgt-r2" }),
     );
-    expect(appUpdates).toEqual([expect.objectContaining({ backupsEnabled: true })]);
+    expect(dbMock.updates.map((u) => u.set)).toEqual([expect.objectContaining({ backupsEnabled: true })]);
   });
 
   it("uses the chosen target", async () => {
@@ -116,7 +98,7 @@ describe("POST coverage", () => {
   });
 
   it("rejects a target outside the org", async () => {
-    targetsFindFirst.mockResolvedValue(undefined);
+    dbMock.query.backupTargets.findFirst.mockResolvedValue(undefined);
 
     const res = await POST(post({ appId: "app-1", targetId: "tgt-foreign" }), params);
 
@@ -133,7 +115,7 @@ describe("POST coverage", () => {
   });
 
   it("rejects an app of another org", async () => {
-    appsFindFirst.mockResolvedValue(undefined);
+    dbMock.query.apps.findFirst.mockResolvedValue(undefined);
 
     const res = await POST(post({ appId: "app-foreign" }), params);
 

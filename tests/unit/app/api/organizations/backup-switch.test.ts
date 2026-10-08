@@ -2,13 +2,11 @@
 // backup.view; changing either takes backup.jobs.manage, so a member is refused.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { dbMock } from "@/tests/helpers/db";
 import { NextRequest } from "next/server";
 
-const { mockVerifyOrgAccess, appsFindFirst, orgsFindFirst, updates, sw } = vi.hoisted(() => ({
+const { mockVerifyOrgAccess, sw } = vi.hoisted(() => ({
   mockVerifyOrgAccess: vi.fn(),
-  appsFindFirst: vi.fn(),
-  orgsFindFirst: vi.fn(),
-  updates: [] as Record<string, unknown>[],
   sw: {
     applyBackupSwitch: vi.fn(),
     getAppBackupSwitchState: vi.fn(),
@@ -22,26 +20,10 @@ vi.mock("@/lib/api/verify-access", async () => {
   const { gateOrgAccess } = await import("../../../helpers/verify-access");
   return { verifyOrgAccess: gateOrgAccess(mockVerifyOrgAccess) };
 });
-vi.mock("@/lib/api/with-rate-limit", () => ({
-  withRateLimit: (handler: (...args: unknown[]) => unknown) => handler,
-}));
+vi.mock("@/lib/api/with-rate-limit", async () => (await import("@/tests/helpers/mocks")).withRateLimitModule());
 vi.mock("@/lib/api/require-plugin", () => ({ requirePlugin: vi.fn().mockResolvedValue(null) }));
 vi.mock("@/lib/activity", () => ({ recordActivity: vi.fn().mockResolvedValue(undefined) }));
-vi.mock("@/lib/db", () => ({
-  db: {
-    query: {
-      apps: { findFirst: appsFindFirst },
-      organizations: { findFirst: orgsFindFirst },
-    },
-    update: () => ({
-      set: (values: Record<string, unknown>) => ({
-        where: async () => {
-          updates.push(values);
-        },
-      }),
-    }),
-  },
-}));
+vi.mock("@/lib/db", async () => (await import("@/tests/helpers/db")).dbModule());
 vi.mock("@/lib/backups/switch", async (importOriginal) => ({
   resolveBackupSwitch: (await importOriginal<typeof import("@/lib/backups/switch")>()).resolveBackupSwitch,
   ...sw,
@@ -79,10 +61,10 @@ const APP = {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  updates.length = 0;
+  dbMock.reset();
   asRole("admin");
-  appsFindFirst.mockResolvedValue(APP);
-  orgsFindFirst.mockResolvedValue({ backupsEnabled: null });
+  dbMock.query.apps.findFirst.mockResolvedValue(APP);
+  dbMock.query.organizations.findFirst.mockResolvedValue({ backupsEnabled: null });
   sw.getAppBackupSwitchState.mockImplementation(async (a: { backupsEnabled: boolean | null }) => ({
     enabled: a.backupsEnabled ?? true,
     source: a.backupsEnabled === null ? "system" : "app",
@@ -108,7 +90,7 @@ describe("app backup switch", () => {
     const res = await appRoute.PUT(put({ enabled: false }), appParams);
 
     expect(res.status).toBe(200);
-    expect(updates).toEqual([expect.objectContaining({ backupsEnabled: false })]);
+    expect(dbMock.updates.map((u) => u.set)).toEqual([expect.objectContaining({ backupsEnabled: false })]);
     expect(sw.applyBackupSwitch).toHaveBeenCalledWith(
       expect.objectContaining({ id: "app-1", organizationId: ORG_ID }),
       false,
@@ -123,7 +105,7 @@ describe("app backup switch", () => {
     const res = await appRoute.PUT(put({ enabled: null }), appParams);
 
     expect(res.status).toBe(200);
-    expect(updates).toEqual([expect.objectContaining({ backupsEnabled: null })]);
+    expect(dbMock.updates.map((u) => u.set)).toEqual([expect.objectContaining({ backupsEnabled: null })]);
     expect(sw.applyBackupSwitch).toHaveBeenCalledWith(expect.anything(), true, { reenable: true });
   });
 
@@ -133,7 +115,7 @@ describe("app backup switch", () => {
     const res = await appRoute.PUT(put({ enabled: false }), appParams);
 
     expect(res.status).toBe(403);
-    expect(updates).toEqual([]);
+    expect(dbMock.updates).toEqual([]);
   });
 
   it("rejects a malformed body", async () => {
@@ -143,7 +125,7 @@ describe("app backup switch", () => {
   });
 
   it("returns 404 for an app of another org", async () => {
-    appsFindFirst.mockResolvedValue(undefined);
+    dbMock.query.apps.findFirst.mockResolvedValue(undefined);
 
     const res = await appRoute.PUT(put({ enabled: true }), appParams);
 
@@ -151,7 +133,7 @@ describe("app backup switch", () => {
   });
 
   it("sends a compose child to its stack", async () => {
-    appsFindFirst.mockResolvedValue({ ...APP, parentAppId: "stack-1" });
+    dbMock.query.apps.findFirst.mockResolvedValue({ ...APP, parentAppId: "stack-1" });
 
     const res = await appRoute.PUT(put({ enabled: true }), appParams);
 
@@ -173,7 +155,7 @@ describe("org backup default", () => {
     const res = await orgRoute.PUT(put({ enabled: false }), orgParams);
 
     expect(res.status).toBe(200);
-    expect(updates).toEqual([expect.objectContaining({ backupsEnabled: false })]);
+    expect(dbMock.updates.map((u) => u.set)).toEqual([expect.objectContaining({ backupsEnabled: false })]);
     expect(sw.reconcileInBackground).toHaveBeenCalledWith({
       organizationId: ORG_ID,
       inheritOnly: true,

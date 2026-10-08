@@ -4,22 +4,20 @@
 // so it is instance-admin only. Org role does not count.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { dbMock } from "@/tests/helpers/db";
 import { NextRequest } from "next/server";
 
-const { mockVerifyOrgAccess, mockSession, userFindFirst, mockDiscover, mockDetail } = vi.hoisted(
+const { mockVerifyOrgAccess, mockSession, mockDiscover, mockDetail } = vi.hoisted(
   () => ({
     mockVerifyOrgAccess: vi.fn(),
     mockSession: vi.fn(),
-    userFindFirst: vi.fn(),
     mockDiscover: vi.fn(),
     mockDetail: vi.fn(),
   }),
 );
 
 vi.mock("@/lib/api/verify-access", () => ({ verifyOrgAccess: mockVerifyOrgAccess }));
-vi.mock("@/lib/api/with-rate-limit", () => ({
-  withRateLimit: (handler: (...args: unknown[]) => unknown) => handler,
-}));
+vi.mock("@/lib/api/with-rate-limit", async () => (await import("@/tests/helpers/mocks")).withRateLimitModule());
 vi.mock("@/lib/api/require-plugin", () => ({ requirePlugin: vi.fn().mockResolvedValue(null) }));
 vi.mock("@/lib/auth/session", () => ({
   getSession: mockSession,
@@ -29,7 +27,7 @@ vi.mock("@/lib/auth/session", () => ({
     return s;
   },
 }));
-vi.mock("@/lib/db", () => ({ db: { query: { user: { findFirst: userFindFirst } } } }));
+vi.mock("@/lib/db", async () => (await import("@/tests/helpers/db")).dbModule());
 vi.mock("@/lib/docker/discover", () => ({
   discoverContainers: mockDiscover,
   getContainerDetail: mockDetail,
@@ -64,7 +62,7 @@ function as(role: string, instanceAdmin: boolean, authMethod: "session" | "token
     session,
   });
   mockSession.mockResolvedValue(session);
-  userFindFirst.mockResolvedValue({ isAppAdmin: instanceAdmin });
+  dbMock.query.user.findFirst.mockResolvedValue({ isAppAdmin: instanceAdmin });
 }
 
 const calls = {
@@ -82,6 +80,7 @@ const calls = {
 };
 
 beforeEach(() => {
+  dbMock.reset();
   vi.clearAllMocks();
   mockDiscover.mockResolvedValue({ standalone: [], groups: [] });
   mockDetail.mockResolvedValue({ id: CONTAINER_ID, env: { SECRET: "x" } });

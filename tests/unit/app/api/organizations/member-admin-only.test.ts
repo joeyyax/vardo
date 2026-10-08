@@ -13,9 +13,7 @@ vi.mock("@/lib/auth/session", () => ({
     session: { user: { id: "u1" } },
   }),
 }));
-vi.mock("@/lib/api/with-rate-limit", () => ({
-  withRateLimit: (handler: (...args: unknown[]) => unknown) => handler,
-}));
+vi.mock("@/lib/api/with-rate-limit", async () => (await import("@/tests/helpers/mocks")).withRateLimitModule());
 vi.mock("@/lib/api/require-plugin", () => ({ requirePlugin: vi.fn().mockResolvedValue(null) }));
 vi.mock("@/lib/auth/admin", () => ({ isAppAdmin: async () => state.instanceAdmin }));
 vi.mock("@/lib/db", () => ({
