@@ -7,11 +7,12 @@ import { restartSchema } from "@/lib/api/admin/maintenance-schemas";
 import { logger } from "@/lib/logger";
 import { resolveVardoComposeFile } from "@/lib/paths";
 import { dockerEnv } from "@/lib/docker/docker-env";
+import { FRONTEND_SERVICE, SHARED_PROJECT, composeIdentity, restartArgs, sharedServices } from "./plan";
 
 const log = logger.child("admin:maintenance:restart");
 
-// POST /api/v1/admin/maintenance/restart — recreates one or all stack services with `docker compose up -d`.
-// Body: { service?: string }. Omit service to restart all.
+// POST /api/v1/admin/maintenance/restart — recreates one or all shared stack services in project `vardo`.
+// Body: { service?: string } (a container name). The frontend runs in a slot project and updates through /update.
 async function handlePost(request: NextRequest) {
   try {
     await requireAppAdmin();
@@ -25,12 +26,23 @@ async function handlePost(request: NextRequest) {
     const { service } = parsed.data;
 
     const composeFile = resolveVardoComposeFile();
-    const args = ["compose", "-f", composeFile, "up", "-d"];
+    let services: string[];
     if (service) {
-      args.push("--no-deps", service);
+      const identity = await composeIdentity(service);
+      if (!identity) return apiError.notFound("service");
+      if (identity.project !== SHARED_PROJECT || identity.service === FRONTEND_SERVICE) {
+        return NextResponse.json(
+          { error: `${service} isn't restarted here. Use Update to redeploy the frontend.` },
+          { status: 409 },
+        );
+      }
+      services = [identity.service];
+    } else {
+      services = await sharedServices(composeFile);
     }
+    const args = restartArgs(composeFile, services);
 
-    log.info(`restarting ${service ?? "all services"} via docker compose up -d`);
+    log.info(`restarting ${service ?? "all services"} in project ${SHARED_PROJECT}`);
 
     setTimeout(() => {
       spawn("docker", args, {
@@ -42,7 +54,7 @@ async function handlePost(request: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      message: service ? `Restarting ${service}...` : "Restarting all services...",
+      message: service ? `Restarting ${service}...` : "Restarting shared services...",
     });
   } catch (error) {
     return handleRouteError(error);
