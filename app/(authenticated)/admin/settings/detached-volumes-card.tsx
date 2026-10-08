@@ -45,7 +45,7 @@ function toRows(data: Listing): Row[] {
       kind: "dir" as const,
       name: d.name,
       sourceApp: d.name,
-      location: d.path,
+      location: d.path.split("/").slice(-2).join("/"),
       sizeBytes: d.sizeBytes,
     })),
   ];
@@ -143,7 +143,7 @@ export function DetachedVolumesCard() {
                   <Folder className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
                 )}
                 <div className="min-w-0 flex-1">
-                  <p className="truncate font-mono text-sm font-medium">{row.location}</p>
+                  <p className="truncate font-mono text-sm font-medium" title={row.location}>{row.location}</p>
                   <p className="text-xs text-muted-foreground">
                     From <span className="font-medium">{row.sourceApp}</span>
                     {row.kind === "dir" ? " · Bind-mounted data" : ""}
