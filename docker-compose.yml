@@ -152,7 +152,7 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD:-host}
       POSTGRES_DB: host
     ports:
-      - "${POSTGRES_PORT:-7100}:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-7100}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -170,7 +170,7 @@ services:
     restart: unless-stopped
     mem_limit: ${VARDO_REDIS_MEM:-512m}
     ports:
-      - "${REDIS_PORT:-7200}:6379"
+      - "127.0.0.1:${REDIS_PORT:-7200}:6379"
     volumes:
       - redis_data:/data
     healthcheck:

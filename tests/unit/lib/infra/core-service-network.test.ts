@@ -75,3 +75,12 @@ describe("core service templates — shared network", () => {
     expect(configs).toBe(true);
   });
 });
+
+describe("datastore ports", () => {
+  it("publishes Postgres and Redis on loopback only", () => {
+    const text = readFileSync(join(process.cwd(), "docker-compose.yml"), "utf8");
+    expect(text).toContain('"127.0.0.1:${POSTGRES_PORT:-7100}:5432"');
+    expect(text).toContain('"127.0.0.1:${REDIS_PORT:-7200}:6379"');
+    expect(text).not.toMatch(/^\s+- "\$\{(POSTGRES|REDIS)_PORT/m);
+  });
+});
