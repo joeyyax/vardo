@@ -12,6 +12,8 @@ import { RestoreProgressView } from "./restore-progress";
 
 const POLL_MS = 3_000;
 
+const sentence = (text: string) => (/[.!?]$/.test(text) ? text : `${text}.`);
+
 /** Polls the restore's state, so a reload or a console restart lands back on the right step. */
 export function RestoreFlow() {
   const [status, setStatus] = useState<RestoreStatus | null>(null);
@@ -87,7 +89,10 @@ function Phase({ status, onChange }: { status: RestoreStatus; onChange: () => vo
       return (
         <div className="space-y-4">
           <Callout variant="error" label="Database restore failed">
-            {status.error ?? "The database restore failed."} This instance&apos;s database wasn&apos;t changed.
+            {sentence(status.error ?? "The database restore failed")}{" "}
+            {status.changed
+              ? "The backup's data is in, but a step after it failed. Check the log, then restart Vardo. It finishes the migrations and moves on to the apps."
+              : "This instance's database wasn't changed."}
           </Callout>
           {status.log && (
             <details className="squircle rounded-lg border p-3 text-xs">
@@ -95,7 +100,7 @@ function Phase({ status, onChange }: { status: RestoreStatus; onChange: () => vo
               <pre className="mt-2 overflow-x-auto whitespace-pre-wrap font-mono">{status.log}</pre>
             </details>
           )}
-          <ChooseBackup configuredTarget={status.configuredTarget} onStarted={onChange} />
+          {!status.changed && <ChooseBackup configuredTarget={status.configuredTarget} onStarted={onChange} />}
         </div>
       );
     case "apps":

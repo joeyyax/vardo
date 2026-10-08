@@ -131,6 +131,17 @@ async function stageSystemBackup(target: RestoreTarget, backupKey: string, keyId
   return backupId;
 }
 
+/** psql's own error when there is one, else the engine's last word. */
+export function databaseFailureReason(log: string): string {
+  const lines = log.split("\n");
+  const psql = lines.find((l) => /^(psql:.*)?ERROR:/.test(l.trim()));
+  if (psql) return `Postgres refused the dump: ${psql.replace(/^.*ERROR:\s*/, "")}`;
+  const engine = [...lines].reverse().find((l) => l.includes("Restore failed:"));
+  const reason = engine?.replace(/^\[[^\]]+\] Restore failed: /, "");
+  if (!reason || reason.startsWith("Command failed:")) return "The database restore failed";
+  return reason;
+}
+
 /** Bring the restored schema up to this version's. */
 export async function runMigrations(logFn: (msg: string) => void): Promise<void> {
   logFn("Running migrations on the restored database");
@@ -149,13 +160,7 @@ async function restoreDatabase(marker: RestoreMarker, target: RestoreTarget, key
 
   const result = await restoreBackup(backupId, { afterRestore: runMigrations });
   if (!result.success) {
-    const reason = result.log.split("\n").reverse().find((l) => l.includes("Restore failed:"));
-    await writeMarker({
-      ...marker,
-      phase: "failed",
-      error: reason?.replace(/^\[[^\]]+\] Restore failed: /, "") ?? "The database restore failed",
-      log: result.log,
-    });
+    await writeMarker({ ...marker, phase: "failed", error: databaseFailureReason(result.log), log: result.log });
     return;
   }
 
@@ -208,6 +213,11 @@ async function refreshRestoredState(): Promise<void> {
 /** At boot: finish a database phase the restart interrupted, then resume the app queue. */
 export async function resumeInstanceRestore(): Promise<void> {
   const marker = await readMarker();
+  // The dump committed but migrating it failed. Entrypoint migrations ran before this boot.
+  if (marker?.phase === "failed" && !(await needsSetup())) {
+    await finishDatabasePhase(marker, marker.log ?? "");
+    return;
+  }
   if (marker?.phase === "database") {
     if (await needsSetup()) {
       await writeMarker({

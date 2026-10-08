@@ -61,3 +61,23 @@ describe("wrapSystemRestoreCmd", () => {
     );
   });
 });
+
+describe("databaseFailureReason", () => {
+  it("surfaces psql's error over the command line", async () => {
+    const { databaseFailureReason } = await import("@/lib/restore/database");
+    const log = [
+      "[2026-10-08T20:57:38.239Z] Restoring via: { printf ...",
+      "drop cascades to table instance_restore",
+      'ERROR:  relation "nowhere" does not exist',
+      "[2026-10-08T20:57:38.300Z] Restore failed: Command failed: bash -c set -o pipefail; gunzip -c x | psql",
+    ].join("\n");
+    expect(databaseFailureReason(log)).toBe('Postgres refused the dump: relation "nowhere" does not exist');
+  });
+
+  it("keeps the engine's reason when psql never ran", async () => {
+    const { databaseFailureReason } = await import("@/lib/restore/database");
+    expect(
+      databaseFailureReason("[t] Restore failed: Downloaded backup produced a 92-byte file — too small to be valid"),
+    ).toBe("Downloaded backup produced a 92-byte file — too small to be valid");
+  });
+});

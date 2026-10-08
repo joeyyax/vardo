@@ -115,7 +115,7 @@ const execImpl = (...args: unknown[]) => {
   const cb = args[args.length - 1] as (e: unknown, r: unknown) => void;
   if (file === "docker" && argv[0] === "run") {
     const mount = argv.find((a) => typeof a === "string" && a.endsWith(":/backup"));
-    if (mount && !mount.includes("restore")) {
+    if (mount && !mount.includes(".tmp-restore-")) {
       writeFileSync(join(mount.slice(0, -":/backup".length), "volume.tar.gz"), ARCHIVE_BYTES);
     }
   }

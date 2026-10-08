@@ -199,6 +199,11 @@ async function restoreArchive(archive: RestoreArchivePlan, at: Date, note: (msg:
       candidates.push(...older);
     }
   }
+  if (lastError.includes(MISSING)) {
+    throw new AppRestoreError(
+      `${label}: no archive at or before this backup is left in storage. Retention may have removed it; a later system backup has newer ones.`,
+    );
+  }
   throw new AppRestoreError(`${label}: ${lastError}`);
 }
 

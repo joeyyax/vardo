@@ -13,7 +13,8 @@ export type RestoreStatus =
   | { phase: "choose"; configuredTarget: string | null }
   /** The database phase. Detail only for the browser that started it. */
   | { phase: "database"; systemBackupKey?: string; startedAt?: string }
-  | { phase: "database-failed"; error?: string; log?: string; configuredTarget: string | null }
+  /** `changed`: the dump committed and a later step failed, so this isn't a fresh database anymore. */
+  | { phase: "database-failed"; error?: string; log?: string; configuredTarget: string | null; changed: boolean }
   /** The app queue. Needs an admin from the restored database. */
   | { phase: "apps"; signIn: true }
   | { phase: "apps"; signIn: false; restore: NonNullable<RestoreView> }
@@ -30,13 +31,20 @@ export async function restoreStatus(token: string | undefined): Promise<RestoreS
       : { phase: "database" };
   }
 
+  if (marker?.phase === "failed" && tokenMatches(marker, token)) {
+    const target = fresh ? await configuredRestoreTarget() : null;
+    return {
+      phase: "database-failed",
+      error: marker.error,
+      log: marker.log,
+      configuredTarget: target ? describeTarget(target) : null,
+      changed: !fresh,
+    };
+  }
+
   if (fresh) {
     const target = await configuredRestoreTarget();
-    const configuredTarget = target ? describeTarget(target) : null;
-    if (marker?.phase === "failed" && tokenMatches(marker, token)) {
-      return { phase: "database-failed", error: marker.error, log: marker.log, configuredTarget };
-    }
-    return { phase: "choose", configuredTarget };
+    return { phase: "choose", configuredTarget: target ? describeTarget(target) : null };
   }
 
   const run = await currentRestore().catch(() => null);
