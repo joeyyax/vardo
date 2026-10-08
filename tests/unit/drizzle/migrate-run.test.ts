@@ -100,6 +100,18 @@ function runMigrate(databaseUrl: string, cwd = ROOT) {
   }
 }
 
+// Parallel runs can collide on template1; retry briefly.
+async function createDatabase(name: string) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await conn!.admin.unsafe(`CREATE DATABASE "${name}"`);
+    } catch (err) {
+      if (attempt >= 5 || !/being accessed by other users/.test(String(err))) throw err;
+      await new Promise((r) => setTimeout(r, 200 * (attempt + 1)));
+    }
+  }
+}
+
 describe.skipIf(!conn)("migrate run against a scratch database", () => {
   const dbName = `vardo_migrate_${process.pid}_${Date.now()}`;
   const extras: string[] = [];
@@ -108,17 +120,17 @@ describe.skipIf(!conn)("migrate run against a scratch database", () => {
   let firstRun: { code: number; out: string };
 
   async function scratch(name: string) {
-    await conn!.admin.unsafe(`CREATE DATABASE "${name}"`);
+    await createDatabase(name);
     extras.push(name);
     return withDatabase(conn!.url, name);
   }
 
   beforeAll(async () => {
-    await conn!.admin.unsafe(`CREATE DATABASE "${dbName}"`);
+    await createDatabase(dbName);
     scratchUrl = withDatabase(conn!.url, dbName);
     firstRun = runMigrate(scratchUrl);
     sql = postgres(scratchUrl, { max: 1, onnotice: () => {} });
-  });
+  }, 60_000);
 
   afterAll(async () => {
     await sql?.end({ timeout: 1 });
