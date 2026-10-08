@@ -40,8 +40,8 @@ const rollback = () =>
 beforeEach(() => {
   vi.clearAllMocks();
   clearPinMock.mockResolvedValue(undefined);
-  // The standby has a stopped container to bring back.
-  execFileAsyncMock.mockResolvedValue({ stdout: '{"State":"exited"}\n', stderr: "" });
+  // The standby has a container.
+  execFileAsyncMock.mockResolvedValue({ stdout: '{"State":"running"}\n', stderr: "" });
 });
 
 describe("instant rollback policy check", () => {
