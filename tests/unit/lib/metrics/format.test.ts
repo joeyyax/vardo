@@ -19,7 +19,7 @@ describe("formatDuration", () => {
 
   it("renders minutes and seconds, then hours and minutes", () => {
     expect(formatDuration(125_000)).toBe("2m 5s");
-    expect(formatDuration(3_700_000)).toBe("1h 2m");
+    expect(formatDuration(3_700_000)).toBe("1h 1m");
     expect(formatDuration(7_200_000)).toBe("2h 0m");
   });
 
