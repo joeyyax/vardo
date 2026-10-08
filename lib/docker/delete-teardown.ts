@@ -1,7 +1,7 @@
 // Leftovers `compose down` misses when an app is deleted: stopped containers, their networks, an unowned app dir.
 
 import { lstat } from "fs/promises";
-import { sep } from "path";
+import { resolve, sep } from "path";
 import { dockerRequest, removeContainer } from "./client";
 import { APP_UID, DOCKER_CLEANUP_TIMEOUT } from "./constants";
 import { dockerEnv } from "./docker-env";
@@ -79,7 +79,7 @@ export function isPermissionError(err: unknown): boolean {
  * Refuses anything outside PROJECTS_DIR and symlinks. Returns false when it could not.
  */
 export async function claimAppDirTopLevel(dir: string): Promise<boolean> {
-  if (!dir.startsWith(PROJECTS_DIR + sep)) return false;
+  if (resolve(dir) !== dir || !dir.startsWith(PROJECTS_DIR + sep)) return false;
   try {
     if (!(await lstat(dir)).isDirectory()) return false;
     await execFileAsync(
