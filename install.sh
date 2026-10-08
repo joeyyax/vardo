@@ -6,11 +6,17 @@ set -euo pipefail
 #
 # Fresh install:  curl -fsSL https://vardo.run/install.sh | bash
 # After install:  sudo bash /opt/vardo/install.sh
+# From a ref:     curl -fsSL https://vardo.run/install.sh | VARDO_REF=<branch|tag|sha> bash
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
 COMPOSE_FILE="docker-compose.yml"
 REPO_URL="https://github.com/joeyyax/vardo.git"
+
+# Branch, tag or commit sha to install. Later updates follow the branch the slot is on.
+VARDO_REF_SET=false
+[ -n "${VARDO_REF:-}" ] && VARDO_REF_SET=true
+VARDO_REF="${VARDO_REF:-main}"
 
 # Blue/green slot layout — Vardo manages itself as an app in apps/vardo/env/.
 VARDO_SLOT_DIR=""       # resolved at runtime: apps/vardo/env/{blue|green}
@@ -590,12 +596,18 @@ get_port_process() {
   fi
 }
 
+# True when Vardo's own Traefik from an earlier run publishes the port.
+vardo_traefik_holds_port() {
+  command -v docker &>/dev/null || return 1
+  docker ps --filter "name=^vardo-traefik$" --filter "publish=$1" --format '{{.Names}}' 2>/dev/null | grep -qx "vardo-traefik"
+}
+
 check_critical_ports() {
   local ports_to_check=("80" "443" "3000")
   local conflicts=0
 
   for port in "${ports_to_check[@]}"; do
-    if check_port_in_use "$port"; then
+    if check_port_in_use "$port" && ! vardo_traefik_holds_port "$port"; then
       local process_name
       process_name=$(get_port_process "$port")
       if [ -n "$process_name" ]; then
@@ -630,7 +642,9 @@ check_ports() {
   # Traefik ports — required for production only
   if is_production; then
     for port in 80 443; do
-      if check_port_in_use "$port"; then
+      if vardo_traefik_holds_port "$port"; then
+        log "Port $port is held by vardo-traefik from an earlier install"
+      elif check_port_in_use "$port"; then
         local proc
         proc=$(get_port_process "$port")
         fail "Port $port is in use by ${proc:-unknown process} — Traefik needs it for TLS. Stop the conflicting service (e.g. 'systemctl stop nginx' or 'systemctl stop apache2') and retry."
@@ -873,6 +887,9 @@ install_packages_linux() {
   fi
 
   if ! $UNATTENDED && ! $AUTO_YES; then
+    if ! has_tty; then
+      fail "No terminal to confirm the package install. Rerun with --yes, e.g. curl -fsSL https://vardo.run/install.sh | sudo bash -s -- --yes"
+    fi
     echo ""
     if ! confirm "Install these packages?"; then
       fail "Cannot continue without required packages. Install them manually and retry."
@@ -973,8 +990,40 @@ EOF
   fi
 }
 
+# Reject refs git could read as an option or a path escape.
+validate_ref() {
+  [[ "$VARDO_REF" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ && "$VARDO_REF" != *..* ]] \
+    || fail "Invalid VARDO_REF: $VARDO_REF (expected a branch, tag or commit sha)"
+}
+
+# Shallow-clone VARDO_REF into $1. A branch or tag clones by name; a sha is fetched.
+clone_ref() {
+  local dir="$1"
+  if run_cmd git clone --depth 1 --branch "$VARDO_REF" "$REPO_URL" "$dir" 2>/dev/null; then
+    return 0
+  fi
+  rm -rf "$dir"
+  run_cmd git init --quiet "$dir" \
+    && run_cmd git -C "$dir" remote add origin "$REPO_URL" \
+    && run_cmd git -C "$dir" fetch --depth 1 --quiet origin "$VARDO_REF" \
+    && run_cmd git -C "$dir" checkout --quiet FETCH_HEAD \
+    || fail "Could not fetch $VARDO_REF from $REPO_URL. Check that the branch, tag or commit exists."
+}
+
+# Move an existing checkout to VARDO_REF. A branch stays a branch; a tag or sha detaches.
+checkout_ref() {
+  run_cmd git fetch --depth 1 --quiet origin "$VARDO_REF" \
+    || fail "Could not fetch $VARDO_REF. Check that the branch, tag or commit exists."
+  if git ls-remote --exit-code --heads origin "$VARDO_REF" &>/dev/null; then
+    run_cmd git checkout --quiet -B "$VARDO_REF" FETCH_HEAD
+  else
+    run_cmd git checkout --quiet FETCH_HEAD
+  fi
+}
+
 clone_repo() {
   step "Installation"
+  validate_ref
 
   local slot_dir="$VARDO_DIR/apps/vardo/env/blue"
 
@@ -995,21 +1044,29 @@ clone_repo() {
       warn "Local changes detected, stashing..."
       run_cmd git stash --quiet
     fi
-    if ! run_cmd git pull --quiet; then
-      fail "git pull failed in $active_dir. Run 'cd $active_dir && git status' to inspect."
+    if $VARDO_REF_SET; then
+      checkout_ref
+      log "Checked out $VARDO_REF"
+    elif [ -z "$(git branch --show-current)" ]; then
+      log "Pinned to $(git describe --tags --always) (detached); leaving it as is"
+    else
+      if ! run_cmd git pull --quiet; then
+        fail "git pull failed in $active_dir. Run 'cd $active_dir && git status' to inspect."
+      fi
+      log "Updated to latest"
     fi
     VARDO_SLOT_DIR="$active_dir"
-    log "Updated to latest"
   elif [ -d "$VARDO_DIR" ] && [ -f "$VARDO_DIR/$COMPOSE_FILE" ]; then
     # Legacy flat layout — migrate to slot layout
+    $VARDO_REF_SET && warn "VARDO_REF is ignored when migrating a flat install."
     migrate_to_slots
   else
     # Fresh install — clone into blue slot
     mkdir -p "$VARDO_DIR/apps/vardo/env" "$VARDO_DIR/images"
     chown 1001:1001 "$VARDO_DIR" "$VARDO_DIR/apps" "$VARDO_DIR/images"
     chown -R 1001:1001 "$VARDO_DIR/apps/vardo"
-    info "Cloning to $slot_dir..."
-    run_cmd git clone --depth 1 "$REPO_URL" "$slot_dir"
+    info "Cloning $VARDO_REF to $slot_dir..."
+    clone_ref "$slot_dir"
     VARDO_SLOT_DIR="$slot_dir"
     ln -sfn "$(basename "$slot_dir")" "$VARDO_DIR/apps/vardo/env/current"
     cd "$slot_dir"
@@ -1061,6 +1118,8 @@ migrate_to_slots() {
 generate_env() {
   local env_file="$VARDO_DIR/.env"
 
+  step "Configuration"
+
   if [ -f "$env_file" ]; then
     log "Configuration exists at $env_file"
     # Symlink .env into the active slot so docker compose picks it up
@@ -1069,8 +1128,6 @@ generate_env() {
     fi
     return
   fi
-
-  step "Configuration"
 
   # Role selection
   if [ -z "${VARDO_ROLE:-}" ]; then
@@ -1727,8 +1784,13 @@ print_install_summary() {
   echo ""
 }
 
+# Steps do_install announces: five, plus the two --restore adds.
+install_step_total() {
+  if $RESTORE; then echo 7; else echo 5; fi
+}
+
 do_install() {
-  STEP_TOTAL=7
+  STEP_TOTAL=$(install_step_total)
   STEP_CURRENT=0
 
   [[ "$PLATFORM" != "macos" ]] && check_root
@@ -1863,6 +1925,7 @@ do_update() {
   local current_version current_branch
   current_version=$(get_version)
   current_branch=$(git rev-parse --abbrev-ref HEAD)
+  [ "$current_branch" != "HEAD" ] || fail "The active slot is pinned to $current_version, not a branch. Reinstall with VARDO_REF set to a branch, or run 'git -C $active_dir checkout <branch>'."
 
   log "Version: $current_version"
   log "Branch: $current_branch"
@@ -2579,6 +2642,7 @@ parse_args() {
         echo ""
         echo "Environment variables (for unattended install):"
         echo "  VARDO_DIR          Installation directory (default: /opt/vardo or ~/vardo on macOS)"
+        echo "  VARDO_REF          Branch, tag or commit sha to install (default: main)"
         echo "  VARDO_ROLE         Instance role: production, staging, development"
         echo "  VARDO_DOMAIN       Dashboard domain (production/staging)"
         echo "  VARDO_BASE_DOMAIN  Base domain for projects (production/staging)"

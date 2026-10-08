@@ -60,6 +60,7 @@ export function ChooseBackup({
   const [picked, setPicked] = useState<string | null>(null);
   const [masterKey, setMasterKey] = useState("");
   const [check, setCheck] = useState<BackupCheck | null>(null);
+  const [hostKey, setHostKey] = useState(false);
   const [busy, setBusy] = useState<"list" | "check" | "start" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -94,6 +95,7 @@ export function ChooseBackup({
   async function findBackups() {
     setPicked(null);
     setCheck(null);
+    setHostKey(false);
     const result = await run("list", () => post<{ backups: FoundBackup[] }>("/api/setup/restore/backups", { target }));
     if (result) setBackups(result.backups);
   }
@@ -106,10 +108,30 @@ export function ChooseBackup({
     setCheck(result);
   }
 
+  // After install.sh --restore the host holds the key; when its Key ID matches the backup there is nothing to enter.
+  async function pick(backupKey: string) {
+    setPicked(backupKey);
+    setCheck(null);
+    setHostKey(false);
+    try {
+      const result = await post<BackupCheck>("/api/setup/restore/check", { target, backupKey });
+      if (result.key.kind === "match") {
+        setCheck(result);
+        setHostKey(true);
+      }
+    } catch {
+      // Without a usable host key the field below stays.
+    }
+  }
+
   async function start() {
     if (!picked) return;
     const result = await run("start", () =>
-      post<{ runId: string }>("/api/setup/restore/start", { target, backupKey: picked, masterKey }),
+      post<{ runId: string }>("/api/setup/restore/start", {
+        target,
+        backupKey: picked,
+        ...(hostKey ? {} : { masterKey }),
+      }),
     );
     if (result) onStarted();
   }
@@ -227,7 +249,7 @@ export function ChooseBackup({
                       type="button"
                       role="radio"
                       aria-checked={picked === b.key}
-                      onClick={() => { setPicked(b.key); setCheck(null); }}
+                      onClick={() => pick(b.key)}
                       className={cn(
                         "flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm transition-colors hover:bg-accent",
                         picked === b.key && "bg-accent",
@@ -263,6 +285,9 @@ export function ChooseBackup({
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            {hostKey && check ? (
+              <KeyCheckResult check={check.key} hostKey />
+            ) : (
             <form
               className="flex flex-col gap-2 sm:flex-row"
               onSubmit={(e) => {
@@ -289,7 +314,8 @@ export function ChooseBackup({
                 Check Key ID
               </Button>
             </form>
-            {check && <KeyCheckResult check={check.key} />}
+            )}
+            {check && !hostKey && <KeyCheckResult check={check.key} />}
             {check?.authSecret?.kind === "mismatch" && (
               <Callout variant="warning" label="Load the auth secret first">
                 Two-factor secrets in this backup don&apos;t open with this instance&apos;s BETTER_AUTH_SECRET. On the
@@ -331,12 +357,12 @@ function Field({
   );
 }
 
-function KeyCheckResult({ check }: { check: KeyCheck }) {
+function KeyCheckResult({ check, hostKey = false }: { check: KeyCheck; hostKey?: boolean }) {
   switch (check.kind) {
     case "match":
       return (
         <Callout variant="success" label="Key ID matches">
-          The backup was written with Key ID <code className="font-mono">{check.keyId}</code>, the key you entered.
+          The backup was written with Key ID <code className="font-mono">{check.keyId}</code>, {hostKey ? "the key this host already holds" : "the key you entered"}.
         </Callout>
       );
     case "unencrypted":

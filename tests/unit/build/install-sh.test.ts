@@ -1,0 +1,169 @@
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, rmSync, readFileSync } from "fs";
+import { join } from "path";
+import { tmpdir } from "os";
+import { spawnSync } from "child_process";
+
+// install.sh with its final `main "$@"` removed, so its functions can be called one at a time.
+
+let dir: string;
+let lib: string;
+let repo: string;
+let tipSha: string;
+let oldSha: string;
+
+function git(cwd: string, ...args: string[]): string {
+  const r = spawnSync("git", args, {
+    cwd,
+    encoding: "utf8",
+    env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" },
+  });
+  if (r.status !== 0) throw new Error(r.stderr);
+  return r.stdout.trim();
+}
+
+/** Runs a snippet with install.sh's functions loaded. */
+function sh(script: string, env: Record<string, string> = {}, path = process.env.PATH ?? "") {
+  const r = spawnSync("bash", ["-c", `set -euo pipefail\nsource "${lib}"\n${script}`], {
+    encoding: "utf8",
+    env: { ...process.env, PATH: path, VARDO_REF: "", ...env },
+  });
+  return { status: r.status, out: `${r.stdout}${r.stderr}` };
+}
+
+beforeAll(() => {
+  dir = mkdtempSync(join(tmpdir(), "install-sh-"));
+  lib = join(dir, "install-lib.sh");
+  const src = readFileSync(join(__dirname, "../../../install.sh"), "utf8").trimEnd().split("\n");
+  expect(src.at(-1)).toBe('main "$@"');
+  writeFileSync(lib, src.slice(0, -1).join("\n"));
+
+  repo = join(dir, "repo");
+  mkdirSync(repo);
+  git(repo, "init", "-q", "-b", "main");
+  writeFileSync(join(repo, "f"), "one");
+  git(repo, "add", ".");
+  git(repo, "commit", "-qm", "one");
+  oldSha = git(repo, "rev-parse", "HEAD");
+  git(repo, "tag", "v1");
+  git(repo, "checkout", "-qb", "feature");
+  writeFileSync(join(repo, "f"), "two");
+  git(repo, "commit", "-qam", "two");
+  tipSha = git(repo, "rev-parse", "HEAD");
+  git(repo, "checkout", "-q", "main");
+});
+
+afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+function clone(ref: string | null, name: string) {
+  const dest = join(dir, name);
+  const r = sh(`REPO_URL="file://${repo}"\nclone_ref "${dest}"\ngit -C "${dest}" rev-parse HEAD`, ref ? { VARDO_REF: ref } : {});
+  return { ...r, sha: r.out.trim().split("\n").at(-1) };
+}
+
+describe("VARDO_REF", () => {
+  it("defaults to main", () => {
+    expect(sh('echo "$VARDO_REF $VARDO_REF_SET"').out.trim()).toBe("main false");
+  });
+
+  it("is marked as set when given", () => {
+    expect(sh('echo "$VARDO_REF $VARDO_REF_SET"', { VARDO_REF: "feature" }).out.trim()).toBe("feature true");
+  });
+
+  it("clones main by default", () => {
+    expect(clone(null, "c-main").sha).toBe(oldSha);
+  });
+
+  it("clones a branch", () => {
+    expect(clone("feature", "c-branch").sha).toBe(tipSha);
+  });
+
+  it("clones a tag", () => {
+    expect(clone("v1", "c-tag").sha).toBe(oldSha);
+  });
+
+  it("fetches a commit sha", () => {
+    expect(clone(tipSha, "c-tip").sha).toBe(tipSha);
+    expect(clone(oldSha, "c-old").sha).toBe(oldSha);
+  });
+
+  it("fails on a ref that does not exist", () => {
+    const r = clone("nope", "c-missing");
+    expect(r.status).not.toBe(0);
+    expect(r.out).toContain("Could not fetch nope");
+  });
+
+  it("moves an existing checkout to the ref", () => {
+    const dest = join(dir, "c-move");
+    const r = sh(
+      `REPO_URL="file://${repo}"\nVARDO_REF=main clone_ref "${dest}"\ncd "${dest}"\nVARDO_REF=feature checkout_ref\ngit rev-parse HEAD\ngit branch --show-current`,
+    );
+    expect(r.out.trim().split("\n").slice(-2)).toEqual([tipSha, "feature"]);
+  });
+
+  it.each(["--upload-pack=x", "a..b", "-f", "a b", "/etc"])("rejects %s", (ref) => {
+    const r = sh("validate_ref", { VARDO_REF: ref });
+    expect(r.status).not.toBe(0);
+    expect(r.out).toContain("Invalid VARDO_REF");
+  });
+
+  it.each(["main", "v1.2.3", "release/2.x", "c47d9d52"])("accepts %s", (ref) => {
+    expect(sh("validate_ref", { VARDO_REF: ref }).status).toBe(0);
+  });
+});
+
+describe("package step without a terminal", () => {
+  const script = `has_tty() { return 1; }\npkg_check() { return 1; }\nPKG_MGR=apt\ninstall_packages_linux`;
+
+  it("tells the operator to rerun with --yes", () => {
+    const r = sh(script);
+    expect(r.status).not.toBe(0);
+    expect(r.out).toContain("Rerun with --yes");
+  });
+});
+
+describe("rerun after a failed install", () => {
+  /** A docker whose `ps --filter publish=N` names vardo-traefik for the listed ports only. */
+  function fakeDocker(name: string, published: string[]) {
+    const bin = join(dir, `bin-${name}`);
+    mkdirSync(bin, { recursive: true });
+    const cases = published.map((p) => `*publish=${p}*) echo vardo-traefik;;`).join(" ");
+    writeFileSync(join(bin, "docker"), `#!/bin/sh\ncase "$*" in ${cases} esac\n`);
+    chmodSync(join(bin, "docker"), 0o755);
+    return `${bin}:${process.env.PATH}`;
+  }
+
+  const ports = `check_port_in_use() { [ "$1" = 80 ] || [ "$1" = 443 ]; }\nget_port_process() { echo nginx; }\nVARDO_ROLE=production\ncheck_ports`;
+
+  it("continues when vardo-traefik holds ports 80 and 443", () => {
+    const r = sh(ports, {}, fakeDocker("both", ["80", "443"]));
+    expect(r.status).toBe(0);
+    expect(r.out).toContain("Port 80 is held by vardo-traefik");
+    expect(r.out).toContain("Port 443 is held by vardo-traefik");
+  });
+
+  it("still refuses a port vardo-traefik does not hold", () => {
+    const r = sh(ports, {}, fakeDocker("only80", ["80"]));
+    expect(r.status).not.toBe(0);
+    expect(r.out).toContain("Port 80 is held by vardo-traefik");
+    expect(r.out).toContain("Port 443 is in use by nginx");
+  });
+
+  it("refuses when another process holds the port", () => {
+    const r = sh(ports, {}, fakeDocker("other", ["8080"]));
+    expect(r.status).not.toBe(0);
+    expect(r.out).toContain("Port 80 is in use by nginx");
+  });
+
+  it("numbers Configuration among the steps when .env already exists", () => {
+    mkdirSync(join(dir, "vardo-home"), { recursive: true });
+    writeFileSync(join(dir, "vardo-home", ".env"), "X=1\n");
+    const r = sh("STEP_TOTAL=5\nSTEP_CURRENT=3\ngenerate_env", { VARDO_DIR: join(dir, "vardo-home") });
+    expect(r.out).toContain("[4/5] Configuration");
+  });
+
+  it("announces five steps, seven with --restore", () => {
+    expect(sh("install_step_total").out.trim()).toBe("5");
+    expect(sh("RESTORE=true\ninstall_step_total").out.trim()).toBe("7");
+  });
+});

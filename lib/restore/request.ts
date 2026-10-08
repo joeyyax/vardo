@@ -7,8 +7,15 @@ export const targetBodySchema = z.object({ target: restoreTargetSchema.optional(
 
 export const keyBodySchema = targetBodySchema.extend({
   backupKey: z.string().min(1, "Pick a backup"),
-  masterKey: masterKeySchema,
+  /** Omitted when the host already holds the key, as after install.sh --restore. */
+  masterKey: masterKeySchema.optional(),
 });
+
+/** The key the browser sent, else the one this instance runs with. Null when neither is a valid key. */
+export function resolveMasterKey(sent: string | undefined, env = process.env): string | null {
+  const parsed = masterKeySchema.safeParse(sent ?? env.ENCRYPTION_MASTER_KEY);
+  return parsed.success ? parsed.data : null;
+}
 
 /** The target the browser sent, else the one set at install. */
 export async function resolveTarget(sent: RestoreTarget | undefined): Promise<RestoreTarget | null> {

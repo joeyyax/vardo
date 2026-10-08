@@ -3,7 +3,7 @@ import { setupTokenRefusal } from "@/lib/setup-token";
 import { needsSetup } from "@/lib/setup";
 import { RestoreRefusedError, startInstanceRestore } from "@/lib/restore/database";
 import { RESTORE_COOKIE } from "@/lib/restore/status";
-import { keyBodySchema, resolveTarget, storageErrorMessage } from "@/lib/restore/request";
+import { keyBodySchema, resolveMasterKey, resolveTarget, storageErrorMessage } from "@/lib/restore/request";
 import { apiError } from "@/lib/api/error-response";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
@@ -16,6 +16,9 @@ async function handler(request: NextRequest) {
   const parsed = keyBodySchema.safeParse(await request.json().catch(() => ({})));
   if (!parsed.success) return apiError.validation(parsed.error);
 
+  const masterKey = resolveMasterKey(parsed.data.masterKey);
+  if (!masterKey) return NextResponse.json({ error: "Enter the master key." }, { status: 400 });
+
   const target = await resolveTarget(parsed.data.target);
   if (!target) return NextResponse.json({ error: "Enter the backup storage first." }, { status: 400 });
 
@@ -23,7 +26,7 @@ async function handler(request: NextRequest) {
     const { runId, token } = await startInstanceRestore({
       target,
       backupKey: parsed.data.backupKey,
-      masterKey: parsed.data.masterKey,
+      masterKey,
     });
     const response = NextResponse.json({ runId });
     response.cookies.set(RESTORE_COOKIE, token, {
