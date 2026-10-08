@@ -1,4 +1,5 @@
 import { SkeletonGroup } from "@/components/ui/skeleton";
+import { Card } from "@/components/ui/card";
 
 export default function UserSettingsLoading() {
   return (
@@ -17,7 +18,7 @@ export default function UserSettingsLoading() {
       </div>
 
       {/* Content card */}
-      <div className="rounded-xl bg-card p-6 space-y-4 shadow-card dark:border">
+      <Card variant="surface" className="p-6 space-y-4">
         <div className="h-5 w-36 bg-muted animate-pulse rounded-md" />
         <div className="space-y-3">
           {Array.from({ length: 3 }).map((_, i) => (
@@ -28,7 +29,7 @@ export default function UserSettingsLoading() {
           ))}
           <div className="h-9 w-24 bg-muted animate-pulse rounded-lg pt-2" />
         </div>
-      </div>
+      </Card>
     </SkeletonGroup>
   );
 }

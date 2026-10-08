@@ -15,6 +15,7 @@ import { MetricsTooltip } from "@/components/metrics-chart";
 import { NetworkChart } from "@/components/network-chart";
 import type { ContainerPoint } from "@/lib/metrics/types";
 import { useMetricsStream } from "@/hooks/use-metrics-stream";
+import { Card } from "@/components/ui/card";
 
 /** Fewer points don't make a readable trend. */
 const MIN_CHART_POINTS = 3;
@@ -102,8 +103,8 @@ function Skeleton({ className = "w-14" }: { className?: string }) {
 /** Stands in for a chart with too few samples to plot. */
 function Collecting({ count }: { count: number }) {
   return (
-    <div
-      className="squircle flex flex-col items-center justify-center gap-2 rounded-lg bg-background-deep"
+    <Card variant="inset"
+      className="flex flex-col items-center justify-center gap-2"
       style={{ height: CHART_HEIGHT }}
     >
       <Loader2 className="size-4 animate-spin text-muted-foreground" />
@@ -111,25 +112,25 @@ function Collecting({ count }: { count: number }) {
       <p className="text-xs text-muted-foreground tabular-nums">
         {count} of {MIN_CHART_POINTS} samples
       </p>
-    </div>
+    </Card>
   );
 }
 
 /** Every sample came back empty. */
 function NoSamples() {
   return (
-    <div
-      className="squircle flex items-center justify-center rounded-lg bg-background-deep"
+    <Card variant="inset"
+      className="flex items-center justify-center"
       style={{ height: CHART_HEIGHT }}
     >
       <p className="text-xs text-muted-foreground">No samples in this range</p>
-    </div>
+    </Card>
   );
 }
 
 function ContainerTable({ containers }: { containers: ContainerPoint[] }) {
   return (
-    <div className="squircle rounded-lg bg-card shadow-card dark:border overflow-x-auto">
+    <Card variant="surface" className="overflow-x-auto">
       <div className="flex items-center gap-2 px-4 py-3">
         <Container className="size-4 text-muted-foreground" />
         <h3 className="type-h4">Containers</h3>
@@ -163,7 +164,7 @@ function ContainerTable({ containers }: { containers: ContainerPoint[] }) {
           ))}
         </tbody>
       </table>
-    </div>
+    </Card>
   );
 }
 
@@ -215,10 +216,10 @@ export function AppMetrics({ orgId, appId, environmentName, gpuEnabled, cpuLimit
   // Loading state -- show if still loading history and not connected
   if (loading && !connected) {
     return (
-      <div className="squircle flex flex-col items-center justify-center gap-3 rounded-lg bg-background-deep p-12">
+      <Card variant="inset" className="flex flex-col items-center justify-center gap-3 p-12">
         <Loader2 className="size-6 text-muted-foreground animate-spin" />
         <p className="text-sm text-muted-foreground">Loading metrics...</p>
-      </div>
+      </Card>
     );
   }
 
@@ -448,7 +449,7 @@ export function AppMetrics({ orgId, appId, environmentName, gpuEnabled, cpuLimit
       {containers.length > 0 ? (
         <ContainerTable containers={containers} />
       ) : awaitingFirstFrame ? (
-        <div className="squircle rounded-lg bg-card shadow-card dark:border">
+        <Card variant="surface">
           <div className="flex items-center gap-2 px-4 py-3">
             <Container className="size-4 text-muted-foreground" />
             <h3 className="type-h4">Containers</h3>
@@ -461,7 +462,7 @@ export function AppMetrics({ orgId, appId, environmentName, gpuEnabled, cpuLimit
               </div>
             ))}
           </div>
-        </div>
+        </Card>
       ) : null}
     </div>
   );

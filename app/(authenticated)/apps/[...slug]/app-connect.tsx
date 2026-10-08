@@ -7,6 +7,7 @@ import { toast } from "@/lib/messenger";
 import { Switch } from "@/components/ui/switch";
 
 import type { EnvVar } from "./types";
+import { Card } from "@/components/ui/card";
 
 export function AppConnect({
   connectionInfo,
@@ -45,7 +46,7 @@ export function AppConnect({
               ? "Showing variable references — paste these into other apps."
               : "Showing resolved values — toggle to see variable references."}
           </p>
-          <div className="rounded-lg bg-card divide-y shadow-card dark:border">
+          <Card variant="surface" className="divide-y">
             {connectionInfo.map((info) => {
               const resolved = info.value
                 .replace(/\$\{project\.name\}/g, appName)
@@ -84,7 +85,7 @@ export function AppConnect({
                 </div>
               );
             })}
-          </div>
+          </Card>
         </div>
 
         {/* External connection */}
@@ -94,7 +95,7 @@ export function AppConnect({
             <p className="text-xs text-muted-foreground">
               Use these to connect from outside Docker (e.g. database tools, local development).
             </p>
-            <div className="rounded-lg bg-card divide-y shadow-card dark:border">
+            <Card variant="surface" className="divide-y">
               {exposedPorts
                 .filter((p) => p.external)
                 .map((p) => (
@@ -116,7 +117,7 @@ export function AppConnect({
                     </button>
                   </div>
                 ))}
-            </div>
+            </Card>
           </div>
         )}
       </div>

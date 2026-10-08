@@ -21,6 +21,7 @@ import { useMetricsStream } from "@/hooks/use-metrics-stream";
 import { Sparkline } from "@/components/app-metrics-card";
 import { MetricsTooltip } from "@/components/metrics-chart";
 import { NetworkChart } from "@/components/network-chart";
+import { Card } from "@/components/ui/card";
 
 type AppSummary = {
   id: string;
@@ -122,7 +123,7 @@ function ShareBar({ title, subtitle, total, totalLabel, slices, footnote }: {
 }) {
   const sum = slices.reduce((s, sl) => s + sl.value, 0);
   return (
-    <div className="squircle rounded-lg bg-card shadow-card dark:border overflow-hidden">
+    <Card variant="surface" className="overflow-hidden">
       <div className="flex items-center justify-between gap-2 px-4 pt-3">
         <h3 className="type-h4">{title}</h3>
         {subtitle && <span className="text-xs text-muted-foreground text-right">{subtitle}</span>}
@@ -157,7 +158,7 @@ function ShareBar({ title, subtitle, total, totalLabel, slices, footnote }: {
         ))}
         {footnote && <p className="pt-1 text-xs text-muted-foreground">{footnote}</p>}
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -318,7 +319,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
 
   if (isEmpty) {
     return (
-      <div className="squircle flex flex-col items-center justify-center gap-4 rounded-lg bg-background-deep p-12">
+      <Card variant="inset" className="flex flex-col items-center justify-center gap-4 p-12">
         <Activity className="size-8 text-muted-foreground/50" />
         <div className="text-center space-y-1">
           <p className="type-h4">No apps deployed yet</p>
@@ -332,7 +333,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
             Go to projects
           </Link>
         </Button>
-      </div>
+      </Card>
     );
   }
 
@@ -370,9 +371,9 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
       </div>
 
       {streamDown && (
-        <div
+        <Card variant="error"
           role="alert"
-          className="squircle flex items-start gap-3 rounded-lg bg-status-error-muted px-4 py-3 border border-status-error-edge"
+          className="flex items-start gap-3 px-4 py-3"
         >
           <AlertTriangle className="size-4 shrink-0 mt-0.5 text-status-error" />
           <div className="space-y-0.5">
@@ -381,12 +382,12 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
               cAdvisor isn&apos;t reachable. Figures below are the last values received.
             </p>
           </div>
-        </div>
+        </Card>
       )}
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 @2xl:grid-cols-3 @5xl:grid-cols-5 gap-5">
-        <div className="squircle relative rounded-lg bg-card px-4 py-3 shadow-card dark:border overflow-hidden">
+        <Card variant="surface" className="relative px-4 py-3 overflow-hidden">
           {points.length > 1 && (
             <Sparkline data={cpuSparkData} className="absolute inset-0 w-full h-full pointer-events-none" style={{ color: CHART_COLORS.cpu }} />
           )}
@@ -400,8 +401,8 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
           <p className="relative text-xs text-muted-foreground mt-0.5">
             {cpu.detail ?? `summed across containers · ${scopeNote}`}
           </p>
-        </div>
-        <div className="squircle relative rounded-lg bg-card px-4 py-3 shadow-card dark:border overflow-hidden">
+        </Card>
+        <Card variant="surface" className="relative px-4 py-3 overflow-hidden">
           {points.length > 1 && (
             <Sparkline data={memSparkData} className="absolute inset-0 w-full h-full pointer-events-none" style={{ color: CHART_COLORS.memory }} />
           )}
@@ -417,8 +418,8 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
               ? `across ${totals.containers} running container${totals.containers === 1 ? "" : "s"}`
               : `running containers · ${scopeNote}`}
           </p>
-        </div>
-        <div className="squircle relative rounded-lg bg-card px-4 py-3 shadow-card dark:border overflow-hidden">
+        </Card>
+        <Card variant="surface" className="relative px-4 py-3 overflow-hidden">
           {points.length > 1 && (
             <Sparkline data={diskSparkData} className="absolute inset-0 w-full h-full pointer-events-none" style={{ color: CHART_COLORS.disk }} />
           )}
@@ -436,8 +437,8 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
                 : `across ${scope.topLevel} app${scope.topLevel !== 1 ? "s" : ""} in ${scopeNote}`}
             </p>
           )}
-        </div>
-        <div className="squircle relative rounded-lg bg-card px-4 py-3 shadow-card dark:border overflow-hidden">
+        </Card>
+        <Card variant="surface" className="relative px-4 py-3 overflow-hidden">
           {points.length > 1 && (<>
             <Sparkline data={netRxSparkData} className="absolute inset-0 w-full h-full pointer-events-none" style={{ color: CHART_COLORS.networkRx }} />
             <Sparkline data={netTxSparkData} className="absolute inset-0 w-full h-full pointer-events-none" style={{ color: CHART_COLORS.networkTx }} />
@@ -454,8 +455,8 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
               ↑ {formatBytes(totals.networkTx)} sent · ↓ {formatBytes(totals.networkRx)} received
             </p>
           )}
-        </div>
-        <div className="squircle rounded-lg bg-card px-4 py-3 shadow-card dark:border">
+        </Card>
+        <Card variant="surface" className="px-4 py-3">
           <div className="flex items-center gap-2">
             <Box className="size-4 text-muted-foreground shrink-0" />
             <p className="type-label text-muted-foreground">Containers</p>
@@ -466,12 +467,12 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
           <p className="text-xs text-muted-foreground mt-0.5">
             reporting to cAdvisor now · {scopeNote}
           </p>
-        </div>
+        </Card>
       </div>
 
       {/* Aggregate charts */}
       <div className="grid @3xl:grid-cols-2 gap-6">
-          <div className="squircle rounded-lg bg-card shadow-card dark:border overflow-hidden">
+          <Card variant="surface" className="overflow-hidden">
             <div className="flex items-center gap-2 px-4 pt-3">
               <Cpu className="size-4 text-muted-foreground" />
               <h3 className="type-h4">CPU</h3>
@@ -494,8 +495,8 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
                 </AreaChart>
               </ResponsiveContainer>
             </div>
-          </div>
-          <div className="squircle rounded-lg bg-card shadow-card dark:border overflow-hidden">
+          </Card>
+          <Card variant="surface" className="overflow-hidden">
             <div className="flex items-center gap-2 px-4 pt-3">
               <MemoryStick className="size-4 text-muted-foreground" />
               <h3 className="type-h4">Memory</h3>
@@ -517,8 +518,8 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
                 </AreaChart>
               </ResponsiveContainer>
             </div>
-          </div>
-          <div className="squircle rounded-lg bg-card shadow-card dark:border overflow-hidden">
+          </Card>
+          <Card variant="surface" className="overflow-hidden">
             <div className="flex items-center gap-2 px-4 pt-3">
               <Network className="size-4 text-muted-foreground" />
               <h3 className="type-h4">Network</h3>
@@ -526,8 +527,8 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
             <div className="p-4">
               <NetworkChart data={chartPoints} height={180} />
             </div>
-          </div>
-          <div className="squircle rounded-lg bg-card shadow-card dark:border overflow-hidden">
+          </Card>
+          <Card variant="surface" className="overflow-hidden">
             <div className="flex items-center gap-2 px-4 pt-3">
               <HardDrive className="size-4 text-muted-foreground" />
               <h3 className="type-h4">Disk usage</h3>
@@ -549,7 +550,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
                 </AreaChart>
               </ResponsiveContainer>
             </div>
-          </div>
+          </Card>
       </div>
 
       {/* Infrastructure overview */}
@@ -629,7 +630,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
 
       {/* Per-app stats */}
       {displayApps.length === 0 ? (
-        <div className="squircle flex flex-col items-center justify-center gap-4 rounded-lg bg-background-deep p-12">
+        <Card variant="inset" className="flex flex-col items-center justify-center gap-4 p-12">
           <Activity className="size-8 text-muted-foreground/50" />
           <div className="text-center space-y-1">
             <p className="type-h4">Metrics will appear here</p>
@@ -643,9 +644,9 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
               Go to projects
             </Link>
           </Button>
-        </div>
+        </Card>
       ) : (
-        <div className="squircle rounded-lg bg-card shadow-card dark:border overflow-x-auto">
+        <Card variant="surface" className="overflow-x-auto">
           <div className="flex items-center justify-between gap-2 px-4 py-3">
             <h3 className="type-h4">Apps</h3>
             <span className="text-xs text-muted-foreground">
@@ -719,7 +720,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
                 : `Show ${idleApps.length} not running`}
             </button>
           )}
-        </div>
+        </Card>
       )}
     </div>
   );

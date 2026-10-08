@@ -10,6 +10,7 @@ import { TargetIcon, targetSubtitle } from "./constants";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { plural, usageSummary } from "./delete-copy";
 import type { BackupTarget, TargetUsage } from "./types";
+import { Card } from "@/components/ui/card";
 
 export function TargetCard({
   target,
@@ -86,7 +87,7 @@ export function TargetCard({
 
   return (
     <>
-      <div className="squircle rounded-lg bg-background-deep p-4">
+      <Card variant="inset" className="p-4">
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
             <TargetIcon type={target.type} />
@@ -129,7 +130,7 @@ export function TargetCard({
             </div>
           )}
         </div>
-      </div>
+      </Card>
 
       <ConfirmDeleteDialog
         open={deleteOpen}

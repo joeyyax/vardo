@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Loader2 } from "lucide-react";
 import { toast } from "@/lib/messenger";
+import { Card } from "@/components/ui/card";
 
 type TraefikConfig = {
   externalRouting: boolean;
@@ -87,7 +88,7 @@ export function TraefikSettings() {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
-        <div className="flex items-center justify-between rounded-lg bg-card p-4 shadow-card dark:border">
+        <Card variant="surface" className="flex items-center justify-between p-4">
           <div className="space-y-0.5">
             <Label htmlFor="external-routing" className="text-sm font-medium">
               Route to external containers
@@ -106,7 +107,7 @@ export function TraefikSettings() {
             }
             aria-label={`${config.externalRouting ? "Disable" : "Enable"} external container routing`}
           />
-        </div>
+        </Card>
 
         <Button type="submit" disabled={saving} aria-label="Save Traefik settings">
           {saving && <Loader2 className="size-4 animate-spin" />}
@@ -115,7 +116,7 @@ export function TraefikSettings() {
       </form>
 
       {restartPending && (
-        <div className="rounded-lg bg-card p-4 flex items-center justify-between gap-4 shadow-card dark:border">
+        <Card variant="surface" className="p-4 flex items-center justify-between gap-4">
           <div className="space-y-0.5">
             <p className="type-h4">Traefik restart required to apply changes</p>
             <p className="text-xs text-muted-foreground">
@@ -133,20 +134,20 @@ export function TraefikSettings() {
             {restarting && <Loader2 className="size-4 animate-spin" />}
             {restarting ? "Restarting..." : "Restart now"}
           </Button>
-        </div>
+        </Card>
       )}
 
       {restarted && (
-        <div className="rounded-lg bg-card p-4 shadow-card dark:border">
+        <Card variant="surface" className="p-4">
           <p className="type-h4">Traefik restart initiated</p>
           <p className="text-xs text-muted-foreground">
             The container is restarting and will be back up momentarily.
           </p>
-        </div>
+        </Card>
       )}
 
       {config.externalRouting && (
-        <div className="rounded-lg bg-card p-4 space-y-3 shadow-card dark:border">
+        <Card variant="surface" className="p-4 space-y-3">
           <div className="space-y-0.5">
             <p className="type-h4">Making external containers reachable</p>
             <p className="text-xs text-muted-foreground">
@@ -179,7 +180,7 @@ networks:
               docker compose up -d your-service
             </pre>
           </div>
-        </div>
+        </Card>
       )}
     </div>
   );

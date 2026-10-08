@@ -1,4 +1,5 @@
 import { SkeletonGroup } from "@/components/ui/skeleton";
+import { Card } from "@/components/ui/card";
 
 export default function AdminLoading() {
   return (
@@ -22,15 +23,15 @@ export default function AdminLoading() {
       {/* Overview cards */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 pt-2">
         {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="rounded-xl bg-card p-4 space-y-2 shadow-card dark:border">
+          <Card variant="surface" key={i} className="p-4 space-y-2">
             <div className="h-3 w-20 bg-muted animate-pulse rounded-md" />
             <div className="h-8 w-16 bg-muted animate-pulse rounded-md" />
-          </div>
+          </Card>
         ))}
       </div>
 
       {/* Table area */}
-      <div className="rounded-xl bg-card overflow-hidden shadow-card dark:border">
+      <Card variant="surface" className="overflow-hidden">
         <div className="flex items-center gap-4 border-b bg-muted/30 px-4 py-3">
           {[120, 160, 100, 80].map((w, i) => (
             <div key={i} className="h-3 bg-muted animate-pulse rounded-md" style={{ width: `${w}px` }} />
@@ -44,7 +45,7 @@ export default function AdminLoading() {
             <div className="h-5 w-16 bg-muted animate-pulse rounded-full ml-auto" />
           </div>
         ))}
-      </div>
+      </Card>
     </SkeletonGroup>
   );
 }

@@ -59,9 +59,9 @@ export function AccountInfo() {
 
   if (isPending) {
     return (
-      <div className="squircle flex items-center justify-center rounded-lg bg-background-deep p-8">
+      <Card variant="inset" className="flex items-center justify-center p-8">
         <Loader2 className="size-5 animate-spin text-muted-foreground" />
-      </div>
+      </Card>
     );
   }
 
@@ -995,7 +995,7 @@ export function ApiTokens({ orgId }: { orgId: string }) {
       <CardContent>
         {/* Created token display */}
         {createdToken && (
-          <div className="squircle rounded-lg bg-status-success-muted p-4 space-y-2 border border-status-success-edge">
+          <Card variant="success" className="p-4 space-y-2">
             <p className="text-sm font-medium">
               Token created. Copy it now -- it won&apos;t be shown again.
             </p>
@@ -1027,7 +1027,7 @@ export function ApiTokens({ orgId }: { orgId: string }) {
                 <Copy className="size-4" />
               </Button>
             </div>
-          </div>
+          </Card>
         )}
 
         {/* Create form */}

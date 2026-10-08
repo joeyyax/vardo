@@ -262,7 +262,7 @@ export function BackupSettings() {
 
       {/* How backups work */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="@container squircle rounded-lg bg-card shadow-card dark:border">
+        <Card variant="surface" className="@container">
           <div className="p-6 @lg:p-7 space-y-3">
             <h3 className="type-h3">How it works</h3>
             <ul className="text-sm space-y-2">
@@ -296,8 +296,8 @@ export function BackupSettings() {
               </li>
             </ul>
           </div>
-        </div>
-        <div className="@container squircle rounded-lg bg-card shadow-card dark:border">
+        </Card>
+        <Card variant="surface" className="@container">
           <div className="p-6 @lg:p-7 space-y-3">
             <h3 className="type-h3">Good to know</h3>
             <ul className="text-sm space-y-2">
@@ -315,7 +315,7 @@ export function BackupSettings() {
               </li>
             </ul>
           </div>
-        </div>
+        </Card>
       </div>
     </div>
   );

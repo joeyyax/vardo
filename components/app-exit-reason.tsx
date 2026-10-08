@@ -3,6 +3,7 @@ import { Skull } from "lucide-react";
 import type { ExitReason } from "@/lib/docker/exit-reason";
 import { exitReasonDetail, exitReasonLabel, exitReasonTone } from "@/lib/ui/exit-reason";
 import { formatRelativeTime } from "@/lib/ui/relative-time";
+import { Card } from "@/components/ui/card";
 
 /** The exit reason and when it happened, as one sentence. */
 export function exitReasonSentence(reason: ExitReason, now?: Date): string {
@@ -30,7 +31,7 @@ export function AppExitReason({
   }
 
   return (
-    <div className="squircle rounded-lg bg-status-error-muted p-4 text-sm border border-status-error-edge">
+    <Card variant="error" className="p-4 text-sm">
       <div className="flex items-center gap-2">
         <Skull className="size-4 shrink-0 text-status-error" />
         <span className="font-medium text-status-error">{exitReasonLabel(reason.kind)}</span>
@@ -41,6 +42,6 @@ export function AppExitReason({
           ? "The host is short on memory — free some up, or give this app a limit so it isn't the kernel's choice next time."
           : "Raise this app's memory limit, or find out what is using more than it was given."}
       </p>
-    </div>
+    </Card>
   );
 }

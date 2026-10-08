@@ -27,6 +27,8 @@ import type {
   IgnoredUpdate,
   ServiceUpdateStatus,
 } from "@/lib/docker/image-updates/status";
+import { cardVariants } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 
 type AppUpdates = AppUpdateStatus;
 type Severity = ServiceUpdateStatus["severity"];
@@ -212,7 +214,7 @@ export function AppUpdatesPanel({
     return (
       <section
         aria-label="Image updates"
-        className="squircle rounded-lg bg-card px-4 py-6 text-center shadow-card dark:border"
+        className={cn(cardVariants({ variant: "surface" }), "px-4 py-6 text-center")}
       >
         {gateSurface && <div className="mb-3 text-left">{gateSurface}</div>}
         <p className="type-body text-muted-foreground">Every image in compose is up to date.</p>
@@ -286,7 +288,7 @@ export function AppUpdatesPanel({
   }
 
   return (
-    <section aria-label="Image updates" className="squircle rounded-lg bg-card divide-y shadow-card dark:border">
+    <section aria-label="Image updates" className={cn(cardVariants({ variant: "surface" }), "divide-y")}>
       <header className="flex items-center gap-2 px-4 py-2.5">
         <h2 className="type-label text-muted-foreground/60">Image updates</h2>
         <button

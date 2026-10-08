@@ -1,4 +1,5 @@
 import { SkeletonGroup } from "@/components/ui/skeleton";
+import { Card } from "@/components/ui/card";
 
 export default function AppDetailLoading() {
   return (
@@ -32,7 +33,7 @@ export default function AppDetailLoading() {
       {/* Content */}
       <div className="space-y-3">
         {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="flex items-center gap-4 rounded-lg bg-card px-4 py-3 shadow-card dark:border">
+          <Card variant="surface" key={i} className="flex items-center gap-4 px-4 py-3">
             <div className="h-4 w-4 bg-muted animate-pulse rounded-full shrink-0" />
             <div className="flex-1 space-y-1.5">
               <div className="h-4 w-64 bg-muted animate-pulse rounded-md" />
@@ -40,7 +41,7 @@ export default function AppDetailLoading() {
             </div>
             <div className="h-5 w-16 bg-muted animate-pulse rounded-full shrink-0" />
             <div className="h-4 w-20 bg-muted animate-pulse rounded-md shrink-0" />
-          </div>
+          </Card>
         ))}
       </div>
     </SkeletonGroup>

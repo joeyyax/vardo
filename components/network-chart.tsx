@@ -10,6 +10,7 @@ import {
   networkDomain, networkTicks, type NetworkBarPoint,
 } from "@/lib/metrics/network-chart";
 import { TooltipFrame, TooltipRow } from "@/components/metrics-chart";
+import { Card } from "@/components/ui/card";
 
 export type NetworkChartPoint = NetworkBarPoint & { time: string };
 
@@ -131,12 +132,12 @@ export function NetworkChart({
 
   if (!hasSamples) {
     return (
-      <div
-        className="squircle flex items-center justify-center rounded-lg bg-background-deep"
+      <Card variant="inset"
+        className="flex items-center justify-center"
         style={{ height }}
       >
         <p className="text-xs text-muted-foreground">No throughput collected in this range</p>
-      </div>
+      </Card>
     );
   }
 

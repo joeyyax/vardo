@@ -7,13 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Loader2, RefreshCw, CheckCircle2, XCircle } from "lucide-react";
 import { useVerify } from "@/hooks/use-verify";
-import {
-  Card,
-  CardAction,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { maskDisplay } from "@/lib/mask-secrets";
 import {
   Select,
@@ -305,7 +299,7 @@ export function DomainSettings() {
                   const isFirst = activeIssuers[0] === issuer;
 
                   return (
-                    <div key={issuer} className="squircle rounded-lg bg-background-deep p-4">
+                    <Card variant="inset" key={issuer} className="p-4">
                       <div className="flex items-start justify-between gap-4">
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2">
@@ -369,7 +363,7 @@ export function DomainSettings() {
                           </div>
                         </div>
                       )}
-                    </div>
+                    </Card>
                   );
                 })}
               </div>

@@ -50,6 +50,7 @@ import {
 import { volumeThreshold, type ThresholdLevel } from "@/lib/volumes/threshold";
 import { useCan } from "@/components/capabilities-provider";
 import { formatBytes } from "@/lib/metrics/format";
+import { Card } from "@/components/ui/card";
 
 type Volume = {
   id: string | null;
@@ -706,9 +707,9 @@ export function VolumesPanel({ appId, orgId }: Props) {
         ) : (
           <div className="space-y-2">
             {volumes.map((vol) => (
-              <div
+              <Card variant="inset"
                 key={`${vol.name}-${vol.mountPath}`}
-                className="squircle rounded-lg bg-background-deep p-4"
+                className="p-4"
               >
                 <div className="flex items-center justify-between gap-4">
                   <div className="flex items-center gap-4 min-w-0 flex-1">
@@ -836,7 +837,7 @@ export function VolumesPanel({ appId, orgId }: Props) {
                     }}
                   />
                 )}
-              </div>
+              </Card>
             ))}
           </div>
         )}
@@ -851,7 +852,7 @@ export function VolumesPanel({ appId, orgId }: Props) {
           </div>
 
           {limitEditing ? (
-            <div className="squircle rounded-lg bg-background-deep p-4 space-y-4">
+            <Card variant="inset" className="p-4 space-y-4">
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="grid gap-2">
                   <Label htmlFor="limit-size">Max size</Label>
@@ -944,9 +945,9 @@ export function VolumesPanel({ appId, orgId }: Props) {
                   Cancel
                 </Button>
               </div>
-            </div>
+            </Card>
           ) : limit ? (
-            <div className="squircle rounded-lg bg-background-deep p-4 space-y-3">
+            <Card variant="inset" className="p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <p className="text-sm">
@@ -982,7 +983,7 @@ export function VolumesPanel({ appId, orgId }: Props) {
                   One or more volumes exceed the limit. Deploys will be blocked until usage is reduced.
                 </p>
               )}
-            </div>
+            </Card>
           ) : (
             <button
               onClick={() => {

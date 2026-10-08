@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { AlertTriangle } from "lucide-react";
 import { detectAppType } from "@/lib/ui/app-type";
 import { formatUptime } from "@/lib/metrics/format";
+import { Card } from "@/components/ui/card";
 
 export function Uptime({ since }: { since: Date }) {
   const [text, setText] = useState<string | null>(null);
@@ -176,7 +177,7 @@ export function ChartCard({
   children: React.ReactNode;
 }) {
   return (
-    <div className="squircle rounded-lg bg-card shadow-card dark:border overflow-hidden">
+    <Card variant="surface" className="overflow-hidden">
       <div className="flex items-center justify-between gap-3 px-4 pt-4 pb-2">
         <div className="flex items-center gap-2 min-w-0">
           <Icon className="size-4 text-muted-foreground shrink-0" />
@@ -187,6 +188,6 @@ export function ChartCard({
         )}
       </div>
       <div className="px-4 pb-4">{children}</div>
-    </div>
+    </Card>
   );
 }

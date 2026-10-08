@@ -34,6 +34,7 @@ import {
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { can } from "@/lib/auth/permissions";
 import { RelativeTime } from "@/components/relative-time";
+import { Card } from "@/components/ui/card";
 
 type CronJob = {
   id: string;
@@ -290,9 +291,9 @@ export function CronManager({ appId, orgId, userRole }: Props) {
         ) : (
           <div className="space-y-2">
             {jobs.map((job) => (
-              <div
+              <Card variant="inset"
                 key={job.id}
-                className="squircle rounded-lg bg-background-deep p-4"
+                className="p-4"
               >
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1 min-w-0 space-y-1.5">
@@ -371,7 +372,7 @@ export function CronManager({ appId, orgId, userRole }: Props) {
                     </div>
                   )}
                 </div>
-              </div>
+              </Card>
             ))}
           </div>
         )}

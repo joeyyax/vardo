@@ -58,6 +58,7 @@ import { typicalElapsedMs } from "@/lib/ui/deploy-timing";
 
 import type { useDeploy } from "./hooks/use-deploy";
 import type { Deployment, SlotStatus } from "./types";
+import { Card } from "@/components/ui/card";
 
 export interface AppDeployPanelProps {
   orgId: string;
@@ -505,11 +506,11 @@ export function AppDeployPanel({
           <>
             {/* A compose child never deploys on its own — these are all it has. */}
             {lifecycleEvents.length > 0 && (
-              <div className="squircle rounded-lg bg-card py-1 shadow-card dark:border">
+              <Card variant="surface" className="py-1">
                 {lifecycleEvents.map((event) => (
                   <LifecycleLine key={event.id} event={event} />
                 ))}
-              </div>
+              </Card>
             )}
             <EmptyState
               icon={Rocket}
@@ -644,9 +645,9 @@ export function AppDeployPanel({
               {liveDeploy ? (
                 renderDeploymentCard(liveDeploy, "live")
               ) : completedDeployments.length > 0 && !deploying && (
-                <div className="squircle rounded-lg bg-background-deep p-4">
+                <Card variant="inset" className="p-4">
                   <p className="text-sm text-muted-foreground text-center">No active deployment</p>
-                </div>
+                </Card>
               )}
 
               {/* Instant rollback */}
@@ -717,7 +718,7 @@ export function AppDeployPanel({
               <>
                 <div className="space-y-2">
                   <p className="type-h4">Rolling back to</p>
-                  <div className="squircle rounded-lg bg-background-deep p-3 space-y-1">
+                  <Card variant="inset" className="p-3 space-y-1">
                     <p className="text-sm">{rollbackPreview.gitMessage || "Manual deploy"}</p>
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
                       {rollbackPreview.gitSha && (
@@ -727,12 +728,12 @@ export function AppDeployPanel({
                       )}
                       <RelativeTime date={rollbackPreview.deployedAt} absoluteFirst />
                     </div>
-                  </div>
+                  </Card>
                 </div>
                 {rollbackPreview.configChanges.length > 0 && (
                   <div className="space-y-2">
                     <p className="type-h4">Config changes</p>
-                    <div className="squircle rounded-lg bg-background-deep divide-y text-xs">
+                    <Card variant="inset" className="divide-y text-xs">
                       {rollbackPreview.configChanges.map((change) => (
                         <div key={change.field} className="flex items-center justify-between px-3 py-2">
                           <span className="text-muted-foreground">{change.field}</span>
@@ -743,7 +744,7 @@ export function AppDeployPanel({
                           </div>
                         </div>
                       ))}
-                    </div>
+                    </Card>
                   </div>
                 )}
                 {rollbackPreview.configChanges.length === 0 && rollbackPreview.hasConfigSnapshot && (
@@ -762,7 +763,7 @@ export function AppDeployPanel({
                       </Label>
                     </div>
                     {rollbackIncludeEnv && rollbackPreview.envKeyChanges && (
-                      <div className="squircle rounded-lg bg-background-deep p-3 space-y-2 text-xs">
+                      <Card variant="inset" className="p-3 space-y-2 text-xs">
                         {rollbackPreview.envKeyChanges.added.length > 0 && (
                           <div>
                             <span className="text-status-success font-medium">Added: </span>
@@ -786,7 +787,7 @@ export function AppDeployPanel({
                           rollbackPreview.envKeyChanges.changed.length === 0 && (
                           <span className="text-muted-foreground">No env var changes detected.</span>
                         )}
-                      </div>
+                      </Card>
                     )}
                   </div>
                 )}

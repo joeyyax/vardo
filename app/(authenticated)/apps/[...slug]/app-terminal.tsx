@@ -16,6 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Card } from "@/components/ui/card";
 
 type Container = {
   id: string;
@@ -330,10 +331,10 @@ export function AppTerminal({ appId, orgId }: AppTerminalProps) {
   // Loading state
   if (loadingContainers) {
     return (
-      <div className="squircle flex flex-col items-center justify-center gap-3 rounded-lg bg-background-deep p-12">
+      <Card variant="inset" className="flex flex-col items-center justify-center gap-3 p-12">
         <Loader2 className="size-6 animate-spin text-muted-foreground" />
         <p className="text-sm text-muted-foreground">Loading containers...</p>
-      </div>
+      </Card>
     );
   }
 
@@ -405,9 +406,9 @@ export function AppTerminal({ appId, orgId }: AppTerminalProps) {
 
       {/* Error message */}
       {errorMessage && (
-        <div className="squircle rounded-lg bg-status-error-muted px-4 py-3 border border-status-error-edge">
+        <Card variant="error" className="px-4 py-3">
           <p className="text-sm text-status-error">{errorMessage}</p>
-        </div>
+        </Card>
       )}
 
       {/* Ephemeral notice */}

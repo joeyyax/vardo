@@ -23,6 +23,7 @@ import type {
 } from "@/lib/activity/types";
 import { ActivityFilterBar } from "./activity-filters";
 import { ActivityRow } from "./activity-row";
+import { Card } from "@/components/ui/card";
 
 type ActivityFeedProps = {
   rows: ActivityRowData[];
@@ -76,7 +77,7 @@ function WindowHeader({
   const withoutWindow = filtersToQuery({ ...filters, since: null });
 
   return (
-    <div className="squircle rounded-lg bg-card px-4 py-3 shadow-card dark:border">
+    <Card variant="surface" className="px-4 py-3">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
         <h2 className="type-h4">
           While you were away
@@ -102,7 +103,7 @@ function WindowHeader({
           </>
         )}
       </p>
-    </div>
+    </Card>
   );
 }
 

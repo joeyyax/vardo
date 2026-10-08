@@ -1,4 +1,5 @@
 import { SkeletonGroup } from "@/components/ui/skeleton";
+import { Card } from "@/components/ui/card";
 
 export default function SettingsLoading() {
   return (
@@ -23,13 +24,13 @@ export default function SettingsLoading() {
       {/* Tab content: key-value rows */}
       <div className="space-y-3 pt-4">
         {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="flex items-center justify-between gap-4 rounded-lg bg-card px-4 py-3 shadow-card dark:border">
+          <Card variant="surface" key={i} className="flex items-center justify-between gap-4 px-4 py-3">
             <div className="space-y-1">
               <div className="h-4 w-32 bg-muted animate-pulse rounded-md" />
               <div className="h-3 w-48 bg-muted animate-pulse rounded-md" />
             </div>
             <div className="h-8 w-16 bg-muted animate-pulse rounded-lg shrink-0" />
-          </div>
+          </Card>
         ))}
         <div className="h-9 w-36 bg-muted animate-pulse rounded-lg" />
       </div>

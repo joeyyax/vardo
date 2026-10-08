@@ -24,6 +24,8 @@ import {
   type RestartReading,
   type StabilityTrend,
 } from "@/lib/ui/stability";
+import { cardVariants } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 
 export type StabilityApp = {
   status: string;
@@ -120,7 +122,7 @@ export function AppStability({
             Nothing recorded. History starts when Vardo first saw this app, not when the container was built.
           </p>
         ) : (
-          <ul className="mt-3 divide-y rounded-lg bg-card shadow-card dark:border">
+          <ul className={cn(cardVariants({ variant: "surface" }), "mt-3 divide-y")}>
             {incidents.map((incident) => (
               <li
                 key={`${incident.kind}-${incident.at}`}

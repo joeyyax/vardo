@@ -70,6 +70,7 @@ import { systemManagedRefusal } from "@/lib/api/system-managed";
 import { tabPanelSurface } from "@/lib/ui/tab-panel";
 import { cn } from "@/lib/utils";
 import type { MeshPeerSummary, ProjectInstanceSummary } from "@/lib/mesh/types";
+import { Card } from "@/components/ui/card";
 
 type GroupEnvironment = {
   id: string;
@@ -390,7 +391,7 @@ function ProjectVariables({ apps, orgId }: { apps: ProjectApp[]; orgId: string }
   return (
     <div className="space-y-2">
       {apps.map((app) => (
-        <div key={app.id} className="squircle rounded-lg bg-card shadow-card dark:border overflow-hidden">
+        <Card variant="surface" key={app.id} className="overflow-hidden">
           <button
             type="button"
             onClick={() => setExpandedApp(expandedApp === app.id ? null : app.id)}
@@ -415,7 +416,7 @@ function ProjectVariables({ apps, orgId }: { apps: ProjectApp[]; orgId: string }
               />
             </div>
           )}
-        </div>
+        </Card>
       ))}
     </div>
   );
@@ -1082,7 +1083,7 @@ export function ProjectDetail({
             />
           ) : (
             /* One row per app, problems first, compose services under their stack. */
-            <div className="@container squircle rounded-lg bg-card p-1.5 shadow-card dark:border">
+            <Card variant="surface" className="@container p-1.5">
               {sortedApps.map((app) => (
                 <Fragment key={app.id}>
                   <AppLedgerRow
@@ -1116,7 +1117,7 @@ export function ProjectDetail({
                     ))}
                 </Fragment>
               ))}
-            </div>
+            </Card>
           )}
         </TabsContent>
 

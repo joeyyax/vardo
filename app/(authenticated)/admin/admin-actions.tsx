@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { RelativeTime } from "@/components/relative-time";
+import { Card } from "@/components/ui/card";
 
 type UserInfo = {
   id: string;
@@ -93,7 +94,7 @@ export function UserManagement() {
       </div>
 
       {/* Invite form */}
-      <div className="rounded-lg bg-card p-4 space-y-4 shadow-card dark:border">
+      <Card variant="surface" className="p-4 space-y-4">
         <div className="flex items-center gap-2">
           <UserPlus className="size-4 text-muted-foreground" />
           <p className="type-h4">Invite user</p>
@@ -136,23 +137,23 @@ export function UserManagement() {
         </form>
 
         {inviteMessage && (
-          <div className="squircle rounded-lg bg-status-success-muted p-4 border border-status-success-edge">
+          <Card variant="success" className="p-4">
             <p className="text-sm text-status-success">{inviteMessage}</p>
-          </div>
+          </Card>
         )}
-      </div>
+      </Card>
 
       {/* User list */}
       {loadingUsers ? (
-        <div className="squircle flex items-center justify-center rounded-lg bg-background-deep p-8">
+        <Card variant="inset" className="flex items-center justify-center p-8">
           <Loader2 className="size-5 animate-spin text-muted-foreground" />
-        </div>
+        </Card>
       ) : (
         <div className="space-y-2">
           {users.map((u) => (
-            <div
+            <Card variant="surface"
               key={u.id}
-              className="flex items-center justify-between rounded-lg bg-card p-3 shadow-card dark:border"
+              className="flex items-center justify-between p-3"
             >
               <div className="flex items-center gap-3 min-w-0">
                 {u.isAppAdmin ? (
@@ -181,7 +182,7 @@ export function UserManagement() {
                   </p>
                 </div>
               </div>
-            </div>
+            </Card>
           ))}
         </div>
       )}

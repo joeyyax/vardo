@@ -23,6 +23,7 @@ import { Loader2 } from "lucide-react";
 import { toast } from "@/lib/messenger";
 import { SCHEDULE_PRESETS } from "./constants";
 import type { App, BackupTarget } from "./types";
+import { Card } from "@/components/ui/card";
 
 export function JobForm({
   open,
@@ -179,7 +180,7 @@ export function JobForm({
             ) : (
               <div className="grid gap-2">
                 <Label>Apps to back up</Label>
-                <div className="squircle space-y-1 max-h-48 overflow-y-auto rounded-lg bg-background-deep p-2">
+                <Card variant="inset" className="space-y-1 max-h-48 overflow-y-auto p-2">
                   {apps.length === 0 ? (
                     <p className="text-xs text-muted-foreground py-2 text-center">No apps available</p>
                   ) : (
@@ -195,7 +196,7 @@ export function JobForm({
                       </label>
                     ))
                   )}
-                </div>
+                </Card>
               </div>
             )}
           </div>

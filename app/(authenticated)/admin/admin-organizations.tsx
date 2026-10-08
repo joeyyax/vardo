@@ -5,6 +5,7 @@ import { Loader2, Building2 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { EmptyState } from "@/components/ui/empty-state";
 import { toast } from "@/lib/messenger";
+import { Card } from "@/components/ui/card";
 
 type OrgBreakdown = {
   id: string;
@@ -78,7 +79,7 @@ export function AdminOrganizations() {
   }
 
   return (
-    <div className="squircle rounded-lg bg-card overflow-x-auto shadow-card dark:border">
+    <Card variant="surface" className="overflow-x-auto">
       <div className="grid grid-cols-[1fr_70px_70px_90px_90px_100px_80px_80px] gap-3 px-4 py-2 bg-background-deep text-xs text-muted-foreground whitespace-nowrap min-w-[800px]">
         <span>Organization</span>
         <span className="text-right">Members</span>
@@ -124,6 +125,6 @@ export function AdminOrganizations() {
           </div>
         ))}
       </div>
-    </div>
+    </Card>
   );
 }

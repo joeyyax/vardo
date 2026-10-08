@@ -25,6 +25,7 @@ import { Label } from "@/components/ui/label";
 import { Loader2, ArrowUpRight, ArrowDownLeft, Copy, Network } from "lucide-react";
 import { toast } from "@/lib/messenger";
 import type { MeshPeerSummary, ProjectInstanceSummary } from "@/lib/mesh/types";
+import { Card } from "@/components/ui/card";
 
 type TransferAction = "promote" | "pull" | "clone";
 
@@ -257,7 +258,7 @@ export function ProjectInstances({
 
   return (
     <div className="space-y-4">
-      <div className="rounded-lg bg-card overflow-x-auto shadow-card dark:border">
+      <Card variant="surface" className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b">
@@ -325,7 +326,7 @@ export function ProjectInstances({
             })}
           </tbody>
         </table>
-      </div>
+      </Card>
 
       {canTransfer && (
         <>

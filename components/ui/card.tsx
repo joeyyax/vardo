@@ -3,14 +3,14 @@ import { cva, type VariantProps } from "class-variance-authority"
 
 import { cn } from "@/lib/utils"
 
-// `default` is the padded, stacked card. `surface` is the same skin with layout left to the caller.
+// `default` is the padded, stacked card. `surface` is the same skin, layout left to the caller.
 // `inset` is a recessed tray. Tones are status panels.
 const cardVariants = cva("squircle rounded-lg", {
   variants: {
     variant: {
       // Dark keeps a hairline; shadows barely read on a dark ground.
       default: "bg-card text-card-foreground @container flex flex-col gap-5 py-6 shadow-card dark:border",
-      surface: "bg-card text-card-foreground @container shadow-card dark:border",
+      surface: "bg-card text-card-foreground shadow-card dark:border",
       inset: "bg-background-deep",
       info: "border border-status-info-edge bg-status-info-muted",
       success: "border border-status-success-edge bg-status-success-muted",

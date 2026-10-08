@@ -40,6 +40,7 @@ import {
   MetricsBand,
   useAppMetrics,
 } from "@/components/app-metrics-card";
+import { Card } from "@/components/ui/card";
 
 type Tag = { id: string; name: string; color: string };
 
@@ -201,7 +202,7 @@ function ProjectCard({
   );
 
   return (
-    <div className="@container squircle relative flex flex-col rounded-lg bg-card shadow-card dark:border transition-shadow hover:shadow-card-hover overflow-hidden">
+    <Card variant="surface" className="@container relative flex flex-col transition-shadow hover:shadow-card-hover overflow-hidden">
       {/* Whole-card click target; interactive children stack above it */}
       <Link
         href={`/projects/${project.name}`}
@@ -342,7 +343,7 @@ function ProjectCard({
           running={activeCount > 0}
         />
       )}
-    </div>
+    </Card>
   );
 }
 
@@ -503,7 +504,7 @@ export function AppGrid({
       </div>
 
       {projectCards.length === 0 && (apps.length > 0 || emptyProjects.length > 0) && (
-        <div className="squircle lining flex flex-col items-center justify-center gap-3 rounded-lg bg-card p-12 shadow-card dark:border">
+        <Card variant="surface" className="lining flex flex-col items-center justify-center gap-3 p-12">
           <p className="text-sm text-muted-foreground">
             No apps match the current filters.
           </p>
@@ -516,7 +517,7 @@ export function AppGrid({
           >
             Clear filters
           </button>
-        </div>
+        </Card>
       )}
       </div>
     </div>

@@ -215,7 +215,7 @@ export function OrgDomainEditor({
 
       {/* Default app domain */}
       {defaultDomainEntry && (
-        <div className="squircle rounded-lg bg-background-deep p-4">
+        <Card variant="inset" className="p-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3 min-w-0">
               <Globe className="size-4 text-muted-foreground shrink-0" />
@@ -242,16 +242,15 @@ export function OrgDomainEditor({
               size="sm"
             />
           </div>
-        </div>
+        </Card>
       )}
 
       {/* Custom domains */}
       {customDomains.length > 0 && (
         <div className="space-y-2">
           {customDomains.map((domain) => (
-            <div
+            <Card variant="inset"
               key={domain.id}
-              className="squircle rounded-lg bg-background-deep"
             >
               <div className="flex items-center justify-between p-4">
                 <div className="flex items-center gap-3 min-w-0">
@@ -302,7 +301,7 @@ export function OrgDomainEditor({
                   onCheck={() => handleVerify(domain)}
                 />
               )}
-            </div>
+            </Card>
           ))}
         </div>
       )}
@@ -352,7 +351,7 @@ export function OrgDomainEditor({
               </p>
             </div>
 
-            <div className="squircle rounded-lg bg-background-deep px-4 py-3 space-y-3">
+            <Card variant="inset" className="px-4 py-3 space-y-3">
               <p className="type-h4">DNS setup instructions</p>
               <div className="space-y-2">
                 <p className="text-xs text-muted-foreground">
@@ -378,7 +377,7 @@ export function OrgDomainEditor({
                   </div>
                 </div>
               </div>
-            </div>
+            </Card>
           </div>
 
           <BottomSheetFooter>

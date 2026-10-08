@@ -335,7 +335,7 @@ function ComposeServices({
 
   // One line per service, problems first.
   return (
-    <div className="@container squircle rounded-lg bg-card p-1.5 shadow-card dark:border">
+    <Card variant="surface" className="@container p-1.5">
       {[...services]
         .sort(
           (x, y) =>
@@ -376,7 +376,7 @@ function ComposeServices({
             </Tooltip>
           );
         })}
-    </div>
+    </Card>
   );
 }
 

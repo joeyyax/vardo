@@ -278,7 +278,7 @@ export function BackupPage({
 
       {/* Info sections */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="@container squircle rounded-lg bg-card shadow-card dark:border">
+        <Card variant="surface" className="@container">
           <div className="p-6 @lg:p-7 space-y-3">
             <Heading className="type-h3">What&apos;s in a backup</Heading>
             <ul className="text-sm space-y-2">
@@ -296,8 +296,8 @@ export function BackupPage({
               </li>
             </ul>
           </div>
-        </div>
-        <div className="@container squircle rounded-lg bg-card shadow-card dark:border">
+        </Card>
+        <Card variant="surface" className="@container">
           <div className="p-6 @lg:p-7 space-y-3">
             <Heading className="type-h3">How it works</Heading>
             <ul className="text-sm space-y-2">
@@ -315,8 +315,8 @@ export function BackupPage({
               </li>
             </ul>
           </div>
-        </div>
-        <div className="@container squircle rounded-lg bg-card shadow-card dark:border">
+        </Card>
+        <Card variant="surface" className="@container">
           <div className="p-6 @lg:p-7 space-y-3">
             <Heading className="type-h3">Good to know</Heading>
             <ul className="text-sm space-y-2">
@@ -334,7 +334,7 @@ export function BackupPage({
               </li>
             </ul>
           </div>
-        </div>
+        </Card>
       </div>
 
       {/* Forms */}

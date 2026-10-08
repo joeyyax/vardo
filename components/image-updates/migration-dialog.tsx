@@ -15,6 +15,8 @@ import {
 import { planMigration, type MigrationPlan } from "@/lib/docker/image-updates/migration-path";
 import type { MajorGateBlock } from "@/lib/docker/image-updates/major-gate";
 import type { ServiceUpdate } from "./update-row";
+import { cardVariants } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 
 export type MigrationPrompt = {
   /** App the service belongs to. */
@@ -59,7 +61,7 @@ function BackupBeforeMigration({ orgId, appId }: { orgId: string; appId: string 
 
   if (state === "started") {
     return (
-      <p className="squircle type-body-sm rounded-lg bg-status-success-muted p-3.5 text-foreground/75 border border-status-success-edge">
+      <p className={cn(cardVariants({ variant: "success" }), "type-body-sm p-3.5 text-foreground/75")}>
         <span className="text-status-success">Backup started.</span> Track it on the Backups tab
         before continuing.
         {gitSourced && " Code is in git; this captures the data volumes."}
@@ -70,7 +72,7 @@ function BackupBeforeMigration({ orgId, appId }: { orgId: string; appId: string 
 
   if (state === "unavailable") {
     return (
-      <p className="squircle type-body-sm rounded-lg bg-status-warning-muted p-3.5 text-status-warning border border-status-warning-edge">
+      <p className={cn(cardVariants({ variant: "warning" }), "type-body-sm p-3.5 text-status-warning")}>
         {detail} — back up by hand before continuing.
       </p>
     );

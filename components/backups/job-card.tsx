@@ -14,6 +14,7 @@ import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { RunProgressLine } from "./run-progress";
 import type { BackupJob, RunProgress } from "./types";
 import { useCan } from "@/components/capabilities-provider";
+import { Card } from "@/components/ui/card";
 
 export function JobCard({
   job,
@@ -97,7 +98,7 @@ export function JobCard({
 
   return (
     <>
-      <div className="squircle rounded-lg bg-background-deep p-4 space-y-2">
+      <Card variant="inset" className="p-4 space-y-2">
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-2 min-w-0">
             <p className="text-sm font-medium">{job.name}</p>
@@ -182,7 +183,7 @@ export function JobCard({
             ))}
           </div>
         )}
-      </div>
+      </Card>
 
       <ConfirmDeleteDialog
         open={deleteOpen}

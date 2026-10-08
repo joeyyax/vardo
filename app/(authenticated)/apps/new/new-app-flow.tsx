@@ -46,6 +46,7 @@ import {
   type AppDeployType,
   type AppSource,
 } from "@/lib/templates/create-payload";
+import { Card } from "@/components/ui/card";
 
 type Source = AppSource;
 type DeployType = AppDeployType;
@@ -634,11 +635,11 @@ export function NewAppFlow({ orgId, templates, parentApps = [], baseDomain: base
             {selectedSource === "github" && (
               <>
                 {installationsLoading ? (
-                  <div className="squircle flex items-center justify-center rounded-lg bg-background-deep p-8">
+                  <Card variant="inset" className="flex items-center justify-center p-8">
                     <Loader2 className="size-5 animate-spin text-muted-foreground" />
-                  </div>
+                  </Card>
                 ) : installations.length === 0 ? (
-                  <div className="squircle flex flex-col items-center gap-3 rounded-lg bg-background-deep p-8 text-center">
+                  <Card variant="inset" className="flex flex-col items-center gap-3 p-8 text-center">
                     <Github className="size-8 text-muted-foreground" />
                     <div className="space-y-1">
                       <p className="type-h4">Connect GitHub to continue</p>
@@ -675,7 +676,7 @@ export function NewAppFlow({ orgId, templates, parentApps = [], baseDomain: base
                       )}
                       Connect GitHub
                     </Button>
-                  </div>
+                  </Card>
                 ) : (
                   <>
                     {installations.length > 1 && (
@@ -775,7 +776,7 @@ export function NewAppFlow({ orgId, templates, parentApps = [], baseDomain: base
             </div>
 
             {/* Public URL */}
-            <div className="squircle rounded-lg bg-background-deep px-4 py-3 space-y-2">
+            <Card variant="inset" className="px-4 py-3 space-y-2">
               <div className="flex items-center gap-3">
                 <Switch
                   id="generate-domain"
@@ -812,7 +813,7 @@ export function NewAppFlow({ orgId, templates, parentApps = [], baseDomain: base
                   </p>
                 </>
               )}
-            </div>
+            </Card>
 
             {/* Branch */}
             {selectedSource === "github" && selectedRepo && (

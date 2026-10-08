@@ -8,6 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Globe, Loader2, Lock } from "lucide-react";
 import { toast } from "@/lib/messenger";
+import { Card } from "@/components/ui/card";
 
 type FlagState = {
   flag: string;
@@ -144,7 +145,7 @@ export function FeatureFlagsSettings() {
               <p className="text-xs text-muted-foreground">{group.description}</p>
             </div>
 
-            <div className="squircle divide-y rounded-lg bg-card shadow-card dark:border">
+            <Card variant="surface" className="divide-y">
               {groupFlags.map((f) => (
                 <div key={f.flag} className="flex items-start justify-between gap-4 p-4">
                   <div className="space-y-1">
@@ -214,7 +215,7 @@ export function FeatureFlagsSettings() {
                   </div>
                 </div>
               ))}
-            </div>
+            </Card>
           </section>
         );
       })}

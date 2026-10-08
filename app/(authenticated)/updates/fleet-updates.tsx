@@ -26,6 +26,8 @@ import type {
   FleetIgnoredUpdate,
   FleetUpdateStatus,
 } from "@/lib/docker/image-updates/status";
+import { cardVariants } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 
 /** Acknowledgements are tied to the tag they were given for. */
 function ackKey(appId: string, service: string | null, tag: string): string {
@@ -317,7 +319,7 @@ export function FleetUpdates({ orgId }: { orgId: string }) {
       {report && <BatchOutcome report={report} />}
 
       {data.apps.length === 0 && data.selfManaged.length === 0 ? (
-        <section className="squircle rounded-lg bg-card px-4 py-10 text-center shadow-card dark:border">
+        <section className={cn(cardVariants({ variant: "surface" }), "px-4 py-10 text-center")}>
           <CircleCheck className="mx-auto size-6 text-status-success" aria-hidden="true" />
           <p className="type-body mt-2 text-muted-foreground">
             Every image across the fleet is up to date.
@@ -333,7 +335,7 @@ export function FleetUpdates({ orgId }: { orgId: string }) {
           <section
             key={app.appId}
             aria-label={`Image updates for ${app.displayName}`}
-            className="squircle rounded-lg bg-card divide-y shadow-card dark:border"
+            className={cn(cardVariants({ variant: "surface" }), "divide-y")}
           >
             <header className="flex items-center gap-2 px-4 py-2.5">
               <Link
@@ -417,7 +419,7 @@ function IgnoredList({
   onRestore: (entry: FleetIgnoredUpdate) => void;
 }) {
   return (
-    <details className="squircle rounded-lg bg-card shadow-card dark:border overflow-hidden">
+    <details className={cn(cardVariants({ variant: "surface" }), "overflow-hidden")}>
       <summary className="type-body-sm flex cursor-pointer list-none items-center gap-2 px-4 py-2.5 text-muted-foreground transition-colors hover:text-foreground [&::-webkit-details-marker]:hidden">
         <BellOff className="size-3.5" aria-hidden="true" />
         Ignored ({entries.length})

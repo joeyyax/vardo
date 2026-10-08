@@ -25,6 +25,7 @@ import { Badge } from "@/components/ui/badge";
 import { AlertTriangle, X, HardDrive, FolderOpen } from "lucide-react";
 import type { DiscoveredContainer, ContainerDetail } from "@/lib/docker/discover";
 import { slugify } from "@/lib/ui/slugify";
+import { Card } from "@/components/ui/card";
 
 type Project = { id: string; name: string; displayName: string };
 
@@ -251,13 +252,13 @@ export function ImportDialog({
         ) : (
           <div className="space-y-5 py-1">
             {isHostNetwork && (
-              <div role="alert" className="squircle flex gap-2 rounded-lg bg-status-warning-muted p-4 text-sm text-status-warning border border-status-warning-edge">
+              <Card variant="warning" role="alert" className="flex gap-2 p-4 text-sm text-status-warning">
                 <AlertTriangle aria-hidden="true" className="size-4 shrink-0 mt-0.5" />
                 <span>
                   This container uses host networking — no port mapping or automatic domain
                   routing is available.
                 </span>
-              </div>
+              </Card>
             )}
 
             <div className="grid grid-cols-2 gap-4">
@@ -449,13 +450,13 @@ export function ImportDialog({
                 </div>
 
                 {hasSelectedBindMounts && (
-                  <div role="alert" className="squircle flex gap-2 rounded-lg bg-status-warning-muted p-4 text-xs text-status-warning border border-status-warning-edge">
+                  <Card variant="warning" role="alert" className="flex gap-2 p-4 text-xs text-status-warning">
                     <AlertTriangle aria-hidden="true" className="size-3.5 shrink-0 mt-0.5" />
                     <span>
                       Bind mounts reference host paths — they&apos;ll be included in the generated
                       compose file but Vardo won&apos;t manage the data.
                     </span>
-                  </div>
+                  </Card>
                 )}
               </div>
             )}

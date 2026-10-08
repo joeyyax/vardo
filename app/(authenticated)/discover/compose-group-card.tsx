@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ContainerCard } from "./container-card";
 import type { DiscoveredContainer } from "@/lib/docker/discover";
+import { Card } from "@/components/ui/card";
 
 type ComposeGroupCardProps = {
   composeProject: string;
@@ -17,7 +18,7 @@ export function ComposeGroupCard({
   onImport,
 }: ComposeGroupCardProps) {
   return (
-    <div className="squircle bg-card p-4 space-y-3 shadow-card dark:border">
+    <Card variant="surface" className="p-4 space-y-3">
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <span className="type-h4">{composeProject}</span>
@@ -44,6 +45,6 @@ export function ComposeGroupCard({
           />
         ))}
       </div>
-    </div>
+    </Card>
   );
 }

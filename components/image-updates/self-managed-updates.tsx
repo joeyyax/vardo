@@ -1,5 +1,7 @@
 import { ArrowRight, Lock } from "lucide-react";
 import { severityLabel, type ServiceUpdate } from "./update-row";
+import { cardVariants } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 
 /** Core service rows, read-only. Tags come from files Vardo ships. */
 export function SelfManagedUpdates({
@@ -16,7 +18,7 @@ export function SelfManagedUpdates({
   return (
     <section
       aria-label={`Vardo-managed images for ${title}`}
-      className="squircle rounded-lg bg-card shadow-card dark:border divide-y"
+      className={cn(cardVariants({ variant: "surface" }), "divide-y")}
     >
       <header className="flex items-center gap-2 px-4 py-2.5">
         <Lock className="size-3.5 text-muted-foreground/50" aria-hidden="true" />

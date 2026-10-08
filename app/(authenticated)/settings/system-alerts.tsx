@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { RefreshCw, AlertTriangle, CheckCircle, Info } from "lucide-react";
 import { formatRelativeTime } from "@/lib/ui/relative-time";
+import { Card } from "@/components/ui/card";
 
 type AlertEntry = {
   type: string;
@@ -182,7 +183,7 @@ export function SystemAlertsPanel() {
           <h4 className="type-label text-muted-foreground">
             Services
           </h4>
-          <div className="rounded-lg bg-card divide-y shadow-card dark:border">
+          <Card variant="surface" className="divide-y">
             {healthData.services.map((service) => (
               <div
                 key={service.name}
@@ -212,7 +213,7 @@ export function SystemAlertsPanel() {
                 <StatusBadge status={service.status} />
               </div>
             ))}
-          </div>
+          </Card>
         </div>
       )}
 
@@ -222,7 +223,7 @@ export function SystemAlertsPanel() {
           <h4 className="type-label text-muted-foreground">
             Resources
           </h4>
-          <div className="rounded-lg bg-card divide-y shadow-card dark:border">
+          <Card variant="surface" className="divide-y">
             {healthData.resources.map((resource) => (
               <div
                 key={resource.name}
@@ -253,7 +254,7 @@ export function SystemAlertsPanel() {
                 </div>
               </div>
             ))}
-          </div>
+          </Card>
         </div>
       )}
 
@@ -270,12 +271,12 @@ export function SystemAlertsPanel() {
           </h4>
 
           {alertsData.active.length === 0 ? (
-            <div className="rounded-lg bg-card px-4 py-6 text-center shadow-card dark:border">
+            <Card variant="surface" className="px-4 py-6 text-center">
               <CheckCircle className="h-6 w-6 text-status-success mx-auto mb-2" />
               <p className="text-sm text-muted-foreground">No active alerts</p>
-            </div>
+            </Card>
           ) : (
-            <div className="rounded-lg bg-card divide-y shadow-card dark:border">
+            <Card variant="surface" className="divide-y">
               {alertsData.active.map((alert) => (
                 <div key={`${alert.type}:${alert.key}`} className="flex items-center justify-between px-4 py-3">
                   <div className="flex items-center gap-2.5">
@@ -299,7 +300,7 @@ export function SystemAlertsPanel() {
                   </div>
                 </div>
               ))}
-            </div>
+            </Card>
           )}
         </div>
       )}
@@ -310,7 +311,7 @@ export function SystemAlertsPanel() {
           <h4 className="type-label text-muted-foreground">
             Recent alert history
           </h4>
-          <div className="rounded-lg bg-card divide-y shadow-card dark:border">
+          <Card variant="surface" className="divide-y">
             {alertsData.history.slice(0, 10).map((alert) => (
               <div
                 key={`${alert.type}:${alert.key}`}
@@ -325,7 +326,7 @@ export function SystemAlertsPanel() {
                 </p>
               </div>
             ))}
-          </div>
+          </Card>
         </div>
       )}
     </div>

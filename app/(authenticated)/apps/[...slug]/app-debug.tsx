@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/collapsible";
 import { toast } from "@/lib/messenger";
 import "@/components/surface-terminal.css";
+import { Card } from "@/components/ui/card";
 
 type DebugData = {
   compose: string | null;
@@ -165,9 +166,9 @@ export function AppDebug({
       </div>
 
       {error && (
-        <div className="squircle rounded-lg bg-status-error-muted px-4 py-3 text-sm text-status-error border border-status-error-edge">
+        <Card variant="error" className="px-4 py-3 text-sm text-status-error">
           {error}
-        </div>
+        </Card>
       )}
 
       <div className="space-y-3">

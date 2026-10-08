@@ -1,4 +1,5 @@
 import { SkeletonGroup } from "@/components/ui/skeleton";
+import { Card } from "@/components/ui/card";
 
 export default function ProjectsLoading() {
   return (
@@ -28,9 +29,9 @@ export default function ProjectsLoading() {
             {/* App cards grid */}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {Array.from({ length: group === 1 ? 3 : 2 }).map((_, i) => (
-                <div
+                <Card variant="surface"
                   key={i}
-                  className="rounded-xl bg-card p-4 space-y-3 shadow-card dark:border"
+                  className="p-4 space-y-3"
                 >
                   {/* App header: icon + name + status */}
                   <div className="flex items-center justify-between">
@@ -49,7 +50,7 @@ export default function ProjectsLoading() {
 
                   {/* Footer: domain */}
                   <div className="h-3 w-36 bg-muted animate-pulse rounded-md" />
-                </div>
+                </Card>
               ))}
             </div>
           </div>

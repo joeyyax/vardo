@@ -17,6 +17,7 @@ import {
 import { tags } from "@lezer/highlight";
 import { createTheme } from "@uiw/codemirror-themes";
 import "./surface-terminal.css";
+import { Card } from "@/components/ui/card";
 
 const clipboardIcon = <ClipboardCheck className="size-4" />;
 
@@ -359,12 +360,12 @@ export function EnvEditor(props: EnvEditorProps) {
     <div className="space-y-3">
       {/* Restart keeps the old environment; only a deploy replaces it. */}
       {!isStandalone && needsRedeploy && !modified && (
-        <div className="squircle flex items-center gap-2 rounded-lg bg-status-warning-muted px-4 py-3 border border-status-warning-edge">
+        <Card variant="warning" className="flex items-center gap-2 px-4 py-3">
           <AlertTriangle className="size-4 text-status-warning shrink-0" />
           <p className="text-sm text-status-warning">
             Variables saved. Deploy the app to apply them.
           </p>
-        </div>
+        </Card>
       )}
 
       {!isStandalone && environment && (
@@ -383,10 +384,10 @@ export function EnvEditor(props: EnvEditorProps) {
 
       {/* Password change warning */}
       {!isStandalone && passwordWarning && (
-        <div className="squircle flex items-start gap-2 rounded-lg bg-status-warning-muted px-4 py-3 border border-status-warning-edge">
+        <Card variant="warning" className="flex items-start gap-2 px-4 py-3">
           <AlertTriangle className="size-4 text-status-warning shrink-0 mt-0.5" />
           <p className="text-xs text-status-warning">{passwordWarning}</p>
-        </div>
+        </Card>
       )}
 
       <div className="flex items-center justify-between">

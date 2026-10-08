@@ -16,6 +16,7 @@ import { failureReason, restoreTestFor } from "./history-state";
 import { deleteDescription, orphanScope, plural } from "./delete-copy";
 import { useCan } from "@/components/capabilities-provider";
 import type { RecentBackup } from "./types";
+import { Card } from "@/components/ui/card";
 
 function backupDuration(startedAt: string, finishedAt: string | null): string {
   if (!finishedAt) return "—";
@@ -130,7 +131,7 @@ export function BackupHistory({
   }
 
   return (
-    <div className="squircle rounded-lg bg-background-deep overflow-x-auto">
+    <Card variant="inset" className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
           <tr className="bg-background-deep">
@@ -307,6 +308,6 @@ export function BackupHistory({
           </label>
         )}
       </ConfirmDeleteDialog>
-    </div>
+    </Card>
   );
 }

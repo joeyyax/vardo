@@ -16,12 +16,7 @@ import {
 } from "@/components/ui/select";
 import { Loader2, Lock } from "lucide-react";
 import { toast } from "@/lib/messenger";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useSystemSetting } from "./use-system-setting";
 
 export function AuthSettings() {
@@ -227,7 +222,7 @@ function SignInMethods() {
           <span className="sr-only">Loading sign-in methods</span>
         </div>
       ) : (
-        <div className="squircle divide-y rounded-lg bg-card shadow-card dark:border">
+        <Card variant="surface" className="divide-y">
           {methods.map((m) => (
             <div key={m.method} className="flex items-start justify-between gap-4 p-4">
               <div className="space-y-1">
@@ -279,7 +274,7 @@ function SignInMethods() {
               </div>
             </div>
           ))}
-        </div>
+        </Card>
       )}
     </section>
   );

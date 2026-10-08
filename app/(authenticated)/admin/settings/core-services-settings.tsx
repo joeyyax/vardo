@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Loader2, RefreshCw } from "lucide-react";
 import { toast } from "@/lib/messenger";
+import { Card } from "@/components/ui/card";
 
 type CoreServiceState = "off" | "provisioned" | "conflict" | "missing-template" | "failed";
 
@@ -143,7 +144,7 @@ export function CoreServicesSettings() {
         </p>
       </div>
 
-      <div className="squircle divide-y rounded-lg bg-card shadow-card dark:border">
+      <Card variant="surface" className="divide-y">
         {services.map((service) => (
           <div key={service.name} className="flex items-start justify-between gap-4 p-4">
             <div className="space-y-1">
@@ -183,7 +184,7 @@ export function CoreServicesSettings() {
             </div>
           </div>
         ))}
-      </div>
+      </Card>
 
       <div className="flex items-center justify-between gap-4">
         <p className="text-xs text-muted-foreground">

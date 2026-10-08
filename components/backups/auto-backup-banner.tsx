@@ -5,6 +5,7 @@ import { retentionDescription } from "./retention-summary";
 import { describeSchedule } from "./schedule-summary";
 import { RunProgressLine } from "./run-progress";
 import type { BackupJob, BackupTarget, RecentBackup, RunProgress } from "./types";
+import { Card } from "@/components/ui/card";
 
 /** Targets that live off this host. */
 const OFFSITE_TYPES = new Set(["s3", "r2", "b2", "ssh"]);
@@ -33,7 +34,7 @@ export function AutoBackupBanner({
   const healthy = failures.length === 0 && lastRun?.status === "success";
 
   return (
-    <div className="@container squircle rounded-lg bg-card shadow-card dark:border">
+    <Card variant="surface" className="@container">
       <div className="space-y-4 p-6 @lg:p-7">
         <div className="flex items-start gap-3">
           {running.length > 0 ? (
@@ -94,6 +95,6 @@ export function AutoBackupBanner({
           </span>
         </div>
       </div>
-    </div>
+    </Card>
   );
 }
