@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { githubAppInstallations } from "@/lib/db/schema";
-import { requireSession } from "@/lib/auth/session";
+import { requireAppAdmin } from "@/lib/auth/admin";
 import { getAppOctokit } from "@/lib/git-integration/app";
 import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
@@ -10,10 +10,10 @@ import { logger } from "@/lib/logger";
 
 const log = logger.child("github-installations-sync");
 
-// GET /api/v1/github/installations/sync — Sync existing GitHub App installations for current user
+// GET /api/v1/github/installations/sync: links every installation of the app, so instance admins only.
 export async function GET() {
   try {
-    const session = await requireSession();
+    const session = await requireAppAdmin();
     const userId = session.user.id;
 
     const octokit = await getAppOctokit();

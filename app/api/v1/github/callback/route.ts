@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { githubAppInstallations } from "@/lib/db/schema";
 import { requireSession } from "@/lib/auth/session";
+import { isAppAdmin } from "@/lib/auth/admin";
 import { getAppOctokit, verifyInstallationState } from "@/lib/git-integration/app";
 import { nanoid } from "nanoid";
 import { logger } from "@/lib/logger";
@@ -46,6 +47,11 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(`${baseUrl}/user/settings/connections?github=error`);
     }
     userId = session.user.id;
+    // installation_id is caller-supplied and GitHub doesn't tie it to this user.
+    if (!(await isAppAdmin())) {
+      log.error("Non-admin tried to link an installation");
+      return NextResponse.redirect(`${baseUrl}/user/settings/connections?github=error`);
+    }
   } catch {
     log.error("Not authenticated");
     return NextResponse.redirect(`${baseUrl}/user/settings/connections?github=error`);
