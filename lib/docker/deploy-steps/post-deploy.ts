@@ -140,6 +140,21 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
         log(`[deploy] ${vol.mountPath} now mounts ${vol.source ?? vol.name}`);
       }
 
+      // Rows inserted before the containers ran are classified here once.
+      for (const vol of detectedVolumes) {
+        const row = existingByPath.get(vol.mountPath);
+        if (!row || row.durability != null || row.backupSpec != null || row.backupStrategy === "dump") continue;
+        const proposal = proposeDurability({ image: vol.image, mountPath: vol.mountPath, volumeName: vol.name });
+        if (!proposal?.kind || !vol.service || !isSafeToApply(null, proposal.durability)) continue;
+        const spec = { kind: proposal.kind, service: vol.service };
+        await db
+          .update(volumes)
+          .set({ durability: "stateful", backupStrategy: "dump", backupSpec: spec, updatedAt: new Date() })
+          .where(eq(volumes.id, row.id));
+        if (!touchedIds.includes(row.id)) touchedIds.push(row.id);
+        log(`[deploy] ${row.name} will back up with ${spec.kind} dump via service "${spec.service}"`);
+      }
+
       if (newDetected.length > 0) {
         for (const vol of newDetected) {
           // Only `stateful` is applied unprompted; a wrong `rebuildable` would cost data.

@@ -229,4 +229,41 @@ describe("postDeploy backup enrollment", () => {
     );
     expect(enrollNewVolumes).toHaveBeenCalledWith(expect.objectContaining({ volumeIds: ["old"] }));
   });
+
+  it("classifies a pre-inserted database row as a dump", async () => {
+    writes.length = 0;
+    vi.mocked(inspectContainer).mockResolvedValue({
+      state: { status: "running" },
+      image: "postgres:16",
+      labels: { "com.docker.compose.service": "db" },
+      mounts: [{ type: "volume", name: "pgdata", source: "/var/lib/docker/volumes/pgdata/_data", destination: "/var/lib/postgresql/data" }],
+    } as never);
+    dbMock.query.volumes.findMany.mockResolvedValue([
+      { id: "pg", appId: "app-1", name: "pgdata", mountPath: "/var/lib/postgresql/data", type: "named", source: null, durability: null, backupStrategy: "tar", backupSpec: null },
+    ]);
+
+    await postDeploy(makeContext());
+
+    expect(writes.map((w) => w.values)).toContainEqual(
+      expect.objectContaining({ durability: "stateful", backupStrategy: "dump", backupSpec: { kind: "postgres", service: "db" } }),
+    );
+    expect(enrollNewVolumes).toHaveBeenCalledWith(expect.objectContaining({ volumeIds: ["pg"] }));
+  });
+
+  it("leaves a row the operator already classified", async () => {
+    writes.length = 0;
+    vi.mocked(inspectContainer).mockResolvedValue({
+      state: { status: "running" },
+      image: "postgres:16",
+      labels: { "com.docker.compose.service": "db" },
+      mounts: [{ type: "volume", name: "pgdata", source: "/var/lib/docker/volumes/pgdata/_data", destination: "/var/lib/postgresql/data" }],
+    } as never);
+    dbMock.query.volumes.findMany.mockResolvedValue([
+      { id: "pg", appId: "app-1", name: "pgdata", mountPath: "/var/lib/postgresql/data", type: "named", source: null, durability: "external", backupStrategy: "tar", backupSpec: null },
+    ]);
+
+    await postDeploy(makeContext());
+
+    expect(writes.map((w) => w.values)).not.toContainEqual(expect.objectContaining({ backupStrategy: "dump" }));
+  });
 });
