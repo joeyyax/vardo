@@ -184,6 +184,13 @@ export async function moveAppToFront(restoreId: string, appId: string): Promise<
   return true;
 }
 
+/** Queue a failed app again, at the front. */
+export async function retryApp(restoreId: string, appId: string): Promise<boolean> {
+  if (!(await setItemStatus(restoreId, appId, "failed", "queued"))) return false;
+  await setPositions(restoreId, moveToFront(await restoreItems(restoreId), appId));
+  return true;
+}
+
 /** Leave an app defined but stopped, or put a deferred one back in the queue. */
 export async function deferApp(restoreId: string, appId: string, defer: boolean): Promise<boolean> {
   return defer

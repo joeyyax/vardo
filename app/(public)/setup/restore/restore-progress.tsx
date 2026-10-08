@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowUpToLine, Clock, Loader2 } from "lucide-react";
+import { ArrowUpToLine, Clock, Loader2, RotateCcw } from "lucide-react";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
@@ -20,7 +20,7 @@ const STATUS: Record<App["status"], { label: string; variant: BadgeProps["varian
   deploying: { label: "Deploying", variant: "info" },
   done: { label: "Done", variant: "success" },
   failed: { label: "Failed", variant: "error" },
-  deferred: { label: "Restore later", variant: "outline" },
+  deferred: { label: "Later", variant: "neutral" },
 };
 
 /** Newest archive date across an app's volumes, for the plan column. */
@@ -36,7 +36,7 @@ export function RestoreProgressView({ restore, onChange }: { restore: NonNullabl
   const failed = restore.apps.filter((a) => a.status === "failed");
   const percent = progress.total === 0 ? 100 : Math.round((progress.settled / progress.total) * 100);
 
-  async function act(appId: string, action: "front" | "defer" | "requeue") {
+  async function act(appId: string, action: "front" | "defer" | "retry") {
     setPending(appId);
     try {
       const res = await fetch(`/api/setup/restore/apps/${appId}`, {
@@ -125,6 +125,11 @@ export function RestoreProgressView({ restore, onChange }: { restore: NonNullabl
                           <Clock /> Restore later
                         </Button>
                       </>
+                    )}
+                    {app.status === "failed" && (
+                      <Button size="xs" variant="ghost" disabled={pending !== null} onClick={() => act(app.appId, "retry")}>
+                        <RotateCcw /> Try again
+                      </Button>
                     )}
                     {app.status === "deferred" && (
                       <Button size="xs" variant="ghost" disabled={pending !== null} onClick={() => act(app.appId, "front")}>

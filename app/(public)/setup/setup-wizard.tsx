@@ -32,7 +32,7 @@ export function SetupWizard() {
           <button
             type="button"
             onClick={() => setMode("new")}
-            className="squircle rounded-2xl border bg-card p-6 text-left transition-colors hover:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="squircle flex flex-col items-start justify-start rounded-2xl border bg-card p-6 text-left transition-colors hover:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <Sparkles className="size-5 text-muted-foreground" aria-hidden />
             <h2 className="mt-3 font-medium">Set up as new</h2>
@@ -40,7 +40,7 @@ export function SetupWizard() {
           </button>
           <Link
             href="/setup/restore"
-            className="squircle rounded-2xl border bg-card p-6 text-left transition-colors hover:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="squircle flex flex-col items-start justify-start rounded-2xl border bg-card p-6 text-left transition-colors hover:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             <ArchiveRestore className="size-5 text-muted-foreground" aria-hidden />
             <h2 className="mt-3 font-medium">Restore from backup</h2>
