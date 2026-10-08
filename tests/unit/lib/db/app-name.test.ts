@@ -1,6 +1,4 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { readFileSync, readdirSync } from "node:fs";
-import { join } from "node:path";
 
 const findFirst = vi.fn();
 
@@ -20,93 +18,7 @@ beforeEach(() => {
   findFirst.mockReset();
 });
 
-// ---------------------------------------------------------------------------
-// The migration
-// ---------------------------------------------------------------------------
-
-describe("app_top_level_name_uniq migration", () => {
-  const dir = join(process.cwd(), "drizzle");
-  const sql = readdirSync(dir)
-    .filter((f) => f.endsWith(".sql"))
-    .map((f) => readFileSync(join(dir, f), "utf8"))
-    .join("\n");
-
-  const statement = sql
-    .split("\n")
-    .find((line) => line.includes("app_top_level_name_uniq"));
-
-  it("creates a unique index on name alone", () => {
-    expect(statement).toBeDefined();
-    expect(statement).toMatch(/CREATE UNIQUE INDEX/);
-    expect(statement).toMatch(/ON "app" USING btree \("name"\)/);
-  });
-
-  it("is partial on top-level apps, so children are exempt", () => {
-    expect(statement).toMatch(/WHERE parent_app_id is null/i);
-  });
-
-  it("is not scoped to the organization", () => {
-    expect(statement).not.toMatch(/organization_id/);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Constraint semantics against representative data
-// ---------------------------------------------------------------------------
-
-type Row = { name: string; orgId: string; parentAppId: string | null };
-
-/** Models `UNIQUE (name) WHERE parent_app_id IS NULL`. */
-function violatesTopLevelUniq(rows: Row[]): boolean {
-  const seen = new Set<string>();
-  for (const row of rows) {
-    if (row.parentAppId !== null) continue;
-    if (seen.has(row.name)) return true;
-    seen.add(row.name);
-  }
-  return false;
-}
-
-describe("top-level name uniqueness", () => {
-  it("rejects the same top-level name in two organizations", () => {
-    expect(
-      violatesTopLevelUniq([
-        { name: "invoices", orgId: "org-a", parentAppId: null },
-        { name: "invoices", orgId: "org-b", parentAppId: null },
-      ])
-    ).toBe(true);
-  });
-
-  it("allows two children of different parents to share a name", () => {
-    expect(
-      violatesTopLevelUniq([
-        { name: "glitchtip", orgId: "org-a", parentAppId: null },
-        { name: "glitchtip-web", orgId: "org-a", parentAppId: "app-a" },
-        { name: "glitchtip-web", orgId: "org-b", parentAppId: "app-b" },
-      ])
-    ).toBe(false);
-  });
-
-  it("applies against the existing glitchtip child collisions", () => {
-    // Four child names duplicated across two parents. Children are exempt from
-    // the index whatever their parent, so the names never collide.
-    const services = ["postgres", "redis", "web", "worker"];
-    const rows: Row[] = [
-      { name: "glitchtip", orgId: "org-a", parentAppId: null },
-      ...services.map((s) => ({
-        name: `glitchtip-${s}`,
-        orgId: "org-a",
-        parentAppId: "app-live",
-      })),
-      ...services.map((s) => ({
-        name: `glitchtip-${s}`,
-        orgId: "org-b",
-        parentAppId: "app-other",
-      })),
-    ];
-    expect(violatesTopLevelUniq(rows)).toBe(false);
-  });
-});
+// The unique index itself is asserted against Postgres in tests/unit/drizzle/migrate-run.test.ts.
 
 // ---------------------------------------------------------------------------
 // Helpers

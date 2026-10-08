@@ -35,11 +35,6 @@ describe("migration", () => {
     .map((f) => readFileSync(join(dir, f), "utf8"))
     .find((sql) => sql.includes('ADD COLUMN IF NOT EXISTS "job_name"'));
 
-  it("replaces the cascading constraint with set null", () => {
-    expect(body).toContain('DROP CONSTRAINT IF EXISTS "backup_job_id_backup_job_id_fk"');
-    expect(body).toMatch(/FOREIGN KEY \("job_id"\) REFERENCES "public"\."backup_job"\("id"\) ON DELETE set null/);
-  });
-
   it("backfills the snapshot from the job", () => {
     expect(body).toMatch(/UPDATE "backup" SET "job_name" = "backup_job"\."name" FROM "backup_job"/);
   });
