@@ -36,4 +36,5 @@ gosu nextjs node scripts/migrate.mjs
 
 # exec so tini's SIGTERM reaches Node. A `sh -c` or npx wrapper here swallows
 # it and the container gets SIGKILLed instead.
-exec gosu nextjs node node_modules/next/dist/bin/next start
+# The preload records each request's real peer for client-IP checks (lib/security/client-ip.ts).
+exec gosu nextjs node --import ./scripts/peer-address.mjs node_modules/next/dist/bin/next start

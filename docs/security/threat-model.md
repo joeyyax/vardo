@@ -16,7 +16,7 @@ Status: **fixed** (on main or in this branch), **open**, or **not a boundary**. 
 | Open registration | fixed | defaults to `closed`, `lib/system-settings.ts:320`; `lib/auth/registration.ts:21` |
 | GitHub webhook signature | fixed | mandatory secret, HMAC with `timingSafeEqual`, `app/api/v1/github/webhook/route.ts:35-55` |
 | Auth rate limit bypass by rotating cookies | branch | `lib/api/with-rate-limit.ts:37` keys the auth tier by IP only |
-| Auth rate limit keyed on first `X-Forwarded-For` | open, verify | `lib/api/with-rate-limit.ts:24`, `proxy.ts:28`. Safe only while Traefik strips client-sent forwarding headers. |
+| Auth rate limit keyed on first `X-Forwarded-For` | fixed | #889: `scripts/peer-address.mjs` records each request's TCP peer; `proxy.ts` trusts `X-Forwarded-For` only from Traefik's container address (`lib/security/client-ip.ts`) and rewrites it for everything downstream. |
 | Host header poisoning of auth links | not a boundary in prod | Better Auth reads `NEXT_PUBLIC_BETTER_AUTH_URL` (`docker-compose.yml:38`). Dev infers from the request. |
 | Postgres and Redis published on every interface, Redis has no password | branch | `docker-compose.yml:155,173` now bind to `127.0.0.1`. Docker's publishing skips ufw. |
 | Traefik API | fixed | #889: no `--api.insecure`; the API answers only a basic-auth router on the internal entrypoint, keyed from the master key (`lib/docker/traefik-api-access.ts`). Untrusted labels can't route to `@internal` services or the `traefik` entrypoint (`lib/docker/compose-policy.ts`). |

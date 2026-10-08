@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { csrfRejection } from "@/lib/security/csrf";
+import { clientIpFor } from "@/lib/security/client-ip";
 
 /**
  * Layer 1: In-memory IP-based rate limiting on all API routes.
@@ -25,19 +26,18 @@ setInterval(() => {
   }
 }, 5 * 60_000);
 
-function getIp(request: NextRequest): string {
-  return (
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-    request.headers.get("x-real-ip") ||
-    "unknown"
-  );
-}
-
-export function proxy(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   // Only rate limit API routes
   if (!request.nextUrl.pathname.startsWith("/api/")) {
     return NextResponse.next();
   }
+
+  // Downstream readers (rate limits, Better Auth) see only the vetted address.
+  const ip = await clientIpFor(request.headers);
+  const headers = new Headers(request.headers);
+  headers.set("x-forwarded-for", ip);
+  headers.set("x-real-ip", ip);
+  const next = () => NextResponse.next({ request: { headers } });
 
   const csrf = csrfRejection({
     method: request.method,
@@ -50,16 +50,15 @@ export function proxy(request: NextRequest) {
 
   // Skip health check and monitoring endpoints
   if (request.nextUrl.pathname === "/api/health") {
-    return NextResponse.next();
+    return next();
   }
 
   // Skip OPTIONS/HEAD — only limit actual requests
   const method = request.method.toUpperCase();
   if (method === "OPTIONS" || method === "HEAD") {
-    return NextResponse.next();
+    return next();
   }
 
-  const ip = getIp(request);
   const now = Date.now();
 
   let entry = ipMap.get(ip);
@@ -88,7 +87,7 @@ export function proxy(request: NextRequest) {
     );
   }
 
-  return NextResponse.next();
+  return next();
 }
 
 export const config = {

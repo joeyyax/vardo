@@ -65,19 +65,19 @@ describe("csrfRejection", () => {
 });
 
 describe("proxy", () => {
-  it("returns 403 for a cross-site cookie POST to the API", () => {
+  it("returns 403 for a cross-site cookie POST to the API", async () => {
     const req = new NextRequest("https://vardo.example.com/api/v1/organizations/o/apps", {
       method: "POST",
       headers: { cookie: COOKIE, origin: "https://evil.example.com", "sec-fetch-site": "same-site" },
     });
-    expect(proxy(req).status).toBe(403);
+    expect((await proxy(req)).status).toBe(403);
   });
 
-  it("passes the dashboard's own POST", () => {
+  it("passes the dashboard's own POST", async () => {
     const req = new NextRequest("https://vardo.example.com/api/v1/organizations/o/apps", {
       method: "POST",
       headers: { cookie: COOKIE, origin: "https://vardo.example.com", "sec-fetch-site": "same-origin" },
     });
-    expect(proxy(req).status).toBe(200);
+    expect((await proxy(req)).status).toBe(200);
   });
 });
