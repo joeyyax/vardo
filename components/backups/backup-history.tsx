@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
@@ -12,7 +12,7 @@ import { toast } from "@/lib/messenger";
 import { RelativeTime } from "@/components/relative-time";
 import { StatusBadge } from "./status-badge";
 import { RestoreTestBadge } from "./restore-test-badge";
-import { restoreTestFor } from "./history-state";
+import { failureReason, restoreTestFor } from "./history-state";
 import { deleteDescription, orphanScope, plural } from "./delete-copy";
 import { useCan } from "@/components/capabilities-provider";
 import type { RecentBackup } from "./types";
@@ -149,8 +149,12 @@ export function BackupHistory({
           </tr>
         </thead>
         <tbody>
-          {history.map((backup) => (
-            <tr key={backup.id} className="border-b last:border-0">
+          {history.map((backup) => {
+            const reason =
+              backup.status === "failed" || backup.status === "skipped" ? failureReason(backup.log) : null;
+            return (
+            <Fragment key={backup.id}>
+            <tr className={reason ? "" : "border-b last:border-0"}>
               <td className="px-4 py-3">
                 <StatusBadge status={backup.status} />
               </td>
@@ -224,7 +228,23 @@ export function BackupHistory({
                 </span>
               </td>
             </tr>
-          ))}
+            {reason && (
+              <tr className="border-b last:border-0">
+                <td colSpan={8} className="px-4 pb-3 pt-0">
+                  <details className="text-xs">
+                    <summary className="cursor-pointer text-destructive">{reason}</summary>
+                    {backup.log && (
+                      <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap rounded-md bg-background p-3 font-mono text-muted-foreground">
+                        {backup.log}
+                      </pre>
+                    )}
+                  </details>
+                </td>
+              </tr>
+            )}
+            </Fragment>
+            );
+          })}
         </tbody>
       </table>
 

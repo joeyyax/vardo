@@ -25,3 +25,15 @@ export function restoreTestFor(
       return { kind: "untested" };
   }
 }
+
+/** The reason a backup failed or was skipped, from its run log. Null when there's no log. */
+export function failureReason(log: string | null): string | null {
+  const lines = (log ?? "")
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+  if (lines.length === 0) return null;
+  const stamp = /^\[\d{4}-\d\d-\d\dT[^\]]*\]\s*/;
+  const failed = [...lines].reverse().find((l) => stamp.test(l) && /Backup failed:|Skipping volume/.test(l));
+  return (failed ?? lines[lines.length - 1]).replace(stamp, "").replace(/^Backup failed:\s*/, "");
+}

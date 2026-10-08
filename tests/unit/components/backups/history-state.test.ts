@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { restoreTestFor } from "@/components/backups/history-state";
+import { failureReason, restoreTestFor } from "@/components/backups/history-state";
 
 const run = {
   status: "success",
@@ -29,5 +29,21 @@ describe("restoreTestFor", () => {
     expect(restoreTestFor({ ...run, verifyOutcome: "unsupported", verifyDetail: "no drill" }).kind).toBe(
       "unsupported",
     );
+  });
+});
+
+describe("failureReason", () => {
+  it("pulls the engine's message from the log", () => {
+    const log = [
+      "[2026-10-01T02:00:00.000Z] Backing up data",
+      "[2026-10-01T02:00:01.000Z] Backup failed: archive is corrupt (gzip -t failed)",
+    ].join("\n");
+    expect(failureReason(log)).toBe("archive is corrupt (gzip -t failed)");
+  });
+
+  it("falls back to the last line and handles an empty log", () => {
+    expect(failureReason("one\ntwo")).toBe("two");
+    expect(failureReason(null)).toBeNull();
+    expect(failureReason("  \n")).toBeNull();
   });
 });
