@@ -10,6 +10,7 @@ import {
 import {
   METRICS_FALLBACK_MS,
   mergePolledPoints,
+  pointsAfterHistory,
   streamRetryMs,
 } from "@/lib/metrics/stream-fallback";
 import type { MetricsPoint, ContainerPoint } from "@/lib/metrics/types";
@@ -96,11 +97,11 @@ export function useMetricsStream(
     const url = `${historyUrl}${separator}from=${from}&to=${now}&bucket=${bucket}`;
 
     fetch(url)
-      .then((r) => r.json())
-      .then((data) => {
-        if (!cancelled) {
-          setPoints(data.points ?? []);
-        }
+      .then(async (r) => ({ ok: r.ok, status: r.status, body: await r.json().catch(() => null) }))
+      .then((res) => {
+        if (cancelled) return;
+        setPoints((prev) => pointsAfterHistory(prev, res));
+        if (!res.ok) setError(`Metrics history unavailable (${res.status})`);
       })
       .catch((err) => {
         if (!cancelled) {

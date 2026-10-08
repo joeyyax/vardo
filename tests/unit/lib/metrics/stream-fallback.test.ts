@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mergePolledPoints, streamRetryMs } from "@/lib/metrics/stream-fallback";
+import { mergePolledPoints, pointsAfterHistory, streamRetryMs } from "@/lib/metrics/stream-fallback";
 import type { MetricsPoint } from "@/lib/metrics/types";
 
 const pt = (timestamp: number): MetricsPoint => ({
@@ -31,5 +31,19 @@ describe("mergePolledPoints", () => {
 describe("streamRetryMs", () => {
   it("doubles from 15 seconds up to 2 minutes", () => {
     expect([0, 1, 2, 3, 10].map(streamRetryMs)).toEqual([15_000, 30_000, 60_000, 120_000, 120_000]);
+  });
+});
+
+describe("pointsAfterHistory", () => {
+  const held = [pt(1), pt(2)];
+
+  it("keeps the chart on a refusal", () => {
+    expect(pointsAfterHistory(held, { ok: false, body: { error: "Too many requests" } as never })).toBe(held);
+    expect(pointsAfterHistory(held, { ok: false, body: null })).toBe(held);
+  });
+
+  it("replaces the chart on success, empty when the body has no points", () => {
+    expect(pointsAfterHistory(held, { ok: true, body: { points: [pt(9)] } })).toEqual([pt(9)]);
+    expect(pointsAfterHistory(held, { ok: true, body: {} })).toEqual([]);
   });
 });

@@ -26,7 +26,7 @@ function git(cwd: string, ...args: string[]): string {
 function sh(script: string, env: Record<string, string> = {}, path = process.env.PATH ?? "") {
   const r = spawnSync("bash", ["-c", `set -euo pipefail\nsource "${lib}"\n${script}`], {
     encoding: "utf8",
-    env: { ...process.env, PATH: path, VARDO_REF: "", ...env },
+    env: { ...process.env, PATH: path, VARDO_REF: "", VARDO_DIR: join(dir, "absent"), ...env },
   });
   return { status: r.status, out: `${r.stdout}${r.stderr}` };
 }
@@ -123,11 +123,11 @@ describe("package step without a terminal", () => {
 });
 
 describe("rerun after a failed install", () => {
-  /** A docker whose `ps --filter publish=N` names vardo-traefik for the listed ports only. */
-  function fakeDocker(name: string, published: string[]) {
+  /** A docker whose `ps --filter publish=N` names the container for each listed port. */
+  function fakeDocker(name: string, published: Record<string, string>) {
     const bin = join(dir, `bin-${name}`);
     mkdirSync(bin, { recursive: true });
-    const cases = published.map((p) => `*publish=${p}*) echo vardo-traefik;;`).join(" ");
+    const cases = Object.entries(published).map(([p, n]) => `*publish=${p}\\ *) echo ${n};;`).join(" ");
     writeFileSync(join(bin, "docker"), `#!/bin/sh\ncase "$*" in ${cases} esac\n`);
     chmodSync(join(bin, "docker"), 0o755);
     return `${bin}:${process.env.PATH}`;
@@ -136,21 +136,21 @@ describe("rerun after a failed install", () => {
   const ports = `check_port_in_use() { [ "$1" = 80 ] || [ "$1" = 443 ]; }\nget_port_process() { echo nginx; }\nVARDO_ROLE=production\ncheck_ports`;
 
   it("continues when vardo-traefik holds ports 80 and 443", () => {
-    const r = sh(ports, {}, fakeDocker("both", ["80", "443"]));
+    const r = sh(ports, {}, fakeDocker("both", { 80: "vardo-traefik", 443: "vardo-traefik" }));
     expect(r.status).toBe(0);
     expect(r.out).toContain("Port 80 is held by vardo-traefik");
     expect(r.out).toContain("Port 443 is held by vardo-traefik");
   });
 
   it("still refuses a port vardo-traefik does not hold", () => {
-    const r = sh(ports, {}, fakeDocker("only80", ["80"]));
+    const r = sh(ports, {}, fakeDocker("only80", { 80: "vardo-traefik" }));
     expect(r.status).not.toBe(0);
     expect(r.out).toContain("Port 80 is held by vardo-traefik");
     expect(r.out).toContain("Port 443 is in use by nginx");
   });
 
   it("refuses when another process holds the port", () => {
-    const r = sh(ports, {}, fakeDocker("other", ["8080"]));
+    const r = sh(ports, {}, fakeDocker("other", { 8080: "vardo-traefik" }));
     expect(r.status).not.toBe(0);
     expect(r.out).toContain("Port 80 is in use by nginx");
   });
@@ -165,5 +165,44 @@ describe("rerun after a failed install", () => {
   it("announces five steps, seven with --restore", () => {
     expect(sh("install_step_total").out.trim()).toBe("5");
     expect(sh("RESTORE=true\ninstall_step_total").out.trim()).toBe("7");
+  });
+
+  describe("service ports", () => {
+    const svc = (busy: string) =>
+      `check_port_in_use() { case " ${busy} " in *" $1 "*) return 0;; *) return 1;; esac; }\nVARDO_ROLE=development\ncheck_ports\necho "PG=${"$"}{POSTGRES_PORT:-unset} REDIS=${"$"}{REDIS_PORT:-unset} CAD=${"$"}{CADVISOR_PORT:-unset} LOKI=${"$"}{LOKI_PORT:-unset}"`;
+
+    it("keeps a port its own container holds", () => {
+      const path = fakeDocker("own", { 7100: "vardo-postgres", 7200: "vardo-redis", 7300: "vardo-cadvisor-1", 7400: "myproj-loki" });
+      const r = sh(svc("7100 7200 7300 7400"), {}, path);
+      expect(r.status).toBe(0);
+      expect(r.out).toContain("PG=unset REDIS=unset CAD=unset LOKI=unset");
+      expect(r.out).not.toContain("reassigning");
+    });
+
+    it("keeps the port written to .env, not the default", () => {
+      const home = join(dir, "vardo-svc");
+      mkdirSync(home, { recursive: true });
+      writeFileSync(join(home, ".env"), "POSTGRES_PORT=7101\n");
+      const path = fakeDocker("env", { 7101: "vardo-postgres" });
+      const r = sh(svc("7101"), { VARDO_DIR: home }, path);
+      expect(r.status).toBe(0);
+      expect(r.out).toContain("port 7101 is held by its own container");
+      expect(r.out).toContain("PG=unset");
+    });
+
+    it("does not reassign a port set in .env when something else holds it", () => {
+      const home = join(dir, "vardo-svc2");
+      mkdirSync(home, { recursive: true });
+      writeFileSync(join(home, ".env"), "REDIS_PORT=7201\n");
+      const r = sh(svc("7201"), { VARDO_DIR: home }, fakeDocker("foreign", { 7201: "nginx" }));
+      expect(r.out).toContain("not reassigning");
+      expect(r.out).toContain("REDIS=unset");
+    });
+
+    it("still reassigns a fresh install's port held by a stranger", () => {
+      const r = sh(svc("7100"), { VARDO_DIR: join(dir, "no-such-dir") }, fakeDocker("stranger", { 7100: "nginx" }));
+      expect(r.out).toContain("PostgreSQL: port 7100 in use");
+      expect(r.out).toContain("PG=7101");
+    });
   });
 });

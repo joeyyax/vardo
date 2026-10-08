@@ -602,6 +602,12 @@ vardo_traefik_holds_port() {
   docker ps --filter "name=^vardo-traefik$" --filter "publish=$1" --format '{{.Names}}' 2>/dev/null | grep -qx "vardo-traefik"
 }
 
+# True when a running container whose name matches the pattern ($2) publishes the port ($1).
+vardo_container_holds_port() {
+  command -v docker &>/dev/null || return 1
+  docker ps --filter "publish=$1" --format '{{.Names}}' 2>/dev/null | grep -Eq "$2"
+}
+
 check_critical_ports() {
   local ports_to_check=("80" "443" "3000")
   local conflicts=0
@@ -656,15 +662,30 @@ check_ports() {
   local env_vars=("POSTGRES_PORT" "REDIS_PORT" "CADVISOR_PORT" "LOKI_PORT")
   local defaults=(7100 7200 7300 7400)
   local labels=("PostgreSQL" "Redis" "cAdvisor" "Loki")
+  # Names of the containers that publish each service port, managed or not.
+  local patterns=('^vardo-postgres$' '^vardo-redis$' '(^|[-_])cadvisor([-_]|$)' '(^|[-_])loki([-_]|$)')
   local assigned=()
 
   for i in "${!env_vars[@]}"; do
     local env_var="${env_vars[$i]}"
     local default="${defaults[$i]}"
     local label="${labels[$i]}"
-    local current="${!env_var:-$default}"
+    local from_env
+    from_env=$(env_get "$env_var")
+    local current="${!env_var:-${from_env:-$default}}"
 
     if check_port_in_use "$current"; then
+      if vardo_container_holds_port "$current" "${patterns[$i]}"; then
+        log "$label: port $current is held by its own container from an earlier install"
+        assigned+=("$current")
+        continue
+      fi
+      if [ -n "$from_env" ]; then
+        warn "$label: port $current is in use, but $env_var is set in .env — not reassigning"
+        assigned+=("$current")
+        ports_ok=false
+        continue
+      fi
       local alt
       alt=$(find_free_port "$((current + 1))" "${assigned[*]}")
       if [ -n "$alt" ]; then

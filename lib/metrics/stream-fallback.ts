@@ -21,3 +21,11 @@ export function mergePolledPoints(
   const inRange = [...prev, ...fresh].filter((p) => p.timestamp >= cutoff);
   return inRange.length > max ? inRange.slice(-max) : inRange;
 }
+
+/** Chart points after a history response: the body's on success, what is held on a refusal such as a 429. */
+export function pointsAfterHistory(
+  prev: MetricsPoint[],
+  res: { ok: boolean; body: { points?: MetricsPoint[] } | null },
+): MetricsPoint[] {
+  return res.ok ? (res.body?.points ?? []) : prev;
+}
