@@ -37,6 +37,7 @@ import {
 import { execFileAsync } from "@/lib/utils/exec";
 import { dockerEnv } from "@/lib/docker/docker-env";
 import { assertComposeWithinApp } from "../compose-policy";
+import { volumePrefix } from "../volume-prefix";
 import { appRootDir } from "../compose-root";
 
 const NETWORK_NAME = VARDO_NETWORK;
@@ -111,7 +112,7 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
   }
 
   // Step 5a: Externalize named volumes
-  const stableVolumePrefix = `${app.name}-${ctx.envName}`;
+  const stableVolumePrefix = volumePrefix(app.name, ctx.envName);
   ctx.stableVolumePrefix = stableVolumePrefix;
   if (compose.volumes && Object.keys(compose.volumes).length > 0) {
     const externalized: string[] = [];

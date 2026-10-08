@@ -20,6 +20,7 @@ import { getSslConfig, getPrimaryIssuer } from "@/lib/system-settings";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { enrollQuietly } from "@/lib/backups/enroll";
+import { findPrefixOwner, prefixCollisionMessage } from "@/lib/docker/volume-prefix";
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
@@ -146,6 +147,11 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
         { error: "Project not found in this organization" },
         { status: 400 }
       );
+    }
+
+    {
+      const owner = await findPrefixOwner(data.name, "production");
+      if (owner) return NextResponse.json({ error: prefixCollisionMessage(owner) }, { status: 409 });
     }
 
     const [app] = await db

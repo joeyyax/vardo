@@ -10,6 +10,7 @@ import { verifyAppAccess } from "@/lib/api/verify-access";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { requirePlugin } from "@/lib/api/require-plugin";
+import { findPrefixOwner, findPrefixOwnerForApp, prefixCollisionMessage } from "@/lib/docker/volume-prefix";
 import { snapshotIntoEnvironment } from "@/lib/docker/environment-env";
 
 type RouteParams = {
@@ -52,6 +53,11 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     if (parsed.data.type === "preview") {
       const previewGate = await requirePlugin("previews");
       if (previewGate) return previewGate;
+    }
+
+    {
+      const owner = await findPrefixOwnerForApp(appId, parsed.data.name);
+      if (owner) return NextResponse.json({ error: prefixCollisionMessage(owner) }, { status: 409 });
     }
 
     const sourceEnv = await db.query.environments.findFirst({

@@ -10,6 +10,7 @@ import { recordActivity } from "@/lib/activity";
 import { slidingWindowRateLimit } from "@/lib/api/rate-limit";
 import type { McpAuthContext } from "../auth";
 import { resolveProjectOrg } from "../scope";
+import { findPrefixOwner, prefixCollisionMessage } from "@/lib/docker/volume-prefix";
 import { gitBranchSchema, gitUrlSchema } from "@/lib/api/git-fields";
 
 // 5 app creations per 10 minutes per user/org pair.
@@ -130,6 +131,13 @@ export function registerCreateApp(
               }),
             },
           ],
+          isError: true,
+        };
+      }
+      const prefixOwner = await findPrefixOwner(name, "production");
+      if (prefixOwner) {
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: prefixCollisionMessage(prefixOwner) }) }],
           isError: true,
         };
       }

@@ -6,6 +6,7 @@ import { eq, and } from "drizzle-orm";
 import { z } from "zod";
 import { HOSTNAME_RE } from "@/lib/security/hostname";
 import { verifyAppAccess } from "@/lib/api/verify-access";
+import { findPrefixOwnerForApp, prefixCollisionMessage } from "@/lib/docker/volume-prefix";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
@@ -38,6 +39,11 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
 
     if (!parsed.success) {
       return apiError.validation(parsed.error);
+    }
+
+    if (parsed.data.name !== undefined) {
+      const owner = await findPrefixOwnerForApp(appId, parsed.data.name, envId);
+      if (owner) return NextResponse.json({ error: prefixCollisionMessage(owner) }, { status: 409 });
     }
 
     const updates: Record<string, unknown> = {

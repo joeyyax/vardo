@@ -14,6 +14,7 @@ import { verifyAppAccess } from "@/lib/api/verify-access";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { requirePlugin } from "@/lib/api/require-plugin";
 import { gitBranchUpdateSchema } from "@/lib/api/git-fields";
+import { findPrefixOwner, findPrefixOwnerForApp, prefixCollisionMessage } from "@/lib/docker/volume-prefix";
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
@@ -166,6 +167,11 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     }
 
     // The first environment is the default.
+    {
+      const owner = await findPrefixOwnerForApp(appId, parsed.data.name);
+      if (owner) return NextResponse.json({ error: prefixCollisionMessage(owner) }, { status: 409 });
+    }
+
     const existingCount = await db
       .select({ count: sql<number>`count(*)::int` })
       .from(environments)
