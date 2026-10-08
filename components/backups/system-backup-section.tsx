@@ -12,7 +12,7 @@ import { formatBytes, formatDuration } from "@/lib/metrics/format";
 import { MIN_VALID_GZIP_BYTES } from "@/lib/backups/archive";
 import { KeyEscrowCard } from "./key-escrow-card";
 import { StatusBadge } from "./status-badge";
-import { NextRun } from "./next-run";
+import { getNextRun } from "./next-run";
 import { RetentionSummary } from "./retention-summary";
 import { scheduleLabel } from "./constants";
 import { failureReason } from "./history-state";
@@ -41,6 +41,15 @@ function sizeLabel(bytes: number | null) {
   return bytes < MIN_VALID_GZIP_BYTES ? "Empty" : formatBytes(bytes);
 }
 
+/** "35 1 * * *" reads "Daily at 1:35 AM"; anything else shows as scheduled. */
+function scheduleText(cron: string) {
+  const daily = cron.match(/^(\d+) (\d+) \* \* \*$/);
+  if (!daily) return scheduleLabel(cron);
+  const hour = Number(daily[2]);
+  const minute = daily[1].padStart(2, "0");
+  return `Daily at ${hour % 12 || 12}:${minute} ${hour < 12 ? "AM" : "PM"}`;
+}
+
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex items-baseline gap-4 text-sm">
@@ -55,6 +64,7 @@ export function SystemBackupSection() {
   const [data, setData] = useState<SystemBackup | null>(null);
   const [failed, setFailed] = useState(false);
   const [running, setRunning] = useState(false);
+  const [formKey, setFormKey] = useState(0);
 
   const load = useCallback(async () => {
     try {
@@ -119,7 +129,7 @@ export function SystemBackupSection() {
             <CardTitle as="h3">Backup storage</CardTitle>
           </CardHeader>
           <CardContent>
-            <SystemStorageForm storage={storage} onSaved={load} />
+            <SystemStorageForm key={formKey} storage={storage} onSaved={async () => { await load(); setFormKey((k) => k + 1); }} />
           </CardContent>
         </Card>
 
@@ -162,9 +172,13 @@ export function SystemBackupSection() {
                   )}
                 </div>
                 <dl className="space-y-2">
-                  <Row label="Schedule">{scheduleLabel(job.schedule)}</Row>
+                  <Row label="Schedule">{scheduleText(job.schedule)}</Row>
                   <Row label="Next run">
-                    {job.enabled ? <NextRun schedule={job.schedule} /> : <span className="text-muted-foreground">Paused</span>}
+                    {job.enabled && getNextRun(job.schedule) ? (
+                      <RelativeTime date={getNextRun(job.schedule)!} />
+                    ) : (
+                      <span className="text-muted-foreground">{job.enabled ? "Manual" : "Paused"}</span>
+                    )}
                   </Row>
                   <Row label="Last run">
                     {last ? (
@@ -208,7 +222,7 @@ export function SystemBackupSection() {
                 <thead>
                   <tr className="bg-background-deep">
                     <th className="px-4 py-2 text-left type-label text-muted-foreground">Status</th>
-                    <th className="px-4 py-2 text-left type-label text-muted-foreground">Runtime</th>
+                    <th className="hidden px-4 py-2 text-left type-label text-muted-foreground sm:table-cell">Runtime</th>
                     <th className="px-4 py-2 text-left type-label text-muted-foreground">Size</th>
                     <th className="px-4 py-2 text-left type-label text-muted-foreground">Created</th>
                     <th className="px-4 py-2 text-right type-label text-muted-foreground">
@@ -225,7 +239,7 @@ export function SystemBackupSection() {
                           <StatusBadge status={run.status} />
                           {reason && <p className="mt-1 max-w-xs truncate text-xs text-destructive" title={reason}>{reason}</p>}
                         </td>
-                        <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
+                        <td className="hidden px-4 py-3 font-mono text-xs text-muted-foreground sm:table-cell">
                           {run.finishedAt ? formatDuration(new Date(run.finishedAt).getTime() - new Date(run.startedAt).getTime()) : "—"}
                         </td>
                         <td className="px-4 py-3 text-xs text-muted-foreground">{sizeLabel(run.sizeBytes)}</td>

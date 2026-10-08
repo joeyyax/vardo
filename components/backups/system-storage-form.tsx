@@ -13,6 +13,8 @@ import { MASK_SENTINEL, isMasked } from "@/lib/mask-secrets";
 import { ProviderGuide, GuideLink, FieldHint } from "@/components/setup/provider-guide";
 import { BACKUP_PROVIDER_GUIDES } from "@/lib/setup/provider-guides";
 
+const TYPE_LABEL: Record<string, string> = { ssh: "SSH", local: "local filesystem" };
+
 export type SystemStorage = {
   configured: boolean;
   editable: boolean;
@@ -87,8 +89,8 @@ export function SystemStorageForm({ storage, onSaved }: { storage: SystemStorage
   if (!storage.editable) {
     return (
       <Callout variant="info">
-        Vardo&apos;s database backs up to {storage.target?.name} ({storage.type?.toUpperCase()}
-        {storage.location ? ` at ${storage.location}` : ""}). Delete that target to switch to S3-compatible storage.
+        Vardo&apos;s database backs up to the {storage.target?.name} target ({TYPE_LABEL[storage.type ?? ""] ?? storage.type}
+        {storage.location ? `, ${storage.location}` : ""}). Delete that target to switch to S3-compatible storage.
       </Callout>
     );
   }
