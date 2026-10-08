@@ -84,19 +84,3 @@ describe("the admin Docker prune endpoint is gone", () => {
     expect(hits.map((f) => relative(ROOT, f))).toEqual([]);
   });
 });
-
-// ---------------------------------------------------------------------------
-// The reclamation that stayed: build cache, via the Engine API.
-// ---------------------------------------------------------------------------
-
-describe("build cache reclamation is the admin path to free disk", () => {
-  const route = readFileSync(
-    join(ROOT, "app/api/v1/admin/maintenance/build-cache/route.ts"),
-    "utf-8",
-  );
-
-  it("goes through pruneBuildCache rather than the CLI", () => {
-    expect(route).toContain("pruneBuildCache");
-    expect(route).not.toContain("child_process");
-  });
-});

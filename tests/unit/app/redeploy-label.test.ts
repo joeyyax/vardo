@@ -1,6 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { StatusIndicator } from "@/components/app-status";
+import { rowNote } from "@/lib/ui/app-row";
 
 // `compose restart` reuses the containers, so env, Traefik labels and compose
 // changes only land on a deploy. The rename off "restart" has been missed twice.
@@ -21,9 +25,7 @@ const FILES = ROOTS.flatMap((root) => sources(join(process.cwd(), root)));
 
 /** Every surface that turns `needsRedeploy` into a label. */
 const LABEL_SOURCES = [
-  "components/app-status.tsx",
   "components/app-row-card.tsx",
-  "lib/ui/app-row.ts",
   "app/(authenticated)/projects/[...slug]/project-detail.tsx",
   "app/(authenticated)/apps/[...slug]/app-detail.tsx",
   "app/(authenticated)/apps/[...slug]/compose-detail.tsx",
@@ -41,10 +43,27 @@ describe("pending config reads as a deploy, never a restart", () => {
     expect(src).toMatch(/[Dd]eploy needed/);
   });
 
-  it("keeps the standalone indicator off the word restart", () => {
-    const src = readFileSync(join(process.cwd(), "components/app-status.tsx"), "utf8");
-    const branch = src.slice(src.indexOf("isRunning && needsRedeploy"), src.indexOf("if (isRunning) {"));
-    expect(branch).toMatch(/Deploy needed/);
-    expect(branch).not.toMatch(/Restart/);
+  it("renders the standalone indicator as a deploy, not a restart", () => {
+    const html = renderToStaticMarkup(
+      createElement(StatusIndicator, { status: "active", needsRedeploy: true }),
+    );
+    expect(html).toContain("Deploy needed");
+    expect(html).not.toMatch(/restart/i);
+  });
+
+  it("renders a running app with nothing pending as running", () => {
+    const html = renderToStaticMarkup(createElement(StatusIndicator, { status: "active" }));
+    expect(html).toContain("Running");
+    expect(html).not.toContain("Deploy needed");
+  });
+
+  it("labels the row note a deploy", () => {
+    const note = rowNote([], true);
+    expect(note?.label).toBe("deploy needed");
+    expect(`${note?.label} ${note?.detail}`).not.toMatch(/restart/i);
+  });
+
+  it("shows no note when nothing is pending", () => {
+    expect(rowNote([], false)).toBeNull();
   });
 });

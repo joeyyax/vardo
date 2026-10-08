@@ -77,10 +77,20 @@ describe("core service templates — shared network", () => {
 });
 
 describe("datastore ports", () => {
+  const services = (
+    YAML.parse(readFileSync(join(process.cwd(), "docker-compose.yml"), "utf8")) as {
+      services: Record<string, { ports?: string[] }>;
+    }
+  ).services;
+
   it("publishes Postgres and Redis on loopback only", () => {
-    const text = readFileSync(join(process.cwd(), "docker-compose.yml"), "utf8");
-    expect(text).toContain('"127.0.0.1:${POSTGRES_PORT:-7100}:5432"');
-    expect(text).toContain('"127.0.0.1:${REDIS_PORT:-7200}:6379"');
-    expect(text).not.toMatch(/^\s+- "\$\{(POSTGRES|REDIS)_PORT/m);
+    expect(services.postgres.ports).toEqual(["127.0.0.1:${POSTGRES_PORT:-7100}:5432"]);
+    expect(services.redis.ports).toEqual(["127.0.0.1:${REDIS_PORT:-7200}:6379"]);
+  });
+
+  it("publishes no datastore port on every interface", () => {
+    for (const name of ["postgres", "redis"]) {
+      for (const port of services[name].ports ?? []) expect(port).toMatch(/^127\.0\.0\.1:/);
+    }
   });
 });

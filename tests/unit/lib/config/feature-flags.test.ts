@@ -94,7 +94,7 @@ describe("feature flag declarations", () => {
 // ---------------------------------------------------------------------------
 // Turning teams off must not lock an existing member out. Sign-in, session and
 // membership resolution stay clear of the flag; only the management surfaces
-// gate on it.
+// gate on it (tests/unit/app/api/organizations/teams-flag-gate.test.ts).
 
 const ACCESS_PATHS = [
   "lib/auth/session.ts",
@@ -102,14 +102,6 @@ const ACCESS_PATHS = [
   "lib/auth/permissions.ts",
   "lib/api/verify-access.ts",
   "app/api/v1/organizations/switch/route.ts",
-];
-
-const TEAMS_MANAGEMENT_PATHS = [
-  "app/api/v1/organizations/[orgId]/invitations/route.ts",
-  "app/api/v1/organizations/[orgId]/invitations/[invitationId]/route.ts",
-  "app/api/v1/organizations/[orgId]/members/route.ts",
-  "app/api/v1/organizations/[orgId]/members/[userId]/route.ts",
-  "app/api/v1/invitations/accept/route.ts",
 ];
 
 describe("teams flag", () => {
@@ -127,11 +119,6 @@ describe("teams flag", () => {
       `${rel} reads the teams flag. Disabling teams must not affect sign-in or ` +
         `membership resolution for existing members.`,
     ).not.toMatch(/["']teams["']/);
-  });
-
-  it.each(TEAMS_MANAGEMENT_PATHS)("gates %s", (rel) => {
-    const source = readFileSync(join(ROOT, rel), "utf8");
-    expect(source).toMatch(/requirePlugin\(\s*["']teams["']/);
   });
 });
 
