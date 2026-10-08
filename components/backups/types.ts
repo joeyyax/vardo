@@ -64,6 +64,10 @@ export type RecentBackup = {
   finishedAt: string | null;
   storagePath: string | null;
   log: string | null;
+  /** Restore drill result; all null until a drill has run. */
+  verifiedAt: string | null;
+  verifyOutcome: string | null;
+  verifyDetail: string | null;
   /** Null once the job is deleted; jobName keeps the label. */
   job: { id: string; name: string } | null;
   jobName: string | null;

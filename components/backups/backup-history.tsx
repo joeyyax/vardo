@@ -11,6 +11,8 @@ import { MIN_VALID_GZIP_BYTES } from "@/lib/backups/archive";
 import { toast } from "@/lib/messenger";
 import { RelativeTime } from "@/components/relative-time";
 import { StatusBadge } from "./status-badge";
+import { RestoreTestBadge } from "./restore-test-badge";
+import { restoreTestFor } from "./history-state";
 import { deleteDescription, orphanScope, plural } from "./delete-copy";
 import { useCan } from "@/components/capabilities-provider";
 import type { RecentBackup } from "./types";
@@ -139,6 +141,7 @@ export function BackupHistory({
             <th className="px-4 py-2 text-left type-label text-muted-foreground">Job</th>
             <th className="px-4 py-2 text-left type-label text-muted-foreground">Runtime</th>
             <th className="px-4 py-2 text-left type-label text-muted-foreground">Size</th>
+            <th className="px-4 py-2 text-left type-label text-muted-foreground">Restore test</th>
             <th className="px-4 py-2 text-left type-label text-muted-foreground">Created</th>
             <th className="px-4 py-2 text-right type-label text-muted-foreground">
               <span className="sr-only">Actions</span>
@@ -169,6 +172,9 @@ export function BackupHistory({
               </td>
               <td className="px-4 py-3 text-muted-foreground text-xs">
                 {formatArchiveSize(backup.sizeBytes)}
+              </td>
+              <td className="px-4 py-3 text-xs">
+                <RestoreTestBadge test={restoreTestFor(backup)} />
               </td>
               <td className="px-4 py-3 text-muted-foreground text-xs">
                 <RelativeTime date={backup.startedAt} />
