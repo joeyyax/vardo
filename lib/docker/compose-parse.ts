@@ -123,6 +123,44 @@ function foldPidsLimit(svc: ComposeService, raw: Record<string, unknown>): void 
   };
 }
 
+
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  typeof v === "object" && v !== null && !Array.isArray(v);
+
+/** `ports:` entry in short form; the long form (target/published/host_ip/protocol) becomes `[ip:]published:target[/proto]`. */
+function portToShort(entry: unknown): string {
+  if (!isRecord(entry)) return String(entry);
+  if (entry.target === undefined) throw new Error('Invalid compose file: a long-syntax port needs "target"');
+  const proto = entry.protocol && entry.protocol !== "tcp" ? `/${entry.protocol}` : "";
+  const published = entry.published !== undefined && entry.published !== "" ? String(entry.published) : "";
+  const prefix = published ? `${entry.host_ip ? `${entry.host_ip}:` : ""}${published}:` : "";
+  return `${prefix}${entry.target}${proto}`;
+}
+
+/** `volumes:` entry in short form. Tmpfs mounts go to `tmpfs`; options the short form can't carry throw. */
+function volumeToShort(entry: unknown, tmpfs: string[]): string | null {
+  if (!isRecord(entry)) return String(entry);
+  const { type, source, target } = entry;
+  if (typeof target !== "string" || !target) throw new Error('Invalid compose file: a long-syntax volume needs "target"');
+  if (type === "tmpfs") {
+    tmpfs.push(target);
+    return null;
+  }
+  if (type !== undefined && type !== "bind" && type !== "volume") {
+    throw new Error(`Unsupported volume type "${String(type)}" for ${target}; use bind or volume`);
+  }
+  const bind = isRecord(entry.bind) ? entry.bind : {};
+  const volume = isRecord(entry.volume) ? entry.volume : {};
+  if (volume.subpath !== undefined) throw new Error(`Unsupported volume option subpath for ${target}`);
+  const opts: string[] = [];
+  if (entry.read_only === true) opts.push("ro");
+  if (volume.nocopy === true) opts.push("nocopy");
+  if (typeof bind.selinux === "string") opts.push(bind.selinux);
+  if (typeof bind.propagation === "string") opts.push(bind.propagation);
+  if (typeof source !== "string" || !source) return target;
+  return `${source}:${target}${opts.length ? `:${opts.join(",")}` : ""}`;
+}
+
 /** Parse a YAML string into a ComposeFile. */
 export function parseCompose(yamlString: string): ComposeFile {
   const parsed = parseComposeYaml(yamlString);
@@ -145,7 +183,7 @@ export function parseCompose(yamlString: string): ComposeFile {
     if (raw.image && typeof raw.image === "string") svc.image = raw.image;
     if (raw.build !== undefined) svc.build = raw.build as ComposeService["build"];
     if (typeof raw.restart === "string") svc.restart = raw.restart;
-    if (Array.isArray(raw.ports)) svc.ports = raw.ports.map(String);
+    if (Array.isArray(raw.ports)) svc.ports = raw.ports.map(portToShort);
     if (Array.isArray(raw.expose)) svc.expose = raw.expose.map(String);
     if (raw.environment && typeof raw.environment === "object") {
       if (Array.isArray(raw.environment)) {
@@ -164,7 +202,12 @@ export function parseCompose(yamlString: string): ComposeFile {
       if (Array.isArray(raw.env_file)) svc.env_file = raw.env_file.map(String);
       else if (typeof raw.env_file === "string") svc.env_file = [raw.env_file];
     }
-    if (Array.isArray(raw.volumes)) svc.volumes = raw.volumes.map(String);
+    const longTmpfs: string[] = [];
+    if (Array.isArray(raw.volumes)) {
+      svc.volumes = raw.volumes
+        .map((v) => volumeToShort(v, longTmpfs))
+        .filter((v): v is string => v !== null);
+    }
     if (raw.labels) {
       if (Array.isArray(raw.labels)) {
         const labelMap: Record<string, string> = {};
@@ -247,6 +290,7 @@ export function parseCompose(yamlString: string): ComposeFile {
     }
     if (Array.isArray(raw.tmpfs)) svc.tmpfs = raw.tmpfs.map(String);
     else if (typeof raw.tmpfs === "string") svc.tmpfs = [raw.tmpfs];
+    if (longTmpfs.length) svc.tmpfs = [...(svc.tmpfs ?? []), ...longTmpfs];
     if (Array.isArray(raw.group_add)) svc.group_add = raw.group_add.map(String);
     foldMemLimit(svc, raw);
     foldCpus(svc, raw);
