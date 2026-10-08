@@ -10,6 +10,7 @@ import { execFileAsync } from "@/lib/utils/exec";
 import { logger } from "@/lib/logger";
 import { nextRunnable } from "./plan";
 import { archivesForApps, currentRestore, finishIfSettled, requeueInterrupted, restoreItems } from "./queue";
+import { dockerEnv } from "@/lib/docker/docker-env";
 
 const log = logger.child("instance-restore");
 
@@ -151,7 +152,7 @@ async function checkHost(
 
 async function hostHasNvidia(): Promise<boolean> {
   try {
-    const { stdout } = await execFileAsync("docker", ["info", "--format", "{{json .Runtimes}}"], { timeout: 10_000 });
+    const { stdout } = await execFileAsync("docker", ["info", "--format", "{{json .Runtimes}}"], { env: dockerEnv(), timeout: 10_000 });
     return String(stdout).includes("nvidia");
   } catch {
     return false;
@@ -164,7 +165,7 @@ async function hostPathExists(path: string): Promise<boolean> {
     await execFileAsync(
       "docker",
       ["run", "--rm", "--mount", `type=bind,source=${path},target=/probe,readonly`, "alpine", "true"],
-      { timeout: 60_000 },
+      { env: dockerEnv(), timeout: 60_000 },
     );
     return true;
   } catch {

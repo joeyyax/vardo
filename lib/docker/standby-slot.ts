@@ -9,6 +9,7 @@ import { slotComposeFiles } from "./compose-inject";
 import { demoteStandbyRestart } from "./restart-policy";
 import { logger } from "@/lib/logger";
 import type { Slot } from "./slots";
+import { dockerEnv } from "@/lib/docker/docker-env";
 
 const log = logger.child("standby-slot");
 
@@ -70,7 +71,7 @@ export async function runningProjects(): Promise<Set<string> | null> {
     const { stdout } = await execFileAsync(
       "docker",
       ["ps", "--format", "{{.Label \"com.docker.compose.project\"}}"],
-      { timeout: COMPOSE_QUERY_TIMEOUT },
+      { env: dockerEnv(), timeout: COMPOSE_QUERY_TIMEOUT },
     );
     const names = stdout.trim().split("\n").map((n) => n.trim()).filter(Boolean);
     // Empty means a failed probe: Vardo itself runs in a container.
@@ -106,6 +107,6 @@ export async function stopStandbySlot(
   await execFileAsync(
     "docker",
     ["compose", ...composeFileArgs, "-p", projectName, "stop"],
-    { cwd: slotDir, timeout: COMPOSE_DOWN_TIMEOUT },
+    { env: dockerEnv(), cwd: slotDir, timeout: COMPOSE_DOWN_TIMEOUT },
   );
 }

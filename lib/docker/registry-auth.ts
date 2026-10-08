@@ -5,6 +5,7 @@ import { mkdtemp, readFile, rm, writeFile } from "fs/promises";
 import { homedir, tmpdir } from "os";
 import { join } from "path";
 
+import { dockerEnv } from "./docker-env";
 import { parseImageRef } from "./image-updates/image-ref";
 import { getRegistryCredentials, type RegistryCredential } from "./image-updates/registry";
 
@@ -57,13 +58,13 @@ export async function withRegistryAuth<T>(
   run: (env: NodeJS.ProcessEnv) => Promise<T>,
 ): Promise<T> {
   const credentials = await getRegistryCredentials();
-  if (Object.keys(credentials).length === 0) return run(process.env);
+  if (Object.keys(credentials).length === 0) return run(dockerEnv());
 
   const dir = await mkdtemp(join(tmpdir(), "vardo-docker-config-"));
   try {
     const config = buildDockerConfig(credentials, await mountedAuths());
     await writeFile(join(dir, "config.json"), config, { mode: 0o600 });
-    return await run({ ...process.env, DOCKER_CONFIG: dir });
+    return await run(dockerEnv({ DOCKER_CONFIG: dir }));
   } finally {
     await rm(dir, { recursive: true, force: true }).catch(() => {});
   }

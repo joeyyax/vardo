@@ -1,5 +1,6 @@
 import { exec } from "child_process";
 import { promisify } from "util";
+import { dockerEnv } from "@/lib/docker/docker-env";
 
 const execAsync = promisify(exec);
 
@@ -12,7 +13,7 @@ async function getUsedPorts(): Promise<Set<number>> {
   try {
     const { stdout } = await execAsync(
       "docker ps --format '{{.Ports}}' | grep -oE '0\\.0\\.0\\.0:[0-9]+' | cut -d: -f2",
-      { timeout: 5000 }
+      { env: dockerEnv(), timeout: 5000 }
     );
     for (const line of stdout.trim().split("\n")) {
       const port = parseInt(line);

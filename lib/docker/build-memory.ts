@@ -5,6 +5,7 @@ import { join } from "path";
 import { buildKitContainerName, DEFAULT_BUILDKIT_HOST, isBuildKitReachable } from "./buildkit";
 import { COMPOSE_QUERY_TIMEOUT } from "./constants";
 import { execFileAsync } from "@/lib/utils/exec";
+import { dockerEnv } from "@/lib/docker/docker-env";
 
 /** The buildx builder that points at the BuildKit container. */
 export const BOUNDED_BUILDER = "vardo-bounded";
@@ -30,7 +31,7 @@ async function memoryLimit(container: string): Promise<number> {
     const { stdout } = await execFileAsync(
       "docker",
       ["inspect", "-f", "{{.HostConfig.Memory}}", container],
-      { timeout: COMPOSE_QUERY_TIMEOUT },
+      { env: dockerEnv(), timeout: COMPOSE_QUERY_TIMEOUT },
     );
     return Number(stdout.trim()) || 0;
   } catch {
@@ -87,7 +88,7 @@ export async function boundedBuild(log: (line: string) => void, signal?: AbortSi
   }
 
   const env = { BUILDX_CONFIG: buildxConfigDir() };
-  if (!(await ensureBuilder(host, { ...process.env, ...env }))) {
+  if (!(await ensureBuilder(host, dockerEnv(env)))) {
     log(`[build] Warning: could not register a builder for ${container} — building on the Docker daemon with no memory limit`);
     return UNBOUNDED;
   }

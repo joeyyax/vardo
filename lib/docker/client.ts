@@ -1,10 +1,12 @@
 import http from "node:http";
 import { execFileSync } from "node:child_process";
+import { dockerEnv } from "@/lib/docker/docker-env";
 
 // Docker daemon API version, detected at startup. Falls back to 1.47.
 export let DOCKER_API_VERSION = "1.47";
 try {
   const out = execFileSync("docker", ["version", "--format", "{{.Server.APIVersion}}"], {
+    env: dockerEnv(),
     encoding: "utf-8",
     timeout: 5000,
   });

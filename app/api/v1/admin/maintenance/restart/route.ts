@@ -6,6 +6,7 @@ import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { restartSchema } from "@/lib/api/admin/maintenance-schemas";
 import { logger } from "@/lib/logger";
 import { resolveVardoComposeFile } from "@/lib/paths";
+import { dockerEnv } from "@/lib/docker/docker-env";
 
 const log = logger.child("admin:maintenance:restart");
 
@@ -33,6 +34,7 @@ async function handlePost(request: NextRequest) {
 
     setTimeout(() => {
       spawn("docker", args, {
+        env: dockerEnv(),
         detached: true,
         stdio: "ignore",
       }).unref();

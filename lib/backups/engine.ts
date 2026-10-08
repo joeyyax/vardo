@@ -58,6 +58,7 @@ import { resolveDefaultEnv } from "@/lib/docker/resolve-env";
 import { logger } from "@/lib/logger";
 import type { BusEvent } from "@/lib/bus/events";
 import { execFileAsync } from "@/lib/utils/exec";
+import { dockerEnv } from "@/lib/docker/docker-env";
 
 const log = logger.child("backup");
 
@@ -257,7 +258,7 @@ async function runTarBackup(
       "alpine", "sh", "-c", buildTarBackupScript(),
       "vardo-backup", ...findArgv,
     ],
-    { timeout: timeoutMs },
+    { env: dockerEnv(), timeout: timeoutMs },
   );
 
   const out = String(stdout);
@@ -366,7 +367,7 @@ async function streamDockerDump(
   logFn: (msg: string) => void,
 ): Promise<void> {
   logFn(`Running: docker ${argv.slice(0, 3).join(" ")} …`);
-  const child = spawn("docker", argv, { stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawn("docker", argv, { env: dockerEnv(), stdio: ["ignore", "pipe", "pipe"] });
 
   let stderr = "";
   child.stderr.on("data", (chunk) => {
@@ -396,7 +397,7 @@ async function streamDockerRestore(
   logFn: (msg: string) => void,
 ): Promise<void> {
   logFn(`Restoring via: docker ${argv.slice(0, 3).join(" ")} …`);
-  const child = spawn("docker", argv, { stdio: ["pipe", "pipe", "pipe"] });
+  const child = spawn("docker", argv, { env: dockerEnv(), stdio: ["pipe", "pipe", "pipe"] });
 
   let stderr = "";
   child.stderr.on("data", (chunk) => {
@@ -432,7 +433,7 @@ async function preflightBindSource(
   const { stdout } = await execFileAsync(
     "docker",
     ["run", "--rm", "-v", `${safeSource}:/data:ro`, "alpine", "sh", "-c", buildBindPreflightScript()],
-    { timeout: 60_000 },
+    { env: dockerEnv(), timeout: 60_000 },
   );
   const out = String(stdout);
   const empty = out.includes(EMPTY_SOURCE_MARKER);
@@ -515,7 +516,7 @@ async function backupBindTar(
           "-v", `${tmpDir}:/backup`,
           "alpine", "sh", "-c", buildFileBackupScript(),
         ],
-        { timeout: 1_800_000 },
+        { env: dockerEnv(), timeout: 1_800_000 },
       );
     } else {
       ({ excludedPaths } = await runTarBackup(
@@ -607,7 +608,7 @@ export async function resolveDockerVolume(
 
   for (const candidate of candidates) {
     try {
-      await execFileAsync("docker", ["volume", "inspect", candidate], { timeout: 10_000 });
+      await execFileAsync("docker", ["volume", "inspect", candidate], { env: dockerEnv(), timeout: 10_000 });
       logFn(`Resolved ${volumeName} → ${candidate}`);
       return candidate;
     } catch {
@@ -1308,14 +1309,14 @@ async function restoreFilesWithSnapshot(opts: {
     await execFileAsync(
       "docker",
       ["run", "--rm", "-v", mount, "-v", `${snapshotDir}:/backup`, "alpine", "sh", "-c", opts.snapshotScript],
-      { timeout: timeoutMs },
+      { env: dockerEnv(), timeout: timeoutMs },
     );
 
     try {
       await execFileAsync(
         "docker",
         ["run", "--rm", "-v", mount, "-v", `${tmpDir}:/backup`, "alpine", "sh", "-c", opts.restoreScript],
-        { timeout: timeoutMs },
+        { env: dockerEnv(), timeout: timeoutMs },
       );
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -1324,7 +1325,7 @@ async function restoreFilesWithSnapshot(opts: {
         await execFileAsync(
           "docker",
           ["run", "--rm", "-v", mount, "-v", `${snapshotDir}:/backup`, "alpine", "sh", "-c", opts.restoreScript],
-          { timeout: timeoutMs },
+          { env: dockerEnv(), timeout: timeoutMs },
         );
         log("Previous data restored");
       } catch (rollbackErr) {
@@ -1605,7 +1606,7 @@ export async function restoreBackup(
         dockerVolumeName = `${backup.app.name}-${env.name}_${backup.volumeName}`;
         assertSafeName(dockerVolumeName);
         log(`Creating volume ${dockerVolumeName}`);
-        await execFileAsync("docker", ["volume", "create", dockerVolumeName], { timeout: 10_000 });
+        await execFileAsync("docker", ["volume", "create", dockerVolumeName], { env: dockerEnv(), timeout: 10_000 });
       }
 
       log(`Restoring to volume ${dockerVolumeName}`);

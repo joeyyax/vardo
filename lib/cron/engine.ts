@@ -10,6 +10,7 @@ import { logger } from "@/lib/logger";
 import { safeFetch } from "@/lib/security/safe-fetch";
 import { getOutboundPolicy } from "@/lib/security/outbound-policy";
 import { execFileAsync } from "@/lib/utils/exec";
+import { dockerEnv } from "@/lib/docker/docker-env";
 
 const log = logger.child("cron");
 
@@ -58,7 +59,7 @@ async function executeInContainer(
     const { stdout, stderr } = await execFileAsync(
       "docker",
       ["exec", running.id, "sh", "-c", command],
-      { timeout: 300_000 }
+      { env: dockerEnv(), timeout: 300_000 }
     );
 
     const log = [stdout, stderr].filter(Boolean).join("\n").trim();

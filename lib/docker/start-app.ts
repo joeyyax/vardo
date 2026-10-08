@@ -19,6 +19,7 @@ import { resolveDefaultEnv } from "./resolve-env";
 import { readSlotPartition, sharedScopeArgs } from "./shared-project";
 import { sharedProjectName, slotScopeArgs } from "./slot-partition";
 import { reconcileAppNow, type ObservedStatus } from "./status-reconcile";
+import { dockerEnv } from "@/lib/docker/docker-env";
 
 export type StartAction = "restarted" | "started" | "none";
 
@@ -85,7 +86,7 @@ async function upActiveSlot(
           "--pull", "never",
           ...scope,
         ],
-        { cwd: slotDir, timeout: COMPOSE_UP_TIMEOUT },
+        { env: dockerEnv(), cwd: slotDir, timeout: COMPOSE_UP_TIMEOUT },
       );
       if (stdout.trim()) logs.push(stdout.trim());
       if (stderr.trim()) logs.push(stderr.trim());

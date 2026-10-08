@@ -20,6 +20,7 @@ import type { RollbackStage, DeployStatus } from "./deploy-logger";
 import { recordActivity } from "@/lib/activity";
 import { logger } from "@/lib/logger";
 import { execFileAsync } from "@/lib/utils/exec";
+import { dockerEnv } from "@/lib/docker/docker-env";
 
 const log = logger.child("rollback-monitor");
 
@@ -39,7 +40,7 @@ export async function slotContainerIds(
         "--filter",
         `label=com.docker.compose.project=${projectName}`,
       ],
-      { timeout: COMPOSE_QUERY_TIMEOUT },
+      { env: dockerEnv(), timeout: COMPOSE_QUERY_TIMEOUT },
     );
     return stdout.trim().split("\n").filter(Boolean);
   } catch (err) {
@@ -184,7 +185,7 @@ export async function performRollback(opts: PerformRollbackOpts): Promise<boolea
       await execFileAsync(
         "docker",
         ["compose", ...crashedComposeFileArgs, "-p", crashedProjectName, "stop"],
-        { cwd: crashedSlotDir, timeout: COMPOSE_DOWN_TIMEOUT },
+        { env: dockerEnv(), cwd: crashedSlotDir, timeout: COMPOSE_DOWN_TIMEOUT },
       );
       rollbackLog(`[rollback] Stopped the crashed ${currentSlot} slot`);
     } catch (err) {
@@ -204,7 +205,7 @@ export async function performRollback(opts: PerformRollbackOpts): Promise<boolea
           "up", "-d", "--no-recreate", "--pull", "never",
           ...(prevPartition ? slotScopeArgs(prevPartition) : []),
         ],
-        { cwd: prevSlotDir, timeout: COMPOSE_UP_TIMEOUT },
+        { env: dockerEnv(), cwd: prevSlotDir, timeout: COMPOSE_UP_TIMEOUT },
       );
       await restoreSlotRestart(prevComposeFileArgs, prevProjectName, prevSlotDir);
       rollbackLog(`[rollback] Restored the ${previousSlot} slot`);
@@ -220,7 +221,7 @@ export async function performRollback(opts: PerformRollbackOpts): Promise<boolea
           "compose", ...crashedComposeFileArgs, "-p", crashedProjectName,
           "up", "-d", "--no-recreate", "--pull", "never",
         ],
-        { cwd: crashedSlotDir, timeout: COMPOSE_UP_TIMEOUT },
+        { env: dockerEnv(), cwd: crashedSlotDir, timeout: COMPOSE_UP_TIMEOUT },
       ).catch(() => {});
       rollbackLog(`[rollback] Put the ${currentSlot} slot back rather than leave the app dark`);
 

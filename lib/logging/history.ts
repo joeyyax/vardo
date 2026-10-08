@@ -6,6 +6,7 @@ import { readlink } from "fs/promises";
 import { appEnvDir, appBaseDir } from "@/lib/paths";
 import { isLokiAvailable, queryRange, buildLogQLQuery, requireTenant } from "./client";
 import { interleaveByTimestamp, parseComposeLine, type ServiceLine } from "./compose-lines";
+import { dockerEnv } from "@/lib/docker/docker-env";
 
 export type ComposeTarget = {
   slotDir: string;
@@ -66,7 +67,7 @@ export async function readComposeHistory(
   ];
 
   const output = await new Promise<string>((done) => {
-    const proc = spawn("docker", args, { cwd: target.slotDir });
+    const proc = spawn("docker", args, { env: dockerEnv(), cwd: target.slotDir });
     let buffer = "";
     const timer = setTimeout(() => proc.kill(), COMPOSE_TIMEOUT_MS);
 

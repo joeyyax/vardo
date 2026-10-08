@@ -204,9 +204,17 @@ describe("swap — registry auth", () => {
     );
   });
 
-  it("leaves the environment alone when no credentials are configured", async () => {
-    await swap(context());
+  it("passes the scrubbed environment when no credentials are configured", async () => {
+    vi.stubEnv("ENCRYPTION_MASTER_KEY", "console-secret");
+    try {
+      await swap(context());
+    } finally {
+      vi.unstubAllEnvs();
+    }
 
-    expect(optionsFor("pull")?.env).toBe(process.env);
+    const env = optionsFor("pull")?.env as NodeJS.ProcessEnv | undefined;
+    expect(env?.PATH).toBe(process.env.PATH);
+    expect(env?.ENCRYPTION_MASTER_KEY).toBeUndefined();
+    expect(env?.DOCKER_CONFIG).toBe(process.env.DOCKER_CONFIG);
   });
 });

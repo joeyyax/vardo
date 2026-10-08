@@ -11,6 +11,7 @@ import { getInstanceConfig } from "@/lib/system-settings";
 import { logger } from "@/lib/logger";
 import { execFileAsync } from "@/lib/utils/exec";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
+import { dockerEnv } from "@/lib/docker/docker-env";
 
 const log = logger.child("self-preview");
 
@@ -137,7 +138,7 @@ export async function createVardoPreview(
         "-p", projectName,
         "up", "-d", "--build",
       ],
-      { cwd: previewDir, timeout: 600_000 }
+      { env: dockerEnv(), cwd: previewDir, timeout: 600_000 }
     );
     if (stdout.trim()) log.info(`[self-preview] ${stdout.trim()}`);
     if (stderr.trim()) log.info(`[self-preview] ${stderr.trim()}`);
@@ -184,7 +185,7 @@ export async function cleanupStaleSelfPreviews(
         "--filter", `name=${PREVIEW_PROJECT_PREFIX}-`,
         "--format", "{{.Names}}\t{{.CreatedAt}}",
       ],
-      { timeout: 30_000 }
+      { env: dockerEnv(), timeout: 30_000 }
     ));
   } catch (err) {
     log.warn(`[self-preview] docker ps failed during stale cleanup: ${err instanceof Error ? err.message : String(err)}`);
@@ -233,7 +234,7 @@ async function _teardown(projectName: string): Promise<void> {
     await execFileAsync(
       "docker",
       ["compose", "-p", projectName, "down", "--volumes"],
-      { timeout: 60_000 }
+      { env: dockerEnv(), timeout: 60_000 }
     );
   } catch (err) {
     log.warn(

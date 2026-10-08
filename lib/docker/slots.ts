@@ -4,6 +4,7 @@ import { readlink, readFile } from "fs/promises";
 import { join } from "path";
 import { COMPOSE_QUERY_TIMEOUT } from "./constants";
 import { execFileAsync } from "@/lib/utils/exec";
+import { dockerEnv } from "@/lib/docker/docker-env";
 
 export type Slot = "blue" | "green";
 
@@ -21,7 +22,7 @@ const defaultProbes: SlotProbes = {
     const { stdout } = await execFileAsync(
       "docker",
       ["ps", "-q", "--filter", `label=com.docker.compose.project=${projectName}`],
-      { timeout: COMPOSE_QUERY_TIMEOUT },
+      { env: dockerEnv(), timeout: COMPOSE_QUERY_TIMEOUT },
     );
     return stdout.trim().length > 0;
   },

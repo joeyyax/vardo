@@ -1,6 +1,7 @@
 import { assertSafeName, assertSafeMountPath } from "@/lib/docker/validate";
 import { assertSafeSyncPath } from "@/lib/utils/exec";
 import { execFileAsync } from "@/lib/utils/exec";
+import { dockerEnv } from "@/lib/docker/docker-env";
 
 /** Throws unless the image ref is alphanumerics, `.`, `-`, `_`, `/`, `:` or `@`. */
 function assertSafeImageRef(ref: string): void {
@@ -82,7 +83,7 @@ async function getImageManifest(
     const { stdout } = await execFileAsync(
       "docker",
       ["run", "--rm", "--entrypoint", "sh", imageName, "-c", script],
-      { timeout: 60000, maxBuffer: 10 * 1024 * 1024 },
+      { env: dockerEnv(), timeout: 60000, maxBuffer: 10 * 1024 * 1024 },
     );
     return parseManifest(stdout, mountPath);
   } catch {
@@ -102,7 +103,7 @@ async function getVolumeManifest(
     const { stdout } = await execFileAsync(
       "docker",
       ["run", "--rm", "-v", `${volumeDockerName}:/vol`, "alpine", "sh", "-c", script],
-      { timeout: 60000, maxBuffer: 10 * 1024 * 1024 },
+      { env: dockerEnv(), timeout: 60000, maxBuffer: 10 * 1024 * 1024 },
     );
     return parseManifest(stdout, "/vol");
   } catch {
@@ -231,7 +232,7 @@ export async function syncFilesFromImage(
     const { stdout } = await execFileAsync(
       "docker",
       ["run", "--rm", "-v", `${volumeDockerName}:/vol`, imageName, "sh", "-c", script],
-      { timeout: 60000 },
+      { env: dockerEnv(), timeout: 60000 },
     );
 
     const synced: string[] = [];

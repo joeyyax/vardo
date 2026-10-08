@@ -7,6 +7,7 @@ import { execFileAsync } from "@/lib/utils/exec";
 import { DOCKER_CHOWN_TIMEOUT, COMPOSE_QUERY_TIMEOUT } from "../constants";
 import type { ComposeService } from "../compose-types";
 import type { DeployContext } from "../deploy-context";
+import { dockerEnv } from "@/lib/docker/docker-env";
 
 /** Absolute host source of a bind-mount volume entry, resolved against the slot dir, or null. */
 export function bindMountHostSource(vol: string, cwd: string): string | null {
@@ -33,7 +34,7 @@ async function inspectImageUser(image: string): Promise<string | undefined> {
     const { stdout } = await execFileAsync(
       "docker",
       ["image", "inspect", "--format", "{{.Config.User}}", image],
-      { timeout: COMPOSE_QUERY_TIMEOUT },
+      { env: dockerEnv(), timeout: COMPOSE_QUERY_TIMEOUT },
     );
     return stdout.trim() || undefined;
   } catch {
@@ -48,7 +49,7 @@ async function resolveUidInImage(image: string, name: string): Promise<string | 
     const { stdout } = await execFileAsync(
       "docker",
       ["run", "--rm", "--entrypoint", "id", image, "-u", userPart],
-      { timeout: COMPOSE_QUERY_TIMEOUT },
+      { env: dockerEnv(), timeout: COMPOSE_QUERY_TIMEOUT },
     );
     const uid = stdout.trim();
     return /^\d+$/.test(uid) && uid !== "0" ? uid : null;
@@ -98,7 +99,7 @@ async function chownIfEmpty(
         // uid is numeric; hostPath stays out of the shell string.
         `[ -z "$(ls -A /target 2>/dev/null)" ] && chown ${uid} /target || true`,
       ],
-      { timeout: DOCKER_CHOWN_TIMEOUT },
+      { env: dockerEnv(), timeout: DOCKER_CHOWN_TIMEOUT },
     );
     log(`[deploy] Prepared bind-mount target for ${service}: ${hostPath} (uid ${uid})`);
   } catch (err) {

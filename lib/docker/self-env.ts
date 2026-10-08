@@ -4,6 +4,7 @@ import { VARDO_SELF_APP_NAME } from "@/lib/api/system-managed";
 import { VARDO_HOME_DIR } from "@/lib/paths";
 import { APP_UID, DOCKER_CLEANUP_TIMEOUT } from "./constants";
 import { execFileAsync } from "@/lib/utils/exec";
+import { dockerEnv } from "@/lib/docker/docker-env";
 
 /** The instance's settings file, `$VARDO_HOME_DIR/.env`. Mounted at the same path inside the container. */
 export const GLOBAL_ENV_PATH = join(VARDO_HOME_DIR, ".env");
@@ -185,7 +186,7 @@ async function copyAsRoot(source: string, target: string): Promise<void> {
       "alpine", "sh", "-c",
       `cp /from/.env /to/.env && chown ${APP_UID}:${APP_UID} /to/.env && chmod 600 /to/.env`,
     ],
-    { timeout: DOCKER_CLEANUP_TIMEOUT },
+    { env: dockerEnv(), timeout: DOCKER_CLEANUP_TIMEOUT },
   );
 }
 
@@ -195,7 +196,7 @@ async function readAsRoot(path: string): Promise<string> {
   const { stdout } = await execFileAsync(
     "docker",
     ["run", "--rm", "-v", `${dirname(real)}:/from:ro`, "alpine", "cat", `/from/${basename(real)}`],
-    { timeout: DOCKER_CLEANUP_TIMEOUT, encoding: "utf-8" },
+    { env: dockerEnv(), timeout: DOCKER_CLEANUP_TIMEOUT, encoding: "utf-8" },
   );
   return String(stdout);
 }

@@ -41,6 +41,7 @@ import { reportOomDuringDeploy } from "../deploy-oom";
 import { checkVolumeLimits } from "./volume-limits";
 import { execFileAsync } from "@/lib/utils/exec";
 import { boundedBuild, explainBuildOom } from "../build-memory";
+import { dockerEnv } from "@/lib/docker/docker-env";
 
 const NETWORK_NAME = VARDO_NETWORK;
 const DEFAULT_HEALTH_CHECK_TIMEOUT_MS = DEFAULT_HEALTH_CHECK_TIMEOUT;
@@ -175,7 +176,7 @@ export async function waitForHealthy(
       const { stdout } = await execFileAsync(
         "docker",
         ["compose", ...composeFileArgs, "-p", projectName, "ps", "--format", "json"],
-        { cwd, timeout: COMPOSE_QUERY_TIMEOUT }
+        { env: dockerEnv(), cwd, timeout: COMPOSE_QUERY_TIMEOUT }
       );
 
       const lines = stdout.trim().split("\n").filter(Boolean);
@@ -279,7 +280,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
     await execFileAsync(
       "docker",
       ["compose", ...composeFileArgs, "-p", newProjectName, "down", "--remove-orphans"],
-      { cwd: slotDir, timeout: COMPOSE_DOWN_TIMEOUT }
+      { env: dockerEnv(), cwd: slotDir, timeout: COMPOSE_DOWN_TIMEOUT }
     );
   } catch {
     // Nothing to clean up.
@@ -295,6 +296,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
   const imageIsLocal = async (image: string): Promise<boolean> => {
     try {
       await execFileAsync("docker", ["image", "inspect", "--format", "{{.Id}}", image], {
+        env: dockerEnv(),
         timeout: COMPOSE_QUERY_TIMEOUT,
       });
       return true;
@@ -401,7 +403,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
       const { stdout } = await execFileAsync(
         "docker",
         ["compose", ...(await getOldComposeFileArgs()), "-p", oldProjectName, "ps", "-q", ...names],
-        { cwd: oldSlotDir, timeout: COMPOSE_QUERY_TIMEOUT },
+        { env: dockerEnv(), cwd: oldSlotDir, timeout: COMPOSE_QUERY_TIMEOUT },
       );
       return stdout.trim().length > 0;
     } catch {
@@ -426,7 +428,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
         await execFileAsync(
           "docker",
           ["compose", ...oldComposeFileArgs, "-p", oldProjectName, "stop"],
-          { cwd: oldSlotDir, timeout: COMPOSE_DOWN_TIMEOUT }
+          { env: dockerEnv(), cwd: oldSlotDir, timeout: COMPOSE_DOWN_TIMEOUT }
         );
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -524,7 +526,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
         await execFileAsync(
           "docker",
           ["network", "connect", "--alias", name, network, container],
-          { timeout: COMPOSE_QUERY_TIMEOUT },
+          { env: dockerEnv(), timeout: COMPOSE_QUERY_TIMEOUT },
         ).catch(() => { /* already attached or gone */ });
       }
     }
@@ -554,7 +556,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
           ...(sharedNames.length > 0 ? ["--no-deps"] : []),
           ...(serviceNames.length > 0 ? serviceNames : slottedNames),
         ],
-        { cwd: oldSlotDir, timeout: COMPOSE_UP_TIMEOUT }
+        { env: dockerEnv(), cwd: oldSlotDir, timeout: COMPOSE_UP_TIMEOUT }
       );
       await restoreSlotRestart(oldComposeFileArgs, oldProjectName, oldSlotDir);
       // Idempotent.
@@ -571,7 +573,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
         project: sharedProject,
         composeFileArgs,
         cwd: slotDir,
-        exec: (args, opts) => execFileAsync("docker", args, { ...opts, maxBuffer: EXEC_MAX_BUFFER }),
+        exec: (args, opts) => execFileAsync("docker", args, { env: dockerEnv(), ...opts, maxBuffer: EXEC_MAX_BUFFER }),
         timeout: COMPOSE_QUERY_TIMEOUT,
         upTimeout: COMPOSE_UP_TIMEOUT,
         readyTimeout: sharedReadyTimeout,
@@ -614,7 +616,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
           "--pull", "never",
           service,
         ],
-        { cwd: oldSlotDir, timeout: COMPOSE_UP_TIMEOUT, maxBuffer: EXEC_MAX_BUFFER }
+        { env: dockerEnv(), cwd: oldSlotDir, timeout: COMPOSE_UP_TIMEOUT, maxBuffer: EXEC_MAX_BUFFER }
       );
       log(`[deploy] Put ${service} back on the ${activeSlot} slot's definition`);
     } catch (err) {
@@ -639,7 +641,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
           "--no-deps",
           ...sharedNames,
         ],
-        { cwd: slotDir, timeout: COMPOSE_UP_TIMEOUT, maxBuffer: EXEC_MAX_BUFFER }
+        { env: dockerEnv(), cwd: slotDir, timeout: COMPOSE_UP_TIMEOUT, maxBuffer: EXEC_MAX_BUFFER }
       );
       for (const line of `${stdout}\n${stderr}`.split(/\r?\n|\r/).filter(Boolean)) {
         logs.push(`[deploy][shared] ${line.trim()}`);
@@ -663,7 +665,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
     const { stdout, stderr } = await execFileAsync(
       "docker",
       ["compose", ...composeFileArgs, "-p", newProjectName, "up", "-d", "--pull", "never", ...onlySlotted],
-      { cwd: slotDir, timeout: composeUpTimeout, maxBuffer: EXEC_MAX_BUFFER }
+      { env: dockerEnv(), cwd: slotDir, timeout: composeUpTimeout, maxBuffer: EXEC_MAX_BUFFER }
     );
     for (const line of stdout.split(/\r?\n|\r/).filter(Boolean)) {
       logs.push(`[deploy][compose] ${line.trim()}`);
@@ -677,7 +679,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
     await execFileAsync(
       "docker",
       ["compose", ...composeFileArgs, "-p", newProjectName, "down", "--remove-orphans"],
-      { cwd: slotDir, timeout: COMPOSE_DOWN_TIMEOUT }
+      { env: dockerEnv(), cwd: slotDir, timeout: COMPOSE_DOWN_TIMEOUT }
     ).catch(() => {});
     await restoreOldSlot("compose up failure");
     throw new Error(
@@ -731,7 +733,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
       const { stdout } = await execFileAsync(
         "docker",
         ["compose", ...composeFileArgs, "-p", newProjectName, "logs", "--tail", "30"],
-        { cwd: slotDir, timeout: COMPOSE_QUERY_TIMEOUT, maxBuffer: EXEC_MAX_BUFFER }
+        { env: dockerEnv(), cwd: slotDir, timeout: COMPOSE_QUERY_TIMEOUT, maxBuffer: EXEC_MAX_BUFFER }
       );
       if (stdout.trim()) {
         for (const line of stdout.trim().split("\n")) {
@@ -744,7 +746,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
     await execFileAsync(
       "docker",
       ["compose", ...composeFileArgs, "-p", newProjectName, "down", "--remove-orphans"],
-      { cwd: slotDir, timeout: COMPOSE_DOWN_TIMEOUT }
+      { env: dockerEnv(), cwd: slotDir, timeout: COMPOSE_DOWN_TIMEOUT }
     ).catch(() => {});
     await restoreOldSlot("health check failure");
     throw new Error(

@@ -5,6 +5,7 @@ import { handleRouteError } from "@/lib/api/error-response";
 import { logger } from "@/lib/logger";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
+import { dockerEnv } from "@/lib/docker/docker-env";
 
 const log = logger.child("admin:traefik:restart");
 
@@ -15,6 +16,7 @@ async function handlePost(request: NextRequest) {
     log.info("restarting vardo-traefik container");
 
     spawn("docker", ["restart", "vardo-traefik"], {
+      env: dockerEnv(),
       detached: true,
       stdio: "ignore",
     }).unref();

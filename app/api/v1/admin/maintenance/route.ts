@@ -3,6 +3,7 @@ import { requireAppAdmin } from "@/lib/auth/admin";
 import { handleRouteError } from "@/lib/api/error-response";
 import { logger } from "@/lib/logger";
 import { execFileAsync } from "@/lib/utils/exec";
+import { dockerEnv } from "@/lib/docker/docker-env";
 
 const log = logger.child("admin:maintenance");
 
@@ -26,7 +27,7 @@ export async function GET() {
       const { stdout } = await execFileAsync(
         "docker",
         ["ps", "-a", "--filter", "name=vardo-", "--format", "{{.ID}}\t{{.Names}}\t{{.Status}}\t{{.State}}\t{{.Image}}"],
-        { timeout: 10000 },
+        { env: dockerEnv(), timeout: 10000 },
       );
 
       const output = stdout.trim();

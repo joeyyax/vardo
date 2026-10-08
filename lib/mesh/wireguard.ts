@@ -3,6 +3,7 @@ import { WG_CONTAINER, FRONTEND_MESH_IP, CONSOLE_PORT } from "./constants";
 import { execFile } from "node:child_process";
 import { execFileAsync } from "@/lib/utils/exec";
 import { redactError } from "@/lib/redact";
+import { dockerEnv } from "@/lib/docker/docker-env";
 
 // WireGuard base64 key: 44 chars, A-Z a-z 0-9 + / ending with =
 const WG_KEY_RE = /^[A-Za-z0-9+/]{43}=$/;
@@ -41,7 +42,7 @@ export async function generateKeypair(): Promise<{
     "sh",
     "-c",
     "key=$(wg genkey) && echo \"$key\" && echo \"$key\" | wg pubkey",
-  ]);
+  ], { env: dockerEnv() });
   const [privateKey, publicKey] = stdout.trim().split("\n");
   return { privateKey, publicKey };
 }
@@ -87,7 +88,7 @@ export async function writeWgConfig(config: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = execFile(
       "docker",
-      ["exec", "-i", WG_CONTAINER, "sh", "-c", "mkdir -p /config/wg_confs && cat > /config/wg_confs/wg0.conf"],
+      ["exec", "-i", WG_CONTAINER, "sh", "-c", "mkdir -p /config/wg_confs && cat > /config/wg_confs/wg0.conf"], { env: dockerEnv() },
       (err) => (err ? reject(redactError(err)) : resolve())
     );
     child.stdin?.write(config);
@@ -104,7 +105,7 @@ export async function syncConfig(): Promise<void> {
     "sh",
     "-c",
     "wg-quick strip wg0 | wg syncconf wg0 /dev/stdin",
-  ]);
+  ], { env: dockerEnv() });
 }
 
 /**
@@ -118,7 +119,7 @@ export async function rebuildAndSync(overrideAddress?: string): Promise<void> {
   const { stdout: privKeyOut } = await execFileAsync("docker", [
     "exec", WG_CONTAINER, "sh", "-c",
     "cat /config/wg_confs/wg0.conf | grep PrivateKey | cut -d= -f2- | tr -d ' '",
-  ]);
+  ], { env: dockerEnv() });
   const privateKey = privKeyOut.trim();
   if (!WG_KEY_RE.test(privateKey)) {
     throw new Error("Could not read WireGuard private key from config");
@@ -131,7 +132,7 @@ export async function rebuildAndSync(overrideAddress?: string): Promise<void> {
     const { stdout: addrOut } = await execFileAsync("docker", [
       "exec", WG_CONTAINER, "sh", "-c",
       "cat /config/wg_confs/wg0.conf | grep Address | cut -d= -f2- | tr -d ' ' | cut -d/ -f1",
-    ]);
+    ], { env: dockerEnv() });
     address = addrOut.trim();
   }
   if (!/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(address)) {
@@ -156,7 +157,7 @@ export async function rebuildAndSync(overrideAddress?: string): Promise<void> {
     // syncconf can't change the interface address, so restart.
     await execFileAsync("docker", [
       "exec", WG_CONTAINER, "sh", "-c", "wg-quick down wg0; wg-quick up wg0",
-    ]);
+    ], { env: dockerEnv() });
   } else {
     await syncConfig();
   }
@@ -170,7 +171,7 @@ export async function isWireguardRunning(): Promise<boolean> {
       "-f",
       "{{.State.Running}}",
       WG_CONTAINER,
-    ]);
+    ], { env: dockerEnv() });
     return stdout.trim() === "true";
   } catch {
     return false;
@@ -182,7 +183,7 @@ export async function ensureHubConfig(hubIp: string): Promise<string> {
   try {
     const { stdout } = await execFileAsync("docker", [
       "exec", WG_CONTAINER, "sh", "-c", "wg show wg0 public-key",
-    ]);
+    ], { env: dockerEnv() });
     const key = stdout.trim();
     if (WG_KEY_RE.test(key)) return key;
   } catch {
@@ -196,7 +197,7 @@ export async function ensureHubConfig(hubIp: string): Promise<string> {
 
   await execFileAsync("docker", [
     "exec", WG_CONTAINER, "sh", "-c", "wg-quick up wg0",
-  ]);
+  ], { env: dockerEnv() });
 
   return publicKey;
 }
@@ -210,7 +211,7 @@ export async function getHubAddress(): Promise<string> {
       "sh",
       "-c",
       "ip -4 addr show wg0 2>/dev/null | awk '/inet /{split($2,a,\"/\"); print a[1]; exit}'",
-    ]);
+    ], { env: dockerEnv() });
     const ip = stdout.trim();
     if (ip && /^\d{1,3}(\.\d{1,3}){3}$/.test(ip)) return ip;
   } catch {
@@ -227,7 +228,7 @@ export async function getHubPublicKey(): Promise<string | null> {
       "sh",
       "-c",
       "wg show wg0 public-key",
-    ]);
+    ], { env: dockerEnv() });
     const key = stdout.trim();
     return WG_KEY_RE.test(key) ? key : null;
   } catch {
@@ -244,7 +245,7 @@ export async function getWgStatus(): Promise<string | null> {
       "wg",
       "show",
       "wg0",
-    ]);
+    ], { env: dockerEnv() });
     return stdout.trim();
   } catch {
     return null;

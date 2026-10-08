@@ -19,6 +19,7 @@ import {
   type CoreServiceState,
 } from "@/lib/infra/core-services";
 import { logger } from "@/lib/logger";
+import { dockerEnv } from "@/lib/docker/docker-env";
 
 const log = logger.child("infra");
 
@@ -358,7 +359,7 @@ async function resolveComposeContent(template: Template): Promise<string | null>
 async function detectNvidiaGpu(): Promise<boolean> {
   try {
     const { execFileAsync } = await import("@/lib/utils/exec");
-    const { stdout } = await execFileAsync("docker", ["info", "--format", "{{json .Runtimes}}"], { timeout: 5000 });
+    const { stdout } = await execFileAsync("docker", ["info", "--format", "{{json .Runtimes}}"], { env: dockerEnv(), timeout: 5000 });
     return stdout.includes("nvidia");
   } catch {
     return false;

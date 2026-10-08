@@ -35,6 +35,7 @@ import {
   sharedNetworks,
 } from "../shared-networks";
 import { execFileAsync } from "@/lib/utils/exec";
+import { dockerEnv } from "@/lib/docker/docker-env";
 
 const NETWORK_NAME = VARDO_NETWORK;
 
@@ -121,7 +122,7 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
         : `${stableVolumePrefix}_${volName}`;
 
       try {
-        await execFileAsync("docker", ["volume", "create", stableName], { timeout: VOLUME_CREATE_TIMEOUT });
+        await execFileAsync("docker", ["volume", "create", stableName], { env: dockerEnv(), timeout: VOLUME_CREATE_TIMEOUT });
       } catch { /* already exists — fine */ }
 
       compose.volumes[volName] = { external: true, name: stableName };
@@ -144,7 +145,7 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
         await execFileAsync(
           "docker",
           networkCreateArgs(compose.networks[netName], externalName),
-          { timeout: VOLUME_CREATE_TIMEOUT },
+          { env: dockerEnv(), timeout: VOLUME_CREATE_TIMEOUT },
         );
       } catch { /* already exists — fine */ }
       const external = { external: true, name: externalName };

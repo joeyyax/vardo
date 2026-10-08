@@ -12,6 +12,7 @@ import { promisify } from "util";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
+import { dockerEnv } from "@/lib/docker/docker-env";
 
 const execAsync = promisify(exec);
 
@@ -130,7 +131,7 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
           measurable.map(({ vol }) => {
             return execAsync(
               `docker run --rm -v "${vol.dockerName ?? vol.name}:/data" alpine du -sb /data`,
-              { timeout: 5000 }
+              { env: dockerEnv(), timeout: 5000 }
             );
           })
         );

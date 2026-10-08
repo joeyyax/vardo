@@ -3,6 +3,7 @@
 import { DOCKER_CLEANUP_TIMEOUT } from "./constants";
 import { DeployBlockedError } from "./errors";
 import { execFileAsync } from "@/lib/utils/exec";
+import { dockerEnv } from "@/lib/docker/docker-env";
 
 const DOCKER_CONTAINER_PREFIX = "docker-container://";
 
@@ -25,7 +26,7 @@ export async function isBuildKitReachable(host: string, signal?: AbortSignal): P
     const { stdout } = await execFileAsync(
       "docker",
       ["inspect", "-f", "{{.State.Running}}", container],
-      { timeout: DOCKER_CLEANUP_TIMEOUT, signal },
+      { env: dockerEnv(), timeout: DOCKER_CLEANUP_TIMEOUT, signal },
     );
     return stdout.trim() === "true";
   } catch {
@@ -75,7 +76,7 @@ export async function pruneBuildKitCache(
       "--format",
       "{{.Size}}",
     ],
-    { timeout: DOCKER_CLEANUP_TIMEOUT, signal },
+    { env: dockerEnv(), timeout: DOCKER_CLEANUP_TIMEOUT, signal },
   );
 
   const spaceReclaimed = stdout

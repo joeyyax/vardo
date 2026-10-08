@@ -7,6 +7,7 @@ import { DeployBlockedError } from "../errors";
 import { DOCKER_CLEANUP_TIMEOUT } from "../constants";
 import type { DeployContext } from "../deploy-context";
 import { execFileAsync } from "@/lib/utils/exec";
+import { dockerEnv } from "@/lib/docker/docker-env";
 
 /**
  * Block the deploy when a volume the running app mounts is over its limit.
@@ -47,7 +48,7 @@ export async function checkVolumeLimits(ctx: DeployContext): Promise<void> {
         execFileAsync(
           "docker",
           ["run", "--rm", "-v", `${volName}:/data`, "alpine", "du", "-sb", "/data"],
-          { timeout: DOCKER_CLEANUP_TIMEOUT },
+          { env: dockerEnv(), timeout: DOCKER_CLEANUP_TIMEOUT },
         ),
       ),
     );

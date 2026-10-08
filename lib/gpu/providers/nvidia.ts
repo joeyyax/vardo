@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { logger } from "@/lib/logger";
 import type { GpuDevice, GpuDeviceMetrics, GpuProcess, GpuProvider } from "../types";
+import { dockerEnv } from "@/lib/docker/docker-env";
 
 const log = logger.child("gpu-nvidia");
 
@@ -256,7 +257,7 @@ export class NvidiaProvider implements GpuProvider {
 /** SIGKILL on timeout; a wedged `docker run` ignores SIGTERM. */
 const execCommand: CommandRunner = (cmd, args, timeoutMs) =>
   new Promise((resolve) => {
-    execFile(cmd, args, { timeout: timeoutMs, killSignal: "SIGKILL" }, (err, stdout) => {
+    execFile(cmd, args, { env: dockerEnv(), timeout: timeoutMs, killSignal: "SIGKILL" }, (err, stdout) => {
       if (err) {
         const code = (err as NodeJS.ErrnoException).code;
         resolve({ ok: false, code: typeof code === "string" ? code : undefined });

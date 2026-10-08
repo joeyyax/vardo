@@ -10,6 +10,7 @@ import { readLogHistory, resolveComposeTarget } from "@/lib/logging/history";
 import { resolveLogScope, type LogScope } from "@/lib/logging/scope";
 import { parseComposeLine, type ServiceLine } from "@/lib/logging/compose-lines";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
+import { dockerEnv } from "@/lib/docker/docker-env";
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
@@ -83,7 +84,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         "--no-color",
         "--tail", "0",
         ...(scope.prefixed ? [] : ["--no-log-prefix", ...(scope.service ? [scope.service] : [])]),
-      ], { cwd: target.slotDir });
+      ], { env: dockerEnv(), cwd: target.slotDir });
 
       // Send whole chunks; a per-line loop outruns the SSE queue.
       function forward(chunk: Buffer) {

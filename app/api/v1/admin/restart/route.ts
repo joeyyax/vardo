@@ -6,6 +6,7 @@ import { requireAppAdmin } from "@/lib/auth/admin";
 import { logger } from "@/lib/logger";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
+import { dockerEnv } from "@/lib/docker/docker-env";
 
 const log = logger.child("admin:restart");
 
@@ -21,6 +22,7 @@ async function handlePost() {
     setTimeout(() => {
       log.info(`restarting container: ${containerId}`);
       spawn("docker", ["restart", containerId], {
+        env: dockerEnv(),
         detached: true,
         stdio: "ignore",
       }).unref();

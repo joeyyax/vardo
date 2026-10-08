@@ -75,6 +75,7 @@ import { mkdir, writeFile, rm } from "fs/promises";
 import { join } from "path";
 import { execFileAsync as execFileAsyncInternal } from "@/lib/utils/exec";
 import { PROJECTS_DIR } from "@/lib/paths";
+import { dockerEnv } from "@/lib/docker/docker-env";
 
 /** Create a directory writable by the app user, chowning via docker if root-owned, and stamp the ownership marker. */
 export async function ensureWritableDir(dir: string): Promise<void> {
@@ -97,7 +98,7 @@ export async function ensureWritableDir(dir: string): Promise<void> {
       }
       await execFileAsyncInternal("docker", [
         "run", "--rm", "-v", `${dir}:/target`, "alpine", "chown", "-R", `${APP_UID}:${APP_UID}`, "/target",
-      ], { timeout: DOCKER_CHOWN_TIMEOUT });
+      ], { env: dockerEnv(), timeout: DOCKER_CHOWN_TIMEOUT });
     } else {
       throw err;
     }

@@ -23,6 +23,7 @@ import {
 } from "./drill-plan";
 import { resolveDefaultEnv } from "@/lib/docker/resolve-env";
 import { execFileAsync } from "@/lib/utils/exec";
+import { dockerEnv } from "@/lib/docker/docker-env";
 
 const log = logger.child("drill");
 
@@ -43,7 +44,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 async function waitForReady(container: string, readyArgv: string[]): Promise<boolean> {
   for (let i = 0; i < READY_ATTEMPTS; i++) {
     try {
-      await execFileAsync("docker", ["exec", container, ...readyArgv], { timeout: 15_000 });
+      await execFileAsync("docker", ["exec", container, ...readyArgv], { env: dockerEnv(), timeout: 15_000 });
       return true;
     } catch {
       await sleep(READY_INTERVAL_MS);
@@ -58,7 +59,7 @@ async function streamInto(
   archivePath: string,
   logFn: (m: string) => void,
 ): Promise<number> {
-  const child = spawn("docker", argv, { stdio: ["pipe", "ignore", "pipe"] });
+  const child = spawn("docker", argv, { env: dockerEnv(), stdio: ["pipe", "ignore", "pipe"] });
   let stderr = "";
   child.stderr.on("data", (c) => {
     if (stderr.length < 4000) stderr += String(c);
@@ -110,7 +111,7 @@ async function drillDump(
   await execFileAsync(
     "docker",
     ["run", "-d", "--rm", "--name", container, "--network", "none", ...envArgs, plan.image],
-    { timeout: 120_000 },
+    { env: dockerEnv(), timeout: 120_000 },
   );
 
   try {
@@ -126,7 +127,7 @@ async function drillDump(
 
     let objectCount: number | null = null;
     try {
-      const { stdout } = await execFileAsync("docker", ["exec", container, ...plan.countArgv], { timeout: 60_000 });
+      const { stdout } = await execFileAsync("docker", ["exec", container, ...plan.countArgv], { env: dockerEnv(), timeout: 60_000 });
       const parsed = Number.parseInt(String(stdout).trim(), 10);
       objectCount = Number.isFinite(parsed) ? parsed : null;
     } catch {
@@ -137,7 +138,7 @@ async function drillDump(
     logFn(`Drill verdict: ${verdict.outcome} — ${verdict.detail}`);
     return verdict;
   } finally {
-    await execFileAsync("docker", ["rm", "-f", container], { timeout: 60_000 }).catch(() => {});
+    await execFileAsync("docker", ["rm", "-f", container], { env: dockerEnv(), timeout: 60_000 }).catch(() => {});
   }
 }
 
@@ -147,7 +148,7 @@ async function drillArchive(
   logFn: (m: string) => void,
 ): Promise<{ outcome: DrillOutcome; detail: string }> {
   const scratchVolume = scratchContainerName(nanoid(8).toLowerCase());
-  await execFileAsync("docker", ["volume", "create", scratchVolume], { timeout: 30_000 });
+  await execFileAsync("docker", ["volume", "create", scratchVolume], { env: dockerEnv(), timeout: 30_000 });
 
   try {
     let extractExitCode = 0;
@@ -162,7 +163,7 @@ async function drillArchive(
           "alpine", "sh", "-c",
           `set -e; tar xzf "/archive/$(basename '${archivePath}')" -C /restore; find /restore -type f | wc -l`,
         ],
-        { timeout: 900_000 },
+        { env: dockerEnv(), timeout: 900_000 },
       );
       const parsed = Number.parseInt(String(stdout).trim(), 10);
       fileCount = Number.isFinite(parsed) ? parsed : null;
@@ -175,7 +176,7 @@ async function drillArchive(
     logFn(`Drill verdict: ${verdict.outcome} — ${verdict.detail}`);
     return verdict;
   } finally {
-    await execFileAsync("docker", ["volume", "rm", "-f", scratchVolume], { timeout: 60_000 }).catch(() => {});
+    await execFileAsync("docker", ["volume", "rm", "-f", scratchVolume], { env: dockerEnv(), timeout: 60_000 }).catch(() => {});
   }
 }
 

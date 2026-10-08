@@ -25,6 +25,7 @@ import { demoteStandbyRestart, restoreSlotRestart } from "./restart-policy";
 import { clearCutoverPin } from "./traefik-cutover";
 import { execFileAsync } from "@/lib/utils/exec";
 import { claimAppForOperation } from "./deploy-cancel";
+import { dockerEnv } from "@/lib/docker/docker-env";
 
 /** Outlasts every step below, so a crashed rollback frees the app on its own. */
 const ROLLBACK_CLAIM_TTL_MS =
@@ -79,7 +80,7 @@ export async function checkStandbyAvailable(
     const { stdout } = await execFileAsync(
       "docker",
       ["compose", ...composeFileArgs, "-p", standbyProjectName, "ps", "-a", "--format", "json"],
-      { cwd: standbyDir, timeout: COMPOSE_QUERY_TIMEOUT },
+      { env: dockerEnv(), cwd: standbyDir, timeout: COMPOSE_QUERY_TIMEOUT },
     );
     const containers = stdout.trim().split("\n").filter(Boolean);
     standbyServiceCount = containers.length;
@@ -137,7 +138,7 @@ async function rollbackClaimed(
     const { stdout } = await execFileAsync(
       "docker",
       ["compose", ...standbyComposeFileArgs, "-p", standbyProjectName, "ps", "-a", "--format", "json"],
-      { cwd: standbyDir, timeout: COMPOSE_QUERY_TIMEOUT },
+      { env: dockerEnv(), cwd: standbyDir, timeout: COMPOSE_QUERY_TIMEOUT },
     );
     standbyHasContainers = stdout.trim().split("\n").filter(Boolean).length > 0;
   } catch { /* no containers */ }
@@ -163,7 +164,7 @@ async function rollbackClaimed(
         "compose", ...standbyComposeFileArgs, "-p", standbyProjectName,
         "up", "-d", "--no-recreate", "--pull", "never", ...onlySlotted,
       ],
-      { cwd: standbyDir, timeout: COMPOSE_UP_TIMEOUT },
+      { env: dockerEnv(), cwd: standbyDir, timeout: COMPOSE_UP_TIMEOUT },
     );
     // About to serve, so restore its restart policy.
     await restoreSlotRestart(standbyComposeFileArgs, standbyProjectName, standbyDir);
@@ -183,7 +184,7 @@ async function rollbackClaimed(
       const { stdout } = await execFileAsync(
         "docker",
         ["compose", ...standbyComposeFileArgs, "-p", standbyProjectName, "ps", "--format", "json"],
-        { cwd: standbyDir, timeout: COMPOSE_QUERY_TIMEOUT },
+        { env: dockerEnv(), cwd: standbyDir, timeout: COMPOSE_QUERY_TIMEOUT },
       );
       const containers = stdout.trim().split("\n").filter(Boolean);
       if (containers.length > 0) {
@@ -201,7 +202,7 @@ async function rollbackClaimed(
     await execFileAsync(
       "docker",
       ["compose", ...standbyComposeFileArgs, "-p", standbyProjectName, "stop"],
-      { cwd: standbyDir, timeout: COMPOSE_DOWN_TIMEOUT },
+      { env: dockerEnv(), cwd: standbyDir, timeout: COMPOSE_DOWN_TIMEOUT },
     ).catch(() => {});
     return {
       success: false, deploymentId: "", fromSlot: activeSlot, toSlot: standbySlot,
@@ -215,13 +216,13 @@ async function rollbackClaimed(
     const { stdout } = await execFileAsync(
       "docker",
       ["compose", ...activeComposeFileArgs, "-p", activeProjectName, "ps", "-q"],
-      { cwd: activeDir, timeout: COMPOSE_QUERY_TIMEOUT },
+      { env: dockerEnv(), cwd: activeDir, timeout: COMPOSE_QUERY_TIMEOUT },
     );
     for (const id of stdout.trim().split("\n").filter(Boolean)) {
       await execFileAsync(
         "docker",
         ["network", "disconnect", "-f", NETWORK_NAME, id],
-        { timeout: COMPOSE_QUERY_TIMEOUT },
+        { env: dockerEnv(), timeout: COMPOSE_QUERY_TIMEOUT },
       ).catch(() => {});
     }
   } catch { /* best-effort */ }
@@ -230,7 +231,7 @@ async function rollbackClaimed(
     await execFileAsync(
       "docker",
       ["compose", ...activeComposeFileArgs, "-p", activeProjectName, "stop"],
-      { cwd: activeDir, timeout: COMPOSE_DOWN_TIMEOUT },
+      { env: dockerEnv(), cwd: activeDir, timeout: COMPOSE_DOWN_TIMEOUT },
     );
     // Now the standby; it must not come back on a daemon restart.
     await demoteStandbyRestart(activeComposeFileArgs, activeProjectName, activeDir);
@@ -251,7 +252,7 @@ async function rollbackClaimed(
     const { stdout } = await execFileAsync(
       "docker",
       ["compose", ...standbyComposeFileArgs, "-p", standbyProjectName, "ps", "--format", "json"],
-      { cwd: standbyDir, timeout: COMPOSE_QUERY_TIMEOUT },
+      { env: dockerEnv(), cwd: standbyDir, timeout: COMPOSE_QUERY_TIMEOUT },
     );
     const firstContainer = stdout.trim().split("\n").filter(Boolean)[0];
     if (firstContainer) {

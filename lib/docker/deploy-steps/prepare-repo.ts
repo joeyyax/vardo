@@ -153,18 +153,19 @@ async function detectAndPersistComposeVolumes(
 
 import { spawn as nodeSpawn } from "child_process";
 import { BUILD_TIMEOUT } from "../constants";
+import { dockerEnv } from "@/lib/docker/docker-env";
 
 function spawnStream(
   cmd: string,
   args: string[],
-  opts: { cwd?: string; env?: NodeJS.ProcessEnv; signal?: AbortSignal },
+  opts: { cwd?: string; env: NodeJS.ProcessEnv; signal?: AbortSignal },
   logs: { push: (line: string) => void },
   prefix: string
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const proc = nodeSpawn(cmd, args, {
       cwd: opts.cwd,
-      env: opts.env || process.env,
+      env: opts.env,
       stdio: ["ignore", "pipe", "pipe"],
       detached: true,
     });
@@ -454,7 +455,7 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
             await execFileAsync("docker", [
               "run", "--rm", "-v", `${repoDir}:/target`, "alpine",
               "sh", "-c", `rm -rf /target/* /target/.[!.]* /target/..?* 2>/dev/null; chown ${APP_UID}:${APP_UID} /target`,
-            ], { timeout: DOCKER_CLEANUP_TIMEOUT });
+            ], { env: dockerEnv(), timeout: DOCKER_CLEANUP_TIMEOUT });
           } else {
             throw rmErr;
           }

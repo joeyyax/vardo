@@ -4,6 +4,7 @@
 import { COMPOSE_QUERY_TIMEOUT } from "./constants";
 import { logger } from "@/lib/logger";
 import { execFileAsync } from "@/lib/utils/exec";
+import { dockerEnv } from "@/lib/docker/docker-env";
 
 const log = logger.child("restart-policy");
 
@@ -18,7 +19,7 @@ async function projectContainers(
   const { stdout } = await execFileAsync(
     "docker",
     ["compose", ...composeFileArgs, "-p", projectName, "ps", "-a", "--format", "json"],
-    { cwd, timeout: COMPOSE_QUERY_TIMEOUT },
+    { env: dockerEnv(), cwd, timeout: COMPOSE_QUERY_TIMEOUT },
   );
   const out: { id: string; service: string }[] = [];
   for (const line of stdout.trim().split("\n").filter(Boolean)) {
@@ -40,7 +41,7 @@ async function declaredPolicies(
   const { stdout } = await execFileAsync(
     "docker",
     ["compose", ...composeFileArgs, "-p", projectName, "config", "--format", "json"],
-    { cwd, timeout: COMPOSE_QUERY_TIMEOUT },
+    { env: dockerEnv(), cwd, timeout: COMPOSE_QUERY_TIMEOUT },
   );
   const policies: ServicePolicies = {};
   const services = JSON.parse(stdout)?.services ?? {};
@@ -62,7 +63,7 @@ export async function demoteStandbyRestart(
     await execFileAsync(
       "docker",
       ["update", "--restart=no", ...containers.map((c) => c.id)],
-      { timeout: COMPOSE_QUERY_TIMEOUT },
+      { env: dockerEnv(), timeout: COMPOSE_QUERY_TIMEOUT },
     );
   } catch (err) {
     log.warn(
@@ -89,6 +90,7 @@ export async function restoreSlotRestart(
     for (const c of containers) {
       const policy = policies[c.service] || DEFAULT_POLICY;
       await execFileAsync("docker", ["update", `--restart=${policy}`, c.id], {
+        env: dockerEnv(),
         timeout: COMPOSE_QUERY_TIMEOUT,
       }).catch(() => {});
     }

@@ -43,6 +43,7 @@ import { execFileAsync } from "@/lib/utils/exec";
 import { environmentDomains, withoutEnvironmentHosts } from "./environment-domains";
 import { loadEnvironmentEnv } from "./environment-env";
 import { productionHostRefs } from "@/lib/env/environment-env";
+import { dockerEnv } from "@/lib/docker/docker-env";
 
 export type { DeployStage } from "./deploy-logger";
 
@@ -590,7 +591,7 @@ export async function runDeployment(
           await execFileAsync(
             "docker",
             ["compose", ...cleanupComposeArgs, "-p", newProjectName, "down", "--remove-orphans"],
-            { cwd: slotDir, timeout: COMPOSE_DOWN_TIMEOUT }
+            { env: dockerEnv(), cwd: slotDir, timeout: COMPOSE_DOWN_TIMEOUT }
           );
           log(`[deploy] Cleaned up containers after failure`);
         } catch {
@@ -783,7 +784,7 @@ async function stopSlotInDir(
       if (removeVolumes) {
         args.push("--volumes");
       }
-      const { stdout, stderr } = await execFileAsync("docker", args, { cwd: slotDir, timeout: COMPOSE_RESTART_TIMEOUT });
+      const { stdout, stderr } = await execFileAsync("docker", args, { env: dockerEnv(), cwd: slotDir, timeout: COMPOSE_RESTART_TIMEOUT });
       if (stdout.trim()) logs.push(stdout.trim());
       if (stderr.trim()) logs.push(stderr.trim());
     } catch (err) {
@@ -945,7 +946,7 @@ export async function stopPreviewEnvironment(
           "ps", "-a",
           "--filter", `label=com.docker.compose.project=${project}`,
           "--format", '{{.Names}}\t{{.Label "vardo.project.id"}}\t{{.Label "vardo.environment"}}',
-        ], { timeout: 30_000 });
+        ], { env: dockerEnv(), timeout: 30_000 });
         const foreign = foreignPreviewContainers(ps, appId, envName);
         if (foreign.length > 0) {
           failures.push(`refused to take down ${project}: not labelled as this preview (${foreign.join(", ")})`);
@@ -953,17 +954,17 @@ export async function stopPreviewEnvironment(
         }
         // No `-v`: it would also remove volumes with an explicit `name:`, which production can share.
         const args = ["compose", ...(await slotComposeFiles(slotDir)), "-p", project, "down"];
-        const { stdout, stderr } = await execFileAsync("docker", args, { cwd: slotDir, timeout: COMPOSE_RESTART_TIMEOUT });
+        const { stdout, stderr } = await execFileAsync("docker", args, { env: dockerEnv(), cwd: slotDir, timeout: COMPOSE_RESTART_TIMEOUT });
         if (stdout.trim()) logs.push(stdout.trim());
         if (stderr.trim()) logs.push(stderr.trim());
 
         const { stdout: vols } = await execFileAsync("docker", [
           "volume", "ls", "-q",
           "--filter", `label=com.docker.compose.project=${project}`,
-        ], { timeout: 30_000 });
+        ], { env: dockerEnv(), timeout: 30_000 });
         const owned = previewVolumesToRemove(vols, project);
         if (owned.length > 0) {
-          await execFileAsync("docker", ["volume", "rm", ...owned], { timeout: 60_000 });
+          await execFileAsync("docker", ["volume", "rm", ...owned], { env: dockerEnv(), timeout: 60_000 });
           logs.push(`Removed volumes: ${owned.join(", ")}`);
         }
       } catch (err) {
@@ -1031,7 +1032,7 @@ export async function restartContainers(
     const { stdout, stderr } = await execFileAsync(
       "docker",
       restartArgs,
-      { cwd: slotDir, timeout: COMPOSE_RESTART_TIMEOUT }
+      { env: dockerEnv(), cwd: slotDir, timeout: COMPOSE_RESTART_TIMEOUT }
     );
     if (stdout.trim()) logs.push(stdout.trim());
     if (stderr.trim()) logs.push(stderr.trim());
@@ -1061,7 +1062,7 @@ export async function recreateProject(
     const { stdout, stderr } = await execFileAsync(
       "docker",
       ["compose", ...composeFileArgs, "-p", composeProject, "up", "-d", "--force-recreate"],
-      { cwd: slotDir, timeout: COMPOSE_RESTART_TIMEOUT }
+      { env: dockerEnv(), cwd: slotDir, timeout: COMPOSE_RESTART_TIMEOUT }
     );
     for (const line of stdout.split(/\r?\n|\r/).filter(Boolean)) {
       logs.push(`[deploy][compose] ${line.trim()}`);
