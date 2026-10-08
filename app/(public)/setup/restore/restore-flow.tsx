@@ -5,10 +5,11 @@ import Link from "next/link";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
-import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, cardVariants } from "@/components/ui/card";
 import type { RestoreStatus } from "@/lib/restore/status";
 import { ChooseBackup } from "./choose-backup";
 import { RestoreProgressView } from "./restore-progress";
+import { cn } from "@/lib/utils";
 
 const POLL_MS = 3_000;
 
@@ -104,7 +105,7 @@ function Phase({ status, onChange }: { status: RestoreStatus; onChange: () => vo
               : "This instance's database wasn't changed."}
           </Callout>
           {status.log && (
-            <details className="squircle rounded-lg border p-3 text-xs">
+            <details className={cn(cardVariants({ variant: "plain" }), "border p-3 text-xs")}>
               <summary className="cursor-pointer text-sm">Restore log</summary>
               <pre className="mt-2 overflow-x-auto whitespace-pre-wrap font-mono">{status.log}</pre>
             </details>

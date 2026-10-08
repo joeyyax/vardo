@@ -8,6 +8,8 @@ import { getInitials } from "@/lib/initials";
 import { detailsFor, phraseFor, subjectSummary } from "@/lib/activity/labels";
 import { isFleetWide } from "@/lib/activity/group";
 import type { ActivityGroup, ActivitySubjectRef } from "@/lib/activity/types";
+import { cardVariants } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 
 function formatTime(date: Date): string {
   return date.toLocaleTimeString("en-US", {
@@ -111,7 +113,7 @@ export function ActivityRow({ group }: { group: ActivityGroup }) {
         </p>
 
         {failed && group.error && (
-          <p className="squircle rounded bg-background-deep px-2 py-1 font-mono text-xs text-status-error">
+          <p className={cn(cardVariants({ variant: "inset" }), "rounded px-2 py-1 font-mono text-xs text-status-error")}>
             <span className="line-clamp-2 break-words">{group.error}</span>
           </p>
         )}
