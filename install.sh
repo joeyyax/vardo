@@ -1205,8 +1205,10 @@ generate_env() {
   fi
 
   # Generate secrets + instance identity. A rebuild passes the escrowed ones in.
-  local db_pass auth_secret enc_key webhook_secret setup_token instance_id
+  local db_pass redis_pass auth_secret enc_key webhook_secret setup_token instance_id
   db_pass=$(openssl rand -base64 32 | tr -d '/+=' | head -c 32)
+  # Dev skips it: `pnpm dev` connects without one.
+  redis_pass=$(openssl rand -hex 32)
   auth_secret="${BETTER_AUTH_SECRET:-$(openssl rand -base64 32 | tr -d '/+=' | head -c 48)}"
   enc_key="${ENCRYPTION_MASTER_KEY:-$(openssl rand -hex 32)}"
   [[ "$enc_key" =~ ^[0-9a-fA-F]{64}$ ]] || fail "ENCRYPTION_MASTER_KEY must be 64 hex characters"
@@ -1257,6 +1259,7 @@ VARDO_INSTANCE_ID=$instance_id
 COMPOSE_PROFILES=$compose_profiles
 DOCKER_GID=$docker_gid
 DB_PASSWORD=$db_pass
+REDIS_PASSWORD=$redis_pass
 BETTER_AUTH_SECRET=$auth_secret
 ENCRYPTION_MASTER_KEY=$enc_key
 GITHUB_WEBHOOK_SECRET=$webhook_secret
@@ -1276,6 +1279,7 @@ DOCKER_GID=$docker_gid
 VARDO_DOMAIN=${VARDO_DOMAIN}
 VARDO_BASE_DOMAIN=${VARDO_BASE_DOMAIN}
 DB_PASSWORD=$db_pass
+REDIS_PASSWORD=$redis_pass
 BETTER_AUTH_SECRET=$auth_secret
 ENCRYPTION_MASTER_KEY=$enc_key
 GITHUB_WEBHOOK_SECRET=$webhook_secret
