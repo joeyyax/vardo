@@ -1,13 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { lookupMock } = vi.hoisted(() => ({ lookupMock: vi.fn() }));
+const { lookupMock, fetchMock } = vi.hoisted(() => ({ lookupMock: vi.fn(), fetchMock: vi.fn() }));
 vi.mock("dns/promises", () => ({ lookup: lookupMock }));
+
+vi.mock("@/lib/security/pinned-fetch", () => ({ pinnedFetch: fetchMock }));
 
 const { safeFetch } = await import("@/lib/security/safe-fetch");
 const { BlockedUrlError } = await import("@/lib/security/ssrf");
 
-const fetchMock = vi.fn();
-vi.stubGlobal("fetch", fetchMock);
 
 /** A redirect response the way undici hands one back in manual mode. */
 function redirect(status: number, location: string): Response {
@@ -26,6 +26,15 @@ describe("safeFetch", () => {
     const res = await safeFetch("https://example.com/hook", { method: "POST", body: "{}" });
     expect(res.status).toBe(200);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("connects with private addresses refused unless the host is allowlisted", async () => {
+    fetchMock.mockResolvedValue(new Response("ok", { status: 200 }));
+    await safeFetch("https://example.com/");
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ allowPrivate: false });
+    lookupMock.mockResolvedValue([{ address: "10.0.0.19", family: 4 }]);
+    await safeFetch("https://internal.example.com/", { policy: { allowlist: ["internal.example.com"] } });
+    expect(fetchMock.mock.calls[1][1]).toMatchObject({ allowPrivate: true });
   });
 
   it("never lets fetch follow redirects itself", async () => {

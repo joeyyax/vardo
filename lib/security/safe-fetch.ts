@@ -1,6 +1,7 @@
 // Outbound fetch that vets every redirect hop, since a public host can 302 to a private address.
 
-import { assertOutboundUrlAllowed, BlockedUrlError, type OutboundPolicy } from "./ssrf";
+import { assertOutboundUrlAllowed, BlockedUrlError, isAllowlisted, type OutboundPolicy } from "./ssrf";
+import { pinnedFetch } from "./pinned-fetch";
 
 const MAX_REDIRECTS = 5;
 
@@ -19,7 +20,7 @@ export type SafeFetchOptions = RequestInit & {
 };
 
 /**
- * fetch() that refuses private, loopback and link-local addresses on every hop.
+ * fetch() that refuses private, loopback and link-local addresses on every hop, checked again at connect.
  * A redirect to another host drops credentials and signatures.
  */
 export async function safeFetch(
@@ -34,7 +35,8 @@ export async function safeFetch(
   let headers = new Headers(init.headers);
 
   for (let hop = 0; hop <= maxRedirects; hop++) {
-    const response = await fetch(url.toString(), { ...init, method, body, headers, redirect: "manual" });
+    const allowPrivate = isAllowlisted(url.hostname, policy?.allowlist);
+    const response = await pinnedFetch(url, { ...init, method, body, headers, redirect: "manual", allowPrivate });
 
     const location = response.headers.get("location");
     if (response.status < 300 || response.status > 399 || !location) {

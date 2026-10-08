@@ -145,7 +145,7 @@ export type OutboundPolicy = {
   allowlist?: string[];
 };
 
-function isAllowlisted(hostname: string, allowlist: string[] | undefined): boolean {
+export function isAllowlisted(hostname: string, allowlist: string[] | undefined): boolean {
   if (!allowlist?.length) return false;
   const host = hostname.toLowerCase();
   return allowlist.some((entry) => {
