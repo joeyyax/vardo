@@ -15,6 +15,7 @@ import { resolveActiveSlot } from "./active-slot";
 import { slotComposeFiles } from "./compose";
 import { COMPOSE_UP_TIMEOUT } from "./constants";
 import { restartContainers } from "./deploy";
+import { assertSlotWithinApp } from "./slot-guard";
 import { resolveDefaultEnv } from "./resolve-env";
 import { readSlotPartition, sharedScopeArgs } from "./shared-project";
 import { sharedProjectName, slotScopeArgs } from "./slot-partition";
@@ -71,6 +72,7 @@ async function upActiveSlot(
       };
     }
 
+    await assertSlotWithinApp({ appName, envName, slotDir, composeProject, reuse: "start" });
     const composeFileArgs = await slotComposeFiles(slotDir);
     const partition = await readSlotPartition(slotDir);
 

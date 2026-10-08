@@ -21,6 +21,7 @@ import { sharedProjectName } from "./slot-partition";
 import { readSlotPartition } from "./shared-project";
 import { recordActivity } from "@/lib/activity";
 import { DeployBlockedError } from "./errors";
+import { assertSlotWithinApp } from "./slot-guard";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { createDeployLogger, DEPLOY_STAGE_ORDER } from "./deploy-logger";
 import { recordPostDeployIncomplete } from "./deploy-incomplete";
@@ -1015,6 +1016,7 @@ export async function restartContainers(
       };
     }
 
+    await assertSlotWithinApp({ appName, envName: environmentName ?? "", slotDir, composeProject, reuse: "restart" });
     const composeFileArgs = await slotComposeFiles(slotDir);
 
     // A shared service has no container in the slot project, where `restart` matches nothing.
@@ -1057,6 +1059,7 @@ export async function recreateProject(
       : appName;
 
     const { slotDir, composeProject } = await resolveActiveSlot(dir, prefix);
+    await assertSlotWithinApp({ appName, envName: environmentName ?? "", slotDir, composeProject, reuse: "recreate" });
     const composeFileArgs = await slotComposeFiles(slotDir);
 
     const { stdout, stderr } = await execFileAsync(

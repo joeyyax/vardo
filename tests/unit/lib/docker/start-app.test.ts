@@ -20,6 +20,7 @@ const {
   recordLifecycleMock,
   readSlotPartitionMock,
   setParkedMock,
+  assertSlotMock,
 } = vi.hoisted(() => {
   const execFileAsyncMock = vi.fn();
   const execFileMock = vi.fn();
@@ -40,6 +41,7 @@ const {
     recordLifecycleMock: vi.fn(),
     readSlotPartitionMock: vi.fn(),
     setParkedMock: vi.fn(),
+    assertSlotMock: vi.fn(),
   };
 });
 
@@ -47,6 +49,7 @@ vi.mock("child_process", () => ({ execFile: execFileMock }));
 vi.mock("fs/promises", () => ({ access: accessMock, readlink: readlinkMock }));
 vi.mock("@/lib/db", () => ({ db: { query: { apps: { findFirst: appsFindFirst } } } }));
 vi.mock("@/lib/db/app-parked", () => ({ setParked: setParkedMock }));
+vi.mock("@/lib/docker/slot-guard", () => ({ assertSlotWithinApp: assertSlotMock }));
 vi.mock("@/lib/docker/deploy", () => ({ restartContainers: restartContainersMock }));
 vi.mock("@/lib/docker/resolve-env", () => ({ resolveDefaultEnv: resolveDefaultEnvMock }));
 vi.mock("@/lib/docker/status-reconcile", () => ({ reconcileAppNow: reconcileAppNowMock }));
@@ -101,6 +104,7 @@ beforeEach(() => {
   resolveDefaultEnvMock.mockResolvedValue({ name: "production" });
   reconcileAppNowMock.mockResolvedValue("active");
   readSlotPartitionMock.mockResolvedValue(null);
+  assertSlotMock.mockResolvedValue(undefined);
 });
 
 describe("startOrRestartApp — running app", () => {
@@ -239,6 +243,20 @@ describe("startOrRestartApp — stopped app", () => {
     expect(composeArgs(1)).toEqual(
       expect.arrayContaining(["-p", "paperless-production-blue", "--no-deps", "web"]),
     );
+  });
+});
+
+describe("startOrRestartApp — policy refusal (#895)", () => {
+  it("leaves a stopped app down and says to redeploy", async () => {
+    assertSlotMock.mockRejectedValue(new Error("Couldn't start: Redeploy the app"));
+
+    const result = await start({ status: "stopped" });
+
+    expect(result).toMatchObject({ success: false, action: "none", failure: "compose" });
+    expect(result.log).toContain("Redeploy");
+    expect(execFileAsyncMock).not.toHaveBeenCalled();
+    expect(setParkedMock).not.toHaveBeenCalled();
+    expect(recordLifecycleMock).not.toHaveBeenCalled();
   });
 });
 

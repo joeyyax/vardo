@@ -326,7 +326,10 @@ async function resolveComposeConfig(opts: {
 }
 
 
-/** Refuses the deploy when the slot's resolved compose reaches outside the app. Removes the slot's files on refusal. */
+/**
+ * Refuses the deploy when the slot's resolved compose reaches outside the app. Removes the slot's files on refusal.
+ * `reuse` names a start, restart or recreate of the running slot: its files stay and the message says to redeploy.
+ */
 export async function assertComposeWithinApp(ctx: {
   slotDir: string;
   appDir: string;
@@ -337,6 +340,7 @@ export async function assertComposeWithinApp(ctx: {
   orgTrusted: boolean;
   projectAllowBindMounts: boolean;
   projectAllowDockerSocket: boolean;
+  reuse?: "start" | "restart" | "recreate";
 }): Promise<void> {
   if (ctx.orgTrusted) return;
   let config: unknown;
@@ -359,6 +363,13 @@ export async function assertComposeWithinApp(ctx: {
     allowDockerSocket: ctx.projectAllowDockerSocket,
   });
   if (errors.length === 0) return;
+
+  if (ctx.reuse) {
+    throw new DeployBlockedError(
+      `Couldn't ${ctx.reuse}: the compose file from an earlier deploy reaches outside the app.\n${errors.map((e) => `- ${e}`).join("\n")}\n` +
+        `Redeploy the app to rewrite it. An instance admin can allow bind mounts or the Docker socket for the project, or mark the organization trusted under Admin → Organizations.`,
+    );
+  }
 
   for (const file of ["docker-compose.yml", "docker-compose.override.yml", ".env"]) {
     await rm(join(ctx.slotDir, file), { force: true }).catch(() => {});
