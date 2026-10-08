@@ -1614,6 +1614,8 @@ case "${1:-}" in
       echo "Error: backup-decrypt.ts not found. Make sure Vardo is up to date." >&2
       exit 1
     fi
+    # A missing bind source makes docker create a directory in its place.
+    [ -f "$2" ] || { echo "No such file: $2" >&2; exit 1; }
     IN=$(realpath "$2")
     OUT_DIR=$(realpath "$(dirname "$3")")
     OUT_NAME=$(basename "$3")
