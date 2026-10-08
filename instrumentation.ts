@@ -154,6 +154,7 @@ export async function register() {
       ["monitoring", async () => { const m = await import("./lib/monitoring/register"); await m.registerMonitoringPlugin(); }],
       ["cron", async () => { const m = await import("./lib/cron/register"); await m.registerCronPlugin(); }],
       ["domain-monitoring", async () => { const m = await import("./lib/domain-monitoring/register"); await m.registerDomainMonitoringPlugin(); }],
+      ["domain-verification", async () => { const m = await import("./lib/domains/register"); await m.registerDomainVerificationPlugin(); }],
       ["digest", async () => { const m = await import("./lib/digest/register"); await m.registerDigestPlugin(); }],
       ["logging", async () => { const m = await import("./lib/logging/register"); await m.registerLoggingFeature(); }],
       ["image-updates", async () => { const m = await import("./lib/docker/image-updates/register"); await m.registerImageUpdatesPlugin(); }],

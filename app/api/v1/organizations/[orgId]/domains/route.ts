@@ -6,6 +6,8 @@ import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
+import { loadInstanceHosts, loadVerifiedZones } from "@/lib/domains/context";
+import { newChallengeToken, refusedHost, verificationView } from "@/lib/domains/ownership";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
@@ -53,7 +55,9 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
         domain: DEFAULT_DOMAIN,
         isDefault: true,
         enabled: true,
-        verified: true,
+        verified: false,
+        verificationToken: null,
+        verifiedAt: null,
         createdAt: new Date(),
       });
     }
@@ -64,7 +68,18 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       return a.createdAt.getTime() - b.createdAt.getTime();
     });
 
-    return NextResponse.json({ domains: rows });
+    const inst = await loadInstanceHosts();
+    const zones = await loadVerifiedZones(orgId);
+    const trust = { trusted: org.organization.trusted };
+    return NextResponse.json({
+      domains: rows.map((r) => ({
+        ...r,
+        // The default is the instance's own zone; it never needs proof.
+        verification: r.isDefault
+          ? { state: "not-required" as const, verifiedAt: null, recordName: "", recordValue: null }
+          : verificationView(r, inst, trust, zones.filter((z) => z !== r.domain.toLowerCase())),
+      })),
+    });
   } catch (error) {
     return handleRouteError(error);
   }
@@ -91,6 +106,10 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
         { status: 400 }
       );
     }
+    const refusal = refusedHost(domain, await loadInstanceHosts());
+    if (refusal) {
+      return NextResponse.json({ error: `Couldn't add domain. ${refusal}` }, { status: 400 });
+    }
 
     const [created] = await db
       .insert(orgDomains)
@@ -101,6 +120,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
         isDefault: false,
         enabled: true,
         verified: false,
+        verificationToken: newChallengeToken(),
       })
       .returning();
 
@@ -130,7 +150,7 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
     const org = await verifyOrgAccess(orgId, "org.domains.manage");
     if (!org) return apiError.forbidden();
 
-    // The default domain is created on its first toggle.
+    // The default domain is created on its first toggle. It's the instance's zone, so it's never marked verified.
     if (parsed.data.id === "__default__") {
       const [created] = await db
         .insert(orgDomains)
@@ -140,7 +160,7 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
           domain: DEFAULT_DOMAIN,
           isDefault: true,
           enabled: parsed.data.enabled,
-          verified: true,
+          verified: false,
         })
         .returning();
 

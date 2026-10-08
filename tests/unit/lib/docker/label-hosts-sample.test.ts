@@ -34,7 +34,7 @@ function verdicts(entry: Fixture["apps"][number], orgOverride?: Partial<Fixture[
     {
       instanceBase: fx.instanceBase,
       consoleHosts: fx.consoleHosts,
-      hostRows: [...fx.domains, ...fx.envDomains].map((d) => ({ domain: d.domain, orgId: d.org })),
+      hostRows: [...fx.domains, ...fx.envDomains].map((d) => ({ domain: d.domain, orgId: d.org, counts: true })),
       orgDomainRows: [],
       appNames: fx.topLevelApps.map((a) => ({ name: a.name, orgId: a.org })),
     },

@@ -41,6 +41,7 @@ import {
   type RollbackTarget,
 } from "./rollback-target";
 import { execFileAsync } from "@/lib/utils/exec";
+import { splitRoutable } from "@/lib/domains/routable";
 import { environmentDomains, withoutEnvironmentHosts } from "./environment-domains";
 import { loadEnvironmentEnv } from "./environment-env";
 import { productionHostRefs } from "@/lib/env/environment-env";
@@ -296,7 +297,7 @@ export async function runDeployment(
 
     const org = await db.query.organizations.findFirst({
       where: eq(organizations.id, opts.organizationId),
-      columns: { id: true, name: true, baseDomain: true, trusted: true },
+      columns: { id: true, name: true, baseDomain: true, trusted: true, isSystemManaged: true },
     });
     const orgTrusted = org?.trusted ?? false;
 
@@ -332,6 +333,13 @@ export async function runDeployment(
       app.domains = withoutEnvironmentHosts(app.domains, groupEnvHosts.map((e) => e.domain));
     } else {
       app.domains = environmentDomains(app.domains, resolvedEnv, app.id);
+    }
+
+    // Hosts the org hasn't proved it owns, the console's host and the instance base domain don't route (#891).
+    if (org) {
+      const { routable, dropped } = await splitRoutable(app.domains, org);
+      for (const d of dropped) log(`[deploy] Domain ${d.domain} not routed: not verified for this organization, or reserved`);
+      app.domains = routable;
     }
 
     // Local environments always allow bind mounts. The Docker socket stays on the project flag (#803).

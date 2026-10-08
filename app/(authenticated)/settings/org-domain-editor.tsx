@@ -17,12 +17,13 @@ import {
   BottomSheetClose,
 } from "@/components/ui/bottom-sheet";
 import { toast } from "@/lib/messenger";
+import { OwnershipChallenge, runOwnershipCheck } from "@/components/ssl/ownership-challenge";
+import type { OwnershipState } from "@/components/ssl/domain-diagnosis";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Globe,
   Plus,
   Trash2,
-  RefreshCw,
   CheckCircle2,
   AlertCircle,
   Shield,
@@ -36,6 +37,7 @@ interface OrgDomain {
   enabled: boolean;
   verified: boolean | null;
   createdAt: string;
+  verification: { state: OwnershipState; recordName: string; recordValue: string | null };
 }
 
 async function requestDomains(orgId: string): Promise<OrgDomain[] | null> {
@@ -111,7 +113,7 @@ export function OrgDomainEditor({
 
       const data = await res.json();
       setDomains((ds) =>
-        ds.map((d) => (d.id === domain.id || d.id === "__default__" ? data.domain : d))
+        ds.map((d) => (d.id === domain.id ? { ...d, ...data.domain } : d))
       );
       router.refresh();
     } catch {
@@ -151,32 +153,17 @@ export function OrgDomainEditor({
 
   async function handleVerify(domain: OrgDomain) {
     setVerifying(domain.id);
-
-    try {
-      const testDomain = `_verify.${domain.domain}`;
-      const res = await fetch(
-        `/api/v1/dns-check?domain=${encodeURIComponent(testDomain)}&expected=${encodeURIComponent(defaultDomain)}`
-      );
-
-      if (!res.ok) throw new Error();
-      const data = await res.json();
-
-      if (data.configured) {
-        // Marks the domain verified locally.
-        setDomains((ds) =>
-          ds.map((d) => (d.id === domain.id ? { ...d, verified: true } : d))
-        );
-        toast.success("DNS verified successfully");
-      } else {
-        toast.error(
-          "DNS not yet configured. Make sure your wildcard record is set up and has propagated."
-        );
-      }
-    } catch {
-      toast.error("Couldn't check DNS");
-    } finally {
-      setVerifying(null);
-    }
+    const result = await runOwnershipCheck(`/api/v1/organizations/${orgId}/domains/verify`, { id: domain.id });
+    setVerifying(null);
+    if (!result) return;
+    setDomains((ds) =>
+      ds.map((d) =>
+        d.id === domain.id
+          ? { ...d, verified: result.verified, verification: { ...d.verification, state: result.verified ? "verified" : "pending" } }
+          : d,
+      ),
+    );
+    router.refresh();
   }
 
   async function handleDelete(domain: OrgDomain) {
@@ -264,9 +251,9 @@ export function OrgDomainEditor({
           {customDomains.map((domain) => (
             <div
               key={domain.id}
-              className="squircle rounded-lg bg-background-deep p-4"
+              className="squircle rounded-lg bg-background-deep"
             >
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between p-4">
                 <div className="flex items-center gap-3 min-w-0">
                   <Globe className="size-4 text-muted-foreground shrink-0" />
                   <div className="min-w-0">
@@ -274,34 +261,22 @@ export function OrgDomainEditor({
                       <p className="text-sm font-mono truncate">
                         *.{domain.domain}
                       </p>
-                      {domain.verified ? (
+                      {domain.verification.state === "verified" && (
                         <Badge variant="success" className="shrink-0">
                           <CheckCircle2 className="size-3 mr-1" />
                           Verified
                         </Badge>
-                      ) : (
+                      )}
+                      {domain.verification.state === "pending" && (
                         <Badge variant="warning" className="shrink-0">
                           <AlertCircle className="size-3 mr-1" />
-                          Unverified
+                          Not verified
                         </Badge>
                       )}
                     </div>
                   </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  {!domain.verified && (
-                    <Button
-                      size="icon-xs"
-                      variant="ghost"
-                      onClick={() => handleVerify(domain)}
-                      disabled={verifying === domain.id}
-                      title="Verify DNS"
-                    >
-                      <RefreshCw
-                        className={`size-3.5 ${verifying === domain.id ? "animate-spin" : ""}`}
-                      />
-                    </Button>
-                  )}
                   <Switch
                     checked={domain.enabled}
                     onCheckedChange={() => handleToggle(domain)}
@@ -319,6 +294,14 @@ export function OrgDomainEditor({
                   </Button>
                 </div>
               </div>
+              {domain.verification.state === "pending" && (
+                <OwnershipChallenge
+                  recordName={domain.verification.recordName}
+                  recordValue={domain.verification.recordValue}
+                  checking={verifying === domain.id}
+                  onCheck={() => handleVerify(domain)}
+                />
+              )}
             </div>
           ))}
         </div>
@@ -343,7 +326,8 @@ export function OrgDomainEditor({
             <BottomSheetTitle>Add custom domain</BottomSheetTitle>
             <BottomSheetDescription>
               Add a custom domain for project URLs. You will need to configure
-              wildcard DNS for the domain.
+              wildcard DNS for the domain and add a TXT record to verify you
+              own it.
             </BottomSheetDescription>
           </BottomSheetHeader>
 

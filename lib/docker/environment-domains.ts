@@ -26,6 +26,8 @@ export function environmentDomains(
       sslEnabled: template?.sslEnabled ?? true,
       redirectTo: null,
       redirectCode: 301,
+      verificationToken: null,
+      verifiedAt: null,
       createdAt: template?.createdAt ?? new Date(0),
       composeService: template?.composeService ?? null,
     },

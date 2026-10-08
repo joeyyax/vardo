@@ -68,6 +68,7 @@ const { dbMock, statusWrites, captured, envRows, groupEnvHosts } = vi.hoisted(()
 });
 
 vi.mock("@/lib/db", () => ({ db: dbMock }));
+vi.mock("@/lib/domains/routable", () => ({ splitRoutable: async (rows: unknown[]) => ({ routable: rows, dropped: [] }) }));
 vi.mock("@/lib/redis", () => ({
   redis: { set: vi.fn().mockResolvedValue("OK"), del: vi.fn().mockResolvedValue(1) },
 }));

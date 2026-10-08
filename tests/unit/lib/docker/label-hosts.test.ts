@@ -28,6 +28,7 @@ import { collectLabelRules } from "@/lib/docker/compose-hosts";
 import type { ComposeFile } from "@/lib/docker/compose-types";
 
 const ORG = "org-a";
+const VERIFIED = new Date("2026-01-01");
 
 function ctx(over: { trusted?: boolean; baseDomain?: string | null; envMap?: Record<string, string>; domains?: string[] } = {}) {
   const log = vi.fn();
@@ -49,10 +50,10 @@ beforeEach(() => {
   tables.clear();
   tables.set(organizations, [{ isSystemManaged: false }]);
   tables.set(domains, [
-    { domain: "shop.org-a.com", orgId: ORG },
-    { domain: "victim.com", orgId: "org-b" },
+    { domain: "shop.org-a.com", orgId: ORG, trusted: false, verifiedAt: VERIFIED },
+    { domain: "victim.com", orgId: "org-b", trusted: false, verifiedAt: VERIFIED },
   ]);
-  tables.set(environments, [{ domain: "staging.org-b.com", orgId: "org-b" }]);
+  tables.set(environments, [{ domain: "staging.org-b.com", orgId: "org-b", trusted: true }]);
   tables.set(orgDomains, []);
   tables.set(apps, []);
 });
@@ -103,19 +104,51 @@ describe("assertLabelHostsOwned", () => {
   });
 
   it("checks HostRegexp zones", async () => {
-    tables.set(domains, [{ domain: "victim.com", orgId: "org-b" }]);
-    tables.set(orgDomains, [{ domain: "org-a.com", verified: true }]);
+    tables.set(domains, [{ domain: "victim.com", orgId: "org-b", trusted: true }]);
+    tables.set(orgDomains, [{ domain: "org-a.com", verifiedAt: VERIFIED }]);
     await expect(assertLabelHostsOwned(ctx(), compose("HostRegexp(`^[a-z]+\\.org-a\\.com$$`)"))).resolves.toHaveLength(1);
     await expect(assertLabelHostsOwned(ctx(), compose("HostRegexp(`^.+\\.vardo\\.test$$`)"))).rejects.toThrow(/subdomain/);
     // A zone holding another org's row would shadow it.
-    tables.set(domains, [{ domain: "x.org-a.com", orgId: "org-b" }]);
+    tables.set(domains, [{ domain: "x.org-a.com", orgId: "org-b", trusted: true }]);
     await expect(assertLabelHostsOwned(ctx(), compose("HostRegexp(`^[a-z]+\\.org-a\\.com$$`)"))).rejects.toThrow(/already in use/);
   });
 
   it("counts unverified org domains for trusted orgs only", async () => {
-    tables.set(orgDomains, [{ domain: "org-a.com", verified: false }]);
+    tables.set(orgDomains, [{ domain: "org-a.com", verifiedAt: null }]);
     await expect(assertLabelHostsOwned(ctx(), compose("Host(`new.org-a.com`)"))).rejects.toThrow(DeployBlockedError);
     await expect(assertLabelHostsOwned(ctx({ trusted: true }), compose("Host(`new.org-a.com`)"))).resolves.toHaveLength(1);
+  });
+
+  it("counts a domain row only once its org may route it (#891)", async () => {
+    const unverified = { domain: "claimed.com", orgId: ORG, trusted: false, verifiedAt: null };
+    // Positive control: the same row, verified, is owned.
+    tables.set(domains, [{ ...unverified, verifiedAt: VERIFIED }]);
+    await expect(assertLabelHostsOwned(ctx(), compose("Host(`claimed.com`) && PathPrefix(`/a`)"))).resolves.toHaveLength(1);
+    // Unverified, an untrusted org's own row doesn't make its label owned.
+    tables.set(domains, [unverified]);
+    await expect(assertLabelHostsOwned(ctx(), compose("Host(`claimed.com`) && PathPrefix(`/a`)"))).rejects.toThrow(DeployBlockedError);
+    // Trusted orgs skip verification.
+    tables.set(domains, [{ ...unverified, trusted: true }]);
+    await expect(assertLabelHostsOwned(ctx({ trusted: true }), compose("Host(`claimed.com`) && PathPrefix(`/a`)"))).resolves.toHaveLength(1);
+    // A host under the instance base needs no proof.
+    tables.set(domains, [{ domain: "mine.vardo.test", orgId: ORG, trusted: false, verifiedAt: null }]);
+    await expect(assertLabelHostsOwned(ctx(), compose("Host(`mine.vardo.test`)"))).resolves.toHaveLength(1);
+  });
+
+  it("lets another org's unverified row neither block nor own a host", async () => {
+    tables.set(domains, [{ domain: "squatted.com", orgId: "org-b", trusted: false, verifiedAt: null }]);
+    tables.set(orgDomains, [{ domain: "squatted.com", verifiedAt: VERIFIED }]);
+    await expect(assertLabelHostsOwned(ctx(), compose("Host(`squatted.com`)"))).resolves.toHaveLength(1);
+    tables.set(domains, [{ domain: "squatted.com", orgId: "org-b", trusted: false, verifiedAt: VERIFIED }]);
+    tables.set(orgDomains, []);
+    await expect(assertLabelHostsOwned(ctx(), compose("Host(`squatted.com`)"))).rejects.toThrow(/already in use/);
+  });
+
+  it("gives an untrusted org its base domain once it's verified", async () => {
+    tables.set(organizations, [{ isSystemManaged: false, baseDomain: "org-a.com", baseVerifiedAt: null }]);
+    await expect(assertLabelHostsOwned(ctx({ baseDomain: "org-a.com" }), compose("Host(`new.org-a.com`)"))).rejects.toThrow(DeployBlockedError);
+    tables.set(organizations, [{ isSystemManaged: false, baseDomain: "org-a.com", baseVerifiedAt: VERIFIED }]);
+    await expect(assertLabelHostsOwned(ctx({ baseDomain: "org-a.com" }), compose("Host(`new.org-a.com`)"))).resolves.toHaveLength(1);
   });
 
   it("refuses rules it can't read for untrusted orgs only", async () => {

@@ -12,6 +12,7 @@ import { apps } from "@/lib/db/schema";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { HOSTNAME_RE } from "@/lib/security/hostname";
+import { proofForNewDomain } from "@/lib/domains/context";
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
@@ -66,6 +67,12 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       }
     }
 
+    const domainName = parsed.data.domain.toLowerCase();
+    const proof = await proofForNewDomain(domainName, orgId);
+    if ("refusal" in proof) {
+      return NextResponse.json({ error: `Couldn't add domain. ${proof.refusal}` }, { status: 400 });
+    }
+
     // Caller's resolver, or the system primary issuer.
     const certResolver = parsed.data.certResolver
       ?? getPrimaryIssuer(await getSslConfig());
@@ -75,7 +82,8 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       .values({
         id: nanoid(),
         appId,
-        domain: parsed.data.domain,
+        domain: domainName,
+        ...proof,
         serviceName: parsed.data.serviceName,
         port: parsed.data.port,
         certResolver,
@@ -128,7 +136,24 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
       return apiError.validation(parsed.error);
     }
 
-    const { id, ...updates } = parsed.data;
+    const { id, ...fields } = parsed.data;
+    const updates: typeof fields & { domain?: string; verificationToken?: string; verifiedAt?: Date | null } = { ...fields };
+
+    // A renamed domain starts over: its old proof says nothing about the new host.
+    const current = fields.domain
+      ? await db.query.domains.findFirst({
+          where: and(eq(domains.id, id), eq(domains.appId, appId)),
+          columns: { domain: true },
+        })
+      : null;
+    if (fields.domain && current?.domain.toLowerCase() !== fields.domain.toLowerCase()) {
+      const proof = await proofForNewDomain(fields.domain.toLowerCase(), orgId);
+      if ("refusal" in proof) {
+        return NextResponse.json({ error: `Couldn't update domain. ${proof.refusal}` }, { status: 400 });
+      }
+      updates.domain = fields.domain.toLowerCase();
+      Object.assign(updates, proof);
+    }
 
     // Prevent self-redirect
     if (updates.redirectTo) {

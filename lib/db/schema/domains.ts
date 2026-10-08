@@ -22,6 +22,9 @@ export const domains = pgTable("domain", {
   sslEnabled: boolean("ssl_enabled").default(true),
   redirectTo: text("redirect_to"),
   redirectCode: integer("redirect_code").default(301),
+  // DNS TXT challenge at _vardo-challenge.<domain>.
+  verificationToken: text("verification_token"),
+  verifiedAt: timestamp("verified_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 },
   (t) => [

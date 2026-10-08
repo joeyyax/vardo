@@ -93,6 +93,20 @@ export function dnsFactsFromCheck(data: DnsCheckResponse): DnsFacts {
   };
 }
 
+export type OwnershipState = "not-required" | "verified" | "pending";
+
+/** What the TXT challenge says about a domain. Null when no proof is needed. */
+export function diagnoseOwnership(state: OwnershipState | undefined): Diagnosis<OwnershipState> | null {
+  if (!state || state === "not-required") return null;
+  if (state === "verified") return { state, label: "Ownership verified", tone: "success" };
+  return {
+    state,
+    label: "Not verified",
+    tone: "warning",
+    hint: "Add the TXT record, then check. Until it's verified, this domain doesn't route.",
+  };
+}
+
 /** The latest certificate probe for a domain, as stored. */
 export type CertCheck = {
   status: string;

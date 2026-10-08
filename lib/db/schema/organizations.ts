@@ -20,6 +20,9 @@ export const organizations = pgTable("organization", {
   isSystemManaged: boolean("is_system_managed").default(false).notNull(),
   // Backups for apps that inherit. Null uses the system default.
   backupsEnabled: boolean("backups_enabled"),
+  // DNS TXT challenge for baseDomain.
+  baseDomainToken: text("base_domain_token"),
+  baseDomainVerifiedAt: timestamp("base_domain_verified_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -75,6 +78,8 @@ export const orgDomains = pgTable(
     isDefault: boolean("is_default").default(false),
     enabled: boolean("enabled").default(true).notNull(),
     verified: boolean("verified").default(false),
+    verificationToken: text("verification_token"),
+    verifiedAt: timestamp("verified_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => [unique("org_domain_uniq").on(t.organizationId, t.domain)]

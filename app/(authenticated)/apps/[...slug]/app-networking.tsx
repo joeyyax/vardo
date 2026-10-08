@@ -27,11 +27,14 @@ import {
   BottomSheetDescription,
 } from "@/components/ui/bottom-sheet";
 import { PortsManager } from "./ports-manager";
+import { OwnershipChallenge, runOwnershipCheck } from "@/components/ssl/ownership-challenge";
 
 import {
   diagnoseCert,
   diagnoseDns,
+  diagnoseOwnership,
   dnsFactsFromCheck,
+  type OwnershipState,
   TONE_DOT,
   TONE_TEXT,
   worstTone,
@@ -92,6 +95,39 @@ export function AppNetworking({
     domainDns[domain.id] = check?.run === checkRun ? diagnoseDns(check.facts) : null;
   }
   const [serverIP, setServerIP] = useState<string | null>(null);
+
+  // TXT challenge state per domain (#891).
+  type Ownership = { state: OwnershipState; recordName: string; recordValue: string | null };
+  const [ownership, setOwnership] = useState<Record<string, Ownership>>({});
+  const [checkingOwnership, setCheckingOwnership] = useState<string | null>(null);
+  const domainIds = domains.map((d) => d.id).join(",");
+  const verifyUrl = `/api/v1/organizations/${orgId}/apps/${appId}/domains/verify`;
+
+  useEffect(() => {
+    if (!domainIds) return;
+    let cancelled = false;
+    fetch(verifyUrl)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!cancelled && data?.verification) setOwnership(data.verification);
+      })
+      .catch(() => { /* the badge stays hidden */ });
+    return () => {
+      cancelled = true;
+    };
+  }, [domainIds, verifyUrl]);
+
+  async function handleOwnershipCheck(domainId: string) {
+    setCheckingOwnership(domainId);
+    const result = await runOwnershipCheck(verifyUrl, { id: domainId });
+    setCheckingOwnership(null);
+    if (!result) return;
+    setOwnership((prev) => ({
+      ...prev,
+      [domainId]: { state: result.verified ? "verified" : "pending", recordName: result.recordName, recordValue: result.recordValue },
+    }));
+    if (result.verified) router.refresh();
+  }
 
   // Certificate state for domains Traefik serves over HTTPS. Local domains have none.
   function certFor(domain: Domain) {
@@ -497,6 +533,11 @@ export function AppNetworking({
                       </Badge>
                     )}
                     {(() => {
+                      const proof = diagnoseOwnership(ownership[domain.id]?.state);
+                      if (!proof) return null;
+                      return <span className={`text-xs shrink-0 ${TONE_TEXT[proof.tone]}`}>{proof.label}</span>;
+                    })()}
+                    {(() => {
                       const cert = certFor(domain);
                       if (!cert) return null;
                       return <span className={`text-xs shrink-0 ${TONE_TEXT[cert.tone]}`}>{cert.label}</span>;
@@ -563,6 +604,14 @@ export function AppNetworking({
                     </Button>
                   </div>
                 </div>
+                {ownership[domain.id]?.state === "pending" && (
+                  <OwnershipChallenge
+                    recordName={ownership[domain.id].recordName}
+                    recordValue={ownership[domain.id].recordValue}
+                    checking={checkingOwnership === domain.id}
+                    onCheck={() => handleOwnershipCheck(domain.id)}
+                  />
+                )}
               </div>
                 );
               })}

@@ -8,6 +8,8 @@ import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { recordActivity } from "@/lib/activity";
 import { eq } from "drizzle-orm";
+import { loadInstanceHosts } from "@/lib/domains/context";
+import { newChallengeToken, refusedHost } from "@/lib/domains/ownership";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
@@ -69,11 +71,28 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
     const updates: Partial<typeof organizations.$inferInsert> = {};
     if (parsed.data.name !== undefined) updates.name = parsed.data.name;
     if (parsed.data.baseDomain !== undefined) {
-      updates.baseDomain = parsed.data.baseDomain === "" ? null : parsed.data.baseDomain;
+      const next = parsed.data.baseDomain === "" ? null : parsed.data.baseDomain;
+      const current = await db.query.organizations.findFirst({
+        where: eq(organizations.id, orgId),
+        columns: { baseDomain: true },
+      });
+      if (!current) {
+        return NextResponse.json({ error: "Organization not found" }, { status: 404 });
+      }
+      // Re-saving the stored value stays allowed. A changed one starts a new challenge.
+      if (next !== current.baseDomain) {
+        const refusal = next ? refusedHost(next, await loadInstanceHosts()) : null;
+        if (refusal) {
+          return NextResponse.json({ error: `Couldn't set base domain. ${refusal}` }, { status: 400 });
+        }
+        updates.baseDomain = next;
+        updates.baseDomainToken = next ? newChallengeToken() : null;
+        updates.baseDomainVerifiedAt = null;
+      }
     }
     if (parsed.data.trusted !== undefined) updates.trusted = parsed.data.trusted;
 
-    if (Object.keys(updates).length === 0) {
+    if (Object.keys(updates).length === 0 && parsed.data.baseDomain === undefined) {
       return NextResponse.json({ error: "No valid updates provided" }, { status: 400 });
     }
 
