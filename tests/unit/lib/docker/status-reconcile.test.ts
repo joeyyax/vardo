@@ -5,6 +5,8 @@ import {
   parseExitCode,
   restartsFor,
   stabilityTransition,
+  shouldClearPark,
+  UNPARK_GRACE_MS,
   DEPLOYING_HOLD_MS,
 } from "@/lib/docker/status-reconcile";
 import { matchContainers, type ReconcilableApp } from "@/lib/docker/container-match";
@@ -452,5 +454,29 @@ describe("stabilityTransition", () => {
 
   it("records nothing when a container simply goes missing", () => {
     expect(stabilityTransition({ from: "active", to: "missing", reason: null, heldMs: null })).toBeNull();
+  });
+});
+
+describe("shouldClearPark", () => {
+  const now = new Date("2026-01-01T12:00:00Z");
+  const old = new Date(now.getTime() - UNPARK_GRACE_MS - 1);
+
+  it("clears a parked app whose containers are running", () => {
+    const observed = deriveStatus([container({ state: "running" })]);
+    expect(shouldClearPark({ parked: true, updatedAt: old }, observed, now)).toBe(true);
+  });
+
+  it("keeps a parked app with no running container", () => {
+    for (const containers of [[], [container({ state: "exited", status: "Exited (0) 1 hour ago" })]]) {
+      expect(shouldClearPark({ parked: true, updatedAt: old }, deriveStatus(containers), now)).toBe(false);
+    }
+  });
+
+  it("leaves an app that isn't parked alone", () => {
+    expect(shouldClearPark({ parked: false, updatedAt: old }, "active", now)).toBe(false);
+  });
+
+  it("waits out the grace after a fresh stop", () => {
+    expect(shouldClearPark({ parked: true, updatedAt: new Date(now.getTime() - 1000) }, "active", now)).toBe(false);
   });
 });

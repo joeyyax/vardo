@@ -5,6 +5,7 @@ import { eq, inArray, or, type SQL } from "drizzle-orm";
 
 import { db } from "@/lib/db";
 import { statusChange } from "@/lib/db/app-status";
+import { setParked } from "@/lib/db/app-parked";
 import { apps } from "@/lib/db/schema";
 import { recordActivity } from "@/lib/activity/record";
 import {
@@ -68,6 +69,20 @@ export function deriveStatus(
   if (reason?.kind === "signal") return "stopped";
   if (containers.some((c) => (parseExitCode(c.status) ?? 0) !== 0)) return "error";
   return "stopped";
+}
+
+/** Skips a fresh stop, whose containers a slightly older Docker read may still show running. */
+export const UNPARK_GRACE_MS = 30_000;
+
+/** A stopped-by-operator app whose containers are running again was started outside Vardo. */
+export function shouldClearPark(
+  app: { parked: boolean; updatedAt: Date | null },
+  observed: ObservedStatus,
+  now: Date,
+  graceMs: number = UNPARK_GRACE_MS,
+): boolean {
+  if (!app.parked || observed !== "active") return false;
+  return !app.updatedAt || now.getTime() - app.updatedAt.getTime() >= graceMs;
 }
 
 /** Crash or recovery activity event for a status transition, or null. */
@@ -251,6 +266,7 @@ const RECONCILE_COLUMNS = {
   displayName: true,
   organizationId: true,
   status: true,
+  parked: true,
   parentAppId: true,
   composeService: true,
   containerName: true,
@@ -350,6 +366,7 @@ async function computeAppUpdate(
     needsRedeploy,
     exitReason,
     running: observed === "active",
+    clearPark: shouldClearPark(app, observed, now),
     stability: unchanged
       ? null
       : stabilityTransition({
@@ -413,6 +430,7 @@ export async function reconcileAppNow(appId: string): Promise<ObservedStatus | n
       if (!update) continue;
       if (app.id === appId) observed = update.observed;
       if (!update.touchOnly) await applyAppUpdate(update, now);
+      if (update.clearPark) await setParked(app.id, false, now);
     }
     return observed;
   } catch (err) {
@@ -448,6 +466,9 @@ export async function tickStatusReconcile(): Promise<void> {
 
   for (const u of changed) {
     await applyAppUpdate(u, now);
+  }
+  for (const u of settled) {
+    if (u.clearPark) await setParked(u.id, false, now);
   }
 
   const touchedRunning = touched.filter((u) => u.running).map((u) => u.id);

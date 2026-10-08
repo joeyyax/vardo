@@ -171,7 +171,7 @@ async function rollbackClaimed(
     return {
       success: false, deploymentId: "", fromSlot: activeSlot, toSlot: standbySlot,
       durationMs: Date.now() - startTime,
-      error: "Failed to start standby slot",
+      error: "Couldn't start the standby",
     };
   }
 
@@ -297,7 +297,7 @@ async function rollbackClaimed(
   addEvent(organizationId, {
     type: "deploy.status",
     title: "Instant rollback",
-    message: `Rolled back to ${standbySlot} slot in ${durationMs}ms`,
+    message: `Rolled back to the previous deploy in ${durationMs}ms`,
     appId,
     deploymentId,
     status: "active",
