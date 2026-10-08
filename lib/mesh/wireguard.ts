@@ -88,7 +88,8 @@ export async function writeWgConfig(config: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = execFile(
       "docker",
-      ["exec", "-i", WG_CONTAINER, "sh", "-c", "mkdir -p /config/wg_confs && cat > /config/wg_confs/wg0.conf"], { env: dockerEnv() },
+      ["exec", "-i", WG_CONTAINER, "sh", "-c", "mkdir -p /config/wg_confs && cat > /config/wg_confs/wg0.conf"],
+      { env: dockerEnv() },
       (err) => (err ? reject(redactError(err)) : resolve())
     );
     child.stdin?.write(config);

@@ -30,7 +30,7 @@ Status: **fixed** (on main or in this branch), **open**, or **not a boundary**. 
 | Any signed-in user links every GitHub App installation | branch | `app/api/v1/github/installations/sync/route.ts:16`, `callback/route.ts:51` now require an instance admin. Rows linked before this aren't removed. |
 | Clone uses any installation of any org member | open | `lib/docker/deploy-steps/prepare-repo.ts:385-404`. A user in two orgs lends their installations to both. |
 | Domain string injected into a Traefik rule | branch | PATCH accepted any string, `apps/[appId]/domains/route.ts:104`. Now validated there and in environment routes; `lib/docker/compose-inject.ts:120` and `lib/ssl/generate-config.ts:93` refuse non-hostnames. |
-| Compose `traefik.*` labels claim another tenant's host or the console | open | user labels pass through when the app has no domain or opts out, `lib/docker/compose-inject.ts:37,206,362-370`. No `Host()` ownership check. |
+| Compose `traefik.*` labels claim another tenant's host or the console | fixed | #887 on `fix/887-label-hosts`: `lib/docker/label-hosts.ts` refuses `Host()` rules for hosts the org doesn't own, checked from `resolve-compose.ts` |
 | Compose joins `vardo_internal` (Postgres, Redis) or any network | open | external networks unchecked; `network_mode: <name>` becomes membership, `lib/docker/compose-validate.ts:61-84` |
 | Every routed app shares `vardo-network` with the console | open, by design | `lib/docker/deploy-steps/resolve-compose.ts:234-247`; apps reach `vardo-frontend:3000` directly |
 | Top-level `volumes:` with `external`/`name` reaches another tenant's or the console's volume | open | passes through for anonymous-looking keys and shared-only volumes, `lib/docker/deploy-steps/build.ts:111-129` |
@@ -85,6 +85,7 @@ Fix shape: validate the output of `docker compose config` (interpolated, long sy
 | Backup target credentials | fixed | `lib/backups/target-config.ts:139` |
 | Notification webhook `url` returned in plaintext | open, low | only `secret` and Slack URL are masked, `lib/notifications/mask-config.ts:8-21`. Discord URLs carry a token. |
 | Deploy log masking | partial | one sanitized sink, `lib/docker/deploy-logger.ts:54-60`, but pattern-only: app env values aren't passed to `redactSecrets`, so a bare value or a name like `STRIPE_KEY` leaks, `lib/redact.ts:8-45` |
+| Console env reaches compose interpolation | fixed | every docker and compose process inherited `process.env`, and Compose prefers shell vars over the project `.env`, so `${ENCRYPTION_MASTER_KEY}`, `${BETTER_AUTH_SECRET}` or `${DATABASE_URL}` in a tenant compose resolved to the console's values. Now `dockerEnv()`, `lib/docker/docker-env.ts`; `tests/unit/lib/docker/docker-env-guard.test.ts` fails on a call without `env`. |
 | Org invite tokens | fixed | 256-bit, hashed, 7-day expiry, `lib/invitations/token.ts:9` |
 | Mesh invite codes | fixed, low entropy | 32-bit, 15-minute TTL, single use, `lib/mesh/invite.ts:26,78` |
 
