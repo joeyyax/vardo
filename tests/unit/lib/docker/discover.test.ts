@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { detectContainerGpu, detectContainerPort, filterImageInheritedEnv, hasAtFileTraefikLabels } from "@/lib/docker/discover";
+import { dedupePorts, detectContainerGpu, detectContainerPort, filterImageInheritedEnv, hasAtFileTraefikLabels } from "@/lib/docker/discover";
 
 // ---------------------------------------------------------------------------
 // detectContainerGpu — GPU heuristic for discovered containers
@@ -231,5 +231,37 @@ describe("filterImageInheritedEnv", () => {
       "NOVALUE",
       "KEY=val",
     ]);
+  });
+});
+
+describe("dedupePorts", () => {
+  it("collapses the IPv4 and IPv6 bindings of one port", () => {
+    const ports = [
+      { internal: 443, external: 443, protocol: "tcp" },
+      { internal: 443, external: 443, protocol: "tcp" },
+      { internal: 80, external: 80, protocol: "tcp" },
+      { internal: 80, external: 80, protocol: "tcp" },
+    ];
+    expect(dedupePorts(ports)).toEqual([
+      { internal: 80, external: 80, protocol: "tcp" },
+      { internal: 443, external: 443, protocol: "tcp" },
+    ]);
+  });
+
+  it("returns the same order whatever order Docker reports", () => {
+    const a = { internal: 5432, external: 5433, protocol: "tcp" };
+    const b = { internal: 80, external: 8080, protocol: "tcp" };
+    const c = { internal: 80, protocol: "tcp" };
+    expect(dedupePorts([a, b, c])).toEqual(dedupePorts([c, b, a, b]));
+    expect(dedupePorts([a, b, c]).map((p) => p.internal)).toEqual([80, 80, 5432]);
+  });
+
+  it("keeps the same port on different protocols and different host ports", () => {
+    const ports = [
+      { internal: 53, external: 53, protocol: "udp" },
+      { internal: 53, external: 53, protocol: "tcp" },
+      { internal: 53, external: 5353, protocol: "tcp" },
+    ];
+    expect(dedupePorts(ports)).toHaveLength(3);
   });
 });

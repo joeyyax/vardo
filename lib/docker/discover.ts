@@ -89,6 +89,22 @@ export function detectContainerGpu(image: string, labels: Record<string, string>
   return false;
 }
 
+type DiscoveredPort = DiscoveredContainer["ports"][number];
+
+/** One entry per host port, container port and protocol, sorted. Docker reports one binding per address family. */
+export function dedupePorts(ports: DiscoveredPort[]): DiscoveredPort[] {
+  const seen = new Map<string, DiscoveredPort>();
+  for (const p of ports) {
+    seen.set(`${p.external ?? ""}:${p.internal}/${p.protocol}`, p);
+  }
+  return [...seen.values()].sort(
+    (a, b) =>
+      a.internal - b.internal ||
+      (a.external ?? 0) - (b.external ?? 0) ||
+      a.protocol.localeCompare(b.protocol),
+  );
+}
+
 function rawToDiscovered(
   id: string,
   name: string,
@@ -104,7 +120,7 @@ function rawToDiscovered(
     name,
     image,
     state,
-    ports,
+    ports: dedupePorts(ports),
     domain: parseTraefikDomain(labels),
     containerPort: parseTraefikPort(labels),
     mounts,
@@ -207,7 +223,7 @@ export async function getContainerDetail(containerId: string): Promise<Container
     name: data.name,
     image: data.image,
     state: data.state.status,
-    ports: data.ports,
+    ports: dedupePorts(data.ports),
     domain: parseTraefikDomain(data.labels),
     containerPort: detectContainerPort(
       data.labels,

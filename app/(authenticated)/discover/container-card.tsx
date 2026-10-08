@@ -55,11 +55,13 @@ export function ContainerCard({ container, onImport, nested }: ContainerCardProp
         {container.ports.length > 0 && (
           <span className="flex items-center gap-1">
             <span className="font-mono">
-              {container.ports
-                .map((p) =>
-                  p.external ? `${p.external}:${p.internal}` : String(p.internal)
-                )
-                .join(", ")}
+              {[
+                ...new Set(
+                  container.ports.map((p) =>
+                    p.external ? `${p.external}:${p.internal}` : String(p.internal)
+                  ),
+                ),
+              ].join(", ")}
             </span>
           </span>
         )}
