@@ -17,7 +17,7 @@ function runCheck(wgUp: boolean): number {
   writeFileSync(join(bin, "wg"), wgUp ? "#!/bin/sh\necho 'interface: wg0'\n" : "#!/bin/sh\nexit 1\n");
   chmodSync(join(bin, "wg"), 0o755);
   const script = command.replaceAll("/config/", `${dir}/config/`);
-  return spawnSync("sh", ["-c", script], { env: { PATH: `${bin}:/usr/bin:/bin` } }).status ?? -1;
+  return spawnSync("sh", ["-c", script], { env: { ...process.env, PATH: `${bin}:/usr/bin:/bin` } }).status ?? -1;
 }
 
 describe("wireguard healthcheck", () => {
