@@ -37,6 +37,9 @@ export type Domain = {
   isPrimary: boolean | null;
   redirectTo: string | null;
   redirectCode: number | null;
+  sslEnabled?: boolean | null;
+  /** Latest certificate probe; null until the monitor has looked. */
+  certCheck?: { status: string; expiresAt: Date | null; checkedAt: Date } | null;
 };
 
 export type EnvVar = {

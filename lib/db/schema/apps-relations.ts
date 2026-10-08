@@ -86,6 +86,7 @@ export const domainsRelations = relations(domains, ({ one, many }) => ({
     references: [apps.id],
   }),
   domainChecks: many(domainChecks),
+  certCheck: one(domainCertChecks),
 }));
 
 export const domainCertChecksRelations = relations(domainCertChecks, ({ one }) => ({

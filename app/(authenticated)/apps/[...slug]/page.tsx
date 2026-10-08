@@ -98,7 +98,7 @@ export default async function AppDetailPage({ params }: PageProps) {
         },
       },
     },
-    domains: true,
+    domains: { with: { certCheck: true } },
     environments: true,
     envVars: {
       columns: { id: true, key: true, value: true, isSecret: true, createdAt: true, updatedAt: true },

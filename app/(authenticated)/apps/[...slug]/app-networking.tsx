@@ -28,6 +28,15 @@ import {
 } from "@/components/ui/bottom-sheet";
 import { PortsManager } from "./ports-manager";
 
+import {
+  diagnoseCert,
+  diagnoseDns,
+  dnsFactsFromCheck,
+  TONE_DOT,
+  TONE_TEXT,
+  worstTone,
+  type DnsFacts,
+} from "@/components/ssl/domain-diagnosis";
 import type { Domain } from "./types";
 
 export function AppNetworking({
@@ -73,15 +82,22 @@ export function AppNetworking({
   const [dnsDomainId, setDnsDomainId] = useState<string | null>(
     () => (initialSubView && domains.find((d) => d.domain === initialSubView)?.id) || null,
   );
-  const [domainChecks, setDomainChecks] = useState<Record<string, { run: string; status: "resolving" | "not-configured" }>>({});
+  const [domainChecks, setDomainChecks] = useState<Record<string, { run: string; facts: DnsFacts }>>({});
   const [domainCheckTick, setDomainCheckTick] = useState(0);
   const checkRun = `${domains.length}:${domainCheckTick}`;
-  const domainStatuses: Record<string, "checking" | "resolving" | "not-configured"> = {};
+  // Null while a check is running.
+  const domainDns: Record<string, ReturnType<typeof diagnoseDns> | null> = {};
   for (const domain of domains) {
     const check = domainChecks[domain.id];
-    domainStatuses[domain.id] = check?.run === checkRun ? check.status : "checking";
+    domainDns[domain.id] = check?.run === checkRun ? diagnoseDns(check.facts) : null;
   }
   const [serverIP, setServerIP] = useState<string | null>(null);
+
+  // Certificate state for domains Traefik serves over HTTPS. Local domains have none.
+  function certFor(domain: Domain) {
+    if (domain.domain.endsWith(".localhost") || domain.sslEnabled === false) return null;
+    return diagnoseCert(domain.certCheck);
+  }
 
   // Fetch available issuers
   useEffect(() => {
@@ -109,7 +125,7 @@ export function AppNetworking({
 
     (async () => {
       for (const domain of domains) {
-        let status: "resolving" | "not-configured" = "not-configured";
+        let facts: DnsFacts = { resolved: false, ips: [], matches: false, failed: true };
         try {
           const params = new URLSearchParams({ domain: domain.domain });
           if (autoDomain && autoDomain !== domain.domain) {
@@ -117,13 +133,13 @@ export function AppNetworking({
           }
           const res = await fetch(`/api/v1/dns-check?${params}`);
           const data = await res.json();
-          if (data.configured) status = "resolving";
+          facts = dnsFactsFromCheck(data);
           if (data.serverIp && !cancelled) setServerIP(data.serverIp);
         } catch {
-          // not-configured
+          // Reported as a failed lookup.
         }
         if (cancelled) return;
-        setDomainChecks((prev) => ({ ...prev, [domain.id]: { run: checkRun, status } }));
+        setDomainChecks((prev) => ({ ...prev, [domain.id]: { run: checkRun, facts } }));
       }
     })();
 
@@ -451,29 +467,18 @@ export function AppNetworking({
                 <div className="flex items-center justify-between gap-4 p-4">
                   <div className="flex items-center gap-3 min-w-0">
                     {(() => {
-                      const status = domainStatuses[domain.id];
+                      const dns = domainDns[domain.id];
+                      const cert = certFor(domain);
+                      const tone = dns ? worstTone(dns.tone, cert?.tone ?? "success") : "neutral";
                       return (
                         <button
                           type="button"
                           onClick={() => openDomainSheet(domain.id)}
                           className="flex items-center gap-1.5 shrink-0 hover:opacity-70 transition-opacity"
                         >
-                          <span
-                            className={`size-2 rounded-full ${
-                              status === "resolving" ? "bg-status-success" :
-                              status === "not-configured" ? "bg-status-warning" :
-                              status === "checking" ? "bg-status-neutral animate-pulse" :
-                              "bg-status-neutral"
-                            }`}
-                          />
-                          <span className={`text-xs ${
-                            status === "resolving" ? "text-status-success" :
-                            status === "not-configured" ? "text-status-warning" :
-                            "text-muted-foreground"
-                          }`}>
-                            {status === "resolving" ? "Connected" :
-                             status === "not-configured" ? "Not connected" :
-                             "Checking"}
+                          <span className={`size-2 rounded-full ${TONE_DOT[tone]} ${dns ? "" : "animate-pulse"}`} />
+                          <span className={`text-xs ${dns ? TONE_TEXT[dns.tone] : "text-muted-foreground"}`}>
+                            {dns?.label ?? "Checking"}
                           </span>
                         </button>
                       );
@@ -491,6 +496,11 @@ export function AppNetworking({
                         Primary
                       </Badge>
                     )}
+                    {(() => {
+                      const cert = certFor(domain);
+                      if (!cert) return null;
+                      return <span className={`text-xs shrink-0 ${TONE_TEXT[cert.tone]}`}>{cert.label}</span>;
+                    })()}
                     {domain.redirectTo ? (
                       <Badge variant="outline" className="text-xs gap-1 shrink-0">
                         <ArrowRight className="size-3" />
@@ -573,7 +583,8 @@ export function AppNetworking({
       {(() => {
         const dnsDomain = domains.find((d) => d.id === dnsDomainId);
         if (!dnsDomain) return null;
-        const status = domainStatuses[dnsDomain.id];
+        const dns = domainDns[dnsDomain.id];
+        const cert = certFor(dnsDomain);
         const isLocal = dnsDomain.domain.endsWith(".localhost");
         return (
           <BottomSheet open={!!dnsDomainId} onOpenChange={(v) => {
@@ -592,23 +603,21 @@ export function AppNetworking({
               <div className="flex-1 overflow-y-auto px-6 pb-6 space-y-6">
                 {/* Status */}
                 <div className="flex items-center gap-3">
-                    <span className={`size-2.5 rounded-full ${
-                      status === "resolving" ? "bg-status-success" :
-                      status === "not-configured" ? "bg-status-warning" :
-                      "bg-status-neutral animate-pulse"
-                    }`} />
+                    <span className={`size-2.5 rounded-full ${dns ? TONE_DOT[dns.tone] : "bg-status-neutral animate-pulse"}`} />
                     <span className="text-sm">
-                      {isLocal
-                        ? (status === "resolving" ? "Service is reachable" : status === "not-configured" ? "Service isn't reachable" : "Checking...")
-                        : (status === "resolving" ? "Domain is correctly pointed to this server" : status === "not-configured" ? "Domain isn't pointed to this server" : "Checking domain status...")}
+                      {dns
+                        ? isLocal
+                          ? dns.tone === "success" ? "Service is reachable" : "Service isn't reachable"
+                          : dns.label
+                        : "Checking..."}
                     </span>
                   <Button
                     size="xs"
                     variant="outline"
                     onClick={() => setDomainCheckTick((t) => t + 1)}
-                    disabled={status === "checking"}
+                    disabled={!dns}
                   >
-                    {status === "checking" ? (
+                    {!dns ? (
                       <><Loader2 className="mr-1 size-3 animate-spin" />Checking</>
                     ) : (
                       "Check again"
@@ -616,13 +625,25 @@ export function AppNetworking({
                   </Button>
                 </div>
 
+                {dns?.hint && !isLocal && (
+                  <p className={`text-sm ${TONE_TEXT[dns.tone]}`}>{dns.hint}</p>
+                )}
+
+                {cert && (
+                  <div className="space-y-1">
+                    <h3 className="type-h4">Certificate</h3>
+                    <p className={`text-sm ${TONE_TEXT[cert.tone]}`}>{cert.label}</p>
+                    {cert.hint && <p className="text-sm text-muted-foreground">{cert.hint}</p>}
+                  </div>
+                )}
+
                 {isLocal ? (
                   /* Local domain info */
                   <div className="space-y-2">
                     <p className="text-sm text-muted-foreground">
                       This is an auto-generated local domain routed by Traefik. It resolves automatically on this machine — no DNS configuration needed.
                     </p>
-                    {status === "not-configured" && (
+                    {dns && dns.tone !== "success" && (
                       <p className="text-sm text-status-warning">
                         The service isn&apos;t responding. Make sure the app is running and the container is healthy.
                       </p>

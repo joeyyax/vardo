@@ -25,6 +25,8 @@ import {
 import { useSystemSetting } from "@/app/(authenticated)/admin/settings/use-system-setting";
 import { FieldHint } from "@/components/setup/provider-guide";
 import type { SslIssuer } from "@/lib/system-settings";
+import { DnsVerdict } from "./dns-verdict";
+import { diagnoseDns } from "./domain-diagnosis";
 
 type DnsCheck = {
   domain: string;
@@ -558,36 +560,7 @@ export function DomainSettings() {
                         : "No DNS records found"}
                     </p>
                   </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    {check.resolved && check.matches && check.proxied ? (
-                      <>
-                        <Check className="size-3.5 text-status-success" />
-                        <span className="text-xs font-medium text-status-success">
-                          Connected (via {check.proxyProvider === "cloudflare" ? "Cloudflare" : "proxy"})
-                        </span>
-                      </>
-                    ) : check.resolved && check.matches ? (
-                      <>
-                        <Check className="size-3.5 text-status-success" />
-                        <span className="text-xs font-medium text-status-success">Connected</span>
-                      </>
-                    ) : check.resolved && !check.reachable ? (
-                      <>
-                        <X className="size-3.5 text-status-error" />
-                        <span className="text-xs font-medium text-status-error">Not responding</span>
-                      </>
-                    ) : check.resolved ? (
-                      <>
-                        <X className="size-3.5 text-status-error" />
-                        <span className="text-xs font-medium text-status-error">Wrong IP</span>
-                      </>
-                    ) : (
-                      <>
-                        <X className="size-3.5 text-muted-foreground" />
-                        <span className="text-xs font-medium text-muted-foreground">DNS not configured</span>
-                      </>
-                    )}
-                  </div>
+                  <DnsVerdict diagnosis={diagnoseDns(check)} />
                 </div>
               ))}
             </div>
