@@ -9,6 +9,7 @@ const { buildBundle, meshFetch } = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/auth/admin", () => ({ requireAppAdmin: vi.fn().mockResolvedValue(undefined) }));
+vi.mock("@/lib/api/require-plugin", () => ({ requirePlugin: async () => null }));
 vi.mock("@/lib/api/with-rate-limit", () => ({
   withRateLimit: (handler: (...args: unknown[]) => unknown) => handler,
 }));

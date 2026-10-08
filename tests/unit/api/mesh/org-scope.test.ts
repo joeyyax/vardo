@@ -8,6 +8,7 @@ const state = vi.hoisted(() => ({
   transaction: vi.fn(),
 }));
 
+vi.mock("@/lib/api/require-plugin", () => ({ requirePlugin: async () => null }));
 vi.mock("@/lib/api/with-rate-limit", () => ({ withRateLimit: (h: unknown) => h }));
 vi.mock("@/lib/db", () => ({ db: { transaction: state.transaction } }));
 vi.mock("@/lib/mesh/auth", async (importOriginal) => ({

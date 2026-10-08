@@ -69,6 +69,7 @@ vi.mock("@/lib/mesh/auth", () => ({
   requireMeshPeer: mockRequireMeshPeer,
 }));
 
+vi.mock("@/lib/api/require-plugin", () => ({ requirePlugin: async () => null }));
 vi.mock("@/lib/api/with-rate-limit", () => ({
   withRateLimit: (handler: (...args: unknown[]) => unknown) => handler,
 }));
