@@ -204,6 +204,8 @@ function describe(c: HostClaim): string {
 /** One line per refused label, for the deploy error. */
 export function refusalMessage(v: LabelVerdict): string {
   const where = `Service "${v.service}" label ${v.label}`;
+  // Interpolated values can come from the console's environment; never echo them.
+  if (v.raw.replaceAll("$$", "").includes("$")) return `${where} (\`${v.raw}\`) claims a host this organization can't use.`;
   if (v.error) return `${where} couldn't be checked (${v.error}). Use Host(\`...\`) with a domain this organization owns.`;
   const bad = v.claims.filter((c) => c.verdict === v.verdict).map((c) => c.claim);
   if (v.verdict === "any") {

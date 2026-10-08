@@ -172,7 +172,7 @@ export async function assertLabelHostsOwned(
 
   for (const v of verdicts) {
     if (v.allowed && v.verdict === "uncertain") {
-      ctx.log(`[deploy] Traefik: ${v.service} ${v.label} not checked (${v.error ?? "unreadable host"}); allowed for a trusted organization`);
+      ctx.log(`[deploy] Traefik: ${v.service} ${v.label} not checked; allowed for a trusted organization`);
     }
   }
   const refused = verdicts.filter((v) => !v.allowed);
