@@ -51,6 +51,15 @@ function toRows(data: Listing): Row[] {
   ];
 }
 
+async function fetchListing(url: string): Promise<Row[] | null> {
+  try {
+    const res = await fetch(url);
+    return res.ok ? toRows(await res.json()) : null;
+  } catch {
+    return null;
+  }
+}
+
 export function DetachedVolumesCard() {
   const [rows, setRows] = useState<Row[] | null>(null);
   const [failed, setFailed] = useState(false);
@@ -59,26 +68,16 @@ export function DetachedVolumesCard() {
   const [deleting, setDeleting] = useState(false);
 
   async function load() {
-    try {
-      const res = await fetch(ENDPOINT);
-      if (!res.ok) throw new Error();
-      const names = toRows(await res.json());
-      setFailed(false);
-      setRows(names);
+    const names = await fetchListing(ENDPOINT);
+    setFailed(names === null);
+    setRows(names);
+    if (!names?.length) return;
 
-      // Sizes take a while on hosts with many volumes, so they arrive second.
-      if (names.length > 0) {
-        setMeasuring(true);
-        try {
-          const sized = await fetch(`${ENDPOINT}?sizes=1`);
-          if (sized.ok) setRows(toRows(await sized.json()));
-        } finally {
-          setMeasuring(false);
-        }
-      }
-    } catch {
-      setFailed(true);
-    }
+    // Sizes take a while on hosts with many volumes, so they arrive second.
+    setMeasuring(true);
+    const sized = await fetchListing(`${ENDPOINT}?sizes=1`);
+    if (sized) setRows(sized);
+    setMeasuring(false);
   }
 
   useEffect(() => {
