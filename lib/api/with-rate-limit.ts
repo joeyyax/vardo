@@ -23,8 +23,19 @@ type Tier = keyof typeof TIERS;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type RouteHandler = (request: NextRequest, context: any) => Promise<Response | NextResponse>;
 
+function clientIp(request: NextRequest): string {
+  return (
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    request.headers.get("x-real-ip") ||
+    "unknown"
+  );
+}
+
 /** Rate limit identifier from the bearer token or session cookie, else IP. Doesn't validate the session. */
-function extractIdentifier(request: NextRequest): string {
+export function extractIdentifier(request: NextRequest, tier?: Tier): string {
+  // Credentials are unverified here, so a fresh cookie per request would mean a fresh bucket.
+  if (tier === "auth") return clientIp(request);
+
   const authHeader = request.headers.get("authorization");
   if (authHeader?.startsWith("Bearer ")) {
     const token = authHeader.slice(7).trim();
@@ -40,11 +51,7 @@ function extractIdentifier(request: NextRequest): string {
     return `session:${hash}`;
   }
 
-  return (
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-    request.headers.get("x-real-ip") ||
-    "unknown"
-  );
+  return clientIp(request);
 }
 
 /** Wraps a route handler with Redis-backed rate limiting. */
@@ -55,7 +62,7 @@ export function withRateLimit(
   const config = TIERS[opts.tier];
 
   return async (request, context) => {
-    const identifier = extractIdentifier(request);
+    const identifier = extractIdentifier(request, opts.tier);
     const tierKey = opts.key || opts.tier;
 
     const limited = await rateLimit(request, {
