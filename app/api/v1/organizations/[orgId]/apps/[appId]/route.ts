@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { apps, projects } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
-import { repoFilePathSchema } from "@/lib/api/create-app-schema";
+import { cpuLimitSchema, repoFilePathSchema } from "@/lib/api/create-app-schema";
 import { deleteApp } from "@/lib/docker/delete-app";
 import { assertAppDirOwnership, AppDirOwnershipError } from "@/lib/docker/app-dir-owner";
 import { recordActivity } from "@/lib/activity";
@@ -42,7 +42,7 @@ const updateAppSchema = z.object({
     protocol: z.string().optional(),
     description: z.string().optional(),
   })).nullable().optional(),
-  cpuLimit: z.number().positive().max(64).nullable().optional(),
+  cpuLimit: cpuLimitSchema.nullable().optional(),
   memoryLimit: z.number().int().min(64).max(65536).nullable().optional(),
   priority: z.enum(["critical", "standard", "disposable"]).nullable().optional(), // null = inherit parent (decomposed child)
   gpuEnabled: z.boolean().optional(),

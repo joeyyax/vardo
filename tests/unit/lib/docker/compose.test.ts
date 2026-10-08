@@ -3399,12 +3399,13 @@ describe("buildVardoOverlay — edge cases", () => {
     expect(overlay.services.app.deploy?.resources?.limits).toEqual({ cpus: "3", memory: "256M", pids: defaultPidsLimit() });
   });
 
-  it("treats cpuLimit 0 as unset, so the tier default applies", () => {
+  it("adds no cpu limit when cpuLimit is 0, but still caps memory", () => {
     const compose: ComposeFile = {
       services: { app: { name: "app", image: "nginx:latest" } },
     };
     const overlay = buildVardoOverlay({ fullCompose: compose, networkName, cpuLimit: 0, hostCpus: 4 });
-    expect(overlay.services.app.deploy?.resources?.limits?.cpus).toBe("3");
+    expect(overlay.services.app.deploy?.resources?.limits?.cpus).toBeUndefined();
+    expect(overlay.services.app.deploy?.resources?.limits?.memory).toBe(`${defaultMemoryLimitMb("standard")}M`);
   });
 
   it("produces a service entry with only name + standard QoS knobs when no other config is injected", () => {

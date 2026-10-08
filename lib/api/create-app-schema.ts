@@ -7,6 +7,9 @@ export const repoFilePathSchema = z
   .regex(/^[a-zA-Z0-9._-][a-zA-Z0-9._\-/]*$/, "Invalid file path")
   .refine((p) => !p.split("/").includes(".."), { message: "Invalid file path" });
 
+/** CPU cores. Null uses the tier default; 0 removes the cap. */
+export const cpuLimitSchema = z.number().min(0).max(64);
+
 /** Request body accepted by POST /api/v1/organizations/[orgId]/apps. */
 export const createAppSchema = z
   .object({
@@ -45,7 +48,7 @@ export const createAppSchema = z
       value: z.string(),
       copyRef: z.string().optional(),
     })).optional(),
-    cpuLimit: z.number().positive().max(64).nullable().optional(),
+    cpuLimit: cpuLimitSchema.nullable().optional(),
     memoryLimit: z.number().int().min(64).max(65536).nullable().optional(),
     diskWriteAlertThreshold: z.number().int().min(0).nullable().optional(),
     projectId: z.string().min(1, "Project is required"),

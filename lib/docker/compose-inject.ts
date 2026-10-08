@@ -425,13 +425,16 @@ export function buildVardoOverlay(opts: {
           : undefined;
     const declaredCpus = svc.deploy?.resources?.limits?.cpus;
     const tierCpus = defaultCpuLimit(tier, hostCpus);
-    // App limit, then compose limit (0 is none), then tier default.
-    const effCpus = effCpuLimit
-      ? String(effCpuLimit)
-      : declaredCpus !== undefined
-        ? String(declaredCpus)
-        : tierCpus
-          ? String(tierCpus)
+    // App limit (0 is none, leaving the compose's), then compose limit (0 is none), then tier default.
+    const effCpus =
+      effCpuLimit == null
+        ? declaredCpus !== undefined
+          ? String(declaredCpus)
+          : tierCpus
+            ? String(tierCpus)
+            : undefined
+        : effCpuLimit > 0
+          ? String(effCpuLimit)
           : undefined;
     const effPids = svc.deploy?.resources?.limits?.pids ?? defaultPidsLimit() ?? undefined;
 

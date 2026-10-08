@@ -25,6 +25,7 @@ import {
 
 import type { App } from "./types";
 import { can } from "@/lib/auth/permissions";
+import { cpuLimitHint } from "@/lib/ui/cpu-limit";
 
 /** Said under every field the container only picks up when it is recreated. */
 const REDEPLOY_NOTE = "Requires a redeploy to take effect.";
@@ -419,13 +420,13 @@ export function AppSettingsPanel({
           <div className={fields.diskWriteAlert ? "grid gap-4 sm:grid-cols-3" : "grid gap-4 sm:grid-cols-2"}>
             <div className="grid gap-2">
               <Label htmlFor="edit-cpu-limit">CPU limit (cores)</Label>
-              <Input id="edit-cpu-limit" type="number" step="0.1" min="0.1" placeholder="No limit" value={cpuLimit} onChange={(e) => setCpuLimit(e.target.value)} />
-              <p className="text-xs text-muted-foreground">{cpuLimit ? cpuLimit + " CPU core(s)" : "No limit"}</p>
+              <Input id="edit-cpu-limit" type="number" step="0.1" min="0" placeholder="Tier default" value={cpuLimit} onChange={(e) => setCpuLimit(e.target.value)} />
+              <p className="text-xs text-muted-foreground">{cpuLimitHint(cpuLimit)}</p>
             </div>
             <div className="grid gap-2">
               <Label htmlFor="edit-memory-limit">Memory limit (MB)</Label>
-              <Input id="edit-memory-limit" type="number" step="64" min="64" placeholder="No limit" value={memoryLimit} onChange={(e) => setMemoryLimit(e.target.value)} />
-              <p className="text-xs text-muted-foreground">{memoryLimit ? memoryLimit + " MB" : "No limit"}</p>
+              <Input id="edit-memory-limit" type="number" step="64" min="64" placeholder="Tier default" value={memoryLimit} onChange={(e) => setMemoryLimit(e.target.value)} />
+              <p className="text-xs text-muted-foreground">{memoryLimit ? memoryLimit + " MB" : "Blank uses the default for this tier."}</p>
             </div>
             {fields.diskWriteAlert && (
               <div className="grid gap-2">

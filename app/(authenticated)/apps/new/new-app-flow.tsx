@@ -115,6 +115,7 @@ const SOURCE_OPTIONS = [
 type SourceOption = (typeof SOURCE_OPTIONS)[number]["id"];
 
 import { slugify } from "@/lib/ui/slugify";
+import { cpuLimitHint } from "@/lib/ui/cpu-limit";
 
 export function NewAppFlow({ orgId, templates, parentApps = [], baseDomain: baseDomainProp, defaultParentId, defaultProjectId, defaultName, defaultImage, defaultTemplate, defaultSource, recentProjectId, containerImportEnabled }: Props) {
   const router = useRouter();
@@ -1055,11 +1056,12 @@ export function NewAppFlow({ orgId, templates, parentApps = [], baseDomain: base
             <div className="grid gap-4 sm:grid-cols-3">
               <div className="grid gap-2">
                 <Label htmlFor="cpu-limit">CPU limit (cores)</Label>
-                <Input id="cpu-limit" type="number" step="0.1" min="0.1" placeholder="No limit" value={cpuLimit} onChange={(e) => setCpuLimit(e.target.value)} />
+                <Input id="cpu-limit" type="number" step="0.1" min="0" placeholder="Tier default" value={cpuLimit} onChange={(e) => setCpuLimit(e.target.value)} />
+                <p className="text-xs text-muted-foreground">{cpuLimitHint(cpuLimit)}</p>
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="memory-limit">Memory limit (MB)</Label>
-                <Input id="memory-limit" type="number" step="64" min="64" placeholder="No limit" value={memoryLimit} onChange={(e) => setMemoryLimit(e.target.value)} />
+                <Input id="memory-limit" type="number" step="64" min="64" placeholder="Tier default" value={memoryLimit} onChange={(e) => setMemoryLimit(e.target.value)} />
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="disk-write-threshold">Disk write alert (GB/hr)</Label>
