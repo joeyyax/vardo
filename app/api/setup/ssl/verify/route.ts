@@ -1,4 +1,5 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { setupTokenRefusal } from "@/lib/setup-token";
 import { requireAdminAuth } from "@/lib/auth/admin";
 import { getSslConfig, ISSUER_LABELS, type SslIssuer } from "@/lib/system-settings";
 
@@ -81,7 +82,9 @@ async function checkIssuer(
   return { issuer, label, ok: false, message: `Unknown issuer: ${issuer}` };
 }
 
-async function handlePost() {
+async function handlePost(request: NextRequest) {
+  const refused = await setupTokenRefusal(request);
+  if (refused) return refused;
   try {
     await requireAdminAuth();
   } catch {

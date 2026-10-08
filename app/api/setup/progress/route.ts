@@ -1,4 +1,5 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { setupTokenRefusal } from "@/lib/setup-token";
 import { needsSetup } from "@/lib/setup";
 import { requireAdminAuth } from "@/lib/auth/admin";
 import {
@@ -14,7 +15,9 @@ import { apiError } from "@/lib/api/error-response";
 
 // GET /api/setup/progress — returns completion status for each setup step.
 // Unauthenticated during setup (no user exists yet); requires admin after.
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const refused = await setupTokenRefusal(request);
+  if (refused) return refused;
   const setup = await needsSetup();
 
   if (!setup) {

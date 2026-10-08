@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { setupTokenRefusal } from "@/lib/setup-token";
 import { needsSetup } from "@/lib/setup";
 import { listSystemBackups } from "@/lib/restore/source";
 import { resolveTarget, storageErrorMessage, targetBodySchema } from "@/lib/restore/request";
@@ -7,6 +8,8 @@ import { withRateLimit } from "@/lib/api/with-rate-limit";
 
 // POST /api/setup/restore/backups — system backups in the target. Fresh installs only.
 async function handler(request: NextRequest) {
+  const refused = await setupTokenRefusal(request);
+  if (refused) return refused;
   if (!(await needsSetup())) return apiError.forbidden();
 
   const parsed = targetBodySchema.safeParse(await request.json().catch(() => ({})));

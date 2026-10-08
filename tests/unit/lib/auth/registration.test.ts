@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const state = vi.hoisted(() => ({
   needsSetup: false,
@@ -6,6 +6,7 @@ const state = vi.hoisted(() => ({
   invitation: undefined as { id: string } | undefined,
   userCount: 2,
   createDefaultOrg: vi.fn(),
+  headers: new Headers(),
 }));
 
 vi.mock("@/lib/db", () => ({
@@ -16,6 +17,7 @@ vi.mock("@/lib/db", () => ({
     select: () => ({ from: async () => [{ count: String(state.userCount) }] }),
   },
 }));
+vi.mock("next/headers", () => ({ headers: async () => state.headers }));
 vi.mock("@/lib/setup", () => ({ needsSetup: async () => state.needsSetup }));
 vi.mock("@/lib/system-settings", () => ({
   getAuthConfig: async () => ({ registrationMode: state.mode, sessionDurationDays: 7 }),
@@ -85,5 +87,36 @@ describe("signup org creation", () => {
     state.mode = "open";
     await hooks().after!(newUser);
     expect(state.createDefaultOrg).toHaveBeenCalled();
+  });
+});
+
+describe("first sign-up needs the setup token", () => {
+  const TOKEN = "0123456789abcdef0123456789abcdef";
+  beforeEach(() => {
+    state.needsSetup = true;
+    state.headers = new Headers();
+    vi.stubEnv("SETUP_TOKEN", TOKEN);
+    vi.stubEnv("NODE_ENV", "production");
+  });
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("refuses sign-up without the token", async () => {
+    await expect(hooks().before!(newUser)).rejects.toThrow(/setup token/);
+  });
+
+  it("refuses sign-up with the wrong token", async () => {
+    state.headers = new Headers({ cookie: "vardo_setup_token=wrong" });
+    await expect(hooks().before!(newUser)).rejects.toThrow(/setup token/);
+  });
+
+  it("allows sign-up with the right token", async () => {
+    state.headers = new Headers({ cookie: `vardo_setup_token=${TOKEN}` });
+    await expect(hooks().before!(newUser)).resolves.toBeUndefined();
+  });
+
+  it("ignores the token once setup has closed", async () => {
+    state.needsSetup = false;
+    state.mode = "open";
+    await expect(hooks().before!(newUser)).resolves.toBeUndefined();
   });
 });

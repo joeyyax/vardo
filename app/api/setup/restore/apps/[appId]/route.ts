@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { setupTokenRefusal } from "@/lib/setup-token";
 import { z } from "zod";
 import { requireAdminAuth } from "@/lib/auth/admin";
 import { currentRestore, deferApp, moveAppToFront, retryApp } from "@/lib/restore/queue";
@@ -10,6 +11,8 @@ const bodySchema = z.object({ action: z.enum(["front", "defer", "requeue", "retr
 
 // POST /api/setup/restore/apps/[appId] — reorder or defer a queued app.
 async function handler(request: NextRequest, { params }: { params: Promise<{ appId: string }> }) {
+  const refused = await setupTokenRefusal(request);
+  if (refused) return refused;
   try {
     await requireAdminAuth(request);
     const { appId } = await params;

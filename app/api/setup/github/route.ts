@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { setupTokenRefusal } from "@/lib/setup-token";
 import { z } from "zod";
 import { requireAdminAuth } from "@/lib/auth/admin";
 import { refreshGitHubOAuthCredentials } from "@/lib/auth";
@@ -19,6 +20,8 @@ const githubSchema = z.object({
 }).strict();
 
 export async function GET(request: NextRequest) {
+  const refused = await setupTokenRefusal(request);
+  if (refused) return refused;
   await requireAdminAuth(request);
 
   const config = await getGitHubAppConfig();
@@ -38,6 +41,8 @@ export async function GET(request: NextRequest) {
 }
 
 async function handlePost(request: NextRequest) {
+  const refused = await setupTokenRefusal(request);
+  if (refused) return refused;
   const setup = await needsSetup();
   if (!setup) {
     await requireAdminAuth(request);

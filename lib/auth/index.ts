@@ -7,7 +7,7 @@ import { db } from "@/lib/db";
 import * as schema from "@/lib/db/schema";
 import { DEFAULT_APP_NAME } from "@/lib/constants";
 import { createDefaultOrgForUser } from "@/lib/organizations/create-default-org";
-import { REGISTRATION_CLOSED_MESSAGE, registrationAllowed, shouldCreateDefaultOrg } from "@/lib/auth/registration";
+import { REGISTRATION_CLOSED_MESSAGE, SETUP_TOKEN_MESSAGE, registrationAllowed, setupTokenAllowsSignup, shouldCreateDefaultOrg } from "@/lib/auth/registration";
 import { isAuthMethodEnabled } from "@/lib/config/auth-methods";
 import { isPasswordAuthAllowed } from "@/lib/config/provider-restrictions";
 
@@ -158,6 +158,9 @@ function buildAuth() {
     user: {
       create: {
         before: async (user) => {
+          if (!(await setupTokenAllowsSignup())) {
+            throw new APIError("FORBIDDEN", { message: SETUP_TOKEN_MESSAGE });
+          }
           if (!(await registrationAllowed(user.email))) {
             throw new APIError("FORBIDDEN", { message: REGISTRATION_CLOSED_MESSAGE });
           }

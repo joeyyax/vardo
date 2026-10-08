@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { setupTokenRefusal } from "@/lib/setup-token";
 import { needsSetup } from "@/lib/setup";
 import { checkSystemBackup } from "@/lib/restore/source";
 import { keyBodySchema, resolveTarget, storageErrorMessage } from "@/lib/restore/request";
@@ -7,6 +8,8 @@ import { withRateLimit } from "@/lib/api/with-rate-limit";
 
 // POST /api/setup/restore/check — compare Key IDs, then the auth secret, with the backup. Restores nothing.
 async function handler(request: NextRequest) {
+  const refused = await setupTokenRefusal(request);
+  if (refused) return refused;
   if (!(await needsSetup())) return apiError.forbidden();
 
   const parsed = keyBodySchema.safeParse(await request.json().catch(() => ({})));

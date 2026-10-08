@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { invitations, user } from "@/lib/db/schema";
 import { needsSetup } from "@/lib/setup";
 import { getAuthConfig } from "@/lib/system-settings";
+import { hasSetupToken } from "@/lib/setup-token";
 
 export const REGISTRATION_CLOSED_MESSAGE = "Registration is closed on this instance. Ask an admin for an invitation.";
 
@@ -16,6 +17,20 @@ async function hasPendingInvitation(email: string): Promise<boolean> {
     columns: { id: true },
   });
   return row !== undefined;
+}
+
+export const SETUP_TOKEN_MESSAGE = "Enter the setup token on the setup page before creating the first account.";
+
+/** Whether the sign-up request may create the first account: the setup token is present, or setup is already closed. */
+export async function setupTokenAllowsSignup(): Promise<boolean> {
+  if (!(await needsSetup())) return true;
+  try {
+    const { headers } = await import("next/headers");
+    return hasSetupToken(await headers());
+  } catch {
+    // Outside a request there's no token to read.
+    return false;
+  }
 }
 
 /** Whether a new account may be created for this email. "approval" refuses like "closed". */

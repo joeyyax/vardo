@@ -1205,7 +1205,7 @@ generate_env() {
   fi
 
   # Generate secrets + instance identity. A rebuild passes the escrowed ones in.
-  local db_pass auth_secret enc_key webhook_secret instance_id
+  local db_pass auth_secret enc_key webhook_secret setup_token instance_id
   db_pass=$(openssl rand -base64 32 | tr -d '/+=' | head -c 32)
   auth_secret="${BETTER_AUTH_SECRET:-$(openssl rand -base64 32 | tr -d '/+=' | head -c 48)}"
   enc_key="${ENCRYPTION_MASTER_KEY:-$(openssl rand -hex 32)}"
@@ -1214,6 +1214,7 @@ generate_env() {
   [ -n "${BETTER_AUTH_SECRET:-}" ] && log "Using the auth secret from BETTER_AUTH_SECRET"
   [ -n "${ENCRYPTION_MASTER_KEY:-}" ] && log "Using the master key from ENCRYPTION_MASTER_KEY"
   webhook_secret=$(openssl rand -hex 32)
+  setup_token=$(openssl rand -hex 16)
   if command -v uuidgen &>/dev/null; then
     instance_id=$(uuidgen | tr '[:upper:]' '[:lower:]')
   elif [ -f /proc/sys/kernel/random/uuid ]; then
@@ -1246,6 +1247,7 @@ DB_PASSWORD=$db_pass
 BETTER_AUTH_SECRET=$auth_secret
 ENCRYPTION_MASTER_KEY=$enc_key
 GITHUB_WEBHOOK_SECRET=$webhook_secret
+SETUP_TOKEN=$setup_token
 EOF
   elif [[ "$VARDO_ROLE" == "staging" ]] && [ -z "${VARDO_DOMAIN:-}" ]; then
     # Staging without domain — no TLS, no Traefik auth
@@ -1258,6 +1260,7 @@ DB_PASSWORD=$db_pass
 BETTER_AUTH_SECRET=$auth_secret
 ENCRYPTION_MASTER_KEY=$enc_key
 GITHUB_WEBHOOK_SECRET=$webhook_secret
+SETUP_TOKEN=$setup_token
 EOF
   else
     # Production or staging with domain — full config
@@ -1276,6 +1279,7 @@ DB_PASSWORD=$db_pass
 BETTER_AUTH_SECRET=$auth_secret
 ENCRYPTION_MASTER_KEY=$enc_key
 GITHUB_WEBHOOK_SECRET=$webhook_secret
+SETUP_TOKEN=$setup_token
 ACME_EMAIL=${ACME_EMAIL}
 ZEROSSL_EAB_KID=${ZEROSSL_EAB_KID:-}
 ZEROSSL_EAB_HMAC=${ZEROSSL_EAB_HMAC:-}
@@ -1563,6 +1567,22 @@ case "${1:-}" in
     echo "host leaves every app's env vars unreadable. Without the auth secret, two-factor" >&2
     echo "sign-in stops working." >&2
     ;;
+  setup-token)
+    # The token that opens first-run setup. Older installs get one on first ask.
+    if [ ! -r "$VARDO_DIR/.env" ]; then
+      echo "Cannot read $VARDO_DIR/.env — run as root." >&2
+      exit 1
+    fi
+    TOKEN=$(grep -m1 '^SETUP_TOKEN=' "$VARDO_DIR/.env" | cut -d= -f2-)
+    if [ -z "$TOKEN" ]; then
+      [ -w "$VARDO_DIR/.env" ] || { echo "Cannot write $VARDO_DIR/.env — run as root." >&2; exit 1; }
+      TOKEN=$(openssl rand -hex 16)
+      printf 'SETUP_TOKEN=%s\n' "$TOKEN" >> "$VARDO_DIR/.env"
+      # up -d recreates the container; restart would keep the old environment.
+      docker compose -f "$COMPOSE_PATH" up -d frontend >&2
+    fi
+    echo "$TOKEN"
+    ;;
   uninstall) bash "$INSTALL_SH" uninstall "$@" ;;
   shell)    shift; docker compose -f "$COMPOSE_PATH" exec frontend "${@:-sh}" ;;
   adopt)
@@ -1619,6 +1639,7 @@ case "${1:-}" in
     echo "  doctor           Run health checks"
     echo "  key              Print the master key and auth secret (escrow them)"
     echo "  key set          Load escrowed secrets (fresh installs, before a restore)"
+    echo "  setup-token      Print the first-run setup token"
     echo "  adopt <path>     Onboard existing repo with vardo.yaml"
     echo "  backup decrypt <in> <out>  Decrypt a backup archive"
     echo "  shell [cmd]      Open shell in frontend container"
@@ -1634,6 +1655,8 @@ print_install_summary() {
   local version
   version=$(get_version)
   load_env_display
+  local setup_token
+  setup_token=$(env_get SETUP_TOKEN)
 
   echo ""
   echo -e "${GREEN}${BOLD}  Vardo is running!${RESET}"
@@ -1654,22 +1677,23 @@ print_install_summary() {
     dimln "  1. cd $dev_dir"
     dimln "  2. pnpm install"
     dimln "  3. pnpm dev"
-    dimln "  4. Visit http://localhost:3000 to complete setup"
+    dimln "  4. Visit http://localhost:3000/setup?token=$setup_token to complete setup"
   elif [ -n "${VARDO_DOMAIN:-}" ]; then
     echo -e "  ${BOLD}Dashboard${RESET}   https://${VARDO_DOMAIN}"
     echo ""
     local server_ip
     server_ip=$(get_server_ip)
     if [ -n "$server_ip" ]; then
-      echo -e "  ${BOLD}Next step${RESET}   Visit ${BOLD}http://${server_ip}${RESET} to complete setup"
+      echo -e "  ${BOLD}Next step${RESET}   Visit ${BOLD}http://${server_ip}/setup?token=${setup_token}${RESET} to complete setup"
       dimln "            (works before DNS propagates)"
     else
-      echo -e "  ${BOLD}Next step${RESET}   Visit the dashboard to complete setup"
+      echo -e "  ${BOLD}Next step${RESET}   Visit ${BOLD}https://${VARDO_DOMAIN}/setup?token=${setup_token}${RESET} to complete setup"
     fi
   else
     echo ""
-    echo -e "  ${BOLD}Next step${RESET}   Visit ${BOLD}http://localhost:3000${RESET} to complete setup"
+    echo -e "  ${BOLD}Next step${RESET}   Visit ${BOLD}http://localhost:3000/setup?token=${setup_token}${RESET} to complete setup"
   fi
+  dimln "  Setup token: $setup_token (vardo setup-token prints it again)"
   echo ""
 
   local sudo_prefix=""
@@ -1682,6 +1706,7 @@ print_install_summary() {
   dimln "  vardo update         Pull latest and rebuild"
   dimln "  vardo doctor         Run health checks"
   dimln "  vardo key            Print the master key and auth secret"
+  dimln "  vardo setup-token    Print the setup token"
   echo ""
 
   if $RESTORE; then

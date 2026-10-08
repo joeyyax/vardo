@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { setupTokenRefusal } from "@/lib/setup-token";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { requireAdminAuth } from "@/lib/auth/admin";
@@ -17,6 +18,8 @@ import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { apiError } from "@/lib/api/error-response";
 
 export async function GET(request: NextRequest) {
+  const refused = await setupTokenRefusal(request);
+  if (refused) return refused;
   await requireAdminAuth(request);
 
   const methods = await getAllAuthMethods();
@@ -25,6 +28,8 @@ export async function GET(request: NextRequest) {
 }
 
 async function handlePost(request: NextRequest) {
+  const refused = await setupTokenRefusal(request);
+  if (refused) return refused;
   await requireAdminAuth(request);
 
   const body = await request.json();

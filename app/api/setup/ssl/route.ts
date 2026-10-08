@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { setupTokenRefusal } from "@/lib/setup-token";
 import { z } from "zod";
 import { requireAdminAuth } from "@/lib/auth/admin";
 import { getSslConfig, setSystemSetting, ISSUER_LABELS } from "@/lib/system-settings";
@@ -18,6 +19,8 @@ const sslSchema = z.object({
 }).strict();
 
 export async function GET(request: NextRequest) {
+  const refused = await setupTokenRefusal(request);
+  if (refused) return refused;
   await requireAdminAuth(request);
 
   const config = await getSslConfig();
@@ -40,6 +43,8 @@ export async function GET(request: NextRequest) {
 }
 
 async function handlePost(request: NextRequest) {
+  const refused = await setupTokenRefusal(request);
+  if (refused) return refused;
   await requireAdminAuth(request);
 
   const body = await request.json();

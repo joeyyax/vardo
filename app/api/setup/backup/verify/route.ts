@@ -1,11 +1,14 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { setupTokenRefusal } from "@/lib/setup-token";
 import { requireAdminAuth } from "@/lib/auth/admin";
 import { getBackupStorageConfig } from "@/lib/system-settings";
 import { HeadBucketCommand, S3Client } from "@aws-sdk/client-s3";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
-async function handlePost() {
+async function handlePost(request: NextRequest) {
+  const refused = await setupTokenRefusal(request);
+  if (refused) return refused;
   try {
     await requireAdminAuth();
   } catch {

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { setupTokenRefusal } from "@/lib/setup-token";
 import { needsSetup } from "@/lib/setup";
 import { RestoreRefusedError, startInstanceRestore } from "@/lib/restore/database";
 import { RESTORE_COOKIE } from "@/lib/restore/status";
@@ -8,6 +9,8 @@ import { withRateLimit } from "@/lib/api/with-rate-limit";
 
 // POST /api/setup/restore/start — check the Key ID, then restore Vardo's database and queue the apps.
 async function handler(request: NextRequest) {
+  const refused = await setupTokenRefusal(request);
+  if (refused) return refused;
   if (!(await needsSetup())) return apiError.forbidden();
 
   const parsed = keyBodySchema.safeParse(await request.json().catch(() => ({})));
