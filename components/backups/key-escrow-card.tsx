@@ -56,14 +56,13 @@ export function KeyEscrowCard({ heading = "h3" }: { heading?: "h2" | "h3" }) {
         ) : null}
 
         <p className="text-sm text-muted-foreground">
-          ENCRYPTION_MASTER_KEY is deliberately not in any backup — an archive that held it would hand every secret
-          to whoever holds the archive. Store it somewhere else, or a restore onto a new host leaves every env var
-          and every backup archive unreadable.
+          ENCRYPTION_MASTER_KEY and BETTER_AUTH_SECRET are never in a backup. Without them, a restore onto a new
+          host can't read env vars or archives, and two-factor sign-in stops working.
         </p>
 
         <p className="text-sm text-muted-foreground">
-          Read it on the host with <code className="font-mono text-foreground">vardo key</code>, then keep it in a
-          password manager. The Key ID above confirms an escrowed copy is the right one.
+          Read both on the host with <code className="font-mono text-foreground">vardo key</code>, then keep them in a
+          password manager. The Key ID above confirms an escrowed master key is the right one.
         </p>
       </CardContent>
     </Card>
