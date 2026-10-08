@@ -4,8 +4,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const { tables } = vi.hoisted(() => ({ tables: new Map<unknown, unknown[]>() }));
 
-vi.mock("@/lib/db", async () => {
-  const schema = await vi.importActual<typeof import("@/lib/db/schema")>("@/lib/db/schema");
+vi.mock("@/lib/db", () => {
   // Each select resolves to the rows queued for its table; filters are the loader's job.
   const select = () => {
     let table: unknown;
@@ -16,7 +15,6 @@ vi.mock("@/lib/db", async () => {
     };
     return chain;
   };
-  void schema;
   return { db: { select } };
 });
 vi.mock("@/lib/system-settings", () => ({
