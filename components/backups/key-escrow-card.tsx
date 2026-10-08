@@ -57,7 +57,7 @@ export function KeyEscrowCard({ heading = "h3" }: { heading?: "h2" | "h3" }) {
 
         <p className="text-sm text-muted-foreground">
           ENCRYPTION_MASTER_KEY and BETTER_AUTH_SECRET are never in a backup. Without them, a restore onto a new
-          host can't read env vars or archives, and two-factor sign-in stops working.
+          host can&apos;t read env vars or archives, and two-factor sign-in stops working.
         </p>
 
         <p className="text-sm text-muted-foreground">
