@@ -3,6 +3,8 @@ import { resolve4, resolveCname } from "dns/promises";
 import { getServerIP } from "@/lib/server-ip";
 import { isCloudflareIp } from "@/lib/cloudflare-ips";
 import { apiError } from "@/lib/api/error-response";
+import { isHostname } from "@/lib/security/hostname";
+import { blockedAddressReason } from "@/lib/security/ssrf";
 
 const BASE_DOMAIN = process.env.VARDO_BASE_DOMAIN || "localhost";
 
@@ -19,6 +21,10 @@ export async function GET(request: NextRequest) {
 
   if (!domain) {
     return NextResponse.json({ error: "domain required" }, { status: 400 });
+  }
+  // A path or port here turned the .localhost probe into a request to any internal address.
+  if (!isHostname(domain)) {
+    return NextResponse.json({ error: "domain must be a hostname" }, { status: 400 });
   }
 
   // For .localhost domains, check HTTP reachability instead of DNS
@@ -83,7 +89,8 @@ export async function GET(request: NextRequest) {
     const allCloudflare = aRecords.length > 0 && aRecords.every(isCloudflareIp);
 
     let reachable = false;
-    if (!aCorrect && !cnameCorrect && aRecords.length > 0) {
+    const anyInternal = aRecords.some((ip) => blockedAddressReason(ip) !== null);
+    if (!aCorrect && !cnameCorrect && aRecords.length > 0 && !anyInternal) {
       try {
         await fetch(`https://${domain}`, {
           method: "HEAD",
