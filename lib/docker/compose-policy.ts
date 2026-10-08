@@ -1,9 +1,9 @@
 // Deny-by-default check of `docker compose config` output for untrusted organizations (#886).
 // Runs on the resolved model, after interpolation, so `${VAR}`, `.`, `~` and long syntax all arrive as plain paths.
 
-import { existsSync, realpathSync } from "fs";
 import { rm } from "fs/promises";
-import { basename, dirname, isAbsolute, join, relative, resolve } from "path";
+import { isAbsolute, join, resolve } from "path";
+import { isUnder, realpathLenient } from "./compose-root";
 import { execFileAsync } from "@/lib/utils/exec";
 import { dockerEnv } from "./docker-env";
 import { DENIED_MOUNT_PATHS } from "./mount-paths";
@@ -12,6 +12,8 @@ import { NETWORK_NAME, COMPOSE_QUERY_TIMEOUT } from "./constants";
 import { DeployBlockedError } from "./errors";
 
 export type ComposePolicy = {
+  /** Trusted organizations keep their compose as written. */
+  trusted: boolean;
   /** The `-p` the files are resolved with. Project-scoped networks and volumes carry it as a prefix. */
   projectName: string;
   /** Directories the app owns: its environment directory and its repo checkout. */
@@ -40,6 +42,8 @@ const DENIED_HOST_PATHS = [
   "/opt/vardo",
   VARDO_HOME_DIR,
 ];
+
+const SHARED_WITH_HOST = ["/opt/vardo", VARDO_HOME_DIR];
 
 // Readable by any process on the host; allowed read-only with bind mounts on.
 const READ_ONLY_HOST_FILES = ["/etc/localtime", "/etc/timezone"];
@@ -73,26 +77,11 @@ type Obj = Record<string, unknown>;
 const isObj = (v: unknown): v is Obj => typeof v === "object" && v !== null && !Array.isArray(v);
 const entries = (v: unknown): [string, unknown][] => (isObj(v) ? Object.entries(v) : []);
 
-function isUnder(path: string, dir: string): boolean {
-  const rel = relative(dir, path);
-  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
-}
 
-/** Real path of `path`, resolving symlinks in the deepest part that exists. */
-export function realpathLenient(path: string): string {
-  let head = resolve(path);
-  const tail: string[] = [];
-  while (!existsSync(head)) {
-    const parent = dirname(head);
-    if (parent === head) return resolve(path);
-    tail.unshift(basename(head));
-    head = parent;
-  }
-  return join(realpathSync(head), ...tail);
-}
 
 /** Policy errors for a resolved compose model. Empty means the deploy may go ahead. */
 export function composePolicyErrors(config: unknown, policy: ComposePolicy): string[] {
+  if (policy.trusted) return [];
   const real = policy.realpath ?? realpathLenient;
   const ownDirs = policy.ownDirs.flatMap((d) => [resolve(d), real(d)]);
   const errors: string[] = [];
@@ -108,21 +97,23 @@ export function composePolicyErrors(config: unknown, policy: ComposePolicy): str
     if (!isAbsolute(source)) return `${what} "${source}", which isn't an absolute path`;
     const bindsOff = `${what} host path "${source}", and bind mounts are off for this project`;
     if (insideApp(source)) return policy.allowBindMounts ? null : bindsOff;
-    const path = real(source);
-    if (DOCKER_SOCKETS.includes(path) || DOCKER_SOCKETS.includes(resolve(source))) {
+    // The console shares only Vardo's directory with the host; elsewhere its symlinks aren't the host's.
+    const lexical = resolve(source);
+    const paths = SHARED_WITH_HOST.some((d) => isUnder(lexical, d)) ? [lexical, real(lexical)] : [lexical];
+    if (paths.some((p) => DOCKER_SOCKETS.includes(p))) {
       return policy.allowDockerSocket ? null : `${what} the Docker socket, and the Docker socket is off for this project`;
     }
     if (!policy.allowBindMounts) return bindsOff;
-    if (readOnly && READ_ONLY_HOST_FILES.includes(resolve(source))) return null;
-    const under = DENIED_HOST_PATHS.find((p) => isUnder(path, p));
+    if (readOnly && READ_ONLY_HOST_FILES.includes(lexical)) return null;
+    const under = DENIED_HOST_PATHS.find((d) => paths.some((p) => isUnder(p, d)));
     if (under) return `${what} host path "${source}", and nothing under ${under} can be mounted`;
-    const over = DENIED_HOST_PATHS.find((p) => isUnder(p, path));
+    const over = DENIED_HOST_PATHS.find((d) => paths.some((p) => isUnder(d, p)));
     return over ? `${what} host path "${source}", which contains ${over}` : null;
   };
 
   // Paths the compose CLI reads inside the console: always the app's own.
   const appFileProblem = (path: string, what: string): string | null =>
-    insideApp(path) ? null : `${what} "${path}" is outside the app's directory`;
+    insideApp(path) ? null : `${what} "${path}", which is outside the app's directory`;
 
   // Top-level volumes.
   const volumes = isObj(root.volumes) ? root.volumes : {};
@@ -336,16 +327,6 @@ export async function resolveComposeConfig(opts: {
   return JSON.parse(stdout);
 }
 
-/** `repoDir/rootDirectory`, refused when it leaves the repo. */
-export function appRootDir(repoDir: string, rootDirectory: string | null | undefined): string {
-  if (!rootDirectory) return repoDir;
-  const root = resolve(join(repoDir, rootDirectory));
-  const repo = realpathLenient(repoDir);
-  if (!isUnder(root, resolve(repoDir)) || !isUnder(realpathLenient(root), repo)) {
-    throw new DeployBlockedError(`Couldn't deploy: root directory "${rootDirectory}" is outside the repository.`);
-  }
-  return root;
-}
 
 /** Refuses the deploy when the slot's resolved compose reaches outside the app. Removes the slot's files on refusal. */
 export async function assertComposeWithinApp(ctx: {
@@ -355,9 +336,11 @@ export async function assertComposeWithinApp(ctx: {
   newProjectName: string;
   stableVolumePrefix: string;
   composeFileArgs: string[];
+  orgTrusted: boolean;
   projectAllowBindMounts: boolean;
   projectAllowDockerSocket: boolean;
 }): Promise<void> {
+  if (ctx.orgTrusted) return;
   let errors: string[];
   try {
     const config = await resolveComposeConfig({
@@ -366,6 +349,7 @@ export async function assertComposeWithinApp(ctx: {
       projectName: ctx.newProjectName,
     });
     errors = composePolicyErrors(config, {
+      trusted: false,
       projectName: ctx.newProjectName,
       ownDirs: [ctx.appDir, ...(ctx.repoDir ? [ctx.repoDir] : [])],
       ownPrefix: `${ctx.stableVolumePrefix}_`,

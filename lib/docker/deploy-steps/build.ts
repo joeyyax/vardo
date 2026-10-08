@@ -36,7 +36,8 @@ import {
 } from "../shared-networks";
 import { execFileAsync } from "@/lib/utils/exec";
 import { dockerEnv } from "@/lib/docker/docker-env";
-import { appRootDir, assertComposeWithinApp } from "../compose-policy";
+import { assertComposeWithinApp } from "../compose-policy";
+import { appRootDir } from "../compose-root";
 
 const NETWORK_NAME = VARDO_NETWORK;
 
@@ -351,7 +352,7 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
 
   ctx.composeFileArgs = ["-f", bareComposePath, "-f", overridePath];
 
-  if (!ctx.orgTrusted) await assertComposeWithinApp(ctx);
+  await assertComposeWithinApp(ctx);
 
   // The repo-build path already closed compose and opened build in prepare-repo.
   if (!ctx.builtLocally) {

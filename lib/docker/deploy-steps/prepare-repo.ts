@@ -26,7 +26,7 @@ import {
 } from "../compose";
 import { isFeatureEnabled } from "@/lib/config/features";
 import { assertSafeBranch, assertSafeGitUrl } from "../validate";
-import { appRootDir } from "../compose-policy";
+import { appRootDir } from "../compose-root";
 import { DeployBlockedError } from "../errors";
 import { assertBuildKitReachable, isBuildKitReachable, DEFAULT_BUILDKIT_HOST } from "../buildkit";
 import { assertAppDirOwnership } from "../app-dir-owner";

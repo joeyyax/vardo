@@ -31,9 +31,9 @@ Status: **fixed** (on main or in this branch), **open**, or **not a boundary**. 
 | Clone uses any installation of any org member | open | `lib/docker/deploy-steps/prepare-repo.ts:385-404`. A user in two orgs lends their installations to both. |
 | Domain string injected into a Traefik rule | branch | PATCH accepted any string, `apps/[appId]/domains/route.ts:104`. Now validated there and in environment routes; `lib/docker/compose-inject.ts:120` and `lib/ssl/generate-config.ts:93` refuse non-hostnames. |
 | Compose `traefik.*` labels claim another tenant's host or the console | fixed | #887 on `fix/887-label-hosts`: `lib/docker/label-hosts.ts` refuses `Host()` rules for hosts the org doesn't own, checked from `resolve-compose.ts` |
-| Compose joins `vardo_internal` (Postgres, Redis) or any network | open | external networks unchecked; `network_mode: <name>` becomes membership, `lib/docker/compose-validate.ts:61-84` |
+| Compose joins `vardo_internal` (Postgres, Redis) or any network | fixed | #886: untrusted orgs may join only `vardo-network` on a routed service and networks named for the app, `lib/docker/compose-policy.ts` |
 | Every routed app shares `vardo-network` with the console | open, by design | `lib/docker/deploy-steps/resolve-compose.ts:234-247`; apps reach `vardo-frontend:3000` directly |
-| Top-level `volumes:` with `external`/`name` reaches another tenant's or the console's volume | open | passes through for anonymous-looking keys and shared-only volumes, `lib/docker/deploy-steps/build.ts:111-129` |
+| Top-level `volumes:` with `external`/`name` reaches another tenant's or the console's volume | fixed | #886: untrusted external volumes must carry the app's `<app>-<env>_` prefix; other volumes keep Compose's project name, `lib/docker/compose-policy.ts` |
 | Invitation revoke | branch | both accept paths ignored `revoked`, `lib/invitations/accept.ts:17` now claims a pending row atomically |
 | Mesh peers read any org's manifest | not a boundary | peers are trusted, `app/api/v1/mesh/sync/route.ts:10` |
 
@@ -44,7 +44,7 @@ Status: **fixed** (on main or in this branch), **open**, or **not a boundary**. 
 | Role changes and invites | fixed | admin-only capabilities, `lib/auth/permissions.ts:23-69`; owner can't be changed |
 | `trusted`, `allowBindMounts`, `allowDockerSocket` | fixed | instance admin only, `organizations/[orgId]/route.ts:57`, `projects/[projectId]/route.ts:118` |
 | API tokens | partial | carry the user's full live role, no capability scoping, `lib/auth/session.ts:48-73`; never instance admin, `lib/auth/admin.ts:8` |
-| Any user can create an org and become its owner | open, product | `app/api/v1/organizations/route.ts:59-97`. Combined with the compose gaps in section 5, owner means host. |
+| Any user can create an org and become its owner | open, product | `app/api/v1/organizations/route.ts:59-97`. The section 5 compose gaps that made owner mean host are fixed (#886). |
 
 ## 4. Untrusted input to execution
 
@@ -61,22 +61,20 @@ Status: **fixed** (on main or in this branch), **open**, or **not a boundary**. 
 
 ## 5. Compose escape
 
-`sanitizeCompose` only inspects short-syntax `volumes:` strings. The parser drops `pid`, `ipc`, `userns_mode`, `extends`, `include` (`lib/docker/compose-validate.ts:298-319`) and refuses `privileged`, `cap_add`, `devices`, `security_opt`, host network modes for untrusted orgs (`:578-595`). It runs on every deploy path, including rollback.
+Fixed by #886. For untrusted orgs, `assertComposeWithinApp` (`lib/docker/compose-policy.ts`, called from `lib/docker/deploy-steps/build.ts`) runs `docker compose config --no-env-resolution` over the slot's files with `dockerEnv()` and checks the interpolated, long-syntax result against an allowlist. Unknown keys are refused. Trusted orgs skip it. The input checks in `compose-validate.ts` still run first.
 
-These reach the host as an org **member** (`app.config`, `app.create`):
-
-| Gap | Evidence |
-| --- | --- |
-| Bind sources `.`, `..`, `~/`, `${VAR}`, `$PWD` | `isBindMount`, `lib/docker/compose-validate.ts:105-111` matches only `./`, `../`, `/x:` |
-| Interpolation runs after sanitizing, from user env vars | `lib/docker/deploy-steps/build.ts:317` |
-| Top-level volume `driver_opts: {type: none, o: bind, device: /}` | `lib/docker/compose-parse.ts:276` |
-| Top-level `configs`/`secrets` with `file:` bind a host file | `lib/docker/compose-parse.ts:279-284` |
-| `env_file:` any path, e.g. `/opt/vardo/.env` | `lib/docker/compose-parse.ts:144-147` |
-| `build.context: /` or `../..`; `additional_contexts` | `lib/docker/deploy-steps/build.ts:186-191` |
-| `rootDirectory` traversal | `lib/api/create-app-schema.ts:27`, joined at `prepare-repo.ts:534-552` |
-| Deny list misses `/`, `/var/lib/docker`, `/run/containerd`, `/opt/vardo` when bind mounts are on | `lib/docker/mount-paths.ts:7-13` |
-
-Fix shape: validate the output of `docker compose config` (interpolated, long syntax) deny-by-default, not the input.
+| Gap | Status | Evidence |
+| --- | --- | --- |
+| Bind sources `.`, `..`, `~/`, `${VAR}`, `$PWD` | fixed | checked after interpolation; any bind needs `allowBindMounts`, the socket needs `allowDockerSocket` |
+| Top-level volume `driver_opts: {type: none, o: bind, device: /}` | fixed | treated as a bind of `device` |
+| Top-level `configs`/`secrets` with `file:` | fixed | inside the app's directory, or a bind under the same rules |
+| `env_file:` any path, e.g. `/opt/vardo/.env` | fixed | must be inside the app's directory, whatever the flags; Compose reads it inside the console |
+| `build.context: /` or `../..`; `additional_contexts`; Dockerfile path | fixed | inside the app's directory |
+| `rootDirectory` traversal | fixed | `appRootDir`, `lib/docker/compose-root.ts`, in `prepare-repo.ts` and `build.ts`, for every org. The schema still accepts `..`, `lib/api/create-app-schema.ts:27`. |
+| Repo symlinks copied into the slot as content | fixed | untrusted slots get a link, so the check resolves it, `lib/docker/deploy-steps/build.ts:85` |
+| Deny list misses `/`, `/var/lib/docker`, `/run/containerd`, `/opt/vardo` when bind mounts are on | fixed for compose | the policy also refuses any ancestor of a denied path; `DENIED_MOUNT_PATHS` itself is unchanged |
+| Top-level `name:` steers the shared volume and network names Vardo creates | fixed for untrusted | `crossBoundaryVolumeName` and `sharedNetworkName` use `compose.name`; the prefix check refuses the result |
+| Slots deployed before #886 | open | `start`, `restart` and `recreate` rerun `up` on existing slot files without the check |
 
 ## 6. Secret exposure
 
