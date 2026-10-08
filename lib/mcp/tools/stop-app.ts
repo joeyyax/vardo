@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { stopProject } from "@/lib/docker/deploy";
+import { setParked } from "@/lib/db/app-parked";
 import { slidingWindowRateLimit } from "@/lib/api/rate-limit";
 import { systemManagedRefusal } from "@/lib/api/system-managed";
 import { recordLifecycle } from "@/lib/activity/lifecycle";
@@ -73,6 +74,7 @@ export function registerStopApp(
       const result = await stopProject(appId, app.name);
 
       if (result.success) {
+        await setParked(appId, true);
         await recordLifecycle({
           organizationId: app.organizationId,
           app,

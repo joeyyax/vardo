@@ -544,7 +544,7 @@ export function AppDeployPanel({
                   aria-pressed={showInfra}
                 >
                   <Settings className="size-3" />
-                  Deployment slots
+                  {showInfra ? "Hide containers" : "Show containers"}
                 </Button>
               </div>
             )}

@@ -28,7 +28,7 @@ export type HealthRollup = {
   parked: number;
 };
 
-/** Members not parked. */
+/** Members not stopped by an operator. */
 export function liveTotal(rollup: HealthRollup): number {
   return rollup.total - rollup.parked;
 }
@@ -51,7 +51,7 @@ export function rollupHealth(members: RollupMember[]): HealthRollup {
     if (member.parentAppId) continue;
     rollup.total++;
     if (member.priority === "critical") rollup.critical++;
-    // Parked members don't count toward state.
+    // Operator-stopped members don't count toward state.
     if (member.parked) {
       rollup.parked++;
       continue;
@@ -95,7 +95,7 @@ export function rollupLabel(rollup: HealthRollup, noun: string): string {
   const plural = `${noun}s`;
   if (rollup.total === 0) return `No ${plural}`;
   const live = liveTotal(rollup);
-  if (live === 0) return "Parked";
+  if (live === 0) return "Stopped";
   if (rollup.errors > 0) return `${rollup.errors} crashed`;
   if (rollup.deploying > 0) return `${rollup.deploying} deploying`;
   if (rollup.stopped === live) return "Stopped";

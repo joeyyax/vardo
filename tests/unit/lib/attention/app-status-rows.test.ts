@@ -238,15 +238,15 @@ describe("appStoppedRows", () => {
     expect(appStoppedRows([app({ name: "hub", status: "active" })])).toEqual([]);
   });
 
-  it("says a parked app is parked rather than dropping it from the inventory", () => {
+  it("says an operator-stopped app is stopped rather than dropping it from the inventory", () => {
     const [row] = appStoppedRows([
       app({ name: "lonvr", displayName: "Lonvr", status: "stopped", parked: true }),
     ]);
 
-    expect(row.items[0]).toMatchObject({ name: "Lonvr", detail: "parked" });
+    expect(row.items[0]).toMatchObject({ name: "Lonvr", detail: "stopped" });
   });
 
-  it("reads parked alongside the service count on a collapsed stack", () => {
+  it("reads stopped alongside the service count on a collapsed stack", () => {
     const [row] = appStoppedRows(
       stack("agents", "Agents", ["postgres", "redis", "worker", "web", "api"]).map((a) => ({
         ...a,
@@ -255,7 +255,7 @@ describe("appStoppedRows", () => {
     );
 
     expect(row.items).toHaveLength(1);
-    expect(row.items[0].detail).toBe("parked · 5 services");
+    expect(row.items[0].detail).toBe("stopped · 5 services");
   });
 });
 
@@ -301,7 +301,7 @@ describe("day one", () => {
     const [row] = appStoppedRows(board);
 
     expect(row.items).toHaveLength(1);
-    expect(row.items[0]).toMatchObject({ name: "Agents", detail: "parked · 5 services" });
+    expect(row.items[0]).toMatchObject({ name: "Agents", detail: "stopped · 5 services" });
     expect(row.items[0].since).toBeUndefined();
   });
 

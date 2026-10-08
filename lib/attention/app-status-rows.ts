@@ -66,7 +66,7 @@ export function appStatusRows(
       label: "App down",
       tone: "error",
       items: [...items.values()],
-      footer: `Each of these broke in the last ${APP_DOWN_WINDOW_HOURS} hours, or has no record of when. Park one to say it is down on purpose and drop it off this list.`,
+      footer: `Each of these broke in the last ${APP_DOWN_WINDOW_HOURS} hours, or has no record of when. Stop one to mark it down on purpose.`,
     },
   ];
 }
@@ -98,10 +98,10 @@ export function appStoppedRows(apps: StatusSubject[]): AttentionRow[] {
       services.set(app.parentAppId, (services.get(app.parentAppId) ?? 0) + 1);
     }
   }
-  // Parked reads beside the count; the row stays so a shelved stack is findable.
+  // Stopped reads beside the count; the row stays so a stopped stack is findable.
   for (const [id, item] of items) {
     const parts: string[] = [];
-    if (byId.get(id)?.parked) parts.push("parked");
+    if (byId.get(id)?.parked) parts.push("stopped");
     const count = services.get(id);
     if (count) parts.push(`${count} service${count === 1 ? "" : "s"}`);
     if (parts.length > 0) item.detail = parts.join(" · ");

@@ -8,8 +8,6 @@ export const APP_ACTIONS = [
   "instant-rollback",
   "rollback",
   "logs",
-  "park",
-  "unpark",
   "stop",
 ] as const;
 
@@ -22,8 +20,6 @@ export type AppActionContext = {
   status: "active" | "stopped" | "error" | "deploying" | "missing";
   /** Compose child service. */
   isChildService: boolean;
-  /** Already declared off on purpose. */
-  parked: boolean;
   /** A deploy is running or queued for this app. */
   deploying: boolean;
   /** A warm standby slot is up. */
@@ -33,8 +29,6 @@ export type AppActionContext = {
   rollbackTarget: boolean;
   /** Why stop is refused, when it is. */
   stopRefusal?: string | null;
-  /** Why park is refused, when it is. */
-  parkRefusal?: string | null;
 };
 
 const DEPLOY_IN_FLIGHT = "A deploy is running. Cancel it first.";
@@ -74,16 +68,6 @@ export function appActionMenu(ctx: AppActionContext): AppActionItem[] {
     { action: "stop", ...(ctx.stopRefusal ? { disabled: ctx.stopRefusal } : {}) },
   ];
 
-  // Unpark whenever parked; park only when already off.
-  const parkItem: AppActionItem[] = ctx.parked
-    ? [{ action: "unpark" }]
-    : ctx.status === "active"
-      ? []
-      : [{ action: "park" }];
-  const park = parkItem.map((item) =>
-    ctx.parkRefusal ? { ...item, disabled: ctx.parkRefusal } : item,
-  );
-
   switch (ctx.status) {
     case "active":
       return [
@@ -92,7 +76,6 @@ export function appActionMenu(ctx: AppActionContext): AppActionItem[] {
         { action: "recreate" },
         ...instantRollback,
         ...rollback,
-        ...park,
         ...stop,
       ];
     case "error":
@@ -102,9 +85,9 @@ export function appActionMenu(ctx: AppActionContext): AppActionItem[] {
         { action: "restart" },
         { action: "recreate" },
         ...rollback,
-        ...park,
         ...stop,
       ];
+    // Stop stays on a down app: it marks the app down on purpose.
     // The slot directory is still on disk, so compose starts containers in place.
     case "stopped":
       return [
@@ -112,10 +95,10 @@ export function appActionMenu(ctx: AppActionContext): AppActionItem[] {
         { action: "recreate" },
         { action: "deploy" },
         ...rollback,
-        ...park,
+        ...stop,
       ];
     case "missing":
-      return [{ action: "recreate" }, { action: "deploy" }, ...rollback, ...park];
+      return [{ action: "recreate" }, { action: "deploy" }, ...rollback, ...stop];
     default:
       return [{ action: "deploy" }];
   }

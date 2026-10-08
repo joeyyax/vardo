@@ -113,7 +113,7 @@ export function AppRow({
   trailing?: React.ReactNode;
   ref?: React.Ref<HTMLAnchorElement>;
 } & React.AnchorHTMLAttributes<HTMLAnchorElement>) {
-  // A parked row keeps its rail off.
+  // An operator-stopped row keeps its rail off.
   const severity = app.parked
     ? "none"
     : rowSeverity(app.status, app.conditions, !!app.needsRedeploy);
@@ -159,7 +159,7 @@ export function AppRow({
         {indented && <span className="sr-only">, compose service</span>}
         {running && <span className="sr-only">, Running</span>}
 
-        {word && <span className={`shrink-0 font-normal ${statusWordTone(app.status)}`}>{word}</span>}
+        {word && <span className={`shrink-0 font-normal ${statusWordTone(app.parked ? "stopped" : app.status)}`}>{word}</span>}
         {shownNote && (
           <span className={`${ROW_NOTE_CELL} font-normal ${shownNote.tone}`} title={shownNote.detail}>
             {shownNote.label}

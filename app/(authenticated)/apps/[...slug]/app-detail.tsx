@@ -14,8 +14,6 @@ import {
   RotateCcw,
   RefreshCw,
   Square,
-  Archive,
-  ArchiveRestore,
   ChevronDown,
   Check,
   GitBranch,
@@ -206,25 +204,6 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
     router.refresh();
   }, [orgId, app.id, router]);
 
-  const handlePark = useCallback(
-    async (parked: boolean) => {
-      try {
-        const res = await fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/park`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ parked }),
-        });
-        const data = await res.json();
-        if (!res.ok) toast.error(data.error || "Couldn't change this");
-        else toast.success(parked ? "Parked" : "Unparked");
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Couldn't change this");
-      }
-      router.refresh();
-    },
-    [orgId, app.id, router],
-  );
-
   const handleRecreate = useCallback(async () => {
     try {
       const res = await fetch(`/api/v1/organizations/${orgId}/apps/${app.id}/recreate`, { method: "POST" });
@@ -365,8 +344,6 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
   const actions = appActionMenu({
     status: app.status,
     isChildService,
-    parked: !!app.parked,
-    parkRefusal: systemManagedRefusal(app, "park"),
     deploying: deploy.deploying,
     standbyAvailable: !!slotStatus?.standbyAvailable,
     hasDeployed: filteredDeployments.length > 0,
@@ -437,8 +414,6 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
     "instant-rollback": { icon: Zap, label: "Roll back to standby" },
     rollback: { icon: Undo2, label: "Roll back to a previous deploy" },
     logs: { icon: ScrollText, label: "View logs" },
-    park: { icon: Archive, label: "Park" },
-    unpark: { icon: ArchiveRestore, label: "Unpark" },
     stop: { icon: Square, label: "Stop" },
   };
 
@@ -451,8 +426,6 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
     "instant-rollback": () => setRollbackOpen(true),
     rollback: handleRollback,
     logs: () => setActiveTab("logs"),
-    park: () => { void handlePark(true); },
-    unpark: () => { void handlePark(false); },
     stop: () => setStopOpen(true),
   };
 

@@ -131,10 +131,10 @@ describe("rollupLabel", () => {
     ).toBe("1/1 app");
   });
 
-  it("names a wholly parked group as parked, not stopped or crashed", () => {
+  it("names a wholly operator-stopped group as stopped, not crashed", () => {
     expect(
       rollupLabel(rollupHealth([app("stopped", { parked: true }), app("error", { parked: true })]), "service"),
-    ).toBe("Parked");
+    ).toBe("Stopped");
   });
 
   it("keeps a parked member in the app count", () => {

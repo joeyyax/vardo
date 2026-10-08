@@ -6,8 +6,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
 
-const { mockVerifyOrgAccess, mockStopProject, mockRecordLifecycle, appsFindFirst } = vi.hoisted(
+const { mockVerifyOrgAccess, mockStopProject, mockRecordLifecycle, appsFindFirst, mockSetParked } = vi.hoisted(
   () => ({
+    mockSetParked: vi.fn(),
     mockVerifyOrgAccess: vi.fn(),
     mockStopProject: vi.fn(),
     mockRecordLifecycle: vi.fn(),
@@ -18,6 +19,7 @@ const { mockVerifyOrgAccess, mockStopProject, mockRecordLifecycle, appsFindFirst
 vi.mock("@/lib/api/verify-access", () => ({ verifyOrgAccess: mockVerifyOrgAccess }));
 vi.mock("@/lib/api/rate-limit", () => ({ rateLimit: vi.fn().mockResolvedValue(null) }));
 vi.mock("@/lib/docker/deploy", () => ({ stopProject: mockStopProject }));
+vi.mock("@/lib/db/app-parked", () => ({ setParked: mockSetParked }));
 vi.mock("@/lib/activity/lifecycle", () => ({ recordLifecycle: mockRecordLifecycle }));
 vi.mock("@/lib/db", () => ({ db: { query: { apps: { findFirst: appsFindFirst } } } }));
 
@@ -59,11 +61,18 @@ describe("stop route", () => {
     );
   });
 
+  it("marks the app stopped by an operator", async () => {
+    await POST(request(), params);
+
+    expect(mockSetParked).toHaveBeenCalledWith(APP_ID, true);
+  });
+
   it("records nothing when the stop failed", async () => {
     mockStopProject.mockResolvedValue({ success: false, log: "boom" });
 
     await POST(request(), params);
 
+    expect(mockSetParked).not.toHaveBeenCalled();
     expect(mockRecordLifecycle).not.toHaveBeenCalled();
   });
 

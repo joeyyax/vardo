@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { stopProject } from "@/lib/docker/deploy";
+import { setParked } from "@/lib/db/app-parked";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { refuseSystemManaged } from "@/lib/api/system-managed";
 import { recordLifecycle } from "@/lib/activity/lifecycle";
@@ -42,6 +43,7 @@ async function handlePost(_request: NextRequest, { params }: RouteParams) {
     const result = await stopProject(appId, app.name);
 
     if (result.success) {
+      await setParked(appId, true);
       await recordLifecycle({
         organizationId: orgId,
         app,

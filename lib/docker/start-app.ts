@@ -164,7 +164,7 @@ export async function startOrRestartApp(opts: {
     return { success: false, action: "none", failure: result.failure, log: result.log };
   }
 
-  // Unpark the owner, so restarting one service unparks its stack.
+  // Clears the operator stop on the owner; restarting one service clears its stack.
   await setParked(ownerId, false);
 
   // Refresh the row for the new containers.

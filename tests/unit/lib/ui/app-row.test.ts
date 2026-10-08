@@ -115,10 +115,10 @@ describe("statusWord", () => {
     expect(statusWord("unknown")).toBeNull();
   });
 
-  it("says parked over whichever shape of off it is", () => {
-    expect(statusWord("stopped", null, true)).toBe("parked");
-    expect(statusWord("missing", null, true)).toBe("parked");
-    expect(statusWord("missing", "missing", true)).toBe("parked");
+  it("says stopped over whichever shape of off it is", () => {
+    expect(statusWord("stopped", null, true)).toBe("stopped");
+    expect(statusWord("missing", null, true)).toBe("stopped");
+    expect(statusWord("missing", "missing", true)).toBe("stopped");
     expect(statusWord("active", null, true)).toBeNull();
   });
 

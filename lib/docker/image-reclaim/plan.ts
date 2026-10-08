@@ -153,7 +153,7 @@ export function selectCandidates(
       skipped.push(skip(app, "never-run", { idleDays: null }));
       continue;
     }
-    // Parked apps skip the idle wait; every re-pull guard below still runs.
+    // Operator-stopped apps skip the idle wait; every re-pull guard below still runs.
     const threshold = resolveIdleThreshold(app.imageReclaimIdleDays, opts.defaultIdleDays);
     if (!app.parked && idle < threshold) {
       skipped.push(skip(app, "not-idle", { idleDays: idle }));

@@ -73,7 +73,7 @@ export const apps = pgTable(
     status: appStatusEnum("status").notNull().default("stopped"),
     // When status last changed. Written only by statusChange(). Null until the first transition.
     statusChangedAt: timestamp("status_changed_at"),
-    // Set and cleared only by setParked(). Starting or deploying clears it.
+    // An operator stopped this app. Set and cleared only by setParked().
     parked: boolean("parked").notNull().default(false),
     // Container State.StartedAt, written by the status reconciler. Null when nothing is running.
     containerStartedAt: timestamp("container_started_at"),

@@ -70,7 +70,7 @@ const ATTENTION_CRITICAL = 0;
 const ATTENTION_WARNING = 1;
 const ATTENTION_NONE = 2;
 
-/** Lower sorts first: crashes, then warnings, then quiet. Stopped and parked apps don't raise rank. */
+/** Lower sorts first: crashes, then warnings, then quiet. Stopped and operator-stopped apps don't raise rank. */
 export function attentionRank(card: SortableCard): number {
   let rank = ATTENTION_NONE;
   for (const app of card.apps) {

@@ -246,7 +246,7 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
       .set({ ...statusChange("active"), needsRedeploy: false })
       .where(eq(apps.id, ctx.appId));
 
-    // A successful deploy unparks the app.
+    // A successful deploy clears the operator stop.
     await setParked(ctx.appId, false);
   }
 

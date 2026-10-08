@@ -182,7 +182,7 @@ export function MaintenanceSettings() {
   const [idleDaysInput, setIdleDaysInput] = useState("30");
   const [savingImages, setSavingImages] = useState(false);
   const [reclaimingImages, setReclaimingImages] = useState(false);
-  // Slot generations are opt-in per run, matching the API.
+  // Previous deploys are opt-in per run, matching the API.
   const [includeSlots, setIncludeSlots] = useState(false);
   const [showAllSkips, setShowAllSkips] = useState(false);
   const [owners, setOwners] = useState<OwnerReport | null>(null);
@@ -319,7 +319,7 @@ export function MaintenanceSettings() {
       const slots = data.slotResult?.reclaimed.length ?? 0;
       toast.success(`Removed ${idle + slots} image${idle + slots === 1 ? "" : "s"}`, {
         description: slots
-          ? `${idle} from idle apps, ${slots} from old slot generations. Volumes weren't touched.`
+          ? `${idle} from idle apps, ${slots} from previous deploys. Volumes weren't touched.`
           : "Volumes weren't touched.",
       });
       void fetchImages();
@@ -806,10 +806,9 @@ export function MaintenanceSettings() {
             <div className="space-y-2 rounded-md bg-background-deep p-3">
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
-                  <p className="type-h4">Old slot generations</p>
+                  <p className="type-h4">Previous deploys</p>
                   <p className="text-xs text-muted-foreground">
-                    Images from blue/green slots nothing is serving, and builds from
-                    before slot naming. Up to{" "}
+                    Images from previous deploys nothing is serving. Up to{" "}
                     {formatBytes(images.slotPlan.estimatedBytes)} — an upper bound,
                     since images share layers.
                   </p>
@@ -887,7 +886,7 @@ export function MaintenanceSettings() {
             <AlertDialogContent size="sm">
               <AlertDialogHeader>
                 <AlertDialogTitle>
-                  {includeSlots ? "Reclaim images and old slot generations?" : "Reclaim images for idle apps?"}
+                  {includeSlots ? "Reclaim images and previous deploys?" : "Reclaim images for idle apps?"}
                 </AlertDialogTitle>
                 <AlertDialogDescription>
                   {[
@@ -895,7 +894,7 @@ export function MaintenanceSettings() {
                       ? `Removes the images of ${images.plan.candidates.length} idle app(s), which pull again on next start.`
                       : null,
                     includeSlots && images?.slotPlan?.candidates.length
-                      ? `Removes ${images.slotPlan.candidates.length} old slot generation(s)${
+                      ? `Removes ${images.slotPlan.candidates.length} previous deploy${images.slotPlan.candidates.length === 1 ? "" : "s"}${
                           images.slotPlan.candidates.some((c) => c.rollbackTargetFor)
                             ? ", including one that is a live app's rollback target — that app would need a rebuild to roll back"
                             : ""

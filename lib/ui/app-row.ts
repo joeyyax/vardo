@@ -65,13 +65,13 @@ const STATUS_WORD: Record<string, string> = {
   stopped: "stopped",
 };
 
-/** Status word beside the name. Null when active or matching the header's status; parked wins. */
+/** Status word beside the name. Null when active or matching the header's status; an operator stop wins. */
 export function statusWord(
   status: string,
   sharedStatus?: string | null,
   parked = false,
 ): string | null {
-  if (parked && status !== "active") return "parked";
+  if (parked && status !== "active") return "stopped";
   if (status === "active") return null;
   if (sharedStatus && status === sharedStatus) return null;
   return STATUS_WORD[status] ?? null;
@@ -93,7 +93,7 @@ const STATUS_RANK: Record<string, number> = {
   active: 4,
 };
 
-/** Sort rank. Parked sorts last. */
+/** Sort rank. Operator-stopped sorts last. */
 export function statusRank(status: string, parked = false): number {
   if (parked) return 5;
   return STATUS_RANK[status] ?? 3;
