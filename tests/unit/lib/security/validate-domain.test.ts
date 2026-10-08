@@ -95,4 +95,14 @@ describe("assertPublicDomain — DNS resolution", () => {
     // DNS failure should not block — the outbound fetch will fail naturally.
     await expect(assertPublicDomain("totally-unknown.example")).resolves.toBeUndefined();
   });
+
+  it("rejects a domain that resolves to CGNAT, which the old patterns missed", async () => {
+    mockResolve4.mockResolvedValue(["100.100.1.1"]);
+    await expect(assertPublicDomain("tailnet.example.com")).rejects.toThrow(/SSRF/);
+  });
+
+  it("rejects an IPv4-mapped metadata address", async () => {
+    mockResolve6.mockResolvedValue(["::ffff:169.254.169.254"]);
+    await expect(assertPublicDomain("mapped.example.com")).rejects.toThrow(/SSRF/);
+  });
 });

@@ -1,5 +1,6 @@
 import * as tls from "tls";
 import { assertPublicDomain } from "./validate-domain";
+import { guardedLookup } from "./pinned-fetch";
 import type { SecurityFinding } from "./types";
 
 const TLS_EXPIRY_WARNING_DAYS = 14;
@@ -25,7 +26,7 @@ export async function checkTls(domain: string): Promise<SecurityFinding[]> {
     }, CONNECT_TIMEOUT_MS);
 
     const socket = tls.connect(
-      { host: domain, port: 443, servername: domain, rejectUnauthorized: false },
+      { host: domain, port: 443, servername: domain, rejectUnauthorized: false, lookup: guardedLookup(false) as never },
       () => {
         clearTimeout(timer);
 

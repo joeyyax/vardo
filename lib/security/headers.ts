@@ -1,4 +1,6 @@
 import { assertPublicDomain } from "./validate-domain";
+import { safeFetch } from "./safe-fetch";
+import { getDomainProbePolicy } from "./outbound-policy";
 import type { SecurityFinding } from "./types";
 
 type HeaderCheck = {
@@ -69,10 +71,10 @@ export async function checkSecurityHeaders(domain: string): Promise<SecurityFind
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
-    const res = await fetch(`https://${domain}`, {
+    const res = await safeFetch(`https://${domain}`, {
       method: "HEAD",
-      redirect: "follow",
       signal: controller.signal,
+      policy: await getDomainProbePolicy(),
     });
 
     clearTimeout(timer);

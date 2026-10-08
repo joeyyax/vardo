@@ -1,6 +1,6 @@
 // Outbound allowlist source. The block is escapable only by naming a host, never by turning it off.
 
-import { getSystemSettingRaw } from "@/lib/system-settings";
+import { getInstanceConfig, getSystemSettingRaw } from "@/lib/system-settings";
 import type { OutboundPolicy } from "./ssrf";
 
 /** Comma or newline separated hostnames. A leading "." matches subdomains. */
@@ -25,4 +25,14 @@ export async function getOutboundPolicy(): Promise<OutboundPolicy> {
   } catch {
     return { allowlist: [] };
   }
+}
+
+/** Probes of app domains also allow the instance's base domain, whose DNS the operator controls. */
+export async function getDomainProbePolicy(): Promise<OutboundPolicy> {
+  const { allowlist = [] } = await getOutboundPolicy();
+  let baseDomain = process.env.VARDO_BASE_DOMAIN ?? "";
+  try {
+    baseDomain = (await getInstanceConfig()).baseDomain || baseDomain;
+  } catch { /* env only */ }
+  return baseDomain ? { allowlist: [...allowlist, `.${baseDomain}`] } : { allowlist };
 }

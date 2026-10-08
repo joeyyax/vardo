@@ -4,6 +4,9 @@ import { desc, sql, inArray } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import pLimit from "p-limit";
 import { logger } from "@/lib/logger";
+import { safeFetch } from "@/lib/security/safe-fetch";
+import { getDomainProbePolicy } from "@/lib/security/outbound-policy";
+import type { OutboundPolicy } from "@/lib/security/ssrf";
 
 const log = logger.child("domain-monitor");
 
@@ -56,10 +59,11 @@ export async function checkAllDomains(): Promise<DomainCheckResult[]> {
     });
 
   const limit = pLimit(MAX_CONCURRENCY);
+  const policy = await getDomainProbePolicy();
 
   const results = await Promise.allSettled(
     eligible.map((d) =>
-      limit(() => probeDomain(d, prevChecks.get(d.id))),
+      limit(() => probeDomain(d, prevChecks.get(d.id), policy)),
     ),
   );
 
@@ -91,6 +95,7 @@ export async function checkAllDomains(): Promise<DomainCheckResult[]> {
 async function probeDomain(
   d: { id: string; domain: string; app: { name: string } },
   prevCheck: { reachable: boolean } | undefined,
+  policy: OutboundPolicy,
 ): Promise<DomainCheckResult> {
   const startTime = Date.now();
   let reachable = false;
@@ -100,10 +105,7 @@ async function probeDomain(
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10000);
-    const res = await fetch(`https://${d.domain}/`, {
-      signal: controller.signal,
-      redirect: "follow",
-    });
+    const res = await safeFetch(`https://${d.domain}/`, { signal: controller.signal, policy });
     clearTimeout(timeout);
     reachable = res.status < 500;
     statusCode = res.status;
@@ -111,10 +113,7 @@ async function probeDomain(
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 10000);
-      const res = await fetch(`http://${d.domain}/`, {
-        signal: controller.signal,
-        redirect: "follow",
-      });
+      const res = await safeFetch(`http://${d.domain}/`, { signal: controller.signal, policy });
       clearTimeout(timeout);
       reachable = res.status < 500;
       statusCode = res.status;

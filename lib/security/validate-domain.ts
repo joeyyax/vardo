@@ -1,19 +1,6 @@
 import { promises as dns } from "dns";
 import { isIP } from "net";
-
-/** IP ranges the scanner must never contact. */
-const PRIVATE_IP_PATTERNS = [
-  /^127\./,           // 127.0.0.0/8  loopback
-  /^10\./,            // 10.0.0.0/8   private
-  /^172\.(1[6-9]|2\d|3[01])\./, // 172.16.0.0/12 private
-  /^192\.168\./,      // 192.168.0.0/16 private
-  /^169\.254\./,      // 169.254.0.0/16 link-local / AWS metadata
-  /^0\./,             // 0.0.0.0/8
-  /^::1$/,            // IPv6 loopback
-  /^fc[0-9a-f]{2}:/i, // IPv6 ULA fc00::/7
-  /^fd[0-9a-f]{2}:/i, // IPv6 ULA fd00::/8
-  /^fe80:/i,          // IPv6 link-local
-];
+import { blockedAddressReason } from "./ssrf";
 
 const BLOCKED_HOSTNAMES = new Set([
   "localhost",
@@ -21,8 +8,9 @@ const BLOCKED_HOSTNAMES = new Set([
   "ip6-loopback",
 ]);
 
+/** Same ranges as outbound requests, including CGNAT and IPv4-mapped IPv6. */
 function isPrivateIp(ip: string): boolean {
-  return PRIVATE_IP_PATTERNS.some((r) => r.test(ip));
+  return blockedAddressReason(ip) !== null;
 }
 
 /** Throws if a domain is loopback, a private IP or resolves to one. */

@@ -708,15 +708,15 @@ export async function deployProject(opts: DeployOpts): Promise<DeployResult> {
 export async function checkEndpoint(domain: string, logs: { push: (line: string) => void }): Promise<boolean> {
   const paths = ["/healthz", "/health", "/"];
   const timeout = ENDPOINT_CHECK_TIMEOUT;
+  const { safeFetch } = await import("@/lib/security/safe-fetch");
+  const { getDomainProbePolicy } = await import("@/lib/security/outbound-policy");
+  const policy = await getDomainProbePolicy();
 
   for (const path of paths) {
     try {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeout);
-      const res = await fetch(`https://${domain}${path}`, {
-        signal: controller.signal,
-        redirect: "follow",
-      });
+      const res = await safeFetch(`https://${domain}${path}`, { signal: controller.signal, policy });
       clearTimeout(timer);
       if (res.ok) {
         logs.push(`[health] ${domain}${path} → ${res.status}`);
@@ -728,10 +728,7 @@ export async function checkEndpoint(domain: string, logs: { push: (line: string)
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeout);
-    const res = await fetch(`http://${domain}/`, {
-      signal: controller.signal,
-      redirect: "follow",
-    });
+    const res = await safeFetch(`http://${domain}/`, { signal: controller.signal, policy });
     clearTimeout(timer);
     if (res.ok) return true;
   } catch { /* not reachable */ }

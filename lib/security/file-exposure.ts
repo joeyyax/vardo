@@ -1,6 +1,8 @@
 import pLimit from "p-limit";
 import { logger } from "@/lib/logger";
 import { assertPublicDomain } from "./validate-domain";
+import { safeFetch } from "./safe-fetch";
+import { getDomainProbePolicy } from "./outbound-policy";
 import type { SecurityFinding } from "./types";
 
 const log = logger.child("security");
@@ -40,6 +42,7 @@ export async function checkFileExposure(domain: string): Promise<SecurityFinding
   await assertPublicDomain(domain);
 
   const limit = pLimit(CONCURRENCY);
+  const policy = await getDomainProbePolicy();
   const findings: SecurityFinding[] = [];
 
   const tasks = PROBE_PATHS.map(({ path, heuristic }) =>
@@ -48,10 +51,12 @@ export async function checkFileExposure(domain: string): Promise<SecurityFinding
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
-        const res = await fetch(`https://${domain}${path}`, {
+        // A redirect throws here, which counts as not exposed.
+        const res = await safeFetch(`https://${domain}${path}`, {
           method: "GET",
-          redirect: "manual",
+          maxRedirects: 0,
           signal: controller.signal,
+          policy,
         });
 
         clearTimeout(timer);

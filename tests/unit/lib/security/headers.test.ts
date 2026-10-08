@@ -7,8 +7,9 @@ vi.mock("dns", () => ({
   },
 }));
 
-const mockFetch = vi.fn();
-vi.stubGlobal("fetch", mockFetch);
+const { mockFetch } = vi.hoisted(() => ({ mockFetch: vi.fn() }));
+vi.mock("@/lib/security/safe-fetch", () => ({ safeFetch: mockFetch }));
+vi.mock("@/lib/security/outbound-policy", () => ({ getDomainProbePolicy: async () => ({ allowlist: [] }) }));
 
 import { checkSecurityHeaders } from "@/lib/security/headers";
 
