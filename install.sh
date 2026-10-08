@@ -29,6 +29,7 @@ PURGE=false
 DRY_RUN=false
 VERBOSE=false
 FORCE_UPDATE=false
+RESTORE=false
 COMMAND=""
 PLATFORM=""
 VARDO_ROLE=""
@@ -1203,11 +1204,14 @@ generate_env() {
     return
   fi
 
-  # Generate secrets + instance identity
+  # Generate secrets + instance identity. A rebuild passes the escrowed ones in.
   local db_pass auth_secret enc_key webhook_secret instance_id
   db_pass=$(openssl rand -base64 32 | tr -d '/+=' | head -c 32)
-  auth_secret=$(openssl rand -base64 32 | tr -d '/+=' | head -c 48)
-  enc_key=$(openssl rand -hex 32)
+  auth_secret="${BETTER_AUTH_SECRET:-$(openssl rand -base64 32 | tr -d '/+=' | head -c 48)}"
+  enc_key="${ENCRYPTION_MASTER_KEY:-$(openssl rand -hex 32)}"
+  [[ "$enc_key" =~ ^[0-9a-fA-F]{64}$ ]] || fail "ENCRYPTION_MASTER_KEY must be 64 hex characters"
+  [[ "$auth_secret" =~ ^[A-Za-z0-9]{32,}$ ]] || fail "BETTER_AUTH_SECRET must be at least 32 letters and digits"
+  [ -n "${ENCRYPTION_MASTER_KEY:-}" ] && log "Using the master key from ENCRYPTION_MASTER_KEY"
   webhook_secret=$(openssl rand -hex 32)
   if command -v uuidgen &>/dev/null; then
     instance_id=$(uuidgen | tr '[:upper:]' '[:lower:]')
@@ -1316,6 +1320,85 @@ EOF
   log "Configuration saved"
 }
 
+# Set or replace KEY=value in an env file.
+env_upsert() {
+  local file="$1" key="$2" value="$3"
+  if grep -q "^${key}=" "$file" 2>/dev/null; then
+    local tmp
+    tmp=$(mktemp)
+    awk -v k="$key" -v v="$value" 'BEGIN { FS = OFS = "=" } $1 == k { print k, v; next } { print }' "$file" > "$tmp"
+    cat "$tmp" > "$file"
+    rm -f "$tmp"
+  else
+    printf '%s=%s\n' "$key" "$value" >> "$file"
+  fi
+}
+
+# Prompt for a value unless the variable is already set. Secrets don't echo.
+ask() {
+  local var="$1" prompt="$2" secret="${3:-false}" default="${4:-}"
+  [ -n "${!var:-}" ] && return
+  if $UNATTENDED || ! has_tty; then
+    [ -n "$default" ] && printf -v "$var" '%s' "$default" && return
+    fail "$var is required for --restore. Set it as an environment variable."
+  fi
+  local answer
+  if $secret; then
+    read -rsp "  $prompt: " answer < /dev/tty; echo ""
+  else
+    read -rp "  $prompt${default:+ [$default]}: " answer < /dev/tty
+  fi
+  printf -v "$var" '%s' "${answer:-$default}"
+}
+
+# --restore: record the backup storage so the setup page lists its backups.
+configure_restore_storage() {
+  $RESTORE || return 0
+  step "Backup storage to restore from"
+  local env_file="$VARDO_DIR/.env"
+
+  ask VARDO_BACKUP_TYPE "Storage type (r2, s3, b2 or local)" false r2
+  VARDO_BACKUP_TYPE=$(echo "$VARDO_BACKUP_TYPE" | tr '[:upper:]' '[:lower:]')
+  case "$VARDO_BACKUP_TYPE" in
+    local)
+      ask VARDO_BACKUP_PATH "Folder holding the backups"
+      [ -d "$VARDO_BACKUP_PATH" ] || fail "$VARDO_BACKUP_PATH doesn't exist"
+      ;;
+    r2|s3|b2)
+      ask VARDO_BACKUP_BUCKET "Bucket"
+      ask VARDO_BACKUP_ENDPOINT "Endpoint (blank for AWS S3)" false " "
+      VARDO_BACKUP_ENDPOINT="${VARDO_BACKUP_ENDPOINT// /}"
+      ask VARDO_BACKUP_REGION "Region" false auto
+      ask VARDO_BACKUP_ACCESS_KEY "Access key ID"
+      ask VARDO_BACKUP_SECRET_KEY "Secret access key" true
+      ;;
+    *) fail "Unknown storage type: $VARDO_BACKUP_TYPE (expected r2, s3, b2 or local)" ;;
+  esac
+
+  for var_name in VARDO_BACKUP_TYPE VARDO_BACKUP_PATH VARDO_BACKUP_BUCKET VARDO_BACKUP_ENDPOINT VARDO_BACKUP_REGION VARDO_BACKUP_ACCESS_KEY VARDO_BACKUP_SECRET_KEY; do
+    local val="${!var_name:-}"
+    [[ "$val" =~ [[:space:]\;\|\&\$\`\\\"\'\<\>] ]] && fail "$var_name contains characters .env can't hold"
+  done
+
+  if $DRY_RUN; then
+    info "[dry-run] Would write backup storage to $env_file"
+    return
+  fi
+  for var_name in VARDO_BACKUP_TYPE VARDO_BACKUP_PATH VARDO_BACKUP_BUCKET VARDO_BACKUP_ENDPOINT VARDO_BACKUP_REGION VARDO_BACKUP_ACCESS_KEY VARDO_BACKUP_SECRET_KEY; do
+    [ -n "${!var_name:-}" ] && env_upsert "$env_file" "$var_name" "${!var_name}"
+  done
+  chmod 600 "$env_file"
+  log "Backup storage saved. The setup page lists the backups it holds."
+
+  local running_key
+  running_key=$(grep '^ENCRYPTION_MASTER_KEY=' "$env_file" | cut -d= -f2-)
+  if [ -n "${ENCRYPTION_MASTER_KEY:-}" ] && [ "$running_key" != "$ENCRYPTION_MASTER_KEY" ]; then
+    warn "$env_file already holds a different master key. Load the escrowed one with: sudo vardo key set"
+  elif [ -z "${ENCRYPTION_MASTER_KEY:-}" ]; then
+    warn "No escrowed master key given. Load it before restoring with: sudo vardo key set"
+  fi
+}
+
 build_and_start() {
   step "Starting Vardo"
 
@@ -1419,6 +1502,28 @@ case "${1:-}" in
   update)   shift; bash "$INSTALL_SH" update "$@" ;;
   doctor)   shift; bash "$INSTALL_SH" doctor "$@" ;;
   key)
+    if [ "${2:-}" = "set" ]; then
+      # For a rebuild: load the escrowed key before restoring a backup onto this instance.
+      [ -w "$VARDO_DIR/.env" ] || { echo "Cannot write $VARDO_DIR/.env — run as root." >&2; exit 1; }
+      if [ -t 0 ]; then
+        read -rsp "Escrowed master key: " NEW_KEY; echo "" >&2
+      else
+        read -r NEW_KEY
+      fi
+      [[ "$NEW_KEY" =~ ^[0-9a-fA-F]{64}$ ]] || { echo "The master key is 64 hex characters." >&2; exit 1; }
+      echo "Anything this instance already encrypted becomes unreadable. Only do this on a fresh install." >&2
+      if [ "${3:-}" != "--yes" ] && [ -t 0 ]; then
+        read -rp "Replace the master key? [y/N] " OK
+        [[ "$OK" =~ ^[Yy] ]] || exit 1
+      fi
+      TMP=$(mktemp)
+      awk -v v="$NEW_KEY" 'BEGIN { FS = OFS = "=" } $1 == "ENCRYPTION_MASTER_KEY" { print $1, v; next } { print }' "$VARDO_DIR/.env" > "$TMP"
+      cat "$TMP" > "$VARDO_DIR/.env" && rm -f "$TMP"
+      # up -d recreates the container; restart would keep the old environment.
+      docker compose -f "$COMPOSE_PATH" up -d frontend
+      echo "Master key loaded." >&2
+      exit 0
+    fi
     # The one secret no backup carries. Printed to the terminal only — writing
     # it anywhere Vardo archives would put it beside the ciphertext it opens.
     if [ ! -r "$VARDO_DIR/.env" ]; then
@@ -1485,6 +1590,7 @@ case "${1:-}" in
     echo "  update           Pull latest and rebuild"
     echo "  doctor           Run health checks"
     echo "  key              Print the encryption master key (escrow it)"
+    echo "  key set          Load an escrowed master key (fresh installs, before a restore)"
     echo "  adopt <path>     Onboard existing repo with vardo.yaml"
     echo "  backup decrypt <in> <out>  Decrypt a backup archive"
     echo "  shell [cmd]      Open shell in frontend container"
@@ -1550,6 +1656,11 @@ print_install_summary() {
   dimln "  vardo key            Print the encryption master key"
   echo ""
 
+  if $RESTORE; then
+    echo -e "  ${BOLD}Restore${RESET}     On the setup page, choose Restore from backup"
+    echo ""
+  fi
+
   echo -e "  ${BOLD}${YELLOW}Escrow the encryption key${RESET}"
   dimln "  It encrypts every app's env vars, lives only in $VARDO_DIR/.env, and is in"
   dimln "  no backup. Restoring a backup onto a host without it leaves every secret"
@@ -1567,6 +1678,7 @@ do_install() {
   install_packages
   clone_repo
   generate_env
+  configure_restore_storage
   build_and_start
   if ! is_dev; then
     wait_healthy 120 2 || true
@@ -2384,6 +2496,9 @@ parse_args() {
       --force|-f)
         FORCE_UPDATE=true
         ;;
+      --restore)
+        RESTORE=true
+        ;;
       --help|-h)
         echo "Usage: install.sh [command] [flags]"
         echo ""
@@ -2395,6 +2510,7 @@ parse_args() {
         echo ""
         echo "Flags:"
         echo "  --unattended   Skip all prompts"
+        echo "  --restore      Ask for backup storage to restore from (see VARDO_BACKUP_* below)"
         echo "  --yes, -y      Auto-confirm prompts"
         echo "  --purge        Remove all data with uninstall"
         echo "  --dry-run      Show what would be done without making changes"
@@ -2407,6 +2523,11 @@ parse_args() {
         echo "  VARDO_DOMAIN       Dashboard domain (production/staging)"
         echo "  VARDO_BASE_DOMAIN  Base domain for projects (production/staging)"
         echo "  ACME_EMAIL         TLS certificate email (production)"
+        echo "  ENCRYPTION_MASTER_KEY  Escrowed master key, 64 hex characters (rebuilds)"
+        echo "  BETTER_AUTH_SECRET     Escrowed auth secret (rebuilds; keeps 2FA working)"
+        echo "  VARDO_BACKUP_TYPE      r2, s3, b2 or local (with --restore)"
+        echo "  VARDO_BACKUP_BUCKET, VARDO_BACKUP_ENDPOINT, VARDO_BACKUP_REGION,"
+        echo "  VARDO_BACKUP_ACCESS_KEY, VARDO_BACKUP_SECRET_KEY, VARDO_BACKUP_PATH"
         exit 0
         ;;
     esac
