@@ -3,6 +3,8 @@ import { AlertTriangle, ShieldAlert } from "lucide-react";
 import { conditionKindLabel } from "@/lib/ui/conditions";
 import { formatSpan } from "@/lib/ui/relative-time";
 import { worstCondition, type AppCondition, type ConditionSeverity } from "@/lib/docker/conditions";
+import { Card } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 
 const TONE: Record<ConditionSeverity, { border: string; surface: string; text: string }> = {
   critical: {
@@ -32,7 +34,7 @@ export function AppConditionsPanel({ conditions }: { conditions: AppCondition[] 
   const Icon = worst.severity === "critical" ? ShieldAlert : AlertTriangle;
 
   return (
-    <div className={`squircle rounded-lg border ${tone.border} ${tone.surface} p-3 text-sm`}>
+    <Card variant="plain" className={cn("border p-3 text-sm", tone.border, tone.surface)}>
       <div className="flex items-center gap-2">
         <Icon className={`size-4 shrink-0 ${tone.text}`} />
         <span className="font-medium">
@@ -52,6 +54,6 @@ export function AppConditionsPanel({ conditions }: { conditions: AppCondition[] 
           </li>
         ))}
       </ul>
-    </div>
+    </Card>
   );
 }

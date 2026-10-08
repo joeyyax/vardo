@@ -1,11 +1,13 @@
 import type { ReactNode } from "react";
+import { cn } from "@/lib/utils";
+import { cardVariants } from "@/components/ui/card";
 
 /** Irreversible actions, at the bottom of a settings page. */
 export function DangerZone({ children }: { children: ReactNode }) {
   return (
     <section
       aria-labelledby="danger-zone-heading"
-      className="surface-danger squircle grid gap-4 rounded-lg border p-4 sm:p-6"
+      className={cn(cardVariants({ variant: "plain" }), "surface-danger grid gap-4 border p-4 sm:p-6")}
     >
       <h2 id="danger-zone-heading" className="type-h3 text-destructive">
         Danger zone

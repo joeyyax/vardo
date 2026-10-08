@@ -2,6 +2,7 @@
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Globe, HardDrive, Cpu } from "lucide-react";
 import type { DiscoveredContainer } from "@/lib/docker/discover";
 import { containerStateVariant } from "@/lib/ui/container-state";
@@ -15,11 +16,7 @@ type ContainerCardProps = {
 
 export function ContainerCard({ container, onImport, nested }: ContainerCardProps) {
   return (
-    <div
-      className={`squircle p-4 space-y-3 ${
-        nested ? "bg-background-deep" : "bg-card shadow-card dark:border"
-      }`}
-    >
+    <Card variant={nested ? "inset" : "surface"} className="p-4 space-y-3">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
@@ -82,6 +79,6 @@ export function ContainerCard({ container, onImport, nested }: ContainerCardProp
           <Badge variant="outline" className="text-xs">host network</Badge>
         )}
       </div>
-    </div>
+    </Card>
   );
 }

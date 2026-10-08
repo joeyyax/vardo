@@ -29,7 +29,8 @@ export default function ProjectsLoading() {
             {/* App cards grid */}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {Array.from({ length: group === 1 ? 3 : 2 }).map((_, i) => (
-                <Card variant="surface"
+                <Card
+                  variant="surface"
                   key={i}
                   className="p-4 space-y-3"
                 >

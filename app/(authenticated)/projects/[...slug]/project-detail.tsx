@@ -270,7 +270,7 @@ function ProjectDeployments({ apps, color }: { apps: ProjectApp[]; color: string
                   : "bg-card";
 
           return (
-            <div key={deployment.id} className={`squircle rounded-lg ${bgColor} shadow-card dark:border overflow-hidden`}>
+            <Card key={deployment.id} variant="surface" className={cn(bgColor, "overflow-hidden")}>
               <button
                 type="button"
                 onClick={() => setViewingLogId(viewingLogId === deployment.id ? null : deployment.id)}
@@ -366,7 +366,7 @@ function ProjectDeployments({ apps, color }: { apps: ProjectApp[]; color: string
                   <p className="text-xs text-muted-foreground">No log output for this deployment.</p>
                 </div>
               )}
-            </div>
+            </Card>
           );
         })}
     </div>

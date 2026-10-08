@@ -24,7 +24,7 @@ import {
   type RestartReading,
   type StabilityTrend,
 } from "@/lib/ui/stability";
-import { cardVariants } from "@/components/ui/card";
+import { cardVariants, Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
 export type StabilityApp = {
@@ -77,14 +77,14 @@ export function AppStability({
 
   return (
     <div className="space-y-6">
-      <div className={`squircle rounded-lg border p-4 ${stabilitySurface(verdict.level)}`}>
+      <Card variant="plain" className={cn("border p-4", stabilitySurface(verdict.level))}>
         <div className="flex flex-wrap items-center gap-2">
           <Activity className={`size-4 shrink-0 ${stabilityTone(verdict.level)}`} aria-hidden="true" />
           <span className={`font-medium ${stabilityTone(verdict.level)}`}>{verdict.headline}</span>
           {held && <span className="text-xs text-muted-foreground">for {held}</span>}
         </div>
         {verdict.detail && <p className="mt-1.5 text-sm text-muted-foreground">{verdict.detail}</p>}
-      </div>
+      </Card>
 
       <dl className="flex flex-wrap gap-x-10 gap-y-4">
         <HeaderStat

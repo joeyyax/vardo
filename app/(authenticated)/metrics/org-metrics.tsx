@@ -371,7 +371,8 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
       </div>
 
       {streamDown && (
-        <Card variant="error"
+        <Card
+          variant="error"
           role="alert"
           className="flex items-start gap-3 px-4 py-3"
         >

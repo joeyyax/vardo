@@ -27,7 +27,7 @@ import type {
   IgnoredUpdate,
   ServiceUpdateStatus,
 } from "@/lib/docker/image-updates/status";
-import { cardVariants } from "@/components/ui/card";
+import { cardVariants, Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
 type AppUpdates = AppUpdateStatus;
@@ -404,7 +404,7 @@ function BlockedDeployNote({
   const label = entry.service ? `${entry.service} (${entry.image})` : entry.image;
 
   return (
-    <div className="squircle flex flex-wrap items-center gap-2 rounded-md bg-status-warning-muted p-2.5 type-body-sm text-muted-foreground">
+    <Card variant="warning" className="flex flex-wrap items-center gap-2 rounded-md p-2.5 type-body-sm text-muted-foreground">
       <TriangleAlert className="size-3.5 shrink-0 text-status-warning" aria-hidden="true" />
       <span>
         Deploy stopped — {label} moved from major {entry.from} to {entry.to}. {block.appName} is
@@ -415,7 +415,7 @@ function BlockedDeployNote({
           Review migration
         </Button>
       )}
-    </div>
+    </Card>
   );
 }
 
@@ -430,7 +430,7 @@ function UndeployedNote({
   deploying: boolean;
 }) {
   return (
-    <div className="squircle flex flex-wrap items-center justify-center gap-2 rounded-md bg-status-warning-muted p-2.5 type-body-sm text-muted-foreground">
+    <Card variant="warning" className="flex flex-wrap items-center justify-center gap-2 rounded-md p-2.5 type-body-sm text-muted-foreground">
       <TriangleAlert className="size-3.5 shrink-0 text-status-warning" aria-hidden="true" />
       <span>
         {count} image{count === 1 ? " is" : "s are"} pinned in compose but not deployed.
@@ -438,6 +438,6 @@ function UndeployedNote({
       <Button size="sm" variant="outline" disabled={deploying} onClick={onDeploy}>
         Deploy
       </Button>
-    </div>
+    </Card>
   );
 }

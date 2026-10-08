@@ -46,7 +46,7 @@ import {
   type AppDeployType,
   type AppSource,
 } from "@/lib/templates/create-payload";
-import { Card } from "@/components/ui/card";
+import { Card, cardVariants } from "@/components/ui/card";
 
 type Source = AppSource;
 type DeployType = AppDeployType;
@@ -117,6 +117,7 @@ type SourceOption = (typeof SOURCE_OPTIONS)[number]["id"];
 
 import { slugify } from "@/lib/ui/slugify";
 import { cpuLimitHint } from "@/lib/ui/cpu-limit";
+import { cn } from "@/lib/utils";
 
 export function NewAppFlow({ orgId, templates, parentApps = [], baseDomain: baseDomainProp, defaultParentId, defaultProjectId, defaultName, defaultImage, defaultTemplate, defaultSource, recentProjectId, containerImportEnabled }: Props) {
   const router = useRouter();
@@ -545,7 +546,7 @@ export function NewAppFlow({ orgId, templates, parentApps = [], baseDomain: base
                     key={opt.id}
                     type="button"
                     onClick={() => selectSource(opt.id)}
-                    className="squircle flex flex-col items-center gap-2 rounded-lg bg-background-deep p-4 text-center transition-colors hover:bg-accent/50"
+                    className={cn(cardVariants({ variant: "inset" }), "flex flex-col items-center gap-2 p-4 text-center transition-colors hover:bg-accent/50")}
                   >
                     <Icon className="size-6 text-muted-foreground" />
                     <span className="type-h4">{opt.label}</span>
@@ -558,7 +559,7 @@ export function NewAppFlow({ orgId, templates, parentApps = [], baseDomain: base
               {containerImportEnabled && (
                 <Link
                   href="/discover"
-                  className="squircle flex flex-col items-center gap-2 rounded-lg bg-background-deep p-4 text-center transition-colors hover:bg-accent/50"
+                  className={cn(cardVariants({ variant: "inset" }), "flex flex-col items-center gap-2 p-4 text-center transition-colors hover:bg-accent/50")}
                 >
                   <Boxes className="size-6 text-muted-foreground" aria-hidden="true" />
                   <span className="type-h4">Existing containers</span>
@@ -582,7 +583,7 @@ export function NewAppFlow({ orgId, templates, parentApps = [], baseDomain: base
                     key={tmpl.id}
                     type="button"
                     onClick={() => selectTemplate(tmpl)}
-                    className="squircle flex items-center gap-3 rounded-lg bg-background-deep p-3 text-left transition-colors hover:bg-accent/50"
+                    className={cn(cardVariants({ variant: "inset" }), "flex items-center gap-3 p-3 text-left transition-colors hover:bg-accent/50")}
                   >
                     {tmpl.icon ? (
                       <img

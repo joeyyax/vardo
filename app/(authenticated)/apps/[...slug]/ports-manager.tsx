@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Plus, X } from "lucide-react";
 import { toast } from "@/lib/messenger";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/ui/empty-state";
 
 export function PortsManager({
@@ -87,35 +88,34 @@ export function PortsManager({
         <div className="flex items-end gap-3 rounded-lg bg-background-deep p-4">
           <div className="grid gap-1.5">
             <label htmlFor="port-container" className="text-xs text-muted-foreground">Container port</label>
-            <input
+            <Input
               id="port-container"
               type="number"
               placeholder="8080"
               value={newInternal}
               onChange={(e) => setNewInternal(e.target.value)}
-              className="h-9 w-24 rounded-md border bg-background px-3 text-sm font-mono"
+              className="w-24 font-mono"
             />
           </div>
           <div className="grid gap-1.5">
             <label htmlFor="port-host" className="text-xs text-muted-foreground">Host port</label>
-            <input
+            <Input
               id="port-host"
               type="number"
               placeholder="Auto"
               value={newExternal}
               onChange={(e) => setNewExternal(e.target.value)}
-              className="h-9 w-24 rounded-md border bg-background px-3 text-sm font-mono"
+              className="w-24 font-mono"
             />
           </div>
           <div className="grid gap-1.5 flex-1">
             <label htmlFor="port-label" className="text-xs text-muted-foreground">Label <span className="text-muted-foreground/60">(optional)</span></label>
-            <input
+            <Input
               id="port-label"
               placeholder="e.g. HTTP, Database"
               value={newDescription}
               onChange={(e) => setNewDescription(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); }}
-              className="h-9 rounded-md border bg-background px-3 text-sm"
             />
           </div>
           <Button size="sm" onClick={handleAdd} disabled={saving || !newInternal}>

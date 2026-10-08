@@ -1,5 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { cardVariants } from "@/components/ui/card";
 
 type EmptyStateProps = {
   icon?: LucideIcon;
@@ -17,7 +18,8 @@ export function EmptyState({ icon: Icon, title, body, action, className }: Empty
   return (
     <div
       className={cn(
-        "squircle flex flex-col items-center justify-center gap-4 rounded-lg bg-background-deep p-12 text-center",
+        cardVariants({ variant: "inset" }),
+        "flex flex-col items-center justify-center gap-4 p-12 text-center",
         className,
       )}
     >

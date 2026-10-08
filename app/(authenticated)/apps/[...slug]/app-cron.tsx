@@ -291,7 +291,8 @@ export function CronManager({ appId, orgId, userRole }: Props) {
         ) : (
           <div className="space-y-2">
             {jobs.map((job) => (
-              <Card variant="inset"
+              <Card
+                variant="inset"
                 key={job.id}
                 className="p-4"
               >

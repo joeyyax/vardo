@@ -26,7 +26,8 @@ import {
 import { toast } from "@/lib/messenger";
 import { PageToolbar } from "@/components/page-toolbar";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { Card, cardVariants } from "@/components/ui/card";
+import { Textarea } from "@/components/ui/textarea";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import {
@@ -486,7 +487,7 @@ function ComposeNetworking({
               <Link
                 key={`${service.id}-${domain}`}
                 href={`/apps/${service.name}/networking`}
-                className="squircle flex items-center justify-between gap-4 rounded-lg bg-background-deep p-4 transition-colors hover:bg-accent"
+                className={cn(cardVariants({ variant: "inset" }), "flex items-center justify-between gap-4 p-4 transition-colors hover:bg-accent")}
               >
                 <span className="truncate font-mono text-sm font-medium">{domain}</span>
                 <span className="shrink-0 text-xs text-muted-foreground">
@@ -531,7 +532,7 @@ function ComposeSecurity({
               <Link
                 key={service.id}
                 href={`/apps/${service.name}/security`}
-                className="squircle flex items-center justify-between gap-4 rounded-lg bg-background-deep p-4 transition-colors hover:bg-accent"
+                className={cn(cardVariants({ variant: "inset" }), "flex items-center justify-between gap-4 p-4 transition-colors hover:bg-accent")}
               >
                 <span className="truncate text-sm font-medium">{service.displayName}</span>
                 <span className="shrink-0 font-mono text-xs text-muted-foreground">
@@ -629,8 +630,8 @@ function ComposeEditor({
           <p className="text-xs text-muted-foreground">
             Compose YAML is stored as plaintext. Use the Variables tab for secrets — env vars are encrypted at rest.
           </p>
-          <textarea
-            className="w-full min-h-96 font-mono text-sm bg-muted/30 border rounded-lg p-4 resize-y focus:outline-none focus:ring-2 focus:ring-ring"
+          <Textarea
+            className="min-h-96 font-mono text-sm bg-muted/30 rounded-lg p-4 resize-y"
             value={value}
             onChange={(e) => setValue(e.target.value)}
             spellCheck={false}

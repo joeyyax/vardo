@@ -16,6 +16,8 @@ import {
 } from "lucide-react";
 import { toast } from "@/lib/messenger";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -41,6 +43,8 @@ import {
   type DnsFacts,
 } from "@/components/ssl/domain-diagnosis";
 import type { Domain } from "./types";
+import { Card } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 
 export function AppNetworking({
   domains,
@@ -343,61 +347,63 @@ export function AppNetworking({
           <div className="flex items-end gap-3 rounded-lg bg-background-deep p-4">
             <div className="grid gap-1.5 flex-1">
               <label className="text-xs text-muted-foreground">Domain</label>
-              <input
+              <Input
                 placeholder="app.example.com"
                 value={newDomain}
                 onChange={(e) => setNewDomain(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") handleDomainAdd(); }}
-                className="h-9 rounded-md border bg-background px-3 text-sm font-mono"
+                className="font-mono"
                 autoFocus
               />
             </div>
             <div className="grid gap-1.5">
               <label className="text-xs text-muted-foreground">Port</label>
-              <input
+              <Input
                 type="number"
                 placeholder={String(containerPort || 3000)}
                 value={newDomainPort}
                 onChange={(e) => setNewDomainPort(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") handleDomainAdd(); }}
-                className="h-9 w-24 rounded-md border bg-background px-3 text-sm font-mono"
+                className="w-24 font-mono"
               />
             </div>
             <div className="grid gap-1.5">
               <label className="text-xs text-muted-foreground">SSL issuer</label>
-              <select
-                value={newDomainResolver}
-                onChange={(e) => setNewDomainResolver(e.target.value)}
-                className="h-9 rounded-md border bg-background px-2 text-sm"
-              >
-                <option value="">Default</option>
-                {availableIssuers.includes("le") && <option value="le">Let&apos;s Encrypt</option>}
-                {availableIssuers.includes("google") && <option value="google">Google</option>}
-                {availableIssuers.includes("zerossl") && <option value="zerossl">ZeroSSL</option>}
-              </select>
+              <Select value={newDomainResolver || "default"} onValueChange={(v) => setNewDomainResolver(v === "default" ? "" : v)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="default">Default</SelectItem>
+                  {availableIssuers.includes("le") && <SelectItem value="le">Let&apos;s Encrypt</SelectItem>}
+                  {availableIssuers.includes("google") && <SelectItem value="google">Google</SelectItem>}
+                  {availableIssuers.includes("zerossl") && <SelectItem value="zerossl">ZeroSSL</SelectItem>}
+                </SelectContent>
+              </Select>
             </div>
             <div className="grid gap-1.5 flex-1">
               <label className="text-xs text-muted-foreground">Redirect to</label>
-              <input
+              <Input
                 type="url"
                 placeholder="https://example.com"
                 value={newDomainRedirectTo}
                 onChange={(e) => setNewDomainRedirectTo(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter") handleDomainAdd(); }}
-                className="h-9 rounded-md border bg-background px-3 text-sm font-mono"
+                className="font-mono"
               />
             </div>
             {newDomainRedirectTo.trim() && (
               <div className="grid gap-1.5">
                 <label className="text-xs text-muted-foreground">Code</label>
-                <select
-                  value={newDomainRedirectCode}
-                  onChange={(e) => setNewDomainRedirectCode(e.target.value)}
-                  className="h-9 rounded-md border bg-background px-2 text-sm"
-                >
-                  <option value="301">301 Permanent</option>
-                  <option value="302">302 Temporary</option>
-                </select>
+                <Select value={newDomainRedirectCode} onValueChange={setNewDomainRedirectCode}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="301">301 Permanent</SelectItem>
+                    <SelectItem value="302">302 Temporary</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             )}
             <Button size="sm" onClick={handleDomainAdd} disabled={domainSaving || !newDomain.trim()}>
@@ -429,60 +435,62 @@ export function AppNetworking({
                     <div key={domain.id} className="flex items-end gap-3 rounded-lg bg-background-deep p-4">
                       <div className="grid gap-1.5 flex-1">
                         <label className="text-xs text-muted-foreground">Domain</label>
-                        <input
+                        <Input
                           value={editDomainValue}
                           onChange={(e) => setEditDomainValue(e.target.value)}
                           onKeyDown={(e) => { if (e.key === "Enter") handleDomainUpdate(domain.id); if (e.key === "Escape") setEditingDomainId(null); }}
-                          className="h-9 rounded-md border bg-background px-3 text-sm font-mono"
+                          className="font-mono"
                           autoFocus
                         />
                       </div>
                       <div className="grid gap-1.5">
                         <label className="text-xs text-muted-foreground">Port</label>
-                        <input
+                        <Input
                           type="number"
                           placeholder={String(containerPort || 3000)}
                           value={editDomainPort}
                           onChange={(e) => setEditDomainPort(e.target.value)}
                           onKeyDown={(e) => { if (e.key === "Enter") handleDomainUpdate(domain.id); if (e.key === "Escape") setEditingDomainId(null); }}
-                          className="h-9 w-24 rounded-md border bg-background px-3 text-sm font-mono"
+                          className="w-24 font-mono"
                         />
                       </div>
                       <div className="grid gap-1.5">
                         <label className="text-xs text-muted-foreground">SSL issuer</label>
-                        <select
-                          value={editDomainResolver}
-                          onChange={(e) => setEditDomainResolver(e.target.value)}
-                          className="h-9 rounded-md border bg-background px-2 text-sm"
-                        >
-                          <option value="">Default</option>
-                          {availableIssuers.includes("le") && <option value="le">Let&apos;s Encrypt</option>}
-                          {availableIssuers.includes("google") && <option value="google">Google</option>}
-                          {availableIssuers.includes("zerossl") && <option value="zerossl">ZeroSSL</option>}
-                        </select>
+                        <Select value={editDomainResolver || "default"} onValueChange={(v) => setEditDomainResolver(v === "default" ? "" : v)}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="default">Default</SelectItem>
+                            {availableIssuers.includes("le") && <SelectItem value="le">Let&apos;s Encrypt</SelectItem>}
+                            {availableIssuers.includes("google") && <SelectItem value="google">Google</SelectItem>}
+                            {availableIssuers.includes("zerossl") && <SelectItem value="zerossl">ZeroSSL</SelectItem>}
+                          </SelectContent>
+                        </Select>
                       </div>
                       <div className="grid gap-1.5 flex-1">
                         <label className="text-xs text-muted-foreground">Redirect to</label>
-                        <input
+                        <Input
                           type="url"
                           placeholder="https://example.com"
                           value={editDomainRedirectTo}
                           onChange={(e) => setEditDomainRedirectTo(e.target.value)}
                           onKeyDown={(e) => { if (e.key === "Enter") handleDomainUpdate(domain.id); if (e.key === "Escape") setEditingDomainId(null); }}
-                          className="h-9 rounded-md border bg-background px-3 text-sm font-mono"
+                          className="font-mono"
                         />
                       </div>
                       {editDomainRedirectTo.trim() && (
                         <div className="grid gap-1.5">
                           <label className="text-xs text-muted-foreground">Code</label>
-                          <select
-                            value={editDomainRedirectCode}
-                            onChange={(e) => setEditDomainRedirectCode(e.target.value)}
-                            className="h-9 rounded-md border bg-background px-2 text-sm"
-                          >
-                            <option value="301">301 Permanent</option>
-                            <option value="302">302 Temporary</option>
-                          </select>
+                          <Select value={editDomainRedirectCode} onValueChange={setEditDomainRedirectCode}>
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="301">301 Permanent</SelectItem>
+                              <SelectItem value="302">302 Temporary</SelectItem>
+                            </SelectContent>
+                          </Select>
                         </div>
                       )}
                       <Button size="sm" onClick={() => handleDomainUpdate(domain.id)} disabled={domainSaving || !editDomainValue.trim()}>
@@ -496,9 +504,10 @@ export function AppNetworking({
                 }
 
                 return (
-              <div
+              <Card
                 key={domain.id}
-                className={`squircle rounded-lg bg-background-deep overflow-hidden ${domain.isPrimary ? "border border-primary/30" : ""}`}
+                variant="inset"
+                className={cn("overflow-hidden", domain.isPrimary && "border border-primary/30")}
               >
                 <div className="flex items-center justify-between gap-4 p-4">
                   <div className="flex items-center gap-3 min-w-0">
@@ -612,7 +621,7 @@ export function AppNetworking({
                     onCheck={() => handleOwnershipCheck(domain.id)}
                   />
                 )}
-              </div>
+              </Card>
                 );
               })}
           </div>

@@ -13,6 +13,7 @@ import {
   stageProgress,
 } from "@/lib/ui/deploy-stage";
 import type { StageTiming } from "./hooks/use-deploy";
+import { Card } from "@/components/ui/card";
 
 /** Spoken status for each step, since the row states it in color and shape. */
 const STAGE_STATUS_WORDS: Record<string, string> = {
@@ -69,7 +70,7 @@ export function InProgressDeployCard({
         : "";
 
   return (
-    <div className="squircle rounded-lg bg-status-info-muted shadow-card overflow-hidden dark:border">
+    <Card variant="surface" className="bg-status-info-muted overflow-hidden">
       <span className="sr-only" aria-live="assertive" aria-atomic="true">{liveAnnouncement}</span>
       <div
         role="button"
@@ -154,6 +155,6 @@ export function InProgressDeployCard({
           />
         </div>
       )}
-    </div>
+    </Card>
   );
 }

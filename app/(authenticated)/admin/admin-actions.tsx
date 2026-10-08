@@ -151,7 +151,8 @@ export function UserManagement() {
       ) : (
         <div className="space-y-2">
           {users.map((u) => (
-            <Card variant="surface"
+            <Card
+              variant="surface"
               key={u.id}
               className="flex items-center justify-between p-3"
             >

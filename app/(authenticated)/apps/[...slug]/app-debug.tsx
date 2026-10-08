@@ -52,10 +52,12 @@ function CodeBlock({
           {label}
         </CollapsibleTrigger>
         {!loading && content && (
-          <button
+          <Button
+            variant="ghost"
+            size="icon-xs"
             type="button"
             onClick={handleCopy}
-            className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+            className="text-muted-foreground hover:text-foreground"
             title="Copy to clipboard"
             aria-label={`Copy ${label} to clipboard`}
           >
@@ -64,7 +66,7 @@ function CodeBlock({
             ) : (
               <Copy className="size-3.5" />
             )}
-          </button>
+          </Button>
         )}
       </div>
       <CollapsibleContent>

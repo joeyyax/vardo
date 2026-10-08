@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { Container, GitBranch, LayoutTemplate } from "lucide-react";
+import { cardVariants } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 
 type Card = {
   href: string;
@@ -52,7 +54,7 @@ export function FirstRun({ canImportContainers }: { canImportContainers: boolean
             <Link
               key={card.href}
               href={card.href}
-              className="squircle flex flex-col gap-2 rounded-lg bg-card p-5 shadow-card dark:border transition-colors hover:bg-accent/50"
+              className={cn(cardVariants({ variant: "surface" }), "flex flex-col gap-2 p-5 transition-colors hover:bg-accent/50")}
             >
               <Icon className="size-6 text-muted-foreground" aria-hidden="true" />
               <span className="type-h4">{card.title}</span>

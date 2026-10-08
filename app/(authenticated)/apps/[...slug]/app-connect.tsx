@@ -8,6 +8,7 @@ import { Switch } from "@/components/ui/switch";
 
 import type { EnvVar } from "./types";
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 
 export function AppConnect({
   connectionInfo,
@@ -72,16 +73,18 @@ export function AppConnect({
                   <span className={`text-sm font-mono truncate flex-1 ${showVarNames ? "text-status-info" : ""}`}>
                     {displayValue}
                   </span>
-                  <button
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
                     type="button"
                     onClick={async () => {
                       if (await copyToClipboard(copyValue)) toast.success(`Copied ${copyValue}`);
                     }}
-                    className="shrink-0 p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                    className="shrink-0 text-muted-foreground hover:text-foreground"
                     title={`Copy: ${copyValue}`}
                   >
                     <Copy className="size-3.5" />
-                  </button>
+                  </Button>
                 </div>
               );
             })}
@@ -106,15 +109,17 @@ export function AppConnect({
                     <span className="text-sm font-mono flex-1">
                       localhost:{p.external}
                     </span>
-                    <button
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
                       type="button"
                       onClick={async () => {
                         if (await copyToClipboard(`localhost:${p.external}`)) toast.success("Copied");
                       }}
-                      className="shrink-0 p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                      className="shrink-0 text-muted-foreground hover:text-foreground"
                     >
                       <Copy className="size-3.5" />
-                    </button>
+                    </Button>
                   </div>
                 ))}
             </Card>

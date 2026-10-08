@@ -17,6 +17,8 @@ import {
   type ErrorRateReading,
   type RateSample,
 } from "@/lib/ui/error-rate";
+import { Card } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 
 type Response = {
   available: boolean;
@@ -71,7 +73,7 @@ export function AppErrors({
 
   return (
     <div className="space-y-6">
-      <div className={`squircle rounded-lg border p-4 ${errorRateSurface(reading?.status ?? "idle")}`}>
+      <Card variant="plain" className={cn("border p-4", errorRateSurface(reading?.status ?? "idle"))}>
         <div className="flex flex-wrap items-center gap-2">
           <TriangleAlert
             className={`size-4 shrink-0 ${errorRateTone(reading?.status ?? "idle")}`}
@@ -82,7 +84,7 @@ export function AppErrors({
           </span>
         </div>
         {reading && <p className="mt-1.5 text-sm text-muted-foreground">{reading.detail}</p>}
-      </div>
+      </Card>
 
       <dl className="flex flex-wrap gap-x-10 gap-y-4">
         <HeaderStat

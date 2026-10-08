@@ -8,6 +8,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import { Button } from "@/components/ui/button";
 
 /** Collapsible guidance panel for setup steps and admin settings. */
 export function ProviderGuide({
@@ -103,10 +104,12 @@ export function CopyableField({
         <code className="flex-1 rounded border bg-muted/50 px-2 py-1.5 text-xs font-mono break-all">
           {value}
         </code>
-        <button
+        <Button
+          variant="ghost"
+          size="icon-xs"
           type="button"
           onClick={handleCopy}
-          className="shrink-0 rounded p-1.5 hover:bg-muted transition-colors"
+          className="shrink-0"
           aria-label={`Copy ${label}`}
         >
           {copied ? (
@@ -114,7 +117,7 @@ export function CopyableField({
           ) : (
             <Copy aria-hidden="true" className="size-3.5 text-muted-foreground" />
           )}
-        </button>
+        </Button>
       </div>
     </div>
   );

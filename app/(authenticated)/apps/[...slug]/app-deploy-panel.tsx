@@ -59,6 +59,7 @@ import { typicalElapsedMs } from "@/lib/ui/deploy-timing";
 import type { useDeploy } from "./hooks/use-deploy";
 import type { Deployment, SlotStatus } from "./types";
 import { Card } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 
 export interface AppDeployPanelProps {
   orgId: string;
@@ -361,11 +362,12 @@ export function AppDeployPanel({
     const label = deployLabel(deployment);
 
     return (
-      <div
+      <Card
         key={deployment.id}
         ref={variant === "live" ? liveCardRef : undefined}
         tabIndex={variant === "live" ? -1 : undefined}
-        className={`squircle rounded-lg ${bgColor} shadow-card overflow-hidden dark:border`}
+        variant="surface"
+        className={cn(bgColor, "overflow-hidden")}
       >
         <div className="flex items-center justify-between gap-4 p-4 cursor-pointer hover:bg-accent/50 transition-colors"
           onClick={() => toggleLog(deployment.id)}
@@ -495,7 +497,7 @@ export function AppDeployPanel({
             <p className="text-xs text-muted-foreground">No log output for this deployment.</p>
           </div>
         )}
-      </div>
+      </Card>
     );
   }
 
@@ -593,9 +595,10 @@ export function AppDeployPanel({
                     const label = triggerLabel(deployment.trigger);
                     const by = deployment.triggeredByUser?.name;
                     return (
-                      <div
+                      <Card
                         key={deployment.id}
-                        className="squircle rounded-lg bg-status-neutral-muted shadow-card overflow-hidden dark:border"
+                        variant="surface"
+                        className="bg-status-neutral-muted overflow-hidden"
                       >
                         <div className="flex items-center justify-between gap-4 p-4">
                           <div className="flex items-center gap-3 min-w-0">
@@ -630,7 +633,7 @@ export function AppDeployPanel({
                             Cancel
                           </Button>
                         </div>
-                      </div>
+                      </Card>
                     );
                   })}
                 </div>

@@ -50,7 +50,8 @@ import {
 import { volumeThreshold, type ThresholdLevel } from "@/lib/volumes/threshold";
 import { useCan } from "@/components/capabilities-provider";
 import { formatBytes } from "@/lib/metrics/format";
-import { Card } from "@/components/ui/card";
+import { Card, cardVariants } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 
 type Volume = {
   id: string | null;
@@ -707,7 +708,8 @@ export function VolumesPanel({ appId, orgId }: Props) {
         ) : (
           <div className="space-y-2">
             {volumes.map((vol) => (
-              <Card variant="inset"
+              <Card
+                variant="inset"
                 key={`${vol.name}-${vol.mountPath}`}
                 className="p-4"
               >
@@ -992,7 +994,7 @@ export function VolumesPanel({ appId, orgId }: Props) {
                 setLimitWarnPercent("80");
                 setLimitEditing(true);
               }}
-              className="squircle flex w-full items-center gap-2.5 rounded-lg bg-background-deep p-4 text-sm text-muted-foreground transition-colors text-left hover:bg-accent hover:text-foreground"
+              className={cn(cardVariants({ variant: "inset" }), "flex w-full items-center gap-2.5 p-4 text-sm text-muted-foreground transition-colors text-left hover:bg-accent hover:text-foreground")}
             >
               <Plus className="size-4 shrink-0" aria-hidden="true" />
               Set a storage limit that blocks deploys when exceeded

@@ -27,7 +27,7 @@ type ActivityFiltersProps = {
 const OUTCOME_CHIPS: ActivityOutcome[] = ["failure", "success"];
 
 const CHIP_BASE =
-  "squircle inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]";
+  "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]";
 
 function Chip({
   href,

@@ -109,13 +109,15 @@ export function UserMenu({ collapsed, compact, currentOrgId, organizations, team
               <p className="text-sm font-medium">{displayName}</p>
               <p className="text-xs text-muted-foreground">{email}</p>
             </div>
-            <button
+            <Button
+              variant="ghost"
+              size="icon-xs"
               onClick={() => router.push("/user/settings/profile")}
-              className="rounded-md p-1 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+              className="text-muted-foreground hover:text-foreground"
               aria-label="Account settings"
             >
               <Settings className="size-3.5" />
-            </button>
+            </Button>
           </div>
         </DropdownMenuLabel>
 
@@ -125,13 +127,15 @@ export function UserMenu({ collapsed, compact, currentOrgId, organizations, team
           <span className="type-label text-muted-foreground">
             {teamsEnabled ? "Organizations" : "Organization"}
           </span>
-          <button
+          <Button
+            variant="ghost"
+            size="icon-xs"
             onClick={() => router.push("/settings")}
-            className="rounded-md p-1 text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+            className="text-muted-foreground hover:text-foreground"
             aria-label="Organization settings"
           >
             <Settings className="size-3.5" />
-          </button>
+          </Button>
         </DropdownMenuLabel>
         {teamsEnabled && (
           <>

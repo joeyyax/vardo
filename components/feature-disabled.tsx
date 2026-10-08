@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ToggleLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { cardVariants } from "@/components/ui/card";
 
 type FeatureDisabledProps = {
   /** Feature name as it appears in Feature flags, e.g. "Metrics". */
@@ -18,7 +19,8 @@ export function FeatureDisabled({ name, description, canManage, className }: Fea
   return (
     <div
       className={cn(
-        "squircle flex flex-col items-center justify-center gap-4 rounded-lg bg-background-deep p-12 text-center",
+        cardVariants({ variant: "inset" }),
+        "flex flex-col items-center justify-center gap-4 p-12 text-center",
         className,
       )}
     >

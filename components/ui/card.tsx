@@ -11,6 +11,8 @@ const cardVariants = cva("squircle rounded-lg", {
       // Dark keeps a hairline; shadows barely read on a dark ground.
       default: "bg-card text-card-foreground @container flex flex-col gap-5 py-6 shadow-card dark:border",
       surface: "bg-card text-card-foreground shadow-card dark:border",
+      // Shape only, for panels whose fill and border come from the caller.
+      plain: "",
       inset: "bg-background-deep",
       info: "border border-status-info-edge bg-status-info-muted",
       success: "border border-status-success-edge bg-status-success-muted",

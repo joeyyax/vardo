@@ -249,7 +249,8 @@ export function OrgDomainEditor({
       {customDomains.length > 0 && (
         <div className="space-y-2">
           {customDomains.map((domain) => (
-            <Card variant="inset"
+            <Card
+              variant="inset"
               key={domain.id}
             >
               <div className="flex items-center justify-between p-4">

@@ -103,7 +103,8 @@ function Skeleton({ className = "w-14" }: { className?: string }) {
 /** Stands in for a chart with too few samples to plot. */
 function Collecting({ count }: { count: number }) {
   return (
-    <Card variant="inset"
+    <Card
+      variant="inset"
       className="flex flex-col items-center justify-center gap-2"
       style={{ height: CHART_HEIGHT }}
     >
@@ -119,7 +120,8 @@ function Collecting({ count }: { count: number }) {
 /** Every sample came back empty. */
 function NoSamples() {
   return (
-    <Card variant="inset"
+    <Card
+      variant="inset"
       className="flex items-center justify-center"
       style={{ height: CHART_HEIGHT }}
     >

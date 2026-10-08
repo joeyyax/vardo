@@ -132,7 +132,8 @@ export function NetworkChart({
 
   if (!hasSamples) {
     return (
-      <Card variant="inset"
+      <Card
+        variant="inset"
         className="flex items-center justify-center"
         style={{ height }}
       >

@@ -7,6 +7,8 @@ import {
   Database, HardDrive, Search, ChevronUp, ChevronDown, Layers,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/messenger";
 import { useVisibilityKey } from "@/hooks/use-visible";
@@ -18,6 +20,7 @@ import { findMatches, matchedLines, filterToMatches, stepMatch, type LineMatch }
 import {
   capLines, mergeOlder, historyUrlFor, SCROLLBACK_OPTIONS, DEFAULT_SCROLLBACK,
 } from "@/lib/logging/buffer";
+import { cardVariants } from "@/components/ui/card";
 import "./surface-terminal.css";
 
 export { detectLevel as detectLogLevel };
@@ -282,13 +285,13 @@ export function TerminalOutput({
           <div className="flex items-center gap-2 px-3 py-1.5">
             <div className="relative flex-1 min-w-32 max-w-md">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3 text-muted-foreground" />
-              <input
+              <Input
                 ref={searchRef}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Find in logs"
                 aria-label="Find in logs"
-                className="w-full rounded bg-background border pl-7 pr-2 py-1 text-xs font-mono text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-ring"
+                className="h-7 pl-7 pr-2 py-1 text-xs md:text-xs font-mono"
               />
             </div>
             {query && (
@@ -427,7 +430,7 @@ export function TerminalOutput({
             <button
               onClick={loadOlder}
               disabled={loadingOlder}
-              className="squircle w-full mb-2 flex items-center justify-center gap-1.5 rounded-lg bg-background-deep py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+              className={cn(cardVariants({ variant: "inset" }), "w-full mb-2 flex items-center justify-center gap-1.5 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition-colors")}
             >
               {loadingOlder
                 ? <><Loader2 className="size-3 animate-spin" />Loading</>
@@ -675,16 +678,16 @@ export function LogViewer({ streamUrl, maxLines = DEFAULT_SCROLLBACK, initialLev
         </div>
         <div className="flex items-center gap-1">
           <label className="sr-only" htmlFor="log-scrollback">Scrollback</label>
-          <select
-            id="log-scrollback"
-            value={scrollback}
-            onChange={(e) => setScrollback(Number(e.target.value))}
-            className="rounded border bg-transparent px-1.5 py-1 text-xs text-muted-foreground"
-          >
-            {SCROLLBACK_OPTIONS.map((size) => (
-              <option key={size} value={size}>{size.toLocaleString()} lines</option>
-            ))}
-          </select>
+          <Select value={String(scrollback)} onValueChange={(v) => setScrollback(Number(v))}>
+            <SelectTrigger id="log-scrollback" className="h-7 w-auto gap-1.5 px-2 py-1 text-xs text-muted-foreground">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {SCROLLBACK_OPTIONS.map((size) => (
+                <SelectItem key={size} value={String(size)}>{size.toLocaleString()} lines</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Button
             size="xs"
             variant="ghost"

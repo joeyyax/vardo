@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -186,11 +187,9 @@ export function JobForm({
                   ) : (
                     apps.map((app) => (
                       <label key={app.id} className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-muted cursor-pointer">
-                        <input
-                          type="checkbox"
+                        <Checkbox
                           checked={appIds.includes(app.id)}
-                          onChange={() => toggleApp(app.id)}
-                          className="size-4 rounded border-input"
+                          onCheckedChange={() => toggleApp(app.id)}
                         />
                         <span className="text-sm">{app.displayName}</span>
                       </label>

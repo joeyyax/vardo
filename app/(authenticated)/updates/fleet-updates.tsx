@@ -461,11 +461,10 @@ function BatchOutcome({ report }: { report: BatchReport }) {
   return (
     <section
       aria-label="Batch update result"
-      className={`squircle rounded-lg p-4 space-y-2 ${
-        report.failed > 0
-          ? "bg-status-warning-muted shadow-card border border-status-warning-edge"
-          : "bg-card shadow-card dark:border"
-      }`}
+      className={cn(
+        cardVariants({ variant: report.failed > 0 ? "warning" : "surface" }),
+        "p-4 space-y-2",
+      )}
     >
       <p className="type-body-sm flex items-center gap-2">
         {report.failed > 0 ? (
