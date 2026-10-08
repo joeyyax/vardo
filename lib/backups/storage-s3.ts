@@ -6,6 +6,7 @@ import {
   GetObjectCommand,
   DeleteObjectCommand,
   HeadObjectCommand,
+  ListObjectsV2Command,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { createReadStream, createWriteStream } from "fs";
@@ -14,7 +15,7 @@ import { Readable, pipeline } from "stream";
 import { promisify } from "util";
 
 const pipelineAsync = promisify(pipeline);
-import { ArchiveMissingError, type BackupStorage } from "./storage-port";
+import { ArchiveMissingError, type BackupStorage, type StoredObject } from "./storage-port";
 
 export type S3StorageConfig = {
   bucket: string;
@@ -101,6 +102,28 @@ export class S3BackupStorage implements BackupStorage {
         Key: this.fullKey(key),
       }),
     );
+  }
+
+  async list(prefix: string): Promise<StoredObject[]> {
+    const full = this.fullKey(prefix);
+    const strip = full.length - prefix.length;
+    const found: StoredObject[] = [];
+    let token: string | undefined;
+    do {
+      const page = await this.client.send(
+        new ListObjectsV2Command({ Bucket: this.config.bucket, Prefix: full, ContinuationToken: token }),
+      );
+      for (const obj of page.Contents ?? []) {
+        if (!obj.Key) continue;
+        found.push({
+          key: obj.Key.slice(strip),
+          sizeBytes: obj.Size ?? 0,
+          modifiedAt: obj.LastModified ?? new Date(0),
+        });
+      }
+      token = page.IsTruncated ? page.NextContinuationToken : undefined;
+    } while (token);
+    return found;
   }
 
   /** Checks the object exists before presigning. */

@@ -138,6 +138,7 @@ export function withStorageRetry(storage: BackupStorage): BackupStorage {
     upload: (key, filePath) => withRetry("upload", key, () => storage.upload(key, filePath)),
     download: (key, destPath) => withRetry("download", key, () => storage.download(key, destPath)),
     delete: (key) => withRetry("delete", key, () => storage.delete(key)),
+    list: (prefix) => withRetry("list", prefix, () => storage.list(prefix)),
   };
 
   // Presigning checks the object exists first.

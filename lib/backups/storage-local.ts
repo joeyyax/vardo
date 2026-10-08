@@ -1,8 +1,8 @@
 // Local filesystem backup storage adapter.
 
-import { copyFile, mkdir, unlink, stat } from "fs/promises";
-import { resolve, dirname } from "path";
-import { ArchiveMissingError, type BackupStorage } from "./storage-port";
+import { copyFile, mkdir, readdir, unlink, stat } from "fs/promises";
+import { resolve, dirname, join, relative, sep } from "path";
+import { ArchiveMissingError, type BackupStorage, type StoredObject } from "./storage-port";
 
 export type LocalStorageConfig = {
   path: string; // e.g. "/opt/vardo/backups"
@@ -50,6 +50,30 @@ export class LocalBackupStorage implements BackupStorage {
       if ((err as NodeJS.ErrnoException).code === "ENOENT") throw new ArchiveMissingError();
       throw err;
     }
+  }
+
+  async list(prefix: string): Promise<StoredObject[]> {
+    const dir = resolve(this.basePath, dirname(`${prefix}x`));
+    if (dir !== this.basePath && !dir.startsWith(this.basePath + "/")) {
+      throw new Error("Invalid backup prefix: path traversal detected");
+    }
+    let entries;
+    try {
+      entries = await readdir(dir, { recursive: true, withFileTypes: true });
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
+      throw err;
+    }
+    const found: StoredObject[] = [];
+    for (const entry of entries) {
+      if (!entry.isFile()) continue;
+      const path = join(entry.parentPath, entry.name);
+      const key = relative(this.basePath, path).split(sep).join("/");
+      if (!key.startsWith(prefix)) continue;
+      const info = await stat(path);
+      found.push({ key, sizeBytes: info.size, modifiedAt: info.mtime });
+    }
+    return found;
   }
 
   // No getDownloadUrl: downloads stream through the server.

@@ -39,6 +39,7 @@ function stubStorage(overrides: Record<string, unknown> = {}) {
     upload: vi.fn(async () => ({ sizeBytes: 1 })),
     download: vi.fn(async () => {}),
     delete: vi.fn(async () => {}),
+    list: vi.fn(async () => []),
     ...overrides,
   };
 }
@@ -222,6 +223,14 @@ describe("withStorageRetry", () => {
 
     expect(download).toHaveBeenCalledTimes(2);
     expect(del).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries a listing", async () => {
+    const list = vi.fn().mockRejectedValueOnce(dnsError()).mockResolvedValue([{ key: "a" }]);
+    const storage = withStorageRetry(stubStorage({ list }));
+
+    await expect(runWithoutWaiting(storage.list("vardo-system/"))).resolves.toEqual([{ key: "a" }]);
+    expect(list).toHaveBeenCalledTimes(2);
   });
 
   it("names the failing operation in the exhausted error", async () => {

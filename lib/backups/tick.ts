@@ -5,6 +5,7 @@ import { runBackup, STALE_RUN_MS } from "./engine";
 import { shouldRunNow } from "@/lib/cron/parse";
 import { acquireLock } from "@/lib/redis-lock";
 import { logger } from "@/lib/logger";
+import { needsSetup } from "@/lib/setup";
 import { selectDrillCandidates, type DrillCandidate } from "./drill-schedule";
 
 const log = logger.child("backup");
@@ -12,6 +13,9 @@ const log = logger.child("backup");
 /** Run any enabled backup jobs that are due. Call every minute. */
 export async function tickBackupJobs(): Promise<void> {
   const now = new Date();
+
+  // A fresh instance's empty database would land in the bucket beside the backups a restore lists.
+  if (await needsSetup()) return;
 
   const jobs = await db.query.backupJobs.findMany({
     where: eq(backupJobs.enabled, true),

@@ -371,6 +371,24 @@ export async function isEncryptedArchiveFile(path: string): Promise<boolean> {
   }
 }
 
+/** Key ID (master-key fingerprint) in an archive's header. Null for a plaintext archive. */
+export async function readArchiveKeyId(path: string): Promise<string | null> {
+  const handle = await open(path, "r");
+  try {
+    const head = Buffer.alloc(FIXED_HEADER_LENGTH + 1 + 255 + 1 + 255);
+    const { bytesRead } = await handle.read(head, 0, head.length, 0);
+    const bytes = head.subarray(0, bytesRead);
+    if (bytes.length < ARCHIVE_MAGIC.length || !bytes.subarray(0, ARCHIVE_MAGIC.length).equals(ARCHIVE_MAGIC)) {
+      return null;
+    }
+    const header = decodeHeader(bytes);
+    if (!header) throw new ArchiveDecryptError("Archive header is truncated");
+    return header.key.keyFingerprint;
+  } finally {
+    await handle.close();
+  }
+}
+
 export async function encryptArchiveFile(
   inPath: string,
   outPath: string,

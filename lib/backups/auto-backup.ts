@@ -70,7 +70,7 @@ export async function ensureHostBackupTarget() {
 }
 
 /** Build dump/restore commands for Vardo's own Postgres from DATABASE_URL. */
-function buildSystemDumpMeta(): { dumpCmd: string; restoreCmd: string } {
+export function buildSystemDumpMeta(): { dumpCmd: string; restoreCmd: string } {
   const container = process.env.VARDO_PG_CONTAINER || "vardo-postgres";
   const dbUrl = process.env.DATABASE_URL || "";
   const dbMatch = dbUrl.match(/^postgresql:\/\/([A-Za-z0-9_-]+):[^@]+@[^/]+\/([A-Za-z0-9_-]+)/);

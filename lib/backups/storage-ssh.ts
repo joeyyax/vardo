@@ -2,7 +2,7 @@
 
 import { stat, writeFile as fsWriteFile, unlink } from "fs/promises";
 import { nanoid } from "nanoid";
-import { ArchiveMissingError, type BackupStorage } from "./storage-port";
+import { ArchiveMissingError, type BackupStorage, type StoredObject } from "./storage-port";
 import { execFileAsync } from "@/lib/utils/exec";
 
 export type SshConfig = {
@@ -158,6 +158,37 @@ export class SshBackupStorage implements BackupStorage {
         ],
         { timeout: 30_000 }
       );
+    } finally {
+      await cleanupKeyFile(keyFile);
+    }
+  }
+
+  /** Needs GNU find on the remote host. */
+  async list(prefix: string): Promise<StoredObject[]> {
+    const base = this.config.path.replace(/\/+$/, "");
+    const dir = remotePath(this.config, prefix.slice(0, prefix.lastIndexOf("/") + 1));
+    const { sshFlags, keyFile } = await buildFlags(this.config);
+    try {
+      const { stdout } = await execFileAsync(
+        "ssh",
+        [
+          ...sshFlags,
+          "--",
+          `${this.config.username}@${this.config.host}`,
+          "find", shellEscape(dir), "-type", "f", "-printf", shellEscape("%s %T@ %p\\n"),
+          "2>/dev/null", "||", "true",
+        ],
+        { timeout: 60_000 },
+      );
+      const found: StoredObject[] = [];
+      for (const line of String(stdout).split("\n")) {
+        const match = line.match(/^(\d+) ([\d.]+) (.+)$/);
+        if (!match || !match[3].startsWith(`${base}/`)) continue;
+        const key = match[3].slice(base.length + 1);
+        if (!key.startsWith(prefix)) continue;
+        found.push({ key, sizeBytes: Number(match[1]), modifiedAt: new Date(Number(match[2]) * 1000) });
+      }
+      return found;
     } finally {
       await cleanupKeyFile(keyFile);
     }

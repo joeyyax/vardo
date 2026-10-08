@@ -1383,6 +1383,8 @@ export async function restoreBackup(
   opts: {
     /** Restore an archive from a different master key. Its env vars stay unreadable. */
     acceptKeyMismatch?: boolean;
+    /** Runs after the data is back and before the decrypt probe. A throw fails the restore. */
+    afterRestore?: (log: (msg: string) => void) => Promise<void>;
   } = {},
 ): Promise<{ success: boolean; log: string }> {
   const backup = await db.query.backups.findFirst({
@@ -1620,6 +1622,7 @@ export async function restoreBackup(
     }
 
     log("Restore complete");
+    if (opts.afterRestore) await opts.afterRestore(log);
 
     // Whether the restored rows open with the running key.
     if (carriesInstanceSecrets) {

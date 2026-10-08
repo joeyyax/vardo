@@ -10,13 +10,14 @@
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-const { backupJobsFindMany, backupsFindFirst, runBackupMock, acquireLockMock, shouldRunNowMock, updates } =
+const { backupJobsFindMany, backupsFindFirst, runBackupMock, acquireLockMock, shouldRunNowMock, needsSetupMock, updates } =
   vi.hoisted(() => ({
     backupJobsFindMany: vi.fn(),
     backupsFindFirst: vi.fn(),
     runBackupMock: vi.fn(),
     acquireLockMock: vi.fn(),
     shouldRunNowMock: vi.fn(),
+    needsSetupMock: vi.fn(),
     updates: [] as { set: Record<string, unknown> }[],
   }));
 
@@ -52,6 +53,7 @@ vi.mock("@/lib/db", () => ({
   },
 }));
 vi.mock("@/lib/cron/parse", () => ({ shouldRunNow: shouldRunNowMock }));
+vi.mock("@/lib/setup", () => ({ needsSetup: needsSetupMock }));
 vi.mock("@/lib/redis-lock", () => ({ acquireLock: acquireLockMock }));
 vi.mock("@/lib/backups/engine", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/backups/engine")>()),
@@ -101,6 +103,22 @@ beforeEach(() => {
   runBackupMock.mockReset().mockResolvedValue([]);
   acquireLockMock.mockReset().mockResolvedValue(true);
   shouldRunNowMock.mockReset().mockReturnValue(true);
+  needsSetupMock.mockReset().mockResolvedValue(false);
+});
+
+describe("tickBackupJobs — before first-run setup", () => {
+  it("runs nothing while setup is still open", async () => {
+    needsSetupMock.mockResolvedValue(true);
+    withExistingBackup(null);
+    await tickBackupJobs();
+    expect(runBackupMock).not.toHaveBeenCalled();
+  });
+
+  it("runs a due job once setup is done", async () => {
+    withExistingBackup(null);
+    await tickBackupJobs();
+    expect(runBackupMock).toHaveBeenCalledWith("job-1");
+  });
 });
 
 describe("tickBackupJobs — the in-flight guard is time-bounded", () => {

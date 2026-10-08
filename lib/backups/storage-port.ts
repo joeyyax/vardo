@@ -1,5 +1,8 @@
 // Contract every backup storage adapter implements.
 
+/** One object found by a listing. */
+export type StoredObject = { key: string; sizeBytes: number; modifiedAt: Date };
+
 export interface BackupStorage {
   /** Upload a local file to the storage target. Returns the size in bytes. */
   upload(key: string, filePath: string): Promise<{ sizeBytes: number }>;
@@ -12,6 +15,9 @@ export interface BackupStorage {
 
   /** Pre-signed download URL, where the backend supports one. */
   getDownloadUrl?(key: string, expiresIn?: number): Promise<string>;
+
+  /** Objects whose key starts with `prefix`. */
+  list(prefix: string): Promise<StoredObject[]>;
 }
 
 /** The archive a backup row points at is gone from its target. */
