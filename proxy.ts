@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { csrfRejection } from "@/lib/security/csrf";
 import { clientIpFor } from "@/lib/security/client-ip";
+import { hasValidCredentials } from "@/lib/security/proxy-credentials";
 
 /**
  * Layer 1: In-memory IP-based rate limiting on all API routes.
@@ -8,7 +9,8 @@ import { clientIpFor } from "@/lib/security/client-ip";
  * Lightweight safety net that runs before any Redis or DB calls.
  * Catches brute-force and DoS before they hit the application.
  *
- * 200 requests per minute per IP. Bounded Map prevents memory leaks.
+ * 200 requests per minute per IP, counting only requests without a valid session or
+ * API token. Signed-in requests are limited per route by withRateLimit. Bounded Map prevents memory leaks.
  */
 
 const WINDOW_MS = 60_000;
@@ -60,6 +62,13 @@ export async function proxy(request: NextRequest) {
   }
 
   const now = Date.now();
+
+  // Past its budget an address gets no further credential lookups beyond what is cached.
+  const seen = ipMap.get(ip);
+  const spent = !!seen && now <= seen.resetAt && seen.count >= MAX_REQUESTS;
+  if (await hasValidCredentials(request.headers, { lookup: !spent, now })) {
+    return next();
+  }
 
   let entry = ipMap.get(ip);
   if (!entry || now > entry.resetAt) {

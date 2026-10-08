@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   applyInfrastructureFailure,
+  applyInfrastructureThrottle,
   applyInfrastructurePayload,
   INFRA_RECHECK_EVENT,
   infrastructurePollMs,
@@ -30,6 +31,14 @@ export function useInfrastructureStatus(): { rows: AttentionRow[]; resolvedAt: n
     inFlight.current = true;
     fetch("/api/v1/system/infrastructure", { cache: "no-store" })
       .then(async (res) => {
+        if (res.status === 429) {
+          const seconds = Number(res.headers.get("Retry-After"));
+          setView((state) =>
+            applyInfrastructureThrottle(state, Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : null),
+          );
+          setCheckedAt(Date.now());
+          return;
+        }
         if (!res.ok) throw new Error(String(res.status));
         const payload = await res.json();
         const at = Date.now();

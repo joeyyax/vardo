@@ -2,10 +2,12 @@
 // same-site origin — including every app Vardo hosts on a sibling subdomain.
 // Unsafe cookie-authenticated API requests must come from Vardo itself.
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { csrfRejection } from "@/lib/security/csrf";
 import { proxy } from "@/proxy";
+
+vi.mock("@/lib/security/proxy-credentials", () => ({ hasValidCredentials: async () => false }));
 
 const ENV = { NEXT_PUBLIC_APP_URL: "https://vardo.example.com" } as unknown as NodeJS.ProcessEnv;
 const COOKIE = "__Secure-better-auth.session_token=abc; theme=dark";

@@ -3,6 +3,9 @@ import { describe, it, expect } from "vitest";
 import {
   applyInfrastructureFailure,
   applyInfrastructurePayload,
+  applyInfrastructureThrottle,
+  INFRA_BACKOFF_MAX_MS,
+  INFRA_BACKOFF_MIN_MS,
   INFRA_FAILURES_BEFORE_UNREACHABLE,
   INFRA_POLL_ACTIVE_MS,
   INFRA_POLL_IDLE_MS,
@@ -151,5 +154,40 @@ describe("infrastructure view", () => {
     expect(infrastructureViewRows(again, NOW + 1_000).map((r) => r.key)).toEqual([
       SELF_DEPLOY_ROW_KEY,
     ]);
+  });
+
+  describe("throttled (429)", () => {
+    function throttleTimes(times: number) {
+      let state = initialInfrastructureView();
+      for (let i = 0; i < times; i++) state = applyInfrastructureThrottle(state, null);
+      return state;
+    }
+
+    it("never reads as unreachable, however many 429s arrive", () => {
+      const state = throttleTimes(20);
+      expect(state.failures).toBe(0);
+      expect(infrastructureViewRows(state, NOW)).toEqual([]);
+    });
+
+    it("clears failures already counted, since the instance answered", () => {
+      const state = applyInfrastructureThrottle(failTimes(initialInfrastructureView(), 2), null);
+      expect(state.failures).toBe(0);
+    });
+
+    it("waits longer than the normal cadence and doubles up to a ceiling", () => {
+      expect(infrastructurePollMs(throttleTimes(1))).toBe(INFRA_BACKOFF_MIN_MS);
+      expect(infrastructurePollMs(throttleTimes(2))).toBe(INFRA_BACKOFF_MIN_MS * 2);
+      expect(infrastructurePollMs(throttleTimes(20))).toBe(INFRA_BACKOFF_MAX_MS);
+    });
+
+    it("honors a longer Retry-After", () => {
+      const state = applyInfrastructureThrottle(initialInfrastructureView(), 120_000);
+      expect(infrastructurePollMs(state)).toBe(120_000);
+    });
+
+    it("returns to the normal cadence after a good poll", () => {
+      const state = applyInfrastructurePayload(throttleTimes(3), healthy, NOW);
+      expect(infrastructurePollMs(state)).toBe(INFRA_POLL_IDLE_MS);
+    });
   });
 });

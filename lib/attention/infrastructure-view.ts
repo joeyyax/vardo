@@ -14,6 +14,10 @@ export const INFRA_FAILURES_BEFORE_UNREACHABLE = 3;
 /** How long the finished-updating row stays up before clearing itself. */
 export const INFRA_RESOLVED_MS = 20_000;
 
+/** Floor and ceiling for the wait after a 429. */
+export const INFRA_BACKOFF_MIN_MS = 30_000;
+export const INFRA_BACKOFF_MAX_MS = 5 * 60_000;
+
 /** Window event asking the bar to re-check now, dispatched on any bus event. */
 export const INFRA_RECHECK_EVENT = "vardo:infrastructure-recheck";
 
@@ -26,10 +30,12 @@ export type InfrastructureView = {
   failures: number;
   /** When a watched self-deploy stopped being reported. */
   resolvedAt: number | null;
+  /** Wait imposed by the last 429s; 0 when not throttled. */
+  backoffMs: number;
 };
 
 export function initialInfrastructureView(): InfrastructureView {
-  return { rows: [], selfDeploy: false, failures: 0, resolvedAt: null };
+  return { rows: [], selfDeploy: false, failures: 0, resolvedAt: null, backoffMs: 0 };
 }
 
 /** Fold a successful poll into the view. */
@@ -44,6 +50,7 @@ export function applyInfrastructurePayload(
     rows: payload.rows,
     selfDeploy: payload.selfDeploy,
     failures: 0,
+    backoffMs: 0,
     resolvedAt: payload.selfDeploy ? null : finished ? now : expired ? null : state.resolvedAt,
   };
 }
@@ -51,6 +58,16 @@ export function applyInfrastructurePayload(
 /** Fold a failed poll into the view, keeping the last payload. */
 export function applyInfrastructureFailure(state: InfrastructureView): InfrastructureView {
   return { ...state, failures: state.failures + 1 };
+}
+
+/** Fold a 429 into the view. The instance answered, so it counts as reachable; the next poll waits. */
+export function applyInfrastructureThrottle(
+  state: InfrastructureView,
+  retryAfterMs: number | null,
+): InfrastructureView {
+  const doubled = state.backoffMs > 0 ? state.backoffMs * 2 : INFRA_BACKOFF_MIN_MS;
+  const wait = Math.max(retryAfterMs ?? 0, doubled);
+  return { ...state, failures: 0, backoffMs: Math.min(wait, INFRA_BACKOFF_MAX_MS) };
 }
 
 /** True once enough polls have failed in a row. */
@@ -74,7 +91,8 @@ export function infrastructureViewRows(state: InfrastructureView, now: number): 
 /** Milliseconds until the next poll. */
 export function infrastructurePollMs(state: InfrastructureView): number {
   const busy = state.selfDeploy || state.failures > 0 || state.resolvedAt !== null;
-  return busy ? INFRA_POLL_ACTIVE_MS : INFRA_POLL_IDLE_MS;
+  const base = busy ? INFRA_POLL_ACTIVE_MS : INFRA_POLL_IDLE_MS;
+  return Math.max(base, state.backoffMs);
 }
 
 function restartingRow(): AttentionRow {

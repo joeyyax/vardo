@@ -7,6 +7,11 @@ import {
   BUCKET_MS,
   type TimeRange,
 } from "@/lib/metrics/constants";
+import {
+  METRICS_FALLBACK_MS,
+  mergePolledPoints,
+  streamRetryMs,
+} from "@/lib/metrics/stream-fallback";
 import type { MetricsPoint, ContainerPoint } from "@/lib/metrics/types";
 
 type MetricsMeta = {
@@ -69,8 +74,12 @@ export function useMetricsStream(
   // Keep timeRange in a ref so the SSE effect can read the latest value
   // without re-opening the connection when the range changes.
   const timeRangeRef = useRef(timeRange);
+  const historyUrlRef = useRef(historyUrl);
+  const pointsRef = useRef<MetricsPoint[]>([]);
   useEffect(() => {
     timeRangeRef.current = timeRange;
+    historyUrlRef.current = historyUrl;
+    pointsRef.current = points;
   });
 
   // ---- Historical fetch ----
@@ -115,86 +124,140 @@ export function useMetricsStream(
     // Don't open a connection while the tab is hidden.
     if (typeof document !== "undefined" && document.hidden) return;
 
-    const es = new EventSource(streamUrl);
+    let es: EventSource | null = null;
+    let fallback: ReturnType<typeof setInterval> | null = null;
+    let retry: ReturnType<typeof setTimeout> | null = null;
+    let attempt = 0;
+    let stopped = false;
 
-    es.onopen = () => {
-      setConnected(true);
-      setReconnecting(false);
-      setError(null);
-      wasConnectedRef.current = true;
-    };
-
-    function handlePoint(event: MessageEvent) {
-      try {
-        const data = JSON.parse(event.data);
-
-        const point: MetricsPoint = {
-          timestamp: data.timestamp ?? Date.now(),
-          cpu: data.cpu ?? 0,
-          memory: data.memory ?? 0,
-          memoryLimit: data.memoryLimit ?? 0,
-          networkRx: data.networkRx ?? 0,
-          networkTx: data.networkTx ?? 0,
-          diskTotal: data.diskTotal ?? 0,
-          gpuUtilization: data.gpuUtilization ?? 0,
-          gpuMemoryUsed: data.gpuMemoryUsed ?? 0,
-          gpuMemoryTotal: data.gpuMemoryTotal ?? 0,
-          gpuTemperature: data.gpuTemperature ?? 0,
-        };
-
-        // Container breakdown — optional per event
-        if (data.containers) {
-          setContainers(data.containers as ContainerPoint[]);
-        }
-
-        // Auxiliary metadata — merge incrementally
-        if (data.disk || data.system || data.apps || data.projectCount !== undefined || data.cpuCount !== undefined || data.orgDiskTotal !== undefined) {
-          setMeta((prev) => ({
-            disk: data.disk ?? prev?.disk ?? null,
-            system: data.system ?? prev?.system ?? null,
-            apps: data.apps ?? prev?.apps ?? [],
-            projectCount: data.projectCount ?? prev?.projectCount,
-            cpuCount: data.cpuCount ?? prev?.cpuCount,
-            orgDiskTotal: data.orgDiskTotal ?? prev?.orgDiskTotal,
-          }));
-        }
-
-        setHasLiveFrame(true);
-
-        // Append live point, trimming outside the current range
-        const cutoff = Date.now() - RANGE_MS[timeRangeRef.current];
-        setPoints((prev) => {
-          const next = [...prev, point];
-          const filtered = next.filter((p) => p.timestamp >= cutoff);
-          return filtered.length > maxPoints
-            ? filtered.slice(-maxPoints)
-            : filtered;
-        });
-      } catch {
-        // Skip malformed events
-      }
+    function clearFallback() {
+      if (fallback) clearInterval(fallback);
+      fallback = null;
     }
 
-    es.addEventListener("point", handlePoint);
+    function poll() {
+      if (document.visibilityState !== "visible") return;
+      const last = pointsRef.current.at(-1)?.timestamp ?? Date.now() - RANGE_MS[timeRangeRef.current];
+      const base = historyUrlRef.current;
+      const url = `${base}${base.includes("?") ? "&" : "?"}from=${last}&to=${Date.now()}&bucket=${BUCKET_MS[timeRangeRef.current]}`;
+      fetch(url)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (stopped || !data?.points?.length) return;
+          const cutoff = Date.now() - RANGE_MS[timeRangeRef.current];
+          setPoints((prev) => mergePolledPoints(prev, data.points as MetricsPoint[], cutoff, maxPoints));
+        })
+        .catch(() => {});
+    }
 
-    // Backward-compatible: handle legacy "stats" events the same way.
-    es.addEventListener("stats", handlePoint);
+    function armFallback() {
+      if (fallback) return;
+      fallback = setInterval(poll, METRICS_FALLBACK_MS);
+    }
 
-    es.addEventListener("timeout", () => {
-      setConnected(false);
-      es.close();
-    });
+    function scheduleRetry() {
+      if (retry || stopped) return;
+      retry = setTimeout(() => {
+        retry = null;
+        es?.close();
+        connect();
+      }, streamRetryMs(attempt++));
+    }
 
-    es.onerror = () => {
-      setConnected(false);
-      // If we were previously connected, the browser will auto-retry -- show reconnecting
-      if (wasConnectedRef.current) {
-        setReconnecting(true);
+    function connect() {
+      es = new EventSource(streamUrl);
+
+      es.onopen = () => {
+        attempt = 0;
+        clearFallback();
+        setConnected(true);
+        setReconnecting(false);
+        setError(null);
+        wasConnectedRef.current = true;
+      };
+
+      function handlePoint(event: MessageEvent) {
+        try {
+          const data = JSON.parse(event.data);
+
+          const point: MetricsPoint = {
+            timestamp: data.timestamp ?? Date.now(),
+            cpu: data.cpu ?? 0,
+            memory: data.memory ?? 0,
+            memoryLimit: data.memoryLimit ?? 0,
+            networkRx: data.networkRx ?? 0,
+            networkTx: data.networkTx ?? 0,
+            diskTotal: data.diskTotal ?? 0,
+            gpuUtilization: data.gpuUtilization ?? 0,
+            gpuMemoryUsed: data.gpuMemoryUsed ?? 0,
+            gpuMemoryTotal: data.gpuMemoryTotal ?? 0,
+            gpuTemperature: data.gpuTemperature ?? 0,
+          };
+
+          // Container breakdown — optional per event
+          if (data.containers) {
+            setContainers(data.containers as ContainerPoint[]);
+          }
+
+          // Auxiliary metadata — merge incrementally
+          if (data.disk || data.system || data.apps || data.projectCount !== undefined || data.cpuCount !== undefined || data.orgDiskTotal !== undefined) {
+            setMeta((prev) => ({
+              disk: data.disk ?? prev?.disk ?? null,
+              system: data.system ?? prev?.system ?? null,
+              apps: data.apps ?? prev?.apps ?? [],
+              projectCount: data.projectCount ?? prev?.projectCount,
+              cpuCount: data.cpuCount ?? prev?.cpuCount,
+              orgDiskTotal: data.orgDiskTotal ?? prev?.orgDiskTotal,
+            }));
+          }
+
+          setHasLiveFrame(true);
+
+          // Append live point, trimming outside the current range
+          const cutoff = Date.now() - RANGE_MS[timeRangeRef.current];
+          setPoints((prev) => {
+            const next = [...prev, point];
+            const filtered = next.filter((p) => p.timestamp >= cutoff);
+            return filtered.length > maxPoints
+              ? filtered.slice(-maxPoints)
+              : filtered;
+          });
+        } catch {
+          // Skip malformed events
+        }
       }
-    };
+
+      es.addEventListener("point", handlePoint);
+
+      // Backward-compatible: handle legacy "stats" events the same way.
+      es.addEventListener("stats", handlePoint);
+
+      es.addEventListener("timeout", () => {
+        setConnected(false);
+        es?.close();
+        armFallback();
+        scheduleRetry();
+      });
+
+      es.onerror = () => {
+        setConnected(false);
+        armFallback();
+        // If we were previously connected, the browser will auto-retry -- show reconnecting
+        if (wasConnectedRef.current) {
+          setReconnecting(true);
+        }
+        // A refused connection (429, 5xx) is closed for good; reopen it ourselves.
+        if (es?.readyState === EventSource.CLOSED) scheduleRetry();
+      };
+    }
+
+    connect();
 
     return () => {
-      es.close();
+      stopped = true;
+      es?.close();
+      clearFallback();
+      if (retry) clearTimeout(retry);
     };
   }, [streamUrl, visKey, maxPoints]);
 
