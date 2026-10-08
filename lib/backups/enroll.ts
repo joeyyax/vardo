@@ -264,8 +264,11 @@ export type UncoveredApp = {
   }[];
 };
 
-/** Apps of an org whose app state no job captures, with sizes. */
-export async function listUncoveredApps(organizationId: string): Promise<UncoveredApp[]> {
+/** Apps of an org whose app state no job captures. Without `measure`, sizes stay unknown and nothing runs in Docker. */
+export async function listUncoveredApps(
+  organizationId: string,
+  { measure = true }: { measure?: boolean } = {},
+): Promise<UncoveredApp[]> {
   const orgApps = await db.query.apps.findMany({
     where: and(eq(apps.organizationId, organizationId), isNull(apps.parentAppId)),
     columns: { id: true, name: true, displayName: true, isSystemManaged: true },
@@ -298,9 +301,11 @@ export async function listUncoveredApps(organizationId: string): Promise<Uncover
   );
 
   const sizes = new Map<string, number | null>();
-  const queue = plans.flatMap(({ app, plan }) =>
-    plan.filter((v) => v.decision.verdict !== "exclude").map((vol) => ({ app, vol })),
-  );
+  const queue = measure
+    ? plans.flatMap(({ app, plan }) =>
+        plan.filter((v) => v.decision.verdict !== "exclude").map((vol) => ({ app, vol })),
+      )
+    : [];
   await Promise.all(
     Array.from({ length: MEASURE_CONCURRENCY }, async () => {
       for (let next = queue.shift(); next; next = queue.shift()) {

@@ -4,8 +4,10 @@ import { and, desc, eq, gte, inArray, isNotNull, isNull } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 
 import { db } from "@/lib/db";
-import { apps, backupJobApps, backupJobs, backups, volumes } from "@/lib/db/schema";
+import { apps, backupJobApps, backupJobs, backupJobVolumes, backups, volumes } from "@/lib/db/schema";
+import { resolveBackupTarget } from "@/lib/backups/auto-backup";
 import { isBackupSelected } from "@/lib/backups/durability";
+import { listUncoveredApps } from "@/lib/backups/enroll";
 import { OVERDUE_INTERVALS, overdueBackupJobs } from "@/lib/backups/staleness";
 import { defaultMemoryLimitMb, type QosTier } from "@/lib/docker/compose-inject";
 import { getCooldownUntil } from "@/lib/docker/image-updates/check";
@@ -22,6 +24,7 @@ import {
   appStoppedRows,
   withParentNames,
 } from "./app-status-rows";
+import { backupCoverageRows, type SystemJobState } from "./backup-coverage-rows";
 import { errorRateRows } from "./error-rate-rows";
 import { getFleetAttention } from "./fleet";
 
@@ -104,6 +107,63 @@ async function loadOverdueBackupJobs(orgId: string, now: Date) {
       href: covered.length === 1 ? `/apps/${covered[0]}/backups` : "/backups",
     };
   });
+}
+
+const COVERAGE_TTL_MS = 30_000;
+const coverageCache = new Map<string, { at: number; value: Promise<CoverageInput> }>();
+
+type CoverageInput = Parameters<typeof backupCoverageRows>[0];
+
+/** Whether anything backs up this org's data and, for admins, Vardo's own database. Cached briefly; the bar polls. */
+function loadBackupCoverage(orgId: string, isAppAdmin: boolean): Promise<CoverageInput> {
+  const key = `${orgId}:${isAppAdmin}`;
+  const hit = coverageCache.get(key);
+  if (hit && Date.now() - hit.at < COVERAGE_TTL_MS) return hit.value;
+
+  const value = (async (): Promise<CoverageInput> => {
+    const [target, uncovered, systemJob] = await Promise.all([
+      resolveBackupTarget(orgId),
+      listUncoveredApps(orgId, { measure: false }),
+      isAppAdmin ? loadSystemJobState() : null,
+    ]);
+    return {
+      hasTarget: !!target,
+      uncovered: uncovered.map((a) => ({
+        id: a.id,
+        name: a.name,
+        displayName: a.displayName,
+        status: a.status,
+        volumeCount: a.volumes.filter((v) => v.verdict !== "exclude").length,
+      })),
+      systemJob,
+    };
+  })();
+  coverageCache.set(key, { at: Date.now(), value });
+  value.catch(() => coverageCache.delete(key));
+  return value;
+}
+
+/** The job that dumps Vardo's own database. */
+async function loadSystemJobState(): Promise<SystemJobState> {
+  const [row] = await db
+    .select({
+      id: backupJobs.id,
+      name: backupJobs.name,
+      schedule: backupJobs.schedule,
+      enabled: backupJobs.enabled,
+      lastRunAt: backupJobs.lastRunAt,
+      createdAt: backupJobs.createdAt,
+    })
+    .from(volumes)
+    .innerJoin(backupJobVolumes, eq(backupJobVolumes.volumeId, volumes.id))
+    .innerJoin(backupJobs, eq(backupJobs.id, backupJobVolumes.backupJobId))
+    .where(and(isNull(volumes.appId), eq(volumes.name, "postgres")))
+    .limit(1);
+
+  if (!row) return { kind: "missing" };
+  if (!row.enabled) return { kind: "disabled" };
+  const [overdue] = overdueBackupJobs([row], new Date());
+  return overdue ? { kind: "overdue", since: overdue.since, neverRan: overdue.neverRan } : { kind: "ok" };
 }
 
 /** Stopped apps whose database can't be dumped until they run again. */
@@ -210,7 +270,10 @@ export async function buildAttentionRows(
   // Vardo's stack and core services report at instance level; listing them here would duplicate rows.
   const appRows = orgApps.filter((a) => !isVardoManagedApp(a));
 
-  const imageUpdatesEnabled = await isFeatureEnabledAsync("image-updates");
+  const [imageUpdatesEnabled, backupsEnabled] = await Promise.all([
+    isFeatureEnabledAsync("image-updates"),
+    isFeatureEnabledAsync("backups"),
+  ]);
 
   const appIds = appRows.map((a) => a.id);
 
@@ -225,6 +288,7 @@ export async function buildAttentionRows(
     exited,
     subjects,
     elevated,
+    coverage,
   ] = await Promise.all([
     getFleetAttention(orgId),
     getCooldownUntil().then((cooldown) => getAggregateUpdateStatus(orgId, appRows, cooldown)),
@@ -236,6 +300,7 @@ export async function buildAttentionRows(
     loadExitReasons(orgId),
     loadStatusSubjects(orgId),
     getElevatedApps(),
+    backupsEnabled ? loadBackupCoverage(orgId, isAppAdmin) : null,
   ]);
 
   const rows = conditionRows(withParentNames(subjects));
@@ -346,6 +411,8 @@ export async function buildAttentionRows(
       footer: `Each of these jobs has captured nothing for more than ${OVERDUE_INTERVALS} runs of its own schedule. The time shown is since its last archive, or since the job was created.`,
     });
   }
+
+  if (coverage) rows.push(...backupCoverageRows(coverage));
 
   if (pausedDumps.length > 0) {
     rows.push({
