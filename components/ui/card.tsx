@@ -1,16 +1,35 @@
 import * as React from "react"
+import { cva, type VariantProps } from "class-variance-authority"
 
 import { cn } from "@/lib/utils"
 
-function Card({ className, ...props }: React.ComponentProps<"div">) {
+// `default` is the padded, stacked card. `surface` is the same skin with layout left to the caller.
+// `inset` is a recessed tray. Tones are status panels.
+const cardVariants = cva("squircle rounded-lg", {
+  variants: {
+    variant: {
+      // Dark keeps a hairline; shadows barely read on a dark ground.
+      default: "bg-card text-card-foreground @container flex flex-col gap-5 py-6 shadow-card dark:border",
+      surface: "bg-card text-card-foreground @container shadow-card dark:border",
+      inset: "bg-background-deep",
+      info: "border border-status-info-edge bg-status-info-muted",
+      success: "border border-status-success-edge bg-status-success-muted",
+      warning: "border border-status-warning-edge bg-status-warning-muted",
+      error: "border border-status-error-edge bg-status-error-muted",
+    },
+  },
+  defaultVariants: { variant: "default" },
+})
+
+function Card({
+  className,
+  variant,
+  ...props
+}: React.ComponentProps<"div"> & VariantProps<typeof cardVariants>) {
   return (
     <div
       data-slot="card"
-      className={cn(
-        // Dark keeps a hairline; shadows barely read on a dark ground.
-        "bg-card text-card-foreground squircle rounded-lg @container flex flex-col gap-5 py-6 shadow-card dark:border",
-        className
-      )}
+      className={cn(cardVariants({ variant }), className)}
       {...props}
     />
   )
@@ -91,6 +110,7 @@ function CardFooter({ className, ...props }: React.ComponentProps<"div">) {
 
 export {
   Card,
+  cardVariants,
   CardHeader,
   CardFooter,
   CardTitle,
