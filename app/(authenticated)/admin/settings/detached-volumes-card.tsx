@@ -67,20 +67,20 @@ export function DetachedVolumesCard() {
   const [target, setTarget] = useState<Row | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  async function load() {
-    const names = await fetchListing(ENDPOINT);
-    setFailed(names === null);
-    setRows(names);
-    if (!names?.length) return;
-
-    // Sizes take a while on hosts with many volumes, so they arrive second.
-    setMeasuring(true);
-    const sized = await fetchListing(`${ENDPOINT}?sizes=1`);
-    if (sized) setRows(sized);
-    setMeasuring(false);
-  }
-
   useEffect(() => {
+    async function load() {
+      const names = await fetchListing(ENDPOINT);
+      setFailed(names === null);
+      setRows(names);
+      if (!names?.length) return;
+
+      // Sizes take a while on hosts with many volumes, so they arrive second.
+      setMeasuring(true);
+      const sized = await fetchListing(`${ENDPOINT}?sizes=1`);
+      if (sized) setRows(sized);
+      setMeasuring(false);
+    }
+
     void load();
   }, []);
 
