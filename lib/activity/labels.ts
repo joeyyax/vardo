@@ -2,6 +2,7 @@
 
 import type { ActivityGroup, ActivityOutcome } from "./types";
 import { actionLabel, asRecord } from "./taxonomy";
+import { formatDuration } from "@/lib/metrics/format";
 
 type Phrase = {
   /** Verb clause. Pluralized forms are chosen by the caller when count > 1. */
@@ -90,14 +91,6 @@ export const OUTCOME_TONE: Record<
   success: "success",
   neutral: "neutral",
 };
-
-export function formatDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  const seconds = Math.round(ms / 1000);
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  return `${minutes}m ${seconds % 60}s`;
-}
 
 const TRIGGER_ACRONYMS: Record<string, string> = { api: "API", mcp: "MCP" };
 

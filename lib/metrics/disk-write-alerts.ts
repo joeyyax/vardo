@@ -3,6 +3,7 @@ import { apps } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { emit } from "@/lib/notifications/dispatch";
 import { queryDiskWriteRange } from "./store";
+import { formatBytes } from "./format";
 import type { ContainerMetrics } from "./types";
 import { logger } from "@/lib/logger";
 
@@ -16,12 +17,6 @@ const ALERT_COOLDOWN_MS = 60 * 60 * 1000;
 
 // containerKey -> last alert timestamp.
 const lastAlertTimes = new Map<string, number>();
-
-function formatBytes(bytes: number): string {
-  if (bytes >= 1_073_741_824) return (bytes / 1_073_741_824).toFixed(1) + " GB";
-  if (bytes >= 1_048_576) return (bytes / 1_048_576).toFixed(1) + " MB";
-  return (bytes / 1024).toFixed(1) + " KB";
-}
 
 function formatThreshold(bytes: number): string {
   if (bytes >= 1_073_741_824) {

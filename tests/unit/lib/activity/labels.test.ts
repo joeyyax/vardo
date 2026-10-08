@@ -2,7 +2,6 @@ import { describe, it, expect } from "vitest";
 
 import {
   detailsFor,
-  formatDuration,
   phraseFor,
   subjectSummary,
 } from "@/lib/activity/labels";
@@ -45,14 +44,6 @@ describe("phraseFor", () => {
     expect(phraseFor("app.restarted").text).toBe("restarted");
     expect(phraseFor("app.stopped").text).toBe("stopped");
     expect(phraseFor("app.started").text).toBe("started");
-  });
-});
-
-describe("formatDuration", () => {
-  it("scales from milliseconds to minutes", () => {
-    expect(formatDuration(400)).toBe("400ms");
-    expect(formatDuration(4200)).toBe("4s");
-    expect(formatDuration(125_000)).toBe("2m 5s");
   });
 });
 

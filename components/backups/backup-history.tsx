@@ -6,7 +6,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Archive, Download, Loader2, RotateCcw, Trash2 } from "lucide-react";
-import { formatBytes } from "@/lib/metrics/format";
+import { formatBytes, formatDuration } from "@/lib/metrics/format";
 import { MIN_VALID_GZIP_BYTES } from "@/lib/backups/archive";
 import { toast } from "@/lib/messenger";
 import { RelativeTime } from "@/components/relative-time";
@@ -17,11 +17,9 @@ import { deleteDescription, orphanScope, plural } from "./delete-copy";
 import { useCan } from "@/components/capabilities-provider";
 import type { RecentBackup } from "./types";
 
-function formatDuration(startedAt: string, finishedAt: string | null): string {
+function backupDuration(startedAt: string, finishedAt: string | null): string {
   if (!finishedAt) return "—";
-  const ms = new Date(finishedAt).getTime() - new Date(startedAt).getTime();
-  if (ms < 1000) return `${ms}ms`;
-  return `${Math.round(ms / 1000)}s`;
+  return formatDuration(new Date(finishedAt).getTime() - new Date(startedAt).getTime());
 }
 
 /** An archive under the floor means the engine confirmed the source empty. */
@@ -172,7 +170,7 @@ export function BackupHistory({
                 {backup.job ? backup.job.name : `${backup.jobName ?? "Unknown job"} (deleted)`}
               </td>
               <td className="px-4 py-3 text-muted-foreground font-mono text-xs">
-                {formatDuration(backup.startedAt, backup.finishedAt)}
+                {backupDuration(backup.startedAt, backup.finishedAt)}
               </td>
               <td className="px-4 py-3 text-muted-foreground text-xs">
                 {formatArchiveSize(backup.sizeBytes)}

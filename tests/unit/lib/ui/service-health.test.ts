@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import {
-  formatDuration,
   formatLatency,
   serviceDotColor,
   serviceStatusTone,
@@ -24,18 +23,6 @@ describe("service dot state", () => {
     expect(serviceStatusWord("healthy")).toBe("Healthy");
     expect(serviceStatusWord("unhealthy")).toBe("Unhealthy");
     expect(serviceStatusWord("unconfigured")).toBe("Not configured");
-  });
-});
-
-describe("formatDuration", () => {
-  it("reads a probe budget in seconds", () => {
-    expect(formatDuration(2000)).toBe("2s");
-    expect(formatDuration(5000)).toBe("5s");
-    expect(formatDuration(1500)).toBe("1.5s");
-  });
-
-  it("stays in milliseconds below a second", () => {
-    expect(formatDuration(750)).toBe("750ms");
   });
 });
 

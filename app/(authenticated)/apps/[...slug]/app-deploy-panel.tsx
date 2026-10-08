@@ -41,7 +41,8 @@ import {
   BottomSheetDescription,
 } from "@/components/ui/bottom-sheet";
 import { DeploymentLog } from "@/components/log-viewer";
-import { DeploymentStatusBadge, LiveBadge, formatDuration } from "@/components/app-status";
+import { DeploymentStatusBadge, LiveBadge } from "@/components/app-status";
+import { formatDuration } from "@/lib/metrics/format";
 import { toast } from "@/lib/messenger";
 import { RelativeTime } from "@/components/relative-time";
 import { Uptime } from "./timer";

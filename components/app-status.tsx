@@ -3,23 +3,12 @@
 import { useState, useEffect } from "react";
 import { AlertTriangle } from "lucide-react";
 import { detectAppType } from "@/lib/ui/app-type";
-
-export function formatUptime(date: Date): string {
-  const ms = Date.now() - new Date(date).getTime();
-  const s = Math.floor(ms / 1000) % 60;
-  const m = Math.floor(ms / 60000) % 60;
-  const h = Math.floor(ms / 3600000) % 24;
-  const d = Math.floor(ms / 86400000);
-  if (d > 0) return `${d}d ${h}h`;
-  if (h > 0) return `${h}h ${m}m`;
-  if (m > 0) return `${m}m ${s}s`;
-  return `${s}s`;
-}
+import { formatUptime } from "@/lib/metrics/format";
 
 export function Uptime({ since }: { since: Date }) {
   const [text, setText] = useState<string | null>(null);
   useEffect(() => {
-    const update = () => setText(formatUptime(since));
+    const update = () => setText(formatUptime((Date.now() - new Date(since).getTime()) / 1000));
     const interval = setInterval(update, 1000);
     const id = requestAnimationFrame(update);
     return () => {
@@ -118,14 +107,6 @@ export function AppIcon({
       <img src={icon} alt="" className={`${iconSize} opacity-70`} />
     </div>
   );
-}
-
-export function formatDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  const s = Math.floor(ms / 1000);
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  return `${m}m ${s % 60}s`;
 }
 
 import { Badge } from "@/components/ui/badge";

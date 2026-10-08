@@ -22,11 +22,6 @@ export function serviceStatusWord(status: Status): string {
   return status === "healthy" ? "Healthy" : status === "unhealthy" ? "Unhealthy" : "Not configured";
 }
 
-/** Seconds to one decimal, or milliseconds under one second. */
-export function formatDuration(ms: number): string {
-  return ms >= 1000 ? `${Math.round(ms / 100) / 10}s` : `${ms}ms`;
-}
-
 export function formatLatency(ms: number | undefined): string {
   return ms === undefined ? "—" : `${ms} ms`;
 }

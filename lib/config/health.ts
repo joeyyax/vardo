@@ -3,8 +3,7 @@ import { sql } from "drizzle-orm";
 import nextPkg from "next/package.json";
 import { getAuthMethodStates } from "@/lib/config/auth-methods";
 import { CORE_SERVICE_FEATURES } from "@/lib/infra/core-services";
-import { formatDuration } from "@/lib/ui/service-health";
-import { cpuDisplay, formatBytes, sharePercent } from "@/lib/metrics/format";
+import { cpuDisplay, formatBytes, formatDuration, sharePercent } from "@/lib/metrics/format";
 
 export type ServiceStatus = {
   name: string;
@@ -112,7 +111,7 @@ function isTimeout(err: unknown): boolean {
 /** Operator-facing text for a failed probe; timeouts say so. */
 export function probeErrorText(err: unknown, timeoutMs: number): string {
   return isTimeout(err)
-    ? `Timed out after ${formatDuration(timeoutMs)}`
+    ? `Timed out after ${formatDuration(timeoutMs, { precise: true })}`
     : sanitizeError(describeError(err));
 }
 

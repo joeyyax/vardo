@@ -4,7 +4,7 @@ import { Loader2, X, ChevronDown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { TerminalOutput, highlightLogLine, detectLogLevel } from "@/components/log-viewer";
-import { formatDuration } from "@/components/app-status";
+import { formatDuration } from "@/lib/metrics/format";
 import { Timer } from "./timer";
 import {
   DEPLOY_STAGE_KEYS,

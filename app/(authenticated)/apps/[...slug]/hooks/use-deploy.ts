@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "@/lib/messenger";
-import { formatDuration } from "@/components/app-status";
+import { formatDuration } from "@/lib/metrics/format";
 
 import type { Deployment, RollbackPreview } from "../types";
 

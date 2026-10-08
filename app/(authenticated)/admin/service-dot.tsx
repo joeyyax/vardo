@@ -7,8 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { RelativeTime } from "@/components/relative-time";
 import { toast } from "@/lib/messenger";
+import { formatDuration } from "@/lib/metrics/format";
 import {
-  formatDuration,
   formatLatency,
   serviceDotColor,
   serviceStatusTone,
@@ -84,7 +84,7 @@ export function ServiceDot({ service, onChecked }: ServiceDotProps) {
           </div>
           <div className="flex justify-between gap-2">
             <dt className="text-muted-foreground">Timeout</dt>
-            <dd className="tabular-nums">{formatDuration(service.timeoutMs)}</dd>
+            <dd className="tabular-nums">{formatDuration(service.timeoutMs, { precise: true })}</dd>
           </div>
         </dl>
 

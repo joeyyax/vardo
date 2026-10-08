@@ -49,6 +49,7 @@ import {
 
 import { volumeThreshold, type ThresholdLevel } from "@/lib/volumes/threshold";
 import { useCan } from "@/components/capabilities-provider";
+import { formatBytes } from "@/lib/metrics/format";
 
 type Volume = {
   id: string | null;
@@ -92,14 +93,6 @@ type Props = {
 
 const MIN_SIZE_MB = 10;
 const MAX_SIZE_MB = 100 * 1024; // 100 GB in MB
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return "0 B";
-  const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1);
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
-}
 
 function toBytes(value: number, unit: "MB" | "GB"): number {
   return unit === "GB" ? value * 1024 * 1024 * 1024 : value * 1024 * 1024;

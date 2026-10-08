@@ -137,11 +137,27 @@ export function formatTime(timestamp: number): string {
   });
 }
 
+/** Elapsed time from milliseconds: "420ms", "4s", "2m 5s", "1h 1m". `precise` keeps one decimal under a minute ("1.5s"). */
+export function formatDuration(ms: number, { precise = false }: { precise?: boolean } = {}): string {
+  if (ms < 1000) return `${ms}ms`;
+  if (precise && ms < 60_000) return `${Math.round(ms / 100) / 10}s`;
+  const totalSeconds = Math.round(ms / 1000);
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m ${totalSeconds % 60}s`;
+}
+
+/** Time up from seconds: "45s", "2m 5s", "1h 1m", "1d 1h 0m". */
 export function formatUptime(seconds: number): string {
-  const days = Math.floor(seconds / 86400);
-  const hours = Math.floor((seconds % 86400) / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  if (days > 0) return `${days}d ${hours}h ${minutes}m`;
-  if (hours > 0) return `${hours}h ${minutes}m`;
-  return `${minutes}m`;
+  const total = Math.max(0, Math.floor(seconds));
+  const d = Math.floor(total / 86400);
+  const h = Math.floor((total % 86400) / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  if (d > 0) return `${d}d ${h}h ${m}m`;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
 }
