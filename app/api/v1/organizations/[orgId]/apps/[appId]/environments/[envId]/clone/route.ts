@@ -10,7 +10,7 @@ import { verifyAppAccess } from "@/lib/api/verify-access";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { requirePlugin } from "@/lib/api/require-plugin";
-import { findPrefixOwner, findPrefixOwnerForApp, prefixCollisionMessage } from "@/lib/docker/volume-prefix";
+import { findPrefixOwnerForApp, prefixCollisionMessage } from "@/lib/docker/volume-prefix";
 import { snapshotIntoEnvironment } from "@/lib/docker/environment-env";
 
 type RouteParams = {

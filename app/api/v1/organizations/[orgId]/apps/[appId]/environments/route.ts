@@ -14,7 +14,7 @@ import { verifyAppAccess } from "@/lib/api/verify-access";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { requirePlugin } from "@/lib/api/require-plugin";
 import { gitBranchUpdateSchema } from "@/lib/api/git-fields";
-import { findPrefixOwner, findPrefixOwnerForApp, prefixCollisionMessage } from "@/lib/docker/volume-prefix";
+import { findPrefixOwnerForApp, prefixCollisionMessage } from "@/lib/docker/volume-prefix";
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;

@@ -19,6 +19,11 @@ function matches(row: Record<string, unknown>, pred: Predicate | undefined): boo
   return true;
 }
 
+vi.mock("@/lib/docker/volume-prefix", () => ({
+  findPrefixOwnerForApp: vi.fn().mockResolvedValue(null),
+  prefixCollisionMessage: vi.fn(),
+}));
+
 vi.mock("drizzle-orm", () => {
   const sql = Object.assign(() => ({ op: "sql" }), { raw: () => ({ op: "sql" }) });
   return {
