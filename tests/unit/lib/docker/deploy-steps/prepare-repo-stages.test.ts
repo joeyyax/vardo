@@ -66,6 +66,10 @@ vi.mock("@/lib/docker/constants", async (importOriginal) => ({
   ensureWritableDir: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock("@/lib/docker/image-updates/registry", () => ({ getRegistryCredentials: vi.fn().mockResolvedValue({}) }));
+
+import { EventEmitter } from "events";
+import { spawn } from "child_process";
 import { prepareRepo } from "@/lib/docker/deploy-steps/prepare-repo";
 
 const COMPOSE = "services:\n  web:\n    image: nginx:1.27\n";
@@ -206,5 +210,24 @@ describe("prepareRepo stage transitions", () => {
 
     expect(finalStatus(stages, "clone")).toBe("success");
     expect(finalStatus(stages, "compose")).toBe("running");
+  });
+
+  it("passes app env vars to Nixpacks only as --env flags", async () => {
+    vi.mocked(spawn).mockImplementation(() => {
+      const proc = Object.assign(new EventEmitter(), { stdout: new EventEmitter(), stderr: new EventEmitter(), pid: 1 });
+      setImmediate(() => proc.emit("close", 0));
+      return proc as unknown as ReturnType<typeof spawn>;
+    });
+    const { ctx } = makeCtx(
+      makeApp({ source: "git", deployType: "nixpacks", gitUrl: "https://git.example.com/example/api.git", gitBranch: "main" }),
+    );
+    ctx.envMap = { LD_PRELOAD: "/srv/apps/plex/repo/evil.so" };
+
+    await prepareRepo(ctx);
+
+    const [cmd, args, opts] = vi.mocked(spawn).mock.calls[0] as unknown as [string, string[], { env: NodeJS.ProcessEnv }];
+    expect(cmd).toBe("nixpacks");
+    expect(args).toContain("LD_PRELOAD=/srv/apps/plex/repo/evil.so");
+    expect(opts.env.LD_PRELOAD).toBeUndefined();
   });
 });

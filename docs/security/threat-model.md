@@ -53,6 +53,7 @@ Status: **fixed** (on main or in this branch), **open**, or **not a boundary**. 
 | Fork PRs reach a build | fixed | `lib/git-integration/pull-request.ts:4` refuses forks and head/base mismatch; called before any build, `webhook/route.ts:154` |
 | Self-preview gets secrets | not a boundary | only same-repo PRs reach it after the fork check |
 | GitHub token in `.git/config` inside the build context | branch | was written into the origin URL; now a github.com-scoped header via env, `lib/git-integration/clone-auth.ts`, `prepare-repo.ts:409` |
+| App env vars become the Nixpacks and Railpack process env | fixed | a member's `PATH` or `LD_PRELOAD` pointed the spawn at a binary in their cloned repo, running it in the console. App vars now reach builders only as `--env`, `lib/docker/deploy-steps/prepare-repo.ts:240` |
 | Git URL transports | fixed | HTTPS only, `lib/docker/validate.ts:26` |
 | Git clone to internal HTTPS hosts | open, low | `assertSafeGitUrl` doesn't check the host; git follows redirects |
 | Push webhook deploys every app with that git URL in any org | open, low | `webhook/route.ts:89-94` doesn't scope by installation. Only rebuilds code that's already public to the cloner. |

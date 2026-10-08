@@ -236,7 +236,8 @@ async function buildFromRepo(
 ): Promise<void> {
   // Base images may be private, so builders get registry credentials.
   await withRegistryAuth(async (authEnv) => {
-    const buildEnv = { ...authEnv, ...envVars };
+    // App vars reach the builders only through --env; in the process env, LD_PRELOAD or PATH would run repo code here.
+    const buildEnv = { ...authEnv };
 
     if (deployType === "nixpacks") {
       logs.push(`[build] Building with Nixpacks...`);
