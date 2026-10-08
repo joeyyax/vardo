@@ -136,7 +136,7 @@ export async function scanAppDir(appName: string): Promise<{
 export const VOLUME_SIZES_TIMEOUT_MS = 3000;
 export const PATH_SIZE_TIMEOUT_MS = 3000;
 
-async function measurePath(path: string): Promise<number | null> {
+export async function measurePath(path: string): Promise<number | null> {
   try {
     const { stdout } = await execFileAsync("du", ["-sb", path], { timeout: PATH_SIZE_TIMEOUT_MS });
     const bytes = parseInt(stdout.split("\t")[0], 10);
@@ -183,7 +183,7 @@ export async function findAppData(
 }
 
 /** Resolves to `fallback` once `ms` passes. */
-function within<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+export function within<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
   let timer: ReturnType<typeof setTimeout>;
   const timeout = new Promise<T>((resolve) => {
     timer = setTimeout(() => resolve(fallback), ms);

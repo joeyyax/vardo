@@ -31,6 +31,7 @@ import {
 import { toast } from "@/lib/messenger";
 import { formatBytes } from "@/lib/metrics/format";
 import { containerStateVariant } from "@/lib/ui/container-state";
+import { DetachedVolumesCard } from "./detached-volumes-card";
 
 type ServiceStatus = {
   name: string;
@@ -916,6 +917,8 @@ export function MaintenanceSettings() {
           </AlertDialog>
         </CardContent>
       </Card>
+
+      <DetachedVolumesCard />
 
       {/* Directory ownership */}
       <Card>

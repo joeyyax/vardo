@@ -274,6 +274,19 @@ export async function listAllContainers(): Promise<ContainerInfo[]> {
   return containers.map(mapRawContainer);
 }
 
+/** Names of named volumes mounted by any container, stopped ones included. */
+export async function listMountedVolumeNames(): Promise<Set<string>> {
+  const containers = await dockerRequest<{ Mounts?: { Type: string; Name?: string }[] }[]>(
+    "GET",
+    "/containers/json?all=true",
+  );
+  const names = new Set<string>();
+  for (const c of containers) {
+    for (const m of c.Mounts ?? []) if (m.Type === "volume" && m.Name) names.add(m.Name);
+  }
+  return names;
+}
+
 /** App whose containers to list. `vardo.project` is only unique per org, so pass the app row when available. */
 export type ContainerScope = { id: string; name: string };
 
