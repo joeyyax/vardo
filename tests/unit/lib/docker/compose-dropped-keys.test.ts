@@ -1,8 +1,13 @@
 import { readFileSync } from "fs";
 import { resolve } from "path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import YAML from "yaml";
-import { buildVardoOverlay, defaultMemoryLimitMb } from "@/lib/docker/compose-inject";
+import {
+  buildVardoOverlay,
+  defaultCpuLimit,
+  defaultMemoryLimitMb,
+  defaultPidsLimit,
+} from "@/lib/docker/compose-inject";
 import { composeToYaml, parseCompose } from "@/lib/docker/compose-parse";
 import { droppedKeyWarnings, parseComposeYaml } from "@/lib/docker/compose-validate";
 import { partitionBySlot } from "@/lib/docker/slot-partition";
@@ -185,8 +190,11 @@ describe("cpus folds into deploy.resources.limits.cpus", () => {
     expect(svc.deploy?.resources?.limits).toEqual({ cpus: "2", memory: "512m" });
   });
 
-  it("ignores zero and unparseable values, which Docker reads as no limit", () => {
-    expect(parsedCpus("services:\n  app:\n    image: nginx\n    cpus: 0\n")).toBeUndefined();
+  it("keeps zero, which opts out of the tier default", () => {
+    expect(parsedCpus("services:\n  app:\n    image: nginx\n    cpus: 0\n")).toBe("0");
+  });
+
+  it("ignores empty and unparseable values", () => {
     expect(parsedCpus('services:\n  app:\n    image: nginx\n    cpus: ""\n')).toBeUndefined();
     expect(parsedCpus("services:\n  app:\n    image: nginx\n    cpus: many\n")).toBeUndefined();
   });
@@ -209,6 +217,100 @@ describe("cpus folds into deploy.resources.limits.cpus", () => {
   it("survives a YAML round trip, so it still reaches the container", () => {
     const yaml = "services:\n  app:\n    image: nginx\n    cpus: 1.5\n";
     expect(parsedCpus(composeToYaml(parseCompose(yaml)))).toBe("1.5");
+  });
+});
+
+describe("pids_limit folds into deploy.resources.limits.pids (#889)", () => {
+  /** The pids limit service "app" carries after parsing. */
+  function parsedPids(yaml: string): number | string | undefined {
+    return parseCompose(yaml).services.app.deploy?.resources?.limits?.pids;
+  }
+
+  it("carries pids_limit instead of dropping it", () => {
+    expect(parsedPids("services:\n  app:\n    image: nginx\n    pids_limit: 200\n")).toBe(200);
+  });
+
+  it("no longer warns about pids_limit", () => {
+    const yaml = "services:\n  app:\n    image: nginx\n    pids_limit: 200\n";
+    expect(droppedKeyWarnings(parseComposeYaml(yaml))).toEqual([]);
+  });
+
+  it("never writes pids_limit beside a deploy limits block, which Compose refuses", () => {
+    const compose = parseCompose("services:\n  app:\n    image: nginx\n    pids_limit: 200\n    mem_limit: 1g\n");
+    const raw = YAML.parse(composeToYaml(compose)) as { services: Record<string, Record<string, unknown>> };
+    expect(raw.services.app.pids_limit).toBeUndefined();
+    expect(raw.services.app.deploy).toEqual({ resources: { limits: { memory: "1g", pids: 200 } } });
+  });
+
+  it("leaves an explicit deploy limit alone", () => {
+    const yaml = `services:
+  app:
+    image: nginx
+    pids_limit: 200
+    deploy:
+      resources:
+        limits:
+          pids: 50
+`;
+    expect(parsedPids(yaml)).toBe(50);
+  });
+});
+
+describe("buildVardoOverlay — cpu and pids precedence (#889)", () => {
+  const keys = ["VARDO_DEFAULT_CPUS_STANDARD", "VARDO_DEFAULT_CPUS_DISPOSABLE", "VARDO_DEFAULT_PIDS_LIMIT"];
+  const originals = keys.map((k) => process.env[k]);
+  afterEach(() => {
+    keys.forEach((k, i) => {
+      if (originals[i] === undefined) delete process.env[k];
+      else process.env[k] = originals[i];
+    });
+  });
+
+  function limits(yaml: string, opts: { cpuLimit?: number | null; priority?: "critical" | "standard" | "disposable" } = {}) {
+    const overlay = buildVardoOverlay({ fullCompose: parseCompose(yaml), networkName: NETWORK, hostCpus: 8, ...opts });
+    return overlay.services.app.deploy?.resources?.limits;
+  }
+  const BARE = "services:\n  app:\n    image: nginx\n";
+
+  it("sizes the tier default from the host", () => {
+    expect(limits(BARE)?.cpus).toBe("7");
+    expect(limits(BARE, { priority: "disposable" })?.cpus).toBe("4");
+    expect(limits(BARE, { priority: "critical" })?.cpus).toBeUndefined();
+    expect(defaultCpuLimit("standard", 1)).toBe(1);
+    expect(defaultCpuLimit("disposable", 1)).toBe(1);
+  });
+
+  it("honors a compose cpus over the tier default", () => {
+    expect(limits("services:\n  app:\n    image: nginx\n    cpus: 1.5\n")?.cpus).toBe("1.5");
+  });
+
+  it("honors a compose cpus of 0 as no cap", () => {
+    expect(limits("services:\n  app:\n    image: nginx\n    cpus: 0\n")?.cpus).toBe("0");
+  });
+
+  it("puts the app's own limit over the compose", () => {
+    expect(limits("services:\n  app:\n    image: nginx\n    cpus: 1.5\n", { cpuLimit: 3 })?.cpus).toBe("3");
+  });
+
+  it("honors a per-tier env override, 0 for none", () => {
+    process.env.VARDO_DEFAULT_CPUS_STANDARD = "2";
+    expect(limits(BARE)?.cpus).toBe("2");
+    process.env.VARDO_DEFAULT_CPUS_STANDARD = "0";
+    expect(limits(BARE)?.cpus).toBeUndefined();
+  });
+
+  it("caps processes by default and honors the compose's own value", () => {
+    expect(limits(BARE)?.pids).toBe(defaultPidsLimit());
+    expect(defaultPidsLimit()).toBe(4096);
+    expect(limits("services:\n  app:\n    image: nginx\n    pids_limit: -1\n")?.pids).toBe(-1);
+    expect(limits("services:\n  app:\n    image: nginx\n    pids_limit: 100\n")?.pids).toBe(100);
+  });
+
+  it("honors a pids env override, 0 for none, with a floor", () => {
+    process.env.VARDO_DEFAULT_PIDS_LIMIT = "0";
+    expect(limits(BARE)?.pids).toBeUndefined();
+    process.env.VARDO_DEFAULT_PIDS_LIMIT = "8";
+    expect(defaultPidsLimit()).toBe(64);
   });
 });
 

@@ -112,10 +112,10 @@ Same starting point as Dokploy: an app's own image CVE runs code inside that app
 Narrows:
 - No socket mount in generated compose; host-access keys refused for untrusted orgs.
 - Only Traefik-routed services join `vardo-network`; others stay on the project network.
-- A default memory limit per QoS tier (`lib/docker/compose-inject.ts:382-414`).
+- Default memory, CPU and process caps per QoS tier; the compose's own values win (`defaultCpuLimit`, `defaultPidsLimit` in `lib/docker/compose-inject.ts`, #889).
 - Postgres and Redis no longer published beyond loopback (this branch).
 
 Widens or leaves open:
 - `vardo-network` includes the console, Traefik and WireGuard, so a routed app reaches `vardo-frontend:3000` and the Traefik API on `:8080` directly.
-- No `no-new-privileges`, `cap_drop`, `read_only`, non-root `user` or `pids_limit`; `pids_limit` is dropped even when set (`lib/docker/compose-validate.ts:313`). No default CPU limit. A cryptominer gets every core.
+- No `no-new-privileges`, `cap_drop`, `read_only` or non-root `user`. A cryptominer gets every core but one on the standard tier.
 - Redis has no password, so anything that joins `vardo_internal` owns it.

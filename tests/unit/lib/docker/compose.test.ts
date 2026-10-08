@@ -28,6 +28,7 @@ import {
   type ComposeService,
   type ContainerConfig,
 } from "@/lib/docker/compose";
+import { defaultPidsLimit } from "@/lib/docker/compose-inject";
 import { mergeComposeFile } from "@/lib/docker/import";
 import * as fsp from "fs/promises";
 
@@ -2998,6 +2999,7 @@ describe("buildVardoOverlay", () => {
     expect(overlay.services.app.deploy?.resources?.limits).toEqual({
       cpus: "2",
       memory: "512M",
+      pids: defaultPidsLimit(),
     });
   });
 
@@ -3005,9 +3007,11 @@ describe("buildVardoOverlay", () => {
     const compose: ComposeFile = {
       services: { app: { name: "app", image: "nginx:latest" } },
     };
-    const overlay = buildVardoOverlay({ fullCompose: compose, networkName });
+    const overlay = buildVardoOverlay({ fullCompose: compose, networkName, hostCpus: 8 });
     expect(overlay.services.app.deploy?.resources?.limits).toEqual({
+      cpus: "7",
       memory: `${defaultMemoryLimitMb("standard")}M`,
+      pids: defaultPidsLimit(),
     });
   });
 
@@ -3042,8 +3046,8 @@ describe("buildVardoOverlay", () => {
         // worker has no entry → falls back to parent globals
       },
     });
-    expect(overlay.services.web.deploy?.resources?.limits).toEqual({ cpus: "2", memory: "512M" });
-    expect(overlay.services.worker.deploy?.resources?.limits).toEqual({ cpus: "1", memory: "256M" });
+    expect(overlay.services.web.deploy?.resources?.limits).toEqual({ cpus: "2", memory: "512M", pids: defaultPidsLimit() });
+    expect(overlay.services.worker.deploy?.resources?.limits).toEqual({ cpus: "1", memory: "256M", pids: defaultPidsLimit() });
   });
 
   it("injects per-service env vars from serviceEnv into only that service (decomposed children)", () => {
@@ -3383,41 +3387,39 @@ describe("buildVardoOverlay — edge cases", () => {
     expect(overlay.services.app.deploy?.resources?.limits).toEqual({
       cpus: "1",
       memory: `${defaultMemoryLimitMb("standard")}M`,
+      pids: defaultPidsLimit(),
     });
   });
 
-  it("injects only memoryLimit when cpuLimit is not set", () => {
+  it("falls back to the tier default cpu limit when cpuLimit is not set", () => {
     const compose: ComposeFile = {
       services: { app: { name: "app", image: "nginx:latest" } },
     };
-    const overlay = buildVardoOverlay({ fullCompose: compose, networkName, memoryLimit: 256 });
-    expect(overlay.services.app.deploy?.resources?.limits).toEqual({ memory: "256M" });
-    expect(overlay.services.app.deploy?.resources?.limits?.cpus).toBeUndefined();
+    const overlay = buildVardoOverlay({ fullCompose: compose, networkName, memoryLimit: 256, hostCpus: 4 });
+    expect(overlay.services.app.deploy?.resources?.limits).toEqual({ cpus: "3", memory: "256M", pids: defaultPidsLimit() });
   });
 
-  it("adds no cpu limit when cpuLimit is 0, but still caps memory", () => {
+  it("treats cpuLimit 0 as unset, so the tier default applies", () => {
     const compose: ComposeFile = {
       services: { app: { name: "app", image: "nginx:latest" } },
     };
-    const overlay = buildVardoOverlay({ fullCompose: compose, networkName, cpuLimit: 0 });
-    expect(overlay.services.app.deploy?.resources?.limits).toEqual({
-      memory: `${defaultMemoryLimitMb("standard")}M`,
-    });
+    const overlay = buildVardoOverlay({ fullCompose: compose, networkName, cpuLimit: 0, hostCpus: 4 });
+    expect(overlay.services.app.deploy?.resources?.limits?.cpus).toBe("3");
   });
 
   it("produces a service entry with only name + standard QoS knobs when no other config is injected", () => {
     const compose: ComposeFile = {
       services: { app: { name: "app", image: "nginx:latest" } },
     };
-    const overlay = buildVardoOverlay({ fullCompose: compose, networkName });
+    const overlay = buildVardoOverlay({ fullCompose: compose, networkName, hostCpus: 2 });
     // Default tier is "standard" → oom_score_adj 0, cpu_shares 1024, plus the
-    // tier's default memory cap. No structural fields leak into the overlay.
+    // tier's default caps. No structural fields leak into the overlay.
     expect(overlay.services.app).toEqual({
       name: "app",
       oom_score_adj: 0,
       cpu_shares: 1024,
       deploy: {
-        resources: { limits: { memory: `${defaultMemoryLimitMb("standard")}M` } },
+        resources: { limits: { cpus: "1", memory: `${defaultMemoryLimitMb("standard")}M`, pids: defaultPidsLimit() } },
       },
     });
   });
@@ -3662,7 +3664,7 @@ describe("round-trip: stripVardoInjections + buildVardoOverlay", () => {
     // web: vardo-network
     expect(overlay.services.web.networks).toEqual([networkName]);
     // web: resource limits
-    expect(overlay.services.web.deploy?.resources?.limits).toEqual({ cpus: "2", memory: "512M" });
+    expect(overlay.services.web.deploy?.resources?.limits).toEqual({ cpus: "2", memory: "512M", pids: defaultPidsLimit() });
     // web: no structural fields (image, ports, volumes are not overlay concerns)
     expect(overlay.services.web.image).toBeUndefined();
     expect(overlay.services.web.ports).toBeUndefined();

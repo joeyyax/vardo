@@ -3,6 +3,7 @@ import type { ContainerRuntimeOptions } from "./client";
 export type ResourceLimits = {
   cpus?: string;
   memory?: string;
+  pids?: number | string;
 };
 
 export type HealthCheck = {

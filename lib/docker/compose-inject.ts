@@ -1,6 +1,7 @@
 // Compose transforms applied at deploy: Traefik labels, networks, limits, GPUs, ports and the Vardo overlay.
 
 import { access } from "fs/promises";
+import { availableParallelism } from "os";
 import { join } from "path";
 import type {
   ComposeFile,
@@ -83,6 +84,29 @@ export function defaultMemoryLimitMb(tier: QosTier): number {
   const parsed = override ? parseInt(override, 10) : NaN;
   if (!isNaN(parsed) && parsed >= 64) return parsed;
   return TIER_MEMORY_DEFAULTS_MB[tier];
+}
+
+/**
+ * CPU cap (cores) when neither the app nor the compose sets one; null means none.
+ * Standard leaves one core free, disposable gets half, critical is uncapped. Override with VARDO_DEFAULT_CPUS_{TIER}, 0 for none.
+ */
+export function defaultCpuLimit(tier: QosTier, hostCpus: number = availableParallelism()): number | null {
+  const override = process.env[`VARDO_DEFAULT_CPUS_${tier.toUpperCase()}`];
+  const parsed = override !== undefined && override !== "" ? Number(override) : NaN;
+  if (Number.isFinite(parsed) && parsed >= 0) return parsed > 0 ? parsed : null;
+  if (tier === "critical") return null;
+  const cores = tier === "disposable" ? Math.ceil(hostCpus / 2) : hostCpus - 1;
+  return Math.max(1, cores);
+}
+
+const DEFAULT_PIDS_LIMIT = 4096;
+
+/** Process cap per container when the compose sets none; null means none. Override with VARDO_DEFAULT_PIDS_LIMIT, 0 for none. */
+export function defaultPidsLimit(): number | null {
+  const override = process.env.VARDO_DEFAULT_PIDS_LIMIT;
+  const parsed = override !== undefined && override !== "" ? Number(override) : NaN;
+  if (Number.isInteger(parsed) && parsed >= 0) return parsed > 0 ? Math.max(parsed, 64) : null;
+  return DEFAULT_PIDS_LIMIT;
 }
 
 /**
@@ -344,6 +368,8 @@ export function buildVardoOverlay(opts: {
   serviceConfig?: Record<string, ServiceConfigOverride>;
   /** Resolved per-service env vars from child apps; override same-named compose keys. */
   serviceEnv?: Record<string, Record<string, string>>;
+  /** Cores the tier CPU default is sized from. Defaults to this host's. */
+  hostCpus?: number;
 }): ComposeFile {
   const {
     fullCompose,
@@ -357,6 +383,7 @@ export function buildVardoOverlay(opts: {
     serviceExposedPorts = {},
     serviceConfig = {},
     serviceEnv = {},
+    hostCpus = availableParallelism(),
   } = opts;
 
   const overlayServices: Record<string, ComposeService> = {};
@@ -391,6 +418,17 @@ export function buildVardoOverlay(opts: {
         : explicitMemoryLimit > 0
           ? `${explicitMemoryLimit}M`
           : undefined;
+    const declaredCpus = svc.deploy?.resources?.limits?.cpus;
+    const tierCpus = defaultCpuLimit(tier, hostCpus);
+    // App limit, then compose limit (0 is none), then tier default.
+    const effCpus = effCpuLimit
+      ? String(effCpuLimit)
+      : declaredCpus !== undefined
+        ? String(declaredCpus)
+        : tierCpus
+          ? String(tierCpus)
+          : undefined;
+    const effPids = svc.deploy?.resources?.limits?.pids ?? defaultPidsLimit() ?? undefined;
 
     if (vardoLabels && Object.keys(vardoLabels).length > 0) {
       overlayService.labels = vardoLabels;
@@ -404,10 +442,11 @@ export function buildVardoOverlay(opts: {
       overlayService.restart = svc.restart;
     }
 
-    if (effCpuLimit || effMemory) {
+    if (effCpus || effMemory || effPids !== undefined) {
       const limits: ResourceLimits = {};
-      if (effCpuLimit) limits.cpus = String(effCpuLimit);
+      if (effCpus) limits.cpus = effCpus;
       if (effMemory) limits.memory = effMemory;
+      if (effPids !== undefined) limits.pids = effPids;
       overlayService.deploy = {
         ...(overlayService.deploy ?? {}),
         resources: {

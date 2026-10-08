@@ -90,9 +90,9 @@ function foldMemLimit(svc: ComposeService, raw: Record<string, unknown>): void {
 function foldCpus(svc: ComposeService, raw: Record<string, unknown>): void {
   const cpus = raw.cpus;
   if (typeof cpus !== "string" && typeof cpus !== "number") return;
-  // Docker treats zero and unparseable as no limit.
+  // Zero is kept: it opts out of the tier default.
   const cores = Number(cpus);
-  if (!Number.isFinite(cores) || cores <= 0) return;
+  if (String(cpus).trim() === "" || !Number.isFinite(cores) || cores < 0) return;
   if (svc.deploy?.resources?.limits?.cpus) return;
 
   svc.deploy = {
@@ -100,6 +100,25 @@ function foldCpus(svc: ComposeService, raw: Record<string, unknown>): void {
     resources: {
       ...svc.deploy?.resources,
       limits: { ...svc.deploy?.resources?.limits, cpus: String(cpus) },
+    },
+  };
+}
+
+/**
+ * Fold `pids_limit` into `deploy.resources.limits.pids`. An existing deploy limit wins.
+ * Compose refuses `pids_limit` beside a `deploy.resources.limits` block, which the overlay always writes.
+ */
+function foldPidsLimit(svc: ComposeService, raw: Record<string, unknown>): void {
+  const pids = raw.pids_limit;
+  if (typeof pids !== "number" && typeof pids !== "string") return;
+  if (String(pids) === "") return;
+  if (svc.deploy?.resources?.limits?.pids !== undefined) return;
+
+  svc.deploy = {
+    ...svc.deploy,
+    resources: {
+      ...svc.deploy?.resources,
+      limits: { ...svc.deploy?.resources?.limits, pids },
     },
   };
 }
@@ -231,6 +250,7 @@ export function parseCompose(yamlString: string): ComposeFile {
     if (Array.isArray(raw.group_add)) svc.group_add = raw.group_add.map(String);
     foldMemLimit(svc, raw);
     foldCpus(svc, raw);
+    foldPidsLimit(svc, raw);
     // Pass-through settings the Vardo overlay never writes.
     if (typeof raw.read_only === "boolean" && raw.read_only) svc.read_only = raw.read_only;
     if (typeof raw.stdin_open === "boolean" && raw.stdin_open) svc.stdin_open = raw.stdin_open;
