@@ -47,6 +47,8 @@ export async function inheritConfigFromHub(
   if (config.backup && !(await getBackupStorageConfig())) {
     await setSystemSetting("backup_storage", JSON.stringify(config.backup));
     inherited.backup = true;
+    const { ensureSystemBackup } = await import("@/lib/backups/auto-backup");
+    await ensureSystemBackup().catch(() => {});
   }
   if (config.github && !(await getGitHubAppConfig())) {
     await setSystemSetting("github_app", JSON.stringify(config.github));

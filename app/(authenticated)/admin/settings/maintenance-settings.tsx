@@ -494,7 +494,7 @@ export function MaintenanceSettings() {
                 <AlertDialogHeader>
                   <AlertDialogTitle>Restart all services?</AlertDialogTitle>
                   <AlertDialogDescription>
-                    This will restart the entire Vardo stack and interrupt all active sessions.
+                    This restarts the shared services (database, cache, proxy and the rest) and interrupts active sessions. The frontend updates through Update.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>

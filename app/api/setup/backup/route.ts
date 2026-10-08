@@ -8,6 +8,10 @@ import { maskSecret, resolveSecret } from "@/lib/mask-secrets";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { apiError } from "@/lib/api/error-response";
+import { ensureSystemBackup } from "@/lib/backups/auto-backup";
+import { logger } from "@/lib/logger";
+
+const log = logger.child("setup:backup");
 
 const backupSchema = z.object({
   type: z.enum(["s3", "r2", "b2"]),
@@ -65,6 +69,8 @@ async function handlePost(request: NextRequest) {
     accessKey: resolveSecret(accessKey, existing?.accessKey),
     secretKey: resolveSecret(secretKey, existing?.secretKey),
   }));
+
+  await ensureSystemBackup().catch((err) => log.error("System backup job setup failed:", err));
 
   return NextResponse.json({ ok: true });
 }
