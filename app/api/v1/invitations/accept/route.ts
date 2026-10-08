@@ -2,12 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
-import { invitations, memberships } from "@/lib/db/schema";
+import { invitations } from "@/lib/db/schema";
 import { getSession } from "@/lib/auth/session";
 import { requirePlugin } from "@/lib/api/require-plugin";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { hashInvitationToken } from "@/lib/invitations/token";
-import { nanoid } from "nanoid";
+import { claimInvitation } from "@/lib/invitations/accept";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
@@ -69,31 +69,9 @@ async function handlePost(request: NextRequest) {
       );
     }
 
-    if (invitation.scope === "org" && invitation.targetId) {
-      const existingMembership = await db.query.memberships.findFirst({
-        where: and(
-          eq(memberships.organizationId, invitation.targetId),
-          eq(memberships.userId, session.user.id),
-        ),
-      });
-
-      if (!existingMembership) {
-        await db.insert(memberships).values({
-          id: nanoid(),
-          userId: session.user.id,
-          organizationId: invitation.targetId,
-          role: invitation.role,
-        });
-      }
+    if (!(await claimInvitation(invitation, session.user.id))) {
+      return NextResponse.json({ error: "This invitation is no longer valid" }, { status: 410 });
     }
-
-    await db
-      .update(invitations)
-      .set({
-        status: "accepted",
-        acceptedAt: new Date(),
-      })
-      .where(eq(invitations.id, invitation.id));
 
     return NextResponse.json({
       success: true,
