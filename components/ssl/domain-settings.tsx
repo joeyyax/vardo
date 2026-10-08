@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { Check, X, Loader2, RefreshCw, CheckCircle2, XCircle } from "lucide-react";
+import { Loader2, RefreshCw, CheckCircle2, XCircle } from "lucide-react";
 import { useVerify } from "@/hooks/use-verify";
 import {
   Card,
