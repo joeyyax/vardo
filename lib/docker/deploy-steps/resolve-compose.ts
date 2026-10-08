@@ -28,6 +28,7 @@ import type { ServiceConfigOverride } from "../compose-types";
 import { appScope } from "@/lib/infra/instance-apps";
 import { handWrittenRoute, isolateCompose } from "../environment-isolation";
 import { nonRotatingServices } from "../slot-partition";
+import { assertLabelHostsOwned } from "../label-hosts";
 
 const NETWORK_NAME = VARDO_NETWORK;
 
@@ -231,6 +232,8 @@ export async function resolveCompose(ctx: DeployContext): Promise<DeployContext>
   } else if (allServicesCustomNetwork) {
     log(`[deploy] Skipping Traefik labels — all services use custom network modes: ${servicesWithCustomNetwork.join(", ")}`);
   }
+  await assertLabelHostsOwned(ctx, compose);
+
   // Only Traefik-routed services join vardo-network, never all of them.
   // Shared aliases like "postgres" would collide across sibling apps.
   const traefikRouted = getTraefikRoutedServices(compose);

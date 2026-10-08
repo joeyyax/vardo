@@ -14,6 +14,10 @@ vi.mock("@/lib/ssl/generate-config", () => ({
 vi.mock("@/lib/docker/client", () => ({
   detectExposedPorts: vi.fn().mockResolvedValue([]),
 }));
+// Vardo's own stack deploys in the system-managed org, which the host check skips.
+vi.mock("@/lib/docker/label-hosts", () => ({
+  assertLabelHostsOwned: vi.fn().mockResolvedValue([]),
+}));
 vi.mock("@/lib/db", () => ({
   db: { query: { apps: { findMany: vi.fn().mockResolvedValue([]) } } },
 }));
