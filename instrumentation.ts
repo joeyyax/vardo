@@ -202,6 +202,11 @@ export async function register() {
         })
         .catch((err) => log.error("Failed to start preview sweeper:", err)),
 
+      // Picks up a whole-instance restore a restart interrupted.
+      import("./lib/restore/database")
+        .then(({ resumeInstanceRestore }) => resumeInstanceRestore())
+        .catch((err) => log.error("Instance restore resume failed:", err)),
+
       import("./lib/docker/self-register")
         .then(({ ensureVardoProject }) => ensureVardoProject())
         .then(() => log.info("Vardo self-registration complete"))

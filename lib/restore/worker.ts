@@ -36,6 +36,7 @@ async function workLoop(opts: { requeueInterrupted?: boolean }): Promise<void> {
     const requeued = await requeueInterrupted(run.id);
     if (requeued > 0) log.info(`Requeued ${requeued} app(s) interrupted by a restart`);
   }
+  if (await finishIfSettled(run.id)) return;
   await db.update(instanceRestores).set({ status: "running", finishedAt: null }).where(eq(instanceRestores.id, run.id));
 
   const inFlight = new Map<string, Promise<void>>();
