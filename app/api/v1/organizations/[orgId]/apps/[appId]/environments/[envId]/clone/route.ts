@@ -5,6 +5,7 @@ import { environments, envVars } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
+import { HOSTNAME_RE } from "@/lib/security/hostname";
 import { verifyAppAccess } from "@/lib/api/verify-access";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
@@ -25,7 +26,7 @@ const cloneSchema = z.object({
       "Name must be lowercase alphanumeric with hyphens"
     ),
   type: z.enum(["production", "staging", "preview", "local"]).optional(),
-  domain: z.string().optional(),
+  domain: z.union([z.literal(""), z.string().regex(HOSTNAME_RE, "Invalid domain name")]).optional(),
 }).strict();
 
 // POST /api/v1/organizations/[orgId]/apps/[appId]/environments/[envId]/clone

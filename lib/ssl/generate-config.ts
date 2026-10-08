@@ -3,6 +3,7 @@ import { join } from "path";
 import YAML from "yaml";
 import { logger } from "@/lib/logger";
 import { TRAEFIK_DYNAMIC_DIR } from "@/lib/paths";
+import { isHostname } from "@/lib/security/hostname";
 
 type TraefikRouterConfig = {
   rule: string;
@@ -89,6 +90,10 @@ export function buildTraefikConfigYaml(
   }
 
   for (const domain of appDomains) {
+    if (!isHostname(domain.domain)) {
+      logger.warn(`[traefik] Skipping invalid domain "${domain.domain}"`);
+      continue;
+    }
     const routerName = `${appName}-${domain.id.slice(0, 8)}`;
     const isLocal =
       domain.domain.endsWith(".localhost") || domain.domain === "localhost";

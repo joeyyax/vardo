@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { environments } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
+import { HOSTNAME_RE } from "@/lib/security/hostname";
 import { verifyAppAccess } from "@/lib/api/verify-access";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
@@ -19,7 +20,7 @@ const updateEnvironmentSchema = z.object({
     .max(100)
     .regex(/^[a-z0-9][a-z0-9-]*[a-z0-9]$/)
     .optional(),
-  domain: z.string().nullable().optional(),
+  domain: z.union([z.literal(""), z.string().regex(HOSTNAME_RE, "Invalid domain name")]).nullable().optional(),
 }).strict();
 
 // PATCH /api/v1/organizations/[orgId]/apps/[appId]/environments/[envId]

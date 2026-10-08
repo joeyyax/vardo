@@ -16,6 +16,7 @@ import { parseCompose } from "./compose-parse";
 import { selectRoutedService } from "./routed-service";
 import { sanitizeCompose, isAnonymousVolume } from "./compose-validate";
 import { generateComposeForImage } from "./compose-generate";
+import { isHostname } from "@/lib/security/hostname";
 
 const VARDO_LABEL_PREFIX = "vardo.";
 
@@ -114,6 +115,9 @@ export function injectTraefikLabels(
       `Service "${serviceName}" not found in compose file. Available: ${Object.keys(compose.services).join(", ")}`,
     );
   }
+
+  // Backticks or spaces here would rewrite the Traefik rule and claim other hosts.
+  if (!isHostname(domain)) throw new Error(`Refusing to route invalid domain "${domain}"`);
 
   const existing = compose.services[serviceName];
   if (isTraefikOptedOut(existing) || isTraefikSelfRouted(existing)) return compose;

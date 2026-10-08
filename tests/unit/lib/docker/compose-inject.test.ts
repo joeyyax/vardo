@@ -295,3 +295,19 @@ describe("Vardo's own compose survives the deploy transforms", () => {
     expect(labels).not.toHaveProperty("traefik.http.routers.vardo-abcdef.rule");
   });
 });
+
+describe("injectTraefikLabels domain validation", () => {
+  const compose: ComposeFile = { services: { web: { name: "web", image: "nginx" } } };
+  const opts = { projectName: "demo-abcdef", appName: "demo", containerPort: 3000, serviceName: "web" };
+
+  it("refuses a domain that would rewrite the Host rule", () => {
+    expect(() =>
+      injectTraefikLabels(compose, { ...opts, domain: "mine.test`) || Host(`victim.test" }),
+    ).toThrow(/invalid domain/);
+  });
+
+  it("routes a plain hostname", () => {
+    const result = injectTraefikLabels(compose, { ...opts, domain: "app.example.com" });
+    expect(result.services.web.labels?.["traefik.http.routers.demo-abcdef.rule"]).toBe("Host(`app.example.com`)");
+  });
+});

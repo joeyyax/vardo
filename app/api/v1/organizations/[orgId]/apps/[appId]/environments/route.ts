@@ -6,6 +6,7 @@ import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { eq, and, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
+import { HOSTNAME_RE } from "@/lib/security/hostname";
 import { createGroupEnvironment } from "@/lib/docker/clone";
 import { snapshotIntoEnvironment } from "@/lib/docker/environment-env";
 import { verifyAppAccess } from "@/lib/api/verify-access";
@@ -97,7 +98,7 @@ const createEnvironmentSchema = z.object({
       "Name must be lowercase alphanumeric with hyphens, and can't start or end with a hyphen"
     ),
   type: z.enum(["production", "staging", "preview", "local"]),
-  domain: z.string().optional(),
+  domain: z.union([z.literal(""), z.string().regex(HOSTNAME_RE, "Invalid domain name")]).optional(),
   cloneFrom: z.string().optional(), // environment ID to clone env vars from
   gitBranch: gitBranchUpdateSchema.optional(), // override git branch for this environment
   appOverrides: z

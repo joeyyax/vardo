@@ -11,12 +11,12 @@ import { getSslConfig, getPrimaryIssuer } from "@/lib/system-settings";
 import { apps } from "@/lib/db/schema";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
+import { HOSTNAME_RE } from "@/lib/security/hostname";
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
 };
 
-const HOSTNAME_RE = /^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
 
 const createDomainSchema = z.object({
   domain: z.string().min(1, "Domain is required").regex(HOSTNAME_RE, "Invalid domain name"),
@@ -101,7 +101,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
 
 const updateDomainSchema = z.object({
   id: z.string().min(1),
-  domain: z.string().min(1).optional(),
+  domain: z.string().min(1).regex(HOSTNAME_RE, "Invalid domain name").optional(),
   port: z.number().int().positive().nullable().optional(),
   certResolver: z.string().optional(),
   redirectTo: z.string().url("Must be a valid URL").nullable().optional(),
