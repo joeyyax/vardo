@@ -26,6 +26,7 @@ import {
 } from "../compose";
 import { isFeatureEnabled } from "@/lib/config/features";
 import { assertSafeBranch, assertSafeGitUrl } from "../validate";
+import { appRootDir } from "../compose-policy";
 import { DeployBlockedError } from "../errors";
 import { assertBuildKitReachable, isBuildKitReachable, DEFAULT_BUILDKIT_HOST } from "../buildkit";
 import { assertAppDirOwnership } from "../app-dir-owner";
@@ -534,11 +535,7 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
       }
     }
 
-    const root = app.rootDirectory
-      ? join(repoDir, app.rootDirectory)
-      : hostConfig?.project?.rootDirectory
-      ? join(repoDir, hostConfig.project.rootDirectory)
-      : repoDir;
+    const root = appRootDir(repoDir, app.rootDirectory || hostConfig?.project?.rootDirectory);
     const composeFilePath = app.composeFilePath || "docker-compose.yml";
     const composeCandidates = [
       composeFilePath,

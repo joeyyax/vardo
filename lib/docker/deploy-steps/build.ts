@@ -3,7 +3,7 @@
 import { db } from "@/lib/db";
 import { orgEnvVars, apps } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
-import { mkdir, writeFile, rm, symlink, copyFile, stat, readdir, chmod } from "fs/promises";
+import { mkdir, writeFile, rm, symlink, copyFile, stat, lstat, readdir, chmod } from "fs/promises";
 import { dirname, join } from "path";
 import { decryptOrFallback } from "@/lib/crypto/encrypt";
 import { DeployBlockedError } from "../errors";
@@ -36,6 +36,7 @@ import {
 } from "../shared-networks";
 import { execFileAsync } from "@/lib/utils/exec";
 import { dockerEnv } from "@/lib/docker/docker-env";
+import { appRootDir, assertComposeWithinApp } from "../compose-policy";
 
 const NETWORK_NAME = VARDO_NETWORK;
 
@@ -79,12 +80,14 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
       const source = join(repoDir, entry);
       const target = join(slotDir, entry);
       const sourceSt = await stat(source);
+      // Copying would read a symlink's target into the slot; a link keeps it visible to the policy check.
+      const linkOnly = !ctx.orgTrusted && (await lstat(source)).isSymbolicLink();
 
       try {
         await rm(target, { recursive: true, force: true });
       } catch { /* nothing to remove */ }
 
-      if (sourceSt.isDirectory()) {
+      if (sourceSt.isDirectory() || linkOnly) {
         await symlink(source, target);
       } else {
         await copyFile(source, target);
@@ -169,11 +172,7 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
 
   // Build contexts point at repoDir, not the slot: BuildKit won't follow the slot's symlinks out of the context.
   if (repoDir) {
-    const buildRoot = app.rootDirectory
-      ? join(repoDir, app.rootDirectory)
-      : ctx.hostConfig?.project?.rootDirectory
-      ? join(repoDir, ctx.hostConfig.project.rootDirectory)
-      : repoDir;
+    const buildRoot = appRootDir(repoDir, app.rootDirectory || ctx.hostConfig?.project?.rootDirectory);
 
     const rewriteBuildContext = (composeFile: typeof compose) => {
       for (const service of Object.values(composeFile.services)) {
@@ -351,6 +350,8 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
   await writeFile(overridePath, composeToYaml(overlayCompose), "utf-8");
 
   ctx.composeFileArgs = ["-f", bareComposePath, "-f", overridePath];
+
+  if (!ctx.orgTrusted) await assertComposeWithinApp(ctx);
 
   // The repo-build path already closed compose and opened build in prepare-repo.
   if (!ctx.builtLocally) {
