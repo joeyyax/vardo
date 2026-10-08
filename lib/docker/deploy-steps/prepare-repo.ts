@@ -30,8 +30,8 @@ import { appRootDir } from "../compose-root";
 import { DeployBlockedError } from "../errors";
 import { assertBuildKitReachable, isBuildKitReachable, DEFAULT_BUILDKIT_HOST } from "../buildkit";
 import { assertAppDirOwnership } from "../app-dir-owner";
-import { getInstallationToken } from "@/lib/git-integration/app";
-import { githubTokenGitEnv } from "@/lib/git-integration/clone-auth";
+import { getInstallationToken, getRepoInstallationId } from "@/lib/git-integration/app";
+import { githubTokenGitEnv, resolveCloneToken } from "@/lib/git-integration/clone-auth";
 import {
   getDecryptedPrivateKey,
   writeTemporaryKeyFile,
@@ -392,20 +392,19 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
         });
         const userIds = orgMembers.map((m) => m.userId);
 
-        let installToken: string | null = null;
+        const installations = [];
         for (const userId of userIds) {
-          const installations = await db.query.githubAppInstallations.findMany({
-            where: eq(githubAppInstallations.userId, userId),
-          });
-          for (const inst of installations) {
-            try {
-              installToken = await getInstallationToken(inst.installationId);
-              log(`[deploy] Got GitHub token via ${inst.accountLogin}`);
-              break;
-            } catch { /* try next */ }
-          }
-          if (installToken) break;
+          installations.push(
+            ...(await db.query.githubAppInstallations.findMany({
+              where: eq(githubAppInstallations.userId, userId),
+            })),
+          );
         }
+        const installToken = await resolveCloneToken(app.gitUrl, installations, {
+          getToken: getInstallationToken,
+          getRepoInstallationId,
+          log,
+        });
 
         if (installToken) {
           // An env header, so the token never lands in .git/config inside the build context.

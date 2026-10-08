@@ -171,3 +171,15 @@ export function verifyInstallationState(
     return null;
   }
 }
+
+/** The App's installation on a repo, or null when it isn't installed there. */
+export async function getRepoInstallationId(owner: string, repo: string): Promise<number | null> {
+  const octokit = await getAppOctokit();
+  try {
+    const { data } = await octokit.rest.apps.getRepoInstallation({ owner, repo });
+    return data.id;
+  } catch (err) {
+    if ((err as { status?: number }).status === 404) return null;
+    throw err;
+  }
+}
