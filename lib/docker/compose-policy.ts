@@ -77,8 +77,6 @@ type Obj = Record<string, unknown>;
 const isObj = (v: unknown): v is Obj => typeof v === "object" && v !== null && !Array.isArray(v);
 const entries = (v: unknown): [string, unknown][] => (isObj(v) ? Object.entries(v) : []);
 
-
-
 /** Policy errors for a resolved compose model. Empty means the deploy may go ahead. */
 export function composePolicyErrors(config: unknown, policy: ComposePolicy): string[] {
   if (policy.trusted) return [];
@@ -311,7 +309,7 @@ function buildErrors(
 }
 
 /** `docker compose config` for the slot's files, as `up` will see them. */
-export async function resolveComposeConfig(opts: {
+async function resolveComposeConfig(opts: {
   cwd: string;
   composeFileArgs: string[];
   projectName: string;
@@ -341,25 +339,25 @@ export async function assertComposeWithinApp(ctx: {
   projectAllowDockerSocket: boolean;
 }): Promise<void> {
   if (ctx.orgTrusted) return;
-  let errors: string[];
+  let config: unknown;
   try {
-    const config = await resolveComposeConfig({
+    config = await resolveComposeConfig({
       cwd: ctx.slotDir,
       composeFileArgs: ctx.composeFileArgs,
       projectName: ctx.newProjectName,
     });
-    errors = composePolicyErrors(config, {
-      trusted: false,
-      projectName: ctx.newProjectName,
-      ownDirs: [ctx.appDir, ...(ctx.repoDir ? [ctx.repoDir] : [])],
-      ownPrefix: `${ctx.stableVolumePrefix}_`,
-      allowBindMounts: ctx.projectAllowBindMounts,
-      allowDockerSocket: ctx.projectAllowDockerSocket,
-    });
   } catch (err) {
     const stderr = (err as { stderr?: string }).stderr?.trim();
-    errors = [`Couldn't read the compose file: ${stderr || (err instanceof Error ? err.message : String(err))}`];
+    throw new DeployBlockedError(`Couldn't read the compose file: ${stderr || (err instanceof Error ? err.message : String(err))}`);
   }
+  const errors = composePolicyErrors(config, {
+    trusted: false,
+    projectName: ctx.newProjectName,
+    ownDirs: [ctx.appDir, ...(ctx.repoDir ? [ctx.repoDir] : [])],
+    ownPrefix: `${ctx.stableVolumePrefix}_`,
+    allowBindMounts: ctx.projectAllowBindMounts,
+    allowDockerSocket: ctx.projectAllowDockerSocket,
+  });
   if (errors.length === 0) return;
 
   for (const file of ["docker-compose.yml", "docker-compose.override.yml", ".env"]) {
