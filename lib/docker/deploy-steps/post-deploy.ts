@@ -126,7 +126,10 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
       });
       const existingByPath = new Map(currentVolumes.map((v) => [v.mountPath, v]));
       const newDetected = detectedVolumes.filter((v) => !existingByPath.has(v.mountPath));
-      const touchedIds: string[] = [];
+      // Rows prepare-repo inserted during this deploy count as found by it.
+      const deployStart = new Date(ctx.startTime);
+      const touchedIds = currentVolumes.filter((v) => v.createdAt >= deployStart).map((v) => v.id);
+      const firstDetection = touchedIds.length === currentVolumes.length;
 
       // A mount path whose source changed is a different volume; reset its backup selection.
       for (const vol of detectedVolumes) {
@@ -136,7 +139,7 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
           .update(volumes)
           .set({ type: vol.type, source: vol.source, backupSelection: null, updatedAt: new Date() })
           .where(eq(volumes.id, row.id));
-        touchedIds.push(row.id);
+        if (!touchedIds.includes(row.id)) touchedIds.push(row.id);
         log(`[deploy] ${vol.mountPath} now mounts ${vol.source ?? vol.name}`);
       }
 
@@ -200,7 +203,7 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
       }
 
       if (touchedIds.length > 0) {
-        await enrollDetectedVolumes(ctx, app.name, currentVolumes.length === 0, touchedIds, log);
+        await enrollDetectedVolumes(ctx, app.name, firstDetection, touchedIds, log);
       }
     }
   } catch {

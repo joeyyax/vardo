@@ -266,4 +266,26 @@ describe("postDeploy backup enrollment", () => {
 
     expect(writes.map((w) => w.values)).not.toContainEqual(expect.objectContaining({ backupStrategy: "dump" }));
   });
+
+  it("enrolls an app whose named volume prepare-repo inserted this deploy", async () => {
+    const startTime = Date.now() - 1000;
+    dbMock.query.volumes.findMany.mockResolvedValue([
+      { id: "nv", appId: "app-1", name: "notes_data", mountPath: "/data", type: "named", source: null, durability: null, backupSpec: null, createdAt: new Date() },
+    ]);
+
+    await postDeploy(makeContext({ startTime }));
+
+    expect(enrollNewApp).toHaveBeenCalledWith(expect.objectContaining({ appId: "app-1", measure: true }));
+  });
+
+  it("does not re-enroll on a redeploy", async () => {
+    dbMock.query.volumes.findMany.mockResolvedValue([
+      { id: "nv", appId: "app-1", name: "notes_data", mountPath: "/data", type: "named", source: null, durability: null, backupSpec: null, backupSelection: "include", createdAt: new Date(Date.now() - 86_400_000) },
+    ]);
+
+    await postDeploy(makeContext());
+
+    expect(enrollNewApp).not.toHaveBeenCalled();
+    expect(enrollNewVolumes).not.toHaveBeenCalled();
+  });
 });
