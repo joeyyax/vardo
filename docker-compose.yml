@@ -301,7 +301,8 @@ services:
     volumes:
       - wireguard_config:/config
     healthcheck:
-      test: ["CMD-SHELL", "wg show wg0 2>/dev/null | grep -q 'interface' || exit 1"]
+      # Healthy with no wg0.conf: the console writes it, so a fresh install would never start.
+      test: ["CMD-SHELL", "[ ! -f /config/wg_confs/wg0.conf ] || wg show wg0 2>/dev/null | grep -q 'interface'"]
       interval: 30s
       timeout: 5s
       retries: 3
