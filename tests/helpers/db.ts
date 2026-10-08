@@ -16,6 +16,7 @@ type Chain = {
   onConflictDoNothing: Mock<() => Chain>;
   onConflictDoUpdate: Mock<() => Chain>;
   then: PromiseLike<unknown[]>["then"];
+  catch: Promise<unknown[]>["catch"];
 };
 export type QueryTable = { findFirst: Fn; findMany: Fn };
 export type Write = { table: unknown; values?: unknown; set?: unknown; where?: unknown };
@@ -36,6 +37,7 @@ function createDbMock() {
       onConflictDoNothing: vi.fn(() => chain),
       onConflictDoUpdate: vi.fn(() => chain),
       then: (resolve, reject) => Promise.resolve(rows()).then(resolve, reject),
+      catch: (reject) => Promise.resolve(rows()).catch(reject),
     };
     return chain;
   };
