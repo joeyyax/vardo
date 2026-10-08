@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { AlertCircle, Database, Folder, Loader2, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -58,12 +58,12 @@ export function DetachedVolumesCard() {
   const [target, setTarget] = useState<Row | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  const load = useCallback(async () => {
-    setFailed(false);
+  async function load() {
     try {
       const res = await fetch(ENDPOINT);
       if (!res.ok) throw new Error();
       const names = toRows(await res.json());
+      setFailed(false);
       setRows(names);
 
       // Sizes take a while on hosts with many volumes, so they arrive second.
@@ -79,11 +79,11 @@ export function DetachedVolumesCard() {
     } catch {
       setFailed(true);
     }
-  }, []);
+  }
 
   useEffect(() => {
     void load();
-  }, [load]);
+  }, []);
 
   async function handleDelete() {
     if (!target) return;

@@ -4,7 +4,7 @@ import { readdir, rm } from "fs/promises";
 import { join } from "path";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { activities, apps, environments } from "@/lib/db/schema";
+import { activities } from "@/lib/db/schema";
 import { PROJECTS_DIR, appBaseDir, removeAppDirOwner } from "@/lib/paths";
 import { listAllContainers, listMountedVolumeNames, listVolumes, removeVolume, getVolumeSizes, type VolumeInfo } from "./client";
 import { matchAppVolumes, measurePath, scanAppDir, within, VOLUME_SIZES_TIMEOUT_MS, PATH_SIZE_TIMEOUT_MS } from "./app-data";

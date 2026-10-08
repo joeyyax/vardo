@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 
 vi.mock("@/lib/db", () => ({ db: {} }));
 
+import type { VolumeInfo } from "@/lib/docker/client";
 import {
   resolveDetached,
   deleteDetachedVolume,
@@ -9,7 +10,7 @@ import {
   type Snapshot,
 } from "@/lib/docker/detached-volumes";
 
-const vol = (name: string, project?: string) => ({
+const vol = (name: string, project?: string): VolumeInfo => ({
   name,
   mountpoint: `/var/lib/docker/volumes/${name}/_data`,
   labels: project ? { "com.docker.compose.project": project } : {},
