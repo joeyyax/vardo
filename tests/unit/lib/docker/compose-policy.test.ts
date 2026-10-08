@@ -80,6 +80,14 @@ describe("composePolicyErrors", () => {
       expect(composePolicyErrors(cfg, untrusted)).toEqual(['Service "web" routes on Traefik\'s internal entrypoint']);
     });
 
+    it("refuses a routed service that would answer to Vardo's names on vardo-network", () => {
+      const cfg = config({ container_name: "vardo-traefik" });
+      expect(composePolicyErrors(cfg, untrusted)).toEqual([
+        'Service "web" answers to "vardo-traefik" on vardo-network, a name Vardo\'s own services use',
+      ]);
+      expect(composePolicyErrors(config({ hostname: "loki" }), untrusted)).toHaveLength(1);
+    });
+
     it("passes the file-provider transport Vardo writes", () => {
       const cfg = config(labels({ "traefik.http.services.web.loadbalancer.serversTransport": "blog-insecure@file" }));
       expect(composePolicyErrors(cfg, untrusted)).toEqual([]);

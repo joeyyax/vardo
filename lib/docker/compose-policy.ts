@@ -67,6 +67,8 @@ const BUILD_KEYS = new Set([
   "secrets", "cache_from", "cache_to", "network", "provenance", "sbom",
 ]);
 
+const RESERVED_NAMES = new Set(["cadvisor", "loki", "promtail"]);
+
 const RUNTIMES = new Set(["runc", "nvidia", "sysbox-runc"]);
 const LOG_DRIVERS = new Set(["json-file", "local", "none"]);
 // Vardo's critical tier; the overlay always sets this key.
@@ -227,6 +229,10 @@ export function composePolicyErrors(config: unknown, policy: ComposePolicy): str
     for (const [net, attach] of entries(svc.networks)) {
       if (vardoNetworkKeys.has(net)) {
         if (!routed) errors.push(`${label} joins ${NETWORK_NAME} without being routed by Vardo`);
+        // The console finds Traefik, cAdvisor and Loki by these names there.
+        const names = [name, svc.container_name, svc.hostname].filter((n): n is string => typeof n === "string");
+        const reserved = names.find((n) => /^vardo-/i.test(n) || RESERVED_NAMES.has(n.toLowerCase()));
+        if (reserved) errors.push(`${label} answers to "${reserved}" on ${NETWORK_NAME}, a name Vardo's own services use`);
         if (isObj(attach) && Object.keys(attach).length > 0) errors.push(`${label} sets addresses or aliases on ${NETWORK_NAME}`);
       }
     }
