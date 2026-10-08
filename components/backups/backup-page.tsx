@@ -334,7 +334,7 @@ export function BackupPage({
               </li>
               <li className="flex items-start gap-2.5">
                 <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
-                <span className="text-muted-foreground">A new instance can restore Vardo&apos;s database from storage during setup</span>
+                <span className="text-muted-foreground">A new instance can restore Vardo and every app from storage during setup</span>
               </li>
             </ul>
           </div>
