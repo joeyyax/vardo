@@ -7,6 +7,7 @@ import { nanoid } from "nanoid";
 import { z } from "zod";
 import { verifyAppAccess } from "@/lib/api/verify-access";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
+import { can } from "@/lib/auth/permissions";
 import { requirePlugin } from "@/lib/api/require-plugin";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
@@ -82,6 +83,10 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       return apiError.validation(parsed.error);
     }
 
+    if (parsed.data.type === "command" && !can(orgAccess.membership.role, "app.cron.command")) {
+      return apiError.forbidden();
+    }
+
     const [created] = await db
       .insert(cronJobs)
       .values({
@@ -124,6 +129,19 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
     }
 
     const { id, ...updates } = parsed.data;
+
+    // A member may pause, rename or reschedule a command job, not change what it runs.
+    if (!can(orgAccess.membership.role, "app.cron.command") && (updates.type || updates.command !== undefined)) {
+      const current = await db.query.cronJobs.findFirst({
+        where: and(eq(cronJobs.id, id), eq(cronJobs.appId, appId)),
+        columns: { type: true, command: true },
+      });
+      if (!current) return apiError.notFound("cron job");
+      const type = updates.type ?? current.type;
+      const commandChanged = updates.command !== undefined && updates.command !== current.command;
+      const typeChanged = type !== current.type;
+      if (type === "command" && (commandChanged || typeChanged)) return apiError.forbidden();
+    }
 
     const [updated] = await db
       .update(cronJobs)

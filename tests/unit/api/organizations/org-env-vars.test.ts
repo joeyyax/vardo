@@ -113,6 +113,12 @@ describe("org env vars round trip", () => {
     expect(decrypt(row.value, "org-1")).toBe("smtp.example.com");
   });
 
+  it("keeps a non-secret when the mask comes back for it", async () => {
+    await save("LOG_LEVEL=••••••••");
+
+    expect(valueOf("LOG_LEVEL")).toBe("info");
+  });
+
   it("never stores the mask as a new value", async () => {
     await save("COPIED=••••••••");
 

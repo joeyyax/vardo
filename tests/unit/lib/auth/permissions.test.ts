@@ -12,6 +12,7 @@ const ADMIN_ONLY: Capability[] = [
   "app.certs",
   "app.debug",
   "app.terminal",
+  "app.cron.command",
   "app.delete",
   "app.volumes.sync",
   "env.reveal",

@@ -1,12 +1,13 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
-import { Loader2 } from "lucide-react";
+import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "@/lib/messenger";
+import { useCan } from "@/components/capabilities-provider";
 import { SECRET_MASK, orgEnvToContent } from "@/lib/env/org-env-content";
-import { scanEnv } from "@/lib/env/dotenv";
+import { formatEnvVar, scanEnv } from "@/lib/env/dotenv";
 import { EnvMultilineAdd } from "@/components/env-multiline-add";
 import "@/components/surface-terminal.css";
 
@@ -21,6 +22,8 @@ type Suggestion = {
 };
 
 export function OrgEnvVarsEditor({ orgId }: Props) {
+  const canReveal = useCan()("env.reveal");
+  const [revealed, setRevealed] = useState(false);
   const [content, setContent] = useState("");
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -31,23 +34,36 @@ export function OrgEnvVarsEditor({ orgId }: Props) {
   const [cursorPosition, setCursorPosition] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const fetchContent = useCallback(async (): Promise<string | null> => {
+  const fetchContent = useCallback(async (reveal: boolean): Promise<string | null> => {
     try {
-      const res = await fetch(`/api/v1/organizations/${orgId}/env-vars`);
-      if (res.ok) return orgEnvToContent((await res.json()).envVars || []);
+      const res = await fetch(`/api/v1/organizations/${orgId}/env-vars${reveal ? "?reveal=true" : ""}`);
+      if (!res.ok) return null;
+      const vars: { key: string; value: string; isSecret: boolean | null }[] = (await res.json()).envVars || [];
+      return reveal ? vars.map((v) => formatEnvVar(v.key, v.value)).join("\n") : orgEnvToContent(vars);
     } catch { /* start empty */ }
     return null;
   }, [orgId]);
 
   useEffect(() => {
     let cancelled = false;
-    fetchContent().then((next) => {
+    fetchContent(false).then((next) => {
       if (cancelled) return;
       if (next !== null) setContent(next);
       setLoaded(true);
     });
     return () => { cancelled = true; };
   }, [fetchContent]);
+
+  async function toggleReveal() {
+    const next = !revealed;
+    const text = await fetchContent(next);
+    if (text === null) {
+      toast.error("Couldn't load values");
+      return;
+    }
+    setContent(text);
+    setRevealed(next);
+  }
 
   const buildSuggestions = useCallback((text: string, cursor: number) => {
     const beforeCursor = text.slice(0, cursor);
@@ -144,7 +160,7 @@ export function OrgEnvVarsEditor({ orgId }: Props) {
       toast.success(`${data.created} added, ${data.updated} updated`);
       setModified(false);
       // Re-mask any secret typed in.
-      const next = await fetchContent();
+      const next = await fetchContent(revealed);
       if (next !== null) setContent(next);
     } catch {
       toast.error("Couldn't save");
@@ -185,11 +201,19 @@ export function OrgEnvVarsEditor({ orgId }: Props) {
           Shared across all projects. Reference with{" "}
           <code className="bg-muted px-1 py-0.5 rounded">{"${org.KEY}"}</code>. Secrets show as {SECRET_MASK}; leave them to keep the value. Press Tab for autocomplete.
         </p>
-        <Button size="sm" onClick={handleSave} disabled={saving || !modified}>
-          {saving ? (
-            <><Loader2 className="mr-1.5 size-4 animate-spin" />Saving...</>
-          ) : modified ? "Save changes" : "Saved"}
-        </Button>
+        <div className="flex shrink-0 items-center gap-2">
+          {canReveal && (
+            <Button size="sm" variant="outline" onClick={toggleReveal} disabled={saving || modified}>
+              {revealed ? <EyeOff className="mr-1.5 size-4" /> : <Eye className="mr-1.5 size-4" />}
+              {revealed ? "Hide values" : "Reveal values"}
+            </Button>
+          )}
+          <Button size="sm" onClick={handleSave} disabled={saving || !modified}>
+            {saving ? (
+              <><Loader2 className="mr-1.5 size-4 animate-spin" />Saving...</>
+            ) : modified ? "Save changes" : "Saved"}
+          </Button>
+        </div>
       </div>
 
       <EnvMultilineAdd onAdd={appendEntry} />

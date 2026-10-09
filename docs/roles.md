@@ -2,14 +2,15 @@
 
 Each org member holds one role. The source of truth is `CAPABILITIES` in `lib/auth/permissions.ts`; every org route and MCP tool checks it.
 
-Members do the day-to-day work: deploy, restart, stop, edit config and env vars, run backups. Anything that can't be undone, hands out plaintext secrets or opens a shell needs an admin.
+Members do the day-to-day work: deploy, restart, stop, edit config and env vars, run backups. Anything that can't be undone, hands out plaintext secrets or opens a shell, on demand or on a schedule, needs an admin.
 
 | Action | Owner | Admin | Member | Viewer |
 | --- | --- | --- | --- | --- |
 | View the org, projects and apps | ✓ | ✓ | ✓ | ✓ |
 | Create and configure projects and apps, domains, tags | ✓ | ✓ | ✓ | |
 | Deploy, restart, stop, recreate, roll back | ✓ | ✓ | ✓ | |
-| Manage cron jobs | ✓ | ✓ | ✓ | |
+| Manage URL cron jobs; pause or delete any cron job | ✓ | ✓ | ✓ | |
+| Create or change command cron jobs | ✓ | ✓ | | |
 | Read env vars, masked | ✓ | ✓ | ✓ | |
 | Write env vars | ✓ | ✓ | ✓ | |
 | Reveal plaintext env vars (app, org, MCP) | ✓ | ✓ | | |
@@ -30,3 +31,5 @@ An instance admin also holds every backup capability in any org they belong to. 
 Terminal sessions and every reveal are recorded in the activity log (`app.terminal_opened`, `app.env_revealed`, `org.env_revealed`).
 
 A member saving env vars sends the masked values back; the server keeps the stored value for any value still masked.
+
+Members see command cron jobs but can't change their command or type. A `[[cron]]` entry in `host.toml` creates a command job on deploy regardless of who deployed; members can already run arbitrary code in their own containers by deploying it.
