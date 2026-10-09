@@ -28,7 +28,7 @@ export const GITHUB_GUIDE = {
 
 export function getWebhookUrl(appUrl: string): string {
   const base = appUrl.replace(/\/+$/, "");
-  return `${base}/api/webhooks/github`;
+  return `${base}/api/v1/github/webhook`;
 }
 
 export function getPouchWebhookUrl(appUrl: string): string {
