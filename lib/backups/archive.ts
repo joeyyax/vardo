@@ -105,6 +105,7 @@ export function buildBindPreflightScript(dataDir = "/data"): string {
 
 /**
  * Shell script for a tar restore: extract to staging, carry over `protect.list` paths, then swap.
+ * The archive's `.` entry sets the volume root's owner and mode.
  * Keep the removal of live data after the extract, or a bad archive empties the volume.
  */
 export function buildTarRestoreScript(dataDir = "/data", backupDir = "/backup"): string {
@@ -115,7 +116,12 @@ export function buildTarRestoreScript(dataDir = "/data", backupDir = "/backup"):
     `protect="${backupDir}/${PROTECT_LIST_FILE}"`,
     'rm -rf "$stage"',
     'mkdir "$stage"',
-    `if ! tar xzf "${backupDir}/volume.tar.gz" -C "$stage"; then rm -rf "$stage"; echo "restore: archive could not be extracted" >&2; exit 1; fi`,
+    `if ! tar xzf "${backupDir}/volume.tar.gz" -C "$stage" -p; then rm -rf "$stage"; echo "restore: archive could not be extracted" >&2; exit 1; fi`,
+    `if tar tzf "${backupDir}/volume.tar.gz" | grep -qxE '\\./?'; then`,
+    `  meta="$(stat -c '%u:%g %a' "$stage" 2>/dev/null || stat -f '%u:%g %Lp' "$stage")"`,
+    '  chown "${meta% *}" "$data" 2>/dev/null || true',
+    '  chmod "${meta#* }" "$data"',
+    "fi",
     'if [ -f "$protect" ]; then',
     "  while IFS= read -r p; do",
     '    [ -n "$p" ] || continue',
