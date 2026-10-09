@@ -4,6 +4,8 @@
 import { describe, it, expect, afterAll } from "vitest";
 import { spawnSync } from "child_process";
 import {
+  chmodSync,
+  chownSync,
   cpSync,
   mkdtempSync,
   mkdirSync,
@@ -350,6 +352,35 @@ describe("tar restore keeps the paths the archive left out", () => {
     expect(proc.stderr).toMatch(/refusing protected path/);
     // Refused before the clear, so nothing was lost.
     expect(readFileSync(join(dataDir, "since.txt"), "utf8")).toBe("written after the backup");
+  });
+
+  it("applies the archive's root entry mode to the volume root", () => {
+    const { dataDir, backupDir } = stageRestore([]);
+    chmodSync(dataDir, 0o700);
+    const src = makeVolume({ "a.db": "x" });
+    chmodSync(src.dataDir, 0o750);
+    expect(backupWith(src.dataDir, src.backupDir, []).status).toBe(0);
+    cpSync(join(src.backupDir, "volume.tar.gz"), join(backupDir, "volume.tar.gz"));
+
+    const proc = restore(dataDir, backupDir);
+
+    expect(proc.status, proc.stderr).toBe(0);
+    expect(statSync(dataDir).mode & 0o777).toBe(0o750);
+    expect(statSync(join(dataDir, "a.db")).isFile()).toBe(true);
+  });
+
+  it("restores the root entry's owner when the archive was written by another user", () => {
+    if (process.getuid?.() !== 0) return;
+    const { dataDir, backupDir } = stageRestore([]);
+    const src = makeVolume({ "a.db": "x" });
+    chownSync(src.dataDir, 472, 0);
+    expect(backupWith(src.dataDir, src.backupDir, []).status).toBe(0);
+    cpSync(join(src.backupDir, "volume.tar.gz"), join(backupDir, "volume.tar.gz"));
+
+    const proc = restore(dataDir, backupDir);
+
+    expect(proc.status, proc.stderr).toBe(0);
+    expect(statSync(dataDir).uid).toBe(472);
   });
 
   it("clears the destination as before when the archive left nothing out", () => {
