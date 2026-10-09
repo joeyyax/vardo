@@ -26,6 +26,7 @@ import { APP_NAME_TAKEN_ERROR, isTopLevelAppNameTaken } from "@/lib/db/app-name"
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { enrollQuietly } from "@/lib/backups/enroll";
+import { armInitialBackupQuietly } from "@/lib/backups/initial-backup";
 
 type RouteParams = {
   params: Promise<{ orgId: string; containerId: string }>;
@@ -270,7 +271,9 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     const appId = app.id;
 
     // Imported mounts hold existing data, so sizes are measured off the request.
-    void enrollQuietly({ appId, appName: app.name, organizationId: orgId, measure: true });
+    void enrollQuietly({ appId, appName: app.name, organizationId: orgId, measure: true }).then(() =>
+      armInitialBackupQuietly(appId, "deploy"),
+    );
 
     const warnings: string[] = [];
 

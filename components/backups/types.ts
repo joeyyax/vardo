@@ -71,6 +71,8 @@ export type RecentBackup = {
   /** Null once the job is deleted; jobName keeps the label. */
   job: { id: string; name: string } | null;
   jobName: string | null;
+  /** "initial" or "import" for a first snapshot. */
+  trigger?: string | null;
   appId: string | null;
   /** Null once the app is deleted; appName keeps the label. */
   app: App | null;

@@ -631,6 +631,13 @@
       "when": 1791588147737,
       "tag": "0089_source_table_count",
       "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1791589394341,
+      "tag": "0090_initial_backup",
+      "breakpoints": true
     }
   ]
 }
