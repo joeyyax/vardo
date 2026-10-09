@@ -553,6 +553,49 @@ ensure_buildkit_mem() {
   log "Set VARDO_BUILDKIT_MEM=$mem"
 }
 
+# Redis limit in MB: 512 below 24 GiB of RAM, 1024 below 96 GiB, else 2048. Mirrors lib/resources/defaults.ts.
+default_redis_mem_mb() {
+  local mb
+  mb=$(get_ram_mb)
+  if (( mb < 24 * 1024 )); then echo 512
+  elif (( mb < 96 * 1024 )); then echo 1024
+  else echo 2048
+  fi
+}
+
+REDIS_DERIVED_MARK="# derived:"
+
+# Writes Redis sizing with a marker of the derived values. Later runs update it only while the values still match the marker.
+ensure_redis_mem() {
+  local env_file="$1" mb mem max derived marked current
+  mb=$(default_redis_mem_mb)
+  mem="${mb}m"
+  max="$(( mb * 3 / 4 ))mb"
+  derived="VARDO_REDIS_MEM=$mem VARDO_REDIS_MAXMEMORY=$max"
+
+  if ! grep -qE "^VARDO_REDIS_(MEM|MAXMEMORY)=" "$env_file" 2>/dev/null; then
+    printf '\n# Redis memory, sized from host RAM. Edit the values to pin them.\n%s %s\nVARDO_REDIS_MEM=%s\nVARDO_REDIS_MAXMEMORY=%s\n' \
+      "$REDIS_DERIVED_MARK" "$derived" "$mem" "$max" >> "$env_file"
+    log "Set VARDO_REDIS_MEM=$mem, VARDO_REDIS_MAXMEMORY=$max"
+    return
+  fi
+
+  # No marker, or values edited since: the owner set them.
+  marked=$({ grep "^$REDIS_DERIVED_MARK VARDO_REDIS_MEM=" "$env_file" || true; } | tail -1 | cut -d' ' -f3-)
+  current="VARDO_REDIS_MEM=$(env_get VARDO_REDIS_MEM "$env_file") VARDO_REDIS_MAXMEMORY=$(env_get VARDO_REDIS_MAXMEMORY "$env_file")"
+  [[ -n "$marked" && "$current" == "$marked" && "$current" != "$derived" ]] || return 0
+
+  env_upsert "$env_file" VARDO_REDIS_MEM "$mem"
+  env_upsert "$env_file" VARDO_REDIS_MAXMEMORY "$max"
+  local tmp
+  tmp=$(mktemp)
+  awk -v m="$REDIS_DERIVED_MARK VARDO_REDIS_MEM=" -v line="$REDIS_DERIVED_MARK $derived" \
+    'index($0, m) == 1 { print line; next } { print }' "$env_file" > "$tmp"
+  cat "$tmp" > "$env_file"
+  rm -f "$tmp"
+  log "Resized Redis to VARDO_REDIS_MEM=$mem, VARDO_REDIS_MAXMEMORY=$max"
+}
+
 # ── Disk space check ─────────────────────────────────────────────────────────
 
 check_disk_space() {
@@ -1396,6 +1439,7 @@ EOF
   fi
 
   ensure_buildkit_mem "$env_file"
+  ensure_redis_mem "$env_file"
 
   chmod 600 "$env_file"
 
@@ -1934,6 +1978,7 @@ run_env_migrations() {
   fi
 
   ensure_buildkit_mem "$env_file"
+  ensure_redis_mem "$env_file"
 
   # Remove deprecated feature flags
   _sed_i '/^FEATURE_METRICS=/d' "$env_file" 2>/dev/null || true
