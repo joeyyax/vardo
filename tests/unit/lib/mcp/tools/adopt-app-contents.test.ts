@@ -63,6 +63,7 @@ vi.mock("@/lib/db/app-name", () => ({
 vi.mock("@/lib/system-settings", () => ({
   getSslConfig: vi.fn().mockResolvedValue({}),
   getPrimaryIssuer: () => "letsencrypt",
+  getDefaultCertResolver: () => "letsencrypt",
 }));
 vi.mock("@/lib/activity", () => ({ recordActivity: vi.fn() }));
 vi.mock("@/lib/docker/import", () => ({

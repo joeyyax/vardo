@@ -16,7 +16,7 @@ import { sharedMarkerTypeErrors } from "@/lib/docker/compose";
 import { recordActivity } from "@/lib/activity";
 import { isReservedSlug } from "@/lib/domain-monitoring/reserved";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
-import { getSslConfig, getPrimaryIssuer } from "@/lib/system-settings";
+import { getSslConfig, getDefaultCertResolver } from "@/lib/system-settings";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { enrollQuietly } from "@/lib/backups/enroll";
@@ -228,7 +228,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
         appId,
         domain: autoDomain,
         port: data.containerPort ?? null,
-        certResolver: getPrimaryIssuer(sslConfig),
+        certResolver: getDefaultCertResolver(sslConfig),
       });
     }
 

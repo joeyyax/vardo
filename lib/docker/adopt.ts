@@ -15,7 +15,7 @@ import {
 } from "@/lib/docker/compose";
 import type { ComposeFile } from "@/lib/docker/compose";
 import { validateCompose } from "@/lib/docker/compose-validate";
-import { getSslConfig, getPrimaryIssuer } from "@/lib/system-settings";
+import { getSslConfig, getDefaultCertResolver } from "@/lib/system-settings";
 import { recordActivity } from "@/lib/activity";
 import { resolveProjectForImport } from "@/lib/docker/import";
 import { isFeatureEnabled } from "@/lib/config/features";
@@ -161,7 +161,7 @@ export async function adoptCompose(
     const domain = data.domain ?? envConfig?.domain ?? `${data.name}.localhost`;
     const containerPort = data.containerPort ?? 3000;
 
-    const certResolver = getPrimaryIssuer(await getSslConfig());
+    const certResolver = getDefaultCertResolver(await getSslConfig());
     compose = injectNetwork(compose, "vardo-network");
     const composeContent = composeToYaml(compose);
 

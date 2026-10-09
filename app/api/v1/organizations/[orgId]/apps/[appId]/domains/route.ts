@@ -7,7 +7,7 @@ import { nanoid } from "nanoid";
 import { z } from "zod";
 import { verifyAppAccess } from "@/lib/api/verify-access";
 import { refuseSystemManaged } from "@/lib/api/system-managed";
-import { getSslConfig, getPrimaryIssuer } from "@/lib/system-settings";
+import { CERT_RESOLVERS, getSslConfig, getDefaultCertResolver } from "@/lib/system-settings";
 import { apps } from "@/lib/db/schema";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
@@ -23,7 +23,7 @@ const createDomainSchema = z.object({
   domain: z.string().min(1, "Domain is required").regex(HOSTNAME_RE, "Invalid domain name"),
   serviceName: z.string().optional(),
   port: z.number().int().positive().optional(),
-  certResolver: z.string().optional(),
+  certResolver: z.enum(CERT_RESOLVERS).optional(),
   redirectTo: z.string().url("Must be a valid URL").optional(),
   redirectCode: z.union([z.literal(301), z.literal(302)]).optional(),
 }).strict();
@@ -73,9 +73,9 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: `Couldn't add domain. ${proof.refusal}` }, { status: 400 });
     }
 
-    // Caller's resolver, or the system primary issuer.
+    // Caller's resolver, or the primary issuer over DNS-01 when Cloudflare credentials are set.
     const certResolver = parsed.data.certResolver
-      ?? getPrimaryIssuer(await getSslConfig());
+      ?? getDefaultCertResolver(await getSslConfig());
 
     const [created] = await db
       .insert(domains)
@@ -111,7 +111,7 @@ const updateDomainSchema = z.object({
   id: z.string().min(1),
   domain: z.string().min(1).regex(HOSTNAME_RE, "Invalid domain name").optional(),
   port: z.number().int().positive().nullable().optional(),
-  certResolver: z.string().optional(),
+  certResolver: z.enum(CERT_RESOLVERS).optional(),
   redirectTo: z.string().url("Must be a valid URL").nullable().optional(),
   redirectCode: z.union([z.literal(301), z.literal(302)]).optional(),
 }).strict();

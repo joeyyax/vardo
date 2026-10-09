@@ -18,7 +18,7 @@ import {
   composeToYaml,
 } from "@/lib/docker/compose";
 import type { ComposeFile } from "@/lib/docker/compose";
-import { getSslConfig, getPrimaryIssuer } from "@/lib/system-settings";
+import { getSslConfig, getDefaultCertResolver } from "@/lib/system-settings";
 import { recordActivity } from "@/lib/activity";
 import { createDeployment } from "@/lib/docker/deploy";
 import { encrypt } from "@/lib/crypto/encrypt";
@@ -151,7 +151,7 @@ async function handler(request: NextRequest, { params }: RouteParams) {
     }
 
     const sslConfig = await getSslConfig();
-    const certResolver = getPrimaryIssuer(sslConfig);
+    const certResolver = getDefaultCertResolver(sslConfig);
 
     // Merges each container into one compose file, keyed by service label or slugified name.
     const merged: ComposeFile = { services: {} };

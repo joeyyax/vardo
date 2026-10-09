@@ -13,7 +13,7 @@ import { resolveContainerPort } from "@/lib/docker/resolve-port";
 import { volumeNameFromMount } from "@/lib/docker/client";
 import { generateComposeFromContainer, injectTraefikLabels, composeToYaml } from "@/lib/docker/compose";
 import { encrypt } from "@/lib/crypto/encrypt";
-import { getSslConfig, getPrimaryIssuer } from "@/lib/system-settings";
+import { getSslConfig, getDefaultCertResolver } from "@/lib/system-settings";
 import { recordActivity } from "@/lib/activity";
 import { createDeployment } from "@/lib/docker/deploy";
 import {
@@ -166,7 +166,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
         projectName: data.name,
         domain: detail.domain,
         containerPort,
-        certResolver: getPrimaryIssuer(sslConfig),
+        certResolver: getDefaultCertResolver(sslConfig),
       });
     }
 
@@ -235,7 +235,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
             appId,
             domain: detail.domain,
             port: containerPort,
-            certResolver: getPrimaryIssuer(sslConfig),
+            certResolver: getDefaultCertResolver(sslConfig),
             isPrimary: true,
           });
         }

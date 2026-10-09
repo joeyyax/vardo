@@ -46,6 +46,16 @@ import type { Domain } from "./types";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
+// Explicit picks; "Default" uses DNS-01 when the instance has Cloudflare credentials.
+const CERT_RESOLVER_OPTIONS = [
+  { value: "le-dns", label: "Let's Encrypt (DNS)" },
+  { value: "le", label: "Let's Encrypt (HTTP)" },
+  { value: "google-dns", label: "Google (DNS)" },
+  { value: "google", label: "Google (HTTP)" },
+  { value: "zerossl-dns", label: "ZeroSSL (DNS)" },
+  { value: "zerossl", label: "ZeroSSL (HTTP)" },
+];
+
 export function AppNetworking({
   domains,
   exposedPorts,
@@ -84,7 +94,6 @@ export function AppNetworking({
   const [editDomainResolver, setEditDomainResolver] = useState("");
   const [editDomainRedirectTo, setEditDomainRedirectTo] = useState("");
   const [editDomainRedirectCode, setEditDomainRedirectCode] = useState("301");
-  const [availableIssuers, setAvailableIssuers] = useState<string[]>(["le", "google"]);
   // Open sub-view from URL (e.g. /apps/emmayax/networking/emmayax.com)
   const [dnsDomainId, setDnsDomainId] = useState<string | null>(
     () => (initialSubView && domains.find((d) => d.domain === initialSubView)?.id) || null,
@@ -138,16 +147,6 @@ export function AppNetworking({
     if (domain.domain.endsWith(".localhost") || domain.sslEnabled === false) return null;
     return diagnoseCert(domain.certCheck);
   }
-
-  // Fetch available issuers
-  useEffect(() => {
-    fetch("/api/setup/ssl")
-      .then((res) => res.ok ? res.json() : null)
-      .then((data) => {
-        if (data?.availableIssuers) setAvailableIssuers(data.availableIssuers);
-      })
-      .catch(() => { /* best effort */ });
-  }, []);
 
   function openDomainSheet(domainId: string) {
     setDnsDomainId(domainId);
@@ -282,6 +281,7 @@ export function AppNetworking({
 
   async function handleDomainUpdate(id: string) {
     if (!editDomainValue.trim()) return;
+    const editingDomain = domains.find((d) => d.id === id);
     setDomainSaving(true);
     try {
       const res = await fetch(
@@ -293,7 +293,7 @@ export function AppNetworking({
             id,
             domain: editDomainValue.trim(),
             port: editDomainPort ? parseInt(editDomainPort, 10) : null,
-            ...(editDomainResolver !== undefined && { certResolver: editDomainResolver || "le" }),
+            ...(editDomainResolver && editDomainResolver !== editingDomain?.certResolver && { certResolver: editDomainResolver }),
             redirectTo: editDomainRedirectTo.trim() || null,
             ...(editDomainRedirectTo.trim() && {
               redirectCode: parseInt(editDomainRedirectCode, 10) as 301 | 302,
@@ -375,9 +375,7 @@ export function AppNetworking({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="default">Default</SelectItem>
-                  {availableIssuers.includes("le") && <SelectItem value="le">Let&apos;s Encrypt</SelectItem>}
-                  {availableIssuers.includes("google") && <SelectItem value="google">Google</SelectItem>}
-                  {availableIssuers.includes("zerossl") && <SelectItem value="zerossl">ZeroSSL</SelectItem>}
+                  {CERT_RESOLVER_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
@@ -462,9 +460,7 @@ export function AppNetworking({
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="default">Default</SelectItem>
-                            {availableIssuers.includes("le") && <SelectItem value="le">Let&apos;s Encrypt</SelectItem>}
-                            {availableIssuers.includes("google") && <SelectItem value="google">Google</SelectItem>}
-                            {availableIssuers.includes("zerossl") && <SelectItem value="zerossl">ZeroSSL</SelectItem>}
+                            {CERT_RESOLVER_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
                           </SelectContent>
                         </Select>
                       </div>

@@ -235,6 +235,20 @@ export function getPrimaryIssuer(config: SslConfig): SslIssuer {
   return config.activeIssuers[0] ?? "le";
 }
 
+/** Resolvers Traefik defines in docker-compose.yml. */
+export const CERT_RESOLVERS = ["le", "le-dns", "google", "google-dns", "zerossl", "zerossl-dns"] as const;
+
+/** Traefik has Cloudflare DNS credentials; it reads CF_DNS_API_TOKEN from the same .env as the console. */
+export function hasCloudflareDns(): boolean {
+  return !!process.env.CF_DNS_API_TOKEN?.trim();
+}
+
+/** Resolver for a new domain: the primary issuer, over DNS-01 when Cloudflare credentials are set. */
+export function getDefaultCertResolver(config: SslConfig): string {
+  const issuer = getPrimaryIssuer(config);
+  return hasCloudflareDns() ? `${issuer}-dns` : issuer;
+}
+
 export async function getSslConfig(): Promise<SslConfig> {
   const fileConfig = await getVardoConfig();
 
