@@ -4,9 +4,11 @@ import { availableParallelism } from "os";
 import { logger } from "@/lib/logger";
 import {
   describeDefaults,
+  parseAdminSettings,
   resolveDeployConcurrency,
   resolveTierCpus,
   resolveTierMemory,
+  type AdminResourceSettings,
   type HostSize,
   type QosTier,
   type ResourceDefault,
@@ -59,17 +61,52 @@ export function resetHostCache(host: HostSize | null = null): void {
   cache.pending = null;
 }
 
+/** The system_settings key holding admin-set defaults. */
+export const RESOURCE_SETTINGS_KEY = "resource_defaults";
+
+// Last admin values read from the database, shared across bundles like the host size.
+const sg = globalThis as unknown as { __vardo_resource_settings?: { values: AdminResourceSettings } };
+const settings = (sg.__vardo_resource_settings ??= { values: {} });
+
+/** Reads the admin-set defaults from the database. Keeps the last values when the read fails. */
+export async function loadResourceSettings(): Promise<AdminResourceSettings> {
+  try {
+    const { getSystemSettingRaw, invalidateSettingsCache } = await import("@/lib/system-settings");
+    invalidateSettingsCache(RESOURCE_SETTINGS_KEY);
+    const raw = await getSystemSettingRaw(RESOURCE_SETTINGS_KEY);
+    settings.values = raw ? parseAdminSettings(JSON.parse(raw)) : {};
+  } catch (err) {
+    log.warn("Couldn't read the admin resource defaults; keeping the last values:", err);
+  }
+  return settings.values;
+}
+
+/** Stores the admin-set defaults and updates the in-memory copy. */
+export async function saveResourceSettings(values: AdminResourceSettings): Promise<void> {
+  const { setSystemSetting } = await import("@/lib/system-settings");
+  await setSystemSetting(RESOURCE_SETTINGS_KEY, JSON.stringify(values));
+  settings.values = { ...values };
+}
+
+/** Sets the in-memory admin values. For tests. */
+export function setResourceSettingsCache(values: AdminResourceSettings = {}): void {
+  settings.values = { ...values };
+}
+
 export function tierMemoryMb(tier: QosTier): number {
-  return resolveTierMemory(tier, cache.host).value;
+  const key = tier === "critical" ? "memoryCritical" : tier === "standard" ? "memoryStandard" : "memoryDisposable";
+  return resolveTierMemory(tier, cache.host, process.env, settings.values[key]).value;
 }
 
 export function tierCpuLimit(tier: QosTier, hostCpus?: number): number | null {
   const host = hostCpus !== undefined ? { cpus: hostCpus, memoryBytes: cache.host?.memoryBytes ?? 0 } : cache.host;
-  return resolveTierCpus(tier, host, availableParallelism()).value;
+  const admin =
+    tier === "standard" ? settings.values.cpusStandard : tier === "disposable" ? settings.values.cpusDisposable : undefined;
+  return resolveTierCpus(tier, host, availableParallelism(), process.env, admin).value;
 }
 
 export function maxDeployConcurrency(): number {
-  return resolveDeployConcurrency(cache.host).value;
+  return resolveDeployConcurrency(cache.host, process.env, settings.values.deployConcurrency).value;
 }
 
 async function containerMemoryMb(name: string): Promise<number | null> {
@@ -107,6 +144,11 @@ export async function runningLimits(): Promise<RunningLimits> {
 
 /** Every sized default for the admin page. */
 export async function currentDefaults(): Promise<{ host: HostSize | null; defaults: ResourceDefault[] }> {
-  const [host, running] = await Promise.all([detectHost(), runningLimits()]);
-  return { host, defaults: describeDefaults(host, availableParallelism(), process.env, running) };
+  const [host, running, admin] = await Promise.all([detectHost(), runningLimits(), loadResourceSettings()]);
+  return { host, defaults: describeDefaults(host, availableParallelism(), process.env, running, admin) };
+}
+
+/** The host's CPU count, or this process's when Docker can't be read. */
+export function hostCpuCount(host: HostSize | null): number {
+  return host?.cpus ?? availableParallelism();
 }

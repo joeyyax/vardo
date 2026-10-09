@@ -4,7 +4,7 @@
 import { redis } from "@/lib/redis";
 import { acquireLock } from "@/lib/redis-lock";
 import { logger } from "@/lib/logger";
-import { maxDeployConcurrency } from "@/lib/resources/host";
+import { loadResourceSettings, maxDeployConcurrency } from "@/lib/resources/host";
 
 const log = logger.child("deploy-concurrency");
 
@@ -21,7 +21,7 @@ const POLL_INTERVAL_MS = 250;
 /** Max wait for a slot. Below the 10-minute SSE stream timeout so the error is clean. */
 const QUEUE_TIMEOUT_MS = 9 * 60 * 1000; // 9 minutes
 
-/** Sized by host; VARDO_MAX_DEPLOY_CONCURRENCY overrides. */
+/** Sized by host, then the admin setting; VARDO_MAX_DEPLOY_CONCURRENCY overrides. */
 export function getConcurrencyLimit(): number {
   return maxDeployConcurrency();
 }
@@ -54,6 +54,7 @@ const LUA_RELEASE = `
 
 /** Enqueue a deployment and try for a slot. False means call waitForConcurrencySlot(). True without Redis. */
 export async function enqueueAndTryAcquire(deploymentId: string): Promise<boolean> {
+  await loadResourceSettings();
   const limit = getConcurrencyLimit();
   try {
     await redis.rpush(QUEUE_KEY, deploymentId);

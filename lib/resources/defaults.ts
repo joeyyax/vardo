@@ -5,8 +5,8 @@ export type QosTier = "critical" | "standard" | "disposable";
 /** What Docker's /info reports. */
 export type HostSize = { cpus: number; memoryBytes: number };
 
-/** Detected: the rule applied to the host. Override: an env var set it. Fallback: the host couldn't be read. */
-export type DefaultSource = "detected" | "override" | "fallback";
+/** Detected: the rule applied to the host. Override: an env var set it. Admin: set in System settings. Fallback: the host couldn't be read. */
+export type DefaultSource = "detected" | "override" | "admin" | "fallback";
 
 export type SizeClass = {
   name: "small" | "medium" | "large" | "xlarge";
@@ -80,38 +80,46 @@ type Env = Record<string, string | undefined>;
 
 export type Resolved<T> = { value: T; source: DefaultSource; rule: T };
 
-function resolve<T>(override: T | undefined, host: HostSize | null, rule: T, fallback: T): Resolved<T> {
+function resolve<T>(override: T | undefined, admin: T | undefined, host: HostSize | null, rule: T, fallback: T): Resolved<T> {
   if (override !== undefined) return { value: override, source: "override", rule };
+  if (admin !== undefined) return { value: admin, source: "admin", rule };
   return host ? { value: rule, source: "detected", rule } : { value: fallback, source: "fallback", rule };
 }
 
-/** Memory cap (MB) for a tier. VARDO_DEFAULT_MEMORY_{TIER} wins when it's at least 64. */
-export function resolveTierMemory(tier: QosTier, host: HostSize | null, env: Env = process.env): Resolved<number> {
+/** Memory cap (MB) for a tier. VARDO_DEFAULT_MEMORY_{TIER} wins when it's at least 64, then the admin value. */
+export function resolveTierMemory(
+  tier: QosTier,
+  host: HostSize | null,
+  env: Env = process.env,
+  admin?: number,
+): Resolved<number> {
   const raw = env[`VARDO_DEFAULT_MEMORY_${tier.toUpperCase()}`];
   const parsed = raw ? parseInt(raw, 10) : NaN;
   const rule = host ? sizeClass(memoryMiB(host.memoryBytes)).memoryMb[tier] : FALLBACK.memoryMb[tier];
-  return resolve(!isNaN(parsed) && parsed >= 64 ? parsed : undefined, host, rule, FALLBACK.memoryMb[tier]);
+  return resolve(!isNaN(parsed) && parsed >= 64 ? parsed : undefined, admin, host, rule, FALLBACK.memoryMb[tier]);
 }
 
-/** CPU cap (cores) for a tier; null means none. VARDO_DEFAULT_CPUS_{TIER} wins, 0 for none. */
+/** CPU cap (cores) for a tier; null means none. VARDO_DEFAULT_CPUS_{TIER} wins, 0 for none, then the admin value capped at the host's CPUs. */
 export function resolveTierCpus(
   tier: QosTier,
   host: HostSize | null,
   fallbackCpus: number,
   env: Env = process.env,
+  admin?: number,
 ): Resolved<number | null> {
   const raw = env[`VARDO_DEFAULT_CPUS_${tier.toUpperCase()}`];
   const parsed = raw !== undefined && raw !== "" ? Number(raw) : NaN;
   const override = Number.isFinite(parsed) && parsed >= 0 ? (parsed > 0 ? parsed : null) : undefined;
   const rule = tierCpus(tier, host?.cpus ?? fallbackCpus);
-  return resolve(override, host, rule, tierCpus(tier, fallbackCpus));
+  const adminCpus = admin !== undefined && host && host.cpus > 0 ? Math.min(admin, host.cpus) : admin;
+  return resolve(override, adminCpus, host, rule, tierCpus(tier, fallbackCpus));
 }
 
-/** Most deploys at once. VARDO_MAX_DEPLOY_CONCURRENCY wins, floored at 1. */
-export function resolveDeployConcurrency(host: HostSize | null, env: Env = process.env): Resolved<number> {
+/** Most deploys at once. VARDO_MAX_DEPLOY_CONCURRENCY wins, floored at 1, then the admin value. */
+export function resolveDeployConcurrency(host: HostSize | null, env: Env = process.env, admin?: number): Resolved<number> {
   const parsed = parseInt(env.VARDO_MAX_DEPLOY_CONCURRENCY ?? "", 10);
   const rule = host ? deployConcurrency(host) : FALLBACK.deploys;
-  return resolve(isNaN(parsed) ? undefined : Math.max(1, parsed), host, rule, FALLBACK.deploys);
+  return resolve(isNaN(parsed) ? undefined : Math.max(1, parsed), admin, host, rule, FALLBACK.deploys);
 }
 
 /** A value install.sh writes to .env. Matching the rule counts as detected; unset means compose's default. */
@@ -136,6 +144,69 @@ export type ResourceDefaultKey =
   | "redisMem"
   | "redisMaxmemory";
 
+/** Defaults an admin can set in System settings. */
+export const ADMIN_RESOURCE_KEYS = [
+  "memoryCritical",
+  "memoryStandard",
+  "memoryDisposable",
+  "cpusStandard",
+  "cpusDisposable",
+  "deployConcurrency",
+] as const satisfies readonly ResourceDefaultKey[];
+
+export type AdminResourceKey = (typeof ADMIN_RESOURCE_KEYS)[number];
+
+/** Admin values by key; a missing key uses the rule. */
+export type AdminResourceSettings = Partial<Record<AdminResourceKey, number>>;
+
+export const RESOURCE_LIMITS = { memoryMinMb: 128, cpusMin: 0.25, deploysMin: 1, deploysMax: 32 };
+
+export function isAdminResourceKey(key: string): key is AdminResourceKey {
+  return (ADMIN_RESOURCE_KEYS as readonly string[]).includes(key);
+}
+
+/** Why an admin value is out of range, or null when it's fine. */
+export function validateAdminValue(key: AdminResourceKey, value: number, hostCpus: number): string | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "Enter a number.";
+  if (key.startsWith("memory")) {
+    if (!Number.isInteger(value)) return "Memory must be a whole number of MB.";
+    return value < RESOURCE_LIMITS.memoryMinMb ? `Memory must be at least ${RESOURCE_LIMITS.memoryMinMb} MB.` : null;
+  }
+  if (key.startsWith("cpus")) {
+    if (value < RESOURCE_LIMITS.cpusMin) return `CPUs must be at least ${RESOURCE_LIMITS.cpusMin}.`;
+    return value > hostCpus ? `CPUs can't be more than the host's ${hostCpus}.` : null;
+  }
+  if (!Number.isInteger(value) || value < RESOURCE_LIMITS.deploysMin || value > RESOURCE_LIMITS.deploysMax) {
+    return `Deploys at once must be a whole number from ${RESOURCE_LIMITS.deploysMin} to ${RESOURCE_LIMITS.deploysMax}.`;
+  }
+  return null;
+}
+
+/** Stored admin values with anything malformed dropped. CPUs aren't checked against the host here. */
+export function parseAdminSettings(raw: unknown): AdminResourceSettings {
+  if (!raw || typeof raw !== "object") return {};
+  const out: AdminResourceSettings = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (isAdminResourceKey(key) && typeof value === "number" && !validateAdminValue(key, value, Infinity)) {
+      out[key] = value;
+    }
+  }
+  return out;
+}
+
+const tierOf = (key: AdminResourceKey) => key.replace(/^(memory|cpus)/, "").toLowerCase() as QosTier;
+
+/** The env var that sets this default when it holds a usable value, or null. */
+export function envLock(key: AdminResourceKey, env: Env = process.env): string | null {
+  const row =
+    key === "deployConcurrency"
+      ? { envVar: "VARDO_MAX_DEPLOY_CONCURRENCY", source: resolveDeployConcurrency(null, env).source }
+      : key.startsWith("memory")
+        ? { envVar: `VARDO_DEFAULT_MEMORY_${tierOf(key).toUpperCase()}`, source: resolveTierMemory(tierOf(key), null, env).source }
+        : { envVar: `VARDO_DEFAULT_CPUS_${tierOf(key).toUpperCase()}`, source: resolveTierCpus(tierOf(key), null, 1, env).source };
+  return row.source === "override" ? row.envVar : null;
+}
+
 export type ResourceDefault = {
   key: ResourceDefaultKey;
   label: string;
@@ -143,6 +214,8 @@ export type ResourceDefault = {
   unit: "mb" | "cpus" | "count";
   /** Set in .env by install.sh; takes effect when the container is recreated. */
   installer: boolean;
+  /** An admin can set it in System settings. */
+  editable: boolean;
   /** What the running container uses, for installer values. */
   running?: number | null;
 } & Resolved<number | null>;
@@ -156,6 +229,7 @@ export function describeDefaults(
   fallbackCpus: number,
   env: Env = process.env,
   running: RunningLimits = { buildkitMemMb: null, redisMemMb: null, redisMaxmemoryMb: null },
+  admin: AdminResourceSettings = {},
 ): ResourceDefault[] {
   const memMb = host ? memoryMiB(host.memoryBytes) : null;
   const redisRule = memMb !== null ? sizeClass(memMb).redisMb : FALLBACK.redisMb;
@@ -166,7 +240,8 @@ export function describeDefaults(
       envVar: `VARDO_DEFAULT_MEMORY_${tier.toUpperCase()}`,
       unit: "mb" as const,
       installer: false,
-      ...resolveTierMemory(tier, host, env),
+      editable: true,
+      ...resolveTierMemory(tier, host, env, admin[`memory${cap(tier)}` as AdminResourceKey]),
     })),
     ...TIERS.map((tier) => ({
       key: `cpus${cap(tier)}` as ResourceDefaultKey,
@@ -174,7 +249,8 @@ export function describeDefaults(
       envVar: `VARDO_DEFAULT_CPUS_${tier.toUpperCase()}`,
       unit: "cpus" as const,
       installer: false,
-      ...resolveTierCpus(tier, host, fallbackCpus, env),
+      editable: tier !== "critical",
+      ...resolveTierCpus(tier, host, fallbackCpus, env, tier === "critical" ? undefined : admin[`cpus${cap(tier)}` as AdminResourceKey]),
     })),
     {
       key: "deployConcurrency",
@@ -182,7 +258,8 @@ export function describeDefaults(
       envVar: "VARDO_MAX_DEPLOY_CONCURRENCY",
       unit: "count",
       installer: false,
-      ...resolveDeployConcurrency(host, env),
+      editable: true,
+      ...resolveDeployConcurrency(host, env, admin.deployConcurrency),
     },
     {
       key: "buildkitMem",
@@ -190,6 +267,7 @@ export function describeDefaults(
       envVar: "VARDO_BUILDKIT_MEM",
       unit: "mb",
       installer: true,
+      editable: false,
       running: running.buildkitMemMb,
       ...resolveInstallerMb(
         env.VARDO_BUILDKIT_MEM,
@@ -204,6 +282,7 @@ export function describeDefaults(
       envVar: "VARDO_REDIS_MEM",
       unit: "mb",
       installer: true,
+      editable: false,
       running: running.redisMemMb,
       ...resolveInstallerMb(env.VARDO_REDIS_MEM, host, redisRule, FALLBACK.redisMb),
     },
@@ -213,6 +292,7 @@ export function describeDefaults(
       envVar: "VARDO_REDIS_MAXMEMORY",
       unit: "mb",
       installer: true,
+      editable: false,
       running: running.redisMaxmemoryMb,
       ...resolveInstallerMb(
         env.VARDO_REDIS_MAXMEMORY,
