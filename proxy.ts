@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { csrfRejection } from "@/lib/security/csrf";
 import { clientIpFor } from "@/lib/security/client-ip";
+import { bodyRefusal } from "@/lib/security/body-limit";
 import { hasValidCredentials } from "@/lib/security/proxy-credentials";
 
 /**
@@ -49,6 +50,10 @@ export async function proxy(request: NextRequest) {
   if (csrf) {
     return NextResponse.json({ error: "Cross-site request blocked" }, { status: 403 });
   }
+
+  // Next would pass on a longer body cut off.
+  const refusal = bodyRefusal(request.headers);
+  if (refusal) return NextResponse.json({ error: refusal.error }, { status: refusal.status });
 
   // Skip health check and monitoring endpoints
   if (request.nextUrl.pathname === "/api/health") {
@@ -100,6 +105,6 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // App imports stream multi-GB bodies; a proxy match would cap them at 10 MB. The route checks CSRF itself.
+  // App imports stream multi-GB bodies; a proxy match would cap them at the body limit. The route checks CSRF itself.
   matcher: "/api/((?!v1/organizations/[^/]+/apps/[^/]+/import/?$).*)",
 };

@@ -13,7 +13,7 @@ import { recordActivity } from "@/lib/activity";
 import { csrfRejection } from "@/lib/security/csrf";
 import { ImportError, importIntoApp, importMaxBytes, type ImportSource } from "@/lib/backups/import";
 
-// Excluded from proxy.ts, which caps request bodies at 10 MB. CSRF is checked here instead.
+// Excluded from proxy.ts, which caps request bodies at the proxy body limit. CSRF is checked here instead.
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;

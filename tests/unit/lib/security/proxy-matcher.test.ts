@@ -1,4 +1,4 @@
-// The proxy buffers request bodies up to 10 MB, so the import upload route must stay outside its matcher.
+// The proxy buffers request bodies up to its limit, so the import upload route must stay outside its matcher.
 
 import { describe, it, expect, vi } from "vitest";
 import { unstable_doesMiddlewareMatch } from "next/experimental/testing/server";

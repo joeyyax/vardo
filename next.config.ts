@@ -2,6 +2,7 @@ import type { NextConfig } from "next";
 import { execSync } from "child_process";
 import { resolve } from "path";
 import { config } from "dotenv";
+import { PROXY_BODY_LIMIT_BYTES } from "./lib/security/body-limit";
 
 // Load .env from repo root
 config({ path: "./.env", quiet: true });
@@ -20,6 +21,7 @@ const nextConfig: NextConfig = {
   env: {
     NEXT_PUBLIC_GIT_SHA: gitSha || process.env.NEXT_PUBLIC_GIT_SHA || "",
   },
+  experimental: { proxyClientMaxBodySize: PROXY_BODY_LIMIT_BYTES },
   serverExternalPackages: ["node-ical", "nodemailer", "@modelcontextprotocol/sdk"],
   images: {
     remotePatterns: [
