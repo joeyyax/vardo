@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAppAdmin } from "@/lib/auth/admin";
 import { handleRouteError } from "@/lib/api/error-response";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
-import { getSystemDiskUsage, pruneBuildCache } from "@/lib/docker/client";
+import { getBuildCacheUsage, pruneBuildCache } from "@/lib/docker/client";
 import { logger } from "@/lib/logger";
 
 const log = logger.child("admin:maintenance:build-cache");
@@ -14,10 +14,10 @@ async function handleGet() {
     await requireAppAdmin();
 
     try {
-      const usage = await getSystemDiskUsage();
+      const usage = await getBuildCacheUsage();
       return NextResponse.json({
-        size: usage.buildCache.totalSize,
-        reclaimable: usage.buildCache.reclaimable,
+        size: usage.totalSize,
+        reclaimable: usage.reclaimable,
       });
     } catch (err) {
       log.error(`Failed to read build cache usage: ${err}`);

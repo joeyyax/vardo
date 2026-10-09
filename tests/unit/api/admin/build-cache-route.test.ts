@@ -3,15 +3,15 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { requireAppAdmin, pruneBuildCache, getSystemDiskUsage, cp } = vi.hoisted(() => ({
+const { requireAppAdmin, pruneBuildCache, getBuildCacheUsage, cp } = vi.hoisted(() => ({
   requireAppAdmin: vi.fn(),
   pruneBuildCache: vi.fn(),
-  getSystemDiskUsage: vi.fn(),
+  getBuildCacheUsage: vi.fn(),
   cp: { exec: vi.fn(), execFile: vi.fn(), spawn: vi.fn(), execSync: vi.fn(), spawnSync: vi.fn() },
 }));
 
 vi.mock("@/lib/auth/admin", () => ({ requireAppAdmin }));
-vi.mock("@/lib/docker/client", () => ({ pruneBuildCache, getSystemDiskUsage }));
+vi.mock("@/lib/docker/client", () => ({ pruneBuildCache, getBuildCacheUsage }));
 vi.mock("child_process", () => ({ ...cp, default: cp }));
 vi.mock("@/lib/api/with-rate-limit", async () => (await import("@/tests/helpers/mocks")).withRateLimitModule());
 vi.mock("@/lib/logger", async () => (await import("@/tests/helpers/mocks")).loggerModule());
@@ -46,7 +46,7 @@ describe("build-cache prune", () => {
   });
 
   it("reads usage as unknown, never zero, when the Engine fails", async () => {
-    getSystemDiskUsage.mockRejectedValue(new Error("socket"));
+    getBuildCacheUsage.mockRejectedValue(new Error("socket"));
     const res = await (GET as () => Promise<Response>)();
     expect(await res.json()).toEqual({ size: null, reclaimable: null });
   });

@@ -715,8 +715,8 @@ export type DiskUsage = {
 export type RawDiskUsage = {
   LayersSize: number;
   Images: { Id: string; Size: number; SharedSize: number; Containers: number }[];
-  Containers: { Id: string; SizeRw: number; SizeRootFs: number }[];
-  Volumes: { Name: string; UsageData: { Size: number; RefCount: number } }[];
+  Containers: { Id: string; ImageID?: string; SizeRw: number; SizeRootFs: number; Labels?: Record<string, string> }[];
+  Volumes: { Name: string; UsageData: { Size: number; RefCount: number }; Labels?: Record<string, string> }[];
   BuildCache: { ID: string; Size: number; InUse: boolean; Shared: boolean }[];
 };
 
@@ -765,14 +765,23 @@ export function summarizeDiskUsage(raw: Partial<RawDiskUsage>): DiskUsage {
   };
 }
 
+/** Resource types `/system/df?type=` accepts (API 1.42+). Omitting volumes skips dockerd's per-volume size walk. */
+export type DfType = "container" | "image" | "volume" | "build-cache";
+
+/** `/system/df`, restricted to `types` when the daemon supports the filter. */
+export async function dockerDf<T extends Partial<RawDiskUsage>>(
+  types: DfType[],
+  opts: { timeoutMs?: number } = {},
+): Promise<T> {
+  const [major, minor] = DOCKER_API_VERSION.split(".").map(Number);
+  const filtered = major > 1 || (major === 1 && minor >= 42);
+  const query = filtered ? `?${types.map((t) => `type=${t}`).join("&")}` : "";
+  return dockerRequest<T>("GET", `/system/df${query}`, undefined, opts);
+}
+
 /** Bytes per volume name. Unmeasured sizes (-1) are left out. */
 export async function getVolumeSizes(opts: { timeoutMs?: number } = {}): Promise<Map<string, number>> {
-  const raw = await dockerRequest<Pick<RawDiskUsage, "Volumes">>(
-    "GET",
-    "/system/df?type=volume",
-    undefined,
-    opts,
-  );
+  const raw = await dockerDf<Pick<RawDiskUsage, "Volumes">>(["volume"], opts);
   const sizes = new Map<string, number>();
   for (const v of raw.Volumes ?? []) {
     const size = v.UsageData?.Size;
@@ -781,19 +790,21 @@ export async function getVolumeSizes(opts: { timeoutMs?: number } = {}): Promise
   return sizes;
 }
 
-export async function getSystemDiskUsage(): Promise<DiskUsage> {
-  return summarizeDiskUsage(await dockerRequest<RawDiskUsage>("GET", "/system/df"));
+/** Build cache only, for callers that need nothing else. */
+export async function getBuildCacheUsage(): Promise<DiskUsage["buildCache"]> {
+  return summarizeDiskUsage(await dockerDf(["build-cache"])).buildCache;
 }
 
-/** Disk usage in bytes per project (containers + volumes), mapped by container labels. */
-export async function getPerProjectDiskUsage(): Promise<Map<string, number>> {
-  const raw = await dockerRequest<{
-    Images: { Id: string; Size: number; SharedSize: number }[];
-    Containers: { Id: string; ImageID: string; SizeRw: number; SizeRootFs: number; Labels: Record<string, string> }[];
-    Volumes: { Name: string; UsageData: { Size: number; RefCount: number }; Labels: Record<string, string> }[];
-    BuildCache: { ID: string; Size: number; InUse: boolean }[];
-  }>("GET", "/system/df");
+/** Everything `/system/df` reports except volumes. */
+export type DfNoVolumes = Omit<RawDiskUsage, "Volumes">;
+/** Volumes with their labels. */
+export type DfVolumes = Pick<RawDiskUsage, "Volumes">;
 
+export const getDfWithoutVolumes = () => dockerDf<DfNoVolumes>(["container", "image", "build-cache"]);
+export const getDfVolumes = () => dockerDf<DfVolumes>(["volume"]);
+
+/** Disk usage in bytes per project (containers + volumes), mapped by container labels. */
+export function attributeDiskToProjects(raw: Partial<RawDiskUsage>): Map<string, number> {
   const byProject = new Map<string, number>();
 
   const imageSize = new Map<string, number>();
