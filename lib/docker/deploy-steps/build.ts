@@ -28,6 +28,7 @@ import { detectActiveSlot } from "../slots";
 import { crossBoundaryVolumeName, volumesByOwner } from "../shared-volumes";
 import { isSelfApp, seedSelfEnv } from "../self-env";
 import { nonRotatingServices } from "../slot-partition";
+import { slotTraefikNames } from "../traefik-slot-names";
 import { anchorSharedPaths, sharedPathsDir } from "../shared-paths";
 import {
   DEFAULT_NETWORK,
@@ -333,8 +334,16 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
 
   const certMount = await prepareCertMount(ctx, stableVolumePrefix);
 
+  // Blue and green carry their own Traefik names so the overlap never redefines a router.
+  const blueGreen = newSlot === "blue" || newSlot === "green";
+  const shared = nonRotatingServices(compose);
+  const slotCompose = blueGreen ? slotTraefikNames(compose, newSlot, { shared }) : compose;
+  const bareCompose = blueGreen
+    ? slotTraefikNames(ctx.bareCompose, newSlot, { shared, declaredIn: compose })
+    : ctx.bareCompose;
+
   const overlayCompose = buildVardoOverlay({
-    fullCompose: compose,
+    fullCompose: slotCompose,
     networkName: NETWORK_NAME,
     cpuLimit: app.cpuLimit,
     memoryLimit: app.memoryLimit,
@@ -349,7 +358,7 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
     certMount,
   });
 
-  await writeFile(bareComposePath, composeToYaml(ctx.bareCompose), "utf-8");
+  await writeFile(bareComposePath, composeToYaml(bareCompose), "utf-8");
   await writeFile(overridePath, composeToYaml(overlayCompose), "utf-8");
 
   ctx.composeFileArgs = ["-f", bareComposePath, "-f", overridePath];
