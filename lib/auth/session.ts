@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { memberships, apiTokens, user } from "@/lib/db/schema";
 import { findApiToken, type TokenScope } from "@/lib/auth/api-token";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
+import { tokenScopeCapabilities } from "@/lib/auth/permissions";
 import { eq, and } from "drizzle-orm";
 
 export const CURRENT_ORG_COOKIE = "host_current_org";
@@ -69,6 +70,7 @@ export const getSession = cache(async (): Promise<SessionResult | null> => {
             tokenScope: {
               crossOrg: token.crossOrg,
               expiresAt: token.expiresAt,
+              capabilities: tokenScopeCapabilities(token.scope, token.capabilities),
             },
           } as SessionResult;
         }
@@ -120,6 +122,8 @@ export const getCurrentOrg = cache(async () => {
         membership: {
           id: membership.id,
           role: membership.role,
+          // can() intersects the role with the token's scope.
+          ...(isToken && { scopes: session.tokenScope.capabilities ?? null }),
         },
       };
     }
@@ -152,6 +156,11 @@ export const getCurrentOrg = cache(async () => {
     },
   };
 });
+
+/** True for a token whose scope is narrower than the user's role. */
+export function isScopedToken(session: { authMethod: string; tokenScope?: TokenScope }): boolean {
+  return session.authMethod === "token" && session.tokenScope?.capabilities != null;
+}
 
 /** Returns the session or throws if unauthenticated. */
 export async function requireSession() {

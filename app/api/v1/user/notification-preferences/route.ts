@@ -7,7 +7,7 @@ import {
   userNotificationPreferences,
   userDigestPreferences,
 } from "@/lib/db/schema";
-import { requireSession } from "@/lib/auth/session";
+import { requireSession, isScopedToken } from "@/lib/auth/session";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
@@ -82,7 +82,9 @@ async function handleGet(req: NextRequest) {
 /** PUT — upserts a preference (type: "preference") or the digest toggle (type: "digest"). */
 async function handlePut(req: NextRequest) {
   try {
-    await requireSession();
+    const session = await requireSession();
+    // A scoped token only acts through org capabilities.
+    if (isScopedToken(session)) return apiError.forbidden();
 
     const body = await req.json();
     const parsed = putSchema.safeParse(body);

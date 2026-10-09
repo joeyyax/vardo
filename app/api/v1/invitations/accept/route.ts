@@ -3,7 +3,7 @@ import { z } from "zod";
 import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { invitations } from "@/lib/db/schema";
-import { getSession } from "@/lib/auth/session";
+import { getSession, isScopedToken } from "@/lib/auth/session";
 import { requirePlugin } from "@/lib/api/require-plugin";
 import { eq } from "drizzle-orm";
 import { hashInvitationToken } from "@/lib/invitations/token";
@@ -57,6 +57,8 @@ async function handlePost(request: NextRequest) {
         { status: 401 }
       );
     }
+    // A scoped token only acts through org capabilities.
+    if (isScopedToken(session)) return apiError.forbidden();
 
     // A logged-in user's email must match.
     if (session.user.email !== invitation.email) {

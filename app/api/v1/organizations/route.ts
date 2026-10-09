@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { organizations, memberships } from "@/lib/db/schema";
-import { getSession } from "@/lib/auth/session";
+import { getSession, isScopedToken } from "@/lib/auth/session";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
@@ -63,6 +63,8 @@ async function handlePost(request: NextRequest) {
     if (!session?.user?.id) {
       return apiError.unauthorized();
     }
+    // A scoped token only acts through org capabilities.
+    if (isScopedToken(session)) return apiError.forbidden();
 
     const body = await request.json();
     const parsed = createOrgSchema.safeParse(body);

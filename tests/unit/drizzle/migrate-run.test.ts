@@ -193,6 +193,33 @@ describe.skipIf(!conn)("migrate run against a scratch database", () => {
     expect(del("backup_job_app", "app_id")).toBe("c"); // cascade
   });
 
+  it("keeps API tokens made before 0087 at full access", async () => {
+    const url = await scratch(`${dbName}_tokens`);
+    const dir = mkdtempSync(join(tmpdir(), "migrate-"));
+    const before = journal.entries.filter((e) => e.idx < 87);
+    try {
+      mkdirSync(join(dir, "drizzle/meta"), { recursive: true });
+      writeFileSync(join(dir, "drizzle/meta/_journal.json"), JSON.stringify({ ...journal, entries: before }));
+      for (const e of before) writeFileSync(join(dir, `drizzle/${e.tag}.sql`), readFileSync(join(DRIZZLE, `${e.tag}.sql`)));
+      expect(runMigrate(url, dir).code).toBe(0);
+
+      const check = postgres(url, { max: 1, onnotice: () => {} });
+      try {
+        await check.begin(async (t) => {
+          await t`set local session_replication_role = replica`;
+          await t`insert into api_token (id, user_id, organization_id, name, token_hash) values ('old', 'u', 'o', 'ci', 'h')`;
+        });
+        expect(runMigrate(url).code).toBe(0);
+        const [row] = await check`select scope, capabilities from api_token where id = 'old'`;
+        expect(row).toEqual({ scope: "full", capabilities: null });
+      } finally {
+        await check.end({ timeout: 1 });
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   describe("app name uniqueness", () => {
     let tx: ReturnType<typeof postgres>;
 

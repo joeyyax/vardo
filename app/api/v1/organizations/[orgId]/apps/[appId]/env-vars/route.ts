@@ -57,7 +57,7 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
     if (refused) return refused;
 
     const reveal = request.nextUrl.searchParams.get("reveal") === "true";
-    if (reveal && !can(org.membership.role, "env.reveal")) return apiError.forbidden();
+    if (reveal && !can(org.membership, "env.reveal")) return apiError.forbidden();
 
     const env = await targetEnvironment(appId, request.nextUrl.searchParams.get("environmentId"));
     if (env === false) {

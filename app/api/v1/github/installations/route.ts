@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handleRouteError } from "@/lib/api/error-response";
+import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { githubAppInstallations, githubInstallationOrgs } from "@/lib/db/schema";
-import { requireSession, getCurrentOrg } from "@/lib/auth/session";
+import { requireSession, getCurrentOrg, isScopedToken } from "@/lib/auth/session";
 import { can } from "@/lib/auth/permissions";
 import { eq, and } from "drizzle-orm";
 import { getAppOctokit } from "@/lib/git-integration/app";
@@ -35,7 +35,7 @@ async function handleGet() {
       ? {
           id: current.organization.id,
           name: current.organization.name,
-          canManage: can(current.membership.role, "org.settings"),
+          canManage: can(current.membership, "org.settings"),
         }
       : null;
 
@@ -49,6 +49,8 @@ async function handleGet() {
 async function handleDelete(request: NextRequest) {
   try {
     const session = await requireSession();
+    // A scoped token only acts through org capabilities.
+    if (isScopedToken(session)) return apiError.forbidden();
 
     const { id } = await request.json();
     if (!id) {
