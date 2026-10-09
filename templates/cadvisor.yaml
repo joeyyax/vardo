@@ -1,7 +1,7 @@
 version: "1"
 name: cadvisor
 displayName: cAdvisor
-description: Container resource metrics (CPU, memory, network, disk). Connect as a Vardo metrics integration.
+description: Container resource metrics (CPU, memory, network). Connect as a Vardo metrics integration.
 icon: https://cdn.simpleicons.org/google/4285F4
 category: monitoring
 source: direct
@@ -17,17 +17,18 @@ composeContent: |
       privileged: true
       command:
         - --housekeeping_interval=30s
-        # cAdvisor's own default disable list plus percpu. Setting this flag
-        # replaces that default, so the expensive /proc scanners must be named.
-        - --disable_metrics=advtcp,cpu_topology,cpuset,hugetlb,memory_numa,percpu,process,referenced_memory,resctrl,sched,tcp,udp
+        # Setting this flag replaces cAdvisor's default list, so the expensive
+        # scanners are named. Vardo reads cpu, memory, network and diskIO only;
+        # `disk` duplicates /system/df and walks every container filesystem.
+        - --disable_metrics=advtcp,app,cpuLoad,cpu_topology,cpuset,hugetlb,memory_numa,oom_event,percpu,pressure,process,referenced_memory,resctrl,sched,tcp,udp,disk
         - --docker_only=true
       volumes:
         - /:/rootfs:ro
         - /var/run:/var/run:ro
         - /sys:/sys:ro
         - /var/lib/docker/:/var/lib/docker:ro
-      # Disk metrics walk every container's filesystem, so this is not 256m.
-      mem_limit: 512m
+      # 512m with disk metrics on (Core services toggle).
+      mem_limit: 256m
       # Vardo reaches this at http://cadvisor:8080. Without joining the shared
       # network the container is unreachable and metrics silently never arrive.
       networks:

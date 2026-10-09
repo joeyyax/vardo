@@ -1,4 +1,4 @@
-// cAdvisor disk metrics setting. Off drops per-container disk figures and lowers cAdvisor's memory ceiling from 512m to 256m.
+// cAdvisor disk metrics setting. Off (default) skips the per-container filesystem walk and holds the memory ceiling at 256m; on raises it to 512m.
 
 import { getSystemSettingRaw, setSystemSetting, invalidateSettingsCache } from "@/lib/system-settings";
 import { logger } from "@/lib/logger";
@@ -12,7 +12,7 @@ export interface CadvisorConfig {
 }
 
 export const DEFAULT_CADVISOR_CONFIG: CadvisorConfig = {
-  diskMetricsEnabled: true,
+  diskMetricsEnabled: false,
 };
 
 export async function getCadvisorConfig(): Promise<CadvisorConfig> {
@@ -20,7 +20,7 @@ export async function getCadvisorConfig(): Promise<CadvisorConfig> {
   if (!raw) return { ...DEFAULT_CADVISOR_CONFIG };
   try {
     const parsed = JSON.parse(raw) as Partial<CadvisorConfig>;
-    return { diskMetricsEnabled: parsed.diskMetricsEnabled !== false };
+    return { diskMetricsEnabled: parsed.diskMetricsEnabled === true };
   } catch {
     return { ...DEFAULT_CADVISOR_CONFIG };
   }
@@ -31,31 +31,23 @@ export async function setCadvisorConfig(config: CadvisorConfig): Promise<void> {
   invalidateSettingsCache(KEY);
 }
 
-// Compose transform. The template ships with disk metrics on, so only off needs a rewrite.
+// Compose transform. The template ships with disk metrics off, so only on needs a rewrite.
 
-/** Kept in step with templates/cadvisor.yaml; both markers below embed it. */
-const DISABLED_METRICS =
-  "advtcp,cpu_topology,cpuset,hugetlb,memory_numa,percpu,process,referenced_memory,resctrl,sched,tcp,udp";
-
-const COMMAND_ON = `      # cAdvisor's own default disable list plus percpu. Setting this flag
-      # replaces that default, so the expensive /proc scanners must be named.
-      - --disable_metrics=${DISABLED_METRICS}`;
-const COMMAND_OFF = `      # disk and diskIO off — toggled from Core services.
-      - --disable_metrics=${DISABLED_METRICS},disk,diskIO`;
-
+const DISK_OFF = "--disable_metrics=advtcp,app,cpuLoad,cpu_topology,cpuset,hugetlb,memory_numa,oom_event,percpu,pressure,process,referenced_memory,resctrl,sched,tcp,udp,disk";
+const DISK_ON = "--disable_metrics=advtcp,app,cpuLoad,cpu_topology,cpuset,hugetlb,memory_numa,oom_event,percpu,pressure,process,referenced_memory,resctrl,sched,tcp,udp";
+const MEM_OFF = `    # 512m with disk metrics on (Core services toggle).
+    mem_limit: 256m`;
 const MEM_ON = `    # Disk metrics walk every container's filesystem, so this is not 256m.
     mem_limit: 512m`;
-const MEM_OFF = `    # Disk metrics off — 256m is enough without filesystem walks.
-    mem_limit: 256m`;
 
 /** Rewrite cAdvisor compose for the disk metrics setting. Logs and returns it unmodified if the markers no longer match. */
 export function applyCadvisorDiskMetrics(composeContent: string, diskMetricsEnabled: boolean): string {
-  if (diskMetricsEnabled) return composeContent;
+  if (!diskMetricsEnabled) return composeContent;
 
-  if (!composeContent.includes(COMMAND_ON) || !composeContent.includes(MEM_ON)) {
-    log.error("cAdvisor template markers not found — leaving disk metrics on");
+  if (!composeContent.includes(DISK_OFF) || !composeContent.includes(MEM_OFF)) {
+    log.error("cAdvisor template markers not found — leaving disk metrics off");
     return composeContent;
   }
 
-  return composeContent.replace(COMMAND_ON, COMMAND_OFF).replace(MEM_ON, MEM_OFF);
+  return composeContent.replace(DISK_OFF, DISK_ON).replace(MEM_OFF, MEM_ON);
 }

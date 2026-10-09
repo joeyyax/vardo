@@ -102,44 +102,43 @@ beforeEach(() => {
 });
 
 describe("ensureInfraServices — cAdvisor disk metrics setting", () => {
-  it("installs with disk metrics on by default", async () => {
+  it("installs with disk metrics off by default", async () => {
     getSystemSettingRawMock.mockResolvedValue(null);
     dbMock.query.apps.findFirst.mockResolvedValue(null);
 
     await ensureInfraServices();
 
     expect(insertedRows[0].composeContent).toBe(TEMPLATE_COMPOSE);
-    expect(insertedRows[0].composeContent).toContain("--disable_metrics=advtcp,cpu_topology,cpuset,hugetlb,memory_numa,percpu,process,referenced_memory,resctrl,sched,tcp,udp\n");
-    expect(insertedRows[0].composeContent).toContain("mem_limit: 512m");
+    expect(insertedRows[0].composeContent).toContain("--disable_metrics=advtcp,app,cpuLoad,cpu_topology,cpuset,hugetlb,memory_numa,oom_event,percpu,pressure,process,referenced_memory,resctrl,sched,tcp,udp,disk\n");
+    expect(insertedRows[0].composeContent).toContain("mem_limit: 256m");
   });
 
-  it("installs with disk metrics off when the setting is disabled", async () => {
-    getSystemSettingRawMock.mockResolvedValue(JSON.stringify({ diskMetricsEnabled: false }));
+  it("installs with disk metrics on when the setting is enabled", async () => {
+    getSystemSettingRawMock.mockResolvedValue(JSON.stringify({ diskMetricsEnabled: true }));
     dbMock.query.apps.findFirst.mockResolvedValue(null);
 
     await ensureInfraServices();
 
     const composeContent = insertedRows[0].composeContent as string;
-    expect(composeContent).toContain("--disable_metrics=advtcp,cpu_topology,cpuset,hugetlb,memory_numa,percpu,process,referenced_memory,resctrl,sched,tcp,udp,disk,diskIO");
-    expect(composeContent).toContain("mem_limit: 256m");
-    expect(composeContent).not.toContain("mem_limit: 512m");
+    expect(composeContent).toContain("--disable_metrics=advtcp,app,cpuLoad,cpu_topology,cpuset,hugetlb,memory_numa,oom_event,percpu,pressure,process,referenced_memory,resctrl,sched,tcp,udp\n");
+    expect(composeContent).toContain("mem_limit: 512m");
   });
 
-  it("redeploys an existing install once the setting flips off", async () => {
-    getSystemSettingRawMock.mockResolvedValue(JSON.stringify({ diskMetricsEnabled: false }));
+  it("redeploys an existing install whose stored compose predates the template", async () => {
+    getSystemSettingRawMock.mockResolvedValue(null);
     dbMock.query.apps.findFirst.mockResolvedValue({
       id: "app-1",
       status: "active",
       organizationId: "org-1",
       isSystemManaged: true,
-      composeContent: TEMPLATE_COMPOSE, // stored compose still reflects the old "on" state
+      composeContent: TEMPLATE_COMPOSE.replace(",disk\n", ",disk,diskIO\n").replace("disable_metrics=advtcp,app,cpuLoad,", "disable_metrics=advtcp,"),
     });
 
     await ensureInfraServices();
 
     expect(updateSets).toContainEqual(expect.objectContaining({ needsRedeploy: true }));
     const staleUpdate = updateSets.find((u) => "composeContent" in u);
-    expect(staleUpdate?.composeContent).toContain("mem_limit: 256m");
+    expect(staleUpdate?.composeContent).toBe(TEMPLATE_COMPOSE);
     expect(requestDeployMock).toHaveBeenCalledWith(
       expect.objectContaining({ appId: "app-1", organizationId: "org-1" }),
     );
