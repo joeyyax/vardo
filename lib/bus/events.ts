@@ -3,7 +3,7 @@
 // Event categories for grouping in the settings UI.
 
 export const EVENT_CATEGORIES = {
-  deploy: ["deploy.success", "deploy.failed", "deploy.incomplete", "deploy.rollback", "deploy.status"],
+  deploy: ["deploy.success", "deploy.failed", "deploy.incomplete", "deploy.rollback"],
   app: ["app.state-changed", "app.auto-restarted", "app.oom-killed"],
   backup: ["backup.success", "backup.failed"],
   cron: ["cron.failed"],

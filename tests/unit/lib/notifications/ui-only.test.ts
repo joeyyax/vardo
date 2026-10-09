@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { isUiOnlyEvent } from "@/lib/notifications/ui-only";
+import { resolveRecipients } from "@/lib/notifications/resolve-recipients";
+import { EVENT_CATEGORIES, ALL_EVENT_TYPES } from "@/lib/bus/events";
 import type { BusEvent } from "@/lib/bus/events";
 
 function deployStatus(status: "running" | "active" | "error" | "cancelled" | "superseded"): BusEvent {
@@ -15,15 +17,10 @@ function deployStatus(status: "running" | "active" | "error" | "cancelled" | "su
 }
 
 describe("isUiOnlyEvent", () => {
-  it("keeps a deploy start off notification channels", () => {
-    expect(isUiOnlyEvent(deployStatus("running"))).toBe(true);
-  });
-
-  it("lets terminal deploy statuses through", () => {
-    expect(isUiOnlyEvent(deployStatus("active"))).toBe(false);
-    expect(isUiOnlyEvent(deployStatus("error"))).toBe(false);
-    expect(isUiOnlyEvent(deployStatus("cancelled"))).toBe(false);
-    expect(isUiOnlyEvent(deployStatus("superseded"))).toBe(false);
+  it("keeps every deploy status off notification channels", () => {
+    for (const status of ["running", "active", "error", "cancelled", "superseded"] as const) {
+      expect(isUiOnlyEvent(deployStatus(status))).toBe(true);
+    }
   });
 
   it("lets other events through", () => {
@@ -38,5 +35,20 @@ describe("isUiOnlyEvent", () => {
         duration: "1s",
       }),
     ).toBe(false);
+  });
+});
+
+describe("deploy.status", () => {
+  it("never resolves a recipient, even when a member opted in", () => {
+    const members = [{ userId: "user-1" }];
+    const prefs = [{ channelId: "chan-1", userId: "user-1", enabled: true }];
+    for (const channelType of ["email", "slack", "webhook"]) {
+      expect(resolveRecipients("chan-1", channelType, "deploy.status", members, prefs).shouldSend).toBe(false);
+    }
+  });
+
+  it("isn't offered as a subscribable event", () => {
+    expect(EVENT_CATEGORIES.deploy).not.toContain("deploy.status");
+    expect(ALL_EVENT_TYPES).not.toContain("deploy.status");
   });
 });
