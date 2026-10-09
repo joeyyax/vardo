@@ -43,6 +43,7 @@ import {
 import type { DeployContext, SlotStopOutcome } from "../deploy-context";
 import { isSelfApp } from "../self-env";
 import { proposeDurability, isSafeToApply } from "@/lib/backups/durability";
+import { refreshDumpSpec } from "@/lib/backups/dump-spec";
 import { CERTS_VOLUME_KEY } from "@/lib/ssl/cert-export";
 
 /** Serializes the host-global prune across deploys. */
@@ -142,6 +143,21 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
           .where(eq(volumes.id, row.id));
         if (!touchedIds.includes(row.id)) touchedIds.push(row.id);
         log(`[deploy] ${vol.mountPath} now mounts ${vol.source ?? vol.name}`);
+      }
+
+      // A renamed service or changed engine moves the dump target; user-set fields stay.
+      for (const vol of detectedVolumes) {
+        const row = existingByPath.get(vol.mountPath);
+        if (!row?.backupSpec) continue;
+        const spec = refreshDumpSpec(row.backupSpec, {
+          image: vol.image,
+          mountPath: vol.mountPath,
+          volumeName: vol.name,
+          service: vol.service,
+        });
+        if (!spec) continue;
+        await db.update(volumes).set({ backupSpec: spec, updatedAt: new Date() }).where(eq(volumes.id, row.id));
+        log(`[deploy] ${row.name} dump target is now ${spec.kind} service "${spec.service}"`);
       }
 
       // Rows inserted before the containers ran are classified here once.

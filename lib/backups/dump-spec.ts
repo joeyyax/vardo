@@ -1,13 +1,29 @@
 // Database dump specs: engine and compose service, resolved to a container at run time.
 // Container names carry the slot, so never store them. Credentials come from the container's env.
 
-import type { DatabaseKind } from "./durability";
+import { proposeDurability, type DatabaseKind } from "./durability";
 
 export type DumpSpec = {
   kind: DatabaseKind;
   /** Compose service name. Stable across slots, unlike the container name. */
   service: string;
 };
+
+/** Spec for a mount now served by a different service or engine. Null when current or the mount is no database. */
+export function refreshDumpSpec(
+  current: DumpSpec | null,
+  mount: { image: string; mountPath: string; volumeName: string; service: string },
+): DumpSpec | null {
+  if (!current || !mount.service) return null;
+  const kind = proposeDurability({
+    image: mount.image,
+    mountPath: mount.mountPath,
+    volumeName: mount.volumeName,
+  })?.kind;
+  if (!kind) return null;
+  if (current.service === mount.service && current.kind === kind) return null;
+  return { kind, service: mount.service };
+}
 
 /** Container environment, as `KEY=value` lines from a container inspect. */
 export type ContainerEnv = string[];
