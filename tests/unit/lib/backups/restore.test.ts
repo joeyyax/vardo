@@ -632,3 +632,29 @@ describe("tar restore quiesces, snapshots and rolls back", () => {
     expect(stopContainerMock).not.toHaveBeenCalled();
   });
 });
+
+describe("restoreBackup — free disk space", () => {
+  it("refuses before downloading when staging can't hold the archive and its decrypted copy", async () => {
+    backupsFindFirst.mockResolvedValue(backupRow({ sizeBytes: 2 ** 60, archiveKey: "wrapped" }));
+    volumesFindFirst.mockResolvedValue({ backupStrategy: "tar", backupMeta: null });
+
+    const result = await restoreBackup("bk-1");
+
+    expect(result.success).toBe(false);
+    expect(result.log).toMatch(
+      /Restore failed: Not enough disk space: the staging filesystem \(.+\) has .+ free and needs 2252\.8 PB \(the download and its decrypted copy, plus 10%\)/,
+    );
+    expect(result.log).not.toMatch(/Downloading backup/);
+    expect(restoreCommandRan()).toBe(false);
+  });
+
+  it("downloads and restores when there's room", async () => {
+    backupsFindFirst.mockResolvedValue(backupRow({ sizeBytes: ARCHIVE_BYTES.length }));
+    volumesFindFirst.mockResolvedValue({ backupStrategy: "tar", backupMeta: null });
+
+    const result = await restoreBackup("bk-1");
+
+    expect(result.success).toBe(true);
+    expect(result.log).toMatch(/Free space on the staging filesystem: .+, needs 564 B/);
+  });
+});
