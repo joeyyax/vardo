@@ -13,6 +13,8 @@ This is the procedure that moved it onto the product path. It was run against pr
 
 `docker-compose.yml` marks `postgres`, `redis`, `traefik` and `wireguard` with `x-vardo-shared: true`. Those four stay in compose project `vardo`, on the volumes and networks they already have, and a deploy leaves them running. When a shared service's definition changes, the deploy recreates `traefik` and `wireguard` and holds `postgres` and `redis`, logging the command to apply it and finishing with a warning. Only `frontend` rotates, into `vardo-production-blue` and `vardo-production-green`.
 
+Shared services in any app, and the commit-tag pattern for one that runs the app's own build, are covered in [shared-services.md](shared-services.md).
+
 That is what the manual procedure always did. The difference is that the engine now understands it.
 
 | | Before | After |

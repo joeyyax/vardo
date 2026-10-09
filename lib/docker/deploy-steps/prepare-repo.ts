@@ -490,6 +490,7 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
       const gitSha = sha.trim();
       const gitMessage = msg.trim();
       log(`[deploy] Commit: ${gitSha.slice(0, 7)} ${gitMessage}`);
+      ctx.gitSha = gitSha;
       await db
         .update(deployments)
         .set({ gitSha, gitMessage })
