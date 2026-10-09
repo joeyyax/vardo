@@ -17,6 +17,14 @@ import {
   groupByCertificate,
   type CertVerdict,
 } from "./cert-expiry";
+import { readFile } from "fs/promises";
+import {
+  WATCHDOG_EVENTS_FILE,
+  WATCHDOG_CURSOR_KEY,
+  FIRST_READ_LOOKBACK_S,
+  newWatchdogEvents,
+  describeWatchdogEvent,
+} from "./watchdog-events";
 
 const log = logger.child("system-alerts");
 
@@ -295,6 +303,45 @@ async function checkCertAlerts(): Promise<void> {
   }
 }
 
+// Watchdog: surface restarts scripts/watchdog.sh made while the console couldn't.
+
+export async function checkWatchdogEvents(): Promise<void> {
+  let text: string;
+  try {
+    text = await readFile(WATCHDOG_EVENTS_FILE, "utf-8");
+  } catch {
+    return;
+  }
+  try {
+    const row = await db.query.systemSettings.findFirst({
+      where: (t, { eq }) => eq(t.key, WATCHDOG_CURSOR_KEY),
+    });
+    const since = row ? Number(row.value) || 0 : Math.floor(Date.now() / 1000) - FIRST_READ_LOOKBACK_S;
+    const events = newWatchdogEvents(text, since);
+    if (events.length === 0) return;
+
+    const cursor = String(events[events.length - 1].ts);
+    await db
+      .insert(systemSettings)
+      .values({ key: WATCHDOG_CURSOR_KEY, value: cursor })
+      .onConflictDoUpdate({ target: systemSettings.key, set: { value: cursor, updatedAt: new Date() } });
+
+    for (const event of events) {
+      const { title, message } = describeWatchdogEvent(event);
+      log.warn(title);
+      await emitAll({
+        type: "system.service-down",
+        title,
+        message,
+        service: event.container,
+        description: `watchdog ${event.action}`,
+      });
+    }
+  } catch (err) {
+    log.error("Watchdog event check error:", err);
+  }
+}
+
 // Update available: compare the build commit to main on GitHub.
 
 export async function checkUpdateAlert(): Promise<void> {
@@ -328,7 +375,7 @@ export async function tickSystemAlerts(): Promise<void> {
     log.error("Health fetch error:", err);
   }
 
-  const checks: Promise<void>[] = [checkHostRestart(), checkCertAlerts(), checkUpdateAlert()];
+  const checks: Promise<void>[] = [checkHostRestart(), checkCertAlerts(), checkUpdateAlert(), checkWatchdogEvents()];
 
   if (health) {
     checks.push(checkServiceAlerts(health), checkDiskAlerts(health));
