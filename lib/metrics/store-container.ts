@@ -33,7 +33,7 @@ async function storeContainerSeries(
   const ts = timestamp.toString();
   await Promise.all(
     entries.map(async ([, value], i) => {
-      await tsRedis.call("TS.ADD", keys[i], ts, value.toString());
+      await tsRedis.call("TS.ADD", keys[i], ts, value.toString(), "ON_DUPLICATE", "LAST");
       await touchRetention(keys[i]);
     })
   );
@@ -84,7 +84,7 @@ export async function storeDiskWrite(
   if (organizationId) labels.organization = organizationId;
   if (composeService) labels.service = composeService;
   await ensureTimeSeries(key, labels);
-  await tsRedis.call("TS.ADD", key, timestamp.toString(), writeBytes.toString());
+  await tsRedis.call("TS.ADD", key, timestamp.toString(), writeBytes.toString(), "ON_DUPLICATE", "LAST");
   await touchRetention(key);
 }
 

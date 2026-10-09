@@ -24,10 +24,10 @@ export async function storeDiskUsage(
 
   const ts = timestamp.toString();
   await Promise.all([
-    tsRedis.call("TS.ADD", keys.total, ts, values.total.toString()),
-    tsRedis.call("TS.ADD", keys.images, ts, values.images.toString()),
-    tsRedis.call("TS.ADD", keys.volumes, ts, values.volumes.toString()),
-    tsRedis.call("TS.ADD", keys.buildCache, ts, values.buildCache.toString()),
+    tsRedis.call("TS.ADD", keys.total, ts, values.total.toString(), "ON_DUPLICATE", "LAST"),
+    tsRedis.call("TS.ADD", keys.images, ts, values.images.toString(), "ON_DUPLICATE", "LAST"),
+    tsRedis.call("TS.ADD", keys.volumes, ts, values.volumes.toString(), "ON_DUPLICATE", "LAST"),
+    tsRedis.call("TS.ADD", keys.buildCache, ts, values.buildCache.toString(), "ON_DUPLICATE", "LAST"),
   ]);
 }
 
@@ -83,7 +83,7 @@ export async function storeProjectDisk(
 ) {
   const key = tsKey(projectName, "disk");
   await ensureTimeSeries(key, { project: projectName, metric: "disk" });
-  await tsRedis.call("TS.ADD", key, timestamp.toString(), sizeBytes.toString());
+  await tsRedis.call("TS.ADD", key, timestamp.toString(), sizeBytes.toString(), "ON_DUPLICATE", "LAST");
 }
 
 /** Latest disk usage for one project from Redis. */

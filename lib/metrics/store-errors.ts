@@ -19,7 +19,7 @@ export async function storeLogCounts(
       if (organizationId) labels.organization = organizationId;
       const k = key(appId, metric);
       await ensureTimeSeries(k, labels);
-      await tsRedis.call("TS.ADD", k, ts, String(counts[metric]));
+      await tsRedis.call("TS.ADD", k, ts, String(counts[metric]), "ON_DUPLICATE", "LAST");
       await touchRetention(k);
     }),
   );

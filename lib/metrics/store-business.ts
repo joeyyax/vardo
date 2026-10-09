@@ -20,7 +20,7 @@ export async function storeBusinessMetric(
 ) {
   const key = `metrics:business:${metric}`;
   await ensureTimeSeries(key, { scope: "business", metric });
-  await tsRedis.call("TS.ADD", key, timestamp.toString(), value.toString());
+  await tsRedis.call("TS.ADD", key, timestamp.toString(), value.toString(), "ON_DUPLICATE", "LAST");
 }
 
 /** Queries historical business metrics. */
@@ -65,7 +65,7 @@ export async function storeOrgBusinessMetric(
 ) {
   const key = `metrics:business:${orgId}:${metric}`;
   await ensureTimeSeries(key, { scope: "business", organization: orgId, metric });
-  await tsRedis.call("TS.ADD", key, timestamp.toString(), value.toString());
+  await tsRedis.call("TS.ADD", key, timestamp.toString(), value.toString(), "ON_DUPLICATE", "LAST");
 }
 
 /** Queries historical per-org business metrics. */
