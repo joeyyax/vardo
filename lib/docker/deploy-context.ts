@@ -123,6 +123,9 @@ export type DeployContext = {
   /** Per-service overrides from decomposed child apps, keyed by service name. (#745) */
   serviceConfig: Record<string, ServiceConfigOverride>;
 
+  /** The project network every service joins. Null or unset keeps the app off it. */
+  projectNetwork?: string | null;
+
   /** Whether the image was built locally (Nixpacks/Railpack/Dockerfile). */
   builtLocally: boolean;
 

@@ -11,6 +11,7 @@ import type {
 } from "./compose-types";
 import { TRAEFIK_LABEL_PREFIX, resolveBackendProtocol } from "./compose-generate";
 import { parseCompose } from "./compose-parse";
+import { isProjectNetwork } from "./project-network";
 import { selectRoutedService } from "./routed-service";
 import { sanitizeCompose, isAnonymousVolume } from "./compose-validate";
 import { generateComposeForImage } from "./compose-generate";
@@ -293,7 +294,7 @@ export function stripVardoInjections(
           ),
         )
       : undefined;
-    const strippedNetworks = svc.networks?.filter((n) => n !== networkName);
+    const strippedNetworks = svc.networks?.filter((n) => n !== networkName && !isProjectNetwork(n));
     updatedServices[name] = {
       ...svc,
       ...(strippedLabels && Object.keys(strippedLabels).length > 0
@@ -309,7 +310,7 @@ export function stripVardoInjections(
     compose.networks &&
     Object.fromEntries(
       Object.entries(compose.networks as Record<string, unknown>).filter(
-        ([k]) => k !== networkName,
+        ([k]) => k !== networkName && !isProjectNetwork(k),
       ),
     );
 
@@ -363,6 +364,8 @@ export function excludeServices(
 export function buildVardoOverlay(opts: {
   fullCompose: ComposeFile;
   networkName: string;
+  /** The project network, carried over with the default network it was attached alongside. */
+  projectNetwork?: string | null;
   cpuLimit?: number | null;
   memoryLimit?: number | null;
   gpuEnabled?: boolean;
@@ -414,8 +417,9 @@ export function buildVardoOverlay(opts: {
       : undefined;
 
     // The overlay restates `default` so merging it over the bare file keeps the service there.
-    const vardoNetworks = svc.networks?.includes(networkName)
-      ? svc.networks.filter((n) => n === DEFAULT_NETWORK || n === networkName)
+    const owned = [networkName, opts.projectNetwork].filter((n): n is string => !!n && !!svc.networks?.includes(n));
+    const vardoNetworks = owned.length > 0
+      ? svc.networks!.filter((n) => n === DEFAULT_NETWORK || owned.includes(n))
       : undefined;
 
     const overlayService: ComposeService = { name };
@@ -536,8 +540,8 @@ export function buildVardoOverlay(opts: {
     overlayServices[name] = overlayService;
   }
 
-  const hasVardoNetwork = Object.values(fullCompose.services).some((svc) =>
-    svc.networks?.includes(networkName),
+  const usedExternal = [networkName, opts.projectNetwork].filter(
+    (n): n is string => !!n && Object.values(fullCompose.services).some((svc) => svc.networks?.includes(n)),
   );
 
   // External declarations override the user's bare volume declarations.
@@ -554,7 +558,9 @@ export function buildVardoOverlay(opts: {
 
   return {
     services: overlayServices,
-    ...(hasVardoNetwork ? { networks: { [networkName]: { external: true } } } : {}),
+    ...(usedExternal.length > 0
+      ? { networks: Object.fromEntries(usedExternal.map((n) => [n, { external: true }])) }
+      : {}),
     ...(Object.keys(overlayVolumes).length > 0 ? { volumes: overlayVolumes } : {}),
   };
 }

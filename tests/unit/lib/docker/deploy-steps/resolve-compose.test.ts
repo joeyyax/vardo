@@ -522,3 +522,34 @@ describe("resolveCompose — restart policy", () => {
     expect(ctx.bareCompose.services.postgres.restart).toBe("no");
   });
 });
+
+describe("resolveCompose — project network", () => {
+  const NET = "vardo-p-project-id-production";
+  const stack = (): ComposeFile => ({
+    services: {
+      web: { name: "web", image: "app:latest" },
+      postgres: { name: "postgres", image: "postgres:17", "x-vardo-shared": true },
+    },
+  });
+
+  it("attaches every service and logs it, keeping vardo-network to the routed one", async () => {
+    const ctx = makeCtx(stack(), makeApp({ containerPort: 3000 }));
+    ctx.projectNetwork = NET;
+    await resolveCompose(ctx);
+
+    expect(ctx.compose.services.web.networks).toEqual(["default", NET, "vardo-network"]);
+    expect(ctx.compose.services.postgres.networks).toEqual(["default", NET]);
+    expect(ctx.compose.networks?.[NET]).toEqual({ external: true });
+    expect((ctx as unknown as { logLines: string[] }).logLines).toContain(
+      `[deploy] project network ${NET}: attached web, postgres`,
+    );
+  });
+
+  it("leaves networks as before without one", async () => {
+    const ctx = makeCtx(stack(), makeApp({ containerPort: 3000 }));
+    await resolveCompose(ctx);
+
+    expect(ctx.compose.services.web.networks).toEqual(["default", "vardo-network"]);
+    expect(ctx.compose.services.postgres.networks).toBeUndefined();
+  });
+});

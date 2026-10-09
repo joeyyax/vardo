@@ -7,6 +7,7 @@ import { APP_UID, DOCKER_CLEANUP_TIMEOUT } from "./constants";
 import { dockerEnv } from "./docker-env";
 import { execFileAsync } from "@/lib/utils/exec";
 import { PROJECTS_DIR } from "@/lib/paths";
+import { PROJECT_NETWORK_LABEL } from "./project-network";
 
 const COMPOSE_PROJECT_LABEL = "com.docker.compose.project";
 
@@ -66,6 +67,24 @@ export async function removeAppContainersAndNetworks(
   }
 
   return { containers, networks, log };
+}
+
+/** Remove a project's networks, one per environment. Docker refuses any still in use. */
+export async function removeProjectNetworks(projectId: string): Promise<string[]> {
+  const log: string[] = [];
+  const found = await dockerRequest<{ Id: string; Name: string }[]>(
+    "GET",
+    `/networks?filters=${labelQuery(`${PROJECT_NETWORK_LABEL}=${projectId}`)}`,
+  ).catch(() => [] as { Id: string; Name: string }[]);
+  for (const n of found) {
+    try {
+      await dockerRequest("DELETE", `/networks/${encodeURIComponent(n.Id)}`);
+      log.push(`Removed network ${n.Name}`);
+    } catch (err) {
+      log.push(`Kept network ${n.Name} (removal failed: ${errText(err)})`);
+    }
+  }
+  return log;
 }
 
 /** Whether an error means the process lacks permission, not that the path is missing. */

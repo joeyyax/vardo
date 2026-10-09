@@ -9,6 +9,7 @@ import { appBaseDir, appEnvDir } from "@/lib/paths";
 import { slotComposeFiles } from "./compose";
 import { assertComposeWithinApp } from "./compose-policy";
 import { volumePrefix } from "./volume-prefix";
+import { projectNetworkName } from "./project-network";
 
 /** Throws DeployBlockedError when an untrusted app's slot reaches outside the app. Leaves the slot's files alone. */
 export async function assertSlotWithinApp(opts: {
@@ -59,6 +60,7 @@ export async function assertSlotWithinApp(opts: {
     // Local environments always allow bind mounts; the socket stays on the project flag.
     projectAllowBindMounts: (project?.allowBindMounts ?? false) || env?.type === "local",
     projectAllowDockerSocket: project?.allowDockerSocket ?? false,
+    projectNetwork: app?.projectId ? projectNetworkName(app.projectId, opts.envName) : null,
     reuse: opts.reuse,
   });
 }

@@ -32,6 +32,7 @@ import { appScope } from "@/lib/infra/instance-apps";
 import { handWrittenRoute, isolateCompose } from "../environment-isolation";
 import { nonRotatingServices } from "../slot-partition";
 import { assertLabelHostsOwned } from "../label-hosts";
+import { injectProjectNetwork } from "../project-network";
 
 const NETWORK_NAME = VARDO_NETWORK;
 
@@ -237,6 +238,13 @@ export async function resolveCompose(ctx: DeployContext): Promise<DeployContext>
     log(`[deploy] Skipping Traefik labels — all services use custom network modes: ${servicesWithCustomNetwork.join(", ")}`);
   }
   await assertLabelHostsOwned(ctx, compose);
+
+  // Before vardo-network, so a service's implicit default network is kept explicit.
+  if (ctx.projectNetwork) {
+    compose = injectProjectNetwork(compose, ctx.projectNetwork);
+    const attached = Object.keys(compose.services).filter((k) => compose.services[k].networks?.includes(ctx.projectNetwork!));
+    log(`[deploy] project network ${ctx.projectNetwork}: attached ${attached.join(", ")}`);
+  }
 
   // Only Traefik-routed services join vardo-network, never all of them.
   // Shared aliases like "postgres" would collide across sibling apps.

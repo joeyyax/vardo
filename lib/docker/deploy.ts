@@ -33,6 +33,7 @@ import {
   ENDPOINT_CHECK_TIMEOUT,
 } from "./constants";
 import { prepareRepo, resolveCompose, build, swap, postDeploy } from "./deploy-steps";
+import { prepareProjectNetwork } from "./project-network-sync";
 import { resolveDeployEnv, resolveDefaultEnv } from "./resolve-env";
 import {
   loadRollbackTarget,
@@ -486,6 +487,7 @@ export async function runDeployment(
 
     // Each step reads and mutates ctx.
     ctx = await prepareRepo(ctx);
+    ctx.projectNetwork = await prepareProjectNetwork(ctx);
     ctx = await resolveCompose(ctx);
     ctx = await build(ctx);
     ctx = await swap(ctx);
