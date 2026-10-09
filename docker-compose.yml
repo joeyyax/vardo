@@ -206,6 +206,12 @@ services:
     # Every build runs here when this profile is on, so this bounds them all.
     # install.sh sets it to a quarter of RAM.
     mem_limit: ${VARDO_BUILDKIT_MEM:-4g}
+    healthcheck:
+      test: ["CMD", "buildctl", "debug", "workers"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
     volumes:
       - buildkit_data:/var/lib/buildkit
     configs:
@@ -330,6 +336,29 @@ services:
         ipv4_address: 10.88.0.2
       vardo-network:
     mem_limit: 64m
+
+  # Restarts the console, Traefik, Postgres and Redis when Docker reports them unhealthy (docs/watchdog.md).
+  watchdog:
+    container_name: vardo-watchdog
+    x-vardo-shared: true
+    image: docker:28.5.1-cli
+    profiles:
+      - production
+    restart: unless-stopped
+    mem_limit: 64m
+    entrypoint: ["sh", "/usr/local/bin/vardo-watchdog"]
+    environment:
+      VARDO_WATCHDOG: ${VARDO_WATCHDOG:-true}
+      # Changes every release, so a deploy recreates this on the new script.
+      VARDO_WATCHDOG_REV: ${VARDO_GIT_SHORT_SHA:-local}
+    volumes:
+      # Inspect, exec into Redis for the deploy lease, and restart.
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./scripts/watchdog.sh:/usr/local/bin/vardo-watchdog:ro
+      - ${VARDO_HOME_DIR:-${VARDO_DIR:-/opt/vardo}}/apps/vardo:/vardo-app:ro
+      # Restart history and events.log, which the console surfaces as alerts.
+      - ${VARDO_HOME_DIR:-${VARDO_DIR:-/opt/vardo}}/watchdog:/state
+    network_mode: none
 
 # Caps BuildKit's cache. VARDO_BUILDKIT_CACHE_MAX is bytes or a size with a unit
 # ("20GB" is binary, 20 GiB); install.sh sets it from the disk size.

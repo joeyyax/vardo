@@ -2255,6 +2255,10 @@ do_update() {
   ln -sfn "$new_slot" "$VARDO_DIR/apps/vardo/env/current"
   log "Active slot: $new_slot"
 
+  # Starts the watchdog on installs from before it existed, and moves it to this slot's script.
+  docker compose -f "$new_compose" up -d --no-deps watchdog > /dev/null 2>&1 \
+    || warn "Couldn't start the watchdog. Check: docker compose -f $new_compose up -d watchdog"
+
   # Copy install.sh to root so the wrapper keeps working
   cp "$new_slot_dir/install.sh" "$VARDO_DIR/install.sh"
 
