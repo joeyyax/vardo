@@ -195,6 +195,13 @@ export async function register() {
         })
         .catch((err) => log.error("Failed to start deploy sweeper:", err)),
 
+      import("./lib/ssl/cert-export")
+        .then(({ startCertExportScheduler }) => {
+          startCertExportScheduler();
+          log.info("Certificate export scheduler started");
+        })
+        .catch((err) => log.error("Failed to start certificate export scheduler:", err)),
+
       import("./lib/mesh/scheduler")
         .then(({ startMeshHeartbeatScheduler }) => {
           startMeshHeartbeatScheduler();

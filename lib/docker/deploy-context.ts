@@ -39,6 +39,7 @@ export type DeployApp = {
   memoryLimit: number | null;
   priority: "critical" | "standard" | "disposable" | null;
   gpuEnabled: boolean | null;
+  certServices?: string[] | null;
   healthCheckTimeout: number | null;
   autoRollback: boolean | null;
   rollbackGracePeriod: number | null;

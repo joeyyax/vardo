@@ -1,0 +1,1 @@
+ALTER TABLE "app" ADD COLUMN "cert_services" jsonb;

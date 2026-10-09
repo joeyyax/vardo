@@ -9,6 +9,7 @@ const ADMIN_ONLY: Capability[] = [
   "mesh.peers.view",
   "project.delete",
   "app.gpu",
+  "app.certs",
   "app.debug",
   "app.delete",
   "app.volumes.sync",

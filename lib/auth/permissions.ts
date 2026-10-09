@@ -46,6 +46,8 @@ export const CAPABILITIES = {
   "app.import": MEMBERS,
   "app.config": MEMBERS,
   "app.gpu": ADMINS,
+  // Hands the app's own TLS private keys to its containers.
+  "app.certs": ADMINS,
   "app.domains": MEMBERS,
   "app.deploy": MEMBERS,
   "app.terminal": MEMBERS,

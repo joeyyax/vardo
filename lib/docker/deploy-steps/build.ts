@@ -39,6 +39,7 @@ import { dockerEnv } from "@/lib/docker/docker-env";
 import { assertComposeWithinApp } from "../compose-policy";
 import { volumePrefix } from "../volume-prefix";
 import { appRootDir } from "../compose-root";
+import { CERTS_VOLUME_KEY, syncAppCerts } from "@/lib/ssl/cert-export";
 
 const NETWORK_NAME = VARDO_NETWORK;
 
@@ -334,6 +335,8 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
 
   await anchorSharedServicePaths(ctx);
 
+  const certMount = await prepareCertMount(ctx, stableVolumePrefix);
+
   const overlayCompose = buildVardoOverlay({
     fullCompose: compose,
     networkName: NETWORK_NAME,
@@ -347,6 +350,7 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
     serviceConfig: ctx.serviceConfig,
     serviceEnv: resolvedServiceEnv,
     orgTrusted: ctx.orgTrusted,
+    certMount,
   });
 
   await writeFile(bareComposePath, composeToYaml(ctx.bareCompose), "utf-8");
@@ -363,6 +367,28 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
   }
 
   return ctx;
+}
+
+/** The cert volume for opted-in services, filled before they start. Undefined when the app has it off. */
+async function prepareCertMount(
+  ctx: DeployContext,
+  prefix: string,
+): Promise<{ services: string[]; volume: string } | undefined> {
+  const wanted = ctx.app.certServices ?? [];
+  if (wanted.length === 0 || ctx.envIsolated) return undefined;
+  const services = wanted.filter((s) => s in ctx.compose.services);
+  const missing = wanted.filter((s) => !(s in ctx.compose.services));
+  if (missing.length > 0) ctx.log(`[certs] No service named ${missing.join(", ")} — skipped`);
+  if (services.length === 0) return undefined;
+
+  const volume = `${prefix}_${CERTS_VOLUME_KEY}`;
+  await execFileAsync("docker", ["volume", "create", volume], { env: dockerEnv(), timeout: VOLUME_CREATE_TIMEOUT });
+  try {
+    await syncAppCerts(ctx.app.id, ctx.log);
+  } catch (err) {
+    ctx.log(`[certs] Couldn't read Traefik's certificates yet: ${err instanceof Error ? err.message : err}`);
+  }
+  return { services, volume };
 }
 
 /** Repo entries the slot links or copies. Compose files and .env are Vardo's own. */

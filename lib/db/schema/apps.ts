@@ -104,6 +104,8 @@ export const apps = pgTable(
     memoryLimit: integer("memory_limit"), // Memory in MB (e.g. 256, 512, 1024)
     priority: appPriorityEnum("priority").default("standard"), // QoS tier. Null on a child inherits the parent's tier.
     gpuEnabled: boolean("gpu_enabled").notNull().default(false),
+    // Services that get this app's own TLS certificates read-only at /certs. Null is off.
+    certServices: jsonb("cert_services").$type<string[]>(),
     backupsEnabled: boolean("backups_enabled"), // null = inherit the org's, then the system's default
     diskWriteAlertThreshold: bigint("disk_write_alert_threshold", { mode: "number" }), // bytes/hour, null = default 1GB
     healthCheckTimeout: integer("health_check_timeout"), // Seconds; null = system default 60s

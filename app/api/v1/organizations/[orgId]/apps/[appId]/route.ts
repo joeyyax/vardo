@@ -46,6 +46,8 @@ const updateAppSchema = z.object({
   memoryLimit: z.number().int().min(64).max(65536).nullable().optional(),
   priority: z.enum(["critical", "standard", "disposable"]).nullable().optional(), // null = inherit parent (decomposed child)
   gpuEnabled: z.boolean().optional(),
+  // Services that get the app's own certificates at /certs. Null or empty turns it off.
+  certServices: z.array(z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/).max(63)).max(32).nullable().optional(),
   backendProtocol: z.enum(["http", "https"]).nullable().optional(),
   diskWriteAlertThreshold: z.number().int().min(0).nullable().optional(), // bytes/hour, null = default 1GB
   healthCheckTimeout: z.number().int().min(10).max(600).nullable().optional(),
@@ -118,6 +120,14 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
       );
     }
 
+    if (parsed.data.certServices !== undefined && !can(org.membership.role, "app.certs")) {
+      return NextResponse.json(
+        { error: "Only owners and admins can give an app its certificates" },
+        { status: 403 }
+      );
+    }
+    if (parsed.data.certServices?.length === 0) parsed.data.certServices = null;
+
     const existingApp = await db.query.apps.findFirst({
       where: and(eq(apps.id, appId), eq(apps.organizationId, orgId)),
       columns: { id: true, name: true, projectId: true, isSystemManaged: true, composeContent: true },
@@ -155,8 +165,9 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
 
     // An edited compose file only reaches containers on the next deploy.
     const composeChanged =
-      parsed.data.composeContent !== undefined &&
-      parsed.data.composeContent !== existingApp.composeContent;
+      (parsed.data.composeContent !== undefined &&
+        parsed.data.composeContent !== existingApp.composeContent) ||
+      parsed.data.certServices !== undefined;
 
     const [updated] = await db
       .update(apps)

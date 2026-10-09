@@ -414,6 +414,8 @@ export function buildVardoOverlay(opts: {
   hostCpus?: number;
   /** Untrusted organizations get no-new-privileges on every service. */
   orgTrusted?: boolean;
+  /** Mounts the app's certificate volume read-only at /certs in these services. */
+  certMount?: { services: string[]; volume: string };
 }): ComposeFile {
   const {
     fullCompose,
@@ -553,6 +555,10 @@ export function buildVardoOverlay(opts: {
       };
     }
 
+    if (opts.certMount?.services.includes(name)) {
+      overlayService.volumes = ["vardo-certs:/certs:ro"];
+    }
+
     const svcEnv = serviceEnv[name];
     if (svcEnv && Object.keys(svcEnv).length > 0) {
       overlayService.environment = { ...svcEnv };
@@ -571,6 +577,10 @@ export function buildVardoOverlay(opts: {
     if (volName in externalVolumes) {
       overlayVolumes[volName] = externalVolumes[volName];
     }
+  }
+
+  if (opts.certMount) {
+    overlayVolumes["vardo-certs"] = { external: true, name: opts.certMount.volume };
   }
 
   return {

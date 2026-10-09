@@ -47,6 +47,7 @@ import {
 import type { DeployContext, SlotStopOutcome } from "../deploy-context";
 import { isSelfApp } from "../self-env";
 import { proposeDurability, isSafeToApply } from "@/lib/backups/durability";
+import { CERTS_VOLUME_KEY } from "@/lib/ssl/cert-export";
 
 /** Serializes the host-global prune across deploys. */
 const PRUNE_LOCK_KEY = "deploy:prune:lock";
@@ -109,6 +110,8 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
         const isBind = mount.type === "bind";
         const isNamed = mount.type === "volume" && !isAnonymousVolume(mount.name);
         if (!isBind && !isNamed) continue;
+        // Vardo's cert volume is rebuilt from Traefik; it's no app data.
+        if (isNamed && mount.name?.endsWith(`_${CERTS_VOLUME_KEY}`)) continue;
 
         seen.add(mount.destination);
         detectedVolumes.push({
