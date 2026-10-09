@@ -18,7 +18,6 @@ import {
   restorePostgresArchive,
   rolesInSql,
   rolesInStatement,
-  schemaInHeader,
 } from "@/lib/backups/pg-cluster";
 import { drillPostgres } from "@/lib/backups/drill";
 import { scratchDatabaseFor } from "@/lib/backups/drill-plan";
@@ -126,28 +125,6 @@ describe("rolesInStatement", () => {
     }
     expect([...(await rolesInSql(lines()))]).toEqual(["real_owner"]);
   });
-
-  it("collects the schemas a dump writes from its headers", async () => {
-    async function* lines() {
-      yield "-- Name: s2; Type: SCHEMA; Schema: -; Owner: app";
-      yield "-- Name: ev; Type: TABLE; Schema: public; Owner: app";
-      yield "-- Name: ev ev_pkey; Type: CONSTRAINT; Schema: public; Owner: app";
-      yield "-- Name: plpgsql; Type: EXTENSION; Schema: -; Owner: -";
-      yield "-- Name: x; Type: FUNCTION; Schema: pg_catalog; Owner: app";
-    }
-    const schemas = new Set<string>();
-    await rolesInSql(lines(), schemas);
-    expect([...schemas].sort()).toEqual(["public", "s2"]);
-  });
-});
-
-describe("schemaInHeader", () => {
-  it("reads the schema column, or the name of a schema entry", () => {
-    expect(schemaInHeader("-- Data for Name: ev_2025; Type: TABLE DATA; Schema: public; Owner: app")).toBe("public");
-    expect(schemaInHeader("-- Name: my; schema; Type: SCHEMA; Schema: -; Owner: app")).toBe("my; schema");
-    expect(schemaInHeader("-- Name: t; Type: TABLE; Schema: pg_temp_3; Owner: app")).toBeNull();
-    expect(schemaInHeader("-- PostgreSQL database dump")).toBeNull();
-  });
 });
 
 function imagePresent(image: string): boolean {
@@ -164,9 +141,9 @@ const PREFIX = `vardo-test-pg906-${process.pid}-${Date.now().toString(36)}`;
 const containers: string[] = [];
 const background: ChildProcess[] = [];
 
-function startPostgres(suffix: string, image = IMAGE): string {
+function startPostgres(suffix: string, image = IMAGE, args: string[] = []): string {
   const name = `${PREFIX}-${suffix}`;
-  execFileSync("docker", ["run", "-d", "--rm", "--name", name, "--network", "none", ...ENV.flatMap((e) => ["-e", e]), image], {
+  execFileSync("docker", ["run", "-d", "--rm", "--name", name, "--network", "none", ...ENV.flatMap((e) => ["-e", e]), image, ...args], {
     stdio: "ignore",
   });
   containers.push(name);
@@ -431,12 +408,12 @@ describe.skipIf(!READY)("Postgres server archives against real postgres:17", () 
       CREATE TABLE s2.t1 PARTITION OF s2.t FOR VALUES IN (1);
       INSERT INTO public.ev VALUES (1, '2025-03-01'), (2, '2026-02-01');
       INSERT INTO s2.t VALUES (1);`;
-    const load = () =>
+    const load = (path = dumped) =>
       loadIntoDatabase({
         kind: "postgres",
         containerId: part,
         containerEnv: ENV,
-        staged: { path: dumped, format: "pg-custom" },
+        staged: { path, format: "pg-custom" },
         tmpDir: mkdtempSync(join(dir, "import-part-")),
         log: () => {},
       });
@@ -465,21 +442,73 @@ describe.skipIf(!READY)("Postgres server archives against real postgres:17", () 
     }, 120_000);
 
     it("reports Postgres's error and changes nothing when the load fails", async () => {
-      sql(
-        part,
-        "appdb",
-        `INSERT INTO public.ev VALUES (4, '2026-06-01');
-         CREATE SCHEMA keep;
-         CREATE VIEW keep.on_plain AS SELECT id FROM public.plain;`,
-      );
-      const err = await load().catch((e: Error) => e);
+      sql(part, "appdb", "INSERT INTO public.ev VALUES (4, '2026-06-01'); CREATE SCHEMA keep;");
+      const archive = execFileSync("docker", ["exec", part, "pg_dump", "-U", "app", "-Fc", "-Z", "0", "appdb"]);
+      const at = archive.indexOf("2025-03-01");
+      expect(at).toBeGreaterThan(0);
+      archive.write("2025-13-01", at);
+      const corrupt = join(dir, "partitioned-corrupt.custom.gz");
+      writeFileSync(corrupt, gzipSync(archive));
+      const err = await load(corrupt).catch((e: Error) => e);
 
       expect(err).toBeInstanceOf(Error);
-      expect((err as Error).message).toMatch(/restore exited \d+: [\s\S]*cannot drop table public.plain/);
+      expect((err as Error).message).toMatch(/Restoring database appdb failed: restore exited \d+: [\s\S]*date\/time field value out of range/);
+      expect((err as Error).message).toContain("The live databases were not changed");
       expect((err as Error).message).not.toContain("EPIPE");
       expect(sql(part, "appdb", "SELECT string_agg(id::text, ',' ORDER BY id) FROM public.ev;")).toBe("1,2,4");
-      expect(sql(part, "appdb", "SELECT to_regclass('keep.on_plain') IS NOT NULL;")).toBe("t");
+      expect(sql(part, "appdb", "SELECT count(*) FROM pg_namespace WHERE nspname = 'keep';")).toBe("1");
+      expect(databases(part).filter((d) => d.startsWith("vardo_"))).toEqual([]);
     }, 120_000);
+  });
+
+  describe("importing a custom-format dump over a database with many tables", () => {
+    let many: string;
+    let dumped: string;
+    const TABLES = 700;
+
+    beforeAll(async () => {
+      // Shrinks the lock table so a clean-and-recreate of 700 tables overflows it.
+      many = startPostgres("many", IMAGE, ["-c", "max_connections=20"]);
+      await waitReady(many);
+      sql(
+        many,
+        "appdb",
+        `DO $$ BEGIN FOR i IN 1..${TABLES} LOOP
+           EXECUTE format('CREATE TABLE public.t%s (id serial PRIMARY KEY, body text, created_at timestamptz DEFAULT now())', i);
+           EXECUTE format('CREATE INDEX ON public.t%s (created_at)', i);
+         END LOOP; END $$;
+         INSERT INTO public.t1 (body) VALUES ('dumped');
+         ALTER DATABASE appdb SET work_mem TO '8MB';`,
+      );
+      dumped = join(dir, "many.custom.gz");
+      const archive = execFileSync("docker", ["exec", many, "pg_dump", "-U", "app", "-Fc", "appdb"], { maxBuffer: 64 * 1024 * 1024 });
+      writeFileSync(dumped, gzipSync(archive));
+    }, 180_000);
+
+    it("replaces the database without exhausting the lock table and closes its connections", async () => {
+      sql(many, "appdb", "INSERT INTO public.t1 (body) VALUES ('after dump'); CREATE TABLE public.stray (id int);");
+      const client = spawn("docker", ["exec", many, "psql", "-U", "app", "-d", "appdb", "-c", "SELECT pg_sleep(120)"], {
+        stdio: "ignore",
+      });
+      background.push(client);
+      await new Promise((r) => setTimeout(r, 500));
+
+      const logs: string[] = [];
+      await loadIntoDatabase({
+        kind: "postgres",
+        containerId: many,
+        containerEnv: ENV,
+        staged: { path: dumped, format: "pg-custom" },
+        tmpDir: mkdtempSync(join(dir, "import-many-")),
+        log: (m) => logs.push(m),
+      });
+
+      expect(sql(many, "appdb", "SELECT count(*) FROM pg_tables WHERE schemaname = 'public';")).toBe(String(TABLES));
+      expect(sql(many, "appdb", "SELECT string_agg(body, ',') FROM public.t1;")).toBe("dumped");
+      expect(sql(many, "appdb", "SHOW work_mem;")).toBe("8MB");
+      expect(logs).toContain("Terminated 1 connection(s) to appdb");
+      expect(databases(many).filter((d) => d.startsWith("vardo_"))).toEqual([]);
+    }, 300_000);
   });
 
   it("fails loudly and changes nothing when a dump breaks part-way", async () => {

@@ -18,10 +18,10 @@ import { resolveDefaultEnv } from "@/lib/docker/resolve-env";
 import { dockerEnv } from "@/lib/docker/docker-env";
 import { execFileAsync } from "@/lib/utils/exec";
 import { buildTarBackupScript, buildTarRestoreScript } from "./archive";
-import { buildPgRestoreArgv, buildRestoreArgv, defaultDatabase } from "./dump-spec";
+import { buildRestoreArgv, defaultDatabase } from "./dump-spec";
 import type { DatabaseKind } from "./durability";
 import { resolveDbContainer } from "./resolve-db-container";
-import { countOtherSessions, createMissingDumpRoles } from "./pg-cluster";
+import { createMissingDumpRoles, replacePostgresDatabase } from "./pg-cluster";
 import {
   BACKUPS_DIR,
   resolveDockerVolume,
@@ -273,12 +273,11 @@ export async function loadIntoDatabase(opts: {
 
   log(`Loading ${staged.format === "pg-custom" ? "a pg_dump archive" : "a SQL dump"} into ${kind}${database ? ` database "${database}"` : ""}`);
   if (kind === "postgres" && (staged.format === "sql" || staged.format === "pg-custom")) {
-    const { schemas } = await createMissingDumpRoles({ containerId, containerEnv, archivePath: staged.path, format: staged.format, log });
-    if (staged.format === "pg-custom") {
-      restoreArgv = buildPgRestoreArgv(containerId, containerEnv, database, schemas);
-      const others = database ? await countOtherSessions(containerId, containerEnv, database).catch(() => 0) : 0;
-      if (others) log(`${others} other connection(s) to "${database}"; stop the app if the import waits on its locks`);
-    }
+    await createMissingDumpRoles({ containerId, containerEnv, archivePath: staged.path, format: staged.format, log });
+  }
+  if (kind === "postgres" && staged.format === "pg-custom") {
+    await replacePostgresDatabase({ containerId, containerEnv, archivePath: staged.path, database: database!, log });
+    return;
   }
   await restoreDumpWithSnapshot({
     backupId: `import-${nanoid(6)}`,

@@ -154,59 +154,6 @@ export function buildRestoreArgv(
   }
 }
 
-// pg_restore renders SQL into psql after `$3`, all in one transaction. $1 user, $2 database, $3 SQL run first.
-// A failed pg_restore never sends its COMMIT, so psql's transaction rolls back.
-const PG_ARCHIVE_RESTORE = [
-  'f=$(mktemp)',
-  '{ printf "%s\\n" "$3"; pg_restore --clean --if-exists --single-transaction -f - || echo failed > "$f"; } ' +
-    '| psql -X -q -v ON_ERROR_STOP=1 -U "$1" -d "$2" > /dev/null',
-  's=$?',
-  '[ -s "$f" ] && s=1',
-  'rm -f "$f"',
-  'exit $s',
-].join("\n");
-
-function sqlLiteral(value: string): string {
-  return `'${value.replace(/'/g, "''")}'`;
-}
-
-/**
- * SQL that opens the restore's transaction and drops inheritance and partition trees in `schemas`.
- * `--clean` drops a partition's constraints before its parent's, which Postgres rejects.
- */
-export function buildPgRestorePrelude(schemas: string[]): string {
-  // pg_restore's own BEGIN follows; this keeps its "already in a transaction" warning out of the log.
-  const lines = ["SET client_min_messages = error;", "BEGIN;", "SET LOCAL lock_timeout = '30s';"];
-  if (!schemas.length) return lines.join("\n");
-  lines.push(
-    "DO $vardo$ DECLARE t text; BEGIN",
-    "FOR t IN SELECT format('%I.%I', n.nspname, c.relname) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace",
-    `WHERE n.nspname = ANY (ARRAY[${schemas.map(sqlLiteral).join(", ")}]::text[]) AND c.relkind IN ('r', 'p')`,
-    "AND EXISTS (SELECT 1 FROM pg_inherits i WHERE i.inhparent = c.oid)",
-    "AND NOT EXISTS (SELECT 1 FROM pg_inherits i WHERE i.inhrelid = c.oid)",
-    "LOOP EXECUTE 'DROP TABLE IF EXISTS ' || t || ' CASCADE'; END LOOP; END $vardo$;",
-  );
-  return lines.join("\n");
-}
-
-/**
- * `docker exec` arguments that load a `pg_dump -Fc` archive from stdin over a populated database.
- * One transaction, as with psql. Owners and grants restore as dumped.
- */
-export function buildPgRestoreArgv(
-  containerId: string,
-  env: ContainerEnv,
-  database?: string,
-  /** Schemas the archive writes, from `createMissingDumpRoles`. */
-  schemas: string[] = [],
-): string[] {
-  const target = postgresTarget(env);
-  return [
-    "exec", "-i", containerId,
-    "sh", "-c", PG_ARCHIVE_RESTORE, "sh", target.user, database || target.database, buildPgRestorePrelude(schemas),
-  ];
-}
-
 /** Database the image created on first start, from its env. Null when it made none. */
 export function defaultDatabase(kind: DatabaseKind, env: ContainerEnv): string | null {
   if (kind === "postgres") return postgresTarget(env).database;

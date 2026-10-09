@@ -213,18 +213,8 @@ export function rolesInStatement(line: string, into: Set<string>): void {
   }
 }
 
-const SYSTEM_SCHEMA = /^(pg_catalog|information_schema|pg_toast|pg_temp.*|pg_toast_temp.*)$/;
-
-/** Schema a pg_dump `-- Name: …; Type: …; Schema: …; Owner: …` header names, or null. */
-export function schemaInHeader(line: string): string | null {
-  const m = line.match(/^-- (?:Data for )?Name: (.*); Type: (.+?); Schema: (.*?); Owner: /);
-  if (!m) return null;
-  const schema = m[2] === "SCHEMA" ? m[1] : m[3];
-  return schema === "-" || SYSTEM_SCHEMA.test(schema) ? null : schema;
-}
-
-/** Roles a plain SQL dump names, skipping `COPY` data. Collects the non-system schemas it writes into `schemas`. */
-export async function rolesInSql(lines: AsyncIterable<string>, schemas?: Set<string>): Promise<Set<string>> {
+/** Roles a plain SQL dump names, skipping `COPY` data. */
+export async function rolesInSql(lines: AsyncIterable<string>): Promise<Set<string>> {
   const roles = new Set<string>();
   let inCopy = false;
   for await (const line of lines) {
@@ -233,32 +223,23 @@ export async function rolesInSql(lines: AsyncIterable<string>, schemas?: Set<str
       continue;
     }
     if (/^COPY .* FROM stdin;$/.test(line)) inCopy = true;
-    else if (line.startsWith("-- ")) {
-      const schema = schemas && schemaInHeader(line);
-      if (schema) schemas.add(schema);
-    } else rolesInStatement(line, roles);
+    else rolesInStatement(line, roles);
   }
   return roles;
 }
 
 /** Roles a gzipped dump names. A custom-format dump is read through `pg_restore --schema-only`. */
-async function rolesInDump(
-  containerId: string,
-  user: string,
-  archivePath: string,
-  format: "sql" | "pg-custom",
-  schemas: Set<string>,
-) {
+async function rolesInDump(containerId: string, user: string, archivePath: string, format: "sql" | "pg-custom") {
   if (format === "sql") {
     const source = gunzipFile(archivePath);
     try {
-      return await rolesInSql(createInterface({ input: source, crlfDelay: Infinity }), schemas);
+      return await rolesInSql(createInterface({ input: source, crlfDelay: Infinity }));
     } finally {
       source.destroy();
     }
   }
   const sql = new PassThrough();
-  const scanned = rolesInSql(createInterface({ input: sql, crlfDelay: Infinity }), schemas);
+  const scanned = rolesInSql(createInterface({ input: sql, crlfDelay: Infinity }));
   const source = gunzipFile(archivePath);
   try {
     await streamInto(
@@ -274,23 +255,18 @@ async function rolesInDump(
   return scanned;
 }
 
-/**
- * Create, as `NOLOGIN`, every role a dump names that the server lacks, so owners and grants restore as dumped.
- * Returns the roles created and the non-system schemas the dump writes.
- */
+/** Create, as `NOLOGIN`, every role a dump names that the server lacks, so owners and grants restore as dumped. */
 export async function createMissingDumpRoles(opts: {
   containerId: string;
   containerEnv: ContainerEnv;
   archivePath: string;
   format: "sql" | "pg-custom";
   log: (msg: string) => void;
-}): Promise<{ created: string[]; schemas: string[] }> {
+}): Promise<string[]> {
   const { containerId, archivePath, format, log } = opts;
   const user = postgresUser(opts.containerEnv);
-  const schemaSet = new Set<string>();
-  const named = [...(await rolesInDump(containerId, user, archivePath, format, schemaSet))];
-  const schemas = [...schemaSet].sort();
-  if (!named.length) return { created: [], schemas };
+  const named = [...(await rolesInDump(containerId, user, archivePath, format))];
+  if (!named.length) return [];
   const out = await runPsql(
     containerId,
     user,
@@ -298,20 +274,10 @@ export async function createMissingDumpRoles(opts: {
   );
   const existing = new Set(out.split("\n").filter(Boolean));
   const missing = named.filter((n) => !existing.has(n)).sort();
-  if (!missing.length) return { created: [], schemas };
+  if (!missing.length) return [];
   await runPsql(containerId, user, missing.map((n) => `CREATE ROLE ${quoteIdent(n)} NOLOGIN;`).join("\n"));
   log(`Created role(s) the dump references but this server lacked, as NOLOGIN: ${missing.join(", ")}`);
-  return { created: missing, schemas };
-}
-
-/** Sessions other than this one connected to `database`. */
-export async function countOtherSessions(containerId: string, containerEnv: ContainerEnv, database: string): Promise<number> {
-  const out = await runPsql(
-    containerId,
-    postgresUser(containerEnv),
-    `SELECT count(*) FROM pg_stat_activity WHERE datname = ${quoteLiteral(database)} AND pid <> pg_backend_pid();`,
-  );
-  return Number(out.trim()) || 0;
+  return missing;
 }
 
 /** Run SQL through psql in the container and return its unaligned output. */
@@ -357,7 +323,7 @@ async function streamInto(
   child.stdin.end();
 
   const code = await exited;
-  if (code !== 0) throw new Error(`${label} exited ${code}: ${stderr.trim().slice(-500)}`);
+  if (code !== 0) throw new Error(`${label} exited ${code}: ${stderr.trim().slice(-1500)}`);
 }
 
 function drained(stream: NodeJS.WritableStream & { destroyed?: boolean }): Promise<void> {
@@ -583,7 +549,7 @@ async function swapIntoPlace(containerId: string, user: string, staged: Staged[]
   let lastError: unknown = null;
   for (let attempt = 1; attempt <= 5; attempt++) {
     try {
-      await runPsql(
+      const terminated = await runPsql(
         containerId,
         user,
         [
@@ -595,6 +561,7 @@ async function swapIntoPlace(containerId: string, user: string, staged: Staged[]
           "COMMIT;",
         ].join("\n"),
       );
+      if (live.length) log(`Terminated ${Number(terminated.trim()) || 0} connection(s) to ${live.join(", ")}`);
       lastError = null;
       break;
     } catch (err) {
@@ -670,7 +637,7 @@ async function restoreCluster(
           await streamInto(
             [
               "exec", "-i", containerId,
-              "pg_restore", "-U", user, "-d", conninfo(scratch), "--single-transaction", "--exit-on-error",
+              "pg_restore", "-U", user, "-d", conninfo(scratch), "--exit-on-error",
             ],
             reader.frames(),
             "pg_restore",
@@ -710,7 +677,7 @@ async function restoreSingle(
     await streamInto(
       [
         "exec", "-i", containerId,
-        "psql", "-X", "-q", "-U", user, "-v", "ON_ERROR_STOP=1", "--single-transaction", "-d", conninfo(scratch),
+        "psql", "-X", "-q", "-U", user, "-v", "ON_ERROR_STOP=1", "-d", conninfo(scratch),
       ],
       source as AsyncIterable<Buffer>,
       "psql",
@@ -722,23 +689,17 @@ async function restoreSingle(
   }
 }
 
-/** Restore a Postgres backup so each database matches the dump. Nothing live changes until all have restored. */
-export async function restorePostgresArchive(opts: {
-  containerId: string;
-  containerEnv: ContainerEnv;
-  archivePath: string;
-  log: (msg: string) => void;
-}): Promise<{ format: PgArchiveFormat; databases: string[] }> {
-  const { containerId, containerEnv, archivePath, log } = opts;
-  const user = postgresUser(containerEnv);
-  const format = await readPgArchiveFormat(archivePath);
+/** Run `restore` into scratch databases, then swap them in. A failure drops the scratch copies. */
+async function restoreThenSwap(
+  containerId: string,
+  user: string,
+  log: (msg: string) => void,
+  restore: (token: string, staged: Staged[]) => Promise<void>,
+): Promise<Staged[]> {
   const token = nanoid(8).toLowerCase().replace(/[^a-z0-9]/g, "x");
   const staged: Staged[] = [];
-  log(format === "cluster" ? "Archive holds every database on the server" : "Archive holds one database (older format)");
-
   try {
-    if (format === "cluster") await restoreCluster(containerId, user, archivePath, token, staged, log);
-    else await restoreSingle(containerId, containerEnv, archivePath, token, staged, log);
+    await restore(token, staged);
   } catch (err) {
     await dropScratch(containerId, user, staged.map((s) => s.scratch), log);
     throw new Error(`${err instanceof Error ? err.message : err}. The live databases were not changed.`);
@@ -753,5 +714,57 @@ export async function restorePostgresArchive(opts: {
     }
     throw err;
   }
+  return staged;
+}
+
+/** Replace `database` with a gzipped `pg_dump -Fc` archive. Its settings and grants carry over from the live database. */
+export async function replacePostgresDatabase(opts: {
+  containerId: string;
+  containerEnv: ContainerEnv;
+  archivePath: string;
+  database: string;
+  log: (msg: string) => void;
+}): Promise<void> {
+  const { containerId, containerEnv, archivePath, database, log } = opts;
+  const user = postgresUser(containerEnv);
+  await restoreThenSwap(containerId, user, log, async (token, staged) => {
+    const info = await liveDatabase(containerId, user, database);
+    const properties = info ? await liveProperties(containerId, user, database) : null;
+    const scratch = `vardo_restore_${token}_0`;
+    log(`Restoring the archive into ${scratch}${info ? "" : `, then creating ${database}`}`);
+    await runPsql(containerId, user, buildCreateDatabase(scratch, info));
+    staged.push({ name: database, scratch, properties });
+    const source = gunzipFile(archivePath);
+    try {
+      await streamInto(
+        ["exec", "-i", containerId, "pg_restore", "-U", user, "-d", conninfo(scratch), "--exit-on-error"],
+        source as AsyncIterable<Buffer>,
+        "restore",
+      );
+    } catch (err) {
+      throw new Error(`Restoring database ${database} failed: ${err instanceof Error ? err.message : err}`);
+    } finally {
+      source.destroy();
+    }
+  });
+}
+
+/** Restore a Postgres backup so each database matches the dump. Nothing live changes until all have restored. */
+export async function restorePostgresArchive(opts: {
+  containerId: string;
+  containerEnv: ContainerEnv;
+  archivePath: string;
+  log: (msg: string) => void;
+}): Promise<{ format: PgArchiveFormat; databases: string[] }> {
+  const { containerId, containerEnv, archivePath, log } = opts;
+  const user = postgresUser(containerEnv);
+  const format = await readPgArchiveFormat(archivePath);
+  log(format === "cluster" ? "Archive holds every database on the server" : "Archive holds one database (older format)");
+
+  const staged = await restoreThenSwap(containerId, user, log, (token, staged) =>
+    format === "cluster"
+      ? restoreCluster(containerId, user, archivePath, token, staged, log)
+      : restoreSingle(containerId, containerEnv, archivePath, token, staged, log),
+  );
   return { format, databases: staged.map((s) => s.name) };
 }

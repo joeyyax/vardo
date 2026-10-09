@@ -5,7 +5,7 @@ import { join } from "path";
 import { Readable } from "stream";
 import { gzipSync, gunzipSync } from "zlib";
 import { detectFormat, ImportError, stageImport, writesMysqlSystemSchema } from "@/lib/backups/import";
-import { buildPgRestoreArgv, buildPgRestorePrelude, buildRestoreArgv, defaultDatabase } from "@/lib/backups/dump-spec";
+import { buildRestoreArgv, defaultDatabase } from "@/lib/backups/dump-spec";
 
 function tarHeader(): Buffer {
   const b = Buffer.alloc(512);
@@ -86,26 +86,6 @@ describe("writesMysqlSystemSchema", () => {
 describe("restore argv for imports", () => {
   const env = ["POSTGRES_USER=app", "POSTGRES_DB=appdb", "MARIADB_DATABASE=wp"];
 
-  it("loads a custom archive in one transaction, keeping its owners and grants", () => {
-    const argv = buildPgRestoreArgv("c", env, undefined, ["public"]);
-    const script = argv[5];
-    expect(argv.slice(0, 5)).toEqual(["exec", "-i", "c", "sh", "-c"]);
-    expect(argv.slice(6, 9)).toEqual(["sh", "app", "appdb"]);
-    expect(script).toContain("pg_restore --clean --if-exists --single-transaction -f -");
-    expect(script).toContain("ON_ERROR_STOP=1");
-    expect(script).not.toContain("--no-owner");
-    expect(script).not.toContain("--no-privileges");
-  });
-
-  it("passes the database and prelude as arguments, never inside the script", () => {
-    const argv = buildPgRestoreArgv("c", env, "other", ["we'ird"]);
-    expect(argv[7]).toBe("app");
-    expect(argv[8]).toBe("other");
-    expect(argv[9]).toContain("'we''ird'");
-    expect(argv[5]).not.toContain("other");
-    expect(argv[5]).not.toContain("ird");
-  });
-
   it("passes a MySQL database as an argument, never inside the script", () => {
     const argv = buildRestoreArgv("mariadb", "c", env, "wp");
     expect(argv.at(-2)).toBe("sh");
@@ -122,23 +102,5 @@ describe("restore argv for imports", () => {
     expect(defaultDatabase("mariadb", env)).toBe("wp");
     expect(defaultDatabase("postgres", env)).toBe("appdb");
     expect(defaultDatabase("mysql", [])).toBeNull();
-  });
-});
-
-describe("buildPgRestorePrelude", () => {
-  it("opens the transaction and drops inheritance roots in the dump's schemas", () => {
-    const sql = buildPgRestorePrelude(["public", "s2"]);
-    expect(sql.indexOf("BEGIN;")).toBeLessThan(sql.indexOf("DROP TABLE"));
-    expect(sql).toContain("ARRAY['public', 's2']");
-    expect(sql).toContain("i.inhparent = c.oid");
-    expect(sql).toContain("NOT EXISTS (SELECT 1 FROM pg_inherits i WHERE i.inhrelid = c.oid)");
-    expect(sql).toContain("CASCADE");
-    expect(sql).not.toContain("COMMIT");
-  });
-
-  it("only opens the transaction without schemas", () => {
-    const sql = buildPgRestorePrelude([]);
-    expect(sql).toContain("BEGIN;");
-    expect(sql).not.toContain("DROP");
   });
 });
