@@ -5,7 +5,6 @@ import { decryptOrFallback } from "@/lib/crypto/encrypt";
 import { parseEnvToMap } from "@/lib/env/parse-env";
 import { eq, and, inArray, isNotNull, ne } from "drizzle-orm";
 import { logger } from "@/lib/logger";
-import { redactSecrets } from "@/lib/redact";
 import { nanoid } from "nanoid";
 import { addEvent } from "@/lib/stream/producer";
 import { readlink } from "fs/promises";
@@ -415,6 +414,7 @@ export async function runDeployment(
       log(`[deploy] Warning: ${key} points at production's ${host}`);
     }
 
+    streamLogger.addSecrets(Object.values(envMap));
     const totalEnvVarCount = Object.keys(envMap).length;
     if (app.containerPort && !envMap.PORT) {
       envMap.PORT = String(app.containerPort);
@@ -470,6 +470,7 @@ export async function runDeployment(
       stableVolumePrefix: "",
 
       log,
+      addSecrets: streamLogger.addSecrets,
       stage,
       checkAbort,
       timer,
@@ -493,7 +494,7 @@ export async function runDeployment(
     return { deploymentId, success: true, log: logLines.join("\n"), durationMs, status: "success" };
   } catch (error) {
     // Redacted once: this message reaches events, activity, notifications and the API response.
-    const message = redactSecrets(error instanceof Error ? error.message : "Unknown error");
+    const message = streamLogger.redact(error instanceof Error ? error.message : "Unknown error");
     const durationMs = Date.now() - startTime;
     timer.endAll();
 

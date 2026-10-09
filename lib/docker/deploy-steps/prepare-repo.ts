@@ -22,6 +22,7 @@ import {
 } from "../compose";
 import { isFeatureEnabled } from "@/lib/config/features";
 import { assertSafeBranch, assertSafeGitUrl } from "../validate";
+import { assertGitHostAllowed, GIT_NO_REDIRECT } from "../git-host";
 import { appRootDir } from "../compose-root";
 import { DeployBlockedError } from "../errors";
 import { assertBuildKitReachable, isBuildKitReachable, DEFAULT_BUILDKIT_HOST } from "../buildkit";
@@ -366,6 +367,7 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
     try {
       assertSafeBranch(branch);
       assertSafeGitUrl(app.gitUrl);
+      await assertGitHostAllowed(app.gitUrl);
     } catch (err) {
       throw new DeployBlockedError(err instanceof Error ? err.message : String(err));
     }
@@ -425,7 +427,7 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
       const execOpts = { timeout: GIT_CLONE_TIMEOUT, env: { ...process.env, ...gitEnv } };
       try {
         await execFileAsync("git", ["-C", repoDir, "remote", "set-url", "--", "origin", cloneUrl], execOpts);
-        await execFileAsync("git", ["-C", repoDir, "fetch", "--", "origin", branch], execOpts);
+        await execFileAsync("git", ["-C", repoDir, ...GIT_NO_REDIRECT, "fetch", "--", "origin", branch], execOpts);
         await execFileAsync("git", ["-C", repoDir, "reset", "--hard", `origin/${branch}`, "--"], execOpts);
         log(`[deploy] Pulled latest from ${branch}`);
       } catch {
@@ -446,7 +448,7 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
           }
         }
         try {
-          await execFileAsync("git", ["clone", "--depth", "1", "--branch", branch, "--", cloneUrl, repoDir], execOpts);
+          await execFileAsync("git", [...GIT_NO_REDIRECT, "clone", "--depth", "1", "--branch", branch, "--", cloneUrl, repoDir], execOpts);
         } catch (cloneErr) {
           if (tokenAuth || sshKeyFile || !cloneUrl.startsWith("https://github.com/")) throw cloneErr;
           const detail = (cloneErr as { stderr?: string }).stderr?.trim() || (cloneErr instanceof Error ? cloneErr.message : String(cloneErr));
@@ -463,7 +465,7 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
           );
         }
         await checkoutRollbackSha(
-          (args) => execFileAsync("git", ["-C", repoDir, ...args], execOpts),
+          (args) => execFileAsync("git", ["-C", repoDir, ...GIT_NO_REDIRECT, ...args], execOpts),
           ctx.rollback.gitSha,
           log,
         );

@@ -30,6 +30,10 @@ vi.mock("@/lib/paths", () => ({
 }));
 
 vi.mock("@/lib/docker/app-dir-owner", () => ({ assertAppDirOwnership: vi.fn() }));
+vi.mock("@/lib/docker/git-host", async (orig) => ({
+  ...(await orig<typeof import("@/lib/docker/git-host")>()),
+  assertGitHostAllowed: (url: string) => (url.includes("internal.test") ? Promise.reject(new Error("Refusing to reach internal.test")) : Promise.resolve()),
+}));
 vi.mock("@/lib/config/features", () => ({ isFeatureEnabled: () => false }));
 vi.mock("@/lib/config/host-config", () => ({
   readHostConfig: vi.fn().mockResolvedValue(null),
@@ -199,6 +203,22 @@ describe("prepareRepo git arguments", () => {
       expect(gitCalls).toEqual([]);
     });
   }
+
+  it("refuses a git host the outbound policy blocks", async () => {
+    const { ctx } = makeCtx(gitApp("main", "https://internal.test/acme/web.git"));
+    await expect(prepareRepo(ctx)).rejects.toThrow(DeployBlockedError);
+    expect(gitCalls).toEqual([]);
+  });
+
+  it("stops git following redirects on clone and fetch", async () => {
+    const { ctx } = makeCtx(gitApp("main"));
+    await prepareRepo(ctx);
+    for (const verb of ["fetch", "clone"]) {
+      const call = gitCalls.find((a) => a.includes(verb));
+      if (call) expect(call.join(" ")).toContain("-c http.followRedirects=false");
+    }
+    expect(gitCalls.some((a) => a.includes("fetch") || a.includes("clone"))).toBe(true);
+  });
 
   it("ends options before the remote, branch and URL", async () => {
     const { ctx } = makeCtx(gitApp("feature/x"));

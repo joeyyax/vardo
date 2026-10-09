@@ -1,5 +1,8 @@
 import { logger } from "@/lib/logger";
 import { getSystemSettingRaw } from "@/lib/system-settings";
+import { assertOutboundUrlAllowed, BlockedUrlError } from "@/lib/security/ssrf";
+import { getOutboundPolicy } from "@/lib/security/outbound-policy";
+import { safeFetch } from "@/lib/security/safe-fetch";
 import type { ImageRef } from "./image-ref";
 
 // Read-only registry access for update checks. Go through `check.ts`: manifest requests count against the pull budget.
@@ -119,7 +122,9 @@ async function fetchToken(
 ): Promise<string | null> {
   const realm = challenge.realm;
   if (!realm) return null;
-  const url = new URL(realm);
+  if (!realm.toLowerCase().startsWith("https://")) throw new BlockedUrlError("Refusing a token realm that isn't https");
+  const policy = await getOutboundPolicy();
+  const url = await assertOutboundUrlAllowed(realm, policy);
   if (challenge.service) url.searchParams.set("service", challenge.service);
   if (challenge.scope) url.searchParams.set("scope", challenge.scope);
 
@@ -129,7 +134,12 @@ async function fetchToken(
     headers.authorization = `Basic ${basic}`;
   }
 
-  const response = await timedFetch(url.toString(), { headers });
+  const response = await safeFetch(url.toString(), {
+    headers: { "user-agent": USER_AGENT, ...headers },
+    policy,
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    cache: "no-store",
+  });
   if (!response.ok) return null;
   const body = (await response.json()) as { token?: string; access_token?: string };
   return body.token ?? body.access_token ?? null;

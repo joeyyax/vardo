@@ -5,12 +5,14 @@ import { notificationChannels } from "@/lib/db/schema";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
-import { presentChannel, sealChannelConfig } from "@/lib/notifications/channel-config";
+import { openChannelConfig, presentChannel, sealChannelConfig } from "@/lib/notifications/channel-config";
+import { isMaskedValue, restoreMaskedConfig } from "@/lib/notifications/mask-config";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
 type RouteParams = { params: Promise<{ orgId: string; channelId: string }> };
-const updateSchema = z.object({ name: z.string().min(1).max(100).optional(), config: z.union([z.object({ recipients: z.array(z.string().email()).min(1) }), z.object({ url: z.string().url(), secret: z.string().optional() }), z.object({ webhookUrl: z.string().url() })]).optional(), enabled: z.boolean().optional(), subscribedEvents: z.array(z.string()).optional() }).strict();
+const urlOrMask = z.string().url().or(z.string().refine(isMaskedValue));
+const updateSchema = z.object({ name: z.string().min(1).max(100).optional(), config: z.union([z.object({ recipients: z.array(z.string().email()).min(1) }), z.object({ url: urlOrMask, secret: z.string().optional() }), z.object({ webhookUrl: urlOrMask })]).optional(), enabled: z.boolean().optional(), subscribedEvents: z.array(z.string()).optional() }).strict();
 
 async function handleGet(_req: NextRequest, { params }: RouteParams) {
   try {
@@ -32,7 +34,12 @@ async function handlePatch(req: NextRequest, { params }: RouteParams) {
     if (!parsed.success) return apiError.validation(parsed.error);
     const updates: Record<string, unknown> = { updatedAt: new Date() };
     if (parsed.data.name !== undefined) updates.name = parsed.data.name;
-    if (parsed.data.config !== undefined) updates.config = sealChannelConfig(parsed.data.config, orgId);
+    if (parsed.data.config !== undefined) {
+      const stored = await db.query.notificationChannels.findFirst({ where: and(eq(notificationChannels.id, channelId), eq(notificationChannels.organizationId, orgId)) });
+      if (!stored) return NextResponse.json({ error: "Channel not found" }, { status: 404 });
+      const config = restoreMaskedConfig(parsed.data.config, openChannelConfig(stored));
+      updates.config = sealChannelConfig(config, orgId);
+    }
     if (parsed.data.enabled !== undefined) updates.enabled = parsed.data.enabled;
     if (parsed.data.subscribedEvents !== undefined) updates.subscribedEvents = parsed.data.subscribedEvents;
     const [channel] = await db.update(notificationChannels).set(updates).where(and(eq(notificationChannels.id, channelId), eq(notificationChannels.organizationId, orgId))).returning();
