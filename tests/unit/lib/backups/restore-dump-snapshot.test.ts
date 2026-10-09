@@ -1,7 +1,7 @@
 // A mysql or mongo restore cannot run in one transaction, so a failure part-way
 // leaves a half-replaced database. The engine dumps the live database first and
-// replays that dump when the restore fails. Postgres restores in a single
-// transaction instead and needs no copy.
+// replays that dump when the restore fails. Postgres restores into scratch
+// databases and swaps them in instead, so it needs no copy.
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
 import { EventEmitter } from "events";
@@ -18,11 +18,12 @@ const SOURCE = join(ROOT, "source.dump.gz");
 const BYTES = gzipSync(Buffer.from("-- backup dump\n".repeat(20)));
 const CHECKSUM = `sha256:${createHash("sha256").update(BYTES).digest("hex")}`;
 
-const { backupsFindFirst, volumesFindFirst, spawnMock, resolveDbContainerMock } = vi.hoisted(() => ({
+const { backupsFindFirst, volumesFindFirst, spawnMock, resolveDbContainerMock, restorePostgresMock } = vi.hoisted(() => ({
   backupsFindFirst: vi.fn(),
   volumesFindFirst: vi.fn(),
   spawnMock: vi.fn(),
   resolveDbContainerMock: vi.fn(),
+  restorePostgresMock: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({
@@ -43,6 +44,10 @@ vi.mock("@/lib/docker/resolve-env", () => ({
   resolveDefaultEnv: vi.fn().mockResolvedValue({ name: "production" }),
 }));
 vi.mock("@/lib/backups/resolve-db-container", () => ({ resolveDbContainer: resolveDbContainerMock }));
+vi.mock("@/lib/backups/pg-cluster", () => ({
+  createPgClusterProducer: vi.fn(),
+  restorePostgresArchive: restorePostgresMock,
+}));
 vi.mock("@/lib/logger", () => ({
   logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }) },
 }));
@@ -157,13 +162,14 @@ describe("dump restore snapshot", () => {
     rmSync(kept!);
   });
 
-  it("restores postgres in one transaction, with no separate dump", async () => {
+  it("restores postgres through scratch databases, with no separate dump", async () => {
     row("postgres");
+    restorePostgresMock.mockResolvedValue({ format: "cluster", databases: ["app"] });
 
     const result = await restoreBackup("bk-1");
 
     expect(result.success).toBe(true);
-    expect(calls.map((c) => c.kind)).toEqual(["restore"]);
-    expect(calls[0].argv).toContain("--single-transaction");
+    expect(calls).toEqual([]);
+    expect(restorePostgresMock).toHaveBeenCalledWith(expect.objectContaining({ containerId: "c-db" }));
   });
 });

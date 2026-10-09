@@ -32,6 +32,7 @@ import { runningKeyFingerprint } from "@/lib/crypto/encrypt";
 import { assertSafeBindSource } from "@/lib/docker/mount-paths";
 import { buildDumpArgv, buildRestoreArgv, describeDumpSpec, type DumpSpec } from "./dump-spec";
 import { resolveDbContainer } from "./resolve-db-container";
+import { createPgClusterProducer, restorePostgresArchive } from "./pg-cluster";
 import { quiesce, type RestoreDestination } from "./quiesce";
 import { getSystemBackupsDefault, resolveBackupSwitch } from "./switch";
 import { isSelfApp } from "@/lib/docker/self-env";
@@ -996,6 +997,7 @@ export async function runBackup(
                   `No running container for service "${spec.service}" — cannot dump ${vol.name}`,
                 );
               }
+              if (spec.kind === "postgres") return createPgClusterProducer(container.id, container.env, logFn);
               const argv = buildDumpArgv(spec.kind, container.id, container.env);
               logFn(`Running: docker ${argv.slice(0, 3).join(" ")} …`);
               return spawnProducer("docker", argv, "dump", { env: dockerEnv() });
@@ -1626,15 +1628,19 @@ export async function restoreBackup(
             `No running container for service "${spec.service}" — start the app before restoring`,
           );
         }
-        await restoreDumpWithSnapshot({
-          backupId,
-          kind: spec.kind,
-          containerId: container.id,
-          containerEnv: container.env,
-          archivePath,
-          tmpDir,
-          log,
-        });
+        if (spec.kind === "postgres") {
+          await restorePostgresArchive({ containerId: container.id, containerEnv: container.env, archivePath, log });
+        } else {
+          await restoreDumpWithSnapshot({
+            backupId,
+            kind: spec.kind,
+            containerId: container.id,
+            containerEnv: container.env,
+            archivePath,
+            tmpDir,
+            log,
+          });
+        }
       } else if (vol?.backupMeta?.restoreCmd) {
         // restoreCmd receives the dump via stdin.
         log(`Restoring via: ${vol.backupMeta.restoreCmd}`);
