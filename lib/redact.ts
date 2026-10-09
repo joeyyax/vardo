@@ -35,6 +35,11 @@ const PATTERNS: { pattern: RegExp; replacement: string }[] = [
       /\b([A-Za-z0-9_]*(?:PASSWORD|PASSWD|SECRET|TOKEN|APIKEY|API_KEY|ACCESS_KEY|PRIVATE_KEY|CREDENTIALS?|PWD)[A-Za-z0-9_]*)=\S+/gi,
     replacement: `$1=${REDACTED}`,
   },
+  // KEY as a whole name segment: MASTER_KEY, KEY_ID, not MONKEY.
+  {
+    pattern: /\b((?:[A-Za-z0-9_]*_)?KEYS?(?:_[A-Za-z0-9_]*)?)=\S+/gi,
+    replacement: `$1=${REDACTED}`,
+  },
   // CLI flags that carry a credential, joined or separated.
   {
     pattern:

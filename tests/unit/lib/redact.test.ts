@@ -43,6 +43,17 @@ describe("redactSecrets", () => {
     expect(out).toContain("PGPASSWORD=");
   });
 
+  it("removes values named by a KEY segment, not words that end in key", () => {
+    const out = redactSecrets("ENCRYPTION_MASTER_KEY=0123abcd KEY=plainvalue KEY_ID=keyid99 SSH_KEYS=abc MONKEY=banana");
+
+    expect(out).not.toContain("0123abcd");
+    expect(out).not.toContain("plainvalue");
+    expect(out).not.toContain("keyid99");
+    expect(out).not.toContain("=abc ");
+    expect(out).toContain("MONKEY=banana");
+    expect(out).toContain("ENCRYPTION_MASTER_KEY=[redacted]");
+  });
+
   it("removes credential-carrying CLI flags in both forms", () => {
     expect(redactSecrets("restic --password=hunter2000")).not.toContain("hunter2000");
     expect(redactSecrets("mc --secret-key hunter2000 alias")).not.toContain("hunter2000");
