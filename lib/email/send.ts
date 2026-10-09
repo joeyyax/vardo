@@ -2,6 +2,7 @@ import { render } from "react-email";
 import type { ReactElement } from "react";
 import { getEmailProviderConfig, type EmailProviderConfig } from "@/lib/system-settings";
 import { logger } from "@/lib/logger";
+import { sendViaPouch } from "@/lib/email/pouch";
 
 const log = logger.child("email");
 
@@ -13,7 +14,8 @@ type SendEmailOpts = {
   replyTo?: string;
 };
 
-type SendResult = { success: boolean; dev?: boolean; error?: string };
+/** `messageId` is the provider's id for the send, when it returns one. */
+export type SendResult = { success: boolean; dev?: boolean; error?: string; messageId?: string };
 
 /** What a client is told about a send. `configured` false means nothing left the server. */
 export type EmailDelivery = { sent: boolean; configured: boolean; error?: string };
@@ -51,6 +53,11 @@ export async function sendEmail({ to, subject, template, from, replyTo }: SendEm
       return sendViaResend(config, { to, subject, html, text, from: fromAddress, replyTo: replyToAddress });
     case "postmark":
       return sendViaPostmark(config, { to, subject, html, text, from: fromAddress, replyTo: replyToAddress });
+    case "pouch": {
+      const result = await sendViaPouch(config, { to, subject, html, text, from: fromAddress, replyTo: replyToAddress });
+      if (result.error) log.error(result.error);
+      return result;
+    }
     case "smtp":
       return sendViaSmtp(config, { to, subject, html, text, from: fromAddress, replyTo: replyToAddress });
     default:

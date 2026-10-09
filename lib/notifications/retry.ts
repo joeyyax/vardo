@@ -7,6 +7,7 @@ import { notificationChannels, notificationLogs } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { createChannel } from "./factory";
+import type { DeliveryReceipt } from "./port";
 import type { BusEvent } from "@/lib/bus";
 import { logger } from "@/lib/logger";
 
@@ -116,8 +117,8 @@ async function processRetries(len: number): Promise<void> {
     }
 
     try {
-      await createChannel(channel).send(entry.event);
-      await logAttempt(entry, "success", null);
+      const receipt = await createChannel(channel).send(entry.event);
+      await logAttempt(entry, "success", null, receipt);
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
 
@@ -141,7 +142,12 @@ async function processRetries(len: number): Promise<void> {
   }
 }
 
-async function logAttempt(entry: RetryEntry, status: string, error: string | null): Promise<void> {
+async function logAttempt(
+  entry: RetryEntry,
+  status: string,
+  error: string | null,
+  receipt?: DeliveryReceipt | void,
+): Promise<void> {
   try {
     await db.insert(notificationLogs).values({
       id: nanoid(),
@@ -154,6 +160,7 @@ async function logAttempt(entry: RetryEntry, status: string, error: string | nul
       status,
       error,
       attempt: entry.attempt,
+      providerMessageIds: receipt?.providerMessageIds ?? null,
     });
   } catch {
     // Don't crash the retry loop

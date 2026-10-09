@@ -12,6 +12,7 @@ import { eventStream } from "@/lib/stream/keys";
 import type { StreamEntry } from "@/lib/stream/types";
 import type { BusEvent, BusEventType } from "@/lib/bus/events";
 import { createChannel } from "./factory";
+import type { DeliveryReceipt } from "./port";
 import {
   fetchOrgMembers,
   fetchEventPrefs,
@@ -81,8 +82,8 @@ async function dispatchEvent(orgId: string, event: BusEvent): Promise<void> {
       if (!shouldSend) return;
 
       try {
-        await createChannel(row).send(event);
-        await logDelivery(orgId, row, event, "success");
+        const receipt = await createChannel(row).send(event);
+        await logDelivery(orgId, row, event, "success", undefined, receipt);
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : String(err);
         log.warn(`Channel "${row.name}" failed: ${errorMsg}`);
@@ -106,6 +107,7 @@ async function logDelivery(
   event: BusEvent,
   status: "success" | "failed",
   error?: string,
+  receipt?: DeliveryReceipt | void,
 ): Promise<void> {
   try {
     await db.insert(notificationLogs).values({
@@ -119,6 +121,7 @@ async function logDelivery(
       status,
       error,
       attempt: 1,
+      providerMessageIds: receipt?.providerMessageIds ?? null,
     });
   } catch {
     // Don't let logging failures break dispatch

@@ -21,10 +21,12 @@ import {
   ProviderGuide,
   StepList,
   GuideLink,
+  CopyableField,
 } from "@/components/setup/provider-guide";
 import {
   EMAIL_PROVIDER_GUIDES,
   SMTP_PRESETS,
+  getPouchWebhookUrl,
 } from "@/lib/setup/provider-guides";
 
 /** Convert sentinel-prefixed value to display-friendly mask. */
@@ -39,6 +41,96 @@ function isMaskedValue(value: string): boolean {
   return typeof value === "string" && value.startsWith(MASK_SENTINEL);
 }
 
+const API_KEY_LABELS: Record<string, { label: string; placeholder?: string }> = {
+  pouch: { label: "Pouch API key" },
+  resend: { label: "Resend API key", placeholder: "re_..." },
+  postmark: { label: "Postmark server token", placeholder: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" },
+  mailpace: { label: "Mailpace API token" },
+};
+
+/** A stored secret: shown masked with Edit, or as a password input while editing. */
+function SecretField({
+  id,
+  label,
+  placeholder,
+  value,
+  onChange,
+  editing,
+  onEditingChange,
+  onCancel,
+  required,
+  hint,
+}: {
+  id: string;
+  label: string;
+  placeholder?: string;
+  value: string;
+  onChange: (value: string) => void;
+  editing: boolean;
+  onEditingChange: (editing: boolean) => void;
+  onCancel: () => void;
+  required?: boolean;
+  hint?: string;
+}) {
+  return (
+    <div className="space-y-2">
+      <Label htmlFor={id}>{label}</Label>
+      {isMaskedValue(value) && !editing ? (
+        <div className="flex gap-2">
+          <Input id={id} value={toDisplay(value)} disabled className="font-mono" />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="shrink-0"
+            aria-label={`Edit ${label}`}
+            onClick={() => {
+              onEditingChange(true);
+              onChange("");
+            }}
+          >
+            Edit
+          </Button>
+        </div>
+      ) : editing ? (
+        <div className="flex gap-2">
+          <Input
+            id={id}
+            type="password"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder={placeholder}
+            required={required}
+            autoFocus
+          />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="shrink-0"
+            onClick={() => {
+              onEditingChange(false);
+              onCancel();
+            }}
+          >
+            Cancel
+          </Button>
+        </div>
+      ) : (
+        <Input
+          id={id}
+          type="password"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          required={required}
+        />
+      )}
+      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+    </div>
+  );
+}
+
 export function EmailSettings() {
   const [provider, setProvider] = useState("resend");
   const [smtpHost, setSmtpHost] = useState("");
@@ -49,13 +141,17 @@ export function EmailSettings() {
   const [fromEmail, setFromEmail] = useState("");
   const [fromName, setFromName] = useState(DEFAULT_APP_NAME);
   const [allowSmtp, setAllowSmtp] = useState(true);
+  const [baseUrl, setBaseUrl] = useState("");
+  const [webhookSecret, setWebhookSecret] = useState("");
 
   const [editingSmtpPass, setEditingSmtpPass] = useState(false);
   const [editingApiKey, setEditingApiKey] = useState(false);
+  const [editingWebhookSecret, setEditingWebhookSecret] = useState(false);
 
   // Store masked values so Cancel can restore them
   const maskedSmtpPass = useRef("");
   const maskedApiKey = useRef("");
+  const maskedWebhookSecret = useRef("");
 
   const onLoad = useCallback(
     (data: Record<string, unknown>) => {
@@ -72,8 +168,13 @@ export function EmailSettings() {
       maskedApiKey.current = key;
       setFromEmail((data.fromEmail as string) || "");
       setFromName((data.fromName as string) || DEFAULT_APP_NAME);
+      setBaseUrl((data.baseUrl as string) || "");
+      const secret = (data.webhookSecret as string) || "";
+      setWebhookSecret(secret);
+      maskedWebhookSecret.current = secret;
       setEditingSmtpPass(false);
       setEditingApiKey(false);
+      setEditingWebhookSecret(false);
     },
     [],
   );
@@ -86,6 +187,7 @@ export function EmailSettings() {
     onSaved: () => {
       setEditingSmtpPass(false);
       setEditingApiKey(false);
+      setEditingWebhookSecret(false);
       resetVerify();
     },
   });
@@ -103,6 +205,11 @@ export function EmailSettings() {
         setApiKey("");
         setEditingApiKey(false);
       }
+      if (provider === "pouch") {
+        setBaseUrl("");
+        setWebhookSecret("");
+        setEditingWebhookSecret(false);
+      }
     }
     setProvider(next);
   }
@@ -118,8 +225,11 @@ export function EmailSettings() {
       apiKey,
       fromEmail,
       fromName,
+      ...(provider === "pouch" && { baseUrl, webhookSecret }),
     });
   }
+
+  const webhookUrl = typeof window !== "undefined" ? getPouchWebhookUrl(window.location.origin) : "";
 
   if (loading) {
     return (
@@ -150,7 +260,7 @@ export function EmailSettings() {
 
           {!allowSmtp && provider === "smtp" && (
             <Card variant="plain" className="surface-danger border px-3 py-2 text-xs text-destructive">
-              SMTP is restricted on this instance. Switch to Resend, Postmark or Mailpace to continue sending email.
+              SMTP is restricted on this instance. Switch to Pouch, Resend, Postmark or Mailpace to continue sending email.
             </Card>
           )}
 
@@ -161,6 +271,7 @@ export function EmailSettings() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="pouch">Pouch</SelectItem>
                 <SelectItem value="resend">Resend</SelectItem>
                 <SelectItem value="postmark">Postmark</SelectItem>
                 <SelectItem value="mailpace">Mailpace</SelectItem>
@@ -191,7 +302,7 @@ export function EmailSettings() {
               <p className="text-xs text-muted-foreground bg-muted/50 rounded-lg px-3 py-2">
                 SMTP provides no delivery tracking or bounce detection. If a
                 notification fails to send, you won&apos;t know. We recommend
-                Resend, Postmark or Mailpace for reliable delivery.
+                Pouch, Resend, Postmark or Mailpace for reliable delivery.
               </p>
               <ProviderGuide title="Common SMTP settings">
                 <div className="space-y-2">
@@ -300,188 +411,47 @@ export function EmailSettings() {
             </>
           )}
 
-          {provider === "mailpace" && (
-            <div className="space-y-2">
-              <Label htmlFor="sys-mailpace-apiKey">Mailpace API token</Label>
-              {isMaskedValue(apiKey) && !editingApiKey ? (
-                <div className="flex gap-2">
-                  <Input
-                    id="sys-mailpace-apiKey"
-                    value={toDisplay(apiKey)}
-                    disabled
-                    className="font-mono"
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="shrink-0"
-                    aria-label="Edit Mailpace API token"
-                    onClick={() => {
-                      setEditingApiKey(true);
-                      setApiKey("");
-                    }}
-                  >
-                    Edit
-                  </Button>
-                </div>
-              ) : editingApiKey ? (
-                <div className="flex gap-2">
-                  <Input
-                    id="sys-mailpace-apiKey"
-                    type="password"
-                    value={apiKey}
-                    onChange={(e) => setApiKey(e.target.value)}
-                    required
-                    autoFocus
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="shrink-0"
-                    onClick={() => {
-                      setEditingApiKey(false);
-                      setApiKey(maskedApiKey.current);
-                    }}
-                  >
-                    Cancel
-                  </Button>
-                </div>
-              ) : (
-                <Input
-                  id="sys-mailpace-apiKey"
-                  type="password"
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  required
-                />
-              )}
-            </div>
+          {provider !== "smtp" && API_KEY_LABELS[provider] && (
+            <SecretField
+              id={`sys-${provider}-apiKey`}
+              label={API_KEY_LABELS[provider].label}
+              placeholder={API_KEY_LABELS[provider].placeholder}
+              value={apiKey}
+              onChange={setApiKey}
+              editing={editingApiKey}
+              onEditingChange={setEditingApiKey}
+              onCancel={() => setApiKey(maskedApiKey.current)}
+              required
+            />
           )}
 
-          {provider === "postmark" && (
-            <div className="space-y-2">
-              <Label htmlFor="sys-postmark-apiKey">Postmark server token</Label>
-              {isMaskedValue(apiKey) && !editingApiKey ? (
-                <div className="flex gap-2">
-                  <Input
-                    id="sys-postmark-apiKey"
-                    value={toDisplay(apiKey)}
-                    disabled
-                    className="font-mono"
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="shrink-0"
-                    aria-label="Edit Postmark server token"
-                    onClick={() => {
-                      setEditingApiKey(true);
-                      setApiKey("");
-                    }}
-                  >
-                    Edit
-                  </Button>
-                </div>
-              ) : editingApiKey ? (
-                <div className="flex gap-2">
-                  <Input
-                    id="sys-postmark-apiKey"
-                    type="password"
-                    value={apiKey}
-                    onChange={(e) => setApiKey(e.target.value)}
-                    placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                    required
-                    autoFocus
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="shrink-0"
-                    onClick={() => {
-                      setEditingApiKey(false);
-                      setApiKey(maskedApiKey.current);
-                    }}
-                  >
-                    Cancel
-                  </Button>
-                </div>
-              ) : (
+          {provider === "pouch" && (
+            <>
+              <div className="space-y-2">
+                <Label htmlFor="sys-pouch-baseUrl">Base URL</Label>
                 <Input
-                  id="sys-postmark-apiKey"
-                  type="password"
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                  required
+                  id="sys-pouch-baseUrl"
+                  type="url"
+                  value={baseUrl}
+                  onChange={(e) => setBaseUrl(e.target.value)}
+                  placeholder="https://pouch.email"
                 />
+                <p className="text-xs text-muted-foreground">Only for self-hosted Pouch.</p>
+              </div>
+              {webhookUrl && (
+                <CopyableField label="Webhook URL (add it to your key in Pouch)" value={webhookUrl} />
               )}
-            </div>
-          )}
-
-          {provider === "resend" && (
-            <div className="space-y-2">
-              <Label htmlFor="sys-resend-apiKey">Resend API key</Label>
-              {isMaskedValue(apiKey) && !editingApiKey ? (
-                <div className="flex gap-2">
-                  <Input
-                    id="sys-resend-apiKey"
-                    value={toDisplay(apiKey)}
-                    disabled
-                    className="font-mono"
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="shrink-0"
-                    aria-label="Edit Resend API key"
-                    onClick={() => {
-                      setEditingApiKey(true);
-                      setApiKey("");
-                    }}
-                  >
-                    Edit
-                  </Button>
-                </div>
-              ) : editingApiKey ? (
-                <div className="flex gap-2">
-                  <Input
-                    id="sys-resend-apiKey"
-                    type="password"
-                    value={apiKey}
-                    onChange={(e) => setApiKey(e.target.value)}
-                    placeholder="re_..."
-                    required
-                    autoFocus
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="shrink-0"
-                    onClick={() => {
-                      setEditingApiKey(false);
-                      setApiKey(maskedApiKey.current);
-                    }}
-                  >
-                    Cancel
-                  </Button>
-                </div>
-              ) : (
-                <Input
-                  id="sys-resend-apiKey"
-                  type="password"
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  placeholder="re_..."
-                  required
-                />
-              )}
-            </div>
+              <SecretField
+                id="sys-pouch-webhookSecret"
+                label="Webhook signing secret"
+                value={webhookSecret}
+                onChange={setWebhookSecret}
+                editing={editingWebhookSecret}
+                onEditingChange={setEditingWebhookSecret}
+                onCancel={() => setWebhookSecret(maskedWebhookSecret.current)}
+                hint="Optional. Subscribe the webhook to email.delivered, email.bounced and email.complained."
+              />
+            </>
           )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">

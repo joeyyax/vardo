@@ -31,6 +31,10 @@ export function getWebhookUrl(appUrl: string): string {
   return `${base}/api/webhooks/github`;
 }
 
+export function getPouchWebhookUrl(appUrl: string): string {
+  return `${appUrl.replace(/\/+$/, "")}/api/v1/email/pouch/webhook`;
+}
+
 export type EmailProviderGuide = {
   name: string;
   signupUrl: string | null;
@@ -40,6 +44,13 @@ export type EmailProviderGuide = {
 };
 
 export const EMAIL_PROVIDER_GUIDES: Record<string, EmailProviderGuide> = {
+  pouch: {
+    name: "Pouch",
+    signupUrl: "https://pouch.email",
+    dashboardUrl: "https://pouch.email/keys",
+    keyLocation: "Keys → New key → copy the secret",
+    description: "Transactional email with delivery, bounce and complaint tracking.",
+  },
   resend: {
     name: "Resend",
     signupUrl: "https://resend.com/signup",

@@ -11,7 +11,7 @@ import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { apiError } from "@/lib/api/error-response";
 
 const emailSchema = z.object({
-  provider: z.enum(["smtp", "mailpace", "resend", "postmark"]),
+  provider: z.enum(["smtp", "mailpace", "resend", "postmark", "pouch"]),
   smtpHost: z.string().optional(),
   smtpPort: z.number().int().positive().optional(),
   smtpUser: z.string().optional(),
@@ -19,6 +19,8 @@ const emailSchema = z.object({
   apiKey: z.string().optional(),
   fromEmail: z.string().email("Invalid from email"),
   fromName: z.string().optional(),
+  baseUrl: z.union([z.literal(""), z.string().url("Invalid base URL")]).optional(),
+  webhookSecret: z.string().optional(),
 }).strict();
 
 async function handleGet(request: NextRequest) {
@@ -42,6 +44,8 @@ async function handleGet(request: NextRequest) {
     apiKey: maskSecret(config.apiKey),
     fromEmail: config.fromEmail ?? null,
     fromName: config.fromName ?? null,
+    baseUrl: config.baseUrl ?? null,
+    webhookSecret: maskSecret(config.webhookSecret),
   });
 }
 
@@ -59,7 +63,8 @@ async function handlePost(request: NextRequest) {
     return apiError.validation(parsed.error, { details: true });
   }
 
-  const { provider, smtpHost, smtpPort, smtpUser, smtpPass, apiKey, fromEmail, fromName } = parsed.data;
+  const { provider, smtpHost, smtpPort, smtpUser, smtpPass, apiKey, fromEmail, fromName, baseUrl, webhookSecret } = parsed.data;
+  const isPouch = provider === "pouch";
 
   // Reject SMTP if restricted by deployment config
   if (provider === "smtp" && !isSmtpAllowed()) {
@@ -80,6 +85,8 @@ async function handlePost(request: NextRequest) {
     apiKey: resolveSecret(apiKey, existing?.apiKey),
     fromEmail,
     fromName,
+    baseUrl: isPouch ? baseUrl || undefined : undefined,
+    webhookSecret: isPouch ? resolveSecret(webhookSecret, existing?.webhookSecret) || undefined : undefined,
   }));
 
   return NextResponse.json({ ok: true });

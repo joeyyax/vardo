@@ -3,6 +3,7 @@ import { setupTokenRefusal } from "@/lib/setup-token";
 import { requireAdminAuth } from "@/lib/auth/admin";
 import { getEmailProviderConfig } from "@/lib/system-settings";
 import nodemailer from "nodemailer";
+import { verifyPouch } from "@/lib/email/pouch";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
@@ -82,6 +83,9 @@ async function handlePost(request: NextRequest) {
         }
         return NextResponse.json({ ok: true, message: "Mailpace API token is valid" });
       }
+
+      case "pouch":
+        return NextResponse.json(await verifyPouch(config));
 
       case "smtp": {
         if (!config.smtpHost) {
