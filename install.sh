@@ -6,7 +6,7 @@ set -euo pipefail
 #
 # Fresh install:  curl -fsSL https://vardo.run/install.sh | bash
 # After install:  sudo bash /opt/vardo/install.sh
-# From a ref:     curl -fsSL https://vardo.run/install.sh | VARDO_REF=<branch|tag|sha> bash
+# From a ref:     curl -fsSL https://vardo.run/install.sh | VARDO_REF=<branch|tag|sha|short sha> bash
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -1060,6 +1060,20 @@ validate_ref() {
     || fail "Invalid VARDO_REF: $VARDO_REF (expected a branch, tag or commit sha)"
 }
 
+# Whether VARDO_REF could be a short commit sha.
+is_short_sha() {
+  [[ "$VARDO_REF" =~ ^[0-9a-fA-F]{4,39}$ ]]
+}
+
+# Check out short sha VARDO_REF in the repo at $1. A remote can't serve one by name, so fetch every branch and tag and resolve it locally.
+checkout_short_sha() {
+  local dir="$1" sha deepen=""
+  [ "$(git -C "$dir" rev-parse --is-shallow-repository)" = true ] && deepen=--unshallow
+  run_cmd git -C "$dir" fetch --quiet --tags ${deepen:+"$deepen"} origin "+refs/heads/*:refs/remotes/origin/*" || return 1
+  sha=$(git -C "$dir" rev-parse --verify --quiet "$VARDO_REF^{commit}") || return 1
+  run_cmd git -C "$dir" checkout --quiet "$sha"
+}
+
 # Shallow-clone VARDO_REF into $1. A branch or tag clones by name; a sha is fetched.
 clone_ref() {
   local dir="$1"
@@ -1067,17 +1081,23 @@ clone_ref() {
     return 0
   fi
   rm -rf "$dir"
-  run_cmd git init --quiet "$dir" \
-    && run_cmd git -C "$dir" remote add origin "$REPO_URL" \
-    && run_cmd git -C "$dir" fetch --depth 1 --quiet origin "$VARDO_REF" \
-    && run_cmd git -C "$dir" checkout --quiet FETCH_HEAD \
-    || fail "Could not fetch $VARDO_REF from $REPO_URL. Check that the branch, tag or commit exists."
+  run_cmd git init --quiet "$dir" && run_cmd git -C "$dir" remote add origin "$REPO_URL" \
+    || fail "Could not set up a checkout in $dir."
+  if run_cmd git -C "$dir" fetch --depth 1 --quiet origin "$VARDO_REF" 2>/dev/null; then
+    run_cmd git -C "$dir" checkout --quiet FETCH_HEAD
+  elif ! is_short_sha || ! checkout_short_sha "$dir"; then
+    fail "Could not fetch $VARDO_REF from $REPO_URL. Check that the branch, tag or commit exists, and that a short sha is unambiguous."
+  fi
 }
 
 # Move an existing checkout to VARDO_REF. A branch stays a branch; a tag or sha detaches.
 checkout_ref() {
-  run_cmd git fetch --depth 1 --quiet origin "$VARDO_REF" \
-    || fail "Could not fetch $VARDO_REF. Check that the branch, tag or commit exists."
+  if ! run_cmd git fetch --depth 1 --quiet origin "$VARDO_REF" 2>/dev/null; then
+    if is_short_sha && checkout_short_sha .; then
+      return 0
+    fi
+    fail "Could not fetch $VARDO_REF. Check that the branch, tag or commit exists, and that a short sha is unambiguous."
+  fi
   if git ls-remote --exit-code --heads origin "$VARDO_REF" &>/dev/null; then
     run_cmd git checkout --quiet -B "$VARDO_REF" FETCH_HEAD
   else
@@ -2756,7 +2776,7 @@ parse_args() {
         echo ""
         echo "Environment variables (for unattended install):"
         echo "  VARDO_DIR          Installation directory (default: /opt/vardo or ~/vardo on macOS)"
-        echo "  VARDO_REF          Branch, tag or commit sha to install (default: main)"
+        echo "  VARDO_REF          Branch, tag or commit sha, full or short, to install (default: main)"
         echo "  VARDO_ROLE         Instance role: production, staging, development"
         echo "  VARDO_DOMAIN       Dashboard domain (production/staging)"
         echo "  VARDO_BASE_DOMAIN  Base domain for projects (production/staging)"
