@@ -1,0 +1,5 @@
+{
+  "providers": [],
+  "buildImage": "ghcr.io/railwayapp/nixpacks:ubuntu-1745885067",
+  "phases": {}
+}

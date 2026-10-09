@@ -1,0 +1,14 @@
+{
+  "logs": [
+    {
+      "Level": "warn",
+      "Msg": "script start.sh not found",
+      "DocsPath": ""
+    },
+    {
+      "Level": "error",
+      "Msg": "Railpack could not determine how to build the app.\n\nThe following languages are supported:\n- Php\n- Golang\n- Java\n- Rust\n- Ruby\n- Elixir\n- Python\n- Deno\n- Dotnet\n- Node\n- Gleam\n- Cpp\n- Staticfile\n- Shell\n\nThe app contents that Railpack analyzed contains:\n\n./\n└── readme.txt\n\nCheck out the docs for more information: https://railpack.com",
+      "DocsPath": ""
+    }
+  ]
+}

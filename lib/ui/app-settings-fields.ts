@@ -18,6 +18,10 @@ export type AppSettingsFields = {
   deployType: boolean;
   composeFilePath: boolean;
   dockerfilePath: boolean;
+  /** Build and start command overrides for Railpack and Nixpacks. */
+  buildOverrides: boolean;
+  /** Railpack or Nixpacks when the repo has no compose file or Dockerfile. */
+  buildProvider: boolean;
   containerPort: boolean;
   backendProtocol: boolean;
   restartPolicy: boolean;
@@ -38,6 +42,9 @@ export function appSettingsFields(ctx: AppSettingsFieldContext): AppSettingsFiel
   const { isComposeParent, isChildService } = ctx;
   // Build, deploy and ingress belong to the stack.
   const ownsBuild = !isChildService;
+  // Railpack or Nixpacks runs on an explicit type, or on compose when the repo has neither file.
+  const buildpack = ownsBuild && !isComposeParent && ctx.source === "git"
+    && ["compose", "nixpacks", "railpack"].includes(ctx.deployType);
 
   return {
     identity: true,
@@ -47,6 +54,8 @@ export function appSettingsFields(ctx: AppSettingsFieldContext): AppSettingsFiel
     deployType: ownsBuild && !isComposeParent,
     composeFilePath: ownsBuild && ctx.deployType === "compose",
     dockerfilePath: ownsBuild && !isComposeParent && ctx.deployType === "dockerfile",
+    buildOverrides: buildpack,
+    buildProvider: buildpack && ctx.deployType === "compose",
     containerPort: ownsBuild,
     backendProtocol: ownsBuild,
     restartPolicy: true,
@@ -82,6 +91,8 @@ export const APP_SETTINGS_FIELD_PAGE: Record<AppSettingsFieldName, AppSettingsPa
   deployType: "build",
   composeFilePath: "build",
   dockerfilePath: "build",
+  buildOverrides: "build",
+  buildProvider: "build",
   autoDeploy: "build",
   autoRollback: "build",
   restartPolicy: "resources",
@@ -95,6 +106,9 @@ export const APP_SETTINGS_FIELD_PAGE: Record<AppSettingsFieldName, AppSettingsPa
 /** PATCH body keys that need a redeploy to take effect. */
 export const APP_SETTINGS_REDEPLOY_KEYS: readonly string[] = [
   "deployType",
+  "buildCommand",
+  "startCommand",
+  "buildProvider",
   "gitBranch",
   "imageName",
   "rootDirectory",

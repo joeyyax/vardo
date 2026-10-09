@@ -4,11 +4,19 @@
 // orchestrator opened before it.
 // ---------------------------------------------------------------------------
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { DeployContext, DeployApp } from "@/lib/docker/deploy-context";
+
+const { dbSets, nixpacksPlan } = vi.hoisted(() => ({
+  dbSets: [] as Record<string, unknown>[],
+  nixpacksPlan: { stdout: "" },
+}));
 
 vi.mock("child_process", () => ({
   execFile: (cmd: string, args: string[], _opts: unknown, cb: (e: Error | null, r?: unknown) => void) => {
+    if (cmd === "nixpacks" && args[0] === "plan") return cb(null, { stdout: nixpacksPlan.stdout, stderr: "" });
     if (cmd !== "git") return cb(null, { stdout: "", stderr: "" });
     const a = args[0] === "-C" ? args.slice(2) : args;
     if (a[0] === "rev-parse") return cb(null, { stdout: "abc1234\n", stderr: "" });
@@ -23,6 +31,12 @@ vi.mock("fs/promises", () => ({
   writeFile: vi.fn().mockResolvedValue(undefined),
   rm: vi.fn().mockResolvedValue(undefined),
   readFile: vi.fn().mockResolvedValue("services:\n  web:\n    image: nginx:1.27\n"),
+  readdir: vi.fn().mockResolvedValue([]),
+}));
+
+vi.mock("@/lib/docker/buildkit", async (orig) => ({
+  ...(await orig<typeof import("@/lib/docker/buildkit")>()),
+  isBuildKitReachable: vi.fn().mockResolvedValue(false),
 }));
 
 vi.mock("@/lib/paths", () => ({
@@ -59,7 +73,12 @@ vi.mock("@/lib/db", () => ({
       volumes: { findMany: vi.fn().mockResolvedValue([]) },
       githubInstallationOrgs: { findMany: vi.fn().mockResolvedValue([]) },
     },
-    update: () => ({ set: () => ({ where: vi.fn().mockResolvedValue(undefined) }) }),
+    update: () => ({
+      set: (values: Record<string, unknown>) => {
+        dbSets.push(values);
+        return { where: vi.fn().mockResolvedValue(undefined) };
+      },
+    }),
     insert: () => ({ values: () => ({ onConflictDoNothing: vi.fn().mockResolvedValue(undefined) }) }),
   },
 }));
@@ -73,6 +92,7 @@ vi.mock("@/lib/docker/image-updates/registry", () => ({ getRegistryCredentials: 
 
 import { EventEmitter } from "events";
 import { spawn } from "child_process";
+import { readFile, readdir } from "fs/promises";
 import { prepareRepo } from "@/lib/docker/deploy-steps/prepare-repo";
 import { createStageTimings } from "@/lib/docker/stage-timings";
 
@@ -234,5 +254,82 @@ describe("prepareRepo stage transitions", () => {
     expect(cmd).toBe("nixpacks");
     expect(args).toContain("LD_PRELOAD=/srv/apps/plex/repo/evil.so");
     expect(opts.env.LD_PRELOAD).toBeUndefined();
+  });
+});
+
+describe("buildpack detection, plan and overrides", () => {
+  const plan = readFileSync(join(__dirname, "../fixtures/buildpack/nix-plan-node.json"), "utf8");
+  const gitApp = (overrides: Partial<DeployApp> = {}) =>
+    makeApp({ source: "git", deployType: "compose", gitUrl: "https://git.example.com/example/api.git", gitBranch: "main", ...overrides });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    dbSets.length = 0;
+    nixpacksPlan.stdout = plan;
+    // No compose file and no Dockerfile.
+    vi.mocked(readFile).mockRejectedValue(Object.assign(new Error("ENOENT"), { code: "ENOENT" }));
+    vi.mocked(readdir).mockResolvedValue(["Procfile", "README.md", "package.json"] as never);
+    vi.mocked(spawn).mockImplementation(() => {
+      const proc = Object.assign(new EventEmitter(), { stdout: new EventEmitter(), stderr: new EventEmitter(), pid: 1 });
+      setImmediate(() => proc.emit("close", 0));
+      return proc as unknown as ReturnType<typeof spawn>;
+    });
+  });
+
+  afterEach(() => {
+    vi.mocked(readFile).mockResolvedValue(COMPOSE);
+    vi.mocked(readdir).mockResolvedValue([] as never);
+  });
+
+  it("names the files and the reason when it falls back to a buildpack", async () => {
+    const { ctx } = makeCtx(gitApp());
+
+    await prepareRepo(ctx);
+
+    expect(ctx.logLines).toContain(
+      "[deploy] No compose file or Dockerfile, found Procfile, package.json (node) — building with Nixpacks (BuildKit not reachable)",
+    );
+  });
+
+  it("uses the builder set in build settings over auto-detection", async () => {
+    const { ctx } = makeCtx(gitApp({ buildProvider: "nixpacks" }));
+
+    await prepareRepo(ctx);
+
+    expect(ctx.logLines.some((l) => l.endsWith("building with Nixpacks (set in build settings)"))).toBe(true);
+  });
+
+  it("stores the plan on the deployment and logs its summary", async () => {
+    const { ctx } = makeCtx(gitApp());
+
+    await prepareRepo(ctx);
+
+    const stored = dbSets.find((v) => "buildPlan" in v)?.buildPlan as { engine: string; summary: { providers: string[]; evidence: string[] } };
+    expect(stored.engine).toBe("nixpacks");
+    expect(stored.summary.providers).toEqual(["node"]);
+    expect(stored.summary.evidence).toEqual(["Procfile", "package.json"]);
+    expect(ctx.logLines).toContain("[build] Plan from Nixpacks: node");
+    expect(ctx.logLines).toContain("[build]   Start: node index.js");
+  });
+
+  it("threads build and start overrides into the build", async () => {
+    const { ctx } = makeCtx(gitApp({ deployType: "nixpacks", buildCommand: "npm run custom", startCommand: "node custom.js" }));
+
+    await prepareRepo(ctx);
+
+    const [cmd, args] = vi.mocked(spawn).mock.calls[0] as unknown as [string, string[]];
+    expect(cmd).toBe("nixpacks");
+    expect(args).toEqual(expect.arrayContaining(["--build-cmd", "npm run custom", "--start-cmd", "node custom.js"]));
+  });
+
+  it("still builds when the plan can't be read", async () => {
+    nixpacksPlan.stdout = "";
+    const { ctx } = makeCtx(gitApp({ deployType: "nixpacks" }));
+
+    await prepareRepo(ctx);
+
+    expect(dbSets.some((v) => "buildPlan" in v)).toBe(false);
+    expect(ctx.logLines).toContain("[build] Couldn't read the Nixpacks plan: output wasn't JSON");
+    expect(vi.mocked(spawn)).toHaveBeenCalled();
   });
 });

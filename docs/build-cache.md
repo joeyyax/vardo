@@ -50,3 +50,14 @@ The cost is that a brand new app starts with an empty npm cache mount instead of
 
 - Find why Railpack's dependency rebuild is slower than Nixpacks' (mise or install layer).
 - Report BuildKit cache size in the console so the ceiling is visible before it evicts.
+
+## Build plan and overrides
+
+Before a Railpack or Nixpacks build, Vardo captures the engine's plan with the same env and overrides as the build:
+
+- Railpack: `railpack info --format json [--build-cmd X] [--start-cmd Y] [--env K=V] <dir>`. `railpack plan` prints only the plan; `info` adds detected providers, resolved versions and detection logs. Neither needs BuildKit.
+- Nixpacks: `nixpacks plan <dir> --format json [--build-cmd X] [--start-cmd Y] [--env K=V]`. It doesn't say why a provider matched, so Vardo lists the repo files that point to it.
+
+The plan is stored on `deployment.build_plan` with app env values masked, summarized in the deploy log and shown on the deployment.
+
+App settings carry a build command, start command and builder (Railpack or Nixpacks). Both engines take `--build-cmd` and `--start-cmd` on `build` and on the plan command. The builder applies when a compose-type app's repo has no compose file or Dockerfile. Blank means auto.

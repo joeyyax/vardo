@@ -48,6 +48,10 @@ export const apps = pgTable(
     composeFilePath: text("compose_file_path").default("docker-compose.yml"),
     dockerfilePath: text("dockerfile_path").default("Dockerfile"),
     rootDirectory: text("root_directory"),
+    // Buildpack overrides. Null lets Railpack or Nixpacks decide.
+    buildCommand: text("build_command"),
+    startCommand: text("start_command"),
+    buildProvider: text("build_provider", { enum: ["railpack", "nixpacks"] }),
     autoTraefikLabels: boolean("auto_traefik_labels").default(false),
     containerPort: integer("container_port"),
     autoDeploy: boolean("auto_deploy").default(false),

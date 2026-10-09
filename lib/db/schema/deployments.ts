@@ -9,6 +9,7 @@ import {
 } from "drizzle-orm/pg-core";
 import type { ConfigSnapshot } from "@/lib/types/deploy-snapshot";
 import type { StageTimings } from "@/lib/docker/stage-timings";
+import type { BuildPlanRecord } from "@/lib/docker/build-plan";
 import { user } from "./auth";
 import { deploymentStatusEnum, deploymentTriggerEnum } from "./enums";
 import { apps } from "./apps";
@@ -28,6 +29,8 @@ export const deployments = pgTable("deployment", {
   durationMs: integer("duration_ms"),
   // Per-phase wall-clock times: clone, build, export, pull, up, healthWait, cleanup.
   stageTimings: jsonb("stage_timings").$type<StageTimings>(),
+  // Railpack or Nixpacks plan, captured before the build.
+  buildPlan: jsonb("build_plan").$type<BuildPlanRecord>(),
   environmentId: text("environment_id").references(() => environments.id, {
     onDelete: "set null",
   }),

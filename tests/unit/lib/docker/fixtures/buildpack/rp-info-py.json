@@ -1,0 +1,173 @@
+{
+  "railpackVersion": "0.35.0",
+  "plan": {
+    "steps": [
+      {
+        "name": "packages:mise",
+        "inputs": [
+          {
+            "image": "ghcr.io/railwayapp/railpack-builder:mise-2026.7.15"
+          }
+        ],
+        "commands": [
+          {
+            "path": "/mise/shims"
+          },
+          {
+            "src": ".python-version",
+            "dest": ".python-version"
+          },
+          {
+            "path": "/etc/mise/config.toml",
+            "name": "generated-mise-toml",
+            "customName": "create mise config"
+          },
+          {
+            "cmd": "mise install",
+            "customName": "install mise packages: python"
+          }
+        ],
+        "assets": {
+          "generated-mise-toml": "[tools]\n  python = \"3.12.15\"\n\n[settings]\n  idiomatic_version_file_enable_tools = [\"python\", \"node\", \"ruby\", \"elixir\", \"go\", \"java\", \"yarn\", \"bun\", \"deno\"]\n  minimum_release_age = \"14d\"\n  paranoid = true\n  trusted_config_paths = [\"/app\"]\n  [settings.node]\n    verify = false\n  [settings.python]\n    compile = false\n"
+        },
+        "variables": {
+          "MISE_CACHE_DIR": "/mise/cache",
+          "MISE_CONFIG_DIR": "/mise",
+          "MISE_DATA_DIR": "/mise",
+          "MISE_INSTALLS_DIR": "/mise/installs",
+          "MISE_SHIMS_DIR": "/mise/shims"
+        }
+      },
+      {
+        "name": "install",
+        "inputs": [
+          {
+            "step": "packages:mise"
+          }
+        ],
+        "commands": [
+          {
+            "cmd": "python -m venv /app/.venv"
+          },
+          {
+            "path": "/app/.venv/bin"
+          },
+          {
+            "src": "requirements.txt",
+            "dest": "requirements.txt"
+          },
+          {
+            "cmd": "pip install -r requirements.txt"
+          }
+        ],
+        "variables": {
+          "PIP_CACHE_DIR": "/opt/pip-cache",
+          "PIP_DEFAULT_TIMEOUT": "100",
+          "PIP_DISABLE_PIP_VERSION_CHECK": "1",
+          "PYTHONDONTWRITEBYTECODE": "1",
+          "PYTHONFAULTHANDLER": "1",
+          "PYTHONHASHSEED": "random",
+          "PYTHONUNBUFFERED": "1",
+          "VIRTUAL_ENV": "/app/.venv"
+        },
+        "caches": [
+          "pip"
+        ]
+      },
+      {
+        "name": "build",
+        "inputs": [
+          {
+            "step": "install"
+          },
+          {
+            "local": true,
+            "include": [
+              "."
+            ]
+          }
+        ],
+        "secrets": [
+          "*"
+        ]
+      }
+    ],
+    "caches": {
+      "pip": {
+        "directory": "/opt/pip-cache",
+        "type": "shared"
+      }
+    },
+    "deploy": {
+      "base": {
+        "image": "ghcr.io/railwayapp/railpack-runtime:mise-2026.7.15"
+      },
+      "inputs": [
+        {
+          "step": "packages:mise",
+          "include": [
+            "/mise/shims",
+            "/mise/installs",
+            "/usr/local/bin/mise",
+            "/etc/mise/config.toml",
+            "/root/.local/state/mise"
+          ]
+        },
+        {
+          "step": "build",
+          "include": [
+            "/app/.venv"
+          ]
+        },
+        {
+          "step": "build",
+          "include": [
+            "."
+          ],
+          "exclude": [
+            ".venv"
+          ]
+        }
+      ],
+      "startCommand": "gunicorn --bind 0.0.0.0:${PORT:-8000} main:app",
+      "variables": {
+        "PIP_DEFAULT_TIMEOUT": "100",
+        "PIP_DISABLE_PIP_VERSION_CHECK": "1",
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONFAULTHANDLER": "1",
+        "PYTHONHASHSEED": "random",
+        "PYTHONUNBUFFERED": "1",
+        "RAILPACK_VERSION": "0.35.0"
+      }
+    }
+  },
+  "resolvedPackages": {
+    "python": {
+      "name": "python",
+      "requestedVersion": "3.12.15",
+      "resolvedVersion": "3.12.15",
+      "source": "idiomatic-version-file"
+    }
+  },
+  "metadata": {
+    "providers": "python",
+    "pythonPackageManager": "pip",
+    "pythonRuntime": "flask"
+  },
+  "detectedProviders": [
+    "python"
+  ],
+  "logs": [
+    {
+      "Level": "info",
+      "Msg": "Detected Python",
+      "DocsPath": ""
+    },
+    {
+      "Level": "info",
+      "Msg": "Using pip",
+      "DocsPath": ""
+    }
+  ],
+  "success": true
+}

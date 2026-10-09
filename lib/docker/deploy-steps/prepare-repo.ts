@@ -49,7 +49,8 @@ import {
 import type { DeployContext } from "../deploy-context";
 import { deployments } from "@/lib/db/schema";
 import { execFileAsync } from "@/lib/utils/exec";
-import { railpackBuildArgs } from "../railpack-args";
+import { nixpacksBuildArgs, railpackBuildArgs, type BuildOverrides } from "../buildpack-args";
+import { ENGINE_NAME, buildPlanLogLines, captureBuildPlan, describeMarkers, providerMarkers, type ProviderMarker } from "../build-plan";
 import { boundedBuild, buildKitLimit, explainBuildOom } from "../build-memory";
 
 type ParseAndSanitizeOpts = {
@@ -234,6 +235,7 @@ async function buildFromRepo(
   dockerfilePath: string | undefined,
   cacheKey: string,
   signal?: AbortSignal,
+  overrides?: BuildOverrides,
 ): Promise<void> {
   // Base images may be private, so builders get registry credentials.
   await withRegistryAuth(async (authEnv) => {
@@ -242,12 +244,7 @@ async function buildFromRepo(
 
     if (deployType === "nixpacks") {
       logs.push(`[build] Building with Nixpacks...`);
-      const args = ["build", repoPath, "--name", imageName];
-      if (envVars) {
-        for (const [k, v] of Object.entries(envVars)) {
-          args.push("--env", `${k}=${v}`);
-        }
-      }
+      const args = nixpacksBuildArgs(imageName, repoPath, envVars, overrides);
       await spawnStream("nixpacks", args, { cwd: repoPath, env: buildEnv, signal }, logs, "[build][nixpacks]");
       logs.push(`[build] Nixpacks build complete: ${imageName}`);
       return;
@@ -259,7 +256,7 @@ async function buildFromRepo(
       await assertBuildKitReachable(buildEnv.BUILDKIT_HOST, signal);
 
       logs.push(`[build] Building with Railpack...`);
-      const args = railpackBuildArgs(imageName, repoPath, cacheKey, envVars);
+      const args = railpackBuildArgs(imageName, repoPath, cacheKey, envVars, overrides);
       try {
         await spawnStream("railpack", args, { cwd: repoPath, env: buildEnv, signal }, logs, "[build][railpack]");
       } catch (err) {
@@ -558,6 +555,7 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
       // Build from repo: Dockerfile, Railpack or Nixpacks.
       const imageName = `host/${app.name}:${ctx.deploymentId.slice(0, 8)}`;
       let buildType = app.deployType;
+      let markers: ProviderMarker[] | undefined;
 
       if (buildType === "compose" && !composeContent) {
         const dockerfileToCheck = app.dockerfilePath || "Dockerfile";
@@ -566,14 +564,21 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
           buildType = "dockerfile";
           log(`[deploy] No compose file, found ${dockerfileToCheck}`);
         } catch {
+          markers = await providerMarkers(root);
+          const found = markers.length > 0
+            ? `found ${describeMarkers(markers)}`
+            : "found no language manifest";
           // Prefer Railpack when the opt-in BuildKit daemon is reachable.
           const buildKitHost = process.env.BUILDKIT_HOST || DEFAULT_BUILDKIT_HOST;
-          if (await isBuildKitReachable(buildKitHost, ctx.signal)) {
+          if (app.buildProvider) {
+            buildType = app.buildProvider;
+            log(`[deploy] No compose file or Dockerfile, ${found} — building with ${ENGINE_NAME[buildType]} (set in build settings)`);
+          } else if (await isBuildKitReachable(buildKitHost, ctx.signal)) {
             buildType = "railpack";
-            log(`[deploy] No compose file or Dockerfile — building with Railpack (BuildKit available)`);
+            log(`[deploy] No compose file or Dockerfile, ${found} — building with Railpack (BuildKit reachable)`);
           } else {
             buildType = "nixpacks";
-            log(`[deploy] No compose file or Dockerfile — building with Nixpacks (BuildKit not reachable)`);
+            log(`[deploy] No compose file or Dockerfile, ${found} — building with Nixpacks (BuildKit not reachable)`);
           }
         }
       }
@@ -590,8 +595,23 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
       ctx.stage("build", "running");
 
       const customDockerfile = app.dockerfilePath && app.dockerfilePath !== "Dockerfile" ? app.dockerfilePath : undefined;
+      const overrides: BuildOverrides = { buildCommand: app.buildCommand, startCommand: app.startCommand };
+      if (buildType === "railpack" || buildType === "nixpacks") {
+        const plan = await captureBuildPlan(buildType, root, {
+          envVars: envMap,
+          overrides,
+          markers: markers ?? (await providerMarkers(root)),
+          log,
+          signal,
+        });
+        if (plan) {
+          for (const line of buildPlanLogLines(plan)) log(line);
+          await db.update(deployments).set({ buildPlan: plan }).where(eq(deployments.id, ctx.deploymentId))
+            .catch(() => log(`[build] Couldn't save the build plan`));
+        }
+      }
       try {
-        await buildFromRepo(root, imageName, buildType, logs, envMap, customDockerfile, ctx.appId, signal);
+        await buildFromRepo(root, imageName, buildType, logs, envMap, customDockerfile, ctx.appId, signal, overrides);
       } catch (buildErr) {
         const errMsg = buildErr instanceof Error ? buildErr.message : String(buildErr);
 
@@ -605,7 +625,7 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
           }
           log(`[compat] Retrying with fixes applied...`);
           Object.assign(envMap, applyCompatFixes(envMap, fixes));
-          await buildFromRepo(root, imageName, buildType, logs, envMap, customDockerfile, ctx.appId, signal);
+          await buildFromRepo(root, imageName, buildType, logs, envMap, customDockerfile, ctx.appId, signal, overrides);
         } else {
           throw buildErr;
         }
