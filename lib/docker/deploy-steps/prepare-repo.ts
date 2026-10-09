@@ -51,6 +51,7 @@ import {
 import type { DeployContext } from "../deploy-context";
 import { deployments } from "@/lib/db/schema";
 import { execFileAsync } from "@/lib/utils/exec";
+import { railpackBuildArgs } from "../railpack-args";
 import { boundedBuild, buildKitLimit, explainBuildOom } from "../build-memory";
 
 type ParseAndSanitizeOpts = {
@@ -231,8 +232,9 @@ async function buildFromRepo(
   imageName: string,
   deployType: string,
   logs: { push: (line: string) => void },
-  envVars?: Record<string, string>,
-  dockerfilePath?: string,
+  envVars: Record<string, string> | undefined,
+  dockerfilePath: string | undefined,
+  cacheKey: string,
   signal?: AbortSignal,
 ): Promise<void> {
   // Base images may be private, so builders get registry credentials.
@@ -259,13 +261,7 @@ async function buildFromRepo(
       await assertBuildKitReachable(buildEnv.BUILDKIT_HOST, signal);
 
       logs.push(`[build] Building with Railpack...`);
-      const args = ["build", "--name", imageName];
-      if (envVars) {
-        for (const [k, v] of Object.entries(envVars)) {
-          args.push("--env", `${k}=${v}`);
-        }
-      }
-      args.push(repoPath);
+      const args = railpackBuildArgs(imageName, repoPath, cacheKey, envVars);
       try {
         await spawnStream("railpack", args, { cwd: repoPath, env: buildEnv, signal }, logs, "[build][railpack]");
       } catch (err) {
@@ -599,7 +595,7 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
 
       const customDockerfile = app.dockerfilePath && app.dockerfilePath !== "Dockerfile" ? app.dockerfilePath : undefined;
       try {
-        await buildFromRepo(root, imageName, buildType, logs, envMap, customDockerfile, signal);
+        await buildFromRepo(root, imageName, buildType, logs, envMap, customDockerfile, ctx.appId, signal);
       } catch (buildErr) {
         const errMsg = buildErr instanceof Error ? buildErr.message : String(buildErr);
 
@@ -613,7 +609,7 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
           }
           log(`[compat] Retrying with fixes applied...`);
           Object.assign(envMap, applyCompatFixes(envMap, fixes));
-          await buildFromRepo(root, imageName, buildType, logs, envMap, customDockerfile, signal);
+          await buildFromRepo(root, imageName, buildType, logs, envMap, customDockerfile, ctx.appId, signal);
         } else {
           throw buildErr;
         }
