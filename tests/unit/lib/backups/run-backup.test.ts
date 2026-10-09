@@ -27,6 +27,7 @@ const {
   resolveDefaultEnvMock,
   inserted,
   updated,
+  leases,
 } = vi.hoisted(() => ({
   backupJobsFindFirst: vi.fn(),
   volumesFindMany: vi.fn(),
@@ -40,6 +41,7 @@ const {
   resolveDefaultEnvMock: vi.fn(),
   inserted: [] as Record<string, unknown>[],
   updated: [] as { table: unknown; set: Record<string, unknown> }[],
+  leases: new Set<string>(),
 }));
 
 vi.mock("@/lib/db", () => ({
@@ -70,6 +72,14 @@ vi.mock("@/lib/docker/client", () => ({
   inspectContainer: vi.fn(),
 }));
 vi.mock("@/lib/docker/resolve-env", () => ({ resolveDefaultEnv: resolveDefaultEnvMock }));
+vi.mock("@/lib/backups/run-lease", () => ({
+  holdBackupLease: async (id: string) => {
+    leases.add(id);
+    return async () => {
+      leases.delete(id);
+    };
+  },
+}));
 vi.mock("@/lib/logger", () => ({
   logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }) },
 }));
@@ -187,6 +197,7 @@ beforeEach(() => {
   inserted.length = 0;
   updated.length = 0;
   committed.length = 0;
+  leases.clear();
   execFileMock.mockReset().mockImplementation(execImpl);
   spawnMock.mockReset().mockImplementation(spawnImpl);
   emitMock.mockReset();
@@ -781,5 +792,35 @@ describe("runBackup — backup switch", () => {
     const results = await runBackup("job-1", { appIds: ["app-a"] });
 
     expect(results.map((r) => r.volumeName)).toEqual(["a-data"]);
+  });
+});
+
+// A restarted console fails any running row whose lease lapsed, so a live run must hold one throughout.
+describe("runBackup — run lease", () => {
+  it("holds the backup's lease while it streams and releases it after", async () => {
+    backupJobsFindFirst.mockResolvedValue(job());
+    volumesPerApp([volume()]);
+    const heldDuringUpload: boolean[] = [];
+    uploadMock.mockImplementationOnce(async (key: string, body: import("stream").Readable) => {
+      heldDuringUpload.push(leases.has(String(inserted[0].id)));
+      return recordingUpload(committed)(key, body);
+    });
+
+    const [result] = await runBackup("job-1");
+
+    expect(result.outcome).toBe("success");
+    expect(heldDuringUpload).toEqual([true]);
+    expect(leases.size).toBe(0);
+  });
+
+  it("releases the lease when the run fails", async () => {
+    backupJobsFindFirst.mockResolvedValue(job());
+    volumesPerApp([volume()]);
+    spawnMock.mockImplementation(() => fakeChild({ code: 1, stderr: "boom" }));
+
+    const [result] = await runBackup("job-1");
+
+    expect(result.outcome).toBe("failed");
+    expect(leases.size).toBe(0);
   });
 });

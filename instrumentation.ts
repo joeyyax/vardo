@@ -123,6 +123,15 @@ export async function register() {
       log.error("Backup job link repair failed:", err);
     }
 
+    // Fails backups a stopped process left running. Skipped whole when Redis can't vouch for leases.
+    try {
+      const { reapInterruptedBackups, sweepOrphanedStaging } = await import("./lib/backups/reap");
+      await reapInterruptedBackups();
+      await sweepOrphanedStaging();
+    } catch (err) {
+      log.error("Interrupted backup cleanup failed:", err);
+    }
+
     // The backup scheduler waits on the target.
     let backupTargetReady: Promise<void> | undefined;
     try {

@@ -23,6 +23,7 @@ import {
 } from "./archive-crypto";
 import { createArchiveInspector, type ArchiveStats } from "./archive-stream";
 import { createBackupStorage } from "./storage-factory";
+import { holdBackupLease } from "./run-lease";
 import { assertSafeName } from "@/lib/docker/validate";
 import { isUncapturedSource, pausedDumpReason, uncapturedReason } from "./coverage";
 import { exclusionReason, isBackupSelected } from "./durability";
@@ -941,6 +942,8 @@ export async function runBackup(
       keyFingerprint: holdsInstanceSecrets(vol) ? runningKeyFingerprint() : null,
       startedAt,
     });
+    // Lets a restarted console tell this row from one a dead process left behind.
+    const releaseLease = await holdBackupLease(backupId);
 
     try {
       log(`Backing up volume ${vol.name} (strategy: ${strategy})`);
@@ -1092,6 +1095,8 @@ export async function runBackup(
         paused: paused !== null,
         durationMs,
       });
+    } finally {
+      await releaseLease();
     }
   }
 

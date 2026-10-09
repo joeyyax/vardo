@@ -85,6 +85,7 @@ vi.mock("@/lib/docker/resolve-env", () => ({
   resolveDefaultEnv: vi.fn().mockResolvedValue({ id: "env-1", name: "production" }),
 }));
 vi.mock("@/lib/crypto/key-escrow", () => ({ probeDecryptability: vi.fn() }));
+vi.mock("@/lib/backups/run-lease", () => ({ holdBackupLease: async () => async () => {} }));
 vi.mock("@/lib/logger", () => ({
   logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }) },
 }));
