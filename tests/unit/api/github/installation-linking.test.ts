@@ -16,6 +16,7 @@ vi.mock("@/lib/auth/admin", () => ({
 vi.mock("@/lib/git-integration/app", () => ({
   getAppOctokit: async () => ({ rest: { apps: { listInstallations } } }),
 }));
+vi.mock("@/lib/auth/session", () => ({ getCurrentOrg: async () => null }));
 vi.mock("@/lib/api/rate-limit", () => ({ rateLimit: async () => null }));
 vi.mock("@/lib/db", () => ({
   db: {

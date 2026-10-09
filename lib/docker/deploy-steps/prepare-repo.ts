@@ -1,11 +1,7 @@
 // Deploy step 1: auth, clone, host.toml and compose discovery, or a local image build.
 
 import { db } from "@/lib/db";
-import {
-  volumes,
-  githubAppInstallations,
-  memberships,
-} from "@/lib/db/schema";
+import { volumes } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { readFile, rm } from "fs/promises";
@@ -31,7 +27,8 @@ import { DeployBlockedError } from "../errors";
 import { assertBuildKitReachable, isBuildKitReachable, DEFAULT_BUILDKIT_HOST } from "../buildkit";
 import { assertAppDirOwnership } from "../app-dir-owner";
 import { getInstallationToken, getRepoInstallationId } from "@/lib/git-integration/app";
-import { githubTokenGitEnv, resolveCloneToken } from "@/lib/git-integration/clone-auth";
+import { githubTokenGitEnv, parseGithubRepo, resolveCloneToken } from "@/lib/git-integration/clone-auth";
+import { LINK_INSTALLATION_HINT, orgInstallations } from "@/lib/git-integration/org-installations";
 import {
   getDecryptedPrivateKey,
   writeTemporaryKeyFile,
@@ -382,20 +379,7 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
     // GitHub App token for github.com URLs.
     if (cloneUrl.startsWith("https://github.com/")) {
       try {
-        const orgMembers = await db.query.memberships.findMany({
-          where: eq(memberships.organizationId, ctx.organizationId),
-          columns: { userId: true },
-        });
-        const userIds = orgMembers.map((m) => m.userId);
-
-        const installations = [];
-        for (const userId of userIds) {
-          installations.push(
-            ...(await db.query.githubAppInstallations.findMany({
-              where: eq(githubAppInstallations.userId, userId),
-            })),
-          );
-        }
+        const installations = await orgInstallations(ctx.organizationId);
         const installToken = await resolveCloneToken(app.gitUrl, installations, {
           getToken: getInstallationToken,
           getRepoInstallationId,
@@ -409,6 +393,10 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
         }
       } catch (err) {
         log(`[deploy] Warning: GitHub auth — ${err instanceof Error ? err.message : err}`);
+      }
+      if (!tokenAuth) {
+        const repo = parseGithubRepo(app.gitUrl);
+        log(`[deploy] No GitHub App installation linked to this organization covers ${repo ? `${repo.owner}/${repo.repo}` : "the repo"}; cloning without a token`);
       }
     }
 
@@ -457,7 +445,13 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
             throw rmErr;
           }
         }
-        await execFileAsync("git", ["clone", "--depth", "1", "--branch", branch, "--", cloneUrl, repoDir], execOpts);
+        try {
+          await execFileAsync("git", ["clone", "--depth", "1", "--branch", branch, "--", cloneUrl, repoDir], execOpts);
+        } catch (cloneErr) {
+          if (tokenAuth || sshKeyFile || !cloneUrl.startsWith("https://github.com/")) throw cloneErr;
+          const detail = (cloneErr as { stderr?: string }).stderr?.trim() || (cloneErr instanceof Error ? cloneErr.message : String(cloneErr));
+          throw new Error(`Couldn't clone ${app.gitUrl} without a GitHub token: ${detail}\n${LINK_INSTALLATION_HINT}`);
+        }
         log(`[deploy] Cloned repo (${branch})`);
       }
 

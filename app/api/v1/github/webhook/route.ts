@@ -2,7 +2,7 @@ import { NextRequest, NextResponse, after } from "next/server";
 import { createHmac, timingSafeEqual } from "crypto";
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { requestDeploy } from "@/lib/docker/deploy-cancel";
 import { createPreview, destroyPreview } from "@/lib/docker/preview";
 import { getSystemManagedApp, createVardoPreview, destroyVardoPreview } from "@/lib/docker/self-preview";
@@ -10,6 +10,7 @@ import { isFeatureEnabled, isFeatureEnabledAsync } from "@/lib/config/features";
 import { getGitHubAppConfig } from "@/lib/system-settings";
 import { previewRefusalReason } from "@/lib/git-integration/pull-request";
 import { logger } from "@/lib/logger";
+import { orgsForInstallation } from "@/lib/git-integration/org-installations";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { requirePlugin } from "@/lib/api/require-plugin";
@@ -85,11 +86,23 @@ async function handlePush(payload: Record<string, unknown>): Promise<NextRespons
 
   log.info(`Push to ${repoFullName}:${branch} by ${pusher} — ${commitSha?.slice(0, 7)} ${commitMessage?.split("\n")[0]}`);
 
+  // Only orgs the delivering installation is linked to.
+  const installationId = (payload.installation as Record<string, unknown> | undefined)?.id;
+  if (typeof installationId !== "number") {
+    return NextResponse.json({ ok: true, skipped: "no installation" });
+  }
+  const orgIds = await orgsForInstallation(installationId);
+  if (orgIds.length === 0) {
+    log.info(`Installation ${installationId} isn't linked to any organization`);
+    return NextResponse.json({ ok: true, skipped: "installation not linked" });
+  }
+
   const gitUrl = `https://github.com/${repoFullName}.git`;
   const allApps = await db.query.apps.findMany({
     where: and(
       eq(apps.gitUrl, gitUrl),
-      eq(apps.autoDeploy, true)
+      eq(apps.autoDeploy, true),
+      inArray(apps.organizationId, orgIds),
     ),
   });
 

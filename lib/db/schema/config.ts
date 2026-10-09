@@ -74,3 +74,21 @@ export const githubAppInstallations = pgTable(
     unique("gh_install_user_uniq").on(t.userId, t.installationId),
   ]
 );
+
+/** Installations an org may clone with and take push webhooks from. */
+export const githubInstallationOrgs = pgTable(
+  "github_installation_org",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    installationId: integer("installation_id").notNull(),
+    linkedByUserId: text("linked_by_user_id").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    unique("gh_install_org_uniq").on(t.organizationId, t.installationId),
+    index("gh_install_org_installation_idx").on(t.installationId),
+  ]
+);

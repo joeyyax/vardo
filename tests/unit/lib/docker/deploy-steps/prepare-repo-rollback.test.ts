@@ -82,8 +82,7 @@ vi.mock("@/lib/db", () => ({
   db: {
     query: {
       volumes: { findMany: vi.fn().mockResolvedValue([]) },
-      memberships: { findMany: vi.fn().mockResolvedValue([]) },
-      githubAppInstallations: { findMany: vi.fn().mockResolvedValue([]) },
+      githubInstallationOrgs: { findMany: vi.fn().mockResolvedValue([]) },
     },
     update: () => ({ set: (v: unknown) => ({ where: () => deploymentUpdate(v) }) }),
     insert: () => ({ values: () => ({ onConflictDoNothing: vi.fn().mockResolvedValue(undefined) }) }),
