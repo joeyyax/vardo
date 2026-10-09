@@ -55,10 +55,10 @@ Nothing recovers the env vars. Re-enter them per app; everything else in the bac
 
 Every archive is encrypted with its own key, wrapped by the master key, so app volume and database archives need the master key too. Restore them from the app's Backups tab; downloads and restore drills decrypt on the server. Archives written before encryption have no header and restore as they are.
 
-To open an archive without Vardo running, copy it off the target and decrypt it on the host:
+Encrypted archives end in `.enc` on the target (`.tar.gz.enc`, `.dump.gz.enc`); archive tools can't open them as they are. Archives written before the suffix keep their plain names but are still encrypted. To open one without Vardo running, copy it off the target and decrypt it on the host:
 
 ```bash
-sudo vardo backup decrypt 2026-10-06T02-00-00-000Z.tar.gz data.tar.gz
+sudo vardo backup decrypt 2026-10-06T02-00-00-000Z.tar.gz.enc data.tar.gz
 ```
 
 The command reads the key from `/opt/vardo/.env`, or from `ENCRYPTION_MASTER_KEY` if set. The archive header carries everything else, so no database is needed. A corrupt, truncated or tampered archive fails instead of writing partial output.

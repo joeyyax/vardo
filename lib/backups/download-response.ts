@@ -4,6 +4,7 @@ import { rm } from "fs/promises";
 import { dirname } from "path";
 import { getBackupDownloadUrl, downloadBackupToTemp } from "./engine";
 import { ArchiveMissingError } from "./storage-port";
+import { DOWNLOAD_HINT } from "./archive-name";
 
 /** Redirect to a presigned URL, or stream the archive through the server. Missing is a 404. */
 export async function backupDownloadResponse(backupId: string, fileName: string): Promise<Response> {
@@ -43,6 +44,7 @@ export async function backupDownloadResponse(backupId: string, fileName: string)
     headers: {
       "Content-Type": "application/gzip",
       "Content-Disposition": `attachment; filename="${fileName}"`,
+      "X-Vardo-Archive": DOWNLOAD_HINT,
     },
   });
 }

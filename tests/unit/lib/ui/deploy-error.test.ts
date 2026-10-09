@@ -30,6 +30,16 @@ describe("extractDeployError", () => {
     );
   });
 
+  it("surfaces a slow-start health failure over earlier container log lines", () => {
+    const log = [
+      "[deploy] Health check timed out — fetching container logs...",
+      "[deploy][logs] composer-1 | Scanning packages failed for one repo",
+      "[deploy] Tearing down blue",
+      "[deploy] ERROR: composer is still starting after 71s (running, no restarts, logs still moving). Raise the app's health timeout (Settings → Health check timeout) or add a healthcheck with a start_period",
+    ].join("\n");
+    expect(extractDeployError(log)).toMatch(/^ERROR: composer is still starting after 71s/);
+  });
+
   it("returns null when nothing in the log names a failure", () => {
     expect(extractDeployError("[deploy] all good\n[deploy] finished")).toBeNull();
   });

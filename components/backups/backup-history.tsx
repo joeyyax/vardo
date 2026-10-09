@@ -9,6 +9,7 @@ import { Archive, Download, Loader2, RotateCcw, Trash2 } from "lucide-react";
 import { formatBytes, formatDuration } from "@/lib/metrics/format";
 import { MIN_VALID_GZIP_BYTES } from "@/lib/backups/archive";
 import { toast } from "@/lib/messenger";
+import { DOWNLOAD_HINT } from "@/lib/backups/archive-name";
 import { RelativeTime } from "@/components/relative-time";
 import { StatusBadge } from "./status-badge";
 import { RestoreTestBadge } from "./restore-test-badge";
@@ -206,7 +207,7 @@ export function BackupHistory({
                         </Button>
                       )}
                       {can("backup.download") && (
-                        <Button size="icon-xs" variant="ghost" aria-label="Download backup" asChild>
+                        <Button size="icon-xs" variant="ghost" aria-label="Download backup" title={DOWNLOAD_HINT} asChild>
                           <a href={`/api/v1/organizations/${orgId}/backups/history/${backup.id}/download`}>
                             <Download className="size-3.5" aria-hidden="true" />
                           </a>

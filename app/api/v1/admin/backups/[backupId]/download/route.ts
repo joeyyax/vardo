@@ -7,6 +7,7 @@ import { requireAppAdmin } from "@/lib/auth/admin";
 import { requirePlugin } from "@/lib/api/require-plugin";
 import { eq } from "drizzle-orm";
 import { backupDownloadResponse } from "@/lib/backups/download-response";
+import { downloadFileName, formatFromArchiveName } from "@/lib/backups/archive-name";
 import { recordAdminBackupActivity } from "@/app/api/v1/admin/backups/record-activity";
 
 type RouteParams = {
@@ -31,7 +32,10 @@ async function handleGet(_request: NextRequest, { params }: RouteParams) {
 
     recordAdminBackupActivity("backup.downloaded", backup, session.user.id).catch(() => {});
 
-    const fileName = `${backup.volumeName ?? "backup"}-${backup.startedAt.toISOString().slice(0, 10)}.tar.gz`;
+    const fileName = downloadFileName(
+      `${backup.volumeName ?? "backup"}-${backup.startedAt.toISOString().slice(0, 10)}`,
+      backup.strategy === "dump" ? "dump" : formatFromArchiveName(backup.storagePath),
+    );
     return await backupDownloadResponse(backupId, fileName);
   } catch (error) {
     return handleRouteError(error, "Error downloading system backup");

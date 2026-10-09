@@ -66,6 +66,7 @@ import { logger } from "@/lib/logger";
 import type { BusEvent } from "@/lib/bus/events";
 import { execFileAsync } from "@/lib/utils/exec";
 import { dockerEnv } from "@/lib/docker/docker-env";
+import { archiveExtension, formatFromArchiveName } from "./archive-name";
 
 const log = logger.child("backup");
 
@@ -160,9 +161,7 @@ async function checksumFile(filePath: string): Promise<string> {
 
 /** Archive format encoded in the storage key. */
 export function strategyFromStoragePath(storagePath: string): ArchiveStrategy | null {
-  if (storagePath.endsWith(".dump.gz")) return "dump";
-  if (storagePath.endsWith(".tar.gz")) return "tar";
-  return null;
+  return formatFromArchiveName(storagePath);
 }
 
 /**
@@ -982,7 +981,7 @@ export async function runBackup(
     }
 
     const strategy: ArchiveStrategy = vol.backupStrategy === "dump" ? "dump" : "tar";
-    const ext = strategy === "dump" ? "dump.gz" : "tar.gz";
+    const ext = archiveExtension(strategy, Boolean(process.env.ENCRYPTION_MASTER_KEY));
     const storageKey = vol.appName && vol.orgSlug
       ? `${vol.orgSlug}/${vol.appName}/${vol.name}/${ts}.${ext}`
       : `vardo-system/${vol.name}/${ts}.${ext}`;
