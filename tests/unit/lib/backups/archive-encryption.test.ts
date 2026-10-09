@@ -207,6 +207,19 @@ describe("runBackup — archive encryption", () => {
     expect(success.sizeBytes).toBe(bytes.length);
   });
 
+  it("names an encrypted archive with an .enc suffix", async () => {
+    await runBackup("job-1");
+
+    expect(uploaded[0].key).toMatch(/\.tar\.gz\.enc$/);
+  });
+
+  it("keeps the plain name when the archive is not encrypted", async () => {
+    delete process.env.ENCRYPTION_MASTER_KEY;
+    await runBackup("job-1");
+
+    expect(uploaded[0].key).toMatch(/\.tar\.gz$/);
+  });
+
   it("uploads plaintext with no key recorded when no master key is set", async () => {
     delete process.env.ENCRYPTION_MASTER_KEY;
     await runBackup("job-1");
@@ -244,6 +257,16 @@ describe("restoreBackup — encrypted and legacy archives", () => {
 
     expect(result.success).toBe(true);
     expect(result.log).toMatch(/Archive is unencrypted/);
+    expect(restoreRan()).toBe(true);
+  });
+
+  it("restores an .enc archive whose row predates the strategy column", async () => {
+    const keyFields = await storeEncrypted(ARCHIVE_BYTES);
+    backupsFindFirst.mockResolvedValue(backupRow({ ...keyFields, strategy: null, storagePath: "acme/app/data/x.tar.gz.enc" }));
+
+    const result = await restoreBackup("bk-1");
+
+    expect(result.success).toBe(true);
     expect(restoreRan()).toBe(true);
   });
 

@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { RelativeTime } from "@/components/relative-time";
 import { toast } from "@/lib/messenger";
+import { DOWNLOAD_HINT } from "@/lib/backups/archive-name";
 import { formatBytes, formatDuration } from "@/lib/metrics/format";
 import { MIN_VALID_GZIP_BYTES } from "@/lib/backups/archive";
 import { KeyEscrowCard } from "./key-escrow-card";
@@ -248,7 +249,7 @@ export function SystemBackupSection() {
                         </td>
                         <td className="px-4 py-3 text-right">
                           {run.status === "success" && run.storagePath && (
-                            <Button size="icon-xs" variant="ghost" aria-label="Download backup" asChild>
+                            <Button size="icon-xs" variant="ghost" aria-label="Download backup" title={DOWNLOAD_HINT} asChild>
                               <a href={`/api/v1/admin/backups/${run.id}/download`}>
                                 <Download className="size-3.5" aria-hidden="true" />
                               </a>

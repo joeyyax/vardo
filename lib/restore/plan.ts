@@ -1,6 +1,7 @@
 // Pure planning for a whole-instance restore: which backups, which archives, what order.
 
 import type { StoredObject } from "@/lib/backups/storage-port";
+import { formatFromArchiveName } from "@/lib/backups/archive-name";
 import type { RestoreAppStatus } from "@/lib/db/schema/restore";
 
 /** Where the system job writes Vardo's own database dumps. */
@@ -24,7 +25,7 @@ export function backupTimeFromKey(key: string): Date | null {
 /** System database dumps in a listing, newest first. */
 export function systemBackupsFrom(objects: StoredObject[]): SystemBackup[] {
   return objects
-    .filter((o) => o.key.startsWith(SYSTEM_BACKUP_PREFIX) && o.key.endsWith(".dump.gz"))
+    .filter((o) => o.key.startsWith(SYSTEM_BACKUP_PREFIX) && formatFromArchiveName(o.key) === "dump")
     .map((o) => ({ key: o.key, takenAt: backupTimeFromKey(o.key) ?? o.modifiedAt, sizeBytes: o.sizeBytes }))
     .sort((a, b) => b.takenAt.getTime() - a.takenAt.getTime());
 }

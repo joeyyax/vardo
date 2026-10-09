@@ -12,6 +12,7 @@ import {
 } from "@/lib/db/schema/restore";
 import { isVardoManagedApp } from "@/lib/infra/instance-apps";
 import { isSelfApp } from "@/lib/docker/self-env";
+import { formatFromArchiveName } from "@/lib/backups/archive-name";
 import {
   BUILD_WEIGHT,
   PULL_WEIGHT,
@@ -50,7 +51,7 @@ export async function archivesForApps(appIds: string[], at: Date): Promise<Map<s
         appId: r.appId!,
         appName: r.appName ?? "",
         volumeName: r.volumeName!,
-        strategy: r.strategy === "dump" || r.storagePath!.endsWith(".dump.gz") ? "dump" : "tar",
+        strategy: r.strategy === "dump" || formatFromArchiveName(r.storagePath!) === "dump" ? "dump" : "tar",
         finishedAt: r.finishedAt!,
       })),
     at,

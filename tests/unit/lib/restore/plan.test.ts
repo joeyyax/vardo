@@ -19,12 +19,14 @@ describe("systemBackupsFrom", () => {
       { key: "vardo-system/postgres/2026-10-07T03-12-00-000Z.dump.gz", sizeBytes: 20, modifiedAt: new Date(0) },
       { key: "acme/web/data/2026-10-08T01-00-00-000Z.tar.gz", sizeBytes: 30, modifiedAt: new Date(0) },
       { key: "vardo-system/postgres/notes.txt", sizeBytes: 1, modifiedAt: new Date(0) },
+      { key: "vardo-system/postgres/2026-10-09T03-12-00-000Z.dump.gz.enc", sizeBytes: 40, modifiedAt: new Date(0) },
     ]);
     expect(found.map((b) => b.key)).toEqual([
+      "vardo-system/postgres/2026-10-09T03-12-00-000Z.dump.gz.enc",
       "vardo-system/postgres/2026-10-07T03-12-00-000Z.dump.gz",
       "vardo-system/postgres/2026-10-01T03-12-00-000Z.dump.gz",
     ]);
-    expect(found[0].takenAt.toISOString()).toBe("2026-10-07T03:12:00.000Z");
+    expect(found[0].takenAt.toISOString()).toBe("2026-10-09T03:12:00.000Z");
   });
 
   it("reads the timestamp the engine writes", () => {

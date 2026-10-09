@@ -6,6 +6,7 @@ import { backupDownloadResponse } from "@/lib/backups/download-response";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { recordActivity } from "@/lib/activity";
 import { findOrgAppBackup } from "@/lib/backups/org-backup";
+import { downloadFileName, formatFromArchiveName } from "@/lib/backups/archive-name";
 
 type RouteParams = {
   params: Promise<{ orgId: string; backupId: string }>;
@@ -40,7 +41,10 @@ async function handleGet(_request: NextRequest, { params }: RouteParams) {
       metadata: { backupId, volumeName: backup.volumeName },
     }).catch(() => {});
 
-    const fileName = `${backup.app?.name ?? backup.appName ?? "vardo"}-${backup.volumeName ?? "backup"}-${backup.startedAt.toISOString().slice(0, 10)}.tar.gz`;
+    const fileName = downloadFileName(
+      `${backup.app?.name ?? backup.appName ?? "vardo"}-${backup.volumeName ?? "backup"}-${backup.startedAt.toISOString().slice(0, 10)}`,
+      backup.strategy === "dump" ? "dump" : formatFromArchiveName(backup.storagePath),
+    );
     return await backupDownloadResponse(backupId, fileName);
   } catch (error) {
     return handleRouteError(error, "Error generating backup download");
