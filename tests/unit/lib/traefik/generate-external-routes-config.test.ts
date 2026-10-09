@@ -16,7 +16,7 @@ vi.mock("@/lib/logger", () => ({
 
 vi.mock("@/lib/system-settings", () => ({
   getSslConfig: vi.fn(),
-  getPrimaryIssuer: vi.fn(),
+  getDefaultCertResolver: vi.fn(),
 }));
 
 vi.mock("fs/promises", () => ({
@@ -28,7 +28,7 @@ vi.mock("fs/promises", () => ({
 
 import { regenerateExternalRoutesConfig } from "@/lib/ssl/generate-external-routes-config";
 import { db } from "@/lib/db";
-import { getSslConfig, getPrimaryIssuer } from "@/lib/system-settings";
+import { getSslConfig, getDefaultCertResolver } from "@/lib/system-settings";
 import * as fsp from "fs/promises";
 
 function makeErrnoError(code: string): NodeJS.ErrnoException {
@@ -54,7 +54,7 @@ describe("regenerateExternalRoutesConfig — mkdir error handling", () => {
   beforeEach(() => {
     vi.mocked(db.query.externalRoutes.findMany).mockResolvedValue(mockRoutes as never);
     vi.mocked(getSslConfig).mockResolvedValue({ activeIssuers: ["le"] } as never);
-    vi.mocked(getPrimaryIssuer).mockReturnValue("le" as never);
+    vi.mocked(getDefaultCertResolver).mockReturnValue("le" as never);
   });
 
   it("returns silently when mkdir fails with EACCES", async () => {
@@ -82,7 +82,7 @@ describe("regenerateExternalRoutesConfig — writeFile/rename error handling", (
   beforeEach(() => {
     vi.mocked(db.query.externalRoutes.findMany).mockResolvedValue(mockRoutes as never);
     vi.mocked(getSslConfig).mockResolvedValue({ activeIssuers: ["le"] } as never);
-    vi.mocked(getPrimaryIssuer).mockReturnValue("le" as never);
+    vi.mocked(getDefaultCertResolver).mockReturnValue("le" as never);
     vi.mocked(fsp.mkdir).mockResolvedValue(undefined as never);
     vi.mocked(fsp.rename).mockResolvedValue(undefined as never);
   });
@@ -106,5 +106,22 @@ describe("regenerateExternalRoutesConfig — writeFile/rename error handling", (
     vi.mocked(fsp.writeFile).mockResolvedValue(undefined as never);
     vi.mocked(fsp.rename).mockRejectedValueOnce(makeErrnoError("EPERM"));
     await expect(regenerateExternalRoutesConfig()).rejects.toThrow();
+  });
+});
+
+describe("regenerateExternalRoutesConfig — cert resolver", () => {
+  it("uses the default resolver, so DNS-01 applies when Cloudflare credentials are set", async () => {
+    vi.mocked(db.query.externalRoutes.findMany).mockResolvedValue([{ ...mockRoutes[0], tls: true }] as never);
+    vi.mocked(getSslConfig).mockResolvedValue({ activeIssuers: ["le"] } as never);
+    vi.mocked(getDefaultCertResolver).mockReturnValue("le-dns" as never);
+    vi.mocked(fsp.mkdir).mockResolvedValue(undefined as never);
+    vi.mocked(fsp.writeFile).mockResolvedValue(undefined as never);
+    vi.mocked(fsp.rename).mockResolvedValue(undefined as never);
+
+    await regenerateExternalRoutesConfig();
+
+    const yaml = String(vi.mocked(fsp.writeFile).mock.calls.at(-1)![1]);
+    expect(yaml).toContain("certResolver: le-dns");
+    expect(yaml).not.toMatch(/certResolver: le$/m);
   });
 });

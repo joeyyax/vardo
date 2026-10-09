@@ -34,6 +34,8 @@ export async function register() {
     startCloudflareOnlySync();
     const { syncConsolePublicRoute } = await import("./lib/docker/console-lock");
     await syncConsolePublicRoute().catch((err) => log.warn("Failed to write the console's public route:", err));
+    const { regenerateExternalRoutesConfig } = await import("./lib/ssl/generate-external-routes-config");
+    await regenerateExternalRoutesConfig().catch((err) => log.warn("Failed to write external routes:", err));
 
     // Sizes tier defaults and deploy concurrency. Kept in memory, so a resized host picks up new defaults on restart.
     const { detectHost } = await import("./lib/resources/host");
