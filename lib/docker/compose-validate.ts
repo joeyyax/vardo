@@ -349,8 +349,13 @@ export function unmarkedSharedVolumeWarnings(compose: ComposeFile): string[] {
   const declared = declaredVolumes(compose);
   const nonRotating = nonRotatingServices(compose);
 
+  const detected = volumeSharedServices(compose);
+  const dataOnly = Object.entries(compose.services).every(
+    ([name, svc]) => isSharedService(svc) || detected.has(name),
+  );
+
   const warnings: string[] = [];
-  for (const name of volumeSharedServices(compose)) {
+  for (const name of detected) {
     const svc = compose.services[name];
     if (isSharedService(svc)) continue;
     const mounts = slotIndependentMounts(svc.volumes, declared).map((v) => `"${v}"`).join(", ");
@@ -361,9 +366,12 @@ export function unmarkedSharedVolumeWarnings(compose: ComposeFile): string[] {
       nonRotating.has(name)
         ? `${head} Vardo will deploy it once instead of rotating it — ` +
             `add ${SHARED_MARKER}: true to say so in the compose file.`
-        : `${head} Vardo cannot take it out of the rotation, so two copies will hold ` +
-            `it during a deploy. Give it its own compose file, or drop the depends_on ` +
-            `tying it to a service that rotates.`,
+        : dataOnly
+          ? `${head} Each deploy stops the old copy before starting the new one, ` +
+              `so it is briefly down while it restarts.`
+          : `${head} Vardo cannot take it out of the rotation, so each deploy stops the ` +
+              `old slot before starting the new one and the app is briefly down. Give it ` +
+              `its own compose file, or drop the depends_on tying it to a service that rotates.`,
     );
   }
   return warnings;

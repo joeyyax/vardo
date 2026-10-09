@@ -201,3 +201,75 @@ describe("swap — a rotating service on an externalized volume", () => {
     expect(ctx.stopOldSlot).toBeTypeOf("function");
   });
 });
+
+describe("swap — an app whose only services are databases", () => {
+  const isSharedUp = (a: string[]) => a.includes("up") && a.some((x) => x.endsWith("-shared"));
+  const newSlotUp = () => execFileAsyncMock.mock.calls.map((c) => c[1] as string[]).find(isNewSlotUp)!;
+  const newSlotPull = () =>
+    execFileAsyncMock.mock.calls
+      .map((c) => c[1] as string[])
+      .find((a) => a.includes("pull") && a.some((x) => x.endsWith("-production-green")));
+
+  function postgresOnly(image = "postgres:15"): ComposeFile {
+    return {
+      services: { postgres: { name: "postgres", image, volumes: ["pgdata:/var/lib/postgresql/data"] } },
+      volumes: { pgdata: {} },
+    } as unknown as ComposeFile;
+  }
+
+  it("stops the old postgres before starting the new one", async () => {
+    await swap(context({ compose: postgresOnly() }));
+    expect(indexOf(isOldSlotStop)).toBeGreaterThan(-1);
+    expect(indexOf(isOldSlotStop)).toBeLessThan(indexOf(isNewSlotUp));
+    expect(indexOf(isSharedUp)).toBe(-1);
+  });
+
+  it("stops the old redis before starting the new one", async () => {
+    const compose = {
+      services: { redis: { name: "redis", image: "redis:7", volumes: ["redis-data:/data"] } },
+      volumes: { "redis-data": {} },
+    } as unknown as ComposeFile;
+
+    await swap(context({ compose }));
+    expect(indexOf(isOldSlotStop)).toBeGreaterThan(-1);
+    expect(indexOf(isOldSlotStop)).toBeLessThan(indexOf(isNewSlotUp));
+  });
+
+  it("stops the old copy first for a database on an absolute bind mount", async () => {
+    const compose = {
+      services: {
+        postgres: { name: "postgres", image: "postgres:15", volumes: ["/mnt/docker/db:/var/lib/postgresql/data"] },
+      },
+    } as unknown as ComposeFile;
+
+    const ctx = context({ compose });
+    await swap(ctx);
+    expect(indexOf(isOldSlotStop)).toBeLessThan(indexOf(isNewSlotUp));
+    expect(ctx.logLines).toContainEqual(
+      "[deploy] Volume both slots would hold, mounted by postgres — stopping blue before green starts",
+    );
+  });
+
+  it("runs a new image tag on redeploy", async () => {
+    await swap(context({ compose: postgresOnly("postgres:16") }));
+    expect(newSlotPull()).toContain("postgres");
+    expect(newSlotUp()).not.toContain("--no-recreate");
+    expect(indexOf(isSharedUp)).toBe(-1);
+  });
+
+  it("leaves a mixed app rotating its web service around a postgres deployed once", async () => {
+    const compose = {
+      services: {
+        web,
+        postgres: { name: "postgres", image: "postgres:15", volumes: ["pgdata:/var/lib/postgresql/data"] },
+      },
+      volumes: { pgdata: {} },
+    } as unknown as ComposeFile;
+
+    await swap(context({ compose }));
+    expect(indexOf(isOldSlotStop)).toBe(-1);
+    expect(indexOf(isSharedUp)).toBeGreaterThan(-1);
+    expect(newSlotUp()).toContain("web");
+    expect(newSlotUp()).not.toContain("postgres");
+  });
+});

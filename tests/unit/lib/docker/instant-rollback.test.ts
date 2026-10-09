@@ -16,6 +16,7 @@ const h = vi.hoisted(() => ({
   restoreRestart: vi.fn(),
   demoteRestart: vi.fn(),
   readPartition: vi.fn(),
+  readBound: vi.fn(),
   addEvent: vi.fn(),
   recordActivity: vi.fn(),
   fs: { rm: vi.fn(), symlink: vi.fn(), rename: vi.fn() },
@@ -34,7 +35,7 @@ vi.mock("@/lib/docker/compose", () => ({
   slotComposeFiles: vi.fn(async (dir: string) => ["-f", `${dir}/docker-compose.yml`]),
 }));
 vi.mock("@/lib/docker/slots", () => ({ detectActiveSlot: h.detectActiveSlot }));
-vi.mock("@/lib/docker/shared-project", () => ({ readSlotPartition: h.readPartition }));
+vi.mock("@/lib/docker/shared-project", () => ({ readSlotPartition: h.readPartition, readSlotBound: h.readBound }));
 vi.mock("@/lib/stream/producer", () => ({ addEvent: h.addEvent }));
 vi.mock("@/lib/activity", () => ({ recordActivity: h.recordActivity }));
 vi.mock("fs/promises", () => h.fs);
@@ -66,7 +67,7 @@ function fakeDocker(s: Script = {}) {
       calls.push(`disconnect:${args[4]}`);
       return { stdout: "", stderr: "" };
     }
-    const verb = ["up", "stop"].find((v) => args.includes(v)) ?? (args.includes("-q") ? "ps-q" : args.includes("-a") ? "ps-a" : "ps");
+    const verb = ["up", "stop", "start"].find((v) => args.includes(v)) ?? (args.includes("-q") ? "ps-q" : args.includes("-a") ? "ps-a" : "ps");
     calls.push(`${verb}:${project}`);
     if (verb === "ps-a") return { stdout: s.standbyPs ?? `${RUNNING}\n`, stderr: "" };
     if (verb === "ps") return { stdout: s.runningPs ?? `${RUNNING}\n`, stderr: "" };
@@ -85,6 +86,7 @@ beforeEach(() => {
   h.assertSlot.mockResolvedValue(undefined);
   h.clearPin.mockResolvedValue(undefined);
   h.readPartition.mockResolvedValue(null);
+  h.readBound.mockResolvedValue([]);
   h.addEvent.mockResolvedValue("evt");
   h.recordActivity.mockResolvedValue(undefined);
   dbMock.query.deployments.findFirst.mockResolvedValue({
@@ -267,6 +269,37 @@ describe("performInstantRollback — refusals leave the active slot serving", ()
 
     await expect(performInstantRollback(OPTS)).rejects.toThrow("db down");
     expect(h.release).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("performInstantRollback — a database that can't run twice", () => {
+  beforeEach(() => {
+    h.readBound.mockResolvedValue(["postgres"]);
+  });
+
+  it("stops the active slot before the standby starts", async () => {
+    const result = await performInstantRollback(OPTS);
+
+    expect(result.success).toBe(true);
+    expect(calls.indexOf("stop:blog-production-blue")).toBeLessThan(calls.indexOf("up:blog-production-green"));
+  });
+
+  it("brings the active slot back when the standby fails to start", async () => {
+    fakeDocker({ upFails: true });
+
+    const result = await performInstantRollback(OPTS);
+
+    expect(result.success).toBe(false);
+    expect(calls.indexOf("start:blog-production-blue")).toBeGreaterThan(calls.indexOf("up:blog-production-green"));
+  });
+
+  it("brings the active slot back when the standby never reaches running", async () => {
+    fakeDocker({ runningPs: JSON.stringify({ Service: "postgres", State: "exited" }) });
+
+    const result = await performInstantRollback(OPTS);
+
+    expect(result.success).toBe(false);
+    expect(calls.indexOf("start:blog-production-blue")).toBeGreaterThan(calls.indexOf("stop:blog-production-green"));
   });
 });
 

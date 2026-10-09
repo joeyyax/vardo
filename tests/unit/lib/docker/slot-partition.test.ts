@@ -9,6 +9,7 @@ import {
   isSharedService,
   partitionBySlot,
   sharedProjectName,
+  slotBoundServices,
   slotScopeArgs,
 } from "@/lib/docker/slot-partition";
 import type { ComposeFile, ComposeService } from "@/lib/docker/compose-types";
@@ -100,6 +101,42 @@ describe("partitionBySlot", () => {
       }),
     );
     expect(shared.pgbouncer.depends_on).toEqual(["postgres"]);
+  });
+});
+
+describe("slotBoundServices", () => {
+  const bound = (compose: ComposeFile) => slotBoundServices(compose, partitionBySlot(compose).slotted);
+
+  it("binds a postgres-only app to one copy at a time", () => {
+    const compose = file({ postgres: { image: "postgres:15", volumes: ["pgdata:/var/lib/postgresql/data"] } });
+    compose.volumes = { pgdata: {} };
+    expect(bound(compose)).toEqual(["postgres"]);
+  });
+
+  it("binds a redis-only app to one copy at a time", () => {
+    const compose = file({ redis: { image: "redis:7", volumes: ["redis-data:/data"] } });
+    compose.volumes = { "redis-data": {} };
+    expect(bound(compose)).toEqual(["redis"]);
+  });
+
+  it("binds a database on an absolute bind mount", () => {
+    const compose = file({ postgres: { image: "postgres:15", volumes: ["/mnt/db:/var/lib/postgresql/data"] } });
+    expect(bound(compose)).toEqual(["postgres"]);
+  });
+
+  it("leaves a mixed app's web service free to overlap once postgres is deployed once", () => {
+    const compose = file({
+      web: { image: "app" },
+      postgres: { image: "postgres:15", volumes: ["pgdata:/var/lib/postgresql/data"] },
+    });
+    compose.volumes = { pgdata: {} };
+    expect(Object.keys(partitionBySlot(compose).shared)).toEqual(["postgres"]);
+    expect(bound(compose)).toEqual([]);
+  });
+
+  it("ignores a relative bind mount, which resolves per slot", () => {
+    const compose = file({ postgres: { image: "postgres:15", volumes: ["./db:/var/lib/postgresql/data"] } });
+    expect(bound(compose)).toEqual([]);
   });
 });
 

@@ -60,7 +60,36 @@ volumes:
   postgres-data: {}
 `);
     const [warning] = unmarkedSharedVolumeWarnings(dependent);
-    expect(warning).toContain("two copies will hold it during a deploy");
+    expect(warning).toContain("each deploy stops the old slot before starting the new one");
+  });
+
+  it("says a postgres-only app restarts in place instead of rotating", () => {
+    const only = parseCompose(`services:
+  postgres:
+    image: postgres:15
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+volumes:
+  pgdata: {}
+`);
+    const [warning, ...rest] = unmarkedSharedVolumeWarnings(only);
+    expect(rest).toEqual([]);
+    expect(warning).toContain("stops the old copy before starting the new one");
+    expect(warning).not.toContain("two copies");
+    expect(warning).not.toContain("x-vardo-shared");
+  });
+
+  it("says the same for a redis-only app", () => {
+    const only = parseCompose(`services:
+  redis:
+    image: redis:7
+    volumes:
+      - redis-data:/data
+volumes:
+  redis-data: {}
+`);
+    const [warning] = unmarkedSharedVolumeWarnings(only);
+    expect(warning).toContain("stops the old copy before starting the new one");
   });
 
   it("names the host path a bind-mounted database keeps its data on", () => {

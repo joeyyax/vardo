@@ -4,7 +4,7 @@
 import { readFile } from "fs/promises";
 import { join } from "path";
 import { parseCompose } from "./compose-parse";
-import { partitionBySlot, type SlotPartition } from "./slot-partition";
+import { partitionBySlot, slotBoundServices, type SlotPartition } from "./slot-partition";
 
 /** Injectable for tests. */
 export type ComposeReader = (path: string) => Promise<string>;
@@ -23,6 +23,19 @@ export async function readSlotPartition(
     return compose.name ? { ...partition, composeName: compose.name } : partition;
   } catch {
     return null;
+  }
+}
+
+/** Rotating services in a slot's deployed compose that hold a directory both slots address. Empty when unreadable. */
+export async function readSlotBound(
+  slotDir: string,
+  read: ComposeReader = defaultReader,
+): Promise<string[]> {
+  try {
+    const compose = parseCompose(await read(join(slotDir, "docker-compose.yml")));
+    return slotBoundServices(compose, partitionBySlot(compose).slotted);
+  } catch {
+    return [];
   }
 }
 

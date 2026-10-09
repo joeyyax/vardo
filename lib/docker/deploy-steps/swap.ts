@@ -31,9 +31,8 @@ import { describeSharedOutcome, reconcileSharedServices, SharedRecreateError } f
 import { majorGateAfter, majorGateBefore, type MajorGateState } from "./major-gate";
 import { publishesHostPorts } from "../host-ports";
 import { composeStopTimeout } from "../stop-timeout";
-import { getServicesWithExternalizedVolumes } from "../compose-inject";
 import { registryAuthHint, withRegistryAuth } from "../registry-auth";
-import { partitionBySlot, sharedProjectName, slotOverlapDiagnosis, slotScopeArgs } from "../slot-partition";
+import { partitionBySlot, sharedProjectName, slotBoundServices, slotOverlapDiagnosis, slotScopeArgs } from "../slot-partition";
 import { isSelfApp } from "../self-env";
 import { clearCutoverPin, guardCutover, holdSlot, NO_HOLD, type CutoverGuard } from "../traefik-cutover";
 import { projectScopedNetworkNames } from "../shared-networks";
@@ -269,7 +268,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
   let pinCutover = canPinCutover(canOverlapSlots);
 
   // Appended to new-slot failures.
-  const overlapDiagnosis = () => slotOverlapDiagnosis(compose, slotted, canOverlapSlots);
+  const overlapDiagnosis = () => slotOverlapDiagnosis(compose, slotted, canOverlapSlots && !stoppedOldSlot);
 
   // OOM kills after this belong to this deploy.
   const swapStartedAt = new Date();
@@ -492,32 +491,30 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
       ? await oldSlotRuns(sharedNames)
       : false;
 
-  // Externalized volumes are shared by both slots, so overlap is off for the whole app. Self-deploy exempt.
-  const slottedOnExternalizedVolumes =
-    canOverlapSlots && !deferStopToPostDeploy
-      ? [...getServicesWithExternalizedVolumes(compose)].filter((name) => name in slotted)
-      : [];
+  // A rotating service on a directory both slots address turns overlap off for the whole app. Self-deploy exempt.
+  const slotBound =
+    canOverlapSlots && !deferStopToPostDeploy ? slotBoundServices(compose, slotted) : [];
 
   // Overlap runs two copies of the app; check memory after the build. Self-deploy exempt.
   const overlapFitsMemory =
     canOverlapSlots &&
     !deferStopToPostDeploy &&
     !oldSlotHoldsShared &&
-    slottedOnExternalizedVolumes.length === 0
+    slotBound.length === 0
       ? await overlapFitsNow(ctx.organizationId, ctx.appId, log)
       : true;
 
   if (
     stopOldBeforeUp ||
     oldSlotHoldsShared ||
-    slottedOnExternalizedVolumes.length > 0 ||
+    slotBound.length > 0 ||
     !overlapFitsMemory
   ) {
     if (oldSlotHoldsShared) {
       log(`[deploy] Old slot still runs ${sharedNames.join(", ")} — stopping it before the shared project starts`);
     }
-    if (slottedOnExternalizedVolumes.length > 0) {
-      log(`[deploy] Volume both slots would hold, mounted by ${slottedOnExternalizedVolumes.join(", ")} — stopping ${activeSlot} before ${newSlot} starts`);
+    if (slotBound.length > 0) {
+      log(`[deploy] Volume both slots would hold, mounted by ${slotBound.join(", ")} — stopping ${activeSlot} before ${newSlot} starts`);
     }
     // No second backend to pin to when stopping first.
     pinCutover = false;

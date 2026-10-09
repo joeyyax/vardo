@@ -1,5 +1,5 @@
 import { dependsOnKeys, type ComposeFile, type ComposeService } from "./compose-types";
-import { declaredVolumes, slotIndependentMounts, volumeSharedServices } from "./volume-shared";
+import { declaredVolumes, sharedVolumeMounts, slotIndependentMounts, volumeSharedServices } from "./volume-shared";
 
 /** Compose extension field marking a service as deployed once, outside blue/green. */
 export const SHARED_MARKER = "x-vardo-shared";
@@ -149,6 +149,18 @@ export function composeProjectApp(project: string): string {
 /** Environment a compose project belongs to: paperless-pr-7-shared → pr-7. Null when the name carries none. */
 export function composeProjectEnvironment(project: string): string | null {
   return PROJECT_SUFFIX.exec(project)?.[1] ?? null;
+}
+
+/** Rotating services on a volume or data directory both slots address. Their old slot must stop before the new one starts. */
+export function slotBoundServices(
+  compose: ComposeFile,
+  slotted: Record<string, ComposeService>,
+): string[] {
+  const declared = declaredVolumes(compose);
+  const engines = volumeSharedServices(compose);
+  return Object.entries(slotted)
+    .filter(([name, service]) => engines.has(name) || sharedVolumeMounts(service.volumes, declared).length > 0)
+    .map(([name]) => name);
 }
 
 /** Whether this app needs the two-project deploy at all. */
