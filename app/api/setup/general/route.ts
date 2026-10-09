@@ -28,6 +28,7 @@ async function handleGet(request: NextRequest) {
     baseDomain: config.baseDomain,
     serverIp: config.serverIp,
     domain: config.domain,
+    envBaseDomain: process.env.VARDO_BASE_DOMAIN || null,
   });
 }
 

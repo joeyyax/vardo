@@ -50,7 +50,7 @@ vi.mock("@/lib/auth/session", () => ({ requireSession: async () => ({ user: { id
 vi.mock("@/lib/auth/admin", () => ({ isAppAdmin: async () => false }));
 vi.mock("@/lib/activity", () => ({ recordActivity: vi.fn() }));
 vi.mock("@/lib/api/with-rate-limit", () => ({ withRateLimit: (h: unknown) => h }));
-vi.mock("@/lib/system-settings", () => ({ getSslConfig: async () => ({}), getPrimaryIssuer: () => "le", getDefaultCertResolver: () => "le", CERT_RESOLVERS: ["le", "le-dns", "google", "google-dns", "zerossl", "zerossl-dns"] }));
+vi.mock("@/lib/system-settings", () => ({ getInstanceConfig: async () => ({ baseDomain: "vardo.test" }), getSslConfig: async () => ({}), getPrimaryIssuer: () => "le", getDefaultCertResolver: () => "le", CERT_RESOLVERS: ["le", "le-dns", "google", "google-dns", "zerossl", "zerossl-dns"] }));
 
 import { POST as postAppDomain } from "@/app/api/v1/organizations/[orgId]/apps/[appId]/domains/route";
 import { PATCH as patchOrgDomain } from "@/app/api/v1/organizations/[orgId]/domains/route";
@@ -129,7 +129,7 @@ describe("org domains __default__ toggle", () => {
   it("saves the placeholder unverified", async () => {
     const res = await patchOrgDomain(req("PATCH", { id: "__default__", enabled: true }), orgParams);
     expect(res.status).toBe(200);
-    expect(state.inserted[0]).toMatchObject({ isDefault: true, verified: false });
+    expect(state.inserted[0]).toMatchObject({ domain: "vardo.test", isDefault: true, verified: false });
     expect(state.inserted[0].verifiedAt).toBeUndefined();
   });
 });

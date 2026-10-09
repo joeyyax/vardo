@@ -10,12 +10,11 @@ import { loadInstanceHosts, loadVerifiedZones } from "@/lib/domains/context";
 import { newChallengeToken, refusedHost, verificationView } from "@/lib/domains/ownership";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
+import { getInstanceBaseDomain } from "@/lib/domain-monitoring/auto-domain";
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
 };
-
-const DEFAULT_DOMAIN = process.env.VARDO_BASE_DOMAIN || "localhost";
 
 const addSchema = z.object({
   domain: z
@@ -52,7 +51,7 @@ async function handleGet(_request: NextRequest, { params }: RouteParams) {
       rows.unshift({
         id: "__default__",
         organizationId: orgId,
-        domain: DEFAULT_DOMAIN,
+        domain: await getInstanceBaseDomain(),
         isDefault: true,
         enabled: true,
         verified: false,
@@ -100,7 +99,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
 
     const domain = parsed.data.domain;
 
-    if (domain === DEFAULT_DOMAIN) {
+    if (domain === (await getInstanceBaseDomain()).toLowerCase()) {
       return NextResponse.json(
         { error: "Can't add the default domain as a custom domain" },
         { status: 400 }
@@ -157,7 +156,7 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
         .values({
           id: nanoid(),
           organizationId: orgId,
-          domain: DEFAULT_DOMAIN,
+          domain: await getInstanceBaseDomain(),
           isDefault: true,
           enabled: parsed.data.enabled,
           verified: false,

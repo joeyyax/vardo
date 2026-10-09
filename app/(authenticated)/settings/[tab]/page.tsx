@@ -13,6 +13,7 @@ import { InvitationsPanel } from "../invitations";
 import { OrgGeneralSettings } from "../org-general-settings";
 import { BackupPage } from "@/components/backups/backup-page";
 import { getEmailProviderConfig } from "@/lib/system-settings";
+import { getInstanceBaseDomain } from "@/lib/domain-monitoring/auto-domain";
 
 const VALID_TABS = ["general", "variables", "domains", "backups", "notifications", "team", "invitations"] as const;
 type ValidTab = (typeof VALID_TABS)[number];
@@ -64,7 +65,7 @@ export default async function OrgSettingsTabPage({
       return (
         <OrgDomainEditor
           orgId={orgId}
-          defaultDomain={process.env.VARDO_BASE_DOMAIN || "localhost"}
+          defaultDomain={await getInstanceBaseDomain()}
           sslEnabled={orgData.organization.sslEnabled ?? true}
           serverIP={process.env.VARDO_SERVER_IP}
         />

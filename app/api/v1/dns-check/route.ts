@@ -6,8 +6,7 @@ import { isCloudflareIp } from "@/lib/cloudflare-ips";
 import { apiError } from "@/lib/api/error-response";
 import { isHostname } from "@/lib/security/hostname";
 import { blockedAddressReason } from "@/lib/security/ssrf";
-
-const BASE_DOMAIN = process.env.VARDO_BASE_DOMAIN || "localhost";
+import { getInstanceBaseDomain } from "@/lib/domain-monitoring/auto-domain";
 
 // GET /api/v1/dns-check?domain=example.com&expected=auto-generated.localhost
 async function handleGet(request: NextRequest) {
@@ -77,8 +76,9 @@ async function handleGet(request: NextRequest) {
     }
 
     // CNAME points to the base domain or the expected generated domain.
+    const baseDomain = await getInstanceBaseDomain();
     const cnameCorrect = cnameRecords.some((r) =>
-      r.endsWith(`.${BASE_DOMAIN}`) || r.endsWith(`.${BASE_DOMAIN}.`) ||
+      r.endsWith(`.${baseDomain}`) || r.endsWith(`.${baseDomain}.`) ||
       (expected && (r === expected || r === `${expected}.`))
     );
 
