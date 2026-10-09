@@ -117,6 +117,10 @@ export function runSucceeded(results: BackupResult[]): boolean {
 export type RunBackupOptions = {
   /** Restrict the run to these apps. Other apps on the job are left alone. */
   appIds?: string[];
+  /** Recorded on each row, e.g. "initial" for an app's first snapshot. */
+  trigger?: string;
+  /** False holds back the failure notice, for a run that will be retried. */
+  notifyFailure?: boolean;
 };
 
 type VolumeToBackup = {
@@ -993,6 +997,7 @@ export async function runBackup(
         targetId: job.target.id,
         status: "skipped",
         volumeName: vol.name,
+        trigger: options.trigger ?? null,
         startedAt,
         finishedAt,
         log: logLines.join("\n"),
@@ -1027,6 +1032,7 @@ export async function runBackup(
       targetId: job.target.id,
       status: "running",
       volumeName: vol.name,
+      trigger: options.trigger ?? null,
       strategy,
       keyFingerprint: holdsInstanceSecrets(vol) ? runningKeyFingerprint() : null,
       startedAt,
@@ -1222,6 +1228,7 @@ export async function runBackup(
       skipped.every((r) => r.paused);
     const hasFailures = failed.length > 0 || (capturedNothing && !onlyPaused);
     const allSuccess = !hasFailures;
+    const notifyOnFailure = job.notifyOnFailure && options.notifyFailure !== false;
     const notes = [
       allSkipped.length > 0 ? `${allSkipped.length} skipped` : null,
       excludedSources.length > 0 ? `${excludedSources.length} excluded by durability` : null,
@@ -1230,7 +1237,7 @@ export async function runBackup(
 
     if (onlyPaused) {
       log.info(`${job.name}: nothing captured — every source is waiting on a stopped app or empty`);
-    } else if (job.organizationId && ((hasFailures && job.notifyOnFailure) || (allSuccess && job.notifyOnSuccess))) {
+    } else if (job.organizationId && ((hasFailures && notifyOnFailure) || (allSuccess && job.notifyOnSuccess))) {
       const { emit } = await import("@/lib/notifications/dispatch");
       const names = jobApps.map((bja) => bja.app.name).join(", ") || job.name;
       if (hasFailures) {
@@ -1243,7 +1250,7 @@ export async function runBackup(
         emit(job.organizationId, { type: "backup.success", title: `Backup successful: ${job.name}`, message: `${succeeded.length} backup(s) completed for: ${names}${skippedNote}`, jobId: job.id, jobName: job.name, totalCount: results.length, totalSize: results.reduce((sum, r) => sum + r.sizeBytes, 0) });
       }
     } else if (!job.organizationId) {
-      if (hasFailures && job.notifyOnFailure) {
+      if (hasFailures && notifyOnFailure) {
         log.error(`${job.name} FAILED — ${[...failed, ...skipped].map((r) => `${r.volumeName}: ${r.error}`).join("; ")}`);
       } else if (!hasFailures && job.notifyOnSuccess) {
         log.info(`${job.name} succeeded (${results.reduce((s, r) => s + r.sizeBytes, 0)} bytes)${skippedNote}`);

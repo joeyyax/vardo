@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const redis = vi.hoisted(() => ({ set: vi.fn(), exists: vi.fn() }));
+const redis = vi.hoisted(() => ({ set: vi.fn(), exists: vi.fn(), get: vi.fn() }));
 vi.mock("@/lib/redis", () => ({ redis }));
 
-import { isBulkWriting, withBulkWrite } from "@/lib/metrics/bulk-write";
+import { isBulkWriteRunning, isBulkWriting, withBulkWrite } from "@/lib/metrics/bulk-write";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -13,14 +13,14 @@ beforeEach(() => {
 describe("withBulkWrite", () => {
   it("marks the app while running and keeps a 15 minute marker after", async () => {
     await withBulkWrite("app1", async () => {
-      expect(redis.set).toHaveBeenLastCalledWith("vardo:bulk-write:app1", "1", "EX", 6 * 3600);
+      expect(redis.set).toHaveBeenLastCalledWith("vardo:bulk-write:app1", "running", "EX", 6 * 3600);
     });
-    expect(redis.set).toHaveBeenLastCalledWith("vardo:bulk-write:app1", "1", "EX", 900);
+    expect(redis.set).toHaveBeenLastCalledWith("vardo:bulk-write:app1", "done", "EX", 900);
   });
 
   it("keeps the cooldown marker when the run throws", async () => {
     await expect(withBulkWrite("app1", async () => { throw new Error("boom"); })).rejects.toThrow("boom");
-    expect(redis.set).toHaveBeenLastCalledWith("vardo:bulk-write:app1", "1", "EX", 900);
+    expect(redis.set).toHaveBeenLastCalledWith("vardo:bulk-write:app1", "done", "EX", 900);
   });
 
   it("runs without an app id", async () => {
@@ -45,5 +45,19 @@ describe("isBulkWriting", () => {
     expect(await isBulkWriting([null])).toBe(false);
     redis.exists.mockRejectedValue(new Error("down"));
     expect(await isBulkWriting(["a"])).toBe(false);
+  });
+});
+
+describe("isBulkWriteRunning", () => {
+  it("is true only while the run holds the marker", async () => {
+    redis.get.mockResolvedValueOnce("running").mockResolvedValueOnce("done").mockResolvedValueOnce(null);
+    expect(await isBulkWriteRunning("a")).toBe(true);
+    expect(await isBulkWriteRunning("a")).toBe(false);
+    expect(await isBulkWriteRunning("a")).toBe(false);
+  });
+
+  it("is false when redis is down", async () => {
+    redis.get.mockRejectedValue(new Error("down"));
+    expect(await isBulkWriteRunning("a")).toBe(false);
   });
 });

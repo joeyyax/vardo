@@ -73,6 +73,13 @@ export async function tickBackupJobs(): Promise<void> {
     }
   }
 
+  try {
+    const { startDueInitialBackups } = await import("./initial-backup");
+    runs.push(...(await startDueInitialBackups({ now, limit, queued })));
+  } catch (err) {
+    log.error("First snapshot tick error:", err);
+  }
+
   await Promise.all(runs);
 }
 

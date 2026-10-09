@@ -466,6 +466,12 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
 
   sendDeployNotification(app, ctx.deploymentId, true, durationMs).catch(() => {});
 
+  if (!ctx.envIsolated) {
+    import("@/lib/backups/initial-backup")
+      .then(({ armInitialBackupQuietly }) => armInitialBackupQuietly(ctx.appId, "deploy"))
+      .catch(() => {});
+  }
+
   // Auto-rollback can't watch Vardo itself; the watcher dies with the slot.
   if (app.autoRollback && isSelfApp(app.name) && activeSlot) {
     log(
