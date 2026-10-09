@@ -35,6 +35,11 @@ describe("parseRule", () => {
     expect(verdict("Host(`victim.com`) && PathPrefix(`/api`)")).toBe("foreign");
   });
 
+  it("owns the path-route rule Vardo writes", () => {
+    expect(verdict("Host(`app.example.com`) && (Path(`/docs`) || PathPrefix(`/docs/`))")).toBe("owned");
+    expect(verdict("Host(`victim.com`) && (Path(`/docs`) || PathPrefix(`/docs/`))")).toBe("foreign");
+  });
+
   it("treats rules without a host matcher as claiming every host", () => {
     expect(verdict("PathPrefix(`/`)")).toBe("any");
     expect(verdict("HostSNI(`*`)")).toBe("any");

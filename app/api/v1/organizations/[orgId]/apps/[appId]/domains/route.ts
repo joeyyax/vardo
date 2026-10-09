@@ -13,11 +13,28 @@ import { apps } from "@/lib/db/schema";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { HOSTNAME_RE } from "@/lib/security/hostname";
 import { proofForNewDomain } from "@/lib/domains/context";
+import { hostHeldByOtherOrg } from "@/lib/domains/shared-host";
+import { normalizePathPrefix } from "@/lib/domains/path-prefix";
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
 };
 
+
+// "/docs"; empty or "/" routes the whole host.
+const pathPrefixSchema = z
+  .string()
+  .nullable()
+  .transform((v, ctx) => {
+    const normalized = normalizePathPrefix(v);
+    if (normalized === undefined) {
+      ctx.addIssue({ code: "custom", message: "Path must look like /docs, using letters, digits and . _ ~ -" });
+      return z.NEVER;
+    }
+    return normalized;
+  });
+
+const HOST_TAKEN = "Another organization already routes that domain.";
 
 const createDomainSchema = z.object({
   domain: z.string().min(1, "Domain is required").regex(HOSTNAME_RE, "Invalid domain name"),
@@ -26,6 +43,8 @@ const createDomainSchema = z.object({
   certResolver: z.enum(CERT_RESOLVERS).optional(),
   redirectTo: z.string().url("Must be a valid URL").optional(),
   redirectCode: z.union([z.literal(301), z.literal(302)]).optional(),
+  pathPrefix: pathPrefixSchema.optional(),
+  stripPathPrefix: z.boolean().optional(),
 }).strict();
 
 const deleteDomainSchema = z.object({
@@ -72,6 +91,9 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     if ("refusal" in proof) {
       return NextResponse.json({ error: `Couldn't add domain. ${proof.refusal}` }, { status: 400 });
     }
+    if (await hostHeldByOtherOrg(domainName, orgId)) {
+      return NextResponse.json({ error: `Couldn't add domain. ${HOST_TAKEN}` }, { status: 409 });
+    }
 
     // Caller's resolver, or the primary issuer over DNS-01 when Cloudflare credentials are set.
     const certResolver = parsed.data.certResolver
@@ -89,6 +111,8 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
         certResolver,
         redirectTo: parsed.data.redirectTo,
         redirectCode: parsed.data.redirectCode,
+        pathPrefix: parsed.data.pathPrefix ?? null,
+        stripPathPrefix: parsed.data.stripPathPrefix ?? false,
       })
       .returning();
 
@@ -99,7 +123,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
   } catch (error) {
     if (isUniqueViolation(error)) {
       return NextResponse.json(
-        { error: "Domain already exists" },
+        { error: "That domain and path are already routed" },
         { status: 409 }
       );
     }
@@ -114,6 +138,8 @@ const updateDomainSchema = z.object({
   certResolver: z.enum(CERT_RESOLVERS).optional(),
   redirectTo: z.string().url("Must be a valid URL").nullable().optional(),
   redirectCode: z.union([z.literal(301), z.literal(302)]).optional(),
+  pathPrefix: pathPrefixSchema.optional(),
+  stripPathPrefix: z.boolean().optional(),
 }).strict();
 
 // PATCH /api/v1/organizations/[orgId]/apps/[appId]/domains
@@ -151,6 +177,9 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
       if ("refusal" in proof) {
         return NextResponse.json({ error: `Couldn't update domain. ${proof.refusal}` }, { status: 400 });
       }
+      if (await hostHeldByOtherOrg(fields.domain, orgId)) {
+        return NextResponse.json({ error: `Couldn't update domain. ${HOST_TAKEN}` }, { status: 409 });
+      }
       updates.domain = fields.domain.toLowerCase();
       Object.assign(updates, proof);
     }
@@ -184,6 +213,9 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ domain: updated });
   } catch (error) {
+    if (isUniqueViolation(error)) {
+      return NextResponse.json({ error: "That domain and path are already routed" }, { status: 409 });
+    }
     return handleRouteError(error, "Error updating domain");
   }
 }

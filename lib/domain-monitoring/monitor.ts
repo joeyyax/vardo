@@ -93,7 +93,7 @@ export async function checkAllDomains(): Promise<DomainCheckResult[]> {
 }
 
 async function probeDomain(
-  d: { id: string; domain: string; app: { name: string } },
+  d: { id: string; domain: string; pathPrefix?: string | null; app: { name: string } },
   prevCheck: { reachable: boolean } | undefined,
   policy: OutboundPolicy,
 ): Promise<DomainCheckResult> {
@@ -105,7 +105,7 @@ async function probeDomain(
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10000);
-    const res = await safeFetch(`https://${d.domain}/`, { signal: controller.signal, policy });
+    const res = await safeFetch(`https://${d.domain}${d.pathPrefix ?? ""}/`, { signal: controller.signal, policy });
     clearTimeout(timeout);
     reachable = res.status < 500;
     statusCode = res.status;
@@ -113,7 +113,7 @@ async function probeDomain(
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 10000);
-      const res = await safeFetch(`http://${d.domain}/`, { signal: controller.signal, policy });
+      const res = await safeFetch(`http://${d.domain}${d.pathPrefix ?? ""}/`, { signal: controller.signal, policy });
       clearTimeout(timeout);
       reachable = res.status < 500;
       statusCode = res.status;

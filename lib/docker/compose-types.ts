@@ -150,6 +150,8 @@ export type DeployTransformDomain = {
   redirectCode: number | null;
   /** Compose service this domain routes to. Null means the primary service. */
   composeService?: string | null;
+  pathPrefix?: string | null;
+  stripPathPrefix?: boolean | null;
 };
 
 export type ComposePreviewApp = {

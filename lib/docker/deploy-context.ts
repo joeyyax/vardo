@@ -61,6 +61,8 @@ export type DeployApp = {
     redirectCode: number | null;
     /** Compose service this domain targets; null for the parent's own domains (primary service). */
     composeService?: string | null;
+    pathPrefix?: string | null;
+    stripPathPrefix?: boolean | null;
   }[];
 };
 

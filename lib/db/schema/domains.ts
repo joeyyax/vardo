@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   boolean,
   index,
@@ -5,6 +6,7 @@ import {
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { apps } from "./apps";
 
@@ -13,7 +15,11 @@ export const domains = pgTable("domain", {
   appId: text("app_id")
     .notNull()
     .references(() => apps.id, { onDelete: "cascade" }),
-  domain: text("domain").notNull().unique(),
+  domain: text("domain").notNull(),
+  /** Routes only requests under this path, e.g. "/docs". Null routes the whole host. */
+  pathPrefix: text("path_prefix"),
+  /** Removes pathPrefix before the request reaches the app. */
+  stripPathPrefix: boolean("strip_path_prefix").default(false).notNull(),
   serviceName: text("service_name"),
   port: integer("port"),
   middlewares: text("middlewares"),
@@ -29,6 +35,7 @@ export const domains = pgTable("domain", {
 },
   (t) => [
     index("domain_app_id_idx").on(t.appId),
+    uniqueIndex("domain_host_path_uniq").on(t.domain, sql`coalesce(${t.pathPrefix}, '')`),
   ]
 );
 

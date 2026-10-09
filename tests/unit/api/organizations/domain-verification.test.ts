@@ -41,6 +41,7 @@ vi.mock("@/lib/db", () => {
     },
   };
 });
+vi.mock("@/lib/domains/shared-host", () => ({ hostHeldByOtherOrg: async (host: string) => host === "taken.com" }));
 vi.mock("@/lib/api/verify-access", () => ({
   verifyOrgAccess: async () => ({ organization: { trusted: false } }),
   verifyAppAccess: async () => ({ id: "app-1", isSystemManaged: false }),
@@ -78,6 +79,34 @@ describe("app domain POST", () => {
       const res = await postAppDomain(req("POST", { domain }), appParams);
       expect(res.status).toBe(400);
     }
+    expect(state.inserted).toEqual([]);
+  });
+});
+
+describe("app domain POST path prefix", () => {
+  it("stores a normalized prefix and the strip flag", async () => {
+    const res = await postAppDomain(req("POST", { domain: "acme.com", pathPrefix: "docs/", stripPathPrefix: true }), appParams);
+    expect(res.status).toBe(201);
+    expect(state.inserted[0]).toMatchObject({ domain: "acme.com", pathPrefix: "/docs", stripPathPrefix: true });
+  });
+
+  it("stores no prefix for the whole host", async () => {
+    const res = await postAppDomain(req("POST", { domain: "acme.com", pathPrefix: "/" }), appParams);
+    expect(res.status).toBe(201);
+    expect(state.inserted[0]).toMatchObject({ pathPrefix: null, stripPathPrefix: false });
+  });
+
+  it("refuses a prefix that could rewrite the rule", async () => {
+    for (const pathPrefix of ["/a`) || Host(`x.com", "/a b", "/a?b", "/../x", "/docs/."]) {
+      const res = await postAppDomain(req("POST", { domain: "acme.com", pathPrefix }), appParams);
+      expect(res.status).toBe(400);
+    }
+    expect(state.inserted).toEqual([]);
+  });
+
+  it("refuses a path on a host another organization routes", async () => {
+    const res = await postAppDomain(req("POST", { domain: "taken.com", pathPrefix: "/docs" }), appParams);
+    expect(res.status).toBe(409);
     expect(state.inserted).toEqual([]);
   });
 });

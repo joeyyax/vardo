@@ -5,6 +5,7 @@ import { statusChange } from "@/lib/db/app-status";
 import { setParked } from "@/lib/db/app-parked";
 import { deployments, apps, volumes } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
+import { formatRoute } from "@/lib/domains/path-prefix";
 import { nanoid } from "nanoid";
 import { encrypt, decryptOrFallback } from "@/lib/crypto/encrypt";
 import { pointCurrentAt } from "../active-slot";
@@ -80,9 +81,10 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
 
   // Step 12: HTTP check on domains.
   for (const domain of app.domains) {
-    const ok = await checkEndpoint(domain.domain, logs);
-    if (ok) logs.push(`[health] ${domain.domain} responding`);
-    else logs.push(`[health] ${domain.domain} not yet reachable (DNS/TLS propagation)`);
+    const route = formatRoute(domain.domain, domain.pathPrefix);
+    const ok = await checkEndpoint(route, logs);
+    if (ok) logs.push(`[health] ${route} responding`);
+    else logs.push(`[health] ${route} not yet reachable (DNS/TLS propagation)`);
   }
 
   // Detect volumes from running containers. Rows describe the default environment.

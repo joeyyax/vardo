@@ -582,6 +582,13 @@
       "when": 1791499102723,
       "tag": "0082_volume_prefix_upsert",
       "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1791504070005,
+      "tag": "0083_domain_path_prefix",
+      "breakpoints": true
     }
   ]
 }

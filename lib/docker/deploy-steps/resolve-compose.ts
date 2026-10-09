@@ -2,6 +2,7 @@
 
 import {
   injectTraefikLabels,
+  domainRouteOptions,
   injectNetwork,
   resolveBackendProtocol,
   narrowBackendProtocol,
@@ -12,6 +13,7 @@ import {
   getTraefikRoutedServices,
 } from "../compose";
 import { selectRoutedService } from "../routed-service";
+import { formatRoute } from "@/lib/domains/path-prefix";
 import { detectExposedPorts } from "../client";
 import type { ComposeFile } from "../compose-types";
 import { normalizeCompose } from "../compose-normalize";
@@ -207,23 +209,20 @@ export async function resolveCompose(ctx: DeployContext): Promise<DeployContext>
         );
       }
       compose = injectTraefikLabels(compose, {
+        ...domainRouteOptions(domain),
         projectName: envRoute ?? `${app.name}-${domain.id.slice(0, 8)}`,
         appName: app.name,
         traefikService: envRoute,
-        domain: domain.domain,
         containerPort: port,
-        certResolver: domain.certResolver || "le-dns",
-        ssl: domain.sslEnabled ?? true,
-        redirectTo: domain.redirectTo ?? undefined,
-        redirectCode: domain.redirectCode ?? 301,
         serviceName: targetService,
         backendProtocol: resolvedProtocol,
       });
       const svcSuffix = targetService ? ` → ${targetService}` : "";
+      const route = formatRoute(domain.domain, domain.pathPrefix);
       if (domain.redirectTo) {
-        log(`[deploy] Traefik: ${domain.domain} → redirect ${domain.redirectCode ?? 301} ${domain.redirectTo}${svcSuffix}`);
+        log(`[deploy] Traefik: ${route} → redirect ${domain.redirectCode ?? 301} ${domain.redirectTo}${svcSuffix}`);
       } else {
-        log(`[deploy] Traefik: ${domain.domain} → :${port}${(domain.sslEnabled ?? true) ? " (TLS)" : ""}${svcSuffix}`);
+        log(`[deploy] Traefik: ${route} → :${port}${(domain.sslEnabled ?? true) ? " (TLS)" : ""}${svcSuffix}`);
       }
     }
 

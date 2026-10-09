@@ -3,7 +3,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "fs";
 import { join } from "path";
-import { injectTraefikLabels } from "@/lib/docker/compose-inject";
+import { domainRouteOptions, injectTraefikLabels } from "@/lib/docker/compose-inject";
 import { parseCompose } from "@/lib/docker/compose-parse";
 import { interpolate } from "@/lib/docker/compose-hosts";
 import type { ComposeFile } from "@/lib/docker/compose-types";
@@ -35,14 +35,10 @@ function render(route: Route): Record<string, string> {
   const port = Number(route.labels[`traefik.http.services.${route.app}.loadbalancer.server.port`]);
   const compose: ComposeFile = { services: { app: { name: "app", image: "x" } } };
   const out = injectTraefikLabels(compose, {
+    ...domainRouteOptions({ ...route, id: route.idPrefix }),
     projectName,
     appName: route.app,
-    domain: route.domain,
     containerPort: port,
-    certResolver: route.certResolver || "le-dns",
-    ssl: route.sslEnabled ?? true,
-    redirectTo: route.redirectTo ?? undefined,
-    redirectCode: route.redirectCode ?? 301,
     serviceName: "app",
     backendProtocol: route.backendProtocol ?? "http",
   });

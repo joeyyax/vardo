@@ -11,13 +11,15 @@ export function environmentDomains(
   appId: string,
 ): DeployDomain[] {
   if (!env.domain) return [];
-  const template =
-    appDomains.find((d) => d.isPrimary && !d.redirectTo) ?? appDomains.find((d) => !d.redirectTo);
+  const serves = (d: DeployDomain) => !d.redirectTo && !d.pathPrefix;
+  const template = appDomains.find((d) => d.isPrimary && serves(d)) ?? appDomains.find(serves);
   return [
     {
       id: env.id ?? env.domain,
       appId,
       domain: env.domain,
+      pathPrefix: null,
+      stripPathPrefix: false,
       serviceName: template?.serviceName ?? null,
       port: template?.port ?? null,
       middlewares: null,

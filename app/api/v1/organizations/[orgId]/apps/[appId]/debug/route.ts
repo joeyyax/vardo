@@ -85,6 +85,8 @@ async function handler(_request: NextRequest, { params }: RouteParams) {
           certResolver: d.certResolver ?? null,
           redirectTo: d.redirectTo ?? null,
           redirectCode: d.redirectCode ?? null,
+          pathPrefix: d.pathPrefix ?? null,
+          stripPathPrefix: d.stripPathPrefix ?? false,
         })),
         backendProtocol: narrowBackendProtocol(app.backendProtocol),
       },

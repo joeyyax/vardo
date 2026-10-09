@@ -44,6 +44,8 @@ import {
 } from "@/components/ssl/domain-diagnosis";
 import type { Domain } from "./types";
 import { Card } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { formatRoute } from "@/lib/domains/path-prefix";
 import { cn } from "@/lib/utils";
 
 // Explicit picks; "Default" uses DNS-01 when the instance has Cloudflare credentials.
@@ -55,6 +57,30 @@ const CERT_RESOLVER_OPTIONS = [
   { value: "zerossl-dns", label: "ZeroSSL (DNS)" },
   { value: "zerossl", label: "ZeroSSL (HTTP)" },
 ];
+
+/** Per-route toggles under the domain fields. */
+function DomainRouteOptions({
+  path,
+  redirect,
+  strip,
+  onStripChange,
+}: {
+  path: string;
+  redirect: boolean;
+  strip: boolean;
+  onStripChange: (v: boolean) => void;
+}) {
+  const hasPath = !!path.trim() && path.trim() !== "/";
+  if (!hasPath || redirect) return null;
+  return (
+    <div className="basis-full flex flex-wrap gap-x-6 gap-y-2">
+      <label className="flex items-center gap-2 text-sm">
+        <Checkbox checked={strip} onCheckedChange={(v) => onStripChange(v === true)} />
+        Remove <span className="font-mono">{path.trim()}</span> before forwarding to the app
+      </label>
+    </div>
+  );
+}
 
 export function AppNetworking({
   domains,
@@ -87,6 +113,8 @@ export function AppNetworking({
   const [newDomainResolver, setNewDomainResolver] = useState("");
   const [newDomainRedirectTo, setNewDomainRedirectTo] = useState("");
   const [newDomainRedirectCode, setNewDomainRedirectCode] = useState("301");
+  const [newDomainPath, setNewDomainPath] = useState("");
+  const [newDomainStrip, setNewDomainStrip] = useState(false);
   const [deletingDomainId, setDeletingDomainId] = useState<string | null>(null);
   const [editingDomainId, setEditingDomainId] = useState<string | null>(null);
   const [editDomainValue, setEditDomainValue] = useState("");
@@ -94,6 +122,8 @@ export function AppNetworking({
   const [editDomainResolver, setEditDomainResolver] = useState("");
   const [editDomainRedirectTo, setEditDomainRedirectTo] = useState("");
   const [editDomainRedirectCode, setEditDomainRedirectCode] = useState("301");
+  const [editDomainPath, setEditDomainPath] = useState("");
+  const [editDomainStrip, setEditDomainStrip] = useState(false);
   // Open sub-view from URL (e.g. /apps/emmayax/networking/emmayax.com)
   const [dnsDomainId, setDnsDomainId] = useState<string | null>(
     () => (initialSubView && domains.find((d) => d.domain === initialSubView)?.id) || null,
@@ -226,6 +256,7 @@ export function AppNetworking({
           body: JSON.stringify({
             domain: newDomain.trim(),
             port: newDomainPort ? parseInt(newDomainPort, 10) : undefined,
+            ...(newDomainPath.trim() && { pathPrefix: newDomainPath.trim(), stripPathPrefix: newDomainStrip }),
             ...(newDomainResolver && { certResolver: newDomainResolver }),
             ...(newDomainRedirectTo.trim() && {
               redirectTo: newDomainRedirectTo.trim(),
@@ -246,6 +277,8 @@ export function AppNetworking({
       setNewDomainResolver("");
       setNewDomainRedirectTo("");
       setNewDomainRedirectCode("301");
+      setNewDomainPath("");
+      setNewDomainStrip(false);
       router.refresh();
     } catch {
       toast.error("Couldn't add domain");
@@ -293,6 +326,8 @@ export function AppNetworking({
             id,
             domain: editDomainValue.trim(),
             port: editDomainPort ? parseInt(editDomainPort, 10) : null,
+            pathPrefix: editDomainPath.trim() || null,
+            stripPathPrefix: editDomainStrip,
             ...(editDomainResolver && editDomainResolver !== editingDomain?.certResolver && { certResolver: editDomainResolver }),
             redirectTo: editDomainRedirectTo.trim() || null,
             ...(editDomainRedirectTo.trim() && {
@@ -335,6 +370,8 @@ export function AppNetworking({
               setNewDomainResolver("");
               setNewDomainRedirectTo("");
               setNewDomainRedirectCode("301");
+              setNewDomainPath("");
+              setNewDomainStrip(false);
               setDomainOpen(!domainOpen);
             }}
           >
@@ -344,8 +381,8 @@ export function AppNetworking({
         </div>
 
         {domainOpen && (
-          <Card variant="inset" className="flex items-end gap-3 p-4">
-            <div className="grid gap-1.5 flex-1">
+          <Card variant="inset" className="flex flex-wrap items-end gap-3 p-4">
+            <div className="grid gap-1.5 flex-1 min-w-48">
               <label className="text-xs text-muted-foreground">Domain</label>
               <Input
                 placeholder="app.example.com"
@@ -354,6 +391,16 @@ export function AppNetworking({
                 onKeyDown={(e) => { if (e.key === "Enter") handleDomainAdd(); }}
                 className="font-mono"
                 autoFocus
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <label className="text-xs text-muted-foreground">Path</label>
+              <Input
+                placeholder="/"
+                value={newDomainPath}
+                onChange={(e) => setNewDomainPath(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") handleDomainAdd(); }}
+                className="w-32 font-mono"
               />
             </div>
             <div className="grid gap-1.5">
@@ -404,6 +451,12 @@ export function AppNetworking({
                 </Select>
               </div>
             )}
+            <DomainRouteOptions
+              path={newDomainPath}
+              redirect={!!newDomainRedirectTo.trim()}
+              strip={newDomainStrip}
+              onStripChange={setNewDomainStrip}
+            />
             <Button size="sm" onClick={handleDomainAdd} disabled={domainSaving || !newDomain.trim()}>
               {domainSaving ? <Loader2 className="size-3.5 animate-spin" /> : "Add"}
             </Button>
@@ -430,8 +483,8 @@ export function AppNetworking({
 
                 if (isEditing) {
                   return (
-                    <Card variant="inset" key={domain.id} className="flex items-end gap-3 p-4">
-                      <div className="grid gap-1.5 flex-1">
+                    <Card variant="inset" key={domain.id} className="flex flex-wrap items-end gap-3 p-4">
+                      <div className="grid gap-1.5 flex-1 min-w-48">
                         <label className="text-xs text-muted-foreground">Domain</label>
                         <Input
                           value={editDomainValue}
@@ -439,6 +492,16 @@ export function AppNetworking({
                           onKeyDown={(e) => { if (e.key === "Enter") handleDomainUpdate(domain.id); if (e.key === "Escape") setEditingDomainId(null); }}
                           className="font-mono"
                           autoFocus
+                        />
+                      </div>
+                      <div className="grid gap-1.5">
+                        <label className="text-xs text-muted-foreground">Path</label>
+                        <Input
+                          placeholder="/"
+                          value={editDomainPath}
+                          onChange={(e) => setEditDomainPath(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === "Enter") handleDomainUpdate(domain.id); if (e.key === "Escape") setEditingDomainId(null); }}
+                          className="w-32 font-mono"
                         />
                       </div>
                       <div className="grid gap-1.5">
@@ -489,6 +552,12 @@ export function AppNetworking({
                           </Select>
                         </div>
                       )}
+                      <DomainRouteOptions
+                        path={editDomainPath}
+                        redirect={!!editDomainRedirectTo.trim()}
+                        strip={editDomainStrip}
+                        onStripChange={setEditDomainStrip}
+                      />
                       <Button size="sm" onClick={() => handleDomainUpdate(domain.id)} disabled={domainSaving || !editDomainValue.trim()}>
                         {domainSaving ? <Loader2 className="size-3.5 animate-spin" /> : "Save"}
                       </Button>
@@ -525,12 +594,13 @@ export function AppNetworking({
                       );
                     })()}
                     <a
-                      href={`${domain.domain.includes("localhost") ? "http" : "https"}://${domain.domain}`}
+                      href={`${domain.domain.includes("localhost") ? "http" : "https"}://${formatRoute(domain.domain, domain.pathPrefix)}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-sm font-medium font-mono truncate hover:underline"
                     >
                       {domain.domain}
+                      {domain.pathPrefix && <span className="text-muted-foreground">{domain.pathPrefix}</span>}
                     </a>
                     {domain.isPrimary && (
                       <Badge variant="info" className="text-xs shrink-0">
@@ -570,6 +640,8 @@ export function AppNetworking({
                         setEditDomainResolver(domain.certResolver || "");
                         setEditDomainRedirectTo(domain.redirectTo || "");
                         setEditDomainRedirectCode(String(domain.redirectCode ?? 301));
+                        setEditDomainPath(domain.pathPrefix || "");
+                        setEditDomainStrip(domain.stripPathPrefix ?? false);
                       }}
                     >
                       <Pencil className="size-3.5" />

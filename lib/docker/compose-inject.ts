@@ -18,6 +18,7 @@ import { selectRoutedService } from "./routed-service";
 import { sanitizeCompose, isAnonymousVolume } from "./compose-validate";
 import { generateComposeForImage } from "./compose-generate";
 import { isHostname } from "@/lib/security/hostname";
+import { isPathPrefix, pathRoutePriority } from "@/lib/domains/path-prefix";
 
 const VARDO_LABEL_PREFIX = "vardo.";
 
@@ -130,9 +131,14 @@ export function injectTraefikLabels(
     backendProtocol?: "http" | "https";
     /** Traefik service name. Defaults to appName, then projectName. */
     traefikService?: string;
+    /** Route only this path and below, e.g. "/docs". */
+    pathPrefix?: string | null;
+    /** Remove pathPrefix before forwarding. */
+    stripPathPrefix?: boolean;
   },
 ): ComposeFile {
   const { projectName, domain, containerPort, certResolver = "le-dns", ssl = true } = opts;
+  const pathPrefix = opts.pathPrefix || null;
   const serviceName =
     opts.serviceName ?? Object.keys(compose.services)[0];
 
@@ -144,6 +150,7 @@ export function injectTraefikLabels(
 
   // Backticks or spaces here would rewrite the Traefik rule and claim other hosts.
   if (!isHostname(domain)) throw new Error(`Refusing to route invalid domain "${domain}"`);
+  if (pathPrefix && !isPathPrefix(pathPrefix)) throw new Error(`Refusing to route invalid path "${pathPrefix}"`);
 
   const existing = compose.services[serviceName];
   if (isTraefikOptedOut(existing) || isTraefikSelfRouted(existing)) return compose;
@@ -154,21 +161,32 @@ export function injectTraefikLabels(
   const svcName = opts.traefikService || opts.appName || projectName;
   const transportName = opts.appName || projectName;
 
+  // Path and PathPrefix together stop "/docs" matching "/docsy".
+  const rule = pathPrefix
+    ? `Host(\`${domain}\`) && (Path(\`${pathPrefix}\`) || PathPrefix(\`${pathPrefix}/\`))`
+    : `Host(\`${domain}\`)`;
   const labels: Record<string, string> = {
     ...existing.labels,
     "traefik.enable": "true",
-    [`traefik.http.routers.${projectName}.rule`]: `Host(\`${domain}\`)`,
+    [`traefik.http.routers.${projectName}.rule`]: rule,
   };
+  if (pathPrefix) labels[`traefik.http.routers.${projectName}.priority`] = String(pathRoutePriority(pathPrefix));
 
+  // Middlewares on the router that serves the app: the redirect, or the path strip.
+  const appMiddlewares: string[] = [];
   if (isRedirect) {
     // Redirect domain: redirectregex middleware, still TLS-terminated.
     labels[`traefik.http.middlewares.${projectName}-redirect.redirectregex.regex`] = "^https?://[^/]+(.*)$";
     labels[`traefik.http.middlewares.${projectName}-redirect.redirectregex.replacement`] = `${opts.redirectTo}\${1}`;
     labels[`traefik.http.middlewares.${projectName}-redirect.redirectregex.permanent`] = String(permanent);
-    labels[`traefik.http.routers.${projectName}.middlewares`] = `${projectName}-redirect`;
+    appMiddlewares.push(`${projectName}-redirect`);
     // Traefik requires a service reference even on redirect routers.
     labels[`traefik.http.routers.${projectName}.service`] = svcName;
   } else {
+    if (pathPrefix && opts.stripPathPrefix) {
+      labels[`traefik.http.middlewares.${projectName}-strip.stripprefix.prefixes`] = pathPrefix;
+      appMiddlewares.push(`${projectName}-strip`);
+    }
     labels[`traefik.http.services.${svcName}.loadbalancer.server.port`] = String(containerPort);
     labels[`traefik.http.routers.${projectName}.service`] = svcName;
     if (opts.backendProtocol === "https") {
@@ -187,7 +205,8 @@ export function injectTraefikLabels(
     }
 
     // Port-80 router: redirects to HTTPS or the domain redirect target.
-    labels[`traefik.http.routers.${projectName}-http.rule`] = `Host(\`${domain}\`)`;
+    labels[`traefik.http.routers.${projectName}-http.rule`] = rule;
+    if (pathPrefix) labels[`traefik.http.routers.${projectName}-http.priority`] = String(pathRoutePriority(pathPrefix));
     labels[`traefik.http.routers.${projectName}-http.entrypoints`] = "web";
     labels[`traefik.http.routers.${projectName}-http.service`] = svcName;
 
@@ -200,9 +219,9 @@ export function injectTraefikLabels(
     }
   } else {
     labels[`traefik.http.routers.${projectName}.entrypoints`] = "web";
-    if (isRedirect) {
-      labels[`traefik.http.routers.${projectName}.middlewares`] = `${projectName}-redirect`;
-    }
+  }
+  if (appMiddlewares.length > 0) {
+    labels[`traefik.http.routers.${projectName}.middlewares`] = appMiddlewares.join(",");
   }
 
   // stripHostPorts() handles host ports for the primary service.
@@ -224,6 +243,19 @@ export function injectTraefikLabels(
   }
 
   return { ...compose, services: updatedServices };
+}
+
+/** injectTraefikLabels options a domain row decides. */
+export function domainRouteOptions(domain: DeployTransformDomain) {
+  return {
+    domain: domain.domain,
+    certResolver: domain.certResolver || "le-dns",
+    ssl: domain.sslEnabled ?? true,
+    redirectTo: domain.redirectTo ?? undefined,
+    redirectCode: domain.redirectCode ?? 301,
+    pathPrefix: domain.pathPrefix ?? null,
+    stripPathPrefix: domain.stripPathPrefix ?? false,
+  };
 }
 
 /**
@@ -817,14 +849,10 @@ export function applyDeployTransforms(
         override: domain.composeService,
       }).service;
       result = injectTraefikLabels(result, {
+        ...domainRouteOptions(domain),
         projectName: `${opts.appName}-${domain.id.slice(0, 6)}`,
         appName: opts.appName,
-        domain: domain.domain,
         containerPort: port,
-        certResolver: domain.certResolver || "le-dns",
-        ssl: domain.sslEnabled ?? true,
-        redirectTo: domain.redirectTo ?? undefined,
-        redirectCode: domain.redirectCode ?? 301,
         serviceName: targetService,
         backendProtocol: resolvedProtocol,
       });

@@ -55,6 +55,7 @@ export {
 // Injection, stripping, overlays, ports, deploy transforms
 export {
   injectTraefikLabels,
+  domainRouteOptions,
   stripTraefikLabels,
   slotComposeFiles,
   stripVardoInjections,

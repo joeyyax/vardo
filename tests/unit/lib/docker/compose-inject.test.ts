@@ -311,3 +311,48 @@ describe("injectTraefikLabels domain validation", () => {
     expect(result.services.web.labels?.["traefik.http.routers.demo-abcdef.rule"]).toBe("Host(`app.example.com`)");
   });
 });
+
+describe("injectTraefikLabels path prefix", () => {
+  const base = (): ComposeFile => ({ services: { web: { name: "web", image: "app:latest" } } });
+  const inject = (opts: { pathPrefix?: string | null; stripPathPrefix?: boolean; redirectTo?: string; ssl?: boolean }) =>
+    injectTraefikLabels(base(), { projectName: "docs-abc", appName: "docs", domain: "acme.test", containerPort: 80, ...opts })
+      .services.web.labels!;
+
+  it("matches the host and path on both routers, ranked above the host's root route", () => {
+    const labels = inject({ pathPrefix: "/docs" });
+    expect(labels["traefik.http.routers.docs-abc.rule"]).toBe("Host(`acme.test`) && (Path(`/docs`) || PathPrefix(`/docs/`))");
+    expect(labels["traefik.http.routers.docs-abc-http.rule"]).toBe("Host(`acme.test`) && (Path(`/docs`) || PathPrefix(`/docs/`))");
+    expect(labels["traefik.http.routers.docs-abc.priority"]).toBe("1005");
+    expect(labels["traefik.http.routers.docs-abc-http.priority"]).toBe("1005");
+    expect(labels["traefik.http.routers.docs-abc.middlewares"]).toBeUndefined();
+  });
+
+  it("strips the prefix when asked", () => {
+    const labels = inject({ pathPrefix: "/docs", stripPathPrefix: true });
+    expect(labels["traefik.http.middlewares.docs-abc-strip.stripprefix.prefixes"]).toBe("/docs");
+    expect(labels["traefik.http.routers.docs-abc.middlewares"]).toBe("docs-abc-strip");
+    expect(labels["traefik.http.routers.docs-abc-http.middlewares"]).toBe("docs-abc-https-redirect");
+  });
+
+  it("strips on the plain-HTTP router when TLS is off", () => {
+    const labels = inject({ pathPrefix: "/docs", stripPathPrefix: true, ssl: false });
+    expect(labels["traefik.http.routers.docs-abc.entrypoints"]).toBe("web");
+    expect(labels["traefik.http.routers.docs-abc.middlewares"]).toBe("docs-abc-strip");
+  });
+
+  it("keeps the path on a redirect and skips the strip", () => {
+    const labels = inject({ pathPrefix: "/old", stripPathPrefix: true, redirectTo: "https://new.test" });
+    expect(labels["traefik.http.routers.docs-abc.middlewares"]).toBe("docs-abc-redirect");
+    expect(labels["traefik.http.middlewares.docs-abc-strip.stripprefix.prefixes"]).toBeUndefined();
+  });
+
+  it("writes no priority or path matcher without a prefix", () => {
+    const labels = inject({ pathPrefix: null });
+    expect(labels["traefik.http.routers.docs-abc.rule"]).toBe("Host(`acme.test`)");
+    expect(labels["traefik.http.routers.docs-abc.priority"]).toBeUndefined();
+  });
+
+  it("refuses a prefix that would rewrite the rule", () => {
+    expect(() => inject({ pathPrefix: "/a`) || Host(`evil.test" })).toThrow(/invalid path/);
+  });
+});
