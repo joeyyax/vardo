@@ -227,3 +227,112 @@ describe("rerun after a failed install", () => {
     });
   });
 });
+
+describe("install-time options", () => {
+  const TOKEN = "cfut_SECRETtokenVALUE0123456789abcdef";
+  const home = () => {
+    const d = mkdtempSync(join(dir, "opts-"));
+    return d;
+  };
+  const apply = (envFile: string, extra = "") => `${extra}\napply_install_options "${envFile}"\ncat "${envFile}"`;
+
+  it("writes all four on a fresh install", () => {
+    const d = home();
+    const r = sh(
+      `VARDO_ROLE=development\nUNATTENDED=true\nvalidate_install_options\ngenerate_env\ncat "$VARDO_DIR/.env"`,
+      {
+        VARDO_DIR: d,
+        CF_DNS_API_TOKEN: TOKEN,
+        VARDO_TRUSTED_PROXIES: "10.90.0.2, 10.1.0.0/16",
+        VARDO_CONSOLE_MIDDLEWARES: "cloudflare-only@file",
+        VARDO_CONSOLE_CERT_RESOLVER: "le-dns",
+      },
+    );
+    expect(r.status).toBe(0);
+    const env = readFileSync(join(d, ".env"), "utf8");
+    expect(env).toContain(`CF_DNS_API_TOKEN=${TOKEN}`);
+    expect(env).toContain("VARDO_TRUSTED_PROXIES=10.90.0.2,10.1.0.0/16");
+    expect(env).toContain("VARDO_CONSOLE_MIDDLEWARES=cloudflare-only@file");
+    expect(env).toContain("VARDO_CONSOLE_CERT_RESOLVER=le-dns");
+  });
+
+  it("adds missing values on update and keeps existing ones", () => {
+    const d = home();
+    const f = join(d, ".env");
+    writeFileSync(f, "VARDO_TRUSTED_PROXIES=10.0.0.1\n");
+    const r = sh(apply(f), { VARDO_TRUSTED_PROXIES: "10.9.9.9", VARDO_CONSOLE_CERT_RESOLVER: "le-dns" });
+    expect(r.status).toBe(0);
+    const env = readFileSync(f, "utf8");
+    expect(env).toContain("VARDO_TRUSTED_PROXIES=10.0.0.1");
+    expect(env).not.toContain("10.9.9.9");
+    expect(env).toContain("VARDO_CONSOLE_CERT_RESOLVER=le-dns");
+    expect(r.out).toContain("--set VARDO_TRUSTED_PROXIES=VALUE");
+  });
+
+  it("changes nothing when no option is given", () => {
+    const d = home();
+    const f = join(d, ".env");
+    writeFileSync(f, "X=1\n");
+    sh(apply(f));
+    expect(readFileSync(f, "utf8")).toBe("X=1\n");
+  });
+
+  it("replaces an existing value only with --set", () => {
+    const d = home();
+    const f = join(d, ".env");
+    writeFileSync(f, "VARDO_TRUSTED_PROXIES=10.0.0.1\nVARDO_CONSOLE_CERT_RESOLVER=old\n");
+    const r = sh(apply(f, 'parse_args --set VARDO_TRUSTED_PROXIES=10.9.9.9 --console-cert-resolver le-dns'));
+    expect(r.status).toBe(0);
+    const env = readFileSync(f, "utf8");
+    expect(env).toContain("VARDO_TRUSTED_PROXIES=10.9.9.9");
+    expect(env).toContain("VARDO_CONSOLE_CERT_RESOLVER=old");
+  });
+
+  it("takes flags in both forms", () => {
+    const r = sh(
+      'parse_args --trusted-proxies=10.0.0.5 --console-middlewares tailscale-only@file\necho "$VARDO_TRUSTED_PROXIES|$VARDO_CONSOLE_MIDDLEWARES"',
+    );
+    expect(r.out.trim().split("\n").at(-1)).toBe("10.0.0.5|tailscale-only@file");
+  });
+
+  it("refuses --set for any other key", () => {
+    const r = sh("parse_args --set DB_PASSWORD=x");
+    expect(r.status).not.toBe(0);
+    expect(r.out).toContain("Unknown option DB_PASSWORD");
+  });
+
+  it.each([
+    ["VARDO_TRUSTED_PROXIES", "10.0.0.256"],
+    ["VARDO_TRUSTED_PROXIES", "10.0.0.0/33"],
+    ["VARDO_TRUSTED_PROXIES", "10.0.0.1,not-an-ip"],
+    ["VARDO_TRUSTED_PROXIES", "example.com"],
+    ["VARDO_CONSOLE_MIDDLEWARES", "cloudflare-only"],
+    ["VARDO_CONSOLE_MIDDLEWARES", "a@file,b"],
+    ["VARDO_CONSOLE_CERT_RESOLVER", "le dns"],
+    ["CF_DNS_API_TOKEN", "short"],
+  ])("refuses %s=%s", (key, value) => {
+    const r = sh("validate_install_options", { [key]: value });
+    expect(r.status).not.toBe(0);
+    expect(r.out).toContain(key);
+  });
+
+  it.each(["10.90.0.2", "10.1.0.0/16", "fd7a:115c:a1e0::/48", "::1", "10.0.0.1,2001:db8::1"])("accepts proxies %s", (v) => {
+    expect(sh("validate_install_options", { VARDO_TRUSTED_PROXIES: v }).status).toBe(0);
+  });
+
+  it("never prints the token", () => {
+    const d = home();
+    const f = join(d, ".env");
+    writeFileSync(f, "");
+    const ok = sh(apply(f, "validate_install_options").replace(`cat "${f}"`, ""), { CF_DNS_API_TOKEN: TOKEN });
+    expect(ok.out).toContain("Set CF_DNS_API_TOKEN");
+    expect(ok.out).not.toContain(TOKEN);
+    const kept = sh(`apply_install_options "${f}"`, { CF_DNS_API_TOKEN: TOKEN });
+    expect(kept.out).not.toContain(TOKEN);
+    const bad = sh("validate_install_options", { CF_DNS_API_TOKEN: "bad token with spaces " + TOKEN });
+    expect(bad.status).not.toBe(0);
+    expect(bad.out).not.toContain(TOKEN);
+    const help = spawnSync("bash", [join(__dirname, "../../../install.sh"), "--help"], { encoding: "utf8", env: { ...process.env, CF_DNS_API_TOKEN: TOKEN } });
+    expect(help.stdout).not.toContain(TOKEN);
+  });
+});

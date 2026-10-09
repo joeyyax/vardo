@@ -1226,6 +1226,85 @@ migrate_to_slots() {
   log "Migrated to $slot_dir"
 }
 
+# ── Install-time options ──────────────────────────────────────────────────────
+
+INSTALL_OPTION_KEYS=(CF_DNS_API_TOKEN VARDO_TRUSTED_PROXIES VARDO_CONSOLE_MIDDLEWARES VARDO_CONSOLE_CERT_RESOLVER)
+FORCE_KEYS=""   # keys given with --set, space-separated
+
+is_install_option() {
+  local k
+  for k in "${INSTALL_OPTION_KEYS[@]}"; do [ "$k" = "$1" ] && return 0; done
+  return 1
+}
+
+# Takes an option from a flag; --set marks the key as allowed to replace an existing value.
+set_install_option() {
+  local key="$1" value="$2" force="${3:-false}"
+  is_install_option "$key" || fail "Unknown option $key. Settable keys: ${INSTALL_OPTION_KEYS[*]}"
+  printf -v "$key" '%s' "$value"
+  $force && FORCE_KEYS="$FORCE_KEYS $key"
+  return 0
+}
+
+valid_ip_or_cidr() {
+  local v="$1" addr="$1" prefix=""
+  if [[ "$v" == */* ]]; then addr="${v%%/*}"; prefix="${v#*/}"; [[ "$prefix" =~ ^[0-9]{1,3}$ ]] || return 1; fi
+  if [[ "$addr" =~ ^([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$ ]]; then
+    local o
+    for o in "${BASH_REMATCH[@]:1}"; do [ "$((10#$o))" -le 255 ] || return 1; done
+    [ -z "$prefix" ] || [ "$((10#$prefix))" -le 32 ]
+  elif [[ "$addr" == *:*:* && "$addr" =~ ^[0-9A-Fa-f:.]+$ ]]; then
+    [ -z "$prefix" ] || [ "$((10#$prefix))" -le 128 ]
+  else
+    return 1
+  fi
+}
+
+# Refuses bad values before anything changes. Never prints the token.
+validate_install_options() {
+  if [ -n "${CF_DNS_API_TOKEN:-}" ]; then
+    [[ "$CF_DNS_API_TOKEN" =~ ^[A-Za-z0-9_.-]{20,}$ ]] || fail "CF_DNS_API_TOKEN doesn't look like a Cloudflare API token (letters, digits, - _ . only; at least 20 characters)"
+  fi
+  local item
+  if [ -n "${VARDO_TRUSTED_PROXIES:-}" ]; then
+    VARDO_TRUSTED_PROXIES="${VARDO_TRUSTED_PROXIES// /}"
+    while IFS= read -r item; do
+      valid_ip_or_cidr "$item" || fail "VARDO_TRUSTED_PROXIES has an entry that isn't an IP or CIDR: $item"
+    done < <(tr ',' '\n' <<< "$VARDO_TRUSTED_PROXIES")
+  fi
+  if [ -n "${VARDO_CONSOLE_MIDDLEWARES:-}" ]; then
+    VARDO_CONSOLE_MIDDLEWARES="${VARDO_CONSOLE_MIDDLEWARES// /}"
+    while IFS= read -r item; do
+      [[ "$item" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*@[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || fail "VARDO_CONSOLE_MIDDLEWARES has an entry that isn't name@provider: $item"
+    done < <(tr ',' '\n' <<< "$VARDO_CONSOLE_MIDDLEWARES")
+  fi
+  if [ -n "${VARDO_CONSOLE_CERT_RESOLVER:-}" ]; then
+    [[ "$VARDO_CONSOLE_CERT_RESOLVER" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]] || fail "VARDO_CONSOLE_CERT_RESOLVER must be a resolver name such as le-dns"
+  fi
+  return 0
+}
+
+# Writes the given options to .env. An existing value stays unless the key came from --set.
+apply_install_options() {
+  local env_file="$1" key value
+  for key in "${INSTALL_OPTION_KEYS[@]}"; do
+    value="${!key:-}"
+    [ -n "$value" ] || continue
+    if [ -n "$(env_get "$key" "$env_file")" ]; then
+      if [[ " $FORCE_KEYS " == *" $key "* ]]; then
+        env_upsert "$env_file" "$key" "$value"
+        log "Replaced $key"
+      else
+        warn "$key is already set in $env_file; keeping it (use --set $key=VALUE to replace)"
+      fi
+    else
+      env_upsert "$env_file" "$key" "$value"
+      log "Set $key"
+    fi
+  done
+  return 0
+}
+
 generate_env() {
   local env_file="$VARDO_DIR/.env"
 
@@ -1233,6 +1312,7 @@ generate_env() {
 
   if [ -f "$env_file" ]; then
     log "Configuration exists at $env_file"
+    apply_install_options "$env_file"
     # Symlink .env into the active slot so docker compose picks it up
     if [ -n "${VARDO_SLOT_DIR:-}" ] && [ ! -e "$VARDO_SLOT_DIR/.env" ]; then
       ln -sfn "$env_file" "$VARDO_SLOT_DIR/.env"
@@ -1488,6 +1568,7 @@ EOF
   ensure_buildkit_mem "$env_file"
   ensure_buildkit_cache_max "$env_file"
   ensure_redis_mem "$env_file"
+  apply_install_options "$env_file"
 
   chmod 600 "$env_file"
 
@@ -2028,6 +2109,7 @@ run_env_migrations() {
   ensure_buildkit_mem "$env_file"
   ensure_buildkit_cache_max "$env_file"
   ensure_redis_mem "$env_file"
+  apply_install_options "$env_file"
 
   # Remove deprecated feature flags
   _sed_i '/^FEATURE_METRICS=/d' "$env_file" 2>/dev/null || true
@@ -2762,8 +2844,25 @@ show_menu() {
 # MAIN
 # ══════════════════════════════════════════════════════════════════════════════
 
+# Maps a flag and its value to the matching .env key.
+parse_option() {
+  local flag="$1" value="$2"
+  case "$flag" in
+    --cf-dns-api-token)        set_install_option CF_DNS_API_TOKEN "$value" ;;
+    --trusted-proxies)         set_install_option VARDO_TRUSTED_PROXIES "$value" ;;
+    --console-middlewares)     set_install_option VARDO_CONSOLE_MIDDLEWARES "$value" ;;
+    --console-cert-resolver)   set_install_option VARDO_CONSOLE_CERT_RESOLVER "$value" ;;
+    --set)
+      [[ "$value" == *=* ]] || fail "--set needs KEY=VALUE"
+      set_install_option "${value%%=*}" "${value#*=}" true
+      ;;
+  esac
+}
+
 parse_args() {
-  for arg in "$@"; do
+  while [ $# -gt 0 ]; do
+    local arg="$1"
+    shift
     case "$arg" in
       install|update|doctor|uninstall)
         COMMAND="$arg"
@@ -2789,6 +2888,14 @@ parse_args() {
       --restore)
         RESTORE=true
         ;;
+      --cf-dns-api-token|--trusted-proxies|--console-middlewares|--console-cert-resolver|--set)
+        [ $# -gt 0 ] || fail "$arg needs a value"
+        parse_option "$arg" "$1"
+        shift
+        ;;
+      --cf-dns-api-token=*|--trusted-proxies=*|--console-middlewares=*|--console-cert-resolver=*|--set=*)
+        parse_option "${arg%%=*}" "${arg#*=}"
+        ;;
       --help|-h)
         echo "Usage: install.sh [command] [flags]"
         echo ""
@@ -2807,6 +2914,14 @@ parse_args() {
         echo "  --verbose      Show full command output"
         echo "  --help, -h     Show this help"
         echo ""
+        echo "Install-time options (fresh install writes them to .env; on update they're added only when"
+        echo "missing, and an existing value stays unless it's given with --set):"
+        echo "  --cf-dns-api-token TOKEN        Cloudflare token for DNS-01 (CF_DNS_API_TOKEN; prefer the env var, flags show in ps)"
+        echo "  --trusted-proxies LIST          IPs or CIDRs of proxies in front of this box (VARDO_TRUSTED_PROXIES)"
+        echo "  --console-middlewares LIST      Traefik middlewares locking the console, name@provider (VARDO_CONSOLE_MIDDLEWARES)"
+        echo "  --console-cert-resolver NAME    Console certificate resolver, such as le-dns (VARDO_CONSOLE_CERT_RESOLVER)"
+        echo "  --set KEY=VALUE                 Set one of the four keys above and replace an existing value"
+        echo ""
         echo "Environment variables (for unattended install):"
         echo "  VARDO_DIR          Installation directory (default: /opt/vardo or ~/vardo on macOS)"
         echo "  VARDO_REF          Branch, tag or commit sha, full or short, to install (default: main)"
@@ -2819,6 +2934,8 @@ parse_args() {
         echo "  VARDO_BACKUP_TYPE      r2, s3, b2 or local (with --restore)"
         echo "  VARDO_BACKUP_BUCKET, VARDO_BACKUP_ENDPOINT, VARDO_BACKUP_REGION,"
         echo "  VARDO_BACKUP_ACCESS_KEY, VARDO_BACKUP_SECRET_KEY, VARDO_BACKUP_PATH"
+        echo "  CF_DNS_API_TOKEN, VARDO_TRUSTED_PROXIES, VARDO_CONSOLE_MIDDLEWARES,"
+        echo "  VARDO_CONSOLE_CERT_RESOLVER  (see Install-time options)"
         exit 0
         ;;
     esac
@@ -2829,6 +2946,7 @@ main() {
   detect_platform
   detect_distro
   parse_args "$@"
+  validate_install_options
   setup_logging
   print_banner
 

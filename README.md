@@ -22,6 +22,32 @@ curl -fsSL https://vardo.run/install.sh | sudo bash
 
 Requires Ubuntu 22.04+ or Debian 12+, 1 GB RAM and a domain with DNS pointing to your server.
 
+### Install-time options
+
+Set these as environment variables or flags. A fresh install writes them to `/opt/vardo/.env`. On update they're added only when missing; an existing value stays unless you pass it with `--set KEY=VALUE`. Token values are never printed.
+
+| Variable | Flag | Value |
+| --- | --- | --- |
+| `VARDO_DOMAIN`, `VARDO_BASE_DOMAIN`, `ACME_EMAIL` | none | Dashboard domain, base domain for projects, TLS email |
+| `VARDO_ROLE` | none | `production`, `staging` or `development` |
+| `VARDO_DIR`, `VARDO_REF` | none | Install directory; branch, tag or commit |
+| `ENCRYPTION_MASTER_KEY`, `BETTER_AUTH_SECRET` | none | Escrowed secrets for a rebuild |
+| `VARDO_BACKUP_*` | `--restore` | Backup storage to restore from |
+| `CF_DNS_API_TOKEN` | `--cf-dns-api-token` | Cloudflare token (Zone:DNS:Edit) for DNS-01 |
+| `VARDO_TRUSTED_PROXIES` | `--trusted-proxies` | Comma-separated IPs or CIDRs of proxies in front of this box |
+| `VARDO_CONSOLE_MIDDLEWARES` | `--console-middlewares` | Comma-separated `name@provider` Traefik middlewares |
+| `VARDO_CONSOLE_CERT_RESOLVER` | `--console-cert-resolver` | Console certificate resolver, such as `le-dns` |
+
+Other flags: `--unattended`, `--yes`, `--force`, `--dry-run`, `--verbose`, `--purge`, `--help`. See [Console lock](docs/console-lock.md) for what the last three options do.
+
+```bash
+CF_DNS_API_TOKEN=<token> VARDO_TRUSTED_PROXIES=10.90.0.2 VARDO_CONSOLE_MIDDLEWARES=cloudflare-only@file \
+  VARDO_CONSOLE_CERT_RESOLVER=le-dns bash install.sh --yes
+bash install.sh update --set VARDO_TRUSTED_PROXIES=10.90.0.3
+```
+
+Prefer the environment for the token; flag values show in `ps`. Changed values apply at the next deploy (`update --force` redeploys now).
+
 ## What you get
 
 | Service | Purpose |
