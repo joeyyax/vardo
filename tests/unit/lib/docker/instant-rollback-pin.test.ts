@@ -51,7 +51,10 @@ vi.mock("@/lib/docker/compose", () => ({
   slotComposeFiles: vi.fn().mockResolvedValue(["-f", "docker-compose.yml"]),
 }));
 vi.mock("@/lib/docker/slots", () => ({ detectActiveSlot: vi.fn().mockResolvedValue("green") }));
-vi.mock("@/lib/docker/shared-project", () => ({ readSlotPartition: vi.fn().mockResolvedValue(null) }));
+vi.mock("@/lib/docker/shared-project", () => ({
+  readSlotPartition: vi.fn().mockResolvedValue(null),
+  readSlotBound: vi.fn().mockResolvedValue([]),
+}));
 vi.mock("@/lib/stream/producer", () => ({ addEvent: vi.fn().mockResolvedValue("id") }));
 vi.mock("@/lib/activity", () => ({ recordActivity: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("fs/promises", () => ({

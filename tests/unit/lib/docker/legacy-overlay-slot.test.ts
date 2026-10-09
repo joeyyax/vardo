@@ -22,7 +22,10 @@ vi.mock("@/lib/docker/deploy-cancel", () => ({ claimAppForOperation: vi.fn(async
 vi.mock("@/lib/docker/traefik-cutover", () => ({ clearCutoverPin: vi.fn(async () => {}) }));
 vi.mock("@/lib/docker/restart-policy", () => ({ restoreSlotRestart: vi.fn(async () => {}), demoteStandbyRestart: vi.fn(async () => {}) }));
 vi.mock("@/lib/docker/slots", () => ({ detectActiveSlot: vi.fn(async () => "blue") }));
-vi.mock("@/lib/docker/shared-project", () => ({ readSlotPartition: vi.fn(async () => null) }));
+vi.mock("@/lib/docker/shared-project", () => ({
+  readSlotPartition: vi.fn(async () => null),
+  readSlotBound: vi.fn(async () => []),
+}));
 vi.mock("@/lib/stream/producer", () => ({ addEvent: vi.fn(async () => "evt") }));
 vi.mock("@/lib/activity", () => ({ recordActivity: vi.fn(async () => {}) }));
 vi.mock("@/lib/docker/constants", async (importOriginal) => ({

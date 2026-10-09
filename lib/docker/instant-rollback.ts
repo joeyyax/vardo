@@ -9,7 +9,7 @@ import { appEnvDir } from "@/lib/paths";
 import { slotComposeFiles } from "./compose";
 import { detectActiveSlot } from "./slots";
 import { slotScopeArgs } from "./slot-partition";
-import { readSlotPartition } from "./shared-project";
+import { readSlotBound, readSlotPartition } from "./shared-project";
 import { addEvent } from "@/lib/stream/producer";
 import { recordActivity } from "@/lib/activity";
 import {
@@ -165,6 +165,33 @@ async function rollbackClaimed(
   // Drop the cutover pin first: it names the outgoing slot and would 502 the app after the flip.
   await clearCutoverPin(appName, env.name).catch(() => {});
 
+  // A service on a directory both slots address must never run twice, so the active slot stops first.
+  const slotBound = await readSlotBound(standbyDir);
+  const restartActive = async () => {
+    if (slotBound.length === 0) return;
+    await execFileAsync(
+      "docker",
+      ["compose", ...activeComposeFileArgs, "-p", activeProjectName, "start"],
+      { env: dockerEnv(), cwd: activeDir, timeout: COMPOSE_UP_TIMEOUT },
+    ).catch(() => {});
+  };
+  if (slotBound.length > 0) {
+    try {
+      await execFileAsync(
+        "docker",
+        ["compose", ...activeComposeFileArgs, "-p", activeProjectName, "stop"],
+        { env: dockerEnv(), cwd: activeDir, timeout: COMPOSE_DOWN_TIMEOUT },
+      );
+    } catch {
+      await restartActive();
+      return {
+        success: false, deploymentId: "", fromSlot: activeSlot, toSlot: standbySlot,
+        durationMs: Date.now() - startTime,
+        error: `Couldn't stop ${activeSlot} before starting ${slotBound.join(", ")} on the standby`,
+      };
+    }
+  }
+
   // Start standby. Rotating services only: an unqualified `up` would start a second database.
   const standbyPartition = await readSlotPartition(standbyDir);
   const onlySlotted = standbyPartition ? slotScopeArgs(standbyPartition) : [];
@@ -180,6 +207,7 @@ async function rollbackClaimed(
     // About to serve, so restore its restart policy.
     await restoreSlotRestart(standbyComposeFileArgs, standbyProjectName, standbyDir);
   } catch {
+    await restartActive();
     return {
       success: false, deploymentId: "", fromSlot: activeSlot, toSlot: standbySlot,
       durationMs: Date.now() - startTime,
@@ -215,6 +243,7 @@ async function rollbackClaimed(
       ["compose", ...standbyComposeFileArgs, "-p", standbyProjectName, "stop"],
       { env: dockerEnv(), cwd: standbyDir, timeout: COMPOSE_DOWN_TIMEOUT },
     ).catch(() => {});
+    await restartActive();
     return {
       success: false, deploymentId: "", fromSlot: activeSlot, toSlot: standbySlot,
       durationMs: Date.now() - startTime,

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { readSlotPartition, sharedScopeArgs } from "@/lib/docker/shared-project";
+import { readSlotBound, readSlotPartition, sharedScopeArgs } from "@/lib/docker/shared-project";
 import { slotScopeArgs } from "@/lib/docker/slot-partition";
 
 const SLOT_DIR = "/opt/vardo/apps/paperless/production/blue";
@@ -30,6 +30,29 @@ services:
 function reader(yaml: string) {
   return vi.fn(() => Promise.resolve(yaml));
 }
+
+describe("readSlotBound", () => {
+  it("names a database-only slot's engine", async () => {
+    const yaml = `
+services:
+  db:
+    image: postgres:15
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+volumes:
+  pgdata: {}
+`;
+    expect(await readSlotBound(SLOT_DIR, reader(yaml))).toEqual(["db"]);
+  });
+
+  it("is empty when the database is deployed once", async () => {
+    expect(await readSlotBound(SLOT_DIR, reader(WITH_SHARED))).toEqual([]);
+  });
+
+  it("is empty when the compose can't be read", async () => {
+    expect(await readSlotBound(SLOT_DIR, vi.fn(() => Promise.reject(new Error("ENOENT"))))).toEqual([]);
+  });
+});
 
 describe("readSlotPartition", () => {
   it("splits a slot compose that declares a shared service", async () => {
