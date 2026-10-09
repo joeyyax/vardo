@@ -213,8 +213,18 @@ export function rolesInStatement(line: string, into: Set<string>): void {
   }
 }
 
-/** Roles a plain SQL dump names, skipping `COPY` data. */
-export async function rolesInSql(lines: AsyncIterable<string>): Promise<Set<string>> {
+const SYSTEM_SCHEMA = /^(pg_catalog|information_schema|pg_toast|pg_temp.*|pg_toast_temp.*)$/;
+
+/** Schema a pg_dump `-- Name: …; Type: …; Schema: …; Owner: …` header names, or null. */
+export function schemaInHeader(line: string): string | null {
+  const m = line.match(/^-- (?:Data for )?Name: (.*); Type: (.+?); Schema: (.*?); Owner: /);
+  if (!m) return null;
+  const schema = m[2] === "SCHEMA" ? m[1] : m[3];
+  return schema === "-" || SYSTEM_SCHEMA.test(schema) ? null : schema;
+}
+
+/** Roles a plain SQL dump names, skipping `COPY` data. Collects the non-system schemas it writes into `schemas`. */
+export async function rolesInSql(lines: AsyncIterable<string>, schemas?: Set<string>): Promise<Set<string>> {
   const roles = new Set<string>();
   let inCopy = false;
   for await (const line of lines) {
@@ -223,23 +233,32 @@ export async function rolesInSql(lines: AsyncIterable<string>): Promise<Set<stri
       continue;
     }
     if (/^COPY .* FROM stdin;$/.test(line)) inCopy = true;
-    else rolesInStatement(line, roles);
+    else if (line.startsWith("-- ")) {
+      const schema = schemas && schemaInHeader(line);
+      if (schema) schemas.add(schema);
+    } else rolesInStatement(line, roles);
   }
   return roles;
 }
 
 /** Roles a gzipped dump names. A custom-format dump is read through `pg_restore --schema-only`. */
-async function rolesInDump(containerId: string, user: string, archivePath: string, format: "sql" | "pg-custom") {
+async function rolesInDump(
+  containerId: string,
+  user: string,
+  archivePath: string,
+  format: "sql" | "pg-custom",
+  schemas: Set<string>,
+) {
   if (format === "sql") {
     const source = gunzipFile(archivePath);
     try {
-      return await rolesInSql(createInterface({ input: source, crlfDelay: Infinity }));
+      return await rolesInSql(createInterface({ input: source, crlfDelay: Infinity }), schemas);
     } finally {
       source.destroy();
     }
   }
   const sql = new PassThrough();
-  const scanned = rolesInSql(createInterface({ input: sql, crlfDelay: Infinity }));
+  const scanned = rolesInSql(createInterface({ input: sql, crlfDelay: Infinity }), schemas);
   const source = gunzipFile(archivePath);
   try {
     await streamInto(
@@ -255,18 +274,23 @@ async function rolesInDump(containerId: string, user: string, archivePath: strin
   return scanned;
 }
 
-/** Create, as `NOLOGIN`, every role a dump names that the server lacks, so owners and grants restore as dumped. */
+/**
+ * Create, as `NOLOGIN`, every role a dump names that the server lacks, so owners and grants restore as dumped.
+ * Returns the roles created and the non-system schemas the dump writes.
+ */
 export async function createMissingDumpRoles(opts: {
   containerId: string;
   containerEnv: ContainerEnv;
   archivePath: string;
   format: "sql" | "pg-custom";
   log: (msg: string) => void;
-}): Promise<string[]> {
+}): Promise<{ created: string[]; schemas: string[] }> {
   const { containerId, archivePath, format, log } = opts;
   const user = postgresUser(opts.containerEnv);
-  const named = [...(await rolesInDump(containerId, user, archivePath, format))];
-  if (!named.length) return [];
+  const schemaSet = new Set<string>();
+  const named = [...(await rolesInDump(containerId, user, archivePath, format, schemaSet))];
+  const schemas = [...schemaSet].sort();
+  if (!named.length) return { created: [], schemas };
   const out = await runPsql(
     containerId,
     user,
@@ -274,10 +298,20 @@ export async function createMissingDumpRoles(opts: {
   );
   const existing = new Set(out.split("\n").filter(Boolean));
   const missing = named.filter((n) => !existing.has(n)).sort();
-  if (!missing.length) return [];
+  if (!missing.length) return { created: [], schemas };
   await runPsql(containerId, user, missing.map((n) => `CREATE ROLE ${quoteIdent(n)} NOLOGIN;`).join("\n"));
   log(`Created role(s) the dump references but this server lacked, as NOLOGIN: ${missing.join(", ")}`);
-  return missing;
+  return { created: missing, schemas };
+}
+
+/** Sessions other than this one connected to `database`. */
+export async function countOtherSessions(containerId: string, containerEnv: ContainerEnv, database: string): Promise<number> {
+  const out = await runPsql(
+    containerId,
+    postgresUser(containerEnv),
+    `SELECT count(*) FROM pg_stat_activity WHERE datname = ${quoteLiteral(database)} AND pid <> pg_backend_pid();`,
+  );
+  return Number(out.trim()) || 0;
 }
 
 /** Run SQL through psql in the container and return its unaligned output. */
