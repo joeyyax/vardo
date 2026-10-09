@@ -19,6 +19,8 @@ import {
   type SlotEnvironment,
   type SlotGeneration,
   type SlotSkipReason,
+  type SlotWarningReason,
+  SLOT_WARNING_COPY,
 } from "./slot-policy";
 
 const COMPOSE_PROJECT_LABEL = "com.docker.compose.project";
@@ -44,6 +46,8 @@ export interface SlotReclaimCandidate {
   estimatedBytes: number;
   /** Set when this generation is a standby; taking it turns instant rollback into a rebuild. Advisory. */
   rollbackTargetFor?: { appName: string; envName: string; liveSlot: Slot };
+  /** Set with `rollbackTargetFor`. Shown next to the row. */
+  warning?: { reason: SlotWarningReason; explanation: string };
 }
 
 export interface SlotReclaimSkip {
@@ -133,6 +137,10 @@ export function selectSlotCandidates(input: SlotPlanInput): SlotReclaimPlan {
                 envName: generation.envName,
                 liveSlot,
               },
+              warning: {
+                reason: "rollback-target" as const,
+                explanation: SLOT_WARNING_COPY["rollback-target"](generation.appName),
+              },
             }
           : {}),
       };
@@ -142,7 +150,11 @@ export function selectSlotCandidates(input: SlotPlanInput): SlotReclaimPlan {
     candidate.estimatedBytes += image.size;
   }
 
-  const candidates = [...byProject.values()].sort((a, b) => b.estimatedBytes - a.estimatedBytes);
+  // Dead images first, rollback targets after; largest first within each group.
+  const candidates = [...byProject.values()].sort(
+    (a, b) =>
+      Number(Boolean(a.warning)) - Number(Boolean(b.warning)) || b.estimatedBytes - a.estimatedBytes,
+  );
   for (const candidate of candidates) {
     candidate.images.sort((a, b) => a.image.localeCompare(b.image));
   }
@@ -153,6 +165,16 @@ export function selectSlotCandidates(input: SlotPlanInput): SlotReclaimPlan {
     skipped,
     estimatedBytes: candidates.reduce((sum, c) => sum + c.estimatedBytes, 0),
     generatedAt: input.now.toISOString(),
+  };
+}
+
+/** The plan minus rollback targets, for sweeps no one reviews. */
+export function withoutRollbackTargets(plan: SlotReclaimPlan): SlotReclaimPlan {
+  const candidates = plan.candidates.filter((c) => !c.rollbackTargetFor);
+  return {
+    ...plan,
+    candidates,
+    estimatedBytes: candidates.reduce((sum, c) => sum + c.estimatedBytes, 0),
   };
 }
 

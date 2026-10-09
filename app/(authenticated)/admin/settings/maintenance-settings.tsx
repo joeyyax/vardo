@@ -82,6 +82,7 @@ type SlotCandidate = {
   estimatedBytes: number;
   /** Present when this generation is an environment's standby. */
   rollbackTargetFor?: { appName: string; envName: string; liveSlot: string };
+  warning?: { reason: string; explanation: string };
 };
 
 type SlotSkip = {
@@ -93,7 +94,7 @@ type SlotSkip = {
 };
 
 type ReclaimState = {
-  config: { enabled: boolean; idleDays: number };
+  config: { enabled: boolean; idleDays: number; slots: boolean; slotRollbackTargets: boolean };
   lastRun: {
     finishedAt: string;
     imagesRemoved: number;
@@ -277,7 +278,10 @@ export function MaintenanceSettings() {
     }
   }
 
-  async function handleSaveImageConfig(enabled: boolean) {
+  async function handleSaveImageConfig(
+    enabled: boolean,
+    slotRollbackTargets = images?.config.slotRollbackTargets ?? false,
+  ) {
     setSavingImages(true);
     try {
       const idleDays = Number(idleDaysInput);
@@ -288,7 +292,12 @@ export function MaintenanceSettings() {
       const res = await fetch("/api/v1/admin/maintenance/image-reclaim", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enabled, idleDays }),
+        body: JSON.stringify({
+          enabled,
+          idleDays,
+          slots: images?.config.slots ?? false,
+          slotRollbackTargets,
+        }),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -732,6 +741,20 @@ export function MaintenanceSettings() {
             >
               {images?.config.enabled ? "Daily sweep: on" : "Daily sweep: off"}
             </Button>
+            <Button
+              variant={images?.config.slotRollbackTargets ? "secondary" : "outline"}
+              disabled={savingImages || loadingImages}
+              onClick={() =>
+                void handleSaveImageConfig(
+                  images?.config.enabled ?? false,
+                  !(images?.config.slotRollbackTargets ?? false),
+                )
+              }
+            >
+              {images?.config.slotRollbackTargets
+                ? "Daily sweep takes rollback targets: on"
+                : "Daily sweep takes rollback targets: off"}
+            </Button>
           </div>
 
           {loadingImages ? (
@@ -832,12 +855,10 @@ export function MaintenanceSettings() {
                       <p className="text-xs text-muted-foreground truncate">
                         {c.images.filter((i) => i.present).map((i) => i.image).join(", ")}
                       </p>
-                      {c.rollbackTargetFor && (
+                      {c.warning && (
                         <p className="flex items-center gap-1 text-xs text-status-warning">
                           <AlertCircle className="size-3 shrink-0" aria-hidden="true" />
-                          Rollback target for {c.rollbackTargetFor.appName} —{" "}
-                          {c.rollbackTargetFor.liveSlot} is live. Removing this leaves
-                          rollback needing a rebuild.
+                          {c.warning.explanation}
                         </p>
                       )}
                     </div>

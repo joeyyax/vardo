@@ -37,6 +37,14 @@ export const SLOT_SKIP_COPY: Record<SlotSkipReason, string> = {
   "unknown-project": "Compose project does not belong to a Vardo app",
 };
 
+/** Advisory on a candidate the policy takes. Not a refusal. */
+export type SlotWarningReason = "rollback-target";
+
+export const SLOT_WARNING_COPY: Record<SlotWarningReason, (appName: string) => string> = {
+  "rollback-target": (appName) =>
+    `Rollback target for ${appName}. Removing it turns instant rollback into a rebuild.`,
+};
+
 /** An environment directory that holds blue-green slots. */
 export interface SlotEnvironment {
   appName: string;
