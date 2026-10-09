@@ -23,7 +23,6 @@ vi.mock("@/lib/db", () => ({ db: {} }));
 
 import { routedPort, tcpProbe, waitForHealthy } from "@/lib/docker/deploy-steps/swap";
 import type { ComposeService } from "@/lib/docker/compose-types";
-import { createStageTimings } from "@/lib/docker/stage-timings";
 
 const FAST = { intervalMs: 5, stableMs: 40 };
 
