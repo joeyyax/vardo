@@ -90,7 +90,9 @@ services:
       # Primary router — domain with TLS
       - "traefik.http.routers.vardo.rule=Host(`${VARDO_DOMAIN:-localhost}`)"
       - "traefik.http.routers.vardo.entrypoints=websecure"
-      - "traefik.http.routers.vardo.tls.certresolver=le"
+      - "traefik.http.routers.vardo.tls.certresolver=${VARDO_CONSOLE_CERT_RESOLVER:-le}"
+      # Console lock (docs/console-lock.md). Empty means none; /api/health and the GitHub webhook bypass it.
+      - "traefik.http.routers.vardo.middlewares=${VARDO_CONSOLE_MIDDLEWARES:-}"
       - "traefik.http.services.vardo.loadbalancer.server.port=3000"
       # HTTP→HTTPS redirect for the domain (not for IP)
       - "traefik.http.routers.vardo-http.rule=Host(`${VARDO_DOMAIN:-localhost}`)"
@@ -103,12 +105,14 @@ services:
       - "traefik.http.routers.vardo-fallback.entrypoints=web"
       - "traefik.http.routers.vardo-fallback.priority=1"
       - "traefik.http.routers.vardo-fallback.service=vardo"
+      - "traefik.http.routers.vardo-fallback.middlewares=${VARDO_CONSOLE_MIDDLEWARES:-}"
       # HTTPS fallback — self-signed cert (Traefik default), user accepts warning
       - "traefik.http.routers.vardo-fallback-https.rule=PathPrefix(`/`)"
       - "traefik.http.routers.vardo-fallback-https.entrypoints=websecure"
       - "traefik.http.routers.vardo-fallback-https.priority=1"
       - "traefik.http.routers.vardo-fallback-https.tls=true"
       - "traefik.http.routers.vardo-fallback-https.service=vardo"
+      - "traefik.http.routers.vardo-fallback-https.middlewares=${VARDO_CONSOLE_MIDDLEWARES:-}"
       # Unknown-host assets — serve /_next without path rewrite so CSS/JS loads correctly
       - "traefik.http.routers.vardo-unknown-host-assets.rule=HostRegexp(`.*[a-zA-Z].*`) && PathPrefix(`/_next`)"
       - "traefik.http.routers.vardo-unknown-host-assets.entrypoints=websecure"

@@ -69,7 +69,18 @@ describe("homelab routes", () => {
     expect(render(route)).toEqual(route.labels);
   });
 
-  it("renders the console's routers as they run", () => {
-    expect(renderConsole(fx.env)).toEqual(fx.console);
+  // The lock hook adds an empty middlewares label to three routers; Traefik reads "" as none.
+  const LOCKED_ROUTERS = ["vardo", "vardo-fallback", "vardo-fallback-https"];
+
+  it("renders the console's routers as they run, plus empty lock hooks", () => {
+    const hooks = Object.fromEntries(LOCKED_ROUTERS.map((r) => [`traefik.http.routers.${r}.middlewares`, ""]));
+    expect(renderConsole(fx.env)).toEqual({ ...fx.console, ...hooks });
+  });
+
+  it("locks the console's routers from VARDO_CONSOLE_MIDDLEWARES and leaves the rest as they run", () => {
+    const locked = renderConsole({ ...fx.env, VARDO_CONSOLE_MIDDLEWARES: "cloudflare-only@file" });
+    for (const r of LOCKED_ROUTERS) expect(locked[`traefik.http.routers.${r}.middlewares`]).toBe("cloudflare-only@file");
+    const rest = Object.fromEntries(Object.entries(locked).filter(([k]) => !LOCKED_ROUTERS.some((r) => k === `traefik.http.routers.${r}.middlewares`)));
+    expect(rest).toEqual(fx.console);
   });
 });

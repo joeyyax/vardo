@@ -32,6 +32,8 @@ export async function register() {
     // Defines cloudflare-only@file for domains and the console lock.
     const { startCloudflareOnlySync } = await import("./lib/docker/cloudflare-only");
     startCloudflareOnlySync();
+    const { syncConsolePublicRoute } = await import("./lib/docker/console-lock");
+    await syncConsolePublicRoute().catch((err) => log.warn("Failed to write the console's public route:", err));
 
     // Must run early so isFeatureEnabled() returns real values for the rest of startup.
     const { loadFeatureFlags } = await import("./lib/config/features");

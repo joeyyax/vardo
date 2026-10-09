@@ -19,6 +19,7 @@ Status: **fixed** (on main or in this branch), **open**, or **not a boundary**. 
 | Auth rate limit keyed on first `X-Forwarded-For` | fixed | #889: `scripts/peer-address.mjs` records each request's TCP peer; `proxy.ts` trusts `X-Forwarded-For` only from Traefik's container address (`lib/security/client-ip.ts`) and rewrites it for everything downstream. |
 | Host header poisoning of auth links | not a boundary in prod | Better Auth reads `NEXT_PUBLIC_BETTER_AUTH_URL` (`docker-compose.yml:38`). Dev infers from the request. |
 | Postgres and Redis published on every interface, Redis has no password | branch | `docker-compose.yml:155,173` now bind to `127.0.0.1`. Docker's publishing skips ufw. |
+| Console reachable from anywhere | optional lock | `VARDO_CONSOLE_MIDDLEWARES` locks the console's domain and IP routers; `/api/health` and the GitHub webhook stay open (`docs/console-lock.md`). Off by default. |
 | Traefik API | fixed | #889: no `--api.insecure`; the API answers only a basic-auth router on the internal entrypoint, keyed from the master key (`lib/docker/traefik-api-access.ts`). Untrusted labels can't route to `@internal` services or the `traefik` entrypoint (`lib/docker/compose-policy.ts`). |
 
 ## 2. Tenant A to tenant B
