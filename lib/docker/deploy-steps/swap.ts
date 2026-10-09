@@ -42,6 +42,7 @@ import { reportOomDuringDeploy } from "../deploy-oom";
 import { checkVolumeLimits } from "./volume-limits";
 import { execFileAsync } from "@/lib/utils/exec";
 import { boundedBuild, explainBuildOom } from "../build-memory";
+import { withFailedStepOutput } from "../build-failure";
 import { dockerEnv } from "@/lib/docker/docker-env";
 import { exportMsFromBuildOutput } from "../stage-timings";
 
@@ -370,7 +371,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
           { cwd: slotDir, env: { ...env, ...bounded.env }, timeout: COMPOSE_BUILD_UP_TIMEOUT, maxBuffer: EXEC_MAX_BUFFER, signal: ctx.signal }
         ).catch((err: unknown) => {
           ctx.timer.range("build", buildStart, Date.now());
-          throw explainBuildOom(err, bounded);
+          throw explainBuildOom(withFailedStepOutput(err), bounded);
         });
         // BuildKit runs the export inside the build; split it out of the build time.
         const buildEnd = Date.now();
