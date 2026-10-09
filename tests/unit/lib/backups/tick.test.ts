@@ -10,8 +10,9 @@
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-const { backupJobsFindMany, backupsFindFirst, runBackupMock, acquireLockMock, shouldRunNowMock, needsSetupMock, updates } =
+const { backupJobsFindMany, backupsFindFirst, runBackupMock, acquireLockMock, shouldRunNowMock, needsSetupMock, updates, limit } =
   vi.hoisted(() => ({
+    limit: { value: 1 },
     backupJobsFindMany: vi.fn(),
     backupsFindFirst: vi.fn(),
     runBackupMock: vi.fn(),
@@ -53,6 +54,10 @@ vi.mock("@/lib/db", () => ({
   },
 }));
 vi.mock("@/lib/cron/parse", () => ({ shouldRunNow: shouldRunNowMock }));
+vi.mock("@/lib/resources/host", () => ({
+  loadResourceSettings: async () => ({}),
+  maxDeployConcurrency: () => limit.value,
+}));
 vi.mock("@/lib/setup", () => ({ needsSetup: needsSetupMock }));
 vi.mock("@/lib/redis-lock", () => ({ acquireLock: acquireLockMock }));
 vi.mock("@/lib/backups/engine", async (importOriginal) => ({
@@ -104,6 +109,7 @@ beforeEach(() => {
   acquireLockMock.mockReset().mockResolvedValue(true);
   shouldRunNowMock.mockReset().mockReturnValue(true);
   needsSetupMock.mockReset().mockResolvedValue(false);
+  limit.value = 1;
 });
 
 describe("tickBackupJobs — before first-run setup", () => {
@@ -175,5 +181,81 @@ describe("tickBackupJobs — lastRunAt is left to the engine", () => {
     await tickBackupJobs();
 
     expect(updates.some((u) => "lastRunAt" in u.set)).toBe(false);
+  });
+});
+
+describe("tickBackupJobs — jobs due together", () => {
+  /** A runBackup whose runs finish only when released, recording which are in flight. */
+  function heldRuns() {
+    const inFlight = new Set<string>();
+    let peak = 0;
+    const release = new Map<string, () => void>();
+    runBackupMock.mockImplementation(
+      (id: string) =>
+        new Promise((resolve) => {
+          inFlight.add(id);
+          peak = Math.max(peak, inFlight.size);
+          release.set(id, () => {
+            inFlight.delete(id);
+            resolve([]);
+          });
+        }),
+    );
+    return { inFlight, release, peak: () => peak };
+  }
+  const settle = () => new Promise((r) => setTimeout(r, 0));
+  const jobs = (...ids: string[]) => ids.map((id) => ({ id, name: id, schedule: "0 2 * * *", enabled: true }));
+
+  it("runs same-minute jobs one at a time on a one-slot host", async () => {
+    withExistingBackup(null);
+    backupJobsFindMany.mockResolvedValue(jobs("a", "b", "c"));
+    const runs = heldRuns();
+
+    const tick = tickBackupJobs();
+    await settle();
+    expect([...runs.inFlight]).toEqual(["a"]);
+    runs.release.get("a")!();
+    await settle();
+    expect([...runs.inFlight]).toEqual(["b"]);
+    runs.release.get("b")!();
+    await settle();
+    runs.release.get("c")!();
+    await tick;
+    expect(runs.peak()).toBe(1);
+  });
+
+  it("runs up to the host's deploy concurrency at once", async () => {
+    limit.value = 2;
+    withExistingBackup(null);
+    backupJobsFindMany.mockResolvedValue(jobs("a", "b", "c"));
+    const runs = heldRuns();
+
+    const tick = tickBackupJobs();
+    await settle();
+    expect([...runs.inFlight].sort()).toEqual(["a", "b"]);
+    for (const id of ["a", "b"]) runs.release.get(id)!();
+    await settle();
+    runs.release.get("c")!();
+    await tick;
+    expect(runs.peak()).toBe(2);
+  });
+
+  it("caps runs across overlapping ticks and skips a job still waiting", async () => {
+    withExistingBackup(null);
+    backupJobsFindMany.mockResolvedValue(jobs("a", "b"));
+    const runs = heldRuns();
+
+    const first = tickBackupJobs();
+    await settle();
+    const second = tickBackupJobs();
+    await settle();
+    expect([...runs.inFlight]).toEqual(["a"]);
+
+    runs.release.get("a")!();
+    await settle();
+    runs.release.get("b")!();
+    await Promise.all([first, second]);
+    expect(runBackupMock).toHaveBeenCalledTimes(2);
+    expect(runs.peak()).toBe(1);
   });
 });
