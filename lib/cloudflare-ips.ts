@@ -61,13 +61,16 @@ export function isCloudflareIp(ip: string): boolean {
   return parsedRanges.some(({ base, mask }) => (num & mask) === base);
 }
 
-/** Matches IPv4 and IPv6 addresses, IPv4-mapped included, against a list of CIDRs. */
+/** Matches IPv4 and IPv6 addresses, IPv4-mapped included, against CIDRs and bare IPs. Invalid entries are skipped. */
 export function cidrMatcher(ranges: readonly string[]): (ip: string) => boolean {
   const list = new BlockList();
   for (const range of ranges) {
-    const [addr, prefix] = range.split("/");
+    const [addr, prefix, extra] = range.trim().split("/");
     const family = isIP(addr);
-    if (family && prefix) list.addSubnet(addr, Number(prefix), family === 4 ? "ipv4" : "ipv6");
+    if (!family || extra !== undefined) continue;
+    const type = family === 4 ? "ipv4" : "ipv6";
+    if (prefix === undefined) list.addAddress(addr, type);
+    else if (/^\d{1,3}$/.test(prefix) && Number(prefix) <= (family === 4 ? 32 : 128)) list.addSubnet(addr, Number(prefix), type);
   }
   return (ip) => {
     const addr = ip.trim().replace(/^::ffff:(?=\d+\.)/i, "");

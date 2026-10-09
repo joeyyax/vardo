@@ -9,7 +9,7 @@ import { NextRequest } from "next/server";
 const dockerRequestMock = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/docker/client", () => ({ dockerRequest: dockerRequestMock }));
 
-const { resolveClientIp, clientIpFor, PEER_HEADER } = await import("@/lib/security/client-ip");
+const { resolveClientIp, clientIpFor, tunnelAddresses, PEER_HEADER } = await import("@/lib/security/client-ip");
 const { cidrMatcher } = await import("@/lib/cloudflare-ips");
 const { BUNDLED_RANGES } = await import("@/lib/docker/cloudflare-only");
 const { proxy } = await import("@/proxy");
@@ -118,6 +118,13 @@ describe("cidrMatcher", () => {
     expect(match("::ffff:173.245.48.1")).toBe(true);
     expect(match("not an ip")).toBe(false);
   });
+
+  it("takes bare addresses and skips bad entries", () => {
+    const m = cidrMatcher(["10.0.0.1", "2001:db8::1", "10.1.0.0/40", "junk", ""]);
+    expect(m("10.0.0.1")).toBe(true);
+    expect(m("2001:db8::1")).toBe(true);
+    expect(m("10.1.0.1")).toBe(false);
+  });
 });
 
 describe("proxy rate limit by vetted address", () => {
@@ -145,6 +152,55 @@ describe("proxy rate limit by vetted address", () => {
     vi.setSystemTime(Date.now() + 60_000);
     expect((await traefikAddresses()).size).toBe(0);
     vi.useRealTimers();
+  });
+});
+
+describe("Cloudflare Tunnel (#902)", () => {
+  const TUNNEL = "192.168.16.5";
+  const OTHER = "192.168.16.9";
+  const viaHop = (hop: string, cf = "203.0.113.7") =>
+    h({ [PEER_HEADER]: TRAEFIK, "x-forwarded-for": hop, "cf-connecting-ip": cf });
+  const containers = [
+    { Image: "cloudflare/cloudflared:2026.9.1", NetworkSettings: { Networks: { "vardo-network": { IPAddress: TUNNEL } } } },
+    { Image: "docker.io/cloudflare/cloudflared@sha256:abc", NetworkSettings: { Networks: { other: { IPAddress: "10.5.0.2" } } } },
+    { Image: "nginx:1.27", NetworkSettings: { Networks: { "vardo-network": { IPAddress: OTHER } } } },
+    { Image: "evil/cloudflare/cloudflared", NetworkSettings: { Networks: { "vardo-network": { IPAddress: "192.168.16.10" } } } },
+  ];
+
+  it("finds cloudflared containers only on Traefik's networks", () => {
+    expect([...tunnelAddresses(containers, new Set(["vardo-network"]))]).toEqual([TUNNEL]);
+    expect(tunnelAddresses({ message: "not a list" }, new Set(["vardo-network"])).size).toBe(0);
+  });
+
+  it("gives the visitor's address through a tunnel and ignores other private peers", () => {
+    const tunnels = tunnelAddresses(containers, new Set(["vardo-network"]));
+    const isTunnel = (ip: string) => tunnels.has(ip);
+    expect(resolveClientIp(viaHop(TUNNEL), isTraefik, isTunnel)).toBe("203.0.113.7");
+    expect(resolveClientIp(viaHop(TUNNEL, "2001:db8::7"), isTraefik, isTunnel)).toBe("2001:db8::7");
+    expect(resolveClientIp(viaHop(OTHER, "6.6.6.6"), isTraefik, isTunnel)).toBe(OTHER);
+  });
+
+  it("detects the tunnel from Docker in clientIpFor", async () => {
+    dockerRequestMock.mockImplementation(async (_method: string, path: string) =>
+      path.startsWith("/containers/json")
+        ? containers
+        : { NetworkSettings: { Networks: { "vardo-network": { IPAddress: TRAEFIK } } } },
+    );
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.now() + 60 * 60_000);
+    expect(await clientIpFor(viaHop(TUNNEL))).toBe("203.0.113.7");
+    expect(await clientIpFor(viaHop(OTHER, "6.6.6.6"))).toBe(OTHER);
+    vi.useRealTimers();
+  });
+
+  it("trusts VARDO_TRUSTED_PROXIES addresses and ranges", async () => {
+    vi.stubEnv("VARDO_TRUSTED_PROXIES", "10.20.0.7, 10.30.0.0/16, junk");
+    expect(await clientIpFor(viaHop("10.20.0.7"))).toBe("203.0.113.7");
+    expect(await clientIpFor(viaHop("10.30.4.4"))).toBe("203.0.113.7");
+    expect(await clientIpFor(viaHop("10.20.0.8", "6.6.6.6"))).toBe("10.20.0.8");
+    vi.stubEnv("VARDO_TRUST_CLOUDFLARE", "false");
+    expect(await clientIpFor(viaHop("10.20.0.7"))).toBe("203.0.113.7");
+    vi.unstubAllEnvs();
   });
 });
 
