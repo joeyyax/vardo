@@ -75,6 +75,9 @@ export function AppSettingsPanel({
   const [editComposeFilePath, setEditComposeFilePath] = useState(app.composeFilePath || "docker-compose.yml");
   const [editDockerfilePath, setEditDockerfilePath] = useState(app.dockerfilePath || "Dockerfile");
   const [rootDirectory, setRootDirectory] = useState(app.rootDirectory || "");
+  const [buildCommand, setBuildCommand] = useState(app.buildCommand || "");
+  const [startCommand, setStartCommand] = useState(app.startCommand || "");
+  const [buildProvider, setBuildProvider] = useState<"auto" | "railpack" | "nixpacks">(app.buildProvider ?? "auto");
   const [editParentId, setEditParentId] = useState<string | null>(app.projectId ?? null);
   const [cpuLimit, setCpuLimit] = useState(app.cpuLimit?.toString() || "");
   const [memoryLimit, setMemoryLimit] = useState(app.memoryLimit?.toString() || "");
@@ -129,6 +132,11 @@ export function AppSettingsPanel({
       if (fields.dockerfilePath) {
         body.dockerfilePath = editDockerfilePath || "Dockerfile";
       }
+      if (fields.buildOverrides) {
+        body.buildCommand = buildCommand.trim() || null;
+        body.startCommand = startCommand.trim() || null;
+      }
+      if (fields.buildProvider) body.buildProvider = buildProvider === "auto" ? null : buildProvider;
       if (fields.gitSource) {
         body.gitBranch = gitBranch;
         body.rootDirectory = rootDirectory.trim() || null;
@@ -151,6 +159,9 @@ export function AppSettingsPanel({
       // Resource limits, GPU and priority apply when the container is recreated.
       const stored: Record<string, unknown> = {
         deployType: app.deployType,
+        buildCommand: app.buildCommand ?? null,
+        startCommand: app.startCommand ?? null,
+        buildProvider: app.buildProvider ?? null,
         gitBranch: app.gitBranch || "",
         imageName: app.imageName || "",
         rootDirectory: app.rootDirectory || null,
@@ -286,7 +297,7 @@ export function AppSettingsPanel({
       )}
 
       {/* Deploy Type */}
-      {(fields.deployType || fields.composeFilePath || fields.dockerfilePath) && (
+      {(fields.deployType || fields.composeFilePath || fields.dockerfilePath || fields.buildProvider) && (
         <div className="grid gap-4">
           {fields.deployType && (
             <div className="grid gap-2 sm:w-1/2">
@@ -336,6 +347,55 @@ export function AppSettingsPanel({
               />
             </div>
           )}
+          {fields.buildProvider && (
+            <div className="grid gap-2 sm:w-1/2">
+              <Label htmlFor="edit-build-provider">Builder</Label>
+              <Select value={buildProvider} onValueChange={(v) => setBuildProvider(v as typeof buildProvider)}>
+                <SelectTrigger id="edit-build-provider">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="auto">Auto</SelectItem>
+                  <SelectItem value="railpack">Railpack</SelectItem>
+                  <SelectItem value="nixpacks">Nixpacks</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Used when the repo has no compose file or Dockerfile. Auto picks Railpack when BuildKit is reachable.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Buildpack overrides */}
+      {fields.buildOverrides && (
+        <div className="grid gap-2">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-2">
+              <Label htmlFor="edit-build-command">Build command</Label>
+              <Input
+                id="edit-build-command"
+                placeholder="Auto"
+                value={buildCommand}
+                onChange={(e) => setBuildCommand(e.target.value)}
+                className="font-mono text-sm"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="edit-start-command">Start command</Label>
+              <Input
+                id="edit-start-command"
+                placeholder="Auto"
+                value={startCommand}
+                onChange={(e) => setStartCommand(e.target.value)}
+                className="font-mono text-sm"
+              />
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Railpack and Nixpacks only. Leave blank to use what they detect. {REDEPLOY_NOTE}
+          </p>
         </div>
       )}
 

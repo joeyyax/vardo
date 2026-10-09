@@ -158,11 +158,29 @@ describe("APP_SETTINGS_FIELD_PAGE", () => {
     expect(shown("build", context({ storedDeployType: "image" })).sort()).toEqual([
       "autoDeploy",
       "autoRollback",
+      "buildOverrides",
+      "buildProvider",
       "composeFilePath",
       "deployType",
       "gitSource",
       "image",
     ]);
+  });
+
+  it("offers build overrides wherever Railpack or Nixpacks can run, and the builder only on auto", () => {
+    for (const type of ["compose", "nixpacks", "railpack"]) {
+      expect(appSettingsFields(context({ deployType: type })).buildOverrides).toBe(true);
+    }
+    expect(appSettingsFields(context({ deployType: "compose" })).buildProvider).toBe(true);
+    expect(appSettingsFields(context({ deployType: "nixpacks" })).buildProvider).toBe(false);
+    expect(appSettingsFields(context({ deployType: "dockerfile" })).buildOverrides).toBe(false);
+  });
+
+  it("hides build overrides without a repo, on a compose parent and on a child service", () => {
+    for (const ctx of [context({ source: "direct" }), composeParent, childService]) {
+      expect(appSettingsFields(ctx).buildOverrides).toBe(false);
+      expect(appSettingsFields(ctx).buildProvider).toBe(false);
+    }
   });
 
   it("leaves Settings the app's identity", () => {

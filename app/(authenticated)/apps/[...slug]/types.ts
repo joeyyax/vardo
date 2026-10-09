@@ -3,6 +3,7 @@ import type { ExitReason } from "@/lib/docker/exit-reason";
 import type { FeatureFlags } from "@/lib/config/features";
 import type { Incident, RestartReading } from "@/lib/ui/stability";
 import type { LifecycleEvent } from "@/lib/ui/lifecycle";
+import type { BuildPlanRecord } from "@/lib/docker/build-plan";
 
 export type Deployment = {
   id: string;
@@ -18,6 +19,7 @@ export type Deployment = {
   rollbackFromId: string | null;
   /** Post-deploy work a successful deploy did not finish. */
   postDeployError: string | null;
+  buildPlan: BuildPlanRecord | null;
   slot: string | null;
   startedAt: Date;
   finishedAt: Date | null;
@@ -132,6 +134,9 @@ export type App = {
   parentAppId: string | null;
   dockerfilePath: string | null;
   rootDirectory: string | null;
+  buildCommand: string | null;
+  startCommand: string | null;
+  buildProvider: "railpack" | "nixpacks" | null;
   containerPort: number | null;
   autoTraefikLabels: boolean | null;
   autoDeploy: boolean | null;

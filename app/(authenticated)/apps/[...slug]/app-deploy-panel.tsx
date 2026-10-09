@@ -47,6 +47,7 @@ import { toast } from "@/lib/messenger";
 import { RelativeTime } from "@/components/relative-time";
 import { Uptime } from "./timer";
 import { InProgressDeployCard } from "./in-progress-deploy-card";
+import { BuildPlanPanel } from "./build-plan-panel";
 import { useCancelDeploy } from "./hooks/use-app-actions";
 import {
   interleaveHistory,
@@ -487,6 +488,7 @@ export function AppDeployPanel({
             </button>
           </div>
         </div>
+        {isExpanded && deployment.buildPlan && <BuildPlanPanel plan={deployment.buildPlan} />}
         {isExpanded && deployment.log && (
           <div id={logPanelId}>
             <DeploymentLog log={deployment.log} />

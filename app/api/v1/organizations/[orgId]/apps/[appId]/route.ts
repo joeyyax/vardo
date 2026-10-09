@@ -20,6 +20,14 @@ type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
 };
 
+const buildOverrideSchema = z
+  .string()
+  .max(1000)
+  .refine((v) => !/[\r\n\0]/.test(v), "Must be one line")
+  .transform((v) => v.trim() || null)
+  .nullable()
+  .optional();
+
 const updateAppSchema = z.object({
   displayName: z.string().min(1).optional(),
   description: z.string().nullable().optional(),
@@ -33,6 +41,10 @@ const updateAppSchema = z.object({
   composeContent: z.string().max(512000).nullable().optional(),
   composeFilePath: repoFilePathSchema.nullable().optional(),
   dockerfilePath: repoFilePathSchema.nullable().optional(),
+  // Buildpack overrides. Null or blank lets the engine decide.
+  buildCommand: buildOverrideSchema,
+  startCommand: buildOverrideSchema,
+  buildProvider: z.enum(["railpack", "nixpacks"]).nullable().optional(),
   gitUrl: gitUrlUpdateSchema.nullable().optional(),
   imageName: z.string().nullable().optional(),
   restartPolicy: z.string().nullable().optional(),
