@@ -87,6 +87,27 @@ describe("VARDO_REF", () => {
     expect(clone(oldSha, "c-old").sha).toBe(oldSha);
   });
 
+  it("resolves a short sha on any branch", () => {
+    expect(clone(tipSha.slice(0, 8), "c-short-tip").sha).toBe(tipSha);
+    expect(clone(oldSha.slice(0, 7), "c-short-old").sha).toBe(oldSha);
+  });
+
+  it("moves a shallow checkout to a short sha", () => {
+    const dest = join(dir, "c-move-short");
+    const r = sh(
+      `REPO_URL="file://${repo}"\nVARDO_REF=feature clone_ref "${dest}"\ncd "${dest}"\nVARDO_REF=${oldSha.slice(0, 8)} checkout_ref\ngit rev-parse HEAD`,
+    );
+    expect(r.status).toBe(0);
+    expect(r.out.trim().split("\n").at(-1)).toBe(oldSha);
+  });
+
+  it("fails clearly on a short sha that matches nothing", () => {
+    const r = clone("deadbeef", "c-short-missing");
+    expect(r.status).not.toBe(0);
+    expect(r.out).toContain("Could not fetch deadbeef");
+    expect(r.out).not.toContain("couldn't find remote ref");
+  });
+
   it("fails on a ref that does not exist", () => {
     const r = clone("nope", "c-missing");
     expect(r.status).not.toBe(0);

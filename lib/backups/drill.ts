@@ -94,7 +94,7 @@ async function countObjects(container: string, countArgv: string[]): Promise<num
 }
 
 /** Restore through the same path as a live restore, then count tables across every database it held. */
-async function drillPostgres(
+export async function drillPostgres(
   container: string,
   env: string[],
   countArgv: string[],

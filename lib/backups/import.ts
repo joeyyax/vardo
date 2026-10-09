@@ -21,6 +21,7 @@ import { buildTarBackupScript, buildTarRestoreScript } from "./archive";
 import { buildPgRestoreArgv, buildRestoreArgv, defaultDatabase } from "./dump-spec";
 import type { DatabaseKind } from "./durability";
 import { resolveDbContainer } from "./resolve-db-container";
+import { createMissingDumpRoles } from "./pg-cluster";
 import {
   BACKUPS_DIR,
   resolveDockerVolume,
@@ -273,24 +274,19 @@ export async function loadIntoDatabase(opts: {
   }
 
   log(`Loading ${staged.format === "pg-custom" ? "a pg_dump archive" : "a SQL dump"} into ${kind}${database ? ` database "${database}"` : ""}`);
-  try {
-    await restoreDumpWithSnapshot({
-      backupId: `import-${nanoid(6)}`,
-      kind,
-      containerId,
-      containerEnv,
-      archivePath: staged.path,
-      tmpDir,
-      log,
-      restoreArgv,
-    });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    if (kind === "postgres" && staged.format === "sql" && /role ".*" does not exist/.test(message)) {
-      throw new Error(`${message}. Dump with pg_dump -Fc, or plain with --no-owner --no-privileges`);
-    }
-    throw err;
+  if (kind === "postgres" && (staged.format === "sql" || staged.format === "pg-custom")) {
+    await createMissingDumpRoles({ containerId, containerEnv, archivePath: staged.path, format: staged.format, log });
   }
+  await restoreDumpWithSnapshot({
+    backupId: `import-${nanoid(6)}`,
+    kind,
+    containerId,
+    containerEnv,
+    archivePath: staged.path,
+    tmpDir,
+    log,
+    restoreArgv,
+  });
 }
 
 /** Replace a Docker volume's contents with a staged tar. Writers stop; the old contents come back on failure. */

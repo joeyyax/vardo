@@ -86,9 +86,11 @@ describe("writesMysqlSystemSchema", () => {
 describe("restore argv for imports", () => {
   const env = ["POSTGRES_USER=app", "POSTGRES_DB=appdb", "MARIADB_DATABASE=wp"];
 
-  it("loads a custom archive in one transaction, owned by the app's user", () => {
+  it("loads a custom archive in one transaction, keeping its owners and grants", () => {
     const argv = buildPgRestoreArgv("c", env);
-    expect(argv).toEqual(expect.arrayContaining(["pg_restore", "-U", "app", "-d", "appdb", "--single-transaction", "--exit-on-error", "--no-owner"]));
+    expect(argv).toEqual(expect.arrayContaining(["pg_restore", "-U", "app", "-d", "appdb", "--single-transaction", "--exit-on-error"]));
+    expect(argv).not.toContain("--no-owner");
+    expect(argv).not.toContain("--no-privileges");
   });
 
   it("passes a MySQL database as an argument, never inside the script", () => {
