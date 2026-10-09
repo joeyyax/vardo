@@ -152,6 +152,8 @@ export type DeployTransformDomain = {
   composeService?: string | null;
   pathPrefix?: string | null;
   stripPathPrefix?: boolean | null;
+  /** Comma-separated Traefik middleware references. */
+  middlewares?: string | null;
 };
 
 export type ComposePreviewApp = {

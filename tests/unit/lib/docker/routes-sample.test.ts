@@ -35,7 +35,7 @@ function render(route: Route): Record<string, string> {
   const port = Number(route.labels[`traefik.http.services.${route.app}.loadbalancer.server.port`]);
   const compose: ComposeFile = { services: { app: { name: "app", image: "x" } } };
   const out = injectTraefikLabels(compose, {
-    ...domainRouteOptions({ ...route, id: route.idPrefix }),
+    ...domainRouteOptions({ ...route, id: route.idPrefix }, { trusted: true }),
     projectName,
     appName: route.app,
     containerPort: port,

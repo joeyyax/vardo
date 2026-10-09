@@ -29,6 +29,10 @@ export async function register() {
     const { writeTraefikApiConfig } = await import("./lib/docker/traefik-api-access");
     await writeTraefikApiConfig().catch((err) => log.warn("Failed to write the Traefik API router:", err));
 
+    // Defines cloudflare-only@file for domains and the console lock.
+    const { startCloudflareOnlySync } = await import("./lib/docker/cloudflare-only");
+    startCloudflareOnlySync();
+
     // Must run early so isFeatureEnabled() returns real values for the rest of startup.
     const { loadFeatureFlags } = await import("./lib/config/features");
     await loadFeatureFlags().catch((err) =>

@@ -40,6 +40,7 @@ export type Domain = {
   sslEnabled?: boolean | null;
   pathPrefix?: string | null;
   stripPathPrefix?: boolean | null;
+  middlewares?: string | null;
   /** Latest certificate probe; null until the monitor has looked. */
   certCheck?: { status: string; expiresAt: Date | null; checkedAt: Date } | null;
 };

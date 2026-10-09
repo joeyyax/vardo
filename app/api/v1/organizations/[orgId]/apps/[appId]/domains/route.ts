@@ -8,13 +8,14 @@ import { z } from "zod";
 import { verifyAppAccess } from "@/lib/api/verify-access";
 import { refuseSystemManaged } from "@/lib/api/system-managed";
 import { CERT_RESOLVERS, getSslConfig, getDefaultCertResolver } from "@/lib/system-settings";
-import { apps } from "@/lib/db/schema";
+import { apps, organizations } from "@/lib/db/schema";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { HOSTNAME_RE } from "@/lib/security/hostname";
 import { proofForNewDomain } from "@/lib/domains/context";
 import { hostHeldByOtherOrg } from "@/lib/domains/shared-host";
 import { normalizePathPrefix } from "@/lib/domains/path-prefix";
+import { middlewareProblem, serializeMiddlewares } from "@/lib/domains/middlewares";
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
@@ -36,6 +37,23 @@ const pathPrefixSchema = z
 
 const HOST_TAKEN = "Another organization already routes that domain.";
 
+// Traefik middleware references, e.g. "cloudflare-only@file".
+const middlewaresSchema = z.array(z.string().trim().min(1).max(100)).max(10).nullable();
+
+/** The stored value, or why the organization can't use one of the middlewares. */
+async function checkMiddlewares(list: string[] | null, orgId: string): Promise<{ value: string | null } | { error: string }> {
+  if (!list || list.length === 0) return { value: null };
+  const org = await db.query.organizations.findFirst({
+    where: eq(organizations.id, orgId),
+    columns: { trusted: true },
+  });
+  for (const ref of list) {
+    const problem = middlewareProblem(ref, org?.trusted ?? false);
+    if (problem) return { error: problem };
+  }
+  return { value: serializeMiddlewares(list) };
+}
+
 const createDomainSchema = z.object({
   domain: z.string().min(1, "Domain is required").regex(HOSTNAME_RE, "Invalid domain name"),
   serviceName: z.string().optional(),
@@ -45,6 +63,7 @@ const createDomainSchema = z.object({
   redirectCode: z.union([z.literal(301), z.literal(302)]).optional(),
   pathPrefix: pathPrefixSchema.optional(),
   stripPathPrefix: z.boolean().optional(),
+  middlewares: middlewaresSchema.optional(),
 }).strict();
 
 const deleteDomainSchema = z.object({
@@ -94,6 +113,10 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     if (await hostHeldByOtherOrg(domainName, orgId)) {
       return NextResponse.json({ error: `Couldn't add domain. ${HOST_TAKEN}` }, { status: 409 });
     }
+    const middlewares = await checkMiddlewares(parsed.data.middlewares ?? null, orgId);
+    if ("error" in middlewares) {
+      return NextResponse.json({ error: `Couldn't add domain. ${middlewares.error}` }, { status: 400 });
+    }
 
     // Caller's resolver, or the primary issuer over DNS-01 when Cloudflare credentials are set.
     const certResolver = parsed.data.certResolver
@@ -113,6 +136,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
         redirectCode: parsed.data.redirectCode,
         pathPrefix: parsed.data.pathPrefix ?? null,
         stripPathPrefix: parsed.data.stripPathPrefix ?? false,
+        middlewares: middlewares.value,
       })
       .returning();
 
@@ -140,6 +164,7 @@ const updateDomainSchema = z.object({
   redirectCode: z.union([z.literal(301), z.literal(302)]).optional(),
   pathPrefix: pathPrefixSchema.optional(),
   stripPathPrefix: z.boolean().optional(),
+  middlewares: middlewaresSchema.optional(),
 }).strict();
 
 // PATCH /api/v1/organizations/[orgId]/apps/[appId]/domains
@@ -162,8 +187,21 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
       return apiError.validation(parsed.error);
     }
 
-    const { id, ...fields } = parsed.data;
-    const updates: typeof fields & { domain?: string; verificationToken?: string; verifiedAt?: Date | null } = { ...fields };
+    const { id, middlewares: requestedMiddlewares, ...fields } = parsed.data;
+    const updates: typeof fields & {
+      domain?: string;
+      verificationToken?: string;
+      verifiedAt?: Date | null;
+      middlewares?: string | null;
+    } = { ...fields };
+
+    if (requestedMiddlewares !== undefined) {
+      const middlewares = await checkMiddlewares(requestedMiddlewares, orgId);
+      if ("error" in middlewares) {
+        return NextResponse.json({ error: `Couldn't update domain. ${middlewares.error}` }, { status: 400 });
+      }
+      updates.middlewares = middlewares.value;
+    }
 
     // A renamed domain starts over: its old proof says nothing about the new host.
     const current = fields.domain

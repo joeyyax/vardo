@@ -14,6 +14,7 @@ import {
 } from "../compose";
 import { selectRoutedService } from "../routed-service";
 import { formatRoute } from "@/lib/domains/path-prefix";
+import { partitionMiddlewares } from "@/lib/domains/middlewares";
 import { detectExposedPorts } from "../client";
 import type { ComposeFile } from "../compose-types";
 import { normalizeCompose } from "../compose-normalize";
@@ -208,8 +209,12 @@ export async function resolveCompose(ctx: DeployContext): Promise<DeployContext>
           `[deploy] Traefik: nothing identifies which service serves :${port} — routing ${domain.domain} to ${targetService} (candidates: ${selection.ambiguous.join(", ")}). Set the domain's compose service to pin it.`,
         );
       }
+      const refused = partitionMiddlewares(domain.middlewares, ctx.orgTrusted).refused;
+      if (refused.length > 0) {
+        log(`[deploy] Traefik: ${domain.domain} skips middlewares this organization can't use: ${refused.join(", ")}`);
+      }
       compose = injectTraefikLabels(compose, {
-        ...domainRouteOptions(domain),
+        ...domainRouteOptions(domain, { trusted: ctx.orgTrusted }),
         projectName: envRoute ?? `${app.name}-${domain.id.slice(0, 8)}`,
         appName: app.name,
         traefikService: envRoute,

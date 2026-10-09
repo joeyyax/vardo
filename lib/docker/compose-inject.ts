@@ -19,6 +19,7 @@ import { sanitizeCompose, isAnonymousVolume } from "./compose-validate";
 import { generateComposeForImage } from "./compose-generate";
 import { isHostname } from "@/lib/security/hostname";
 import { isPathPrefix, pathRoutePriority } from "@/lib/domains/path-prefix";
+import { middlewareProblem, partitionMiddlewares } from "@/lib/domains/middlewares";
 
 const VARDO_LABEL_PREFIX = "vardo.";
 
@@ -135,6 +136,8 @@ export function injectTraefikLabels(
     pathPrefix?: string | null;
     /** Remove pathPrefix before forwarding. */
     stripPathPrefix?: boolean;
+    /** Middlewares the domain asks for, ahead of Vardo's own. */
+    middlewares?: string[];
   },
 ): ComposeFile {
   const { projectName, domain, containerPort, certResolver = "le-dns", ssl = true } = opts;
@@ -151,6 +154,10 @@ export function injectTraefikLabels(
   // Backticks or spaces here would rewrite the Traefik rule and claim other hosts.
   if (!isHostname(domain)) throw new Error(`Refusing to route invalid domain "${domain}"`);
   if (pathPrefix && !isPathPrefix(pathPrefix)) throw new Error(`Refusing to route invalid path "${pathPrefix}"`);
+  for (const ref of opts.middlewares ?? []) {
+    // Trust is checked by the caller; this only keeps the label well-formed.
+    if (middlewareProblem(ref, true)) throw new Error(`Refusing invalid middleware "${ref}"`);
+  }
 
   const existing = compose.services[serviceName];
   if (isTraefikOptedOut(existing) || isTraefikSelfRouted(existing)) return compose;
@@ -172,8 +179,8 @@ export function injectTraefikLabels(
   };
   if (pathPrefix) labels[`traefik.http.routers.${projectName}.priority`] = String(pathRoutePriority(pathPrefix));
 
-  // Middlewares on the router that serves the app: the redirect, or the path strip.
-  const appMiddlewares: string[] = [];
+  // Middlewares on the router that serves the app: the domain's own, then the redirect or the path strip.
+  const appMiddlewares: string[] = [...(opts.middlewares ?? [])];
   if (isRedirect) {
     // Redirect domain: redirectregex middleware, still TLS-terminated.
     labels[`traefik.http.middlewares.${projectName}-redirect.redirectregex.regex`] = "^https?://[^/]+(.*)$";
@@ -245,9 +252,10 @@ export function injectTraefikLabels(
   return { ...compose, services: updatedServices };
 }
 
-/** injectTraefikLabels options a domain row decides. */
-export function domainRouteOptions(domain: DeployTransformDomain) {
+/** injectTraefikLabels options a domain row decides. Middlewares the organization may not use are dropped. */
+export function domainRouteOptions(domain: DeployTransformDomain, org: { trusted: boolean }) {
   return {
+    middlewares: partitionMiddlewares(domain.middlewares, org.trusted).allowed,
     domain: domain.domain,
     certResolver: domain.certResolver || "le-dns",
     ssl: domain.sslEnabled ?? true,
@@ -816,6 +824,7 @@ export function applyDeployTransforms(
     domains: DeployTransformDomain[];
     networkName: string;
     backendProtocol?: "http" | "https" | null;
+    orgTrusted?: boolean;
   },
 ): ComposeFile {
   let result = compose;
@@ -849,7 +858,7 @@ export function applyDeployTransforms(
         override: domain.composeService,
       }).service;
       result = injectTraefikLabels(result, {
-        ...domainRouteOptions(domain),
+        ...domainRouteOptions(domain, { trusted: opts.orgTrusted ?? false }),
         projectName: `${opts.appName}-${domain.id.slice(0, 6)}`,
         appName: opts.appName,
         containerPort: port,
@@ -924,5 +933,6 @@ export function buildComposePreview(
     domains: app.domains,
     networkName,
     backendProtocol: app.backendProtocol,
+    orgTrusted,
   });
 }

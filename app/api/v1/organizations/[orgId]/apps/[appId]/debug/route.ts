@@ -87,6 +87,7 @@ async function handler(_request: NextRequest, { params }: RouteParams) {
           redirectCode: d.redirectCode ?? null,
           pathPrefix: d.pathPrefix ?? null,
           stripPathPrefix: d.stripPathPrefix ?? false,
+          middlewares: d.middlewares ?? null,
         })),
         backendProtocol: narrowBackendProtocol(app.backendProtocol),
       },

@@ -111,6 +111,20 @@ describe("app domain POST path prefix", () => {
   });
 });
 
+describe("app domain middlewares", () => {
+  it("lets an untrusted organization turn on cloudflare-only", async () => {
+    const res = await postAppDomain(req("POST", { domain: "acme.com", middlewares: ["cloudflare-only@file"] }), appParams);
+    expect(res.status).toBe(201);
+    expect(state.inserted[0]).toMatchObject({ middlewares: "cloudflare-only@file" });
+  });
+
+  it("refuses a middleware Vardo doesn't define for an untrusted organization", async () => {
+    const res = await postAppDomain(req("POST", { domain: "acme.com", middlewares: ["authentik@docker"] }), appParams);
+    expect(res.status).toBe(400);
+    expect(state.inserted).toEqual([]);
+  });
+});
+
 describe("org domains __default__ toggle", () => {
   it("saves the placeholder unverified", async () => {
     const res = await patchOrgDomain(req("PATCH", { id: "__default__", enabled: true }), orgParams);

@@ -63,6 +63,7 @@ export type DeployApp = {
     composeService?: string | null;
     pathPrefix?: string | null;
     stripPathPrefix?: boolean | null;
+    middlewares?: string | null;
   }[];
 };
 

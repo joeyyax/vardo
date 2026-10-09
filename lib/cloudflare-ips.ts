@@ -1,9 +1,9 @@
 /**
  * Cloudflare IPv4 CIDR ranges.
  * Source: https://www.cloudflare.com/ips-v4
- * Last updated: 2026-03-25
+ * Last updated: 2026-10-08
  */
-const CLOUDFLARE_IPV4_RANGES = [
+export const CLOUDFLARE_IPV4_RANGES = [
   "173.245.48.0/20",
   "103.21.244.0/22",
   "103.22.200.0/22",
@@ -19,6 +19,21 @@ const CLOUDFLARE_IPV4_RANGES = [
   "104.24.0.0/14",
   "172.64.0.0/13",
   "131.0.72.0/22",
+];
+
+/**
+ * Cloudflare IPv6 CIDR ranges.
+ * Source: https://www.cloudflare.com/ips-v6
+ * Last updated: 2026-10-08
+ */
+export const CLOUDFLARE_IPV6_RANGES = [
+  "2400:cb00::/32",
+  "2606:4700::/32",
+  "2803:f800::/32",
+  "2405:b500::/32",
+  "2405:8100::/32",
+  "2a06:98c0::/29",
+  "2c0f:f248::/32",
 ];
 
 /** Parse a CIDR string into a numeric base address and mask. */

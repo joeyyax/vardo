@@ -5,6 +5,7 @@ import { join } from "path";
 import {
   TRAEFIK_MANUAL_LABEL,
   applyDeployTransforms,
+  domainRouteOptions,
   buildVardoOverlay,
   injectTraefikLabels,
   isTraefikSelfRouted,
@@ -13,7 +14,7 @@ import {
 } from "@/lib/docker/compose-inject";
 import { parseCompose } from "@/lib/docker/compose-parse";
 import { selectRoutedService } from "@/lib/docker/routed-service";
-import type { ComposeFile } from "@/lib/docker/compose-types";
+import type { ComposeFile, DeployTransformDomain } from "@/lib/docker/compose-types";
 
 const NETWORK = "vardo-network";
 
@@ -354,5 +355,49 @@ describe("injectTraefikLabels path prefix", () => {
 
   it("refuses a prefix that would rewrite the rule", () => {
     expect(() => inject({ pathPrefix: "/a`) || Host(`evil.test" })).toThrow(/invalid path/);
+  });
+});
+
+describe("injectTraefikLabels domain middlewares", () => {
+  const base = (): ComposeFile => ({ services: { web: { name: "web", image: "app:latest" } } });
+  const row: DeployTransformDomain = {
+    id: "abcdef123456",
+    domain: "search.test",
+    port: 80,
+    sslEnabled: true,
+    certResolver: "le-dns",
+    redirectTo: null,
+    redirectCode: null,
+    middlewares: "cloudflare-only@file,auth@docker",
+  };
+  const inject = (domain: DeployTransformDomain, trusted: boolean) =>
+    injectTraefikLabels(base(), {
+      ...domainRouteOptions(domain, { trusted }),
+      projectName: "search-abc",
+      appName: "search",
+      containerPort: 80,
+    }).services.web.labels!;
+
+  it("puts the domain's middlewares on the router that serves the app, not the HTTPS redirect", () => {
+    const labels = inject(row, true);
+    expect(labels["traefik.http.routers.search-abc.middlewares"]).toBe("cloudflare-only@file,auth@docker");
+    expect(labels["traefik.http.routers.search-abc-http.middlewares"]).toBe("search-abc-https-redirect");
+  });
+
+  it("drops middlewares an untrusted organization can't use", () => {
+    expect(inject(row, false)["traefik.http.routers.search-abc.middlewares"]).toBe("cloudflare-only@file");
+  });
+
+  it("runs the lock before the strip and the redirect", () => {
+    const strip = inject({ ...row, middlewares: "cloudflare-only@file", pathPrefix: "/docs", stripPathPrefix: true }, false);
+    expect(strip["traefik.http.routers.search-abc.middlewares"]).toBe("cloudflare-only@file,search-abc-strip");
+    const redirect = inject({ ...row, middlewares: "cloudflare-only@file", redirectTo: "https://new.test" }, false);
+    expect(redirect["traefik.http.routers.search-abc.middlewares"]).toBe("cloudflare-only@file,search-abc-redirect");
+  });
+
+  it("refuses a malformed reference even when trusted", () => {
+    expect(() =>
+      injectTraefikLabels(base(), { projectName: "p", domain: "a.test", containerPort: 80, middlewares: ["a`b"] }),
+    ).toThrow(/invalid middleware/);
   });
 });

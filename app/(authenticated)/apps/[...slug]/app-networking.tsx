@@ -45,7 +45,9 @@ import {
 import type { Domain } from "./types";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { HelpTip } from "@/components/ui/help-tip";
 import { formatRoute } from "@/lib/domains/path-prefix";
+import { CLOUDFLARE_ONLY_MIDDLEWARE, parseMiddlewares } from "@/lib/domains/middlewares";
 import { cn } from "@/lib/utils";
 
 // Explicit picks; "Default" uses DNS-01 when the instance has Cloudflare credentials.
@@ -64,22 +66,43 @@ function DomainRouteOptions({
   redirect,
   strip,
   onStripChange,
+  cloudflareOnly,
+  onCloudflareOnlyChange,
 }: {
   path: string;
   redirect: boolean;
   strip: boolean;
   onStripChange: (v: boolean) => void;
+  cloudflareOnly: boolean;
+  onCloudflareOnlyChange: (v: boolean) => void;
 }) {
-  const hasPath = !!path.trim() && path.trim() !== "/";
-  if (!hasPath || redirect) return null;
+  const showStrip = !!path.trim() && path.trim() !== "/" && !redirect;
   return (
     <div className="basis-full flex flex-wrap gap-x-6 gap-y-2">
-      <label className="flex items-center gap-2 text-sm">
-        <Checkbox checked={strip} onCheckedChange={(v) => onStripChange(v === true)} />
-        Remove <span className="font-mono">{path.trim()}</span> before forwarding to the app
-      </label>
+      <span className="flex items-center gap-2 text-sm">
+        <label className="flex items-center gap-2">
+          <Checkbox checked={cloudflareOnly} onCheckedChange={(v) => onCloudflareOnlyChange(v === true)} />
+          Only accept traffic through Cloudflare
+        </label>
+        <HelpTip label="Cloudflare only">
+          Requests that don&apos;t come through Cloudflare get a 403. The domain&apos;s DNS record must be proxied.
+        </HelpTip>
+      </span>
+      {showStrip && (
+        <label className="flex items-center gap-2 text-sm">
+          <Checkbox checked={strip} onCheckedChange={(v) => onStripChange(v === true)} />
+          Remove <span className="font-mono">{path.trim()}</span> before forwarding to the app
+        </label>
+      )}
     </div>
   );
+}
+
+/** The domain's middlewares with cloudflare-only on or off, or undefined when nothing changes. */
+function withCloudflareOnly(stored: string | null | undefined, on: boolean): string[] | undefined {
+  const list = parseMiddlewares(stored);
+  if (list.includes(CLOUDFLARE_ONLY_MIDDLEWARE) === on) return undefined;
+  return on ? [...list, CLOUDFLARE_ONLY_MIDDLEWARE] : list.filter((m) => m !== CLOUDFLARE_ONLY_MIDDLEWARE);
 }
 
 export function AppNetworking({
@@ -115,6 +138,7 @@ export function AppNetworking({
   const [newDomainRedirectCode, setNewDomainRedirectCode] = useState("301");
   const [newDomainPath, setNewDomainPath] = useState("");
   const [newDomainStrip, setNewDomainStrip] = useState(false);
+  const [newDomainCloudflareOnly, setNewDomainCloudflareOnly] = useState(false);
   const [deletingDomainId, setDeletingDomainId] = useState<string | null>(null);
   const [editingDomainId, setEditingDomainId] = useState<string | null>(null);
   const [editDomainValue, setEditDomainValue] = useState("");
@@ -124,6 +148,7 @@ export function AppNetworking({
   const [editDomainRedirectCode, setEditDomainRedirectCode] = useState("301");
   const [editDomainPath, setEditDomainPath] = useState("");
   const [editDomainStrip, setEditDomainStrip] = useState(false);
+  const [editDomainCloudflareOnly, setEditDomainCloudflareOnly] = useState(false);
   // Open sub-view from URL (e.g. /apps/emmayax/networking/emmayax.com)
   const [dnsDomainId, setDnsDomainId] = useState<string | null>(
     () => (initialSubView && domains.find((d) => d.domain === initialSubView)?.id) || null,
@@ -257,6 +282,7 @@ export function AppNetworking({
             domain: newDomain.trim(),
             port: newDomainPort ? parseInt(newDomainPort, 10) : undefined,
             ...(newDomainPath.trim() && { pathPrefix: newDomainPath.trim(), stripPathPrefix: newDomainStrip }),
+            ...(newDomainCloudflareOnly && { middlewares: [CLOUDFLARE_ONLY_MIDDLEWARE] }),
             ...(newDomainResolver && { certResolver: newDomainResolver }),
             ...(newDomainRedirectTo.trim() && {
               redirectTo: newDomainRedirectTo.trim(),
@@ -279,6 +305,7 @@ export function AppNetworking({
       setNewDomainRedirectCode("301");
       setNewDomainPath("");
       setNewDomainStrip(false);
+      setNewDomainCloudflareOnly(false);
       router.refresh();
     } catch {
       toast.error("Couldn't add domain");
@@ -328,6 +355,7 @@ export function AppNetworking({
             port: editDomainPort ? parseInt(editDomainPort, 10) : null,
             pathPrefix: editDomainPath.trim() || null,
             stripPathPrefix: editDomainStrip,
+            middlewares: withCloudflareOnly(editingDomain?.middlewares, editDomainCloudflareOnly),
             ...(editDomainResolver && editDomainResolver !== editingDomain?.certResolver && { certResolver: editDomainResolver }),
             redirectTo: editDomainRedirectTo.trim() || null,
             ...(editDomainRedirectTo.trim() && {
@@ -372,6 +400,7 @@ export function AppNetworking({
               setNewDomainRedirectCode("301");
               setNewDomainPath("");
               setNewDomainStrip(false);
+              setNewDomainCloudflareOnly(false);
               setDomainOpen(!domainOpen);
             }}
           >
@@ -456,6 +485,8 @@ export function AppNetworking({
               redirect={!!newDomainRedirectTo.trim()}
               strip={newDomainStrip}
               onStripChange={setNewDomainStrip}
+              cloudflareOnly={newDomainCloudflareOnly}
+              onCloudflareOnlyChange={setNewDomainCloudflareOnly}
             />
             <Button size="sm" onClick={handleDomainAdd} disabled={domainSaving || !newDomain.trim()}>
               {domainSaving ? <Loader2 className="size-3.5 animate-spin" /> : "Add"}
@@ -557,6 +588,8 @@ export function AppNetworking({
                         redirect={!!editDomainRedirectTo.trim()}
                         strip={editDomainStrip}
                         onStripChange={setEditDomainStrip}
+                        cloudflareOnly={editDomainCloudflareOnly}
+                        onCloudflareOnlyChange={setEditDomainCloudflareOnly}
                       />
                       <Button size="sm" onClick={() => handleDomainUpdate(domain.id)} disabled={domainSaving || !editDomainValue.trim()}>
                         {domainSaving ? <Loader2 className="size-3.5 animate-spin" /> : "Save"}
@@ -607,6 +640,11 @@ export function AppNetworking({
                         Primary
                       </Badge>
                     )}
+                    {parseMiddlewares(domain.middlewares).includes(CLOUDFLARE_ONLY_MIDDLEWARE) && (
+                      <Badge variant="outline" className="text-xs shrink-0">
+                        Cloudflare only
+                      </Badge>
+                    )}
                     {(() => {
                       const proof = diagnoseOwnership(ownership[domain.id]?.state);
                       if (!proof) return null;
@@ -642,6 +680,7 @@ export function AppNetworking({
                         setEditDomainRedirectCode(String(domain.redirectCode ?? 301));
                         setEditDomainPath(domain.pathPrefix || "");
                         setEditDomainStrip(domain.stripPathPrefix ?? false);
+                        setEditDomainCloudflareOnly(parseMiddlewares(domain.middlewares).includes(CLOUDFLARE_ONLY_MIDDLEWARE));
                       }}
                     >
                       <Pencil className="size-3.5" />
