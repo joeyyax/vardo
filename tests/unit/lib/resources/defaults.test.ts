@@ -230,3 +230,25 @@ describe("envLock", () => {
     expect(envLock("deployConcurrency", { VARDO_MAX_DEPLOY_CONCURRENCY: "lots" })).toBeNull();
   });
 });
+
+describe("BuildKit cache ceiling", () => {
+  const GIB = 1024 ** 3;
+  const row = (env: Record<string, string>, disk: number | null) =>
+    describeDefaults(HOSTS["32 GB"], 8, env, undefined, {}, disk).find((d) => d.key === "buildkitCache")!;
+
+  it("is the rule in MiB, not bytes", () => {
+    expect(row({}, 250 * GIB).rule).toBe(25 * 1024);
+  });
+
+  it("counts the installer's bytes as detected when they match the disk's rule", () => {
+    expect(row({ VARDO_BUILDKIT_CACHE_MAX: String(25 * GIB) }, 250 * GIB)).toMatchObject({ source: "detected", value: 25 * 1024 });
+  });
+
+  it("reads a pinned value with a unit as an override", () => {
+    expect(row({ VARDO_BUILDKIT_CACHE_MAX: "20GB" }, 250 * GIB)).toMatchObject({ source: "override", value: 20 * 1024 });
+  });
+
+  it("falls back to 10 GiB with nothing set", () => {
+    expect(row({}, null)).toMatchObject({ source: "fallback", value: 10 * 1024 });
+  });
+});

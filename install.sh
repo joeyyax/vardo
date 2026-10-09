@@ -553,6 +553,33 @@ ensure_buildkit_mem() {
   log "Set VARDO_BUILDKIT_MEM=$mem"
 }
 
+# Size in KB of the disk holding Docker's data, falling back to /.
+get_docker_disk_kb() {
+  local path=/var/lib/docker
+  [ -d "$path" ] || path=/
+  df -Pk "$path" 2>/dev/null | awk 'NR==2 {print $2}'
+}
+
+# BuildKit's cache ceiling in bytes: a tenth of the disk, between 5 and 50 GiB. Mirrors lib/resources/defaults.ts.
+default_buildkit_cache_bytes() {
+  local kb="${1:-$(get_docker_disk_kb)}"
+  [[ "$kb" =~ ^[0-9]+$ && "$kb" -gt 0 ]] || kb=$(( 100 * 1024 * 1024 ))
+  local gb=$(( kb / 1024 / 1024 / 10 ))
+  (( gb < 5 )) && gb=5
+  (( gb > 50 )) && gb=50
+  echo $(( gb * 1024 * 1024 * 1024 ))
+}
+
+# Sets the ceiling once; an existing value is the owner's.
+ensure_buildkit_cache_max() {
+  local env_file="$1"
+  grep -q "^VARDO_BUILDKIT_CACHE_MAX=" "$env_file" 2>/dev/null && return
+  local bytes
+  bytes=$(default_buildkit_cache_bytes)
+  printf '\n# BuildKit cache ceiling in bytes (vardo-buildkit)\nVARDO_BUILDKIT_CACHE_MAX=%s\n' "$bytes" >> "$env_file"
+  log "Set VARDO_BUILDKIT_CACHE_MAX=$bytes"
+}
+
 # Redis limit in MB: 512 below 24 GiB of RAM, 1024 below 96 GiB, else 2048. Mirrors lib/resources/defaults.ts.
 default_redis_mem_mb() {
   local mb
@@ -1459,6 +1486,7 @@ EOF
   fi
 
   ensure_buildkit_mem "$env_file"
+  ensure_buildkit_cache_max "$env_file"
   ensure_redis_mem "$env_file"
 
   chmod 600 "$env_file"
@@ -1998,6 +2026,7 @@ run_env_migrations() {
   fi
 
   ensure_buildkit_mem "$env_file"
+  ensure_buildkit_cache_max "$env_file"
   ensure_redis_mem "$env_file"
 
   # Remove deprecated feature flags
