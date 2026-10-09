@@ -9,6 +9,7 @@
  * Options:
  *   --dry-run         List variable names only. Reads Dokploy, writes nothing, never prints values.
  *   --overwrite       Replace an env the Vardo app already has. Without it the script stops.
+ *   --keep-dollars    Leave `$$` as is. By default it becomes `$`, since Vardo escapes `$` itself.
  *   --dokploy-url     Dokploy base URL. Default: DOKPLOY_URL.
  *   --vardo-url       Vardo base URL. Default: VARDO_URL or http://localhost:3000.
  *   --org             Vardo organization ID. Default: the first one the token belongs to.
@@ -34,11 +35,14 @@ export interface VardoEnvResult {
   written: string[];
   /** Names Vardo can't use as variable names (letters, digits and underscores only). */
   skipped: string[];
+  /** Names whose `$$` was turned back into `$`. */
+  unescaped: string[];
   /** Names whose value references a Dokploy shared variable (`${{...}}`), which Vardo won't resolve. */
   unresolved: string[];
 }
 
 const KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const DOUBLE_DOLLAR_RE = /\$\$/g;
 const DOKPLOY_REF_RE = /\$\{\{[^}]*\}\}/;
 
 /** Parses Dokploy's env text the way Dokploy does: with `dotenv`. Quoted values may span lines and `\n` expands inside double quotes. */
@@ -46,8 +50,13 @@ export function parseDokployEnv(text: string): DokployEnvEntry[] {
   return Object.entries(parse(text)).map(([key, value]) => ({ key, value }));
 }
 
+export interface ToVardoEnvOptions {
+  /** Keep `$$` as is. Default false: Dokploy escapes `$` for compose, and Vardo escapes it on write. */
+  keepDollars?: boolean;
+}
+
 /** Maps Dokploy entries to Vardo env-file content; the last duplicate wins. */
-export function toVardoEnv(entries: DokployEnvEntry[]): VardoEnvResult {
+export function toVardoEnv(entries: DokployEnvEntry[], opts: ToVardoEnvOptions = {}): VardoEnvResult {
   const byKey = new Map<string, string>();
   for (const { key, value } of entries) byKey.set(key, value);
 
@@ -55,18 +64,24 @@ export function toVardoEnv(entries: DokployEnvEntry[]): VardoEnvResult {
   const written: string[] = [];
   const skipped: string[] = [];
   const unresolved: string[] = [];
+  const unescaped: string[] = [];
 
-  for (const [key, value] of byKey) {
+  for (const [key, raw] of byKey) {
+    let value = raw;
     if (!KEY_RE.test(key)) {
       skipped.push(key);
       continue;
     }
     if (DOKPLOY_REF_RE.test(value)) unresolved.push(key);
+    if (!opts.keepDollars && value.includes("$$")) {
+      value = value.replace(DOUBLE_DOLLAR_RE, "$");
+      unescaped.push(key);
+    }
     lines.push(formatEnvVar(key, value));
     written.push(key);
   }
 
-  return { content: lines.length ? `${lines.join("\n")}\n` : "", written, skipped, unresolved };
+  return { content: lines.length ? `${lines.join("\n")}\n` : "", written, skipped, unresolved, unescaped };
 }
 
 export interface Source {
@@ -85,6 +100,7 @@ export interface Args {
   app?: string;
   dryRun: boolean;
   overwrite: boolean;
+  keepDollars: boolean;
   dokployUrl?: string;
   vardoUrl?: string;
   org?: string;
@@ -92,7 +108,7 @@ export interface Args {
 }
 
 export function parseArgs(argv: string[]): Args {
-  const out: Args = { dryRun: false, overwrite: false, help: false };
+  const out: Args = { dryRun: false, overwrite: false, keepDollars: false, help: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const next = () => {
@@ -103,6 +119,7 @@ export function parseArgs(argv: string[]): Args {
     if (a === "--help" || a === "-h") out.help = true;
     else if (a === "--dry-run") out.dryRun = true;
     else if (a === "--overwrite") out.overwrite = true;
+    else if (a === "--keep-dollars") out.keepDollars = true;
     else if (a === "--from") out.from = next();
     else if (a === "--app") out.app = next();
     else if (a === "--dokploy-url") out.dokployUrl = next();
@@ -164,7 +181,7 @@ export async function findVardoApp(
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.help || !args.from || !args.app) {
-    console.log("Usage: tsx scripts/dokploy-env-import.ts --from application:<id>|compose:<id> --app <name> [--dry-run] [--overwrite]");
+    console.log("Usage: tsx scripts/dokploy-env-import.ts --from application:<id>|compose:<id> --app <name> [--dry-run] [--overwrite] [--keep-dollars]");
     process.exit(args.help ? 0 : 1);
   }
 
@@ -174,10 +191,13 @@ async function main() {
   if (!dokployUrl) throw new Error("Set DOKPLOY_URL or pass --dokploy-url");
 
   const text = await fetchDokployEnv(dokployUrl, dokployKey, parseSource(args.from));
-  const result = toVardoEnv(parseDokployEnv(text));
+  const result = toVardoEnv(parseDokployEnv(text), { keepDollars: args.keepDollars });
 
   console.log(`${result.written.length} variable(s) from ${args.from}`);
   for (const name of result.written) console.log(`  ${name}`);
+  if (result.unescaped.length) {
+    console.log(`Turned $$ into $ (pass --keep-dollars to skip): ${result.unescaped.join(", ")}`);
+  }
   if (result.unresolved.length) {
     console.log(`Reference a Dokploy shared variable (\${{...}}), set by hand: ${result.unresolved.join(", ")}`);
   }

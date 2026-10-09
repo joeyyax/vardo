@@ -107,6 +107,33 @@ describe("toVardoEnv", () => {
   });
 });
 
+describe("toVardoEnv $$ handling", () => {
+  const entries = parseDokployEnv(
+    ["LOKI_PUSH_AUTH=user:$$2y$$10$$fakehash", "PLAIN=a$b", "PRICE=$$$$5", "NONE=x"].join("\n"),
+  );
+
+  it("turns $$ back into $ and names the keys it changed", () => {
+    const r = toVardoEnv(entries);
+    const back = new Map(parseEnvContent(r.content).map((e) => [e.key, e.value]));
+    expect(back.get("LOKI_PUSH_AUTH")).toBe("user:$2y$10$fakehash");
+    expect(back.get("PRICE")).toBe("$$5");
+    expect(back.get("PLAIN")).toBe("a$b");
+    expect(r.unescaped).toEqual(["LOKI_PUSH_AUTH", "PRICE"]);
+  });
+
+  it("keeps $$ with keepDollars", () => {
+    const r = toVardoEnv(entries, { keepDollars: true });
+    const back = new Map(parseEnvContent(r.content).map((e) => [e.key, e.value]));
+    expect(back.get("LOKI_PUSH_AUTH")).toBe("user:$$2y$$10$$fakehash");
+    expect(r.unescaped).toEqual([]);
+  });
+
+  it("parses --keep-dollars", () => {
+    expect(parseArgs([]).keepDollars).toBe(false);
+    expect(parseArgs(["--keep-dollars"]).keepDollars).toBe(true);
+  });
+});
+
 describe("parseSource and parseArgs", () => {
   it("parses application and compose sources", () => {
     expect(parseSource("application:abc")).toEqual({ kind: "application", id: "abc" });

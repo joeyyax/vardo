@@ -67,6 +67,10 @@ describe("composePolicyErrors", () => {
     expect(composePolicyErrors(config(), untrusted)).toEqual([]);
   });
 
+  it("accepts mem_limit and memswap_limit for an untrusted org", () => {
+    expect(composePolicyErrors(config({ mem_limit: "128m", memswap_limit: "256m" }), untrusted)).toEqual([]);
+  });
+
   describe("Traefik's API (#889)", () => {
     const labels = (extra: Obj) => ({ labels: { "traefik.enable": "true", ...extra } });
 
@@ -77,6 +81,11 @@ describe("composePolicyErrors", () => {
 
     it("refuses a router on the internal entrypoint", () => {
       const cfg = config(labels({ "traefik.http.routers.x.entrypoints": "websecure, traefik" }));
+      expect(composePolicyErrors(cfg, untrusted)).toEqual(['Service "web" routes on Traefik\'s internal entrypoint']);
+    });
+
+    it("refuses a router on the metrics entrypoint", () => {
+      const cfg = config(labels({ "traefik.http.routers.x.entrypoints": "metrics" }));
       expect(composePolicyErrors(cfg, untrusted)).toEqual(['Service "web" routes on Traefik\'s internal entrypoint']);
     });
 

@@ -230,6 +230,10 @@ services:
       # The API answers only through the console's basic-auth router (vardo-api.yaml) on this entrypoint.
       - "--api=true"
       - "--entrypoints.traefik.address=:8080"
+      # Prometheus metrics on vardo-traefik:8082, never published or routed. Off unless VARDO_TRAEFIK_METRICS=true.
+      - "--entrypoints.metrics.address=:8082"
+      - "--metrics.prometheus=${VARDO_TRAEFIK_METRICS:-false}"
+      - "--metrics.prometheus.entrypoint=metrics"
       - "--accesslog=true"
       - "--accesslog.format=json"
       - "--accesslog.fields.headers.defaultmode=drop"

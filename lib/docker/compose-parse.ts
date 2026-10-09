@@ -262,6 +262,9 @@ export function parseCompose(yamlString: string): ComposeFile {
     }
     if (typeof raw.oom_score_adj === "number") svc.oom_score_adj = raw.oom_score_adj;
     if (typeof raw.mem_reservation === "string" && raw.mem_reservation) svc.mem_reservation = raw.mem_reservation;
+    if ((typeof raw.memswap_limit === "string" && raw.memswap_limit) || typeof raw.memswap_limit === "number") {
+      svc.memswap_limit = raw.memswap_limit;
+    }
     if (typeof raw.cpu_shares === "number") svc.cpu_shares = raw.cpu_shares;
     if (Array.isArray(raw.cap_add)) svc.cap_add = raw.cap_add.map(String);
     if (Array.isArray(raw.cap_drop)) svc.cap_drop = raw.cap_drop.map(String);
