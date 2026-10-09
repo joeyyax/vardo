@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { formatBytes, formatDuration, formatUptime } from "@/lib/metrics/format";
+import { formatBytes, formatBytesIec, formatDuration, formatUptime } from "@/lib/metrics/format";
+
+describe("formatBytesIec", () => {
+  it("spells binary units", () => {
+    expect(formatBytesIec(8_270_499_840)).toBe("7.7 GiB");
+    expect(formatBytesIec(1_073_741_824)).toBe("1 GiB");
+    expect(formatBytesIec(512)).toBe("512 B");
+  });
+});
 
 describe("formatDuration", () => {
   it("renders milliseconds under a second", () => {

@@ -12,6 +12,7 @@ import { nanoid } from "nanoid";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { apps, volumes } from "@/lib/db/schema";
+import { withBulkWrite } from "@/lib/metrics/bulk-write";
 import { assertSafeName } from "@/lib/docker/validate";
 import { isSelfApp } from "@/lib/docker/self-env";
 import { resolveDefaultEnv } from "@/lib/docker/resolve-env";
@@ -317,7 +318,7 @@ export async function loadIntoVolume(opts: {
 }
 
 /** Import a source into one of an app's volumes, or the database that volume holds. */
-export async function importIntoApp(opts: {
+async function importIntoAppUnmarked(opts: {
   appId: string;
   organizationId: string;
   volumeName: string;
@@ -400,4 +401,10 @@ export async function importIntoApp(opts: {
     await cleanup().catch(() => {});
     await rm(tmpDir, { recursive: true, force: true }).catch(() => {});
   }
+}
+
+export async function importIntoApp(
+  opts: Parameters<typeof importIntoAppUnmarked>[0],
+): ReturnType<typeof importIntoAppUnmarked> {
+  return withBulkWrite(opts.appId, () => importIntoAppUnmarked(opts));
 }

@@ -6,6 +6,11 @@ export function formatBytes(bytes: number, decimals = 1): string {
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(decimals))} ${sizes[i]}`;
 }
 
+/** Binary units spelled out: "7.7 GiB". */
+export function formatBytesIec(bytes: number, decimals = 1): string {
+  return formatBytes(bytes, decimals).replace(/^(\S+) ([KMGTP])B$/, "$1 $2iB");
+}
+
 // Limits over 1 TB read as unlimited.
 export function formatMemLimit(bytes: number): string {
   if (bytes === 0 || bytes > 1099511627776) return "No limit";

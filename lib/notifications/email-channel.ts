@@ -10,6 +10,7 @@ import { DeployFailedEmail } from "@/lib/email/templates/deploy-failed";
 import { BackupSuccessEmail } from "@/lib/email/templates/backup-success";
 import { BackupFailedEmail } from "@/lib/email/templates/backup-failed";
 import { CronFailedEmail } from "@/lib/email/templates/cron-failed";
+import { formatBytesIec } from "@/lib/metrics/format";
 import { DiskWriteAlertEmail } from "@/lib/email/templates/disk-write-alert";
 import { VolumeDriftEmail } from "@/lib/email/templates/volume-drift";
 import { AutoRollbackEmail } from "@/lib/email/templates/auto-rollback";
@@ -99,10 +100,13 @@ export class EmailNotificationChannel implements NotificationChannel {
 
       case "disk.write-alert":
         return DiskWriteAlertEmail({
-          appName: event.containerName || "Unknown",
+          appName: event.appName || event.containerName || "Unknown",
+          projectName: event.projectName,
+          composeService: event.composeService,
           containerName: event.containerName,
-          writeAmount: String(event.writtenBytes) || "unknown",
-          threshold: String(event.thresholdBytes) || "unknown",
+          dataEngine: event.dataEngine,
+          writeAmount: formatBytesIec(event.writtenBytes),
+          threshold: formatBytesIec(event.thresholdBytes),
           period: event.window,
           dashboardUrl,
         });
