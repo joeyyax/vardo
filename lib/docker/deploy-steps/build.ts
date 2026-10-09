@@ -352,6 +352,7 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
   const overlayCompose = buildVardoOverlay({
     fullCompose: slotCompose,
     networkName: NETWORK_NAME,
+    projectNetwork: ctx.projectNetwork,
     cpuLimit: app.cpuLimit,
     memoryLimit: app.memoryLimit,
     priority: app.priority,

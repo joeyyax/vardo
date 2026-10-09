@@ -37,3 +37,19 @@ services:
 Each release changes `smtp`'s definition, so the deploy builds `web`, then recreates `smtp` on the new image. A failed recreate puts `smtp` back on the previous slot's definition, which still names the previous commit's image. `pull_policy: never` stops the deploy from looking for the tag in a registry.
 
 Without a git repo the tag stays `local` and this falls back to a fixed tag.
+
+## Reaching other apps in the project
+
+Apps in one project reach each other by compose service name. Each deploy attaches every service to the network `vardo-p-<project id>-<environment>`, alongside the app's own network and, for routed services, `vardo-network`. An untrusted organization needs no trust for this.
+
+A Railpack, Nixpacks, Dockerfile or image app's service is named after the app. With a `shop-db` compose app running `postgres` and a `shop-east` Railpack app in the same project:
+
+```
+DATABASE_URL=postgres://app:secret@postgres:5432/shop
+```
+
+- Production and each preview environment get their own network, so `pr-7` never reaches production's database.
+- A shared service joins in place, so a held data store answers from both slots without a recreate. During a deploy both slots of a rotating service answer to its name.
+- When another app in the project already has a service by the same name, the deploy leaves the new app off the network and logs which name collides. Rename the service in one of the apps.
+- A compose file can't set aliases on the project network or join another project's.
+- Deleting a project's last app removes its networks.

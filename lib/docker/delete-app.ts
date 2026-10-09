@@ -6,7 +6,7 @@ import { assertAppDirOwnership, removeAppDir } from "./app-dir-owner";
 import { removeVolume, stripDockerProjectPrefix } from "./client";
 import { appBindPaths, findAppData } from "./app-data";
 import { appBaseDir } from "@/lib/paths";
-import { removeAppContainersAndNetworks } from "./delete-teardown";
+import { removeAppContainersAndNetworks, removeProjectNetworks } from "./delete-teardown";
 import { deleteEmptyAutoJobs } from "@/lib/backups/auto-backup";
 import { logger } from "@/lib/logger";
 import { recordActivity } from "@/lib/activity";
@@ -205,6 +205,7 @@ export async function deleteApp(opts: {
         .where(eq(projects.id, app.projectId))
         .returning({ id: projects.id, name: projects.name });
       deletedProject = row ?? null;
+      logs.push(...(await removeProjectNetworks(app.projectId)));
     }
   }
 

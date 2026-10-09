@@ -36,6 +36,7 @@ import { partitionBySlot, sharedProjectName, slotBoundServices, slotOverlapDiagn
 import { isSelfApp } from "../self-env";
 import { clearCutoverPin, guardCutover, holdSlot, NO_HOLD, type CutoverGuard } from "../traefik-cutover";
 import { projectScopedNetworkNames } from "../shared-networks";
+import { syncProjectNetwork } from "../project-network-sync";
 import { overlapFitsNow } from "../memory-headroom";
 import { reportOomDuringDeploy } from "../deploy-oom";
 import { checkVolumeLimits } from "./volume-limits";
@@ -707,6 +708,13 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
     }
 
     await reconcileShared();
+
+    // A held data store isn't recreated, so it joins the project network in place.
+    const joined = await syncProjectNetwork(
+      sharedNames.map((name) => ({ container: shared[name].container_name ?? `${sharedProject}-${name}-1`, alias: name })),
+      ctx.projectNetwork ?? null,
+    );
+    if (joined.length > 0) log(`[deploy] project network ${ctx.projectNetwork}: connected shared ${joined.join(", ")}`);
   }
 
   // Step 6c: chown bind-mount targets to non-root uids (#738). Needs the images.

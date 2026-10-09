@@ -23,6 +23,8 @@ export type ComposePolicy = {
   ownPrefix: string;
   allowBindMounts: boolean;
   allowDockerSocket: boolean;
+  /** The project network Vardo attaches the app to. */
+  projectNetwork?: string | null;
   /** Resolves symlinks. Defaults to the real filesystem. */
   realpath?: (path: string) => string;
 };
@@ -150,11 +152,13 @@ export function composePolicyErrors(config: unknown, policy: ComposePolicy): str
   // Top-level networks. Vardo's own are external; anything else stays project-scoped.
   const networks = isObj(root.networks) ? root.networks : {};
   const vardoNetworkKeys = new Set<string>();
+  const projectNetworkKeys = new Set<string>();
   for (const [key, raw] of entries(networks)) {
     const net = isObj(raw) ? raw : {};
     const name = typeof net.name === "string" ? net.name : "";
     if (net.external) {
       if (name === NETWORK_NAME) vardoNetworkKeys.add(key);
+      else if (policy.projectNetwork && name === policy.projectNetwork) projectNetworkKeys.add(key);
       else if (!name.startsWith(policy.ownPrefix)) errors.push(`Network "${key}" joins "${name}", which isn't this app's`);
       continue;
     }
@@ -235,6 +239,9 @@ export function composePolicyErrors(config: unknown, policy: ComposePolicy): str
         const reserved = names.find((n) => /^vardo-/i.test(n) || RESERVED_NAMES.has(n.toLowerCase()));
         if (reserved) errors.push(`${label} answers to "${reserved}" on ${NETWORK_NAME}, a name Vardo's own services use`);
         if (isObj(attach) && Object.keys(attach).length > 0) errors.push(`${label} sets addresses or aliases on ${NETWORK_NAME}`);
+      }
+      if (projectNetworkKeys.has(net) && isObj(attach) && Object.keys(attach).length > 0) {
+        errors.push(`${label} sets addresses or aliases on the project network`);
       }
     }
 
@@ -357,6 +364,7 @@ export async function assertComposeWithinApp(ctx: {
   orgTrusted: boolean;
   projectAllowBindMounts: boolean;
   projectAllowDockerSocket: boolean;
+  projectNetwork?: string | null;
   reuse?: "start" | "restart" | "recreate" | "rollback";
 }): Promise<void> {
   if (ctx.orgTrusted) return;
@@ -378,6 +386,7 @@ export async function assertComposeWithinApp(ctx: {
     ownPrefix: `${ctx.stableVolumePrefix}_`,
     allowBindMounts: ctx.projectAllowBindMounts,
     allowDockerSocket: ctx.projectAllowDockerSocket,
+    projectNetwork: ctx.projectNetwork,
   });
   if (errors.length === 0) return;
 

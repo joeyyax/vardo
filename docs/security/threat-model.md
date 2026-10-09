@@ -35,7 +35,7 @@ Status: **fixed** (on main or in this branch), **open**, or **not a boundary**. 
 | Compose `traefik.*` labels claim another tenant's host or the console | fixed | #887 on `fix/887-label-hosts`: `lib/docker/label-hosts.ts` refuses `Host()` rules for hosts the org doesn't own, checked from `resolve-compose.ts` |
 | Path routes on another tenant's host | fixed | A host's domain rows may differ by path, so uniqueness is host plus path. The domain API refuses a host another org routes, `lib/domains/shared-host.ts`. Checked in the API only, not by a constraint, so two orgs racing for a new host can both land. |
 | Domain middlewares reference another tenant's or Traefik's | fixed | untrusted orgs may name only middlewares Vardo defines (`cloudflare-only@file`); checked on write and again at deploy, `lib/domains/middlewares.ts` |
-| Compose joins `vardo_internal` (Postgres, Redis) or any network | fixed | #886: untrusted orgs may join only `vardo-network` on a routed service and networks named for the app, `lib/docker/compose-policy.ts` |
+| Compose joins `vardo_internal` (Postgres, Redis) or any network | fixed | #886: untrusted orgs may join only `vardo-network` on a routed service, their own project's `vardo-p-<project>-<env>` network without aliases, and networks named for the app, `lib/docker/compose-policy.ts` |
 | Every routed app shares `vardo-network` with the console | open, by design | `lib/docker/deploy-steps/resolve-compose.ts:234-247`; apps reach `vardo-frontend:3000` directly |
 | Top-level `volumes:` with `external`/`name` reaches another tenant's or the console's volume | fixed | #886: untrusted external volumes must carry the app's `<app>-<env>_` prefix; other volumes keep Compose's project name, `lib/docker/compose-policy.ts` |
 | Invitation revoke | branch | both accept paths ignored `revoked`, `lib/invitations/accept.ts:17` now claims a pending row atomically |
@@ -120,7 +120,7 @@ Same starting point as Dokploy: an app's own image CVE runs code inside that app
 
 Narrows:
 - No socket mount in generated compose; host-access keys refused for untrusted orgs.
-- Only Traefik-routed services join `vardo-network`; others stay on the project network.
+- Only Traefik-routed services join `vardo-network`; others stay on the app's own network and its project's `vardo-p-*` network, which only that project's apps join.
 - Default memory, CPU and process caps per QoS tier; the compose's own values win (`defaultCpuLimit`, `defaultPidsLimit` in `lib/docker/compose-inject.ts`, #889).
 - Postgres and Redis no longer published beyond loopback (this branch).
 - Builds and deploys refuse when Docker's disk is 95% used or has under 2 GB free, so a tenant filling it can't take the next deploy down mid-build (#815, `lib/docker/disk-guard.ts`; `VARDO_DISK_GUARD_PERCENT`, `VARDO_DISK_GUARD_MIN_FREE_GB`).
