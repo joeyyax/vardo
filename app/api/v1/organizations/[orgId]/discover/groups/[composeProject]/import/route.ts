@@ -8,6 +8,7 @@ import { db } from "@/lib/db";
 import { apps, domains, environments, volumes } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
+import { formatEnvVar } from "@/lib/env/dotenv";
 import { z } from "zod";
 import { discoverContainers, getContainerDetail, hasAtFileTraefikLabels, isLocalImage } from "@/lib/docker/discover";
 import { slugify } from "@/lib/ui/slugify";
@@ -293,7 +294,7 @@ async function handler(request: NextRequest, { params }: RouteParams) {
     let envContent: string | null = null;
     if (Object.keys(allSensitiveVars).length > 0) {
       const envLines = Object.entries(allSensitiveVars)
-        .map(([k, v]) => `${k}=${v.replace(/\r?\n/g, "\\n")}`)
+        .map(([k, v]) => formatEnvVar(k, v))
         .join("\n");
       envContent = encrypt(envLines, orgId);
     }

@@ -7,6 +7,7 @@ import { db } from "@/lib/db";
 import { apps, environments, domains, volumes } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
+import { formatEnvVar } from "@/lib/env/dotenv";
 import { z } from "zod";
 import { getContainerDetail, hasAtFileTraefikLabels, isLocalImage } from "@/lib/docker/discover";
 import { resolveContainerPort } from "@/lib/docker/resolve-port";
@@ -185,7 +186,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
 
     let envContent: string | null = null;
     if (data.envVars.length > 0) {
-      const envLines = data.envVars.map(({ key, value }) => `${key}=${value}`).join("\n");
+      const envLines = data.envVars.map(({ key, value }) => formatEnvVar(key, value)).join("\n");
       envContent = encrypt(envLines, orgId);
     }
 

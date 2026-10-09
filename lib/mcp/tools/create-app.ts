@@ -1,4 +1,5 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { formatEnvVar } from "@/lib/env/dotenv";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { APP_NAME_TAKEN_ERROR, isTopLevelAppNameTaken } from "@/lib/db/app-name";
@@ -156,7 +157,7 @@ export function registerCreateApp(
       const envContent = env && Object.keys(env).length > 0
         ? encrypt(
             Object.entries(env)
-              .map(([k, v]) => `${k}=${v}`)
+              .map(([k, v]) => formatEnvVar(k, v))
               .join("\n"),
             orgId
           )

@@ -7,6 +7,7 @@ import {
   Info,
   Loader2,
 } from "lucide-react";
+import { formatEnvVar } from "@/lib/env/dotenv";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -110,7 +111,7 @@ export function ComposeReview({
 
         const newLines = envCandidates
           .filter((f) => selectedEnvKeys.has(f.detail.key as string))
-          .map((f) => `${f.detail.key}=${f.detail.value}`);
+          .map((f) => formatEnvVar(f.detail.key as string, String(f.detail.value)));
 
         const separator = currentContent && !currentContent.endsWith("\n") ? "\n" : "";
         const updated = (currentContent || "") + separator + newLines.join("\n") + "\n";

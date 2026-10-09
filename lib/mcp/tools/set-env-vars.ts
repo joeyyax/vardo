@@ -19,10 +19,10 @@ export function registerSetEnvVars(
 ) {
   server.tool(
     "vardo_set_env_vars",
-    "Set the environment variables for an app. Takes the full env file content as a string (KEY=VALUE format, one per line). Overwrites all existing env vars. Sets needsRedeploy flag — use vardo_deploy_app after to apply changes.",
+    "Set the environment variables for an app. Takes the full env file content as a string (KEY=VALUE format, one per line). A multi-line value such as a PEM key goes in double quotes spanning lines, with backslash and double quote escaped by a backslash. Overwrites all existing env vars. Sets needsRedeploy flag — use vardo_deploy_app after to apply changes.",
     {
       appId: z.string().describe("The app ID to set env vars for"),
-      content: z.string().describe("Full env file content (KEY=VALUE per line)"),
+      content: z.string().describe("Full env file content (KEY=VALUE per line; multi-line values in double quotes)"),
     },
     async ({ appId, content }) => {
       const rl = await slidingWindowRateLimit(

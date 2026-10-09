@@ -4,6 +4,7 @@ import { randomBytes } from "node:crypto";
 import { encrypt, decryptOrFallback } from "@/lib/crypto/encrypt";
 import { isSecretKey } from "./is-secret-key";
 import { parseEnvToMap } from "./parse-env";
+import { scanEnv } from "./dotenv";
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -31,22 +32,22 @@ export function regenerateSecrets(
   generated: Map<string, string>,
 ): { content: string; regenerated: string[] } {
   const regenerated: string[] = [];
-  const lines = content.split("\n").map((line) => {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) return line;
-    const eq = line.indexOf("=");
-    if (eq <= 0) return line;
-    const key = line.slice(0, eq).trim();
-    const value = line.slice(eq + 1).trim().replace(/^(["'])(.*)\1$/, "$2");
+  const lines = scanEnv(content, "loose").map((segment) => {
+    if (segment.kind === "text") return segment.raw;
+    const { raw, key } = segment;
+    const eq = raw.indexOf("=");
+    const value = segment.multiline
+      ? segment.value
+      : raw.slice(eq + 1).trim().replace(/^(["'])(.*)\1$/, "$2");
     // An empty value or a ${ref} has no production secret to replace.
-    if (!isSecretKey(key) || !value || value.includes("${")) return line;
+    if (!isSecretKey(key) || !value || value.includes("${")) return raw;
     let next = generated.get(value);
     if (!next) {
       next = generateSecret();
       generated.set(value, next);
     }
     regenerated.push(key);
-    return `${line.slice(0, eq)}=${next}`;
+    return `${raw.slice(0, eq)}=${next}`;
   });
   return { content: lines.join("\n"), regenerated };
 }

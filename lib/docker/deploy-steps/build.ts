@@ -8,6 +8,7 @@ import { dirname, join } from "path";
 import { decryptOrFallback } from "@/lib/crypto/encrypt";
 import { DeployBlockedError } from "../errors";
 import { parseEnvToMap } from "@/lib/env/parse-env";
+import { composeEnvFile } from "@/lib/env/compose-env-file";
 import { resolveAllEnvVars, type ResolveContext } from "@/lib/env/resolve";
 import { externalVarResolver } from "./external-var";
 import { environmentEnvContent } from "../environment-env";
@@ -311,12 +312,7 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
 
     if (Object.keys(envMap).length > 0) {
       const resolved = await resolveAllEnvVars(envMap, resolveCtx);
-      const envContent = Object.entries(resolved).map(([k, v]) => {
-        if (/[\n\r"' $#\\]/.test(v)) {
-          return `${k}="${v.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n").replace(/\r/g, "\\r")}"`;
-        }
-        return `${k}=${v}`;
-      }).join("\n");
+      const envContent = composeEnvFile(resolved);
       await writeFile(join(slotDir, ".env"), envContent, "utf-8");
     }
 
