@@ -289,6 +289,54 @@ describe("selectRoutedService", () => {
     });
   });
 
+  describe("data engines and shared services", () => {
+    it("routes past a pgvector database listed first", () => {
+      const result = selectRoutedService(
+        compose({
+          "formbricks-db": { image: "pgvector/pgvector:pg17" },
+          formbricks: { image: "ghcr.io/formbricks/formbricks:v3.1.5" },
+        }),
+        { containerPort: 3000 },
+      );
+      expect(result).toEqual({ service: "formbricks", reason: "role" });
+    });
+
+    for (const image of ["valkey/valkey:8", "mariadb:11", "mongo:7", "timescale/timescaledb:latest-pg16", "eqalpha/keydb"]) {
+      it(`demotes ${image}`, () => {
+        const result = selectRoutedService(
+          compose({ store: { image }, app: { image: "ghcr.io/example/app:1" } }),
+          { containerPort: 3000 },
+        );
+        expect(result.service).toBe("app");
+      });
+    }
+
+    it("never guesses a service marked shared", () => {
+      const result = selectRoutedService(
+        compose({
+          cache: { image: "ghcr.io/example/app:1", "x-vardo-shared": true },
+          app: { image: "ghcr.io/example/app:1" },
+        }),
+        { containerPort: 3000 },
+      );
+      expect(result.service).toBe("app");
+      expect(result.ambiguous).toEqual(["cache", "app"]);
+    });
+
+    it("guesses a non-data service when only data engines declare the port", () => {
+      const result = selectRoutedService(
+        compose({
+          primary: { image: "postgres:17", expose: ["3000"] },
+          replica: { image: "postgres:17", expose: ["3000"] },
+          web: { image: "ghcr.io/example/app:1" },
+        }),
+        { containerPort: 3000 },
+      );
+      expect(result.service).toBe("web");
+      expect(result.ambiguous).toEqual(["primary", "replica"]);
+    });
+  });
+
   describe("background role names", () => {
     const demoted = ["worker", "app-worker", "celery", "celery-beat", "scheduler", "cron", "db-migrate", "queue-consumer", "init"];
     for (const name of demoted) {
