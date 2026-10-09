@@ -152,7 +152,15 @@ export type CronFailedEvent = {
   projectName: string;
   durationMs: number;
   schedule?: string;
+  /** Shell command, or the URL for a URL job. */
   command?: string;
+  jobType?: "command" | "url";
+  /** Exit code, or the HTTP status for a URL job. */
+  exitCode?: number;
+  /** Container the command ran in, or the URL. */
+  target?: string;
+  /** ISO time of the last successful run. */
+  lastSuccessAt?: string;
   logTail?: string[];
 };
 

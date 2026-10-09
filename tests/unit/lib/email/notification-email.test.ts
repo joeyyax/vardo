@@ -98,6 +98,19 @@ describe("notification emails", () => {
     expect(app.text).toContain("S3/R2");
   });
 
+  it("gives a failed cron its command, exit code, schedule and units", async () => {
+    const email = (await renderNotificationEmail(fixture("cron-failed-exit"), FIXTURE_CONTEXT))!;
+    expect(email.subject).toBe("✗ Cron failure test failed on Shop Docs");
+    expect(email.text).toContain("Command: echo testing failure path; exit 3");
+    expect(email.text).toContain("Exit code: 3");
+    expect(email.text).toContain("Schedule: every minute (* * * * *)");
+    expect(email.text).toContain("Ran for: 112 ms");
+    expect(email.text).toContain("Container: shop-docs-production-green-web-1");
+    expect(email.text).toContain("Last success: None on record");
+    expect(email.text).toContain("Output\n    testing failure path");
+    expect(email.text).toContain("Open run history: https://vardo.example.com/apps/app_d0cs/cron");
+  });
+
   it("skips UI-only events", async () => {
     const event: BusEvent = { type: "deploy.status", title: "", message: "", appId: "a", deploymentId: "d", status: "running", success: false };
     expect(await renderNotificationEmail(event, FIXTURE_CONTEXT)).toBeNull();

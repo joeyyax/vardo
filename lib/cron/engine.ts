@@ -36,11 +36,14 @@ export function selectCronContainer(
   return matchContainers(app, containers).find((c) => c.state === "running") ?? null;
 }
 
+/** One run's outcome. `target` is the container or URL, `exitCode` the command's or the HTTP status. */
+export type CronRunResult = { success: boolean; log: string; durationMs: number; exitCode?: number; target?: string };
+
 /** Run a command inside an app's container. */
 async function executeInContainer(
   app: CronTargetApp,
   command: string,
-): Promise<{ success: boolean; log: string; durationMs: number }> {
+): Promise<CronRunResult> {
   const startTime = Date.now();
 
   const containers = await listContainers(cronContainerScope(app));
@@ -67,13 +70,19 @@ async function executeInContainer(
       success: true,
       log: log || "(no output)",
       durationMs: Date.now() - startTime,
+      exitCode: 0,
+      target: running.name,
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    const { code, stdout, stderr } = err as { code?: unknown; stdout?: unknown; stderr?: unknown };
+    const output = [stdout, stderr].filter((v): v is string => typeof v === "string" && v.trim() !== "").join("\n").trim();
     return {
       success: false,
-      log: message,
+      log: output || message,
       durationMs: Date.now() - startTime,
+      exitCode: typeof code === "number" ? code : undefined,
+      target: running.name,
     };
   }
 }
@@ -81,7 +90,7 @@ async function executeInContainer(
 /** Hit a URL and return the result. */
 async function fetchUrl(
   url: string,
-): Promise<{ success: boolean; log: string; durationMs: number }> {
+): Promise<CronRunResult> {
   const startTime = Date.now();
   try {
     const controller = new AbortController();
@@ -97,12 +106,15 @@ async function fetchUrl(
       success: res.ok,
       log,
       durationMs: Date.now() - startTime,
+      exitCode: res.status,
+      target: url,
     };
   } catch (err) {
     return {
       success: false,
       log: err instanceof Error ? err.message : String(err),
       durationMs: Date.now() - startTime,
+      target: url,
     };
   }
 }
@@ -150,7 +162,7 @@ export async function tickCronJobs(): Promise<void> {
       updatedAt: now,
     }).where(eq(cronJobs.id, job.id));
 
-    let result: { success: boolean; log: string; durationMs: number };
+    let result: CronRunResult;
     try {
       result = job.type === "url"
         ? await fetchUrl(job.command)
@@ -197,6 +209,11 @@ export async function tickCronJobs(): Promise<void> {
 
     if (!result.success) {
       try {
+        const lastSuccess = await db.query.cronJobRuns.findFirst({
+          where: and(eq(cronJobRuns.cronJobId, job.id), eq(cronJobRuns.status, "success")),
+          orderBy: (r, { desc }) => [desc(r.startedAt)],
+          columns: { startedAt: true },
+        }).catch(() => undefined);
         const { emit } = await import("@/lib/notifications/dispatch");
         emit(job.app.organizationId, {
           type: "cron.failed",
@@ -208,7 +225,11 @@ export async function tickCronJobs(): Promise<void> {
           projectName: job.app.displayName || job.app.name,
           durationMs: result.durationMs,
           schedule: job.schedule,
-          command: job.command,
+          command: job.command.length > 200 ? `${job.command.slice(0, 199)}…` : job.command,
+          jobType: job.type === "url" ? "url" : "command",
+          exitCode: result.exitCode,
+          target: result.target,
+          lastSuccessAt: lastSuccess?.startedAt.toISOString(),
           logTail: result.log.split("\n").filter((l) => l.trim()).slice(-20),
         });
       } catch (err) {
