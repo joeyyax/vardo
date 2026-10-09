@@ -46,6 +46,19 @@ DISTRO_TIER=0    # 1=bulletproof, 2=supported, 3=best-effort
 INSTALL_LOG=""
 STEP_CURRENT=0
 STEP_TOTAL=0
+LAST_FAIL_MSG=""
+CURRENT_STEP=""
+
+# `vardo update` progress for the console, in $VARDO_DIR/lifecycle/update.json.
+UPDATE_MARKER_ID=""
+UPDATE_MARKER_STATE=""
+UPDATE_STARTED_AT=0
+UPDATE_FROM_VERSION=""
+UPDATE_TO_VERSION=""
+UPDATE_BRANCH=""
+UPDATE_FROM_SLOT=""
+UPDATE_TO_SLOT=""
+UPDATE_ROLLED_BACK=false
 
 # ── Platform detection ────────────────────────────────────────────────────────
 
@@ -298,11 +311,12 @@ log_to_file() {
 
 log()     { echo -e "  ${GREEN}✓${RESET} $1"; }
 warn()    { echo -e "  ${YELLOW}!${RESET} $1"; }
-fail()    { echo -e "  ${RED}✗${RESET} $1"; exit 1; }
+fail()    { LAST_FAIL_MSG="$1"; echo -e "  ${RED}✗${RESET} $1"; exit 1; }
 info()    { echo -e "  ${CYAN}·${RESET} $1"; }
 dimln()   { echo -e "  ${DIM}$1${RESET}"; }
 
 step() {
+  CURRENT_STEP="$1"
   if [ "$STEP_TOTAL" -gt 0 ]; then
     STEP_CURRENT=$((STEP_CURRENT + 1))
     echo -e "\n${BOLD}  [${STEP_CURRENT}/${STEP_TOTAL}] $1${RESET}"
@@ -330,6 +344,70 @@ run_cmd() {
 # no controlling terminal (e.g. ssh host 'cmd' without -t).
 has_tty() {
   [ -t 0 ] || { : < /dev/tty; } 2>/dev/null
+}
+
+# ── Update markers ───────────────────────────────────────────────────────────
+
+# A JSON string literal.
+json_str() {
+  local s="$1"
+  s=${s//\\/\\\\}
+  s=${s//\"/\\\"}
+  s=${s//$'\t'/ }
+  s=${s//$'\r'/}
+  s=${s//$'\n'/\\n}
+  printf '"%s"' "$s"
+}
+
+# The install log's last lines as a JSON array, colors stripped.
+update_log_tail_json() {
+  if [ -z "${INSTALL_LOG:-}" ] || [ ! -r "$INSTALL_LOG" ]; then
+    printf '[]'
+    return
+  fi
+  local esc line out="[" first=true
+  esc=$(printf '\033')
+  while IFS= read -r line; do
+    line=$(printf '%s' "$line" | sed "s/${esc}\[[0-9;]*[A-Za-z]//g" | tr -d '\r')
+    [ -z "${line//[[:space:]]/}" ] && continue
+    $first || out="$out,"
+    first=false
+    out="$out$(json_str "$line")"
+  done < <(tail -n 20 "$INSTALL_LOG" 2>/dev/null)
+  printf '%s]' "$out"
+}
+
+# Writes the update marker the console announces. Extra args are JSON members.
+write_update_marker() {
+  [ -n "$UPDATE_MARKER_ID" ] || return 0
+  if $DRY_RUN; then return 0; fi
+  local state="$1"
+  shift
+  local dir="$VARDO_DIR/lifecycle"
+  mkdir -p "$dir" 2>/dev/null || return 0
+  local body member
+  body="{\"id\":$(json_str "$UPDATE_MARKER_ID"),\"state\":$(json_str "$state"),\"startedAt\":$UPDATE_STARTED_AT"
+  body="$body,\"fromVersion\":$(json_str "$UPDATE_FROM_VERSION"),\"toVersion\":$(json_str "$UPDATE_TO_VERSION")"
+  body="$body,\"branch\":$(json_str "$UPDATE_BRANCH"),\"fromSlot\":$(json_str "$UPDATE_FROM_SLOT"),\"toSlot\":$(json_str "$UPDATE_TO_SLOT")"
+  for member in "$@"; do body="$body,$member"; done
+  printf '%s}\n' "$body" > "$dir/update.json.tmp" 2>/dev/null \
+    && chmod 644 "$dir/update.json.tmp" 2>/dev/null \
+    && mv -f "$dir/update.json.tmp" "$dir/update.json" 2>/dev/null
+  UPDATE_MARKER_STATE="$state"
+  return 0
+}
+
+# Marks an update that exits early as failed, with its step and log tail.
+on_update_exit() {
+  local code=$?
+  if [ "$code" -ne 0 ] && [ "$UPDATE_MARKER_STATE" = "started" ]; then
+    write_update_marker failed \
+      "\"finishedAt\":$(date +%s)" \
+      "\"step\":$(json_str "${CURRENT_STEP:-update}")" \
+      "\"error\":$(json_str "${LAST_FAIL_MSG:-exited with code $code}")" \
+      "\"rolledBack\":$UPDATE_ROLLED_BACK" \
+      "\"logTail\":$(update_log_tail_json)"
+  fi
 }
 
 # Run a command with elapsed timer — for long-running operations
@@ -2237,6 +2315,15 @@ do_update() {
     fi
   fi
 
+  UPDATE_MARKER_ID="$(date +%Y%m%d%H%M%S)-$$"
+  UPDATE_STARTED_AT=$(date +%s)
+  UPDATE_FROM_VERSION="$current_version"
+  UPDATE_BRANCH="$current_branch"
+  UPDATE_FROM_SLOT="$active"
+  UPDATE_TO_SLOT="$new_slot"
+  trap on_update_exit EXIT
+  write_update_marker started
+
   # Backup database
   step "Backup"
 
@@ -2290,6 +2377,7 @@ do_update() {
     || git -C "$new_slot_dir" rev-parse --short HEAD 2>/dev/null \
     || echo "unknown")
   log "New version: $new_version"
+  UPDATE_TO_VERSION="$new_version"
 
   # Run env migrations from the updated code
   run_env_migrations
@@ -2309,6 +2397,8 @@ do_update() {
   step "Swapping frontend"
 
   local active_compose="$active_dir/$COMPOSE_FILE"
+  local swap_started_at
+  swap_started_at=$(date +%s)
   info "Stopping old frontend..."
   docker compose -f "$active_compose" stop frontend 2>/dev/null || true
   docker compose -f "$active_compose" rm -f frontend 2>/dev/null || true
@@ -2327,7 +2417,7 @@ do_update() {
   local hc_tty_out
   if has_tty; then hc_tty_out="/dev/tty"; else hc_tty_out="/dev/stderr"; fi
 
-  local healthy=false
+  local healthy=false healthy_at=0
   while [ $hc_elapsed -lt "$hc_timeout" ]; do
     hc_attempt=$((hc_attempt + 1))
     printf "\r  ${CYAN}⠹${RESET} Waiting for healthy... (attempt %d/%d, %ds/%ds)" "$hc_attempt" "$hc_attempts" "$hc_elapsed" "$hc_timeout" > "$hc_tty_out"
@@ -2336,6 +2426,7 @@ do_update() {
       printf "\r                                                              \r" > "$hc_tty_out"
       log "New frontend is healthy"
       healthy=true
+      healthy_at=$(date +%s)
       break
     fi
     sleep "$hc_interval"
@@ -2349,6 +2440,7 @@ do_update() {
     docker compose -f "$new_compose" rm -f frontend 2>/dev/null || true
     info "Restarting old frontend..."
     docker compose -f "$active_compose" up -d frontend 2>/dev/null || true
+    UPDATE_ROLLED_BACK=true
     fail "Update aborted: new frontend did not become healthy within ${hc_timeout}s. Rolled back to $active slot."
   fi
 
@@ -2357,6 +2449,10 @@ do_update() {
 
   ln -sfn "$new_slot" "$VARDO_DIR/apps/vardo/env/current"
   log "Active slot: $new_slot"
+  write_update_marker updated \
+    "\"finishedAt\":$(date +%s)" \
+    "\"swapStartedAt\":$swap_started_at" \
+    "\"healthyAt\":$healthy_at"
 
   # Starts the watchdog on installs from before it existed, and moves it to this slot's script.
   docker compose -f "$new_compose" up -d --no-deps watchdog > /dev/null 2>&1 \
