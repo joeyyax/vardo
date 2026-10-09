@@ -49,7 +49,7 @@ Status: **fixed** (on main or in this branch), **open**, or **not a boundary**. 
 | `trusted`, `allowBindMounts`, `allowDockerSocket` | fixed | instance admin only, `organizations/[orgId]/route.ts:57`, `projects/[projectId]/route.ts:118` |
 | Container terminal | fixed | `app.terminal` is admin-only on the stream and input handlers, `apps/[appId]/terminal/route.ts`; logged (#813). Role table in `docs/roles.md` |
 | Cron command jobs | fixed | `app.cron.command` is admin-only for creating or changing a command job, `apps/[appId]/cron/route.ts`; members keep URL crons, pause and delete. `host.toml` cron entries still create command jobs on deploy, accepted: a member can already deploy code that runs in the same container, `lib/docker/deploy-steps/post-deploy.ts` |
-| API tokens | partial | carry the user's full live role, no capability scoping, `lib/auth/session.ts:48-73`; never instance admin, `lib/auth/admin.ts:8` |
+| API tokens | branch | #788: a token holds its scope (full, deploy, read-only or custom capabilities) intersected with the user's live role, `lib/auth/permissions.ts:116-145`; applied where sessions resolve to capabilities, `lib/auth/session.ts:126`, `lib/api/verify-access.ts:13`, and in MCP, `lib/mcp/scope.ts:27`; scoped tokens can't use user-level write routes, `lib/auth/session.ts:161`; pinned to one org unless `crossOrg`; existing tokens stay full, `drizzle/0087_api_token_scopes.sql`; never instance admin, `lib/auth/admin.ts:8` |
 | Any user can create an org and become its owner | open, product | `app/api/v1/organizations/route.ts:59-97`. The section 5 compose gaps that made owner mean host are fixed (#886). |
 
 ## 4. Untrusted input to execution
