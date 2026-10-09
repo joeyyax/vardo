@@ -33,7 +33,7 @@ import {
 } from "@/components/ui/select";
 import { generateWordPair } from "@/lib/domain-monitoring/auto-domain";
 import { isReservedSlug } from "@/lib/domain-monitoring/reserved";
-import { EnvEditor } from "@/components/env-editor";
+import { EnvEditor } from "@/components/env-editor-lazy";
 import { BranchSelect } from "@/components/branch-select";
 import { ComposeReview } from "@/components/compose-review";
 

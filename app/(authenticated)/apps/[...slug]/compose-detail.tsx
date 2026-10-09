@@ -41,8 +41,8 @@ import {
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { DeleteAppDialog } from "./delete-app-dialog";
 import { LogViewer } from "@/components/log-viewer";
-import { EnvEditor } from "@/components/env-editor";
-import { AppMetrics } from "./app-metrics";
+import { EnvEditor } from "@/components/env-editor-lazy";
+import { AppMetrics } from "./app-metrics-lazy";
 import { AppBackupHistory } from "@/components/backups/app-backup-history";
 import { AppBackupSwitch } from "@/components/backups/backup-switch";
 import { StatusIndicator, Uptime } from "@/components/app-status";
