@@ -47,6 +47,8 @@ Status: **fixed** (on main or in this branch), **open**, or **not a boundary**. 
 | --- | --- | --- |
 | Role changes and invites | fixed | admin-only capabilities, `lib/auth/permissions.ts:23-69`; owner can't be changed |
 | `trusted`, `allowBindMounts`, `allowDockerSocket` | fixed | instance admin only, `organizations/[orgId]/route.ts:57`, `projects/[projectId]/route.ts:118` |
+| Container terminal | fixed | `app.terminal` is admin-only on the stream and input handlers, `apps/[appId]/terminal/route.ts`; logged (#813). Role table in `docs/roles.md` |
+| Cron command jobs | open, product | `app.cron` is a member capability and a command job runs `sh -c` in the app container, `lib/cron/engine.ts:61`. Same reach as the terminal on a schedule. |
 | API tokens | partial | carry the user's full live role, no capability scoping, `lib/auth/session.ts:48-73`; never instance admin, `lib/auth/admin.ts:8` |
 | Any user can create an org and become its owner | open, product | `app/api/v1/organizations/route.ts:59-97`. The section 5 compose gaps that made owner mean host are fixed (#886). |
 
@@ -84,7 +86,7 @@ Fixed by #886. For untrusted orgs, `assertComposeWithinApp` (`lib/docker/compose
 
 | Claim | Status | Evidence |
 | --- | --- | --- |
-| Env vars in API responses | fixed | masked unless `?reveal=true`, logged, `apps/[appId]/env-vars/route.ts:61-80` |
+| Env vars in API responses | fixed | masked for members; `?reveal=true` and MCP `vardo_get_env_vars` need `env.reveal` (admins) and are logged, `apps/[appId]/env-vars/route.ts`, `organizations/[orgId]/env-vars/route.ts`, `lib/mcp/tools/get-env-vars.ts` (#813) |
 | Backup target credentials | fixed | `lib/backups/target-config.ts:139` |
 | Notification webhook `url` returned in plaintext | open, low | only `secret` and Slack URL are masked, `lib/notifications/mask-config.ts:8-21`. Discord URLs carry a token. |
 | Deploy log masking | partial | one sanitized sink, `lib/docker/deploy-logger.ts:54-60`, but pattern-only: app env values aren't passed to `redactSecrets`, so a bare value or a name like `STRIPE_KEY` leaks, `lib/redact.ts:8-45` |
