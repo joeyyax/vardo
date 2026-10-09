@@ -574,9 +574,9 @@ export function sanitizeCompose(
   return { compose: sanitized, strippedMounts };
 }
 
-/** Service settings that reach past the container boundary to the host. */
-export function hostAccessErrors(compose: ComposeFile): string[] {
-  const errors: string[] = [];
+/** Each service's settings that reach past the container boundary to the host. */
+export function hostAccessSettings(compose: ComposeFile): { service: string; used: string[] }[] {
+  const out: { service: string; used: string[] }[] = [];
   for (const [name, svc] of Object.entries(compose.services)) {
     const used: string[] = [];
     if (svc.privileged) used.push("privileged");
@@ -586,11 +586,15 @@ export function hostAccessErrors(compose: ComposeFile): string[] {
     if (svc.security_opt?.some((o) => !/^no-new-privileges(:true)?$/.test(o))) used.push("security_opt");
     const nm = svc.network_mode;
     if (nm === "host" || nm?.startsWith("container:")) used.push(`network_mode: ${nm}`);
-    if (used.length > 0) {
-      errors.push(
-        `Service "${name}" uses ${used.join(", ")}, which only a trusted organization can deploy. An instance admin can mark the organization trusted under Admin → Organizations.`,
-      );
-    }
+    if (used.length > 0) out.push({ service: name, used });
   }
-  return errors;
+  return out;
+}
+
+/** Host-access refusals for an untrusted organization. */
+export function hostAccessErrors(compose: ComposeFile): string[] {
+  return hostAccessSettings(compose).map(
+    ({ service, used }) =>
+      `Service "${service}" uses ${used.join(", ")}, which only a trusted organization can deploy. An instance admin can mark the organization trusted under Admin → Organizations.`,
+  );
 }

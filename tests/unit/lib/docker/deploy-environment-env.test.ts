@@ -114,6 +114,7 @@ const PREVIEW_ENV = {
   isDefault: false,
   domain: "web-pr-7.example.com",
 };
+const STAGING_ENV = { ...PREVIEW_ENV, name: "staging", type: "staging" };
 const PRODUCTION_ENV = {
   id: "env-prod",
   name: "production",
@@ -157,13 +158,22 @@ describe("runDeployment environment env", () => {
     expect(lines.join("\n")).not.toMatch(/points at production/);
   });
 
-  it("falls back to the app env with a warning when the environment predates snapshots", async () => {
-    envRows.push(PREVIEW_ENV);
+  it("falls back to the app env with a warning when a staging environment predates snapshots", async () => {
+    envRows.push(STAGING_ENV);
 
     const lines = await deploy({ environmentId: "env-pr-7", groupEnvironmentId: "ge-1" });
 
     expect(captured.envMap?.DATABASE_URL).toBe("postgres://app:prod-pass@db.example.com:5432/app");
-    expect(lines.join("\n")).toMatch(/Warning: environment pr-7 has no env of its own — deploying with the app's env/);
+    expect(lines.join("\n")).toMatch(/Warning: environment staging has no env of its own — deploying with the app's env/);
+  });
+
+  it("refuses a preview with no env of its own rather than deploy production's", async () => {
+    envRows.push(PREVIEW_ENV);
+
+    const lines = await deploy({ environmentId: "env-pr-7", groupEnvironmentId: "ge-1" });
+
+    expect(captured.envMap).toBeUndefined();
+    expect(lines.join("\n")).toMatch(/Preview pr-7 has no env of its own/);
   });
 
   it("warns when a preview's env still names a production hostname", async () => {

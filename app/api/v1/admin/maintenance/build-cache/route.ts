@@ -3,21 +3,22 @@ import { requireAppAdmin } from "@/lib/auth/admin";
 import { handleRouteError } from "@/lib/api/error-response";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { getBuildCacheUsage, pruneBuildCache } from "@/lib/docker/client";
+import { getBuildKitCacheUsage, pruneBuildKitCache } from "@/lib/docker/buildkit";
 import { logger } from "@/lib/logger";
 
 const log = logger.child("admin:maintenance:build-cache");
 
-// GET /api/v1/admin/maintenance/build-cache — build cache size and reclaimable space.
+// GET /api/v1/admin/maintenance/build-cache — build cache size and reclaimable space, the daemon's plus BuildKit's.
 // Both are null (unknown) on failure, never 0.
 async function handleGet() {
   try {
     await requireAppAdmin();
 
     try {
-      const usage = await getBuildCacheUsage();
+      const [usage, buildkit] = await Promise.all([getBuildCacheUsage(), getBuildKitCacheUsage()]);
       return NextResponse.json({
-        size: usage.totalSize,
-        reclaimable: usage.reclaimable,
+        size: usage.totalSize + (buildkit?.totalSize ?? 0),
+        reclaimable: usage.reclaimable + (buildkit?.reclaimable ?? 0),
       });
     } catch (err) {
       log.error(`Failed to read build cache usage: ${err}`);
@@ -28,13 +29,20 @@ async function handleGet() {
   }
 }
 
-// POST /api/v1/admin/maintenance/build-cache — prunes the build cache and returns the space reclaimed.
+// POST /api/v1/admin/maintenance/build-cache — prunes the daemon's and BuildKit's build cache and returns the space reclaimed.
 async function handlePost() {
   try {
     await requireAppAdmin();
 
     log.info("pruning build cache");
-    const { spaceReclaimed } = await pruneBuildCache(undefined, { all: true });
+    const [{ spaceReclaimed: daemon }, buildkit] = await Promise.all([
+      pruneBuildCache(undefined, { all: true }),
+      pruneBuildKitCache().catch((err) => {
+        log.error(`BuildKit cache prune failed: ${err}`);
+        return 0;
+      }),
+    ]);
+    const spaceReclaimed = daemon + buildkit;
     log.info(`build cache prune reclaimed ${spaceReclaimed} bytes`);
 
     return NextResponse.json({ ok: true, reclaimed: spaceReclaimed });

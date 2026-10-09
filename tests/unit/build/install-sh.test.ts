@@ -336,3 +336,36 @@ describe("install-time options", () => {
     expect(help.stdout).not.toContain(TOKEN);
   });
 });
+
+describe("Docker daemon config", () => {
+  /** Runs configure_docker_logging against a daemon.json under the test dir. */
+  function configure(name: string, existing?: string) {
+    const etc = join(dir, name);
+    const daemon = join(etc, "daemon.json");
+    mkdirSync(etc, { recursive: true });
+    if (existing !== undefined) writeFileSync(daemon, existing);
+    const local = join(dir, `${name}.sh`);
+    writeFileSync(local, readFileSync(lib, "utf8").replaceAll("/etc/docker", etc));
+    const r = spawnSync(
+      "bash",
+      ["-c", `set -euo pipefail\nsource "${local}"\nPLATFORM=linux\nsystemctl() { :; }\ndocker() { :; }\nconfigure_docker_logging`],
+      { encoding: "utf8", env: { ...process.env, VARDO_REF: "", VARDO_DIR: join(dir, "absent") } },
+    );
+    expect(r.status, r.stderr).toBe(0);
+    return JSON.parse(readFileSync(daemon, "utf8"));
+  }
+
+  it("writes /24 address pools on a host with no daemon.json", () => {
+    const config = configure("fresh");
+    expect(config["log-opts"]).toEqual({ "max-size": "10m", "max-file": "3" });
+    expect(config["default-address-pools"]).toContainEqual({ base: "172.17.0.0/16", size: 24 });
+    expect(config["default-address-pools"].every((p: { size: number }) => p.size === 24)).toBe(true);
+  });
+
+  it("leaves an existing daemon.json's networking alone", () => {
+    const config = configure("existing", JSON.stringify({ "data-root": "/srv/docker" }));
+    expect(config["data-root"]).toBe("/srv/docker");
+    expect(config["log-driver"]).toBe("json-file");
+    expect(config).not.toHaveProperty("default-address-pools");
+  });
+});

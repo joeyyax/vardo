@@ -96,7 +96,7 @@ describe("createGroupEnvironment env snapshot", () => {
   it("rewrites production hostnames of cloned apps to their preview hostnames", async () => {
     await create();
 
-    expect(snapshotFor("web")).toBe(
+    expect(snapshotFor("web")!.split("\n")).toEqual(
       [
         "API_URL=https://api-pr-7.example.com/v1",
         "SELF=https://web-pr-7.example.com",
@@ -104,9 +104,22 @@ describe("createGroupEnvironment env snapshot", () => {
         "CDN_URL=https://cdn.example.com",
         "PARTNER=https://myapi.example.com",
         "DATABASE_URL=${db.DATABASE_URL}",
-        "SESSION_SECRET=prod-session",
-      ].join("\n"),
+        expect.stringMatching(/^SESSION_SECRET=[A-Za-z0-9_-]{32}$/),
+      ],
     );
+  });
+
+  it("never copies a production secret value into a preview, whatever the strategy", async () => {
+    await create();
+
+    expect(parseEnvToMap(snapshotFor("web")!).SESSION_SECRET).not.toBe("prod-session");
+    expect(parseEnvToMap(snapshotFor("api")!).PORT).toBe("4000");
+  });
+
+  it("keeps a cloned app's secrets in a staging environment", async () => {
+    await createGroupEnvironment({ projectId: "proj", organizationId: "org-1", name: "staging", type: "staging" });
+
+    expect(parseEnvToMap(snapshotFor("web")!).SESSION_SECRET).toBe("prod-session");
   });
 
   it("generates fresh secrets for the empty strategy, one per production value across the environment", async () => {

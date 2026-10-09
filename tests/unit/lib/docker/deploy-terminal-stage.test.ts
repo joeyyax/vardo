@@ -58,6 +58,9 @@ const { dbMock, events, dockerCalls } = vi.hoisted(() => {
   return { dbMock, events, dockerCalls };
 });
 
+const { assertDiskHeadroom } = vi.hoisted(() => ({ assertDiskHeadroom: vi.fn(async () => {}) }));
+vi.mock("@/lib/docker/disk-guard", () => ({ assertDiskHeadroom }));
+
 vi.mock("@/lib/db", () => ({ db: dbMock }));
 vi.mock("@/lib/redis", () => ({
   redis: { set: vi.fn().mockResolvedValue("OK"), del: vi.fn().mockResolvedValue(1) },
@@ -364,5 +367,19 @@ describe("runDeployment failures after the deploy reported success", () => {
 
     expect(stageCalls()).toContainEqual(["done", "success"]);
     expect(dockerCalls.some((c) => c.includes("down"))).toBe(false);
+  });
+});
+
+describe("runDeployment disk guard", () => {
+  it("refuses before cloning or building when the disk is full", async () => {
+    const { DeployBlockedError } = await import("@/lib/docker/errors");
+    vi.mocked(prepareRepo).mockClear();
+    assertDiskHeadroom.mockRejectedValueOnce(new DeployBlockedError("Couldn't deploy: the disk is 97% full"));
+
+    const result = await runDeployment("dep-1", { ...OPTS, onStage });
+
+    expect(prepareRepo).not.toHaveBeenCalled();
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("97% full");
   });
 });

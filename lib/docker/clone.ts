@@ -114,7 +114,7 @@ export async function createGroupEnvironment(
     }
   }
 
-  // Production secret -> its replacement, shared by every `empty` app in this environment.
+  // Production secret -> its replacement, shared by every `empty` or preview app in this environment.
   const generatedSecrets = new Map<string, string>();
 
   for (const app of projectApps) {
@@ -149,11 +149,12 @@ export async function createGroupEnvironment(
 
     // No domain row: it would route this hostname to the production deploy.
 
+    // A preview runs unreviewed PR code on a public URL, so it never gets production's secret values.
     const snapshot = snapshotEnv({
       appEnvContent: app.envContent,
       organizationId: opts.organizationId,
       hostReplacements,
-      strategy,
+      strategy: opts.type === "preview" ? "empty" : strategy,
       generatedSecrets,
     });
     await db.insert(environmentEnv).values({ environmentId: envId, envContent: snapshot.envContent });

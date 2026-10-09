@@ -38,6 +38,8 @@ Caveats:
 
 BuildKit is capped by the gc policy in `docker-compose.yml` (`VARDO_BUILDKIT_CACHE_MAX`, default 10 GiB). One Next app plus one Node app fills about 6 GB, so the default holds a handful of apps before LRU eviction starts.
 
+Admin → Settings → Maintenance reports and prunes both caches; BuildKit's is read with `buildctl du`, since `docker system df` can't see inside its volume (#815).
+
 Nixpacks builds land in the Docker daemon's own builder cache. That one is already bounded: `post-deploy.ts` prunes it to `BUILD_CACHE_MAX_BYTES` after each deploy. No separate Nixpacks ceiling is needed.
 
 ## Change: per-app Railpack cache key
@@ -49,7 +51,6 @@ The cost is that a brand new app starts with an empty npm cache mount instead of
 ## Follow-ups
 
 - Find why Railpack's dependency rebuild is slower than Nixpacks' (mise or install layer).
-- Report BuildKit cache size in the console so the ceiling is visible before it evicts.
 
 ## Build plan and overrides
 

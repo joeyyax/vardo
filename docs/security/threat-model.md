@@ -58,6 +58,7 @@ Status: **fixed** (on main or in this branch), **open**, or **not a boundary**. 
 | --- | --- | --- |
 | Fork PRs reach a build | fixed | `lib/git-integration/pull-request.ts:4` refuses forks and head/base mismatch; called before any build, `webhook/route.ts:154` |
 | Self-preview gets secrets | not a boundary | only same-repo PRs reach it after the fork check |
+| PR previews get production secret values | fixed | #815: a preview's env snapshot regenerates every secret-named value whatever the app's clone strategy, `lib/docker/clone.ts`; a preview with no env of its own refuses to deploy rather than fall back to production's, `lib/docker/deploy.ts`. Previews stay off until #885. |
 | GitHub token in `.git/config` inside the build context | branch | was written into the origin URL; now a github.com-scoped header via env, `lib/git-integration/clone-auth.ts`, `prepare-repo.ts:391` |
 | App env vars become the Nixpacks and Railpack process env | fixed | a member's `PATH` or `LD_PRELOAD` pointed the spawn at a binary in their cloned repo, running it in the console. App vars now reach builders only as `--env`, `lib/docker/deploy-steps/prepare-repo.ts:246` |
 | App env values stored in the build plan | fixed | `nixpacks plan` copies `--env` values into its JSON. `maskPlanEnv` masks them before `deployment.build_plan` is written, `lib/docker/build-plan.ts:95` |
@@ -81,6 +82,7 @@ Fixed by #886. For untrusted orgs, `assertComposeWithinApp` (`lib/docker/compose
 | Repo symlinks copied into the slot as content | fixed | untrusted slots get a link, so the check resolves it, `lib/docker/deploy-steps/build.ts:85` |
 | Deny list misses `/`, `/var/lib/docker`, `/run/containerd`, `/opt/vardo` when bind mounts are on | fixed for compose | the policy also refuses any ancestor of a denied path; `DENIED_MOUNT_PATHS` itself is unchanged |
 | Top-level `name:` steers the shared volume and network names Vardo creates | fixed for untrusted | `crossBoundaryVolumeName` and `sharedNetworkName` use `compose.name`; the prefix check refuses the result |
+| `privileged`, `cap_add`, `devices`, `security_opt`, host `network_mode`, `pid` and `ipc` | fixed | #815: refused for untrusted orgs by `hostAccessErrors` on input and by the policy on the resolved model; `pid`, `ipc` and the rest of `DROPPED_SERVICE_KEYS` never reach the container, and the drop is logged. Trusted orgs keep them, logged on every deploy, `prepare-repo.ts:84` |
 | Slots deployed before #886 | fixed | #895: `assertSlotWithinApp` runs the check over the slot's files before `start`, `restart`, `recreate` and both rollbacks, `lib/docker/slot-guard.ts`, `start-app.ts:75`, `deploy.ts:1049,1092` |
 
 ## 6. Secret exposure
@@ -121,6 +123,7 @@ Narrows:
 - Only Traefik-routed services join `vardo-network`; others stay on the project network.
 - Default memory, CPU and process caps per QoS tier; the compose's own values win (`defaultCpuLimit`, `defaultPidsLimit` in `lib/docker/compose-inject.ts`, #889).
 - Postgres and Redis no longer published beyond loopback (this branch).
+- Builds and deploys refuse when Docker's disk is 95% used or has under 2 GB free, so a tenant filling it can't take the next deploy down mid-build (#815, `lib/docker/disk-guard.ts`; `VARDO_DISK_GUARD_PERCENT`, `VARDO_DISK_GUARD_MIN_FREE_GB`).
 
 Widens or leaves open:
 - `vardo-network` includes the console, Traefik and WireGuard, so a routed app reaches `vardo-frontend:3000` directly. Traefik's `:8080` answers it only `/ping` (#889).

@@ -62,17 +62,23 @@ describe("evaluateCertExpiry", () => {
   });
 
   it("reports a certificate inside the threshold as expiring", () => {
-    const verdict = evaluateCertExpiry(probe(5), NOW);
-    expect(verdict).toMatchObject({ kind: "expiring", severity: "warning", daysLeft: 5 });
+    const verdict = evaluateCertExpiry(probe(15), NOW);
+    expect(verdict).toMatchObject({ kind: "expiring", severity: "warning", daysLeft: 15 });
     expect(certVerdictAlerts(verdict)).toBe(true);
   });
 
-  it("escalates to critical inside two days", () => {
-    expect(evaluateCertExpiry(probe(2), NOW)).toMatchObject({
+  it("warns from 21 days, inside Traefik's 30-day renewal window", () => {
+    expect(evaluateCertExpiry(probe(21), NOW).kind).toBe("expiring");
+    expect(evaluateCertExpiry(probe(22), NOW).kind).toBe("ok");
+    expect(evaluateCertExpiry(probe(30), NOW).kind).toBe("ok");
+  });
+
+  it("escalates to critical inside seven days", () => {
+    expect(evaluateCertExpiry(probe(7), NOW)).toMatchObject({
       kind: "expiring",
       severity: "critical",
     });
-    expect(evaluateCertExpiry(probe(3), NOW)).toMatchObject({
+    expect(evaluateCertExpiry(probe(8), NOW)).toMatchObject({
       kind: "expiring",
       severity: "warning",
     });

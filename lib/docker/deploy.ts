@@ -21,6 +21,7 @@ import { readSlotPartition } from "./shared-project";
 import { recordActivity } from "@/lib/activity";
 import { DeployBlockedError } from "./errors";
 import { assertSlotWithinApp } from "./slot-guard";
+import { assertDiskHeadroom } from "./disk-guard";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { createDeployLogger, DEPLOY_STAGE_ORDER } from "./deploy-logger";
 import { recordPostDeployIncomplete } from "./deploy-incomplete";
@@ -378,6 +379,8 @@ export async function runDeployment(
       if (own !== null) {
         app.envContent = own;
         envFromApp = false;
+      } else if (envType === "preview") {
+        throw new DeployBlockedError(`Preview ${envName} has no env of its own, and previews never deploy with production's. Recreate the preview.`);
       } else {
         log(`[deploy] Warning: environment ${envName} has no env of its own — deploying with the app's env`);
       }
@@ -478,6 +481,8 @@ export async function runDeployment(
       logLines,
       startTime,
     };
+
+    await assertDiskHeadroom();
 
     // Each step reads and mutates ctx.
     ctx = await prepareRepo(ctx);
