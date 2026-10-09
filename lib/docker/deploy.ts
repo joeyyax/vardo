@@ -379,6 +379,8 @@ export async function runDeployment(
       if (own !== null) {
         app.envContent = own;
         envFromApp = false;
+      } else if (envType === "preview") {
+        throw new DeployBlockedError(`Preview ${envName} has no env of its own, and previews never deploy with production's. Recreate the preview.`);
       } else {
         log(`[deploy] Warning: environment ${envName} has no env of its own — deploying with the app's env`);
       }

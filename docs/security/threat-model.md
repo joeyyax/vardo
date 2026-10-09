@@ -58,6 +58,7 @@ Status: **fixed** (on main or in this branch), **open**, or **not a boundary**. 
 | --- | --- | --- |
 | Fork PRs reach a build | fixed | `lib/git-integration/pull-request.ts:4` refuses forks and head/base mismatch; called before any build, `webhook/route.ts:154` |
 | Self-preview gets secrets | not a boundary | only same-repo PRs reach it after the fork check |
+| PR previews get production secret values | fixed | #815: a preview's env snapshot regenerates every secret-named value whatever the app's clone strategy, `lib/docker/clone.ts`; a preview with no env of its own refuses to deploy rather than fall back to production's, `lib/docker/deploy.ts`. Previews stay off until #885. |
 | GitHub token in `.git/config` inside the build context | branch | was written into the origin URL; now a github.com-scoped header via env, `lib/git-integration/clone-auth.ts`, `prepare-repo.ts:391` |
 | App env vars become the Nixpacks and Railpack process env | fixed | a member's `PATH` or `LD_PRELOAD` pointed the spawn at a binary in their cloned repo, running it in the console. App vars now reach builders only as `--env`, `lib/docker/deploy-steps/prepare-repo.ts:240` |
 | Git URL transports | fixed | HTTPS only, `lib/docker/validate.ts:26` |
