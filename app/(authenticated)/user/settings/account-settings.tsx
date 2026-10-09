@@ -125,7 +125,7 @@ export function PasswordManagement() {
       const { error } = await authClient.changePassword({
         currentPassword,
         newPassword,
-        revokeOtherSessions: false,
+        revokeOtherSessions: true,
       });
       if (error) {
         toast.error(error.message || "Couldn't change password");
