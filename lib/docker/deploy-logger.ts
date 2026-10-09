@@ -7,6 +7,9 @@ import { redactSecrets } from "@/lib/redact";
 
 const log = logger.child("deploy-logger");
 
+/** Shortest env value redacted by exact match. */
+const MIN_SECRET_LENGTH = 6;
+
 /** Deploy stages, including "queued" before start. */
 export type DeployStage =
   | "queued"
@@ -52,8 +55,13 @@ const KEY_FILE_PATTERNS = [
   { pattern: /\.host-ssh-key-[A-Za-z0-9_-]+/g, replacement: ".host-ssh-key-***" },
 ];
 
-function sanitize(line: string): string {
-  let result = redactSecrets(line);
+/** Values too common to redact by exact match without mangling logs. */
+const COMMON_VALUES = new Set([
+  "true", "false", "production", "development", "staging", "preview", "test", "localhost", "default", "enabled", "disabled",
+]);
+
+function sanitize(line: string, values: Iterable<string>): string {
+  let result = redactSecrets(line, values);
   for (const { pattern, replacement } of KEY_FILE_PATTERNS) {
     result = result.replace(pattern, replacement);
   }
@@ -64,10 +72,20 @@ function sanitize(line: string): string {
 export function createDeployLogger(deployId: string) {
   let currentStage: StreamStage = "queued";
   let lastWrite: Promise<string> = Promise.resolve("");
+  const secretValues = new Set<string>();
+
+  /** Redact these literal values from every later line. Short and common values are skipped. */
+  function addSecrets(values: Iterable<string>): void {
+    for (const value of values) {
+      if (typeof value !== "string" || value.length < MIN_SECRET_LENGTH) continue;
+      if (COMMON_VALUES.has(value.toLowerCase())) continue;
+      secretValues.add(value);
+    }
+  }
 
   /** Sanitize a line, write it to the stream and return it. */
   function logLine(line: string): string {
-    const sanitized = sanitize(line);
+    const sanitized = sanitize(line, secretValues);
 
     addDeployLog(deployId, {
       line: sanitized,
@@ -119,5 +137,5 @@ export function createDeployLogger(deployId: string) {
     try { await lastWrite; } catch { /* already logged */ }
   }
 
-  return { log: logLine, stage: setStage, getStage, flush };
+  return { log: logLine, stage: setStage, getStage, flush, addSecrets, redact: (text: string) => sanitize(text, secretValues) };
 }
