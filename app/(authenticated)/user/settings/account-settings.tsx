@@ -22,6 +22,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
+import { CAPABILITIES, type Capability, type TokenScopeKind } from "@/lib/auth/permissions";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { RelativeTime } from "@/components/relative-time";
@@ -829,6 +831,8 @@ type ApiToken = {
   id: string;
   name: string;
   crossOrg: boolean;
+  scope: TokenScopeKind;
+  capabilities: Capability[] | null;
   expiresAt: string | null;
   lastUsedAt: string | null;
   createdAt: string;
@@ -840,6 +844,23 @@ const TOKEN_EXPIRY_OPTIONS = [
   { value: "365", label: "1 year" },
   { value: "never", label: "Never" },
 ];
+
+const TOKEN_SCOPE_OPTIONS: { value: TokenScopeKind; label: string }[] = [
+  { value: "full", label: "Full access" },
+  { value: "deploy", label: "Deploy" },
+  { value: "read", label: "Read-only" },
+  { value: "custom", label: "Custom" },
+];
+
+const ALL_CAPABILITIES = Object.keys(CAPABILITIES) as Capability[];
+
+function scopeLabel(token: Pick<ApiToken, "scope" | "capabilities">): string {
+  if (token.scope === "custom") {
+    const n = token.capabilities?.length ?? 0;
+    return `${n} ${n === 1 ? "capability" : "capabilities"}`;
+  }
+  return TOKEN_SCOPE_OPTIONS.find((o) => o.value === token.scope)?.label ?? "No access";
+}
 
 function expiryFromOption(option: string): string | null {
   if (option === "never") return null;
@@ -864,6 +885,9 @@ export function ApiTokens({ orgId }: { orgId: string }) {
   const [creating, setCreating] = useState(false);
   const [newTokenName, setNewTokenName] = useState("");
   const [newTokenExpiry, setNewTokenExpiry] = useState("90");
+  const [newTokenScope, setNewTokenScope] = useState<TokenScopeKind>("full");
+  const [newTokenCaps, setNewTokenCaps] = useState<Capability[]>([]);
+  const [newTokenCrossOrg, setNewTokenCrossOrg] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [createdToken, setCreatedToken] = useState<string | null>(null);
   const tokenRef = useRef<HTMLElement>(null);
@@ -892,6 +916,10 @@ export function ApiTokens({ orgId }: { orgId: string }) {
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     if (!newTokenName.trim()) return;
+    if (newTokenScope === "custom" && newTokenCaps.length === 0) {
+      toast.error("Pick at least one capability");
+      return;
+    }
     setCreating(true);
     try {
       const res = await fetch(
@@ -902,6 +930,9 @@ export function ApiTokens({ orgId }: { orgId: string }) {
           body: JSON.stringify({
             name: newTokenName.trim(),
             expiresAt: expiryFromOption(newTokenExpiry),
+            scope: newTokenScope,
+            crossOrg: newTokenCrossOrg,
+            ...(newTokenScope === "custom" && { capabilities: newTokenCaps }),
           }),
         }
       );
@@ -909,6 +940,9 @@ export function ApiTokens({ orgId }: { orgId: string }) {
         const data = await res.json();
         setCreatedToken(data.token);
         setNewTokenName("");
+        setNewTokenScope("full");
+        setNewTokenCaps([]);
+        setNewTokenCrossOrg(false);
         setShowCreate(false);
         fetchTokens();
         toast.success("Token created");
@@ -980,7 +1014,7 @@ export function ApiTokens({ orgId }: { orgId: string }) {
         <div className="flex items-center justify-between">
           <div>
             <CardTitle>API tokens</CardTitle>
-            <CardDescription>Tokens authenticate API requests. Treat them like passwords — they grant full access to your organization. Turn on &quot;all my organizations&quot; to let a token act on every organization you belong to. Tokens never carry instance-admin access.</CardDescription>
+            <CardDescription>Tokens authenticate API requests. Treat them like passwords. A token never does more than your role allows and never carries instance-admin access. Turn on &quot;all my organizations&quot; to let a token act on every organization you belong to.</CardDescription>
           </div>
           <Button
             size="sm"
@@ -1035,40 +1069,90 @@ export function ApiTokens({ orgId }: { orgId: string }) {
 
         {/* Create form */}
         {showCreate && (
-          <form
-            onSubmit={handleCreate}
-            className="flex items-end gap-2 max-w-sm"
-          >
-            <div className="flex-1 space-y-1.5">
-              <Label htmlFor="token-name">Token name</Label>
-              <Input
-                id="token-name"
-                value={newTokenName}
-                onChange={(e) => setNewTokenName(e.target.value)}
-                placeholder="e.g., CI/CD Pipeline"
-                required
-                autoFocus
-              />
+          <form onSubmit={handleCreate} className="space-y-3">
+            <div className="flex flex-wrap items-end gap-2">
+              <div className="min-w-48 flex-1 space-y-1.5">
+                <Label htmlFor="token-name">Token name</Label>
+                <Input
+                  id="token-name"
+                  value={newTokenName}
+                  onChange={(e) => setNewTokenName(e.target.value)}
+                  placeholder="e.g., CI/CD Pipeline"
+                  required
+                  autoFocus
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="token-expiry">Expires</Label>
+                <Select value={newTokenExpiry} onValueChange={setNewTokenExpiry}>
+                  <SelectTrigger id="token-expiry" className="w-28">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TOKEN_EXPIRY_OPTIONS.map((o) => (
+                      <SelectItem key={o.value} value={o.value}>
+                        {o.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="token-scope">Access</Label>
+                <Select value={newTokenScope} onValueChange={(v) => setNewTokenScope(v as TokenScopeKind)}>
+                  <SelectTrigger id="token-scope" className="w-32">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TOKEN_SCOPE_OPTIONS.map((o) => (
+                      <SelectItem key={o.value} value={o.value}>
+                        {o.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="token-orgs">Organizations</Label>
+                <Select
+                  value={newTokenCrossOrg ? "all" : "this"}
+                  onValueChange={(v) => setNewTokenCrossOrg(v === "all")}
+                >
+                  <SelectTrigger id="token-orgs" className="w-44">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="this">This organization</SelectItem>
+                    <SelectItem value="all">All my organizations</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button type="submit" size="sm" disabled={creating}>
+                {creating && <Loader2 className="mr-1.5 size-4 animate-spin" />}
+                Create
+              </Button>
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="token-expiry">Expires</Label>
-              <Select value={newTokenExpiry} onValueChange={setNewTokenExpiry}>
-                <SelectTrigger id="token-expiry" className="w-28">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {TOKEN_EXPIRY_OPTIONS.map((o) => (
-                    <SelectItem key={o.value} value={o.value}>
-                      {o.label}
-                    </SelectItem>
+            {newTokenScope === "custom" && (
+              <fieldset className="space-y-2">
+                <legend className="text-sm font-medium">Capabilities</legend>
+                <p className="text-xs text-muted-foreground">Your role still applies.</p>
+                <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
+                  {ALL_CAPABILITIES.map((cap) => (
+                    <Label key={cap} className="flex items-center gap-2 font-mono text-xs font-normal">
+                      <Checkbox
+                        checked={newTokenCaps.includes(cap)}
+                        onCheckedChange={(checked) =>
+                          setNewTokenCaps((prev) =>
+                            checked ? [...prev, cap] : prev.filter((c) => c !== cap)
+                          )
+                        }
+                      />
+                      {cap}
+                    </Label>
                   ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <Button type="submit" size="sm" disabled={creating}>
-              {creating && <Loader2 className="mr-1.5 size-4 animate-spin" />}
-              Create
-            </Button>
+                </div>
+              </fieldset>
+            )}
           </form>
         )}
 
@@ -1093,7 +1177,16 @@ export function ApiTokens({ orgId }: { orgId: string }) {
                 className="flex items-center justify-between p-3"
               >
                 <div className="min-w-0">
-                  <p className="text-sm font-medium truncate">{token.name}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-medium truncate">{token.name}</p>
+                    <Badge
+                      variant="outline"
+                      className="shrink-0"
+                      title={token.scope === "custom" ? token.capabilities?.join(", ") : undefined}
+                    >
+                      {scopeLabel(token)}
+                    </Badge>
+                  </div>
                   <p className="text-xs text-muted-foreground">
                     Created <RelativeTime date={token.createdAt} />
                     {token.expiresAt && (
