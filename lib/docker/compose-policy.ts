@@ -10,6 +10,7 @@ import { DENIED_MOUNT_PATHS } from "./mount-paths";
 import { VARDO_HOME_DIR } from "@/lib/paths";
 import { NETWORK_NAME, COMPOSE_QUERY_TIMEOUT } from "./constants";
 import { DeployBlockedError } from "./errors";
+import { SLOT_OVERLAY_FILE, SLOT_VARS_FILE } from "./slot-files";
 
 export type ComposePolicy = {
   /** Trusted organizations keep their compose as written. */
@@ -387,7 +388,7 @@ export async function assertComposeWithinApp(ctx: {
     );
   }
 
-  for (const file of ["docker-compose.yml", "docker-compose.override.yml", ".env"]) {
+  for (const file of ["docker-compose.yml", SLOT_OVERLAY_FILE, ".env", SLOT_VARS_FILE]) {
     await rm(join(ctx.slotDir, file), { force: true }).catch(() => {});
   }
   throw new DeployBlockedError(

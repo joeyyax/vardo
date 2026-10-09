@@ -7,11 +7,14 @@ import { appEnvDir, appBaseDir } from "@/lib/paths";
 import { isLokiAvailable, queryRange, buildLogQLQuery, requireTenant } from "./client";
 import { interleaveByTimestamp, parseComposeLine, type ServiceLine } from "./compose-lines";
 import { dockerEnv } from "@/lib/docker/docker-env";
+import { slotEnvFileArgs } from "@/lib/docker/slot-files";
 
 export type ComposeTarget = {
   slotDir: string;
   composePath: string;
   composeProject: string;
+  /** The slot's --env-file arguments, so compose interpolates Vardo's variables. */
+  envFileArgs: string[];
 };
 
 /** Locate the compose file and project name of an app's active slot. */
@@ -31,12 +34,14 @@ export async function resolveComposeTarget(
   }
 
   const envAware = appDir.endsWith(environmentName);
+  const slotDir = resolve(appDir, activeSlot);
   return {
-    slotDir: resolve(appDir, activeSlot),
+    slotDir,
     composePath: resolve(appDir, activeSlot, "docker-compose.yml"),
     composeProject: envAware
       ? `${appName}-${environmentName}-${activeSlot}`
       : `${appName}-${activeSlot}`,
+    envFileArgs: await slotEnvFileArgs(slotDir),
   };
 }
 
@@ -59,6 +64,7 @@ export async function readComposeHistory(
   const args = [
     "compose",
     "-f", target.composePath,
+    ...target.envFileArgs,
     "-p", target.composeProject,
     "logs",
     "--no-color",

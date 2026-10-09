@@ -1,7 +1,5 @@
 // Compose transforms applied at deploy: Traefik labels, networks, limits, GPUs, ports and the Vardo overlay.
 
-import { access } from "fs/promises";
-import { join } from "path";
 import type {
   ComposeFile,
   ComposeService,
@@ -271,24 +269,7 @@ export function stripTraefikLabels(compose: ComposeFile): ComposeFile {
   return { ...compose, services: updatedServices };
 }
 
-/** Compose -f arguments for a slot directory, including the override or legacy vardo overlay. */
-export async function slotComposeFiles(slotDir: string): Promise<string[]> {
-  const base = join(slotDir, "docker-compose.yml");
-  const legacyOverlay = join(slotDir, "docker-compose.vardo.yml");
-  try {
-    await access(legacyOverlay);
-    return ["-f", base, "-f", legacyOverlay];
-  } catch {
-    // Compose skips docker-compose.override.yml when -f is passed.
-    const override = join(slotDir, "docker-compose.override.yml");
-    try {
-      await access(override);
-      return ["-f", base, "-f", override];
-    } catch {
-      return ["-f", base];
-    }
-  }
-}
+export { slotComposeFiles } from "./slot-files";
 
 /**
  * Strip Vardo-injected labels and network, leaving the user's standalone compose.

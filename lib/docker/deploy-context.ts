@@ -132,6 +132,9 @@ export type DeployContext = {
   /** Cloned repo directory (app-level, shared across environments). */
   repoDir: string | null;
 
+  /** Commit this deploy ships. Unset for an app without a repo. */
+  gitSha?: string;
+
   /** App base directory. */
   appBase: string;
 
@@ -156,7 +159,7 @@ export type DeployContext = {
   /** Detected or configured container port. */
   containerPort: number;
 
-  /** Compose -f arguments for docker compose commands. */
+  /** Compose -f and --env-file arguments for docker compose commands. */
   composeFileArgs: string[];
 
   /** Stable volume prefix for externalization. */

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
 import {
   sanitizeCompose,
   parseCompose,
@@ -22,7 +22,6 @@ import {
   buildComposePreview,
   stripVardoInjections,
   buildVardoOverlay,
-  slotComposeFiles,
   excludeServices,
   type ComposeFile,
   type ComposeService,
@@ -30,14 +29,6 @@ import {
 } from "@/lib/docker/compose";
 import { defaultPidsLimit } from "@/lib/docker/compose-inject";
 import { mergeComposeFile } from "@/lib/docker/import";
-import * as fsp from "fs/promises";
-
-// vi.mock is hoisted above imports by vitest, so compose.ts gets the mocked
-// access function. Other fs/promises exports remain real.
-vi.mock("fs/promises", async (importOriginal) => {
-  const mod = await importOriginal<typeof import("fs/promises")>();
-  return { ...mod, access: vi.fn() };
-});
 
 function makeCompose(volumes: string[]): ComposeFile {
   return {
@@ -3204,52 +3195,6 @@ describe("buildVardoOverlay", () => {
 });
 
 // ---------------------------------------------------------------------------
-// slotComposeFiles
-// ---------------------------------------------------------------------------
-
-describe("slotComposeFiles", () => {
-  afterEach(() => {
-    vi.resetAllMocks();
-  });
-
-  it("returns both -f args when the legacy vardo overlay exists", async () => {
-    vi.mocked(fsp.access).mockResolvedValue(undefined);
-
-    const result = await slotComposeFiles("/slots/blue");
-
-    expect(result).toEqual([
-      "-f",
-      "/slots/blue/docker-compose.yml",
-      "-f",
-      "/slots/blue/docker-compose.vardo.yml",
-    ]);
-  });
-
-  it("returns both -f args when override.yml exists and no legacy overlay", async () => {
-    vi.mocked(fsp.access)
-      .mockRejectedValueOnce(new Error("ENOENT")) // legacy overlay missing
-      .mockResolvedValueOnce(undefined); // override exists
-
-    const result = await slotComposeFiles("/slots/blue");
-
-    expect(result).toEqual([
-      "-f",
-      "/slots/blue/docker-compose.yml",
-      "-f",
-      "/slots/blue/docker-compose.override.yml",
-    ]);
-  });
-
-  it("returns only the base -f arg when neither overlay exists", async () => {
-    vi.mocked(fsp.access).mockRejectedValue(new Error("ENOENT"));
-
-    const result = await slotComposeFiles("/slots/blue");
-
-    expect(result).toEqual(["-f", "/slots/blue/docker-compose.yml"]);
-  });
-});
-
-// ---------------------------------------------------------------------------
 // Round-trip integration: strip → overlay → merged = original
 // ---------------------------------------------------------------------------
 
@@ -3503,41 +3448,6 @@ describe("buildVardoOverlay — edge cases", () => {
     expect(overlay.services.app.oom_score_adj).toBe(0);
     expect(overlay.services.app.cpu_shares).toBe(1024);
     expect(overlay.services.app.mem_reservation).toBeUndefined();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// slotComposeFiles — edge cases
-// ---------------------------------------------------------------------------
-
-describe("slotComposeFiles — edge cases", () => {
-  afterEach(() => {
-    vi.resetAllMocks();
-  });
-
-  it("falls back to single file when both overlays throw EACCES", async () => {
-    const err = Object.assign(new Error("EACCES: permission denied"), { code: "EACCES" });
-    vi.mocked(fsp.access).mockRejectedValue(err);
-
-    const result = await slotComposeFiles("/slots/blue");
-
-    expect(result).toEqual(["-f", "/slots/blue/docker-compose.yml"]);
-  });
-
-  it("checks for the legacy overlay file inside the given slot directory", async () => {
-    vi.mocked(fsp.access).mockResolvedValue(undefined);
-
-    await slotComposeFiles("/deploy/slots/green");
-
-    expect(fsp.access).toHaveBeenCalledWith("/deploy/slots/green/docker-compose.vardo.yml");
-  });
-
-  it("includes the base compose path inside the given slot directory", async () => {
-    vi.mocked(fsp.access).mockRejectedValue(new Error("ENOENT"));
-
-    const result = await slotComposeFiles("/deploy/slots/green");
-
-    expect(result[1]).toBe("/deploy/slots/green/docker-compose.yml");
   });
 });
 

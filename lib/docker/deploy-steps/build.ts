@@ -42,6 +42,7 @@ import { dockerEnv } from "@/lib/docker/docker-env";
 import { assertComposeWithinApp } from "../compose-policy";
 import { volumePrefix } from "../volume-prefix";
 import { appRootDir } from "../compose-root";
+import { SLOT_OVERLAY_FILE, SLOT_VARS_FILE, slotEnvFileArgs, writeSlotVars } from "../slot-files";
 import { CERTS_VOLUME_KEY, syncAppCerts } from "@/lib/ssl/cert-export";
 
 const NETWORK_NAME = VARDO_NETWORK;
@@ -102,7 +103,7 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
 
     // Remove slot entries no longer in the repo.
     const repoEntrySet = new Set(entries);
-    const MANAGED_FILES = new Set(["docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml", "docker-compose.override.yml", ".env"]);
+    const MANAGED_FILES = new Set(["docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml", SLOT_OVERLAY_FILE, ".env", SLOT_VARS_FILE]);
     try {
       const slotEntries = await readdir(slotDir);
       for (const entry of slotEntries) {
@@ -170,9 +171,9 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
 
   // Step 5b: write the bare and override compose files.
   const bareComposePath = join(slotDir, "docker-compose.yml");
-  const overridePath = join(slotDir, "docker-compose.override.yml");
+  const overridePath = join(slotDir, SLOT_OVERLAY_FILE);
 
-  for (const stale of [bareComposePath, overridePath, join(slotDir, ".env")]) {
+  for (const stale of [bareComposePath, overridePath, join(slotDir, ".env"), join(slotDir, SLOT_VARS_FILE)]) {
     try { await rm(stale, { force: true }); } catch { /* gone already */ }
   }
 
@@ -365,7 +366,9 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
   await writeFile(bareComposePath, composeToYaml(bareCompose), "utf-8");
   await writeFile(overridePath, composeToYaml(overlayCompose), "utf-8");
 
-  ctx.composeFileArgs = ["-f", bareComposePath, "-f", overridePath];
+  await writeSlotVars(slotDir, ctx.gitSha);
+
+  ctx.composeFileArgs = ["-f", bareComposePath, "-f", overridePath, ...(await slotEnvFileArgs(slotDir))];
 
   await assertComposeWithinApp(ctx);
 
@@ -400,9 +403,9 @@ async function prepareCertMount(
   return { services, volume };
 }
 
-/** Repo entries the slot links or copies. Compose files and .env are Vardo's own. */
+/** Repo entries the slot links or copies. Compose files and env files are Vardo's own. */
 function isLinkedRepoEntry(entry: string): boolean {
-  return !["docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml", ".env"].includes(entry);
+  return !["docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml", ".env", SLOT_VARS_FILE].includes(entry);
 }
 
 /**

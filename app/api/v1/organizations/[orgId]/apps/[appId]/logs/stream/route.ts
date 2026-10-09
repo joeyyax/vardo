@@ -79,6 +79,7 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
       const proc = spawn("docker", [
         "compose",
         "-f", target.composePath,
+        ...target.envFileArgs,
         "-p", target.composeProject,
         "logs",
         "-f",
