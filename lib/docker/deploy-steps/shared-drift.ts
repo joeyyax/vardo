@@ -57,10 +57,11 @@ type DriftOpts = {
 /** Compare each shared service's running container against its definition. */
 export async function sharedDrift(
   opts: DriftOpts,
-): Promise<{ states: Map<string, DriftState>; error?: string }> {
+): Promise<{ states: Map<string, DriftState>; staleRoutes: Set<string>; error?: string }> {
   const { shared, project, composeFileArgs, cwd, exec, timeout } = opts;
   const names = Object.keys(shared);
   const states = new Map<string, DriftState>();
+  const staleRoutes = new Set<string>();
 
   // `--profile *` or compose refuses to hash a profiled service (buildkit).
   let desired: Map<string, string>;
@@ -72,17 +73,19 @@ export async function sharedDrift(
     desired = parseConfigHashes(stdout);
   } catch (err) {
     for (const name of names) states.set(name, "unknown");
-    return { states, error: err instanceof Error ? err.message : String(err) };
+    return { states, staleRoutes, error: err instanceof Error ? err.message : String(err) };
   }
 
   for (const [container, name] of sharedContainerNames(shared, project)) {
     let running: string | undefined;
     try {
       const { stdout } = await exec(
-        ["inspect", "--format", `{{index .Config.Labels "${CONFIG_HASH_LABEL}"}}`, container],
+        ["inspect", "--format", `{{index .Config.Labels "${CONFIG_HASH_LABEL}"}}|{{index .Config.Labels "traefik.enable"}}`, container],
         { timeout },
       );
-      running = stdout.trim();
+      const [hash, routed] = stdout.trim().split("|");
+      running = hash;
+      if (routed === "true" && !isRouted(shared[name])) staleRoutes.add(name);
     } catch {
       states.set(name, "missing");
       continue;
@@ -91,7 +94,12 @@ export async function sharedDrift(
     if (!running || running === "<no value>" || !want) states.set(name, "unknown");
     else states.set(name, running === want ? "unchanged" : "drifted");
   }
-  return { states };
+  return { states, staleRoutes };
+}
+
+function isRouted(service: ComposeService | undefined): boolean {
+  const enable = service?.labels?.["traefik.enable"];
+  return enable === "true" || (enable as unknown) === true;
 }
 
 /**
@@ -161,7 +169,7 @@ export async function reconcileSharedServices(
   },
 ): Promise<SharedOutcome[]> {
   const { shared, project, composeFileArgs, cwd, exec, timeout, log } = opts;
-  const { states, error } = await sharedDrift(opts);
+  const { states, staleRoutes, error } = await sharedDrift(opts);
   if (error) log(`[deploy] Could not read shared service definitions — ${error}`);
 
   const containers = new Map(
@@ -194,13 +202,19 @@ export async function reconcileSharedServices(
       continue;
     }
 
+    // Traefik keeps routing to a stale label, so a held data store is recreated to drop it.
+    const staleRoute = staleRoutes.has(name);
     const policy = sharedPolicy(service);
-    if (policy.action === "hold") {
+    if (policy.action === "hold" && !staleRoute) {
       outcomes.push({ service: name, result: "held", reason: policy.reason });
       continue;
     }
 
-    log(`[deploy] Recreating shared service ${name} — its definition changed`);
+    log(
+      staleRoute
+        ? `[deploy] Recreating shared service ${name} — it still carries Traefik routing it no longer has`
+        : `[deploy] Recreating shared service ${name} — its definition changed`,
+    );
     try {
       await exec(
         ["compose", ...composeFileArgs, "-p", project, "up", "-d", "--no-deps", "--pull", "never", name],
