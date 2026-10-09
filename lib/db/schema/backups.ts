@@ -142,6 +142,8 @@ export const backups = pgTable("backup", {
   // Paths this archive left out, relative to the volume root. Restore keeps the live copies.
   // Recorded per archive and never re-derived, or dropped patterns lose data.
   excludedPaths: jsonb("excluded_paths").$type<string[]>(),
+  // User tables in the source database at backup time. Null when not counted.
+  sourceTableCount: integer("source_table_count"),
   // Restore drill results.
   verifiedAt: timestamp("verified_at"),
   verifyOutcome: text("verify_outcome"),

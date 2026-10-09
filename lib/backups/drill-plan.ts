@@ -15,6 +15,8 @@ export type ScratchDatabase = {
   restoreArgv: string[];
   /** Prints a single number: how much structure the restore created. */
   countArgv: string[];
+  /** Prints how many tables named `monitor` exist. Zero fails the drill. */
+  requiredTableArgv?: string[];
 };
 
 // TCP reaches only the final server; the init server listens on the socket before root has its password.
@@ -80,10 +82,30 @@ export function scratchDatabaseFor(
   return null;
 }
 
+/** Scratch MariaDB for an Uptime Kuma archive. The restore reads the gzipped tar on stdin. */
+export function kumaMariadbPlan(): ScratchDatabase {
+  const plan = scratchDatabaseFor("mariadb", "mariadb:11", [])!;
+  const client = 'MYSQL_PWD="$MARIADB_ROOT_PASSWORD" exec "$(command -v mariadb || command -v mysql)" -u root';
+  const query = (sql: string) => ["sh", "-c", `${client} -N -B -e "${sql}"`];
+  return {
+    ...plan,
+    restoreArgv: [
+      "sh", "-c",
+      `tar -xO ${KUMA_DUMP_DIR + "/kuma.sql"} > /tmp/dump && ${client} < /tmp/dump`,
+    ],
+    countArgv: query("SELECT count(*) FROM information_schema.tables WHERE table_schema = 'kuma'"),
+    requiredTableArgv: query(
+      "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'kuma' AND table_name = 'monitor'",
+    ),
+  };
+}
+
 /** Whether a restored copy counts as verified. Exiting 0 having created nothing fails. */
 export function judgeDrill(input: {
   restoreExitCode: number;
   objectCount: number | null;
+  /** Tables in the source at backup time. Null for backups that didn't record it. */
+  sourceTableCount?: number | null;
 }): { outcome: DrillOutcome; detail: string } {
   if (input.restoreExitCode !== 0) {
     return { outcome: "failed", detail: `restore exited ${input.restoreExitCode}` };
@@ -92,6 +114,12 @@ export function judgeDrill(input: {
     return { outcome: "failed", detail: "restored copy could not be inspected" };
   }
   if (input.objectCount <= 0) {
+    if (input.sourceTableCount === 0) {
+      return { outcome: "verified", detail: "database is empty (no tables at backup time)" };
+    }
+    if (input.sourceTableCount == null) {
+      return { outcome: "failed", detail: "restore created no tables; the source may be empty" };
+    }
     return { outcome: "failed", detail: "restore applied cleanly but created no tables" };
   }
   return { outcome: "verified", detail: `${input.objectCount} table(s) restored` };
