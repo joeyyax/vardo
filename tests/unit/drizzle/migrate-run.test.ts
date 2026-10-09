@@ -132,7 +132,6 @@ describe.skipIf(!conn)("migrate run against a scratch database", () => {
     sql = postgres(scratchUrl, { max: 1, onnotice: () => {} });
   }, 60_000);
 
-  // Each DROP DATABASE waits on a checkpoint, slow while the full suite runs.
   afterAll(async () => {
     await sql?.end({ timeout: 1 });
     for (const name of [dbName, ...extras]) {
