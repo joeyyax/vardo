@@ -47,7 +47,7 @@ import { environmentDomains, withoutEnvironmentHosts } from "./environment-domai
 import { loadEnvironmentEnv } from "./environment-env";
 import { productionHostRefs } from "@/lib/env/environment-env";
 import { dockerEnv } from "@/lib/docker/docker-env";
-import { createStageTimings, formatTimings, STAGE_PHASE } from "./stage-timings";
+import { createStageTimings, formatTimings, STAGE_PHASE, type StageTimings } from "./stage-timings";
 
 export type { DeployStage } from "./deploy-logger";
 
@@ -445,6 +445,7 @@ export async function runDeployment(
         : undefined,
 
       app: app as DeployContext["app"],
+      projectName: projectRow?.name,
       org: org ?? null,
       orgTrusted,
       projectAllowBindMounts,
@@ -676,10 +677,19 @@ export async function runDeployment(
       metadata: { deploymentId, error: message },
     }).catch(() => {});
 
-    sendDeployNotification(
-      { id: opts.appId, name: "", displayName: "", organizationId: opts.organizationId, domains: [] },
-      deploymentId, false, durationMs, message
-    ).catch(() => {});
+    sendDeployNotification({
+      app: ctx?.app ?? { id: opts.appId, name: "", displayName: "", organizationId: opts.organizationId, domains: [] },
+      deploymentId,
+      success: false,
+      durationMs,
+      errorMessage: message,
+      ctx,
+      trigger: opts.trigger,
+      stageTimings: timer.snapshot(),
+      failedStage: blamed,
+      logLines,
+      serving: keptNewSlot ? "new" : undefined,
+    }).catch(() => {});
 
     await streamLogger.flush();
     return { deploymentId, success: false, log: logLines.join("\n"), durationMs, status: "failed", error: message };
@@ -697,50 +707,118 @@ export async function keepProvenSlot(ctx: DeployContext, reached: DeployStage): 
   return !(await ctx.oldSlotServing().catch(() => false));
 }
 
-export async function sendDeployNotification(
-  app: { id: string; name: string; displayName: string; organizationId?: string; domains: { domain: string }[] },
-  deploymentId: string,
-  success: boolean,
-  durationMs: number,
-  errorMessage?: string,
-) {
+export type DeployNotice = {
+  app: { id: string; name: string; displayName: string; organizationId?: string; domains: { domain: string }[]; gitUrl?: string | null; gitBranch?: string | null };
+  deploymentId: string;
+  success: boolean;
+  durationMs: number;
+  errorMessage?: string;
+  ctx?: DeployContext;
+  trigger?: DeployOpts["trigger"];
+  stageTimings?: StageTimings;
+  /** Stage the deploy failed in. */
+  failedStage?: string;
+  /** The deploy log so far, already redacted. */
+  logLines?: string[];
+  serving?: "previous" | "new" | "none";
+};
+
+/** What serves a failed deploy's environment: a newer successful deploy, or nothing. */
+async function servingAfterFailure(appId: string, deploymentId: string, environmentId: string | null): Promise<"previous" | "none"> {
+  const previous = await db.query.deployments.findFirst({
+    where: and(
+      eq(deployments.appId, appId),
+      eq(deployments.status, "success"),
+      ne(deployments.id, deploymentId),
+      ...(environmentId ? [eq(deployments.environmentId, environmentId)] : []),
+    ),
+    columns: { id: true },
+  });
+  return previous ? "previous" : "none";
+}
+
+export async function sendDeployNotification(notice: DeployNotice) {
+  const { deploymentId, success, durationMs, errorMessage, ctx } = notice;
   try {
-    if (!app.organizationId) return;
+    const organizationId = notice.app.organizationId;
+    if (!organizationId) return;
     const { emit } = await import("@/lib/notifications/dispatch");
-    const deployment = await db.query.deployments.findFirst({ where: eq(deployments.id, deploymentId), columns: { gitSha: true, gitMessage: true, triggeredBy: true } });
+    const deployment = await db.query.deployments.findFirst({
+      where: eq(deployments.id, deploymentId),
+      columns: { gitSha: true, gitMessage: true, triggeredBy: true, trigger: true, slot: true, environmentId: true },
+    });
+
+    // A deploy that failed before loading its app has no names yet.
+    let app = notice.app;
+    if (!app.name) {
+      const row = await db.query.apps.findFirst({
+        where: eq(apps.id, app.id),
+        columns: { name: true, displayName: true, gitUrl: true, gitBranch: true },
+        with: { domains: { columns: { domain: true } } },
+      });
+      if (row) app = { ...app, ...row, domains: row.domains };
+    }
+
     let triggeredByName: string | undefined;
     if (deployment?.triggeredBy) { const { user: userTable } = await import("@/lib/db/schema"); const u = await db.query.user.findFirst({ where: eq(userTable.id, deployment.triggeredBy), columns: { name: true, email: true } }); triggeredByName = u?.name || u?.email || undefined; }
     const duration = durationMs < 1000 ? `${durationMs}ms` : `${Math.round(durationMs / 1000)}s`;
-    const domain = app.domains[0]?.domain;
-    const projectName = app.displayName || app.name;
+    const domainList = app.domains.map((d) => d.domain);
+    const displayName = app.displayName || app.name;
+
+    const { repoWebUrl } = await import("@/lib/email/format");
+    const details = {
+      appName: app.name || undefined,
+      project: ctx?.projectName,
+      environment: ctx?.envName,
+      domains: domainList,
+      trigger: notice.trigger ?? deployment?.trigger,
+      gitAuthor: ctx?.gitAuthor,
+      gitBranch: ctx?.envBranchOverride || app.gitBranch || undefined,
+      repoUrl: repoWebUrl(app.gitUrl) ?? undefined,
+      slot: ctx && !ctx.isLocalEnv ? ctx.newSlot : deployment?.slot ?? undefined,
+      previousSlot: ctx?.activeSlot ?? undefined,
+      durationMs,
+      stageTimings: notice.stageTimings,
+    };
+    const gitSha = deployment?.gitSha ?? ctx?.gitSha ?? undefined;
+    const gitMessage = deployment?.gitMessage ?? ctx?.gitMessage ?? undefined;
 
     if (success) {
-      emit(app.organizationId, {
+      emit(organizationId, {
         type: "deploy.success",
-        title: `Deploy successful: ${projectName}`,
-        message: `${projectName} was deployed successfully in ${duration}.`,
-        projectName,
+        title: `Deploy successful: ${displayName}`,
+        message: `${displayName} was deployed successfully in ${duration}.`,
+        projectName: displayName,
         appId: app.id,
         deploymentId,
         duration,
-        domain,
-        gitSha: deployment?.gitSha ?? undefined,
-        gitMessage: deployment?.gitMessage ?? undefined,
+        domain: domainList[0],
+        gitSha,
+        gitMessage,
         triggeredBy: triggeredByName,
+        ...details,
       });
     } else {
-      emit(app.organizationId, {
+      const { relevantLogTail, crashReason } = await import("./deploy-log-tail");
+      const lines = notice.logLines ?? [];
+      const serving = notice.serving ?? (await servingAfterFailure(app.id, deploymentId, deployment?.environmentId ?? null).catch(() => undefined));
+      emit(organizationId, {
         type: "deploy.failed",
-        title: `Deploy failed: ${projectName}`,
+        title: `Deploy failed: ${displayName}`,
         message: errorMessage || "Deployment failed with an unknown error.",
-        projectName,
+        projectName: displayName,
         appId: app.id,
         deploymentId,
-        domain,
-        gitSha: deployment?.gitSha ?? undefined,
-        gitMessage: deployment?.gitMessage ?? undefined,
+        domain: domainList[0],
+        gitSha,
+        gitMessage,
         triggeredBy: triggeredByName,
         errorMessage,
+        failedStage: notice.failedStage,
+        crashReason: crashReason(lines),
+        logTail: relevantLogTail(lines),
+        serving,
+        ...details,
       });
     }
   } catch (err) { logger.child("notifications").error("Deploy notification error:", err); }

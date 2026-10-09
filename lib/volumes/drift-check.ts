@@ -76,6 +76,7 @@ export async function runPostDeployDriftCheck(opts: DriftCheckOpts): Promise<voi
     }
 
     let totalDrift = 0;
+    const perVolume: { name: string; modified: number; added: number; missing: number }[] = [];
 
     for (const vol of appVolumes) {
       const dockerVolumeName = dockerVolumes.get(vol.mountPath);
@@ -100,6 +101,7 @@ export async function runPostDeployDriftCheck(opts: DriftCheckOpts): Promise<voi
         totalDrift += driftCount;
 
         if (driftCount > 0) {
+          perVolume.push({ name: vol.name, modified: diff.modified.length, added: diff.addedOnDisk.length, missing: diff.missingFromDisk.length });
           log?.(
             `[drift] Volume '${vol.name}': ${driftCount} unignored change(s) (${diff.modified.length} modified, ${diff.addedOnDisk.length} added, ${diff.missingFromDisk.length} missing)`,
           );
@@ -121,6 +123,7 @@ export async function runPostDeployDriftCheck(opts: DriftCheckOpts): Promise<voi
           appId,
           appName,
           totalDrift,
+          volumes: perVolume,
         });
       } catch {
         // Non-fatal.

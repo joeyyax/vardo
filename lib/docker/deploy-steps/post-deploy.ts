@@ -451,7 +451,15 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
     metadata: { deploymentId: ctx.deploymentId, durationMs },
   }).catch(() => {});
 
-  sendDeployNotification(app, ctx.deploymentId, true, durationMs).catch(() => {});
+  sendDeployNotification({
+    app,
+    deploymentId: ctx.deploymentId,
+    success: true,
+    durationMs,
+    ctx,
+    trigger: ctx.trigger,
+    stageTimings: ctx.timer?.snapshot(),
+  }).catch(() => {});
 
   // Auto-rollback can't watch Vardo itself; the watcher dies with the slot.
   if (app.autoRollback && isSelfApp(app.name) && activeSlot) {

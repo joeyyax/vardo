@@ -140,6 +140,11 @@ async function handlePost(_req: NextRequest, { params }: RouteParams) {
       backupsFailed: data.backups.failed,
       cronTotal: data.cron.totalFailures,
       cronFailed: data.cron.totalFailures,
+      backupsSucceeded: data.backups.succeeded,
+      cronAffectedJobs: data.cron.affectedJobs,
+      diskWriteAlerts: data.alerts.diskWriteAlerts,
+      volumeDrifts: data.alerts.volumeDrifts,
+      projects: data.projects,
     };
 
     const channels = await db.query.notificationChannels.findMany({

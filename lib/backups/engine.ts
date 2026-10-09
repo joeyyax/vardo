@@ -1211,14 +1211,15 @@ export async function runBackup(
     } else if (job.organizationId && ((hasFailures && job.notifyOnFailure) || (allSuccess && job.notifyOnSuccess))) {
       const { emit } = await import("@/lib/notifications/dispatch");
       const names = jobApps.map((bja) => bja.app.name).join(", ") || job.name;
+      const runMs = results.reduce((sum, r) => sum + r.durationMs, 0);
       if (hasFailures) {
         const problems = [...failed, ...skipped];
         const message = failed.length > 0
           ? `${failed.length} of ${results.length} backup(s) failed for: ${names}${skippedNote}`
           : `Nothing was captured for: ${names}${skippedNote}`;
-        emit(job.organizationId, { type: "backup.failed", title: `Backup failed: ${job.name}`, message, jobId: job.id, jobName: job.name, failedCount: problems.length, totalCount: results.length, errors: problems.map((r) => `${r.volumeName}: ${r.error}`).join("; ") });
+        emit(job.organizationId, { type: "backup.failed", title: `Backup failed: ${job.name}`, message, jobId: job.id, jobName: job.name, failedCount: problems.length, totalCount: results.length, errors: problems.map((r) => `${r.volumeName}: ${r.error}`).join("; "), durationMs: runMs, failures: problems.map((r) => ({ name: r.volumeName, error: r.error ?? r.outcome })) });
       } else {
-        emit(job.organizationId, { type: "backup.success", title: `Backup successful: ${job.name}`, message: `${succeeded.length} backup(s) completed for: ${names}${skippedNote}`, jobId: job.id, jobName: job.name, totalCount: results.length, totalSize: results.reduce((sum, r) => sum + r.sizeBytes, 0) });
+        emit(job.organizationId, { type: "backup.success", title: `Backup successful: ${job.name}`, message: `${succeeded.length} backup(s) completed for: ${names}${skippedNote}`, jobId: job.id, jobName: job.name, totalCount: results.length, totalSize: results.reduce((sum, r) => sum + r.sizeBytes, 0), durationMs: runMs, sources: succeeded.map((r) => ({ name: r.volumeName, sizeBytes: r.sizeBytes })), skippedCount: allSkipped.length });
       }
     } else if (!job.organizationId) {
       if (hasFailures && job.notifyOnFailure) {

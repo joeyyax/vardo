@@ -63,6 +63,11 @@ export async function tickDigestJobs(): Promise<void> {
           backupsFailed: data.backups.failed,
           cronTotal: data.cron.totalFailures,
           cronFailed: data.cron.totalFailures,
+          backupsSucceeded: data.backups.succeeded,
+          cronAffectedJobs: data.cron.affectedJobs,
+          diskWriteAlerts: data.alerts.diskWriteAlerts,
+          volumeDrifts: data.alerts.volumeDrifts,
+          projects: data.projects,
         });
 
         log.info(`Digest sent for org "${org.name}"`);

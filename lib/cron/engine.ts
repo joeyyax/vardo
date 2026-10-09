@@ -207,6 +207,9 @@ export async function tickCronJobs(): Promise<void> {
           appId: job.app.id,
           projectName: job.app.displayName || job.app.name,
           durationMs: result.durationMs,
+          schedule: job.schedule,
+          command: job.command,
+          logTail: result.log.split("\n").filter((l) => l.trim()).slice(-20),
         });
       } catch (err) {
         log.error(`Failed to send notification for ${job.name}:`, err);
