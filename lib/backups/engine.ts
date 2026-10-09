@@ -1,3 +1,4 @@
+import { withBulkWrite } from "@/lib/metrics/bulk-write";
 import { db } from "@/lib/db";
 import {
   backupJobs,
@@ -1540,7 +1541,7 @@ async function restartAfterRestore(kind: DumpSpec["kind"], containerId: string, 
 }
 
 /** Restore a backup by its archive format. */
-export async function restoreBackup(
+async function restoreBackupUnmarked(
   backupId: string,
   opts: {
     /** Restore an archive from a different master key. Its env vars stay unreadable. */
@@ -1822,6 +1823,14 @@ export async function restoreBackup(
       // best effort
     }
   }
+}
+
+export async function restoreBackup(
+  backupId: string,
+  opts: Parameters<typeof restoreBackupUnmarked>[1] = {},
+): Promise<{ success: boolean; log: string }> {
+  const row = await db.query.backups.findFirst({ where: eq(backups.id, backupId), columns: { appId: true } });
+  return withBulkWrite(row?.appId, () => restoreBackupUnmarked(backupId, opts));
 }
 
 /** Pre-signed download URL for an archive. Null when the backend can't sign or the archive is encrypted. */

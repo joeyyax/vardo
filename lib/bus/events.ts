@@ -117,6 +117,10 @@ export type DiskWriteAlertEvent = {
   title: string;
   message: string;
   appId: string;
+  appName?: string;
+  projectName?: string;
+  composeService?: string;
+  dataEngine?: boolean;
   containerName: string;
   containerId: string;
   writtenBytes: number;
