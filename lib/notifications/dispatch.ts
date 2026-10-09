@@ -9,6 +9,7 @@ import type { BusEvent, BusEventType } from "@/lib/bus";
 import { logger } from "@/lib/logger";
 import { fetchOrgMembers, fetchEventPrefs, resolveRecipients } from "./resolve-recipients";
 import { isUiOnlyEvent } from "./ui-only";
+import { isConsumedOrg } from "./consumer-state";
 
 const log = logger.child("notifications");
 
@@ -74,6 +75,7 @@ async function handleChannelFailure(
 /** Dispatches a bus event to an org's matching notification channels. */
 function dispatchToChannels(orgId: string, event: BusEvent): void {
   if (isUiOnlyEvent(event)) return;
+  if (isConsumedOrg(orgId)) return;
 
   Promise.resolve().then(async () => {
     try {
@@ -116,7 +118,7 @@ function dispatchToChannels(orgId: string, event: BusEvent): void {
   });
 }
 
-// Fallback for direct dispatch; the stream consumer starts in register.ts.
+// Delivers for orgs the stream consumer isn't reading.
 onEmit("dispatch", dispatchToChannels);
 
 // Import emit from here so the dispatch hook registers as a side effect.

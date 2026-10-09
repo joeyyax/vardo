@@ -45,6 +45,10 @@ export class EmailNotificationChannel implements NotificationChannel {
       : appUrl;
 
     switch (event.type) {
+      case "deploy.status":
+      case "backup.progress":
+        return null;
+
       case "deploy.success":
         return DeploySuccessEmail({
           projectName: event.projectName || "Unknown",

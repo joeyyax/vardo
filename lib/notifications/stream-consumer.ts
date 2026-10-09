@@ -18,6 +18,7 @@ import {
   resolveRecipients,
 } from "./resolve-recipients";
 import { isUiOnlyEvent } from "./ui-only";
+import { markConsumedOrgs, clearConsumedOrgs } from "./consumer-state";
 import { logger } from "@/lib/logger";
 
 const log = logger.child("notifications-consumer");
@@ -146,17 +147,25 @@ export async function startNotificationConsumer(): Promise<void> {
 
   log.info(`Starting notification consumer for ${streamKeys.length} org stream(s)`);
 
-  stopFn = await consumeGroup({
-    group: CONSUMER_GROUP,
-    consumer: CONSUMER_NAME,
-    keys: streamKeys,
-    handler: async (streamKey, entry) => {
-      const parsed = parseEventEntry(streamKey, entry);
-      if (!parsed) return; // Skip unparseable entries (ACK them to move on)
+  // Must precede consumeGroup, or the direct hook double-sends.
+  markConsumedOrgs(orgs.map((org) => org.id));
 
-      await dispatchEvent(parsed.orgId, parsed.event);
-    },
-  });
+  try {
+    stopFn = await consumeGroup({
+      group: CONSUMER_GROUP,
+      consumer: CONSUMER_NAME,
+      keys: streamKeys,
+      handler: async (streamKey, entry) => {
+        const parsed = parseEventEntry(streamKey, entry);
+        if (!parsed) return; // Skip unparseable entries (ACK them to move on)
+
+        await dispatchEvent(parsed.orgId, parsed.event);
+      },
+    });
+  } catch (err) {
+    clearConsumedOrgs();
+    throw err;
+  }
 }
 
 /** Stops the consumer after in-progress deliveries drain. */
@@ -165,6 +174,7 @@ export async function stopNotificationConsumer(): Promise<void> {
     log.info("Stopping notification consumer...");
     await stopFn();
     stopFn = null;
+    clearConsumedOrgs();
     log.info("Notification consumer stopped");
   }
 }
