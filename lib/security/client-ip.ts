@@ -2,7 +2,7 @@
 // CF-Connecting-IP counts only when Traefik's own peer was a Cloudflare edge, a cloudflared tunnel or VARDO_TRUSTED_PROXIES (#902).
 
 import { isIP } from "net";
-import { cidrMatcher, cloudflareTrustEnabled } from "@/lib/cloudflare-ips";
+import { cidrMatcher, cloudflareTrustEnabled, trustedProxyRanges } from "@/lib/cloudflare-ips";
 import { dockerRequest } from "@/lib/docker/client";
 import { BUNDLED_RANGES, currentCloudflareRanges } from "@/lib/docker/cloudflare-only";
 
@@ -86,7 +86,7 @@ async function loadTunnels(): Promise<Set<string>> {
 /** Hops whose CF-Connecting-IP is trusted. Ranges and tunnels refresh together; a miss refreshes tunnels, but no more often than MISS_REFRESH_MS. */
 async function cloudflareProxies(opts: { refresh?: boolean } = {}): Promise<(ip: string) => boolean> {
   const source = process.env.VARDO_TRUSTED_PROXIES ?? "";
-  if (source !== manual.source) manual = { source, match: cidrMatcher(source.split(",")) };
+  if (source !== manual.source) manual = { source, match: cidrMatcher(trustedProxyRanges()) };
   const listed = manual.match;
   if (!cloudflareTrustEnabled()) return listed;
 

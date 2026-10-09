@@ -1,4 +1,5 @@
 import { BlockList, isIP } from "net";
+import { logger } from "@/lib/logger";
 
 /**
  * Cloudflare IPv4 CIDR ranges.
@@ -83,4 +84,35 @@ export function cidrMatcher(ranges: readonly string[]): (ip: string) => boolean 
 export function cloudflareTrustEnabled(env: Record<string, string | undefined> = process.env): boolean {
   const value = env.VARDO_TRUST_CLOUDFLARE?.trim().toLowerCase();
   return value !== "false" && value !== "0";
+}
+
+type Env = Record<string, string | undefined>;
+
+/** VARDO_TRUSTED_PROXIES as CIDRs, bare addresses widened to /32 or /128, with the entries that aren't IPv4, IPv6 or a CIDR. */
+export function parseTrustedProxies(value: string | undefined): { ranges: string[]; invalid: string[] } {
+  const ranges: string[] = [];
+  const invalid: string[] = [];
+  for (const entry of (value ?? "").split(",").map((e) => e.trim()).filter(Boolean)) {
+    const [addr, prefix, extra] = entry.split("/");
+    const family = isIP(addr);
+    const max = family === 4 ? 32 : 128;
+    if (!family || extra !== undefined) invalid.push(entry);
+    else if (prefix === undefined) ranges.push(`${addr}/${max}`);
+    else if (/^\d{1,3}$/.test(prefix) && Number(prefix) <= max) ranges.push(`${addr}/${Number(prefix)}`);
+    else invalid.push(entry);
+  }
+  return { ranges: [...new Set(ranges)], invalid };
+}
+
+let warnedFor: string | undefined;
+
+/** The valid VARDO_TRUSTED_PROXIES entries; invalid ones are skipped and logged once per value. */
+export function trustedProxyRanges(env: Env = process.env): string[] {
+  const value = env.VARDO_TRUSTED_PROXIES;
+  const { ranges, invalid } = parseTrustedProxies(value);
+  if (invalid.length > 0 && value !== warnedFor) {
+    warnedFor = value;
+    logger.child("trusted-proxies").warn(`Skipping invalid VARDO_TRUSTED_PROXIES entries: ${invalid.join(", ")}`);
+  }
+  return ranges;
 }

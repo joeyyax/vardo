@@ -1,11 +1,11 @@
-// The built-in `cloudflare-only` middleware: an ipAllowList of Cloudflare's ranges, refreshed daily.
+// The built-in `cloudflare-only` middleware: an ipAllowList of Cloudflare's ranges plus VARDO_TRUSTED_PROXIES, refreshed daily.
 
 import { isIP } from "net";
 import { mkdir, readFile, rename, writeFile } from "fs/promises";
 import { join } from "path";
 import YAML from "yaml";
 import { TRAEFIK_DYNAMIC_DIR } from "@/lib/paths";
-import { CLOUDFLARE_IPV4_RANGES, CLOUDFLARE_IPV6_RANGES } from "@/lib/cloudflare-ips";
+import { CLOUDFLARE_IPV4_RANGES, CLOUDFLARE_IPV6_RANGES, parseTrustedProxies, trustedProxyRanges } from "@/lib/cloudflare-ips";
 import { logger } from "@/lib/logger";
 
 const log = logger.child("cloudflare-only");
@@ -40,15 +40,39 @@ export function parseRangeList(body: string, family: 4 | 6): { ranges: string[] 
   return { ranges: [...new Set(ranges)] };
 }
 
-export function renderCloudflareOnly(ranges: CloudflareRanges): string {
+const EXTRAS_PREFIX = "# VARDO_TRUSTED_PROXIES: ";
+
+function allowed(ranges: CloudflareRanges, extras: readonly string[]): string[] {
+  return [...new Set([...ranges.v4, ...ranges.v6, ...extras])];
+}
+
+/** Extras are valid CIDRs from trustedProxyRanges, recorded in a comment so a failed fetch can tell them apart. */
+export function renderCloudflareOnly(ranges: CloudflareRanges, extras: readonly string[] = []): string {
   const config = {
     http: {
       middlewares: {
-        "cloudflare-only": { ipAllowList: { sourceRange: [...ranges.v4, ...ranges.v6] } },
+        "cloudflare-only": { ipAllowList: { sourceRange: allowed(ranges, extras) } },
       },
     },
   };
-  return `# Written by Vardo from cloudflare.com/ips. Do not edit.\n${YAML.stringify(config)}`;
+  const header = "# Written by Vardo from cloudflare.com/ips and VARDO_TRUSTED_PROXIES. Do not edit.\n";
+  const extrasLine = extras.length > 0 ? `${EXTRAS_PREFIX}${extras.join(",")}\n` : "";
+  return `${header}${extrasLine}${YAML.stringify(config)}`;
+}
+
+/** The VARDO_TRUSTED_PROXIES entries a rendered file was written with. */
+export function readRenderedExtras(content: string): string[] {
+  const line = content.split("\n").find((l) => l.startsWith(EXTRAS_PREFIX));
+  return line ? parseTrustedProxies(line.slice(EXTRAS_PREFIX.length)).ranges : [];
+}
+
+/** A rendered file's Cloudflare ranges, without its extras, or null when it isn't one Vardo would write. */
+function renderedCloudflareRanges(content: string): string[] | null {
+  const all = readRenderedRanges(content);
+  if (!all) return null;
+  const extras = new Set(readRenderedExtras(content));
+  const cloudflare = all.filter((r) => !extras.has(r));
+  return cloudflare.length > 0 ? cloudflare : null;
 }
 
 /** The ranges a rendered file allows, or null when it isn't one Vardo would write. */
@@ -89,41 +113,46 @@ async function readCurrent(path: string): Promise<string | null> {
 }
 
 /**
- * Refreshes the middleware file from cloudflare.com. A failed fetch or a list that doesn't
- * validate keeps the last good file; with no file yet, the bundled ranges are written.
+ * Refreshes the middleware file from cloudflare.com and VARDO_TRUSTED_PROXIES. A failed fetch or a list
+ * that doesn't validate keeps the last good Cloudflare ranges; with no file yet, the bundled ranges are written.
  */
 export async function syncCloudflareOnly(opts: {
   dir?: string;
   fetchRanges?: () => Promise<CloudflareRanges>;
+  env?: Record<string, string | undefined>;
 } = {}): Promise<"updated" | "unchanged" | "kept" | "bundled" | "skipped"> {
   const dir = opts.dir ?? TRAEFIK_DYNAMIC_DIR;
   const path = join(dir, CLOUDFLARE_ONLY_FILE);
   const current = await readCurrent(path);
-  const currentGood = current !== null && readRenderedRanges(current) !== null;
+  const lastGood = current !== null ? renderedCloudflareRanges(current) : null;
+  const extras = trustedProxyRanges(opts.env);
 
   let ranges: CloudflareRanges;
-  let outcome: "updated" | "bundled";
+  let outcome: "updated" | "bundled" | "kept";
   try {
     ranges = await (opts.fetchRanges ?? fetchCloudflareRanges)();
     outcome = "updated";
   } catch (err) {
-    if (currentGood) {
-      log.warn(`Keeping the last good Cloudflare ranges: ${err instanceof Error ? err.message : String(err)}`);
-      return "kept";
+    const reason = err instanceof Error ? err.message : String(err);
+    if (lastGood) {
+      log.warn(`Keeping the last good Cloudflare ranges: ${reason}`);
+      ranges = { v4: lastGood.filter((r) => !r.includes(":")), v6: lastGood.filter((r) => r.includes(":")) };
+      outcome = "kept";
+    } else {
+      log.warn(`Writing bundled Cloudflare ranges: ${reason}`);
+      ranges = BUNDLED_RANGES;
+      outcome = "bundled";
     }
-    log.warn(`Writing bundled Cloudflare ranges: ${err instanceof Error ? err.message : String(err)}`);
-    ranges = BUNDLED_RANGES;
-    outcome = "bundled";
   }
 
-  const content = renderCloudflareOnly(ranges);
+  const content = renderCloudflareOnly(ranges, extras);
   // Validate what Traefik will read before it replaces anything.
   const rendered = readRenderedRanges(content);
-  if (!rendered || rendered.length !== ranges.v4.length + ranges.v6.length) {
+  if (!rendered || rendered.length !== allowed(ranges, extras).length) {
     log.error("Rendered Cloudflare middleware did not validate; keeping the current file");
     return "kept";
   }
-  if (content === current) return "unchanged";
+  if (content === current) return outcome === "kept" ? "kept" : "unchanged";
 
   try {
     await mkdir(dir, { recursive: true });
@@ -138,10 +167,10 @@ export async function syncCloudflareOnly(opts: {
   return outcome;
 }
 
-/** The ranges the middleware file allows, or the bundled ones without a valid file. */
+/** The Cloudflare ranges the middleware file allows, or the bundled ones without a valid file. */
 export async function currentCloudflareRanges(dir: string = TRAEFIK_DYNAMIC_DIR): Promise<string[]> {
   const content = await readCurrent(join(dir, CLOUDFLARE_ONLY_FILE));
-  return (content !== null && readRenderedRanges(content)) || [...BUNDLED_RANGES.v4, ...BUNDLED_RANGES.v6];
+  return (content !== null && renderedCloudflareRanges(content)) || [...BUNDLED_RANGES.v4, ...BUNDLED_RANGES.v6];
 }
 
 /** Writes the middleware now, then refreshes it daily. Traefik's trusted IPs follow the same list. */
