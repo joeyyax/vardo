@@ -61,7 +61,7 @@ Status: **fixed** (on main or in this branch), **open**, or **not a boundary**. 
 | GitHub token in `.git/config` inside the build context | branch | was written into the origin URL; now a github.com-scoped header via env, `lib/git-integration/clone-auth.ts`, `prepare-repo.ts:409` |
 | App env vars become the Nixpacks and Railpack process env | fixed | a member's `PATH` or `LD_PRELOAD` pointed the spawn at a binary in their cloned repo, running it in the console. App vars now reach builders only as `--env`, `lib/docker/deploy-steps/prepare-repo.ts:240` |
 | Git URL transports | fixed | HTTPS only, `lib/docker/validate.ts:26` |
-| Git clone to internal HTTPS hosts | open, low | `assertSafeGitUrl` doesn't check the host; git follows redirects |
+| Git clone to internal HTTPS hosts | fixed | `assertGitHostAllowed` runs the SSRF guard on the host before clone, and clone and fetch pass `-c http.followRedirects=false`, `lib/docker/git-host.ts`, `prepare-repo.ts:371`. LAN git hosts need `VARDO_OUTBOUND_ALLOWLIST`. Resolution isn't pinned to git's own connect. |
 | Push webhook deploys every app with that git URL in any org | open, low | `webhook/route.ts:89-94` doesn't scope by installation. Only rebuilds code that's already public to the cloner. |
 | Hooks `bash -c` | not applicable | framework deleted |
 
@@ -88,8 +88,8 @@ Fixed by #886. For untrusted orgs, `assertComposeWithinApp` (`lib/docker/compose
 | --- | --- | --- |
 | Env vars in API responses | fixed | masked for members; `?reveal=true` and MCP `vardo_get_env_vars` need `env.reveal` (admins) and are logged, `apps/[appId]/env-vars/route.ts`, `organizations/[orgId]/env-vars/route.ts`, `lib/mcp/tools/get-env-vars.ts` (#813) |
 | Backup target credentials | fixed | `lib/backups/target-config.ts:139` |
-| Notification webhook `url` returned in plaintext | open, low | only `secret` and Slack URL are masked, `lib/notifications/mask-config.ts:8-21`. Discord URLs carry a token. |
-| Deploy log masking | partial | one sanitized sink, `lib/docker/deploy-logger.ts:54-60`, but pattern-only: app env values aren't passed to `redactSecrets`, so a bare value or a name like `STRIPE_KEY` leaks, `lib/redact.ts:8-45` |
+| Notification webhook `url` returned in plaintext | fixed | webhook `url` (Discord and generic) and Slack `webhookUrl` return as `****`; a masked value on PATCH keeps the stored one, `lib/notifications/mask-config.ts`, `notifications/[channelId]/route.ts` |
+| Deploy log masking | fixed | one sanitized sink, `lib/docker/deploy-logger.ts`; the app's env values, org env values and resolved values are redacted by exact match on top of the patterns. Values under 6 characters and common ones (`true`, `production`) are skipped. |
 | Console env reaches compose interpolation | fixed | every docker and compose process inherited `process.env`, and Compose prefers shell vars over the project `.env`, so `${ENCRYPTION_MASTER_KEY}`, `${BETTER_AUTH_SECRET}` or `${DATABASE_URL}` in a tenant compose resolved to the console's values. Now `dockerEnv()`, `lib/docker/docker-env.ts`; `tests/unit/lib/docker/docker-env-guard.test.ts` fails on a call without `env`. |
 | Org invite tokens | fixed | 256-bit, hashed, 7-day expiry, `lib/invitations/token.ts:9` |
 | Mesh invite codes | fixed, low entropy | 32-bit, 15-minute TTL, single use, `lib/mesh/invite.ts:26,78` |
@@ -106,9 +106,9 @@ Guard: `lib/security/ssrf.ts` blocks loopback, RFC 1918, CGNAT, link-local and m
 | Domain monitor, post-deploy health check | branch | followed redirects with plain fetch; now `safeFetch` with the allowlist plus `.<baseDomain>`, `lib/domain-monitoring/monitor.ts:108`, `lib/docker/deploy.ts:719` |
 | Security scanner (headers, file exposure, TLS) | branch | weaker regex list replaced by `ssrf.ts`; requests through `safeFetch` and the guarded lookup, `lib/security/headers.ts:74`, `file-exposure.ts:55`, `tls.ts:29` |
 | `/api/v1/dns-check` `.localhost` branch | branch | any signed-in user could fetch `http://169.254.169.254/x?.localhost`; hostnames only now, `app/api/v1/dns-check/route.ts:26` |
-| Registry token realm from `WWW-Authenticate` | open, blind | `lib/docker/image-updates/registry.ts:119-136` fetches any realm |
+| Registry token realm from `WWW-Authenticate` | fixed | https only, address check and allowlist, fetched through `safeFetch`, `lib/docker/image-updates/registry.ts:118-143` |
 | Backup S3 `endpoint` | open, verify | unvalidated string, `lib/backups/target-config.ts:37` |
-| Git clone host | open, low | see section 4 |
+| Git clone host | fixed | see section 4 |
 | Mesh hub URL from an invite | not a boundary | instance admin only, `app/api/v1/admin/mesh/join/route.ts:81` |
 
 ## 8. A compromised app container
