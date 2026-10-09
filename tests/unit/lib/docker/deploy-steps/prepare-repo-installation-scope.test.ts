@@ -12,7 +12,8 @@ const { cloneEnvs, linked, getInstallationToken } = vi.hoisted(() => ({
 vi.mock("child_process", () => ({
   execFile: (cmd: string, args: string[], opts: { env?: Record<string, string | undefined> }, cb: (e: Error | null, r?: unknown) => void) => {
     if (cmd !== "git") return cb(null, { stdout: "", stderr: "" });
-    const a = args[0] === "-C" ? args.slice(2) : args;
+    let a = args[0] === "-C" ? args.slice(2) : args;
+    while (a[0] === "-c") a = a.slice(2);
     if (a[0] === "remote") return cb(Object.assign(new Error("no repo"), { stderr: "not a git repository" }));
     if (a[0] === "clone") {
       cloneEnvs.push(opts.env ?? {});
@@ -37,6 +38,10 @@ vi.mock("@/lib/paths", () => ({
   PROJECTS_DIR: "/srv/apps",
 }));
 vi.mock("@/lib/docker/app-dir-owner", () => ({ assertAppDirOwnership: vi.fn() }));
+vi.mock("@/lib/docker/git-host", async (orig) => ({
+  ...(await orig<typeof import("@/lib/docker/git-host")>()),
+  assertGitHostAllowed: () => Promise.resolve(),
+}));
 vi.mock("@/lib/config/features", () => ({ isFeatureEnabled: () => false }));
 vi.mock("@/lib/config/host-config", () => ({
   readHostConfig: vi.fn().mockResolvedValue(null),
