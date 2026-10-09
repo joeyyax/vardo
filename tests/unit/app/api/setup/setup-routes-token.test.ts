@@ -5,8 +5,14 @@ import { NextRequest } from "next/server";
 
 // Every setup and restore route refuses without the setup token while no user exists (#888).
 
-const state = vi.hoisted(() => ({ needsSetup: true }));
+const state = vi.hoisted(() => ({ needsSetup: true, admin: true }));
 vi.mock("@/lib/setup", () => ({ needsSetup: async () => state.needsSetup }));
+vi.mock("@/lib/auth/admin", () => {
+  const requireAppAdmin = async () => {
+    if (!state.admin) throw new Error("Forbidden");
+  };
+  return { requireAppAdmin, requireAdminAuth: requireAppAdmin, isAppAdmin: async () => state.admin };
+});
 vi.mock("@/lib/api/with-rate-limit", () => ({
   withRateLimit: (handler: unknown) => handler,
 }));
@@ -70,6 +76,7 @@ async function call(handler: Handler, headers?: Record<string, string>, method =
 
 beforeEach(() => {
   state.needsSetup = true;
+  state.admin = true;
   vi.stubEnv("SETUP_TOKEN", TOKEN);
   vi.stubEnv("NODE_ENV", "production");
 });
@@ -111,6 +118,34 @@ describe("setup routes", () => {
     state.needsSetup = false;
     for (const [method, h] of await handlersOf(rel)) {
       expect(await isRefusal(await call(h, undefined, method)), `${rel} ${method}`).toBe(false);
+    }
+  });
+});
+
+describe("setup config routes after setup", () => {
+  const CONFIG = ["general", "auth", "email", "backup", "github"].map((r) => `${r}/route.ts`);
+
+  async function forbidden(handler: Handler, method: string) {
+    try {
+      const res = await handler(request(method, { "x-setup-token": TOKEN }), { params: Promise.resolve({}) });
+      return res.status === 401 || res.status === 403;
+    } catch (err) {
+      return err instanceof Error && ["Forbidden", "Unauthorized"].includes(err.message);
+    }
+  }
+
+  it.each(CONFIG)("%s refuses a non-admin even with the token", async (rel) => {
+    state.needsSetup = false;
+    state.admin = false;
+    for (const [method, h] of await handlersOf(rel)) {
+      expect(await forbidden(h, method), `${rel} ${method}`).toBe(true);
+    }
+  });
+
+  it.each(CONFIG)("%s lets an admin through", async (rel) => {
+    state.needsSetup = false;
+    for (const [method, h] of await handlersOf(rel)) {
+      expect(await forbidden(h, method), `${rel} ${method}`).toBe(false);
     }
   });
 });

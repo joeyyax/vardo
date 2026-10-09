@@ -11,7 +11,7 @@ Status: **fixed** (on main or in this branch), **open**, or **not a boundary**. 
 | Claim | Status | Evidence |
 | --- | --- | --- |
 | Setup reopens once a user exists | fixed | `lib/setup.ts:26` latches on the first account and never reopens |
-| Setup POSTs are unauthenticated while no user exists | open | `app/api/setup/{general,auth,email,backup,github}/route.ts` skip `requireAdminAuth` when `needsSetup()`. On a fresh public box the first visitor can set GitHub OAuth, email and backup targets, then sign up as admin. |
+| Setup POSTs are unauthenticated while no user exists | fixed | #888: while no user exists, every `app/api/setup/**` handler and first signup refuse without the setup token (`lib/setup-token.ts`, `lib/auth/registration.ts`); the setup UI carries it as the `vardo_setup_token` cookie. After setup the config routes need an instance admin. Covered by `tests/unit/app/api/setup/setup-routes-token.test.ts`. |
 | First signup becomes instance admin | open, by design | `lib/organizations/create-default-org.ts:17`. Concurrent signups give at most one admin. Whoever reaches the box first wins. |
 | Open registration | fixed | defaults to `closed`, `lib/system-settings.ts:320`; `lib/auth/registration.ts:21` |
 | GitHub webhook signature | fixed | mandatory secret, HMAC with `timingSafeEqual`, `app/api/v1/github/webhook/route.ts:35-55` |
