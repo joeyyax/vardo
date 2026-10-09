@@ -3,20 +3,20 @@
 // still capture and record every volume.
 
 import { describe, it, expect, beforeEach, afterAll, vi } from "vitest";
-import { mkdtempSync, writeFileSync, rmSync } from "fs";
+import { mkdtempSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 
 const BACKUPS_ROOT = mkdtempSync(join(tmpdir(), "vardo-busfail-test-"));
 process.env.VARDO_BACKUPS_DIR = BACKUPS_ROOT;
 
-const ARCHIVE_BYTES = Buffer.alloc(512, 7);
 
 const {
   backupJobsFindFirst,
   volumesFindMany,
   backupsFindMany,
   execFileMock,
+  spawnMock,
   uploadMock,
   inserted,
   updated,
@@ -25,6 +25,7 @@ const {
   volumesFindMany: vi.fn(),
   backupsFindMany: vi.fn(),
   execFileMock: vi.fn(),
+  spawnMock: vi.fn(),
   uploadMock: vi.fn(),
   inserted: [] as Record<string, unknown>[],
   updated: [] as { set: Record<string, unknown> }[],
@@ -57,19 +58,23 @@ vi.mock("@/lib/db", () => ({
     }),
   },
 }));
-vi.mock("child_process", () => ({ execFile: execFileMock }));
+vi.mock("child_process", () => ({ execFile: execFileMock, spawn: spawnMock }));
 vi.mock("@/lib/docker/client", () => ({ listContainers: vi.fn(), inspectContainer: vi.fn() }));
 vi.mock("@/lib/docker/resolve-env", () => ({
   resolveDefaultEnv: vi.fn().mockResolvedValue({ id: "env-1", name: "production" }),
 }));
+vi.mock("@/lib/backups/run-lease", () => ({ holdBackupLease: async () => async () => {} }));
 vi.mock("@/lib/logger", () => ({
   logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }) },
 }));
 vi.mock("@/lib/backups/storage-factory", () => ({
-  createBackupStorage: () => ({ upload: uploadMock, delete: vi.fn(), download: vi.fn() }),
+  createBackupStorage: () => ({ uploadStream: uploadMock, delete: vi.fn(), download: vi.fn() }),
 }));
 
 import { runBackup } from "@/lib/backups/engine";
+import { VALID_ARCHIVE, fakeChild, recordingUpload } from "./fake-archive";
+
+const committed: { key: string; bytes: Buffer }[] = [];
 
 afterAll(() => {
   rmSync(BACKUPS_ROOT, { recursive: true, force: true });
@@ -78,17 +83,12 @@ afterAll(() => {
 beforeEach(() => {
   inserted.length = 0;
   updated.length = 0;
-  uploadMock.mockReset().mockResolvedValue({ sizeBytes: 512 });
+  committed.length = 0;
+  uploadMock.mockReset().mockImplementation(recordingUpload(committed));
+  spawnMock.mockReset().mockImplementation(() => fakeChild({ stdout: VALID_ARCHIVE }));
   backupsFindMany.mockReset().mockResolvedValue([]);
   execFileMock.mockReset().mockImplementation((...args: unknown[]) => {
-    const [file, argv] = args as [string, string[]];
     const cb = args[args.length - 1] as (e: unknown, r: unknown) => void;
-    if (file === "docker" && argv[0] === "run") {
-      const mount = argv.find((a) => typeof a === "string" && a.endsWith(":/backup"));
-      if (mount) {
-        writeFileSync(join(mount.slice(0, -":/backup".length), "volume.tar.gz"), ARCHIVE_BYTES);
-      }
-    }
     cb(null, { stdout: "", stderr: "" });
   });
   volumesFindMany.mockReset().mockResolvedValue([
@@ -124,7 +124,7 @@ describe("runBackup — bus unavailable", () => {
       ["data", "success"],
       ["uploads", "success"],
     ]);
-    expect(uploadMock).toHaveBeenCalledTimes(2);
+    expect(committed).toHaveLength(2);
     expect(inserted.every((row) => row.status === "running")).toBe(true);
     expect(updated.filter((u) => u.set.status === "success")).toHaveLength(2);
   });

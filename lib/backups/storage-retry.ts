@@ -104,7 +104,8 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function withRetry<T>(
+/** Retry one operation on transient failures. */
+export async function withRetry<T>(
   operation: string,
   key: string,
   run: () => Promise<T>,
@@ -135,7 +136,8 @@ async function withRetry<T>(
 /** Wrap an adapter so its network operations retry on transient failures. */
 export function withStorageRetry(storage: BackupStorage): BackupStorage {
   const wrapped: BackupStorage = {
-    upload: (key, filePath) => withRetry("upload", key, () => storage.upload(key, filePath)),
+    // Adapters retry the parts they buffer; the stream itself can't be replayed.
+    uploadStream: (key, body, opts) => storage.uploadStream(key, body, opts),
     download: (key, destPath) => withRetry("download", key, () => storage.download(key, destPath)),
     delete: (key) => withRetry("delete", key, () => storage.delete(key)),
     list: (prefix) => withRetry("list", prefix, () => storage.list(prefix)),

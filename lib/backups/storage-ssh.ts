@@ -1,6 +1,9 @@
 // SSH/SCP backup storage adapter.
 
-import { stat, writeFile as fsWriteFile, unlink } from "fs/promises";
+import { spawn } from "child_process";
+import { writeFile as fsWriteFile, unlink } from "fs/promises";
+import { Transform, type Readable } from "stream";
+import { pipeline } from "stream/promises";
 import { nanoid } from "nanoid";
 import { ArchiveMissingError, type BackupStorage, type StoredObject } from "./storage-port";
 import { execFileAsync } from "@/lib/utils/exec";
@@ -62,27 +65,6 @@ function remotePath(config: SshConfig, key: string): string {
   return `${base}/${key}`;
 }
 
-async function ensureRemoteDir(
-  config: SshConfig,
-  remoteDir: string
-): Promise<void> {
-  const { sshFlags, keyFile } = await buildFlags(config);
-  try {
-    await execFileAsync(
-      "ssh",
-      [
-        ...sshFlags,
-        "--",
-        `${config.username}@${config.host}`,
-        "mkdir", "-p", shellEscape(remoteDir),
-      ],
-      { timeout: 30_000 }
-    );
-  } finally {
-    await cleanupKeyFile(keyFile);
-  }
-}
-
 export class SshBackupStorage implements BackupStorage {
   private config: SshConfig;
 
@@ -90,27 +72,62 @@ export class SshBackupStorage implements BackupStorage {
     this.config = config;
   }
 
-  async upload(key: string, filePath: string): Promise<{ sizeBytes: number }> {
+  /** Streams over ssh into a temp name, renamed into place only after the last byte. */
+  async uploadStream(key: string, body: Readable): Promise<{ sizeBytes: number }> {
     const remote = remotePath(this.config, key);
     const remoteDir = remote.substring(0, remote.lastIndexOf("/"));
+    const partial = `${remote}.partial-${nanoid(6)}`;
+    const command = [
+      `mkdir -p ${shellEscape(remoteDir)}`,
+      `cat > ${shellEscape(partial)}`,
+      `mv -f ${shellEscape(partial)} ${shellEscape(remote)}`,
+    ].join(" && ");
 
-    await ensureRemoteDir(this.config, remoteDir);
+    const { sshFlags, keyFile } = await buildFlags(this.config);
+    try {
+      const child = spawn("ssh", [...sshFlags, "--", `${this.config.username}@${this.config.host}`, command], {
+        stdio: ["pipe", "ignore", "pipe"],
+      });
+      let stderr = "";
+      child.stderr.on("data", (chunk) => {
+        if (stderr.length < 8000) stderr += String(chunk);
+      });
+      const exited = new Promise<void>((resolve, reject) => {
+        child.on("error", reject);
+        child.on("close", (code) => {
+          if (code === 0) resolve();
+          else reject(Object.assign(new Error(`ssh upload exited ${code}: ${stderr.trim().slice(0, 500)}`), { stderr }));
+        });
+      });
 
-    const { scpFlags, keyFile } = await buildFlags(this.config);
+      let sizeBytes = 0;
+      const count = new Transform({
+        transform(chunk: Buffer, _enc, cb) {
+          sizeBytes += chunk.length;
+          cb(null, chunk);
+        },
+      });
+      try {
+        await Promise.all([pipeline(body, count, child.stdin), exited]);
+      } catch (err) {
+        child.kill();
+        await this.removeRemote(partial).catch(() => {});
+        throw err;
+      }
+      return { sizeBytes };
+    } finally {
+      await cleanupKeyFile(keyFile);
+    }
+  }
+
+  private async removeRemote(remote: string): Promise<void> {
+    const { sshFlags, keyFile } = await buildFlags(this.config);
     try {
       await execFileAsync(
-        "scp",
-        [
-          ...scpFlags,
-          "--",
-          filePath,
-          `${this.config.username}@${this.config.host}:${shellEscape(remote)}`,
-        ],
-        { timeout: 600_000 }
+        "ssh",
+        [...sshFlags, "--", `${this.config.username}@${this.config.host}`, "rm", "-f", shellEscape(remote)],
+        { timeout: 30_000 },
       );
-
-      const fileInfo = await stat(filePath);
-      return { sizeBytes: fileInfo.size };
     } finally {
       await cleanupKeyFile(keyFile);
     }
@@ -144,23 +161,7 @@ export class SshBackupStorage implements BackupStorage {
   }
 
   async delete(key: string): Promise<void> {
-    const remote = remotePath(this.config, key);
-    const { sshFlags, keyFile } = await buildFlags(this.config);
-
-    try {
-      await execFileAsync(
-        "ssh",
-        [
-          ...sshFlags,
-          "--",
-          `${this.config.username}@${this.config.host}`,
-          "rm", "-f", shellEscape(remote),
-        ],
-        { timeout: 30_000 }
-      );
-    } finally {
-      await cleanupKeyFile(keyFile);
-    }
+    await this.removeRemote(remotePath(this.config, key));
   }
 
   /** Needs GNU find on the remote host. */

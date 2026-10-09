@@ -9,11 +9,10 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vites
 import { mkdtempSync, writeFileSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
+import { randomBytes } from "crypto";
 
 const BACKUPS_ROOT = mkdtempSync(join(tmpdir(), "vardo-runbackup-test-"));
 process.env.VARDO_BACKUPS_DIR = BACKUPS_ROOT;
-
-const ARCHIVE_BYTES = Buffer.alloc(512, 7); // ≥100 bytes so verifyArchive passes
 
 const {
   backupJobsFindFirst,
@@ -21,24 +20,30 @@ const {
   backupsFindMany,
   backupsFindFirst,
   execFileMock,
+  spawnMock,
   emitMock,
   uploadMock,
   listContainersMock,
   resolveDefaultEnvMock,
   inserted,
   updated,
+  leases,
+  volumeSizeMock,
 } = vi.hoisted(() => ({
   backupJobsFindFirst: vi.fn(),
   volumesFindMany: vi.fn(),
   backupsFindMany: vi.fn(),
   backupsFindFirst: vi.fn(),
   execFileMock: vi.fn(),
+  spawnMock: vi.fn(),
   emitMock: vi.fn(),
   uploadMock: vi.fn(),
   listContainersMock: vi.fn(),
   resolveDefaultEnvMock: vi.fn(),
   inserted: [] as Record<string, unknown>[],
   updated: [] as { table: unknown; set: Record<string, unknown> }[],
+  leases: new Set<string>(),
+  volumeSizeMock: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({
@@ -62,44 +67,61 @@ vi.mock("@/lib/db", () => ({
     }),
   },
 }));
-vi.mock("child_process", () => ({ execFile: execFileMock }));
+vi.mock("child_process", () => ({ execFile: execFileMock, spawn: spawnMock }));
 vi.mock("@/lib/notifications/dispatch", () => ({ emit: emitMock }));
 vi.mock("@/lib/docker/client", () => ({
   listContainers: listContainersMock,
   inspectContainer: vi.fn(),
 }));
 vi.mock("@/lib/docker/resolve-env", () => ({ resolveDefaultEnv: resolveDefaultEnvMock }));
+vi.mock("@/lib/docker/disk-snapshot", () => ({ getVolumeSizeBytes: volumeSizeMock }));
+vi.mock("@/lib/backups/run-lease", () => ({
+  holdBackupLease: async (id: string) => {
+    leases.add(id);
+    return async () => {
+      leases.delete(id);
+    };
+  },
+}));
 vi.mock("@/lib/logger", () => ({
   logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }) },
 }));
 vi.mock("@/lib/backups/storage-factory", () => ({
-  createBackupStorage: () => ({ upload: uploadMock, delete: vi.fn(), download: vi.fn() }),
+  createBackupStorage: () => ({ uploadStream: uploadMock, delete: vi.fn(), download: vi.fn() }),
 }));
 
 import { runBackup, runSucceeded } from "@/lib/backups/engine";
 import {
-  ARCHIVE_HAS_FILES_MARKER,
   DIRECTORY_SOURCE_MARKER,
   EMPTY_SOURCE_MARKER,
+  MARKERS_FILE,
+  MIN_VALID_GZIP_BYTES,
 } from "@/lib/backups/archive";
 import { backupJobs } from "@/lib/db/schema";
+import { VALID_ARCHIVE, fakeChild, recordingUpload, tarGz } from "./fake-archive";
 
-// Stands in for docker/bash: writes the archive the engine then verifies.
 const execImpl = (...args: unknown[]) => {
-  const [file, argv] = args as [string, string[]];
   const cb = args[args.length - 1] as (e: unknown, r: unknown) => void;
-
-  if (file === "docker" && argv[0] === "run") {
-    const mount = argv.find((a) => typeof a === "string" && a.endsWith(":/backup"));
-    if (mount) writeFileSync(join(mount.slice(0, -":/backup".length), "volume.tar.gz"), ARCHIVE_BYTES);
-  }
-  if (file === "bash") {
-    const dest = /> "([^"]+)"/.exec(argv[1]);
-    if (dest) writeFileSync(dest[1], ARCHIVE_BYTES);
-  }
-
   cb(null, { stdout: "", stderr: "" });
 };
+
+// Random, so its gzip clears the size floor.
+const DUMP_BYTES = Buffer.from(randomBytes(512).toString("hex"));
+
+// Stands in for the archiving container and dump commands: their stdout is the archive.
+const spawnImpl = (file: string, argv: string[]) => {
+  if (file === "docker" && argv[0] === "run") return fakeChild({ stdout: VALID_ARCHIVE });
+  return fakeChild({ stdout: DUMP_BYTES });
+};
+
+/** What reached storage with a clean end. */
+const committed: { key: string; bytes: Buffer }[] = [];
+
+/** The work dir mounted at /backup in a spawned docker run. */
+function workDirOf(argv: string[]): string {
+  const mount = argv.find((a) => a.endsWith(":/backup"))!;
+  return mount.slice(0, -":/backup".length);
+}
 
 function volume(overrides: Record<string, unknown> = {}) {
   return {
@@ -161,7 +183,7 @@ function emittedOrgs(type: string): string[] {
 }
 
 function dockerRuns(): string[][] {
-  return execFileMock.mock.calls
+  return [...execFileMock.mock.calls, ...spawnMock.mock.calls]
     .filter((c) => c[0] === "docker" && (c[1] as string[])[0] === "run")
     .map((c) => c[1] as string[]);
 }
@@ -171,13 +193,17 @@ afterAll(() => {
 });
 
 beforeAll(() => {
-  uploadMock.mockResolvedValue({ sizeBytes: 512 });
+  uploadMock.mockImplementation(recordingUpload(committed));
 });
 
 beforeEach(() => {
   inserted.length = 0;
   updated.length = 0;
+  committed.length = 0;
+  leases.clear();
+  volumeSizeMock.mockReset().mockResolvedValue(null);
   execFileMock.mockReset().mockImplementation(execImpl);
+  spawnMock.mockReset().mockImplementation(spawnImpl);
   emitMock.mockReset();
   volumesFindMany.mockReset();
   backupsFindMany.mockReset().mockResolvedValue([]);
@@ -201,7 +227,7 @@ describe("runBackup — bind mounts", () => {
     expect(inserted[0].status).toBe("skipped");
     expect(inserted[0].finishedAt).toBeInstanceOf(Date);
     expect(dockerRuns()).toHaveLength(0);
-    expect(uploadMock).not.toHaveBeenCalled();
+    expect(committed).toHaveLength(0);
   });
 
   it("does not report a run where every source was skipped as successful", async () => {
@@ -246,7 +272,7 @@ describe("runBackup — bind mounts", () => {
     const results = await runBackup("job-1");
 
     expect(results[0].outcome).toBe("success");
-    expect(execFileMock.mock.calls.some((c) => c[0] === "bash")).toBe(true);
+    expect(spawnMock.mock.calls.some((c) => c[0] === "bash")).toBe(true);
   });
 });
 
@@ -299,10 +325,7 @@ describe("runBackup — app scoping", () => {
   it("leaves lastRunAt alone when the run captured nothing", async () => {
     backupJobsFindFirst.mockResolvedValue(job());
     volumesPerApp([volume({ name: "a-data" })]);
-    execFileMock.mockImplementation((...args: unknown[]) => {
-      const cb = args[args.length - 1] as (e: unknown, r: unknown) => void;
-      cb(new Error("docker run failed"), null);
-    });
+    spawnMock.mockImplementation(() => fakeChild({ code: 1, stderr: "docker run failed" }));
 
     const results = await runBackup("job-1");
 
@@ -334,7 +357,7 @@ describe("runBackup — stopped apps", () => {
     const results = await runBackup("job-1");
 
     expect(results.map((r) => [r.volumeName, r.outcome])).toEqual([["a-data", "success"]]);
-    expect(uploadMock).toHaveBeenCalledTimes(1);
+    expect(committed).toHaveLength(1);
   });
 
   it("still leaves a missing app out — it has no volumes left to capture", async () => {
@@ -508,7 +531,7 @@ describe("runBackup — progress events", () => {
     const results = await runBackup("job-1");
 
     expect(results.map((r) => r.outcome)).toEqual(["success", "success"]);
-    expect(uploadMock).toHaveBeenCalledTimes(2);
+    expect(committed).toHaveLength(2);
     expect(updated.filter((u) => u.set.status === "success")).toHaveLength(2);
   });
 });
@@ -517,35 +540,31 @@ describe("runBackup — progress events", () => {
 // that is correct output or a truncated archive is decided by what the
 // archiving container reported about the source, never by the size.
 describe("runBackup — tiny archives", () => {
-  const TINY = Buffer.alloc(87, 0);
+  const TINY = tarGz({ dirs: ["./"] });
 
-  /** Replaces the archiving container with a specific body, stdout and gzip verdict. */
-  function stubArchive(opts: { bytes: Buffer; stdout?: string; gzipOk?: boolean }) {
-    execFileMock.mockImplementation((...args: unknown[]) => {
-      const [file, argv] = args as [string, string[]];
-      const cb = args[args.length - 1] as (e: unknown, r: unknown) => void;
-
-      if (file === "docker" && argv[0] === "run") {
-        const mount = argv.find((a) => typeof a === "string" && a.endsWith(":/backup"))!;
-        writeFileSync(join(mount.slice(0, -":/backup".length), "volume.tar.gz"), opts.bytes);
-        return cb(null, { stdout: opts.stdout ?? "", stderr: "" });
+  /** Replaces the archiving container with a specific body and empty-source verdict. */
+  function stubArchive(opts: { bytes: Buffer; empty?: boolean }) {
+    spawnMock.mockImplementation((file: string, argv: string[]) => {
+      if (file === "docker" && argv[0] === "run" && opts.empty) {
+        writeFileSync(join(workDirOf(argv), MARKERS_FILE), `${EMPTY_SOURCE_MARKER}\n`);
       }
-      if (file === "gzip" && opts.gzipOk === false) {
-        return cb(new Error("unexpected end of file"), null);
-      }
-      cb(null, { stdout: "", stderr: "" });
+      return fakeChild({ stdout: opts.bytes });
     });
   }
+
+  it("uses an archive under the size floor", () => {
+    expect(TINY.length).toBeLessThan(MIN_VALID_GZIP_BYTES);
+  });
 
   it("succeeds when the container reports the source empty", async () => {
     backupJobsFindFirst.mockResolvedValue(job());
     volumesPerApp([volume({ name: "letsencrypt" })]);
-    stubArchive({ bytes: TINY, stdout: `${EMPTY_SOURCE_MARKER}\n` });
+    stubArchive({ bytes: TINY, empty: true });
 
     const results = await runBackup("job-1");
 
     expect(results[0].outcome).toBe("success");
-    expect(uploadMock).toHaveBeenCalledTimes(1);
+    expect(committed).toHaveLength(1);
     const row = updated.find((u) => u.set.status === "success")!;
     expect(String(row.set.log)).toMatch(/is empty — archived 0 files/);
   });
@@ -558,20 +577,20 @@ describe("runBackup — tiny archives", () => {
     const results = await runBackup("job-1");
 
     expect(results[0].outcome).toBe("failed");
-    expect(results[0].error).toMatch(/87-byte file/);
-    expect(uploadMock).not.toHaveBeenCalled();
+    expect(results[0].error).toMatch(new RegExp(`${TINY.length}-byte file`));
+    expect(committed).toHaveLength(0);
   });
 
   it("fails a corrupt archive even when the source was empty", async () => {
     backupJobsFindFirst.mockResolvedValue(job());
     volumesPerApp([volume({ name: "letsencrypt" })]);
-    stubArchive({ bytes: TINY, stdout: EMPTY_SOURCE_MARKER, gzipOk: false });
+    stubArchive({ bytes: TINY.subarray(0, TINY.length - 8), empty: true });
 
     const results = await runBackup("job-1");
 
     expect(results[0].outcome).toBe("failed");
-    expect(results[0].error).toMatch(/gzip -t failed/);
-    expect(uploadMock).not.toHaveBeenCalled();
+    expect(results[0].error).toMatch(/gzip check failed/);
+    expect(committed).toHaveLength(0);
   });
 
   it("still fails a tiny dump — an empty dump is never correct output", async () => {
@@ -582,15 +601,7 @@ describe("runBackup — tiny archives", () => {
         backupMeta: { dumpCmd: "docker exec pg pg_dump -U u db", restoreCmd: "" },
       }),
     ]);
-    execFileMock.mockImplementation((...args: unknown[]) => {
-      const [file, argv] = args as [string, string[]];
-      const cb = args[args.length - 1] as (e: unknown, r: unknown) => void;
-      if (file === "bash") {
-        const dest = /> "([^"]+)"/.exec(argv[1])!;
-        writeFileSync(dest[1], TINY);
-      }
-      cb(null, { stdout: "", stderr: "" });
-    });
+    spawnMock.mockImplementation(() => fakeChild({ stdout: Buffer.alloc(0) }));
 
     const results = await runBackup("job-1");
 
@@ -676,13 +687,8 @@ describe("runBackup — empty bind sources", () => {
       const [file, argv] = args as [string, string[]];
       const cb = args[args.length - 1] as (e: unknown, r: unknown) => void;
       if (file === "docker" && argv[0] === "run" && argv.some((a) => a.endsWith(":/data:ro"))) {
-        const mount = argv.find((a) => a.endsWith(":/backup"));
-        if (!mount) {
-          const stdout = `${DIRECTORY_SOURCE_MARKER}\n${empty ? `${EMPTY_SOURCE_MARKER}\n` : ""}`;
-          return cb(null, { stdout, stderr: "" });
-        }
-        writeFileSync(join(mount.slice(0, -":/backup".length), "volume.tar.gz"), ARCHIVE_BYTES);
-        return cb(null, { stdout: `${ARCHIVE_HAS_FILES_MARKER}\n`, stderr: "" });
+        const stdout = `${DIRECTORY_SOURCE_MARKER}\n${empty ? `${EMPTY_SOURCE_MARKER}\n` : ""}`;
+        return cb(null, { stdout, stderr: "" });
       }
       execImpl(...args);
     });
@@ -700,7 +706,7 @@ describe("runBackup — empty bind sources", () => {
       emptySource: true,
       error: expect.stringMatching(/empty, never backed up/),
     });
-    expect(uploadMock).not.toHaveBeenCalled();
+    expect(committed).toHaveLength(0);
     const row = updated.find((u) => u.set.status === "skipped")!;
     expect(String(row.set.log)).toMatch(/has never been backed up with data/);
     expect(updated.some((u) => u.set.status === "failed")).toBe(false);
@@ -728,7 +734,7 @@ describe("runBackup — empty bind sources", () => {
     const results = await runBackup("job-1");
 
     expect(results[0].outcome).toBe("success");
-    expect(uploadMock).toHaveBeenCalledTimes(1);
+    expect(committed).toHaveLength(1);
     expect(backupsFindFirst).not.toHaveBeenCalled();
   });
 
@@ -790,5 +796,60 @@ describe("runBackup — backup switch", () => {
     const results = await runBackup("job-1", { appIds: ["app-a"] });
 
     expect(results.map((r) => r.volumeName)).toEqual(["a-data"]);
+  });
+});
+
+// A restarted console fails any running row whose lease lapsed, so a live run must hold one throughout.
+describe("runBackup — run lease", () => {
+  it("holds the backup's lease while it streams and releases it after", async () => {
+    backupJobsFindFirst.mockResolvedValue(job());
+    volumesPerApp([volume()]);
+    const heldDuringUpload: boolean[] = [];
+    uploadMock.mockImplementationOnce(async (key: string, body: import("stream").Readable) => {
+      heldDuringUpload.push(leases.has(String(inserted[0].id)));
+      return recordingUpload(committed)(key, body);
+    });
+
+    const [result] = await runBackup("job-1");
+
+    expect(result.outcome).toBe("success");
+    expect(heldDuringUpload).toEqual([true]);
+    expect(leases.size).toBe(0);
+  });
+
+  it("releases the lease when the run fails", async () => {
+    backupJobsFindFirst.mockResolvedValue(job());
+    volumesPerApp([volume()]);
+    spawnMock.mockImplementation(() => fakeChild({ code: 1, stderr: "boom" }));
+
+    const [result] = await runBackup("job-1");
+
+    expect(result.outcome).toBe("failed");
+    expect(leases.size).toBe(0);
+  });
+});
+
+describe("runBackup — expected size", () => {
+  it("passes the volume's cached size to storage so it can size parts", async () => {
+    backupJobsFindFirst.mockResolvedValue(job());
+    volumesPerApp([volume()]);
+    listContainersMock.mockResolvedValue([]);
+    volumeSizeMock.mockResolvedValue(250e9);
+
+    await runBackup("job-1");
+
+    expect(volumeSizeMock).toHaveBeenCalledWith("app-a-production_data");
+    expect(uploadMock.mock.calls[0][2]).toMatchObject({ expectedBytes: 250e9 });
+  });
+
+  it("still backs up when the size lookup fails", async () => {
+    backupJobsFindFirst.mockResolvedValue(job());
+    volumesPerApp([volume()]);
+    volumeSizeMock.mockRejectedValue(new Error("df timed out"));
+
+    const [result] = await runBackup("job-1");
+
+    expect(result.outcome).toBe("success");
+    expect(uploadMock.mock.calls[0][2]).toMatchObject({ expectedBytes: null });
   });
 });

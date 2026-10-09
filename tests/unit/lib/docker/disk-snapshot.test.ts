@@ -12,7 +12,9 @@ vi.mock("@/lib/docker/client", async () => {
   return { ...actual, ...client };
 });
 
-const { getDiskSnapshot, resetDiskSnapshotCache, VOLUME_REFRESH_MS } = await import("@/lib/docker/disk-snapshot");
+const { getDiskSnapshot, getVolumeSizeBytes, resetDiskSnapshotCache, VOLUME_REFRESH_MS } = await import(
+  "@/lib/docker/disk-snapshot"
+);
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -43,5 +45,19 @@ describe("getDiskSnapshot", () => {
   it("fails when volumes have never been measured", async () => {
     client.getDfVolumes.mockRejectedValue(new Error("timeout"));
     await expect(getDiskSnapshot(0)).rejects.toThrow("timeout");
+  });
+});
+
+describe("getVolumeSizeBytes", () => {
+  it("reads one volume's size from the same cache", async () => {
+    await getDiskSnapshot(0);
+    expect(await getVolumeSizeBytes("a_data", 1000)).toBe(7);
+    expect(client.getDfVolumes).toHaveBeenCalledTimes(1);
+  });
+
+  it("is null for an unknown volume or one Docker couldn't size", async () => {
+    client.getDfVolumes.mockResolvedValue({ Volumes: [{ Name: "b", UsageData: { Size: -1, RefCount: 0 } }] });
+    expect(await getVolumeSizeBytes("b", 0)).toBeNull();
+    expect(await getVolumeSizeBytes("missing", 0)).toBeNull();
   });
 });
