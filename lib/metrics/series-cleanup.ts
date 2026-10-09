@@ -3,7 +3,7 @@
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema/apps";
 import { logger } from "@/lib/logger";
-import { tsRedis, forgetKey } from "./ts-client";
+import { tsRedis, forgetKey, RETENTION_MS } from "./ts-client";
 
 const log = logger.child("series-cleanup");
 
@@ -107,6 +107,19 @@ async function isQuiet(key: string, now: number): Promise<boolean> {
   }
 }
 
+/** Writers that never refresh the key TTL: system and business series and per-project disk. */
+function keepsNoTtl(key: string): boolean {
+  return key.startsWith("metrics:system:") || key.startsWith("metrics:business:") || key.endsWith(":disk");
+}
+
+/** Gives a series with no TTL the retention window. Returns whether it changed. */
+async function expireIfPersistent(key: string): Promise<boolean> {
+  if (keepsNoTtl(key)) return false;
+  if ((await tsRedis.call("PTTL", key)) !== -1) return false;
+  await tsRedis.call("PEXPIRE", key, RETENTION_MS.toString());
+  return true;
+}
+
 /** Deletes series whose app no longer exists and that have gone quiet. Returns the number of keys removed. */
 export async function sweepOrphanSeries(): Promise<number> {
   const rows = await db.select({ id: apps.id, name: apps.name }).from(apps);
@@ -114,24 +127,23 @@ export async function sweepOrphanSeries(): Promise<number> {
   const appNames = new Set(rows.map((r) => r.name));
   const now = Date.now();
   let removed = 0;
+  let expired = 0;
 
   await scanKeys("metrics:*", async (keys) => {
     const orphans: string[] = [];
     for (const key of keys) {
       const owner = parseSeriesKey(key);
-      if (!owner) continue;
-
-      if (owner.kind === "logs") {
-        if (!appIds.has(owner.appId)) orphans.push(key);
-        continue;
-      }
-      if (appNames.has(owner.project)) continue;
-      if (await isQuiet(key, now)) orphans.push(key);
+      const orphaned = !owner ? false
+        : owner.kind === "logs" ? !appIds.has(owner.appId)
+        : !appNames.has(owner.project) && (await isQuiet(key, now));
+      if (orphaned) orphans.push(key);
+      // Live series are re-touched on their next write; strays from before touchRetention never are.
+      else if (await expireIfPersistent(key)) expired++;
     }
     removed += await deleteKeys(orphans);
   });
 
-  log.info(`Deleted ${removed} orphaned series`);
+  log.info(`Deleted ${removed} orphaned series, set an expiry on ${expired} without one`);
   return removed;
 }
 

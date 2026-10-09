@@ -4,6 +4,7 @@ const { state, callMock, dbMock } = vi.hoisted(() => {
   const state = {
     keys: new Set<string>(),
     lastSample: {} as Record<string, number>,
+    ttls: {} as Record<string, number>,
     apps: [] as { id: string; name: string }[],
   };
 
@@ -28,6 +29,11 @@ const { state, callMock, dbMock } = vi.hoisted(() => {
       for (const k of args) if (state.keys.delete(k)) n++;
       return n;
     }
+    if (cmd === "PTTL") return state.keys.has(args[0]) ? (state.ttls[args[0]] ?? -1) : -2;
+    if (cmd === "PEXPIRE") {
+      state.ttls[args[0]] = Number(args[1]);
+      return 1;
+    }
     if (cmd === "TS.GET") {
       const ts = state.lastSample[args[0]];
       return ts === undefined ? null : [String(ts), "1"];
@@ -39,12 +45,17 @@ const { state, callMock, dbMock } = vi.hoisted(() => {
   return { state, callMock, dbMock };
 });
 
-vi.mock("@/lib/metrics/ts-client", () => ({ tsRedis: { call: callMock }, forgetKey: vi.fn() }));
+vi.mock("@/lib/metrics/ts-client", () => ({
+  tsRedis: { call: callMock },
+  forgetKey: vi.fn(),
+  RETENTION_MS: 7 * 24 * 60 * 60 * 1000,
+}));
 vi.mock("@/lib/db", () => ({ db: dbMock }));
 vi.mock("@/lib/logger", () => ({
   logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }) },
 }));
 
+import { RETENTION_MS } from "@/lib/metrics/ts-client";
 import { deleteAppSeries, parseSeriesKey, sweepOrphanSeries } from "@/lib/metrics/series-cleanup";
 
 const OLD = Date.now() - 3 * 60 * 60_000;
@@ -61,6 +72,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   state.keys.clear();
   state.lastSample = {};
+  state.ttls = {};
   state.apps = [];
 });
 
@@ -169,5 +181,28 @@ describe("sweepOrphanSeries", () => {
     const cmds = callMock.mock.calls.map((c) => c[0]);
     expect(cmds).toContain("SCAN");
     expect(cmds).not.toContain("KEYS");
+  });
+});
+
+describe("sweepOrphanSeries TTL backfill", () => {
+  it("expires live-app series that have no TTL and leaves ones that have one", async () => {
+    state.apps = [{ id: "a1", name: "vardo" }];
+    seed(["metrics:vardo:memoryLimit:docker-cf61a", "metrics:vardo:cpu:c2", "metrics:logs:a1:errors"]);
+    state.ttls["metrics:vardo:cpu:c2"] = 1000;
+
+    await sweepOrphanSeries();
+
+    expect(state.ttls["metrics:vardo:memoryLimit:docker-cf61a"]).toBe(RETENTION_MS);
+    expect(state.ttls["metrics:logs:a1:errors"]).toBe(RETENTION_MS);
+    expect(state.ttls["metrics:vardo:cpu:c2"]).toBe(1000);
+  });
+
+  it("skips system, business and disk series, which are written without a TTL", async () => {
+    state.apps = [{ id: "a1", name: "vardo" }];
+    seed(["metrics:system:diskTotal", "metrics:business:org1:revenue", "metrics:vardo:disk"]);
+
+    await sweepOrphanSeries();
+
+    expect(state.ttls).toEqual({});
   });
 });
