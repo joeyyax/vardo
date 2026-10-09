@@ -11,7 +11,7 @@ Status: **fixed** (on main or in this branch), **open**, or **not a boundary**. 
 | Claim | Status | Evidence |
 | --- | --- | --- |
 | Setup reopens once a user exists | fixed | `lib/setup.ts:26` latches on the first account and never reopens |
-| Setup POSTs are unauthenticated while no user exists | open | `app/api/setup/{general,auth,email,backup,github}/route.ts` skip `requireAdminAuth` when `needsSetup()`. On a fresh public box the first visitor can set GitHub OAuth, email and backup targets, then sign up as admin. |
+| Setup POSTs are unauthenticated while no user exists | fixed | #888: while no user exists, every `app/api/setup/**` handler and first signup refuse without the setup token (`lib/setup-token.ts`, `lib/auth/registration.ts`); the setup UI carries it as the `vardo_setup_token` cookie. After setup the config routes need an instance admin. Covered by `tests/unit/app/api/setup/setup-routes-token.test.ts`. |
 | First signup becomes instance admin | open, by design | `lib/organizations/create-default-org.ts:17`. Concurrent signups give at most one admin. Whoever reaches the box first wins. |
 | Open registration | fixed | defaults to `closed`, `lib/system-settings.ts:320`; `lib/auth/registration.ts:21` |
 | GitHub webhook signature | fixed | mandatory secret, HMAC with `timingSafeEqual`, `app/api/v1/github/webhook/route.ts:35-55` |
@@ -28,7 +28,7 @@ Status: **fixed** (on main or in this branch), **open**, or **not a boundary**. 
 | Claim | Status | Evidence |
 | --- | --- | --- |
 | Org routes check membership and capability | fixed | `verifyOrgAccess`/`verifyAppAccess` with `can()`, `lib/auth/permissions.ts`; nested IDs scoped through the app or org lookup, `lib/api/verify-access.ts:21-24` |
-| Route walker | partial | `tests/unit/api/route-authorization.test.ts:13,57` only scans `organizations/**` and only checks a guard name appears in the file, not per handler or capability |
+| Route walker | fixed | `tests/unit/api/route-authorization.test.ts` checks every exported handler under `app/api` reaches an auth or verify helper, or sits on a reasoned allowlist. It checks a guard runs, not which capability it checks. |
 | Any signed-in user links every GitHub App installation | branch | `app/api/v1/github/installations/sync/route.ts:16`, `callback/route.ts:51` now require an instance admin. Rows linked before this aren't removed. |
 | Clone uses any installation of any org member | open | `lib/docker/deploy-steps/prepare-repo.ts:385-404`. A user in two orgs lends their installations to both. |
 | Domain string injected into a Traefik rule | branch | PATCH accepted any string, `apps/[appId]/domains/route.ts:104`. Now validated there and in environment routes; `lib/docker/compose-inject.ts:120` and `lib/ssl/generate-config.ts:93` refuse non-hostnames. |

@@ -1,33 +1,45 @@
 import { describe, it, expect } from "vitest";
 import { readdirSync, readFileSync, statSync } from "fs";
 import { join, relative } from "path";
+import ts from "typescript";
 
-// ---------------------------------------------------------------------------
-// Every org-scoped route must establish who is asking before it answers.
-//
-// This is a guard against drift, not a proof of correctness — it checks that a
-// check exists, not that it guards the right thing. A new route under
-// /organizations that forgets one fails here rather than in production.
-// ---------------------------------------------------------------------------
+// Every exported handler under app/api must reach an auth or verify helper, or be allowlisted below.
+// This catches drift, not wrong checks: it proves a guard runs, not that it guards the right thing.
 
-const ROUTES_DIR = join(process.cwd(), "app/api/v1/organizations");
+const API_DIR = join(process.cwd(), "app/api");
 
-const ACCESS_CHECKS = [
+const METHODS = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"];
+
+const GUARDS = new Set([
   "verifyOrgAccess",
   "verifyAppAccess",
   "verifyProjectAccess",
   "verifyAccess",
   "requireAdmin",
-];
+  "requireAdminAuth",
+  "requireAppAdmin",
+  "isAppAdmin",
+  "requireSession",
+  "getSession",
+  "requireMeshPeer",
+  "authenticateRequest",
+  "setupTokenRefusal",
+]);
 
-/**
- * Routes that legitimately have no orgId to check, with the reason each is
- * safe. Adding to this list should take an argument, not a shrug.
- */
-const EXEMPT: Record<string, string> = {
-  "route.ts": "lists the caller's own organizations — scoped by session, not by a path param",
-  "switch/route.ts": "verifies membership inline before setting the active-org cookie",
+/** Handlers that answer without a guard helper, keyed "path METHOD", each with its reason. */
+const ALLOWLIST: Record<string, string> = {
+  "health/route.ts GET": "liveness probe; returns no instance data",
+  "auth/[...all]/route.ts GET": "Better Auth handler; authenticates the caller itself",
+  "auth/[...all]/route.ts POST": "Better Auth handler; authenticates the caller itself",
+  "mcp/route.ts GET": "static 405; stateless transport has no SSE stream",
+  "mcp/route.ts DELETE": "static 204; stateless transport has no session to end",
+  "setup/status/route.ts GET": "one boolean the root redirect already shows",
+  "setup/token/route.ts POST": "trades the setup token for its cookie; closed once setup latches",
+  "v1/github/webhook/route.ts POST": "HMAC signature checked against the webhook secret",
+  "v1/mesh/join/route.ts POST": "redeems a single-use mesh invite code",
 };
+
+type Fn = ts.FunctionLikeDeclaration;
 
 function routeFiles(dir: string): string[] {
   const found: string[] = [];
@@ -39,30 +51,107 @@ function routeFiles(dir: string): string[] {
   return found;
 }
 
-describe("org-scoped API routes", () => {
-  const files = routeFiles(ROUTES_DIR);
+function isFn(node: ts.Node): node is Fn {
+  return ts.isFunctionDeclaration(node) || ts.isArrowFunction(node) || ts.isFunctionExpression(node);
+}
 
-  it("finds routes to check, so a bad path cannot make this vacuously pass", () => {
-    expect(files.length).toBeGreaterThan(50);
-  });
+function isExported(node: ts.Node): boolean {
+  return ts.canHaveModifiers(node) && (ts.getModifiers(node) ?? []).some((m) => m.kind === ts.SyntaxKind.ExportKeyword);
+}
 
-  it.each(files.map((f) => [relative(ROUTES_DIR, f), f]))(
-    "%s establishes access",
-    (rel, full) => {
-      if (rel in EXEMPT) {
-        expect(EXEMPT[rel]).toBeTruthy();
+/** Top-level function and const bindings, plus the expression each exported method resolves to. */
+function parse(source: string) {
+  const file = ts.createSourceFile("route.ts", source, ts.ScriptTarget.Latest, true);
+  const locals = new Map<string, ts.Node>();
+  const exported = new Map<string, ts.Node>();
+
+  for (const stmt of file.statements) {
+    if (ts.isFunctionDeclaration(stmt) && stmt.name) {
+      locals.set(stmt.name.text, stmt);
+      if (isExported(stmt)) exported.set(stmt.name.text, stmt);
+    } else if (ts.isVariableStatement(stmt)) {
+      for (const decl of stmt.declarationList.declarations) {
+        if (!decl.initializer) continue;
+        if (ts.isIdentifier(decl.name)) {
+          locals.set(decl.name.text, decl.initializer);
+          if (isExported(stmt)) exported.set(decl.name.text, decl.initializer);
+        } else if (ts.isObjectBindingPattern(decl.name) && isExported(stmt)) {
+          for (const el of decl.name.elements) {
+            if (ts.isIdentifier(el.name)) exported.set(el.name.text, decl.initializer);
+          }
+        }
+      }
+    } else if (ts.isExportDeclaration(stmt) && !stmt.moduleSpecifier && stmt.exportClause && ts.isNamedExports(stmt.exportClause)) {
+      for (const spec of stmt.exportClause.elements) {
+        const local = locals.get((spec.propertyName ?? spec.name).text);
+        if (local) exported.set(spec.name.text, local);
+      }
+    }
+  }
+  return { locals, exported };
+}
+
+/** Whether evaluating the node reaches a guard call, following local bindings it references. */
+function reachesGuard(node: ts.Node, locals: Map<string, ts.Node>, seen = new Set<ts.Node>()): boolean {
+  if (seen.has(node)) return false;
+  seen.add(node);
+
+  let found = false;
+  const visit = (n: ts.Node) => {
+    if (found) return;
+    if (ts.isCallExpression(n)) {
+      const callee = n.expression;
+      const name = ts.isIdentifier(callee)
+        ? callee.text
+        : ts.isPropertyAccessExpression(callee)
+          ? callee.name.text
+          : null;
+      if (name && GUARDS.has(name)) {
+        found = true;
         return;
       }
-      const source = readFileSync(full, "utf8");
-      const hasCheck = ACCESS_CHECKS.some((fn) => source.includes(fn));
-      expect(hasCheck, `${rel} calls none of: ${ACCESS_CHECKS.join(", ")}`).toBe(true);
+    }
+    if (ts.isIdentifier(n)) {
+      const local = locals.get(n.text);
+      if (local && (isFn(local) || ts.isCallExpression(local)) && reachesGuard(local, locals, seen)) {
+        found = true;
+        return;
+      }
+    }
+    ts.forEachChild(n, visit);
+  };
+  visit(node);
+  return found;
+}
+
+const handlers = routeFiles(API_DIR).flatMap((full) => {
+  const rel = relative(API_DIR, full);
+  const { locals, exported } = parse(readFileSync(full, "utf8"));
+  return METHODS.filter((m) => exported.has(m)).map((m) => ({
+    key: `${rel} ${m}`,
+    guarded: reachesGuard(exported.get(m)!, locals),
+  }));
+});
+
+describe("API route handlers", () => {
+  it("finds handlers to check, so a bad path can't pass vacuously", () => {
+    expect(handlers.length).toBeGreaterThan(250);
+    expect(handlers.map((h) => h.key)).toContain("v1/organizations/[orgId]/apps/route.ts GET");
+  });
+
+  it.each(handlers.filter((h) => !(h.key in ALLOWLIST)).map((h) => [h.key, h.guarded]))(
+    "%s reaches an auth or verify helper",
+    (key, guarded) => {
+      expect(guarded, `${key} calls none of: ${[...GUARDS].join(", ")}`).toBe(true);
     },
   );
 
-  it("keeps the exemption list from outliving the routes it describes", () => {
-    const present = new Set(files.map((f) => relative(ROUTES_DIR, f)));
-    for (const rel of Object.keys(EXEMPT)) {
-      expect(present.has(rel), `${rel} is exempted but no longer exists`).toBe(true);
+  it("keeps each allowlist entry real and still unguarded", () => {
+    const byKey = new Map(handlers.map((h) => [h.key, h.guarded]));
+    for (const [key, reason] of Object.entries(ALLOWLIST)) {
+      expect(reason, key).toBeTruthy();
+      expect(byKey.has(key), `${key} is allowlisted but no longer exists`).toBe(true);
+      expect(byKey.get(key), `${key} is allowlisted but now calls a guard`).toBe(false);
     }
   });
 });
