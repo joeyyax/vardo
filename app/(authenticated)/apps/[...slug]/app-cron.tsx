@@ -98,6 +98,7 @@ async function requestJobs(url: string): Promise<CronJob[] | null> {
 
 export function CronManager({ appId, orgId, userRole }: Props) {
   const canManage = can(userRole, "app.cron");
+  const canCommand = can(userRole, "app.cron.command");
   const [jobs, setJobs] = useState<CronJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -138,7 +139,7 @@ export function CronManager({ appId, orgId, userRole }: Props) {
   function openCreate() {
     setEditId(null);
     setName("");
-    setJobType("command");
+    setJobType(canCommand ? "command" : "url");
     setSchedulePreset("0 * * * *");
     setCustomSchedule("");
     setCommand("");
@@ -432,12 +433,16 @@ export function CronManager({ appId, orgId, userRole }: Props) {
 
               <div className="grid gap-2">
                 <Label>Type</Label>
-                <Select value={jobType} onValueChange={(v) => setJobType(v as "command" | "url")}>
+                <Select
+                  value={jobType}
+                  onValueChange={(v) => setJobType(v as "command" | "url")}
+                  disabled={!canCommand && editId !== null && jobType === "command"}
+                >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="command">Command (docker exec)</SelectItem>
+                    <SelectItem value="command" disabled={!canCommand}>Command (docker exec)</SelectItem>
                     <SelectItem value="url">URL (HTTP request)</SelectItem>
                   </SelectContent>
                 </Select>
@@ -453,12 +458,16 @@ export function CronManager({ appId, orgId, userRole }: Props) {
                   className="font-mono"
                   value={command}
                   onChange={(e) => setCommand(e.target.value)}
+                  disabled={jobType === "command" && !canCommand}
                 />
                 <p className="text-xs text-muted-foreground">
                   {jobType === "url"
                     ? "Sends a GET request to this URL. Supports internal Docker hostnames and public URLs."
                     : "Runs via docker exec inside your container."}
                 </p>
+                {!canCommand && (
+                  <p className="text-xs text-muted-foreground">Command jobs need an admin.</p>
+                )}
               </div>
             </div>
           </div>

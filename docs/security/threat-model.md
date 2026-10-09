@@ -48,7 +48,7 @@ Status: **fixed** (on main or in this branch), **open**, or **not a boundary**. 
 | Role changes and invites | fixed | admin-only capabilities, `lib/auth/permissions.ts:23-69`; owner can't be changed |
 | `trusted`, `allowBindMounts`, `allowDockerSocket` | fixed | instance admin only, `organizations/[orgId]/route.ts:57`, `projects/[projectId]/route.ts:118` |
 | Container terminal | fixed | `app.terminal` is admin-only on the stream and input handlers, `apps/[appId]/terminal/route.ts`; logged (#813). Role table in `docs/roles.md` |
-| Cron command jobs | open, product | `app.cron` is a member capability and a command job runs `sh -c` in the app container, `lib/cron/engine.ts:61`. Same reach as the terminal on a schedule. |
+| Cron command jobs | fixed | `app.cron.command` is admin-only for creating or changing a command job, `apps/[appId]/cron/route.ts`; members keep URL crons, pause and delete. `host.toml` cron entries still create command jobs on deploy, accepted: a member can already deploy code that runs in the same container, `lib/docker/deploy-steps/post-deploy.ts` |
 | API tokens | partial | carry the user's full live role, no capability scoping, `lib/auth/session.ts:48-73`; never instance admin, `lib/auth/admin.ts:8` |
 | Any user can create an org and become its owner | open, product | `app/api/v1/organizations/route.ts:59-97`. The section 5 compose gaps that made owner mean host are fixed (#886). |
 

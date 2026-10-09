@@ -52,6 +52,8 @@ export const CAPABILITIES = {
   "app.deploy": MEMBERS,
   // Root shell; host root through an enabled Docker socket.
   "app.terminal": ADMINS,
+  // Create or change a job that runs `sh -c` in the container.
+  "app.cron.command": ADMINS,
   "app.cron": MEMBERS,
   "app.debug": ADMINS,
   "app.delete": ADMINS,
