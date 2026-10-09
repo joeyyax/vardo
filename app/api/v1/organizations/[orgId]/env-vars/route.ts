@@ -141,8 +141,8 @@ async function handlePut(request: NextRequest, { params }: RouteParams) {
       for (const v of varsToUpsert) {
         const row = existingByKey.get(v.key);
         if (row) {
-          // A masked or blank secret means the editor never saw its value.
-          if (row.isSecret && (v.value === SECRET_MASK || v.value === "")) continue;
+          // A masked value, or a blank secret, means the editor never saw the stored one.
+          if (v.value === SECRET_MASK || (row.isSecret && v.value === "")) continue;
 
           const current = decryptOrFallback(row.value, orgId);
           if (current.wasEncrypted && !current.decryptFailed && current.content === v.value) continue;
