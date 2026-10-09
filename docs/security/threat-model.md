@@ -28,7 +28,7 @@ Status: **fixed** (on main or in this branch), **open**, or **not a boundary**. 
 | Claim | Status | Evidence |
 | --- | --- | --- |
 | Org routes check membership and capability | fixed | `verifyOrgAccess`/`verifyAppAccess` with `can()`, `lib/auth/permissions.ts`; nested IDs scoped through the app or org lookup, `lib/api/verify-access.ts:21-24` |
-| Route walker | partial | `tests/unit/api/route-authorization.test.ts:13,57` only scans `organizations/**` and only checks a guard name appears in the file, not per handler or capability |
+| Route walker | fixed | `tests/unit/api/route-authorization.test.ts` checks every exported handler under `app/api` reaches an auth or verify helper, or sits on a reasoned allowlist. It checks a guard runs, not which capability it checks. |
 | Any signed-in user links every GitHub App installation | branch | `app/api/v1/github/installations/sync/route.ts:16`, `callback/route.ts:51` now require an instance admin. Rows linked before this aren't removed. |
 | Clone uses any installation of any org member | open | `lib/docker/deploy-steps/prepare-repo.ts:385-404`. A user in two orgs lends their installations to both. |
 | Domain string injected into a Traefik rule | branch | PATCH accepted any string, `apps/[appId]/domains/route.ts:104`. Now validated there and in environment routes; `lib/docker/compose-inject.ts:120` and `lib/ssl/generate-config.ts:93` refuse non-hostnames. |
