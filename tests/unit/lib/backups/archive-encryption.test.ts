@@ -8,12 +8,13 @@ import { copyFile } from "fs/promises";
 import { createHash } from "crypto";
 import { tmpdir } from "os";
 import { dirname, join } from "path";
+import { VALID_ARCHIVE, fakeChild, recordingUpload } from "./fake-archive";
 
 const BACKUPS_ROOT = mkdtempSync(join(tmpdir(), "vardo-archive-enc-test-"));
 process.env.VARDO_BACKUPS_DIR = BACKUPS_ROOT;
 const KEY = "d".repeat(64);
 
-const ARCHIVE_BYTES = Buffer.alloc(512, 7);
+const ARCHIVE_BYTES = VALID_ARCHIVE;
 const sha = (b: Buffer) => `sha256:${createHash("sha256").update(b).digest("hex")}`;
 
 const {
@@ -23,6 +24,7 @@ const {
   backupsFindMany,
   backupsFindFirst,
   execFileMock,
+  spawnMock,
   uploaded,
   stored,
   deleteMock,
@@ -36,6 +38,7 @@ const {
   backupsFindMany: vi.fn(),
   backupsFindFirst: vi.fn(),
   execFileMock: vi.fn(),
+  spawnMock: vi.fn(),
   uploaded: [] as { key: string; bytes: Buffer }[],
   stored: { path: "" },
   deleteMock: vi.fn(),
@@ -68,6 +71,7 @@ vi.mock("@/lib/db", () => ({
 vi.mock("child_process", async (importOriginal) => ({
   ...(await importOriginal<typeof import("child_process")>()),
   execFile: execFileMock,
+  spawn: spawnMock,
 }));
 vi.mock("@/lib/notifications/dispatch", () => ({ emit: vi.fn() }));
 vi.mock("@/lib/docker/client", () => ({
@@ -86,11 +90,7 @@ vi.mock("@/lib/logger", () => ({
 }));
 vi.mock("@/lib/backups/storage-factory", () => ({
   createBackupStorage: () => ({
-    upload: vi.fn(async (key: string, filePath: string) => {
-      const bytes = readFileSync(filePath);
-      uploaded.push({ key, bytes });
-      return { sizeBytes: bytes.length };
-    }),
+    uploadStream: recordingUpload(uploaded),
     download: vi.fn(async (_key: string, dest: string) => {
       await copyFile(stored.path, dest);
     }),
@@ -109,16 +109,8 @@ import {
 import { ARCHIVE_MAGIC, encryptArchiveFile } from "@/lib/backups/archive-crypto";
 import { fingerprintMasterKey } from "@/lib/crypto/key-fingerprint";
 
-// Stands in for docker/bash: the helper container writes the archive.
 const execImpl = (...args: unknown[]) => {
-  const [file, argv] = args as [string, string[]];
   const cb = args[args.length - 1] as (e: unknown, r: unknown) => void;
-  if (file === "docker" && argv[0] === "run") {
-    const mount = argv.find((a) => typeof a === "string" && a.endsWith(":/backup"));
-    if (mount && !mount.includes(".tmp-restore-")) {
-      writeFileSync(join(mount.slice(0, -":/backup".length), "volume.tar.gz"), ARCHIVE_BYTES);
-    }
-  }
   cb(null, { stdout: "", stderr: "" });
 };
 
@@ -184,6 +176,7 @@ beforeEach(() => {
   updated.length = 0;
   uploaded.length = 0;
   execFileMock.mockReset().mockImplementation(execImpl);
+  spawnMock.mockReset().mockImplementation(() => fakeChild({ stdout: ARCHIVE_BYTES }));
   backupJobsFindFirst.mockReset().mockResolvedValue(job());
   volumesFindMany.mockReset().mockResolvedValue([
     { id: "vol-1", name: "data", mountPath: "/data", type: "named", source: null, persistent: true, backupStrategy: "tar", backupMeta: null },

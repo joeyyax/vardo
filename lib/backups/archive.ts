@@ -6,21 +6,18 @@ export const MIN_VALID_GZIP_BYTES = 100;
 /** Printed by the backup script when the source directory held nothing. */
 export const EMPTY_SOURCE_MARKER = "vardo:empty-source";
 
-/** Printed when the archive holds at least one non-directory member. */
-export const ARCHIVE_HAS_FILES_MARKER = "vardo:archive-has-files";
-
 /** Written by the backup script, inside the backup dir: what tar left out. */
 export const EXCLUDE_LIST_FILE = "exclude.list";
+
+/** Written by the streaming backup script, inside the backup dir: markers, since stdout carries the archive. */
+export const MARKERS_FILE = "markers";
 
 /** Read by the restore script, inside the backup dir: what to carry over. */
 export const PROTECT_LIST_FILE = "protect.list";
 
 const RESTORE_STAGE_DIR = ".vardo-restore-staging";
 
-/**
- * Shell script for a tar backup: archive the volume, then report whether the source was empty.
- * Exclusions arrive as `find` argv. Never interpolate operator patterns into this string.
- */
+/** Shell script that copies a volume aside as a tar.gz, as the pre-restore snapshot. */
 export function buildTarBackupScript(dataDir = "/data", backupDir = "/backup"): string {
   return [
     "set -e",
@@ -32,8 +29,30 @@ export function buildTarBackupScript(dataDir = "/data", backupDir = "/backup"): 
     `  tar czf "${backupDir}/volume.tar.gz" -C "${dataDir}" .`,
     "fi",
     `if [ -z "$(ls -A "${dataDir}")" ]; then echo "${EMPTY_SOURCE_MARKER}"; fi`,
-    `if tar tzf "${backupDir}/volume.tar.gz" | grep -qv '/$'; then echo "${ARCHIVE_HAS_FILES_MARKER}"; fi`,
   ].join("\n");
+}
+
+/**
+ * Shell script for a tar backup: stream the tar.gz to stdout, then record whether the source was empty.
+ * Exclusions arrive as `find` argv. Never interpolate operator patterns into this string.
+ */
+export function buildTarStreamScript(dataDir = "/data", backupDir = "/backup"): string {
+  return [
+    "set -e",
+    `cd "${dataDir}"`,
+    'if [ "$#" -gt 0 ]; then',
+    `  find . "$@" > "${backupDir}/${EXCLUDE_LIST_FILE}"`,
+    `  tar czf - -X "${backupDir}/${EXCLUDE_LIST_FILE}" -C "${dataDir}" .`,
+    "else",
+    `  tar czf - -C "${dataDir}" .`,
+    "fi",
+    `if [ -z "$(ls -A "${dataDir}")" ]; then echo "${EMPTY_SOURCE_MARKER}" > "${backupDir}/${MARKERS_FILE}"; fi`,
+  ].join("\n");
+}
+
+/** Stream a single bind-mounted file's tar.gz to stdout. Mounted at `${dataDir}/${FILE_PAYLOAD_NAME}`. */
+export function buildFileStreamScript(dataDir = "/data"): string {
+  return ["set -e", `tar czf - -C "${dataDir}" ${FILE_PAYLOAD_NAME}`].join("\n");
 }
 
 /** Printed when the mounted source is a directory. Its absence is the signal. */
@@ -45,7 +64,7 @@ export const FILE_SOURCE_MARKER = "vardo:source-is-file";
 /** Fixed mount name for a single-file bind source, so no host path reaches a shell script. */
 export const FILE_PAYLOAD_NAME = "payload";
 
-/** Archive a single bind-mounted file. Mounted at `${dataDir}/${FILE_PAYLOAD_NAME}`. */
+/** Copy a single bind-mounted file aside as a tar.gz, as the pre-restore snapshot. */
 export function buildFileBackupScript(dataDir = "/data", backupDir = "/backup"): string {
   return [
     "set -e",

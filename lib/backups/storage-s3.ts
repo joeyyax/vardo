@@ -3,19 +3,29 @@
 import {
   S3Client,
   PutObjectCommand,
+  CreateMultipartUploadCommand,
+  UploadPartCommand,
+  CompleteMultipartUploadCommand,
+  AbortMultipartUploadCommand,
   GetObjectCommand,
   DeleteObjectCommand,
   HeadObjectCommand,
   ListObjectsV2Command,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { createReadStream, createWriteStream } from "fs";
-import { stat } from "fs/promises";
+import { createWriteStream } from "fs";
 import { Readable, pipeline } from "stream";
 import { promisify } from "util";
+import { ArchiveMissingError, type BackupStorage, type StoredObject } from "./storage-port";
+import { withRetry } from "./storage-retry";
 
 const pipelineAsync = promisify(pipeline);
-import { ArchiveMissingError, type BackupStorage, type StoredObject } from "./storage-port";
+
+/** Every part but the last is this size; R2 requires equal parts. 10,000 parts caps an archive at 156 GiB. */
+export const PART_SIZE = 16 * 1024 * 1024;
+/** Parts in flight at once. Memory is about (queue + 1) × part size. */
+export const PART_QUEUE = 4;
+const MAX_PARTS = 10_000;
 
 export type S3StorageConfig = {
   bucket: string;
@@ -35,9 +45,11 @@ function isMissing(err: unknown): boolean {
 export class S3BackupStorage implements BackupStorage {
   private client: S3Client;
   private config: S3StorageConfig;
+  private partSize: number;
 
-  constructor(config: S3StorageConfig) {
+  constructor(config: S3StorageConfig, opts: { partSize?: number } = {}) {
     this.config = config;
+    this.partSize = opts.partSize ?? PART_SIZE;
     this.client = new S3Client({
       region: config.region,
       endpoint: config.endpoint,
@@ -46,6 +58,8 @@ export class S3BackupStorage implements BackupStorage {
         secretAccessKey: config.secretAccessKey,
       },
       forcePathStyle: true, // Required for Minio, R2, B2
+      // A hung part would otherwise hold the upload forever.
+      requestHandler: { requestTimeout: 120_000, connectionTimeout: 30_000 },
     });
   }
 
@@ -57,21 +71,88 @@ export class S3BackupStorage implements BackupStorage {
     return key;
   }
 
-  async upload(key: string, filePath: string): Promise<{ sizeBytes: number }> {
-    const fileInfo = await stat(filePath);
-    const body = createReadStream(filePath);
+  /** One PUT under a part's size, otherwise a multipart upload that aborts on any failure. */
+  async uploadStream(key: string, body: Readable): Promise<{ sizeBytes: number }> {
+    const Bucket = this.config.bucket;
+    const Key = this.fullKey(key);
+    const parts = readParts(body, this.partSize);
 
-    await this.client.send(
-      new PutObjectCommand({
-        Bucket: this.config.bucket,
-        Key: this.fullKey(key),
-        Body: body,
-        ContentLength: fileInfo.size,
-        ContentType: "application/gzip",
-      }),
+    const first = await parts.next();
+    const firstPart = first.done ? Buffer.alloc(0) : first.value;
+    const second = first.done ? first : await parts.next();
+    if (second.done) {
+      await withRetry("upload", key, () =>
+        this.client.send(
+          new PutObjectCommand({
+            Bucket,
+            Key,
+            Body: firstPart,
+            ContentLength: firstPart.length,
+            ContentType: "application/gzip",
+          }),
+        ),
+      );
+      return { sizeBytes: firstPart.length };
+    }
+
+    const { UploadId } = await withRetry("upload", key, () =>
+      this.client.send(new CreateMultipartUploadCommand({ Bucket, Key, ContentType: "application/gzip" })),
     );
+    if (!UploadId) throw new Error("Storage returned no multipart upload ID");
 
-    return { sizeBytes: fileInfo.size };
+    const done: { ETag: string; PartNumber: number }[] = [];
+    const inFlight = new Set<Promise<void>>();
+    let failure: unknown = null;
+    let sizeBytes = 0;
+    let partNumber = 0;
+
+    const send = (data: Buffer) => {
+      const PartNumber = ++partNumber;
+      if (PartNumber > MAX_PARTS) throw new Error(`Archive exceeds ${MAX_PARTS} parts of ${this.partSize} bytes`);
+      sizeBytes += data.length;
+      const task = withRetry(`upload part ${PartNumber}`, key, () =>
+        this.client.send(
+          new UploadPartCommand({ Bucket, Key, UploadId, PartNumber, Body: data, ContentLength: data.length }),
+        ),
+      )
+        .then(({ ETag }) => {
+          if (!ETag) throw new Error(`Storage returned no ETag for part ${PartNumber}`);
+          done.push({ ETag, PartNumber });
+        })
+        .catch((err) => {
+          failure ??= err;
+        })
+        .finally(() => inFlight.delete(task));
+      inFlight.add(task);
+    };
+
+    try {
+      send(firstPart);
+      send(second.value);
+      for await (const part of parts) {
+        while (inFlight.size >= PART_QUEUE && !failure) await Promise.race(inFlight);
+        if (failure) break;
+        send(part);
+      }
+      await Promise.all(inFlight);
+      if (failure) throw failure;
+
+      done.sort((a, b) => a.PartNumber - b.PartNumber);
+      await withRetry("upload complete", key, () =>
+        this.client.send(
+          new CompleteMultipartUploadCommand({ Bucket, Key, UploadId, MultipartUpload: { Parts: done } }),
+        ),
+      );
+      return { sizeBytes };
+    } catch (err) {
+      body.destroy();
+      await Promise.allSettled(inFlight);
+      // Abandoned parts are billed until aborted.
+      await withRetry("upload abort", key, () =>
+        this.client.send(new AbortMultipartUploadCommand({ Bucket, Key, UploadId })),
+      ).catch(() => {});
+      throw err;
+    }
   }
 
   async download(key: string, destPath: string): Promise<void> {
@@ -141,4 +222,25 @@ export class S3BackupStorage implements BackupStorage {
 
     return getSignedUrl(this.client, command, { expiresIn });
   }
+}
+
+/** Cut a stream into buffers of exactly `size` bytes, plus a shorter last one. */
+export async function* readParts(body: Readable, size: number): AsyncGenerator<Buffer> {
+  let buf = Buffer.allocUnsafe(size);
+  let filled = 0;
+  for await (const chunk of body as AsyncIterable<Buffer>) {
+    let offset = 0;
+    while (offset < chunk.length) {
+      const n = Math.min(size - filled, chunk.length - offset);
+      chunk.copy(buf, filled, offset, offset + n);
+      filled += n;
+      offset += n;
+      if (filled === size) {
+        yield buf;
+        buf = Buffer.allocUnsafe(size);
+        filled = 0;
+      }
+    }
+  }
+  if (filled > 0) yield buf.subarray(0, filled);
 }

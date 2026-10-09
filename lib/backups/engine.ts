@@ -9,17 +9,19 @@ import { nanoid } from "nanoid";
 import { createHash } from "crypto";
 import { createReadStream, createWriteStream } from "fs";
 import { spawn } from "child_process";
+import { PassThrough, type Duplex, type Readable } from "stream";
 import { pipeline } from "stream/promises";
 import { createGzip, createGunzip } from "zlib";
 import { mkdir, readFile, rename, rm, stat, writeFile } from "fs/promises";
 import { resolve, join } from "path";
 import { ArchiveMissingError, type BackupStorage } from "./storage-port";
 import {
+  createArchiveEncryptor,
   decryptArchiveFile,
-  encryptArchiveFile,
   isEncryptedArchiveFile,
   type ArchiveKey,
 } from "./archive-crypto";
+import { createArchiveInspector, type ArchiveStats } from "./archive-stream";
 import { createBackupStorage } from "./storage-factory";
 import { assertSafeName } from "@/lib/docker/validate";
 import { isUncapturedSource, pausedDumpReason, uncapturedReason } from "./coverage";
@@ -33,18 +35,20 @@ import { quiesce, type RestoreDestination } from "./quiesce";
 import { getSystemBackupsDefault, resolveBackupSwitch } from "./switch";
 import { isSelfApp } from "@/lib/docker/self-env";
 import {
-  ARCHIVE_HAS_FILES_MARKER,
   DIRECTORY_SOURCE_MARKER,
   EMPTY_SOURCE_MARKER,
   EXCLUDE_LIST_FILE,
   FILE_PAYLOAD_NAME,
   FILE_SOURCE_MARKER,
+  MARKERS_FILE,
   MIN_VALID_GZIP_BYTES,
   PROTECT_LIST_FILE,
   buildBindPreflightScript,
   buildFileBackupScript,
   buildFileRestoreScript,
+  buildFileStreamScript,
   buildTarBackupScript,
+  buildTarStreamScript,
   buildTarRestoreScript,
 } from "./archive";
 import {
@@ -185,28 +189,179 @@ async function verifyArchive(
   return info.size;
 }
 
-/** Encrypt a verified archive and upload it. Plaintext only when no master key is configured. */
-async function uploadArchive(
-  archivePath: string,
-  storageKey: string,
-  storage: BackupStorage,
-  logFn: (msg: string) => void,
-): Promise<{ sizeBytes: number; archiveKey: ArchiveKey | null }> {
+/** A process whose stdout is an archive. `done` settles when it exits. */
+type ArchiveProducer = { stdout: Readable; done: Promise<void>; kill: () => void };
+
+function spawnProducer(
+  file: string,
+  argv: string[],
+  label: string,
+  opts: { env?: NodeJS.ProcessEnv; containerName?: string } = {},
+): ArchiveProducer {
+  const child = spawn(file, argv, { env: opts.env, stdio: ["ignore", "pipe", "pipe"] });
+  let stderr = "";
+  child.stderr.on("data", (chunk) => {
+    stderr = (stderr + String(chunk)).slice(-8000);
+  });
+  const done = new Promise<void>((resolveExit, rejectExit) => {
+    child.on("error", rejectExit);
+    child.on("close", (code, signal) => {
+      if (code === 0) resolveExit();
+      else rejectExit(new Error(`${label} exited ${code ?? signal}: ${stderr.trim().slice(-500)}`));
+    });
+  });
+  done.catch(() => {});
+  return {
+    stdout: child.stdout,
+    done,
+    kill: () => {
+      child.kill();
+      // Killing the client alone can leave the container running.
+      if (opts.containerName) {
+        execFileAsync("docker", ["rm", "-f", opts.containerName], { env: dockerEnv(), timeout: 30_000 }).catch(() => {});
+      }
+    },
+  };
+}
+
+/** Container name for a backup's archiving container, so a reaper can find it. */
+export function backupContainerName(backupId: string): string {
+  return `vardo-backup-${backupId}`;
+}
+
+/** Staging dir for one backup's side files. Named by backup so a reaper can find it. */
+export function backupWorkDir(backupId: string): string {
+  return join(BACKUPS_DIR, `.tmp-${backupId}`);
+}
+
+/**
+ * Stream an archive from its producer through checksum, gzip check and encryption into storage.
+ * Plaintext only when no master key is configured. Nothing is committed unless every check passes.
+ */
+async function streamArchive(opts: {
+  producer: ArchiveProducer;
+  /** Gzip the producer's output here. */
+  compress?: boolean;
+  /** Scan the payload as tar. */
+  tar: boolean;
+  label: string;
+  storage: BackupStorage;
+  storageKey: string;
+  logFn: (msg: string) => void;
+  /** Runs once the producer has exited cleanly. A throw fails the archive. */
+  afterExit?: (stats: ArchiveStats) => Promise<void>;
+}): Promise<{ sizeBytes: number; checksum: string; archiveKey: ArchiveKey | null }> {
+  const { producer, label, storage, storageKey, logFn } = opts;
+  const inspector = createArchiveInspector({
+    label,
+    tar: opts.tar,
+    beforeEnd: async (stats) => {
+      await producer.done;
+      await opts.afterExit?.(stats);
+    },
+  });
+
+  const stages: Duplex[] = [];
+  if (opts.compress) stages.push(createGzip());
+  stages.push(inspector);
+
   const masterKey = process.env.ENCRYPTION_MASTER_KEY;
-  let uploadPath = archivePath;
   let archiveKey: ArchiveKey | null = null;
   if (masterKey) {
-    uploadPath = `${archivePath}.enc`;
-    archiveKey = await encryptArchiveFile(archivePath, uploadPath, masterKey);
-    logFn(`Encrypted under master key ${archiveKey.keyFingerprint}`);
+    const encryptor = createArchiveEncryptor(masterKey);
+    archiveKey = encryptor.key;
+    stages.push(encryptor.stream);
+    logFn(`Encrypting under master key ${archiveKey.keyFingerprint}`);
   } else {
     logFn("WARNING: ENCRYPTION_MASTER_KEY is not set — uploading the archive unencrypted");
   }
 
-  logFn(`Uploading to ${storageKey}`);
-  const { sizeBytes } = await storage.upload(storageKey, uploadPath);
-  logFn(`Upload complete (${sizeBytes} bytes)`);
-  return { sizeBytes, archiveKey };
+  logFn(`Streaming to ${storageKey}`);
+  const startedAt = Date.now();
+  const body = new PassThrough();
+  let firstError: unknown = null;
+  const fail = (err: unknown) => {
+    firstError ??= err;
+    producer.kill();
+    body.destroy(err instanceof Error ? err : new Error(String(err)));
+  };
+
+  const [produced, uploaded] = await Promise.allSettled([
+    pipeline([producer.stdout, ...stages, body]).catch((err) => {
+      fail(err);
+      throw err;
+    }),
+    storage.uploadStream(storageKey, body).catch((err) => {
+      fail(err);
+      throw err;
+    }),
+  ]);
+  if (produced.status === "rejected" || uploaded.status === "rejected") throw firstError;
+
+  const stats = inspector.stats!;
+  const seconds = ((Date.now() - startedAt) / 1000).toFixed(1);
+  logFn(`Checksum: sha256:${stats.sha256.slice(0, 16)}...`);
+  logFn(`Upload complete (${uploaded.value.sizeBytes} bytes, ${stats.bytes} before encryption) in ${seconds}s`);
+  return { sizeBytes: uploaded.value.sizeBytes, checksum: stats.sha256, archiveKey };
+}
+
+/** The empty-source marker the streaming script leaves in the work dir. */
+async function sourceReportedEmpty(workDir: string): Promise<boolean> {
+  const body = await readFile(join(workDir, MARKERS_FILE), "utf8").catch(() => "");
+  return body.includes(EMPTY_SOURCE_MARKER);
+}
+
+/**
+ * Stream a tar backup from a one-shot container and read back what it left out.
+ * Exclusion patterns go in as argv, never script text: they're operator input.
+ */
+async function streamTarBackup(opts: {
+  mountArgs: string[];
+  workDir: string;
+  containerName: string;
+  excludePatterns: string[];
+  /** A single bind-mounted file instead of a tree. */
+  singleFile?: boolean;
+  label: string;
+  storage: BackupStorage;
+  storageKey: string;
+  logFn: (msg: string) => void;
+}): Promise<{ sizeBytes: number; checksum: string; archiveKey: ArchiveKey | null; excludedPaths: string[]; sourceWasEmpty: boolean }> {
+  const { workDir, label } = opts;
+  const findArgv = opts.singleFile ? [] : buildFindExclusionArgv(opts.excludePatterns);
+  const script = opts.singleFile ? [buildFileStreamScript()] : [buildTarStreamScript(), "vardo-backup", ...findArgv];
+
+  const producer = spawnProducer(
+    "docker",
+    ["run", "--rm", "--name", opts.containerName, ...opts.mountArgs, "-v", `${workDir}:/backup`, "alpine", "sh", "-c", ...script],
+    label,
+    { env: dockerEnv(), containerName: opts.containerName },
+  );
+
+  let sourceWasEmpty = false;
+  const result = await streamArchive({
+    producer,
+    tar: true,
+    label,
+    storage: opts.storage,
+    storageKey: opts.storageKey,
+    logFn: opts.logFn,
+    afterExit: async (stats) => {
+      // The container's own verdict on the source.
+      sourceWasEmpty = await sourceReportedEmpty(workDir);
+      // A pattern that matched every file still leaves a tree that clears the size floor.
+      if (findArgv.length > 0 && !stats.hasFiles && !sourceWasEmpty) {
+        throw new Error(`${label} excluded every file — refusing to record an archive that holds none`);
+      }
+      if (!sourceWasEmpty && stats.bytes < MIN_VALID_GZIP_BYTES) {
+        throw new Error(`${label} produced a ${stats.bytes}-byte file — too small to be valid, backup aborted`);
+      }
+    },
+  });
+
+  const excludedPaths =
+    findArgv.length === 0 ? [] : parseExcludedPaths(await readFile(join(workDir, EXCLUDE_LIST_FILE), "utf8"));
+  return { ...result, excludedPaths, sourceWasEmpty };
 }
 
 /** Download an archive into `destPath`, decrypted. Plaintext passes through unless the row says encrypted. */
@@ -236,125 +391,66 @@ async function fetchArchive(
   }
 }
 
-/**
- * Run the tar backup script in a one-shot container and read back what it left out.
- * Exclusion patterns go in as argv, never script text: they're operator input.
- */
-async function runTarBackup(
-  mountArgs: string[],
-  tmpDir: string,
-  excludePatterns: string[],
-  timeoutMs: number,
-  label: string,
-): Promise<{ stdout: string; excludedPaths: string[] }> {
-  const findArgv = buildFindExclusionArgv(excludePatterns);
-
-  const { stdout } = await execFileAsync(
-    "docker",
-    [
-      "run", "--rm",
-      ...mountArgs,
-      "-v", `${tmpDir}:/backup`,
-      "alpine", "sh", "-c", buildTarBackupScript(),
-      "vardo-backup", ...findArgv,
-    ],
-    { env: dockerEnv(), timeout: timeoutMs },
-  );
-
-  const out = String(stdout);
-  if (findArgv.length === 0) return { stdout: out, excludedPaths: [] };
-
-  // A pattern that matched every file still leaves a tree that clears the size floor.
-  if (!out.includes(ARCHIVE_HAS_FILES_MARKER) && !out.includes(EMPTY_SOURCE_MARKER)) {
-    throw new Error(
-      `${label} excluded every file — refusing to record an archive that holds none`,
-    );
-  }
-
-  return {
-    stdout: out,
-    excludedPaths: parseExcludedPaths(await readFile(join(tmpDir, EXCLUDE_LIST_FILE), "utf8")),
-  };
-}
-
-/** Create a tar.gz of a Docker volume. */
-async function backupVolumeTar(
+/** Stream a Docker volume's tar.gz to storage. */
+export async function backupVolumeTar(
+  backupId: string,
   dockerVolumeName: string,
   storageKey: string,
   storage: BackupStorage,
   logFn: (msg: string) => void,
   excludePatterns: string[] = [],
 ): Promise<{ sizeBytes: number; checksum: string; excludedPaths: string[]; archiveKey: ArchiveKey | null }> {
-  const tmpDir = join(BACKUPS_DIR, `.tmp-${nanoid(8)}`);
-  await ensureDir(tmpDir);
-  const archiveFile = "volume.tar.gz";
+  const workDir = backupWorkDir(backupId);
+  await ensureDir(workDir);
 
   try {
     assertSafeName(dockerVolumeName);
 
     logFn(`Archiving volume ${dockerVolumeName}`);
-    const { stdout, excludedPaths } = await runTarBackup(
-      ["-v", `${dockerVolumeName}:/data`],
-      tmpDir,
+    const result = await streamTarBackup({
+      mountArgs: ["-v", `${dockerVolumeName}:/data`],
+      workDir,
+      containerName: backupContainerName(backupId),
       excludePatterns,
-      600_000,
-      `Volume ${dockerVolumeName}`,
-    );
+      label: `Volume ${dockerVolumeName}`,
+      storage,
+      storageKey,
+      logFn,
+    });
     if (excludePatterns.length > 0) {
-      logFn(`Excluded ${excludedPaths.length} path(s) from ${excludePatterns.length} pattern(s)`);
+      logFn(`Excluded ${result.excludedPaths.length} path(s) from ${excludePatterns.length} pattern(s)`);
     }
-
-    // The container's own verdict on the source.
-    const sourceWasEmpty = stdout.includes(EMPTY_SOURCE_MARKER);
-    if (sourceWasEmpty) {
+    if (result.sourceWasEmpty) {
       logFn(`Volume ${dockerVolumeName} is empty — archived 0 files`);
     }
-
-    const archivePath = join(tmpDir, archiveFile);
-    await verifyArchive(archivePath, `Volume ${dockerVolumeName}`, sourceWasEmpty);
-
-    const checksum = await checksumFile(archivePath);
-    logFn(`Checksum: sha256:${checksum.slice(0, 16)}...`);
-
-    const { sizeBytes, archiveKey } = await uploadArchive(archivePath, storageKey, storage, logFn);
-    return { sizeBytes, checksum, excludedPaths, archiveKey };
+    return result;
   } finally {
-    try {
-      await rm(tmpDir, { recursive: true, force: true });
-    } catch {
-      // best effort
-    }
+    await rm(workDir, { recursive: true, force: true }).catch(() => {});
   }
 }
 
-/** Write a dump to stdout and gzip it. `run` receives the destination and issues the command. */
+/** Stream a dump from `producer`, gzipped here, to storage. */
 async function backupVolumeDump(
-  run: (dumpFile: string, logFn: (msg: string) => void) => Promise<void>,
+  producer: ArchiveProducer,
   storageKey: string,
   storage: BackupStorage,
   logFn: (msg: string) => void,
 ): Promise<{ sizeBytes: number; checksum: string; archiveKey: ArchiveKey | null }> {
-  const tmpDir = join(BACKUPS_DIR, `.tmp-${nanoid(8)}`);
-  await ensureDir(tmpDir);
-  const dumpFile = join(tmpDir, "dump.gz");
-
-  try {
-    await run(dumpFile, logFn);
-
-    await verifyArchive(dumpFile, "dump");
-
-    const checksum = await checksumFile(dumpFile);
-    logFn(`Checksum: sha256:${checksum.slice(0, 16)}...`);
-
-    const { sizeBytes, archiveKey } = await uploadArchive(dumpFile, storageKey, storage, logFn);
-    return { sizeBytes, checksum, archiveKey };
-  } finally {
-    try {
-      await rm(tmpDir, { recursive: true, force: true });
-    } catch {
-      // best effort
-    }
-  }
+  return streamArchive({
+    producer,
+    compress: true,
+    tar: false,
+    label: "dump",
+    storage,
+    storageKey,
+    logFn,
+    // An empty dump is never correct output.
+    afterExit: async (stats) => {
+      if (stats.bytes < MIN_VALID_GZIP_BYTES) {
+        throw new Error(`dump produced a ${stats.bytes}-byte file — too small to be valid, backup aborted`);
+      }
+    },
+  });
 }
 
 /**
@@ -471,6 +567,7 @@ async function bindSourceHeldData(appId: string | null, volumeName: string): Pro
 
 /** Archive a host path, directory or single file. Mounted `:ro` so a bug can't write to the host. */
 async function backupBindTar(
+  backupId: string,
   hostSource: string,
   storageKey: string,
   storage: BackupStorage,
@@ -483,8 +580,8 @@ async function backupBindTar(
   excludedPaths: string[];
   archiveKey: ArchiveKey | null;
 }> {
-  const tmpDir = join(BACKUPS_DIR, `.tmp-${nanoid(8)}`);
-  await ensureDir(tmpDir);
+  const workDir = backupWorkDir(backupId);
+  await ensureDir(workDir);
 
   try {
     const safeSource = assertSafeBindSource(hostSource, {
@@ -506,45 +603,26 @@ async function backupBindTar(
 
     logFn(`Archiving host ${kind} ${safeSource}`);
 
-    let excludedPaths: string[] = [];
-    if (kind === "file") {
-      await execFileAsync(
-        "docker",
-        [
-          "run", "--rm",
-          "-v", `${safeSource}:/data/${FILE_PAYLOAD_NAME}:ro`,
-          "-v", `${tmpDir}:/backup`,
-          "alpine", "sh", "-c", buildFileBackupScript(),
-        ],
-        { env: dockerEnv(), timeout: 1_800_000 },
-      );
-    } else {
-      ({ excludedPaths } = await runTarBackup(
-        ["-v", `${safeSource}:/data:ro`],
-        tmpDir,
-        excludePatterns,
-        1_800_000,
-        `Bind mount ${safeSource}`,
-      ));
-      if (excludePatterns.length > 0) {
-        logFn(`Excluded ${excludedPaths.length} path(s) from ${excludePatterns.length} pattern(s)`);
-      }
+    const result = await streamTarBackup({
+      mountArgs:
+        kind === "file"
+          ? ["-v", `${safeSource}:/data/${FILE_PAYLOAD_NAME}:ro`]
+          : ["-v", `${safeSource}:/data:ro`],
+      workDir,
+      containerName: backupContainerName(backupId),
+      excludePatterns,
+      singleFile: kind === "file",
+      label: `Bind mount ${safeSource}`,
+      storage,
+      storageKey,
+      logFn,
+    });
+    if (excludePatterns.length > 0) {
+      logFn(`Excluded ${result.excludedPaths.length} path(s) from ${excludePatterns.length} pattern(s)`);
     }
-
-    const archivePath = join(tmpDir, "volume.tar.gz");
-    await verifyArchive(archivePath, `Bind mount ${safeSource}`);
-
-    const checksum = await checksumFile(archivePath);
-    logFn(`Checksum: sha256:${checksum.slice(0, 16)}...`);
-
-    const { sizeBytes, archiveKey } = await uploadArchive(archivePath, storageKey, storage, logFn);
-    return { sizeBytes, checksum, kind, excludedPaths, archiveKey };
+    return { ...result, kind };
   } finally {
-    try {
-      await rm(tmpDir, { recursive: true, force: true });
-    } catch {
-      // best effort
-    }
+    await rm(workDir, { recursive: true, force: true }).catch(() => {});
   }
 }
 
@@ -881,8 +959,8 @@ export async function runBackup(
         }
 
         // Prefer the spec: it resolves its container now.
-        const runDump = spec
-          ? async (dumpFile: string, logFn: (msg: string) => void) => {
+        const startDump = spec
+          ? async (logFn: (msg: string) => void): Promise<ArchiveProducer> => {
               if (!vol.appId || !vol.appName) {
                 throw new Error(`A dump spec needs an app to resolve against (volume: ${vol.name})`);
               }
@@ -899,28 +977,21 @@ export async function runBackup(
                   `No running container for service "${spec.service}" — cannot dump ${vol.name}`,
                 );
               }
-              await streamDockerDump(buildDumpArgv(spec.kind, container.id, container.env), dumpFile, logFn);
+              const argv = buildDumpArgv(spec.kind, container.id, container.env);
+              logFn(`Running: docker ${argv.slice(0, 3).join(" ")} …`);
+              return spawnProducer("docker", argv, "dump", { env: dockerEnv() });
             }
-          : async (dumpFile: string, logFn: (msg: string) => void) => {
+          : async (logFn: (msg: string) => void): Promise<ArchiveProducer> => {
               logFn(`Running dump: ${legacyCmd}`);
-              await execFileAsync(
-                "bash",
-                ["-c", `set -o pipefail; ${legacyCmd} | gzip > "${dumpFile}"`],
-                { timeout: 600_000 },
-              );
+              return spawnProducer("bash", ["-c", `set -o pipefail; ${legacyCmd}`], "dump");
             };
 
-        result = await backupVolumeDump(
-          runDump,
-          storageKey,
-          storage,
-          log,
-        );
+        result = await backupVolumeDump(await startDump(log), storageKey, storage, log);
       } else if (vol.type === "bind") {
         if (!vol.source) {
           throw new Error(`Bind mount ${vol.name} has no host path recorded`);
         }
-        const bind = await backupBindTar(vol.source, storageKey, storage, log, excludePatterns);
+        const bind = await backupBindTar(backupId, vol.source, storageKey, storage, log, excludePatterns);
         result = bind;
         resolvedSource = vol.source;
         sourceKind = bind.kind;
@@ -933,7 +1004,7 @@ export async function runBackup(
         if (!dockerVolumeName) {
           throw new Error(`Volume not found: ${vol.name}`);
         }
-        const tar = await backupVolumeTar(dockerVolumeName, storageKey, storage, log, excludePatterns);
+        const tar = await backupVolumeTar(backupId, dockerVolumeName, storageKey, storage, log, excludePatterns);
         result = tar;
         excludedPaths = tar.excludedPaths;
       }

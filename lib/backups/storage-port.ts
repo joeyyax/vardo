@@ -1,11 +1,16 @@
 // Contract every backup storage adapter implements.
 
+import type { Readable } from "stream";
+
 /** One object found by a listing. */
 export type StoredObject = { key: string; sizeBytes: number; modifiedAt: Date };
 
 export interface BackupStorage {
-  /** Upload a local file to the storage target. Returns the size in bytes. */
-  upload(key: string, filePath: string): Promise<{ sizeBytes: number }>;
+  /**
+   * Write a stream to the target. Nothing is visible under `key` unless the stream ends cleanly.
+   * Not retried as a whole: the stream can't be replayed. Adapters retry what they buffer.
+   */
+  uploadStream(key: string, body: Readable): Promise<{ sizeBytes: number }>;
 
   /** Download a file from the storage target to a local path. */
   download(key: string, destPath: string): Promise<void>;

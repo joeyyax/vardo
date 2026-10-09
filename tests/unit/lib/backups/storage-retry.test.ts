@@ -4,6 +4,7 @@
 // failure surfacing immediately.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { Readable } from "stream";
 
 vi.mock("@/lib/logger", () => ({
   logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }) },
@@ -36,7 +37,7 @@ function s3Error(name: string, httpStatusCode: number) {
 
 function stubStorage(overrides: Record<string, unknown> = {}) {
   return {
-    upload: vi.fn(async () => ({ sizeBytes: 1 })),
+    uploadStream: vi.fn(async () => ({ sizeBytes: 1 })),
     download: vi.fn(async () => {}),
     delete: vi.fn(async () => {}),
     list: vi.fn(async () => []),
@@ -142,20 +143,20 @@ describe("withStorageRetry", () => {
       .fn()
       .mockRejectedValueOnce(dnsError())
       .mockRejectedValueOnce(dnsError())
-      .mockResolvedValue({ sizeBytes: 4096 });
+      .mockResolvedValue(undefined);
 
-    const storage = withStorageRetry(stubStorage({ upload }));
-    const result = await runWithoutWaiting(storage.upload("org/app/vol.tar.gz", "/tmp/vol.tar.gz"));
+    const storage = withStorageRetry(stubStorage({ download: upload }));
+    const result = await runWithoutWaiting(storage.download("org/app/vol.tar.gz", "/tmp/vol.tar.gz"));
 
-    expect(result).toEqual({ sizeBytes: 4096 });
+    expect(result).toBeUndefined();
     expect(upload).toHaveBeenCalledTimes(3);
   });
 
-  it("re-enters the adapter each attempt so the file is re-read, never a spent stream", async () => {
-    const upload = vi.fn().mockRejectedValueOnce(dnsError()).mockResolvedValue({ sizeBytes: 1 });
+  it("re-enters the adapter each attempt, never reusing a spent stream", async () => {
+    const upload = vi.fn().mockRejectedValueOnce(dnsError()).mockResolvedValue(undefined);
 
-    const storage = withStorageRetry(stubStorage({ upload }));
-    await runWithoutWaiting(storage.upload("k", "/tmp/archive.tar.gz"));
+    const storage = withStorageRetry(stubStorage({ download: upload }));
+    await runWithoutWaiting(storage.download("k", "/tmp/archive.tar.gz"));
 
     expect(upload).toHaveBeenNthCalledWith(1, "k", "/tmp/archive.tar.gz");
     expect(upload).toHaveBeenNthCalledWith(2, "k", "/tmp/archive.tar.gz");
@@ -163,9 +164,9 @@ describe("withStorageRetry", () => {
 
   it("does not retry an auth failure", async () => {
     const upload = vi.fn().mockRejectedValue(s3Error("InvalidAccessKeyId", 403));
-    const storage = withStorageRetry(stubStorage({ upload }));
+    const storage = withStorageRetry(stubStorage({ download: upload }));
 
-    await expect(runWithoutWaiting(storage.upload("k", "/tmp/f"))).rejects.toThrow(
+    await expect(runWithoutWaiting(storage.download("k", "/tmp/f"))).rejects.toThrow(
       "InvalidAccessKeyId",
     );
     expect(upload).toHaveBeenCalledTimes(1);
@@ -173,19 +174,19 @@ describe("withStorageRetry", () => {
 
   it("reports an auth failure as itself, not as a retry exhaustion", async () => {
     const storage = withStorageRetry(
-      stubStorage({ upload: vi.fn().mockRejectedValue(s3Error("AccessDenied", 403)) }),
+      stubStorage({ download: vi.fn().mockRejectedValue(s3Error("AccessDenied", 403)) }),
     );
 
-    await expect(runWithoutWaiting(storage.upload("k", "/tmp/f"))).rejects.not.toBeInstanceOf(
+    await expect(runWithoutWaiting(storage.download("k", "/tmp/f"))).rejects.not.toBeInstanceOf(
       StorageRetryError,
     );
   });
 
   it("bounds retries", async () => {
     const upload = vi.fn().mockRejectedValue(dnsError());
-    const storage = withStorageRetry(stubStorage({ upload }));
+    const storage = withStorageRetry(stubStorage({ download: upload }));
 
-    await expect(runWithoutWaiting(storage.upload("k", "/tmp/f"))).rejects.toThrow();
+    await expect(runWithoutWaiting(storage.download("k", "/tmp/f"))).rejects.toThrow();
     expect(upload).toHaveBeenCalledTimes(MAX_ATTEMPTS);
   });
 
@@ -194,22 +195,30 @@ describe("withStorageRetry", () => {
       vi.setSystemTime(Date.now() + RETRY_BUDGET_MS + 1_000);
       throw dnsError();
     });
-    const storage = withStorageRetry(stubStorage({ upload }));
+    const storage = withStorageRetry(stubStorage({ download: upload }));
 
-    await expect(runWithoutWaiting(storage.upload("k", "/tmp/f"))).rejects.toThrow();
+    await expect(runWithoutWaiting(storage.download("k", "/tmp/f"))).rejects.toThrow();
     expect(upload).toHaveBeenCalledTimes(1);
   });
 
   it("reports that it retried, and how often, once retries are exhausted", async () => {
-    const storage = withStorageRetry(stubStorage({ upload: vi.fn().mockRejectedValue(dnsError()) }));
+    const storage = withStorageRetry(stubStorage({ download: vi.fn().mockRejectedValue(dnsError()) }));
 
-    const error = await runWithoutWaiting(storage.upload("k", "/tmp/f")).catch((e) => e);
+    const error = await runWithoutWaiting(storage.download("k", "/tmp/f")).catch((e) => e);
 
     expect(error).toBeInstanceOf(StorageRetryError);
     expect(error.attempts).toBe(MAX_ATTEMPTS);
     expect(error.message).toContain("EAI_AGAIN");
-    expect(error.message).toContain(`upload failed after ${MAX_ATTEMPTS} attempts`);
+    expect(error.message).toContain(`download failed after ${MAX_ATTEMPTS} attempts`);
     expect(error.cause).toMatchObject({ code: "EAI_AGAIN" });
+  });
+
+  it("never retries a whole stream upload, which can't be replayed", async () => {
+    const uploadStream = vi.fn().mockRejectedValue(dnsError());
+    const storage = withStorageRetry(stubStorage({ uploadStream }));
+
+    await expect(runWithoutWaiting(storage.uploadStream("k", Readable.from([])))).rejects.toThrow();
+    expect(uploadStream).toHaveBeenCalledTimes(1);
   });
 
   it("retries download and delete, not just upload", async () => {

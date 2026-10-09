@@ -1,7 +1,11 @@
 // Local filesystem backup storage adapter.
 
-import { copyFile, mkdir, readdir, unlink, stat } from "fs/promises";
+import { createWriteStream } from "fs";
+import { copyFile, mkdir, readdir, rename, unlink, stat } from "fs/promises";
 import { resolve, dirname, join, relative, sep } from "path";
+import type { Readable } from "stream";
+import { pipeline } from "stream/promises";
+import { nanoid } from "nanoid";
 import { ArchiveMissingError, type BackupStorage, type StoredObject } from "./storage-port";
 
 export type LocalStorageConfig = {
@@ -24,12 +28,18 @@ export class LocalBackupStorage implements BackupStorage {
     return dest;
   }
 
-  async upload(key: string, filePath: string): Promise<{ sizeBytes: number }> {
+  async uploadStream(key: string, body: Readable): Promise<{ sizeBytes: number }> {
     const dest = this.safePath(key);
     await mkdir(dirname(dest), { recursive: true });
-    await copyFile(filePath, dest);
-    const info = await stat(dest);
-    return { sizeBytes: info.size };
+    const partial = `${dest}.partial-${nanoid(6)}`;
+    try {
+      await pipeline(body, createWriteStream(partial));
+      await rename(partial, dest);
+    } catch (err) {
+      await unlink(partial).catch(() => {});
+      throw err;
+    }
+    return { sizeBytes: (await stat(dest)).size };
   }
 
   async download(key: string, destPath: string): Promise<void> {

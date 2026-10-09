@@ -16,18 +16,21 @@ import {
 import { tmpdir } from "os";
 import { join } from "path";
 
+import { gunzipSync } from "zlib";
 import {
-  ARCHIVE_HAS_FILES_MARKER,
   EMPTY_SOURCE_MARKER,
   EXCLUDE_LIST_FILE,
   FILE_PAYLOAD_NAME,
+  MARKERS_FILE,
   MIN_VALID_GZIP_BYTES,
   PROTECT_LIST_FILE,
-  buildFileBackupScript,
   buildFileRestoreScript,
+  buildFileStreamScript,
   buildTarBackupScript,
   buildTarRestoreScript,
+  buildTarStreamScript,
 } from "@/lib/backups/archive";
+import { TarMemberScanner } from "@/lib/backups/archive-stream";
 import { buildFindExclusionArgv } from "@/lib/backups/exclusions";
 
 const ROOT = mkdtempSync(join(tmpdir(), "vardo-archive-script-"));
@@ -48,20 +51,44 @@ function makeVolume(files: Record<string, string>): { dataDir: string; backupDir
   return { dataDir, backupDir };
 }
 
-function run(dataDir: string, backupDir: string) {
-  return spawnSync("sh", ["-c", buildTarBackupScript(dataDir, backupDir)], { encoding: "utf8" });
+/** Run a streaming script, saving its stdout where the restore script reads an archive. */
+function stream(script: string, backupDir: string, argv: string[] = []) {
+  // macOS bsdtar adds AppleDouble members unless told not to.
+  const proc = spawnSync("sh", ["-c", script, "vardo-backup", ...argv], {
+    maxBuffer: 64 * 1024 * 1024,
+    env: { ...process.env, COPYFILE_DISABLE: "1" },
+  });
+  writeFileSync(join(backupDir, "volume.tar.gz"), proc.stdout);
+  let marker = "";
+  try {
+    marker = readFileSync(join(backupDir, MARKERS_FILE), "utf8");
+  } catch {
+    // no marker
+  }
+  return { status: proc.status, stderr: proc.stderr.toString(), archive: proc.stdout, marker };
 }
 
-describe("buildTarBackupScript", () => {
+function run(dataDir: string, backupDir: string) {
+  return stream(buildTarStreamScript(dataDir, backupDir), backupDir);
+}
+
+/** What the engine's in-stream scan reports about a tar.gz. */
+function hasFiles(archive: Buffer): boolean {
+  const scanner = new TarMemberScanner();
+  scanner.write(gunzipSync(archive));
+  return scanner.hasFiles;
+}
+
+describe("buildTarStreamScript", () => {
   it("marks an empty volume and still writes a readable archive", () => {
     const { dataDir, backupDir } = makeVolume({});
 
     const proc = run(dataDir, backupDir);
-    const archive = join(backupDir, "volume.tar.gz");
 
-    expect(proc.status).toBe(0);
-    expect(proc.stdout).toContain(EMPTY_SOURCE_MARKER);
-    expect(spawnSync("gzip", ["-t", archive]).status).toBe(0);
+    expect(proc.status, proc.stderr).toBe(0);
+    expect(proc.marker).toContain(EMPTY_SOURCE_MARKER);
+    // Not `gzip -t`: bsdtar pads piped output, which gzip flags as trailing garbage.
+    expect(() => gunzipSync(proc.archive)).not.toThrow();
   });
 
   it("leaves a volume with a dotfile unmarked", () => {
@@ -70,7 +97,7 @@ describe("buildTarBackupScript", () => {
     const proc = run(dataDir, backupDir);
 
     expect(proc.status).toBe(0);
-    expect(proc.stdout).not.toContain(EMPTY_SOURCE_MARKER);
+    expect(proc.marker).not.toContain(EMPTY_SOURCE_MARKER);
     expect(statSync(join(backupDir, "volume.tar.gz")).size).toBeGreaterThanOrEqual(
       MIN_VALID_GZIP_BYTES,
     );
@@ -82,7 +109,15 @@ describe("buildTarBackupScript", () => {
     const proc = run(join(ROOT, "does-not-exist"), backupDir);
 
     expect(proc.status).not.toBe(0);
-    expect(proc.stdout).not.toContain(EMPTY_SOURCE_MARKER);
+    expect(proc.marker).not.toContain(EMPTY_SOURCE_MARKER);
+  });
+
+  it("keeps the archive off stdout's marker channel", () => {
+    const { dataDir, backupDir } = makeVolume({});
+
+    const proc = run(dataDir, backupDir);
+
+    expect(proc.archive.includes(Buffer.from(EMPTY_SOURCE_MARKER))).toBe(false);
   });
 });
 
@@ -106,8 +141,8 @@ describe("single-file archive round-trip", () => {
     const original = '{"token":"secret","records":[1,2,3]}\n';
     const { dataDir, backupDir, payload } = makeFileVolume(original);
 
-    const backup = spawnSync("sh", ["-c", buildFileBackupScript(dataDir, backupDir)]);
-    expect(backup.status, backup.stderr?.toString()).toBe(0);
+    const backup = stream(buildFileStreamScript(dataDir), backupDir);
+    expect(backup.status, backup.stderr).toBe(0);
     expect(statSync(join(backupDir, "volume.tar.gz")).size).toBeGreaterThan(MIN_VALID_GZIP_BYTES);
 
     writeFileSync(payload, "clobbered");
@@ -119,7 +154,7 @@ describe("single-file archive round-trip", () => {
 
   it("writes through the existing inode, since the destination is a mount point", () => {
     const { dataDir, backupDir, payload } = makeFileVolume("v1\n");
-    spawnSync("sh", ["-c", buildFileBackupScript(dataDir, backupDir)]);
+    stream(buildFileStreamScript(dataDir), backupDir);
     const before = statSync(payload).ino;
 
     writeFileSync(payload, "v2\n");
@@ -174,16 +209,7 @@ function makeTree(files: Record<string, string>): { dataDir: string; backupDir: 
 }
 
 function backupWith(dataDir: string, backupDir: string, patterns: string[]) {
-  return spawnSync(
-    "sh",
-    [
-      "-c",
-      buildTarBackupScript(dataDir, backupDir),
-      "vardo-backup",
-      ...buildFindExclusionArgv(patterns),
-    ],
-    { encoding: "utf8" },
-  );
+  return stream(buildTarStreamScript(dataDir, backupDir), backupDir, buildFindExclusionArgv(patterns));
 }
 
 function members(backupDir: string): string[] {
@@ -201,7 +227,7 @@ const TREE = {
   "config/settings": "irreplaceable",
 };
 
-describe("buildTarBackupScript exclusions", () => {
+describe("buildTarStreamScript exclusions", () => {
   it("archives everything when no patterns are passed", () => {
     const { dataDir, backupDir } = makeTree(TREE);
 
@@ -209,7 +235,7 @@ describe("buildTarBackupScript exclusions", () => {
 
     expect(proc.status, proc.stderr).toBe(0);
     expect(members(backupDir)).toContain("./Cache/blob");
-    expect(proc.stdout).toContain(ARCHIVE_HAS_FILES_MARKER);
+    expect(hasFiles(proc.archive)).toBe(true);
   });
 
   it("drops every directory a slashless pattern names, at any depth", () => {
@@ -243,13 +269,13 @@ describe("buildTarBackupScript exclusions", () => {
   });
 
   // The size floor cannot see this: the directory tree alone clears 100 bytes.
-  it("withholds the has-files marker when the patterns took every file", () => {
+  it("scans as holding no files when the patterns took every file", () => {
     const { dataDir, backupDir } = makeTree(TREE);
 
     const proc = backupWith(dataDir, backupDir, ["*"]);
 
     expect(proc.status, proc.stderr).toBe(0);
-    expect(proc.stdout).not.toContain(ARCHIVE_HAS_FILES_MARKER);
+    expect(hasFiles(proc.archive)).toBe(false);
     expect(members(backupDir)).toEqual(["."]);
   });
 });
