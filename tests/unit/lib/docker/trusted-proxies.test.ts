@@ -86,6 +86,14 @@ describe("syncTraefikTrustedIps", () => {
     expect(await syncTraefikTrustedIps({ ranges: RANGES, env, deps: applied.deps, attempts: applied.attempts })).toBe("unchanged");
   });
 
+  it("still recreates Traefik when the .env isn't writable", async () => {
+    const t = setup(compose(flags(RANGES.join(","))));
+    t.writeEnv.mockRejectedValue(Object.assign(new Error("EACCES: permission denied"), { code: "EACCES" }));
+    const env = { VARDO_TRUSTED_PROXIES: "10.90.0.2" };
+    expect(await syncTraefikTrustedIps({ ranges: RANGES, env, deps: t.deps, attempts: t.attempts })).toBe("recreated");
+    expect(t.recreate).toHaveBeenCalledWith(expect.any(String), "vardo", "traefik", `${RANGES.join(",")},10.90.0.2/32`);
+  });
+
   it("recreates a Traefik started before the flags existed", async () => {
     const t = setup(compose(["--entrypoints.web.address=:80"]));
     expect(await syncTraefikTrustedIps({ ranges: RANGES, env: {}, deps: t.deps, attempts: t.attempts })).toBe("recreated");
