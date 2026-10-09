@@ -28,6 +28,9 @@ export type DeployApp = {
   composeFilePath: string | null;
   dockerfilePath: string | null;
   rootDirectory: string | null;
+  buildCommand?: string | null;
+  startCommand?: string | null;
+  buildProvider?: "railpack" | "nixpacks" | null;
   autoTraefikLabels: boolean | null;
   containerPort: number | null;
   autoDeploy: boolean | null;

@@ -1,0 +1,233 @@
+{
+  "railpackVersion": "0.35.0",
+  "plan": {
+    "steps": [
+      {
+        "name": "packages:mise",
+        "inputs": [
+          {
+            "image": "ghcr.io/railwayapp/railpack-builder:mise-2026.7.15"
+          }
+        ],
+        "commands": [
+          {
+            "path": "/mise/shims"
+          },
+          {
+            "path": "/etc/mise/config.toml",
+            "name": "generated-mise-toml",
+            "customName": "create mise config"
+          },
+          {
+            "cmd": "mise install",
+            "customName": "install mise packages: node, pnpm"
+          }
+        ],
+        "assets": {
+          "generated-mise-toml": "[tools]\n  node = \"22.23.3\"\n  pnpm = \"9.15.9\"\n\n[settings]\n  idiomatic_version_file_enable_tools = [\"python\", \"node\", \"ruby\", \"elixir\", \"go\", \"java\", \"yarn\", \"bun\", \"deno\"]\n  minimum_release_age = \"14d\"\n  paranoid = true\n  trusted_config_paths = [\"/app\"]\n  [settings.node]\n    verify = false\n"
+        },
+        "variables": {
+          "MISE_CACHE_DIR": "/mise/cache",
+          "MISE_CONFIG_DIR": "/mise",
+          "MISE_DATA_DIR": "/mise",
+          "MISE_INSTALLS_DIR": "/mise/installs",
+          "MISE_SHIMS_DIR": "/mise/shims"
+        }
+      },
+      {
+        "name": "install",
+        "inputs": [
+          {
+            "step": "packages:mise"
+          }
+        ],
+        "commands": [
+          {
+            "path": "/app/node_modules/.bin"
+          },
+          {
+            "cmd": "mkdir -p /app/node_modules/.cache"
+          },
+          {
+            "src": "package.json",
+            "dest": "package.json"
+          },
+          {
+            "src": "pnpm-lock.yaml",
+            "dest": "pnpm-lock.yaml"
+          },
+          {
+            "path": "/opt/pnpm"
+          },
+          {
+            "cmd": "pnpm add -g node-gyp"
+          },
+          {
+            "cmd": "pnpm install --frozen-lockfile --prefer-offline"
+          }
+        ],
+        "variables": {
+          "CI": "true",
+          "NODE_ENV": "production",
+          "NPM_CONFIG_FETCH_RETRIES": "5",
+          "NPM_CONFIG_FUND": "false",
+          "NPM_CONFIG_PRODUCTION": "false",
+          "NPM_CONFIG_UPDATE_NOTIFIER": "false",
+          "PNPM_HOME": "/opt/pnpm",
+          "PNPM_STORE_DIR": "/opt/pnpm/store"
+        },
+        "caches": [
+          "pnpm-install"
+        ]
+      },
+      {
+        "name": "build",
+        "inputs": [
+          {
+            "step": "install"
+          },
+          {
+            "local": true,
+            "include": [
+              "."
+            ]
+          }
+        ],
+        "commands": [
+          {
+            "cmd": "pnpm run build"
+          }
+        ],
+        "secrets": [
+          "*"
+        ],
+        "variables": {
+          "NEXT_TELEMETRY_DISABLED": "1"
+        },
+        "caches": [
+          "node-modules",
+          "next"
+        ]
+      },
+      {
+        "name": "packages:apt:runtime",
+        "inputs": [
+          {
+            "image": "ghcr.io/railwayapp/railpack-runtime:mise-2026.7.15"
+          }
+        ],
+        "commands": [
+          {
+            "cmd": "sh -c 'apt-get update \u0026\u0026 apt-get install -y libatomic1'",
+            "customName": "install apt packages: libatomic1"
+          }
+        ],
+        "caches": [
+          "apt",
+          "apt-lists"
+        ]
+      }
+    ],
+    "caches": {
+      "apt": {
+        "directory": "/var/cache/apt",
+        "type": "locked"
+      },
+      "apt-lists": {
+        "directory": "/var/lib/apt/lists",
+        "type": "locked"
+      },
+      "next": {
+        "directory": "/app/.next/cache",
+        "type": "shared"
+      },
+      "node-modules": {
+        "directory": "/app/node_modules/.cache",
+        "type": "shared"
+      },
+      "pnpm-install": {
+        "directory": "/opt/pnpm/store",
+        "type": "shared"
+      }
+    },
+    "deploy": {
+      "base": {
+        "step": "packages:apt:runtime"
+      },
+      "inputs": [
+        {
+          "step": "packages:mise",
+          "include": [
+            "/mise/shims",
+            "/mise/installs",
+            "/usr/local/bin/mise",
+            "/etc/mise/config.toml",
+            "/root/.local/state/mise"
+          ]
+        },
+        {
+          "step": "build",
+          "include": [
+            "/app/node_modules"
+          ]
+        },
+        {
+          "step": "build",
+          "include": [
+            "/root/.cache",
+            "."
+          ],
+          "exclude": [
+            "node_modules",
+            ".yarn"
+          ]
+        }
+      ],
+      "startCommand": "pnpm run start",
+      "variables": {
+        "CI": "true",
+        "NODE_ENV": "production",
+        "NPM_CONFIG_FETCH_RETRIES": "5",
+        "NPM_CONFIG_FUND": "false",
+        "NPM_CONFIG_PRODUCTION": "false",
+        "NPM_CONFIG_UPDATE_NOTIFIER": "false",
+        "RAILPACK_VERSION": "0.35.0"
+      }
+    }
+  },
+  "resolvedPackages": {
+    "node": {
+      "name": "node",
+      "requestedVersion": "22",
+      "resolvedVersion": "22.23.3",
+      "source": "railpack default"
+    },
+    "pnpm": {
+      "name": "pnpm",
+      "requestedVersion": "9",
+      "resolvedVersion": "9.15.9",
+      "source": "railpack default"
+    }
+  },
+  "metadata": {
+    "nodePackageManager": "pnpm",
+    "nodeRuntime": "next",
+    "providers": "node"
+  },
+  "detectedProviders": [
+    "node"
+  ],
+  "logs": [
+    {
+      "Level": "info",
+      "Msg": "Detected Node",
+      "DocsPath": ""
+    },
+    {
+      "Level": "info",
+      "Msg": "Using pnpm package manager",
+      "DocsPath": ""
+    }
+  ],
+  "success": true
+}

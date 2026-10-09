@@ -59,7 +59,8 @@ Status: **fixed** (on main or in this branch), **open**, or **not a boundary**. 
 | Fork PRs reach a build | fixed | `lib/git-integration/pull-request.ts:4` refuses forks and head/base mismatch; called before any build, `webhook/route.ts:154` |
 | Self-preview gets secrets | not a boundary | only same-repo PRs reach it after the fork check |
 | GitHub token in `.git/config` inside the build context | branch | was written into the origin URL; now a github.com-scoped header via env, `lib/git-integration/clone-auth.ts`, `prepare-repo.ts:391` |
-| App env vars become the Nixpacks and Railpack process env | fixed | a member's `PATH` or `LD_PRELOAD` pointed the spawn at a binary in their cloned repo, running it in the console. App vars now reach builders only as `--env`, `lib/docker/deploy-steps/prepare-repo.ts:240` |
+| App env vars become the Nixpacks and Railpack process env | fixed | a member's `PATH` or `LD_PRELOAD` pointed the spawn at a binary in their cloned repo, running it in the console. App vars now reach builders only as `--env`, `lib/docker/deploy-steps/prepare-repo.ts:246` |
+| App env values stored in the build plan | fixed | `nixpacks plan` copies `--env` values into its JSON. `maskPlanEnv` masks them before `deployment.build_plan` is written, `lib/docker/build-plan.ts:95` |
 | Git URL transports | fixed | HTTPS only, `lib/docker/validate.ts:26` |
 | Git clone to internal HTTPS hosts | fixed | `assertGitHostAllowed` runs the SSRF guard on the host before clone, and clone and fetch pass `-c http.followRedirects=false`, `lib/docker/git-host.ts`, `prepare-repo.ts:371`. LAN git hosts need `VARDO_OUTBOUND_ALLOWLIST`. Resolution isn't pinned to git's own connect. |
 | Push webhook deploys every app with that git URL in any org | branch | #788: only apps in orgs linked to the payload's `installation.id`, `webhook/route.ts:89-107`. PR previews aren't scoped this way yet. |
