@@ -71,3 +71,6 @@ node-compile-cache/
 # tool output
 .vitest/
 screenshots/
+
+# Load harness reports
+load-*.json
