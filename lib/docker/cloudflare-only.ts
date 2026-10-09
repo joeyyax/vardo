@@ -138,9 +138,21 @@ export async function syncCloudflareOnly(opts: {
   return outcome;
 }
 
-/** Writes the middleware now, then refreshes it daily. */
+/** The ranges the middleware file allows, or the bundled ones without a valid file. */
+export async function currentCloudflareRanges(dir: string = TRAEFIK_DYNAMIC_DIR): Promise<string[]> {
+  const content = await readCurrent(join(dir, CLOUDFLARE_ONLY_FILE));
+  return (content !== null && readRenderedRanges(content)) || [...BUNDLED_RANGES.v4, ...BUNDLED_RANGES.v6];
+}
+
+/** Writes the middleware now, then refreshes it daily. Traefik's trusted IPs follow the same list. */
 export function startCloudflareOnlySync(): void {
-  const tick = () => syncCloudflareOnly().catch((err) => log.error("Cloudflare range sync failed:", err));
+  const tick = () =>
+    syncCloudflareOnly()
+      .then(async () => {
+        const { syncTraefikTrustedIps } = await import("./trusted-proxies");
+        await syncTraefikTrustedIps({ ranges: await currentCloudflareRanges() });
+      })
+      .catch((err) => log.error("Cloudflare range sync failed:", err));
   void tick();
   setInterval(tick, REFRESH_MS).unref?.();
 }

@@ -9,7 +9,9 @@ import { NextRequest } from "next/server";
 const dockerRequestMock = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/docker/client", () => ({ dockerRequest: dockerRequestMock }));
 
-const { resolveClientIp, PEER_HEADER } = await import("@/lib/security/client-ip");
+const { resolveClientIp, clientIpFor, tunnelAddresses, PEER_HEADER } = await import("@/lib/security/client-ip");
+const { cidrMatcher } = await import("@/lib/cloudflare-ips");
+const { BUNDLED_RANGES } = await import("@/lib/docker/cloudflare-only");
 const { proxy } = await import("@/proxy");
 
 const TRAEFIK = "172.18.0.2";
@@ -40,6 +42,91 @@ describe("resolveClientIp", () => {
   });
 });
 
+describe("resolveClientIp behind Cloudflare (#902)", () => {
+  const isCloudflare = cidrMatcher([...BUNDLED_RANGES.v4, ...BUNDLED_RANGES.v6]);
+  const CF_EDGE = "172.70.1.2";
+  const CF_EDGE_V6 = "2606:4700:10::ac43:1";
+  const resolve = (init: Record<string, string>) => resolveClientIp(h({ [PEER_HEADER]: TRAEFIK, ...init }), isTraefik, isCloudflare);
+
+  it("reads CF-Connecting-IP when Traefik's peer was a Cloudflare edge", () => {
+    expect(resolve({ "x-forwarded-for": `203.0.113.7, ${CF_EDGE}`, "cf-connecting-ip": "203.0.113.7" })).toBe("203.0.113.7");
+  });
+
+  it("ignores a forged X-Forwarded-For that Cloudflare passed through", () => {
+    expect(resolve({ "x-forwarded-for": `6.6.6.6, 203.0.113.7, ${CF_EDGE}`, "x-real-ip": "6.6.6.6", "cf-connecting-ip": "203.0.113.7" })).toBe("203.0.113.7");
+  });
+
+  it("ignores CF-Connecting-IP from a client that skipped Cloudflare", () => {
+    expect(resolve({ "x-forwarded-for": "198.51.100.4", "cf-connecting-ip": "6.6.6.6" })).toBe("198.51.100.4");
+  });
+
+  it("ignores a forged chain ending in a Cloudflare address when Traefik's peer wasn't one", () => {
+    expect(resolve({ "x-forwarded-for": `${CF_EDGE}, 198.51.100.4`, "cf-connecting-ip": "6.6.6.6" })).toBe("198.51.100.4");
+  });
+
+  it("ignores CF-Connecting-IP from an app on the network", () => {
+    const headers = h({ [PEER_HEADER]: APP, "x-forwarded-for": CF_EDGE, "cf-connecting-ip": "6.6.6.6" });
+    expect(resolveClientIp(headers, isTraefik, isCloudflare)).toBe(APP);
+  });
+
+  it("never reads CF-Connecting-IP without a peer header", () => {
+    expect(resolveClientIp(h({ "x-forwarded-for": CF_EDGE, "cf-connecting-ip": "6.6.6.6" }), isTraefik, isCloudflare)).toBe(CF_EDGE);
+  });
+
+  it("keys by the edge when Cloudflare's header is missing or not an address", () => {
+    expect(resolve({ "x-forwarded-for": CF_EDGE })).toBe(CF_EDGE);
+    expect(resolve({ "x-forwarded-for": CF_EDGE, "cf-connecting-ip": "<script>" })).toBe(CF_EDGE);
+  });
+
+  it("keys a direct client by its own address without Cloudflare", () => {
+    expect(resolve({ "x-forwarded-for": "198.51.100.4" })).toBe("198.51.100.4");
+  });
+
+  it("handles IPv6 edges and clients", () => {
+    expect(resolve({ "x-forwarded-for": CF_EDGE_V6, "cf-connecting-ip": "2001:db8::7" })).toBe("2001:db8::7");
+    expect(resolve({ "x-forwarded-for": CF_EDGE, "cf-connecting-ip": "2001:db8::7" })).toBe("2001:db8::7");
+    expect(resolve({ "x-forwarded-for": "2001:db8::9", "cf-connecting-ip": "6.6.6.6" })).toBe("2001:db8::9");
+  });
+
+  it("reads an IPv4-mapped edge as IPv4", () => {
+    expect(resolve({ "x-forwarded-for": `::ffff:${CF_EDGE}`, "cf-connecting-ip": "203.0.113.7" })).toBe("203.0.113.7");
+  });
+});
+
+describe("clientIpFor", () => {
+  const viaCloudflare = h({ [PEER_HEADER]: TRAEFIK, "x-forwarded-for": "6.6.6.6, 172.70.1.2", "cf-connecting-ip": "203.0.113.7" });
+
+  it("reads CF-Connecting-IP through Cloudflare's live ranges", async () => {
+    expect(await clientIpFor(viaCloudflare)).toBe("203.0.113.7");
+  });
+
+  it("keys by the edge when VARDO_TRUST_CLOUDFLARE opts out", async () => {
+    vi.stubEnv("VARDO_TRUST_CLOUDFLARE", "false");
+    expect(await clientIpFor(viaCloudflare)).toBe("172.70.1.2");
+    vi.unstubAllEnvs();
+  });
+});
+
+describe("cidrMatcher", () => {
+  const match = cidrMatcher(["173.245.48.0/20", "2400:cb00::/32"]);
+
+  it("matches both families and nothing else", () => {
+    expect(match("173.245.63.255")).toBe(true);
+    expect(match("173.245.64.0")).toBe(false);
+    expect(match("2400:cb00:1::1")).toBe(true);
+    expect(match("2400:cb01::1")).toBe(false);
+    expect(match("::ffff:173.245.48.1")).toBe(true);
+    expect(match("not an ip")).toBe(false);
+  });
+
+  it("takes bare addresses and skips bad entries", () => {
+    const m = cidrMatcher(["10.0.0.1", "2001:db8::1", "10.1.0.0/40", "junk", ""]);
+    expect(m("10.0.0.1")).toBe(true);
+    expect(m("2001:db8::1")).toBe(true);
+    expect(m("10.1.0.1")).toBe(false);
+  });
+});
+
 describe("proxy rate limit by vetted address", () => {
   const hit = (peer: string, i: number) =>
     proxy(new NextRequest("http://vardo-frontend:3000/api/v1/whatever", {
@@ -65,6 +152,55 @@ describe("proxy rate limit by vetted address", () => {
     vi.setSystemTime(Date.now() + 60_000);
     expect((await traefikAddresses()).size).toBe(0);
     vi.useRealTimers();
+  });
+});
+
+describe("Cloudflare Tunnel (#902)", () => {
+  const TUNNEL = "192.168.16.5";
+  const OTHER = "192.168.16.9";
+  const viaHop = (hop: string, cf = "203.0.113.7") =>
+    h({ [PEER_HEADER]: TRAEFIK, "x-forwarded-for": hop, "cf-connecting-ip": cf });
+  const containers = [
+    { Image: "cloudflare/cloudflared:2026.9.1", NetworkSettings: { Networks: { "vardo-network": { IPAddress: TUNNEL } } } },
+    { Image: "docker.io/cloudflare/cloudflared@sha256:abc", NetworkSettings: { Networks: { other: { IPAddress: "10.5.0.2" } } } },
+    { Image: "nginx:1.27", NetworkSettings: { Networks: { "vardo-network": { IPAddress: OTHER } } } },
+    { Image: "evil/cloudflare/cloudflared", NetworkSettings: { Networks: { "vardo-network": { IPAddress: "192.168.16.10" } } } },
+  ];
+
+  it("finds cloudflared containers only on Traefik's networks", () => {
+    expect([...tunnelAddresses(containers, new Set(["vardo-network"]))]).toEqual([TUNNEL]);
+    expect(tunnelAddresses({ message: "not a list" }, new Set(["vardo-network"])).size).toBe(0);
+  });
+
+  it("gives the visitor's address through a tunnel and ignores other private peers", () => {
+    const tunnels = tunnelAddresses(containers, new Set(["vardo-network"]));
+    const isTunnel = (ip: string) => tunnels.has(ip);
+    expect(resolveClientIp(viaHop(TUNNEL), isTraefik, isTunnel)).toBe("203.0.113.7");
+    expect(resolveClientIp(viaHop(TUNNEL, "2001:db8::7"), isTraefik, isTunnel)).toBe("2001:db8::7");
+    expect(resolveClientIp(viaHop(OTHER, "6.6.6.6"), isTraefik, isTunnel)).toBe(OTHER);
+  });
+
+  it("detects the tunnel from Docker in clientIpFor", async () => {
+    dockerRequestMock.mockImplementation(async (_method: string, path: string) =>
+      path.startsWith("/containers/json")
+        ? containers
+        : { NetworkSettings: { Networks: { "vardo-network": { IPAddress: TRAEFIK } } } },
+    );
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.now() + 60 * 60_000);
+    expect(await clientIpFor(viaHop(TUNNEL))).toBe("203.0.113.7");
+    expect(await clientIpFor(viaHop(OTHER, "6.6.6.6"))).toBe(OTHER);
+    vi.useRealTimers();
+  });
+
+  it("trusts VARDO_TRUSTED_PROXIES addresses and ranges", async () => {
+    vi.stubEnv("VARDO_TRUSTED_PROXIES", "10.20.0.7, 10.30.0.0/16, junk");
+    expect(await clientIpFor(viaHop("10.20.0.7"))).toBe("203.0.113.7");
+    expect(await clientIpFor(viaHop("10.30.4.4"))).toBe("203.0.113.7");
+    expect(await clientIpFor(viaHop("10.20.0.8", "6.6.6.6"))).toBe("10.20.0.8");
+    vi.stubEnv("VARDO_TRUST_CLOUDFLARE", "false");
+    expect(await clientIpFor(viaHop("10.20.0.7"))).toBe("203.0.113.7");
+    vi.unstubAllEnvs();
   });
 });
 

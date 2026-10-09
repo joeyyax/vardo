@@ -17,6 +17,7 @@ Status: **fixed** (on main or in this branch), **open**, or **not a boundary**. 
 | GitHub webhook signature | fixed | mandatory secret, HMAC with `timingSafeEqual`, `app/api/v1/github/webhook/route.ts:35-55` |
 | Auth rate limit bypass by rotating cookies | branch | `lib/api/with-rate-limit.ts:37` keys the auth tier by IP only |
 | Auth rate limit keyed on first `X-Forwarded-For` | fixed | #889: `scripts/peer-address.mjs` records each request's TCP peer; `proxy.ts` trusts `X-Forwarded-For` only from Traefik's container address (`lib/security/client-ip.ts`) and rewrites it for everything downstream. |
+| `CF-Connecting-IP` spoofed by a client skipping Cloudflare | fixed | #902: `lib/security/client-ip.ts` reads it only when Traefik's peer, the last `X-Forwarded-For` hop, is in Cloudflare's ranges, a cloudflared container on Traefik's networks or `VARDO_TRUSTED_PROXIES`. Traefik trusts the same ranges (`lib/docker/trusted-proxies.ts`). |
 | Host header poisoning of auth links | not a boundary in prod | Better Auth reads `NEXT_PUBLIC_BETTER_AUTH_URL` (`docker-compose.yml:38`). Dev infers from the request. |
 | Postgres and Redis published on every interface, Redis has no password | branch | `docker-compose.yml:155,173` now bind to `127.0.0.1`. Docker's publishing skips ufw. |
 | Console reachable from anywhere | optional lock | `VARDO_CONSOLE_MIDDLEWARES` locks the console's domain and IP routers; `/api/health` and the GitHub webhook stay open (`docs/console-lock.md`). Off by default. |
