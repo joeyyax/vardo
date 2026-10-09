@@ -30,7 +30,7 @@ Status: **fixed** (on main or in this branch), **open**, or **not a boundary**. 
 | Org routes check membership and capability | fixed | `verifyOrgAccess`/`verifyAppAccess` with `can()`, `lib/auth/permissions.ts`; nested IDs scoped through the app or org lookup, `lib/api/verify-access.ts:21-24` |
 | Route walker | partial | `tests/unit/api/route-authorization.test.ts:13,57` only scans `organizations/**` and only checks a guard name appears in the file, not per handler or capability |
 | Any signed-in user links every GitHub App installation | branch | `app/api/v1/github/installations/sync/route.ts:16`, `callback/route.ts:51` now require an instance admin. Rows linked before this aren't removed. |
-| Clone uses any installation of any org member | open | `lib/docker/deploy-steps/prepare-repo.ts:385-404`. A user in two orgs lends their installations to both. |
+| Clone uses any installation of any org member | branch | #788: only installations linked to the app's org, `github_installation_org`, `lib/git-integration/org-installations.ts`, `prepare-repo.ts:382`. Org admins link their own installations, `organizations/[orgId]/github-installations/route.ts`. Migration 0086 linked existing rows to every org the linking user owns or administers. |
 | Domain string injected into a Traefik rule | branch | PATCH accepted any string, `apps/[appId]/domains/route.ts:104`. Now validated there and in environment routes; `lib/docker/compose-inject.ts:120` and `lib/ssl/generate-config.ts:93` refuse non-hostnames. |
 | Compose `traefik.*` labels claim another tenant's host or the console | fixed | #887 on `fix/887-label-hosts`: `lib/docker/label-hosts.ts` refuses `Host()` rules for hosts the org doesn't own, checked from `resolve-compose.ts` |
 | Path routes on another tenant's host | fixed | A host's domain rows may differ by path, so uniqueness is host plus path. The domain API refuses a host another org routes, `lib/domains/shared-host.ts`. Checked in the API only, not by a constraint, so two orgs racing for a new host can both land. |
@@ -58,11 +58,11 @@ Status: **fixed** (on main or in this branch), **open**, or **not a boundary**. 
 | --- | --- | --- |
 | Fork PRs reach a build | fixed | `lib/git-integration/pull-request.ts:4` refuses forks and head/base mismatch; called before any build, `webhook/route.ts:154` |
 | Self-preview gets secrets | not a boundary | only same-repo PRs reach it after the fork check |
-| GitHub token in `.git/config` inside the build context | branch | was written into the origin URL; now a github.com-scoped header via env, `lib/git-integration/clone-auth.ts`, `prepare-repo.ts:409` |
+| GitHub token in `.git/config` inside the build context | branch | was written into the origin URL; now a github.com-scoped header via env, `lib/git-integration/clone-auth.ts`, `prepare-repo.ts:391` |
 | App env vars become the Nixpacks and Railpack process env | fixed | a member's `PATH` or `LD_PRELOAD` pointed the spawn at a binary in their cloned repo, running it in the console. App vars now reach builders only as `--env`, `lib/docker/deploy-steps/prepare-repo.ts:240` |
 | Git URL transports | fixed | HTTPS only, `lib/docker/validate.ts:26` |
 | Git clone to internal HTTPS hosts | open, low | `assertSafeGitUrl` doesn't check the host; git follows redirects |
-| Push webhook deploys every app with that git URL in any org | open, low | `webhook/route.ts:89-94` doesn't scope by installation. Only rebuilds code that's already public to the cloner. |
+| Push webhook deploys every app with that git URL in any org | branch | #788: only apps in orgs linked to the payload's `installation.id`, `webhook/route.ts:89-107`. PR previews aren't scoped this way yet. |
 | Hooks `bash -c` | not applicable | framework deleted |
 
 ## 5. Compose escape
@@ -80,7 +80,7 @@ Fixed by #886. For untrusted orgs, `assertComposeWithinApp` (`lib/docker/compose
 | Repo symlinks copied into the slot as content | fixed | untrusted slots get a link, so the check resolves it, `lib/docker/deploy-steps/build.ts:85` |
 | Deny list misses `/`, `/var/lib/docker`, `/run/containerd`, `/opt/vardo` when bind mounts are on | fixed for compose | the policy also refuses any ancestor of a denied path; `DENIED_MOUNT_PATHS` itself is unchanged |
 | Top-level `name:` steers the shared volume and network names Vardo creates | fixed for untrusted | `crossBoundaryVolumeName` and `sharedNetworkName` use `compose.name`; the prefix check refuses the result |
-| Slots deployed before #886 | open | `start`, `restart` and `recreate` rerun `up` on existing slot files without the check |
+| Slots deployed before #886 | fixed | #895: `assertSlotWithinApp` runs the check over the slot's files before `start`, `restart`, `recreate` and both rollbacks, `lib/docker/slot-guard.ts`, `start-app.ts:75`, `deploy.ts:1049,1092` |
 
 ## 6. Secret exposure
 
