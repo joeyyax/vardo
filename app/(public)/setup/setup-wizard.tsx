@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
 import { Loader2 } from "lucide-react";
 import { toast } from "@/lib/messenger";
+import { ResourcesSummary } from "./resources-summary";
 
 /** First page after the setup token: create the first admin. Restore is the quiet alternative. */
 export function SetupWizard() {
@@ -100,6 +101,7 @@ export function SetupWizard() {
           </form>
         </CardContent>
       </Card>
+      <ResourcesSummary />
       <div className="text-center text-sm text-muted-foreground">
         <p>Moving from another instance?</p>
         <Link href="/setup/restore" className="text-foreground underline underline-offset-4 hover:no-underline">

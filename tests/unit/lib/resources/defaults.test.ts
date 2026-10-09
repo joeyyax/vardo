@@ -3,12 +3,15 @@ import {
   FALLBACK,
   buildkitMemGb,
   describeDefaults,
+  envLock,
+  parseAdminSettings,
   parseSizeMb,
   redisMemory,
   resolveDeployConcurrency,
   resolveTierCpus,
   resolveTierMemory,
   sizeClass,
+  validateAdminValue,
   type HostSize,
 } from "@/lib/resources/defaults";
 
@@ -144,5 +147,86 @@ describe("parseSizeMb", () => {
     ["junk", null],
   ])("%s", (input, mb) => {
     expect(parseSizeMb(input)).toBe(mb);
+  });
+});
+
+describe("admin values", () => {
+  const big = host(32, 128);
+
+  it("win over the rule and the fallback", () => {
+    expect(resolveTierMemory("standard", big, {}, 3072)).toEqual({ value: 3072, source: "admin", rule: 4096 });
+    expect(resolveTierMemory("standard", null, {}, 3072).source).toBe("admin");
+    expect(resolveTierCpus("disposable", big, 4, {}, 2)).toMatchObject({ value: 2, source: "admin" });
+    expect(resolveDeployConcurrency(big, {}, 9)).toMatchObject({ value: 9, source: "admin" });
+  });
+
+  it("lose to an env var", () => {
+    const env = { VARDO_DEFAULT_MEMORY_STANDARD: "1536", VARDO_MAX_DEPLOY_CONCURRENCY: "3" };
+    expect(resolveTierMemory("standard", big, env, 3072)).toMatchObject({ value: 1536, source: "override" });
+    expect(resolveDeployConcurrency(big, env, 9)).toMatchObject({ value: 3, source: "override" });
+  });
+
+  it("cap CPUs at the host's count", () => {
+    expect(resolveTierCpus("standard", host(4, 16), 4, {}, 12).value).toBe(4);
+  });
+
+  it("show up in describeDefaults, editable only where an admin can set them", () => {
+    const rows = describeDefaults(big, 32, {}, undefined, { memoryCritical: 6144, cpusStandard: 8 });
+    const by = Object.fromEntries(rows.map((r) => [r.key, r]));
+    expect(by.memoryCritical).toMatchObject({ value: 6144, source: "admin", rule: 8192, editable: true });
+    expect(by.cpusStandard).toMatchObject({ value: 8, source: "admin", editable: true });
+    expect(by.cpusCritical.editable).toBe(false);
+    expect(by.redisMem.editable).toBe(false);
+    expect(by.buildkitMem.editable).toBe(false);
+  });
+});
+
+describe("validateAdminValue", () => {
+  it("holds memory to at least 128 MB", () => {
+    expect(validateAdminValue("memoryStandard", 127, 8)).toMatch(/at least 128/);
+    expect(validateAdminValue("memoryStandard", 128, 8)).toBeNull();
+    expect(validateAdminValue("memoryStandard", 512.5, 8)).toMatch(/whole number/);
+  });
+
+  it("holds CPUs between 0.25 and the host's count", () => {
+    expect(validateAdminValue("cpusStandard", 0.2, 8)).toMatch(/at least 0.25/);
+    expect(validateAdminValue("cpusStandard", 0.25, 8)).toBeNull();
+    expect(validateAdminValue("cpusDisposable", 8, 8)).toBeNull();
+    expect(validateAdminValue("cpusDisposable", 8.5, 8)).toMatch(/more than the host's 8/);
+  });
+
+  it("holds deploys at once to 1 through 32", () => {
+    expect(validateAdminValue("deployConcurrency", 0, 8)).toMatch(/1 to 32/);
+    expect(validateAdminValue("deployConcurrency", 1, 8)).toBeNull();
+    expect(validateAdminValue("deployConcurrency", 32, 8)).toBeNull();
+    expect(validateAdminValue("deployConcurrency", 33, 8)).toMatch(/1 to 32/);
+    expect(validateAdminValue("deployConcurrency", 2.5, 8)).toMatch(/1 to 32/);
+  });
+
+  it("refuses a non-number", () => {
+    expect(validateAdminValue("memoryStandard", NaN, 8)).toMatch(/number/);
+  });
+});
+
+describe("parseAdminSettings", () => {
+  it("keeps valid values and drops the rest", () => {
+    expect(
+      parseAdminSettings({ memoryStandard: 2048, memoryCritical: 10, cpusCritical: 2, deployConcurrency: "4", bogus: 1 }),
+    ).toEqual({ memoryStandard: 2048 });
+    expect(parseAdminSettings(null)).toEqual({});
+  });
+});
+
+describe("envLock", () => {
+  it("names the env var that sets a value", () => {
+    expect(envLock("memoryStandard", { VARDO_DEFAULT_MEMORY_STANDARD: "1536" })).toBe("VARDO_DEFAULT_MEMORY_STANDARD");
+    expect(envLock("cpusDisposable", { VARDO_DEFAULT_CPUS_DISPOSABLE: "0" })).toBe("VARDO_DEFAULT_CPUS_DISPOSABLE");
+    expect(envLock("deployConcurrency", { VARDO_MAX_DEPLOY_CONCURRENCY: "3" })).toBe("VARDO_MAX_DEPLOY_CONCURRENCY");
+  });
+
+  it("ignores unset and unusable env values", () => {
+    expect(envLock("memoryStandard", {})).toBeNull();
+    expect(envLock("memoryStandard", { VARDO_DEFAULT_MEMORY_STANDARD: "32" })).toBeNull();
+    expect(envLock("deployConcurrency", { VARDO_MAX_DEPLOY_CONCURRENCY: "lots" })).toBeNull();
   });
 });
