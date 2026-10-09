@@ -8,8 +8,7 @@ import type { ContainerMetrics } from "@/lib/metrics/types";
 const { logMock, dockerMock, storeMock, providerMock, businessMock } = vi.hoisted(() => {
   const logMock = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
   const dockerMock = {
-    getSystemDiskUsage: vi.fn(),
-    getPerProjectDiskUsage: vi.fn(),
+    getDiskSnapshot: vi.fn(),
   };
   const storeMock = {
     storeMetrics: vi.fn().mockResolvedValue(undefined),
@@ -25,7 +24,7 @@ const { logMock, dockerMock, storeMock, providerMock, businessMock } = vi.hoiste
 });
 
 vi.mock("@/lib/logger", () => ({ logger: { child: () => logMock } }));
-vi.mock("@/lib/docker/client", () => dockerMock);
+vi.mock("@/lib/docker/disk-snapshot", () => dockerMock);
 vi.mock("@/lib/metrics/store", () => storeMock);
 vi.mock("@/lib/metrics/provider", () => providerMock);
 vi.mock("@/lib/metrics/collect-business-metrics", () => businessMock);
@@ -91,14 +90,16 @@ describe("collector disk-usage degradation", () => {
     vi.clearAllMocks();
     vi.useFakeTimers();
     providerMock.fetchAllMetrics.mockResolvedValue([sampleMetric()]);
-    dockerMock.getSystemDiskUsage.mockResolvedValue({
-      images: { count: 0, totalSize: 0, reclaimable: 0 },
-      containers: { count: 0, totalSize: 0 },
-      volumes: { count: 0, totalSize: 0 },
-      buildCache: { count: 0, totalSize: 0, reclaimable: 0 },
-      total: 0,
+    dockerMock.getDiskSnapshot.mockResolvedValue({
+      usage: {
+        images: { count: 0, totalSize: 0, reclaimable: 0 },
+        containers: { count: 0, totalSize: 0 },
+        volumes: { count: 0, totalSize: 0 },
+        buildCache: { count: 0, totalSize: 0, reclaimable: 0 },
+        total: 0,
+      },
+      perProject: new Map([["demo", 42]]),
     });
-    dockerMock.getPerProjectDiskUsage.mockResolvedValue(new Map());
   });
 
   afterEach(() => {
@@ -107,7 +108,7 @@ describe("collector disk-usage degradation", () => {
   });
 
   it("does not store zero and keeps other collection running when /system/df 404s", async () => {
-    dockerMock.getSystemDiskUsage.mockRejectedValue(SNAPSHOT_404);
+    dockerMock.getDiskSnapshot.mockRejectedValue(SNAPSHOT_404);
 
     await startCollector();
     await tick(); // tickCount 0 — first disk-check cycle
@@ -123,23 +124,30 @@ describe("collector disk-usage degradation", () => {
     expect(businessMock.collectBusinessMetrics).toHaveBeenCalled();
   });
 
-  it("does not store zero and keeps other collection running when per-project disk 404s", async () => {
-    dockerMock.getPerProjectDiskUsage.mockRejectedValue(SNAPSHOT_404);
+  it("stores per-project disk from the same snapshot, with one df call per cycle", async () => {
+    await startCollector();
+    await tick();
+
+    expect(dockerMock.getDiskSnapshot).toHaveBeenCalledTimes(1);
+    expect(storeMock.storeDiskUsage).toHaveBeenCalled();
+    expect(storeMock.storeProjectDisk).toHaveBeenCalledWith("demo", expect.any(Number), 42);
+  });
+
+  it("stores no per-project disk when the snapshot fails", async () => {
+    dockerMock.getDiskSnapshot.mockRejectedValue(SNAPSHOT_404);
 
     await startCollector();
     await tick();
 
     expect(storeMock.storeProjectDisk).not.toHaveBeenCalled();
-    expect(storeMock.storeDiskUsage).toHaveBeenCalled(); // system disk still succeeded
     expect(logMock.error).toHaveBeenCalledWith(
       expect.stringContaining("Per-project disk error"),
-      expect.stringContaining("NotFound: snapshot"),
+      expect.anything(),
     );
   });
 
   it("logs a persistent 404 once, then stays quiet on the very next cycle", async () => {
-    dockerMock.getSystemDiskUsage.mockRejectedValue(SNAPSHOT_404);
-    dockerMock.getPerProjectDiskUsage.mockRejectedValue(SNAPSHOT_404);
+    dockerMock.getDiskSnapshot.mockRejectedValue(SNAPSHOT_404);
 
     await startCollector();
     await tick(); // tickCount 0 — 1st disk-check cycle, 1st failure — logs
@@ -159,7 +167,7 @@ describe("collector disk-usage degradation", () => {
   });
 
   it("logs recovery and re-arms logging for the next failure", async () => {
-    dockerMock.getSystemDiskUsage.mockRejectedValueOnce(SNAPSHOT_404);
+    dockerMock.getDiskSnapshot.mockRejectedValueOnce(SNAPSHOT_404);
 
     await startCollector();
     await tick(); // fails once — logged
@@ -180,7 +188,7 @@ describe("collector disk-usage degradation", () => {
 
     // A fresh failure right after recovery logs immediately (count reset to 1),
     // proving the rate limit doesn't get stuck suppressed forever.
-    dockerMock.getSystemDiskUsage.mockRejectedValue(SNAPSHOT_404);
+    dockerMock.getDiskSnapshot.mockRejectedValue(SNAPSHOT_404);
     await tick();
     await tick();
     await tick();
@@ -195,8 +203,7 @@ describe("collector single tick loop", () => {
     vi.clearAllMocks();
     vi.useFakeTimers();
     providerMock.fetchAllMetrics.mockResolvedValue([sampleMetric()]);
-    dockerMock.getSystemDiskUsage.mockRejectedValue(SNAPSHOT_404);
-    dockerMock.getPerProjectDiskUsage.mockRejectedValue(SNAPSHOT_404);
+    dockerMock.getDiskSnapshot.mockRejectedValue(SNAPSHOT_404);
   });
 
   afterEach(() => {

@@ -43,7 +43,7 @@ export function CoreServicesSettings() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [services, setServices] = useState<CoreService[]>([]);
-  const [diskMetricsEnabled, setDiskMetricsEnabled] = useState(true);
+  const [diskMetricsEnabled, setDiskMetricsEnabled] = useState(false);
   const [savingDiskMetrics, setSavingDiskMetrics] = useState(false);
 
   const fetchServices = useCallback(async () => {
@@ -57,7 +57,7 @@ export function CoreServicesSettings() {
     const res = await fetch("/api/v1/admin/core-services/cadvisor-disk-metrics");
     if (!res.ok) throw new Error("Couldn't fetch");
     const data = await res.json();
-    setDiskMetricsEnabled(data.diskMetricsEnabled ?? true);
+    setDiskMetricsEnabled(data.diskMetricsEnabled ?? false);
   }, []);
 
   useEffect(() => {
@@ -177,7 +177,7 @@ export function CoreServicesSettings() {
                     aria-label={`${diskMetricsEnabled ? "Disable" : "Enable"} disk metrics collection`}
                   />
                   <Label htmlFor="cadvisor-disk-metrics" className="text-xs font-normal text-muted-foreground">
-                    Disk metrics — walks every container&apos;s filesystem; off drops cAdvisor to 256m
+                    Per-container disk metrics — walks every container&apos;s filesystem; on raises cAdvisor to 512m
                   </Label>
                 </div>
               )}

@@ -66,6 +66,7 @@ vi.mock("@/lib/docker/constants", async (importOriginal) => ({
 
 import { prepareRepo } from "@/lib/docker/deploy-steps/prepare-repo";
 import { DeployBlockedError } from "@/lib/docker/errors";
+import { createStageTimings } from "@/lib/docker/stage-timings";
 
 
 function makeApp(overrides: Partial<DeployApp>): DeployApp {
@@ -162,6 +163,7 @@ function makeCtx(app: DeployApp): { ctx: DeployContext; stages: StageCall[] } {
       stages.push([s, status]);
     },
     checkAbort: vi.fn(),
+    timer: createStageTimings(),
     logs: { push: log },
     logLines,
     startTime: Date.now(),

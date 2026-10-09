@@ -3,7 +3,7 @@ import { isMetricsEnabled, initMetricsProvider } from "./config";
 import { fetchAllMetrics } from "./provider";
 import { storeMetrics, storeDiskUsage, storeDiskWrite, storeGpuMetrics, storeProjectDisk, pruneStaleGpuSeries } from "./store";
 import { checkDiskWriteAlerts } from "./disk-write-alerts";
-import { getSystemDiskUsage, getPerProjectDiskUsage } from "@/lib/docker/client";
+import { getDiskSnapshot } from "@/lib/docker/disk-snapshot";
 import { collectBusinessMetrics } from "./collect-business-metrics";
 import { initGpuCollector, getGpuCollector, setGpuSnapshot } from "@/lib/gpu/collector";
 import { setLatestSnapshot } from "./broadcast";
@@ -221,8 +221,11 @@ async function collect() {
   // Disk usage: every 4th tick during warmup, every 10th after.
   const diskInterval = state.tickCount < WARMUP_TICKS ? 4 : 10;
   if (state.tickCount % diskInterval === 0) {
+    // One df call serves both the system totals and the per-project figures.
+    let snapshot: Awaited<ReturnType<typeof getDiskSnapshot>> | null = null;
     try {
-      const diskUsage = await getSystemDiskUsage();
+      snapshot = await getDiskSnapshot();
+      const diskUsage = snapshot.usage;
       await storeDiskUsage(Date.now(), {
         images: diskUsage.images.totalSize,
         volumes: diskUsage.volumes.totalSize,
@@ -242,10 +245,10 @@ async function collect() {
     }
 
     try {
-      const perProject = await getPerProjectDiskUsage();
+      if (!snapshot) throw new Error("no disk snapshot");
       const ts = Date.now();
       await Promise.allSettled(
-        Array.from(perProject.entries()).map(([name, size]) =>
+        Array.from(snapshot.perProject.entries()).map(([name, size]) =>
           storeProjectDisk(name, ts, size)
         )
       );

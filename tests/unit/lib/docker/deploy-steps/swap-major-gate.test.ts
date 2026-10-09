@@ -70,6 +70,7 @@ import { swap } from "@/lib/docker/deploy-steps/swap";
 import { DeployBlockedError } from "@/lib/docker/errors";
 import type { DeployContext } from "@/lib/docker/deploy-context";
 import type { ComposeFile } from "@/lib/docker/compose-types";
+import { createStageTimings } from "@/lib/docker/stage-timings";
 
 function pgEnv(major: number): string[] {
   return ["GOSU_VERSION=1.19", `PG_MAJOR=${major}`, `PG_VERSION=${major}.4-1.pgdg13+1`];
@@ -125,6 +126,7 @@ function context(): DeployContext {
     },
     stage: (stage: string, status: string) => stages.push([stage, status]),
     checkAbort: () => {},
+    timer: createStageTimings(),
     startTime: Date.now(),
   } as unknown as DeployContext;
 }

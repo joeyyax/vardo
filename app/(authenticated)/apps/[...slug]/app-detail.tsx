@@ -30,7 +30,7 @@ import { DeleteAppDialog } from "./delete-app-dialog";
 import { LogViewer } from "@/components/log-viewer";
 import dynamic from "next/dynamic";
 import { envTypeDotColor } from "@/lib/ui/status-colors";
-import { AppMetrics } from "./app-metrics";
+import { AppMetrics } from "./app-metrics-lazy";
 import { AppBackupHistory } from "@/components/backups/app-backup-history";
 import { AppBackupSwitch } from "@/components/backups/backup-switch";
 import { AppErrors } from "./app-errors";
@@ -41,7 +41,7 @@ const AppTerminal = dynamic(
   () => import("./app-terminal").then((m) => m.AppTerminal),
   { ssr: false },
 );
-import { EnvEditor } from "@/components/env-editor";
+import { EnvEditor } from "@/components/env-editor-lazy";
 import { VolumesPanel } from "@/components/volumes-panel";
 import { CronManager } from "./app-cron";
 import {

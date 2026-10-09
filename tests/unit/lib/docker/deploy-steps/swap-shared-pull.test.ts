@@ -51,6 +51,7 @@ vi.mock("@/lib/docker/deploy-steps/bind-mount-ownership", () => ({
 import { swap } from "@/lib/docker/deploy-steps/swap";
 import type { DeployContext } from "@/lib/docker/deploy-context";
 import type { ComposeFile } from "@/lib/docker/compose-types";
+import { createStageTimings } from "@/lib/docker/stage-timings";
 
 function calls(): string[][] {
   return execFileAsyncMock.mock.calls.map((c) => c[1] as string[]);
@@ -108,6 +109,7 @@ function context(): DeployContext {
     log: (line: string) => { logLines.push(line); return line; },
     stage: () => {},
     checkAbort: () => {},
+    timer: createStageTimings(),
     startTime: Date.now(),
   } as unknown as DeployContext;
 }

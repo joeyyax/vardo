@@ -17,24 +17,34 @@ async function cadvisorComposeContent(): Promise<string> {
   return template.composeContent;
 }
 
+const FLAG = "--disable_metrics=advtcp,app,cpuLoad,cpu_topology,cpuset,hugetlb,memory_numa,oom_event,percpu,pressure,process,referenced_memory,resctrl,sched,tcp,udp";
+
 describe("applyCadvisorDiskMetrics", () => {
-  it("leaves the template untouched when disk metrics are on", async () => {
+  it("ships disk metrics off: `disk` disabled, 256m", async () => {
     const content = await cadvisorComposeContent();
-    expect(applyCadvisorDiskMetrics(content, true)).toBe(content);
+    expect(applyCadvisorDiskMetrics(content, false)).toBe(content);
+    expect(content).toContain(`${FLAG},disk\n`);
+    expect(content).toContain("mem_limit: 256m");
   });
 
-  it("disables disk and diskIO and drops the memory limit to 256m when off", async () => {
+  it("keeps cpu, memory, network and diskIO collectors on", async () => {
     const content = await cadvisorComposeContent();
-    const result = applyCadvisorDiskMetrics(content, false);
+    const flag = content.match(/--disable_metrics=(\S+)/)![1].split(",");
+    for (const needed of ["cpu", "memory", "network", "diskIO"]) expect(flag).not.toContain(needed);
+  });
 
-    expect(result).toContain("--disable_metrics=advtcp,cpu_topology,cpuset,hugetlb,memory_numa,percpu,process,referenced_memory,resctrl,sched,tcp,udp,disk,diskIO");
-    expect(result).toContain("mem_limit: 256m");
-    expect(result).not.toContain("mem_limit: 512m");
-    expect(result).not.toContain("--disable_metrics=advtcp,cpu_topology,cpuset,hugetlb,memory_numa,percpu,process,referenced_memory,resctrl,sched,tcp,udp\n");
+  it("enables disk and raises the memory limit to 512m when on", async () => {
+    const content = await cadvisorComposeContent();
+    const result = applyCadvisorDiskMetrics(content, true);
+
+    expect(result).toContain(`${FLAG}\n`);
+    expect(result).not.toContain(",disk");
+    expect(result).toContain("mem_limit: 512m");
+    expect(result).not.toContain("mem_limit: 256m");
   });
 
   it("falls back to the input unchanged when the expected markers are missing", () => {
     const drifted = "services:\n  cadvisor:\n    image: gcr.io/cadvisor/cadvisor:latest\n";
-    expect(applyCadvisorDiskMetrics(drifted, false)).toBe(drifted);
+    expect(applyCadvisorDiskMetrics(drifted, true)).toBe(drifted);
   });
 });

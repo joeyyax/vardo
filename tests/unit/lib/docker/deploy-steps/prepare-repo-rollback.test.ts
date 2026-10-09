@@ -96,6 +96,7 @@ vi.mock("@/lib/docker/constants", async (importOriginal) => ({
 }));
 
 import { prepareRepo } from "@/lib/docker/deploy-steps/prepare-repo";
+import { createStageTimings } from "@/lib/docker/stage-timings";
 
 function makeApp(): DeployApp {
   return {
@@ -186,6 +187,7 @@ function makeCtx(rollback?: DeployContext["rollback"]): DeployContext {
     log,
     stage: vi.fn(),
     checkAbort: vi.fn(),
+    timer: createStageTimings(),
     logs: { push: log },
     logLines,
     startTime: Date.now(),

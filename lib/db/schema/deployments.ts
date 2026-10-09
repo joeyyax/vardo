@@ -8,6 +8,7 @@ import {
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import type { ConfigSnapshot } from "@/lib/types/deploy-snapshot";
+import type { StageTimings } from "@/lib/docker/stage-timings";
 import { user } from "./auth";
 import { deploymentStatusEnum, deploymentTriggerEnum } from "./enums";
 import { apps } from "./apps";
@@ -25,6 +26,8 @@ export const deployments = pgTable("deployment", {
   log: text("log"),
   // Execution time from runDeployment start, excluding queue wait.
   durationMs: integer("duration_ms"),
+  // Per-phase wall-clock times: clone, build, export, pull, up, healthWait, cleanup.
+  stageTimings: jsonb("stage_timings").$type<StageTimings>(),
   environmentId: text("environment_id").references(() => environments.id, {
     onDelete: "set null",
   }),

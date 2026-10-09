@@ -111,7 +111,7 @@ describe("POST /api/v1/admin/core-services/cadvisor-disk-metrics", () => {
     expect(mockRequestDeploy).not.toHaveBeenCalled();
   });
 
-  it("turns disk metrics off: rewrites compose, drops the memory limit, and redeploys", async () => {
+  it("turns disk metrics off: restores the template compose and redeploys", async () => {
     mockFindFirst.mockResolvedValue({ id: "app-1", organizationId: "org-1", isSystemManaged: true });
     mockRequestDeploy.mockResolvedValue({ success: true });
 
@@ -119,8 +119,7 @@ describe("POST /api/v1/admin/core-services/cadvisor-disk-metrics", () => {
     const body = await res.json();
 
     const composeContent = mockUpdateSet.mock.calls[0][0].composeContent as string;
-    expect(composeContent).toContain("--disable_metrics=advtcp,cpu_topology,cpuset,hugetlb,memory_numa,percpu,process,referenced_memory,resctrl,sched,tcp,udp,disk,diskIO");
-    expect(composeContent).toContain("mem_limit: 256m");
+    expect(composeContent).toBe(CADVISOR_COMPOSE);
     expect(mockUpdateSet.mock.calls[0][0].needsRedeploy).toBe(true);
     expect(mockRequestDeploy).toHaveBeenCalledWith(
       expect.objectContaining({ appId: "app-1", organizationId: "org-1" }),
@@ -128,7 +127,7 @@ describe("POST /api/v1/admin/core-services/cadvisor-disk-metrics", () => {
     expect(body).toEqual({ diskMetricsEnabled: false, installed: true, redeployed: true });
   });
 
-  it("turns disk metrics on: restores the default compose and redeploys", async () => {
+  it("turns disk metrics on: enables `disk`, raises the memory limit and redeploys", async () => {
     mockFindFirst.mockResolvedValue({ id: "app-1", organizationId: "org-1", isSystemManaged: true });
     mockRequestDeploy.mockResolvedValue({ success: true });
 
@@ -136,7 +135,8 @@ describe("POST /api/v1/admin/core-services/cadvisor-disk-metrics", () => {
     const body = await res.json();
 
     const composeContent = mockUpdateSet.mock.calls[0][0].composeContent as string;
-    expect(composeContent).toBe(CADVISOR_COMPOSE);
+    expect(composeContent).toContain("--disable_metrics=advtcp,app,cpuLoad,cpu_topology,cpuset,hugetlb,memory_numa,oom_event,percpu,pressure,process,referenced_memory,resctrl,sched,tcp,udp\n");
+    expect(composeContent).toContain("mem_limit: 512m");
     expect(body).toEqual({ diskMetricsEnabled: true, installed: true, redeployed: true });
   });
 

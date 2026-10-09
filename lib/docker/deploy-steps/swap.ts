@@ -42,6 +42,7 @@ import { checkVolumeLimits } from "./volume-limits";
 import { execFileAsync } from "@/lib/utils/exec";
 import { boundedBuild, explainBuildOom } from "../build-memory";
 import { dockerEnv } from "@/lib/docker/docker-env";
+import { exportMsFromBuildOutput } from "../stage-timings";
 
 const NETWORK_NAME = VARDO_NETWORK;
 const DEFAULT_HEALTH_CHECK_TIMEOUT_MS = DEFAULT_HEALTH_CHECK_TIMEOUT;
@@ -315,13 +316,20 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
       if (buildServices.length > 0) {
         log(`[deploy] Pre-building ${newSlot} slot images (old slot still serving)...`);
         const bounded = await boundedBuild(log, ctx.signal);
+        const buildStart = Date.now();
         const { stdout, stderr } = await execFileAsync(
           "docker",
           ["compose", "--progress=plain", ...composeFileArgs, "-p", newProjectName, "build"],
           { cwd: slotDir, env: { ...env, ...bounded.env }, timeout: COMPOSE_BUILD_UP_TIMEOUT, maxBuffer: EXEC_MAX_BUFFER, signal: ctx.signal }
         ).catch((err: unknown) => {
+          ctx.timer.range("build", buildStart, Date.now());
           throw explainBuildOom(err, bounded);
         });
+        // BuildKit runs the export inside the build; split it out of the build time.
+        const buildEnd = Date.now();
+        const exportMs = Math.min(exportMsFromBuildOutput(`${stdout}\n${stderr}`), buildEnd - buildStart);
+        ctx.timer.range("build", buildStart, buildEnd - exportMs);
+        if (exportMs > 0) ctx.timer.range("export", buildEnd - exportMs, buildEnd);
         for (const line of stdout.split(/\r?\n|\r/).filter(Boolean)) {
           logs.push(`[deploy][build] ${line.trim()}`);
         }
@@ -333,11 +341,11 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
         // Read engine majors before the pull moves the tag.
         majorGate = await majorGateBefore(ctx, pullServices);
         log(`[deploy] Pre-pulling ${newSlot} slot images (old slot still serving)...`);
-        const { stdout, stderr } = await execFileAsync(
+        const { stdout, stderr } = await ctx.timer.span("pull", () => execFileAsync(
           "docker",
           ["compose", ...composeFileArgs, "-p", newProjectName, "pull", ...pullServices],
           { cwd: slotDir, env, timeout: COMPOSE_UP_TIMEOUT, maxBuffer: EXEC_MAX_BUFFER, signal: ctx.signal }
-        );
+        ));
         for (const line of stdout.split(/\r?\n|\r/).filter(Boolean)) {
           logs.push(`[deploy][pull] ${line.trim()}`);
         }
@@ -347,11 +355,11 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
       }
       if (sharedPulls.length > 0) {
         log(`[deploy] Pre-pulling shared images: ${sharedPulls.join(", ")} (old slot still serving)...`);
-        const { stdout, stderr } = await execFileAsync(
+        const { stdout, stderr } = await ctx.timer.span("pull", () => execFileAsync(
           "docker",
           ["compose", ...composeFileArgs, "-p", sharedProject, "pull", ...sharedPulls],
           { cwd: slotDir, env, timeout: COMPOSE_UP_TIMEOUT, maxBuffer: EXEC_MAX_BUFFER, signal: ctx.signal }
-        );
+        ));
         for (const line of `${stdout}\n${stderr}`.split(/\r?\n|\r/).filter(Boolean)) {
           logs.push(`[deploy][pull] ${line.trim()}`);
         }
@@ -662,11 +670,11 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
   const composeUpTimeout = buildServices.length > 0 ? COMPOSE_BUILD_UP_TIMEOUT : COMPOSE_UP_TIMEOUT;
   log(`[deploy] Starting ${newSlot} slot...`);
   try {
-    const { stdout, stderr } = await execFileAsync(
+    const { stdout, stderr } = await ctx.timer.span("up", () => execFileAsync(
       "docker",
       ["compose", ...composeFileArgs, "-p", newProjectName, "up", "-d", "--pull", "never", ...onlySlotted],
       { env: dockerEnv(), cwd: slotDir, timeout: composeUpTimeout, maxBuffer: EXEC_MAX_BUFFER }
-    );
+    ));
     for (const line of stdout.split(/\r?\n|\r/).filter(Boolean)) {
       logs.push(`[deploy][compose] ${line.trim()}`);
     }

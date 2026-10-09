@@ -4,6 +4,8 @@ import type { ComposeFile, ServiceConfigOverride } from "./compose-types";
 import type { HostConfig } from "@/lib/config/host-config";
 import type { DeployStage } from "./deploy-logger";
 
+import type { StageTimer } from "./stage-timings";
+
 export type DeployStatus = "running" | "success" | "failed" | "skipped";
 
 /** Result of stopping the old slot. `ok: false` means its containers are still up. */
@@ -182,6 +184,8 @@ export type DeployContext = {
   log: (line: string) => string;
   stage: (stage: DeployStage, status: DeployStatus) => void;
   checkAbort: () => void;
+  /** Phase timings, persisted to `deployment.stage_timings`. */
+  timer: StageTimer;
   /** Proxy object for helpers that expect { push }. */
   logs: { push: (line: string) => void };
   logLines: string[];
