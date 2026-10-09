@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { statusChange } from "@/lib/db/app-status";
 import { setParked } from "@/lib/db/app-parked";
 import { deployments, apps, volumes } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { formatRoute } from "@/lib/domains/path-prefix";
 import { nanoid } from "nanoid";
 import { encrypt, decryptOrFallback } from "@/lib/crypto/encrypt";
@@ -44,7 +44,7 @@ import type { DeployContext, SlotStopOutcome } from "../deploy-context";
 import { isSelfApp } from "../self-env";
 import { proposeDurability, isSafeToApply } from "@/lib/backups/durability";
 import { refreshDumpSpec } from "@/lib/backups/dump-spec";
-import { CERTS_VOLUME_KEY } from "@/lib/ssl/cert-export";
+import { CERTS_VOLUME_KEY, watchAppCerts } from "@/lib/ssl/cert-export";
 
 /** Serializes the host-global prune across deploys. */
 const PRUNE_LOCK_KEY = "deploy:prune:lock";
@@ -356,6 +356,19 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
     await stopOldSlot();
   }
 
+  // Traefik issues certs after `up`; the watch outlives the deploy and appends to its log.
+  if (app.certServices?.length && !ctx.envIsolated) {
+    const appendLog = (line: string) => {
+      db.update(deployments)
+        .set({ log: sql`coalesce(${deployments.log}, '') || ${`\n${line}`}` })
+        .where(eq(deployments.id, ctx.deploymentId))
+        .catch(() => {});
+    };
+    await watchAppCerts(ctx.appId, log, appendLog).catch((err) =>
+      log(`[certs] Couldn't read Traefik's certificates: ${err instanceof Error ? err.message : err}`),
+    );
+  }
+
   // The imported original is removed only after the deploy commits.
   if (app.importedContainerId && !ctx.envIsolated) {
     try {
@@ -452,6 +465,12 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
   }).catch(() => {});
 
   sendDeployNotification(app, ctx.deploymentId, true, durationMs).catch(() => {});
+
+  if (!ctx.envIsolated) {
+    import("@/lib/backups/initial-backup")
+      .then(({ armInitialBackupQuietly }) => armInitialBackupQuietly(ctx.appId, "deploy"))
+      .catch(() => {});
+  }
 
   // Auto-rollback can't watch Vardo itself; the watcher dies with the slot.
   if (app.autoRollback && isSelfApp(app.name) && activeSlot) {

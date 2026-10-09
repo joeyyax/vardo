@@ -19,6 +19,11 @@ import { useCan } from "@/components/capabilities-provider";
 import type { RecentBackup } from "./types";
 import { Card } from "@/components/ui/card";
 
+const TRIGGER_LABELS: Record<string, string> = {
+  initial: "Initial snapshot",
+  import: "After import",
+};
+
 function backupDuration(startedAt: string, finishedAt: string | null): string {
   if (!finishedAt) return "—";
   return formatDuration(new Date(finishedAt).getTime() - new Date(startedAt).getTime());
@@ -170,6 +175,9 @@ export function BackupHistory({
               </td>
               <td className="px-4 py-3 text-muted-foreground">
                 {backup.job ? backup.job.name : `${backup.jobName ?? "Unknown job"} (deleted)`}
+                {backup.trigger && TRIGGER_LABELS[backup.trigger] && (
+                  <span className="block text-xs">{TRIGGER_LABELS[backup.trigger]}</span>
+                )}
               </td>
               <td className="px-4 py-3 text-muted-foreground font-mono text-xs">
                 {backupDuration(backup.startedAt, backup.finishedAt)}

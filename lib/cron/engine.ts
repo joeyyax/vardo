@@ -5,7 +5,7 @@ import { nanoid } from "nanoid";
 import { listContainers, type ContainerInfo, type ContainerScope } from "@/lib/docker/client";
 import { matchContainers, type ReconcilableApp } from "@/lib/docker/container-match";
 import { shouldRunNow } from "./parse";
-import { acquireLock } from "@/lib/redis-lock";
+import { acquireLock, releaseLock } from "@/lib/redis-lock";
 import { logger } from "@/lib/logger";
 import { safeFetch } from "@/lib/security/safe-fetch";
 import { getOutboundPolicy } from "@/lib/security/outbound-policy";
@@ -36,11 +36,21 @@ export function selectCronContainer(
   return matchContainers(app, containers).find((c) => c.state === "running") ?? null;
 }
 
+const OUTPUT_TAIL = 2000;
+
+type ExecResult = {
+  success: boolean;
+  log: string;
+  durationMs: number;
+  exitCode?: number;
+  httpStatus?: number;
+};
+
 /** Run a command inside an app's container. */
 async function executeInContainer(
   app: CronTargetApp,
   command: string,
-): Promise<{ success: boolean; log: string; durationMs: number }> {
+): Promise<ExecResult> {
   const startTime = Date.now();
 
   const containers = await listContainers(cronContainerScope(app));
@@ -67,6 +77,7 @@ async function executeInContainer(
       success: true,
       log: log || "(no output)",
       durationMs: Date.now() - startTime,
+      exitCode: 0,
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -74,6 +85,7 @@ async function executeInContainer(
       success: false,
       log: message,
       durationMs: Date.now() - startTime,
+      exitCode: typeof (err as { code?: unknown }).code === "number" ? (err as { code: number }).code : undefined,
     };
   }
 }
@@ -81,7 +93,7 @@ async function executeInContainer(
 /** Hit a URL and return the result. */
 async function fetchUrl(
   url: string,
-): Promise<{ success: boolean; log: string; durationMs: number }> {
+): Promise<ExecResult> {
   const startTime = Date.now();
   try {
     const controller = new AbortController();
@@ -97,6 +109,7 @@ async function fetchUrl(
       success: res.ok,
       log,
       durationMs: Date.now() - startTime,
+      httpStatus: res.status,
     };
   } catch (err) {
     return {
@@ -141,16 +154,45 @@ export async function tickCronJobs(): Promise<void> {
     const locked = await acquireLock(`lock:cron:${job.id}:${minuteTs}`, 61_000);
     if (!locked) continue;
 
+    await runCronJob(job);
+  }
+}
+
+const RUN_LOCK_TTL_MS = 330_000;
+
+export type CronRunJob = {
+  id: string;
+  name: string;
+  type: "command" | "url";
+  command: string;
+  app: CronTargetApp & { organizationId: string; displayName: string | null };
+};
+
+export type CronRunResult = {
+  runId: string;
+  status: "success" | "failed";
+  exitCode: number | null;
+  httpStatus: number | null;
+  durationMs: number;
+  output: string;
+};
+
+/** Run a job, record the run and notify on failure. Null when the job is already running. */
+export async function runCronJob(job: CronRunJob): Promise<CronRunResult | null> {
+  const lockKey = `lock:cron:running:${job.id}`;
+  if (!(await acquireLock(lockKey, RUN_LOCK_TTL_MS))) return null;
+
+  try {
     const runId = nanoid();
     const startedAt = new Date();
 
     await db.update(cronJobs).set({
-      lastRunAt: now,
+      lastRunAt: startedAt,
       lastStatus: "running",
-      updatedAt: now,
+      updatedAt: startedAt,
     }).where(eq(cronJobs.id, job.id));
 
-    let result: { success: boolean; log: string; durationMs: number };
+    let result: ExecResult;
     try {
       result = job.type === "url"
         ? await fetchUrl(job.command)
@@ -212,6 +254,17 @@ export async function tickCronJobs(): Promise<void> {
         log.error(`Failed to send notification for ${job.name}:`, err);
       }
     }
+
+    return {
+      runId,
+      status,
+      exitCode: result.exitCode ?? null,
+      httpStatus: result.httpStatus ?? null,
+      durationMs: result.durationMs,
+      output: result.log.slice(-OUTPUT_TAIL),
+    };
+  } finally {
+    await releaseLock(lockKey).catch(() => {});
   }
 }
 

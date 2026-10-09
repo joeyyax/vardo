@@ -406,5 +406,11 @@ async function importIntoAppUnmarked(opts: {
 export async function importIntoApp(
   opts: Parameters<typeof importIntoAppUnmarked>[0],
 ): ReturnType<typeof importIntoAppUnmarked> {
-  return withBulkWrite(opts.appId, () => importIntoAppUnmarked(opts));
+  const result = await withBulkWrite(opts.appId, () => importIntoAppUnmarked(opts));
+  if (result.success) {
+    await import("./initial-backup")
+      .then(({ armInitialBackupQuietly }) => armInitialBackupQuietly(opts.appId, "import"))
+      .catch(() => {});
+  }
+  return result;
 }

@@ -36,6 +36,7 @@ import {
 import { isUniqueViolation } from "@/lib/api/error-response";
 import { APP_NAME_TAKEN_ERROR, isTopLevelAppNameTaken } from "@/lib/db/app-name";
 import { enrollQuietly } from "@/lib/backups/enroll";
+import { armInitialBackupQuietly } from "@/lib/backups/initial-backup";
 
 type RouteParams = {
   params: Promise<{ orgId: string; composeProject: string }>;
@@ -416,7 +417,9 @@ async function handler(request: NextRequest, { params }: RouteParams) {
     const appId = app.id;
 
     // Imported mounts hold existing data, so sizes are measured off the request.
-    void enrollQuietly({ appId, appName: app.name, organizationId: orgId, measure: true });
+    void enrollQuietly({ appId, appName: app.name, organizationId: orgId, measure: true }).then(() =>
+      armInitialBackupQuietly(appId, "deploy"),
+    );
 
     // Warn about local images, host networking and @file provider references
     for (const detail of validDetails) {
