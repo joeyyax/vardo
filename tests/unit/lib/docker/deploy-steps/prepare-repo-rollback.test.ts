@@ -23,7 +23,8 @@ vi.mock("child_process", () => ({
     if (cmd !== "git") return cb(null, { stdout: "", stderr: "" });
     gitCalls.push(args);
     // Strip the `-C <repoDir>` prefix the step adds.
-    const a = args[0] === "-C" ? args.slice(2) : args;
+    const noRepo = args[0] === "-C" ? args.slice(2) : args;
+    const a = noRepo[0] === "-c" ? noRepo.slice(2) : noRepo;
 
     if (a[0] === "cat-file") {
       const sha = a[2].replace("^{commit}", "");
@@ -60,6 +61,10 @@ vi.mock("@/lib/paths", () => ({
 }));
 
 vi.mock("@/lib/docker/app-dir-owner", () => ({ assertAppDirOwnership: vi.fn() }));
+vi.mock("@/lib/docker/git-host", async (orig) => ({
+  ...(await orig<typeof import("@/lib/docker/git-host")>()),
+  assertGitHostAllowed: vi.fn().mockResolvedValue(undefined),
+}));
 vi.mock("@/lib/config/features", () => ({ isFeatureEnabled: () => false }));
 vi.mock("@/lib/config/host-config", () => ({
   readHostConfig: vi.fn().mockResolvedValue(null),

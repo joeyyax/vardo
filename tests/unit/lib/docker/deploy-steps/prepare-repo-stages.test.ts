@@ -32,6 +32,10 @@ vi.mock("@/lib/paths", () => ({
 }));
 
 vi.mock("@/lib/docker/app-dir-owner", () => ({ assertAppDirOwnership: vi.fn() }));
+vi.mock("@/lib/docker/git-host", async (orig) => ({
+  ...(await orig<typeof import("@/lib/docker/git-host")>()),
+  assertGitHostAllowed: vi.fn().mockResolvedValue(undefined),
+}));
 vi.mock("@/lib/config/features", () => ({ isFeatureEnabled: () => false }));
 vi.mock("@/lib/config/host-config", () => ({
   readHostConfig: vi.fn().mockResolvedValue(null),
