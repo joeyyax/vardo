@@ -155,6 +155,22 @@ export function routedPort(service: ComposeService | undefined): number | null {
 /** Restarts of a fresh slot container, without a healthcheck, that fail the deploy as a crash loop. */
 export const CRASH_LOOP_RESTARTS = 3;
 
+/** Output within this window counts as a service still making progress. */
+export const HEALTH_LOG_ACTIVE_MS = 15_000;
+
+/** Longest a still-starting slot may wait: three times the timeout, at most 600s. */
+export function healthGraceCap(timeoutMs: number): number {
+  return Math.max(timeoutMs, Math.min(timeoutMs * 3, 600_000));
+}
+
+/** How a health wait ended. */
+export type HealthVerdict =
+  | { kind: "healthy" }
+  | { kind: "crashed"; service: string; detail: string }
+  | { kind: "unhealthy"; service: string; waitedMs: number }
+  | { kind: "starting"; service: string; waitedMs: number }
+  | { kind: "not-ready"; detail: string; waitedMs: number };
+
 /** RestartCount and state per container name. */
 async function restartCounts(names: string[]): Promise<Map<string, { restarts: number; status: string }>> {
   const { stdout } = await execFileAsync(
@@ -170,10 +186,51 @@ async function restartCounts(names: string[]): Promise<Map<string, { restarts: n
   return counts;
 }
 
-/**
- * Wait for the new slot to be ready; a timeout fails. Healthchecked services must be healthy;
- * others must stay running without a restart, with the probe passing, for HEALTH_STABLE_WINDOW_MS.
- */
+/** Whether the container wrote any output in the last `withinMs`. */
+async function logsMoved(container: string, withinMs: number): Promise<boolean> {
+  try {
+    const { stdout, stderr } = await execFileAsync(
+      "docker",
+      ["logs", "--since", `${Math.max(1, Math.ceil(withinMs / 1000))}s`, "--tail", "1", container],
+      { env: dockerEnv(), timeout: COMPOSE_QUERY_TIMEOUT },
+    );
+    return Boolean(stdout.trim() || stderr?.trim());
+  } catch {
+    return false;
+  }
+}
+
+type Observed = { name: string; container: string; state: string; health: string };
+
+type Stall =
+  | { kind: "crashed"; service: string; detail: string }
+  | { kind: "unhealthy"; service: string }
+  | { kind: "starting"; service: string };
+
+/** Why the services holding the slot back aren't ready; null when it can't tell. */
+async function diagnoseStall(stuck: Observed[], restarted: Set<string>, logActiveMs: number): Promise<Stall | null> {
+  const crashed = stuck.find((s) => s.state === "restarting" || restarted.has(s.name));
+  if (crashed) {
+    return { kind: "crashed", service: crashed.name, detail: crashed.state === "restarting" ? "restarting" : "restarted during the health check" };
+  }
+  const unhealthy = stuck.find((s) => s.health === "unhealthy");
+  if (unhealthy) return { kind: "unhealthy", service: unhealthy.name };
+  if (stuck.length === 0 || stuck.some((s) => s.state !== "running" || (s.health && s.health !== "starting"))) return null;
+
+  // A restart resets health to "starting", so a fresh slot container must still show zero restarts.
+  const counts = await restartCounts(stuck.map((s) => s.container)).catch(() => null);
+  if (!counts) return null;
+  for (const s of stuck) {
+    const restarts = counts.get(s.container)?.restarts ?? 0;
+    if (restarts > 0) return { kind: "crashed", service: s.name, detail: `${restarts} restart${restarts === 1 ? "" : "s"}` };
+  }
+  for (const s of stuck) {
+    if (await logsMoved(s.container, logActiveMs)) return { kind: "starting", service: s.name };
+  }
+  return null;
+}
+
+/** Wait for the new slot to be ready, extending a still-starting slot up to healthGraceCap. */
 export async function waitForHealthy(
   projectName: string,
   composeFileArgs: string[],
@@ -181,19 +238,26 @@ export async function waitForHealthy(
   logs: { push: (line: string) => void },
   timeoutMs: number = DEFAULT_HEALTH_CHECK_TIMEOUT_MS,
   probe?: ReadinessProbe,
-  timing: { intervalMs?: number; stableMs?: number } = {},
-): Promise<boolean> {
+  timing: { intervalMs?: number; stableMs?: number; logActiveMs?: number } = {},
+): Promise<HealthVerdict> {
   const intervalMs = timing.intervalMs ?? HEALTH_CHECK_INTERVAL_MS;
   const stableMs = timing.stableMs ?? HEALTH_STABLE_WINDOW_MS;
-  const deadline = Date.now() + timeoutMs;
+  const logActiveMs = timing.logActiveMs ?? HEALTH_LOG_ACTIVE_MS;
+  const started = Date.now();
+  const cap = started + healthGraceCap(timeoutMs);
+  let deadline = started + timeoutMs;
+  let extended = false;
   let readySince: number | null = null;
   let waitingOn = "no containers yet";
   const lastRestarts = new Map<string, number>();
+  const restarted = new Set<string>();
 
-  while (Date.now() < deadline) {
+  for (;;) {
     let ready = false;
     let needsWindow = false;
     const windowed: { name: string; container: string }[] = [];
+    const notReady: Observed[] = [];
+    const running: Observed[] = [];
     try {
       const { stdout } = await execFileAsync(
         "docker",
@@ -212,25 +276,29 @@ export async function waitForHealthy(
           continue;
         }
         const name = container.Service || container.Name || "container";
+        const ref = container.Name || container.ID || name;
         const state = (container.State || "").toLowerCase();
         const health = (container.Health || "").toLowerCase();
 
         if (state === "exited" || state === "dead") {
           logs.push(`[health] ${name}: ${state}`);
-          return false;
+          return { kind: "crashed", service: name, detail: state };
         }
 
-        if (!health) windowed.push({ name, container: container.Name || container.ID || name });
+        if (!health) windowed.push({ name, container: ref });
         if (health) {
           if (health !== "healthy") {
             ready = false;
             waitingOn = `${name} is ${health}`;
+            notReady.push({ name, container: ref, state, health });
           }
         } else if (state !== "running") {
           ready = false;
           waitingOn = `${name} is ${state || "not running"}`;
+          notReady.push({ name, container: ref, state, health });
         } else {
           needsWindow = true;
+          running.push({ name, container: ref, state, health });
         }
       }
 
@@ -250,11 +318,12 @@ export async function waitForHealthy(
           if (seen.restarts > (lastRestarts.get(container) ?? seen.restarts)) {
             ready = false;
             waitingOn = `${name} restarted`;
+            restarted.add(name);
           }
           lastRestarts.set(container, seen.restarts);
           if (seen.restarts >= CRASH_LOOP_RESTARTS) {
             logs.push(`[health] ${name}: crash-looping (${seen.restarts} restarts)`);
-            return false;
+            return { kind: "crashed", service: name, detail: `crash-looping, ${seen.restarts} restarts` };
           }
         }
       }
@@ -270,17 +339,56 @@ export async function waitForHealthy(
     if (!ready) {
       readySince = null;
     } else if (!needsWindow) {
-      return true;
+      return { kind: "healthy" };
     } else {
       readySince ??= Date.now();
-      if (Date.now() - readySince >= stableMs) return true;
+      if (Date.now() - readySince >= stableMs) return { kind: "healthy" };
+    }
+
+    if (Date.now() >= deadline) {
+      const stuck = notReady.length > 0 ? notReady : running;
+      const stall = await diagnoseStall(stuck, restarted, logActiveMs);
+      const now = Date.now();
+      const waitedMs = now - started;
+      const secs = Math.round(waitedMs / 1000);
+      if (stall?.kind === "starting" && now < cap) {
+        if (!extended) {
+          logs.push(`[health] ${stall.service}: still starting with fresh output after ${secs}s — extending the wait up to ${Math.round((cap - started) / 1000)}s`);
+          extended = true;
+        }
+        deadline = Math.min(cap, now + logActiveMs);
+      } else if (stall?.kind === "starting") {
+        logs.push(`[health] ${stall.service}: still starting after ${secs}s (running, no restarts, logs still moving)`);
+        return { kind: "starting", service: stall.service, waitedMs };
+      } else if (stall?.kind === "crashed") {
+        logs.push(`[health] ${stall.service}: crashed (${stall.detail})`);
+        return stall;
+      } else if (stall?.kind === "unhealthy") {
+        logs.push(`[health] ${stall.service}: healthcheck reports unhealthy after ${secs}s`);
+        return { ...stall, waitedMs };
+      } else {
+        const detail = readySince ? "not ready long enough" : waitingOn;
+        logs.push(`[health] Timeout after ${secs}s — ${detail}`);
+        return { kind: "not-ready", detail, waitedMs };
+      }
     }
 
     await sleep(intervalMs);
   }
+}
 
-  logs.push(`[health] Timeout after ${timeoutMs / 1000}s — ${readySince ? "not ready long enough" : waitingOn}`);
-  return false;
+/** The deploy error for a failed health wait. */
+export function healthFailureMessage(verdict: Exclude<HealthVerdict, { kind: "healthy" }>, slot: string): string {
+  switch (verdict.kind) {
+    case "crashed":
+      return `${slot} slot did not become healthy: ${verdict.service} crashed (${verdict.detail}). See logs above`;
+    case "unhealthy":
+      return `${slot} slot did not become healthy: ${verdict.service} healthcheck reports unhealthy after ${Math.round(verdict.waitedMs / 1000)}s. See logs above`;
+    case "starting":
+      return `${verdict.service} is still starting after ${Math.round(verdict.waitedMs / 1000)}s (running, no restarts, logs still moving). Raise the app's health timeout (Settings → Health check timeout) or add a healthcheck with a start_period`;
+    case "not-ready":
+      return `${slot} slot did not become ready within ${Math.round(verdict.waitedMs / 1000)}s: ${verdict.detail}. See logs above`;
+  }
 }
 
 export async function swap(ctx: DeployContext): Promise<DeployContext> {
@@ -796,9 +904,11 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
         ? tcpProbe(`${newProjectName}-${primarySvcName}-1`, probePort)
         : undefined;
 
-    const healthy = await waitForHealthy(newProjectName, composeFileArgs, slotDir, logs, healthTimeoutMs, probe);
-    if (!healthy) {
-      log(`[deploy] Health check failed — fetching container logs...`);
+    const verdict = await waitForHealthy(newProjectName, composeFileArgs, slotDir, logs, healthTimeoutMs, probe);
+    if (verdict.kind !== "healthy") {
+      const crashed = verdict.kind === "crashed";
+      const prefix = crashed ? "[deploy][crash]" : verdict.kind === "unhealthy" ? "[deploy][unhealthy]" : "[deploy][logs]";
+      log(`[deploy] Health check ${crashed ? "failed" : "timed out"} — fetching container logs...`);
       try {
         const { stdout } = await execFileAsync(
           "docker",
@@ -807,7 +917,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
         );
         if (stdout.trim()) {
           for (const line of stdout.trim().split("\n")) {
-            log(`[deploy][crash] ${line}`);
+            log(`${prefix} ${line}`);
           }
         }
       } catch { /* no logs */ }
@@ -820,10 +930,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
       ).catch(() => {});
       await restoreOldSlot("health check failure");
       throw new Error(
-        [
-          `${newSlot} slot did not become healthy — container may have crashed (see logs above)`,
-          overlapDiagnosis(),
-        ]
+        [healthFailureMessage(verdict, newSlot), overlapDiagnosis()]
           .filter(Boolean)
           .join("\n"),
       );

@@ -374,6 +374,19 @@ describe("swap — hold pin on the old slot", () => {
     expect(ctx.releaseHold).toBeUndefined();
   });
 
+  it("tags container logs as a crash only when the slot crashed", async () => {
+    dockerRecording("exited");
+    const recorded = execFileAsyncMock.getMockImplementation()!;
+    execFileAsyncMock.mockImplementation(async (cmd: string, args: string[]) =>
+      args.includes("logs") ? { stdout: "web-1 | boom", stderr: "" } : recorded(cmd, args),
+    );
+    const ctx = context();
+
+    await expect(swap(ctx)).rejects.toThrow("green slot did not become healthy: web crashed (exited)");
+    const lines = (ctx as unknown as { logLines: string[] }).logLines;
+    expect(lines).toContain("[deploy][crash] web-1 | boom");
+  });
+
   it("releases the hold when compose up fails", async () => {
     dockerRecording("running", { upFails: true });
     await expect(swap(context())).rejects.toThrow(/compose up/);

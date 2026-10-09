@@ -1,7 +1,8 @@
 // ---------------------------------------------------------------------------
 // The health gate fails closed. A service with no Docker healthcheck is ready
 // only once it has kept accepting connections for a sustained window; a
-// refused connection or a timeout is never healthy.
+// refused connection or a timeout is never healthy. A failure says whether the
+// slot crashed, reported unhealthy or was still starting.
 // ---------------------------------------------------------------------------
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -21,20 +22,21 @@ const { execFileAsyncMock, execFileMock } = vi.hoisted(() => {
 vi.mock("child_process", () => ({ execFile: execFileMock }));
 vi.mock("@/lib/db", () => ({ db: {} }));
 
-import { routedPort, tcpProbe, waitForHealthy } from "@/lib/docker/deploy-steps/swap";
+import { healthFailureMessage, healthGraceCap, routedPort, tcpProbe, waitForHealthy } from "@/lib/docker/deploy-steps/swap";
 import type { ComposeService } from "@/lib/docker/compose-types";
 
-const FAST = { intervalMs: 5, stableMs: 40 };
+const FAST = { intervalMs: 5, stableMs: 40, logActiveMs: 20 };
 
-/** `docker inspect` answers with the next restart count per call, holding the last. */
-function psReturns(container: Record<string, string>, restarts: number[] = [0]) {
+/** `docker inspect` answers with the next restart count per call, holding the last; `docker logs` with `output`. */
+function psReturns(container: Record<string, string>, restarts: number[] = [0], output = "") {
   const list = [container];
   let inspects = 0;
   execFileAsyncMock.mockImplementation(async (_cmd: string, args: string[]) => {
+    if (args[0] === "logs") return { stdout: output, stderr: "" };
     if (args[0] === "inspect") {
       const count = restarts[Math.min(inspects++, restarts.length - 1)];
       const stdout = list
-        .filter((c) => !c.Health)
+        .filter((c) => !c.Health || args.includes(c.Name))
         .map((c) => `/${c.Name} ${count} ${c.State}`)
         .join("\n");
       return { stdout, stderr: "" };
@@ -49,6 +51,8 @@ function gate(probe?: () => Promise<boolean>, timeoutMs = 300) {
   return { result, logs };
 }
 
+const composer = { Service: "composer", Name: "composer-production-blue-composer-1", State: "running", Health: "" };
+
 beforeEach(() => {
   execFileAsyncMock.mockReset();
 });
@@ -60,7 +64,7 @@ describe("waitForHealthy", () => {
 
     const { result, logs } = gate(probe);
 
-    expect(await result).toBe(false);
+    expect((await result).kind).toBe("not-ready");
     expect(probe).toHaveBeenCalled();
     expect(logs.at(-1)).toContain("Timeout");
   });
@@ -69,14 +73,14 @@ describe("waitForHealthy", () => {
     psReturns({ Service: "web", Name: "app-production-green-web-1", State: "running", Health: "" });
     const probe = vi.fn().mockResolvedValueOnce(true).mockResolvedValue(false);
 
-    expect(await gate(probe).result).toBe(false);
+    expect((await gate(probe).result).kind).not.toBe("healthy");
   });
 
   it("passes once the probe keeps succeeding for the window", async () => {
     psReturns({ Service: "web", Name: "app-production-green-web-1", State: "running", Health: "" });
     const probe = vi.fn().mockResolvedValue(true);
 
-    expect(await gate(probe).result).toBe(true);
+    expect((await gate(probe).result).kind).toBe("healthy");
     expect(probe.mock.calls.length).toBeGreaterThan(1);
   });
 
@@ -90,7 +94,7 @@ describe("waitForHealthy", () => {
     });
     const started = Date.now();
 
-    expect(await gate(probe).result).toBe(true);
+    expect((await gate(probe).result).kind).toBe("healthy");
     expect(Date.now() - started).toBeGreaterThanOrEqual(FAST.stableMs);
     expect(calls).toBeGreaterThan(3);
   });
@@ -98,14 +102,14 @@ describe("waitForHealthy", () => {
   it("fails a container stuck restarting", async () => {
     psReturns({ Service: "web", Name: "app-production-green-web-1", State: "restarting", Health: "" });
 
-    expect(await gate(vi.fn().mockResolvedValue(true)).result).toBe(false);
+    expect((await gate(vi.fn().mockResolvedValue(true)).result).kind).toBe("crashed");
   });
 
   it("holds an unprobed service to the running window", async () => {
     psReturns({ Service: "worker", Name: "app-production-green-worker-1", State: "running", Health: "" });
     const started = Date.now();
 
-    expect(await gate(undefined).result).toBe(true);
+    expect((await gate(undefined).result).kind).toBe("healthy");
     expect(Date.now() - started).toBeGreaterThanOrEqual(FAST.stableMs);
   });
 
@@ -113,7 +117,7 @@ describe("waitForHealthy", () => {
     psReturns({ Service: "web", Name: "app-production-green-web-1", State: "running", Health: "healthy" });
     const probe = vi.fn().mockResolvedValue(false);
 
-    expect(await gate(probe).result).toBe(true);
+    expect((await gate(probe).result).kind).toBe("healthy");
     expect(probe).not.toHaveBeenCalled();
   });
 
@@ -122,7 +126,7 @@ describe("waitForHealthy", () => {
 
     const { result, logs } = gate(undefined, 10_000);
 
-    expect(await result).toBe(false);
+    expect((await result).kind).toBe("crashed");
     expect(logs.at(-1)).toContain("crash-looping");
   });
 
@@ -130,27 +134,117 @@ describe("waitForHealthy", () => {
     psReturns({ Service: "web", Name: "app-production-green-web-1", State: "running", Health: "" }, [0, 0, 1]);
     const started = Date.now();
 
-    expect(await gate(undefined).result).toBe(true);
+    expect((await gate(undefined).result).kind).toBe("healthy");
     expect(Date.now() - started).toBeGreaterThanOrEqual(FAST.stableMs);
   });
 
   it("does not inspect restarts for a healthchecked service", async () => {
     psReturns({ Service: "web", Name: "app-production-green-web-1", State: "running", Health: "healthy" }, [5]);
 
-    expect(await gate(undefined).result).toBe(true);
+    expect((await gate(undefined).result).kind).toBe("healthy");
     expect(execFileAsyncMock.mock.calls.some(([, args]) => args[0] === "inspect")).toBe(false);
   });
 
   it("fails closed when compose cannot be queried", async () => {
     execFileAsyncMock.mockRejectedValue(new Error("docker daemon unreachable"));
 
-    expect(await gate(vi.fn().mockResolvedValue(true)).result).toBe(false);
+    expect((await gate(vi.fn().mockResolvedValue(true)).result).kind).not.toBe("healthy");
   });
 
   it("fails an exited container at once", async () => {
     psReturns({ Service: "web", Name: "app-production-green-web-1", State: "exited", Health: "" });
 
-    expect(await gate(vi.fn().mockResolvedValue(true), 10_000).result).toBe(false);
+    expect((await gate(vi.fn().mockResolvedValue(true), 10_000).result)).toEqual({ kind: "crashed", service: "web", detail: "exited" });
+  });
+});
+
+describe("waitForHealthy — slow starts", () => {
+  it("extends the wait for a running service still writing logs, then calls it starting", async () => {
+    psReturns(composer, [0], "Scanning packages");
+    const started = Date.now();
+
+    const { result, logs } = gate(vi.fn().mockResolvedValue(false), 50);
+    const verdict = await result;
+
+    expect(verdict.kind).toBe("starting");
+    expect(Date.now() - started).toBeGreaterThanOrEqual(healthGraceCap(50) - 10);
+    expect(logs.some((l) => l.includes("extending the wait"))).toBe(true);
+    expect(logs.at(-1)).toContain("composer: still starting");
+    expect(logs.some((l) => l.includes("crash"))).toBe(false);
+  });
+
+  it("passes a slow start that becomes ready during the grace", async () => {
+    psReturns(composer, [0], "Scanning packages");
+    const started = Date.now();
+    const probe = vi.fn(async () => Date.now() - started > 70);
+
+    const { result, logs } = gate(probe, 60);
+
+    expect((await result).kind).toBe("healthy");
+    expect(logs.some((l) => l.includes("extending the wait"))).toBe(true);
+  });
+
+  it("does not extend a running service with quiet logs", async () => {
+    psReturns(composer, [0], "");
+    const started = Date.now();
+
+    const { result, logs } = gate(vi.fn().mockResolvedValue(false), 50);
+
+    expect((await result).kind).toBe("not-ready");
+    expect(Date.now() - started).toBeLessThan(healthGraceCap(50));
+    expect(logs.some((l) => l.includes("extending"))).toBe(false);
+  });
+
+  it("calls a restart during the wait a crash, even with logs moving", async () => {
+    psReturns(composer, [0, 1], "booting");
+
+    const { result, logs } = gate(vi.fn().mockResolvedValue(false), 50);
+
+    expect(await result).toMatchObject({ kind: "crashed", service: "composer" });
+    expect(logs.some((l) => l.includes("extending"))).toBe(false);
+  });
+
+  it("extends a healthchecked service still in its start period", async () => {
+    psReturns({ ...composer, Health: "starting" }, [0], "warming up");
+
+    expect((await gate(undefined, 50).result).kind).toBe("starting");
+  });
+
+  it("calls a healthchecked service that restarted into starting a crash", async () => {
+    psReturns({ ...composer, Health: "starting" }, [2], "warming up");
+
+    expect(await gate(undefined, 50).result).toMatchObject({ kind: "crashed", detail: "2 restarts" });
+  });
+
+  it("reports a failing healthcheck as unhealthy", async () => {
+    psReturns({ ...composer, Health: "unhealthy" }, [0], "still logging");
+
+    expect(await gate(undefined, 50).result).toMatchObject({ kind: "unhealthy", service: "composer" });
+  });
+});
+
+describe("healthGraceCap", () => {
+  it("allows three times the timeout up to 600s", () => {
+    expect(healthGraceCap(60_000)).toBe(180_000);
+    expect(healthGraceCap(300_000)).toBe(600_000);
+    expect(healthGraceCap(900_000)).toBe(900_000);
+  });
+});
+
+describe("healthFailureMessage", () => {
+  it("tells a slow start how to get more time without calling it a crash", () => {
+    const message = healthFailureMessage({ kind: "starting", service: "composer", waitedMs: 70_900 }, "blue");
+
+    expect(message).toBe(
+      "composer is still starting after 71s (running, no restarts, logs still moving). Raise the app's health timeout (Settings → Health check timeout) or add a healthcheck with a start_period",
+    );
+    expect(message).not.toMatch(/crash/);
+  });
+
+  it("names the crash", () => {
+    expect(healthFailureMessage({ kind: "crashed", service: "web", detail: "exited" }, "green")).toBe(
+      "green slot did not become healthy: web crashed (exited). See logs above",
+    );
   });
 });
 
