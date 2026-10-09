@@ -1,7 +1,6 @@
 // Compose transforms applied at deploy: Traefik labels, networks, limits, GPUs, ports and the Vardo overlay.
 
 import { access } from "fs/promises";
-import { availableParallelism } from "os";
 import { join } from "path";
 import type {
   ComposeFile,
@@ -20,6 +19,8 @@ import { generateComposeForImage } from "./compose-generate";
 import { isHostname } from "@/lib/security/hostname";
 import { isPathPrefix, pathRoutePriority } from "@/lib/domains/path-prefix";
 import { middlewareProblem, partitionMiddlewares } from "@/lib/domains/middlewares";
+import type { QosTier } from "@/lib/resources/defaults";
+import { tierCpuLimit, tierMemoryMb } from "@/lib/resources/host";
 
 const VARDO_LABEL_PREFIX = "vardo.";
 
@@ -72,33 +73,16 @@ function dropAppRouting(
 // an unkillable process deadlocks its container at its own cgroup limit.
 const CRITICAL_OOM_WITH_LIMIT = -900;
 
-// Memory cap (MB) when an app sets none. Override with VARDO_DEFAULT_MEMORY_{CRITICAL,STANDARD,DISPOSABLE}.
-const TIER_MEMORY_DEFAULTS_MB = {
-  critical: 2048,
-  standard: 1024,
-  disposable: 512,
-} as const;
+export type { QosTier } from "@/lib/resources/defaults";
 
-export type QosTier = "critical" | "standard" | "disposable";
-
+/** Memory cap (MB) when an app sets none. Sized by host memory; VARDO_DEFAULT_MEMORY_{TIER} overrides. */
 export function defaultMemoryLimitMb(tier: QosTier): number {
-  const override = process.env[`VARDO_DEFAULT_MEMORY_${tier.toUpperCase()}`];
-  const parsed = override ? parseInt(override, 10) : NaN;
-  if (!isNaN(parsed) && parsed >= 64) return parsed;
-  return TIER_MEMORY_DEFAULTS_MB[tier];
+  return tierMemoryMb(tier);
 }
 
-/**
- * CPU cap (cores) when neither the app nor the compose sets one; null means none.
- * Standard leaves one core free, disposable gets half, critical is uncapped. Override with VARDO_DEFAULT_CPUS_{TIER}, 0 for none.
- */
-export function defaultCpuLimit(tier: QosTier, hostCpus: number = availableParallelism()): number | null {
-  const override = process.env[`VARDO_DEFAULT_CPUS_${tier.toUpperCase()}`];
-  const parsed = override !== undefined && override !== "" ? Number(override) : NaN;
-  if (Number.isFinite(parsed) && parsed >= 0) return parsed > 0 ? parsed : null;
-  if (tier === "critical") return null;
-  const cores = tier === "disposable" ? Math.ceil(hostCpus / 2) : hostCpus - 1;
-  return Math.max(1, cores);
+/** CPU cap (cores) when neither the app nor the compose sets one; null means none. VARDO_DEFAULT_CPUS_{TIER} overrides, 0 for none. */
+export function defaultCpuLimit(tier: QosTier, hostCpus?: number): number | null {
+  return tierCpuLimit(tier, hostCpus);
 }
 
 const DEFAULT_PIDS_LIMIT = 4096;
@@ -429,7 +413,7 @@ export function buildVardoOverlay(opts: {
     serviceExposedPorts = {},
     serviceConfig = {},
     serviceEnv = {},
-    hostCpus = availableParallelism(),
+    hostCpus,
     orgTrusted = true,
   } = opts;
 

@@ -4,6 +4,7 @@
 import { redis } from "@/lib/redis";
 import { acquireLock } from "@/lib/redis-lock";
 import { logger } from "@/lib/logger";
+import { maxDeployConcurrency } from "@/lib/resources/host";
 
 const log = logger.child("deploy-concurrency");
 
@@ -20,9 +21,9 @@ const POLL_INTERVAL_MS = 250;
 /** Max wait for a slot. Below the 10-minute SSE stream timeout so the error is clean. */
 const QUEUE_TIMEOUT_MS = 9 * 60 * 1000; // 9 minutes
 
+/** Sized by host; VARDO_MAX_DEPLOY_CONCURRENCY overrides. */
 export function getConcurrencyLimit(): number {
-  const parsed = parseInt(process.env.VARDO_MAX_DEPLOY_CONCURRENCY ?? "2", 10);
-  return Math.max(1, isNaN(parsed) ? 2 : parsed);
+  return maxDeployConcurrency();
 }
 
 // Lua scripts keep key mutations atomic, preventing double acquisition.

@@ -35,6 +35,10 @@ export async function register() {
     const { syncConsolePublicRoute } = await import("./lib/docker/console-lock");
     await syncConsolePublicRoute().catch((err) => log.warn("Failed to write the console's public route:", err));
 
+    // Sizes tier defaults and deploy concurrency. Kept in memory, so a resized host picks up new defaults on restart.
+    const { detectHost } = await import("./lib/resources/host");
+    await detectHost();
+
     // Must run early so isFeatureEnabled() returns real values for the rest of startup.
     const { loadFeatureFlags } = await import("./lib/config/features");
     await loadFeatureFlags().catch((err) =>
