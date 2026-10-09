@@ -180,6 +180,39 @@ describe("reconcileSharedServices", () => {
     expect(upCalls(exec)).toEqual([]);
   });
 
+  it("recreates a held data store still carrying Traefik routing (formbricks 502 regression)", async () => {
+    const exec = docker({
+      desired: { postgres: B, redis: A, traefik: A },
+      running: { "vardo-postgres": `${A}|true`, "vardo-redis": A, "vardo-traefik": A },
+    });
+    const log = vi.fn();
+    const outcomes = await reconcile(exec, log);
+    expect(outcomes.find((o) => o.service === "postgres")?.result).toBe("recreated");
+    expect(upCalls(exec).map((a) => a.at(-1))).toEqual(["postgres"]);
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("Traefik routing it no longer has"));
+  });
+
+  it("still holds a data store whose definition keeps its route", async () => {
+    const exec = docker({
+      desired: { postgres: B, redis: A, traefik: A },
+      running: { "vardo-postgres": `${A}|true`, "vardo-redis": A, "vardo-traefik": A },
+    });
+    const services = vardoShared();
+    services.postgres.labels = { "traefik.enable": "true" };
+    const outcomes = await reconcileSharedServices({
+      ...base(exec),
+      shared: services,
+      log: () => {},
+      upTimeout: 1000,
+      readyTimeout: () => 1000,
+      intervalMs: 1,
+      stableMs: 0,
+      sleep: async () => {},
+    });
+    expect(outcomes.find((o) => o.service === "postgres")?.result).toBe("held");
+    expect(upCalls(exec)).toEqual([]);
+  });
+
   it("waits for a recreated service's healthcheck", async () => {
     const exec = docker({
       desired: { postgres: A, redis: A, traefik: B },

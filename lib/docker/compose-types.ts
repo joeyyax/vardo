@@ -151,7 +151,7 @@ export type DeployTransformDomain = {
   redirectTo: string | null;
   redirectCode: number | null;
   /** Compose service this domain routes to. Null means the primary service. */
-  composeService?: string | null;
+  serviceName?: string | null;
   pathPrefix?: string | null;
   stripPathPrefix?: boolean | null;
   /** Comma-separated Traefik middleware references. */

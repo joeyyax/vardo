@@ -69,7 +69,7 @@ export async function resolveCompose(ctx: DeployContext): Promise<DeployContext>
     const route = handWrittenRoute(compose);
     if (route) {
       for (const domain of app.domains) {
-        domain.composeService ??= route.service;
+        domain.serviceName ??= route.service;
         domain.port ??= route.port;
       }
     }
@@ -183,7 +183,7 @@ export async function resolveCompose(ctx: DeployContext): Promise<DeployContext>
         !["override", "sole-candidate", "declared-port"].includes(
           selectRoutedService(compose, {
             containerPort: d.port || containerPort,
-            override: d.composeService,
+            override: d.serviceName,
           }).reason,
         ),
     );
@@ -200,7 +200,7 @@ export async function resolveCompose(ctx: DeployContext): Promise<DeployContext>
       // A child app's domain routes to its compose service; otherwise pick the one serving the port.
       const selection = selectRoutedService(compose, {
         containerPort: port,
-        override: domain.composeService,
+        override: domain.serviceName,
         imagePorts,
       });
       const targetService = selection.service;

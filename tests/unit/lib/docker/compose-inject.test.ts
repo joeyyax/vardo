@@ -7,12 +7,14 @@ import {
   applyDeployTransforms,
   domainRouteOptions,
   buildVardoOverlay,
+  injectNetwork,
   injectTraefikLabels,
   isTraefikSelfRouted,
   stripTraefikLabels,
   stripVardoInjections,
 } from "@/lib/docker/compose-inject";
 import { parseCompose } from "@/lib/docker/compose-parse";
+import { sharedNetworks } from "@/lib/docker/shared-networks";
 import { selectRoutedService } from "@/lib/docker/routed-service";
 import type { ComposeFile, DeployTransformDomain } from "@/lib/docker/compose-types";
 
@@ -54,7 +56,7 @@ const domain = {
   certResolver: null,
   redirectTo: null,
   redirectCode: null,
-  composeService: null,
+  serviceName: null,
 };
 
 describe("isTraefikSelfRouted", () => {
@@ -399,5 +401,44 @@ describe("injectTraefikLabels domain middlewares", () => {
     expect(() =>
       injectTraefikLabels(base(), { projectName: "p", domain: "a.test", containerPort: 80, middlewares: ["a`b"] }),
     ).toThrow(/invalid middleware/);
+  });
+});
+
+describe("injectNetwork — keeps the implicit default network (formbricks P1001 regression)", () => {
+  const stack = (): ComposeFile => ({
+    services: {
+      "formbricks-db": {
+        name: "formbricks-db",
+        image: "pgvector/pgvector:pg17",
+        volumes: ["db-data:/var/lib/postgresql/data"],
+      },
+      formbricks: { name: "formbricks", image: "ghcr.io/formbricks/formbricks:v3.1.5" },
+    },
+    volumes: { "db-data": null },
+  });
+
+  it("lists default alongside vardo-network on a service that named no networks", () => {
+    const result = injectNetwork(stack(), NETWORK, { attachTo: new Set(["formbricks"]) });
+    expect(result.services.formbricks.networks).toEqual(["default", NETWORK]);
+    expect(result.services["formbricks-db"].networks).toBeUndefined();
+  });
+
+  it("leaves a service's own networks alone", () => {
+    const compose = stack();
+    compose.services.formbricks.networks = ["internal"];
+    const result = injectNetwork(compose, NETWORK, { attachTo: new Set(["formbricks"]) });
+    expect(result.services.formbricks.networks).toEqual(["internal", NETWORK]);
+  });
+
+  it("restates default in the overlay so the merged service stays on it", () => {
+    const full = injectNetwork(stack(), NETWORK, { attachTo: new Set(["formbricks"]) });
+    const overlay = buildVardoOverlay({ fullCompose: full, networkName: NETWORK });
+    expect(overlay.services.formbricks.networks).toEqual(["default", NETWORK]);
+    expect(overlay.services["formbricks-db"].networks).toBeUndefined();
+  });
+
+  it("shares default with the slot even when the shared service is the routed one", () => {
+    const full = injectNetwork(stack(), NETWORK, { attachTo: new Set(["formbricks-db"]) });
+    expect([...sharedNetworks(full)]).toEqual(["default"]);
   });
 });

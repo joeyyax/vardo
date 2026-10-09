@@ -2,17 +2,19 @@
 
 import type { ComposeFile, ComposeService } from "./compose-types";
 import { parsePortString, isTraefikOptedOut } from "./compose-inject";
+import { ownsDataDirectory } from "./image-updates/stateful-image";
+import { nonRotatingServices } from "./slot-partition";
 
-/** Images that never serve an app's HTTP port. */
+/** Images that never serve an app's HTTP port, beyond the data-directory engines. */
 const DATASTORE_IMAGE =
-  /^(?:.*\/)?(postgres|postgis|mysql|mariadb|percona|mongo|redis|valkey|memcached)\b/i;
+  /^(?:.*\/)?(postgres|postgis|pgvector|timescale|citus|paradedb|mysql|mariadb|percona|mongo|redis|valkey|keydb|dragonfly|memcached)\b/i;
 
 /** Service names for background roles. */
 const BACKGROUND_ROLE =
   /(^|[-_.])(worker|celery|beat|scheduler|cron|queue|consumer|migrate|migrations?|init|backup|sidecar)([-_.]|$)/i;
 
 export type RoutedServiceReason =
-  /** `domain.composeService` named it. */
+  /** `domain.serviceName` named it. */
   | "override"
   /** Only one service can be routed at all. */
   | "sole-candidate"
@@ -46,8 +48,14 @@ export function declaredContainerPorts(svc: ComposeService): number[] {
   return ports;
 }
 
+/** Whether a service runs a known data engine. */
+export function isDataEngine(svc: ComposeService): boolean {
+  if (!svc.image) return false;
+  return DATASTORE_IMAGE.test(svc.image) || ownsDataDirectory(svc.image);
+}
+
 function isServingRole(name: string, svc: ComposeService): boolean {
-  if (svc.image && DATASTORE_IMAGE.test(svc.image)) return false;
+  if (isDataEngine(svc)) return false;
   return !BACKGROUND_ROLE.test(name);
 }
 
@@ -57,7 +65,7 @@ export function selectRoutedService(
   opts: {
     /** The app's container port — the port Traefik will send traffic to. */
     containerPort?: number | null;
-    /** `domain.composeService`; wins outright when the service exists. */
+    /** `domain.serviceName`; wins outright when the service exists. */
     override?: string | null;
     /** Ports each service's image exposes, by service name. */
     imagePorts?: Record<string, number[]>;
@@ -80,6 +88,7 @@ export function selectRoutedService(
   if (candidates.length === 1) return { service: candidates[0], reason: "sole-candidate" };
 
   const port = containerPort ?? 0;
+  const shared = nonRotatingServices(compose);
   const filters: { reason: RoutedServiceReason; keep: (name: string) => boolean }[] = [
     {
       reason: "declared-port",
@@ -106,5 +115,9 @@ export function selectRoutedService(
   }
 
   if (pool.length === 1) return { service: pool[0], reason };
-  return { service: pool[0], reason: "file-order", ambiguous: pool };
+  // A guess never lands on a data engine or a shared service while another candidate can serve.
+  const servable = pool.filter((n) => !isDataEngine(compose.services[n]) && !shared.has(n));
+  const fallback = candidates.filter((n) => !isDataEngine(compose.services[n]) && !shared.has(n));
+  const service = servable[0] ?? fallback[0] ?? pool[0];
+  return { service, reason: "file-order", ambiguous: pool };
 }

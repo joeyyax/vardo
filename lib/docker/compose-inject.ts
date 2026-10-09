@@ -14,6 +14,7 @@ import { parseCompose } from "./compose-parse";
 import { selectRoutedService } from "./routed-service";
 import { sanitizeCompose, isAnonymousVolume } from "./compose-validate";
 import { generateComposeForImage } from "./compose-generate";
+import { DEFAULT_NETWORK } from "./shared-networks";
 import { isHostname } from "@/lib/security/hostname";
 import { isPathPrefix, pathRoutePriority } from "@/lib/domains/path-prefix";
 import { middlewareProblem, partitionMiddlewares } from "@/lib/domains/middlewares";
@@ -412,7 +413,10 @@ export function buildVardoOverlay(opts: {
         )
       : undefined;
 
-    const vardoNetworks = svc.networks?.includes(networkName) ? [networkName] : undefined;
+    // The overlay restates `default` so merging it over the bare file keeps the service there.
+    const vardoNetworks = svc.networks?.includes(networkName)
+      ? svc.networks.filter((n) => n === DEFAULT_NETWORK || n === networkName)
+      : undefined;
 
     const overlayService: ComposeService = { name };
 
@@ -575,7 +579,8 @@ export function injectNetwork(
       updatedServices[key] = svc;
       continue;
     }
-    const existingNetworks = svc.networks ?? [];
+    // Naming any network drops the implicit default, which siblings and shared services resolve on.
+    const existingNetworks = svc.networks?.length ? svc.networks : [DEFAULT_NETWORK];
     updatedServices[key] = {
       ...svc,
       networks: existingNetworks.includes(networkName)
@@ -830,7 +835,7 @@ export function applyDeployTransforms(
       const resolvedProtocol = resolveBackendProtocol(opts.backendProtocol, port);
       const targetService = selectRoutedService(result, {
         containerPort: port,
-        override: domain.composeService,
+        override: domain.serviceName,
       }).service;
       result = injectTraefikLabels(result, {
         ...domainRouteOptions(domain, { trusted: opts.orgTrusted ?? false }),

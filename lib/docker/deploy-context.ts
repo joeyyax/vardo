@@ -65,8 +65,8 @@ export type DeployApp = {
     certResolver: string | null;
     redirectTo: string | null;
     redirectCode: number | null;
-    /** Compose service this domain targets; null for the parent's own domains (primary service). */
-    composeService?: string | null;
+    /** `domain.service_name`; a child app's domains carry its compose service. */
+    serviceName?: string | null;
     pathPrefix?: string | null;
     stripPathPrefix?: boolean | null;
     middlewares?: string | null;

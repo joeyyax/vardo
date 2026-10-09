@@ -411,7 +411,7 @@ describe("resolveCompose — per-child domain targeting (decomposed children)", 
     },
   };
 
-  it("routes a domain tagged with a child composeService to that service, not the primary", async () => {
+  it("routes a domain tagged with a child service name to that service, not the primary", async () => {
     const app = makeApp({
       domains: [
         {
@@ -423,7 +423,7 @@ describe("resolveCompose — per-child domain targeting (decomposed children)", 
           certResolver: "le",
           redirectTo: null,
           redirectCode: null,
-          composeService: "worker",
+          serviceName: "worker",
         },
       ],
     });
@@ -439,12 +439,54 @@ describe("resolveCompose — per-child domain targeting (decomposed children)", 
     expect(ctx.compose.services.web.networks ?? []).not.toContain("vardo-network");
   });
 
-  it("falls back to the primary service when a domain has no composeService", async () => {
-    // makeApp's default domain has no composeService → targets the primary (web).
+  it("falls back to the primary service when a domain has no serviceName", async () => {
+    // makeApp's default domain has no serviceName → targets the primary (web).
     const ctx = makeCtx({ ...twoService, services: { ...twoService.services } }, makeApp());
     await resolveCompose(ctx);
     expect(ctx.compose.services.web.networks).toContain("vardo-network");
     expect(ctx.compose.services.worker.networks ?? []).not.toContain("vardo-network");
+  });
+});
+
+describe("resolveCompose — domain service pin (formbricks regression)", () => {
+  const formbricks = (): ComposeFile => ({
+    services: {
+      "formbricks-db": {
+        name: "formbricks-db",
+        image: "pgvector/pgvector:pg17",
+        volumes: ["db-data:/var/lib/postgresql/data"],
+      },
+      formbricks: { name: "formbricks", image: "ghcr.io/formbricks/formbricks:v3.1.5" },
+    },
+    volumes: { "db-data": null },
+  });
+  const domain = (serviceName: string | null) => ({
+    id: "dom-forms-1234",
+    domain: "forms.example.com",
+    isPrimary: true,
+    port: 3000,
+    sslEnabled: true,
+    certResolver: "le",
+    redirectTo: null,
+    redirectCode: null,
+    serviceName,
+  });
+  const routed = (compose: ComposeFile) =>
+    Object.keys(compose.services).filter((name) =>
+      Object.keys(compose.services[name].labels ?? {}).some((k) => k.startsWith("traefik.http.routers.")),
+    );
+
+  it("routes to the domain row's stored service_name", async () => {
+    const ctx = makeCtx(formbricks(), makeApp({ containerPort: null, domains: [domain("formbricks")] }));
+    await resolveCompose(ctx);
+    expect(routed(ctx.compose)).toEqual(["formbricks"]);
+    expect(ctx.logLines.join("\n")).not.toContain("nothing identifies");
+  });
+
+  it("never routes an unpinned domain to the database", async () => {
+    const ctx = makeCtx(formbricks(), makeApp({ containerPort: null, domains: [domain(null)] }));
+    await resolveCompose(ctx);
+    expect(routed(ctx.compose)).toEqual(["formbricks"]);
   });
 });
 
