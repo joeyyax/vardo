@@ -74,6 +74,8 @@ export type ComposeService = {
   // QoS tier fields injected by the Vardo overlay.
   oom_score_adj?: number;
   mem_reservation?: string;
+  /** Swap ceiling beside the memory limit; `-1` is unlimited swap. */
+  memswap_limit?: string | number;
   cpu_shares?: number;
   // Extended fields for container import round-trip.
   cap_add?: string[];

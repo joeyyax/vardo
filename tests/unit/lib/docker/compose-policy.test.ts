@@ -67,6 +67,10 @@ describe("composePolicyErrors", () => {
     expect(composePolicyErrors(config(), untrusted)).toEqual([]);
   });
 
+  it("accepts mem_limit and memswap_limit for an untrusted org", () => {
+    expect(composePolicyErrors(config({ mem_limit: "128m", memswap_limit: "256m" }), untrusted)).toEqual([]);
+  });
+
   describe("Traefik's API (#889)", () => {
     const labels = (extra: Obj) => ({ labels: { "traefik.enable": "true", ...extra } });
 

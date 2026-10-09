@@ -150,6 +150,31 @@ describe("mem_limit folds into deploy.resources.limits.memory", () => {
   });
 });
 
+describe("memswap_limit is carried like mem_limit", () => {
+  const SRC = "services:\n  app:\n    image: nginx\n    mem_limit: 128m\n    memswap_limit: 256m\n";
+
+  it("survives parsing, a YAML round trip and slot partitioning", () => {
+    const once = parseCompose(SRC);
+    expect(once.services.app.memswap_limit).toBe("256m");
+    expect(parseCompose(composeToYaml(once)).services.app.memswap_limit).toBe("256m");
+    expect(partitionBySlot(once).slotted.app.memswap_limit).toBe("256m");
+  });
+
+  it("keeps a numeric value, including -1 for unlimited swap", () => {
+    const svc = parseCompose("services:\n  app:\n    image: nginx\n    memswap_limit: -1\n").services.app;
+    expect(svc.memswap_limit).toBe(-1);
+  });
+
+  it("ignores an empty value", () => {
+    const svc = parseCompose('services:\n  app:\n    image: nginx\n    memswap_limit: ""\n').services.app;
+    expect(svc.memswap_limit).toBeUndefined();
+  });
+
+  it("no longer warns that it's dropped", () => {
+    expect(droppedKeyWarnings(parseComposeYaml(SRC))).toEqual([]);
+  });
+});
+
 describe("cpus folds into deploy.resources.limits.cpus", () => {
   /** The CPU limit service "app" carries after parsing. */
   function parsedCpus(yaml: string): string | undefined {

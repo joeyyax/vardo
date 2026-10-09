@@ -298,7 +298,7 @@ export function sharedMarkerWarnings(yamlText: string): string[] {
 const PARSED_SERVICE_KEYS = new Set([
   "image", "build", "restart", "ports", "expose", "environment", "env_file",
   "volumes", "labels", "networks", "depends_on", "network_mode", "runtime",
-  "deploy", "oom_score_adj", "mem_reservation", "cpu_shares", "cap_add",
+  "deploy", "oom_score_adj", "mem_reservation", "memswap_limit", "cpu_shares", "cap_add",
   "cap_drop", "devices", "privileged", "security_opt", "shm_size", "init",
   "extra_hosts", "healthcheck", "ulimits", "hostname", "user", "stop_signal",
   "entrypoint", "command", "tmpfs", "group_add", "container_name", "configs",
@@ -309,7 +309,7 @@ const PARSED_SERVICE_KEYS = new Set([
 
 /** Valid Compose service keys Docker honors and Vardo drops. */
 const DROPPED_SERVICE_KEYS = new Set([
-  "cpu_count", "cpu_percent", "cpuset", "memswap_limit",
+  "cpu_count", "cpu_percent", "cpuset",
   "mem_swappiness", "blkio_config", "device_cgroup_rules",
   "logging", "profiles", "platform", "domainname", "userns_mode", "ipc", "pid",
   "uts", "cgroup", "cgroup_parent", "isolation", "storage_opt", "annotations",
