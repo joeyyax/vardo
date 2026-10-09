@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, rmSync, readFileSync } from "fs";
+import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, rmSync, readFileSync, statSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import { spawnSync } from "child_process";
@@ -334,6 +334,41 @@ describe("install-time options", () => {
     expect(bad.out).not.toContain(TOKEN);
     const help = spawnSync("bash", [join(__dirname, "../../../install.sh"), "--help"], { encoding: "utf8", env: { ...process.env, CF_DNS_API_TOKEN: TOKEN } });
     expect(help.stdout).not.toContain(TOKEN);
+  });
+});
+
+describe(".env permissions", () => {
+  const asRoot = 'id() { echo 0; }\nchown() { echo "chown $*"; }\n';
+  const mode = (f: string) => (statSync(f).mode & 0o777).toString(8);
+  const home = (name: string) => {
+    const d = join(dir, `perms-${name}`);
+    mkdirSync(d, { recursive: true });
+    writeFileSync(join(d, ".env"), "X=1\n");
+    chmodSync(join(d, ".env"), 0o600);
+    return d;
+  };
+
+  it("hands .env to group 1001 when run as root", () => {
+    const f = join(home("root"), ".env");
+    const r = sh(`${asRoot}secure_env_file "${f}"`);
+    expect(r.status).toBe(0);
+    expect(r.out).toContain(`chown 0:1001 ${f}`);
+    expect(mode(f)).toBe("660");
+  });
+
+  it("keeps .env private to its owner otherwise", () => {
+    const f = join(home("user"), ".env");
+    chmodSync(f, 0o644);
+    expect(sh(`secure_env_file "${f}"`).status).toBe(0);
+    expect(mode(f)).toBe("600");
+  });
+
+  it.each(["run_env_migrations", "generate_env"])("repairs an existing install's .env in %s", (fn) => {
+    const d = home(fn);
+    const r = sh(`${asRoot}${fn}`, { VARDO_DIR: d });
+    expect(r.status, r.out).toBe(0);
+    expect(r.out).toContain(`chown 0:1001 ${d}/.env`);
+    expect(mode(join(d, ".env"))).toBe("660");
   });
 });
 

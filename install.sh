@@ -1321,6 +1321,7 @@ generate_env() {
   if [ -f "$env_file" ]; then
     log "Configuration exists at $env_file"
     apply_install_options "$env_file"
+    secure_env_file "$env_file"
     # Symlink .env into the active slot so docker compose picks it up
     if [ -n "${VARDO_SLOT_DIR:-}" ] && [ ! -e "$VARDO_SLOT_DIR/.env" ]; then
       ln -sfn "$env_file" "$VARDO_SLOT_DIR/.env"
@@ -1578,7 +1579,7 @@ EOF
   ensure_redis_mem "$env_file"
   apply_install_options "$env_file"
 
-  chmod 600 "$env_file"
+  secure_env_file "$env_file"
 
   # Symlink .env into the active slot so docker compose picks it up
   if [ -n "${VARDO_SLOT_DIR:-}" ] && [ ! -e "$VARDO_SLOT_DIR/.env" ]; then
@@ -1586,6 +1587,16 @@ EOF
   fi
 
   log "Configuration saved"
+}
+
+# Root-owned, group 1001 so the console can read and update it.
+secure_env_file() {
+  if [ "$(id -u)" -eq 0 ]; then
+    chown 0:1001 "$1"
+    chmod 660 "$1"
+  else
+    chmod 600 "$1"
+  fi
 }
 
 # Set or replace KEY=value in an env file.
@@ -1668,7 +1679,7 @@ configure_restore_storage() {
   for var_name in VARDO_BACKUP_TYPE VARDO_BACKUP_PATH VARDO_BACKUP_BUCKET VARDO_BACKUP_ENDPOINT VARDO_BACKUP_REGION VARDO_BACKUP_ACCESS_KEY VARDO_BACKUP_SECRET_KEY; do
     [ -n "${!var_name:-}" ] && env_upsert "$env_file" "$var_name" "${!var_name}"
   done
-  chmod 600 "$env_file"
+  secure_env_file "$env_file"
   log "Backup storage saved. The setup page lists the backups it holds."
 
   local running_key running_auth
@@ -2122,6 +2133,8 @@ run_env_migrations() {
   # Remove deprecated feature flags
   _sed_i '/^FEATURE_METRICS=/d' "$env_file" 2>/dev/null || true
   _sed_i '/^FEATURE_LOGS=/d' "$env_file" 2>/dev/null || true
+
+  secure_env_file "$env_file"
 }
 
 do_update() {
