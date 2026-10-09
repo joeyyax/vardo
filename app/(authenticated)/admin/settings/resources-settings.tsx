@@ -54,6 +54,7 @@ function formatValue(row: ResourceDefault, value: number | null): string {
 function envValue(row: ResourceDefault): string {
   const mb = row.rule ?? 0;
   if (row.key === "buildkitMem") return `${mb / 1024}g`;
+  if (row.key === "buildkitCache") return String(mb * 1024 ** 2);
   if (row.key === "redisMaxmemory") return `${mb}mb`;
   return `${mb}m`;
 }

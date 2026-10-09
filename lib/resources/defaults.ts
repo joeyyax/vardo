@@ -34,6 +34,7 @@ export const FALLBACK = {
   deploys: 2,
   redisMb: 512,
   buildkitGb: 4,
+  buildkitCacheGb: 10,
 };
 
 export function memoryMiB(memoryBytes: number): number {
@@ -58,6 +59,12 @@ export function deployConcurrency(host: HostSize): number {
 /** A quarter of RAM, between 2 and 16 GiB. */
 export function buildkitMemGb(memoryMb: number): number {
   return Math.min(16, Math.max(2, Math.floor(memoryMb / 1024 / 4)));
+}
+
+/** BuildKit's cache ceiling in bytes: a tenth of the disk, between 5 and 50 GiB. install.sh mirrors it. */
+export function buildkitCacheMaxBytes(diskBytes: number): number {
+  const gib = 1024 ** 3;
+  return Math.min(50, Math.max(5, Math.floor(diskBytes / gib / 10))) * gib;
 }
 
 /** vardo-redis's container limit and maxmemory, as install.sh writes them. maxmemory is 75% of the limit. */
@@ -141,6 +148,7 @@ export type ResourceDefaultKey =
   | "cpusDisposable"
   | "deployConcurrency"
   | "buildkitMem"
+  | "buildkitCache"
   | "redisMem"
   | "redisMaxmemory";
 
@@ -230,6 +238,7 @@ export function describeDefaults(
   env: Env = process.env,
   running: RunningLimits = { buildkitMemMb: null, redisMemMb: null, redisMaxmemoryMb: null },
   admin: AdminResourceSettings = {},
+  diskBytes: number | null = null,
 ): ResourceDefault[] {
   const memMb = host ? memoryMiB(host.memoryBytes) : null;
   const redisRule = memMb !== null ? sizeClass(memMb).redisMb : FALLBACK.redisMb;
@@ -274,6 +283,20 @@ export function describeDefaults(
         host,
         (memMb !== null ? buildkitMemGb(memMb) : FALLBACK.buildkitGb) * 1024,
         FALLBACK.buildkitGb * 1024,
+      ),
+    },
+    {
+      key: "buildkitCache",
+      label: "BuildKit cache ceiling",
+      envVar: "VARDO_BUILDKIT_CACHE_MAX",
+      unit: "mb",
+      installer: true,
+      editable: false,
+      ...resolveInstallerMb(
+        env.VARDO_BUILDKIT_CACHE_MAX,
+        diskBytes !== null ? host : null,
+        Math.floor((diskBytes !== null ? buildkitCacheMaxBytes(diskBytes) : FALLBACK.buildkitCacheGb * 1024 ** 3) / 1024 ** 2),
+        FALLBACK.buildkitCacheGb * 1024,
       ),
     },
     {

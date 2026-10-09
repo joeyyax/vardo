@@ -50,38 +50,3 @@ export async function assertBuildKitReachable(
       `Or point BUILDKIT_HOST at a daemon you run yourself. Nixpacks needs none of this.`,
   );
 }
-
-/** Prune BuildKit's own store to a ceiling, returning bytes reclaimed. No-op when unreachable. */
-export async function pruneBuildKitCache(
-  host: string,
-  maxBytes: number,
-  signal?: AbortSignal,
-): Promise<{ spaceReclaimed: number }> {
-  const container = buildKitContainerName(host);
-  if (!container) return { spaceReclaimed: 0 };
-  if (!(await isBuildKitReachable(host, signal))) return { spaceReclaimed: 0 };
-
-  // `--keep-storage` is megabytes, not bytes.
-  const keepStorageMb = Math.max(1, Math.floor(maxBytes / 1e6));
-  const { stdout } = await execFileAsync(
-    "docker",
-    [
-      "exec",
-      container,
-      "buildctl",
-      "prune",
-      "--keep-storage",
-      String(keepStorageMb),
-      // One record size per line.
-      "--format",
-      "{{.Size}}",
-    ],
-    { env: dockerEnv(), timeout: DOCKER_CLEANUP_TIMEOUT, signal },
-  );
-
-  const spaceReclaimed = stdout
-    .split("\n")
-    .reduce((total, line) => total + (Number(line.trim()) || 0), 0);
-
-  return { spaceReclaimed };
-}

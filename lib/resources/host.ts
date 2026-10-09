@@ -142,10 +142,27 @@ export async function runningLimits(): Promise<RunningLimits> {
   return { buildkitMemMb, redisMemMb, redisMaxmemoryMb: redisMax };
 }
 
+/** Size of the disk behind the console's root filesystem, which on an overlay is the host's. Null when unreadable. */
+async function diskTotalBytes(): Promise<number | null> {
+  try {
+    const { statfs } = await import("fs/promises");
+    const s = await statfs("/");
+    const bytes = Number(s.blocks) * Number(s.bsize);
+    return bytes > 0 ? bytes : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Every sized default for the admin page. */
 export async function currentDefaults(): Promise<{ host: HostSize | null; defaults: ResourceDefault[] }> {
-  const [host, running, admin] = await Promise.all([detectHost(), runningLimits(), loadResourceSettings()]);
-  return { host, defaults: describeDefaults(host, availableParallelism(), process.env, running, admin) };
+  const [host, running, admin, disk] = await Promise.all([
+    detectHost(),
+    runningLimits(),
+    loadResourceSettings(),
+    diskTotalBytes(),
+  ]);
+  return { host, defaults: describeDefaults(host, availableParallelism(), process.env, running, admin, disk) };
 }
 
 /** The host's CPU count, or this process's when Docker can't be read. */

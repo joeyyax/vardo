@@ -32,11 +32,7 @@ import { drainForSelfStop, endSelfDrain, SELF_DRAIN_TIMEOUT_MS } from "../deploy
 import { acquireLock, releaseLock } from "@/lib/redis-lock";
 import { addEvent } from "@/lib/stream/producer";
 import { recordActivity } from "@/lib/activity";
-import { pruneBuildKitCache, DEFAULT_BUILDKIT_HOST } from "../buildkit";
-import {
-  BUILD_CACHE_MAX_BYTES,
-  BUILDKIT_CACHE_MAX_BYTES,
-} from "../constants";
+import { BUILD_CACHE_MAX_BYTES } from "../constants";
 import type { ConfigSnapshot } from "@/lib/types/deploy-snapshot";
 import { checkEndpoint, sendDeployNotification } from "../deploy";
 import {
@@ -406,23 +402,6 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
           }
         } catch {
           // Best-effort.
-        }
-
-        try {
-          // Railpack's cache lives in the buildkit daemon, out of reach of the prune above.
-          const { spaceReclaimed: buildKitReclaimed } = await pruneBuildKitCache(
-            process.env.BUILDKIT_HOST || DEFAULT_BUILDKIT_HOST,
-            BUILDKIT_CACHE_MAX_BYTES,
-          );
-          if (buildKitReclaimed > 0) {
-            log(
-              `[deploy] BuildKit cache over ${formatBytes(BUILDKIT_CACHE_MAX_BYTES)}, ` +
-                `reclaimed ${formatBytes(buildKitReclaimed)}`,
-            );
-          }
-        } catch (err) {
-          // Logged: buildctl is deprecating --keep-storage.
-          log(`[deploy] BuildKit cache prune failed: ${err instanceof Error ? err.message : err}`);
         }
       } finally {
         await releaseLock(PRUNE_LOCK_KEY).catch(() => {});

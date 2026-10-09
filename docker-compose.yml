@@ -198,7 +198,7 @@ services:
   buildkit:
     container_name: vardo-buildkit
     x-vardo-shared: true
-    image: moby/buildkit:latest
+    image: moby/buildkit:v0.34.0
     profiles:
       - buildkit
     restart: unless-stopped
@@ -208,6 +208,9 @@ services:
     mem_limit: ${VARDO_BUILDKIT_MEM:-4g}
     volumes:
       - buildkit_data:/var/lib/buildkit
+    configs:
+      - source: buildkitd
+        target: /etc/buildkit/buildkitd.toml
     networks:
       - internal
 
@@ -327,6 +330,19 @@ services:
         ipv4_address: 10.88.0.2
       vardo-network:
     mem_limit: 64m
+
+# Caps BuildKit's cache. VARDO_BUILDKIT_CACHE_MAX is bytes or a size with a unit
+# ("20GB" is binary, 20 GiB); install.sh sets it from the disk size.
+configs:
+  buildkitd:
+    content: |
+      [worker.oci]
+        gc = true
+        [[worker.oci.gcpolicy]]
+          all = true
+          reservedSpace = "1000000000"
+          maxUsedSpace = "${VARDO_BUILDKIT_CACHE_MAX:-10737418240}"
+          minFreeSpace = "5000000000"
 
 volumes:
   postgres_data:
