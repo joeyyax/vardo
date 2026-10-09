@@ -10,7 +10,8 @@ const { store, runs } = vi.hoisted(() => ({
 vi.mock("@/lib/redis", () => ({
   redis: {
     get: async (k: string) => store.get(k) ?? null,
-    set: async (k: string, v: string) => {
+    set: async (k: string, v: string, ...args: string[]) => {
+      if (args.includes("NX") && store.has(k)) return null;
       store.set(k, v);
       return "OK";
     },

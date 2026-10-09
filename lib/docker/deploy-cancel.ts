@@ -354,50 +354,83 @@ export async function requestDeploy(opts: DeployOpts): Promise<DeployResult> {
   }
 }
 
+// Claims per scope run one at a time in this process, so a burst can't all find the registry empty.
+const claimChains = new Map<string, Promise<unknown>>();
+
+function oneClaimAtATime<T>(scope: string, fn: () => Promise<T>): Promise<T> {
+  const next = (claimChains.get(scope) ?? Promise.resolve()).then(fn, fn);
+  const settled = next.then(
+    () => {},
+    () => {},
+  );
+  claimChains.set(scope, settled);
+  void settled.then(() => {
+    if (claimChains.get(scope) === settled) claimChains.delete(scope);
+  });
+  return next;
+}
+
+/** Takes the scope's Redis key with NX, superseding or waiting out its owner. Overwrites at the deadline, as a dead owner would have let it lapse. */
+async function claimActiveInRedis(scope: string, deploymentId: string, onLog?: (line: string) => void): Promise<void> {
+  const deadline = Date.now() + WAIT_TIMEOUT_MS;
+  const value = JSON.stringify({ deploymentId, stage: "clone" });
+  let signalled: string | null = null;
+  let announced = false;
+  for (;;) {
+    try {
+      if ((await redis.set(ACTIVE_KEY(scope), value, "PX", ACTIVE_TTL_MS, "NX")) === "OK") return;
+    } catch {
+      // Redis down: the in-process registry is all there is.
+      return;
+    }
+    const entry = await getActiveFromRedis(scope);
+    if (entry && entry.deploymentId !== signalled && SAFE_CANCEL_STAGES.has(entry.stage)) {
+      await writeCancelSignal(scope, deploymentId);
+      signalled = entry.deploymentId;
+    }
+    if (!announced) {
+      onLog?.("[queue] Waiting for the deploy already running for this app");
+      announced = true;
+    }
+    if (Date.now() >= deadline) {
+      await setActiveInRedis(scope, deploymentId, "clone");
+      return;
+    }
+    await new Promise((r) => setTimeout(r, WAIT_POLL_MS));
+  }
+}
+
 async function runRequestedDeploy(newDeploymentId: string, opts: DeployOpts): Promise<DeployResult> {
   const scope = await deployScope(opts.appId, opts.environmentId);
 
-  // 1. Same-process deploy.
-  const localExisting = localRegistry.get(scope);
-  if (localExisting) {
-    if (SAFE_CANCEL_STAGES.has(localExisting.stage)) {
-      localExisting.controller.abort({ supersededBy: newDeploymentId });
-    }
-    await localExisting.done.catch(() => {});
-  } else {
-    // 2. Deploy owned by another process.
-    const redisEntry = await getActiveFromRedis(scope);
-    if (redisEntry) {
-      if (SAFE_CANCEL_STAGES.has(redisEntry.stage)) {
-        await writeCancelSignal(scope, newDeploymentId);
-      }
-
-      // Its lease renews only while its process lives, so a dead owner clears itself.
-      opts.onLog?.("[queue] Waiting for the deploy already running for this app");
-      const deadline = Date.now() + WAIT_TIMEOUT_MS;
-      while (Date.now() < deadline) {
-        const still = await getActiveFromRedis(scope);
-        if (!still) break;
-        await new Promise((r) => setTimeout(r, WAIT_POLL_MS));
-      }
-    }
-  }
-
-  // 3. Register this deploy locally and in Redis.
   const controller = new AbortController();
   let resolveDone!: () => void;
   const done = new Promise<void>((resolve) => {
     resolveDone = resolve;
   });
-
   const active: ActiveDeploy = {
     deploymentId: newDeploymentId,
     controller,
     stage: "clone",
     done,
   };
-  localRegistry.set(scope, active);
-  await setActiveInRedis(scope, newDeploymentId, "clone");
+
+  await oneClaimAtATime(scope, async () => {
+    // 1. Same-process deploy.
+    const localExisting = localRegistry.get(scope);
+    if (localExisting) {
+      if (SAFE_CANCEL_STAGES.has(localExisting.stage)) {
+        localExisting.controller.abort({ supersededBy: newDeploymentId });
+      }
+      await localExisting.done.catch(() => {});
+    }
+
+    // 2. Deploy owned by another process. Its lease renews only while its process lives, so a dead owner clears itself.
+    await claimActiveInRedis(scope, newDeploymentId, opts.onLog);
+
+    // 3. Register this deploy locally.
+    localRegistry.set(scope, active);
+  });
 
   // Stage transitions are minutes apart during a build, so they can't carry the lease alone.
   const leaseRenew = setInterval(() => {
