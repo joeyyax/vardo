@@ -16,4 +16,11 @@ export async function registerMetricsPlugin(): Promise<void> {
   } catch (err) {
     log.error("Failed to start metrics collector:", err);
   }
+
+  try {
+    const { startOrphanSeriesSweeper } = await import("@/lib/metrics/series-cleanup");
+    startOrphanSeriesSweeper();
+  } catch (err) {
+    log.error("Failed to start orphan series sweeper:", err);
+  }
 }

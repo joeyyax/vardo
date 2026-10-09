@@ -10,6 +10,7 @@ import { removeAppContainersAndNetworks } from "./delete-teardown";
 import { deleteEmptyAutoJobs } from "@/lib/backups/auto-backup";
 import { logger } from "@/lib/logger";
 import { recordActivity } from "@/lib/activity";
+import { deleteAppSeries } from "@/lib/metrics/series-cleanup";
 
 const log = logger.child("delete-app");
 
@@ -179,6 +180,16 @@ export async function deleteApp(opts: {
     if (removedJobs.length > 0) logs.push(`Removed ${removedJobs.length} empty backup job(s)`);
   } catch (err) {
     log.warn(`Could not remove the empty backup job for ${app.name}:`, err);
+  }
+
+  // A decomposed child's containers report under the parent's project.
+  try {
+    await deleteAppSeries({
+      projects: app.parentAppId ? [] : [app.name],
+      appIds: [appId, ...childApps.map((c) => c.id)],
+    });
+  } catch (err) {
+    log.warn(`Could not delete the metrics series for ${app.name}:`, err);
   }
 
   // Remove the project if this was its last app.

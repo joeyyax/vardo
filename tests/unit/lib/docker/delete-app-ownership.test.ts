@@ -25,6 +25,7 @@ const {
   };
 });
 
+vi.mock("@/lib/metrics/series-cleanup", () => ({ deleteAppSeries: vi.fn().mockResolvedValue(0) }));
 vi.mock("@/lib/db", () => ({
   db: {
     query: {

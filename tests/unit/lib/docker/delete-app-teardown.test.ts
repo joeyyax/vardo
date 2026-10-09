@@ -10,6 +10,7 @@ const { order, findFirstMock, findManyMock, teardownMock, autoJobsMock } = vi.ho
   autoJobsMock: vi.fn(),
 }));
 
+vi.mock("@/lib/metrics/series-cleanup", () => ({ deleteAppSeries: vi.fn().mockResolvedValue(0) }));
 vi.mock("@/lib/db", () => ({
   db: {
     query: { apps: { findFirst: findFirstMock, findMany: findManyMock } },

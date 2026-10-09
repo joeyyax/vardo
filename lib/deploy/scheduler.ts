@@ -4,6 +4,7 @@ import {
   sweepRollbackWatches,
   sweepStandbySlots,
 } from "./sweeper";
+import { sweepDeployStreams } from "@/lib/stream/deploy-expiry";
 import { logger } from "@/lib/logger";
 
 const log = logger.child("deploy-sweeper");
@@ -13,16 +14,32 @@ const ROLLBACK_INTERVAL_MS = 15_000;
 
 const STANDBY_INTERVAL_MS = 5 * 60_000;
 
+const STREAM_EXPIRY_INTERVAL_MS = 60 * 60_000;
+
 let interval: NodeJS.Timeout | null = null;
 let rollbackInterval: NodeJS.Timeout | null = null;
 let rollbackTicking = false;
 let standbyInterval: NodeJS.Timeout | null = null;
 let standbyTicking = false;
+let streamExpiryInterval: NodeJS.Timeout | null = null;
+let streamExpiryTicking = false;
+
+async function tickStreamExpiry(): Promise<void> {
+  if (streamExpiryTicking) return;
+  streamExpiryTicking = true;
+  try {
+    await sweepDeployStreams();
+  } catch (err) {
+    log.error("Deploy stream expiry error:", err);
+  } finally {
+    streamExpiryTicking = false;
+  }
+}
 
 export function startDeploySweeper(): void {
   if (interval) return;
 
-  log.info("Deploy sweeper started (60s interval, 15s rollback watch, 5m standby sweep)");
+  log.info("Deploy sweeper started (60s interval, 15s rollback watch, 5m standby sweep, 1h stream expiry)");
   interval = setInterval(async () => {
     try {
       await sweepStuckDeployments();
@@ -55,9 +72,17 @@ export function startDeploySweeper(): void {
       standbyTicking = false;
     }
   }, STANDBY_INTERVAL_MS);
+
+  // Boot sweep catches streams left without an expiry.
+  void tickStreamExpiry();
+  streamExpiryInterval = setInterval(tickStreamExpiry, STREAM_EXPIRY_INTERVAL_MS);
 }
 
 export function stopDeploySweeper(): void {
+  if (streamExpiryInterval) {
+    clearInterval(streamExpiryInterval);
+    streamExpiryInterval = null;
+  }
   if (standbyInterval) {
     clearInterval(standbyInterval);
     standbyInterval = null;
