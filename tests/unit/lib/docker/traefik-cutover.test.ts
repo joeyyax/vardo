@@ -206,6 +206,38 @@ describe("planCutover", () => {
   });
 });
 
+describe("planCutover with compose variables", () => {
+  const raw = routedLabels({ "traefik.http.routers.app-1a2b3c4d.middlewares": "${LOCK:-}" });
+
+  it("skips a router whose labels still hold a compose variable", () => {
+    expect(plan({ web: svc("web", { labels: raw }) })).toBeNull();
+  });
+
+  it("uses the new slot's interpolated labels over the compose file", () => {
+    const services = { web: svc("web", { labels: raw }) };
+    const result = planCutover({ services } as ComposeFile, {
+      newProjectName: "app-production-green",
+      slotted: services,
+      liveLabels: {
+        web: routedLabels({ "traefik.http.routers.app-1a2b3c4d.middlewares": "cloudflare-only@file" }),
+      },
+    });
+    expect(parse(result!.yaml).http.routers["app-1a2b3c4d-cutover"].middlewares).toEqual([
+      "cloudflare-only@file",
+    ]);
+  });
+
+  it("drops a middleware list that interpolated to empty", () => {
+    const services = { web: svc("web", { labels: raw }) };
+    const result = planCutover({ services } as ComposeFile, {
+      newProjectName: "app-production-green",
+      slotted: services,
+      liveLabels: { web: routedLabels({ "traefik.http.routers.app-1a2b3c4d.middlewares": "" }) },
+    });
+    expect(parse(result!.yaml).http.routers["app-1a2b3c4d-cutover"].middlewares).toBeUndefined();
+  });
+});
+
 describe("pinIsLive", () => {
   const names = ["app-1a2b3c4d-cutover"];
 

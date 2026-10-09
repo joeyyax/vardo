@@ -65,13 +65,15 @@ export function planCutover(
     newProjectName: string;
     /** Services that rotate. Shared services are never pinned. */
     slotted: Record<string, ComposeService>;
+    /** The new slot's container labels by compose service, after compose interpolation. */
+    liveLabels?: Record<string, Labels>;
   },
 ): CutoverPlan | null {
   const routers = new Map<string, RouterOptions>();
   const declared = new Map<string, RouterOptions>();
 
   for (const name of Object.keys(opts.slotted)) {
-    const labels = compose.services[name]?.labels;
+    const labels = opts.liveLabels?.[name] ?? compose.services[name]?.labels;
     if (!labels || labels["traefik.enable"] !== "true") continue;
 
     for (const [key, value] of Object.entries(labels)) {
@@ -99,6 +101,8 @@ export function planCutover(
     const rule = router.opts["rule"];
     const target = router.opts["service"];
     if (!rule || !target) continue;
+    // Uninterpolated compose variables would reach Traefik as literal names.
+    if (Object.values(router.opts).some((v) => v.includes("${"))) continue;
 
     const backend = declared.get(target);
     const port = backend?.opts["loadbalancer.server.port"];
@@ -220,6 +224,22 @@ async function projectIps(projectName: string): Promise<Set<string>> {
   }
 }
 
+/** Labels of a compose project's running containers, by compose service. */
+async function projectLabels(projectName: string): Promise<Record<string, Labels>> {
+  try {
+    const containers = await liveContainers();
+    const byService: Record<string, Labels> = {};
+    for (const c of containers) {
+      if (c.labels["com.docker.compose.project"] !== projectName) continue;
+      const service = c.labels["com.docker.compose.service"];
+      if (service) byService[service] = c.labels;
+    }
+    return byService;
+  } catch {
+    return {};
+  }
+}
+
 export type CutoverGuard = {
   /** Whether Traefik confirmed the pin. */
   pinned: boolean;
@@ -248,6 +268,7 @@ export async function guardCutover(opts: {
   const plan = planCutover(opts.compose, {
     newProjectName: opts.newProjectName,
     slotted: opts.slotted,
+    liveLabels: await projectLabels(opts.newProjectName),
   });
   if (!plan) {
     await clearCutoverPin(appName, envName).catch(() => {});
