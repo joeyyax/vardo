@@ -33,6 +33,8 @@ vi.mock("@/lib/docker/restart-policy", () => ({
 }));
 vi.mock("@/lib/docker/traefik-cutover", () => ({
   clearCutoverPin: vi.fn().mockResolvedValue(undefined),
+  holdSlot: vi.fn(async () => ({ held: false, release: async () => {} })),
+  NO_HOLD: { held: false, release: async () => {} },
   guardCutover: vi.fn(async () => ({ pinned: true, release: async () => {} })),
 }));
 vi.mock("@/lib/docker/client", () => ({ ensureNetwork: vi.fn().mockResolvedValue(undefined) }));

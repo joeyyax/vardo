@@ -38,6 +38,8 @@ const { dbMock, execFileAsyncMock, execFileMock, restartPolicyMock, cutoverMock,
       },
       cutoverMock: {
         clearCutoverPin: vi.fn(async () => { order.push("clear-pin"); }),
+        holdSlot: vi.fn(async () => ({ held: false, release: async () => {} })),
+        NO_HOLD: { held: false, release: async () => {} },
         guardCutover: vi.fn(async () => {
           order.push("pin");
           return { pinned: true, release: async () => { order.push("unpin"); } };
@@ -307,6 +309,106 @@ describe("swap — cutover pin", () => {
   it("does not pin when the old slot was stopped before the new one started", async () => {
     await expect(swap(context({ compose: composeFile({ ports: true }) }))).resolves.toBeTruthy();
     expect(cutoverMock.guardCutover).not.toHaveBeenCalled();
+  });
+});
+
+describe("swap — hold pin on the old slot", () => {
+  const isNewSlotUp = (a: string[]) => a.includes("up") && a.includes("app-production-green");
+  const isNewSlotDown = (a: string[]) => a.includes("down") && a.includes("app-production-green");
+
+  /** Docker that records the new slot's up and down, with `ps` reporting `state`. */
+  function dockerRecording(state: "running" | "exited", opts: { upFails?: boolean } = {}) {
+    let started = false;
+    execFileAsyncMock.mockImplementation(async (_cmd: string, args: string[]) => {
+      if (isNewSlotUp(args)) {
+        order.push("up");
+        started = true;
+        if (opts.upFails) throw new Error("port is already allocated");
+      }
+      if (isNewSlotDown(args) && started) order.push("down");
+      if (args.includes("ps")) {
+        return {
+          stdout: JSON.stringify({ Service: "web", Name: "app-production-green-web-1", State: state, Health: state === "running" ? "healthy" : "" }),
+          stderr: "",
+        };
+      }
+      return { stdout: "", stderr: "" };
+    });
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    order.length = 0;
+    cutoverMock.holdSlot.mockImplementation(async () => {
+      order.push("hold");
+      return { held: true, release: async () => { order.push("release-hold"); } };
+    });
+  });
+
+  it("holds the old slot before the new one starts and keeps it through the health wait", async () => {
+    dockerRecording("running");
+    const ctx = await swap(context());
+
+    expect(cutoverMock.holdSlot).toHaveBeenCalledWith(
+      expect.objectContaining({ appName: "app", envName: "production", projectName: "app-production-blue" }),
+    );
+    expect(order).toEqual(["clear-pin", "hold", "up"]);
+    expect(ctx.releaseHold).toBeTypeOf("function");
+  });
+
+  it("swaps the hold for the cutover pin, never removing it in between", async () => {
+    dockerRecording("running");
+    const ctx = await swap(context());
+    await ctx.stopOldSlot!();
+
+    expect(order).toEqual(["clear-pin", "hold", "up", "pin", "demote", "unpin"]);
+    expect(ctx.releaseHold).toBeUndefined();
+  });
+
+  it("releases the hold after tearing down a new slot that fails its health check", async () => {
+    dockerRecording("exited");
+    const ctx = context();
+    await expect(swap(ctx)).rejects.toThrow(/did not become healthy/);
+
+    expect(order).toEqual(["clear-pin", "hold", "up", "down", "release-hold"]);
+    expect(ctx.releaseHold).toBeUndefined();
+  });
+
+  it("releases the hold when compose up fails", async () => {
+    dockerRecording("running", { upFails: true });
+    await expect(swap(context())).rejects.toThrow(/compose up/);
+
+    expect(order).toEqual(["clear-pin", "hold", "up", "down", "release-hold"]);
+  });
+
+  it("releases the hold when the deploy is cancelled before the health wait", async () => {
+    dockerRecording("running");
+    const ctx = context();
+    ctx.checkAbort = () => {
+      if (order.includes("up")) throw new Error("aborted");
+    };
+    await expect(swap(ctx)).rejects.toThrow("aborted");
+
+    expect(order).toEqual(["clear-pin", "hold", "up", "release-hold"]);
+  });
+
+  it("does not hold when the slots can't overlap", async () => {
+    dockerRecording("running");
+    await swap(context({ compose: composeFile({ ports: true }) }));
+    expect(cutoverMock.holdSlot).not.toHaveBeenCalled();
+  });
+
+  it("does not hold on a first deploy", async () => {
+    dockerRecording("running");
+    await swap(context({ activeSlot: null }));
+    expect(cutoverMock.holdSlot).not.toHaveBeenCalled();
+  });
+
+  it("leaves no release behind when Traefik never confirmed the hold", async () => {
+    cutoverMock.holdSlot.mockResolvedValueOnce({ held: false, release: async () => {} });
+    dockerRecording("running");
+    const ctx = await swap(context());
+    expect(ctx.releaseHold).toBeUndefined();
   });
 });
 

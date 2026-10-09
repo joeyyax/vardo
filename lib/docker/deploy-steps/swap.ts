@@ -34,7 +34,7 @@ import { getServicesWithExternalizedVolumes } from "../compose-inject";
 import { registryAuthHint, withRegistryAuth } from "../registry-auth";
 import { partitionBySlot, sharedProjectName, slotOverlapDiagnosis, slotScopeArgs } from "../slot-partition";
 import { isSelfApp } from "../self-env";
-import { clearCutoverPin, guardCutover, type CutoverGuard } from "../traefik-cutover";
+import { clearCutoverPin, guardCutover, holdSlot, NO_HOLD, type CutoverGuard } from "../traefik-cutover";
 import { projectScopedNetworkNames } from "../shared-networks";
 import { overlapFitsNow } from "../memory-headroom";
 import { reportOomDuringDeploy } from "../deploy-oom";
@@ -449,6 +449,8 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
       return { ok: true };
     };
 
+    // The cutover pin replaces the hold in the same file.
+    ctx.releaseHold = undefined;
     const outcome = pinCutover
       ? await drainThenStop(
           () =>
@@ -666,105 +668,119 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
   // Step 6c: chown bind-mount targets to non-root uids (#738). Needs the images.
   await prepareBindMountOwnership(ctx);
 
-  // Step 7: start the new slot from local images.
-  const composeUpTimeout = buildServices.length > 0 ? COMPOSE_BUILD_UP_TIMEOUT : COMPOSE_UP_TIMEOUT;
-  log(`[deploy] Starting ${newSlot} slot...`);
+  // Keep Traefik on the old slot until the new one is healthy.
+  const hold =
+    pinCutover && !stoppedOldSlot && oldProjectName
+      ? await holdSlot({ appName: app.name, envName: ctx.envName, slotted, projectName: oldProjectName, log })
+      : NO_HOLD;
+  if (hold.held) ctx.releaseHold = hold.release;
+
   try {
-    const { stdout, stderr } = await ctx.timer.span("up", () => execFileAsync(
-      "docker",
-      ["compose", ...composeFileArgs, "-p", newProjectName, "up", "-d", "--pull", "never", ...onlySlotted],
-      { env: dockerEnv(), cwd: slotDir, timeout: composeUpTimeout, maxBuffer: EXEC_MAX_BUFFER }
-    ));
-    for (const line of stdout.split(/\r?\n|\r/).filter(Boolean)) {
-      logs.push(`[deploy][compose] ${line.trim()}`);
+    // Step 7: start the new slot from local images.
+    const composeUpTimeout = buildServices.length > 0 ? COMPOSE_BUILD_UP_TIMEOUT : COMPOSE_UP_TIMEOUT;
+    log(`[deploy] Starting ${newSlot} slot...`);
+    try {
+      const { stdout, stderr } = await ctx.timer.span("up", () => execFileAsync(
+        "docker",
+        ["compose", ...composeFileArgs, "-p", newProjectName, "up", "-d", "--pull", "never", ...onlySlotted],
+        { env: dockerEnv(), cwd: slotDir, timeout: composeUpTimeout, maxBuffer: EXEC_MAX_BUFFER }
+      ));
+      for (const line of stdout.split(/\r?\n|\r/).filter(Boolean)) {
+        logs.push(`[deploy][compose] ${line.trim()}`);
+      }
+      for (const line of stderr.split(/\r?\n|\r/).filter(Boolean)) {
+        logs.push(`[deploy][compose] ${line.trim()}`);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      log(`[deploy] Tearing down half-started ${newSlot} slot`);
+      await execFileAsync(
+        "docker",
+        ["compose", ...composeFileArgs, "-p", newProjectName, "down", "--remove-orphans"],
+        { env: dockerEnv(), cwd: slotDir, timeout: COMPOSE_DOWN_TIMEOUT }
+      ).catch(() => {});
+      await restoreOldSlot("compose up failure");
+      throw new Error(
+        [`docker compose up (${newSlot}) failed: ${message}`, overlapDiagnosis()]
+          .filter(Boolean)
+          .join("\n"),
+      );
     }
-    for (const line of stderr.split(/\r?\n|\r/).filter(Boolean)) {
-      logs.push(`[deploy][compose] ${line.trim()}`);
+
+    // Step 8: health check.
+    ctx.checkAbort();
+    ctx.stage("deploy", "success");
+    ctx.stage("healthcheck", "running");
+    log(`[deploy] Waiting for ${newSlot} to be healthy...`);
+
+    let healthTimeoutMs = (app.healthCheckTimeout ?? 0) * 1000 || DEFAULT_HEALTH_CHECK_TIMEOUT_MS;
+    if (!app.healthCheckTimeout) {
+      for (const svc of Object.values(compose.services)) {
+        if (svc.healthcheck) {
+          const interval = parseDuration(svc.healthcheck.interval);
+          const startPeriod = parseDuration(svc.healthcheck.start_period);
+          const retries = svc.healthcheck.retries ?? 3;
+          const needed = startPeriod + (interval * retries) + POST_DEPLOY_DELAY;
+          if (needed > healthTimeoutMs) {
+            healthTimeoutMs = needed;
+            log(`[deploy] Extended health timeout to ${Math.round(needed / 1000)}s (service healthcheck interval: ${svc.healthcheck.interval || "default"})`);
+          }
+        }
+      }
+    }
+
+    // Probe the container Traefik routes to; the wrong one fails open.
+    const routed = getTraefikRoutedServices(compose);
+    const routedName =
+      [...routed][0] ?? selectRoutedService(compose, { containerPort }).service;
+    // A shared routed service isn't replaced, so probing it proves nothing.
+    const primarySvcName = sharedNames.includes(routedName) ? undefined : routedName;
+    // Only Traefik-routed services are reachable on vardo-network.
+    const probePort = primarySvcName
+      ? routedPort(compose.services[primarySvcName]) ?? containerPort
+      : 0;
+    const probe =
+      primarySvcName && routed.has(primarySvcName) && probePort > 0
+        ? tcpProbe(`${newProjectName}-${primarySvcName}-1`, probePort)
+        : undefined;
+
+    const healthy = await waitForHealthy(newProjectName, composeFileArgs, slotDir, logs, healthTimeoutMs, probe);
+    if (!healthy) {
+      log(`[deploy] Health check failed — fetching container logs...`);
+      try {
+        const { stdout } = await execFileAsync(
+          "docker",
+          ["compose", ...composeFileArgs, "-p", newProjectName, "logs", "--tail", "30"],
+          { env: dockerEnv(), cwd: slotDir, timeout: COMPOSE_QUERY_TIMEOUT, maxBuffer: EXEC_MAX_BUFFER }
+        );
+        if (stdout.trim()) {
+          for (const line of stdout.trim().split("\n")) {
+            log(`[deploy][crash] ${line}`);
+          }
+        }
+      } catch { /* no logs */ }
+
+      log(`[deploy] Tearing down ${newSlot}`);
+      await execFileAsync(
+        "docker",
+        ["compose", ...composeFileArgs, "-p", newProjectName, "down", "--remove-orphans"],
+        { env: dockerEnv(), cwd: slotDir, timeout: COMPOSE_DOWN_TIMEOUT }
+      ).catch(() => {});
+      await restoreOldSlot("health check failure");
+      throw new Error(
+        [
+          `${newSlot} slot did not become healthy — container may have crashed (see logs above)`,
+          overlapDiagnosis(),
+        ]
+          .filter(Boolean)
+          .join("\n"),
+      );
     }
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    log(`[deploy] Tearing down half-started ${newSlot} slot`);
-    await execFileAsync(
-      "docker",
-      ["compose", ...composeFileArgs, "-p", newProjectName, "down", "--remove-orphans"],
-      { env: dockerEnv(), cwd: slotDir, timeout: COMPOSE_DOWN_TIMEOUT }
-    ).catch(() => {});
-    await restoreOldSlot("compose up failure");
-    throw new Error(
-      [`docker compose up (${newSlot}) failed: ${message}`, overlapDiagnosis()]
-        .filter(Boolean)
-        .join("\n"),
-    );
-  }
-
-  // Step 8: health check.
-  ctx.checkAbort();
-  ctx.stage("deploy", "success");
-  ctx.stage("healthcheck", "running");
-  log(`[deploy] Waiting for ${newSlot} to be healthy...`);
-
-  let healthTimeoutMs = (app.healthCheckTimeout ?? 0) * 1000 || DEFAULT_HEALTH_CHECK_TIMEOUT_MS;
-  if (!app.healthCheckTimeout) {
-    for (const svc of Object.values(compose.services)) {
-      if (svc.healthcheck) {
-        const interval = parseDuration(svc.healthcheck.interval);
-        const startPeriod = parseDuration(svc.healthcheck.start_period);
-        const retries = svc.healthcheck.retries ?? 3;
-        const needed = startPeriod + (interval * retries) + POST_DEPLOY_DELAY;
-        if (needed > healthTimeoutMs) {
-          healthTimeoutMs = needed;
-          log(`[deploy] Extended health timeout to ${Math.round(needed / 1000)}s (service healthcheck interval: ${svc.healthcheck.interval || "default"})`);
-        }
-      }
-    }
-  }
-
-  // Probe the container Traefik routes to; the wrong one fails open.
-  const routed = getTraefikRoutedServices(compose);
-  const routedName =
-    [...routed][0] ?? selectRoutedService(compose, { containerPort }).service;
-  // A shared routed service isn't replaced, so probing it proves nothing.
-  const primarySvcName = sharedNames.includes(routedName) ? undefined : routedName;
-  // Only Traefik-routed services are reachable on vardo-network.
-  const probePort = primarySvcName
-    ? routedPort(compose.services[primarySvcName]) ?? containerPort
-    : 0;
-  const probe =
-    primarySvcName && routed.has(primarySvcName) && probePort > 0
-      ? tcpProbe(`${newProjectName}-${primarySvcName}-1`, probePort)
-      : undefined;
-
-  const healthy = await waitForHealthy(newProjectName, composeFileArgs, slotDir, logs, healthTimeoutMs, probe);
-  if (!healthy) {
-    log(`[deploy] Health check failed — fetching container logs...`);
-    try {
-      const { stdout } = await execFileAsync(
-        "docker",
-        ["compose", ...composeFileArgs, "-p", newProjectName, "logs", "--tail", "30"],
-        { env: dockerEnv(), cwd: slotDir, timeout: COMPOSE_QUERY_TIMEOUT, maxBuffer: EXEC_MAX_BUFFER }
-      );
-      if (stdout.trim()) {
-        for (const line of stdout.trim().split("\n")) {
-          log(`[deploy][crash] ${line}`);
-        }
-      }
-    } catch { /* no logs */ }
-
-    log(`[deploy] Tearing down ${newSlot}`);
-    await execFileAsync(
-      "docker",
-      ["compose", ...composeFileArgs, "-p", newProjectName, "down", "--remove-orphans"],
-      { env: dockerEnv(), cwd: slotDir, timeout: COMPOSE_DOWN_TIMEOUT }
-    ).catch(() => {});
-    await restoreOldSlot("health check failure");
-    throw new Error(
-      [
-        `${newSlot} slot did not become healthy — container may have crashed (see logs above)`,
-        overlapDiagnosis(),
-      ]
-        .filter(Boolean)
-        .join("\n"),
-    );
+    // Every failure before the cutover hands routing back to the old slot's labels.
+    ctx.releaseHold = undefined;
+    await hold.release();
+    throw err;
   }
   ctx.stage("healthcheck", "success");
   ctx.stage("routing", "running");

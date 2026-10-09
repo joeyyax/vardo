@@ -171,6 +171,9 @@ export type DeployContext = {
   /** Whether the old slot's rotating services are still running. */
   oldSlotServing?: () => Promise<boolean>;
 
+  /** Removes the Traefik hold on the old slot; cleared once the cutover pin replaces it. */
+  releaseHold?: () => Promise<void>;
+
   /** Unfinished work, written to the deployment row by post-deploy. */
   unfinished?: string[];
 

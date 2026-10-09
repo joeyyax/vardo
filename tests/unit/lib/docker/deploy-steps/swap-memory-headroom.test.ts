@@ -32,6 +32,8 @@ const { dbMock, execFileAsyncMock, execFileMock, headroomMock, cutoverMock, oomM
       oomMock: { reportOomDuringDeploy: vi.fn(async () => {}) },
       cutoverMock: {
         clearCutoverPin: vi.fn(async () => {}),
+        holdSlot: vi.fn(async () => ({ held: false, release: async () => {} })),
+        NO_HOLD: { held: false, release: async () => {} },
         guardCutover: vi.fn(async () => {
           order.push("pin");
           return { pinned: true, release: async () => { order.push("unpin"); } };

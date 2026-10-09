@@ -28,6 +28,8 @@ const { dbMock, execFileAsyncMock, execFileMock, headroomMock, cutoverMock } = v
     headroomMock: { overlapFitsNow: vi.fn(async () => true) },
     cutoverMock: {
       clearCutoverPin: vi.fn(async () => {}),
+      holdSlot: vi.fn(async () => ({ held: false, release: async () => {} })),
+      NO_HOLD: { held: false, release: async () => {} },
       guardCutover: vi.fn(async () => ({ pinned: true, release: async () => {} })),
     },
   };
