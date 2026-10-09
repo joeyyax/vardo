@@ -25,7 +25,7 @@ const HOSTS = {
 
 describe("rules by host size", () => {
   it.each([
-    ["2 GB", "small", { critical: 1024, standard: 768, disposable: 384 }, 1, "512m", "384mb", 2],
+    ["2 GB", "small", { critical: 1024, standard: 1024, disposable: 512 }, 1, "512m", "384mb", 2],
     ["8 GB", "medium", { critical: 2048, standard: 1024, disposable: 512 }, 2, "512m", "384mb", 2],
     ["32 GB", "large", { critical: 4096, standard: 2048, disposable: 1024 }, 4, "1024m", "768mb", 7],
     ["128 GB", "xlarge", { critical: 8192, standard: 4096, disposable: 2048 }, 6, "2048m", "1536mb", 16],

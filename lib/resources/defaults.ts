@@ -22,7 +22,7 @@ export type SizeClass = {
 
 /** Host memory decides the class. The boundaries sit below round sizes because MemTotal reads under the installed RAM. */
 export const SIZE_CLASSES: readonly SizeClass[] = [
-  { name: "small", belowGiB: 6, memoryMb: { critical: 1024, standard: 768, disposable: 384 }, deploys: 1, redisMb: 512 },
+  { name: "small", belowGiB: 6, memoryMb: { critical: 1024, standard: 1024, disposable: 512 }, deploys: 1, redisMb: 512 },
   { name: "medium", belowGiB: 24, memoryMb: { critical: 2048, standard: 1024, disposable: 512 }, deploys: 2, redisMb: 512 },
   { name: "large", belowGiB: 96, memoryMb: { critical: 4096, standard: 2048, disposable: 1024 }, deploys: 4, redisMb: 1024 },
   { name: "xlarge", belowGiB: Infinity, memoryMb: { critical: 8192, standard: 4096, disposable: 2048 }, deploys: 6, redisMb: 2048 },
