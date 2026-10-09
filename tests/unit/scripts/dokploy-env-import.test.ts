@@ -6,6 +6,8 @@ import {
   parseArgs,
   fetchDokployEnv,
   findVardoApp,
+  resolveDokployRefs,
+  run,
 } from "@/scripts/dokploy-env-import";
 import { parseEnvContent } from "@/lib/env/parse-env-content";
 
@@ -151,8 +153,8 @@ describe("parseSource and parseArgs", () => {
 describe("Dokploy and Vardo calls", () => {
   it("sends the key as x-api-key and reads env", async () => {
     const f = vi.fn(async () => new Response(JSON.stringify({ env: "A=1" }), { status: 200 }));
-    const text = await fetchDokployEnv("https://dok.example/", "fake-key", { kind: "compose", id: "c1" }, f as unknown as typeof fetch);
-    expect(text).toBe("A=1");
+    const sources = await fetchDokployEnv("https://dok.example/", "fake-key", { kind: "compose", id: "c1" }, f as unknown as typeof fetch);
+    expect(sources).toEqual({ env: "A=1", projectEnv: "", environmentEnv: "" });
     const [url, init] = f.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe("https://dok.example/api/compose.one?composeId=c1");
     expect((init.headers as Record<string, string>)["x-api-key"]).toBe("fake-key");
@@ -168,5 +170,114 @@ describe("Dokploy and Vardo calls", () => {
     const f = vi.fn(async () => new Response(JSON.stringify({ apps: [{ id: "1", name: "pouch-web" }, { id: "2", name: "pouch" }] }), { status: 200 }));
     expect(await findVardoApp("https://v.example", "k", "org", "pouch", f as unknown as typeof fetch)).toBe("2");
     await expect(findVardoApp("https://v.example", "k", "org", "nope", f as unknown as typeof fetch)).rejects.toThrow(/No Vardo app/);
+  });
+});
+
+describe("resolveDokployRefs", () => {
+  const PROJECT_ENV = ["SHARED_DB=fake-project-db", "NESTED=${{environment.STAGE}}"].join("\n");
+  const ENVIRONMENT_ENV = ["STAGE=fake-stage", "REGION=fake-region"].join("\n");
+  const SERVICE_ENV = [
+    "PLAIN=fake-plain",
+    "FROM_PROJECT=${{project.SHARED_DB}}",
+    "FROM_ENVIRONMENT=${{environment.REGION}}",
+    "SELF=${{PLAIN}}",
+    "MULTI=${{project.SHARED_DB}}/${{environment.STAGE}}/${{PLAIN}}",
+    "NESTED_REF=${{project.NESTED}}",
+    "MISSING=${{project.NOPE}}",
+    "PARTLY=${{environment.REGION}}-${{environment.NOPE}}",
+    "VAULT=${{vault.fake/path}}",
+  ].join("\n");
+
+  const { entries, resolved } = resolveDokployRefs(parseDokployEnv(SERVICE_ENV), {
+    projectEnv: PROJECT_ENV,
+    environmentEnv: ENVIRONMENT_ENV,
+  });
+  const map = new Map(entries.map((e) => [e.key, e.value]));
+
+  it("resolves project, environment and self references", () => {
+    expect(map.get("FROM_PROJECT")).toBe("fake-project-db");
+    expect(map.get("FROM_ENVIRONMENT")).toBe("fake-region");
+    expect(map.get("SELF")).toBe("fake-plain");
+  });
+
+  it("resolves every reference in one value", () => {
+    expect(map.get("MULTI")).toBe("fake-project-db/fake-stage/fake-plain");
+  });
+
+  it("resolves an environment ref that a project value brings in, as Dokploy's passes do", () => {
+    expect(map.get("NESTED_REF")).toBe("fake-stage");
+  });
+
+  it("leaves missing and vault refs in place and reports them unresolved", () => {
+    expect(map.get("MISSING")).toBe("${{project.NOPE}}");
+    expect(map.get("PARTLY")).toBe("fake-region-${{environment.NOPE}}");
+    expect(map.get("VAULT")).toBe("${{vault.fake/path}}");
+    expect(toVardoEnv(entries).unresolved).toEqual(["MISSING", "PARTLY", "VAULT"]);
+  });
+
+  it("names what it resolved", () => {
+    expect(resolved).toEqual(["FROM_PROJECT", "FROM_ENVIRONMENT", "SELF", "MULTI", "NESTED_REF", "PARTLY"]);
+  });
+
+  it("leaves every ref unresolved without project or environment env", () => {
+    const r = resolveDokployRefs(parseDokployEnv("A=${{project.X}}\nB=${{environment.Y}}"), { projectEnv: "", environmentEnv: "" });
+    expect(r.resolved).toEqual([]);
+    expect(toVardoEnv(r.entries).unresolved).toEqual(["A", "B"]);
+  });
+});
+
+describe("fetchDokployEnv sources", () => {
+  const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200 });
+
+  it("reads project and environment env embedded in application.one", async () => {
+    const f = vi.fn(async () =>
+      json({ env: "A=1", environmentId: "e1", environment: { env: "E=1", projectId: "p1", project: { env: "P=1" } } }),
+    );
+    const s = await fetchDokployEnv("https://dok.example", "k", { kind: "application", id: "a1" }, f as unknown as typeof fetch);
+    expect(s).toEqual({ env: "A=1", projectEnv: "P=1", environmentEnv: "E=1" });
+    expect(f).toHaveBeenCalledTimes(1);
+  });
+
+  it("fetches environment.one and project.one when not embedded", async () => {
+    const f = vi.fn(async (url: string) => {
+      if (url.includes("/api/compose.one")) return json({ env: "A=1", environmentId: "e 1" });
+      if (url.includes("/api/environment.one")) return json({ env: "E=1", projectId: "p1" });
+      if (url.includes("/api/project.one")) return json({ env: "P=1" });
+      return new Response("", { status: 404 });
+    });
+    const s = await fetchDokployEnv("https://dok.example", "k", { kind: "compose", id: "c1" }, f as unknown as typeof fetch);
+    expect(s).toEqual({ env: "A=1", projectEnv: "P=1", environmentEnv: "E=1" });
+    const urls = f.mock.calls.map((c) => c[0]);
+    expect(urls).toContain("https://dok.example/api/environment.one?environmentId=e+1");
+    expect(urls).toContain("https://dok.example/api/project.one?projectId=p1");
+  });
+});
+
+describe("run --dry-run", () => {
+  const VALUES = ["fake-secret-service", "fake-secret-project", "fake-secret-environment"];
+
+  it("prints names only, never values", async () => {
+    const f = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          env: [`OWN=${VALUES[0]}`, "FROM_P=${{project.P}}", "FROM_E=${{environment.E}}", "GONE=${{project.MISSING}}"].join("\n"),
+          environment: { env: `E=${VALUES[2]}`, project: { env: `P=${VALUES[1]}` } },
+        }),
+        { status: 200 },
+      ),
+    );
+    const lines: string[] = [];
+    await run(parseArgs(["--from", "application:a1", "--app", "web", "--dry-run"]), {
+      env: { DOKPLOY_API_KEY: "fake-key", DOKPLOY_URL: "https://dok.example" },
+      fetch: f as unknown as typeof fetch,
+      log: (l) => lines.push(l),
+    });
+    const out = lines.join("\n");
+    for (const v of [...VALUES, "fake-key"]) expect(out).not.toContain(v);
+    expect(out).toContain("Resolved Dokploy references: FROM_P, FROM_E");
+    expect(out).toMatch(/Unresolved .*: GONE$/m);
+    expect(out).not.toContain("project.MISSING");
+    expect(out).toContain("Dry run: nothing written.");
+    expect(f).toHaveBeenCalledTimes(1);
   });
 });
