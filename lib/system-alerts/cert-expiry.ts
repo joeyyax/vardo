@@ -1,10 +1,10 @@
 // Certificate expiry verdicts from a TLS handshake observation. Pure.
 
-/** Days remaining at or below which a certificate raises an alert. */
-export const CERT_EXPIRY_THRESHOLD_DAYS = 7;
+/** Days remaining at or below which a certificate raises an alert. Traefik renews at 30, so this leaves nine days of retries. */
+export const CERT_EXPIRY_THRESHOLD_DAYS = 21;
 
 /** Days remaining at or below which the alert is critical. */
-export const CERT_EXPIRY_CRITICAL_DAYS = 2;
+export const CERT_EXPIRY_CRITICAL_DAYS = 7;
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
