@@ -48,6 +48,8 @@ import { loadEnvironmentEnv } from "./environment-env";
 import { productionHostRefs } from "@/lib/env/environment-env";
 import { dockerEnv } from "@/lib/docker/docker-env";
 import { createStageTimings, formatTimings, STAGE_PHASE, type StageTimings } from "./stage-timings";
+import { crashReason, relevantLogTail } from "./deploy-log-tail";
+import { repoWebUrl } from "@/lib/email/format";
 
 export type { DeployStage } from "./deploy-logger";
 
@@ -765,7 +767,6 @@ export async function sendDeployNotification(notice: DeployNotice) {
     const domainList = app.domains.map((d) => d.domain);
     const displayName = app.displayName || app.name;
 
-    const { repoWebUrl } = await import("@/lib/email/format");
     const details = {
       appName: app.name || undefined,
       project: ctx?.projectName,
@@ -799,7 +800,6 @@ export async function sendDeployNotification(notice: DeployNotice) {
         ...details,
       });
     } else {
-      const { relevantLogTail, crashReason } = await import("./deploy-log-tail");
       const lines = notice.logLines ?? [];
       const serving = notice.serving ?? (await servingAfterFailure(app.id, deploymentId, deployment?.environmentId ?? null).catch(() => undefined));
       emit(organizationId, {
