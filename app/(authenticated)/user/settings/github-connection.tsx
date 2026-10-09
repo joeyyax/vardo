@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
-import { Loader2, ExternalLink, Trash2 } from "lucide-react";
+import { Loader2, ExternalLink, Trash2, Link2, Link2Off } from "lucide-react";
 import { Github } from "@/components/icons/github";
 import { toast } from "@/lib/messenger";
 import { Button } from "@/components/ui/button";
@@ -17,7 +17,10 @@ type Installation = {
   accountType: string;
   accountAvatarUrl: string | null;
   createdAt: string;
+  linkedToOrg?: boolean;
 };
+
+type CurrentOrg = { id: string; name: string; canManage: boolean };
 
 export function GitHubConnection() {
   const searchParams = useSearchParams();
@@ -25,6 +28,8 @@ export function GitHubConnection() {
   const [loading, setLoading] = useState(true);
   const [connecting, setConnecting] = useState(false);
   const [removing, setRemoving] = useState<string | null>(null);
+  const [organization, setOrganization] = useState<CurrentOrg | null>(null);
+  const [toggling, setToggling] = useState<number | null>(null);
 
   // Show toast based on callback result
   useEffect(() => {
@@ -46,6 +51,7 @@ export function GitHubConnection() {
         if (res.ok) {
           const data = await res.json();
           setInstallations(data.installations || []);
+          setOrganization(data.organization ?? null);
         }
       } catch {
         console.error("Failed to fetch GitHub installations");
@@ -93,6 +99,32 @@ export function GitHubConnection() {
     }
   }
 
+  async function handleToggleLink(installation: Installation) {
+    if (!organization) return;
+    const link = !installation.linkedToOrg;
+    setToggling(installation.installationId);
+    try {
+      const res = await fetch(`/api/v1/organizations/${organization.id}/github-installations`, {
+        method: link ? "POST" : "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ installationId: installation.installationId }),
+      });
+      if (res.ok) {
+        setInstallations((prev) =>
+          prev.map((i) => (i.installationId === installation.installationId ? { ...i, linkedToOrg: link } : i)),
+        );
+        toast.success(link ? `Linked to ${organization.name}` : `Unlinked from ${organization.name}`);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error || "Couldn't update the link");
+      }
+    } catch {
+      toast.error("Couldn't update the link");
+    } finally {
+      setToggling(null);
+    }
+  }
+
   async function handleRemove(id: string) {
     setRemoving(id);
     try {
@@ -121,7 +153,10 @@ export function GitHubConnection() {
         <div className="flex items-center justify-between">
           <div>
             <CardTitle>GitHub</CardTitle>
-            <CardDescription>Link a GitHub account to deploy from private repos and enable auto-deploy on push.</CardDescription>
+            <CardDescription>
+              Link a GitHub account to deploy from private repos and enable auto-deploy on push.
+              {organization && ` Clones and push deploys in ${organization.name} use only the installations linked to it.`}
+            </CardDescription>
           </div>
           <Button
             size="sm"
@@ -177,12 +212,35 @@ export function GitHubConnection() {
                   <Badge variant="secondary" className="text-xs">
                     {installation.accountType}
                   </Badge>
+                  {organization && installation.linkedToOrg && (
+                    <Badge variant="outline" className="text-xs">
+                      Linked to {organization.name}
+                    </Badge>
+                  )}
                 </div>
                 <p className="text-xs text-muted-foreground">
                   Connected <RelativeTime date={installation.createdAt} />
                 </p>
               </div>
               <div className="flex items-center gap-1">
+                {organization?.canManage && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => handleToggleLink(installation)}
+                    disabled={toggling === installation.installationId}
+                    aria-label={installation.linkedToOrg ? `Unlink from ${organization.name}` : `Link to ${organization.name}`}
+                    title={installation.linkedToOrg ? `Unlink from ${organization.name}` : `Link to ${organization.name}`}
+                  >
+                    {toggling === installation.installationId ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : installation.linkedToOrg ? (
+                      <Link2Off className="size-4" />
+                    ) : (
+                      <Link2 className="size-4" />
+                    )}
+                  </Button>
+                )}
                 <Button size="sm" variant="ghost" asChild>
                   <a
                     href="https://github.com/settings/installations"

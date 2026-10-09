@@ -17,6 +17,7 @@ const FAMILY_BY_PREFIX: Array<[string, ActivityFamily]> = [
   ["security.", "security"],
   ["system.", "system"],
   ["deploy_key.", "security"],
+  ["github_installation.", "security"],
   ["org.trusted_changed", "security"],
   ["project.allow_bind_mounts", "security"],
   ["project.allow_docker_socket", "security"],

@@ -55,6 +55,8 @@ const PHRASES: Record<string, Phrase> = {
 
   "deploy_key.created": { text: "added deploy key" },
   "deploy_key.deleted": { text: "removed deploy key" },
+  "github_installation.linked": { text: "linked a GitHub installation", standalone: true },
+  "github_installation.unlinked": { text: "unlinked a GitHub installation", standalone: true },
 
   "org.env_revealed": { text: "revealed organization env vars", standalone: true },
   "org.trusted_changed": {

@@ -2,10 +2,11 @@ import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { githubAppInstallations } from "@/lib/db/schema";
-import { requireSession } from "@/lib/auth/session";
+import { requireSession, getCurrentOrg } from "@/lib/auth/session";
 import { isAppAdmin } from "@/lib/auth/admin";
 import { getAppOctokit, verifyInstallationState } from "@/lib/git-integration/app";
 import { nanoid } from "nanoid";
+import { linkToCurrentOrgIfAdmin } from "@/lib/git-integration/org-installations";
 import { logger } from "@/lib/logger";
 
 const log = logger.child("github-callback");
@@ -106,8 +107,10 @@ async function handleGet(request: NextRequest) {
         },
       });
 
+    const linked = await linkToCurrentOrgIfAdmin(await getCurrentOrg(), parseInt(installationId, 10), userId);
+
     log.info(
-      `Saved installation ${installationId} for user ${userId} (${accountLogin})`
+      `Saved installation ${installationId} for user ${userId} (${accountLogin})${linked ? " and linked it to the current organization" : ""}`
     );
 
     return NextResponse.redirect(`${baseUrl}/user/settings/connections?github=connected`);

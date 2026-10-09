@@ -2,10 +2,11 @@ import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { NextRequest, NextResponse } from "next/server";
 import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
-import { apps, memberships, githubAppInstallations } from "@/lib/db/schema";
+import { apps } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { getInstallationOctokit } from "@/lib/git-integration/app";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
+import { orgInstallations } from "@/lib/git-integration/org-installations";
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
@@ -58,30 +59,18 @@ async function handleGet(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ branches: [] });
     }
 
-    // Find a GitHub installation with access to the repo.
-    const orgMembers = await db.query.memberships.findMany({
-      where: eq(memberships.organizationId, orgId),
-      columns: { userId: true },
-    });
-    const userIds = orgMembers.map((m) => m.userId);
-
-    for (const userId of userIds) {
-      const installations = await db.query.githubAppInstallations.findMany({
-        where: eq(githubAppInstallations.userId, userId),
-      });
-
-      for (const inst of installations) {
-        try {
-          const octokit = await getInstallationOctokit(inst.installationId);
-          const { data } = await octokit.rest.repos.listBranches({
-            owner,
-            repo,
-            per_page: 100,
-          });
-          return NextResponse.json({ branches: data.map((b) => b.name) });
-        } catch {
-          // No access; try the next installation.
-        }
+    // Only installations linked to this org.
+    for (const inst of await orgInstallations(orgId)) {
+      try {
+        const octokit = await getInstallationOctokit(inst.installationId);
+        const { data } = await octokit.rest.repos.listBranches({
+          owner,
+          repo,
+          per_page: 100,
+        });
+        return NextResponse.json({ branches: data.map((b) => b.name) });
+      } catch {
+        // No access; try the next installation.
       }
     }
 

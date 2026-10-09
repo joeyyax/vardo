@@ -7,6 +7,8 @@ import { requireAppAdmin } from "@/lib/auth/admin";
 import { getAppOctokit } from "@/lib/git-integration/app";
 import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
+import { getCurrentOrg } from "@/lib/auth/session";
+import { linkToCurrentOrgIfAdmin } from "@/lib/git-integration/org-installations";
 import { logger } from "@/lib/logger";
 
 const log = logger.child("github-installations-sync");
@@ -28,6 +30,7 @@ async function handleGet() {
     });
     const existingIds = new Set(existing.map((i) => i.installationId));
 
+    const currentOrg = await getCurrentOrg();
     let synced = 0;
 
     for (const installation of data) {
@@ -68,6 +71,7 @@ async function handleGet() {
           },
         });
 
+      await linkToCurrentOrgIfAdmin(currentOrg, installation.id, userId);
       synced++;
     }
 

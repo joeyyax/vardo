@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
-import { githubAppInstallations } from "@/lib/db/schema";
-import { requireSession } from "@/lib/auth/session";
+import { githubAppInstallations, githubInstallationOrgs } from "@/lib/db/schema";
+import { requireSession, getCurrentOrg } from "@/lib/auth/session";
+import { can } from "@/lib/auth/permissions";
 import { eq, and } from "drizzle-orm";
 import { getAppOctokit } from "@/lib/git-integration/app";
 
@@ -13,11 +14,32 @@ async function handleGet() {
   try {
     const session = await requireSession();
 
-    const installations = await db.query.githubAppInstallations.findMany({
+    const rows = await db.query.githubAppInstallations.findMany({
       where: eq(githubAppInstallations.userId, session.user.id),
     });
 
-    return NextResponse.json({ installations });
+    // Link state against the current org, which clones and push webhooks are scoped to.
+    const current = await getCurrentOrg();
+    const linkedIds = new Set(
+      current
+        ? (
+            await db.query.githubInstallationOrgs.findMany({
+              where: eq(githubInstallationOrgs.organizationId, current.organization.id),
+              columns: { installationId: true },
+            })
+          ).map((l) => l.installationId)
+        : [],
+    );
+    const installations = rows.map((r) => ({ ...r, linkedToOrg: linkedIds.has(r.installationId) }));
+    const organization = current
+      ? {
+          id: current.organization.id,
+          name: current.organization.name,
+          canManage: can(current.membership.role, "org.settings"),
+        }
+      : null;
+
+    return NextResponse.json({ installations, organization });
   } catch (error) {
     return handleRouteError(error, "Error fetching GitHub installations");
   }
@@ -54,6 +76,10 @@ async function handleDelete(request: NextRequest) {
     await db
       .delete(githubAppInstallations)
       .where(eq(githubAppInstallations.id, id));
+    // The installation is removed on GitHub too, so no org keeps it.
+    await db
+      .delete(githubInstallationOrgs)
+      .where(eq(githubInstallationOrgs.installationId, installation.installationId));
 
     // Best-effort removal on GitHub.
     try {

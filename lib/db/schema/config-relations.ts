@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm";
-import { deployKeys, githubAppInstallations, apiTokens } from "./config";
+import { deployKeys, githubAppInstallations, githubInstallationOrgs, apiTokens } from "./config";
 import { organizations } from "./organizations";
 import { user } from "./auth";
 
@@ -19,6 +19,13 @@ export const githubAppInstallationsRelations = relations(
     }),
   })
 );
+
+export const githubInstallationOrgsRelations = relations(githubInstallationOrgs, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [githubInstallationOrgs.organizationId],
+    references: [organizations.id],
+  }),
+}));
 
 export const apiTokensRelations = relations(apiTokens, ({ one }) => ({
   user: one(user, {
