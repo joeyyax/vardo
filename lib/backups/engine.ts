@@ -32,6 +32,8 @@ import { runningKeyFingerprint } from "@/lib/crypto/encrypt";
 import { assertSafeBindSource } from "@/lib/docker/mount-paths";
 import { buildDumpArgv, buildRestoreArgv, describeDumpSpec, type DumpSpec } from "./dump-spec";
 import { resolveDbContainer } from "./resolve-db-container";
+import { createPgClusterProducer, restorePostgresArchive } from "./pg-cluster";
+import { assertSpace, hostFreeBytes, localFreeBytes, stagingNeed, targetNeed, type SpaceNeed } from "./disk-space";
 import { quiesce, type RestoreDestination } from "./quiesce";
 import { getSystemBackupsDefault, resolveBackupSwitch } from "./switch";
 import { isSelfApp } from "@/lib/docker/self-env";
@@ -367,6 +369,48 @@ async function streamTarBackup(opts: {
   const excludedPaths =
     findArgv.length === 0 ? [] : parseExcludedPaths(await readFile(join(workDir, EXCLUDE_LIST_FILE), "utf8"));
   return { ...result, excludedPaths, sourceWasEmpty };
+}
+
+/** The archive's size in storage, else the size recorded when it was written. */
+async function storedArchiveBytes(storage: BackupStorage, storagePath: string, recorded: number | null): Promise<number | null> {
+  try {
+    const found = (await storage.list(storagePath)).find((o) => o.key === storagePath);
+    if (found) return found.sizeBytes;
+  } catch {
+    // fall back to the row
+  }
+  return recorded;
+}
+
+/** Refuse before downloading when staging, or the restore's destination, can't hold the archive. */
+async function checkDiskSpace(opts: {
+  storage: BackupStorage;
+  backup: { storagePath: string; archiveKey: string | null; sizeBytes: number | null };
+  /** Host path a file restore writes into. */
+  targetHostPath?: string | null;
+  log: (msg: string) => void;
+}): Promise<void> {
+  const { storage, backup, log } = opts;
+  const archiveBytes = await storedArchiveBytes(storage, backup.storagePath, backup.sizeBytes);
+  if (archiveBytes == null) {
+    log("WARNING: the archive's size is unknown; skipping the free-space check");
+    return;
+  }
+  const staging = stagingNeed(archiveBytes, !!backup.archiveKey);
+  const needs: SpaceNeed[] = [
+    { label: "staging filesystem", path: BACKUPS_DIR, neededBytes: staging.bytes, freeBytes: await localFreeBytes(BACKUPS_DIR), why: staging.why },
+  ];
+  if (opts.targetHostPath) {
+    const target = targetNeed(archiveBytes);
+    needs.push({
+      label: "restore destination",
+      path: opts.targetHostPath,
+      neededBytes: target.bytes,
+      freeBytes: await hostFreeBytes(opts.targetHostPath),
+      why: target.why,
+    });
+  }
+  assertSpace(needs, log);
 }
 
 /** Download an archive into `destPath`, decrypted. Plaintext passes through unless the row says encrypted. */
@@ -996,6 +1040,7 @@ export async function runBackup(
                   `No running container for service "${spec.service}" — cannot dump ${vol.name}`,
                 );
               }
+              if (spec.kind === "postgres") return createPgClusterProducer(container.id, container.env, logFn);
               const argv = buildDumpArgv(spec.kind, container.id, container.env);
               logFn(`Running: docker ${argv.slice(0, 3).join(" ")} …`);
               return spawnProducer("docker", argv, "dump", { env: dockerEnv() });
@@ -1575,6 +1620,12 @@ export async function restoreBackup(
     }
 
     // 1. Download
+    await checkDiskSpace({
+      storage,
+      backup: { storagePath: backup.storagePath, archiveKey: backup.archiveKey, sizeBytes: backup.sizeBytes },
+      targetHostPath: strategy === "tar" ? (vol?.type === "bind" ? vol.source : await dockerDataRoot()) : null,
+      log,
+    });
     log(`Downloading backup from ${backup.storagePath}`);
     const { encrypted } = await fetchArchive(
       storage,
@@ -1626,15 +1677,19 @@ export async function restoreBackup(
             `No running container for service "${spec.service}" — start the app before restoring`,
           );
         }
-        await restoreDumpWithSnapshot({
-          backupId,
-          kind: spec.kind,
-          containerId: container.id,
-          containerEnv: container.env,
-          archivePath,
-          tmpDir,
-          log,
-        });
+        if (spec.kind === "postgres") {
+          await restorePostgresArchive({ containerId: container.id, containerEnv: container.env, archivePath, log });
+        } else {
+          await restoreDumpWithSnapshot({
+            backupId,
+            kind: spec.kind,
+            containerId: container.id,
+            containerEnv: container.env,
+            archivePath,
+            tmpDir,
+            log,
+          });
+        }
       } else if (vol?.backupMeta?.restoreCmd) {
         // restoreCmd receives the dump via stdin.
         log(`Restoring via: ${vol.backupMeta.restoreCmd}`);
@@ -1807,6 +1862,11 @@ export async function downloadBackupToTemp(
 
   const storage = createBackupStorage(backup.target);
   try {
+    await checkDiskSpace({
+      storage,
+      backup: { storagePath: backup.storagePath, archiveKey: backup.archiveKey, sizeBytes: backup.sizeBytes },
+      log: logFn ?? (() => {}),
+    });
     await fetchArchive(
       storage,
       { storagePath: backup.storagePath, archiveKey: backup.archiveKey },

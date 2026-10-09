@@ -13,6 +13,7 @@ import { dirname } from "path";
 import { logger } from "@/lib/logger";
 import { downloadBackupToTemp, strategyFromStoragePath, type ArchiveStrategy } from "./engine";
 import { resolveDbContainer } from "./resolve-db-container";
+import { conninfo, restorePostgresArchive } from "./pg-cluster";
 import { inspectContainer } from "@/lib/docker/client";
 import {
   judgeArchiveDrill,
@@ -81,6 +82,53 @@ async function streamInto(
   return code;
 }
 
+/** The single number `countArgv` prints, or null. */
+async function countObjects(container: string, countArgv: string[]): Promise<number | null> {
+  try {
+    const { stdout } = await execFileAsync("docker", ["exec", container, ...countArgv], { env: dockerEnv(), timeout: 60_000 });
+    const parsed = Number.parseInt(String(stdout).trim(), 10);
+    return Number.isFinite(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Restore through the same path as a live restore, then count tables across every database it held. */
+async function drillPostgres(
+  container: string,
+  env: string[],
+  countArgv: string[],
+  archivePath: string,
+  logFn: (m: string) => void,
+): Promise<{ outcome: DrillOutcome; detail: string }> {
+  let databases: string[];
+  try {
+    ({ databases } = await restorePostgresArchive({ containerId: container, containerEnv: env, archivePath, log: logFn }));
+  } catch (err) {
+    logFn(`scratch restore failed: ${err instanceof Error ? err.message.slice(0, 400) : err}`);
+    const verdict = judgeDrill({ restoreExitCode: 1, objectCount: null });
+    logFn(`Drill verdict: ${verdict.outcome} — ${verdict.detail}`);
+    return verdict;
+  }
+
+  // countArgv ends with `-d <database> -tAc <query>`; point it at each restored database.
+  const dIndex = countArgv.indexOf("-d");
+  let objectCount: number | null = 0;
+  for (const database of databases) {
+    const argv = [...countArgv];
+    argv[dIndex + 1] = conninfo(database);
+    const n = await countObjects(container, argv);
+    if (n === null) {
+      objectCount = null;
+      break;
+    }
+    objectCount += n;
+  }
+  const verdict = judgeDrill({ restoreExitCode: 0, objectCount });
+  logFn(`Drill verdict: ${verdict.outcome} — ${verdict.detail}`);
+  return verdict;
+}
+
 /** Restore a dump into an unpublished scratch database of the same image and count what it created. */
 async function drillDump(
   archivePath: string,
@@ -119,20 +167,14 @@ async function drillDump(
       return { outcome: "failed", detail: "scratch database never became ready" };
     }
 
+    if (spec.kind === "postgres") return await drillPostgres(container, plan.env, plan.countArgv, archivePath, logFn);
+
     const restoreExitCode = await streamInto(
       ["exec", "-i", container, ...plan.restoreArgv],
       archivePath,
       logFn,
     );
-
-    let objectCount: number | null = null;
-    try {
-      const { stdout } = await execFileAsync("docker", ["exec", container, ...plan.countArgv], { env: dockerEnv(), timeout: 60_000 });
-      const parsed = Number.parseInt(String(stdout).trim(), 10);
-      objectCount = Number.isFinite(parsed) ? parsed : null;
-    } catch {
-      objectCount = null;
-    }
+    const objectCount = await countObjects(container, plan.countArgv);
 
     const verdict = judgeDrill({ restoreExitCode, objectCount });
     logFn(`Drill verdict: ${verdict.outcome} — ${verdict.detail}`);
