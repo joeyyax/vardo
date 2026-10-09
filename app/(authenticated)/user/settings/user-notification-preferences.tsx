@@ -32,6 +32,7 @@ const CATEGORY_LABELS: Record<EventCategory, string> = {
   org: "Organization",
   security: "Security",
   system: "System",
+  lifecycle: "Vardo lifecycle",
   digest: "Digest",
 };
 
@@ -60,6 +61,13 @@ const EVENT_LABELS: Record<BusEventType, string> = {
   "system.restart-loop": "Vardo restarted",
   "system.cert-expiring": "Certificate expiring",
   "system.update-available": "Update available",
+  "system.shutdown": "Vardo shutting down",
+  "system.started": "Vardo started",
+  "system.recovered-unclean": "Recovered after an unclean stop",
+  "system.update-started": "Update started",
+  "system.updated": "Update finished",
+  "system.update-failed": "Update failed",
+  "system.containers-missing": "Containers missing after restart",
   "digest.weekly": "Weekly digest",
 };
 
