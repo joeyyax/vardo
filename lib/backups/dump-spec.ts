@@ -140,14 +140,14 @@ export function buildRestoreArgv(
 
 /**
  * `docker exec` arguments that load a `pg_dump -Fc` archive from stdin.
- * One transaction, as with psql. Objects are owned by the app's user, not the source's.
+ * One transaction, as with psql. Owners and grants restore as dumped.
  */
 export function buildPgRestoreArgv(containerId: string, env: ContainerEnv, database?: string): string[] {
   const target = postgresTarget(env);
   return [
     "exec", "-i", containerId,
     "pg_restore", "-U", target.user, "-d", database || target.database,
-    "--clean", "--if-exists", "--no-owner", "--no-privileges", "--single-transaction", "--exit-on-error",
+    "--clean", "--if-exists", "--single-transaction", "--exit-on-error",
   ];
 }
 

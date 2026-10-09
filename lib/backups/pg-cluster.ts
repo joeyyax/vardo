@@ -3,6 +3,7 @@
 
 import { spawn } from "child_process";
 import { createReadStream } from "fs";
+import { createInterface } from "readline";
 import { PassThrough, type Readable } from "stream";
 import { createGunzip } from "zlib";
 import { nanoid } from "nanoid";
@@ -141,6 +142,142 @@ export async function readPgArchiveFormat(archivePath: string): Promise<PgArchiv
   }
   const head = Buffer.concat(chunks).subarray(0, PG_CLUSTER_MAGIC.length);
   return head.equals(PG_CLUSTER_MAGIC) ? "cluster" : "sql";
+}
+
+const SQL_TOKEN = /"(?:[^"]|"")*"|'(?:[^']|'')*'|[A-Za-z_][A-Za-z0-9_$]*|[^\sA-Za-z_]/g;
+const NOT_A_ROLE = new Set(["public", "current_user", "session_user", "current_role", "none", "default"]);
+
+/** A role name from a token: quoted names as written, bare names folded to lowercase. */
+function roleName(token: string | undefined): string | null {
+  if (!token) return null;
+  let name: string;
+  if (token.startsWith('"')) name = token.slice(1, -1).replace(/""/g, '"');
+  else if (token.startsWith("'")) name = token.slice(1, -1).replace(/''/g, "'");
+  else if (/^[A-Za-z_]/.test(token)) {
+    if (NOT_A_ROLE.has(token.toLowerCase())) return null;
+    name = token.toLowerCase();
+  } else return null;
+  return name && !name.startsWith("pg_") ? name : null;
+}
+
+/** Comma-separated role names starting at `i`. */
+function roleList(tokens: string[], i: number, into: Set<string>): void {
+  for (; i < tokens.length; i += 2) {
+    const name = roleName(tokens[i]);
+    if (name) into.add(name);
+    if (tokens[i + 1] !== ",") return;
+  }
+}
+
+/** Index of the last bare keyword `word`, or -1. */
+function lastKeyword(upper: string[], word: string, before = upper.length): number {
+  for (let i = before - 1; i >= 0; i--) if (upper[i] === word) return i;
+  return -1;
+}
+
+/** Roles one line of pg_dump output names in `OWNER TO`, `GRANT`, `REVOKE`, `SET ROLE` and the like. */
+export function rolesInStatement(line: string, into: Set<string>): void {
+  if (!/^(ALTER|GRANT|REVOKE|SET|CREATE POLICY) /i.test(line)) return;
+  const tokens = line.match(SQL_TOKEN) ?? [];
+  const upper = tokens.map((t) => (/^[A-Za-z_]/.test(t) ? t.toUpperCase() : ""));
+
+  if (upper[0] === "SET") {
+    if (upper[1] === "ROLE") roleList(tokens, 2, into);
+    else if (upper[1] === "SESSION" && upper[2] === "AUTHORIZATION") roleList(tokens, 3, into);
+    return;
+  }
+  const owner = lastKeyword(upper, "OWNER");
+  if (upper[0] === "ALTER" && owner >= 0 && upper[owner + 1] === "TO") roleList(tokens, owner + 2, into);
+  if (upper[0] === "ALTER" && upper[1] === "DEFAULT" && upper[2] === "PRIVILEGES" && upper[3] === "FOR") {
+    roleList(tokens, 5, into);
+  }
+  if (upper[0] === "CREATE") {
+    const to = upper.indexOf("TO");
+    if (to >= 0) roleList(tokens, to + 1, into);
+    return;
+  }
+
+  const verb = upper.findIndex((u) => u === "GRANT" || u === "REVOKE");
+  if (verb < 0) return;
+  const grantedBy = lastKeyword(upper, "GRANTED");
+  if (grantedBy >= 0 && upper[grantedBy + 1] === "BY") roleList(tokens, grantedBy + 2, into);
+  const target = lastKeyword(upper, upper[verb] === "GRANT" ? "TO" : "FROM", grantedBy >= 0 ? grantedBy : upper.length);
+  if (target < 0) return;
+  roleList(tokens, target + 1, into);
+  // A grant without ON grants role membership, so the granted names are roles too.
+  if (upper.indexOf("ON", verb) < 0 || upper.indexOf("ON", verb) > target) {
+    let i = verb + 1;
+    if (upper[i] === "GRANT" && upper[i + 1] === "OPTION" && upper[i + 2] === "FOR") i += 3;
+    if (upper[i] === "ADMIN" || upper[i] === "INHERIT" || upper[i] === "SET") i += 3;
+    roleList(tokens, i, into);
+  }
+}
+
+/** Roles a plain SQL dump names, skipping `COPY` data. */
+export async function rolesInSql(lines: AsyncIterable<string>): Promise<Set<string>> {
+  const roles = new Set<string>();
+  let inCopy = false;
+  for await (const line of lines) {
+    if (inCopy) {
+      if (line === "\\.") inCopy = false;
+      continue;
+    }
+    if (/^COPY .* FROM stdin;$/.test(line)) inCopy = true;
+    else rolesInStatement(line, roles);
+  }
+  return roles;
+}
+
+/** Roles a gzipped dump names. A custom-format dump is read through `pg_restore --schema-only`. */
+async function rolesInDump(containerId: string, user: string, archivePath: string, format: "sql" | "pg-custom") {
+  if (format === "sql") {
+    const source = gunzipFile(archivePath);
+    try {
+      return await rolesInSql(createInterface({ input: source, crlfDelay: Infinity }));
+    } finally {
+      source.destroy();
+    }
+  }
+  const sql = new PassThrough();
+  const scanned = rolesInSql(createInterface({ input: sql, crlfDelay: Infinity }));
+  const source = gunzipFile(archivePath);
+  try {
+    await streamInto(
+      ["exec", "-i", containerId, "pg_restore", "-U", user, "--schema-only", "-f", "-"],
+      source as AsyncIterable<Buffer>,
+      "pg_restore --schema-only",
+      (c) => sql.write(c),
+    );
+  } finally {
+    source.destroy();
+    sql.end();
+  }
+  return scanned;
+}
+
+/** Create, as `NOLOGIN`, every role a dump names that the server lacks, so owners and grants restore as dumped. */
+export async function createMissingDumpRoles(opts: {
+  containerId: string;
+  containerEnv: ContainerEnv;
+  archivePath: string;
+  format: "sql" | "pg-custom";
+  log: (msg: string) => void;
+}): Promise<string[]> {
+  const { containerId, archivePath, format, log } = opts;
+  const user = postgresUser(opts.containerEnv);
+  const named = [...(await rolesInDump(containerId, user, archivePath, format))];
+  if (!named.length) return [];
+  const out = await runPsql(
+    containerId,
+    user,
+    `SELECT rolname FROM pg_roles WHERE rolname = ANY(ARRAY[${named.map(quoteLiteral).join(", ")}]::text[]);`,
+  );
+  const existing = new Set(out.split("\n").filter(Boolean));
+  const missing = named.filter((n) => !existing.has(n)).sort();
+  if (!missing.length) return [];
+  await runPsql(containerId, user, missing.map((n) => `CREATE ROLE ${quoteIdent(n)} NOLOGIN;`).join("\n"));
+  log(`Created role(s) the dump references but this server lacked, as NOLOGIN: ${missing.join(", ")}`);
+  return missing;
 }
 
 /** Run SQL through psql in the container and return its unaligned output. */
@@ -529,6 +666,7 @@ async function restoreSingle(
   const database = readEnv(env, "POSTGRES_DB") || user;
   const info = await liveDatabase(containerId, user, database);
   const properties = info ? await liveProperties(containerId, user, database) : null;
+  await createMissingDumpRoles({ containerId, containerEnv: env, archivePath, format: "sql", log });
   const scratch = `vardo_restore_${token}_0`;
   log(`Restoring a single-database dump of ${database} into ${scratch}`);
   await runPsql(containerId, user, buildCreateDatabase(scratch, info));

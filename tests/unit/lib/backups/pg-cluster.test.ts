@@ -16,7 +16,12 @@ import {
   prepareGlobals,
   readPgArchiveFormat,
   restorePostgresArchive,
+  rolesInSql,
+  rolesInStatement,
 } from "@/lib/backups/pg-cluster";
+import { drillPostgres } from "@/lib/backups/drill";
+import { scratchDatabaseFor } from "@/lib/backups/drill-plan";
+import { loadIntoDatabase } from "@/lib/backups/import";
 
 const IMAGE = "postgres:17";
 const ENV = ["POSTGRES_USER=app", "POSTGRES_DB=appdb", "POSTGRES_PASSWORD=pw"];
@@ -72,6 +77,53 @@ describe("buildCreateDatabase", () => {
 
   it("names a database in a conninfo string, so options can't ride along", () => {
     expect(conninfo("a' host=evil")).toBe("dbname='a\\' host=evil'");
+  });
+});
+
+describe("rolesInStatement", () => {
+  const roles = (...lines: string[]) => {
+    const into = new Set<string>();
+    for (const line of lines) rolesInStatement(line, into);
+    return [...into].sort();
+  };
+
+  it("reads owners, grantees, revokees and session roles", () => {
+    expect(
+      roles(
+        "ALTER TABLE app.notes OWNER TO owner_role;",
+        'ALTER SCHEMA "Odd Schema" OWNER TO "Mixed ""Case""";',
+        "GRANT SELECT ON TABLE app.notes TO reader, writer WITH GRANT OPTION;",
+        "REVOKE ALL ON SCHEMA public FROM revoked CASCADE;",
+        "SET SESSION AUTHORIZATION 'session_role';",
+        "SET ROLE set_role;",
+        "ALTER DEFAULT PRIVILEGES FOR ROLE definer IN SCHEMA app GRANT SELECT ON TABLES TO defaulted;",
+        "CREATE POLICY p ON app.notes TO policy_role USING ((id > 0));",
+        "GRANT member_of TO member GRANTED BY grantor;",
+      ),
+    ).toEqual(["Mixed \"Case\"", "defaulted", "definer", "grantor", "member", "member_of", "owner_role", "policy_role", "reader", "revoked", "session_role", "set_role", "writer"]);
+  });
+
+  it("skips PUBLIC, built-ins and keywords", () => {
+    expect(
+      roles(
+        "GRANT USAGE ON SCHEMA public TO PUBLIC;",
+        "GRANT pg_read_all_data TO pg_monitor;",
+        "SET ROLE NONE;",
+        "ALTER TABLE t OWNER TO CURRENT_USER;",
+        "SET search_path = app, public;",
+        "ALTER TABLE t ALTER COLUMN owner SET DEFAULT 'x';",
+      ),
+    ).toEqual([]);
+  });
+
+  it("ignores COPY data", async () => {
+    async function* lines() {
+      yield "COPY public.t (body) FROM stdin;";
+      yield "GRANT ALL ON t TO from_data;";
+      yield "\\.";
+      yield "ALTER TABLE public.t OWNER TO real_owner;";
+    }
+    expect([...(await rolesInSql(lines()))]).toEqual(["real_owner"]);
   });
 });
 
@@ -261,6 +313,86 @@ describe.skipIf(!READY)("Postgres server archives against real postgres:17", () 
     expect(sql(target, "appdb", "SHOW search_path;")).toBe("app, public");
     expect(sql(target, "second", "SELECT count(*) FROM things;")).toBe("3");
   }, 120_000);
+
+  describe("onto a server without the dump's roles", () => {
+    let fresh: Record<"legacy" | "drill" | "sql" | "custom", string>;
+
+    beforeAll(async () => {
+      fresh = {
+        legacy: startPostgres("bare-legacy"),
+        drill: startPostgres("bare-drill"),
+        sql: startPostgres("bare-sql"),
+        custom: startPostgres("bare-custom"),
+      };
+      await Promise.all(Object.values(fresh).map(waitReady));
+    }, 180_000);
+
+    const roleExists = (name: string, role: string) =>
+      sql(name, "postgres", `SELECT rolcanlogin FROM pg_roles WHERE rolname = '${role}';`);
+
+    it("restores an older single-database archive, creating its owner and grantee as NOLOGIN", async () => {
+      const logs: string[] = [];
+      const result = await restorePostgresArchive({
+        containerId: fresh.legacy,
+        containerEnv: ENV,
+        archivePath: legacy,
+        log: (m) => logs.push(m),
+      });
+
+      expect(result).toEqual({ format: "sql", databases: ["appdb"] });
+      expect(roleExists(fresh.legacy, "owner_role")).toBe("f");
+      expect(roleExists(fresh.legacy, "reader")).toBe("f");
+      expect(logs.some((l) => l.includes("NOLOGIN: owner_role, reader"))).toBe(true);
+      expect(sql(fresh.legacy, "appdb", "SELECT tableowner FROM pg_tables WHERE tablename = 'notes';")).toBe("owner_role");
+      expect(sql(fresh.legacy, "appdb", "SELECT has_table_privilege('reader', 'app.notes', 'SELECT');")).toBe("t");
+      expect(sql(fresh.legacy, "appdb", "SELECT count(*) FROM app.notes;")).toBe("2");
+    }, 120_000);
+
+    it("passes a drill of an older archive on a scratch server", async () => {
+      const plan = scratchDatabaseFor("postgres", IMAGE, ENV)!;
+      const verdict = await drillPostgres(fresh.drill, plan.env, plan.countArgv, legacy, () => {});
+      expect(verdict.outcome).toBe("verified");
+    }, 120_000);
+
+    it("imports a plain pg_dump from another host", async () => {
+      const dumped = join(dir, "import.sql.gz");
+      writeFileSync(
+        dumped,
+        gzipSync(execFileSync("docker", ["exec", source, "pg_dump", "-U", "app", "appdb"])),
+      );
+      const tmp = mkdtempSync(join(dir, "import-sql-"));
+      await loadIntoDatabase({
+        kind: "postgres",
+        containerId: fresh.sql,
+        containerEnv: ENV,
+        staged: { path: dumped, format: "sql" },
+        tmpDir: tmp,
+        log: () => {},
+      });
+      expect(roleExists(fresh.sql, "owner_role")).toBe("f");
+      expect(sql(fresh.sql, "appdb", "SELECT tableowner FROM pg_tables WHERE tablename = 'notes';")).toBe("owner_role");
+      expect(sql(fresh.sql, "appdb", "SELECT has_table_privilege('reader', 'app.notes', 'SELECT');")).toBe("t");
+    }, 120_000);
+
+    it("imports a custom-format pg_dump with its owners and grants", async () => {
+      const dumped = join(dir, "import.custom.gz");
+      writeFileSync(dumped, gzipSync(execFileSync("docker", ["exec", source, "pg_dump", "-U", "app", "-Fc", "appdb"])));
+      const tmp = mkdtempSync(join(dir, "import-custom-"));
+      const logs: string[] = [];
+      await loadIntoDatabase({
+        kind: "postgres",
+        containerId: fresh.custom,
+        containerEnv: ENV,
+        staged: { path: dumped, format: "pg-custom" },
+        tmpDir: tmp,
+        log: (m) => logs.push(m),
+      });
+      expect(logs.some((l) => l.includes("NOLOGIN: owner_role, reader"))).toBe(true);
+      expect(sql(fresh.custom, "appdb", "SELECT tableowner FROM pg_tables WHERE tablename = 'notes';")).toBe("owner_role");
+      expect(sql(fresh.custom, "appdb", "SELECT has_table_privilege('reader', 'app.notes', 'SELECT');")).toBe("t");
+      expect(sql(fresh.custom, "appdb", "SELECT count(*) FROM app.notes;")).toBe("2");
+    }, 120_000);
+  });
 
   it("fails loudly and changes nothing when a dump breaks part-way", async () => {
     sql(target, "appdb", "CREATE TABLE public.marker (id int); INSERT INTO public.marker VALUES (42);");
