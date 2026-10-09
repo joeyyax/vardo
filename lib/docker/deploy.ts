@@ -5,7 +5,6 @@ import { decryptOrFallback } from "@/lib/crypto/encrypt";
 import { parseEnvToMap } from "@/lib/env/parse-env";
 import { eq, and, inArray, isNotNull, ne } from "drizzle-orm";
 import { logger } from "@/lib/logger";
-import { redactSecrets } from "@/lib/redact";
 import { nanoid } from "nanoid";
 import { addEvent } from "@/lib/stream/producer";
 import { readlink } from "fs/promises";
