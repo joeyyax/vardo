@@ -30,7 +30,7 @@ vi.mock("@/lib/docker/exec", () => ({
 vi.mock("@/lib/shutdown", () => ({ closeOnShutdown: () => () => {} }));
 vi.mock("@/lib/db", async () => (await import("@/tests/helpers/db")).dbModule());
 
-const { GET } = await import("@/app/api/v1/organizations/[orgId]/apps/[appId]/terminal/route");
+const { GET, POST } = await import("@/app/api/v1/organizations/[orgId]/apps/[appId]/terminal/route");
 
 const ORG_ID = "org-1";
 const APP_ID = "child-server";
@@ -120,5 +120,40 @@ describe("GET terminal — stack child container scope", () => {
     expect(res.status).toBe(200);
     expect(mockListContainers).toHaveBeenCalledWith({ id: "app-1", name: "paperless" });
     expect(mockCreateExec).toHaveBeenCalledWith("c-mine", ["/bin/sh"]);
+  });
+});
+
+describe("POST terminal — session owner", () => {
+  async function openSession() {
+    const write = vi.fn();
+    mockStartExec.mockResolvedValue({ on: vi.fn(), destroy: vi.fn(), destroyed: false, write });
+    const res = await GET(request(), params);
+    return { sessionId: res.headers.get("X-Terminal-Session")!, write };
+  }
+
+  function input(sessionId: string) {
+    return new NextRequest(`http://localhost/api/v1/organizations/${ORG_ID}/apps/${APP_ID}/terminal`, {
+      method: "POST",
+      body: JSON.stringify({ sessionId, type: "input", data: Buffer.from("ls\n").toString("base64") }),
+    });
+  }
+
+  it("accepts input from the user who opened the session", async () => {
+    const { sessionId, write } = await openSession();
+
+    const res = await POST(input(sessionId), params);
+
+    expect(res.status).toBe(200);
+    expect(write).toHaveBeenCalled();
+  });
+
+  it("refuses input from another member of the org", async () => {
+    const { sessionId, write } = await openSession();
+    mockVerifyOrgAccess.mockResolvedValue({ organization: { id: ORG_ID }, session: { user: { id: "u2" } } });
+
+    const res = await POST(input(sessionId), params);
+
+    expect(res.status).toBe(404);
+    expect(write).not.toHaveBeenCalled();
   });
 });
