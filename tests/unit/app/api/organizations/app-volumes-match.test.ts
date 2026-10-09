@@ -33,10 +33,8 @@ vi.mock("@/lib/docker/client", () => ({
     ],
   }),
 }));
-vi.mock("child_process", () => ({
-  exec: (_cmd: string, _opts: unknown, cb: (err: unknown, out?: unknown) => void) =>
-    cb(null, { stdout: "4096\t/data", stderr: "" }),
-}));
+const execFileAsync = vi.hoisted(() => vi.fn().mockResolvedValue({ stdout: "4096\t/data", stderr: "" }));
+vi.mock("@/lib/utils/exec", () => ({ execFileAsync }));
 
 const { GET } = await import("@/app/api/v1/organizations/[orgId]/apps/[appId]/volumes/route");
 
@@ -51,5 +49,20 @@ describe("GET app volumes", () => {
       ["v-data", "data", true],
       ["v-cfg", "config", false],
     ]);
+  });
+
+  it("measures named volumes with an argv, not a shell string", async () => {
+    execFileAsync.mockClear();
+    const res = await GET(new NextRequest("http://localhost"), {
+      params: Promise.resolve({ orgId: "org-1", appId: "app-1" }),
+    });
+    const { volumes } = await res.json();
+
+    expect(execFileAsync).toHaveBeenCalledWith(
+      "docker",
+      ["run", "--rm", "-v", "notes_data:/data", "alpine", "du", "-sb", "/data"],
+      expect.any(Object),
+    );
+    expect(volumes.find((v: { id: string }) => v.id === "v-data").sizeBytes).toBe(4096);
   });
 });

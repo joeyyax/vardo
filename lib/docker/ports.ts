@@ -1,26 +1,30 @@
-import { exec } from "child_process";
-import { promisify } from "util";
+import { execFileAsync } from "@/lib/utils/exec";
 import { dockerEnv } from "@/lib/docker/docker-env";
-
-const execAsync = promisify(exec);
 
 const PORT_RANGE_START = 32768;
 const PORT_RANGE_END = 60999;
 
+/** Host ports bound on 0.0.0.0 in `docker ps --format {{.Ports}}` output. */
+export function parseHostPorts(output: string): Set<number> {
+  const used = new Set<number>();
+  for (const match of output.matchAll(/0\.0\.0\.0:(\d+)/g)) {
+    used.add(parseInt(match[1], 10));
+  }
+  return used;
+}
+
 /** Host ports in use by Docker containers. */
 async function getUsedPorts(): Promise<Set<number>> {
-  const used = new Set<number>();
   try {
-    const { stdout } = await execAsync(
-      "docker ps --format '{{.Ports}}' | grep -oE '0\\.0\\.0\\.0:[0-9]+' | cut -d: -f2",
+    const { stdout } = await execFileAsync(
+      "docker",
+      ["ps", "--format", "{{.Ports}}"],
       { env: dockerEnv(), timeout: 5000 }
     );
-    for (const line of stdout.trim().split("\n")) {
-      const port = parseInt(line);
-      if (!isNaN(port)) used.add(port);
-    }
-  } catch { /* no containers or docker not running */ }
-  return used;
+    return parseHostPorts(stdout);
+  } catch {
+    return new Set();
+  }
 }
 
 /** Allocate a random free high port. */

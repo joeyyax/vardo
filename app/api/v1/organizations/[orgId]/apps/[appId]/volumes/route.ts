@@ -7,14 +7,11 @@ import { inspectContainer, resolveVolumeName } from "@/lib/docker/client";
 import { listAppContainers } from "@/lib/docker/app-containers";
 import { z } from "zod";
 import { nanoid } from "nanoid";
-import { exec } from "child_process";
-import { promisify } from "util";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
+import { execFileAsync } from "@/lib/utils/exec";
 import { dockerEnv } from "@/lib/docker/docker-env";
-
-const execAsync = promisify(exec);
 
 const volumeSchema = z.object({
   name: z.string().min(1).regex(/^[a-zA-Z0-9._-]+$/, "Invalid volume name"),
@@ -129,8 +126,9 @@ async function handleGet(_request: NextRequest, { params }: RouteParams) {
       if (measurable.length > 0) {
         const results = await Promise.allSettled(
           measurable.map(({ vol }) => {
-            return execAsync(
-              `docker run --rm -v "${vol.dockerName ?? vol.name}:/data" alpine du -sb /data`,
+            return execFileAsync(
+              "docker",
+              ["run", "--rm", "-v", `${vol.dockerName ?? vol.name}:/data`, "alpine", "du", "-sb", "/data"],
               { env: dockerEnv(), timeout: 5000 }
             );
           })
