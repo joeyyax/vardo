@@ -283,6 +283,22 @@ describe("runDeployment failures between phases", () => {
     expect(dockerCalls.some((c) => c.includes("-p app-prod-blue down"))).toBe(true);
   });
 
+  it("releases a hold the swap left on the old slot", async () => {
+    const releaseHold = vi.fn(async () => {});
+    vi.mocked(swap).mockImplementation(async (ctx) => {
+      ctx.slotDir = "/srv/vardo/app/blue";
+      ctx.newProjectName = "app-prod-blue";
+      ctx.stage("routing", "running");
+      ctx.oldSlotServing = async () => true;
+      ctx.releaseHold = releaseHold;
+      return ctx;
+    });
+
+    await runDeployment("dep-1", { ...OPTS, onStage });
+
+    expect(releaseHold).toHaveBeenCalledOnce();
+  });
+
   it("keeps a healthy new slot when no other slot is serving", async () => {
     const result = await runDeployment("dep-1", { ...OPTS, onStage });
 

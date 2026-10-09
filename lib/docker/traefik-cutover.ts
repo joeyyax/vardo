@@ -1,5 +1,5 @@
-// Short-lived file-provider route pinning traffic to the new slot while the old one stops.
-// Traefik keeps routing to exited container IPs until it reconciles, and those requests hang.
+// Short-lived file-provider routes pinning an app's traffic to one slot.
+// The hold keeps the old slot serving while the new one warms up; the cutover pins the new slot while the old one stops.
 
 import { mkdir, rename, unlink, writeFile } from "fs/promises";
 import { join } from "path";
@@ -67,10 +67,14 @@ export function planCutover(
     slotted: Record<string, ComposeService>;
     /** The new slot's container labels by compose service, after compose interpolation. */
     liveLabels?: Record<string, Labels>;
+    /** Appended to pin router and service names. */
+    suffix?: string;
   },
 ): CutoverPlan | null {
+  const suffix = opts.suffix ?? "cutover";
   const routers = new Map<string, RouterOptions>();
   const declared = new Map<string, RouterOptions>();
+  const declaredBy = new Map<string, Set<string>>();
 
   for (const name of Object.keys(opts.slotted)) {
     const labels = opts.liveLabels?.[name] ?? compose.services[name]?.labels;
@@ -89,6 +93,8 @@ export function planCutover(
         const entry = declared.get(service[1]) ?? { composeService: name, opts: {} };
         entry.opts[service[2].toLowerCase()] = value;
         declared.set(service[1], entry);
+        if (!declaredBy.has(name)) declaredBy.set(name, new Set());
+        declaredBy.get(name)!.add(service[1]);
       }
     }
   }
@@ -99,7 +105,9 @@ export function planCutover(
 
   for (const [routerName, router] of routers) {
     const rule = router.opts["rule"];
-    const target = router.opts["service"];
+    // Traefik gives a router without a service the container's only one.
+    const own = [...(declaredBy.get(router.composeService) ?? [])];
+    const target = router.opts["service"] ?? (own.length === 1 ? own[0] : undefined);
     if (!rule || !target) continue;
     // Uninterpolated compose variables would reach Traefik as literal names.
     if (Object.values(router.opts).some((v) => v.includes("${"))) continue;
@@ -109,7 +117,7 @@ export function planCutover(
     // Undeclared target services stay on the Docker provider.
     if (!backend || !port) continue;
 
-    const pinName = `${target}-cutover`;
+    const pinName = `${target}-${suffix}`;
     if (!pinServices[pinName]) {
       const scheme = backend.opts["loadbalancer.server.scheme"] === "https" ? "https" : "http";
       const container = `${opts.newProjectName}-${backend.composeService}-1`;
@@ -129,7 +137,7 @@ export function planCutover(
     const certResolver = router.opts["tls.certresolver"];
     const tls = certResolver ? { certResolver } : router.opts["tls"] === "true" ? {} : undefined;
 
-    pinRouters[`${routerName}-cutover`] = {
+    pinRouters[`${routerName}-${suffix}`] = {
       rule,
       service: pinName,
       priority: pinPriority(router.opts, rule),
@@ -282,6 +290,8 @@ export async function guardCutover(opts: {
     written = await writePin(path, plan.yaml);
   } catch (err) {
     log(`[deploy] Traefik cutover: could not write pin — ${err instanceof Error ? err.message : err}`);
+    // Never leave a hold on the slot about to stop.
+    await clearCutoverPin(appName, envName).catch(() => {});
   }
   if (!written) return NO_PIN;
 
@@ -319,4 +329,60 @@ export async function guardCutover(opts: {
       }
     },
   };
+}
+
+export type SlotHold = {
+  /** Whether Traefik confirmed the hold. */
+  held: boolean;
+  /** Remove the hold and hand routing back to the labels. */
+  release: () => Promise<void>;
+};
+
+export const NO_HOLD: SlotHold = { held: false, release: async () => {} };
+
+/**
+ * Pin the app to the running old slot while the new one starts, built from the old slot's live labels.
+ * Never throws; without Traefik the deploy goes on unheld.
+ */
+export async function holdSlot(opts: {
+  appName: string;
+  envName: string;
+  slotted: Record<string, ComposeService>;
+  projectName: string;
+  log: (line: string) => void;
+}): Promise<SlotHold> {
+  const { appName, envName, log } = opts;
+  const path = cutoverPinPath(appName, envName);
+  const release = () => clearCutoverPin(appName, envName).catch(() => {});
+
+  // Live labels only; the new compose names the new slot's routers and middlewares.
+  const plan = planCutover({ services: {} } as unknown as ComposeFile, {
+    newProjectName: opts.projectName,
+    slotted: opts.slotted,
+    liveLabels: await projectLabels(opts.projectName),
+    suffix: "hold",
+  });
+  if (!plan) return NO_HOLD;
+
+  try {
+    if (!(await writePin(path, plan.yaml))) return NO_HOLD;
+  } catch (err) {
+    log(`[deploy] Traefik hold: could not write pin — ${err instanceof Error ? err.message : err}`);
+    await release();
+    return NO_HOLD;
+  }
+
+  const live = await waitUntil(async () => {
+    const routers = await fetchTraefikRouters();
+    return routers !== null && pinIsLive(routers, plan.routerNames);
+  }, PIN_CONFIRM_TIMEOUT);
+
+  if (!live) {
+    log(`[deploy] Traefik hold: pin not picked up in ${PIN_CONFIRM_TIMEOUT / 1000}s — starting the new slot unheld`);
+    await release();
+    return NO_HOLD;
+  }
+
+  log(`[deploy] Traefik hold: traffic held on ${opts.projectName} (${plan.routerNames.length} router(s)) until the new slot is healthy`);
+  return { held: true, release };
 }

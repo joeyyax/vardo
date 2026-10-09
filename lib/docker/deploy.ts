@@ -497,6 +497,12 @@ export async function runDeployment(
     const durationMs = Date.now() - startTime;
     timer.endAll();
 
+    // A hold left by a failure after the health check pins the old slot; drop it.
+    if (ctx?.releaseHold) {
+      await ctx.releaseHold().catch(() => {});
+      ctx.releaseHold = undefined;
+    }
+
     // Cut over and serving; only post-deploy work failed. Row, status and stream stand.
     if (ctx?.succeeded) {
       await recordPostDeployIncomplete(ctx, message);
