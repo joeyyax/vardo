@@ -17,6 +17,7 @@ const {
   plaintextChannelSecretKeys,
   ChannelDecryptError,
 } = await import("@/lib/notifications/channel-config");
+const { restoreMaskedConfig } = await import("@/lib/notifications/mask-config");
 const { createChannel } = await import("@/lib/notifications/factory");
 const { WebhookNotificationChannel } = await import("@/lib/notifications/webhook-channel");
 
@@ -67,9 +68,15 @@ describe("openChannelConfig", () => {
 });
 
 describe("presentChannel", () => {
-  it("returns the webhook URL and the masked secret, never ciphertext", () => {
+  it("masks the webhook URL and secret, never ciphertext", () => {
     const row = { type: "webhook", organizationId: ORG, config: sealChannelConfig(webhook, ORG) };
-    expect(presentChannel(row).config).toEqual({ url: webhook.url, secret: "****1234" });
+    expect(presentChannel(row).config).toEqual({ url: "****", secret: "****1234" });
+  });
+
+  it("masks a Discord webhook URL", () => {
+    const url = "https://discord.com/api/webhooks/123/tok_en";
+    const row = { type: "webhook", organizationId: ORG, config: sealChannelConfig({ url }, ORG) };
+    expect(presentChannel(row).config).toEqual({ url: "****" });
   });
 
   it("masks a Slack webhook URL", () => {
@@ -79,7 +86,7 @@ describe("presentChannel", () => {
 
   it("masks legacy plaintext the same way", () => {
     expect(presentChannel({ type: "webhook", organizationId: ORG, config: webhook }).config).toEqual({
-      url: webhook.url,
+      url: "****",
       secret: "****1234",
     });
   });
@@ -89,5 +96,22 @@ describe("presentChannel", () => {
     const { config } = presentChannel(row) as { config: { url: string } };
     expect(isEncrypted(config.url)).toBe(false);
     expect(config.url).toBe("");
+  });
+});
+
+describe("restoreMaskedConfig", () => {
+  it("keeps the stored URL and secret when the client sends masks back", () => {
+    const stored = { url: "https://discord.com/api/webhooks/1/tok", secret: "whsec_abcd1234" };
+    expect(restoreMaskedConfig({ url: "****", secret: "****1234" }, stored)).toEqual(stored);
+    expect(restoreMaskedConfig({ webhookUrl: "****" }, { webhookUrl: "https://hooks.slack.com/x" })).toEqual({
+      webhookUrl: "https://hooks.slack.com/x",
+    });
+  });
+
+  it("takes a new value over the stored one", () => {
+    expect(restoreMaskedConfig({ url: "https://new.example/h", secret: "****1234" }, { url: "https://old/h", secret: "s3cret" })).toEqual({
+      url: "https://new.example/h",
+      secret: "s3cret",
+    });
   });
 });
