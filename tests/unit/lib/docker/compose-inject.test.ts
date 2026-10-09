@@ -54,7 +54,7 @@ const domain = {
   certResolver: null,
   redirectTo: null,
   redirectCode: null,
-  composeService: null,
+  serviceName: null,
 };
 
 describe("isTraefikSelfRouted", () => {

@@ -830,7 +830,7 @@ export function applyDeployTransforms(
       const resolvedProtocol = resolveBackendProtocol(opts.backendProtocol, port);
       const targetService = selectRoutedService(result, {
         containerPort: port,
-        override: domain.composeService,
+        override: domain.serviceName,
       }).service;
       result = injectTraefikLabels(result, {
         ...domainRouteOptions(domain, { trusted: opts.orgTrusted ?? false }),

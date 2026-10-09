@@ -2,7 +2,7 @@
 
 import type { domains } from "@/lib/db/schema";
 
-export type DeployDomain = typeof domains.$inferSelect & { composeService?: string | null };
+export type DeployDomain = typeof domains.$inferSelect;
 
 /** A non-default environment's own hostname, routed like the app's primary domain and behind its middlewares. */
 export function environmentDomains(
@@ -31,7 +31,6 @@ export function environmentDomains(
       verificationToken: null,
       verifiedAt: null,
       createdAt: template?.createdAt ?? new Date(0),
-      composeService: template?.composeService ?? null,
     },
   ];
 }

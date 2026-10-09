@@ -2318,7 +2318,7 @@ describe("applyDeployTransforms — routed service selection", () => {
       ...baseTransformOpts,
       appName: "authentik",
       containerPort: 9000,
-      domains: [{ ...domain, composeService: "authentik-worker" }],
+      domains: [{ ...domain, serviceName: "authentik-worker" }],
     });
     expect(result.services["authentik-worker"].labels?.["traefik.enable"]).toBe("true");
     expect(result.services["authentik-server"].labels).toBeUndefined();
@@ -2409,8 +2409,8 @@ describe("applyDeployTransforms — single Traefik backend", () => {
       appName: "agents",
       containerPort: 3000,
       domains: [
-        { ...agentsDomain, composeService: "dashboard" },
-        { ...agentsDomain, id: "dom-55667788", domain: "api.example.com", composeService: "worker" },
+        { ...agentsDomain, serviceName: "dashboard" },
+        { ...agentsDomain, id: "dom-55667788", domain: "api.example.com", serviceName: "worker" },
       ],
     });
 

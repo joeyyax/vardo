@@ -300,7 +300,7 @@ export async function runDeployment(
     for (const d of childDomains) {
       app.domains.push({
         ...d,
-        composeService: d.app?.composeService ?? null,
+        serviceName: d.app?.composeService ?? d.serviceName,
       } as typeof app.domains[number]);
     }
 
