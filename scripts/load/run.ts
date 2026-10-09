@@ -4,6 +4,7 @@ import { getJson, runLoad, authHeaders, type Config, type LoadResult, type Probe
 import { holdStreams, type SseResult } from "./sse";
 import { runDeployScenario, type DeployResult } from "./write";
 import { startSampler, type ServerPeaks } from "./sampler";
+import { defaultRate } from "./pacing";
 import { renderComparison, type Report, type ResultRow } from "./compare";
 import {
   deployRow, loadRow, renderDeploy, renderRequests, renderServer, renderSse, serverRow, sseRow,
@@ -14,7 +15,8 @@ const USAGE = `pnpm test:load [options]
 
 Environment
   VARDO_URL            Target, e.g. http://localhost:3000 (required)
-  VARDO_TOKEN          API token (required)
+  VARDO_TOKEN          API token (required unless VARDO_TOKENS is set)
+  VARDO_TOKENS         Comma-separated API tokens, rotated per request; each gets its own rate budget
   VARDO_LOAD_ORG       Organization id for org-scoped scenarios; required with --write
   VARDO_LOAD_APP       App id for app detail, history and streams (default: first app in the org)
   VARDO_SESSION_COOKIE Session cookie ("name=value") for the admin overview; API tokens can't reach it
@@ -25,6 +27,8 @@ Options
   --streams 20           SSE streams per kind (default 20, server cap is 60 per token)
   --stream-seconds 20    Seconds to hold each stream group (default 20)
   --only a,b             Run only these: endpoints, sse, health, admin
+  --rate 108             Requests per minute per token per route (default 108, 90% of the 120 read limit)
+  --no-pace              Send as fast as the workers go (429s back off but the run measures the limiter)
   --write                Deploy scratch apps, then delete them (needs VARDO_LOAD_ORG)
   --apps 4               Scratch apps to deploy with --write (default 4)
   --image traefik/whoami Image for scratch apps
@@ -58,6 +62,8 @@ async function main() {
       streams: { type: "string", default: "20" },
       "stream-seconds": { type: "string", default: "20" },
       only: { type: "string" },
+      rate: { type: "string" },
+      "no-pace": { type: "boolean", default: false },
       write: { type: "boolean", default: false },
       apps: { type: "string", default: "4" },
       image: { type: "string", default: "traefik/whoami" },
@@ -80,8 +86,10 @@ async function main() {
   }
 
   const url = process.env.VARDO_URL?.replace(/\/+$/, "");
-  const token = process.env.VARDO_TOKEN;
-  if (!url || !token) die(`VARDO_URL and VARDO_TOKEN are both required.\n\n${USAGE}`);
+  const tokens = (process.env.VARDO_TOKENS ?? "").split(",").map((t) => t.trim()).filter(Boolean);
+  const token = process.env.VARDO_TOKEN || tokens[0];
+  if (!url || !token) die(`VARDO_URL and VARDO_TOKEN (or VARDO_TOKENS) are required.\n\n${USAGE}`);
+  if (!tokens.length) tokens.push(token);
 
   const org = process.env.VARDO_LOAD_ORG || null;
   if (values.write && !org) die("--write needs VARDO_LOAD_ORG set to the organization for the scratch apps.");
@@ -91,12 +99,15 @@ async function main() {
   const streams = positiveInt("streams", values.streams!);
   const streamSeconds = positiveInt("stream-seconds", values["stream-seconds"]!);
   const appCount = positiveInt("apps", values.apps!);
+  if (values.rate && values["no-pace"]) die("--rate and --no-pace can't be combined");
+  const explicitRate = values.rate ? positiveInt("rate", values.rate) : null;
   const only = values.only ? new Set(values.only.split(",").map((s) => s.trim())) : null;
   const want = (name: string) => !only || only.has(name);
 
   const cfg: Config = {
     url,
     token,
+    tokens,
     org,
     app: process.env.VARDO_LOAD_APP || null,
     cookie: process.env.VARDO_SESSION_COOKIE || null,
@@ -131,20 +142,21 @@ async function main() {
   let peaks: ServerPeaks | null = null;
 
   const probes: (Probe & { group: string })[] = [];
+  // Unauthenticated and cookie routes aren't on the token tier, so they pace only with an explicit --rate.
+  const rateFor = (p: Probe) => (values["no-pace"] ? null : explicitRate ?? (p.tokens ? defaultRate() : null));
   if (want("health")) {
     probes.push({ id: "health", label: "GET /api/health", path: "/api/health", group: "health" });
   }
   if (want("endpoints") && org) {
     const base = `/api/v1/organizations/${org}`;
-    const headers = authHeaders(cfg);
     probes.push(
-      { id: "apps-list", label: "apps list", path: `${base}/apps?limit=50`, headers, group: "endpoints" },
-      { id: "projects-list", label: "projects list", path: `${base}/projects`, headers, group: "endpoints" },
+      { id: "apps-list", label: "apps list", path: `${base}/apps?limit=50`, group: "endpoints", tokens },
+      { id: "projects-list", label: "projects list", path: `${base}/projects`, group: "endpoints", tokens },
     );
     if (cfg.app) {
       probes.push(
-        { id: "app-detail", label: "app detail", path: `${base}/apps/${cfg.app}`, headers, group: "endpoints" },
-        { id: "metrics-history", label: "metrics history 1h", path: `${base}/apps/${cfg.app}/stats/history`, headers, group: "endpoints" },
+        { id: "app-detail", label: "app detail", path: `${base}/apps/${cfg.app}`, group: "endpoints", tokens },
+        { id: "metrics-history", label: "metrics history 1h", path: `${base}/apps/${cfg.app}/stats/history`, group: "endpoints", tokens },
       );
     }
   } else if (want("endpoints")) {
@@ -167,8 +179,9 @@ async function main() {
   try {
     for (const p of probes) {
       for (const c of levels) {
-        say(`${p.label} c=${c} for ${duration}s`);
-        const r = await runLoad(url, p, c, duration);
+        const rate = rateFor(p);
+        say(`${p.label} c=${c} for ${duration}s${rate ? `, ${rate}/min per token` : ", unpaced"}`);
+        const r = await runLoad(url, p, c, duration, rate);
         requestRows.push({ name: p.label, r });
         results.push(loadRow(p.id, p.label, r));
       }
@@ -197,9 +210,10 @@ async function main() {
     }
   }
 
-  const limited = requestRows.reduce((n, x) => n + x.r.limited, 0);
-  if (limited > 0) {
-    notes.push(`${limited} requests were rate limited (429). Throughput there reflects the server's limit, not its capacity.`);
+  for (const { name, r } of requestRows) {
+    if (r.rateLimited) {
+      notes.push(`${name} c=${r.concurrency}: rate-limited, latencies not meaningful (${r.limited}/${r.requests} were 429). Lower --rate or add tokens to VARDO_TOKENS.`);
+    }
   }
   if (sseRows.some((r) => r.limited > 0)) {
     notes.push("Some streams hit the per-token stream cap (60); lower --streams or use another token.");
@@ -212,6 +226,7 @@ async function main() {
   for (const row of deploy?.rows.filter((r) => !r.success) ?? []) notes.push(`deploy failed: ${row.name}: ${row.error ?? "unknown"}`);
 
   console.log();
+  if (requestRows.some((x) => x.r.rateLimited)) notes.push("* marks scenarios where more than 5% of requests were 429.");
   if (requestRows.length) console.log(`Requests (${duration}s per level)\n${renderRequests(requestRows)}\n`);
   if (sseRows.length) console.log(`SSE (${streamSeconds}s hold, times in ms)\n${renderSse(sseRows)}\n`);
   if (deploy) console.log(`Deploys\n${renderDeploy(deploy)}\n`);
@@ -223,7 +238,8 @@ async function main() {
     startedAt,
     target: url,
     options: {
-      concurrency: levels, duration, streams, streamSeconds, write: values.write,
+      concurrency: levels, duration, tokens: tokens.length,
+      rate: values["no-pace"] ? null : explicitRate ?? defaultRate(), streams, streamSeconds, write: values.write,
       apps: values.write ? appCount : null, ssh: Boolean(values.ssh), node: process.version,
     },
     results,

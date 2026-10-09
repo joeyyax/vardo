@@ -1,8 +1,10 @@
 import { requestStats, type Outcome, type RequestStats } from "./stats";
+import { DEFAULT_BACKOFF_MS, Pacer, isRateLimited, parseBackoffMs } from "./pacing";
 
 export type Config = {
   url: string;
   token: string;
+  tokens: string[];
   org: string | null;
   app: string | null;
   cookie: string | null;
@@ -25,51 +27,98 @@ export type Probe = {
   label: string;
   path: string;
   headers?: Record<string, string>;
+  /** Bearer tokens rotated round-robin per request, in addition to `headers`. */
+  tokens?: string[];
 };
 
 /** One timed GET with the body drained. */
 export async function timedGet(
   base: string,
   probe: Probe,
-): Promise<{ ms: number; outcome: Outcome; status: number }> {
+  n = 0,
+): Promise<{ ms: number; outcome: Outcome; status: number; backoffMs: number | null }> {
   const start = performance.now();
+  const tokens = probe.tokens;
+  const headers = tokens?.length
+    ? { ...probe.headers, authorization: `Bearer ${tokens[n % tokens.length]}` }
+    : probe.headers;
   try {
     const res = await fetch(base + probe.path, {
-      headers: probe.headers,
+      headers,
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
     await res.arrayBuffer();
-    return { ms: performance.now() - start, outcome: classify(res.status), status: res.status };
+    const backoffMs = res.status === 429 ? parseBackoffMs((h) => res.headers.get(h)) : null;
+    return { ms: performance.now() - start, outcome: classify(res.status), status: res.status, backoffMs };
   } catch {
-    return { ms: performance.now() - start, outcome: "error", status: 0 };
+    return { ms: performance.now() - start, outcome: "error", status: 0, backoffMs: null };
   }
 }
 
-export type LoadResult = RequestStats & { concurrency: number; statuses: Record<string, number> };
+export type LoadResult = RequestStats & {
+  concurrency: number;
+  statuses: Record<string, number>;
+  /** Requests sent per minute, 429s included. */
+  sentPerMin: number;
+  /** Pacing target in requests per minute across all tokens; null when unpaced. */
+  targetPerMin: number | null;
+  rateLimited: boolean;
+};
 
-/** Closed loop: `concurrency` workers hit the probe back to back for `seconds`. */
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Closed loop: `concurrency` workers hit the probe for `seconds`, capped at `ratePerMin` per token when set. A 429 pauses the route. */
 export async function runLoad(
   base: string,
   probe: Probe,
   concurrency: number,
   seconds: number,
+  ratePerMin: number | null = null,
 ): Promise<LoadResult> {
   const samples: { ms: number; outcome: Outcome }[] = [];
   const statuses: Record<string, number> = {};
   const started = performance.now();
   const deadline = started + seconds * 1000;
+  const targetPerMin = ratePerMin === null ? null : ratePerMin * (probe.tokens?.length || 1);
+  const pacer = targetPerMin === null ? null : new Pacer(targetPerMin, started);
+  let sent = 0;
+  let pausedUntil = 0;
 
   async function worker() {
     while (performance.now() < deadline) {
-      const r = await timedGet(base, probe);
+      const hold = pausedUntil - performance.now();
+      if (hold > 0) {
+        await sleep(Math.min(hold, Math.max(0, deadline - performance.now())));
+        continue;
+      }
+      if (pacer) {
+        const slot = pacer.reserve(performance.now());
+        if (slot >= deadline) return;
+        const wait = slot - performance.now();
+        if (wait > 0) await sleep(wait);
+      }
+      const r = await timedGet(base, probe, sent++);
       samples.push({ ms: r.ms, outcome: r.outcome });
       statuses[r.status] = (statuses[r.status] ?? 0) + 1;
+      if (r.outcome === "limited") {
+        const backoff = r.backoffMs ?? DEFAULT_BACKOFF_MS;
+        pausedUntil = Math.max(pausedUntil, performance.now() + backoff);
+        pacer?.penalize(pausedUntil);
+      }
     }
   }
 
   await Promise.all(Array.from({ length: concurrency }, worker));
   const elapsed = performance.now() - started;
-  return { ...requestStats(samples, elapsed), concurrency, statuses };
+  const stats = requestStats(samples, elapsed);
+  return {
+    ...stats,
+    concurrency,
+    statuses,
+    sentPerMin: elapsed > 0 ? (stats.requests / elapsed) * 60_000 : 0,
+    targetPerMin,
+    rateLimited: isRateLimited(stats.requests, stats.limited),
+  };
 }
 
 export async function getJson<T>(cfg: Config, path: string): Promise<T> {
@@ -80,8 +129,6 @@ export async function getJson<T>(cfg: Config, path: string): Promise<T> {
   if (!res.ok) throw new Error(`GET ${path} returned ${res.status}`);
   return (await res.json()) as T;
 }
-
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** JSON write that waits out a 429 (up to five times) so scratch setup and cleanup survive the mutation limit. */
 export async function sendJson<T>(
@@ -99,8 +146,7 @@ export async function sendJson<T>(
     });
     const text = await res.text();
     if (res.status === 429 && attempt < 5) {
-      const wait = Math.min(65, Number(res.headers.get("retry-after")) || 10);
-      await sleep(wait * 1000);
+      await sleep(parseBackoffMs((h) => res.headers.get(h)) ?? 10_000);
       continue;
     }
     if (!res.ok) throw new Error(`${method} ${path} returned ${res.status}: ${text.slice(0, 200)}`);

@@ -15,7 +15,7 @@ export type Report = {
   notes: string[];
 };
 
-const HIGHER_IS_BETTER = /(^|\.)(rps|ok|connected|events|succeeded|streams)$/;
+const HIGHER_IS_BETTER = /(^|\.)(rps|sentPerMin|ok|connected|events|succeeded|streams)$/;
 
 export function higherIsBetter(metric: string): boolean {
   return HIGHER_IS_BETTER.test(metric);

@@ -1,6 +1,10 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { percentile, requestStats, summarize } from "../../../scripts/load/stats";
 import { compareReports, delta, renderComparison, type Report } from "../../../scripts/load/compare";
+import {
+  Pacer, defaultRate, isRateLimited, parseBackoffMs, DEFAULT_BACKOFF_MS, MAX_BACKOFF_MS,
+} from "../../../scripts/load/pacing";
+import { runLoad } from "../../../scripts/load/client";
 import { createSseParser } from "../../../scripts/load/sse";
 import { parseTick, toMiB, mergeTick } from "../../../scripts/load/sampler";
 
@@ -169,5 +173,122 @@ describe("server sampling", () => {
     expect(b.samples).toBe(2);
     expect(b.containers["vardo-frontend"].cpuPct).toBe(12.5);
     expect(b.pgConnections).toBe(17);
+  });
+});
+
+const headers = (h: Record<string, string>) => (name: string) => h[name] ?? null;
+
+describe("defaultRate", () => {
+  it("is 90% of the read limit", () => {
+    expect(defaultRate()).toBe(108);
+    expect(defaultRate(60, 0.5)).toBe(30);
+  });
+});
+
+describe("Pacer", () => {
+  it("spaces slots evenly", () => {
+    const p = new Pacer(60, 0);
+    expect([p.reserve(0), p.reserve(0), p.reserve(0)]).toEqual([0, 1000, 2000]);
+  });
+
+  it("doesn't bank idle time as a burst", () => {
+    const p = new Pacer(60, 0);
+    p.reserve(0);
+    expect([p.reserve(10_000), p.reserve(10_000)]).toEqual([10_000, 11_000]);
+  });
+
+  it("stays under the limit over a minute", () => {
+    const p = new Pacer(defaultRate(), 0);
+    const slots = Array.from({ length: 200 }, () => p.reserve(0));
+    // Any 60s window holds at most 108 slots, so the 109th is a full minute after the first.
+    expect(slots[108] - slots[0]).toBeGreaterThanOrEqual(59_999);
+  });
+
+  it("holds later slots after a penalty", () => {
+    const p = new Pacer(60, 0);
+    p.reserve(0);
+    p.penalize(5000);
+    expect(p.reserve(1000)).toBe(5000);
+    p.penalize(2000);
+    expect(p.reserve(1000)).toBe(6000);
+  });
+
+  it("rejects a non-positive rate", () => {
+    expect(() => new Pacer(0)).toThrow();
+  });
+});
+
+describe("parseBackoffMs", () => {
+  it("reads Retry-After seconds", () => {
+    expect(parseBackoffMs(headers({ "retry-after": "12" }))).toBe(12_000);
+  });
+
+  it("reads Retry-After as an HTTP date", () => {
+    const now = Date.parse("2026-01-01T00:00:00Z");
+    expect(parseBackoffMs(headers({ "retry-after": "Thu, 01 Jan 2026 00:00:30 GMT" }), now)).toBe(30_000);
+  });
+
+  it("prefers Retry-After over reset headers", () => {
+    expect(parseBackoffMs(headers({ "retry-after": "3", "ratelimit-reset": "40" }))).toBe(3000);
+  });
+
+  it("falls back to RateLimit-Reset as delta seconds or epoch", () => {
+    expect(parseBackoffMs(headers({ "ratelimit-reset": "8" }))).toBe(8000);
+    const now = 1_800_000_000_000;
+    expect(parseBackoffMs(headers({ "x-ratelimit-reset": "1800000020" }), now)).toBe(20_000);
+  });
+
+  it("caps long waits and floors past dates at zero", () => {
+    expect(parseBackoffMs(headers({ "retry-after": "9999" }))).toBe(MAX_BACKOFF_MS);
+    expect(parseBackoffMs(headers({ "retry-after": "Thu, 01 Jan 2026 00:00:00 GMT" }), Date.parse("2027-01-01"))).toBe(0);
+  });
+
+  it("returns null without usable headers", () => {
+    expect(parseBackoffMs(headers({}))).toBeNull();
+    expect(parseBackoffMs(headers({ "retry-after": "soon" }))).toBeNull();
+    expect(DEFAULT_BACKOFF_MS).toBeGreaterThan(0);
+  });
+});
+
+describe("isRateLimited", () => {
+  it("flags above 5% only", () => {
+    expect(isRateLimited(100, 5)).toBe(false);
+    expect(isRateLimited(100, 6)).toBe(true);
+    expect(isRateLimited(0, 0)).toBe(false);
+  });
+});
+
+describe("runLoad against a limiter", () => {
+  it("backs off on 429 using Retry-After", async () => {
+    let calls = 0;
+    const spy = vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
+      calls++;
+      return new Response("{}", calls === 1 ? { status: 429, headers: { "retry-after": "1" } } : { status: 200 });
+    });
+    const r = await runLoad("http://x", { id: "t", label: "t", path: "/" }, 2, 1);
+    spy.mockRestore();
+    expect(r.limited).toBe(1);
+    expect(calls).toBeLessThanOrEqual(3);
+  });
+
+  it("caps the request rate when paced", async () => {
+    const spy = vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response("{}", { status: 200 }));
+    const r = await runLoad("http://x", { id: "t", label: "t", path: "/" }, 5, 1, 120);
+    spy.mockRestore();
+    expect(r.requests).toBeGreaterThanOrEqual(1);
+    expect(r.requests).toBeLessThanOrEqual(3);
+    expect(r.rateLimited).toBe(false);
+  });
+
+  it("multiplies the target by token count", async () => {
+    const seen: string[] = [];
+    const spy = vi.spyOn(globalThis, "fetch").mockImplementation(async (_u, init) => {
+      seen.push(String((init?.headers as Record<string, string>).authorization));
+      return new Response("{}", { status: 200 });
+    });
+    const r = await runLoad("http://x", { id: "t", label: "t", path: "/", tokens: ["a", "b"] }, 1, 1, 120);
+    spy.mockRestore();
+    expect(r.targetPerMin).toBe(240);
+    expect(seen.slice(0, 2)).toEqual(["Bearer a", "Bearer b"]);
   });
 });
