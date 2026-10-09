@@ -22,6 +22,8 @@ export function loadRow(id: string, label: string, r: LoadResult): ResultRow {
       errors: r.errors,
       errorRate: Math.round(r.errorRate * 10000) / 100,
       rps: r1(r.rps),
+      sentPerMin: r1(r.sentPerMin),
+      rateLimited: r.rateLimited ? 1 : 0,
       ...pctl("", r.latency),
       max: r1(r.latency.max),
     },
@@ -89,10 +91,10 @@ const ms = (n: number | null) => (n === null ? null : n.toFixed(1));
 
 export function renderRequests(rows: { name: string; r: LoadResult }[]): string {
   return table(
-    ["endpoint", "conc", "reqs", "ok", "429", "err", "err%", "rps", "p50ms", "p95ms", "p99ms"],
+    ["endpoint", "conc", "reqs", "ok", "429", "err", "err%", "rps", "sent/min", "p50ms", "p95ms", "p99ms"],
     rows.map(({ name, r }) => [
-      name, r.concurrency, r.requests, r.ok, r.limited, r.errors,
-      (r.errorRate * 100).toFixed(1), r.rps.toFixed(1),
+      r.rateLimited ? `${name} *` : name, r.concurrency, r.requests, r.ok, r.limited, r.errors,
+      (r.errorRate * 100).toFixed(1), r.rps.toFixed(1), r.sentPerMin.toFixed(0),
       ms(r.latency.p50), ms(r.latency.p95), ms(r.latency.p99),
     ]),
   );
