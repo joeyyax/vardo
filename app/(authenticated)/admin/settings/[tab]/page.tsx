@@ -14,6 +14,7 @@ import { GitHubSettings } from "@/components/git-integration/settings";
 import { DomainSettings } from "@/components/ssl/domain-settings";
 import { InstancesSettings } from "../instances-settings";
 import { ConfigSettings } from "../config-settings";
+import { ResourcesSettings } from "../resources-settings";
 import { TraefikSettings } from "@/components/ssl/traefik-settings";
 import { ExternalRoutesSettings } from "@/components/ssl/external-routes-settings";
 import { MaintenanceSettings } from "../maintenance-settings";
@@ -33,6 +34,7 @@ const TABS: Record<string, TabEntry> = {
   authentication:     { component: AuthSettings },
   "feature-flags":    { component: FeatureFlagsSettings },
   "core-services":    { component: CoreServicesSettings },
+  resources:          { component: ResourcesSettings },
   backup:             { component: BackupSettings, gate: "backups" },
   github:             { component: GitHubSettings, gate: "git-integration" },
   domain:             { component: DomainSettings, gate: "ssl" },

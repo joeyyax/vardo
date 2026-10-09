@@ -1,5 +1,6 @@
 // Deploy steps 4-5: slot selection, compose files, volume externalization and .env.
 
+import { detectHost } from "@/lib/resources/host";
 import { db } from "@/lib/db";
 import { orgEnvVars, apps } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
@@ -250,6 +251,9 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
       }
     }
   }
+
+  // Tier defaults below and in the compose overlay read the cached host size.
+  await detectHost();
 
   if (!app.memoryLimit) {
     if (app.priority === "critical") {
