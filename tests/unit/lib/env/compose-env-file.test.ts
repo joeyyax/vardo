@@ -30,7 +30,7 @@ describe("composeEnvFile", () => {
         "EQ=a=b=c",
         'SPACE="a b"',
         'HASH="x#y"',
-        'DOLLAR="pa$word"',
+        'DOLLAR="pa$$word"',
         'DQUOTE="say \\"hi\\""',
         "SQUOTE=\"it's\"",
         'BACKSLASH="C:\\\\dir"',
@@ -82,6 +82,13 @@ describe.skipIf(!hasCompose)("slot .env through docker compose", () => {
   it("delivers a value saved in the editor format", () => {
     const stored = Object.entries(values).map(([k, v]) => formatEnvVar(k, v)).join("\n");
     expect(composeEnv(composeEnvFile(parseEnvToMap(stored)))).toEqual(values);
+  });
+
+  it("delivers `$` literally instead of interpolating it", () => {
+    const dollars = { A: "pa$word", B: "${NOT_A_VAR}", C: "$$already", D: "cost $5 and trailing $" };
+    const env = composeEnv(composeEnvFile(dollars));
+    // config prints a literal `$` as `$$`.
+    expect(Object.fromEntries(Object.entries(env).map(([k, v]) => [k, v.replace(/\$\$/g, "$")]))).toEqual(dollars);
   });
 
   it("fails when a newline is written raw", () => {
