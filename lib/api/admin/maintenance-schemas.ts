@@ -60,6 +60,7 @@ export const imageReclaimConfigSchema = z.object({
   enabled: z.boolean(),
   idleDays: z.number().int().min(1).max(3650),
   slots: z.boolean().optional().default(false),
+  slotRollbackTargets: z.boolean().optional().default(false),
 });
 
 export const imageReclaimRunSchema = z.object({

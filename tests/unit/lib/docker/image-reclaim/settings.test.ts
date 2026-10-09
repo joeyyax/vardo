@@ -13,6 +13,10 @@ describe("image reclaim settings", () => {
     expect(DEFAULT_CONFIG.slots).toBe(false);
   });
 
+  it("keeps the scheduled sweep off rollback targets until someone allows it", () => {
+    expect(DEFAULT_CONFIG.slotRollbackTargets).toBe(false);
+  });
+
   it("clamps the threshold into range", () => {
     expect(clampIdleDays(0)).toBe(1);
     expect(clampIdleDays(-1)).toBe(1);

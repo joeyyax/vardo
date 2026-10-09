@@ -11,12 +11,15 @@ export interface ImageReclaimConfig {
   idleDays: number;
   /** Whether the sweep also removes superseded blue-green slot generations. */
   slots: boolean;
+  /** Whether the scheduled slot sweep may also remove a live app's standby generation. */
+  slotRollbackTargets: boolean;
 }
 
 export const DEFAULT_CONFIG: ImageReclaimConfig = {
   enabled: false,
   idleDays: DEFAULT_IDLE_DAYS,
   slots: false,
+  slotRollbackTargets: false,
 };
 
 export function clampIdleDays(value: unknown): number {
@@ -34,6 +37,7 @@ export async function getImageReclaimConfig(): Promise<ImageReclaimConfig> {
       enabled: parsed.enabled === true,
       idleDays: clampIdleDays(parsed.idleDays ?? DEFAULT_IDLE_DAYS),
       slots: parsed.slots === true,
+      slotRollbackTargets: parsed.slotRollbackTargets === true,
     };
   } catch {
     return { ...DEFAULT_CONFIG };
@@ -88,6 +92,7 @@ export async function setImageReclaimConfig(config: ImageReclaimConfig): Promise
       enabled: config.enabled,
       idleDays: clampIdleDays(config.idleDays),
       slots: config.slots === true,
+      slotRollbackTargets: config.slotRollbackTargets === true,
     }),
   );
   invalidateSettingsCache(KEY);

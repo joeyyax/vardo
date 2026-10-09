@@ -37,8 +37,10 @@ export async function runScheduledSweep(): Promise<void> {
 
   if (!config.slots) return;
 
-  const { buildSlotReclaimPlan } = await import("./slot-plan");
-  const slotPlan = await buildSlotReclaimPlan();
+  const { buildSlotReclaimPlan, withoutRollbackTargets } = await import("./slot-plan");
+  const fullPlan = await buildSlotReclaimPlan();
+  // Nobody reviews a scheduled run, so rollback targets stay unless the setting allows them.
+  const slotPlan = config.slotRollbackTargets ? fullPlan : withoutRollbackTargets(fullPlan);
   if (slotPlan.candidates.length === 0) return;
 
   const slotResult = await executeReclaimPlan(slotPlan, { dryRun: false });

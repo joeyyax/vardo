@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   selectSlotCandidates,
+  withoutRollbackTargets,
   type SlotPlanInput,
 } from "@/lib/docker/image-reclaim/slot-plan";
 import type { SlotApp, SlotEnvironment } from "@/lib/docker/image-reclaim/slot-policy";
@@ -308,5 +309,47 @@ describe("selectSlotCandidates — rollback-target annotation", () => {
     });
 
     expect(result.candidates[0].rollbackTargetFor?.liveSlot).toBe("blue");
+  });
+
+  it("carries a warning with the reason and the app's name", () => {
+    const result = plan({ images: [image("agents-production-blue", "bot")] });
+
+    expect(result.candidates[0].warning).toEqual({
+      reason: "rollback-target",
+      explanation:
+        "Rollback target for agents. Removing it turns instant rollback into a rebuild.",
+    });
+  });
+
+  it("leaves a dead legacy project unwarned", () => {
+    const result = plan({ images: [image("agents", "bot")] });
+
+    expect(result.candidates[0].warning).toBeUndefined();
+  });
+
+  it("sorts rollback targets after dead images, whatever their size", () => {
+    const result = plan({
+      images: [
+        image("agents-production-blue", "bot", { size: 9_000 }),
+        image("agents", "bot", { size: 10 }),
+        image("green", "reeve", { size: 20 }),
+      ],
+    });
+
+    expect(result.candidates.map((c) => c.project)).toEqual([
+      "green",
+      "agents",
+      "agents-production-blue",
+    ]);
+  });
+
+  it("drops rollback targets for unattended sweeps and recounts bytes", () => {
+    const result = plan({
+      images: [image("agents-production-blue", "bot", { size: 9_000 }), image("agents", "bot")],
+    });
+    const trimmed = withoutRollbackTargets(result);
+
+    expect(trimmed.candidates.map((c) => c.project)).toEqual(["agents"]);
+    expect(trimmed.estimatedBytes).toBe(1_000);
   });
 });
