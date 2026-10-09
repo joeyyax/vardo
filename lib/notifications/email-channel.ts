@@ -1,5 +1,5 @@
 import { createElement } from "react";
-import type { NotificationChannel } from "./port";
+import type { DeliveryReceipt, NotificationChannel } from "./port";
 import type { BusEvent } from "@/lib/bus/events";
 import { sendEmail } from "@/lib/email/send";
 import { logger } from "@/lib/logger";
@@ -22,12 +22,14 @@ type EmailConfig = { recipients: string[] };
 export class EmailNotificationChannel implements NotificationChannel {
   constructor(private config: EmailConfig) {}
 
-  async send(event: BusEvent): Promise<void> {
+  async send(event: BusEvent): Promise<DeliveryReceipt> {
+    const providerMessageIds: string[] = [];
     for (const recipient of this.config.recipients) {
       try {
         const template = this.buildTemplate(event);
         if (template) {
-          await sendEmail({ to: recipient, subject: event.title, template });
+          const result = await sendEmail({ to: recipient, subject: event.title, template });
+          if (result.messageId) providerMessageIds.push(result.messageId);
         }
       } catch (err) {
         log.error(
@@ -36,6 +38,7 @@ export class EmailNotificationChannel implements NotificationChannel {
         );
       }
     }
+    return providerMessageIds.length > 0 ? { providerMessageIds } : {};
   }
 
   private buildTemplate(event: BusEvent) {

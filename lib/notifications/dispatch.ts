@@ -10,6 +10,7 @@ import { logger } from "@/lib/logger";
 import { fetchOrgMembers, fetchEventPrefs, resolveRecipients } from "./resolve-recipients";
 import { isUiOnlyEvent } from "./ui-only";
 import { isConsumedOrg } from "./consumer-state";
+import type { DeliveryReceipt } from "./port";
 
 const log = logger.child("notifications");
 
@@ -30,6 +31,7 @@ async function logNotification(
   eventTitle: string | undefined,
   status: "success" | "failed",
   error?: string,
+  receipt?: DeliveryReceipt | void,
 ): Promise<void> {
   try {
     await db.insert(notificationLogs).values({
@@ -43,6 +45,7 @@ async function logNotification(
       status,
       error,
       attempt: 1,
+      providerMessageIds: receipt?.providerMessageIds ?? null,
     });
   } catch {
     // Best-effort.
@@ -105,8 +108,8 @@ function dispatchToChannels(orgId: string, event: BusEvent): void {
           if (!shouldSend) return;
 
           try {
-            await createChannel(row).send(event);
-            await logNotification(orgId, row, event.type, event.title, "success");
+            const receipt = await createChannel(row).send(event);
+            await logNotification(orgId, row, event.type, event.title, "success", undefined, receipt);
           } catch (err) {
             await handleChannelFailure(orgId, row, event, err);
           }

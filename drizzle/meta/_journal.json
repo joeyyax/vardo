@@ -638,6 +638,13 @@
       "when": 1791589394341,
       "tag": "0090_initial_backup",
       "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1791589848071,
+      "tag": "0091_notification_log_provider_ids",
+      "breakpoints": true
     }
   ]
 }

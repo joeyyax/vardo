@@ -4,6 +4,7 @@ import {
   getGitHubAppConfig,
   getFeatureFlagsConfig,
   getSslConfig,
+  type EmailProvider,
 } from "@/lib/system-settings";
 
 /**
@@ -12,12 +13,13 @@ import {
  */
 export type ShareableMeshConfig = {
   email: {
-    provider: "smtp" | "mailpace" | "resend" | "postmark";
+    provider: EmailProvider;
     smtpHost?: string;
     smtpPort?: number;
     smtpUser?: string;
     fromEmail?: string;
     fromName?: string;
+    baseUrl?: string;
   } | null;
   backup: {
     type: "s3" | "r2" | "b2" | "ssh";
@@ -66,6 +68,7 @@ export async function buildShareableConfig(): Promise<ShareableMeshConfig> {
           smtpUser: email.smtpUser,
           fromEmail: email.fromEmail,
           fromName: email.fromName,
+          baseUrl: email.baseUrl,
         }
       : null,
     backup: backup

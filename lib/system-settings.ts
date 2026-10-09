@@ -123,8 +123,10 @@ export async function getGitHubAppConfig(): Promise<GitHubAppConfig | null> {
   return null;
 }
 
+export type EmailProvider = "smtp" | "mailpace" | "resend" | "postmark" | "pouch";
+
 export type EmailProviderConfig = {
-  provider: "smtp" | "mailpace" | "resend" | "postmark";
+  provider: EmailProvider;
   smtpHost?: string;
   smtpPort?: number;
   smtpUser?: string;
@@ -132,6 +134,10 @@ export type EmailProviderConfig = {
   apiKey?: string;
   fromEmail?: string;
   fromName?: string;
+  /** Pouch only. Empty means https://pouch.email. */
+  baseUrl?: string;
+  /** Pouch only. Signing secret for delivery webhooks. */
+  webhookSecret?: string;
 };
 
 export async function getEmailProviderConfig(): Promise<EmailProviderConfig | null> {
@@ -146,6 +152,8 @@ export async function getEmailProviderConfig(): Promise<EmailProviderConfig | nu
       apiKey: fileConfig.email.apiKey,
       fromEmail: fileConfig.email.fromEmail,
       fromName: fileConfig.email.fromName,
+      baseUrl: fileConfig.email.baseUrl,
+      webhookSecret: fileConfig.email.webhookSecret,
     };
   }
 
