@@ -10,7 +10,7 @@ import { apps, projects, domains, organizations, environments, volumes } from "@
 import { and, desc, eq, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { createAppSchema } from "@/lib/api/create-app-schema";
-import { getBaseDomain } from "@/lib/domain-monitoring/auto-domain";
+import { getBaseDomain } from "@/lib/domain-monitoring/base-domain";
 import { allocatePorts } from "@/lib/docker/ports";
 import { sharedMarkerTypeErrors } from "@/lib/docker/compose";
 import { recordActivity } from "@/lib/activity";

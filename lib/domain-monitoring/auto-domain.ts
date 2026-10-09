@@ -105,17 +105,6 @@ export function pickBaseDomain(
   return orgBaseDomain || instanceBaseDomain || envBaseDomain || "localhost";
 }
 
-/** The instance base domain from the admin settings, then `VARDO_BASE_DOMAIN`. */
-export async function getInstanceBaseDomain(): Promise<string> {
-  const { getInstanceConfig } = await import("@/lib/system-settings");
-  return pickBaseDomain(null, (await getInstanceConfig()).baseDomain);
-}
-
-export async function getBaseDomain(orgBaseDomain?: string | null): Promise<string> {
-  if (orgBaseDomain) return orgBaseDomain;
-  return getInstanceBaseDomain();
-}
-
 /** Why the instance base domain and `VARDO_BASE_DOMAIN` can't both be right, or null. */
 export function baseDomainMismatch(
   instanceBaseDomain: string | null | undefined,

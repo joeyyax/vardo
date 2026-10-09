@@ -9,10 +9,9 @@ import {
   baseDomainMismatch,
   generateEnvironmentSubdomain,
   generatePreviewSubdomain,
-  getBaseDomain,
-  getInstanceBaseDomain,
   pickBaseDomain,
 } from "@/lib/domain-monitoring/auto-domain";
+import { getBaseDomain, getInstanceBaseDomain } from "@/lib/domain-monitoring/base-domain";
 
 beforeEach(() => {
   config.baseDomain = "";

@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { domains, organizations } from "@/lib/db/schema";
 import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { isTopLevelAppNameTaken } from "@/lib/db/app-name";
-import { getBaseDomain } from "@/lib/domain-monitoring/auto-domain";
+import { getBaseDomain } from "@/lib/domain-monitoring/base-domain";
 import { isReservedSlug } from "@/lib/domain-monitoring/reserved";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 

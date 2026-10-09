@@ -13,8 +13,8 @@ import { nanoid } from "nanoid";
 import {
   generateEnvironmentSubdomain,
   generatePreviewSubdomain,
-  getBaseDomain,
 } from "@/lib/domain-monitoring/auto-domain";
+import { getBaseDomain } from "@/lib/domain-monitoring/base-domain";
 import { snapshotEnv } from "@/lib/env/environment-env";
 
 type CreateGroupEnvironmentOpts = {

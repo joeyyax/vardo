@@ -10,7 +10,7 @@ import { loadInstanceHosts, loadVerifiedZones } from "@/lib/domains/context";
 import { newChallengeToken, refusedHost, verificationView } from "@/lib/domains/ownership";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
-import { getInstanceBaseDomain } from "@/lib/domain-monitoring/auto-domain";
+import { getInstanceBaseDomain } from "@/lib/domain-monitoring/base-domain";
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;

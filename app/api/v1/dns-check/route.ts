@@ -6,7 +6,7 @@ import { isCloudflareIp } from "@/lib/cloudflare-ips";
 import { apiError } from "@/lib/api/error-response";
 import { isHostname } from "@/lib/security/hostname";
 import { blockedAddressReason } from "@/lib/security/ssrf";
-import { getInstanceBaseDomain } from "@/lib/domain-monitoring/auto-domain";
+import { getInstanceBaseDomain } from "@/lib/domain-monitoring/base-domain";
 
 // GET /api/v1/dns-check?domain=example.com&expected=auto-generated.localhost
 async function handleGet(request: NextRequest) {
