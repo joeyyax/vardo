@@ -46,7 +46,7 @@ const envParser: StreamParser<{ inValue: boolean; inBlock: boolean }> = {
       if (stream.match(/^[A-Za-z_][A-Za-z0-9_]*/)) return "propertyName";
       if (stream.eat("=")) {
         state.inValue = true;
-        if (stream.match(/^"(?:\\.|[^"\\])*$/, false)) {
+        if (stream.match(/^"(?:\\.|[^"\\])*\\?$/, false)) {
           stream.next();
           state.inBlock = true;
         }
@@ -410,8 +410,6 @@ export function EnvEditor(props: EnvEditorProps) {
         <p className="text-xs text-muted-foreground">
           KEY=value format. <kbd className="bg-muted px-1 py-0.5 rounded font-mono text-xs">Cmd+D</kbd> select next occurrence. <kbd className="bg-muted px-1 py-0.5 rounded font-mono text-xs">Alt+↑↓</kbd> move lines.
         </p>
-        <div className="flex items-center gap-2">
-        <EnvMultilineAdd onAdd={appendEntry} />
         {!isStandalone && (
           <Button
             size="sm"
@@ -425,8 +423,9 @@ export function EnvEditor(props: EnvEditorProps) {
             )}
           </Button>
         )}
-        </div>
       </div>
+
+      <EnvMultilineAdd onAdd={appendEntry} />
 
       <Card
         variant="plain"

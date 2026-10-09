@@ -185,19 +185,18 @@ export function OrgEnvVarsEditor({ orgId }: Props) {
           Shared across all projects. Reference with{" "}
           <code className="bg-muted px-1 py-0.5 rounded">{"${org.KEY}"}</code>. Secrets show as {SECRET_MASK}; leave them to keep the value. Press Tab for autocomplete.
         </p>
-        <div className="flex items-center gap-2">
-          <EnvMultilineAdd onAdd={appendEntry} />
-          <Button size="sm" onClick={handleSave} disabled={saving || !modified}>
-            {saving ? (
-              <><Loader2 className="mr-1.5 size-4 animate-spin" />Saving...</>
-            ) : modified ? "Save changes" : "Saved"}
-          </Button>
-        </div>
+        <Button size="sm" onClick={handleSave} disabled={saving || !modified}>
+          {saving ? (
+            <><Loader2 className="mr-1.5 size-4 animate-spin" />Saving...</>
+          ) : modified ? "Save changes" : "Saved"}
+        </Button>
       </div>
+
+      <EnvMultilineAdd onAdd={appendEntry} />
 
       <Card variant="plain" className="surface-terminal relative border bg-background min-h-[400px]">
         <div
-          className="absolute inset-0 p-4 font-mono text-sm leading-6 whitespace-pre-wrap overflow-auto pointer-events-none"
+          className="absolute inset-0 p-4 font-mono text-sm text-foreground leading-6 whitespace-pre-wrap overflow-auto pointer-events-none"
           aria-hidden
         >
           {content ? (

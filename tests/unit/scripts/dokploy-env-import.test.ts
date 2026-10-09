@@ -18,6 +18,10 @@ const FIXTURE = [
   "SINGLE='single value'",
   "export EXPORTED=yes",
   "HASH=abc#def",
+  "HASH_SPACE=abc #comment",
+  "ESCAPED=\"one\\ntwo\"",
+  "LITERAL='one\\ntwo'",
+  "dotted.name=x",
   "EMPTY=",
   "PADDED=\"  keep me  \"",
   'WRAPPED="\\"inner\\""',
@@ -35,13 +39,23 @@ const FIXTURE = [
 describe("parseDokployEnv", () => {
   const map = new Map(parseDokployEnv(FIXTURE).map((e) => [e.key, e.value]));
 
-  it("reads plain, quoted and exported pairs", () => {
+  it("reads pairs the way Dokploy's dotenv does", () => {
     expect(map.get("NODE_ENV")).toBe("production");
     expect(map.get("QUOTED")).toBe("hello world");
     expect(map.get("SINGLE")).toBe("single value");
     expect(map.get("EXPORTED")).toBe("yes");
-    expect(map.get("HASH")).toBe("abc#def");
     expect(map.get("EMPTY")).toBe("");
+    expect(map.get("PADDED")).toBe("  keep me  ");
+  });
+
+  it("ends an unquoted value at #, as dotenv does", () => {
+    expect(map.get("HASH")).toBe("abc");
+    expect(map.get("HASH_SPACE")).toBe("abc");
+  });
+
+  it("expands \\n only inside double quotes", () => {
+    expect(map.get("ESCAPED")).toBe("one\ntwo");
+    expect(map.get("LITERAL")).toBe("one\\ntwo");
   });
 
   it("joins multi-line quoted values and keeps parsing after them", () => {
@@ -49,18 +63,25 @@ describe("parseDokployEnv", () => {
     expect(map.get("AFTER_MULTILINE")).toBe("ok");
   });
 
-  it("drops comments and malformed lines", () => {
-    expect([...map.keys()]).not.toContain("1BAD");
-    expect(map.size).toBe(13);
+  it("drops comments and lines that aren't pairs", () => {
+    expect([...map.keys()]).not.toContain("not a pair");
   });
 });
 
 describe("toVardoEnv", () => {
   const result = toVardoEnv(parseDokployEnv(FIXTURE));
+  const back = new Map(parseEnvContent(result.content).map((e) => [e.key, e.value]));
 
-  it("skips multi-line values by name", () => {
-    expect(result.skipped).toEqual(["PRIVATE_KEY"]);
-    expect(result.content).not.toContain("BEGIN FAKE");
+  it("copies multi-line values", () => {
+    expect(result.written).toContain("PRIVATE_KEY");
+    expect(result.skipped).not.toContain("PRIVATE_KEY");
+    expect(back.get("PRIVATE_KEY")).toBe("-----BEGIN FAKE-----\nline-two\n-----END FAKE-----");
+    expect(back.get("AFTER_MULTILINE")).toBe("ok");
+  });
+
+  it("skips names Vardo can't use, by name", () => {
+    expect(result.skipped.sort()).toEqual(["1BAD", "dotted.name"]);
+    expect(result.content).not.toContain("dotted.name");
   });
 
   it("flags Dokploy shared-variable references", () => {
@@ -72,16 +93,13 @@ describe("toVardoEnv", () => {
     expect(result.content).not.toContain("DUP=first");
   });
 
-  it("round-trips through Vardo's own env parser", () => {
-    const back = new Map(parseEnvContent(result.content).map((e) => [e.key, e.value]));
-    expect(back.get("QUOTED")).toBe("hello world");
-    expect(back.get("DATABASE_URL")).toBe("postgres://app:fake-pass@db:5432/app");
-    expect(back.get("HASH")).toBe("abc#def");
-    expect(back.get("EMPTY")).toBe("");
+  it("round-trips every written value through Vardo's own env parser", () => {
+    const dokploy = new Map(parseDokployEnv(FIXTURE).map((e) => [e.key, e.value]));
+    for (const name of result.written) expect(back.get(name), name).toBe(dokploy.get(name));
     expect(back.get("PADDED")).toBe("  keep me  ");
-    expect(back.get("WRAPPED")).toBe('\\"inner\\"');
-    expect(back.has("PRIVATE_KEY")).toBe(false);
-    expect(result.written).toHaveLength(12);
+    expect(back.get("WRAPPED")).toBe(dokploy.get("WRAPPED"));
+    expect(back.get("EMPTY")).toBe("");
+    expect(result.written).toHaveLength(back.size);
   });
 
   it("returns empty content for an empty env", () => {

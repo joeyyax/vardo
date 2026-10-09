@@ -20,6 +20,9 @@
  * Vardo encrypts the env when its env-vars endpoint saves it.
  */
 
+import { parse } from "dotenv";
+import { formatEnvVar } from "../lib/env/dotenv";
+
 export interface DokployEnvEntry {
   key: string;
   value: string;
@@ -29,7 +32,7 @@ export interface VardoEnvResult {
   content: string;
   /** Names written. */
   written: string[];
-  /** Names Vardo's env format can't hold (multi-line values). */
+  /** Names Vardo can't use as variable names (letters, digits and underscores only). */
   skipped: string[];
   /** Names whose value references a Dokploy shared variable (`${{...}}`), which Vardo won't resolve. */
   unresolved: string[];
@@ -38,51 +41,9 @@ export interface VardoEnvResult {
 const KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const DOKPLOY_REF_RE = /\$\{\{[^}]*\}\}/;
 
-/** Parses Dokploy's env text. Quoted values may span lines; unquoted values are literal. */
+/** Parses Dokploy's env text the way Dokploy does: with `dotenv`. Quoted values may span lines and `\n` expands inside double quotes. */
 export function parseDokployEnv(text: string): DokployEnvEntry[] {
-  const entries: DokployEnvEntry[] = [];
-  const lines = text.replace(/\r\n/g, "\n").split("\n");
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
-    if (line === "" || line.startsWith("#")) continue;
-
-    const eq = line.indexOf("=");
-    if (eq <= 0) continue;
-    const key = line.slice(0, eq).trim().replace(/^export\s+/, "");
-    if (!KEY_RE.test(key)) continue;
-
-    let value = lines[i].slice(lines[i].indexOf("=") + 1).replace(/^\s+/, "");
-    const quote = value[0];
-    if (quote === '"' || quote === "'") {
-      let body = value.slice(1);
-      let closed = body.trimEnd().endsWith(quote);
-      let j = i;
-      while (!closed && j + 1 < lines.length) {
-        j++;
-        body += `\n${lines[j]}`;
-        closed = lines[j].trimEnd().endsWith(quote);
-      }
-      if (closed) {
-        value = body.trimEnd().slice(0, -1);
-        i = j;
-      } else {
-        value = value.trimEnd();
-      }
-    } else {
-      value = value.trimEnd();
-    }
-    entries.push({ key, value });
-  }
-
-  return entries;
-}
-
-/** Vardo's env parser is line-based and strips one pair of outer quotes, so quote values that would not survive it. */
-function formatValue(value: string): string {
-  const edgeQuote = /^["']/.test(value) && /["']$/.test(value);
-  const padded = value !== value.trim();
-  return edgeQuote || padded ? `"${value}"` : value;
+  return Object.entries(parse(text)).map(([key, value]) => ({ key, value }));
 }
 
 /** Maps Dokploy entries to Vardo env-file content; the last duplicate wins. */
@@ -96,12 +57,12 @@ export function toVardoEnv(entries: DokployEnvEntry[]): VardoEnvResult {
   const unresolved: string[] = [];
 
   for (const [key, value] of byKey) {
-    if (value.includes("\n")) {
+    if (!KEY_RE.test(key)) {
       skipped.push(key);
       continue;
     }
     if (DOKPLOY_REF_RE.test(value)) unresolved.push(key);
-    lines.push(`${key}=${formatValue(value)}`);
+    lines.push(formatEnvVar(key, value));
     written.push(key);
   }
 
@@ -221,7 +182,7 @@ async function main() {
     console.log(`Reference a Dokploy shared variable (\${{...}}), set by hand: ${result.unresolved.join(", ")}`);
   }
   if (result.skipped.length) {
-    console.log(`Skipped, multi-line values Vardo's env format can't hold: ${result.skipped.join(", ")}`);
+    console.log(`Skipped, names Vardo can't use: ${result.skipped.join(", ")}`);
   }
 
   if (args.dryRun) {
