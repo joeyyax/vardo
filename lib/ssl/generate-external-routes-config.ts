@@ -3,7 +3,7 @@ import { writeFile, unlink, mkdir, rename } from "fs/promises";
 import { join } from "path";
 import YAML from "yaml";
 import { logger } from "@/lib/logger";
-import { getSslConfig, getPrimaryIssuer } from "@/lib/system-settings";
+import { getSslConfig, getDefaultCertResolver } from "@/lib/system-settings";
 import { TRAEFIK_DYNAMIC_DIR } from "@/lib/paths";
 
 const EXTERNAL_ROUTES_FILE = "external-routes.yaml";
@@ -61,7 +61,7 @@ export async function regenerateExternalRoutesConfig(): Promise<void> {
   }
 
   const sslConfig = await getSslConfig();
-  const certResolver = getPrimaryIssuer(sslConfig);
+  const certResolver = getDefaultCertResolver(sslConfig);
 
   const routers: Record<string, TraefikRouterConfig> = {};
   const services: Record<string, TraefikServiceConfig> = {};
