@@ -8,7 +8,7 @@ import { spawn } from "child_process";
 import { createSSEResponse } from "@/lib/api/sse";
 import { isLokiAvailable, tailLogs, buildLogQLQuery } from "@/lib/logging/client";
 import { readLogHistory, resolveComposeTarget } from "@/lib/logging/history";
-import { resolveLogScope, type LogScope } from "@/lib/logging/scope";
+import { resolveLogEnvironment, resolveLogScope, type LogScope } from "@/lib/logging/scope";
 import { parseComposeLine, type ServiceLine } from "@/lib/logging/compose-lines";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { dockerEnv } from "@/lib/docker/docker-env";
@@ -40,7 +40,8 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
 
     const searchParams = request.nextUrl.searchParams;
     const tail = parseInt(searchParams.get("tail") || "200");
-    const environmentName = searchParams.get("environment") || "production";
+    const environmentName = await resolveLogEnvironment(app, searchParams.get("environment"));
+    if (!environmentName) return new Response("Not found", { status: 404 });
     const search = searchParams.get("search") || undefined;
     const allServices = searchParams.get("services") === "all";
 

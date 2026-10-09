@@ -191,25 +191,30 @@ export type LogQueryOptions = {
   search?: string;
 };
 
+/** Escapes a value for a double-quoted LogQL string. Backticks need no escape there. */
+export function escapeLogQLString(value: string): string {
+  return value.replace(/[\\"]/g, "\\$&").replace(/\n/g, "\\n").replace(/\r/g, "\\r");
+}
+
 /**
  * Build a LogQL query from structured options.
- * `{project: "myapp", search: "error"}` → {project="myapp"} |~ `(?i)error`
+ * `{project: "myapp", search: "error"}` → {project="myapp"} |~ "(?i)error"
  */
 export function buildLogQLQuery(opts: LogQueryOptions): string {
-  const selectors: string[] = [`project="${opts.project}"`];
+  const selectors: string[] = [`project="${escapeLogQLString(opts.project)}"`];
 
   if (opts.environment) {
-    selectors.push(`environment="${opts.environment}"`);
+    selectors.push(`environment="${escapeLogQLString(opts.environment)}"`);
   }
   if (opts.service) {
-    selectors.push(`service="${opts.service}"`);
+    selectors.push(`service="${escapeLogQLString(opts.service)}"`);
   }
 
   let query = `{${selectors.join(", ")}}`;
 
   if (opts.search) {
-    const escaped = opts.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    query += ` |~ \`(?i)${escaped}\``;
+    const pattern = opts.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    query += ` |~ "(?i)${escapeLogQLString(pattern)}"`;
   }
 
   return query;

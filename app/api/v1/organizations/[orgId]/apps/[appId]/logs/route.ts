@@ -6,7 +6,7 @@ import { apps } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { listContainers } from "@/lib/docker/client";
 import { readLogHistory } from "@/lib/logging/history";
-import { resolveLogScope } from "@/lib/logging/scope";
+import { resolveLogEnvironment, resolveLogScope } from "@/lib/logging/scope";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 
 type RouteParams = {
@@ -35,7 +35,8 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
     const searchParams = request.nextUrl.searchParams;
     const tail = parseInt(searchParams.get("tail") || "200");
     const search = searchParams.get("search") || undefined;
-    const environment = searchParams.get("environment") || "production";
+    const environment = await resolveLogEnvironment(app, searchParams.get("environment"));
+    if (!environment) return apiError.notFound("environment");
     const allServices = searchParams.get("services") === "all";
 
     const scope = await resolveLogScope(app, { allServices });
