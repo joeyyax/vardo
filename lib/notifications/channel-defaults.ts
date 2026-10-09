@@ -14,4 +14,7 @@ export const CRITICAL_EVENT_TYPES: ReadonlySet<BusEventType> = new Set([
   "security.scan-findings",
   "system.service-down",
   "system.disk-alert",
+  "system.update-failed",
+  "system.recovered-unclean",
+  "system.containers-missing",
 ] as BusEventType[]);

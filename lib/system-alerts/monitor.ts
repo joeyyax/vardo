@@ -127,61 +127,7 @@ async function checkDiskAlerts(health: Awaited<ReturnType<typeof getSystemHealth
   }
 }
 
-// Restart detection
-
-// Evaluated once per process; process.uptime() resets on Next.js hot reload.
-let startupCheckDone = false;
-
-async function checkHostRestart(): Promise<void> {
-  if (startupCheckDone) return;
-  startupCheckDone = true;
-
-  try {
-    const uptimeSeconds = process.uptime();
-    // Five-minute guard against slow cold starts.
-    if (uptimeSeconds >= 300) return;
-
-    const setting = await db.query.systemSettings.findFirst({
-      where: (t, { eq }) => eq(t.key, "last_known_uptime"),
-    });
-
-    if (!setting) {
-      // First startup ever: record, don't alert.
-      await db
-        .insert(systemSettings)
-        .values({ key: "last_known_uptime", value: Date.now().toString() })
-        .onConflictDoUpdate({
-          target: systemSettings.key,
-          set: { value: Date.now().toString(), updatedAt: new Date() },
-        });
-      return;
-    }
-
-    if (!shouldFire("host-restarted", "host")) return;
-    markFired("host-restarted", "host");
-
-    await emitAll({
-      type: "system.restart-loop",
-      title: "Vardo restarted",
-      message: `The Vardo process restarted. Current uptime: ${Math.round(uptimeSeconds)}s. All services are reinitializing.`,
-      uptimeSeconds,
-    });
-  } catch (err) {
-    log.error("Restart check error:", err);
-  }
-
-  try {
-    await db
-      .insert(systemSettings)
-      .values({ key: "last_known_uptime", value: Date.now().toString() })
-      .onConflictDoUpdate({
-        target: systemSettings.key,
-        set: { value: Date.now().toString(), updatedAt: new Date() },
-      });
-  } catch {
-    // best-effort
-  }
-}
+// Restarts are announced by lib/lifecycle/monitor.ts.
 
 // Certificate expiry: dial each domain over TLS and read the served cert.
 const CERT_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
@@ -375,7 +321,7 @@ export async function tickSystemAlerts(): Promise<void> {
     log.error("Health fetch error:", err);
   }
 
-  const checks: Promise<void>[] = [checkHostRestart(), checkCertAlerts(), checkUpdateAlert(), checkWatchdogEvents()];
+  const checks: Promise<void>[] = [checkCertAlerts(), checkUpdateAlert(), checkWatchdogEvents()];
 
   if (health) {
     checks.push(checkServiceAlerts(health), checkDiskAlerts(health));
