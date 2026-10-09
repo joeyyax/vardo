@@ -144,3 +144,13 @@ describe("regenerateSecrets", () => {
     expect(scanEnv("# c\n\nA=1", "loose").map((s) => s.kind)).toEqual(["text", "text", "var"]);
   });
 });
+
+describe("maskEnvContent", () => {
+  it("hides values line by line as before and collapses a block", async () => {
+    const { maskEnvContent } = await import("@/lib/env/mask-env");
+    const text = `# keep\nA=1\nB=x=y\n${formatEnvVar("PEM", "-----BEGIN-----\nsecret\n-----END-----")}\nC=3\nplain line`;
+    const masked = maskEnvContent(text);
+    expect(masked).toBe("# keep\nA=••••••••\nB=••••••••\nPEM=••••••••\nC=••••••••\nplain line");
+    expect(masked).not.toContain("secret");
+  });
+});

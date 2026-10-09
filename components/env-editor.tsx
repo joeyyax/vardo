@@ -18,6 +18,7 @@ import { tags } from "@lezer/highlight";
 import { createTheme } from "@uiw/codemirror-themes";
 import "./surface-terminal.css";
 import { Card } from "@/components/ui/card";
+import { EnvMultilineAdd } from "@/components/env-multiline-add";
 
 const clipboardIcon = <ClipboardCheck className="size-4" />;
 
@@ -30,12 +31,14 @@ async function copyToast(value: string) {
   });
 }
 
-const envParser: StreamParser<{ inValue: boolean }> = {
-  startState: () => ({ inValue: false }),
+const envParser: StreamParser<{ inValue: boolean; inBlock: boolean }> = {
+  startState: () => ({ inValue: false, inBlock: false }),
   token(stream, state) {
     if (stream.sol()) {
       state.inValue = false;
-      if (stream.match(/^#.*/)) return "comment";
+      // A double-quoted value spanning lines runs to its closing quote.
+      if (state.inBlock) state.inValue = true;
+      else if (stream.match(/^#.*/)) return "comment";
     }
 
     // Key before =
@@ -43,6 +46,10 @@ const envParser: StreamParser<{ inValue: boolean }> = {
       if (stream.match(/^[A-Za-z_][A-Za-z0-9_]*/)) return "propertyName";
       if (stream.eat("=")) {
         state.inValue = true;
+        if (stream.match(/^"(?:\\.|[^"\\])*$/, false)) {
+          stream.next();
+          state.inBlock = true;
+        }
         return "operator";
       }
       stream.next();
@@ -51,6 +58,10 @@ const envParser: StreamParser<{ inValue: boolean }> = {
 
     // Value side — highlight ${...} refs
     if (stream.match(/^\$\{[^}]*\}/)) return "variableName";
+    if (state.inBlock) {
+      if (stream.peek() === "\\") stream.next();
+      else if (stream.peek() === '"') state.inBlock = false;
+    }
     stream.next();
     return "string";
   },
@@ -220,6 +231,11 @@ export function EnvEditor(props: EnvEditorProps) {
         ? `Changing ${changedLines.map((l) => l.split("=")[0]).join(", ")} won't update existing data in persistent volumes. You may need to manually update the service.`
         : null
     );
+  }
+
+  function appendEntry(entry: string) {
+    const separator = content && !content.endsWith("\n") ? "\n" : "";
+    handleChange(`${content}${separator}${entry}\n`);
   }
 
   async function doSave(): Promise<boolean> {
@@ -394,6 +410,8 @@ export function EnvEditor(props: EnvEditorProps) {
         <p className="text-xs text-muted-foreground">
           KEY=value format. <kbd className="bg-muted px-1 py-0.5 rounded font-mono text-xs">Cmd+D</kbd> select next occurrence. <kbd className="bg-muted px-1 py-0.5 rounded font-mono text-xs">Alt+↑↓</kbd> move lines.
         </p>
+        <div className="flex items-center gap-2">
+        <EnvMultilineAdd onAdd={appendEntry} />
         {!isStandalone && (
           <Button
             size="sm"
@@ -407,6 +425,7 @@ export function EnvEditor(props: EnvEditorProps) {
             )}
           </Button>
         )}
+        </div>
       </div>
 
       <Card

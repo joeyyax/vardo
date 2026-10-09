@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "@/lib/messenger";
 import { SECRET_MASK, orgEnvToContent } from "@/lib/env/org-env-content";
+import { scanEnv } from "@/lib/env/dotenv";
+import { EnvMultilineAdd } from "@/components/env-multiline-add";
 import "@/components/surface-terminal.css";
 
 type Props = {
@@ -119,6 +121,12 @@ export function OrgEnvVarsEditor({ orgId }: Props) {
     });
   }
 
+  function appendEntry(entry: string) {
+    const separator = content && !content.endsWith("\n") ? "\n" : "";
+    setContent(`${content}${separator}${entry}\n`);
+    setModified(true);
+  }
+
   async function handleSave() {
     setSaving(true);
     try {
@@ -146,9 +154,10 @@ export function OrgEnvVarsEditor({ orgId }: Props) {
   }
 
   function highlightContent(text: string): string {
-    return text
-      .split("\n")
-      .map((line) => {
+    return scanEnv(text, "loose")
+      .flatMap((segment) => segment.raw.split("\n").map((line, i) => ({ line, continued: i > 0 })))
+      .map(({ line, continued }) => {
+        if (continued) return esc(line);
         if (line.startsWith("#"))
           return `<span class="text-muted-foreground">${esc(line)}</span>`;
         const eq = line.indexOf("=");
@@ -176,11 +185,14 @@ export function OrgEnvVarsEditor({ orgId }: Props) {
           Shared across all projects. Reference with{" "}
           <code className="bg-muted px-1 py-0.5 rounded">{"${org.KEY}"}</code>. Secrets show as {SECRET_MASK}; leave them to keep the value. Press Tab for autocomplete.
         </p>
-        <Button size="sm" onClick={handleSave} disabled={saving || !modified}>
-          {saving ? (
-            <><Loader2 className="mr-1.5 size-4 animate-spin" />Saving...</>
-          ) : modified ? "Save changes" : "Saved"}
-        </Button>
+        <div className="flex items-center gap-2">
+          <EnvMultilineAdd onAdd={appendEntry} />
+          <Button size="sm" onClick={handleSave} disabled={saving || !modified}>
+            {saving ? (
+              <><Loader2 className="mr-1.5 size-4 animate-spin" />Saving...</>
+            ) : modified ? "Save changes" : "Saved"}
+          </Button>
+        </div>
       </div>
 
       <Card variant="plain" className="surface-terminal relative border bg-background min-h-[400px]">

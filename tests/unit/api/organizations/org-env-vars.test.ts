@@ -134,4 +134,41 @@ describe("org env vars round trip", () => {
     expect(isEncrypted(rows[1].value)).toBe(true);
     expect(valueOf("LOG_LEVEL")).toBe("warn");
   });
+
+  describe("multi-line values", () => {
+    const PEM = "-----BEGIN PRIVATE KEY-----\nMIIE\nAQAB==\n-----END PRIVATE KEY-----\n";
+    const CRED = '{\n  "type": "service_account",\n  "key": "a\\nb"\n}';
+
+    beforeEach(() => {
+      rows.push(
+        { id: "k", organizationId: "org-1", key: "TLS_PRIVATE_KEY", value: encrypt(PEM, "org-1"), isSecret: true },
+        { id: "c", organizationId: "org-1", key: "GOOGLE_CREDENTIALS", value: encrypt(CRED, "org-1"), isSecret: false },
+      );
+    });
+
+    it("masks a multi-line secret and shows a multi-line value as one block", async () => {
+      const content = await load();
+      expect(content).toContain("TLS_PRIVATE_KEY=••••••••\n");
+      expect(content).not.toContain("BEGIN");
+      expect(content).toContain("GOOGLE_CREDENTIALS=\"");
+    });
+
+    it("keeps both when the content is saved unchanged", async () => {
+      expect(await save(await load())).toEqual({ created: 0, updated: 0 });
+      expect(valueOf("TLS_PRIVATE_KEY")).toBe(PEM);
+      expect(valueOf("GOOGLE_CREDENTIALS")).toBe(CRED);
+    });
+
+    it("keeps the secret and stores an edited multi-line value exactly", async () => {
+      const edited = (await load()).replace("service_account", "authorized_user");
+      expect(await save(edited)).toEqual({ created: 0, updated: 1 });
+      expect(valueOf("GOOGLE_CREDENTIALS")).toBe(CRED.replace("service_account", "authorized_user"));
+      expect(valueOf("TLS_PRIVATE_KEY")).toBe(PEM);
+    });
+
+    it("stores a pasted multi-line value as typed", async () => {
+      await save(`NEW_BLOB="line one\nline two"`);
+      expect(valueOf("NEW_BLOB")).toBe("line one\nline two");
+    });
+  });
 });

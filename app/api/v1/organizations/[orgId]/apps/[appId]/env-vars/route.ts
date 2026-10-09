@@ -8,7 +8,7 @@ import { verifyAppAccess, verifyOrgAccess } from "@/lib/api/verify-access";
 import { recordActivity } from "@/lib/activity";
 import { encrypt, decryptOrFallback } from "@/lib/crypto/encrypt";
 import { refuseSystemManaged } from "@/lib/api/system-managed";
-import { scanEnv } from "@/lib/env/dotenv";
+import { maskEnvContent as mask } from "@/lib/env/mask-env";
 import { loadEnvironmentEnv, saveEnvironmentEnv } from "@/lib/docker/environment-env";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
@@ -26,21 +26,6 @@ async function targetEnvironment(appId: string, environmentId: string | null | u
   });
   if (!env) return false;
   return env.isDefault ? null : env;
-}
-
-function mask(content: string): string {
-  return scanEnv(content, "loose")
-    .map((segment) => {
-      if (segment.kind === "text") return maskLine(segment.raw);
-      return segment.multiline ? `${segment.key}=••••••••` : maskLine(segment.raw);
-    })
-    .join("\n");
-}
-
-function maskLine(line: string): string {
-  if (line.startsWith("#") || !line.includes("=")) return line;
-  const key = line.slice(0, line.indexOf("="));
-  return `${key}=••••••••`;
 }
 
 const DECRYPT_ERROR = "Couldn't decrypt env vars — check ENCRYPTION_MASTER_KEY";
