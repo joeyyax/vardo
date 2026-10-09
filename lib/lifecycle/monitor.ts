@@ -71,9 +71,10 @@ async function clearSetting(key: string): Promise<void> {
 
 /** Host boot time: /proc/stat btime, which procfs doesn't namespace, then os.uptime(). */
 export async function hostBootTime(): Promise<number | null> {
-  for (const path of ["/host-proc/stat", "/proc/stat"]) {
+  const reads = [() => readFile("/host-proc/stat", "utf-8"), () => readFile("/proc/stat", "utf-8")];
+  for (const read of reads) {
     try {
-      const btime = parseBtime(await readFile(path, "utf-8"));
+      const btime = parseBtime(await read());
       if (btime) return btime;
     } catch {
       // Not Linux, or not mounted.
