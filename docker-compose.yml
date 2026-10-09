@@ -33,7 +33,7 @@ services:
         condition: service_healthy
     env_file: .env
     environment:
-      DATABASE_URL: postgresql://host:${DB_PASSWORD:-host}@vardo-postgres:5432/host
+      DATABASE_URL: postgresql://host:${DB_PASSWORD:?Set DB_PASSWORD in .env}@vardo-postgres:5432/host
       REDIS_URL: redis://:${REDIS_PASSWORD:-}@vardo-redis:6379
       NEXT_PUBLIC_BETTER_AUTH_URL: https://${VARDO_DOMAIN:-localhost}
       NEXT_PUBLIC_APP_URL: https://${VARDO_DOMAIN:-localhost}
@@ -153,7 +153,7 @@ services:
     mem_limit: ${VARDO_POSTGRES_MEM:-1g}
     environment:
       POSTGRES_USER: host
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-host}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
       POSTGRES_DB: host
     ports:
       - "127.0.0.1:${POSTGRES_PORT:-7100}:5432"
