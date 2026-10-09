@@ -8,7 +8,8 @@ import {
   Clock,
   CheckCircle2,
   XCircle,
-  } from "lucide-react";
+  Play,
+} from "lucide-react";
 import { toast } from "@/lib/messenger";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -106,6 +107,7 @@ export function CronManager({ appId, orgId, userRole }: Props) {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [expandedLog, setExpandedLog] = useState<string | null>(null);
+  const [runningId, setRunningId] = useState<string | null>(null);
 
   // Form state
   const [editId, setEditId] = useState<string | null>(null);
@@ -250,6 +252,30 @@ export function CronManager({ appId, orgId, userRole }: Props) {
     }
   }
 
+  async function runNow(job: CronJob) {
+    setRunningId(job.id);
+    try {
+      const res = await fetch(`${baseUrl}/${job.id}/run`, { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        const ok = data.run?.status === "success";
+        const description = `${job.name} finished in ${data.run?.durationMs ?? 0}ms`;
+        if (ok) toast.success("Run succeeded", { description });
+        else toast.error("Run failed", { description });
+        setExpandedLog(job.id);
+      } else {
+        toast.error("Couldn't run cron job", { description: data.error });
+      }
+      fetchJobs();
+    } catch {
+      toast.error("Couldn't run cron job", {
+        description: "Check your connection and try again",
+      });
+    } finally {
+      setRunningId(null);
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -350,6 +376,21 @@ export function CronManager({ appId, orgId, userRole }: Props) {
                   </div>
                   {canManage && (
                     <div className="flex items-center gap-2 shrink-0">
+                      {(job.type === "url" || canCommand) && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => runNow(job)}
+                          disabled={runningId === job.id || job.lastStatus === "running"}
+                        >
+                          {runningId === job.id ? (
+                            <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+                          ) : (
+                            <Play className="mr-1.5 size-3.5" />
+                          )}
+                          Run now
+                        </Button>
+                      )}
                       <Button
                         size="sm"
                         variant="ghost"
