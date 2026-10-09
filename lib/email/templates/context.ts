@@ -6,6 +6,17 @@ export type MailContext = {
   baseUrl: string;
   instanceName: string;
   orgName?: string;
+  /** History the charts draw from; missing series leave their chart out. */
+  series?: MailSeries;
+};
+
+export type MailSeries = {
+  /** Docker disk usage in bytes, one point per hour, oldest first. */
+  dockerDisk24h?: number[];
+  /** Bytes the alerting container wrote per hour, oldest first. */
+  diskWritesHourly?: number[];
+  /** Earlier successful backup sizes per volume, oldest first, this run excluded. */
+  backupHistory?: Record<string, number[]>;
 };
 
 export function footerFor(ctx: MailContext): MailFooter {

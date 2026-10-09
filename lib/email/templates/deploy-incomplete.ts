@@ -2,7 +2,7 @@ import type { DeployIncompleteEvent } from "@/lib/bus/events";
 import { appLabel } from "../subjects";
 import type { MailFact, NotificationMailBody } from "./components";
 import { appPage, footerFor, type MailContext } from "./context";
-import { changeFacts, placeFacts } from "./deploy-facts";
+import { changeFacts, phaseVisual, placeFacts } from "./deploy-facts";
 
 /** A shell command quoted in the reason, e.g. `docker compose ... up -d`. */
 export function splitCommand(reason: string): { text: string; command?: string; output?: string } {
@@ -40,6 +40,7 @@ export function deployIncompleteMail(event: DeployIncompleteEvent, ctx: MailCont
       "The new release passed its health check and is serving traffic.",
       "Work that runs after the cutover stopped partway. Until it's finished the old slot may keep running, use disk and hold a port.",
     ],
+    visuals: [phaseVisual(event.stageTimings)].filter((v) => v !== undefined),
     facts,
     log: output ? { title: "Error", lines: output.split("\n") } : undefined,
     command: command ? { title: "Run on the host to finish it", text: command } : undefined,

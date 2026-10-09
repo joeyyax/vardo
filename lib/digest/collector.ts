@@ -14,6 +14,7 @@ import type {
   DigestCronSummary,
   DigestAlertSummary,
   DigestProjectRow,
+  DigestDayRow,
 } from "@/lib/email/templates/weekly-digest";
 
 export type DigestData = {
@@ -24,7 +25,25 @@ export type DigestData = {
   cron: DigestCronSummary;
   alerts: DigestAlertSummary;
   projects: DigestProjectRow[];
+  deploysByDay: DigestDayRow[];
 };
+
+/** Deploys per UTC day for the last 7 days, oldest first. */
+export function deployDays(rows: { status: string; startedAt: Date }[], now: Date): DigestDayRow[] {
+  const days: DigestDayRow[] = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - i));
+    days.push({ day: d.toISOString().slice(0, 10), succeeded: 0, failed: 0 });
+  }
+  const byDay = new Map(days.map((d) => [d.day, d]));
+  for (const row of rows) {
+    const day = byDay.get(row.startedAt.toISOString().slice(0, 10));
+    if (!day) continue;
+    if (row.status === "failed") day.failed += 1;
+    else if (row.status === "success") day.succeeded += 1;
+  }
+  return days;
+}
 
 /** Collect the past 7 days of health data for an org. */
 export async function collectDigestData(
@@ -53,6 +72,7 @@ export async function collectDigestData(
       cron: { totalFailures: 0, affectedJobs: [] },
       alerts: { diskWriteAlerts: 0, volumeDrifts: 0 },
       projects: [],
+      deploysByDay: deployDays([], now),
     };
   }
 
@@ -179,7 +199,7 @@ export async function collectDigestData(
   const [deployRows, backupRows] = await Promise.all([
     deployTotal > 0
       ? db
-          .select({ appId: deployments.appId, status: deployments.status })
+          .select({ appId: deployments.appId, status: deployments.status, startedAt: deployments.startedAt })
           .from(deployments)
           .where(
             and(
@@ -241,6 +261,7 @@ export async function collectDigestData(
   return {
     orgName,
     weekLabel,
+    deploysByDay: deployDays(deployRows, now),
     deploys: {
       total: deployTotal,
       succeeded: deploySucceeded,

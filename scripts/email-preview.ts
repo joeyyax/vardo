@@ -14,8 +14,8 @@ function escape(s: string): string {
 async function main() {
   await mkdir(OUT, { recursive: true });
   const rows: string[] = [];
-  for (const { name, event } of EMAIL_FIXTURES) {
-    const email = await renderNotificationEmail(event, FIXTURE_CONTEXT);
+  for (const { name, event, series } of EMAIL_FIXTURES) {
+    const email = await renderNotificationEmail(event, { ...FIXTURE_CONTEXT, series });
     if (!email) continue;
     await writeFile(join(OUT, `${name}.html`), email.html);
     await writeFile(join(OUT, `${name}.txt`), `Subject: ${email.subject}\n\n${email.text}`);

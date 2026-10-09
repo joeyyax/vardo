@@ -125,7 +125,7 @@ export type BackupSuccessEvent = {
   totalCount: number;
   totalSize: number;
   durationMs?: number;
-  sources?: { name: string; sizeBytes: number }[];
+  sources?: { name: string; sizeBytes: number; backupId?: string }[];
   skippedCount?: number;
 };
 
@@ -139,7 +139,7 @@ export type BackupFailedEvent = {
   totalCount: number;
   errors: string;
   durationMs?: number;
-  failures?: { name: string; error: string }[];
+  failures?: { name: string; error: string; backupId?: string }[];
 };
 
 export type CronFailedEvent = {
@@ -188,6 +188,8 @@ export type DiskWriteAlertEvent = {
   writtenBytes: number;
   thresholdBytes: number;
   window: string;
+  /** Project label the container's metrics are stored under. */
+  metricsProject?: string;
 };
 
 export type OrgInvitationSentEvent = {
@@ -301,6 +303,8 @@ export type DigestWeeklyEvent = {
   diskWriteAlerts?: number;
   volumeDrifts?: number;
   projects?: { name: string; deploys: number; failures: number; backupFailures: number; cronFailures: number }[];
+  /** Last 7 UTC days, oldest first. */
+  deploysByDay?: { day: string; succeeded: number; failed: number }[];
 };
 
 // Vardo's own lifecycle, sent to orgs with an instance admin.

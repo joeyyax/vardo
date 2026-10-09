@@ -49,10 +49,12 @@ describe("notification subjects", () => {
 });
 
 describe("notification emails", () => {
-  it.each(EMAIL_FIXTURES.map((f) => [f.name, f.event] as const))("%s renders HTML and a matching text part", async (_name, event) => {
-    const email = await renderNotificationEmail(event, FIXTURE_CONTEXT);
+  it.each(EMAIL_FIXTURES.map((f) => [f.name, f.event, f.series] as const))("%s renders HTML and a matching text part", async (_name, event, series) => {
+    const ctx = { ...FIXTURE_CONTEXT, series };
+    const email = await renderNotificationEmail(event, ctx);
     expect(email).not.toBeNull();
-    const body = notificationMailBody(event, FIXTURE_CONTEXT)!;
+    const body = notificationMailBody(event, ctx)!;
+    expect(email!.html).not.toMatch(/<svg|<script|display:\s*(flex|grid)|background-image/i);
     expect(email!.html).toContain(body.heading.replace(/'/g, "&#x27;"));
     expect(email!.text).toContain(body.heading);
     expect(email!.html).toContain("prefers-color-scheme:dark");
@@ -65,7 +67,7 @@ describe("notification emails", () => {
   it("puts the deploy facts, phases and links in a success email", async () => {
     const email = (await renderNotificationEmail(fixture("deploy-success"), FIXTURE_CONTEXT))!;
     expect(email.text).toContain("Commit: a1b2c3d Fix donation form validation on mobile <https://github.com/joeyyax/acme-2026/commit/a1b2c3d4e5f60718293a4b5c6d7e8f9012345678>");
-    expect(email.text).toContain("Phases: clone 3 s · build 1 min 2 s");
+    expect(email.text).toContain("Phases\nClone 3% · Build 69% · Pull 5% · Start 7% · Health wait 14% · Cleanup 2%");
     expect(email.text).toContain("Slot: blue → green");
     expect(email.html).toContain('href="https://acme.org"');
     expect(email.text).toContain("Deployment log: https://vardo.example.com/apps/app_9xk2/deployments");

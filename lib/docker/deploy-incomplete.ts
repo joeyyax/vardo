@@ -60,6 +60,8 @@ export async function announcePostDeployIncomplete(
       previousSlot: ctx.activeSlot ?? undefined,
       gitSha: ctx.gitSha,
       gitAuthor: ctx.gitAuthor,
+      stageTimings: ctx.timer?.snapshot(),
+      durationMs: ctx.startTime ? Date.now() - ctx.startTime : undefined,
     });
   } catch {
     // Notification dispatch is best-effort.

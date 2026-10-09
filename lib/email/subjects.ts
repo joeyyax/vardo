@@ -3,8 +3,10 @@
 import type { BusEvent } from "@/lib/bus/events";
 import { formatBytesIec } from "@/lib/metrics/format";
 import { formatDuration, shortSha } from "./format";
+import type { MailSeries } from "./templates/context";
+import { backupDrop } from "./templates/visuals";
 
-export type SubjectContext = { instanceName: string };
+export type SubjectContext = { instanceName: string; series?: MailSeries };
 
 /** Display name for an app-scoped event. Never "Unknown". */
 export function appLabel(event: { projectName?: string; appName?: string; project?: string }): string {
@@ -46,8 +48,15 @@ export function notificationSubject(event: BusEvent, ctx: SubjectContext): strin
       return event.rollbackSuccess
         ? `↩ ${appLabel(event)} rolled back${event.restoredSlot ? ` to ${event.restoredSlot}` : ""}`
         : `✗ ${appLabel(event)} rollback failed`;
-    case "backup.success":
-      return `✓ Backup ${event.jobName} · ${formatBytesIec(event.totalSize)}`;
+    case "backup.success": {
+      const shrunk = (event.sources ?? []).find((s) => {
+        const history = ctx.series?.backupHistory?.[s.name];
+        return history ? backupDrop(history, s.sizeBytes) !== null : false;
+      });
+      return shrunk
+        ? `⚠ Backup ${event.jobName} · ${shrunk.name} much smaller than usual`
+        : `✓ Backup ${event.jobName} · ${formatBytesIec(event.totalSize)}`;
+    }
     case "backup.failed":
       return `✗ Backup ${event.jobName} failed · ${event.failedCount} of ${event.totalCount}`;
     case "cron.failed":

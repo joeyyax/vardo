@@ -1,9 +1,9 @@
 import type { DeployFailedEvent } from "@/lib/bus/events";
-import { formatDuration, formatPhases } from "../format";
+import { formatDuration } from "../format";
 import { appLabel, stageLabel } from "../subjects";
 import type { MailFact, NotificationMailBody } from "./components";
 import { appPage, footerFor, type MailContext } from "./context";
-import { changeFacts, placeFacts } from "./deploy-facts";
+import { changeFacts, phaseVisual, placeFacts } from "./deploy-facts";
 
 const SERVING: Record<NonNullable<DeployFailedEvent["serving"]>, string> = {
   previous: "The previous release is still serving.",
@@ -22,8 +22,6 @@ export function deployFailedMail(event: DeployFailedEvent, ctx: MailContext): No
   if (event.crashReason) facts.push({ label: "Crash", value: event.crashReason, mono: true });
   facts.push(...placeFacts(event), ...changeFacts(event));
   if (event.durationMs !== undefined) facts.push({ label: "Ran for", value: formatDuration(event.durationMs) });
-  const phases = formatPhases(event.stageTimings);
-  if (phases) facts.push({ label: "Phases", value: phases });
 
   const paragraphs = [event.serving ? SERVING[event.serving] : "", "Fix the cause, then redeploy or roll back."].filter(Boolean);
 
@@ -33,6 +31,7 @@ export function deployFailedMail(event: DeployFailedEvent, ctx: MailContext): No
     heading: stage ? `${name} failed at ${stage}` : `${name} failed to deploy`,
     preheader: event.crashReason || reason || paragraphs[0],
     paragraphs,
+    visuals: [phaseVisual(event.stageTimings, event.failedStage)].filter((v) => v !== undefined),
     facts,
     log: event.logTail?.length ? { title: "Last log lines", lines: event.logTail } : undefined,
     action: { label: "Open deployment log", href: appPage(ctx, event.appId, "deployments") },

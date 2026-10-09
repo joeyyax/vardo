@@ -1217,9 +1217,9 @@ export async function runBackup(
         const message = failed.length > 0
           ? `${failed.length} of ${results.length} backup(s) failed for: ${names}${skippedNote}`
           : `Nothing was captured for: ${names}${skippedNote}`;
-        emit(job.organizationId, { type: "backup.failed", title: `Backup failed: ${job.name}`, message, jobId: job.id, jobName: job.name, failedCount: problems.length, totalCount: results.length, errors: problems.map((r) => `${r.volumeName}: ${r.error}`).join("; "), durationMs: runMs, failures: problems.map((r) => ({ name: r.volumeName, error: r.error ?? r.outcome })) });
+        emit(job.organizationId, { type: "backup.failed", title: `Backup failed: ${job.name}`, message, jobId: job.id, jobName: job.name, failedCount: problems.length, totalCount: results.length, errors: problems.map((r) => `${r.volumeName}: ${r.error}`).join("; "), durationMs: runMs, failures: problems.map((r) => ({ name: r.volumeName, error: r.error ?? r.outcome, backupId: r.backupId })) });
       } else {
-        emit(job.organizationId, { type: "backup.success", title: `Backup successful: ${job.name}`, message: `${succeeded.length} backup(s) completed for: ${names}${skippedNote}`, jobId: job.id, jobName: job.name, totalCount: results.length, totalSize: results.reduce((sum, r) => sum + r.sizeBytes, 0), durationMs: runMs, sources: succeeded.map((r) => ({ name: r.volumeName, sizeBytes: r.sizeBytes })), skippedCount: allSkipped.length });
+        emit(job.organizationId, { type: "backup.success", title: `Backup successful: ${job.name}`, message: `${succeeded.length} backup(s) completed for: ${names}${skippedNote}`, jobId: job.id, jobName: job.name, totalCount: results.length, totalSize: results.reduce((sum, r) => sum + r.sizeBytes, 0), durationMs: runMs, sources: succeeded.map((r) => ({ name: r.volumeName, sizeBytes: r.sizeBytes, backupId: r.backupId })), skippedCount: allSkipped.length });
       }
     } else if (!job.organizationId) {
       if (hasFailures && job.notifyOnFailure) {

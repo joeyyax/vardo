@@ -43,7 +43,9 @@ export class EmailNotificationChannel implements NotificationChannel {
   ) {}
 
   async send(event: BusEvent): Promise<void> {
-    const email = await renderNotificationEmail(event, await mailContext(this.organizationId));
+    const { loadMailSeries } = await import("@/lib/email/series");
+    const [ctx, series] = await Promise.all([mailContext(this.organizationId), loadMailSeries(event).catch(() => ({}))]);
+    const email = await renderNotificationEmail(event, { ...ctx, series });
     if (!email) return;
     for (const recipient of this.config.recipients) {
       try {

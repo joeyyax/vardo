@@ -1,7 +1,7 @@
 // Realistic events for the email preview and template tests.
 
 import type { BusEvent } from "@/lib/bus/events";
-import type { MailContext } from "./templates/context";
+import type { MailContext, MailSeries } from "./templates/context";
 
 export const FIXTURE_CONTEXT: MailContext = {
   baseUrl: "https://vardo.example.com",
@@ -17,7 +17,17 @@ const timings = (ms: Partial<Record<"clone" | "build" | "pull" | "up" | "healthW
     ]),
   );
 
-export const EMAIL_FIXTURES: { name: string; event: BusEvent }[] = [
+const GiB = 1024 ** 3;
+
+/** A gentle 24-point curve from `start` to `end` with some noise. */
+function ramp(start: number, end: number, wobble = 0.02): number[] {
+  return Array.from({ length: 24 }, (_, i) => {
+    const t = i / 23;
+    return Math.round((start + (end - start) * t) * (1 + Math.sin(i * 1.7) * wobble));
+  });
+}
+
+export const EMAIL_FIXTURES: { name: string; event: BusEvent; series?: MailSeries }[] = [
   {
     name: "deploy-success",
     event: {
@@ -157,6 +167,37 @@ export const EMAIL_FIXTURES: { name: string; event: BusEvent }[] = [
         { name: "vardo-postgres", sizeBytes: 33_554_432 },
       ],
     },
+    series: {
+      backupHistory: {
+        "shop-mysql": [1_811_939_328, 1_843_396_608, 1_866_465_280, 1_887_436_800, 1_900_019_712, 1_918_894_080],
+        "acme-uploads": [492_830_720, 495_976_448, 497_025_024, 499_122_176, 501_219_328, 502_267_904],
+        "vardo-postgres": [31_457_280, 31_981_568, 32_505_856, 32_505_856, 33_030_144, 33_292_288],
+      },
+    },
+  },
+  {
+    name: "backup-success-drop",
+    event: {
+      type: "backup.success",
+      title: "Backup successful: Nightly",
+      message: "3 backup(s) completed",
+      jobId: "job_n1",
+      jobName: "Nightly",
+      totalCount: 3,
+      totalSize: 104_857_600 + 503_316_480 + 33_554_432,
+      durationMs: 121_000,
+      sources: [
+        { name: "shop-mysql", sizeBytes: 104_857_600 },
+        { name: "acme-uploads", sizeBytes: 503_316_480 },
+        { name: "vardo-postgres", sizeBytes: 33_554_432 },
+      ],
+    },
+    series: {
+      backupHistory: {
+        "shop-mysql": [1_811_939_328, 1_843_396_608, 1_866_465_280, 1_887_436_800, 1_900_019_712, 1_918_894_080],
+        "acme-uploads": [492_830_720, 495_976_448, 497_025_024, 499_122_176, 501_219_328, 502_267_904],
+      },
+    },
   },
   {
     name: "backup-failed",
@@ -170,6 +211,10 @@ export const EMAIL_FIXTURES: { name: string; event: BusEvent }[] = [
       totalCount: 3,
       errors: "shop-mysql: mysqldump: Got error: 2013: Lost connection to server during query",
       durationMs: 96_000,
+      failures: [{ name: "shop-mysql", error: "mysqldump: Got error: 2013: Lost connection to server during query" }],
+    },
+    series: {
+      backupHistory: { "shop-mysql": [1_811_939_328, 1_843_396_608, 1_866_465_280, 1_887_436_800, 1_900_019_712, 1_918_894_080] },
     },
   },
   {
@@ -230,6 +275,12 @@ export const EMAIL_FIXTURES: { name: string; event: BusEvent }[] = [
       writtenBytes: 8_270_499_840,
       thresholdBytes: 4_294_967_296,
       window: "1h",
+      metricsProject: "shop-staging-data",
+    },
+    series: {
+      diskWritesHourly: [
+        0.3, 0.2, 0.2, 0.3, 0.4, 0.3, 0.2, 0.2, 0.3, 0.5, 0.6, 0.4, 0.3, 0.3, 0.4, 0.3, 0.2, 0.3, 0.4, 1.1, 3.2, 5.6, 6.9, 7.7,
+      ].map((g) => Math.round(g * GiB)),
     },
   },
   {
@@ -259,6 +310,7 @@ export const EMAIL_FIXTURES: { name: string; event: BusEvent }[] = [
       used: 219_043_332_096,
       total: 239_903_502_336,
     },
+    series: { dockerDisk24h: ramp(141 * GiB, 163 * GiB, 0.01) },
   },
   {
     name: "system-service-down",
@@ -303,6 +355,15 @@ export const EMAIL_FIXTURES: { name: string; event: BusEvent }[] = [
       cronAffectedJobs: ["sync-orders"],
       diskWriteAlerts: 1,
       volumeDrifts: 0,
+      deploysByDay: [
+        { day: "2026-10-03", succeeded: 4, failed: 0 },
+        { day: "2026-10-04", succeeded: 2, failed: 0 },
+        { day: "2026-10-05", succeeded: 9, failed: 1 },
+        { day: "2026-10-06", succeeded: 11, failed: 0 },
+        { day: "2026-10-07", succeeded: 7, failed: 2 },
+        { day: "2026-10-08", succeeded: 8, failed: 0 },
+        { day: "2026-10-09", succeeded: 4, failed: 0 },
+      ],
       projects: [
         { name: "Shop", deploys: 19, failures: 2, backupFailures: 1, cronFailures: 2 },
         { name: "Acme Nonprofit", deploys: 22, failures: 1, backupFailures: 0, cronFailures: 0 },

@@ -68,6 +68,7 @@ export async function tickDigestJobs(): Promise<void> {
           diskWriteAlerts: data.alerts.diskWriteAlerts,
           volumeDrifts: data.alerts.volumeDrifts,
           projects: data.projects,
+          deploysByDay: data.deploysByDay,
         });
 
         log.info(`Digest sent for org "${org.name}"`);

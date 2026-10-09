@@ -148,6 +148,7 @@ export async function checkDiskWriteAlerts(
               containerId: container.containerId,
               writtenBytes: writtenInHour,
               thresholdBytes: threshold,
+              metricsProject: projectName,
               window: "1h",
             });
 

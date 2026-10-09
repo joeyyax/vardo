@@ -3,6 +3,11 @@ import { formatBytesIec } from "@/lib/metrics/format";
 import { formatDuration } from "../format";
 import type { NotificationMailBody } from "./components";
 import { appPage, consolePage, footerFor, type MailContext } from "./context";
+import { hourlyColumns } from "./visuals";
+
+/** The system monitor's disk thresholds (lib/system-alerts/monitor.ts). */
+const DISK_WARN = 85;
+const DISK_CRITICAL = 95;
 
 export type SystemAlertEvent = Extract<
   BusEvent,
@@ -53,6 +58,12 @@ export function systemAlertMail(event: SystemAlertEvent, ctx: MailContext): Noti
         heading: `Disk ${Math.round(event.percent)}% full on ${ctx.instanceName}`,
         preheader: `${formatBytesIec(free)} free of ${formatBytesIec(event.total)}`,
         paragraphs: ["Deploys and backups fail once the disk is full. Prune old images and build cache or grow the disk."],
+        visuals: [
+          { kind: "gauge" as const, title: "Disk used", percent: event.percent, warn: DISK_WARN, critical: DISK_CRITICAL },
+          hourlyColumns("Docker data, last 24 h", ctx.series?.dockerDisk24h, {
+            caption: ctx.series?.dockerDisk24h ? `Images, volumes and build cache, now ${formatBytesIec(ctx.series.dockerDisk24h.at(-1) ?? 0)}` : undefined,
+          }),
+        ].filter((v) => v !== undefined),
         facts: [
           { label: "Used", value: `${formatBytesIec(event.used)} of ${formatBytesIec(event.total)}` },
           { label: "Free", value: formatBytesIec(free) },

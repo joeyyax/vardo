@@ -145,6 +145,7 @@ async function handlePost(_req: NextRequest, { params }: RouteParams) {
       diskWriteAlerts: data.alerts.diskWriteAlerts,
       volumeDrifts: data.alerts.volumeDrifts,
       projects: data.projects,
+      deploysByDay: data.deploysByDay,
     };
 
     const channels = await db.query.notificationChannels.findMany({

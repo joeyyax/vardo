@@ -1,7 +1,5 @@
 // Formatting shared by notification subjects and templates.
 
-import { TIMED_PHASES, type StageTimings } from "@/lib/docker/stage-timings";
-
 /** "850 ms", "42 s", "3 min 5 s", "2 h 4 min". */
 export function formatDuration(ms: number): string {
   if (!Number.isFinite(ms) || ms < 0) return "unknown";
@@ -18,25 +16,6 @@ export function formatDuration(ms: number): string {
 
 export function shortSha(sha: string | undefined | null): string {
   return (sha ?? "").slice(0, 7);
-}
-
-const PHASE_LABELS: Record<string, string> = {
-  clone: "clone",
-  build: "build",
-  export: "export",
-  pull: "pull",
-  up: "up",
-  healthWait: "health wait",
-  cleanup: "cleanup",
-};
-
-/** "clone 3 s · build 41 s · health wait 12 s". Empty when nothing was timed. */
-export function formatPhases(timings: StageTimings | undefined): string {
-  if (!timings) return "";
-  return TIMED_PHASES.flatMap((phase) => {
-    const t = timings[phase];
-    return t && t.ms > 0 ? [`${PHASE_LABELS[phase]} ${formatDuration(t.ms)}`] : [];
-  }).join(" · ");
 }
 
 /** Browse URL for a git remote: `git@github.com:a/b.git` → `https://github.com/a/b`. Null for anything else. */

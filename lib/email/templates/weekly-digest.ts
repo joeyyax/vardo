@@ -1,11 +1,14 @@
 import type { DigestWeeklyEvent } from "@/lib/bus/events";
-import type { MailFact, MailTone, NotificationMailBody } from "./components";
+import type { MailFact, MailTone, MailVisual, NotificationMailBody } from "./components";
 import { consolePage, footerFor, type MailContext } from "./context";
 
 export type DigestDeploySummary = { total: number; succeeded: number; failed: number };
 export type DigestBackupSummary = { total: number; succeeded: number; failed: number };
 export type DigestCronSummary = { totalFailures: number; affectedJobs: string[] };
 export type DigestAlertSummary = { diskWriteAlerts: number; volumeDrifts: number };
+/** One UTC day, `YYYY-MM-DD`. */
+export type DigestDayRow = { day: string; succeeded: number; failed: number };
+
 export type DigestProjectRow = {
   name: string;
   deploys: number;
@@ -16,6 +19,27 @@ export type DigestProjectRow = {
 
 function rate(ok: number, total: number): string {
   return total === 0 ? "none" : `${ok} of ${total} (${Math.round((ok / total) * 100)}%)`;
+}
+
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+function deployChart(days: DigestDayRow[] | undefined): MailVisual | undefined {
+  if (!days?.length || days.every((d) => d.succeeded + d.failed === 0)) return undefined;
+  return {
+    kind: "columns",
+    title: "Deploys per day",
+    columns: days.map((d) => ({
+      parts: [
+        { value: d.succeeded, tone: 1 },
+        { value: d.failed, tone: "fail" },
+      ],
+      label: WEEKDAYS[new Date(`${d.day}T00:00:00Z`).getUTCDay()],
+    })),
+    legend: [
+      { label: "Succeeded", tone: 1 },
+      { label: "Failed", tone: "fail" },
+    ],
+  };
 }
 
 export function weeklyDigestMail(event: DigestWeeklyEvent, ctx: MailContext): NotificationMailBody {
@@ -47,6 +71,7 @@ export function weeklyDigestMail(event: DigestWeeklyEvent, ctx: MailContext): No
     status: problems > 0 ? `${problems} to look at` : "All clear",
     heading: `${event.orgName}, week of ${event.weekLabel}`,
     preheader: `${event.deploysTotal} deploys, ${event.deploysFailed} failed, ${event.backupsFailed} backup failures${alerts ? `, ${alerts} alerts` : ""}`,
+    visuals: [deployChart(event.deploysByDay)].filter((v) => v !== undefined),
     facts,
     sections: projects.length ? [{ title: "By project", facts: projects }] : undefined,
     action: { label: "Open Vardo", href: consolePage(ctx, "/projects") },

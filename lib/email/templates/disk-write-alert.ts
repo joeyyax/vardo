@@ -2,6 +2,7 @@ import type { DiskWriteAlertEvent } from "@/lib/bus/events";
 import { formatBytesIec } from "@/lib/metrics/format";
 import type { MailFact, NotificationMailBody } from "./components";
 import { appPage, footerFor, type MailContext } from "./context";
+import { hourlyColumns } from "./visuals";
 
 export function diskWriteAlertMail(event: DiskWriteAlertEvent, ctx: MailContext): NotificationMailBody {
   const name = event.appName || event.containerName;
@@ -25,6 +26,12 @@ export function diskWriteAlertMail(event: DiskWriteAlertEvent, ctx: MailContext)
     heading: `${name} is writing a lot to disk`,
     preheader: `${formatBytesIec(event.writtenBytes)} in ${period}, threshold ${formatBytesIec(event.thresholdBytes)}`,
     paragraphs: [why, "If it's expected, raise the threshold in the app's settings."],
+    visuals: [
+      hourlyColumns("Written per hour, last 24 h", ctx.series?.diskWritesHourly, {
+        over: event.thresholdBytes,
+        caption: `Hours over the ${formatBytesIec(event.thresholdBytes)} threshold are amber`,
+      }),
+    ].filter((v) => v !== undefined),
     facts,
     action: event.appId ? { label: "Check app logs", href: appPage(ctx, event.appId, "logs") } : undefined,
     links: event.appId ? [{ label: "Metrics", href: appPage(ctx, event.appId, "metrics") }] : undefined,
