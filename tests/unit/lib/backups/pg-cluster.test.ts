@@ -18,6 +18,7 @@ import {
   restorePostgresArchive,
   rolesInSql,
   rolesInStatement,
+  schemaInHeader,
 } from "@/lib/backups/pg-cluster";
 import { drillPostgres } from "@/lib/backups/drill";
 import { scratchDatabaseFor } from "@/lib/backups/drill-plan";
@@ -124,6 +125,28 @@ describe("rolesInStatement", () => {
       yield "ALTER TABLE public.t OWNER TO real_owner;";
     }
     expect([...(await rolesInSql(lines()))]).toEqual(["real_owner"]);
+  });
+
+  it("collects the schemas a dump writes from its headers", async () => {
+    async function* lines() {
+      yield "-- Name: s2; Type: SCHEMA; Schema: -; Owner: app";
+      yield "-- Name: ev; Type: TABLE; Schema: public; Owner: app";
+      yield "-- Name: ev ev_pkey; Type: CONSTRAINT; Schema: public; Owner: app";
+      yield "-- Name: plpgsql; Type: EXTENSION; Schema: -; Owner: -";
+      yield "-- Name: x; Type: FUNCTION; Schema: pg_catalog; Owner: app";
+    }
+    const schemas = new Set<string>();
+    await rolesInSql(lines(), schemas);
+    expect([...schemas].sort()).toEqual(["public", "s2"]);
+  });
+});
+
+describe("schemaInHeader", () => {
+  it("reads the schema column, or the name of a schema entry", () => {
+    expect(schemaInHeader("-- Data for Name: ev_2025; Type: TABLE DATA; Schema: public; Owner: app")).toBe("public");
+    expect(schemaInHeader("-- Name: my; schema; Type: SCHEMA; Schema: -; Owner: app")).toBe("my; schema");
+    expect(schemaInHeader("-- Name: t; Type: TABLE; Schema: pg_temp_3; Owner: app")).toBeNull();
+    expect(schemaInHeader("-- PostgreSQL database dump")).toBeNull();
   });
 });
 
@@ -391,6 +414,71 @@ describe.skipIf(!READY)("Postgres server archives against real postgres:17", () 
       expect(sql(fresh.custom, "appdb", "SELECT tableowner FROM pg_tables WHERE tablename = 'notes';")).toBe("owner_role");
       expect(sql(fresh.custom, "appdb", "SELECT has_table_privilege('reader', 'app.notes', 'SELECT');")).toBe("t");
       expect(sql(fresh.custom, "appdb", "SELECT count(*) FROM app.notes;")).toBe("2");
+    }, 120_000);
+  });
+
+  describe("importing a custom-format dump over a database with partitioned tables", () => {
+    let part: string;
+    let dumped: string;
+    const PARTITIONED = `
+      CREATE SCHEMA s2;
+      CREATE TABLE public.ev (id int, d date, PRIMARY KEY (id, d)) PARTITION BY RANGE (d);
+      CREATE TABLE public.ev_2025 PARTITION OF public.ev FOR VALUES FROM ('2025-01-01') TO ('2026-01-01');
+      CREATE TABLE public.ev_2026 PARTITION OF public.ev FOR VALUES FROM ('2026-01-01') TO ('2027-01-01');
+      CREATE VIEW public.ev_view AS SELECT * FROM public.ev;
+      CREATE TABLE public.plain (id int);
+      CREATE TABLE s2.t (id int PRIMARY KEY) PARTITION BY LIST (id);
+      CREATE TABLE s2.t1 PARTITION OF s2.t FOR VALUES IN (1);
+      INSERT INTO public.ev VALUES (1, '2025-03-01'), (2, '2026-02-01');
+      INSERT INTO s2.t VALUES (1);`;
+    const load = () =>
+      loadIntoDatabase({
+        kind: "postgres",
+        containerId: part,
+        containerEnv: ENV,
+        staged: { path: dumped, format: "pg-custom" },
+        tmpDir: mkdtempSync(join(dir, "import-part-")),
+        log: () => {},
+      });
+
+    beforeAll(async () => {
+      part = startPostgres("partitioned");
+      await waitReady(part);
+      sql(part, "appdb", PARTITIONED);
+      dumped = join(dir, "partitioned.custom.gz");
+      writeFileSync(dumped, gzipSync(execFileSync("docker", ["exec", part, "pg_dump", "-U", "app", "-Fc", "appdb"])));
+    }, 180_000);
+
+    it("replaces the partition trees the dump holds", async () => {
+      sql(
+        part,
+        "appdb",
+        `INSERT INTO public.ev VALUES (3, '2026-05-01');
+         CREATE TABLE public.ev_2027 PARTITION OF public.ev FOR VALUES FROM ('2027-01-01') TO ('2028-01-01');`,
+      );
+      await load();
+
+      expect(sql(part, "appdb", "SELECT string_agg(id::text, ',' ORDER BY id) FROM public.ev;")).toBe("1,2");
+      expect(sql(part, "appdb", "SELECT to_regclass('public.ev_2027') IS NULL;")).toBe("t");
+      expect(sql(part, "appdb", "SELECT count(*) FROM public.ev_view;")).toBe("2");
+      expect(sql(part, "appdb", "SELECT count(*) FROM s2.t;")).toBe("1");
+    }, 120_000);
+
+    it("reports Postgres's error and changes nothing when the load fails", async () => {
+      sql(
+        part,
+        "appdb",
+        `INSERT INTO public.ev VALUES (4, '2026-06-01');
+         CREATE SCHEMA keep;
+         CREATE VIEW keep.on_plain AS SELECT id FROM public.plain;`,
+      );
+      const err = await load().catch((e: Error) => e);
+
+      expect(err).toBeInstanceOf(Error);
+      expect((err as Error).message).toMatch(/restore exited \d+: [\s\S]*cannot drop table public.plain/);
+      expect((err as Error).message).not.toContain("EPIPE");
+      expect(sql(part, "appdb", "SELECT string_agg(id::text, ',' ORDER BY id) FROM public.ev;")).toBe("1,2,4");
+      expect(sql(part, "appdb", "SELECT to_regclass('keep.on_plain') IS NOT NULL;")).toBe("t");
     }, 120_000);
   });
 

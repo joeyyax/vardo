@@ -555,25 +555,35 @@ async function streamDockerRestore(
   logFn(`Restoring via: docker ${argv.slice(0, 3).join(" ")} …`);
   const child = spawn("docker", argv, { env: dockerEnv(), stdio: ["pipe", "pipe", "pipe"] });
 
+  // The tail: a restore's fatal error comes last.
   let stderr = "";
   child.stderr.on("data", (chunk) => {
-    if (stderr.length < 8000) stderr += String(chunk);
+    stderr = (stderr + String(chunk)).slice(-8000);
   });
 
   const exited = new Promise<void>((resolveExit, rejectExit) => {
     child.on("error", rejectExit);
     child.on("close", (code) => {
       if (code === 0) resolveExit();
-      else rejectExit(new Error(`restore exited ${code}: ${stderr.trim().slice(0, 500)}`));
+      else rejectExit(new Error(restoreExitMessage(code, stderr)));
     });
   });
 
-  await Promise.all([
+  // A restore that dies closes its stdin; report its exit, not the EPIPE that follows.
+  const [piped, exit] = await Promise.allSettled([
     pipeline(createReadStream(archivePath), createGunzip(), child.stdin),
     exited,
   ]);
+  if (exit.status === "rejected") throw exit.reason;
+  if (piped.status === "rejected") throw piped.reason;
 
-  if (stderr.trim()) logFn(`restore stderr: ${stderr.trim().slice(0, 300)}`);
+  if (stderr.trim()) logFn(`restore stderr: ${stderr.trim().slice(-300)}`);
+}
+
+/** Error for a restore command that exited non-zero, ending with its stderr. */
+function restoreExitMessage(code: number | null, stderr: string): string {
+  const tail = stderr.trim().slice(-1500);
+  return tail ? `restore exited ${code}: ${tail}` : `restore exited ${code}`;
 }
 
 /** What a bind source turned out to be when Docker mounted it. */

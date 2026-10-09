@@ -21,7 +21,7 @@ import { buildTarBackupScript, buildTarRestoreScript } from "./archive";
 import { buildPgRestoreArgv, buildRestoreArgv, defaultDatabase } from "./dump-spec";
 import type { DatabaseKind } from "./durability";
 import { resolveDbContainer } from "./resolve-db-container";
-import { createMissingDumpRoles } from "./pg-cluster";
+import { countOtherSessions, createMissingDumpRoles } from "./pg-cluster";
 import {
   BACKUPS_DIR,
   resolveDockerVolume,
@@ -252,13 +252,11 @@ export async function loadIntoDatabase(opts: {
   const { kind, containerId, containerEnv, staged, tmpDir, log } = opts;
   const database = opts.database || defaultDatabase(kind, containerEnv) || undefined;
 
-  let restoreArgv: string[];
+  let restoreArgv: string[] = [];
   if (kind === "postgres") {
-    if (staged.format === "pg-custom") {
-      restoreArgv = buildPgRestoreArgv(containerId, containerEnv, database);
-    } else if (staged.format === "sql") {
+    if (staged.format === "sql") {
       restoreArgv = buildRestoreArgv(kind, containerId, containerEnv, database);
-    } else {
+    } else if (staged.format !== "pg-custom") {
       throw new ImportError("A tar archive goes into a volume, not a database");
     }
   } else if (kind === "mysql" || kind === "mariadb") {
@@ -275,7 +273,12 @@ export async function loadIntoDatabase(opts: {
 
   log(`Loading ${staged.format === "pg-custom" ? "a pg_dump archive" : "a SQL dump"} into ${kind}${database ? ` database "${database}"` : ""}`);
   if (kind === "postgres" && (staged.format === "sql" || staged.format === "pg-custom")) {
-    await createMissingDumpRoles({ containerId, containerEnv, archivePath: staged.path, format: staged.format, log });
+    const { schemas } = await createMissingDumpRoles({ containerId, containerEnv, archivePath: staged.path, format: staged.format, log });
+    if (staged.format === "pg-custom") {
+      restoreArgv = buildPgRestoreArgv(containerId, containerEnv, database, schemas);
+      const others = database ? await countOtherSessions(containerId, containerEnv, database).catch(() => 0) : 0;
+      if (others) log(`${others} other connection(s) to "${database}"; stop the app if the import waits on its locks`);
+    }
   }
   await restoreDumpWithSnapshot({
     backupId: `import-${nanoid(6)}`,

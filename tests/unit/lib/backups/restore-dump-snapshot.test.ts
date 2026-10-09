@@ -64,6 +64,7 @@ import { restoreBackup } from "@/lib/backups/engine";
 type Call = { kind: "dump" | "restore"; argv: string[]; stdin: string };
 let calls: Call[];
 let failRestores: number;
+let epipeRestores: number;
 
 /** A fake `docker exec`: a dump writes to stdout, a restore reads stdin. */
 function fakeDocker(_cmd: string, argv: string[]) {
@@ -85,7 +86,17 @@ function fakeDocker(_cmd: string, argv: string[]) {
     },
   });
 
-  if (isRestore) {
+  if (isRestore && epipeRestores > 0) {
+    epipeRestores--;
+    // Dies on its first statement: stdin breaks before the exit lands.
+    child.stdin = new Writable({
+      write(_chunk, _enc, done) {
+        child.stderr.write("ERROR:  cannot drop inherited constraint\n");
+        done(Object.assign(new Error("write EPIPE"), { code: "EPIPE" }));
+        setTimeout(() => child.emit("close", 1), 20);
+      },
+    });
+  } else if (isRestore) {
     child.stdin.on("finish", () => {
       const fail = failRestores > 0;
       if (fail) failRestores--;
@@ -122,6 +133,7 @@ afterAll(() => rmSync(ROOT, { recursive: true, force: true }));
 beforeEach(() => {
   calls = [];
   failRestores = 0;
+  epipeRestores = 0;
   spawnMock.mockReset().mockImplementation(fakeDocker);
   resolveDbContainerMock.mockResolvedValue({ id: "c-db", env: [] });
 });
@@ -147,6 +159,17 @@ describe("dump restore snapshot", () => {
     expect(calls.map((c) => c.kind)).toEqual(["dump", "restore", "restore"]);
     expect(calls[2].stdin).toBe("-- live database\n");
     expect(result.log).toMatch(/Previous database restored/);
+  });
+
+  it("reports the restore's stderr, not the EPIPE its exit causes", async () => {
+    row("mysql");
+    epipeRestores = 1;
+
+    const result = await restoreBackup("bk-1");
+
+    expect(result.success).toBe(false);
+    expect(result.log).toMatch(/restore exited 1: ERROR: {2}cannot drop inherited constraint/);
+    expect(result.log).not.toContain("EPIPE");
   });
 
   it("keeps the pre-restore dump when the replay fails too", async () => {
