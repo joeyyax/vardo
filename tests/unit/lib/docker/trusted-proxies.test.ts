@@ -41,6 +41,16 @@ describe("desiredTrustedIps", () => {
     expect(desiredTrustedIps(RANGES, {})).toBe("173.245.48.0/20,2400:cb00::/32");
     expect(desiredTrustedIps(RANGES, { VARDO_TRUST_CLOUDFLARE: "false" })).toBe("");
   });
+
+  it("adds VARDO_TRUSTED_PROXIES, alone when Cloudflare is opted out", () => {
+    const env = { VARDO_TRUSTED_PROXIES: "10.90.0.2, 10.91.0.0/16" };
+    expect(desiredTrustedIps(RANGES, env)).toBe("173.245.48.0/20,2400:cb00::/32,10.90.0.2/32,10.91.0.0/16");
+    expect(desiredTrustedIps(RANGES, { ...env, VARDO_TRUST_CLOUDFLARE: "false" })).toBe("10.90.0.2/32,10.91.0.0/16");
+  });
+
+  it("skips invalid entries", () => {
+    expect(desiredTrustedIps(RANGES, { VARDO_TRUSTED_PROXIES: "junk,10.90.0.2,10.0.0.0/33,::1" })).toBe("173.245.48.0/20,2400:cb00::/32,10.90.0.2/32,::1/128");
+  });
 });
 
 describe("runningTrustedIps", () => {
@@ -65,6 +75,15 @@ describe("syncTraefikTrustedIps", () => {
     expect(t.writeEnv).toHaveBeenCalledWith("/opt/vardo/.env", TRUSTED_IPS_KEY, value);
     expect(t.writeEnv).toHaveBeenCalledWith("/opt/vardo/apps/vardo/env/current/.env", TRUSTED_IPS_KEY, value);
     expect(t.recreate).toHaveBeenCalledWith("/opt/vardo/apps/vardo/env/current/docker-compose.yml", "vardo", "traefik", value);
+  });
+
+  it("recreates Traefik once when VARDO_TRUSTED_PROXIES is added", async () => {
+    const t = setup(compose(flags(RANGES.join(","))));
+    const env = { VARDO_TRUSTED_PROXIES: "10.90.0.2" };
+    expect(await syncTraefikTrustedIps({ ranges: RANGES, env, deps: t.deps, attempts: t.attempts })).toBe("recreated");
+    expect(t.recreate).toHaveBeenCalledWith(expect.any(String), "vardo", "traefik", `${RANGES.join(",")},10.90.0.2/32`);
+    const applied = setup(compose(flags(`10.90.0.2/32,${RANGES.join(",")}`)));
+    expect(await syncTraefikTrustedIps({ ranges: RANGES, env, deps: applied.deps, attempts: applied.attempts })).toBe("unchanged");
   });
 
   it("recreates a Traefik started before the flags existed", async () => {

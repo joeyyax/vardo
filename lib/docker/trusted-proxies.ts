@@ -1,9 +1,9 @@
-// Traefik's web and websecure entrypoints trust X-Forwarded-* from Cloudflare's ranges (#902).
+// Traefik's web and websecure entrypoints trust X-Forwarded-* from Cloudflare's ranges (#902) and VARDO_TRUSTED_PROXIES.
 // Entrypoints are static config, so a changed list is applied by recreating Traefik.
 
 import { readFile, realpath } from "fs/promises";
 import { dirname, join } from "path";
-import { cloudflareTrustEnabled } from "@/lib/cloudflare-ips";
+import { cloudflareTrustEnabled, trustedProxyRanges } from "@/lib/cloudflare-ips";
 import { dockerRequest } from "@/lib/docker/client";
 import { dockerEnv } from "@/lib/docker/docker-env";
 import { GLOBAL_ENV_PATH } from "@/lib/docker/self-env";
@@ -23,9 +23,10 @@ const RECREATE_TIMEOUT_MS = 120_000;
 
 type Env = Record<string, string | undefined>;
 
-/** The value Traefik's entrypoints should carry: the ranges, or nothing when opted out. */
+/** The value Traefik's entrypoints should carry: Cloudflare's ranges unless opted out, plus VARDO_TRUSTED_PROXIES. */
 export function desiredTrustedIps(ranges: readonly string[], env: Env = process.env): string {
-  return cloudflareTrustEnabled(env) ? ranges.join(",") : "";
+  const cloudflare = cloudflareTrustEnabled(env) ? ranges : [];
+  return [...new Set([...cloudflare, ...trustedProxyRanges(env)])].join(",");
 }
 
 /** Each entrypoint's trustedIPs from Traefik's command line. A missing flag reads as empty. */
@@ -103,7 +104,7 @@ const attempted = new Set<string>();
 
 export type TrustedIpsOutcome = "unchanged" | "recreated" | "skipped" | "failed";
 
-/** Recreates Traefik when its entrypoints trust a different list than Cloudflare's current one. */
+/** Recreates Traefik when its entrypoints trust a different list than the desired one. */
 export async function syncTraefikTrustedIps(opts: {
   ranges: readonly string[];
   env?: Env;

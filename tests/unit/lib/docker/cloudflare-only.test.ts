@@ -13,6 +13,8 @@ import {
   CLOUDFLARE_ONLY_FILE,
   fetchCloudflareRanges,
   parseRangeList,
+  currentCloudflareRanges,
+  readRenderedExtras,
   readRenderedRanges,
   renderCloudflareOnly,
   syncCloudflareOnly,
@@ -40,6 +42,12 @@ describe("renderCloudflareOnly", () => {
     const parsed = YAML.parse(renderCloudflareOnly(BUNDLED_RANGES));
     expect(parsed.http.middlewares["cloudflare-only"].ipAllowList.sourceRange).toEqual([...BUNDLED_RANGES.v4, ...BUNDLED_RANGES.v6]);
     expect(readRenderedRanges(renderCloudflareOnly(BUNDLED_RANGES))).toHaveLength(22);
+  });
+
+  it("appends the extras and records them", () => {
+    const content = renderCloudflareOnly(BUNDLED_RANGES, ["10.90.0.2/32"]);
+    expect(YAML.parse(content).http.middlewares["cloudflare-only"].ipAllowList.sourceRange.at(-1)).toBe("10.90.0.2/32");
+    expect(readRenderedExtras(content)).toEqual(["10.90.0.2/32"]);
   });
 });
 
@@ -84,6 +92,28 @@ describe("syncCloudflareOnly", () => {
     };
     expect(await syncCloudflareOnly({ dir, fetchRanges: failing })).toBe("kept");
     expect(await readFile(file(), "utf-8")).toBe(before);
+  });
+
+  it("includes VARDO_TRUSTED_PROXIES, skipping invalid entries", async () => {
+    const env = { VARDO_TRUSTED_PROXIES: "10.90.0.2,junk,fd00::/8" };
+    expect(await syncCloudflareOnly({ dir, fetchRanges: async () => fresh, env })).toBe("updated");
+    const ranges = readRenderedRanges(await readFile(file(), "utf-8"));
+    expect(ranges).toContain("10.90.0.2/32");
+    expect(ranges).toContain("fd00::/8");
+    expect(ranges).not.toContain("junk");
+    expect(await currentCloudflareRanges(dir)).toEqual([...fresh.v4, ...fresh.v6]);
+  });
+
+  it("keeps the extras through a failed fetch and applies changed ones", async () => {
+    const failing = async () => {
+      throw new Error("offline");
+    };
+    await syncCloudflareOnly({ dir, fetchRanges: async () => fresh, env: { VARDO_TRUSTED_PROXIES: "10.90.0.2" } });
+    expect(await syncCloudflareOnly({ dir, fetchRanges: failing, env: { VARDO_TRUSTED_PROXIES: "10.90.0.2" } })).toBe("kept");
+    expect(readRenderedRanges(await readFile(file(), "utf-8"))).toContain("10.90.0.2/32");
+    expect(await syncCloudflareOnly({ dir, fetchRanges: failing, env: { VARDO_TRUSTED_PROXIES: "10.90.0.3" } })).toBe("kept");
+    const ranges = readRenderedRanges(await readFile(file(), "utf-8"));
+    expect(ranges).toEqual([...fresh.v4, ...fresh.v6, "10.90.0.3/32"]);
   });
 
   it("writes the bundled ranges when there's no file and no fetch", async () => {
