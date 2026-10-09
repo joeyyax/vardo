@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import ts from "typescript";
-import { CAPABILITIES } from "@/lib/auth/permissions";
+import { CAPABILITIES, can, type Capability } from "@/lib/auth/permissions";
 
 // Every handler under app/api/v1/organizations names the capability it needs (#788).
 
@@ -105,5 +105,14 @@ describe("organization route capabilities", () => {
   it.each(rows)("$route names a capability", ({ caps }) => {
     expect(caps.length).toBeGreaterThan(0);
     for (const cap of caps) expect(Object.keys(CAPABILITIES)).toContain(cap);
+  });
+
+  it("gates every terminal handler on an admin-only capability", () => {
+    const terminal = rows.filter((r) => r.route.endsWith("/terminal"));
+    expect(terminal.map((r) => r.route.split(" ")[0]).sort()).toEqual(["GET", "POST"]);
+    for (const { caps } of terminal) {
+      expect(caps).toContain("app.terminal");
+      for (const cap of caps) expect(can("member", cap as Capability)).toBe(false);
+    }
   });
 });

@@ -56,6 +56,7 @@ const PHRASES: Record<string, Phrase> = {
   "deploy_key.created": { text: "added deploy key" },
   "deploy_key.deleted": { text: "removed deploy key" },
 
+  "org.env_revealed": { text: "revealed organization env vars", standalone: true },
   "org.trusted_changed": {
     text: "changed organization trust settings",
     standalone: true,

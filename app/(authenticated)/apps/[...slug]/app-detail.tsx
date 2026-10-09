@@ -706,7 +706,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
                 {
                   label: "Tools",
                   items: [
-                    ...(featureFlags?.terminal !== false ? [{ value: "terminal", label: "Terminal" }] : []),
+                    ...(featureFlags?.terminal !== false && can(userRole, "app.terminal") ? [{ value: "terminal", label: "Terminal" }] : []),
                     ...(can(userRole, "app.debug") ? [{ value: "debug", label: "Debug" }] : []),
                   ],
                 },
@@ -902,7 +902,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
           )}
         </TabsContent>
 
-        {featureFlags?.terminal !== false && (
+        {featureFlags?.terminal !== false && can(userRole, "app.terminal") && (
           <TabsContent value="terminal" className={cn(tabPanelSurface, "space-y-4")}>
             <p className="text-sm text-muted-foreground">
               Interactive shell session inside the running container. Changes to the filesystem are lost on redeploy unless written to a persistent volume.

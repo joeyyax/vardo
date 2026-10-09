@@ -105,7 +105,7 @@ export function ComposeReview({
       setExtracting(true);
       try {
         const getRes = await fetch(
-          `/api/v1/organizations/${orgId}/apps/${appId}/env-vars?reveal=true`,
+          `/api/v1/organizations/${orgId}/apps/${appId}/env-vars`,
         );
         const { content: currentContent } = await getRes.json();
 

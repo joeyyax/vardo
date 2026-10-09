@@ -50,14 +50,18 @@ export const CAPABILITIES = {
   "app.certs": ADMINS,
   "app.domains": MEMBERS,
   "app.deploy": MEMBERS,
-  "app.terminal": MEMBERS,
+  // Root shell; host root through an enabled Docker socket.
+  "app.terminal": ADMINS,
   "app.cron": MEMBERS,
   "app.debug": ADMINS,
   "app.delete": ADMINS,
   "app.volumes.sync": ADMINS,
 
   // Env vars
+  // Masked values.
   "env.read": MEMBERS,
+  // Plaintext secrets.
+  "env.reveal": ADMINS,
   "env.write": MEMBERS,
 
   // Backups

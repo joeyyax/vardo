@@ -35,6 +35,7 @@ export type AppTabContext = {
   isChildService: boolean;
   hasConnectionInfo: boolean;
   canDebug: boolean;
+  canTerminal: boolean;
   features: FeatureToggles;
 };
 
@@ -69,7 +70,7 @@ export function availableAppTabs(ctx: AppTabContext): AppTab[] {
       "security",
       "volumes",
       ...(f.backups ? (["backups"] as const) : []),
-      ...(f.terminal ? (["terminal"] as const) : []),
+      ...(f.terminal && ctx.canTerminal ? (["terminal"] as const) : []),
       ...(ctx.canDebug ? (["debug"] as const) : []),
     ];
   }
@@ -91,7 +92,7 @@ export function availableAppTabs(ctx: AppTabContext): AppTab[] {
     "security",
     "volumes",
     ...(f.backups ? (["backups"] as const) : []),
-    ...(f.terminal ? (["terminal"] as const) : []),
+    ...(f.terminal && ctx.canTerminal ? (["terminal"] as const) : []),
     ...(ctx.canDebug ? (["debug"] as const) : []),
   ];
 }
