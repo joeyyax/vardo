@@ -1,6 +1,10 @@
 // The client address a request is keyed by. X-Forwarded-For counts only when the TCP peer is Traefik (#889).
+// CF-Connecting-IP counts only when Traefik's own peer was a Cloudflare edge (#902).
 
+import { isIP } from "net";
+import { cidrMatcher, cloudflareTrustEnabled } from "@/lib/cloudflare-ips";
 import { dockerRequest } from "@/lib/docker/client";
+import { BUNDLED_RANGES, currentCloudflareRanges } from "@/lib/docker/cloudflare-only";
 
 /** Set from the socket by scripts/peer-address.mjs, overwriting any client-sent value. */
 export const PEER_HEADER = "x-vardo-peer";
@@ -17,13 +21,46 @@ function forwardedIp(headers: Headers): string | null {
   return headers.get("x-forwarded-for")?.split(",")[0]?.trim() || headers.get("x-real-ip")?.trim() || null;
 }
 
+/** The last X-Forwarded-For entry: the address Traefik appended for its own peer. */
+function traefikPeer(headers: Headers): string | null {
+  const hops = headers.get("x-forwarded-for")?.split(",").map((h) => h.trim()).filter(Boolean) ?? [];
+  const last = hops.at(-1) ?? headers.get("x-real-ip")?.trim();
+  return last ? normalize(last) : null;
+}
+
+function cfConnectingIp(headers: Headers): string | null {
+  const value = headers.get("cf-connecting-ip");
+  if (!value) return null;
+  const ip = normalize(value);
+  return isIP(ip) ? ip : null;
+}
+
 /** The address to key a request by. Without a peer header (dev, no preload) the forwarded headers are all there is. */
-export function resolveClientIp(headers: Headers, isProxy: (ip: string) => boolean): string {
+export function resolveClientIp(
+  headers: Headers,
+  isProxy: (ip: string) => boolean,
+  isCloudflare: (ip: string) => boolean = () => false,
+): string {
   const raw = headers.get(PEER_HEADER);
   if (!raw) return forwardedIp(headers) ?? "unknown";
   const peer = normalize(raw);
   if (!isProxy(peer)) return peer;
-  return forwardedIp(headers) ?? peer;
+  const hop = traefikPeer(headers);
+  if (!hop) return peer;
+  if (isCloudflare(hop)) return cfConnectingIp(headers) ?? hop;
+  return hop;
+}
+
+const CLOUDFLARE_TTL_MS = 10 * 60_000;
+let cloudflare = { match: cidrMatcher([...BUNDLED_RANGES.v4, ...BUNDLED_RANGES.v6]), at: 0 };
+
+/** Cloudflare's ranges as the middleware file has them, re-read every few minutes. */
+async function cloudflareMatcher(): Promise<(ip: string) => boolean> {
+  if (!cloudflareTrustEnabled()) return () => false;
+  if (Date.now() - cloudflare.at >= CLOUDFLARE_TTL_MS) {
+    cloudflare = { match: cidrMatcher(await currentCloudflareRanges()), at: Date.now() };
+  }
+  return cloudflare.match;
 }
 
 type Cache = { ips: Set<string>; at: number };
@@ -58,5 +95,5 @@ export async function clientIpFor(headers: Headers): Promise<string> {
   const peer = normalize(raw);
   let ips = await traefikAddresses();
   if (!ips.has(peer)) ips = await traefikAddresses({ refresh: true });
-  return resolveClientIp(headers, (ip) => ips.has(ip));
+  return resolveClientIp(headers, (ip) => ips.has(ip), await cloudflareMatcher());
 }

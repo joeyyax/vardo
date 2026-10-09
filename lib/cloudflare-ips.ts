@@ -1,3 +1,5 @@
+import { BlockList, isIP } from "net";
+
 /**
  * Cloudflare IPv4 CIDR ranges.
  * Source: https://www.cloudflare.com/ips-v4
@@ -57,4 +59,25 @@ function ipToNum(ip: string): number {
 export function isCloudflareIp(ip: string): boolean {
   const num = ipToNum(ip);
   return parsedRanges.some(({ base, mask }) => (num & mask) === base);
+}
+
+/** Matches IPv4 and IPv6 addresses, IPv4-mapped included, against a list of CIDRs. */
+export function cidrMatcher(ranges: readonly string[]): (ip: string) => boolean {
+  const list = new BlockList();
+  for (const range of ranges) {
+    const [addr, prefix] = range.split("/");
+    const family = isIP(addr);
+    if (family && prefix) list.addSubnet(addr, Number(prefix), family === 4 ? "ipv4" : "ipv6");
+  }
+  return (ip) => {
+    const addr = ip.trim().replace(/^::ffff:(?=\d+\.)/i, "");
+    const family = isIP(addr);
+    return family !== 0 && list.check(addr, family === 4 ? "ipv4" : "ipv6");
+  };
+}
+
+/** False when VARDO_TRUST_CLOUDFLARE opts the host out of trusting Cloudflare's forwarded headers. */
+export function cloudflareTrustEnabled(env: Record<string, string | undefined> = process.env): boolean {
+  const value = env.VARDO_TRUST_CLOUDFLARE?.trim().toLowerCase();
+  return value !== "false" && value !== "0";
 }

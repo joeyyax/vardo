@@ -6,6 +6,8 @@ import { copyFile, mkdtemp, rm, writeFile } from "fs/promises";
 import { readFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
+import { BUNDLED_RANGES } from "@/lib/docker/cloudflare-only";
+import { runningTrustedIps } from "@/lib/docker/trusted-proxies";
 
 type Service = { environment?: Record<string, string>; command?: string[]; healthcheck?: { test?: string[] } };
 type Config = { services: Record<string, Service> };
@@ -54,6 +56,15 @@ describe.skipIf(!hasCompose)("self compose (#889)", () => {
     const command = resolve({}).services.traefik.command ?? [];
     expect(command).not.toContain("--api.insecure=true");
     expect(command).toContain("--entrypoints.traefik.address=:8080");
+  });
+
+  it("trusts Cloudflare's bundled ranges on both entrypoints until the console writes its own (#902)", () => {
+    const bundled = [...BUNDLED_RANGES.v4, ...BUNDLED_RANGES.v6].join(",");
+    const trusted = (env: Record<string, string>) =>
+      runningTrustedIps(resolve(env).services.traefik.command ?? []);
+    expect(trusted({})).toEqual({ web: bundled, websecure: bundled });
+    expect(trusted({ VARDO_TRAEFIK_TRUSTED_IPS: "198.51.100.0/24" })).toEqual({ web: "198.51.100.0/24", websecure: "198.51.100.0/24" });
+    expect(trusted({ VARDO_TRAEFIK_TRUSTED_IPS: "" })).toEqual({ web: "", websecure: "" });
   });
 });
 
