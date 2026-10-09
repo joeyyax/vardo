@@ -45,18 +45,18 @@ const PATTERNS: { pattern: RegExp; replacement: string }[] = [
 ];
 
 /** Replaces every occurrence of the given literal values. */
-export function redactValues(text: string, values: Iterable<string>): string {
+export function redactValues(text: string, values: Iterable<string>, minLength = MIN_VALUE_LENGTH): string {
   let out = text;
   for (const value of values) {
-    if (typeof value !== "string" || value.length < MIN_VALUE_LENGTH) continue;
+    if (typeof value !== "string" || value.length < minLength) continue;
     out = out.replaceAll(value, REDACTED);
   }
   return out;
 }
 
 /** Replaces anything shaped like a credential. */
-export function redactSecrets(text: string, values: Iterable<string> = []): string {
-  let out = redactValues(text, values);
+export function redactSecrets(text: string, values: Iterable<string> = [], minLength = MIN_VALUE_LENGTH): string {
+  let out = redactValues(text, values, minLength);
   for (const { pattern, replacement } of PATTERNS) {
     out = out.replace(pattern, replacement);
   }
@@ -82,3 +82,55 @@ export function redactError<T>(error: T, values: Iterable<string> = []): T {
   }
   return error;
 }
+
+/** Env keys whose values are secret. */
+const SECRET_KEY = /SECRET|TOKEN|PASSWORD|PASSWD|PWD|KEY|PRIVATE|CREDENTIAL|DSN|AUTH|SALT|SIGNATURE/i;
+
+/** Shortest value masked on key name alone. */
+const MIN_KEYED_LENGTH = 4;
+
+/** Shortest value masked on its shape alone. */
+const MIN_SHAPED_LENGTH = 12;
+
+const COMMON_WORDS = new Set([
+  "true", "false", "production", "development", "staging", "preview", "test", "localhost", "default", "enabled", "disabled",
+]);
+
+/** Password of a URL with credentials, else null. */
+function urlPassword(value: string): string | null {
+  return /^[a-z][a-z0-9+.-]*:\/\/[^/\s:@]*:([^\s@]+)@/i.exec(value)?.[1] ?? null;
+}
+
+/** Long, mixed letters and digits, and not a path, URL or hostname. */
+function looksSecret(value: string): boolean {
+  if (value.length < MIN_SHAPED_LENGTH || /\s/.test(value)) return false;
+  if (/[/\\]/.test(value) || /^[a-z][a-z0-9+.-]*:/i.test(value)) return false;
+  if (/^[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(value) && /[a-z]$/i.test(value)) return false;
+  return /[A-Za-z]/.test(value) && /\d/.test(value);
+}
+
+/**
+ * Env values to mask: those under a secret-looking key or shaped like a credential.
+ * Values equal to `publicNames` (app, project, org, domains) are never masked.
+ */
+export function secretEnvValues(env: Record<string, string>, publicNames: Iterable<string> = []): string[] {
+  const skip = new Set([...publicNames].filter(Boolean).map((n) => n.toLowerCase()));
+  const out = new Set<string>();
+  for (const [key, raw] of Object.entries(env)) {
+    if (typeof raw !== "string") continue;
+    const password = urlPassword(raw);
+    if (password) {
+      out.add(password);
+      continue;
+    }
+    const value = raw.trim();
+    const keyed = SECRET_KEY.test(key) && value.length >= MIN_KEYED_LENGTH;
+    if (!keyed && !looksSecret(value)) continue;
+    const lower = value.toLowerCase();
+    if (skip.has(lower) || COMMON_WORDS.has(lower)) continue;
+    out.add(value);
+  }
+  return [...out];
+}
+
+export { MIN_KEYED_LENGTH };

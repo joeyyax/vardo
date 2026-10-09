@@ -194,8 +194,8 @@ export type DeployContext = {
 
   // Logging and lifecycle
   log: (line: string) => string;
-  /** Registers env values to redact from this deploy's log lines. */
-  addSecrets?: (values: Iterable<string>) => void;
+  /** Registers the secret-looking values of an env to redact from this deploy's log lines. */
+  addSecrets?: (env: Record<string, string>) => void;
   stage: (stage: DeployStage, status: DeployStatus) => void;
   checkAbort: () => void;
   /** Phase timings, persisted to `deployment.stage_timings`. */

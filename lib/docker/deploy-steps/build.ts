@@ -286,7 +286,7 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
       }
       orgEnvVarMap[v.key] = content;
     }
-    ctx.addSecrets?.(Object.values(orgEnvVarMap));
+    ctx.addSecrets?.(orgEnvVarMap);
 
     const primaryDomain = app.domains[0]?.domain ?? null;
 
@@ -319,7 +319,7 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
 
     if (Object.keys(envMap).length > 0) {
       const resolved = await resolveAllEnvVars(envMap, resolveCtx);
-      ctx.addSecrets?.(Object.values(resolved));
+      ctx.addSecrets?.(resolved);
       const envContent = composeEnvFile(resolved);
       await writeFile(join(slotDir, ".env"), envContent, "utf-8");
     }

@@ -70,7 +70,7 @@ vi.mock("@/lib/activity", () => ({ recordActivity: vi.fn().mockResolvedValue(und
 vi.mock("@/lib/docker/deploy-logger", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/docker/deploy-logger")>()),
   createDeployLogger: () => ({
-    addSecrets: vi.fn(),
+    addSecrets: vi.fn(), addPublicNames: vi.fn(),
     redact: (text: string) => text,
     log: (line: string) => line,
     stage: vi.fn(),
