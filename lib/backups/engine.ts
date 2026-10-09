@@ -251,6 +251,8 @@ async function streamArchive(opts: {
   logFn: (msg: string) => void;
   /** Runs once the producer has exited cleanly. A throw fails the archive. */
   afterExit?: (stats: ArchiveStats) => Promise<void>;
+  /** Upper bound on the archive's size, when known. */
+  expectedBytes?: number | null;
 }): Promise<{ sizeBytes: number; checksum: string; archiveKey: ArchiveKey | null }> {
   const { producer, label, storage, storageKey, logFn } = opts;
   const inspector = createArchiveInspector({
@@ -292,7 +294,7 @@ async function streamArchive(opts: {
       fail(err);
       throw err;
     }),
-    storage.uploadStream(storageKey, body).catch((err) => {
+    storage.uploadStream(storageKey, body, { expectedBytes: opts.expectedBytes, log: logFn }).catch((err) => {
       fail(err);
       throw err;
     }),
@@ -327,6 +329,7 @@ async function streamTarBackup(opts: {
   storage: BackupStorage;
   storageKey: string;
   logFn: (msg: string) => void;
+  expectedBytes?: number | null;
 }): Promise<{ sizeBytes: number; checksum: string; archiveKey: ArchiveKey | null; excludedPaths: string[]; sourceWasEmpty: boolean }> {
   const { workDir, label } = opts;
   const findArgv = opts.singleFile ? [] : buildFindExclusionArgv(opts.excludePatterns);
@@ -347,6 +350,7 @@ async function streamTarBackup(opts: {
     storage: opts.storage,
     storageKey: opts.storageKey,
     logFn: opts.logFn,
+    expectedBytes: opts.expectedBytes,
     afterExit: async (stats) => {
       // The container's own verdict on the source.
       sourceWasEmpty = await sourceReportedEmpty(workDir);
@@ -408,6 +412,7 @@ export async function backupVolumeTar(
     assertSafeName(dockerVolumeName);
 
     logFn(`Archiving volume ${dockerVolumeName}`);
+    const expectedBytes = await volumeSizeBytes(dockerVolumeName);
     const result = await streamTarBackup({
       mountArgs: ["-v", `${dockerVolumeName}:/data`],
       workDir,
@@ -417,6 +422,7 @@ export async function backupVolumeTar(
       storage,
       storageKey,
       logFn,
+      expectedBytes,
     });
     if (excludePatterns.length > 0) {
       logFn(`Excluded ${result.excludedPaths.length} path(s) from ${excludePatterns.length} pattern(s)`);
@@ -427,6 +433,16 @@ export async function backupVolumeTar(
     return result;
   } finally {
     await rm(workDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+/** Uncompressed size of a volume from the hourly df cache. Null when unknown: parts fall back to the default. */
+async function volumeSizeBytes(dockerVolumeName: string): Promise<number | null> {
+  try {
+    const { getVolumeSizeBytes } = await import("@/lib/docker/disk-snapshot");
+    return await getVolumeSizeBytes(dockerVolumeName);
+  } catch {
+    return null;
   }
 }
 

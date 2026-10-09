@@ -28,6 +28,7 @@ const {
   inserted,
   updated,
   leases,
+  volumeSizeMock,
 } = vi.hoisted(() => ({
   backupJobsFindFirst: vi.fn(),
   volumesFindMany: vi.fn(),
@@ -42,6 +43,7 @@ const {
   inserted: [] as Record<string, unknown>[],
   updated: [] as { table: unknown; set: Record<string, unknown> }[],
   leases: new Set<string>(),
+  volumeSizeMock: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({
@@ -72,6 +74,7 @@ vi.mock("@/lib/docker/client", () => ({
   inspectContainer: vi.fn(),
 }));
 vi.mock("@/lib/docker/resolve-env", () => ({ resolveDefaultEnv: resolveDefaultEnvMock }));
+vi.mock("@/lib/docker/disk-snapshot", () => ({ getVolumeSizeBytes: volumeSizeMock }));
 vi.mock("@/lib/backups/run-lease", () => ({
   holdBackupLease: async (id: string) => {
     leases.add(id);
@@ -198,6 +201,7 @@ beforeEach(() => {
   updated.length = 0;
   committed.length = 0;
   leases.clear();
+  volumeSizeMock.mockReset().mockResolvedValue(null);
   execFileMock.mockReset().mockImplementation(execImpl);
   spawnMock.mockReset().mockImplementation(spawnImpl);
   emitMock.mockReset();
@@ -822,5 +826,30 @@ describe("runBackup — run lease", () => {
 
     expect(result.outcome).toBe("failed");
     expect(leases.size).toBe(0);
+  });
+});
+
+describe("runBackup — expected size", () => {
+  it("passes the volume's cached size to storage so it can size parts", async () => {
+    backupJobsFindFirst.mockResolvedValue(job());
+    volumesPerApp([volume()]);
+    listContainersMock.mockResolvedValue([]);
+    volumeSizeMock.mockResolvedValue(250e9);
+
+    await runBackup("job-1");
+
+    expect(volumeSizeMock).toHaveBeenCalledWith("app-a-production_data");
+    expect(uploadMock.mock.calls[0][2]).toMatchObject({ expectedBytes: 250e9 });
+  });
+
+  it("still backs up when the size lookup fails", async () => {
+    backupJobsFindFirst.mockResolvedValue(job());
+    volumesPerApp([volume()]);
+    volumeSizeMock.mockRejectedValue(new Error("df timed out"));
+
+    const [result] = await runBackup("job-1");
+
+    expect(result.outcome).toBe("success");
+    expect(uploadMock.mock.calls[0][2]).toMatchObject({ expectedBytes: null });
   });
 });

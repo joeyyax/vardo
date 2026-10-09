@@ -137,7 +137,7 @@ export async function withRetry<T>(
 export function withStorageRetry(storage: BackupStorage): BackupStorage {
   const wrapped: BackupStorage = {
     // Adapters retry the parts they buffer; the stream itself can't be replayed.
-    uploadStream: (key, body) => storage.uploadStream(key, body),
+    uploadStream: (key, body, opts) => storage.uploadStream(key, body, opts),
     download: (key, destPath) => withRetry("download", key, () => storage.download(key, destPath)),
     delete: (key) => withRetry("delete", key, () => storage.delete(key)),
     list: (prefix) => withRetry("list", prefix, () => storage.list(prefix)),

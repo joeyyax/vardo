@@ -2,6 +2,12 @@
 
 import type { Readable } from "stream";
 
+export type UploadStreamOptions = {
+  /** Upper bound on the stream's size, when known. Sizes multipart parts. */
+  expectedBytes?: number | null;
+  log?: (msg: string) => void;
+};
+
 /** One object found by a listing. */
 export type StoredObject = { key: string; sizeBytes: number; modifiedAt: Date };
 
@@ -10,7 +16,7 @@ export interface BackupStorage {
    * Write a stream to the target. Nothing is visible under `key` unless the stream ends cleanly.
    * Not retried as a whole: the stream can't be replayed. Adapters retry what they buffer.
    */
-  uploadStream(key: string, body: Readable): Promise<{ sizeBytes: number }>;
+  uploadStream(key: string, body: Readable, opts?: UploadStreamOptions): Promise<{ sizeBytes: number }>;
 
   /** Download a file from the storage target to a local path. */
   download(key: string, destPath: string): Promise<void>;

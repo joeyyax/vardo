@@ -44,6 +44,12 @@ export async function getDiskSnapshot(now = Date.now()): Promise<{
   };
 }
 
+/** A volume's size from the hourly cache. Null when Docker doesn't report one. */
+export async function getVolumeSizeBytes(name: string, now = Date.now()): Promise<number | null> {
+  const size = (await currentVolumes(now)).Volumes?.find((v) => v.Name === name)?.UsageData?.Size;
+  return typeof size === "number" && size >= 0 ? size : null;
+}
+
 export function resetDiskSnapshotCache() {
   volumes = null;
   volumesInFlight = null;

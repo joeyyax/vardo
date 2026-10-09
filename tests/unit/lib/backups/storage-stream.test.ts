@@ -18,7 +18,16 @@ import {
   CompleteMultipartUploadCommand,
   AbortMultipartUploadCommand,
 } from "@aws-sdk/client-s3";
-import { S3BackupStorage, readParts } from "@/lib/backups/storage-s3";
+import {
+  LARGE_PART_QUEUE,
+  MAX_PART_SIZE,
+  PART_QUEUE,
+  PART_SIZE,
+  S3BackupStorage,
+  choosePartSize,
+  partQueueFor,
+  readParts,
+} from "@/lib/backups/storage-s3";
 import { LocalBackupStorage } from "@/lib/backups/storage-local";
 
 const PART = 1024;
@@ -179,5 +188,52 @@ describe("local uploadStream", () => {
     await expect(new LocalBackupStorage({ path: root }).uploadStream("org/app/b.tar.gz", body)).rejects.toThrow();
 
     expect(readdirSync(join(root, "org/app")).filter((f) => f.startsWith("b.tar.gz"))).toEqual([]);
+  });
+});
+
+describe("part size", () => {
+  const MiB = 1024 * 1024;
+  const GB = 1e9;
+
+  it("falls back to 16 MiB when the size is unknown", () => {
+    expect(choosePartSize(null)).toBe(PART_SIZE);
+    expect(choosePartSize(undefined)).toBe(PART_SIZE);
+    expect(choosePartSize(0)).toBe(PART_SIZE);
+    expect(choosePartSize(Number.NaN)).toBe(PART_SIZE);
+  });
+
+  it("never goes under 16 MiB", () => {
+    expect(choosePartSize(4 * GB)).toBe(16 * MiB);
+  });
+
+  it("spreads 1.5 × the expected size over 9,000 parts, in whole MiB", () => {
+    // 1.5e12 / 9000 = 166,666,667 bytes = 158.9 MiB.
+    expect(choosePartSize(1000 * GB)).toBe(159 * MiB);
+    // 1.5 × 200 GB / 9000 = 31.8 MiB.
+    expect(choosePartSize(200 * GB)).toBe(32 * MiB);
+  });
+
+  it("keeps any archive up to 1.5 × the expected size under 10,000 parts", () => {
+    for (const expected of [97 * GB, 160 * GB, 1000 * GB, 7_000 * GB]) {
+      expect(Math.ceil((expected * 1.5) / choosePartSize(expected))).toBeLessThanOrEqual(10_000);
+    }
+  });
+
+  it("caps at S3's 5 GiB part limit", () => {
+    expect(choosePartSize(100_000 * GB)).toBe(MAX_PART_SIZE);
+  });
+
+  it("halves the queue once parts pass 64 MiB", () => {
+    expect(partQueueFor(64 * MiB)).toBe(PART_QUEUE);
+    expect(partQueueFor(65 * MiB)).toBe(LARGE_PART_QUEUE);
+  });
+
+  it("logs the part size it chose from the expected size", async () => {
+    const log = vi.fn();
+    const s3 = new S3BackupStorage({ bucket: "b", region: "auto", accessKeyId: "k", secretAccessKey: "s" });
+
+    await s3.uploadStream("k", bytes(10).body, { expectedBytes: 1000 * GB, log });
+
+    expect(log).toHaveBeenCalledWith("Part size 159 MiB, 2 in flight");
   });
 });

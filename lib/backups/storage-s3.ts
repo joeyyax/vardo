@@ -16,16 +16,39 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { createWriteStream } from "fs";
 import { Readable, pipeline } from "stream";
 import { promisify } from "util";
-import { ArchiveMissingError, type BackupStorage, type StoredObject } from "./storage-port";
+import { ArchiveMissingError, type BackupStorage, type StoredObject, type UploadStreamOptions } from "./storage-port";
 import { withRetry } from "./storage-retry";
 
 const pipelineAsync = promisify(pipeline);
 
-/** Every part but the last is this size; R2 requires equal parts. 10,000 parts caps an archive at 156 GiB. */
-export const PART_SIZE = 16 * 1024 * 1024;
+const MiB = 1024 * 1024;
+
+/** Smallest part, and the part size when the archive's size is unknown. */
+export const PART_SIZE = 16 * MiB;
+/** S3's largest part. */
+export const MAX_PART_SIZE = 5 * 1024 * MiB;
 /** Parts in flight at once. Memory is about (queue + 1) × part size. */
 export const PART_QUEUE = 4;
+/** Queue for parts over LARGE_PART_SIZE, so a huge volume doesn't hold gigabytes. */
+export const LARGE_PART_QUEUE = 2;
+export const LARGE_PART_SIZE = 64 * MiB;
 const MAX_PARTS = 10_000;
+/** Parts the expected size is spread over, leaving headroom under MAX_PARTS. */
+const TARGET_PARTS = 9_000;
+
+/**
+ * One part size for the whole upload: R2 rejects unequal non-trailing parts.
+ * `expectedBytes` is an upper bound, such as the uncompressed volume size.
+ */
+export function choosePartSize(expectedBytes: number | null | undefined): number {
+  if (!expectedBytes || !Number.isFinite(expectedBytes) || expectedBytes <= 0) return PART_SIZE;
+  const wholeMiB = Math.ceil(Math.ceil((expectedBytes * 1.5) / TARGET_PARTS) / MiB) * MiB;
+  return Math.min(MAX_PART_SIZE, Math.max(PART_SIZE, wholeMiB));
+}
+
+export function partQueueFor(partSize: number): number {
+  return partSize > LARGE_PART_SIZE ? LARGE_PART_QUEUE : PART_QUEUE;
+}
 
 export type S3StorageConfig = {
   bucket: string;
@@ -45,11 +68,12 @@ function isMissing(err: unknown): boolean {
 export class S3BackupStorage implements BackupStorage {
   private client: S3Client;
   private config: S3StorageConfig;
-  private partSize: number;
+  /** Fixed part size, overriding choosePartSize. */
+  private partSize: number | undefined;
 
   constructor(config: S3StorageConfig, opts: { partSize?: number } = {}) {
     this.config = config;
-    this.partSize = opts.partSize ?? PART_SIZE;
+    this.partSize = opts.partSize;
     this.client = new S3Client({
       region: config.region,
       endpoint: config.endpoint,
@@ -72,10 +96,13 @@ export class S3BackupStorage implements BackupStorage {
   }
 
   /** One PUT under a part's size, otherwise a multipart upload that aborts on any failure. */
-  async uploadStream(key: string, body: Readable): Promise<{ sizeBytes: number }> {
+  async uploadStream(key: string, body: Readable, opts: UploadStreamOptions = {}): Promise<{ sizeBytes: number }> {
     const Bucket = this.config.bucket;
     const Key = this.fullKey(key);
-    const parts = readParts(body, this.partSize);
+    const partSize = this.partSize ?? choosePartSize(opts.expectedBytes);
+    const queue = partQueueFor(partSize);
+    opts.log?.(`Part size ${partSize / MiB} MiB, ${queue} in flight`);
+    const parts = readParts(body, partSize);
 
     const first = await parts.next();
     const firstPart = first.done ? Buffer.alloc(0) : first.value;
@@ -108,7 +135,7 @@ export class S3BackupStorage implements BackupStorage {
 
     const send = (data: Buffer) => {
       const PartNumber = ++partNumber;
-      if (PartNumber > MAX_PARTS) throw new Error(`Archive exceeds ${MAX_PARTS} parts of ${this.partSize} bytes`);
+      if (PartNumber > MAX_PARTS) throw new Error(`Archive exceeds ${MAX_PARTS} parts of ${partSize / MiB} MiB`);
       sizeBytes += data.length;
       const task = withRetry(`upload part ${PartNumber}`, key, () =>
         this.client.send(
@@ -130,7 +157,7 @@ export class S3BackupStorage implements BackupStorage {
       send(firstPart);
       send(second.value);
       for await (const part of parts) {
-        while (inFlight.size >= PART_QUEUE && !failure) await Promise.race(inFlight);
+        while (inFlight.size >= queue && !failure) await Promise.race(inFlight);
         if (failure) break;
         send(part);
       }
