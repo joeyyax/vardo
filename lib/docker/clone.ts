@@ -13,7 +13,8 @@ import { nanoid } from "nanoid";
 import {
   generateEnvironmentSubdomain,
   generatePreviewSubdomain,
-  } from "@/lib/domain-monitoring/auto-domain";
+  getBaseDomain,
+} from "@/lib/domain-monitoring/auto-domain";
 import { snapshotEnv } from "@/lib/env/environment-env";
 
 type CreateGroupEnvironmentOpts = {
@@ -63,19 +64,12 @@ export async function createGroupEnvironment(
 
   if (!project) throw new Error("Project not found");
 
-  // Org base domain, falling back to instance config.
   const { organizations } = await import("@/lib/db/schema");
   const org = await db.query.organizations.findFirst({
     where: eq(organizations.id, opts.organizationId),
     columns: { baseDomain: true },
   });
-  if (!org?.baseDomain) {
-    const { getInstanceConfig } = await import("@/lib/system-settings");
-    const instanceConfig = await getInstanceConfig();
-    if (instanceConfig.baseDomain && org) {
-      (org as { baseDomain: string | null }).baseDomain = instanceConfig.baseDomain;
-    }
-  }
+  const baseDomain = await getBaseDomain(org?.baseDomain);
 
   const groupEnvId = nanoid();
   await db.insert(groupEnvironments).values({
@@ -102,8 +96,8 @@ export async function createGroupEnvironment(
     opts.appOverrides?.[app.id]?.strategy ?? app.cloneStrategy ?? "clone";
   const envDomainOf = (app: (typeof projectApps)[number]) =>
     opts.type === "preview" && opts.prNumber
-      ? generatePreviewSubdomain(app.name, opts.prNumber, org?.baseDomain)
-      : generateEnvironmentSubdomain(app.name, opts.name, org?.baseDomain);
+      ? generatePreviewSubdomain(app.name, opts.prNumber, baseDomain)
+      : generateEnvironmentSubdomain(app.name, opts.name, baseDomain);
 
   // Production hostname -> this environment's hostname, for every app that gets one.
   const cloned = projectApps.filter((app) => strategyOf(app) !== "skip");

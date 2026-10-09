@@ -32,6 +32,7 @@ const ALERT_KINDS = new Set([
   "volume.drift",
   "security.file-exposed",
   "security.scan-findings",
+  "security.domain-claimed",
 ]);
 
 /** State changes the platform cannot account for. */

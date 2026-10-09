@@ -44,7 +44,7 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
         where: eq(organizations.id, orgId),
         columns: { baseDomain: true },
       });
-      const domain = `${name}.${getBaseDomain(orgRecord?.baseDomain)}`;
+      const domain = `${name}.${await getBaseDomain(orgRecord?.baseDomain)}`;
 
       const taken = await db.query.domains.findFirst({
         where: eq(domains.domain, domain),

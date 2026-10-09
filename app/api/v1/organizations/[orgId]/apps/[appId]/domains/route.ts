@@ -13,7 +13,7 @@ import { apps, organizations } from "@/lib/db/schema";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { HOSTNAME_RE } from "@/lib/security/hostname";
 import { proofForNewDomain } from "@/lib/domains/context";
-import { hostHeldByOtherOrg } from "@/lib/domains/shared-host";
+import { hostHoldByOtherOrg, withClaim, type Claim } from "@/lib/domains/claim";
 import { normalizePathPrefix } from "@/lib/domains/path-prefix";
 import { middlewareProblem, serializeMiddlewares } from "@/lib/domains/middlewares";
 
@@ -36,6 +36,7 @@ const pathPrefixSchema = z
   });
 
 const HOST_TAKEN = "Another organization already routes that domain.";
+const HOST_CLAIMABLE = "Another organization added it but hasn't verified it. Verify it under Settings → Domains to claim it.";
 
 // Traefik middleware references, e.g. "cloudflare-only@file".
 const middlewaresSchema = z.array(z.string().trim().min(1).max(100)).max(10).nullable();
@@ -110,8 +111,13 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     if ("refusal" in proof) {
       return NextResponse.json({ error: `Couldn't add domain. ${proof.refusal}` }, { status: 400 });
     }
-    if (await hostHeldByOtherOrg(domainName, orgId)) {
+    const hold = await hostHoldByOtherOrg(domainName, orgId);
+    if (hold === "taken") {
       return NextResponse.json({ error: `Couldn't add domain. ${HOST_TAKEN}` }, { status: 409 });
+    }
+    // Unverified rows elsewhere yield only to a host this org proved through a verified zone.
+    if (hold === "claimable" && !proof.verifiedAt) {
+      return NextResponse.json({ error: `Couldn't add domain. ${HOST_CLAIMABLE}`, claimable: true }, { status: 409 });
     }
     const middlewares = await checkMiddlewares(parsed.data.middlewares ?? null, orgId);
     if ("error" in middlewares) {
@@ -122,7 +128,8 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     const certResolver = parsed.data.certResolver
       ?? getDefaultCertResolver(await getSslConfig());
 
-    const [created] = await db
+    const claim = hold === "claimable" ? { orgId, host: domainName, zone: false } : null;
+    const [created] = await withClaim(claim, (exec) => exec
       .insert(domains)
       .values({
         id: nanoid(),
@@ -138,7 +145,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
         stripPathPrefix: parsed.data.stripPathPrefix ?? false,
         middlewares: middlewares.value,
       })
-      .returning();
+      .returning());
 
     // Traefik labels route traffic, so domain changes need a redeploy.
     await db.update(apps).set({ needsRedeploy: true, updatedAt: new Date() }).where(eq(apps.id, appId));
@@ -204,6 +211,7 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
     }
 
     // A renamed domain starts over: its old proof says nothing about the new host.
+    let claim: Claim | null = null;
     const current = fields.domain
       ? await db.query.domains.findFirst({
           where: and(eq(domains.id, id), eq(domains.appId, appId)),
@@ -215,9 +223,14 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
       if ("refusal" in proof) {
         return NextResponse.json({ error: `Couldn't update domain. ${proof.refusal}` }, { status: 400 });
       }
-      if (await hostHeldByOtherOrg(fields.domain, orgId)) {
+      const hold = await hostHoldByOtherOrg(fields.domain, orgId);
+      if (hold === "taken") {
         return NextResponse.json({ error: `Couldn't update domain. ${HOST_TAKEN}` }, { status: 409 });
       }
+      if (hold === "claimable" && !proof.verifiedAt) {
+        return NextResponse.json({ error: `Couldn't update domain. ${HOST_CLAIMABLE}`, claimable: true }, { status: 409 });
+      }
+      if (hold === "claimable") claim = { orgId, host: fields.domain.toLowerCase(), zone: false };
       updates.domain = fields.domain.toLowerCase();
       Object.assign(updates, proof);
     }
@@ -236,11 +249,11 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
       }
     }
 
-    const [updated] = await db
+    const [updated] = await withClaim(claim, (exec) => exec
       .update(domains)
       .set(updates)
       .where(and(eq(domains.id, id), eq(domains.appId, appId)))
-      .returning();
+      .returning());
 
     if (!updated) {
       return apiError.notFound("domain");

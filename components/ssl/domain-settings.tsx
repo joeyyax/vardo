@@ -21,6 +21,7 @@ import { FieldHint } from "@/components/setup/provider-guide";
 import type { SslIssuer } from "@/lib/system-settings";
 import { DnsVerdict } from "./dns-verdict";
 import { diagnoseDns } from "./domain-diagnosis";
+import { baseDomainMismatch } from "@/lib/domain-monitoring/auto-domain";
 
 type DnsCheck = {
   domain: string;
@@ -61,6 +62,7 @@ export function DomainSettings() {
   const [instance, setInstance] = useState<InstanceData>({ baseDomain: "", serverIp: "", domain: "", instanceName: "" });
   const acmeEmail = process.env.NEXT_PUBLIC_ACME_EMAIL ?? "";
   const [dnsChecks, setDnsChecks] = useState<DnsCheck[]>([]);
+  const [envBaseDomain, setEnvBaseDomain] = useState<string | null>(null);
 
   // SSL issuer settings
   const [activeIssuers, setActiveIssuers] = useState<SslIssuer[]>(["le"]);
@@ -117,6 +119,7 @@ export function DomainSettings() {
             domain: data.domain ?? "",
             instanceName: data.instanceName ?? "",
           });
+          setEnvBaseDomain(data.envBaseDomain ?? null);
         }
 
         if (dnsRes.ok) {
@@ -178,6 +181,8 @@ export function DomainSettings() {
     }
   }
 
+  const baseMismatch = baseDomainMismatch(instance.baseDomain, envBaseDomain);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-8" role="status" aria-live="polite">
@@ -226,6 +231,9 @@ export function DomainSettings() {
             <p className="text-xs text-muted-foreground">
               Wildcard domain used for auto-generated app subdomains.
             </p>
+            {baseMismatch && (
+              <p className="text-xs text-status-warning" role="status">{baseMismatch}</p>
+            )}
           </div>
 
           <div className="max-w-md space-y-2">

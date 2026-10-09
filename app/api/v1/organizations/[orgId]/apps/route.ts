@@ -119,7 +119,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
 
     // The slug is the subdomain.
     const autoDomain = data.generateDomain
-      ? `${data.name}.${getBaseDomain(orgRecord?.baseDomain)}`
+      ? `${data.name}.${await getBaseDomain(orgRecord?.baseDomain)}`
       : null;
 
     if (autoDomain) {

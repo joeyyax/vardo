@@ -47,6 +47,16 @@ export async function register() {
       log.warn("Failed to load feature flags:", err)
     );
 
+    // Auto-domains follow the instance base domain over VARDO_BASE_DOMAIN.
+    try {
+      const { getInstanceConfig } = await import("./lib/system-settings");
+      const { baseDomainMismatch } = await import("./lib/domain-monitoring/auto-domain");
+      const mismatch = baseDomainMismatch((await getInstanceConfig()).baseDomain);
+      if (mismatch) log.warn(mismatch);
+    } catch (err) {
+      log.warn("Failed to compare base domains:", err);
+    }
+
     // buildAuth() reads sign-in methods synchronously.
     const { loadAuthMethods } = await import("./lib/config/auth-methods");
     await loadAuthMethods().catch((err) =>

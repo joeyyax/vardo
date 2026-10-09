@@ -10,7 +10,7 @@ export const EVENT_CATEGORIES = {
   volume: ["volume.drift"],
   disk: ["disk.write-alert"],
   org: ["org.invitation-sent", "org.invitation-accepted"],
-  security: ["security.file-exposed", "security.scan-findings"],
+  security: ["security.file-exposed", "security.scan-findings", "security.domain-claimed"],
   system: [
     "system.service-down",
     "system.disk-alert",
@@ -208,6 +208,15 @@ export type SecurityScanFindingsEvent = {
   domain?: string;
 };
 
+/** Another org verified a host, which removed this org's unverified rows for it. */
+export type SecurityDomainClaimedEvent = {
+  type: "security.domain-claimed";
+  title: string;
+  message: string;
+  domains: string[];
+  appIds: string[];
+};
+
 export type DigestWeeklyEvent = {
   type: "digest.weekly";
   title: string;
@@ -310,6 +319,7 @@ export type BusEvent =
   | SystemUpdateAvailableEvent
   | SecurityFileExposedEvent
   | SecurityScanFindingsEvent
+  | SecurityDomainClaimedEvent
   | DigestWeeklyEvent
   | BackupProgressEvent
   | DeployStatusEvent

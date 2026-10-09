@@ -1,4 +1,4 @@
-// Server only. Client components get baseDomain as a prop from getInstanceConfig().
+// Server only, except generateWordPair. Client components get baseDomain as a prop from getInstanceConfig().
 
 export const DEFAULT_BASE_DOMAIN = process.env.VARDO_BASE_DOMAIN || "localhost";
 
@@ -96,38 +96,59 @@ export function generateWordPair(): { adjective: string; noun: string } {
   return { adjective: pick(ADJECTIVES), noun: pick(NOUNS) };
 }
 
-export function getBaseDomain(orgBaseDomain?: string | null): string {
-  return orgBaseDomain || DEFAULT_BASE_DOMAIN;
+/** The org's base domain, then the instance base domain, then `VARDO_BASE_DOMAIN`. */
+export function pickBaseDomain(
+  orgBaseDomain: string | null | undefined,
+  instanceBaseDomain: string | null | undefined,
+  envBaseDomain: string | null | undefined = process.env.VARDO_BASE_DOMAIN,
+): string {
+  return orgBaseDomain || instanceBaseDomain || envBaseDomain || "localhost";
 }
 
-export function generateSubdomain(
-  projectName: string,
-  baseDomain?: string | null
-): string {
-  const base = getBaseDomain(baseDomain);
+/** The instance base domain from the admin settings, then `VARDO_BASE_DOMAIN`. */
+export async function getInstanceBaseDomain(): Promise<string> {
+  const { getInstanceConfig } = await import("@/lib/system-settings");
+  return pickBaseDomain(null, (await getInstanceConfig()).baseDomain);
+}
+
+export async function getBaseDomain(orgBaseDomain?: string | null): Promise<string> {
+  if (orgBaseDomain) return orgBaseDomain;
+  return getInstanceBaseDomain();
+}
+
+/** Why the instance base domain and `VARDO_BASE_DOMAIN` can't both be right, or null. */
+export function baseDomainMismatch(
+  instanceBaseDomain: string | null | undefined,
+  envBaseDomain: string | null | undefined = process.env.VARDO_BASE_DOMAIN,
+): string | null {
+  const inst = instanceBaseDomain?.trim().toLowerCase();
+  const env = envBaseDomain?.trim().toLowerCase();
+  if (!inst || !env || inst === env) return null;
+  return `The instance base domain is ${inst} but VARDO_BASE_DOMAIN is ${env}. Orgs without their own base domain get auto-domains under ${inst}.`;
+}
+
+export function generateSubdomain(projectName: string, baseDomain: string): string {
   const { adjective, noun } = generateWordPair();
-  return `${projectName}-${adjective}-${noun}.${base}`;
+  return `${projectName}-${adjective}-${noun}.${baseDomain}`;
 }
 
 export function generateEnvironmentSubdomain(
   projectName: string,
   environmentName: string,
-  baseDomain?: string | null
+  baseDomain: string,
 ): string {
-  const base = getBaseDomain(baseDomain);
   const sanitized = environmentName
     .toLowerCase()
     .replace(/[^a-z0-9-]/g, "-")
     .replace(/-+/g, "-")
     .replace(/^-|-$/g, "");
-  return `${projectName}-${sanitized}.${base}`;
+  return `${projectName}-${sanitized}.${baseDomain}`;
 }
 
 export function generatePreviewSubdomain(
   projectName: string,
   prNumber: number,
-  baseDomain?: string | null
+  baseDomain: string,
 ): string {
-  const base = getBaseDomain(baseDomain);
-  return `${projectName}-pr-${prNumber}.${base}`;
+  return `${projectName}-pr-${prNumber}.${baseDomain}`;
 }
