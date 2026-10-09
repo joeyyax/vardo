@@ -63,7 +63,7 @@ import { dockerEnv } from "@/lib/docker/docker-env";
 const log = logger.child("backup");
 
 // Staging dir for archives. Must be host-visible: it's bind-mounted into a `docker run` container.
-const BACKUPS_DIR = resolve(
+export const BACKUPS_DIR = resolve(
   process.env.VARDO_BACKUPS_DIR ||
     (process.env.VARDO_HOME_DIR
       ? join(process.env.VARDO_HOME_DIR, "backups-staging")
@@ -1288,7 +1288,7 @@ async function keepSnapshot(snapshotFile: string, backupId: string, log: (msg: s
 }
 
 /** Stop the destination's writers, copy it aside, restore and put the copy back on failure. */
-async function restoreFilesWithSnapshot(opts: {
+export async function restoreFilesWithSnapshot(opts: {
   backupId: string;
   dest: RestoreDestination | null;
   /** `-v` spec for the destination, as the restore script expects it. */
@@ -1340,7 +1340,7 @@ async function restoreFilesWithSnapshot(opts: {
 }
 
 /** Dump restore for engines without transactions: dump the live database first, replay it on failure. */
-async function restoreDumpWithSnapshot(opts: {
+export async function restoreDumpWithSnapshot(opts: {
   backupId: string;
   kind: DumpSpec["kind"];
   containerId: string;
@@ -1348,9 +1348,11 @@ async function restoreDumpWithSnapshot(opts: {
   archivePath: string;
   tmpDir: string;
   log: (msg: string) => void;
+  /** Replaces the kind's own restore command. Postgres overrides must also run in one transaction. */
+  restoreArgv?: string[];
 }): Promise<void> {
   const { backupId, kind, containerId, containerEnv, archivePath, tmpDir, log } = opts;
-  const restoreArgv = buildRestoreArgv(kind, containerId, containerEnv);
+  const restoreArgv = opts.restoreArgv ?? buildRestoreArgv(kind, containerId, containerEnv);
 
   // One transaction: a failure leaves the database as it was.
   if (kind === "postgres") {

@@ -113,24 +113,51 @@ export function buildRestoreArgv(
   kind: DatabaseKind,
   containerId: string,
   env: ContainerEnv,
+  /** Database to restore into. MySQL and MariaDB dumps with `USE` statements still switch. */
+  database?: string,
 ): string[] {
+  // Passed as a positional parameter, never spliced into the script.
+  const dbArgs = database ? ["sh", database] : [];
+  const withDb = (script: string) => (database ? `${script} "$1"` : script);
   switch (kind) {
     case "postgres": {
-      const { user, database } = postgresTarget(env);
+      const target = postgresTarget(env);
       return [
         "exec", "-i", containerId,
-        "psql", "-U", user, "-v", "ON_ERROR_STOP=1", "--single-transaction", "-d", database,
+        "psql", "-U", target.user, "-v", "ON_ERROR_STOP=1", "--single-transaction", "-d", database || target.database,
       ];
     }
     case "mysql":
-      return ["exec", "-i", containerId, "sh", "-c", MYSQL_RESTORE];
+      return ["exec", "-i", containerId, "sh", "-c", withDb(MYSQL_RESTORE), ...dbArgs];
     case "mariadb":
-      return ["exec", "-i", containerId, "sh", "-c", MARIADB_RESTORE];
+      return ["exec", "-i", containerId, "sh", "-c", withDb(MARIADB_RESTORE), ...dbArgs];
     case "uptime-kuma":
       return ["exec", "-i", containerId, "sh", "-c", KUMA_RESTORE];
     case "mongo":
       return ["exec", "-i", containerId, "sh", "-c", MONGO_RESTORE];
   }
+}
+
+/**
+ * `docker exec` arguments that load a `pg_dump -Fc` archive from stdin.
+ * One transaction, as with psql. Objects are owned by the app's user, not the source's.
+ */
+export function buildPgRestoreArgv(containerId: string, env: ContainerEnv, database?: string): string[] {
+  const target = postgresTarget(env);
+  return [
+    "exec", "-i", containerId,
+    "pg_restore", "-U", target.user, "-d", database || target.database,
+    "--clean", "--if-exists", "--no-owner", "--no-privileges", "--single-transaction", "--exit-on-error",
+  ];
+}
+
+/** Database the image created on first start, from its env. Null when it made none. */
+export function defaultDatabase(kind: DatabaseKind, env: ContainerEnv): string | null {
+  if (kind === "postgres") return postgresTarget(env).database;
+  if (kind === "mysql" || kind === "mariadb") {
+    return readEnv(env, "MARIADB_DATABASE") || readEnv(env, "MYSQL_DATABASE") || null;
+  }
+  return null;
 }
 
 /** Human-readable description of what a spec will run, for logs and the UI. */

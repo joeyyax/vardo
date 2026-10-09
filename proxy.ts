@@ -100,5 +100,6 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: "/api/:path*",
+  // App imports stream multi-GB bodies; a proxy match would cap them at 10 MB. The route checks CSRF itself.
+  matcher: "/api/((?!v1/organizations/[^/]+/apps/[^/]+/import/?$).*)",
 };

@@ -1710,6 +1710,53 @@ case "${1:-}" in
         node:22-slim npx -y tsx /src/scripts/backup-decrypt.ts /in "/out/$OUT_NAME"
     fi
     ;;
+  import-data)
+    # Load a pg_dump, SQL dump or volume tar into an app through the import API.
+    shift
+    if [ $# -lt 3 ] || [ $# -gt 4 ]; then
+      echo "Usage: vardo import-data <org-id>/<app-id> <volume> <file|-|user@host:/path|https://url> [database]" >&2
+      echo "Set VARDO_API_KEY to an API token for the app's organization." >&2
+      exit 2
+    fi
+    TARGET="$1"; VOLUME="$2"; SRC="$3"; DB="${4:-}"
+    [ -n "${VARDO_API_KEY:-}" ] || { echo "Set VARDO_API_KEY to an API token for the app's organization." >&2; exit 2; }
+    [[ "$TARGET" =~ ^[A-Za-z0-9_-]+/[A-Za-z0-9_-]+$ ]] || { echo "Target is <org-id>/<app-id>." >&2; exit 2; }
+    [[ "$VOLUME" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "Invalid volume name: $VOLUME" >&2; exit 2; }
+    [ -z "$DB" ] || [[ "$DB" =~ ^[A-Za-z0-9_-]+$ ]] || { echo "Invalid database name: $DB" >&2; exit 2; }
+    API="http://localhost:3000/api/v1/organizations/${TARGET%%/*}/apps/${TARGET#*/}/import"
+    export VARDO_API_KEY
+    # curl runs in the console container; the token stays off the host's process list.
+    upload() {
+      local q="volume=$VOLUME"
+      [ -n "$DB" ] && q="$q&database=$DB"
+      docker compose -f "$COMPOSE_PATH" exec -T -e VARDO_API_KEY frontend sh -c \
+        'exec curl -sS -X PUT -T - -H "Authorization: Bearer $VARDO_API_KEY" -H "Content-Type: application/octet-stream" "$1"' \
+        sh "$API?$q"
+    }
+    if [ "$SRC" = "-" ]; then
+      OUT=$(upload)
+    elif [ -f "$SRC" ]; then
+      OUT=$(upload < "$SRC")
+    elif [[ "$SRC" =~ ^https?://[^\"\\[:space:]]+$ ]]; then
+      BODY="{\"volume\":\"$VOLUME\",${DB:+\"database\":\"$DB\",}\"source\":{\"type\":\"url\",\"url\":\"$SRC\"}}"
+      OUT=$(printf '%s' "$BODY" | docker compose -f "$COMPOSE_PATH" exec -T -e VARDO_API_KEY frontend sh -c \
+        'exec curl -sS -X POST --data-binary @- -H "Authorization: Bearer $VARDO_API_KEY" -H "Content-Type: application/json" "$1"' \
+        sh "$API")
+    elif [[ "$SRC" =~ ^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+:/ ]]; then
+      # Copied with this host's SSH keys first: a dropped connection mid-stream would upload a cut-off file.
+      REMOTE_PATH="${SRC#*:}"
+      QUOTED="'$(printf '%s' "$REMOTE_PATH" | sed "s/'/'\\\\''/g")'"
+      STAGE=$(mktemp -d "$VARDO_DIR/.import-XXXXXX")
+      trap 'rm -rf "$STAGE"' EXIT
+      ssh -o BatchMode=yes -- "${SRC%%:*}" "cat -- $QUOTED" > "$STAGE/source" || { echo "Copying $SRC failed." >&2; exit 1; }
+      OUT=$(upload < "$STAGE/source")
+    else
+      echo "No such file, URL or SSH path: $SRC" >&2
+      exit 2
+    fi
+    echo "$OUT"
+    [[ "$OUT" == *'"success":true'* ]] || exit 1
+    ;;
   *)
     echo "Usage: vardo <command>"
     echo ""
@@ -1726,6 +1773,7 @@ case "${1:-}" in
     echo "  setup-token      Print the first-run setup token"
     echo "  adopt <path>     Onboard existing repo with vardo.yaml"
     echo "  backup decrypt <in> <out>  Decrypt a backup archive"
+    echo "  import-data <org>/<app> <volume> <source> [db]  Load a dump or volume tar into an app"
     echo "  shell [cmd]      Open shell in frontend container"
     echo "  uninstall        Remove Vardo"
     ;;
