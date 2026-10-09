@@ -109,7 +109,7 @@ function dispatchToChannels(orgId: string, event: BusEvent): void {
 
           try {
             const receipt = await createChannel(row).send(event);
-            await logNotification(orgId, row, event.type, event.title, "success", undefined, receipt);
+            await logNotification(orgId, row, event.type, event.title, "success", receipt?.partialFailure, receipt);
           } catch (err) {
             await handleChannelFailure(orgId, row, event, err);
           }

@@ -42,20 +42,37 @@ export class EmailNotificationChannel implements NotificationChannel {
     private organizationId?: string,
   ) {}
 
+  /** Throws when no recipient got the email, so dispatch logs a failure and retries. */
   async send(event: BusEvent): Promise<DeliveryReceipt> {
     const { loadMailSeries } = await import("@/lib/email/series");
     const [ctx, series] = await Promise.all([mailContext(this.organizationId), loadMailSeries(event).catch(() => ({}))]);
     const email = await renderNotificationEmail(event, { ...ctx, series });
-    if (!email) return {};
+    if (!email || this.config.recipients.length === 0) return {};
+
     const providerMessageIds: string[] = [];
+    const failures: string[] = [];
     for (const recipient of this.config.recipients) {
       try {
         const result = await sendEmail({ to: recipient, subject: email.subject, html: email.html, text: email.text });
+        if (!result.success) {
+          failures.push(`${recipient}: ${result.error ?? "rejected"}`);
+          continue;
+        }
         if (result.messageId) providerMessageIds.push(result.messageId);
       } catch (err) {
-        log.error(`Failed to send email to ${recipient}:`, err);
+        failures.push(`${recipient}: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
-    return providerMessageIds.length > 0 ? { providerMessageIds } : {};
+
+    if (failures.length === this.config.recipients.length) {
+      throw new Error(`Email not sent to any recipient. ${failures.join("; ")}`);
+    }
+    if (failures.length > 0) {
+      log.warn(`Email reached ${this.config.recipients.length - failures.length} of ${this.config.recipients.length} recipients: ${failures.join("; ")}`);
+    }
+    return {
+      ...(providerMessageIds.length > 0 ? { providerMessageIds } : {}),
+      ...(failures.length > 0 ? { partialFailure: `Not sent to ${failures.length} of ${this.config.recipients.length}: ${failures.join("; ")}` } : {}),
+    };
   }
 }

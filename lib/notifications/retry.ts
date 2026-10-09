@@ -118,7 +118,7 @@ async function processRetries(len: number): Promise<void> {
 
     try {
       const receipt = await createChannel(channel).send(entry.event);
-      await logAttempt(entry, "success", null, receipt);
+      await logAttempt(entry, "success", receipt?.partialFailure ?? null, receipt);
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
 
