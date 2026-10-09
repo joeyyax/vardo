@@ -1,6 +1,7 @@
 // Writes deploy events to a per-deploy Redis stream (stream:deploy:{deployId}), read by live tailing and history.
 
 import { addDeployLog } from "@/lib/stream/producer";
+import { expireDeployStream } from "@/lib/stream/deploy-expiry";
 import { logger } from "@/lib/logger";
 import { redactSecrets } from "@/lib/redact";
 
@@ -95,7 +96,17 @@ export function createDeployLogger(deployId: string) {
         log.error(`Failed to write stage for ${deployId}:`, err);
       });
     }
-    lastWrite = isTerminal ? write : lastWrite;
+    if (isTerminal && isTerminalStageEvent(stage, status)) {
+      // Expiry failure is logged; the sweep retries.
+      lastWrite = write.then(async (id) => {
+        await expireDeployStream(deployId).catch((err) => {
+          log.error(`Failed to expire deploy stream for ${deployId}:`, err);
+        });
+        return id;
+      });
+    } else {
+      lastWrite = isTerminal ? write : lastWrite;
+    }
   }
 
   /** Current stage, for error context. */
