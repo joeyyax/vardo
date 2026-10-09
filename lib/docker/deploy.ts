@@ -307,9 +307,15 @@ export async function runDeployment(
 
     const org = await db.query.organizations.findFirst({
       where: eq(organizations.id, opts.organizationId),
-      columns: { id: true, name: true, baseDomain: true, trusted: true, isSystemManaged: true },
+      columns: { id: true, name: true, slug: true, baseDomain: true, trusted: true, isSystemManaged: true },
     });
     const orgTrusted = org?.trusted ?? false;
+    const projectRow = app.projectId
+      ? await db.query.projects.findFirst({ where: eq(projects.id, app.projectId), columns: { name: true } })
+      : null;
+    streamLogger.addPublicNames([
+      app.name, app.displayName, projectRow?.name, org?.name, org?.slug, org?.baseDomain, ...app.domains.map((d) => d.domain),
+    ]);
 
     // Per-project bind mount and Docker socket permissions.
     let projectAllowBindMounts = false;
@@ -418,7 +424,7 @@ export async function runDeployment(
       log(`[deploy] Warning: ${key} points at production's ${host}`);
     }
 
-    streamLogger.addSecrets(Object.values(envMap));
+    streamLogger.addSecrets(envMap);
     const totalEnvVarCount = Object.keys(envMap).length;
     if (app.containerPort && !envMap.PORT) {
       envMap.PORT = String(app.containerPort);
