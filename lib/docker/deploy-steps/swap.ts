@@ -30,6 +30,7 @@ import { sharedPullTargets } from "./shared-images";
 import { describeSharedOutcome, reconcileSharedServices, SharedRecreateError } from "./shared-drift";
 import { majorGateAfter, majorGateBefore, type MajorGateState } from "./major-gate";
 import { publishesHostPorts } from "../host-ports";
+import { composeStopTimeout } from "../stop-timeout";
 import { getServicesWithExternalizedVolumes } from "../compose-inject";
 import { registryAuthHint, withRegistryAuth } from "../registry-auth";
 import { partitionBySlot, sharedProjectName, slotOverlapDiagnosis, slotScopeArgs } from "../slot-partition";
@@ -436,7 +437,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
         await execFileAsync(
           "docker",
           ["compose", ...oldComposeFileArgs, "-p", oldProjectName, "stop"],
-          { env: dockerEnv(), cwd: oldSlotDir, timeout: COMPOSE_DOWN_TIMEOUT }
+          { env: dockerEnv(), cwd: oldSlotDir, timeout: composeStopTimeout(compose.services) }
         );
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
