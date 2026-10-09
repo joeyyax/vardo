@@ -37,6 +37,23 @@ describe("deploy refuses host access for untrusted orgs", () => {
     expect(compose.services.web.devices).toEqual(["/dev/sda:/dev/sda"]);
   });
 
+  it("logs each host-access setting a trusted org deploys", () => {
+    const lines: string[] = [];
+    parseAndSanitize(svc(HOST_ACCESS.privileged + HOST_ACCESS.cap_add), (m) => lines.push(m), { orgTrusted: true });
+    expect(lines).toContain('[deploy] Service "web" runs with privileged, cap_add, allowed for this trusted organization');
+  });
+
+  for (const key of ["pid", "ipc"]) {
+    it(`drops ${key}: host and logs the drop`, () => {
+      for (const orgTrusted of [true, false]) {
+        const lines: string[] = [];
+        const compose = parseAndSanitize(svc(`    ${key}: host\n`), (m) => lines.push(m), { orgTrusted });
+        expect(compose.services.web).not.toHaveProperty(key);
+        expect(lines.some((l) => l.includes(`"${key}"`) && l.includes("does not apply"))).toBe(true);
+      }
+    });
+  }
+
   it("leaves ordinary compose alone", () => {
     expect(() => parseAndSanitize(svc("    cap_drop:\n      - ALL\n"), log, { orgTrusted: false })).not.toThrow();
   });

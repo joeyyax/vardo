@@ -80,6 +80,7 @@ Fixed by #886. For untrusted orgs, `assertComposeWithinApp` (`lib/docker/compose
 | Repo symlinks copied into the slot as content | fixed | untrusted slots get a link, so the check resolves it, `lib/docker/deploy-steps/build.ts:85` |
 | Deny list misses `/`, `/var/lib/docker`, `/run/containerd`, `/opt/vardo` when bind mounts are on | fixed for compose | the policy also refuses any ancestor of a denied path; `DENIED_MOUNT_PATHS` itself is unchanged |
 | Top-level `name:` steers the shared volume and network names Vardo creates | fixed for untrusted | `crossBoundaryVolumeName` and `sharedNetworkName` use `compose.name`; the prefix check refuses the result |
+| `privileged`, `cap_add`, `devices`, `security_opt`, host `network_mode`, `pid` and `ipc` | fixed | #815: refused for untrusted orgs by `hostAccessErrors` on input and by the policy on the resolved model; `pid`, `ipc` and the rest of `DROPPED_SERVICE_KEYS` never reach the container, and the drop is logged. Trusted orgs keep them, logged on every deploy, `prepare-repo.ts:84` |
 | Slots deployed before #886 | fixed | #895: `assertSlotWithinApp` runs the check over the slot's files before `start`, `restart`, `recreate` and both rollbacks, `lib/docker/slot-guard.ts`, `start-app.ts:75`, `deploy.ts:1049,1092` |
 
 ## 6. Secret exposure

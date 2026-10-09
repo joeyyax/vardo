@@ -11,6 +11,7 @@ import {
   droppedKeyWarnings,
   generateComposeForImage,
   hostAccessErrors,
+  hostAccessSettings,
   parseCompose,
   parseComposeYaml,
   sanitizeCompose,
@@ -80,6 +81,9 @@ export function parseAndSanitize(yaml: string, log: (msg: string) => void, opts?
   }
   // Trusted orgs bypass all mount restrictions.
   if (opts?.orgTrusted) {
+    for (const { service, used } of hostAccessSettings(compose)) {
+      log(`[deploy] Service "${service}" runs with ${used.join(", ")}, allowed for this trusted organization`);
+    }
     const { valid, errors } = validateCompose(compose, { allowBindMounts: true, skipMountChecks: true });
     if (!valid) {
       throw new DeployBlockedError(`Compose validation failed:\n${errors.join("\n")}`);

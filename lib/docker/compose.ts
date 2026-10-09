@@ -31,6 +31,7 @@ export {
   validateCompose,
   sanitizeCompose,
   hostAccessErrors,
+  hostAccessSettings,
   sharedServiceNames,
   findMistypedSharedMarkers,
   sharedMarkerTypeErrors,
