@@ -21,6 +21,7 @@ import { readSlotPartition } from "./shared-project";
 import { recordActivity } from "@/lib/activity";
 import { DeployBlockedError } from "./errors";
 import { assertSlotWithinApp } from "./slot-guard";
+import { assertDiskHeadroom } from "./disk-guard";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { createDeployLogger, DEPLOY_STAGE_ORDER } from "./deploy-logger";
 import { recordPostDeployIncomplete } from "./deploy-incomplete";
@@ -478,6 +479,8 @@ export async function runDeployment(
       logLines,
       startTime,
     };
+
+    await assertDiskHeadroom();
 
     // Each step reads and mutates ctx.
     ctx = await prepareRepo(ctx);

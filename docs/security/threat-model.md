@@ -121,6 +121,7 @@ Narrows:
 - Only Traefik-routed services join `vardo-network`; others stay on the project network.
 - Default memory, CPU and process caps per QoS tier; the compose's own values win (`defaultCpuLimit`, `defaultPidsLimit` in `lib/docker/compose-inject.ts`, #889).
 - Postgres and Redis no longer published beyond loopback (this branch).
+- Builds and deploys refuse when Docker's disk is 95% used or has under 2 GB free, so a tenant filling it can't take the next deploy down mid-build (#815, `lib/docker/disk-guard.ts`; `VARDO_DISK_GUARD_PERCENT`, `VARDO_DISK_GUARD_MIN_FREE_GB`).
 
 Widens or leaves open:
 - `vardo-network` includes the console, Traefik and WireGuard, so a routed app reaches `vardo-frontend:3000` directly. Traefik's `:8080` answers it only `/ping` (#889).
