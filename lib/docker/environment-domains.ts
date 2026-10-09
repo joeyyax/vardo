@@ -4,7 +4,7 @@ import type { domains } from "@/lib/db/schema";
 
 export type DeployDomain = typeof domains.$inferSelect & { composeService?: string | null };
 
-/** A non-default environment's own hostname, routed like the app's primary domain. */
+/** A non-default environment's own hostname, routed like the app's primary domain and behind its middlewares. */
 export function environmentDomains(
   appDomains: DeployDomain[],
   env: { id: string | null; domain: string | null },
@@ -22,7 +22,7 @@ export function environmentDomains(
       stripPathPrefix: false,
       serviceName: template?.serviceName ?? null,
       port: template?.port ?? null,
-      middlewares: null,
+      middlewares: template?.middlewares ?? null,
       certResolver: template?.certResolver ?? "le-dns",
       isPrimary: true,
       sslEnabled: template?.sslEnabled ?? true,
