@@ -9,6 +9,8 @@ import { db } from "@/lib/db";
 import { apps, domains, organizations } from "@/lib/db/schema";
 import { loadInstanceHosts, loadVerifiedZones } from "@/lib/domains/context";
 import { coveredByZone, isRoutable, refusedHost } from "@/lib/domains/ownership";
+import { recordActivity } from "@/lib/activity/record";
+import { dockerRequest, inspectContainer, restartContainer } from "@/lib/docker/client";
 import { dockerEnv } from "@/lib/docker/docker-env";
 import { resolveDefaultEnv } from "@/lib/docker/resolve-env";
 import { volumePrefix } from "@/lib/docker/volume-prefix";
@@ -190,16 +192,40 @@ const PRUNE_SCRIPT = [
 ].join("\n");
 
 const written = new Map<string, string>();
+/** When each volume's certs last changed, in ms. */
+const writtenAt = new Map<string, number>();
 
-function fingerprint(certs: ExportedCert[]): string {
+type CertFiles = Pick<ExportedCert, "host" | "fullchain" | "privkey">;
+
+function fingerprint(certs: CertFiles[]): string {
   const h = createHash("sha256");
   for (const c of certs) h.update(c.host).update("\0").update(c.fullchain).update("\0").update(c.privkey).update("\0");
   return h.digest("hex");
 }
 
+/** The certs a volume holds, from a tar of its root. A host missing a file keeps it empty. */
+export function certsFromTar(entries: { name: string; data: Buffer }[]): CertFiles[] {
+  const byHost = new Map<string, CertFiles>();
+  for (const e of entries) {
+    const m = /^(?:\.\/)?([^/]+)\/(fullchain|privkey)\.pem$/.exec(e.name);
+    if (!m) continue;
+    const c = byHost.get(m[1]) ?? { host: m[1], fullchain: "", privkey: "" };
+    c[m[2] as "fullchain" | "privkey"] = e.data.toString("utf8");
+    byHost.set(m[1], c);
+  }
+  return [...byHost.values()].sort((a, b) => a.host.localeCompare(b.host));
+}
+
+/** What a volume holds now, so a console restart doesn't rewrite unchanged certs. */
+async function volumeFingerprint(volume: string): Promise<string> {
+  const tar = await runDocker(["run", "--rm", "--network", "none", "-v", `${volume}:/certs:ro`, "alpine", "tar", "-C", "/certs", "-cf", "-", "."]);
+  return fingerprint(certsFromTar(readTar(tar)));
+}
+
 /** Write the selected certs into a volume and remove any host no longer selected. Skips an unchanged set. */
 export async function writeCertsToVolume(volume: string, certs: ExportedCert[]): Promise<boolean> {
   const print = fingerprint(certs);
+  if (!written.has(volume)) written.set(volume, await volumeFingerprint(volume).catch(() => ""));
   if (written.get(volume) === print) return false;
   const base = ["run", "--rm", "--network", "none", "-v", `${volume}:/certs`];
   for (const c of certs) {
@@ -208,11 +234,45 @@ export async function writeCertsToVolume(volume: string, certs: ExportedCert[]):
   }
   await runDocker([...base, "alpine", "sh", "-c", PRUNE_SCRIPT, "sh", ...certs.map((c) => c.host)]);
   written.set(volume, print);
+  writtenAt.set(volume, Date.now());
   return true;
 }
 
-/** Bring one app's cert volume up to date. Returns the hosts it now holds, or null when the app has it off. */
-export async function syncAppCerts(appId: string, logFn: (msg: string) => void = (m) => log.info(m)): Promise<string[] | null> {
+/** Docker's RFC 3339 time with nanoseconds, in ms. */
+export function parseDockerTime(t: string): number {
+  return Date.parse(t.replace(/(\.\d{3})\d+/, "$1"));
+}
+
+/** A container started before its certs last changed still holds the old ones. */
+export function startedBeforeWrite(startedAt: string, certsWrittenAt: number | undefined): boolean {
+  if (certsWrittenAt === undefined) return false;
+  const started = parseDockerTime(startedAt);
+  return Number.isFinite(started) && started < certsWrittenAt;
+}
+
+/** Restart running containers that mount the volume and hold old certs. Returns their service names. */
+export async function restartStaleCertServices(volume: string): Promise<string[]> {
+  const at = writtenAt.get(volume);
+  if (at === undefined) return [];
+  const filters = encodeURIComponent(JSON.stringify({ volume: [volume] }));
+  const running = await dockerRequest<{ Id: string; Names: string[]; Labels?: Record<string, string> }[]>(
+    "GET",
+    `/containers/json?filters=${filters}`,
+  );
+  const restarted: string[] = [];
+  for (const c of running) {
+    const info = await inspectContainer(c.Id);
+    if (!startedBeforeWrite(info.state.startedAt, at)) continue;
+    await restartContainer(c.Id);
+    restarted.push(c.Labels?.["com.docker.compose.service"] ?? (c.Names[0] ?? c.Id).replace(/^\//, ""));
+  }
+  return restarted;
+}
+
+export type CertSync = { app: string; organizationId: string; volume: string; hosts: string[]; waiting: string[] };
+
+/** Bring one app's cert volume up to date. Null when the app has it off. */
+export async function syncAppCerts(appId: string, logFn: (msg: string) => void = (m) => log.info(m)): Promise<CertSync | null> {
   const app = await db.query.apps.findFirst({
     where: eq(apps.id, appId),
     columns: { id: true, name: true, organizationId: true, certServices: true },
@@ -231,7 +291,91 @@ export async function syncAppCerts(appId: string, logFn: (msg: string) => void =
         : `[certs] ${app.name}: no issued certificate covers only this app's verified domains yet`,
     );
   }
-  return selected.map((c) => c.host);
+  const hosts = selected.map((c) => c.host);
+  const waiting = [...eligible].filter((h) => !hosts.includes(h)).sort();
+  return { app: app.name, organizationId: app.organizationId, volume, hosts, waiting };
+}
+
+export type CertRefresh = CertSync & { restarted: string[] };
+
+const inflight = new Map<string, Promise<unknown>>();
+
+/** Sync one app's certs, then restart the cert services holding old ones. Serialized per app. */
+export function refreshAppCerts(appId: string, logFn: (msg: string) => void = (m) => log.info(m)): Promise<CertRefresh | null> {
+  const run = async (): Promise<CertRefresh | null> => {
+    const synced = await syncAppCerts(appId, logFn);
+    if (!synced) return null;
+    const restarted = await restartStaleCertServices(synced.volume);
+    if (restarted.length > 0) {
+      logFn(`[certs] ${synced.app}: exported ${synced.hosts.join(", ")} — restarted ${restarted.join(", ")}`);
+      recordActivity({
+        organizationId: synced.organizationId,
+        action: "app.certs_exported",
+        appId,
+        metadata: { hosts: synced.hosts, restarted },
+      }).catch(() => {});
+    }
+    return { ...synced, restarted };
+  };
+  const next = (inflight.get(appId) ?? Promise.resolve()).catch(() => {}).then(run);
+  inflight.set(appId, next);
+  next
+    .finally(() => {
+      if (inflight.get(appId) === next) inflight.delete(appId);
+    })
+    .catch(() => {});
+  return next;
+}
+
+export const CERT_POLL_INTERVAL_MS = 15_000;
+export const CERT_POLL_TIMEOUT_MS = 5 * 60_000;
+
+/** Refresh until no host is waiting or time runs out. A failed attempt is logged and retried. */
+export async function pollCerts(
+  refresh: () => Promise<CertRefresh | null>,
+  logFn: (msg: string) => void,
+  opts: { intervalMs?: number; timeoutMs?: number; sleep?: (ms: number) => Promise<void> } = {},
+): Promise<CertRefresh | null> {
+  const { intervalMs = CERT_POLL_INTERVAL_MS, timeoutMs = CERT_POLL_TIMEOUT_MS } = opts;
+  const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  let last: CertRefresh | null = null;
+  for (let waited = 0; waited < timeoutMs; ) {
+    await sleep(intervalMs);
+    waited += intervalMs;
+    try {
+      last = await refresh();
+    } catch (err) {
+      logFn(`[certs] Couldn't read Traefik's certificates: ${err instanceof Error ? err.message : err}`);
+      continue;
+    }
+    if (!last || last.waiting.length === 0) return last;
+  }
+  if (last?.waiting.length) {
+    logFn(`[certs] ${last.app}: still no certificate for ${last.waiting.join(", ")} after ${timeoutMs / 60_000} minutes`);
+  }
+  return last;
+}
+
+/** After a deploy: export now, then keep polling in the background while hosts lack certs. */
+export async function watchAppCerts(
+  appId: string,
+  logFn: (msg: string) => void,
+  laterLogFn: (msg: string) => void,
+): Promise<void> {
+  const first = await refreshAppCerts(appId, logFn);
+  if (!first?.waiting.length) return;
+  logFn(`[certs] waiting for ${first.waiting.join(", ")} — checking every ${CERT_POLL_INTERVAL_MS / 1000}s for up to ${CERT_POLL_TIMEOUT_MS / 60_000} minutes`);
+  void pollCerts(() => refreshAppCerts(appId, laterLogFn), laterLogFn)
+    .then((last) => {
+      if (!last?.waiting.length) return;
+      return recordActivity({
+        organizationId: last.organizationId,
+        action: "app.certs_missing",
+        appId,
+        metadata: { hosts: last.waiting },
+      });
+    })
+    .catch((err) => log.warn(`${appId}: ${err instanceof Error ? err.message : err}`));
 }
 
 /** Every opted-in app. Errors are logged per app. */
@@ -239,7 +383,7 @@ export async function syncAllCerts(): Promise<void> {
   const rows = await db.select({ id: apps.id, name: apps.name }).from(apps).where(isNotNull(apps.certServices));
   for (const row of rows) {
     try {
-      await syncAppCerts(row.id);
+      await refreshAppCerts(row.id);
     } catch (err) {
       log.warn(`${row.name}: ${err instanceof Error ? err.message : err}`);
     }
