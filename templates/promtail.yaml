@@ -10,7 +10,7 @@ deployType: compose
 composeContent: |
   services:
     promtail:
-      image: grafana/promtail:3.4
+      image: grafana/promtail:3.6
       restart: unless-stopped
       command:
         - -config.file=/etc/promtail/config.yml
