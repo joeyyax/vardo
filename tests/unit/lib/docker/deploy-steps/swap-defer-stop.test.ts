@@ -8,6 +8,7 @@ import { describe, it, expect, vi } from "vitest";
 vi.mock("@/lib/db", () => ({ db: {} }));
 
 import { deferSlotStop } from "@/lib/docker/deploy-steps/swap";
+import { createStageTimings } from "@/lib/docker/stage-timings";
 
 describe("deferSlotStop", () => {
   it("defers for the self-app, whose old slot is running the deploy", () => {

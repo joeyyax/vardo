@@ -71,6 +71,7 @@ vi.mock("@/lib/docker/image-updates/registry", () => ({ getRegistryCredentials: 
 import { EventEmitter } from "events";
 import { spawn } from "child_process";
 import { prepareRepo } from "@/lib/docker/deploy-steps/prepare-repo";
+import { createStageTimings } from "@/lib/docker/stage-timings";
 
 const COMPOSE = "services:\n  web:\n    image: nginx:1.27\n";
 
@@ -168,6 +169,7 @@ function makeCtx(app: DeployApp): { ctx: DeployContext; stages: StageCall[] } {
       stages.push([s, status]);
     },
     checkAbort: vi.fn(),
+    timer: createStageTimings(),
     logs: { push: log },
     logLines,
     startTime: Date.now(),

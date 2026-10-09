@@ -32,7 +32,7 @@ const { dbMock, events, dockerCalls } = vi.hoisted(() => {
     const set = vi.fn().mockImplementation((values: Record<string, unknown>) => {
       const isDeploymentRow = typeof values.status === "string" && "finishedAt" in values;
       if (isDeploymentRow) events.push({ kind: "row", detail: String(values.status) });
-      else if (Object.keys(values).length === 1 && typeof values.log === "string") {
+      else if (typeof values.log === "string") {
         events.push({ kind: "log-flush", detail: values.log });
       }
       void table;

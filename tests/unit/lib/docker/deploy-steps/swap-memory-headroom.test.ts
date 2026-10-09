@@ -63,6 +63,7 @@ vi.mock("@/lib/docker/deploy-steps/bind-mount-ownership", () => ({
 import { swap } from "@/lib/docker/deploy-steps/swap";
 import type { DeployContext } from "@/lib/docker/deploy-context";
 import type { ComposeFile } from "@/lib/docker/compose-types";
+import { createStageTimings } from "@/lib/docker/stage-timings";
 
 /** Index of the first docker call matching a predicate, or -1. */
 function indexOf(match: (args: string[]) => boolean): number {
@@ -98,6 +99,7 @@ function context(overrides: { appName?: string } = {}): DeployContext {
     log: (line: string) => { logLines.push(line); return line; },
     stage: () => {},
     checkAbort: () => {},
+    timer: createStageTimings(),
     startTime: Date.now(),
   } as unknown as DeployContext;
 }

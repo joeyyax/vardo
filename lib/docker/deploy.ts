@@ -46,6 +46,7 @@ import { environmentDomains, withoutEnvironmentHosts } from "./environment-domai
 import { loadEnvironmentEnv } from "./environment-env";
 import { productionHostRefs } from "@/lib/env/environment-env";
 import { dockerEnv } from "@/lib/docker/docker-env";
+import { createStageTimings, formatTimings, STAGE_PHASE } from "./stage-timings";
 
 export type { DeployStage } from "./deploy-logger";
 
@@ -135,17 +136,20 @@ export async function runDeployment(
     return sanitized;
   }
 
+  const timer = createStageTimings();
+
   // Serialized so a slow write can't land after a later one and shorten the log.
   let logFlush: Promise<unknown> = Promise.resolve();
 
   /** Persist the log so far, so a process that dies mid-deploy keeps it. */
   function flushLog() {
     const snapshot = logLines.join("\n");
+    const stageTimings = timer.snapshot();
     logFlush = logFlush
       .then(() =>
         db
           .update(deployments)
-          .set({ log: snapshot })
+          .set({ log: snapshot, stageTimings })
           .where(eq(deployments.id, deploymentId)),
       )
       .catch(() => {});
@@ -156,6 +160,11 @@ export async function runDeployment(
 
   function emitStage(s: DeployStage, status: StageStatus) {
     stageStatus.set(s, status);
+    const phase = STAGE_PHASE[s];
+    if (phase) {
+      if (status === "running") timer.begin(phase);
+      else timer.end(phase);
+    }
     opts.onStage?.(s, status);
     streamLogger.stage(s, status);
     flushLog();
@@ -463,6 +472,7 @@ export async function runDeployment(
       log,
       stage,
       checkAbort,
+      timer,
       logs,
       logLines,
       startTime,
@@ -475,6 +485,9 @@ export async function runDeployment(
     ctx = await swap(ctx);
     ctx = await postDeploy(ctx);
 
+    const timingLine = formatTimings(timer.snapshot());
+    if (timingLine) log(timingLine);
+    flushLog();
     const durationMs = Date.now() - startTime;
     await streamLogger.flush();
     return { deploymentId, success: true, log: logLines.join("\n"), durationMs, status: "success" };
@@ -482,6 +495,7 @@ export async function runDeployment(
     // Redacted once: this message reaches events, activity, notifications and the API response.
     const message = redactSecrets(error instanceof Error ? error.message : "Unknown error");
     const durationMs = Date.now() - startTime;
+    timer.endAll();
 
     // Cut over and serving; only post-deploy work failed. Row, status and stream stand.
     if (ctx?.succeeded) {
@@ -581,6 +595,8 @@ export async function runDeployment(
     }
 
     log(`[deploy] ERROR: ${message}`);
+    const failedTimings = formatTimings(timer.snapshot());
+    if (failedTimings) log(failedTimings);
 
     // Past the deploy stage containers may be running. Nothing here has committed.
     const CONTAINER_STAGES: Set<DeployStage> = new Set(["deploy", "healthcheck", "routing", "cleanup", "done"]);
@@ -612,7 +628,7 @@ export async function runDeployment(
     fail();
     await db
       .update(deployments)
-      .set({ status: "failed", log: logLines.join("\n"), durationMs, finishedAt: new Date() })
+      .set({ status: "failed", log: logLines.join("\n"), stageTimings: timer.snapshot(), durationMs, finishedAt: new Date() })
       .where(eq(deployments.id, deploymentId));
 
     if (ownsAppStatus) {

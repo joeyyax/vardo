@@ -73,6 +73,7 @@ import { readFile } from "fs/promises";
 import { swap } from "@/lib/docker/deploy-steps/swap";
 import type { DeployContext } from "@/lib/docker/deploy-context";
 import type { ComposeFile } from "@/lib/docker/compose-types";
+import { createStageTimings } from "@/lib/docker/stage-timings";
 
 function composeFile(): ComposeFile {
   return {
@@ -119,6 +120,7 @@ function context(): DeployContext {
     },
     stage: () => {},
     checkAbort: () => {},
+    timer: createStageTimings(),
     startTime: Date.now(),
   } as unknown as DeployContext;
 }

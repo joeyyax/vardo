@@ -10,6 +10,7 @@ vi.mock("@/lib/db", () => ({ db: {} }));
 
 import { canPinCutover, drainThenStop } from "@/lib/docker/deploy-steps/swap";
 import type { CutoverGuard } from "@/lib/docker/traefik-cutover";
+import { createStageTimings } from "@/lib/docker/stage-timings";
 
 function recorder() {
   const calls: string[] = [];
