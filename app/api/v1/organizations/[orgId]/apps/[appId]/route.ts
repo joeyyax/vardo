@@ -12,6 +12,8 @@ import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { can } from "@/lib/auth/permissions";
 import { refuseSystemManaged } from "@/lib/api/system-managed";
 import { sharedMarkerTypeErrors } from "@/lib/docker/compose";
+import { MaskedComposeError, unmaskComposeEnv } from "@/lib/docker/compose-mask";
+import { readableApp } from "@/lib/api/readable-app";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { gitBranchUpdateSchema, gitUrlUpdateSchema } from "@/lib/api/git-fields";
@@ -104,7 +106,7 @@ async function handleGet(_request: NextRequest, { params }: RouteParams) {
       return apiError.notFound("app");
     }
 
-    return NextResponse.json({ app });
+    return NextResponse.json({ app: readableApp(app, can(org.membership, "env.reveal")) });
   } catch (error) {
     return handleRouteError(error, "Error fetching app");
   }
@@ -150,6 +152,16 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
 
     const refused = refuseSystemManaged(existingApp, "edit");
     if (refused) return refused;
+
+    // A masked read sent back keeps the saved values.
+    if (parsed.data.composeContent) {
+      try {
+        parsed.data.composeContent = unmaskComposeEnv(parsed.data.composeContent, existingApp.composeContent);
+      } catch (err) {
+        if (err instanceof MaskedComposeError) return NextResponse.json({ error: err.message }, { status: 400 });
+        throw err;
+      }
+    }
 
     // The parser drops a quoted x-vardo-shared, so check the raw YAML before storing.
     const markerErrors = sharedMarkerTypeErrors(parsed.data.composeContent ?? "");
@@ -216,7 +228,7 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
       metadata: { changes: Object.keys(parsed.data) },
     });
 
-    return NextResponse.json({ app: updated });
+    return NextResponse.json({ app: readableApp(updated, can(org.membership, "env.reveal")) });
   } catch (error) {
     return handleRouteError(error, "Error updating app");
   }

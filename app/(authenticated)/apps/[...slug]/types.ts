@@ -50,7 +50,7 @@ export type Domain = {
 export type EnvVar = {
   id: string;
   key: string;
-  value: string;
+  value?: string;
   isSecret: boolean | null;
   createdAt: Date;
   updatedAt: Date;

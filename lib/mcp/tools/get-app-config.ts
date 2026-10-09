@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import type { McpAuthContext } from "../auth";
+import { readableApp } from "@/lib/api/readable-app";
 import { accessDenied, canAccessOrg } from "../scope";
 
 export function registerGetAppConfig(
@@ -39,7 +40,11 @@ export function registerGetAppConfig(
         content: [
           {
             type: "text" as const,
-            text: JSON.stringify({ app }, null, 2),
+            text: JSON.stringify(
+              { app: readableApp(app, await canAccessOrg(context, app.organizationId, "env.reveal")) },
+              null,
+              2,
+            ),
           },
         ],
       };

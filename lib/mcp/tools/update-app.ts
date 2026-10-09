@@ -9,6 +9,8 @@ import { systemManagedRefusal } from "@/lib/api/system-managed";
 import { sharedMarkerTypeErrors } from "@/lib/docker/compose";
 import type { McpAuthContext } from "../auth";
 import { accessDenied, canAccessOrg } from "../scope";
+import { readableApp } from "@/lib/api/readable-app";
+import { MaskedComposeError, unmaskComposeEnv } from "@/lib/docker/compose-mask";
 import { gitBranchUpdateSchema, gitUrlUpdateSchema } from "@/lib/api/git-fields";
 
 // 10 updates per 5 minutes per user/org pair.
@@ -81,6 +83,7 @@ export function registerUpdateApp(
           name: true,
           organizationId: true,
           isSystemManaged: true,
+          composeContent: true,
         },
       });
 
@@ -129,6 +132,19 @@ export function registerUpdateApp(
         };
       }
 
+      // A masked read sent back keeps the saved values.
+      if (config.composeContent) {
+        try {
+          config.composeContent = unmaskComposeEnv(config.composeContent, existingApp.composeContent);
+        } catch (err) {
+          if (!(err instanceof MaskedComposeError)) throw err;
+          return {
+            content: [{ type: "text" as const, text: JSON.stringify({ error: err.message }) }],
+            isError: true,
+          };
+        }
+      }
+
       const [updated] = await db
         .update(apps)
         .set({ ...config, updatedAt: new Date() })
@@ -154,7 +170,10 @@ export function registerUpdateApp(
           {
             type: "text" as const,
             text: JSON.stringify(
-              { app: updated, updatedFields: Object.keys(config) },
+              {
+                app: readableApp(updated, await canAccessOrg(context, existingApp.organizationId, "env.reveal")),
+                updatedFields: Object.keys(config),
+              },
               null,
               2
             ),

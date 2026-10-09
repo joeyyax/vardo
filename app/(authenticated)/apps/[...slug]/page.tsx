@@ -12,6 +12,7 @@ import { loadStabilityHistory } from "@/lib/docker/stability-history";
 import { loadLifecycleHistory } from "@/lib/activity/lifecycle";
 
 import { can } from "@/lib/auth/permissions";
+import { readableApp } from "@/lib/api/readable-app";
 import {
   APP_TABS as VALID_TABS,
   type AppTab as ValidTab,
@@ -102,7 +103,7 @@ export default async function AppDetailPage({ params }: PageProps) {
     domains: { with: { certCheck: true } },
     environments: true,
     envVars: {
-      columns: { id: true, key: true, value: true, isSecret: true, createdAt: true, updatedAt: true },
+      columns: { id: true, key: true, isSecret: true, createdAt: true, updatedAt: true },
     },
     appTags: {
       with: { tag: true },
@@ -275,7 +276,7 @@ export default async function AppDetailPage({ params }: PageProps) {
 
   return (
     <AppDetail
-      app={{ ...app, childApps }}
+      app={{ ...readableApp(app, can(orgData.membership, "env.reveal")), childApps }}
       orgId={orgId}
       userRole={orgData.membership.role}
       allTags={allTags}
