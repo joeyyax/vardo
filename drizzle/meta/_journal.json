@@ -624,6 +624,13 @@
       "when": 1791566331663,
       "tag": "0088_build_plan",
       "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1791588147737,
+      "tag": "0089_source_table_count",
+      "breakpoints": true
     }
   ]
 }

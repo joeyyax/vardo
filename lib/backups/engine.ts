@@ -27,11 +27,11 @@ import { createBackupStorage } from "./storage-factory";
 import { holdBackupLease } from "./run-lease";
 import { assertSafeName } from "@/lib/docker/validate";
 import { isUncapturedSource, pausedDumpReason, uncapturedReason } from "./coverage";
-import { exclusionReason, isBackupSelected } from "./durability";
+import { exclusionReason, isBackupSelected, type DatabaseKind } from "./durability";
 import { checkRestoreKey, holdsInstanceSecrets } from "./key-guard";
 import { runningKeyFingerprint } from "@/lib/crypto/encrypt";
 import { assertSafeBindSource } from "@/lib/docker/mount-paths";
-import { buildDumpArgv, buildRestoreArgv, describeDumpSpec, type DumpSpec } from "./dump-spec";
+import { buildDumpArgv, buildRestoreArgv, buildTableCountArgv, describeDumpSpec, type DumpSpec } from "./dump-spec";
 import { resolveDbContainer } from "./resolve-db-container";
 import { createPgClusterProducer, restorePostgresArchive } from "./pg-cluster";
 import { assertSpace, hostFreeBytes, localFreeBytes, stagingNeed, targetNeed, type SpaceNeed } from "./disk-space";
@@ -194,6 +194,25 @@ async function verifyArchive(
 
 /** A process whose stdout is an archive. `done` settles when it exits. */
 type ArchiveProducer = { stdout: Readable; done: Promise<void>; kill: () => void };
+
+/** User tables in the live database, or null when the engine has none or the count fails. */
+async function countSourceTables(
+  kind: DatabaseKind,
+  containerId: string,
+  env: string[],
+  logFn: (msg: string) => void,
+): Promise<number | null> {
+  const argv = buildTableCountArgv(kind, containerId, env);
+  if (!argv) return null;
+  try {
+    const { stdout } = await execFileAsync("docker", argv, { env: dockerEnv(), timeout: 60_000 });
+    const n = Number.parseInt(String(stdout).trim(), 10);
+    return Number.isFinite(n) ? n : null;
+  } catch (err) {
+    logFn(`Source table count failed: ${err instanceof Error ? err.message.slice(0, 200) : err}`);
+    return null;
+  }
+}
 
 function spawnProducer(
   file: string,
@@ -1022,6 +1041,7 @@ export async function runBackup(
       let resolvedSource: string | null = null;
       let sourceKind: string | null = null;
       let excludedPaths: string[] = [];
+      let sourceTableCount: number | null = null;
       const excludePatterns = vol.backupExcludePatterns ?? [];
 
       if (strategy === "dump") {
@@ -1050,6 +1070,7 @@ export async function runBackup(
                   `No running container for service "${spec.service}" — cannot dump ${vol.name}`,
                 );
               }
+              sourceTableCount = await countSourceTables(spec.kind, container.id, container.env, logFn);
               if (spec.kind === "postgres") return createPgClusterProducer(container.id, container.env, logFn);
               const argv = buildDumpArgv(spec.kind, container.id, container.env);
               logFn(`Running: docker ${argv.slice(0, 3).join(" ")} …`);
@@ -1098,6 +1119,7 @@ export async function runBackup(
           resolvedSource,
           sourceKind,
           excludedPaths: excludedPaths.length > 0 ? excludedPaths : null,
+          sourceTableCount,
           log: logLines.join("\n"),
           finishedAt,
         })

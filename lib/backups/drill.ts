@@ -20,6 +20,7 @@ import {
   judgeDrill,
   judgeKumaDrill,
   KUMA_DRILL,
+  kumaMariadbPlan,
   scratchContainerName,
   scratchDatabaseFor,
   type DrillOutcome,
@@ -103,6 +104,7 @@ export async function drillPostgres(
   countArgv: string[],
   archivePath: string,
   logFn: (m: string) => void,
+  sourceTableCount: number | null = null,
 ): Promise<{ outcome: DrillOutcome; detail: string }> {
   let databases: string[];
   try {
@@ -127,7 +129,7 @@ export async function drillPostgres(
     }
     objectCount += n;
   }
-  const verdict = judgeDrill({ restoreExitCode: 0, objectCount });
+  const verdict = judgeDrill({ restoreExitCode: 0, objectCount, sourceTableCount });
   logFn(`Drill verdict: ${verdict.outcome} — ${verdict.detail}`);
   return verdict;
 }
@@ -137,6 +139,7 @@ async function drillDump(
   archivePath: string,
   vol: { appId: string | null; appName: string | null; backupSpec: { kind: string; service: string } | null },
   logFn: (m: string) => void,
+  sourceTableCount: number | null = null,
 ): Promise<{ outcome: DrillOutcome; detail: string }> {
   const spec = vol.backupSpec;
   if (!spec || !vol.appId || !vol.appName) {
@@ -157,7 +160,7 @@ async function drillDump(
     return { outcome: "unsupported", detail: `no drill defined for ${spec.kind}` };
   }
 
-  return drillScratchDatabase(spec.kind, plan, archivePath, logFn);
+  return drillScratchDatabase(spec.kind, plan, archivePath, logFn, sourceTableCount);
 }
 
 /** Start a scratch database from `plan`, restore the dump into it once ready and count what it created. */
@@ -166,6 +169,7 @@ export async function drillScratchDatabase(
   plan: ScratchDatabase,
   archivePath: string,
   logFn: (m: string) => void,
+  sourceTableCount: number | null = null,
 ): Promise<{ outcome: DrillOutcome; detail: string }> {
   const container = scratchContainerName(nanoid(8).toLowerCase());
   const envArgs = plan.env.flatMap((e) => ["-e", e]);
@@ -182,7 +186,9 @@ export async function drillScratchDatabase(
       return { outcome: "failed", detail: "scratch database never became ready" };
     }
 
-    if (kind === "postgres") return await drillPostgres(container, plan.env, plan.countArgv, archivePath, logFn);
+    if (kind === "postgres") {
+      return await drillPostgres(container, plan.env, plan.countArgv, archivePath, logFn, sourceTableCount);
+    }
 
     const restoreExitCode = await streamInto(
       ["exec", "-i", container, ...plan.restoreArgv],
@@ -191,7 +197,11 @@ export async function drillScratchDatabase(
     );
     const objectCount = await countObjects(container, plan.countArgv);
 
-    const verdict = judgeDrill({ restoreExitCode, objectCount });
+    let verdict = judgeDrill({ restoreExitCode, objectCount, sourceTableCount });
+    if (verdict.outcome === "verified" && plan.requiredTableArgv) {
+      const present = await countObjects(container, plan.requiredTableArgv);
+      if (!present) verdict = { outcome: "failed", detail: "restored database has no monitor table" };
+    }
     logFn(`Drill verdict: ${verdict.outcome} — ${verdict.detail}`);
     return verdict;
   } finally {
@@ -227,6 +237,10 @@ async function drillKuma(
     } catch (err) {
       exitCode = (err as { code?: number }).code ?? 1;
       logFn(`Kuma drill failed: ${err instanceof Error ? err.message.slice(0, 300) : err}`);
+    }
+
+    if (exitCode === 0 && /^type=embedded-mariadb$/m.test(output)) {
+      return await drillScratchDatabase("uptime-kuma", kumaMariadbPlan(), archivePath, logFn);
     }
 
     const verdict = judgeKumaDrill({ exitCode, output });
@@ -317,6 +331,7 @@ export async function runRestoreDrill(backupId: string): Promise<DrillResult> {
               backupSpec: vol?.backupSpec ?? null,
             },
             logFn,
+            backup.sourceTableCount,
           )
         : await drillArchive(archivePath, logFn);
 

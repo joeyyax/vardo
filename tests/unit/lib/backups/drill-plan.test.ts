@@ -8,6 +8,7 @@ import {
   judgeArchiveDrill,
   judgeKumaDrill,
   judgeSqliteDrill,
+  kumaMariadbPlan,
   scratchDatabaseFor,
   scratchContainerName,
   SQLITE_CHECK,
@@ -44,6 +45,40 @@ describe("judgeDrill", () => {
 
   it("reports how much was restored, so the number is reviewable", () => {
     expect(judgeDrill({ restoreExitCode: 0, objectCount: 7 }).detail).toContain("7");
+  });
+});
+
+describe("judgeDrill with a recorded source table count", () => {
+  it("verifies an empty restore when the source had no tables", () => {
+    expect(judgeDrill({ restoreExitCode: 0, objectCount: 0, sourceTableCount: 0 })).toEqual({
+      outcome: "verified",
+      detail: "database is empty (no tables at backup time)",
+    });
+  });
+
+  it("fails an empty restore when the source had tables", () => {
+    expect(judgeDrill({ restoreExitCode: 0, objectCount: 0, sourceTableCount: 12 }).outcome).toBe("failed");
+  });
+
+  it("words the failure as possibly empty when no count was recorded", () => {
+    expect(judgeDrill({ restoreExitCode: 0, objectCount: 0, sourceTableCount: null })).toEqual({
+      outcome: "failed",
+      detail: "restore created no tables; the source may be empty",
+    });
+  });
+
+  it("still fails a restore that exited non-zero on an empty source", () => {
+    expect(judgeDrill({ restoreExitCode: 1, objectCount: 0, sourceTableCount: 0 }).outcome).toBe("failed");
+  });
+});
+
+describe("kumaMariadbPlan", () => {
+  it("runs mariadb:11 and checks for the monitor table", () => {
+    const plan = kumaMariadbPlan();
+    expect(plan.image).toBe("mariadb:11");
+    expect(plan.readyArgv.join(" ")).toContain("--protocol=TCP");
+    expect(plan.restoreArgv.join(" ")).toContain("vardo-kuma-dump/kuma.sql");
+    expect(plan.requiredTableArgv?.join(" ")).toContain("table_name = 'monitor'");
   });
 });
 
