@@ -22,6 +22,24 @@ curl -fsSL https://vardo.run/install.sh | sudo bash
 
 Requires Ubuntu 22.04+ or Debian 12+, 1 GB RAM and a domain with DNS pointing to your server.
 
+### Docker address pools
+
+Docker's default pools hold 31 networks, and every compose project that names no network takes one, two during a blue-green deploy. Past that, every deploy fails with `could not find an available, non-overlapping IPv4 address pool`.
+
+On a host with no `/etc/docker/daemon.json`, the installer writes one with Docker's own ranges cut into `/24`s, about 4,000 networks. It never changes an existing `daemon.json`, so add the key yourself and restart Docker:
+
+```json
+"default-address-pools": [
+  { "base": "172.17.0.0/16", "size": 24 },
+  { "base": "172.18.0.0/15", "size": 24 },
+  { "base": "172.20.0.0/14", "size": 24 },
+  { "base": "172.24.0.0/13", "size": 24 },
+  { "base": "192.168.0.0/16", "size": 24 }
+]
+```
+
+Existing networks keep their subnets; new ones come from the pools.
+
 ## What you get
 
 | Service | Purpose |

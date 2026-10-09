@@ -1053,6 +1053,7 @@ print(json.dumps(c,indent=2))
       fi
     fi
   else
+    # Docker's own ranges cut into /24s: about 4,000 networks instead of 31. Only written with no daemon.json.
     if ! $DRY_RUN; then
       mkdir -p /etc/docker
       cat > "$daemon" <<'EOF'
@@ -1061,7 +1062,14 @@ print(json.dumps(c,indent=2))
   "log-opts": {
     "max-size": "10m",
     "max-file": "3"
-  }
+  },
+  "default-address-pools": [
+    { "base": "172.17.0.0/16", "size": 24 },
+    { "base": "172.18.0.0/15", "size": 24 },
+    { "base": "172.20.0.0/14", "size": 24 },
+    { "base": "172.24.0.0/13", "size": 24 },
+    { "base": "192.168.0.0/16", "size": 24 }
+  ]
 }
 EOF
     fi
