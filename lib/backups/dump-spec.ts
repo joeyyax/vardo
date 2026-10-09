@@ -22,12 +22,60 @@ export function readEnv(env: ContainerEnv, key: string): string | null {
 
 /** Constant shell fragments. Never interpolate caller data; credentials stay off the host process list. */
 const MYSQL_DUMP =
-  'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysqldump -u root --single-transaction --all-databases';
+  'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysqldump -u root --single-transaction --routines --events --all-databases';
 const MYSQL_RESTORE = 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql -u root';
+// MariaDB 11 images ship only mariadb-* clients; older ones and Percona only mysql*.
+const MARIADB_PWD = 'export MYSQL_PWD="${MARIADB_ROOT_PASSWORD:-$MYSQL_ROOT_PASSWORD}"';
+const MARIADB_DUMP =
+  `${MARIADB_PWD}; c=$(command -v mariadb-dump || command -v mysqldump); ` +
+  'exec "$c" -u root --single-transaction --routines --events --all-databases';
+const MARIADB_RESTORE = `${MARIADB_PWD}; c=$(command -v mariadb || command -v mysql); exec "$c" -u root`;
 const MONGO_DUMP =
   'exec mongodump --archive -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin';
 const MONGO_RESTORE =
   'exec mongorestore --archive --drop -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin';
+
+/** Marker directory inside an Uptime Kuma archive. */
+export const KUMA_DUMP_DIR = "vardo-kuma-dump";
+
+// Uptime Kuma: a tar of /app/data with the live database swapped for a consistent copy.
+// `type` records which database the copy came from: embedded-mariadb, sqlite or none.
+const KUMA_SOCKET = "/app/data/run/mariadb.sock";
+const KUMA_DUMP = [
+  "set -e",
+  "cd /app/data",
+  't=$(mktemp -d)',
+  "trap 'rm -rf \"$t\"' EXIT",
+  `k="$t/${KUMA_DUMP_DIR}"`,
+  'mkdir "$k"',
+  'y=$(sed -n \'s/.*"type"[^"]*"\\([^"]*\\)".*/\\1/p\' db-config.json 2>/dev/null || true)',
+  'case "$y" in',
+  `  embedded-mariadb) mariadb-dump --socket=${KUMA_SOCKET} -u "$(id -un)" --single-transaction --routines --events --add-drop-database --databases kuma > "$k/kuma.sql" ;;`,
+  '  sqlite) [ -f kuma.db ] || { echo "kuma.db is missing" >&2; exit 1; }; sqlite3 kuma.db ".timeout 30000" ".backup \'$k/kuma.sqlite\'" ;;',
+  '  "") y=none ;;',
+  '  *) echo "Uptime Kuma uses an external $y database; back that database up instead" >&2; exit 1 ;;',
+  "esac",
+  'printf "%s\\n" "$y" > "$k/type"',
+  "tar -cf - --exclude=./mariadb --exclude=./run --exclude=./kuma.db --exclude=./kuma.db-wal --exclude=./kuma.db-shm " +
+    `--exclude=./error.log --exclude='./.vardo-restore.*' . -C "$t" ${KUMA_DUMP_DIR}`,
+].join("\n");
+const KUMA_RESTORE = [
+  "set -e",
+  "cd /app/data",
+  't=$(mktemp -d /app/data/.vardo-restore.XXXXXX)',
+  "trap 'rm -rf \"$t\"' EXIT",
+  'tar -xf - -C "$t"',
+  `k="$t/${KUMA_DUMP_DIR}"`,
+  '[ -f "$k/type" ] || { echo "Not an Uptime Kuma archive from Vardo" >&2; exit 1; }',
+  'case "$(cat "$k/type")" in',
+  `  embedded-mariadb) mariadb --socket=${KUMA_SOCKET} -u "$(id -un)" < "$k/kuma.sql" ;;`,
+  '  sqlite) sqlite3 kuma.db ".timeout 30000" ".restore \'$k/kuma.sqlite\'" ;;',
+  "  none) ;;",
+  '  *) echo "Unknown Uptime Kuma database type" >&2; exit 1 ;;',
+  "esac",
+  'rm -rf "$k"',
+  'cp -a "$t/." /app/data/',
+].join("\n");
 
 /** Postgres user and database, from the image's own conventions. */
 function postgresTarget(env: ContainerEnv): { user: string; database: string } {
@@ -47,8 +95,11 @@ export function buildDumpArgv(
       return ["exec", containerId, "pg_dump", "-U", user, "--clean", "--if-exists", database];
     }
     case "mysql":
-    case "mariadb":
       return ["exec", containerId, "sh", "-c", MYSQL_DUMP];
+    case "mariadb":
+      return ["exec", containerId, "sh", "-c", MARIADB_DUMP];
+    case "uptime-kuma":
+      return ["exec", containerId, "sh", "-c", KUMA_DUMP];
     case "mongo":
       return ["exec", containerId, "sh", "-c", MONGO_DUMP];
   }
@@ -72,8 +123,11 @@ export function buildRestoreArgv(
       ];
     }
     case "mysql":
-    case "mariadb":
       return ["exec", "-i", containerId, "sh", "-c", MYSQL_RESTORE];
+    case "mariadb":
+      return ["exec", "-i", containerId, "sh", "-c", MARIADB_RESTORE];
+    case "uptime-kuma":
+      return ["exec", "-i", containerId, "sh", "-c", KUMA_RESTORE];
     case "mongo":
       return ["exec", "-i", containerId, "sh", "-c", MONGO_RESTORE];
   }
@@ -84,8 +138,9 @@ export function describeDumpSpec(spec: DumpSpec): string {
   const tool = {
     postgres: "pg_dump",
     mysql: "mysqldump",
-    mariadb: "mysqldump",
+    mariadb: "mariadb-dump",
     mongo: "mongodump",
+    "uptime-kuma": "Uptime Kuma database copy",
   }[spec.kind];
   return `${tool} against the "${spec.service}" service`;
 }

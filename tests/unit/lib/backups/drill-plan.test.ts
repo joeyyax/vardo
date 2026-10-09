@@ -94,8 +94,16 @@ describe("scratchDatabaseFor — mysql family", () => {
     expect(count).toContain("performance_schema");
   });
 
+  it("uses the mariadb client when the image has one, since MariaDB 11 ships no mysql", () => {
+    const plan = scratchDatabaseFor("mariadb", "mariadb:11", ["MARIADB_ROOT_PASSWORD=hunter2"])!;
+    expect(plan.restoreArgv.join(" ")).toContain("command -v mariadb || command -v mysql");
+    expect(plan.env).toContain("MARIADB_ROOT_PASSWORD=hunter2");
+    expect(plan.readyArgv.join(" ")).not.toContain("hunter2");
+  });
+
   it("has no plan for engines without one, rather than improvising", () => {
     expect(scratchDatabaseFor("mongo", "mongo:7", [])).toBeNull();
+    expect(scratchDatabaseFor("uptime-kuma", "louislam/uptime-kuma:2", [])).toBeNull();
   });
 });
 

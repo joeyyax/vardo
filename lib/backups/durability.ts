@@ -9,7 +9,7 @@ export type Durability =
   | "external";
 
 /** Database engine behind a volume, and the dump strategy that fits it. */
-export type DatabaseKind = "postgres" | "mysql" | "mariadb" | "mongo";
+export type DatabaseKind = "postgres" | "mysql" | "mariadb" | "mongo" | "uptime-kuma";
 
 export type DurabilityProposal = {
   durability: Durability;
@@ -17,6 +17,8 @@ export type DurabilityProposal = {
   kind?: DatabaseKind;
   /** Operator-facing evidence. Shown next to the proposal, never a bare verdict. */
   reason: string;
+  /** Apply only to a volume found in this deploy, never to one already backing up another way. */
+  newVolumesOnly?: boolean;
 };
 
 /** Whether the backup engine should capture this volume. Unclassified reads as yes. */
@@ -47,17 +49,21 @@ export function exclusionReason(durability: Durability | null | undefined): stri
 const DATABASE_SIGNATURES: {
   kind: DatabaseKind;
   image: RegExp;
-  dataDir: string;
+  dataDir: RegExp;
+  newVolumesOnly?: boolean;
 }[] = [
   // Postgres images without "postgres" in the name. The data directory alone would match sidecars.
+  // 18 moved PGDATA to /var/lib/postgresql/<major>/docker under a /var/lib/postgresql volume.
   {
     kind: "postgres",
     image: /(^|\/)(postgres|postgis|timescale|pgvector|pgvecto|citus|supabase|paradedb|pgautoupgrade|cloudnative-pg)/i,
-    dataDir: "/var/lib/postgresql/data",
+    dataDir: /^\/var\/lib\/postgresql(\/data|\/\d+\/docker)?\/?$/,
   },
-  { kind: "mariadb", image: /(^|\/)(mariadb|percona)/i, dataDir: "/var/lib/mysql" },
-  { kind: "mysql", image: /(^|\/)mysql/i, dataDir: "/var/lib/mysql" },
-  { kind: "mongo", image: /(^|\/)mongo/i, dataDir: "/data/db" },
+  { kind: "mariadb", image: /(^|\/)(mariadb|percona)/i, dataDir: /^\/var\/lib\/mysql\/?$/ },
+  { kind: "mysql", image: /(^|\/)mysql/i, dataDir: /^\/var\/lib\/mysql\/?$/ },
+  { kind: "mongo", image: /(^|\/)mongo/i, dataDir: /^\/data\/db\/?$/ },
+  // SQLite or embedded MariaDB inside the app container. Existing volumes keep their file archive.
+  { kind: "uptime-kuma", image: /(^|\/)uptime-kuma/i, dataDir: /^\/app\/data\/?$/, newVolumesOnly: true },
 ];
 
 /** Paths and names that reconstruct themselves. Keep narrow: a wrong `rebuildable` is silent data loss. */
@@ -83,11 +89,12 @@ export function proposeDurability(input: {
   // A database is judged on its image, corroborated by its data directory.
   for (const sig of DATABASE_SIGNATURES) {
     if (!sig.image.test(image)) continue;
-    if (mountPath && mountPath !== sig.dataDir) continue;
+    if (mountPath && !sig.dataDir.test(mountPath)) continue;
     return {
       durability: "stateful",
       kind: sig.kind,
       reason: `${sig.kind} data directory — dump rather than archive the running files`,
+      ...(sig.newVolumesOnly ? { newVolumesOnly: true } : {}),
     };
   }
 

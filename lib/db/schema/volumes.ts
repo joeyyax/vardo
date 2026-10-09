@@ -47,7 +47,7 @@ export const volumes = pgTable(
     backupMeta: jsonb("backup_meta").$type<{ dumpCmd: string; restoreCmd: string }>(),
     // Dump target, resolved to a container and credentials at backup time.
     backupSpec: jsonb("backup_spec").$type<{
-      kind: "postgres" | "mysql" | "mariadb" | "mongo";
+      kind: "postgres" | "mysql" | "mariadb" | "mongo" | "uptime-kuma";
       service: string;
     }>(),
     createdAt: timestamp("created_at").defaultNow().notNull(),

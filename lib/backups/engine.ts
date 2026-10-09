@@ -1374,7 +1374,20 @@ async function restoreDumpWithSnapshot(opts: {
       log(`WARNING: replaying the pre-restore dump failed — ${rollbackErr instanceof Error ? rollbackErr.message : rollbackErr}`);
       await keepSnapshot(snapshotFile, backupId, log);
     }
+    await restartAfterRestore(kind, containerId, log);
     throw err;
+  }
+  await restartAfterRestore(kind, containerId, log);
+}
+
+/** Uptime Kuma caches its database in memory; restart it so it reads what was restored. */
+async function restartAfterRestore(kind: DumpSpec["kind"], containerId: string, log: (msg: string) => void) {
+  if (kind !== "uptime-kuma") return;
+  log("Restarting Uptime Kuma to load the restored database");
+  try {
+    await execFileAsync("docker", ["restart", containerId], { env: dockerEnv(), timeout: 120_000 });
+  } catch (err) {
+    log(`WARNING: restart failed — ${err instanceof Error ? err.message : err}. Restart the app by hand.`);
   }
 }
 

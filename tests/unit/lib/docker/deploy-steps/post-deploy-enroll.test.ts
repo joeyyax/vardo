@@ -289,3 +289,46 @@ describe("postDeploy backup enrollment", () => {
     expect(enrollNewVolumes).not.toHaveBeenCalled();
   });
 });
+
+describe("postDeploy dump classification for Uptime Kuma", () => {
+  const kumaMount = {
+    type: "volume",
+    name: "kuma_data",
+    source: "/var/lib/docker/volumes/kuma_data/_data",
+    destination: "/app/data",
+  };
+  const row = (createdAt: Date) => ({
+    id: "kv", appId: "app-1", name: "kuma_data", mountPath: "/app/data", type: "named", source: null,
+    durability: null, backupStrategy: "tar", backupSpec: null, createdAt,
+  });
+
+  beforeEach(() => {
+    writes.length = 0;
+    vi.mocked(listContainers).mockResolvedValue([{ id: "c1" }] as never);
+    vi.mocked(inspectContainer).mockResolvedValue({
+      state: { status: "running" },
+      image: "louislam/uptime-kuma:2",
+      labels: { "com.docker.compose.service": "uptime-kuma" },
+      mounts: [kumaMount],
+    } as never);
+  });
+
+  it("switches a volume found this deploy to a dump", async () => {
+    const startTime = Date.now() - 1000;
+    dbMock.query.volumes.findMany.mockResolvedValue([row(new Date())]);
+
+    await postDeploy(makeContext({ startTime }));
+
+    expect(writes.map((w) => w.values)).toContainEqual(
+      expect.objectContaining({ backupStrategy: "dump", backupSpec: { kind: "uptime-kuma", service: "uptime-kuma" } }),
+    );
+  });
+
+  it("leaves an existing volume on its file archive", async () => {
+    dbMock.query.volumes.findMany.mockResolvedValue([row(new Date(Date.now() - 86_400_000))]);
+
+    await postDeploy(makeContext());
+
+    expect(writes.map((w) => w.values)).not.toContainEqual(expect.objectContaining({ backupStrategy: "dump" }));
+  });
+});

@@ -86,8 +86,49 @@ describe("buildDumpArgv — mysql and mariadb", () => {
     expect(buildDumpArgv("mysql", "c", []).join(" ")).toContain("--single-transaction");
   });
 
-  it("treats mariadb the same as mysql", () => {
-    expect(buildDumpArgv("mariadb", "c", [])).toEqual(buildDumpArgv("mysql", "c", []));
+  it("keeps routines and events", () => {
+    for (const kind of ["mysql", "mariadb"] as const) {
+      expect(buildDumpArgv(kind, "c", []).join(" ")).toContain("--routines --events");
+    }
+  });
+
+  it("uses the mariadb-* clients when the image has them, as MariaDB 11 images ship no mysql*", () => {
+    const dump = buildDumpArgv("mariadb", "c", []).join(" ");
+    expect(dump).toContain("command -v mariadb-dump || command -v mysqldump");
+    const restore = buildRestoreArgv("mariadb", "c", []).join(" ");
+    expect(restore).toContain("command -v mariadb || command -v mysql");
+  });
+
+  it("reads MARIADB_ROOT_PASSWORD first and falls back to MYSQL_ROOT_PASSWORD", () => {
+    const argv = buildDumpArgv("mariadb", "c", ["MARIADB_ROOT_PASSWORD=hunter2"]);
+    expect(argv.join(" ")).not.toContain("hunter2");
+    expect(argv.join(" ")).toContain("${MARIADB_ROOT_PASSWORD:-$MYSQL_ROOT_PASSWORD}");
+  });
+});
+
+describe("buildDumpArgv — uptime-kuma", () => {
+  it("copies the live database the way the instance stores it", () => {
+    const script = buildDumpArgv("uptime-kuma", "c", []).at(-1)!;
+    expect(script).toContain("mariadb-dump --socket=/app/data/run/mariadb.sock");
+    expect(script).toContain("--single-transaction");
+    expect(script).toContain(".backup");
+  });
+
+  it("leaves the live database files out of the archive", () => {
+    const script = buildDumpArgv("uptime-kuma", "c", []).at(-1)!;
+    for (const path of ["./mariadb", "./run", "./kuma.db", "./kuma.db-wal", "./kuma.db-shm"]) {
+      expect(script).toContain(`--exclude=${path} `);
+    }
+  });
+
+  it("refuses an external database rather than archiving config alone", () => {
+    expect(buildDumpArgv("uptime-kuma", "c", []).at(-1)).toContain("back that database up instead");
+  });
+
+  it("restores the database before the files, from a temp dir on the same volume", () => {
+    const script = buildRestoreArgv("uptime-kuma", "c", []).at(-1)!;
+    expect(script).toContain("mktemp -d /app/data/.vardo-restore.");
+    expect(script.indexOf(".restore")).toBeLessThan(script.indexOf("cp -a"));
   });
 });
 
@@ -107,7 +148,7 @@ describe("argv shape", () => {
   it("never contains a container name, only the id it was resolved to", () => {
     // The whole point: nothing here survives from configuration except the id
     // passed in, which was resolved moments ago.
-    for (const kind of ["postgres", "mysql", "mariadb", "mongo"] as const) {
+    for (const kind of ["postgres", "mysql", "mariadb", "mongo", "uptime-kuma"] as const) {
       expect(buildDumpArgv(kind, "resolved-id", [])[1]).toBe("resolved-id");
     }
   });
@@ -118,6 +159,6 @@ describe("describeDumpSpec", () => {
     expect(describeDumpSpec({ kind: "postgres", service: "app-db" })).toBe(
       'pg_dump against the "app-db" service',
     );
-    expect(describeDumpSpec({ kind: "mariadb", service: "db" })).toContain("mysqldump");
+    expect(describeDumpSpec({ kind: "mariadb", service: "db" })).toContain("mariadb-dump");
   });
 });

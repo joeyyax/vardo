@@ -193,3 +193,33 @@ describe("proposeDurability — Postgres under other names", () => {
     expect(proposeDurability({ image: "alpine:3.20", mountPath: "/var/lib/postgresql/data" })).toBeNull();
   });
 });
+
+describe("proposeDurability — Postgres 18 layout", () => {
+  it("recognizes the 18 data directory and its parent volume", () => {
+    for (const mountPath of ["/var/lib/postgresql", "/var/lib/postgresql/18/docker", "/var/lib/postgresql/data"]) {
+      expect(proposeDurability({ image: "postgres:18", mountPath })).toMatchObject({ kind: "postgres" });
+    }
+  });
+
+  it("still refuses other paths under /var/lib/postgresql", () => {
+    expect(proposeDurability({ image: "postgres:18", mountPath: "/var/lib/postgresql/backups" })).toBeNull();
+  });
+});
+
+describe("proposeDurability — Uptime Kuma", () => {
+  it("dumps its data directory, for new volumes only", () => {
+    expect(proposeDurability({ image: "louislam/uptime-kuma:2", mountPath: "/app/data" })).toMatchObject({
+      durability: "stateful",
+      kind: "uptime-kuma",
+      newVolumesOnly: true,
+    });
+  });
+
+  it("ignores /app/data on anything else", () => {
+    expect(proposeDurability({ image: "ghcr.io/example/app:1", mountPath: "/app/data" })).toBeNull();
+  });
+
+  it("does not mark the established engines new-volumes-only", () => {
+    expect(proposeDurability({ image: "postgres:16", mountPath: "/var/lib/postgresql/data" })?.newVolumesOnly).toBeUndefined();
+  });
+});

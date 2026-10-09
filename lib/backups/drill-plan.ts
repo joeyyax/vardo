@@ -44,7 +44,22 @@ export function scratchDatabaseFor(
     };
   }
 
-  if (kind === "mysql" || kind === "mariadb") {
+  if (kind === "mariadb") {
+    const password = read("MARIADB_ROOT_PASSWORD") || read("MYSQL_ROOT_PASSWORD") || "drill";
+    const client = 'MYSQL_PWD="$MARIADB_ROOT_PASSWORD" exec "$(command -v mariadb || command -v mysql)" -u root';
+    return {
+      image,
+      env: [`MARIADB_ROOT_PASSWORD=${password}`, `MYSQL_ROOT_PASSWORD=${password}`],
+      readyArgv: ["sh", "-c", `${client} -e "SELECT 1" >/dev/null`],
+      restoreArgv: ["sh", "-c", client],
+      countArgv: [
+        "sh", "-c",
+        `${client} -N -B -e "SELECT count(*) FROM information_schema.tables WHERE table_schema NOT IN ('mysql','information_schema','performance_schema','sys')"`,
+      ],
+    };
+  }
+
+  if (kind === "mysql") {
     const password = read("MYSQL_ROOT_PASSWORD") || "drill";
     return {
       image,

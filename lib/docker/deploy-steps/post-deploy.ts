@@ -151,6 +151,7 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
         if (!row || row.durability != null || row.backupSpec != null || row.backupStrategy === "dump") continue;
         const proposal = proposeDurability({ image: vol.image, mountPath: vol.mountPath, volumeName: vol.name });
         if (!proposal?.kind || !vol.service || !isSafeToApply(null, proposal.durability)) continue;
+        if (proposal.newVolumesOnly && row.createdAt < deployStart) continue;
         const spec = { kind: proposal.kind, service: vol.service };
         await db
           .update(volumes)
