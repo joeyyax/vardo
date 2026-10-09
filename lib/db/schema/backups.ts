@@ -142,11 +142,33 @@ export const backups = pgTable("backup", {
   // Paths this archive left out, relative to the volume root. Restore keeps the live copies.
   // Recorded per archive and never re-derived, or dropped patterns lose data.
   excludedPaths: jsonb("excluded_paths").$type<string[]>(),
+  // User tables in the source database at backup time. Null when not counted.
+  sourceTableCount: integer("source_table_count"),
+  // "initial" or "import" for a first snapshot. Null for a scheduled or manual run.
+  trigger: text("trigger"),
   // Restore drill results.
   verifiedAt: timestamp("verified_at"),
   verifyOutcome: text("verify_outcome"),
   verifyDetail: text("verify_detail"),
   log: text("log"),
   startedAt: timestamp("started_at").defaultNow().notNull(),
+  finishedAt: timestamp("finished_at"),
+});
+
+// A pending first snapshot of an app. One row per app; it stays once finished so a redeploy never re-arms it.
+export const initialBackups = pgTable("initial_backup", {
+  appId: text("app_id")
+    .primaryKey()
+    .references(() => apps.id, { onDelete: "cascade" }),
+  // "deploy" or "import".
+  reason: text("reason").notNull(),
+  // Start of the healthy window the run waits out.
+  armedAt: timestamp("armed_at").notNull(),
+  dueAt: timestamp("due_at").notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+  attempts: integer("attempts").notNull().default(0),
+  lastError: text("last_error"),
+  // "success", "covered", "skipped" or "expired". Null while pending.
+  outcome: text("outcome"),
   finishedAt: timestamp("finished_at"),
 });

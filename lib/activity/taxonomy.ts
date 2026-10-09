@@ -42,6 +42,8 @@ const OUTCOME_OVERRIDES: Record<string, ActivityOutcome> = {
   "app.crashed": "failure",
   "app.crash_looping": "failure",
   "app.recovered": "success",
+  "app.certs_exported": "success",
+  "app.certs_missing": "failure",
   "transfer.rejected": "failure",
   "transfer.accepted": "success",
   // Automatic rollback means the deploy broke.

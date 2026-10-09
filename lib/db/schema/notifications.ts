@@ -124,10 +124,15 @@ export const notificationLogs = pgTable(
     status: text("status").notNull(), // success, failed
     error: text("error"),
     attempt: integer("attempt").notNull().default(1),
+    // Email provider message ids, one per recipient.
+    providerMessageIds: text("provider_message_ids").array(),
+    // delivered, bounced or complained, from provider webhooks.
+    deliveryStatus: text("delivery_status"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => [
     index("notification_log_org_idx").on(t.organizationId),
     index("notification_log_created_idx").on(t.createdAt),
+    index("notification_log_provider_message_ids_idx").using("gin", t.providerMessageIds),
   ]
 );

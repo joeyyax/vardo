@@ -6,6 +6,7 @@
 import { readFile, writeFile, chmod, access } from "fs/promises";
 import { resolve } from "path";
 import YAML from "yaml";
+import type { EmailProvider } from "@/lib/system-settings";
 
 export type VardoConfig = {
   instance?: {
@@ -22,12 +23,13 @@ export type VardoConfig = {
     methods?: Record<string, boolean>;
   };
   email?: {
-    provider?: "smtp" | "mailpace" | "resend" | "postmark";
+    provider?: EmailProvider;
     fromEmail?: string;
     fromName?: string;
     smtpHost?: string;
     smtpPort?: number;
     smtpUser?: string;
+    baseUrl?: string;
   };
   backup?: {
     type?: "s3" | "r2" | "b2" | "ssh";
@@ -90,6 +92,7 @@ export type VardoSecrets = {
   email?: {
     apiKey?: string;
     smtpPass?: string;
+    webhookSecret?: string;
   };
   backup?: {
     accessKey?: string;
@@ -273,6 +276,7 @@ export async function systemSettingsToVardoConfig(): Promise<{
         smtpHost: email.smtpHost,
         smtpPort: email.smtpPort,
         smtpUser: email.smtpUser,
+        baseUrl: email.baseUrl,
       },
     }),
     ...(backup && {
@@ -307,6 +311,7 @@ export async function systemSettingsToVardoConfig(): Promise<{
       email: {
         apiKey: email.apiKey,
         smtpPass: email.smtpPass,
+        webhookSecret: email.webhookSecret,
       },
     }),
     ...(backup && {

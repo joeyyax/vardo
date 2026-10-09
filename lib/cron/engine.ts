@@ -5,7 +5,7 @@ import { nanoid } from "nanoid";
 import { listContainers, type ContainerInfo, type ContainerScope } from "@/lib/docker/client";
 import { matchContainers, type ReconcilableApp } from "@/lib/docker/container-match";
 import { shouldRunNow } from "./parse";
-import { acquireLock } from "@/lib/redis-lock";
+import { acquireLock, releaseLock } from "@/lib/redis-lock";
 import { logger } from "@/lib/logger";
 import { safeFetch } from "@/lib/security/safe-fetch";
 import { getOutboundPolicy } from "@/lib/security/outbound-policy";
@@ -36,14 +36,23 @@ export function selectCronContainer(
   return matchContainers(app, containers).find((c) => c.state === "running") ?? null;
 }
 
-/** One run's outcome. `target` is the container or URL, `exitCode` the command's or the HTTP status. */
-export type CronRunResult = { success: boolean; log: string; durationMs: number; exitCode?: number; target?: string };
+const OUTPUT_TAIL = 2000;
+
+type ExecResult = {
+  success: boolean;
+  log: string;
+  durationMs: number;
+  exitCode?: number;
+  httpStatus?: number;
+  /** Container the command ran in, or the URL. */
+  target?: string;
+};
 
 /** Run a command inside an app's container. */
 async function executeInContainer(
   app: CronTargetApp,
   command: string,
-): Promise<CronRunResult> {
+): Promise<ExecResult> {
   const startTime = Date.now();
 
   const containers = await listContainers(cronContainerScope(app));
@@ -90,7 +99,7 @@ async function executeInContainer(
 /** Hit a URL and return the result. */
 async function fetchUrl(
   url: string,
-): Promise<CronRunResult> {
+): Promise<ExecResult> {
   const startTime = Date.now();
   try {
     const controller = new AbortController();
@@ -106,7 +115,7 @@ async function fetchUrl(
       success: res.ok,
       log,
       durationMs: Date.now() - startTime,
-      exitCode: res.status,
+      httpStatus: res.status,
       target: url,
     };
   } catch (err) {
@@ -153,16 +162,47 @@ export async function tickCronJobs(): Promise<void> {
     const locked = await acquireLock(`lock:cron:${job.id}:${minuteTs}`, 61_000);
     if (!locked) continue;
 
+    await runCronJob(job);
+  }
+}
+
+const RUN_LOCK_TTL_MS = 330_000;
+
+export type CronRunJob = {
+  id: string;
+  name: string;
+  type: "command" | "url";
+  command: string;
+  /** Cron expression, for the failure email. */
+  schedule?: string;
+  app: CronTargetApp & { organizationId: string; displayName: string | null };
+};
+
+export type CronRunResult = {
+  runId: string;
+  status: "success" | "failed";
+  exitCode: number | null;
+  httpStatus: number | null;
+  durationMs: number;
+  output: string;
+};
+
+/** Run a job, record the run and notify on failure. Null when the job is already running. */
+export async function runCronJob(job: CronRunJob): Promise<CronRunResult | null> {
+  const lockKey = `lock:cron:running:${job.id}`;
+  if (!(await acquireLock(lockKey, RUN_LOCK_TTL_MS))) return null;
+
+  try {
     const runId = nanoid();
     const startedAt = new Date();
 
     await db.update(cronJobs).set({
-      lastRunAt: now,
+      lastRunAt: startedAt,
       lastStatus: "running",
-      updatedAt: now,
+      updatedAt: startedAt,
     }).where(eq(cronJobs.id, job.id));
 
-    let result: CronRunResult;
+    let result: ExecResult;
     try {
       result = job.type === "url"
         ? await fetchUrl(job.command)
@@ -227,7 +267,7 @@ export async function tickCronJobs(): Promise<void> {
           schedule: job.schedule,
           command: job.command.length > 200 ? `${job.command.slice(0, 199)}…` : job.command,
           jobType: job.type === "url" ? "url" : "command",
-          exitCode: result.exitCode,
+          exitCode: result.exitCode ?? result.httpStatus,
           target: result.target,
           lastSuccessAt: lastSuccess?.startedAt.toISOString(),
           logTail: result.log.split("\n").filter((l) => l.trim()).slice(-20),
@@ -236,6 +276,17 @@ export async function tickCronJobs(): Promise<void> {
         log.error(`Failed to send notification for ${job.name}:`, err);
       }
     }
+
+    return {
+      runId,
+      status,
+      exitCode: result.exitCode ?? null,
+      httpStatus: result.httpStatus ?? null,
+      durationMs: result.durationMs,
+      output: result.log.slice(-OUTPUT_TAIL),
+    };
+  } finally {
+    await releaseLock(lockKey).catch(() => {});
   }
 }
 

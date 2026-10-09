@@ -9,7 +9,7 @@ import { pipeline } from "stream/promises";
 import { createGunzip } from "zlib";
 import { createReadStream } from "fs";
 import { rm } from "fs/promises";
-import { dirname } from "path";
+import { basename, dirname } from "path";
 import { logger } from "@/lib/logger";
 import { downloadBackupToTemp, strategyFromStoragePath, type ArchiveStrategy } from "./engine";
 import { resolveDbContainer } from "./resolve-db-container";
@@ -18,9 +18,13 @@ import { inspectContainer } from "@/lib/docker/client";
 import {
   judgeArchiveDrill,
   judgeDrill,
+  judgeKumaDrill,
+  KUMA_DRILL,
+  kumaMariadbPlan,
   scratchContainerName,
   scratchDatabaseFor,
   type DrillOutcome,
+  type ScratchDatabase,
 } from "./drill-plan";
 import { resolveDefaultEnv } from "@/lib/docker/resolve-env";
 import { execFileAsync } from "@/lib/utils/exec";
@@ -28,7 +32,7 @@ import { dockerEnv } from "@/lib/docker/docker-env";
 
 const log = logger.child("drill");
 
-const READY_ATTEMPTS = 30;
+const READY_ATTEMPTS = 60;
 const READY_INTERVAL_MS = 2000;
 
 export type DrillResult = {
@@ -100,6 +104,7 @@ export async function drillPostgres(
   countArgv: string[],
   archivePath: string,
   logFn: (m: string) => void,
+  sourceTableCount: number | null = null,
 ): Promise<{ outcome: DrillOutcome; detail: string }> {
   let databases: string[];
   try {
@@ -124,7 +129,7 @@ export async function drillPostgres(
     }
     objectCount += n;
   }
-  const verdict = judgeDrill({ restoreExitCode: 0, objectCount });
+  const verdict = judgeDrill({ restoreExitCode: 0, objectCount, sourceTableCount });
   logFn(`Drill verdict: ${verdict.outcome} — ${verdict.detail}`);
   return verdict;
 }
@@ -134,6 +139,7 @@ async function drillDump(
   archivePath: string,
   vol: { appId: string | null; appName: string | null; backupSpec: { kind: string; service: string } | null },
   logFn: (m: string) => void,
+  sourceTableCount: number | null = null,
 ): Promise<{ outcome: DrillOutcome; detail: string }> {
   const spec = vol.backupSpec;
   if (!spec || !vol.appId || !vol.appName) {
@@ -147,15 +153,28 @@ async function drillDump(
   }
   const liveImage = (await inspectContainer(live.id)).image;
 
+  if (spec.kind === "uptime-kuma") return drillKuma(archivePath, liveImage, logFn);
+
   const plan = scratchDatabaseFor(spec.kind as never, liveImage, live.env);
   if (!plan) {
     return { outcome: "unsupported", detail: `no drill defined for ${spec.kind}` };
   }
 
+  return drillScratchDatabase(spec.kind, plan, archivePath, logFn, sourceTableCount);
+}
+
+/** Start a scratch database from `plan`, restore the dump into it once ready and count what it created. */
+export async function drillScratchDatabase(
+  kind: string,
+  plan: ScratchDatabase,
+  archivePath: string,
+  logFn: (m: string) => void,
+  sourceTableCount: number | null = null,
+): Promise<{ outcome: DrillOutcome; detail: string }> {
   const container = scratchContainerName(nanoid(8).toLowerCase());
   const envArgs = plan.env.flatMap((e) => ["-e", e]);
 
-  logFn(`Starting scratch ${spec.kind} (${plan.image}) as ${container}`);
+  logFn(`Starting scratch ${kind} (${plan.image}) as ${container}`);
   await execFileAsync(
     "docker",
     ["run", "-d", "--rm", "--name", container, "--network", "none", ...envArgs, plan.image],
@@ -167,7 +186,9 @@ async function drillDump(
       return { outcome: "failed", detail: "scratch database never became ready" };
     }
 
-    if (spec.kind === "postgres") return await drillPostgres(container, plan.env, plan.countArgv, archivePath, logFn);
+    if (kind === "postgres") {
+      return await drillPostgres(container, plan.env, plan.countArgv, archivePath, logFn, sourceTableCount);
+    }
 
     const restoreExitCode = await streamInto(
       ["exec", "-i", container, ...plan.restoreArgv],
@@ -176,11 +197,57 @@ async function drillDump(
     );
     const objectCount = await countObjects(container, plan.countArgv);
 
-    const verdict = judgeDrill({ restoreExitCode, objectCount });
+    let verdict = judgeDrill({ restoreExitCode, objectCount, sourceTableCount });
+    if (verdict.outcome === "verified" && plan.requiredTableArgv) {
+      const present = await countObjects(container, plan.requiredTableArgv);
+      if (!present) verdict = { outcome: "failed", detail: "restored database has no monitor table" };
+    }
     logFn(`Drill verdict: ${verdict.outcome} — ${verdict.detail}`);
     return verdict;
   } finally {
     await execFileAsync("docker", ["rm", "-f", container], { env: dockerEnv(), timeout: 60_000 }).catch(() => {});
+  }
+}
+
+/** Extract an Uptime Kuma archive with its own image and check the SQLite copy inside. */
+async function drillKuma(
+  archivePath: string,
+  image: string,
+  logFn: (m: string) => void,
+): Promise<{ outcome: DrillOutcome; detail: string }> {
+  const scratchVolume = scratchContainerName(nanoid(8).toLowerCase());
+  await execFileAsync("docker", ["volume", "create", scratchVolume], { env: dockerEnv(), timeout: 30_000 });
+
+  try {
+    logFn(`Checking Uptime Kuma archive in scratch ${image}`);
+    let exitCode = 0;
+    let output = "";
+    try {
+      const { stdout } = await execFileAsync(
+        "docker",
+        [
+          "run", "--rm", "--network", "none", "--user", "0:0", "--entrypoint", "sh",
+          "-v", `${scratchVolume}:/restore`,
+          "-v", `${dirname(archivePath)}:/archive:ro`,
+          image, "-c", KUMA_DRILL, "sh", basename(archivePath),
+        ],
+        { env: dockerEnv(), timeout: 900_000 },
+      );
+      output = String(stdout);
+    } catch (err) {
+      exitCode = (err as { code?: number }).code ?? 1;
+      logFn(`Kuma drill failed: ${err instanceof Error ? err.message.slice(0, 300) : err}`);
+    }
+
+    if (exitCode === 0 && /^type=embedded-mariadb$/m.test(output)) {
+      return await drillScratchDatabase("uptime-kuma", kumaMariadbPlan(), archivePath, logFn);
+    }
+
+    const verdict = judgeKumaDrill({ exitCode, output });
+    logFn(`Drill verdict: ${verdict.outcome} — ${verdict.detail}`);
+    return verdict;
+  } finally {
+    await execFileAsync("docker", ["volume", "rm", "-f", scratchVolume], { env: dockerEnv(), timeout: 60_000 }).catch(() => {});
   }
 }
 
@@ -264,6 +331,7 @@ export async function runRestoreDrill(backupId: string): Promise<DrillResult> {
               backupSpec: vol?.backupSpec ?? null,
             },
             logFn,
+            backup.sourceTableCount,
           )
         : await drillArchive(archivePath, logFn);
 

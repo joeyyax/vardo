@@ -11,7 +11,7 @@ defaultPort: 3100
 composeContent: |
   services:
     loki:
-      image: grafana/loki:3.4
+      image: grafana/loki:3.7
       restart: unless-stopped
       command: -config.file=/etc/loki/config.yaml
       configs:

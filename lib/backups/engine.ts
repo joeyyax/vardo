@@ -27,11 +27,11 @@ import { createBackupStorage } from "./storage-factory";
 import { holdBackupLease } from "./run-lease";
 import { assertSafeName } from "@/lib/docker/validate";
 import { isUncapturedSource, pausedDumpReason, uncapturedReason } from "./coverage";
-import { exclusionReason, isBackupSelected } from "./durability";
+import { exclusionReason, isBackupSelected, type DatabaseKind } from "./durability";
 import { checkRestoreKey, holdsInstanceSecrets } from "./key-guard";
 import { runningKeyFingerprint } from "@/lib/crypto/encrypt";
 import { assertSafeBindSource } from "@/lib/docker/mount-paths";
-import { buildDumpArgv, buildRestoreArgv, describeDumpSpec, type DumpSpec } from "./dump-spec";
+import { buildDumpArgv, buildRestoreArgv, buildTableCountArgv, describeDumpSpec, type DumpSpec } from "./dump-spec";
 import { resolveDbContainer } from "./resolve-db-container";
 import { createPgClusterProducer, restorePostgresArchive } from "./pg-cluster";
 import { assertSpace, hostFreeBytes, localFreeBytes, stagingNeed, targetNeed, type SpaceNeed } from "./disk-space";
@@ -117,6 +117,10 @@ export function runSucceeded(results: BackupResult[]): boolean {
 export type RunBackupOptions = {
   /** Restrict the run to these apps. Other apps on the job are left alone. */
   appIds?: string[];
+  /** Recorded on each row, e.g. "initial" for an app's first snapshot. */
+  trigger?: string;
+  /** False holds back the failure notice, for a run that will be retried. */
+  notifyFailure?: boolean;
 };
 
 type VolumeToBackup = {
@@ -194,6 +198,25 @@ async function verifyArchive(
 
 /** A process whose stdout is an archive. `done` settles when it exits. */
 type ArchiveProducer = { stdout: Readable; done: Promise<void>; kill: () => void };
+
+/** User tables in the live database, or null when the engine has none or the count fails. */
+async function countSourceTables(
+  kind: DatabaseKind,
+  containerId: string,
+  env: string[],
+  logFn: (msg: string) => void,
+): Promise<number | null> {
+  const argv = buildTableCountArgv(kind, containerId, env);
+  if (!argv) return null;
+  try {
+    const { stdout } = await execFileAsync("docker", argv, { env: dockerEnv(), timeout: 60_000 });
+    const n = Number.parseInt(String(stdout).trim(), 10);
+    return Number.isFinite(n) ? n : null;
+  } catch (err) {
+    logFn(`Source table count failed: ${err instanceof Error ? err.message.slice(0, 200) : err}`);
+    return null;
+  }
+}
 
 function spawnProducer(
   file: string,
@@ -974,6 +997,7 @@ export async function runBackup(
         targetId: job.target.id,
         status: "skipped",
         volumeName: vol.name,
+        trigger: options.trigger ?? null,
         startedAt,
         finishedAt,
         log: logLines.join("\n"),
@@ -1008,6 +1032,7 @@ export async function runBackup(
       targetId: job.target.id,
       status: "running",
       volumeName: vol.name,
+      trigger: options.trigger ?? null,
       strategy,
       keyFingerprint: holdsInstanceSecrets(vol) ? runningKeyFingerprint() : null,
       startedAt,
@@ -1022,6 +1047,7 @@ export async function runBackup(
       let resolvedSource: string | null = null;
       let sourceKind: string | null = null;
       let excludedPaths: string[] = [];
+      let sourceTableCount: number | null = null;
       const excludePatterns = vol.backupExcludePatterns ?? [];
 
       if (strategy === "dump") {
@@ -1050,6 +1076,7 @@ export async function runBackup(
                   `No running container for service "${spec.service}" — cannot dump ${vol.name}`,
                 );
               }
+              sourceTableCount = await countSourceTables(spec.kind, container.id, container.env, logFn);
               if (spec.kind === "postgres") return createPgClusterProducer(container.id, container.env, logFn);
               const argv = buildDumpArgv(spec.kind, container.id, container.env);
               logFn(`Running: docker ${argv.slice(0, 3).join(" ")} …`);
@@ -1098,6 +1125,7 @@ export async function runBackup(
           resolvedSource,
           sourceKind,
           excludedPaths: excludedPaths.length > 0 ? excludedPaths : null,
+          sourceTableCount,
           log: logLines.join("\n"),
           finishedAt,
         })
@@ -1200,6 +1228,7 @@ export async function runBackup(
       skipped.every((r) => r.paused);
     const hasFailures = failed.length > 0 || (capturedNothing && !onlyPaused);
     const allSuccess = !hasFailures;
+    const notifyOnFailure = job.notifyOnFailure && options.notifyFailure !== false;
     const notes = [
       allSkipped.length > 0 ? `${allSkipped.length} skipped` : null,
       excludedSources.length > 0 ? `${excludedSources.length} excluded by durability` : null,
@@ -1208,7 +1237,7 @@ export async function runBackup(
 
     if (onlyPaused) {
       log.info(`${job.name}: nothing captured — every source is waiting on a stopped app or empty`);
-    } else if (job.organizationId && ((hasFailures && job.notifyOnFailure) || (allSuccess && job.notifyOnSuccess))) {
+    } else if (job.organizationId && ((hasFailures && notifyOnFailure) || (allSuccess && job.notifyOnSuccess))) {
       const { emit } = await import("@/lib/notifications/dispatch");
       const names = jobApps.map((bja) => bja.app.name).join(", ") || job.name;
       const runMs = results.reduce((sum, r) => sum + r.durationMs, 0);
@@ -1222,7 +1251,7 @@ export async function runBackup(
         emit(job.organizationId, { type: "backup.success", title: `Backup successful: ${job.name}`, message: `${succeeded.length} backup(s) completed for: ${names}${skippedNote}`, jobId: job.id, jobName: job.name, totalCount: results.length, totalSize: results.reduce((sum, r) => sum + r.sizeBytes, 0), durationMs: runMs, sources: succeeded.map((r) => ({ name: r.volumeName, sizeBytes: r.sizeBytes, backupId: r.backupId })), skippedCount: allSkipped.length });
       }
     } else if (!job.organizationId) {
-      if (hasFailures && job.notifyOnFailure) {
+      if (hasFailures && notifyOnFailure) {
         log.error(`${job.name} FAILED — ${[...failed, ...skipped].map((r) => `${r.volumeName}: ${r.error}`).join("; ")}`);
       } else if (!hasFailures && job.notifyOnSuccess) {
         log.info(`${job.name} succeeded (${results.reduce((s, r) => s + r.sizeBytes, 0)} bytes)${skippedNote}`);

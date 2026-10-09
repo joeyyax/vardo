@@ -1,10 +1,27 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   judgeDrill,
   judgeArchiveDrill,
+  judgeKumaDrill,
+  judgeSqliteDrill,
+  kumaMariadbPlan,
   scratchDatabaseFor,
   scratchContainerName,
+  SQLITE_CHECK,
 } from "@/lib/backups/drill-plan";
+
+const HAS_SQLITE = (() => {
+  try {
+    execFileSync("sqlite3", ["-version"], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+})();
 
 describe("judgeDrill", () => {
   it("verifies a restore that applied and created structure", () => {
@@ -31,13 +48,50 @@ describe("judgeDrill", () => {
   });
 });
 
+describe("judgeDrill with a recorded source table count", () => {
+  it("verifies an empty restore when the source had no tables", () => {
+    expect(judgeDrill({ restoreExitCode: 0, objectCount: 0, sourceTableCount: 0 })).toEqual({
+      outcome: "verified",
+      detail: "database is empty (no tables at backup time)",
+    });
+  });
+
+  it("fails an empty restore when the source had tables", () => {
+    expect(judgeDrill({ restoreExitCode: 0, objectCount: 0, sourceTableCount: 12 }).outcome).toBe("failed");
+  });
+
+  it("words the failure as possibly empty when no count was recorded", () => {
+    expect(judgeDrill({ restoreExitCode: 0, objectCount: 0, sourceTableCount: null })).toEqual({
+      outcome: "failed",
+      detail: "restore created no tables; the source may be empty",
+    });
+  });
+
+  it("still fails a restore that exited non-zero on an empty source", () => {
+    expect(judgeDrill({ restoreExitCode: 1, objectCount: 0, sourceTableCount: 0 }).outcome).toBe("failed");
+  });
+});
+
+describe("kumaMariadbPlan", () => {
+  it("runs mariadb:11 and checks for the monitor table", () => {
+    const plan = kumaMariadbPlan();
+    expect(plan.image).toBe("mariadb:11");
+    expect(plan.readyArgv.join(" ")).toContain("--protocol=TCP");
+    expect(plan.restoreArgv.join(" ")).toContain("vardo-kuma-dump/kuma.sql");
+    expect(plan.requiredTableArgv?.join(" ")).toContain("table_name = 'monitor'");
+  });
+});
+
 describe("judgeArchiveDrill", () => {
   it("verifies an archive that extracted files", () => {
     expect(judgeArchiveDrill({ extractExitCode: 0, fileCount: 12 })).toMatchObject({ outcome: "verified" });
   });
 
-  it("fails an archive that extracted nothing", () => {
-    expect(judgeArchiveDrill({ extractExitCode: 0, fileCount: 0 })).toMatchObject({ outcome: "failed" });
+  it("verifies an empty archive of an empty volume", () => {
+    expect(judgeArchiveDrill({ extractExitCode: 0, fileCount: 0 })).toEqual({
+      outcome: "verified",
+      detail: "archive is empty; volume held no files",
+    });
   });
 
   it("fails when extraction itself failed", () => {
@@ -101,9 +155,71 @@ describe("scratchDatabaseFor — mysql family", () => {
     expect(plan.readyArgv.join(" ")).not.toContain("hunter2");
   });
 
+  it.each(["mysql", "mariadb"] as const)("waits for %s's final server over TCP with a real query", (kind) => {
+    const ready = scratchDatabaseFor(kind, `${kind}:8`, [])!.readyArgv.join(" ");
+    expect(ready).toContain("-h 127.0.0.1 --protocol=TCP");
+    expect(ready).toContain('-e "SELECT 1"');
+    // mysqladmin ping exits 0 on access denied, so it passes during init.
+    expect(ready).not.toContain("mysqladmin");
+  });
+
   it("has no plan for engines without one, rather than improvising", () => {
     expect(scratchDatabaseFor("mongo", "mongo:7", [])).toBeNull();
     expect(scratchDatabaseFor("uptime-kuma", "louislam/uptime-kuma:2", [])).toBeNull();
+  });
+});
+
+describe("judgeKumaDrill", () => {
+  it("verifies a SQLite copy that passes integrity_check and holds tables", () => {
+    expect(judgeKumaDrill({ exitCode: 0, output: "type=sqlite\nintegrity=ok\ntables=31\n" })).toEqual({
+      outcome: "verified",
+      detail: "integrity check ok; 31 table(s)",
+    });
+  });
+
+  it("fails a corrupt copy with what integrity_check said", () => {
+    const verdict = judgeKumaDrill({ exitCode: 0, output: "type=sqlite\nintegrity=Error: file is not a database\ntables=\n" });
+    expect(verdict.outcome).toBe("failed");
+    expect(verdict.detail).toContain("file is not a database");
+  });
+
+  it("fails a copy with no tables", () => {
+    expect(judgeKumaDrill({ exitCode: 0, output: "type=sqlite\nintegrity=ok\ntables=0\n" }).outcome).toBe("failed");
+  });
+
+  it("fails when extraction failed", () => {
+    expect(judgeKumaDrill({ exitCode: 2, output: "" }).outcome).toBe("failed");
+  });
+
+  it("verifies an archive taken before Kuma had a database", () => {
+    expect(judgeKumaDrill({ exitCode: 0, output: "type=none\n" }).outcome).toBe("verified");
+  });
+
+  it("reports embedded MariaDB as unsupported rather than guessing", () => {
+    expect(judgeKumaDrill({ exitCode: 0, output: "type=embedded-mariadb\n" }).outcome).toBe("unsupported");
+  });
+});
+
+describe.skipIf(!HAS_SQLITE)("SQLITE_CHECK against a real sqlite3", () => {
+  let dir: string;
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "vardo-sqlite-drill-"));
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  const check = (file: string) =>
+    execFileSync("sh", ["-c", SQLITE_CHECK, "sh", file], { encoding: "utf8" });
+
+  it("verifies a healthy database", () => {
+    const file = join(dir, "ok.sqlite");
+    execFileSync("sqlite3", [file, "CREATE TABLE monitor (id int); CREATE TABLE heartbeat (id int);"]);
+    expect(judgeSqliteDrill(check(file))).toEqual({ outcome: "verified", detail: "integrity check ok; 2 table(s)" });
+  });
+
+  it("fails a file that isn't a database", () => {
+    const file = join(dir, "junk.sqlite");
+    writeFileSync(file, "x".repeat(4096));
+    expect(judgeSqliteDrill(check(file)).outcome).toBe("failed");
   });
 });
 

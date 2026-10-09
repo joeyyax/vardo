@@ -3,7 +3,17 @@ import { execFileSync } from "child_process";
 import { mkdtempSync, readFileSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { parseAcmeStore, readTar, selectCertificates, type AcmeCert } from "@/lib/ssl/cert-export";
+import {
+  certsFromTar,
+  parseAcmeStore,
+  parseDockerTime,
+  pollCerts,
+  readTar,
+  selectCertificates,
+  startedBeforeWrite,
+  type AcmeCert,
+  type CertRefresh,
+} from "@/lib/ssl/cert-export";
 import { buildVardoOverlay } from "@/lib/docker/compose-inject";
 
 let dir: string;
@@ -102,5 +112,75 @@ describe("buildVardoOverlay certMount", () => {
   it("adds nothing without it", () => {
     const overlay = buildVardoOverlay({ fullCompose, networkName: "vardo-network", hostCpus: 2 });
     expect(overlay.volumes).toBeUndefined();
+  });
+});
+
+describe("certsFromTar", () => {
+  it("pairs each host's files from a tar of the volume root", () => {
+    const f = (name: string, s: string) => ({ name, data: Buffer.from(s) });
+    expect(
+      certsFromTar([
+        f("./smtp.pouch.test/privkey.pem", "k"),
+        f("./smtp.pouch.test/fullchain.pem", "c"),
+        f("./pouch.test/fullchain.pem", "c2"),
+        f("./.fullchain.tmp", "x"),
+      ]),
+    ).toEqual([
+      { host: "pouch.test", fullchain: "c2", privkey: "" },
+      { host: "smtp.pouch.test", fullchain: "c", privkey: "k" },
+    ]);
+  });
+});
+
+describe("startedBeforeWrite", () => {
+  const written = Date.parse("2026-10-09T12:00:00.000Z");
+
+  it("reads Docker's nanosecond timestamps", () => {
+    expect(parseDockerTime("2026-10-09T12:00:00.123456789Z")).toBe(Date.parse("2026-10-09T12:00:00.123Z"));
+  });
+
+  it("flags a container that started before the certs changed", () => {
+    expect(startedBeforeWrite("2026-10-09T11:59:59.999999999Z", written)).toBe(true);
+  });
+
+  it("leaves a container that started after them", () => {
+    expect(startedBeforeWrite("2026-10-09T12:00:01.5Z", written)).toBe(false);
+  });
+
+  it("leaves everything when nothing was written since boot", () => {
+    expect(startedBeforeWrite("2026-10-09T11:00:00Z", undefined)).toBe(false);
+  });
+});
+
+describe("pollCerts", () => {
+  const result = (waiting: string[], restarted: string[] = []): CertRefresh => ({
+    app: "pouch", organizationId: "org", volume: "v", hosts: [], waiting, restarted,
+  });
+  const noSleep = async () => {};
+
+  it("stops once nothing is waiting", async () => {
+    const seq = [result(["smtp.pouch.test"]), result([], ["pouch-smtp"]), result([])];
+    let calls = 0;
+    const last = await pollCerts(async () => seq[calls++], () => {}, { sleep: noSleep });
+    expect(calls).toBe(2);
+    expect(last?.restarted).toEqual(["pouch-smtp"]);
+  });
+
+  it("retries a failed read and gives up after the timeout", async () => {
+    const lines: string[] = [];
+    let calls = 0;
+    const last = await pollCerts(
+      async () => {
+        calls++;
+        if (calls === 1) throw new Error("no traefik");
+        return result(["smtp.pouch.test"]);
+      },
+      (l) => lines.push(l),
+      { intervalMs: 15_000, timeoutMs: 120_000, sleep: noSleep },
+    );
+    expect(calls).toBe(8);
+    expect(last?.waiting).toEqual(["smtp.pouch.test"]);
+    expect(lines[0]).toContain("no traefik");
+    expect(lines.at(-1)).toBe("[certs] pouch: still no certificate for smtp.pouch.test after 2 minutes");
   });
 });

@@ -20,7 +20,7 @@ describe("consolePublicConfig", () => {
 
   it("routes only the health check and the webhook, unlocked, ahead of the console's router", () => {
     const router = (consolePublicConfig(locked) as { http: { routers: Record<string, Record<string, unknown>> } }).http.routers["vardo-console-public"];
-    expect(router.rule).toBe("Host(`vardo.example.com`) && (Path(`/api/health`) || Path(`/api/v1/github/webhook`))");
+    expect(router.rule).toBe("Host(`vardo.example.com`) && (Path(`/api/health`) || Path(`/api/v1/github/webhook`) || Path(`/api/v1/email/pouch/webhook`))");
     expect(router.service).toBe("vardo@docker");
     expect(router.middlewares).toBeUndefined();
     expect(router.priority).toBe(100000);

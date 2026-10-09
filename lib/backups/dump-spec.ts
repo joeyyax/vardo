@@ -163,6 +163,30 @@ export function defaultDatabase(kind: DatabaseKind, env: ContainerEnv): string |
   return null;
 }
 
+const SYSTEM_SCHEMAS = "'mysql','information_schema','performance_schema','sys'";
+const TABLE_COUNT_SQL = `SELECT count(*) FROM information_schema.tables WHERE table_schema NOT IN (${SYSTEM_SCHEMAS})`;
+const PG_TABLE_COUNT =
+  'for d in $(psql -U "$1" -d postgres -tAc "SELECT datname FROM pg_database WHERE NOT datistemplate AND datallowconn"); do ' +
+  `psql -U "$1" -d "$d" -tAc "SELECT count(*) FROM information_schema.tables WHERE table_schema NOT IN ('pg_catalog','information_schema')"; ` +
+  "done | awk '{s+=$1} END {print s+0}'";
+
+/** `docker exec` arguments that print how many user tables the live database holds. Null for engines without tables. */
+export function buildTableCountArgv(kind: DatabaseKind, containerId: string, env: ContainerEnv): string[] | null {
+  switch (kind) {
+    case "postgres":
+      return ["exec", containerId, "sh", "-c", PG_TABLE_COUNT, "sh", postgresTarget(env).user];
+    case "mysql":
+      return ["exec", containerId, "sh", "-c", `MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql -u root -N -B -e "${TABLE_COUNT_SQL}"`];
+    case "mariadb":
+      return [
+        "exec", containerId, "sh", "-c",
+        `${MARIADB_PWD}; c=$(command -v mariadb || command -v mysql); exec "$c" -u root -N -B -e "${TABLE_COUNT_SQL}"`,
+      ];
+    default:
+      return null;
+  }
+}
+
 /** Human-readable description of what a spec will run, for logs and the UI. */
 export function describeDumpSpec(spec: DumpSpec): string {
   const tool = {

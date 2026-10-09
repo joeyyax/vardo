@@ -1,6 +1,7 @@
 // Restore drills: restore into something disposable and check the contents load. Container work is in drill.ts.
 
 import type { DatabaseKind } from "./durability";
+import { KUMA_DUMP_DIR } from "./dump-spec";
 
 export type DrillOutcome = "verified" | "failed" | "unsupported";
 
@@ -14,7 +15,12 @@ export type ScratchDatabase = {
   restoreArgv: string[];
   /** Prints a single number: how much structure the restore created. */
   countArgv: string[];
+  /** Prints how many tables named `monitor` exist. Zero fails the drill. */
+  requiredTableArgv?: string[];
 };
+
+// TCP reaches only the final server; the init server listens on the socket before root has its password.
+const FINAL_SERVER = "-h 127.0.0.1 --protocol=TCP";
 
 /** Scratch instance with the live container's user and database, so ownership and \connect lines resolve. */
 export function scratchDatabaseFor(
@@ -50,7 +56,7 @@ export function scratchDatabaseFor(
     return {
       image,
       env: [`MARIADB_ROOT_PASSWORD=${password}`, `MYSQL_ROOT_PASSWORD=${password}`],
-      readyArgv: ["sh", "-c", `${client} -e "SELECT 1" >/dev/null`],
+      readyArgv: ["sh", "-c", `${client} ${FINAL_SERVER} -e "SELECT 1" >/dev/null`],
       restoreArgv: ["sh", "-c", client],
       countArgv: [
         "sh", "-c",
@@ -64,7 +70,7 @@ export function scratchDatabaseFor(
     return {
       image,
       env: [`MYSQL_ROOT_PASSWORD=${password}`],
-      readyArgv: ["sh", "-c", 'mysqladmin ping -u root -p"$MYSQL_ROOT_PASSWORD" --silent'],
+      readyArgv: ["sh", "-c", `MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -u root ${FINAL_SERVER} -e "SELECT 1" >/dev/null`],
       restoreArgv: ["sh", "-c", 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql -u root'],
       countArgv: [
         "sh", "-c",
@@ -76,10 +82,30 @@ export function scratchDatabaseFor(
   return null;
 }
 
+/** Scratch MariaDB for an Uptime Kuma archive. The restore reads the gzipped tar on stdin. */
+export function kumaMariadbPlan(): ScratchDatabase {
+  const plan = scratchDatabaseFor("mariadb", "mariadb:11", [])!;
+  const client = 'MYSQL_PWD="$MARIADB_ROOT_PASSWORD" exec "$(command -v mariadb || command -v mysql)" -u root';
+  const query = (sql: string) => ["sh", "-c", `${client} -N -B -e "${sql}"`];
+  return {
+    ...plan,
+    restoreArgv: [
+      "sh", "-c",
+      `tar -xO ${KUMA_DUMP_DIR + "/kuma.sql"} > /tmp/dump && ${client} < /tmp/dump`,
+    ],
+    countArgv: query("SELECT count(*) FROM information_schema.tables WHERE table_schema = 'kuma'"),
+    requiredTableArgv: query(
+      "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'kuma' AND table_name = 'monitor'",
+    ),
+  };
+}
+
 /** Whether a restored copy counts as verified. Exiting 0 having created nothing fails. */
 export function judgeDrill(input: {
   restoreExitCode: number;
   objectCount: number | null;
+  /** Tables in the source at backup time. Null for backups that didn't record it. */
+  sourceTableCount?: number | null;
 }): { outcome: DrillOutcome; detail: string } {
   if (input.restoreExitCode !== 0) {
     return { outcome: "failed", detail: `restore exited ${input.restoreExitCode}` };
@@ -88,6 +114,12 @@ export function judgeDrill(input: {
     return { outcome: "failed", detail: "restored copy could not be inspected" };
   }
   if (input.objectCount <= 0) {
+    if (input.sourceTableCount === 0) {
+      return { outcome: "verified", detail: "database is empty (no tables at backup time)" };
+    }
+    if (input.sourceTableCount == null) {
+      return { outcome: "failed", detail: "restore created no tables; the source may be empty" };
+    }
     return { outcome: "failed", detail: "restore applied cleanly but created no tables" };
   }
   return { outcome: "verified", detail: `${input.objectCount} table(s) restored` };
@@ -105,9 +137,52 @@ export function judgeArchiveDrill(input: {
     return { outcome: "failed", detail: "extracted copy could not be inspected" };
   }
   if (input.fileCount <= 0) {
-    return { outcome: "failed", detail: "archive extracted but held no files" };
+    return { outcome: "verified", detail: "archive is empty; volume held no files" };
   }
   return { outcome: "verified", detail: `${input.fileCount} file(s) extracted` };
+}
+
+/** Prints `integrity=<result>` and `tables=<n>` for the SQLite file at "$1". */
+export const SQLITE_CHECK = [
+  `i=$(sqlite3 "$1" "PRAGMA integrity_check;" 2>&1 | tr '\\n' ' ')`,
+  'echo "integrity=${i% }"',
+  `echo "tables=$(sqlite3 "$1" "SELECT count(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';" 2>/dev/null)"`,
+].join("\n");
+
+/** Extracts an Uptime Kuma archive ("$1" under /archive) into /restore and checks its database. */
+export const KUMA_DRILL = [
+  "set -e",
+  'tar -xzf "/archive/$1" -C /restore',
+  `k="/restore/${KUMA_DUMP_DIR}"`,
+  '[ -f "$k/type" ] || { echo "not an Uptime Kuma archive from Vardo" >&2; exit 1; }',
+  't=$(cat "$k/type")',
+  'echo "type=$t"',
+  '[ "$t" = sqlite ] || exit 0',
+  "set +e",
+  'set -- "$k/kuma.sqlite"',
+  SQLITE_CHECK,
+].join("\n");
+
+/** Verified when integrity_check says ok and the database holds tables. */
+export function judgeSqliteDrill(output: string): { outcome: DrillOutcome; detail: string } {
+  const field = (key: string) => output.match(new RegExp(`^${key}=(.*)$`, "m"))?.[1].trim() ?? null;
+  const integrity = field("integrity");
+  const tables = Number.parseInt(field("tables") ?? "", 10);
+  if (!integrity) return { outcome: "failed", detail: "integrity check did not run" };
+  if (integrity !== "ok") return { outcome: "failed", detail: `integrity check: ${integrity.slice(0, 200)}` };
+  if (!Number.isFinite(tables) || tables <= 0) {
+    return { outcome: "failed", detail: "database passed integrity check but held no tables" };
+  }
+  return { outcome: "verified", detail: `integrity check ok; ${tables} table(s)` };
+}
+
+/** Judge an Uptime Kuma drill by the database type its archive recorded. */
+export function judgeKumaDrill(input: { exitCode: number; output: string }): { outcome: DrillOutcome; detail: string } {
+  if (input.exitCode !== 0) return { outcome: "failed", detail: `extract exited ${input.exitCode}` };
+  const type = input.output.match(/^type=(.*)$/m)?.[1].trim();
+  if (type === "sqlite") return judgeSqliteDrill(input.output);
+  if (type === "none") return { outcome: "verified", detail: "archive extracted; Uptime Kuma had no database yet" };
+  return { outcome: "unsupported", detail: `no drill defined for Uptime Kuma's ${type || "unknown"} database` };
 }
 
 /** Name for a drill's scratch container. Unique per run so drills never collide. */

@@ -64,6 +64,7 @@ vi.mock("@/lib/backups/engine", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/backups/engine")>()),
   runBackup: runBackupMock,
 }));
+vi.mock("@/lib/backups/initial-backup", () => ({ startDueInitialBackups: async () => [] }));
 vi.mock("@/lib/logger", () => ({
   logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }) },
 }));

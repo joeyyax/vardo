@@ -1,5 +1,5 @@
 // VARDO_CONSOLE_MIDDLEWARES locks the console's routers (docker-compose.yml). This writes the unlocked
-// router for the paths that must stay reachable: the health check and the GitHub webhook.
+// router for the paths that must stay reachable: the health check and the GitHub and Pouch webhooks.
 
 import { mkdir, rename, unlink, writeFile } from "fs/promises";
 import { join } from "path";
@@ -14,7 +14,7 @@ const log = logger.child("console-lock");
 // .yaml so no app's <name>.yml can replace it.
 export const CONSOLE_PUBLIC_FILE = "vardo-console-public.yaml";
 
-export const CONSOLE_PUBLIC_PATHS = ["/api/health", "/api/v1/github/webhook"] as const;
+export const CONSOLE_PUBLIC_PATHS = ["/api/health", "/api/v1/github/webhook", "/api/v1/email/pouch/webhook"] as const;
 
 // Above every route Vardo writes for an app, so the console's own paths win on its host.
 const PUBLIC_PRIORITY = 100_000;
@@ -67,7 +67,7 @@ export async function syncConsolePublicRoute(opts: { dir?: string; env?: Env } =
     await mkdir(opts.dir ?? TRAEFIK_DYNAMIC_DIR, { recursive: true });
     await writeFile(`${path}.tmp`, YAML.stringify(config), { encoding: "utf-8", mode: 0o644 });
     await rename(`${path}.tmp`, path);
-    log.info(`Console locked with ${middlewares.join(", ")}; ${CONSOLE_PUBLIC_PATHS.join(" and ")} stay public`);
+    log.info(`Console locked with ${middlewares.join(", ")}; ${CONSOLE_PUBLIC_PATHS.join(", ")} stay public`);
     return "written";
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;

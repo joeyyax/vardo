@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import type { NotificationChannel } from "./port";
+import type { DeliveryReceipt, NotificationChannel } from "./port";
 import type { BusEvent } from "@/lib/bus/events";
 import { sendEmail } from "@/lib/email/send";
 import { renderNotificationEmail, type MailContext } from "@/lib/email/notification-email";
@@ -42,17 +42,20 @@ export class EmailNotificationChannel implements NotificationChannel {
     private organizationId?: string,
   ) {}
 
-  async send(event: BusEvent): Promise<void> {
+  async send(event: BusEvent): Promise<DeliveryReceipt> {
     const { loadMailSeries } = await import("@/lib/email/series");
     const [ctx, series] = await Promise.all([mailContext(this.organizationId), loadMailSeries(event).catch(() => ({}))]);
     const email = await renderNotificationEmail(event, { ...ctx, series });
-    if (!email) return;
+    if (!email) return {};
+    const providerMessageIds: string[] = [];
     for (const recipient of this.config.recipients) {
       try {
-        await sendEmail({ to: recipient, subject: email.subject, html: email.html, text: email.text });
+        const result = await sendEmail({ to: recipient, subject: email.subject, html: email.html, text: email.text });
+        if (result.messageId) providerMessageIds.push(result.messageId);
       } catch (err) {
         log.error(`Failed to send email to ${recipient}:`, err);
       }
     }
+    return providerMessageIds.length > 0 ? { providerMessageIds } : {};
   }
 }
