@@ -133,8 +133,12 @@ export async function syncTraefikTrustedIps(opts: {
   if (attempts.has(desired)) return "skipped";
   attempts.add(desired);
 
+  for (const path of await deps.envFiles(composeFile)) {
+    await deps.writeEnv(path, TRUSTED_IPS_KEY, desired).catch((err) => {
+      log.warn(`Couldn't save ${TRUSTED_IPS_KEY} to ${path}, so a manual \`compose up\` reverts it: ${err instanceof Error ? err.message : err}`);
+    });
+  }
   try {
-    for (const path of await deps.envFiles(composeFile)) await deps.writeEnv(path, TRUSTED_IPS_KEY, desired);
     log.info(`Recreating Traefik: its entrypoints' trusted IPs changed (${desired ? desired.split(",").length : 0} ranges)`);
     await deps.recreate(composeFile, traefik.project, traefik.service, desired);
   } catch (err) {
