@@ -26,10 +26,20 @@ import type { ComposeService } from "@/lib/docker/compose-types";
 
 const FAST = { intervalMs: 5, stableMs: 40 };
 
-function psReturns(...containers: Record<string, string>[]) {
-  execFileAsyncMock.mockResolvedValue({
-    stdout: containers.map((c) => JSON.stringify(c)).join("\n"),
-    stderr: "",
+/** `docker inspect` answers with the next restart count per call, holding the last. */
+function psReturns(container: Record<string, string>, restarts: number[] = [0]) {
+  const list = [container];
+  let inspects = 0;
+  execFileAsyncMock.mockImplementation(async (_cmd: string, args: string[]) => {
+    if (args[0] === "inspect") {
+      const count = restarts[Math.min(inspects++, restarts.length - 1)];
+      const stdout = list
+        .filter((c) => !c.Health)
+        .map((c) => `/${c.Name} ${count} ${c.State}`)
+        .join("\n");
+      return { stdout, stderr: "" };
+    }
+    return { stdout: list.map((c) => JSON.stringify(c)).join("\n"), stderr: "" };
   });
 }
 
@@ -45,7 +55,7 @@ beforeEach(() => {
 
 describe("waitForHealthy", () => {
   it("fails a running service whose port refuses every connection", async () => {
-    psReturns({ Service: "web", State: "running", Health: "" });
+    psReturns({ Service: "web", Name: "app-production-green-web-1", State: "running", Health: "" });
     const probe = vi.fn().mockResolvedValue(false);
 
     const { result, logs } = gate(probe);
@@ -56,14 +66,14 @@ describe("waitForHealthy", () => {
   });
 
   it("does not pass on a single success", async () => {
-    psReturns({ Service: "web", State: "running", Health: "" });
+    psReturns({ Service: "web", Name: "app-production-green-web-1", State: "running", Health: "" });
     const probe = vi.fn().mockResolvedValueOnce(true).mockResolvedValue(false);
 
     expect(await gate(probe).result).toBe(false);
   });
 
   it("passes once the probe keeps succeeding for the window", async () => {
-    psReturns({ Service: "web", State: "running", Health: "" });
+    psReturns({ Service: "web", Name: "app-production-green-web-1", State: "running", Health: "" });
     const probe = vi.fn().mockResolvedValue(true);
 
     expect(await gate(probe).result).toBe(true);
@@ -71,7 +81,7 @@ describe("waitForHealthy", () => {
   });
 
   it("restarts the window when the service flaps", async () => {
-    psReturns({ Service: "web", State: "running", Health: "" });
+    psReturns({ Service: "web", Name: "app-production-green-web-1", State: "running", Health: "" });
     let calls = 0;
     // Up, down, then up for good: must not pass on the first run of successes.
     const probe = vi.fn(async () => {
@@ -86,13 +96,13 @@ describe("waitForHealthy", () => {
   });
 
   it("fails a container stuck restarting", async () => {
-    psReturns({ Service: "web", State: "restarting", Health: "" });
+    psReturns({ Service: "web", Name: "app-production-green-web-1", State: "restarting", Health: "" });
 
     expect(await gate(vi.fn().mockResolvedValue(true)).result).toBe(false);
   });
 
   it("holds an unprobed service to the running window", async () => {
-    psReturns({ Service: "worker", State: "running", Health: "" });
+    psReturns({ Service: "worker", Name: "app-production-green-worker-1", State: "running", Health: "" });
     const started = Date.now();
 
     expect(await gate(undefined).result).toBe(true);
@@ -100,11 +110,35 @@ describe("waitForHealthy", () => {
   });
 
   it("trusts Docker's healthcheck without a window", async () => {
-    psReturns({ Service: "web", State: "running", Health: "healthy" });
+    psReturns({ Service: "web", Name: "app-production-green-web-1", State: "running", Health: "healthy" });
     const probe = vi.fn().mockResolvedValue(false);
 
     expect(await gate(probe).result).toBe(true);
     expect(probe).not.toHaveBeenCalled();
+  });
+
+  it("fails a service with no healthcheck that keeps restarting between running checks", async () => {
+    psReturns({ Service: "formbricks", Name: "formbricks-production-blue-formbricks-1", State: "running", Health: "" }, [0, 1, 2, 3]);
+
+    const { result, logs } = gate(undefined, 10_000);
+
+    expect(await result).toBe(false);
+    expect(logs.at(-1)).toContain("crash-looping");
+  });
+
+  it("restarts the window after a restart and passes once stable", async () => {
+    psReturns({ Service: "web", Name: "app-production-green-web-1", State: "running", Health: "" }, [0, 0, 1]);
+    const started = Date.now();
+
+    expect(await gate(undefined).result).toBe(true);
+    expect(Date.now() - started).toBeGreaterThanOrEqual(FAST.stableMs);
+  });
+
+  it("does not inspect restarts for a healthchecked service", async () => {
+    psReturns({ Service: "web", Name: "app-production-green-web-1", State: "running", Health: "healthy" }, [5]);
+
+    expect(await gate(undefined).result).toBe(true);
+    expect(execFileAsyncMock.mock.calls.some(([, args]) => args[0] === "inspect")).toBe(false);
   });
 
   it("fails closed when compose cannot be queried", async () => {
@@ -114,7 +148,7 @@ describe("waitForHealthy", () => {
   });
 
   it("fails an exited container at once", async () => {
-    psReturns({ Service: "web", State: "exited", Health: "" });
+    psReturns({ Service: "web", Name: "app-production-green-web-1", State: "exited", Health: "" });
 
     expect(await gate(vi.fn().mockResolvedValue(true), 10_000).result).toBe(false);
   });

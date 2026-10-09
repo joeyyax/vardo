@@ -151,9 +151,27 @@ export function routedPort(service: ComposeService | undefined): number | null {
   return null;
 }
 
+/** Restarts of a fresh slot container, without a healthcheck, that fail the deploy as a crash loop. */
+export const CRASH_LOOP_RESTARTS = 3;
+
+/** RestartCount and state per container name. */
+async function restartCounts(names: string[]): Promise<Map<string, { restarts: number; status: string }>> {
+  const { stdout } = await execFileAsync(
+    "docker",
+    ["inspect", "--format", "{{.Name}} {{.RestartCount}} {{.State.Status}}", ...names],
+    { env: dockerEnv(), timeout: COMPOSE_QUERY_TIMEOUT },
+  );
+  const counts = new Map<string, { restarts: number; status: string }>();
+  for (const line of stdout.trim().split("\n")) {
+    const [name, restarts, status] = line.trim().split(/\s+/);
+    if (name && restarts !== undefined) counts.set(name.replace(/^\//, ""), { restarts: Number(restarts), status: status ?? "" });
+  }
+  return counts;
+}
+
 /**
  * Wait for the new slot to be ready; a timeout fails. Healthchecked services must be healthy;
- * others must stay running, with the probe passing, for HEALTH_STABLE_WINDOW_MS.
+ * others must stay running without a restart, with the probe passing, for HEALTH_STABLE_WINDOW_MS.
  */
 export async function waitForHealthy(
   projectName: string,
@@ -169,10 +187,12 @@ export async function waitForHealthy(
   const deadline = Date.now() + timeoutMs;
   let readySince: number | null = null;
   let waitingOn = "no containers yet";
+  const lastRestarts = new Map<string, number>();
 
   while (Date.now() < deadline) {
     let ready = false;
     let needsWindow = false;
+    const windowed: { name: string; container: string }[] = [];
     try {
       const { stdout } = await execFileAsync(
         "docker",
@@ -183,7 +203,7 @@ export async function waitForHealthy(
       const lines = stdout.trim().split("\n").filter(Boolean);
       ready = lines.length > 0;
       for (const line of lines) {
-        let container: { State?: string; Health?: string; Service?: string; Name?: string };
+        let container: { State?: string; Health?: string; Service?: string; Name?: string; ID?: string };
         try {
           container = JSON.parse(line);
         } catch {
@@ -199,6 +219,7 @@ export async function waitForHealthy(
           return false;
         }
 
+        if (!health) windowed.push({ name, container: container.Name || container.ID || name });
         if (health) {
           if (health !== "healthy") {
             ready = false;
@@ -209,6 +230,31 @@ export async function waitForHealthy(
           waitingOn = `${name} is ${state || "not running"}`;
         } else {
           needsWindow = true;
+        }
+      }
+
+      if (windowed.length > 0) {
+        const counts = await restartCounts(windowed.map((w) => w.container));
+        for (const { name, container } of windowed) {
+          const seen = counts.get(container);
+          if (!seen) {
+            ready = false;
+            waitingOn = `${name} could not be inspected`;
+            continue;
+          }
+          if (seen.status !== "running") {
+            ready = false;
+            waitingOn = `${name} is ${seen.status || "not running"}`;
+          }
+          if (seen.restarts > (lastRestarts.get(container) ?? seen.restarts)) {
+            ready = false;
+            waitingOn = `${name} restarted`;
+          }
+          lastRestarts.set(container, seen.restarts);
+          if (seen.restarts >= CRASH_LOOP_RESTARTS) {
+            logs.push(`[health] ${name}: crash-looping (${seen.restarts} restarts)`);
+            return false;
+          }
         }
       }
 
