@@ -176,6 +176,28 @@ describe("accessibleOrgIds by capability", () => {
   });
 });
 
+describe("token scopes", () => {
+  it("narrows an owner's token to its scope", async () => {
+    const { canAccessOrg, accessibleOrgIds } = await scope();
+    const { tokenScopeCapabilities } = await import("@/lib/auth/permissions");
+    const deployToken = { ...crossToken, scopes: tokenScopeCapabilities("deploy", null) };
+
+    expect(await canAccessOrg(deployToken, HOME, "app.deploy")).toBe(true);
+    expect(await canAccessOrg(deployToken, HOME, "env.reveal")).toBe(false);
+    expect(await canAccessOrg(deployToken, HOME, "env.write")).toBe(false);
+    expect(await accessibleOrgIds(deployToken, "app.delete")).toEqual([]);
+  });
+
+  it("never lifts a member past the role", async () => {
+    const { canAccessOrg } = await scope();
+    roleTable = { [`u1:${HOME}`]: "member" };
+    const token = { ...normalToken, scopes: new Set(["env.reveal", "env.read"] as const) };
+
+    expect(await canAccessOrg(token, HOME, "env.reveal")).toBe(false);
+    expect(await canAccessOrg(token, HOME, "env.read")).toBe(true);
+  });
+});
+
 describe("resolveTargetOrg", () => {
   it("defaults to the token's own org", async () => {
     const { resolveTargetOrg } = await scope();

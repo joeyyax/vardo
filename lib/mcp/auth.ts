@@ -3,6 +3,7 @@ import { apiTokens, user } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { findApiToken } from "@/lib/auth/api-token";
+import { tokenScopeCapabilities, type Capability } from "@/lib/auth/permissions";
 
 export type McpAuthContext = {
   userId: string;
@@ -10,6 +11,8 @@ export type McpAuthContext = {
   organizationId: string;
   /** Opt-in widening to every organization the token's user belongs to. */
   crossOrg: boolean;
+  /** The token's scope; null or absent allows everything the role does. */
+  scopes?: ReadonlySet<Capability> | null;
 };
 
 /** Authenticates a raw MCP Request by Bearer token. Null if invalid or api-tokens is off. */
@@ -45,5 +48,6 @@ export async function authenticateRequest(
     userId: token.userId,
     organizationId: token.organizationId,
     crossOrg: token.crossOrg,
+    scopes: tokenScopeCapabilities(token.scope, token.capabilities),
   };
 }

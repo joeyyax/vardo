@@ -33,3 +33,16 @@ Terminal sessions and every reveal are recorded in the activity log (`app.termin
 A member saving env vars sends the masked values back; the server keeps the stored value for any value still masked.
 
 Members see command cron jobs but can't change their command or type. A `[[cron]]` entry in `host.toml` creates a command job on deploy regardless of who deployed; members can already run arbitrary code in their own containers by deploying it.
+
+## API tokens
+
+A token acts as the user who made it. It holds the intersection of its scope and the user's live role, so a scope never grants more than the role. Tokens never carry instance-admin power.
+
+| Scope | Holds |
+| --- | --- |
+| Full access | Everything the role holds. Tokens made before scopes keep this. |
+| Deploy | Read-only, plus `app.deploy` |
+| Read-only | Every `*.view` capability and masked `env.read` |
+| Custom | The capabilities picked at creation |
+
+A token works in the org it was made in. Turn on "all my organizations" to let it act on every org the user belongs to. A token scoped below full can't create orgs, accept invitations, change notification preferences or touch GitHub installations and repos. A token can only mint tokens within its own scope, reach and lifetime.

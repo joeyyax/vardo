@@ -9,6 +9,7 @@ import { randomBytes } from "crypto";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { recordActivity } from "@/lib/activity";
 import { hashApiToken, scopeCeilingViolation, type TokenScope } from "@/lib/auth/api-token";
+import { isCapability, tokenScopeCapabilities, TOKEN_PRESETS } from "@/lib/auth/permissions";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { requirePlugin } from "@/lib/api/require-plugin";
@@ -17,6 +18,13 @@ const createTokenSchema = z
   .object({
     name: z.string().min(1, "Name is required").max(100).trim(),
     crossOrg: z.boolean().default(false),
+    scope: z.enum([...TOKEN_PRESETS, "custom"]).default("full"),
+    capabilities: z
+      .array(z.string().refine(isCapability, "Unknown capability"))
+      .min(1)
+      .max(100)
+      .transform((caps) => [...new Set(caps)])
+      .optional(),
     expiresAt: z.iso
       .datetime({ offset: true })
       .transform((v) => new Date(v))
@@ -24,7 +32,11 @@ const createTokenSchema = z
       .nullable()
       .default(null),
   })
-  .strict();
+  .strict()
+  .refine((d) => (d.scope === "custom") === (d.capabilities !== undefined), {
+    message: "Pick capabilities only with the custom scope",
+    path: ["capabilities"],
+  });
 const deleteTokenSchema = z.object({ id: z.string().min(1, "Token ID is required") }).strict();
 const updateTokenSchema = z
   .object({
@@ -61,6 +73,8 @@ async function handleGet(_request: NextRequest, { params }: RouteParams) {
         id: true,
         name: true,
         crossOrg: true,
+        scope: true,
+        capabilities: true,
         expiresAt: true,
         lastUsedAt: true,
         createdAt: true,
@@ -72,6 +86,8 @@ async function handleGet(_request: NextRequest, { params }: RouteParams) {
         id: t.id,
         name: t.name,
         crossOrg: t.crossOrg,
+        scope: t.scope,
+        capabilities: t.scope === "custom" ? (t.capabilities ?? []) : null,
         expiresAt: t.expiresAt?.toISOString() || null,
         lastUsedAt: t.lastUsedAt?.toISOString() || null,
         createdAt: t.createdAt.toISOString(),
@@ -101,9 +117,10 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       return apiError.validation(parsed.error, { details: true });
     }
 
+    const { scope, capabilities = null } = parsed.data;
     const violation = scopeCeilingViolation({
       caller: callerScope(org.session),
-      requested: parsed.data,
+      requested: { ...parsed.data, capabilities: tokenScopeCapabilities(scope, capabilities) },
     });
     if (violation) return NextResponse.json({ error: violation }, { status: 403 });
 
@@ -118,6 +135,8 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       name: parsed.data.name,
       tokenHash,
       crossOrg: parsed.data.crossOrg,
+      scope,
+      capabilities,
       expiresAt: parsed.data.expiresAt,
     });
 
@@ -125,7 +144,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       organizationId: orgId,
       action: "token.created",
       userId: org.session.user.id,
-      metadata: { tokenId, name: parsed.data.name, crossOrg: parsed.data.crossOrg },
+      metadata: { tokenId, name: parsed.data.name, crossOrg: parsed.data.crossOrg, scope, capabilities },
     }).catch(() => {});
 
     // The raw token is returned only once.

@@ -83,7 +83,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       return apiError.validation(parsed.error);
     }
 
-    if (parsed.data.type === "command" && !can(orgAccess.membership.role, "app.cron.command")) {
+    if (parsed.data.type === "command" && !can(orgAccess.membership, "app.cron.command")) {
       return apiError.forbidden();
     }
 
@@ -131,7 +131,7 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
     const { id, ...updates } = parsed.data;
 
     // A member may pause, rename or reschedule a command job, not change what it runs.
-    if (!can(orgAccess.membership.role, "app.cron.command") && (updates.type || updates.command !== undefined)) {
+    if (!can(orgAccess.membership, "app.cron.command") && (updates.type || updates.command !== undefined)) {
       const current = await db.query.cronJobs.findFirst({
         where: and(eq(cronJobs.id, id), eq(cronJobs.appId, appId)),
         columns: { type: true, command: true },

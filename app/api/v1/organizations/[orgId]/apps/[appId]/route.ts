@@ -113,14 +113,14 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
     }
 
     // GPU passthrough grants host hardware access; owner/admin only.
-    if (parsed.data.gpuEnabled === true && !can(org.membership.role, "app.gpu")) {
+    if (parsed.data.gpuEnabled === true && !can(org.membership, "app.gpu")) {
       return NextResponse.json(
         { error: "Only owners and admins can enable GPU passthrough" },
         { status: 403 }
       );
     }
 
-    if (parsed.data.certServices !== undefined && !can(org.membership.role, "app.certs")) {
+    if (parsed.data.certServices !== undefined && !can(org.membership, "app.certs")) {
       return NextResponse.json(
         { error: "Only owners and admins can give an app its certificates" },
         { status: 403 }

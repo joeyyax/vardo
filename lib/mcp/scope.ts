@@ -8,7 +8,7 @@ import type { McpAuthContext } from "./auth";
 // Organization scoping for MCP tools, checked against live memberships on every request.
 // Every tool's tenancy boundary runs through canAccessOrg and accessibleOrgIds; widening either widens all tools.
 
-/** True when the token may act on `orgId` with `cap`. */
+/** True when the token may act on `orgId` with `cap`: its scope intersected with the live role. */
 export async function canAccessOrg(
   context: McpAuthContext,
   orgId: string,
@@ -24,7 +24,7 @@ export async function canAccessOrg(
     columns: { role: true },
   });
 
-  return can(membership?.role, cap);
+  return can({ role: membership?.role, scopes: context.scopes }, cap);
 }
 
 /** Every organization the token may act on with `cap`, resolved from live memberships. */
@@ -38,7 +38,7 @@ export async function accessibleOrgIds(
   });
 
   const memberOrgIds = [
-    ...new Set(rows.filter((r) => can(r.role, cap)).map((r) => r.organizationId)),
+    ...new Set(rows.filter((r) => can({ role: r.role, scopes: context.scopes }, cap)).map((r) => r.organizationId)),
   ];
 
   return context.crossOrg

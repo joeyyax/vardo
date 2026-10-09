@@ -5,12 +5,12 @@ import { can, INSTANCE_ADMIN_CAPABILITIES, type Capability } from "@/lib/auth/pe
 import { isAppAdmin } from "@/lib/auth/admin";
 import { eq, and } from "drizzle-orm";
 
-/** Org access when the caller's role holds `cap` (instance admins also hold backup caps), else null. */
+/** Org access when the caller holds `cap`: role, narrowed by any token scope (instance admins also hold backup caps). Else null. */
 export async function verifyOrgAccess(orgId: string, cap: Capability) {
   const { organization, membership, session } = await requireOrg();
   if (organization.id !== orgId) return null;
   const instanceAdmin = INSTANCE_ADMIN_CAPABILITIES.has(cap) && (await isAppAdmin());
-  if (!can(membership.role, cap, { instanceAdmin })) return null;
+  if (!can(membership, cap, { instanceAdmin })) return null;
   return { organization, membership, session };
 }
 

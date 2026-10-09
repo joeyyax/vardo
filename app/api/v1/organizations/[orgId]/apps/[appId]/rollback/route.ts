@@ -105,7 +105,7 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ org
     const configSnapshot = targetDeployment.configSnapshot as ConfigSnapshot | null;
 
     // A GPU-enabled snapshot restores host hardware access; gate it like PATCH.
-    if (configSnapshot?.gpuEnabled === true && !can(org.membership.role, "app.gpu")) {
+    if (configSnapshot?.gpuEnabled === true && !can(org.membership, "app.gpu")) {
       return NextResponse.json(
         { error: "Only owners and admins can roll back to a snapshot with GPU passthrough enabled" },
         { status: 403 },

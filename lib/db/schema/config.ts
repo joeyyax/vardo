@@ -9,6 +9,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { user } from "./auth";
 import { organizations } from "./organizations";
+import type { TokenScopeKind } from "@/lib/auth/permissions";
 
 // Key-value store for setup and global config.
 
@@ -32,6 +33,10 @@ export const apiTokens = pgTable(
     tokenHash: text("token_hash").notNull(),
     // Lets the token act on any of its user's organizations. Keep the default false; flipping it widens every token.
     crossOrg: boolean("cross_org").default(false).notNull(),
+    // "full", "deploy", "read" or "custom"; intersected with the user's live role.
+    scope: text("scope").$type<TokenScopeKind>().default("full").notNull(),
+    // Only read when scope is "custom".
+    capabilities: text("capabilities").array(),
     // Unused: tokens never carry instance-admin power.
     adminAccess: boolean("admin_access").default(false).notNull(),
     // Null never expires.

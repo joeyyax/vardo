@@ -60,7 +60,7 @@ export default async function AppLayout({
   ]);
 
   return (
-    <CapabilitiesProvider capabilities={capabilitiesFor(orgData.membership.role, { instanceAdmin })}>
+    <CapabilitiesProvider capabilities={capabilitiesFor(orgData.membership, { instanceAdmin })}>
       <TooltipProvider>
         <div className="min-h-dvh flex flex-col bg-background">
           <div className="sticky top-0 z-40 bg-sidebar">

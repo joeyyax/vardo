@@ -55,7 +55,7 @@ export async function linkToCurrentOrgIfAdmin(
   installationId: number,
   userId: string,
 ): Promise<boolean> {
-  if (!current || !can(current.membership.role, "org.settings")) return false;
+  if (!current || !can(current.membership, "org.settings")) return false;
   await linkInstallationToOrg(current.organization.id, installationId, userId);
   return true;
 }

@@ -89,16 +89,60 @@ export const INSTANCE_ADMIN_CAPABILITIES: ReadonlySet<Capability> = new Set<Capa
   "backup.jobs.manage",
 ]);
 
+// API token scopes. A token holds the intersection of its scope and the user's live role.
+
+export const TOKEN_PRESETS = ["full", "deploy", "read"] as const;
+export type TokenPreset = (typeof TOKEN_PRESETS)[number];
+/** Stored on the token: a preset, or "custom" for an explicit capability list. */
+export type TokenScopeKind = TokenPreset | "custom";
+
+const ALL_CAPABILITIES = Object.keys(CAPABILITIES) as Capability[];
+
+export function isCapability(value: string): value is Capability {
+  return Object.hasOwn(CAPABILITIES, value);
+}
+
+const READ_ONLY: ReadonlySet<Capability> = new Set<Capability>([
+  ...ALL_CAPABILITIES.filter((cap) => cap.endsWith(".view")),
+  "env.read",
+]);
+
+const PRESET_CAPABILITIES: Record<Exclude<TokenPreset, "full">, ReadonlySet<Capability>> = {
+  read: READ_ONLY,
+  deploy: new Set<Capability>([...READ_ONLY, "app.deploy"]),
+};
+
+/** Capabilities a token's scope allows, or null when it allows everything the role does. An unknown kind allows nothing. */
+export function tokenScopeCapabilities(
+  kind: string | null | undefined,
+  capabilities: readonly string[] | null | undefined,
+): ReadonlySet<Capability> | null {
+  if (kind == null || kind === "full") return null;
+  if (kind === "read" || kind === "deploy") return PRESET_CAPABILITIES[kind];
+  if (kind === "custom") return new Set((capabilities ?? []).filter(isCapability));
+  return new Set();
+}
+
+/** A role, or a membership that may carry a token's scope. */
+export type Subject =
+  | string
+  | null
+  | undefined
+  | { role: string | null | undefined; scopes?: ReadonlySet<Capability> | null };
+
 type Grant = { instanceAdmin?: boolean };
 
-/** Whether `role` holds `cap`. Unknown or missing roles hold nothing. */
-export function can(role: string | null | undefined, cap: Capability, grant: Grant = {}): boolean {
+/** Whether `subject` holds `cap`. Pass the membership, not its role, or a token scope is skipped. */
+export function can(subject: Subject, cap: Capability, grant: Grant = {}): boolean {
+  const role = typeof subject === "object" && subject !== null ? subject.role : subject;
+  const scopes = typeof subject === "object" && subject !== null ? subject.scopes : null;
   if (!role) return false;
+  if (scopes && !scopes.has(cap)) return false;
   if (grant.instanceAdmin && INSTANCE_ADMIN_CAPABILITIES.has(cap)) return true;
   return (CAPABILITIES[cap] as readonly string[]).includes(role);
 }
 
-/** Every capability `role` holds, for passing to client components. */
-export function capabilitiesFor(role: string | null | undefined, grant: Grant = {}): Capability[] {
-  return (Object.keys(CAPABILITIES) as Capability[]).filter((cap) => can(role, cap, grant));
+/** Every capability `subject` holds, for passing to client components. */
+export function capabilitiesFor(subject: Subject, grant: Grant = {}): Capability[] {
+  return ALL_CAPABILITIES.filter((cap) => can(subject, cap, grant));
 }

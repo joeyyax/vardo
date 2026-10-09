@@ -2,12 +2,15 @@ import { createHash } from "crypto";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { apiTokens } from "@/lib/db/schema";
+import type { Capability } from "@/lib/auth/permissions";
 
 export type ApiTokenRow = {
   id: string;
   userId: string;
   organizationId: string;
   crossOrg: boolean;
+  scope?: string | null;
+  capabilities?: string[] | null;
   expiresAt: Date | null;
 };
 
@@ -15,6 +18,8 @@ export type ApiTokenRow = {
 export type TokenScope = {
   crossOrg: boolean;
   expiresAt: Date | null;
+  /** Null or absent allows everything the role does. */
+  capabilities?: ReadonlySet<Capability> | null;
 };
 
 export function hashApiToken(rawToken: string): string {
@@ -35,6 +40,8 @@ export async function findApiToken(rawToken: string): Promise<ApiTokenRow | null
       userId: true,
       organizationId: true,
       crossOrg: true,
+      scope: true,
+      capabilities: true,
       expiresAt: true,
     },
   });
@@ -54,6 +61,11 @@ export function scopeCeilingViolation(opts: {
 
   if (requested.crossOrg && caller && !caller.crossOrg) {
     return "A token cannot grant access to organizations it cannot reach";
+  }
+  const held = caller?.capabilities;
+  const wanted = requested.capabilities;
+  if (held && wanted !== undefined && (!wanted || [...wanted].some((cap) => !held.has(cap)))) {
+    return "A token cannot grant capabilities it doesn't hold";
   }
   if (caller?.expiresAt) {
     if (requested.expiresAt === undefined) return null;

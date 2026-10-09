@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { githubAppInstallations } from "@/lib/db/schema";
-import { requireSession } from "@/lib/auth/session";
+import { requireSession, isScopedToken } from "@/lib/auth/session";
 import { eq, and } from "drizzle-orm";
 import { listInstallationRepos, createRepo } from "@/lib/git-integration/app";
 import { z } from "zod";
@@ -66,6 +66,8 @@ const createRepoSchema = z.object({
 async function handlePost(request: NextRequest) {
   try {
     const session = await requireSession();
+    // A scoped token only acts through org capabilities.
+    if (isScopedToken(session)) return apiError.forbidden();
 
     const body = await request.json();
     const parsed = createRepoSchema.safeParse(body);

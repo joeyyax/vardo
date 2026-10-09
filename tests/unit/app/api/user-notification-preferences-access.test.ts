@@ -29,7 +29,7 @@ const {
   mockUpdate: vi.fn(),
 }));
 
-vi.mock("@/lib/auth/session", () => ({ requireSession: mockRequireSession }));
+vi.mock("@/lib/auth/session", () => ({ requireSession: mockRequireSession, isScopedToken: () => false }));
 vi.mock("@/lib/api/verify-access", () => ({ verifyOrgAccess: mockVerifyOrgAccess }));
 vi.mock("@/lib/api/with-rate-limit", async () => (await import("@/tests/helpers/mocks")).withRateLimitModule());
 vi.mock("@/lib/logger", async () => (await import("@/tests/helpers/mocks")).loggerModule());

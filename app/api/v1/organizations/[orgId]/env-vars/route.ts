@@ -45,7 +45,7 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
     if (!org) return apiError.forbidden();
 
     const reveal = request.nextUrl.searchParams.get("reveal") === "true";
-    if (reveal && !can(org.membership.role, "env.reveal")) return apiError.forbidden();
+    if (reveal && !can(org.membership, "env.reveal")) return apiError.forbidden();
     if (reveal) {
       recordActivity({
         organizationId: orgId,

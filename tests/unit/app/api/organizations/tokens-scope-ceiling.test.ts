@@ -32,7 +32,7 @@ function req(method: string, body: unknown) {
   });
 }
 
-function asToken(scope: { crossOrg?: boolean; expiresAt?: Date | null } = {}) {
+function asToken(scope: { crossOrg?: boolean; expiresAt?: Date | null; capabilities?: ReadonlySet<string> | null } = {}) {
   mockVerifyOrgAccess.mockResolvedValue({
     session: {
       user: { id: "u1" },
@@ -107,6 +107,61 @@ describe("minting a token", () => {
     asCookie();
     const res = await POST(req("POST", { name: "ci", expiresAt: "2020-01-01T00:00:00Z" }), params);
     expect(res.status).toBe(400);
+  });
+});
+
+describe("capability scopes", () => {
+  it("stores full by default", async () => {
+    asCookie();
+    const res = await POST(req("POST", { name: "ci" }), params);
+    expect(res.status).toBe(201);
+    expect(inserted[0]).toMatchObject({ scope: "full", capabilities: null });
+  });
+
+  it("stores a preset and an org binding", async () => {
+    asCookie();
+    const res = await POST(req("POST", { name: "ci", scope: "deploy", crossOrg: false }), params);
+    expect(res.status).toBe(201);
+    expect(inserted[0]).toMatchObject({ scope: "deploy", capabilities: null, crossOrg: false });
+  });
+
+  it("stores custom capabilities", async () => {
+    asCookie();
+    const res = await POST(req("POST", { name: "ci", scope: "custom", capabilities: ["app.view", "app.deploy"] }), params);
+    expect(res.status).toBe(201);
+    expect(inserted[0]).toMatchObject({ scope: "custom", capabilities: ["app.view", "app.deploy"] });
+  });
+
+  it("rejects unknown capabilities, custom without any, and capabilities on a preset", async () => {
+    asCookie();
+    for (const body of [
+      { name: "x", scope: "custom", capabilities: ["root.all"] },
+      { name: "x", scope: "custom" },
+      { name: "x", scope: "read", capabilities: ["app.view"] },
+      { name: "x", scope: "admin" },
+    ]) {
+      expect((await POST(req("POST", body), params)).status).toBe(400);
+    }
+    expect(inserted).toHaveLength(0);
+  });
+
+  it("refuses a full token from a scoped one", async () => {
+    asToken({ capabilities: new Set(["app.view", "org.tokens.manage"]) });
+    const res = await POST(req("POST", { name: "wide" }), params);
+    expect(res.status).toBe(403);
+    expect(inserted).toHaveLength(0);
+  });
+
+  it("refuses a capability the minting token lacks", async () => {
+    asToken({ capabilities: new Set(["app.view", "org.tokens.manage"]) });
+    const res = await POST(req("POST", { name: "x", scope: "custom", capabilities: ["app.deploy"] }), params);
+    expect(res.status).toBe(403);
+  });
+
+  it("lets a scoped token mint a narrower one", async () => {
+    asToken({ capabilities: new Set(["app.view", "org.view", "org.tokens.manage"]) });
+    const res = await POST(req("POST", { name: "x", scope: "custom", capabilities: ["app.view"] }), params);
+    expect(res.status).toBe(201);
   });
 });
 
