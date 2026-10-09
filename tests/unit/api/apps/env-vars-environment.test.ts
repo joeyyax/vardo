@@ -22,7 +22,7 @@ vi.mock("@/lib/docker/environment-env", () => ({
   saveEnvironmentEnv: saveMock,
 }));
 vi.mock("@/lib/api/verify-access", () => ({
-  verifyOrgAccess: vi.fn().mockResolvedValue({ session: { user: { id: "u1" } } }),
+  verifyOrgAccess: vi.fn().mockResolvedValue({ membership: { role: "admin" }, session: { user: { id: "u1" } } }),
   verifyAppAccess: vi.fn().mockResolvedValue({ id: "app-1" }),
 }));
 const recordActivity = vi.hoisted(() => vi.fn(async () => {}));
@@ -100,6 +100,20 @@ describe("env-vars for an environment", () => {
     expect(saveMock).toHaveBeenCalledTimes(1);
     expect(decrypt(saveMock.mock.calls[0][1], "org-1")).toBe("A=edited");
     expect(dbMock.updates).toEqual([]);
+  });
+
+  it("keeps a masked value's stored value on save", async () => {
+    state.appEnv = encrypt("A=prod\nB=two", "org-1");
+
+    await put({ content: "A=••••••••\nB=new\nC=three" });
+
+    expect(decrypt((dbMock.updates[0].set as { envContent: string }).envContent, "org-1")).toBe("A=prod\nB=new\nC=three");
+  });
+
+  it("restores a masked environment save from the app's env it inherited", async () => {
+    await put({ content: "A=••••••••", environmentId: "env-pr-7" });
+
+    expect(decrypt(saveMock.mock.calls[0][1], "org-1")).toBe("A=prod");
   });
 
   it("saves to the app without an environment", async () => {

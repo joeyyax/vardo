@@ -19,6 +19,7 @@ import { createTheme } from "@uiw/codemirror-themes";
 import "./surface-terminal.css";
 import { Card } from "@/components/ui/card";
 import { EnvMultilineAdd } from "@/components/env-multiline-add";
+import { useCan } from "@/components/capabilities-provider";
 
 const clipboardIcon = <ClipboardCheck className="size-4" />;
 
@@ -126,6 +127,7 @@ export function EnvEditor(props: EnvEditorProps) {
   const environment = isStandalone ? undefined : (props as Exclude<EnvEditorProps, { standalone: true }>).environment;
   const environmentId = environment?.id;
   const [inherited, setInherited] = useState(false);
+  const canReveal = useCan()("env.reveal");
 
   const router = useRouter();
   const [content, setContentState] = useState(isStandalone ? (props.initialContent || "") : "");
@@ -197,8 +199,10 @@ export function EnvEditor(props: EnvEditorProps) {
     if (isStandalone) return;
     async function load() {
       try {
-        const scope = environmentId ? `&environmentId=${encodeURIComponent(environmentId)}` : "";
-        const res = await fetch(`/api/v1/organizations/${orgId}/apps/${appId}/env-vars?reveal=true${scope}`);
+        const query = new URLSearchParams();
+        if (canReveal) query.set("reveal", "true");
+        if (environmentId) query.set("environmentId", environmentId);
+        const res = await fetch(`/api/v1/organizations/${orgId}/apps/${appId}/env-vars?${query}`);
         if (res.ok) {
           const data = await res.json();
           setContentState(data.content || "");
@@ -212,7 +216,7 @@ export function EnvEditor(props: EnvEditorProps) {
       setLoaded(true);
     }
     load();
-  }, [orgId, appId, isStandalone, environmentId]);
+  }, [orgId, appId, isStandalone, environmentId, canReveal]);
 
   function handleChange(value: string) {
     setContent(value);
@@ -395,6 +399,12 @@ export function EnvEditor(props: EnvEditorProps) {
               Variables for the <span className="font-medium text-foreground">{environment.name}</span> environment. Production&apos;s are unaffected.
             </>
           )}
+        </p>
+      )}
+
+      {!isStandalone && !canReveal && (
+        <p className="text-sm text-muted-foreground">
+          Values are hidden. Leave a hidden value as is to keep it.
         </p>
       )}
 

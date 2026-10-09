@@ -246,6 +246,7 @@ export default async function AppDetailPage({ params }: PageProps) {
     isChildService: !!app.parentAppId,
     hasConnectionInfo: (app.connectionInfo?.length ?? 0) > 0,
     canDebug: can(orgData.membership.role, "app.debug"),
+    canTerminal: can(orgData.membership.role, "app.terminal"),
     features: featureFlags,
   };
   const effectiveTab = resolveAppTab(tab, tabContext);

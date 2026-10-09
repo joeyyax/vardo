@@ -22,6 +22,7 @@ const FAMILY_BY_PREFIX: Array<[string, ActivityFamily]> = [
   ["project.allow_docker_socket", "security"],
   ["app.terminal_opened", "security"],
   ["app.env_revealed", "security"],
+  ["org.env_revealed", "security"],
   ["token.", "security"],
   ["app.", "app"],
   ["volume.", "app"],

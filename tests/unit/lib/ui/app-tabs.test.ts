@@ -24,6 +24,7 @@ function context(overrides: Partial<AppTabContext> = {}): AppTabContext {
     isChildService: false,
     hasConnectionInfo: false,
     canDebug: false,
+    canTerminal: true,
     features: allFeatures,
     ...overrides,
   };
@@ -147,6 +148,12 @@ describe("availableAppTabs", () => {
   it("only offers debug to org admins", () => {
     expect(availableAppTabs(plainApp)).not.toContain("debug");
     expect(availableAppTabs(context({ canDebug: true }))).toContain("debug");
+  });
+
+  it("only offers the terminal to org admins", () => {
+    expect(availableAppTabs(context({ canTerminal: false }))).not.toContain("terminal");
+    expect(availableAppTabs(context({ isComposeParent: true, canTerminal: false }))).not.toContain("terminal");
+    expect(availableAppTabs(plainApp)).toContain("terminal");
   });
 
   it("drops tabs behind disabled feature flags", () => {

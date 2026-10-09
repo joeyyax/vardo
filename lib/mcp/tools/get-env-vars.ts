@@ -15,7 +15,7 @@ export function registerGetEnvVars(
 ) {
   server.tool(
     "vardo_get_env_vars",
-    "Get the decrypted environment variables for an app. Returns the full env file content as a string.",
+    "Get the decrypted environment variables for an app. Returns the full env file content as a string. Needs an org admin.",
     {
       appId: z.string().describe("The app ID to get env vars for"),
     },
@@ -31,7 +31,7 @@ export function registerGetEnvVars(
         },
       });
 
-      if (!app || !(await canAccessOrg(context, app.organizationId, "env.read"))) {
+      if (!app || !(await canAccessOrg(context, app.organizationId, "env.reveal"))) {
         return accessDenied("App");
       }
 

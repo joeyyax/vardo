@@ -8,7 +8,8 @@ import { verifyAppAccess, verifyOrgAccess } from "@/lib/api/verify-access";
 import { recordActivity } from "@/lib/activity";
 import { encrypt, decryptOrFallback } from "@/lib/crypto/encrypt";
 import { refuseSystemManaged } from "@/lib/api/system-managed";
-import { maskEnvContent as mask } from "@/lib/env/mask-env";
+import { maskEnvContent as mask, restoreMaskedEnv } from "@/lib/env/mask-env";
+import { can } from "@/lib/auth/permissions";
 import { loadEnvironmentEnv, saveEnvironmentEnv } from "@/lib/docker/environment-env";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
@@ -28,10 +29,21 @@ async function targetEnvironment(appId: string, environmentId: string | null | u
   return env.isDefault ? null : env;
 }
 
+/** The plaintext env a masked save is restored from: the environment's own, else the app's. */
+async function storedEnv(appId: string, orgId: string, env: { id: string } | null): Promise<string> {
+  const own = env ? await loadEnvironmentEnv(env.id) : null;
+  if (own !== null) return decryptOrFallback(own, orgId).content;
+  const record = await db.query.apps.findFirst({
+    where: and(eq(apps.id, appId), eq(apps.organizationId, orgId)),
+    columns: { envContent: true },
+  });
+  return record?.envContent ? decryptOrFallback(record.envContent, orgId).content : "";
+}
+
 const DECRYPT_ERROR = "Couldn't decrypt env vars — check ENCRYPTION_MASTER_KEY";
 
 // GET /api/v1/organizations/[orgId]/apps/[appId]/env-vars[?environmentId=]
-// Returns decrypted env content. `inherited` marks an environment with no env of its own.
+// Returns masked env content, or plaintext with `reveal=true` for env.reveal holders. `inherited` marks an environment with no env of its own.
 async function handleGet(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
@@ -45,6 +57,7 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
     if (refused) return refused;
 
     const reveal = request.nextUrl.searchParams.get("reveal") === "true";
+    if (reveal && !can(org.membership.role, "env.reveal")) return apiError.forbidden();
 
     const env = await targetEnvironment(appId, request.nextUrl.searchParams.get("environmentId"));
     if (env === false) {
@@ -119,12 +132,12 @@ async function handlePut(request: NextRequest, { params }: RouteParams) {
       return apiError.validation(parsed.error);
     }
 
-    const content = parsed.data.content;
-
     const env = await targetEnvironment(appId, parsed.data.environmentId);
     if (env === false) {
       return NextResponse.json({ error: "Environment not found" }, { status: 404 });
     }
+
+    const content = restoreMaskedEnv(parsed.data.content, await storedEnv(appId, orgId, env));
     if (env) {
       await saveEnvironmentEnv(env.id, encrypt(content, orgId));
       return NextResponse.json({ saved: true });

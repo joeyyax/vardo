@@ -154,3 +154,18 @@ describe("maskEnvContent", () => {
     expect(masked).not.toContain("secret");
   });
 });
+
+describe("restoreMaskedEnv", () => {
+  it("puts stored values back under the mask and keeps edits", async () => {
+    const { maskEnvContent, restoreMaskedEnv } = await import("@/lib/env/mask-env");
+    const pem = formatEnvVar("PEM", "-----BEGIN-----\nsecret\n-----END-----");
+    const stored = `A=1\n${pem}\nB=2`;
+    const edited = maskEnvContent(stored).replace("B=••••••••", "B=new") + "\nC=3";
+    expect(restoreMaskedEnv(edited, stored)).toBe(`A=1\n${pem}\nB=new\nC=3`);
+  });
+
+  it("drops a masked key with nothing stored", async () => {
+    const { restoreMaskedEnv } = await import("@/lib/env/mask-env");
+    expect(restoreMaskedEnv("A=1\nX=••••••••", "A=0")).toBe("A=1");
+  });
+});

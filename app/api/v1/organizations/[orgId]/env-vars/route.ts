@@ -9,6 +9,8 @@ import { parseEnvContent } from "@/lib/env/parse-env-content";
 import { encrypt, decryptOrFallback } from "@/lib/crypto/encrypt";
 import { SECRET_MASK } from "@/lib/env/org-env-content";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
+import { can } from "@/lib/auth/permissions";
+import { recordActivity } from "@/lib/activity";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
@@ -35,12 +37,22 @@ const bulkSchema = z.object({
   message: "Either content or vars required",
 });
 
-// GET — list org env vars (keys + descriptions, no secret values)
-async function handleGet(_request: NextRequest, { params }: RouteParams) {
+// GET — list org env vars, secret values masked unless `reveal=true` for env.reveal holders
+async function handleGet(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId, "env.read");
     if (!org) return apiError.forbidden();
+
+    const reveal = request.nextUrl.searchParams.get("reveal") === "true";
+    if (reveal && !can(org.membership.role, "env.reveal")) return apiError.forbidden();
+    if (reveal) {
+      recordActivity({
+        organizationId: orgId,
+        action: "org.env_revealed",
+        userId: org.session.user.id,
+      }).catch(() => {});
+    }
 
     const vars = await db.query.orgEnvVars.findMany({
       where: eq(orgEnvVars.organizationId, orgId),
@@ -48,7 +60,7 @@ async function handleGet(_request: NextRequest, { params }: RouteParams) {
 
     const safe = vars.map((v) => ({
       ...v,
-      value: v.isSecret ? SECRET_MASK : decryptOrFallback(v.value, orgId).content,
+      value: v.isSecret && !reveal ? SECRET_MASK : decryptOrFallback(v.value, orgId).content,
     }));
 
     return NextResponse.json({ envVars: safe });
