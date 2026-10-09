@@ -84,6 +84,11 @@ describe("composePolicyErrors", () => {
       expect(composePolicyErrors(cfg, untrusted)).toEqual(['Service "web" routes on Traefik\'s internal entrypoint']);
     });
 
+    it("refuses a router on the metrics entrypoint", () => {
+      const cfg = config(labels({ "traefik.http.routers.x.entrypoints": "metrics" }));
+      expect(composePolicyErrors(cfg, untrusted)).toEqual(['Service "web" routes on Traefik\'s internal entrypoint']);
+    });
+
     it("refuses a routed service that would answer to Vardo's names on vardo-network", () => {
       const cfg = config({ container_name: "vardo-traefik" });
       expect(composePolicyErrors(cfg, untrusted)).toEqual([

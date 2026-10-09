@@ -275,7 +275,7 @@ export function composePolicyErrors(config: unknown, policy: ComposePolicy): str
       if (!key.startsWith("traefik.")) continue;
       const v = String(value);
       if (v.includes("@internal")) errors.push(`${label} routes to Traefik's internal "${v}"`);
-      if (/\.entrypoints$/.test(key) && v.split(",").map((e) => e.trim()).includes("traefik")) {
+      if (/\.entrypoints$/.test(key) && v.split(",").map((e) => e.trim()).some((e) => e === "traefik" || e === "metrics")) {
         errors.push(`${label} routes on Traefik's internal entrypoint`);
       }
     }

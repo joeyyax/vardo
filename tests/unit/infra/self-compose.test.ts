@@ -68,6 +68,27 @@ describe.skipIf(!hasCompose)("self compose (#889)", () => {
     expect(trusted({ VARDO_TRAEFIK_TRUSTED_IPS: "" })).toEqual({ web: "", websecure: "" });
   });
 
+  describe("Traefik metrics", () => {
+    const traefik = (env: Record<string, string>) => resolve(env).services.traefik as Service & { ports?: { target: number }[] };
+
+    it("is off by default", () => {
+      expect(traefik({}).command).toContain("--metrics.prometheus=false");
+    });
+
+    it("turns on with VARDO_TRAEFIK_METRICS=true, on an entrypoint of its own", () => {
+      const command = traefik({ VARDO_TRAEFIK_METRICS: "true" }).command ?? [];
+      expect(command).toContain("--metrics.prometheus=true");
+      expect(command).toContain("--metrics.prometheus.entrypoint=metrics");
+      expect(command).toContain("--entrypoints.metrics.address=:8082");
+    });
+
+    it("never publishes the metrics port", () => {
+      for (const env of [{}, { VARDO_TRAEFIK_METRICS: "true" }] as Record<string, string>[]) {
+        expect((traefik(env).ports ?? []).map((p) => p.target)).toEqual([80, 443]);
+      }
+    });
+  });
+
   describe("BuildKit cache ceiling (#801)", () => {
     type Policy = { all?: boolean; reservedSpace: string; maxUsedSpace: string; minFreeSpace: string };
     const buildkitd = (env: Record<string, string>) => {
