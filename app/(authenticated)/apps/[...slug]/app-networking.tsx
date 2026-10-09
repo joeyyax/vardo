@@ -82,16 +82,18 @@ function DomainRouteOptions({
       <span className="flex items-center gap-2 text-sm">
         <label className="flex items-center gap-2">
           <Checkbox checked={cloudflareOnly} onCheckedChange={(v) => onCloudflareOnlyChange(v === true)} />
-          Only accept traffic through Cloudflare
+          <span>Only accept traffic through Cloudflare</span>
         </label>
         <HelpTip label="Cloudflare only">
           Requests that don&apos;t come through Cloudflare get a 403. The domain&apos;s DNS record must be proxied.
         </HelpTip>
       </span>
       {showStrip && (
-        <label className="flex items-center gap-2 text-sm">
-          <Checkbox checked={strip} onCheckedChange={(v) => onStripChange(v === true)} />
-          Remove <span className="font-mono">{path.trim()}</span> before forwarding to the app
+        <label className="flex items-start gap-2 text-sm">
+          <Checkbox className="mt-0.5" checked={strip} onCheckedChange={(v) => onStripChange(v === true)} />
+          <span>
+            Remove <span className="font-mono break-all">{path.trim()}</span> before forwarding to the app
+          </span>
         </label>
       )}
     </div>
