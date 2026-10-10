@@ -10,7 +10,7 @@ export type Deployment = {
   id: string;
   status: "queued" | "running" | "success" | "failed" | "cancelled" | "rolled_back" | "superseded";
   supersededBy: string | null;
-  trigger: "manual" | "webhook" | "api" | "rollback";
+  trigger: "manual" | "webhook" | "api" | "rollback" | "relay" | "poll";
   gitSha: string | null;
   gitMessage: string | null;
   durationMs: number | null;

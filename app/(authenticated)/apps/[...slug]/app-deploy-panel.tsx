@@ -115,6 +115,8 @@ function triggerLabel(trigger: string): string {
     webhook: "Auto deploy",
     api: "API deploy",
     rollback: "Rollback",
+    relay: "Relayed deploy",
+    poll: "Polled deploy",
   }[trigger] ?? `${trigger.charAt(0).toUpperCase()}${trigger.slice(1)} deploy`;
 }
 

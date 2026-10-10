@@ -85,7 +85,7 @@ export function recordSelfUpdate(ctx: DeployContext | null | undefined, outcome:
 export type DeployOpts = {
   appId: string;
   organizationId: string;
-  trigger: "manual" | "webhook" | "api" | "rollback";
+  trigger: "manual" | "webhook" | "api" | "rollback" | "relay" | "poll";
   triggeredBy?: string;
   environmentId?: string;
   groupEnvironmentId?: string;

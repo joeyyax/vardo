@@ -35,6 +35,8 @@ export const deploymentTriggerEnum = pgEnum("deployment_trigger", [
   "webhook",
   "api",
   "rollback",
+  "relay",
+  "poll",
 ]);
 
 export const environmentTypeEnum = pgEnum("environment_type", [

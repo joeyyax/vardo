@@ -58,6 +58,12 @@ export const apps = pgTable(
     autoTraefikLabels: boolean("auto_traefik_labels").default(false),
     containerPort: integer("container_port"),
     autoDeploy: boolean("auto_deploy").default(false),
+    // Last time the poller checked the branch head.
+    gitPolledAt: timestamp("git_polled_at"),
+    // Last head the poller acted on: deployed or recorded as the baseline.
+    gitPolledSha: text("git_polled_sha"),
+    // Why the last check failed. Null after a good one.
+    gitPollError: text("git_poll_error"),
     /** @deprecated Replaced by the `volumes` table. */
     persistentVolumes: jsonb("persistent_volumes").$type<
       { name: string; mountPath: string }[]

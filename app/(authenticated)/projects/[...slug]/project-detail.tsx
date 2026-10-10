@@ -81,7 +81,7 @@ type GroupEnvironment = {
 type Deployment = {
   id: string;
   status: "queued" | "running" | "success" | "failed" | "cancelled" | "rolled_back" | "superseded";
-  trigger: "manual" | "webhook" | "api" | "rollback";
+  trigger: "manual" | "webhook" | "api" | "rollback" | "relay" | "poll";
   gitSha: string | null;
   gitMessage: string | null;
   durationMs: number | null;
@@ -321,6 +321,8 @@ function ProjectDeployments({ apps, color }: { apps: ProjectApp[]; color: string
                           webhook: "Auto deploy",
                           api: "API deploy",
                           rollback: "Rollback",
+                          relay: "Relayed deploy",
+                          poll: "Polled deploy",
                         }[deployment.trigger];
                         const by = deployment.triggeredByUser?.name;
                         return by ? `${triggerLabel} by ${by}` : triggerLabel;
