@@ -1,5 +1,6 @@
 // Deploy step 1: auth, clone, host.toml and compose discovery, or a local image build.
 
+import { deploymentImageName } from "@/lib/docker/image-tag";
 import { db } from "@/lib/db";
 import { volumes } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
@@ -561,7 +562,7 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
       await detectAndPersistComposeVolumes(compose, ctx.appId, ctx.organizationId, new Set(appVolumes.map(v => v.name)), log);
     } else {
       // Build from repo: Dockerfile, Railpack or Nixpacks.
-      const imageName = `host/${app.name}:${ctx.deploymentId.slice(0, 8)}`;
+      const imageName = deploymentImageName(app.name, ctx.deploymentId);
       let buildType = app.deployType;
       let markers: ProviderMarker[] | undefined;
 
