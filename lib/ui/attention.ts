@@ -26,9 +26,13 @@ export type AttentionRow = {
   items: AttentionItem[];
   /** What to do about it. */
   footer?: string;
-  /** Link to a page that handles the whole row. */
-  action?: { label: string; href: string };
+  /** Link to a page that handles the whole row, or a POST it confirms first. */
+  action?: AttentionAction;
 };
+
+export type AttentionAction =
+  | { label: string; href: string }
+  | { label: string; post: string; confirm: { title: string; description: string; label: string } };
 
 const TONE_RANK: Record<AttentionTone, number> = { error: 0, warning: 1, neutral: 2, activity: 3 };
 

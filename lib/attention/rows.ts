@@ -15,7 +15,14 @@ import { getAggregateUpdateStatus } from "@/lib/docker/image-updates/status";
 import { conditionRows, hadRecentHostOom, oomRows, type AttentionRow } from "@/lib/ui/attention";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { isVardoManagedApp } from "@/lib/infra/instance-apps";
-import { getVersionData } from "@/lib/version";
+import { getBuildSha, getChannelUpdate } from "@/lib/version";
+import { isSelfDeployLayout } from "@/lib/paths";
+import { formatVersion } from "@/lib/lifecycle/self-deploy";
+import { effectiveChannel } from "@/lib/self-update/policy";
+import { getUpdatePolicy, getUpdateRun } from "@/lib/self-update/store";
+import { isRunActive } from "@/lib/self-update/decide";
+import pkg from "@/package.json";
+import { vardoUpdateRow } from "./vardo-update-row";
 import { getElevatedApps } from "@/lib/logging/error-rate";
 import { activityRows, getFleetActivity } from "./activity";
 import {
@@ -42,6 +49,19 @@ const HOST_OOM_PROMOTE_HOURS = 24;
 
 function formatMb(mb: number): string {
   return mb >= 1024 ? `${(mb / 1024).toFixed(mb % 1024 === 0 ? 0 : 1)} GB` : `${mb} MB`;
+}
+
+/** The Vardo update row on the policy's channel. Off shows nothing. */
+async function loadVardoUpdateRow(): Promise<AttentionRow | null> {
+  const policy = await getUpdatePolicy();
+  if (policy.mode === "off") return null;
+  const [update, run] = await Promise.all([getChannelUpdate(effectiveChannel(policy)), getUpdateRun()]);
+  return vardoUpdateRow({
+    update,
+    currentVersion: formatVersion(pkg.version, getBuildSha()) ?? pkg.version,
+    selfDeploy: isSelfDeployLayout(),
+    runActive: isRunActive(run),
+  });
 }
 
 /** Most recent failure per app, so one broken job is one row. */
@@ -292,7 +312,7 @@ export async function buildAttentionRows(
   ] = await Promise.all([
     getFleetAttention(orgId),
     getCooldownUntil().then((cooldown) => getAggregateUpdateStatus(orgId, appRows, cooldown)),
-    isAppAdmin ? getVersionData().catch(() => null) : null,
+    isAppAdmin ? loadVardoUpdateRow().catch(() => null) : null,
     loadFailedBackups(appIds),
     loadOverdueBackupJobs(orgId, new Date()),
     loadPausedDumps(orgId),
@@ -433,23 +453,7 @@ export async function buildAttentionRows(
 
   rows.push(...activityRows(appRows, activity));
 
-  if (version?.hasUpdate) {
-    rows.push({
-      key: "vardo-update",
-      label: "Vardo update",
-      tone: "neutral",
-      items: [
-        {
-          id: version.latestVersion,
-          name: `Vardo ${version.latestVersion}`,
-          href: version.releaseUrl,
-          detail: `You are on ${version.currentVersion}`,
-          external: true,
-        },
-      ],
-      footer: "Release notes open on GitHub.",
-    });
-  }
+  if (version) rows.push(version);
 
   return rows;
 }
