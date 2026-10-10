@@ -28,6 +28,7 @@ export const EVENT_LABELS: Record<BusEventType, string> = {
   "alert.resolved": "Alert resolved",
   "backup.success": "Backup succeeded",
   "backup.failed": "Backup failed",
+  "backup.summary": "Backup summary",
   "backup.progress": "Backup progress",
   "cron.failed": "Cron job failed",
   "volume.drift": "Volume differs from image",

@@ -33,7 +33,8 @@ describe("notification subjects", () => {
 
   it("formats bytes for humans", () => {
     expect(subject(fixture("disk-write-alert"))).toBe("⚠ MySQL wrote 7.7 GiB in 1h");
-    expect(subject(fixture("backup-success"))).toBe("✓ Backup Nightly · 2.3 GiB");
+    expect(subject(fixture("backup-summary"))).toBe("✓ Backups · 6 done · 9.8 GiB");
+    expect(subject(fixture("backup-summary-failed"))).toBe("✗ Backups · 2 failed");
   });
 
   it("never says Unknown when the display name is missing", () => {

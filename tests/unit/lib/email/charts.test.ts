@@ -61,19 +61,19 @@ describe("backup size history", () => {
   });
 
   it("warns in the subject and body", async () => {
-    const fixture = EMAIL_FIXTURES.find((f) => f.name === "backup-success-drop")!;
-    const ctx = { ...FIXTURE_CONTEXT, series: fixture.series };
-    expect(notificationSubject(fixture.event, ctx)).toBe("⚠ Backup Nightly · shop-mysql much smaller than usual");
-    const email = (await renderNotificationEmail(fixture.event, ctx))!;
-    expect(email.text).toContain("Smaller than usual: shop-mysql is 94% below its usual");
-    expect(email.text).toContain("shop-mysql, last 7 runs (older → this run · 100 MiB)\n██████▁");
+    const fixture = EMAIL_FIXTURES.find((f) => f.name === "backup-summary-shrunk")!;
+    expect(notificationSubject(fixture.event, FIXTURE_CONTEXT)).toBe("⚠ Backups · Shop much smaller than usual");
+    const email = (await renderNotificationEmail(fixture.event, FIXTURE_CONTEXT))!;
+    expect(email.text).toContain("Shop / mysql-data: 100 MiB, 95% below its usual");
+    expect(email.text).toContain("Shop / mysql-data, last 7 runs (older → this run · 100 MiB)\n██████▁");
+    expect(email.text).toContain("No successful backup in 48 hours");
   });
 
-  it("leaves the chart out without history", async () => {
-    const fixture = EMAIL_FIXTURES.find((f) => f.name === "backup-success")!;
+  it("charts only what needs a look", async () => {
+    const fixture = EMAIL_FIXTURES.find((f) => f.name === "backup-summary")!;
     const email = (await renderNotificationEmail(fixture.event, FIXTURE_CONTEXT))!;
     expect(email.text).not.toContain("last 7 runs");
-    expect(email.subject).toBe("✓ Backup Nightly · 2.3 GiB");
+    expect(email.subject).toMatch(/^✓ Backups · 6 done · /);
   });
 });
 

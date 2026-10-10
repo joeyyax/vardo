@@ -1,6 +1,7 @@
 // Realistic events for the email preview and template tests.
 
-import type { AlertItem, BusEvent } from "@/lib/bus/events";
+import type { AlertItem, BackupSummaryEvent, BusEvent } from "@/lib/bus/events";
+import { summarizeBatch, volumeKey, type BackupBatchItem } from "@/lib/backups/batch-rules";
 import type { MailContext, MailSeries } from "./templates/context";
 
 export const FIXTURE_CONTEXT: MailContext = {
@@ -54,6 +55,53 @@ const hostDisk: AlertItem = {
     { label: "Free", value: "19.4 GiB" },
   ],
 };
+
+const MiB = 1024 ** 2;
+
+/** A night of backups, one result per app and volume. */
+const NIGHTLY: BackupBatchItem[] = [
+  ["app_wh4", "Shop", "mysql-data", 1_932 * MiB],
+  ["app_wh4", "Shop", "wp-content", 6_240 * MiB],
+  ["app_acme", "Acme", "uploads", 480 * MiB],
+  ["app_acme", "Acme", "postgres-data", 212 * MiB],
+  ["app_srch", "Search", "meili-data", 1_104 * MiB],
+  ["app_kuma", "Uptime Kuma", "kuma-data", 38 * MiB],
+].map(([appId, appName, volumeName, sizeBytes], i) => ({
+  kind: "backup" as const,
+  appId: appId as string,
+  appName: appName as string,
+  volumeName: volumeName as string,
+  jobName: `auto-${appId}`,
+  outcome: "success" as const,
+  sizeBytes: sizeBytes as number,
+  durationMs: 20_000 + i * 9_000,
+  at: `2026-10-09T03:${String(2 + i * 4).padStart(2, "0")}:00.000Z`,
+}));
+
+/** Six earlier runs per volume, each a touch smaller than tonight. */
+const NIGHTLY_HISTORY = new Map(
+  NIGHTLY.map((i) => [volumeKey(i.appId, i.volumeName), [0.94, 0.95, 0.96, 0.97, 0.98, 0.99].map((f) => Math.round(i.sizeBytes! * f))]),
+);
+
+function backupSummary(items: BackupBatchItem[], extra: Partial<BackupSummaryEvent>): BackupSummaryEvent {
+  const rows = summarizeBatch(items, NIGHTLY_HISTORY);
+  const backups = rows.filter((r) => r.kind === "backup");
+  const times = items.map((i) => i.at).sort();
+  return {
+    type: "backup.summary",
+    title: "Backups",
+    message: `${backups.filter((r) => r.outcome === "success").length} of ${backups.length} backups succeeded.`,
+    windowStart: times[0],
+    windowEnd: times.at(-1)!,
+    succeeded: backups.filter((r) => r.outcome === "success").length,
+    failed: backups.filter((r) => r.outcome === "failed").length,
+    skipped: backups.filter((r) => r.outcome === "skipped").length,
+    totalSize: backups.reduce((sum, r) => sum + (r.outcome === "success" ? r.sizeBytes : 0), 0),
+    durationMs: backups.reduce((sum, r) => sum + r.durationMs, 0),
+    rows,
+    ...extra,
+  };
+}
 
 export const EMAIL_FIXTURES: { name: string; event: BusEvent; series?: MailSeries }[] = [
   {
@@ -179,71 +227,30 @@ export const EMAIL_FIXTURES: { name: string; event: BusEvent; series?: MailSerie
     },
   },
   {
-    name: "backup-success",
-    event: {
-      type: "backup.success",
-      title: "Backup successful: Nightly",
-      message: "3 backup(s) completed",
-      jobId: "job_n1",
-      jobName: "Nightly",
-      totalCount: 3,
-      totalSize: 2_469_606_195,
-      durationMs: 184_000,
-      sources: [
-        { name: "shop-mysql", sizeBytes: 1_932_735_283 },
-        { name: "acme-uploads", sizeBytes: 503_316_480 },
-        { name: "vardo-postgres", sizeBytes: 33_554_432 },
-      ],
-    },
-    series: {
-      backupHistory: {
-        "shop-mysql": [1_811_939_328, 1_843_396_608, 1_866_465_280, 1_887_436_800, 1_900_019_712, 1_918_894_080],
-        "acme-uploads": [492_830_720, 495_976_448, 497_025_024, 499_122_176, 501_219_328, 502_267_904],
-        "vardo-postgres": [31_457_280, 31_981_568, 32_505_856, 32_505_856, 33_030_144, 33_292_288],
-      },
-    },
+    name: "backup-summary",
+    event: backupSummary(NIGHTLY, {}),
   },
   {
-    name: "backup-success-drop",
-    event: {
-      type: "backup.success",
-      title: "Backup successful: Nightly",
-      message: "3 backup(s) completed",
-      jobId: "job_n1",
-      jobName: "Nightly",
-      totalCount: 3,
-      totalSize: 104_857_600 + 503_316_480 + 33_554_432,
-      durationMs: 121_000,
-      sources: [
-        { name: "shop-mysql", sizeBytes: 104_857_600 },
-        { name: "acme-uploads", sizeBytes: 503_316_480 },
-        { name: "vardo-postgres", sizeBytes: 33_554_432 },
-      ],
-    },
-    series: {
-      backupHistory: {
-        "shop-mysql": [1_811_939_328, 1_843_396_608, 1_866_465_280, 1_887_436_800, 1_900_019_712, 1_918_894_080],
-        "acme-uploads": [492_830_720, 495_976_448, 497_025_024, 499_122_176, 501_219_328, 502_267_904],
-      },
-    },
+    name: "backup-summary-shrunk",
+    event: backupSummary(
+      NIGHTLY.map((i) => (i.volumeName === "mysql-data" ? { ...i, sizeBytes: 104_857_600 } : i)),
+      { staleVolumes: [{ appName: "Search", volumeName: "meili-data", lastSuccessAt: "2026-10-06T07:12:00.000Z" }] },
+    ),
   },
   {
-    name: "backup-failed",
-    event: {
-      type: "backup.failed",
-      title: "Backup failed: Nightly",
-      message: "1 of 3 backup(s) failed for: shop-staging",
-      jobId: "job_n1",
-      jobName: "Nightly",
-      failedCount: 1,
-      totalCount: 3,
-      errors: "shop-mysql: mysqldump: Got error: 2013: Lost connection to server during query",
-      durationMs: 96_000,
-      failures: [{ name: "shop-mysql", error: "mysqldump: Got error: 2013: Lost connection to server during query" }],
-    },
-    series: {
-      backupHistory: { "shop-mysql": [1_811_939_328, 1_843_396_608, 1_866_465_280, 1_887_436_800, 1_900_019_712, 1_918_894_080] },
-    },
+    name: "backup-summary-failed",
+    event: backupSummary(
+      [
+        ...NIGHTLY.map((i) =>
+          i.volumeName === "mysql-data"
+            ? { ...i, outcome: "failed" as const, sizeBytes: 0, error: "mysqldump: Got error: 2013: Lost connection to server during query" }
+            : i,
+        ),
+        { kind: "drill", appId: "app_acme", appName: "Acme", volumeName: "uploads", outcome: "failed", error: "extract exited 2", durationMs: 41_000, at: "2026-10-09T03:40:00.000Z" },
+        { kind: "restore", appId: "app_wh4s", appName: "Shop Staging", volumeName: "wp-content", outcome: "success", durationMs: 74_000, at: "2026-10-09T03:31:00.000Z" },
+      ],
+      {},
+    ),
   },
   {
     name: "cron-failed",

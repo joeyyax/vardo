@@ -22,6 +22,7 @@ export const CRITICAL_EVENT_TYPES: ReadonlySet<BusEventType> = new Set([
 export function isCriticalEvent(event: BusEvent): boolean {
   if (CRITICAL_EVENT_TYPES.has(event.type)) return true;
   if (event.type === "alert.fired") return event.alerts.some((a) => a.severity === "critical");
+  if (event.type === "backup.summary") return event.rows.some((r) => r.outcome === "failed");
   return false;
 }
 
@@ -29,6 +30,7 @@ export function isCriticalEvent(event: BusEvent): boolean {
 export const REPLACED_EVENT_TYPES: Partial<Record<BusEventType, string[]>> = {
   "alert.fired": ["system.disk-alert", "app.oom-killed"],
   "alert.resolved": ["system.disk-alert"],
+  "backup.summary": ["backup.success", "backup.failed"],
 };
 
 /** Whether a channel's subscribedEvents filter allows this event. Empty means all. */

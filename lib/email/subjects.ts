@@ -4,7 +4,6 @@ import type { BusEvent } from "@/lib/bus/events";
 import { formatBytesIec } from "@/lib/metrics/format";
 import { formatDuration, shortSha } from "./format";
 import type { MailSeries } from "./templates/context";
-import { backupDrop } from "./templates/visuals";
 
 export type SubjectContext = { instanceName: string; series?: MailSeries };
 
@@ -48,17 +47,21 @@ export function notificationSubject(event: BusEvent, ctx: SubjectContext): strin
       return event.rollbackSuccess
         ? `↩ ${appLabel(event)} rolled back${event.restoredSlot ? ` to ${event.restoredSlot}` : ""}`
         : `✗ ${appLabel(event)} rollback failed`;
-    case "backup.success": {
-      const shrunk = (event.sources ?? []).find((s) => {
-        const history = ctx.series?.backupHistory?.[s.name];
-        return history ? backupDrop(history, s.sizeBytes) !== null : false;
-      });
-      return shrunk
-        ? `⚠ Backup ${event.jobName} · ${shrunk.name} much smaller than usual`
-        : `✓ Backup ${event.jobName} · ${formatBytesIec(event.totalSize)}`;
+    case "backup.summary": {
+      const failed = event.rows.filter((r) => r.outcome === "failed");
+      if (failed.length) {
+        const total = event.succeeded + event.failed + event.skipped;
+        return event.failed === failed.length && total > 0
+          ? `✗ Backups · ${event.failed} of ${total} failed`
+          : `✗ Backups · ${failed.length} failed`;
+      }
+      const shrunk = event.rows.filter((r) => r.shrunk);
+      if (shrunk.length) return `⚠ Backups · ${shrunk[0].appName} much smaller than usual`;
+      if (event.staleVolumes?.length) return `⚠ Backups · ${event.staleVolumes.length} with no success in 48 h`;
+      return event.succeeded > 0
+        ? `✓ Backups · ${event.succeeded} done · ${formatBytesIec(event.totalSize)}`
+        : `✓ Backups · ${event.rows.length} finished`;
     }
-    case "backup.failed":
-      return `✗ Backup ${event.jobName} failed · ${event.failedCount} of ${event.totalCount}`;
     case "cron.failed":
       return `✗ Cron ${event.cronJobName} failed on ${event.projectName || "an app"}`;
     case "disk.write-alert":

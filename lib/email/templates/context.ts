@@ -15,8 +15,6 @@ export type MailSeries = {
   dockerDisk24h?: number[];
   /** Bytes the alerting container wrote per hour, oldest first. */
   diskWritesHourly?: number[];
-  /** Earlier successful backup sizes per volume, oldest first, this run excluded. */
-  backupHistory?: Record<string, number[]>;
 };
 
 export function footerFor(ctx: MailContext): MailFooter {

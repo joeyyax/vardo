@@ -8,6 +8,8 @@ export const SILENT_EVENT_TYPES: ReadonlySet<BusEventType> = new Set([
   "backup.progress",
   "deploy.status",
   "app.oom-killed",
+  "backup.success",
+  "backup.failed",
 ] as BusEventType[]);
 
 /** Whether an event is for the UI alone. */

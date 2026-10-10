@@ -403,10 +403,36 @@ async function importIntoAppUnmarked(opts: {
   }
 }
 
+/** The result into the org's backup batch. */
+async function batchImport(
+  opts: { appId: string; organizationId: string; volumeName: string },
+  result: { success: boolean; bytes: number; log: string },
+  durationMs: number,
+): Promise<void> {
+  const app = await db.query.apps.findFirst({ where: eq(apps.id, opts.appId), columns: { displayName: true } });
+  const { recordBackupResults } = await import("./batch");
+  const { lastLogLine } = await import("./engine");
+  await recordBackupResults(opts.organizationId, [
+    {
+      kind: "import",
+      appId: opts.appId,
+      appName: app?.displayName ?? null,
+      volumeName: opts.volumeName,
+      outcome: result.success ? "success" : "failed",
+      sizeBytes: result.bytes,
+      error: result.success ? undefined : lastLogLine(result.log),
+      durationMs,
+      at: new Date().toISOString(),
+    },
+  ]);
+}
+
 export async function importIntoApp(
   opts: Parameters<typeof importIntoAppUnmarked>[0],
 ): ReturnType<typeof importIntoAppUnmarked> {
+  const startedAt = Date.now();
   const result = await withBulkWrite(opts.appId, () => importIntoAppUnmarked(opts));
+  await batchImport(opts, result, Date.now() - startedAt).catch(() => {});
   if (result.success) {
     await import("./initial-backup")
       .then(({ armInitialBackupQuietly }) => armInitialBackupQuietly(opts.appId, "import"))

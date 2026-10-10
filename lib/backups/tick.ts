@@ -15,6 +15,11 @@ const log = logger.child("backup");
 /** Jobs waiting for or holding a slot, so an every-minute schedule can't stack runs behind a slow one. */
 const queued = new Set<string>();
 
+/** Jobs queued or running in this process. */
+export function queuedBackupJobIds(): ReadonlySet<string> {
+  return queued;
+}
+
 /** Concurrent backups and drills: the host-sized deploy concurrency. */
 async function backupConcurrency(): Promise<number> {
   await loadResourceSettings();

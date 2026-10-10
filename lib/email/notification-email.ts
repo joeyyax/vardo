@@ -10,7 +10,7 @@ import { deploySuccessMail } from "./templates/deploy-success";
 import { deployFailedMail } from "./templates/deploy-failed";
 import { deployIncompleteMail } from "./templates/deploy-incomplete";
 import { autoRollbackMail } from "./templates/auto-rollback";
-import { backupFailedMail, backupSuccessMail } from "./templates/backup";
+import { backupSummaryMail } from "./templates/backup";
 import { cronFailedMail } from "./templates/cron-failed";
 import { diskWriteAlertMail } from "./templates/disk-write-alert";
 import { volumeDriftMail } from "./templates/volume-drift";
@@ -42,6 +42,8 @@ export function notificationMailBody(event: BusEvent, ctx: MailContext): Notific
     case "deploy.status":
     case "backup.progress":
     case "app.oom-killed":
+    case "backup.success":
+    case "backup.failed":
       return null;
     case "deploy.success":
       return deploySuccessMail(event, ctx);
@@ -51,10 +53,8 @@ export function notificationMailBody(event: BusEvent, ctx: MailContext): Notific
       return deployIncompleteMail(event, ctx);
     case "deploy.rollback":
       return autoRollbackMail(event, ctx);
-    case "backup.success":
-      return backupSuccessMail(event, ctx);
-    case "backup.failed":
-      return backupFailedMail(event, ctx);
+    case "backup.summary":
+      return backupSummaryMail(event, ctx);
     case "cron.failed":
       return cronFailedMail(event, ctx);
     case "disk.write-alert":

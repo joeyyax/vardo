@@ -8,7 +8,7 @@ export const EVENT_CATEGORIES = {
   deploy: ["deploy.success", "deploy.failed", "deploy.incomplete", "deploy.rollback"],
   app: ["app.state-changed", "app.auto-restarted"],
   alert: ["alert.fired", "alert.resolved"],
-  backup: ["backup.success", "backup.failed"],
+  backup: ["backup.summary"],
   cron: ["cron.failed"],
   volume: ["volume.drift"],
   disk: ["disk.write-alert"],
@@ -140,6 +140,47 @@ export type BackupFailedEvent = {
   errors: string;
   durationMs?: number;
   failures?: { name: string; error: string; backupId?: string }[];
+};
+
+/** One app and volume in a backup summary. */
+export type BackupSummaryRow = {
+  kind: "backup" | "drill" | "restore" | "import";
+  appId: string | null;
+  appName: string;
+  volumeName: string;
+  jobName?: string;
+  outcome: "success" | "failed" | "skipped";
+  sizeBytes: number;
+  durationMs: number;
+  error?: string;
+  /** Results for this row in the batch. */
+  runs: number;
+  /** Earlier successful sizes, oldest first. */
+  history?: number[];
+  previousSize?: number;
+  /** Well below its usual size. */
+  shrunk?: { median: number; drop: number };
+};
+
+/** Backups, drills, restores and imports from one run window, in one notice. */
+export type BackupSummaryEvent = {
+  type: "backup.summary";
+  title: string;
+  message: string;
+  /** ISO times of the first and last result. */
+  windowStart: string;
+  windowEnd: string;
+  /** Backup rows only. */
+  succeeded: number;
+  failed: number;
+  skipped: number;
+  totalSize: number;
+  durationMs: number;
+  /** Failures first. Capped; `hiddenRows` counts the rest. */
+  rows: BackupSummaryRow[];
+  hiddenRows?: number;
+  /** Volumes backed up this week with no success in 48 hours. */
+  staleVolumes?: { appName: string; volumeName: string; lastSuccessAt: string | null }[];
 };
 
 export type CronFailedEvent = {
@@ -491,6 +532,7 @@ export type BusEvent =
   | DeployRollbackEvent
   | BackupSuccessEvent
   | BackupFailedEvent
+  | BackupSummaryEvent
   | CronFailedEvent
   | VolumeDriftEvent
   | DiskWriteAlertEvent

@@ -29,6 +29,7 @@ const {
   updated,
   leases,
   volumeSizeMock,
+  recordMock,
 } = vi.hoisted(() => ({
   backupJobsFindFirst: vi.fn(),
   volumesFindMany: vi.fn(),
@@ -44,6 +45,7 @@ const {
   updated: [] as { table: unknown; set: Record<string, unknown> }[],
   leases: new Set<string>(),
   volumeSizeMock: vi.fn(),
+  recordMock: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({
@@ -69,6 +71,7 @@ vi.mock("@/lib/db", () => ({
 }));
 vi.mock("child_process", () => ({ execFile: execFileMock, spawn: spawnMock }));
 vi.mock("@/lib/notifications/dispatch", () => ({ emit: emitMock }));
+vi.mock("@/lib/backups/batch", () => ({ recordBackupResults: recordMock }));
 vi.mock("@/lib/docker/client", () => ({
   listContainers: listContainersMock,
   inspectContainer: vi.fn(),
@@ -205,6 +208,7 @@ beforeEach(() => {
   execFileMock.mockReset().mockImplementation(execImpl);
   spawnMock.mockReset().mockImplementation(spawnImpl);
   emitMock.mockReset();
+  recordMock.mockReset();
   volumesFindMany.mockReset();
   backupsFindMany.mockReset().mockResolvedValue([]);
   backupsFindFirst.mockReset().mockResolvedValue(undefined);
@@ -736,6 +740,30 @@ describe("runBackup — empty bind sources", () => {
     expect(results[0].outcome).toBe("success");
     expect(committed).toHaveLength(1);
     expect(backupsFindFirst).not.toHaveBeenCalled();
+  });
+
+  it("hands the run to the org's batch, without never-populated sources", async () => {
+    backupJobsFindFirst.mockResolvedValue(job());
+    volumesPerApp([volume({ id: "vol-1", name: "pgdata" }), bindVolume({ id: "vol-2" })]);
+    stubBind(true);
+
+    await runBackup("job-1");
+
+    expect(recordMock).toHaveBeenCalledTimes(1);
+    const [orgId, items] = recordMock.mock.calls[0];
+    expect(orgId).toBe("org-1");
+    expect(items.map((i: { volumeName: string; outcome: string; kind: string }) => [i.kind, i.volumeName, i.outcome])).toEqual([["backup", "pgdata", "success"]]);
+  });
+
+  it("holds back failures a retry will cover", async () => {
+    backupJobsFindFirst.mockResolvedValue(job());
+    volumesPerApp([bindVolume()]);
+    backupsFindFirst.mockResolvedValue({ id: "b-prior" });
+    stubBind(true);
+
+    await runBackup("job-1", { notifyFailure: false });
+
+    expect(recordMock.mock.calls.flatMap((c) => c[1])).toEqual([]);
   });
 
   it("leaves the job's success alone", async () => {
