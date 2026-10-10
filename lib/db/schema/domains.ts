@@ -10,6 +10,10 @@ import {
 } from "drizzle-orm/pg-core";
 import { apps } from "./apps";
 
+/** `vardo` rows route through Vardo's labels; `compose` rows are read from the app's own Traefik labels. */
+export const DOMAIN_SOURCES = ["vardo", "compose"] as const;
+export type DomainSource = (typeof DOMAIN_SOURCES)[number];
+
 export const domains = pgTable("domain", {
   id: text("id").primaryKey(),
   appId: text("app_id")
@@ -31,6 +35,9 @@ export const domains = pgTable("domain", {
   // DNS TXT challenge at _vardo-challenge.<domain>.
   verificationToken: text("verification_token"),
   verifiedAt: timestamp("verified_at"),
+  source: text("source", { enum: DOMAIN_SOURCES }).notNull().default("vardo"),
+  /** Compose router that claims this host: the declaring router on a compose row, a redundant one on a managed row. */
+  composeRouter: text("compose_router"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 },
   (t) => [

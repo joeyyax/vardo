@@ -25,7 +25,7 @@ export async function recheckDomainOwnership(): Promise<{ checked: number }> {
       .from(domains)
       .innerJoin(apps, eq(domains.appId, apps.id))
       .innerJoin(organizations, eq(apps.organizationId, organizations.id))
-      .where(eq(organizations.trusted, false)),
+      .where(and(eq(organizations.trusted, false), eq(domains.source, "vardo"))),
     db
       .select({ id: orgDomains.id, domain: orgDomains.domain })
       .from(orgDomains)

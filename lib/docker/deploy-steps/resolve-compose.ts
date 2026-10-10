@@ -190,6 +190,7 @@ export async function resolveCompose(ctx: DeployContext): Promise<DeployContext>
     .map(([name, svc]) => `${name} (${svc.network_mode})`);
   const allServicesCustomNetwork = servicesWithCustomNetwork.length === Object.keys(compose.services).length;
 
+  ctx.declaredCompose = compose;
   if (!allServicesCustomNetwork && app.domains.length > 0) {
     // Vardo owns routing once the app has a domain; inbound labels would add a second backend.
     compose = stripTraefikLabels(compose);

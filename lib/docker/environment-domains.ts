@@ -30,6 +30,8 @@ export function environmentDomains(
       redirectCode: 301,
       verificationToken: null,
       verifiedAt: null,
+      source: "vardo",
+      composeRouter: null,
       createdAt: template?.createdAt ?? new Date(0),
     },
   ];

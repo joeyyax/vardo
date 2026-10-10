@@ -6,7 +6,7 @@ import { isHostname } from "@/lib/security/hostname";
 export type HostClaim =
   | { kind: "host"; host: string }
   | { kind: "zone"; zone: string }
-  | { kind: "any"; reason: string }
+  | { kind: "any"; reason: string; /** Set for Path and PathPrefix. */ path?: string }
   | { kind: "unknown"; reason: string };
 
 export type RuleNode =
@@ -16,6 +16,7 @@ export type RuleNode =
 
 const HOST_MATCHERS = new Set(["host", "hostsni"]);
 const REGEXP_MATCHERS = new Set(["hostregexp", "hostsniregexp"]);
+const PATH_MATCHERS = new Set(["path", "pathprefix"]);
 
 class RuleSyntaxError extends Error {}
 
@@ -90,6 +91,7 @@ function matcherClaims(name: string, args: string[]): HostClaim[] {
   const m = name.toLowerCase();
   if (HOST_MATCHERS.has(m)) return args.map((a) => hostClaim(m, a));
   if (REGEXP_MATCHERS.has(m)) return args.map(regexpClaim);
+  if (PATH_MATCHERS.has(m)) return args.map((path): HostClaim => ({ kind: "any", reason: `${name}(...) doesn't restrict the host`, path }));
   return [{ kind: "any", reason: `${name}(...) doesn't restrict the host` }];
 }
 

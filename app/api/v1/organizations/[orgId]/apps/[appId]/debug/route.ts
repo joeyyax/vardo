@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
-import { apps, volumes, projects } from "@/lib/db/schema";
+import { apps, domains, volumes, projects } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
@@ -32,7 +32,7 @@ async function handler(_request: NextRequest, { params }: RouteParams) {
     const [app, appVolumes] = await Promise.all([
       db.query.apps.findFirst({
         where: and(eq(apps.id, appId), eq(apps.organizationId, orgId)),
-        with: { domains: true },
+        with: { domains: { where: eq(domains.source, "vardo") } },
       }),
       db.query.volumes.findMany({
         where: eq(volumes.appId, appId),

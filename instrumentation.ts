@@ -278,6 +278,12 @@ export async function register() {
         .then(() => log.info("Vardo self-registration complete"))
         .catch((err) => log.warn("Vardo self-registration skipped:", err)),
 
+      // Lists compose-label domains for apps last deployed before deploys recorded them.
+      import("./lib/domains/compose-domains")
+        .then(({ reconcileComposeDomains }) => reconcileComposeDomains())
+        .then(({ synced }) => { if (synced > 0) log.info(`Compose domains listed for ${synced} app(s)`); })
+        .catch((err) => log.warn("Compose domain reconcile skipped:", err)),
+
       // Heartbeat, shutdown marker and one boot announcement.
       import("./lib/lifecycle/monitor")
         .then(({ startLifecycleMonitor }) => startLifecycleMonitor())

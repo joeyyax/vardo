@@ -309,14 +309,15 @@ export async function runDeployment(
         eq(apps.id, opts.appId),
         eq(apps.organizationId, opts.organizationId)
       ),
-      with: { domains: true },
+      // Compose rows describe the app's own labels; Vardo routes only its managed ones.
+      with: { domains: { where: eq(domains.source, "vardo") } },
     });
 
     if (!app) throw new Error("App not found");
 
     // Child-service domains, tagged with their compose service for label injection.
     const childDomains = await db.query.domains.findMany({
-      where: inArray(
+      where: and(eq(domains.source, "vardo"), inArray(
         domains.appId,
         db
           .select({ id: apps.id })
@@ -327,7 +328,7 @@ export async function runDeployment(
               eq(apps.organizationId, opts.organizationId),
             ),
           ),
-      ),
+      )),
       with: {
         app: { columns: { composeService: true } },
       },
