@@ -60,6 +60,7 @@ import { engineVersion } from "../engine-version";
 import { boundedBuild, buildKitLimit, explainBuildOom } from "../build-memory";
 import { applyComposeProfiles, parseComposeProfiles } from "../compose-profiles";
 import { globalEnvValue, isSelfApp } from "../self-env";
+import { exportMsFromBuildOutput } from "../stage-timings";
 import { acquireCheckoutLock, type CheckoutLock } from "../checkout-lock";
 import {
   INCLUDE_GIT_ENV,
@@ -205,13 +206,22 @@ import { spawn as nodeSpawn } from "child_process";
 import { BUILD_TIMEOUT } from "../constants";
 import { dockerEnv } from "@/lib/docker/docker-env";
 
+/** Tail of a build's output kept for timing; the export steps come last. */
+const CAPTURE_MAX = 2 * 1024 * 1024;
+
 function spawnStream(
   cmd: string,
   args: string[],
   opts: { cwd?: string; env: NodeJS.ProcessEnv; signal?: AbortSignal },
   logs: { push: (line: string) => void },
-  prefix: string
+  prefix: string,
+  capture?: { text: string },
 ): Promise<void> {
+  const keep = (chunk: Buffer) => {
+    if (!capture) return;
+    capture.text += chunk.toString();
+    if (capture.text.length > CAPTURE_MAX) capture.text = capture.text.slice(-CAPTURE_MAX);
+  };
   return new Promise((resolve, reject) => {
     const proc = nodeSpawn(cmd, args, {
       cwd: opts.cwd,
@@ -242,12 +252,14 @@ function spawnStream(
     }
 
     proc.stdout.on("data", (chunk: Buffer) => {
+      keep(chunk);
       for (const line of chunk.toString().split("\n")) {
         if (line.trim()) logs.push(`${prefix} ${line}`);
       }
     });
 
     proc.stderr.on("data", (chunk: Buffer) => {
+      keep(chunk);
       stderrBuf += chunk.toString();
       for (const line of chunk.toString().split("\n")) {
         if (line.trim()) logs.push(`${prefix} ${line}`);
@@ -308,6 +320,22 @@ async function reuseImage(
   }
 }
 
+/** Records a repo build as the build phase, with BuildKit's export split out as in compose builds. */
+async function timedBuild(ctx: DeployContext, run: (capture: { text: string }) => Promise<void>): Promise<void> {
+  const capture = { text: "" };
+  const start = Date.now();
+  try {
+    await run(capture);
+  } catch (err) {
+    ctx.timer.range("build", start, Date.now());
+    throw err;
+  }
+  const end = Date.now();
+  const exportMs = Math.min(exportMsFromBuildOutput(capture.text), end - start);
+  ctx.timer.range("build", start, end - exportMs);
+  if (exportMs > 0) ctx.timer.range("export", end - exportMs, end);
+}
+
 type RepoBuild = {
   repoPath: string;
   imageName: string;
@@ -321,6 +349,8 @@ type RepoBuild = {
   noCache: boolean;
   gitSha?: string;
   buildKey?: string;
+  /** Collects the build's output for timing. */
+  capture?: { text: string };
 };
 
 async function buildFromRepo(build: RepoBuild): Promise<void> {
@@ -333,7 +363,7 @@ async function buildFromRepo(build: RepoBuild): Promise<void> {
     if (build.engine === "nixpacks") {
       logs.push(`[build] Building with Nixpacks...`);
       const args = nixpacksBuildArgs(imageName, repoPath, envVars, overrides, noCache);
-      await spawnStream("nixpacks", args, { cwd: repoPath, env: buildEnv, signal }, logs, "[build][nixpacks]");
+      await spawnStream("nixpacks", args, { cwd: repoPath, env: buildEnv, signal }, logs, "[build][nixpacks]", build.capture);
       logs.push(`[build] Nixpacks build complete: ${imageName}`);
       return;
     }
@@ -346,7 +376,7 @@ async function buildFromRepo(build: RepoBuild): Promise<void> {
       logs.push(`[build] Building with Railpack...`);
       const args = railpackBuildArgs(imageName, repoPath, cacheKey, envVars, overrides, noCache);
       try {
-        await spawnStream("railpack", args, { cwd: repoPath, env: buildEnv, signal }, logs, "[build][railpack]");
+        await spawnStream("railpack", args, { cwd: repoPath, env: buildEnv, signal }, logs, "[build][railpack]", build.capture);
       } catch (err) {
         throw explainBuildOom(err, await buildKitLimit(buildEnv.BUILDKIT_HOST));
       }
@@ -368,7 +398,7 @@ async function buildFromRepo(build: RepoBuild): Promise<void> {
       gitSha: build.gitSha,
     });
     try {
-      await spawnStream("docker", args, { cwd: repoPath, env: { ...authEnv, ...bounded.env }, signal }, logs, "[build][docker]");
+      await spawnStream("docker", args, { cwd: repoPath, env: { ...authEnv, ...bounded.env }, signal }, logs, "[build][docker]", build.capture);
     } catch (err) {
       throw explainBuildOom(err, bounded);
     }
@@ -762,7 +792,7 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
               .catch(() => log(`[build] Couldn't save the build plan`));
           }
         }
-        const run = () => buildFromRepo({
+        const run = () => timedBuild(ctx, (capture) => buildFromRepo({
           repoPath: root,
           imageName,
           engine,
@@ -775,7 +805,8 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
           noCache: ctx.rebuild === "no-cache",
           gitSha: ctx.gitSha,
           buildKey: key,
-        });
+          capture,
+        }));
         try {
           await run();
         } catch (buildErr) {

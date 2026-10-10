@@ -253,6 +253,31 @@ describe("prepareRepo image reuse", () => {
     expect(ctx.logLines).toContain("[build] Rebuilding, as asked");
   });
 
+  it("times the build and BuildKit's export as their own phases", async () => {
+    vi.mocked(spawn).mockImplementation(() => {
+      const proc = Object.assign(new EventEmitter(), { stdout: new EventEmitter(), stderr: new EventEmitter(), pid: 1 });
+      setTimeout(() => {
+        proc.stdout.emit("data", Buffer.from("#7 [3/3] RUN npm run build\n#7 DONE 0.1s\n#9 exporting to im"));
+        proc.stdout.emit("data", Buffer.from("age\n#9 DONE 0.01s\n"));
+        proc.emit("close", 0);
+      }, 40);
+      return proc as unknown as ReturnType<typeof spawn>;
+    });
+    earlier.rows = [];
+    const ctx = makeCtx();
+    await prepareRepo(ctx);
+
+    const timings = ctx.timer.snapshot();
+    expect(timings.export?.ms).toBe(10);
+    expect(timings.build?.ms).toBeGreaterThanOrEqual(25);
+  });
+
+  it("records no build phase when the image is reused", async () => {
+    const ctx = makeCtx();
+    await prepareRepo(ctx);
+    expect(ctx.timer.snapshot().build).toBeUndefined();
+  });
+
   it("rebuilds without the cache on no-cache", async () => {
     const ctx = makeCtx("no-cache");
     await prepareRepo(ctx);
