@@ -119,21 +119,20 @@ Running it again is safe. On an instance that already deploys itself it only ret
 
 Nothing is renamed, copied or deleted, so rollback is starting the old console again. The shared services run throughout, so the database is never in question. The migration's backup is in `/opt/vardo/backups/`.
 
-While `vardo-frontend` is still running:
+Run these in order, whether `vardo-frontend` is still running or was removed:
 
 ```
 docker rm -f vardo-production-<slot>-frontend-1
+rm -f "$(docker volume inspect -f '{{.Mountpoint}}' vardo_traefik_dynamic)/cutover-vardo-production.yml"
 rm -f /opt/vardo/apps/vardo/production/current
-```
-
-After it was removed:
-
-```
 cd /opt/vardo/apps/vardo/env/current
 docker compose -p vardo up -d --no-deps frontend
-docker rm -f vardo-production-<slot>-frontend-1
-rm -f /opt/vardo/apps/vardo/production/current
 ```
+
+The order matters:
+
+- The slot console holds the console's static IP on `vardo_mesh`. Starting `vardo-frontend` while it runs fails with "Address already in use".
+- A self-deploy leaves `cutover-vardo-production.yml` in Traefik's dynamic config, pinning the console's domain to the slot container. Left behind, the console answers 502 after rollback.
 
 Without `production/current`, `vardo update` takes the legacy path again.
 

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import { spawnSync } from "child_process";
@@ -253,5 +253,77 @@ describe("the vardo wrapper", () => {
     const vardo = instance("legacy");
     expect(wrapper(vardo, "update").out).toContain("LEGACY-INSTALL-SH update");
     expect(wrapper(vardo, "start").docker).toMatch(/docker compose -f .*env\/current\/docker-compose.yml up -d/);
+  });
+});
+
+describe("verify_self_deploy and the deploy slot", () => {
+  const counting = (dropAfter: number) =>
+    // A file, since the call runs in a subshell.
+    `deploy_slots_active() { echo x >> "$VARDO_DIR/polls"; [ "$(wc -l < "$VARDO_DIR/polls")" -gt ${dropAfter} ] && echo 0 || echo 1; }\nsleep() { :; }\n`;
+
+  it("waits for the engine to release its slot", () => {
+    const r = sh(instance("self-deploy"), `${counting(3)}verify_self_deploy dep_123 && echo PASSED`);
+    expect(r.out).not.toContain("deploy:system:active");
+    expect(r.out).toContain("PASSED");
+  });
+
+  it("warns when the slot is still held after a minute", () => {
+    const r = sh(instance("self-deploy"), `${counting(1000)}verify_self_deploy dep_123 || echo FLAGGED`);
+    expect(r.out).toContain("Redis deploy:system:active is 1, not 0");
+    expect(r.out).toContain("FLAGGED");
+  });
+});
+
+describe("print_self_deploy_rollback", () => {
+  it("removes the slot console and the cutover pin before starting vardo-frontend", () => {
+    const out = sh(instance("self-deploy"), "print_self_deploy_rollback").out;
+    const steps = [
+      "docker rm -f vardo-production-blue-frontend-1",
+      "vardo_traefik_dynamic)/cutover-vardo-production.yml",
+      "/apps/vardo/production/current",
+      "docker compose -p vardo up -d --no-deps frontend",
+    ].map((s) => out.indexOf(s));
+    expect(steps.every((i) => i >= 0)).toBe(true);
+    expect([...steps].sort((a, b) => a - b)).toEqual(steps);
+  });
+});
+
+describe("install_shortcut", () => {
+  it("replaces the wrapper rather than rewriting it in place", () => {
+    const vardo = instance("self-deploy");
+    sh(vardo, "install_shortcut");
+    const before = statSync(join(vardo, "vardo-wrapper")).ino;
+    sh(vardo, "install_shortcut");
+    expect(statSync(join(vardo, "vardo-wrapper")).ino).not.toBe(before);
+    expect(statSync(join(vardo, "vardo-wrapper")).mode & 0o777).toBe(0o755);
+  });
+
+  it("hands update to install.sh, so a rewrite mid-run can't reach the wrapper", () => {
+    const vardo = instance("self-deploy");
+    writeFileSync(
+      join(vardo, "apps/vardo/production/blue/install.sh"),
+      'for _ in $(seq 1 400); do echo "echo GARBAGE; exit 2"; done > "$VARDO_BIN"\necho UPDATED\n',
+    );
+    sh(vardo, "install_shortcut");
+    const r = sh(vardo, 'bash "$VARDO_BIN" update');
+    expect(r.out).toContain("UPDATED");
+    expect(r.out).not.toContain("GARBAGE");
+    expect(r.status).toBe(0);
+  });
+});
+
+describe("get_version", () => {
+  it("reads a checkout owned by another user", () => {
+    const vardo = instance("self-deploy");
+    mkdirSync(join(vardo, "apps/vardo/production/blue/.git"));
+    const gitBin = mkdtempSync(join(dir, "git-"));
+    // Refuses like git does for another user's checkout unless safe.directory names it.
+    writeFileSync(
+      join(gitBin, "git"),
+      '#!/usr/bin/env bash\nfor a in "$@"; do case "$a" in safe.directory=*/production/blue) echo v1.2.3; exit 0 ;; esac; done\necho "fatal: detected dubious ownership" >&2\nexit 128\n',
+    );
+    chmodSync(join(gitBin, "git"), 0o755);
+    const r = sh(vardo, "get_version", { PATH: `${gitBin}:${bin}:${process.env.PATH}` });
+    expect(r.out.trim()).toBe("v1.2.3");
   });
 });
