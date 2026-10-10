@@ -37,6 +37,23 @@ export function backupDrop(history: number[], current: number): { median: number
   return drop > BACKUP_DROP_RATIO ? { median: m, drop } : null;
 }
 
+/** A short sparkline of recent readings. */
+export function sparkColumns(
+  title: string,
+  values: number[] | undefined,
+  opts: { axis?: [string, string]; caption?: string; over?: number } = {},
+): MailVisual | undefined {
+  if (!values || values.length < 2 || values.every((v) => v === 0)) return undefined;
+  return {
+    kind: "columns",
+    title,
+    compact: true,
+    columns: values.map((value) => ({ parts: [{ value, tone: (opts.over !== undefined && value >= opts.over ? "warn" : 2) as ChartTone }] })),
+    axis: opts.axis,
+    caption: opts.caption,
+  };
+}
+
 /** Sizes of earlier runs plus this one, with this one marked. A failed run is a short red stub. */
 export function backupColumns(
   volume: string,

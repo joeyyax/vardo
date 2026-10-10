@@ -645,6 +645,27 @@
       "when": 1791589848071,
       "tag": "0091_notification_log_provider_ids",
       "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1791591631322,
+      "tag": "0092_alert_registry",
+      "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1791592141244,
+      "tag": "0093_backup_batch",
+      "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1791592436983,
+      "tag": "0094_health_digest",
+      "breakpoints": true
     }
   ]
 }

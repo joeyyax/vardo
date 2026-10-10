@@ -3,7 +3,7 @@ import { percentages, sparkline, visualText } from "@/lib/email/templates/compon
 import { backupColumns, backupDrop } from "@/lib/email/templates/visuals";
 import { phaseVisual } from "@/lib/email/templates/deploy-facts";
 import { hourlyDeltas, loadMailSeries } from "@/lib/email/series";
-import { deployDays } from "@/lib/digest/collector";
+import { deployBuckets } from "@/lib/digest/collector";
 import { EMAIL_FIXTURES, FIXTURE_CONTEXT } from "@/lib/email/fixtures";
 import { renderNotificationEmail } from "@/lib/email/notification-email";
 import { notificationSubject } from "@/lib/email/subjects";
@@ -61,25 +61,25 @@ describe("backup size history", () => {
   });
 
   it("warns in the subject and body", async () => {
-    const fixture = EMAIL_FIXTURES.find((f) => f.name === "backup-success-drop")!;
-    const ctx = { ...FIXTURE_CONTEXT, series: fixture.series };
-    expect(notificationSubject(fixture.event, ctx)).toBe("⚠ Backup Nightly · shop-mysql much smaller than usual");
-    const email = (await renderNotificationEmail(fixture.event, ctx))!;
-    expect(email.text).toContain("Smaller than usual: shop-mysql is 94% below its usual");
-    expect(email.text).toContain("shop-mysql, last 7 runs (older → this run · 100 MiB)\n██████▁");
+    const fixture = EMAIL_FIXTURES.find((f) => f.name === "backup-summary-shrunk")!;
+    expect(notificationSubject(fixture.event, FIXTURE_CONTEXT)).toBe("⚠ Backups · Shop much smaller than usual");
+    const email = (await renderNotificationEmail(fixture.event, FIXTURE_CONTEXT))!;
+    expect(email.text).toContain("Shop / mysql-data: 100 MiB, 95% below its usual");
+    expect(email.text).toContain("Shop / mysql-data, last 7 runs (older → this run · 100 MiB)\n██████▁");
+    expect(email.text).toContain("No successful backup in 48 hours");
   });
 
-  it("leaves the chart out without history", async () => {
-    const fixture = EMAIL_FIXTURES.find((f) => f.name === "backup-success")!;
+  it("charts only what needs a look", async () => {
+    const fixture = EMAIL_FIXTURES.find((f) => f.name === "backup-summary")!;
     const email = (await renderNotificationEmail(fixture.event, FIXTURE_CONTEXT))!;
     expect(email.text).not.toContain("last 7 runs");
-    expect(email.subject).toBe("✓ Backup Nightly · 2.3 GiB");
+    expect(email.subject).toMatch(/^✓ Backups · 6 done · /);
   });
 });
 
 describe("loadMailSeries", () => {
   it("drops a chart whose query fails or hangs", async () => {
-    const disk = EMAIL_FIXTURES.find((f) => f.name === "system-disk-alert")!.event;
+    const disk = EMAIL_FIXTURES.find((f) => f.name === "alert-host-disk")!.event;
     expect(await loadMailSeries(disk)).toEqual({ dockerDisk24h: undefined });
     const writes = EMAIL_FIXTURES.find((f) => f.name === "disk-write-alert")!.event;
     const started = Date.now();
@@ -102,19 +102,21 @@ describe("series helpers", () => {
     expect(deltas.slice(-2)).toEqual([300, 1000]);
   });
 
-  it("buckets deploys by UTC day", () => {
-    const now = new Date("2026-10-09T17:00:00Z");
-    const days = deployDays(
+  it("buckets deploys by UTC day across the window", () => {
+    const window = { since: new Date("2026-10-03T00:00:00Z"), until: new Date("2026-10-10T00:00:00Z") };
+    const days = deployBuckets(
       [
         { status: "success", startedAt: new Date("2026-10-09T01:00:00Z") },
         { status: "failed", startedAt: new Date("2026-10-07T12:00:00Z") },
         { status: "success", startedAt: new Date("2026-09-01T12:00:00Z") },
+        { status: "success", startedAt: new Date("2026-10-10T00:00:00Z") },
       ],
-      now,
+      window,
+      86_400_000,
     );
     expect(days).toHaveLength(7);
-    expect(days[0].day).toBe("2026-10-03");
-    expect(days[6]).toEqual({ day: "2026-10-09", succeeded: 1, failed: 0 });
-    expect(days[4]).toEqual({ day: "2026-10-07", succeeded: 0, failed: 1 });
+    expect(days[0].start).toBe("2026-10-03T00:00:00.000Z");
+    expect(days[6]).toEqual({ start: "2026-10-09T00:00:00.000Z", succeeded: 1, failed: 0 });
+    expect(days[4]).toEqual({ start: "2026-10-07T00:00:00.000Z", succeeded: 0, failed: 1 });
   });
 });

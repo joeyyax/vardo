@@ -14,9 +14,16 @@ import { toast } from "@/lib/messenger";
 import { Card, CardContent } from "@/components/ui/card";
 import { RelativeTime } from "@/components/relative-time";
 import { Loader2, Mail } from "lucide-react";
+import { DEFAULT_DIGEST, type DigestCadence } from "@/lib/digest/window";
+
+const CADENCE_LABELS: Record<DigestCadence, string> = {
+  daily: "Daily",
+  weekly: "Weekly",
+};
 
 type DigestSettingsData = {
   enabled: boolean;
+  cadence: DigestCadence;
   dayOfWeek: number;
   hourOfDay: number;
   lastSentAt: string | null;
@@ -55,12 +62,7 @@ export function DigestSettingsEditor({ orgId }: { orgId: string }) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [settings, setSettings] = useState<DigestSettingsData>({
-    enabled: false,
-    dayOfWeek: 1,
-    hourOfDay: 8,
-    lastSentAt: null,
-  });
+  const [settings, setSettings] = useState<DigestSettingsData>({ ...DEFAULT_DIGEST, lastSentAt: null });
 
   const applySettings = useCallback((data: DigestSettingsData | null) => {
     if (data) {
@@ -141,21 +143,21 @@ export function DigestSettingsEditor({ orgId }: { orgId: string }) {
         <div className="space-y-1">
           <div className="flex items-center gap-2">
             <Mail className="h-4 w-4 text-muted-foreground" />
-            <p className="type-h3">Weekly digest</p>
+            <p className="type-h3">Health summary</p>
             {saving && (
               <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
             )}
           </div>
           <p className="text-sm text-muted-foreground">
-            Receive a weekly summary of deploys, backups, cron failures and
-            alerts across all your projects. Sent to all enabled email
-            notification channels.
+            Deploys, backups, alerts, resource trends, expiring certificates
+            and image updates for the last full day or week. Skipped when
+            nothing happened.
           </p>
         </div>
         <Switch
           checked={settings.enabled}
           onCheckedChange={(checked) => save({ enabled: checked })}
-          aria-label="Enable weekly digest"
+          aria-label="Send the health summary"
         />
       </div>
 
@@ -164,18 +166,18 @@ export function DigestSettingsEditor({ orgId }: { orgId: string }) {
           <p className="text-xs text-muted-foreground">
             Schedule times are in UTC.
           </p>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div className="space-y-2">
-              <Label htmlFor="digest-day">Day of week</Label>
+              <Label htmlFor="digest-cadence">Every</Label>
               <Select
-                value={String(settings.dayOfWeek)}
-                onValueChange={(v) => save({ dayOfWeek: parseInt(v) })}
+                value={settings.cadence}
+                onValueChange={(v) => save({ cadence: v as DigestCadence })}
               >
-                <SelectTrigger id="digest-day">
+                <SelectTrigger id="digest-cadence">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {Object.entries(DAY_LABELS).map(([value, label]) => (
+                  {Object.entries(CADENCE_LABELS).map(([value, label]) => (
                     <SelectItem key={value} value={value}>
                       {label}
                     </SelectItem>
@@ -183,6 +185,27 @@ export function DigestSettingsEditor({ orgId }: { orgId: string }) {
                 </SelectContent>
               </Select>
             </div>
+
+            {settings.cadence === "weekly" && (
+              <div className="space-y-2">
+                <Label htmlFor="digest-day">Day of week</Label>
+                <Select
+                  value={String(settings.dayOfWeek)}
+                  onValueChange={(v) => save({ dayOfWeek: parseInt(v) })}
+                >
+                  <SelectTrigger id="digest-day">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(DAY_LABELS).map(([value, label]) => (
+                      <SelectItem key={value} value={value}>
+                        {label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label htmlFor="digest-hour">Time (UTC)</Label>

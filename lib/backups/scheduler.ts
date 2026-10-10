@@ -5,6 +5,7 @@ const log = logger.child("backup");
 
 let interval: NodeJS.Timeout | null = null;
 let drillInterval: NodeJS.Timeout | null = null;
+let batchInterval: NodeJS.Timeout | null = null;
 
 // Drills run hourly.
 const DRILL_TICK_MS = 60 * 60_000;
@@ -21,6 +22,16 @@ export function startBackupScheduler(): void {
     }
   }, 60_000);
 
+  // Own timer: the backup tick waits on its runs.
+  batchInterval = setInterval(async () => {
+    try {
+      const { flushBackupBatches } = await import("./batch");
+      await flushBackupBatches();
+    } catch (err) {
+      log.error("Batch flush error:", err);
+    }
+  }, 60_000);
+
   // Own timer, so a slow drill can't delay a backup.
   drillInterval = setInterval(async () => {
     try {
@@ -32,6 +43,10 @@ export function startBackupScheduler(): void {
 }
 
 export function stopBackupScheduler(): void {
+  if (batchInterval) {
+    clearInterval(batchInterval);
+    batchInterval = null;
+  }
   if (drillInterval) {
     clearInterval(drillInterval);
     drillInterval = null;

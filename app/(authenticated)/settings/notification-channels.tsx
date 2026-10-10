@@ -11,58 +11,10 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "@/lib/messenger";
 import { Loader2, Plus, Trash2, Bell, ChevronDown, ChevronRight, Filter } from "lucide-react";
 import { EVENT_CATEGORIES, type BusEventType, type EventCategory } from "@/lib/bus/events";
+import { CATEGORY_LABELS, EVENT_LABELS } from "@/lib/notifications/labels";
 
 type ChannelType = "email" | "webhook" | "slack";
 type Channel = { id: string; name: string; type: ChannelType; config: Record<string, unknown>; enabled: boolean; subscribedEvents: string[] };
-
-const CATEGORY_LABELS: Record<EventCategory, string> = {
-  deploy: "Deploy",
-  app: "App",
-  backup: "Backup",
-  cron: "Cron",
-  volume: "Volume",
-  disk: "Disk",
-  org: "Organization",
-  security: "Security",
-  system: "System",
-  lifecycle: "Vardo lifecycle",
-  digest: "Digest",
-};
-
-const EVENT_LABELS: Record<BusEventType, string> = {
-  "deploy.success": "Deploy succeeded",
-  "deploy.failed": "Deploy failed",
-  "deploy.incomplete": "Post-deploy work unfinished",
-  "deploy.rollback": "Auto-rollback",
-  "deploy.status": "Deploy status changed",
-  "app.state-changed": "App state changed",
-  "app.auto-restarted": "Container auto-restarted",
-  "app.oom-killed": "Killed for memory",
-  "backup.success": "Backup succeeded",
-  "backup.failed": "Backup failed",
-  "backup.progress": "Backup progress",
-  "cron.failed": "Cron job failed",
-  "volume.drift": "Volume differs from image",
-  "disk.write-alert": "High disk writes",
-  "org.invitation-sent": "Invitation sent",
-  "org.invitation-accepted": "Invitation accepted",
-  "security.file-exposed": "Sensitive file exposed",
-  "security.scan-findings": "Security scan findings",
-  "security.domain-claimed": "Domain claimed by its owner",
-  "system.service-down": "Service down",
-  "system.disk-alert": "Disk space alert",
-  "system.restart-loop": "Vardo restarted",
-  "system.cert-expiring": "Certificate expiring",
-  "system.update-available": "Update available",
-  "system.shutdown": "Vardo shutting down",
-  "system.started": "Vardo started",
-  "system.recovered-unclean": "Recovered after an unclean stop",
-  "system.update-started": "Update started",
-  "system.updated": "Update finished",
-  "system.update-failed": "Update failed",
-  "system.containers-missing": "Containers missing after restart",
-  "digest.weekly": "Weekly digest",
-};
 
 function EventFilterEditor({
   subscribedEvents,
@@ -219,7 +171,7 @@ export function NotificationChannelsEditor({ orgId }: { orgId: string }) {
     <Card>
       <CardContent className="space-y-4">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">Configure where notifications are sent for deploy, backup and cron failures.</p>
+        <p className="text-sm text-muted-foreground">Where notifications go: deploys, backups, alerts and summaries.</p>
         {!showForm && <Button size="sm" onClick={() => setShowForm(true)}><Plus className="h-4 w-4 mr-1" />Add channel</Button>}
       </div>
       {showForm && (

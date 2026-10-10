@@ -65,6 +65,7 @@ import { listContainers, inspectContainer } from "@/lib/docker/client";
 import { resolveDefaultEnv } from "@/lib/docker/resolve-env";
 import { logger } from "@/lib/logger";
 import type { BusEvent } from "@/lib/bus/events";
+import type { BackupBatchItem } from "./batch-rules";
 import { execFileAsync } from "@/lib/utils/exec";
 import { dockerEnv } from "@/lib/docker/docker-env";
 import { archiveExtension, formatFromArchiveName } from "./archive-name";
@@ -1238,6 +1239,7 @@ export async function runBackup(
     if (onlyPaused) {
       log.info(`${job.name}: nothing captured — every source is waiting on a stopped app or empty`);
     } else if (job.organizationId && ((hasFailures && notifyOnFailure) || (allSuccess && job.notifyOnSuccess))) {
+      // Live UI only; email goes out as the batch summary.
       const { emit } = await import("@/lib/notifications/dispatch");
       const names = jobApps.map((bja) => bja.app.name).join(", ") || job.name;
       const runMs = results.reduce((sum, r) => sum + r.durationMs, 0);
@@ -1257,6 +1259,10 @@ export async function runBackup(
         log.info(`${job.name} succeeded (${results.reduce((s, r) => s + r.sizeBytes, 0)} bytes)${skippedNote}`);
       }
     }
+
+    if (!onlyPaused) {
+      await batchRunResults(job, results, volumesToBackup, { holdFailures: !notifyOnFailure });
+    }
   } catch (err) {
     log.error("Backup notification error:", err);
   }
@@ -1268,6 +1274,42 @@ export async function runBackup(
   }
 
   return results;
+}
+
+/** Each org's share of a run, into its backup batch. */
+async function batchRunResults(
+  job: { name: string; organizationId: string | null },
+  results: BackupResult[],
+  sources: VolumeToBackup[],
+  opts: { holdFailures: boolean },
+): Promise<void> {
+  const { recordBackupResults } = await import("./batch");
+  const sourceByKey = new Map(sources.map((v) => [`${v.appId ?? ""}:${v.name}`, v]));
+  const byOrg = new Map<string, BackupBatchItem[]>();
+  const at = new Date().toISOString();
+  for (const r of results) {
+    if (r.emptySource) continue;
+    if (r.outcome === "failed" && opts.holdFailures) continue;
+    const source = sourceByKey.get(`${r.appId}:${r.volumeName}`);
+    const orgId = job.organizationId ?? source?.orgId;
+    if (!orgId) continue;
+    const items = byOrg.get(orgId) ?? [];
+    items.push({
+      kind: "backup",
+      appId: r.appId || null,
+      appName: source?.appName ?? null,
+      volumeName: r.volumeName,
+      jobName: job.name,
+      outcome: r.outcome,
+      sizeBytes: r.sizeBytes,
+      durationMs: r.durationMs,
+      error: r.error,
+      backupId: r.backupId,
+      at,
+    });
+    byOrg.set(orgId, items);
+  }
+  for (const [orgId, items] of byOrg) await recordBackupResults(orgId, items);
 }
 
 // Retention (GFS: grandfather-father-son)
@@ -1859,8 +1901,35 @@ export async function restoreBackup(
   backupId: string,
   opts: Parameters<typeof restoreBackupUnmarked>[1] = {},
 ): Promise<{ success: boolean; log: string }> {
-  const row = await db.query.backups.findFirst({ where: eq(backups.id, backupId), columns: { appId: true } });
-  return withBulkWrite(row?.appId, () => restoreBackupUnmarked(backupId, opts));
+  const row = await db.query.backups.findFirst({
+    where: eq(backups.id, backupId),
+    columns: { appId: true, appName: true, volumeName: true, organizationId: true },
+  });
+  const startedAt = Date.now();
+  const result = await withBulkWrite(row?.appId, () => restoreBackupUnmarked(backupId, opts));
+  if (row?.organizationId) {
+    const { recordBackupResults } = await import("./batch");
+    await recordBackupResults(row.organizationId, [
+      {
+        kind: "restore",
+        appId: row.appId,
+        appName: row.appName,
+        volumeName: row.volumeName ?? "",
+        outcome: result.success ? "success" : "failed",
+        error: result.success ? undefined : lastLogLine(result.log),
+        durationMs: Date.now() - startedAt,
+        backupId,
+        at: new Date().toISOString(),
+      },
+    ]);
+  }
+  return result;
+}
+
+/** The last non-empty line of a run log, without its timestamp. */
+export function lastLogLine(log: string): string | undefined {
+  const line = log.split("\n").filter((l) => l.trim()).at(-1);
+  return line?.replace(/^\[[^\]]+\]\s*/, "").slice(0, 300);
 }
 
 /** Pre-signed download URL for an archive. Null when the backend can't sign or the archive is encrypted. */

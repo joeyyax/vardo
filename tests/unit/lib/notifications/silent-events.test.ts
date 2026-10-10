@@ -24,8 +24,9 @@ describe("resolveRecipients — live-UI-only events", () => {
     ).toBe(false);
   });
 
-  it("still sends the terminal backup events", () => {
-    expect(resolveRecipients("chan-1", "email", "backup.success", members, []).shouldSend).toBe(true);
-    expect(resolveRecipients("chan-1", "email", "backup.failed", members, []).shouldSend).toBe(true);
+  it("sends the batch summary, not the per-job events", () => {
+    expect(resolveRecipients("chan-1", "email", "backup.summary", members, []).shouldSend).toBe(true);
+    expect(resolveRecipients("chan-1", "email", "backup.success", members, []).shouldSend).toBe(false);
+    expect(resolveRecipients("chan-1", "email", "backup.failed", members, []).shouldSend).toBe(false);
   });
 });

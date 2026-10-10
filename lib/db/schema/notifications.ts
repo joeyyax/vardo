@@ -5,6 +5,7 @@ import {
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   unique,
@@ -29,7 +30,7 @@ export const notificationChannels = pgTable(
   (t) => [index("notification_channel_org_idx").on(t.organizationId)]
 );
 
-// Weekly digest settings per org.
+// Health digest settings per org. No row means the defaults.
 
 export const digestSettings = pgTable("digest_setting", {
   id: text("id").primaryKey(),
@@ -38,11 +39,15 @@ export const digestSettings = pgTable("digest_setting", {
     .unique()
     .references(() => organizations.id, { onDelete: "cascade" }),
   enabled: boolean("enabled").default(true).notNull(),
-  // 0 = Sunday ... 6 = Saturday
+  // "daily" or "weekly".
+  cadence: text("cadence").default("weekly").notNull(),
+  // 0 = Sunday ... 6 = Saturday. Weekly only.
   dayOfWeek: integer("day_of_week").default(1).notNull(),
   // 0-23 UTC
   hourOfDay: integer("hour_of_day").default(8).notNull(),
   lastSentAt: timestamp("last_sent_at"),
+  // The window last sent, so each sends once.
+  lastWindowKey: text("last_window_key"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -136,3 +141,59 @@ export const notificationLogs = pgTable(
     index("notification_log_provider_message_ids_idx").using("gin", t.providerMessageIds),
   ]
 );
+
+// The until_clear throttle: one row per org, alert type and subject.
+
+export const notificationSends = pgTable(
+  "notification_send",
+  {
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    type: text("type").notNull(),
+    about: text("about").notNull(),
+    // Worst severity sent since the last clear.
+    severity: text("severity").notNull(),
+    sentAt: timestamp("sent_at").notNull(),
+    clearedAt: timestamp("cleared_at"),
+    // The alert as sent, for its resolved notice.
+    detail: jsonb("detail"),
+  },
+  (t) => [primaryKey({ columns: [t.organizationId, t.type, t.about] })]
+);
+
+export type NotificationSendRow = typeof notificationSends.$inferSelect;
+
+// Every alert that fired and when it cleared, for the health digest.
+
+export const alertHistory = pgTable(
+  "alert_history",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    type: text("type").notNull(),
+    about: text("about").notNull(),
+    severity: text("severity").notNull(),
+    title: text("title").notNull(),
+    firedAt: timestamp("fired_at").notNull(),
+    resolvedAt: timestamp("resolved_at"),
+  },
+  (t) => [
+    index("alert_history_org_fired_idx").on(t.organizationId, t.firedAt),
+    index("alert_history_open_idx").on(t.organizationId, t.type, t.about),
+  ]
+);
+
+// Per-org notification switches and the backup batch window.
+
+export const notificationSettings = pgTable("notification_setting", {
+  organizationId: text("organization_id")
+    .primaryKey()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  // Category on/off. A missing key is the category's default.
+  categories: jsonb("categories").$type<Record<string, boolean>>().default({}).notNull(),
+  batchWindowMinutes: integer("batch_window_minutes").default(30).notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});

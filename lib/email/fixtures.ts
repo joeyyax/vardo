@@ -1,6 +1,7 @@
 // Realistic events for the email preview and template tests.
 
-import type { BusEvent } from "@/lib/bus/events";
+import type { AlertItem, BackupSummaryEvent, BusEvent } from "@/lib/bus/events";
+import { summarizeBatch, volumeKey, type BackupBatchItem } from "@/lib/backups/batch-rules";
 import type { MailContext, MailSeries } from "./templates/context";
 
 export const FIXTURE_CONTEXT: MailContext = {
@@ -25,6 +26,81 @@ function ramp(start: number, end: number, wobble = 0.02): number[] {
     const t = i / 23;
     return Math.round((start + (end - start) * t) * (1 + Math.sin(i * 1.7) * wobble));
   });
+}
+
+const hostMemory: AlertItem = {
+  type: "host.memory",
+  about: "host",
+  severity: "warning",
+  title: "Memory 91% used",
+  detail: "Available memory is low. Deploys can fail and the kernel starts killing containers. Stop or limit what's using it.",
+  gauge: { title: "Memory used", percent: 91.4, warn: 85, critical: 95 },
+  series: { title: "Memory, last hour", values: ramp(72, 92, 0.03).slice(-20), caption: "Over 85% for 5 min" },
+  facts: [
+    { label: "Used", value: "29.2 GiB of 31.9 GiB" },
+    { label: "Available", value: "2.7 GiB" },
+    { label: "Top containers", value: "shop-production-blue-wordpress-1 6.1 GiB, search-data-production-green-meilisearch-1 4.8 GiB, vardo-postgres 2.2 GiB" },
+  ],
+};
+
+const hostDisk: AlertItem = {
+  type: "host.disk",
+  about: "host",
+  severity: "warning",
+  title: "Disk 91% full",
+  detail: "Deploys and backups fail once the disk is full. Prune old images and build cache or grow the disk.",
+  gauge: { title: "Disk used", percent: 91.3, warn: 85, critical: 95 },
+  facts: [
+    { label: "Used", value: "204.0 GiB of 223.4 GiB" },
+    { label: "Free", value: "19.4 GiB" },
+  ],
+};
+
+const MiB = 1024 ** 2;
+
+/** A night of backups, one result per app and volume. */
+const NIGHTLY: BackupBatchItem[] = [
+  ["app_wh4", "Shop", "mysql-data", 1_932 * MiB],
+  ["app_wh4", "Shop", "wp-content", 6_240 * MiB],
+  ["app_acme", "Acme", "uploads", 480 * MiB],
+  ["app_acme", "Acme", "postgres-data", 212 * MiB],
+  ["app_srch", "Search", "meili-data", 1_104 * MiB],
+  ["app_kuma", "Uptime Kuma", "kuma-data", 38 * MiB],
+].map(([appId, appName, volumeName, sizeBytes], i) => ({
+  kind: "backup" as const,
+  appId: appId as string,
+  appName: appName as string,
+  volumeName: volumeName as string,
+  jobName: `auto-${appId}`,
+  outcome: "success" as const,
+  sizeBytes: sizeBytes as number,
+  durationMs: 20_000 + i * 9_000,
+  at: `2026-10-09T03:${String(2 + i * 4).padStart(2, "0")}:00.000Z`,
+}));
+
+/** Six earlier runs per volume, each a touch smaller than tonight. */
+const NIGHTLY_HISTORY = new Map(
+  NIGHTLY.map((i) => [volumeKey(i.appId, i.volumeName), [0.94, 0.95, 0.96, 0.97, 0.98, 0.99].map((f) => Math.round(i.sizeBytes! * f))]),
+);
+
+function backupSummary(items: BackupBatchItem[], extra: Partial<BackupSummaryEvent>): BackupSummaryEvent {
+  const rows = summarizeBatch(items, NIGHTLY_HISTORY);
+  const backups = rows.filter((r) => r.kind === "backup");
+  const times = items.map((i) => i.at).sort();
+  return {
+    type: "backup.summary",
+    title: "Backups",
+    message: `${backups.filter((r) => r.outcome === "success").length} of ${backups.length} backups succeeded.`,
+    windowStart: times[0],
+    windowEnd: times.at(-1)!,
+    succeeded: backups.filter((r) => r.outcome === "success").length,
+    failed: backups.filter((r) => r.outcome === "failed").length,
+    skipped: backups.filter((r) => r.outcome === "skipped").length,
+    totalSize: backups.reduce((sum, r) => sum + (r.outcome === "success" ? r.sizeBytes : 0), 0),
+    durationMs: backups.reduce((sum, r) => sum + r.durationMs, 0),
+    rows,
+    ...extra,
+  };
 }
 
 export const EMAIL_FIXTURES: { name: string; event: BusEvent; series?: MailSeries }[] = [
@@ -151,71 +227,30 @@ export const EMAIL_FIXTURES: { name: string; event: BusEvent; series?: MailSerie
     },
   },
   {
-    name: "backup-success",
-    event: {
-      type: "backup.success",
-      title: "Backup successful: Nightly",
-      message: "3 backup(s) completed",
-      jobId: "job_n1",
-      jobName: "Nightly",
-      totalCount: 3,
-      totalSize: 2_469_606_195,
-      durationMs: 184_000,
-      sources: [
-        { name: "shop-mysql", sizeBytes: 1_932_735_283 },
-        { name: "acme-uploads", sizeBytes: 503_316_480 },
-        { name: "vardo-postgres", sizeBytes: 33_554_432 },
-      ],
-    },
-    series: {
-      backupHistory: {
-        "shop-mysql": [1_811_939_328, 1_843_396_608, 1_866_465_280, 1_887_436_800, 1_900_019_712, 1_918_894_080],
-        "acme-uploads": [492_830_720, 495_976_448, 497_025_024, 499_122_176, 501_219_328, 502_267_904],
-        "vardo-postgres": [31_457_280, 31_981_568, 32_505_856, 32_505_856, 33_030_144, 33_292_288],
-      },
-    },
+    name: "backup-summary",
+    event: backupSummary(NIGHTLY, {}),
   },
   {
-    name: "backup-success-drop",
-    event: {
-      type: "backup.success",
-      title: "Backup successful: Nightly",
-      message: "3 backup(s) completed",
-      jobId: "job_n1",
-      jobName: "Nightly",
-      totalCount: 3,
-      totalSize: 104_857_600 + 503_316_480 + 33_554_432,
-      durationMs: 121_000,
-      sources: [
-        { name: "shop-mysql", sizeBytes: 104_857_600 },
-        { name: "acme-uploads", sizeBytes: 503_316_480 },
-        { name: "vardo-postgres", sizeBytes: 33_554_432 },
-      ],
-    },
-    series: {
-      backupHistory: {
-        "shop-mysql": [1_811_939_328, 1_843_396_608, 1_866_465_280, 1_887_436_800, 1_900_019_712, 1_918_894_080],
-        "acme-uploads": [492_830_720, 495_976_448, 497_025_024, 499_122_176, 501_219_328, 502_267_904],
-      },
-    },
+    name: "backup-summary-shrunk",
+    event: backupSummary(
+      NIGHTLY.map((i) => (i.volumeName === "mysql-data" ? { ...i, sizeBytes: 104_857_600 } : i)),
+      { staleVolumes: [{ appName: "Search", volumeName: "meili-data", lastSuccessAt: "2026-10-06T07:12:00.000Z" }] },
+    ),
   },
   {
-    name: "backup-failed",
-    event: {
-      type: "backup.failed",
-      title: "Backup failed: Nightly",
-      message: "1 of 3 backup(s) failed for: shop-staging",
-      jobId: "job_n1",
-      jobName: "Nightly",
-      failedCount: 1,
-      totalCount: 3,
-      errors: "shop-mysql: mysqldump: Got error: 2013: Lost connection to server during query",
-      durationMs: 96_000,
-      failures: [{ name: "shop-mysql", error: "mysqldump: Got error: 2013: Lost connection to server during query" }],
-    },
-    series: {
-      backupHistory: { "shop-mysql": [1_811_939_328, 1_843_396_608, 1_866_465_280, 1_887_436_800, 1_900_019_712, 1_918_894_080] },
-    },
+    name: "backup-summary-failed",
+    event: backupSummary(
+      [
+        ...NIGHTLY.map((i) =>
+          i.volumeName === "mysql-data"
+            ? { ...i, outcome: "failed" as const, sizeBytes: 0, error: "mysqldump: Got error: 2013: Lost connection to server during query" }
+            : i,
+        ),
+        { kind: "drill", appId: "app_acme", appName: "Acme", volumeName: "uploads", outcome: "failed", error: "extract exited 2", durationMs: 41_000, at: "2026-10-09T03:40:00.000Z" },
+        { kind: "restore", appId: "app_wh4s", appName: "Shop Staging", volumeName: "wp-content", outcome: "success", durationMs: 74_000, at: "2026-10-09T03:31:00.000Z" },
+      ],
+      {},
+    ),
   },
   {
     name: "cron-failed",
@@ -299,18 +334,89 @@ export const EMAIL_FIXTURES: { name: string; event: BusEvent; series?: MailSerie
     },
   },
   {
-    name: "system-disk-alert",
+    name: "alert-host-disk",
     event: {
-      type: "system.disk-alert",
-      title: "Disk usage at 91%",
-      message: "Vardo disk usage has reached 91% (threshold: 90%).",
-      percent: 91.3,
-      threshold: 90,
-      severity: "warning",
-      used: 219_043_332_096,
-      total: 239_903_502_336,
+      type: "alert.fired",
+      title: "Disk 91% full",
+      message: "Disk 91% full",
+      alerts: [
+        {
+          ...hostDisk,
+        },
+      ],
     },
     series: { dockerDisk24h: ramp(141 * GiB, 163 * GiB, 0.01) },
+  },
+  {
+    name: "alert-host-memory",
+    event: {
+      type: "alert.fired",
+      title: "Memory 91% used",
+      message: "Memory 91% used",
+      alerts: [hostMemory],
+    },
+  },
+  {
+    name: "alert-coalesced",
+    event: {
+      type: "alert.fired",
+      title: "3 alerts: Shop was killed for memory and more",
+      message: "Shop was killed for memory; Search was killed for memory; Memory 97% used",
+      alerts: [
+        {
+          type: "app.oom",
+          about: "app_wh4",
+          appId: "app_wh4",
+          appName: "Shop",
+          severity: "critical",
+          title: "Shop was killed for memory",
+          detail: "The host ran out of memory and the kernel killed it. Free memory on the host or give the app a limit.",
+          facts: [
+            { label: "Kills", value: "2" },
+            { label: "Container", value: "shop-production-blue-wordpress-1 (2)" },
+          ],
+          since: "2026-10-09T14:02:11.000Z",
+        },
+        {
+          type: "app.oom",
+          about: "app_srch",
+          appId: "app_srch",
+          appName: "Search",
+          severity: "critical",
+          title: "Search was killed for memory",
+          detail: "The host ran out of memory and the kernel killed it. Free memory on the host or give the app a limit.",
+          facts: [
+            { label: "Kills", value: "1" },
+            { label: "Container", value: "search-data-production-green-meilisearch-1" },
+          ],
+          since: "2026-10-09T14:02:40.000Z",
+        },
+        { ...hostMemory, severity: "critical", title: "Memory 97% used", gauge: { ...hostMemory.gauge!, percent: 97.2 } },
+      ],
+    },
+  },
+  {
+    name: "alert-resolved",
+    event: {
+      type: "alert.resolved",
+      title: "2 alerts resolved",
+      message: "Memory 91% used; Shop is near its memory limit",
+      alerts: [
+        { ...hostMemory, firedAt: "2026-10-09T14:05:00.000Z", resolvedAt: "2026-10-09T14:41:00.000Z" },
+        {
+          type: "app.memory-limit",
+          about: "app_wh4",
+          appId: "app_wh4",
+          appName: "Shop",
+          severity: "warning",
+          title: "Shop is near its memory limit",
+          detail: "It has stayed over 90% of its limit for 10 minutes.",
+          since: "2026-10-09T13:50:00.000Z",
+          firedAt: "2026-10-09T14:00:00.000Z",
+          resolvedAt: "2026-10-09T14:41:00.000Z",
+        },
+      ],
+    },
   },
   {
     name: "system-service-down",
@@ -337,38 +443,72 @@ export const EMAIL_FIXTURES: { name: string; event: BusEvent; series?: MailSerie
     },
   },
   {
-    name: "weekly-digest",
+    name: "digest-weekly",
     event: {
-      type: "digest.weekly",
-      title: "Weekly Digest — Joey Yax",
-      message: "Weekly health summary",
+      type: "digest.health",
+      title: "Weekly health summary: Joey Yax",
+      message: "48 deploys, 3 failed.",
+      cadence: "weekly",
       orgName: "Joey Yax",
-      weekLabel: "Oct 2 – Oct 9, 2026",
-      deploysTotal: 48,
-      deploysSucceeded: 45,
-      deploysFailed: 3,
-      backupsTotal: 21,
-      backupsSucceeded: 20,
-      backupsFailed: 1,
-      cronTotal: 2,
-      cronFailed: 2,
-      cronAffectedJobs: ["sync-orders"],
-      diskWriteAlerts: 1,
-      volumeDrifts: 0,
-      deploysByDay: [
-        { day: "2026-10-03", succeeded: 4, failed: 0 },
-        { day: "2026-10-04", succeeded: 2, failed: 0 },
-        { day: "2026-10-05", succeeded: 9, failed: 1 },
-        { day: "2026-10-06", succeeded: 11, failed: 0 },
-        { day: "2026-10-07", succeeded: 7, failed: 2 },
-        { day: "2026-10-08", succeeded: 8, failed: 0 },
-        { day: "2026-10-09", succeeded: 4, failed: 0 },
+      windowLabel: "Oct 5 – Oct 11, 2026",
+      since: "2026-10-05T00:00:00.000Z",
+      until: "2026-10-12T00:00:00.000Z",
+      deploys: { total: 48, succeeded: 45, failed: 3 },
+      deploysByBucket: [
+        [5, 1], [9, 0], [12, 2], [3, 0], [8, 0], [4, 0], [4, 0],
+      ].map(([succeeded, failed], i) => ({ start: `2026-10-${String(5 + i).padStart(2, "0")}T00:00:00.000Z`, succeeded, failed })),
+      backups: { succeeded: 131, failed: 2, totalSize: 71 * GiB, drillsPassed: 160, drillsFailed: 1, staleVolumes: 0 },
+      cron: { failed: 2, affectedJobs: ["shop-cache-warm"] },
+      alerts: {
+        fired: 4,
+        resolved: 4,
+        open: 0,
+        top: [
+          { label: "Host memory", count: 2 },
+          { label: "Killed for memory", count: 1 },
+          { label: "Restart loop", count: 1 },
+        ],
+      },
+      resources: [
+        { label: "CPU", values: ramp(18, 26, 0.3).slice(-28), latest: 22, peak: 61, unit: "percent" },
+        { label: "Memory", values: ramp(64, 79, 0.05).slice(-28), latest: 78, peak: 91, unit: "percent" },
+        { label: "Disk", values: ramp(70, 74, 0.005).slice(-28), latest: 74, peak: 74, unit: "percent" },
+      ],
+      certs: [{ domain: "staging.wha.org", daysLeft: 12 }],
+      imageUpdates: [
+        { appName: "Uptime Kuma", count: 1 },
+        { appName: "Search", count: 2 },
       ],
       projects: [
         { name: "Shop", deploys: 19, failures: 2, backupFailures: 1, cronFailures: 2 },
         { name: "Acme Nonprofit", deploys: 22, failures: 1, backupFailures: 0, cronFailures: 0 },
         { name: "Tools", deploys: 7, failures: 0, backupFailures: 0, cronFailures: 0 },
       ],
+    },
+  },
+  {
+    name: "digest-daily",
+    event: {
+      type: "digest.health",
+      title: "Daily health summary: Joey Yax",
+      message: "6 deploys.",
+      cadence: "daily",
+      orgName: "Joey Yax",
+      windowLabel: "Oct 8, 2026",
+      since: "2026-10-08T00:00:00.000Z",
+      until: "2026-10-09T00:00:00.000Z",
+      deploys: { total: 6, succeeded: 6, failed: 0 },
+      deploysByBucket: Array.from({ length: 24 }, (_, h) => ({
+        start: `2026-10-08T${String(h).padStart(2, "0")}:00:00.000Z`,
+        succeeded: [9, 10, 14, 15, 16, 21].includes(h) ? 1 : 0,
+        failed: 0,
+      })),
+      backups: { succeeded: 19, failed: 0, totalSize: 10 * GiB, drillsPassed: 24, drillsFailed: 0, staleVolumes: 0 },
+      cron: { failed: 0, affectedJobs: [] },
+      alerts: { fired: 0, resolved: 0, open: 0, top: [] },
+      certs: [],
+      imageUpdates: [],
+      projects: [{ name: "Acme Nonprofit", deploys: 6, failures: 0, backupFailures: 0, cronFailures: 0 }],
     },
   },
   {

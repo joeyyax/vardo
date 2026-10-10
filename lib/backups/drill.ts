@@ -289,6 +289,30 @@ async function drillArchive(
   }
 }
 
+/** A verdict into the org's backup batch. Unsupported drills aren't news. */
+async function batchDrill(
+  backup: { id: string; organizationId: string | null; appId: string | null; appName: string | null; volumeName: string | null },
+  outcome: DrillOutcome,
+  detail: string,
+  durationMs: number,
+): Promise<void> {
+  if (!backup.organizationId || outcome === "unsupported") return;
+  const { recordBackupResults } = await import("./batch");
+  await recordBackupResults(backup.organizationId, [
+    {
+      kind: "drill",
+      appId: backup.appId,
+      appName: backup.appName,
+      volumeName: backup.volumeName ?? "",
+      outcome: outcome === "verified" ? "success" : "failed",
+      error: outcome === "failed" ? detail : undefined,
+      durationMs,
+      backupId: backup.id,
+      at: new Date().toISOString(),
+    },
+  ]);
+}
+
 /** Verify a backup is restorable without touching anything live, and record the verdict on its row. */
 export async function runRestoreDrill(backupId: string): Promise<DrillResult> {
   const startedAt = Date.now();
@@ -343,6 +367,7 @@ export async function runRestoreDrill(backupId: string): Promise<DrillResult> {
         verifyDetail: verdict.detail,
       })
       .where(eq(backups.id, backupId));
+    await batchDrill(backup, verdict.outcome, verdict.detail, Date.now() - startedAt);
 
     return {
       backupId,
@@ -360,6 +385,7 @@ export async function runRestoreDrill(backupId: string): Promise<DrillResult> {
       .where(eq(backups.id, backupId))
       .catch(() => {});
     log.error(`Drill failed for ${backupId}: ${detail}`);
+    await batchDrill(backup, "failed", detail, Date.now() - startedAt);
     return { backupId, outcome: "failed", detail, durationMs: Date.now() - startedAt, log: lines.join("\n") };
   } finally {
     if (archivePath) {

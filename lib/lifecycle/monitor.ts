@@ -6,9 +6,10 @@ import { uptime } from "os";
 import { eq } from "drizzle-orm";
 import pkg from "@/package.json";
 import { db } from "@/lib/db";
-import { memberships, systemSettings, user } from "@/lib/db/schema";
+import { systemSettings } from "@/lib/db/schema";
 import type { BusEvent } from "@/lib/bus/events";
 import { emit } from "@/lib/notifications/dispatch";
+import { adminOrgIds } from "@/lib/notifications/admin-orgs";
 import { logger } from "@/lib/logger";
 import { VARDO_HOME_DIR } from "@/lib/paths";
 import { closeOnShutdown, shutdownSignal } from "@/lib/shutdown";
@@ -90,19 +91,6 @@ async function readUpdateMarker(): Promise<UpdateMarker | null> {
   } catch {
     return null;
   }
-}
-
-/** Orgs with an instance admin as a member; every org when none has one. */
-async function adminOrgIds(): Promise<string[]> {
-  const rows = await db
-    .select({ id: memberships.organizationId })
-    .from(memberships)
-    .innerJoin(user, eq(user.id, memberships.userId))
-    .where(eq(user.isAppAdmin, true));
-  const ids = [...new Set(rows.map((r) => r.id))];
-  if (ids.length > 0) return ids;
-  const orgs = await db.query.organizations.findMany({ columns: { id: true } });
-  return orgs.map((o) => o.id);
 }
 
 async function emitToAdmins(event: BusEvent): Promise<void> {

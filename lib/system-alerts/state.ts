@@ -8,7 +8,6 @@ const log = logger.child("system-alerts");
 
 export type AlertType =
   | "service-degraded"
-  | "disk-space"
   | "host-restarted"
   | "cert-expiring"
   | "update-available";
@@ -20,7 +19,6 @@ type AlertState = {
 
 const RATE_LIMITS: Record<AlertType, number> = {
   "service-degraded": 24 * 60 * 60 * 1000, // once per outage; recovery clears it
-  "disk-space": 60 * 60 * 1000,
   "host-restarted": 365 * 24 * 60 * 60 * 1000, // once per startup
   "cert-expiring": 24 * 60 * 60 * 1000,
   "update-available": 24 * 60 * 60 * 1000,

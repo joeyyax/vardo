@@ -125,6 +125,8 @@ export type MailVisual =
       axis?: [string, string];
       legend?: { label: string; tone: ChartTone }[];
       caption?: string;
+      /** Sparkline height. */
+      compact?: boolean;
     };
 
 const TONE_COLOR: Record<MailTone, { fg: string; bg: string }> = {
@@ -514,9 +516,11 @@ export function GaugeBar({ title, percent, warn, critical, caption }: { title: s
 }
 
 const COLUMN_HEIGHT = 56;
+const SPARK_HEIGHT = 28;
 
 /** Columns of stacked parts; each is a fixed-height table whose spacer row takes what the bar doesn't. */
-export function ColumnChart({ title, columns, axis, legend, caption }: Extract<MailVisual, { kind: "columns" }>) {
+export function ColumnChart({ title, columns, axis, legend, caption, compact }: Extract<MailVisual, { kind: "columns" }>) {
+  const chartHeight = compact ? SPARK_HEIGHT : COLUMN_HEIGHT;
   const totals = columns.map((c) => c.parts.reduce((sum, p) => sum + Math.max(0, p.value), 0));
   const max = Math.max(1, ...totals);
   if (columns.length === 0) return null;
@@ -528,14 +532,14 @@ export function ColumnChart({ title, columns, axis, legend, caption }: Extract<M
       <Table width={width} style={{ tableLayout: "fixed", width }}>
         <tr>
           {columns.map((column, i) => {
-            const heights = column.parts.map((p) => (p.value > 0 ? Math.max(2, Math.round((p.value / max) * COLUMN_HEIGHT)) : 0));
-            const used = Math.min(COLUMN_HEIGHT, heights.reduce((a, b) => a + b, 0));
+            const heights = column.parts.map((p) => (p.value > 0 ? Math.max(2, Math.round((p.value / max) * chartHeight)) : 0));
+            const used = Math.min(chartHeight, heights.reduce((a, b) => a + b, 0));
             return (
               <td key={i} valign="bottom" style={{ ...CELL_RESET, padding: "0 2px", verticalAlign: "bottom" }}>
                 <Table width="100%">
-                  {COLUMN_HEIGHT - used > 0 ? (
+                  {chartHeight - used > 0 ? (
                     <tr>
-                      <td height={String(COLUMN_HEIGHT - used)} style={{ ...CELL_RESET, height: `${COLUMN_HEIGHT - used}px` }}>
+                      <td height={String(chartHeight - used)} style={{ ...CELL_RESET, height: `${chartHeight - used}px` }}>
                         {NBSP}
                       </td>
                     </tr>

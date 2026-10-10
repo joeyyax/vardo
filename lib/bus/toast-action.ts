@@ -18,6 +18,11 @@ export function toastActionFor(
       return { label: "View app", url: `/apps/${event.appId}/stability` };
     case "disk.write-alert":
       return { label: "View app", url: `/apps/${event.appId}` };
+    case "alert.fired": {
+      const appId = event.alerts.find((a) => a.appId)?.appId;
+      if (appId) return { label: "View app", url: `/apps/${appId}` };
+      return canLinkToAdmin ? { label: "View metrics", url: "/metrics" } : undefined;
+    }
     case "cron.failed":
       return { label: "View cron jobs", url: `/apps/${event.appId}/cron` };
     case "backup.success":
@@ -27,7 +32,6 @@ export function toastActionFor(
       return canLinkToAdmin
         ? { label: "View services", url: "/admin/settings/core-services" }
         : undefined;
-    case "system.disk-alert":
     case "system.restart-loop":
       return canLinkToAdmin ? { label: "View system", url: "/admin" } : undefined;
     case "system.cert-expiring":

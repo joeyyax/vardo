@@ -6,8 +6,9 @@ import type { StageTimings } from "@/lib/docker/stage-timings";
 
 export const EVENT_CATEGORIES = {
   deploy: ["deploy.success", "deploy.failed", "deploy.incomplete", "deploy.rollback"],
-  app: ["app.state-changed", "app.auto-restarted", "app.oom-killed"],
-  backup: ["backup.success", "backup.failed"],
+  app: ["app.state-changed", "app.auto-restarted"],
+  alert: ["alert.fired", "alert.resolved"],
+  backup: ["backup.summary"],
   cron: ["cron.failed"],
   volume: ["volume.drift"],
   disk: ["disk.write-alert"],
@@ -15,7 +16,6 @@ export const EVENT_CATEGORIES = {
   security: ["security.file-exposed", "security.scan-findings", "security.domain-claimed"],
   system: [
     "system.service-down",
-    "system.disk-alert",
     "system.restart-loop",
     "system.cert-expiring",
     "system.update-available",
@@ -29,7 +29,7 @@ export const EVENT_CATEGORIES = {
     "system.update-failed",
     "system.containers-missing",
   ],
-  digest: ["digest.weekly"],
+  digest: ["digest.health"],
 } as const;
 
 export type EventCategory = keyof typeof EVENT_CATEGORIES;
@@ -142,6 +142,47 @@ export type BackupFailedEvent = {
   failures?: { name: string; error: string; backupId?: string }[];
 };
 
+/** One app and volume in a backup summary. */
+export type BackupSummaryRow = {
+  kind: "backup" | "drill" | "restore" | "import";
+  appId: string | null;
+  appName: string;
+  volumeName: string;
+  jobName?: string;
+  outcome: "success" | "failed" | "skipped";
+  sizeBytes: number;
+  durationMs: number;
+  error?: string;
+  /** Results for this row in the batch. */
+  runs: number;
+  /** Earlier successful sizes, oldest first. */
+  history?: number[];
+  previousSize?: number;
+  /** Well below its usual size. */
+  shrunk?: { median: number; drop: number };
+};
+
+/** Backups, drills, restores and imports from one run window, in one notice. */
+export type BackupSummaryEvent = {
+  type: "backup.summary";
+  title: string;
+  message: string;
+  /** ISO times of the first and last result. */
+  windowStart: string;
+  windowEnd: string;
+  /** Backup rows only. */
+  succeeded: number;
+  failed: number;
+  skipped: number;
+  totalSize: number;
+  durationMs: number;
+  /** Failures first. Capped; `hiddenRows` counts the rest. */
+  rows: BackupSummaryRow[];
+  hiddenRows?: number;
+  /** Volumes backed up this week with no success in 48 hours. */
+  staleVolumes?: { appName: string; volumeName: string; lastSuccessAt: string | null }[];
+};
+
 export type CronFailedEvent = {
   type: "cron.failed";
   title: string;
@@ -217,17 +258,6 @@ export type SystemServiceDownEvent = {
   latencyMs?: string;
 };
 
-export type SystemDiskAlertEvent = {
-  type: "system.disk-alert";
-  title: string;
-  message: string;
-  percent: number;
-  threshold: number;
-  severity: "warning" | "critical";
-  used: number;
-  total: number;
-};
-
 export type SystemRestartLoopEvent = {
   type: "system.restart-loop";
   title: string;
@@ -285,26 +315,37 @@ export type SecurityDomainClaimedEvent = {
   appIds: string[];
 };
 
-export type DigestWeeklyEvent = {
-  type: "digest.weekly";
+export type DigestProjectRow = {
+  name: string;
+  deploys: number;
+  failures: number;
+  backupFailures: number;
+  cronFailures: number;
+};
+
+/** A daily or weekly record of one org's window: deploys, backups, alerts, trends and what's coming due. */
+export type DigestHealthEvent = {
+  type: "digest.health";
   title: string;
   message: string;
+  cadence: "daily" | "weekly";
   orgName: string;
-  weekLabel: string;
-  deploysTotal: number;
-  deploysSucceeded: number;
-  deploysFailed: number;
-  backupsTotal: number;
-  backupsFailed: number;
-  cronTotal: number;
-  cronFailed: number;
-  backupsSucceeded?: number;
-  cronAffectedJobs?: string[];
-  diskWriteAlerts?: number;
-  volumeDrifts?: number;
-  projects?: { name: string; deploys: number; failures: number; backupFailures: number; cronFailures: number }[];
-  /** Last 7 UTC days, oldest first. */
-  deploysByDay?: { day: string; succeeded: number; failed: number }[];
+  /** "Oct 2 – Oct 8, 2026", or one day for a daily digest. */
+  windowLabel: string;
+  since: string;
+  until: string;
+  deploys: { total: number; succeeded: number; failed: number };
+  /** Per hour for a daily digest, per day for a weekly one. Oldest first. */
+  deploysByBucket?: { start: string; succeeded: number; failed: number }[];
+  backups: { succeeded: number; failed: number; totalSize: number; drillsPassed: number; drillsFailed: number; staleVolumes: number };
+  cron: { failed: number; affectedJobs: string[] };
+  alerts: { fired: number; resolved: number; open: number; top: { label: string; count: number }[] };
+  /** Host trends, for orgs with an instance admin. */
+  resources?: { label: string; values: number[]; latest: number; peak: number; unit: "percent" | "per-core" }[];
+  /** Live at send time, not part of the window. */
+  certs: { domain: string; daysLeft: number }[];
+  imageUpdates: { appName: string; count: number }[];
+  projects: DigestProjectRow[];
 };
 
 // Vardo's own lifecycle, sent to orgs with an instance admin.
@@ -458,6 +499,43 @@ export type AppOomKilledEvent = {
   at: string;
 };
 
+/** One alert in an alert email. Severity and wording come from the rule that fired it. */
+export type AlertItem = {
+  /** Registry key, e.g. `host.memory`. */
+  type: string;
+  /** Subject the throttle keys on. */
+  about: string;
+  severity: "warning" | "critical";
+  /** "Memory 92% used". */
+  title: string;
+  /** One or two sentences: what's wrong and what to do. */
+  detail: string;
+  appId?: string;
+  appName?: string;
+  gauge?: { title: string; percent: number; warn: number; critical: number };
+  /** Recent readings, oldest first. */
+  series?: { title: string; values: number[]; caption?: string };
+  facts?: { label: string; value: string }[];
+  /** ISO time the condition started. */
+  since?: string;
+};
+
+/** Alerts that fired in one pass, coalesced into one notice per org. */
+export type AlertFiredEvent = {
+  type: "alert.fired";
+  title: string;
+  message: string;
+  alerts: AlertItem[];
+};
+
+/** Alerts that cleared in one pass. */
+export type AlertResolvedEvent = {
+  type: "alert.resolved";
+  title: string;
+  message: string;
+  alerts: (AlertItem & { firedAt: string; resolvedAt: string })[];
+};
+
 export type BusEvent =
   | DeploySuccessEvent
   | DeployFailedEvent
@@ -465,20 +543,20 @@ export type BusEvent =
   | DeployRollbackEvent
   | BackupSuccessEvent
   | BackupFailedEvent
+  | BackupSummaryEvent
   | CronFailedEvent
   | VolumeDriftEvent
   | DiskWriteAlertEvent
   | OrgInvitationSentEvent
   | OrgInvitationAcceptedEvent
   | SystemServiceDownEvent
-  | SystemDiskAlertEvent
   | SystemRestartLoopEvent
   | SystemCertExpiringEvent
   | SystemUpdateAvailableEvent
   | SecurityFileExposedEvent
   | SecurityScanFindingsEvent
   | SecurityDomainClaimedEvent
-  | DigestWeeklyEvent
+  | DigestHealthEvent
   | SystemShutdownEvent
   | SystemStartedEvent
   | SystemRecoveredUncleanEvent
@@ -490,7 +568,9 @@ export type BusEvent =
   | DeployStatusEvent
   | AppStateChangedEvent
   | AppAutoRestartedEvent
-  | AppOomKilledEvent;
+  | AppOomKilledEvent
+  | AlertFiredEvent
+  | AlertResolvedEvent;
 
 export type BusEventType = BusEvent["type"];
 

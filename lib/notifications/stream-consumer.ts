@@ -10,7 +10,7 @@ import { nanoid } from "nanoid";
 import { consumeGroup } from "@/lib/stream/consumer";
 import { eventStream } from "@/lib/stream/keys";
 import type { StreamEntry } from "@/lib/stream/types";
-import type { BusEvent, BusEventType } from "@/lib/bus/events";
+import type { BusEvent } from "@/lib/bus/events";
 import { createChannel } from "./factory";
 import type { DeliveryReceipt } from "./port";
 import {
@@ -19,6 +19,7 @@ import {
   resolveRecipients,
 } from "./resolve-recipients";
 import { isUiOnlyEvent } from "./ui-only";
+import { channelAcceptsEvent, isCriticalEvent } from "./channel-defaults";
 import { markConsumedOrgs, clearConsumedOrgs } from "./consumer-state";
 import { logger } from "@/lib/logger";
 
@@ -41,15 +42,6 @@ function parseEventEntry(
     log.warn(`Failed to parse event entry ${entry.id} from ${streamKey}`);
     return null;
   }
-}
-
-/** Check whether a channel's subscribedEvents filter allows this event. */
-function channelAcceptsEvent(
-  subscribedEvents: string[],
-  eventType: BusEventType,
-): boolean {
-  if (subscribedEvents.length === 0) return true;
-  return subscribedEvents.includes(eventType);
 }
 
 /** Dispatch a single event to all matching channels for an org. */
@@ -78,6 +70,7 @@ async function dispatchEvent(orgId: string, event: BusEvent): Promise<void> {
         event.type,
         members,
         prefs,
+        isCriticalEvent(event),
       );
       if (!shouldSend) return;
 

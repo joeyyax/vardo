@@ -17,22 +17,22 @@ beforeEach(() => {
 
 describe("shouldFire", () => {
   it("returns true for an alert type that has never fired", () => {
-    expect(shouldFire("disk-space", "85")).toBe(true);
+    expect(shouldFire("service-degraded", "85")).toBe(true);
   });
 
   it("returns false immediately after markFired (within rate-limit window)", () => {
-    markFired("disk-space", "85");
-    expect(shouldFire("disk-space", "85")).toBe(false);
+    markFired("service-degraded", "85");
+    expect(shouldFire("service-degraded", "85")).toBe(false);
   });
 
   it("treats different keys for the same type independently", () => {
-    markFired("disk-space", "85");
+    markFired("service-degraded", "85");
     // Threshold 90 has never fired — should fire
-    expect(shouldFire("disk-space", "90")).toBe(true);
+    expect(shouldFire("service-degraded", "90")).toBe(true);
   });
 
   it("treats different alert types independently", () => {
-    markFired("disk-space", "key");
+    markFired("cert-expiring", "key");
     expect(shouldFire("service-degraded", "key")).toBe(true);
   });
 
@@ -68,9 +68,9 @@ describe("host-restarted — fires only once per process lifetime", () => {
 
 describe("markFired", () => {
   it("initialises count to 1 on first fire", () => {
-    markFired("disk-space", "90");
+    markFired("service-degraded", "90");
     const state = getAlertState();
-    const record = state.find((s) => s.type === "disk-space" && s.key === "90");
+    const record = state.find((s) => s.type === "service-degraded" && s.key === "90");
     expect(record?.count).toBe(1);
   });
 
@@ -99,8 +99,8 @@ describe("getAlertState", () => {
   });
 
   it("returns one entry per distinct type:key pair fired", () => {
-    markFired("disk-space", "85");
-    markFired("disk-space", "90");
+    markFired("service-degraded", "85");
+    markFired("service-degraded", "90");
     markFired("cert-expiring", "example.com");
 
     const state = getAlertState();
@@ -114,16 +114,16 @@ describe("getAlertState", () => {
 
 describe("clearAlertState", () => {
   it("removes all fired alert records", () => {
-    markFired("disk-space", "85");
+    markFired("service-degraded", "85");
     markFired("cert-expiring", "example.com");
     clearAlertState();
     expect(getAlertState()).toHaveLength(0);
   });
 
   it("allows alerts to fire again after clearing", () => {
-    markFired("disk-space", "85");
-    expect(shouldFire("disk-space", "85")).toBe(false);
+    markFired("service-degraded", "85");
+    expect(shouldFire("service-degraded", "85")).toBe(false);
     clearAlertState();
-    expect(shouldFire("disk-space", "85")).toBe(true);
+    expect(shouldFire("service-degraded", "85")).toBe(true);
   });
 });

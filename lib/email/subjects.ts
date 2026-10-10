@@ -4,7 +4,6 @@ import type { BusEvent } from "@/lib/bus/events";
 import { formatBytesIec } from "@/lib/metrics/format";
 import { formatDuration, shortSha } from "./format";
 import type { MailSeries } from "./templates/context";
-import { backupDrop } from "./templates/visuals";
 
 export type SubjectContext = { instanceName: string; series?: MailSeries };
 
@@ -48,25 +47,27 @@ export function notificationSubject(event: BusEvent, ctx: SubjectContext): strin
       return event.rollbackSuccess
         ? `↩ ${appLabel(event)} rolled back${event.restoredSlot ? ` to ${event.restoredSlot}` : ""}`
         : `✗ ${appLabel(event)} rollback failed`;
-    case "backup.success": {
-      const shrunk = (event.sources ?? []).find((s) => {
-        const history = ctx.series?.backupHistory?.[s.name];
-        return history ? backupDrop(history, s.sizeBytes) !== null : false;
-      });
-      return shrunk
-        ? `⚠ Backup ${event.jobName} · ${shrunk.name} much smaller than usual`
-        : `✓ Backup ${event.jobName} · ${formatBytesIec(event.totalSize)}`;
+    case "backup.summary": {
+      const failed = event.rows.filter((r) => r.outcome === "failed");
+      if (failed.length) {
+        const total = event.succeeded + event.failed + event.skipped;
+        return event.failed === failed.length && total > 0
+          ? `✗ Backups · ${event.failed} of ${total} failed`
+          : `✗ Backups · ${failed.length} failed`;
+      }
+      const shrunk = event.rows.filter((r) => r.shrunk);
+      if (shrunk.length) return `⚠ Backups · ${shrunk[0].appName} much smaller than usual`;
+      if (event.staleVolumes?.length) return `⚠ Backups · ${event.staleVolumes.length} with no success in 48 h`;
+      return event.succeeded > 0
+        ? `✓ Backups · ${event.succeeded} done · ${formatBytesIec(event.totalSize)}`
+        : `✓ Backups · ${event.rows.length} finished`;
     }
-    case "backup.failed":
-      return `✗ Backup ${event.jobName} failed · ${event.failedCount} of ${event.totalCount}`;
     case "cron.failed":
       return `✗ Cron ${event.cronJobName} failed on ${event.projectName || "an app"}`;
     case "disk.write-alert":
       return `⚠ ${event.appName || event.containerName} wrote ${formatBytesIec(event.writtenBytes)} in ${event.window || "1h"}`;
     case "volume.drift":
       return `⚠ ${event.appName} volumes drifted · ${event.totalDrift} files`;
-    case "system.disk-alert":
-      return `${event.severity === "critical" ? "✗" : "⚠"} Disk ${Math.round(event.percent)}% on ${host}`;
     case "system.service-down":
       return `✗ ${event.service} down on ${host}`;
     case "system.restart-loop":
@@ -77,8 +78,19 @@ export function notificationSubject(event: BusEvent, ctx: SubjectContext): strin
         : `⚠ Certificate expires in ${event.daysLeft} d · ${event.domain}`;
     case "system.update-available":
       return `↑ Vardo update available on ${host}`;
-    case "app.oom-killed":
-      return `✗ ${event.appName} killed for memory`;
+    case "alert.fired": {
+      const [first] = event.alerts;
+      const mark = event.alerts.some((a) => a.severity === "critical") ? "✗" : "⚠";
+      const where = first.appId ? "" : ` on ${host}`;
+      const more = event.alerts.length > 1 ? ` · ${event.alerts.length - 1} more` : "";
+      return `${mark} ${first.title}${where}${more}`;
+    }
+    case "alert.resolved": {
+      const [first] = event.alerts;
+      return event.alerts.length === 1
+        ? `✓ Resolved · ${first.title}${first.appId ? "" : ` on ${host}`}`
+        : `✓ ${event.alerts.length} alerts resolved on ${host}`;
+    }
     case "app.auto-restarted":
       return event.gaveUp ? `✗ ${event.appName} keeps failing, restarts stopped` : `⚠ ${event.appName} restarted`;
     case "system.shutdown":
@@ -97,8 +109,8 @@ export function notificationSubject(event: BusEvent, ctx: SubjectContext): strin
       return `✗ Vardo update failed on ${host} at ${event.step}`;
     case "system.containers-missing":
       return `⚠ ${event.containers.length} container${event.containers.length === 1 ? "" : "s"} didn't come back on ${host}`;
-    case "digest.weekly":
-      return `Weekly digest · ${event.orgName} · ${event.weekLabel}`;
+    case "digest.health":
+      return `${event.cadence === "daily" ? "Daily" : "Weekly"} summary · ${event.orgName} · ${event.windowLabel}`;
     default:
       return event.title;
   }

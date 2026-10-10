@@ -1,71 +1,155 @@
-import type { BackupFailedEvent, BackupSuccessEvent } from "@/lib/bus/events";
+import type { BackupSummaryEvent, BackupSummaryRow } from "@/lib/bus/events";
 import { formatBytesIec } from "@/lib/metrics/format";
 import { formatDuration, plural } from "../format";
-import type { MailFact, NotificationMailBody } from "./components";
-import { consolePage, footerFor, type MailContext } from "./context";
+import type { MailFact, MailTone, MailVisual, NotificationMailBody } from "./components";
+import { appPage, consolePage, footerFor, type MailContext } from "./context";
 import { backupColumns } from "./visuals";
 
-/** Charts for at most this many sources, largest first. */
-const CHARTED_SOURCES = 3;
+/** Charts for at most this many rows, the worst first. */
+const CHARTED_ROWS = 3;
 
-export function backupSuccessMail(event: BackupSuccessEvent, ctx: MailContext): NotificationMailBody {
-  const facts: MailFact[] = [
-    { label: "Size", value: formatBytesIec(event.totalSize) },
-    { label: "Sources", value: String(event.totalCount) },
-  ];
-  if (event.skippedCount) facts.push({ label: "Skipped", value: String(event.skippedCount) });
-  if (event.durationMs !== undefined) facts.push({ label: "Duration", value: formatDuration(event.durationMs) });
+const KIND_NOUNS: Record<BackupSummaryRow["kind"], [string, string]> = {
+  backup: ["backup", "backups"],
+  restore: ["restore", "restores"],
+  import: ["import", "imports"],
+  drill: ["restore drill", "restore drills"],
+};
 
-  const charted = [...(event.sources ?? [])]
-    .map((s) => ({ s, chart: backupColumns(s.name, ctx.series?.backupHistory?.[s.name], s.sizeBytes) }))
-    .filter((c) => c.chart !== undefined)
-    .sort((a, b) => Number(Boolean(b.chart?.warning)) - Number(Boolean(a.chart?.warning)) || b.s.sizeBytes - a.s.sizeBytes)
-    .slice(0, CHARTED_SOURCES)
-    .map((c) => c.chart!);
-  const warnings = charted.flatMap((c) => (c.warning ? [c.warning] : []));
-
-  return {
-    tone: warnings.length ? "warn" : "success",
-    status: warnings.length ? "Backed up, check size" : "Backed up",
-    heading: `Backup ${event.jobName} finished`,
-    preheader: warnings[0]?.value ?? `${plural(event.totalCount, "source")}, ${formatBytesIec(event.totalSize)}`,
-    paragraphs: warnings.length ? ["The backup finished, but it's much smaller than earlier runs. That can mean the data it copies went missing."] : undefined,
-    visuals: charted.map((c) => c.visual),
-    facts: [...warnings, ...facts],
-    sections: event.sources?.length
-      ? [{ title: "Sources", facts: event.sources.map((s) => ({ label: s.name, value: formatBytesIec(s.sizeBytes) })) }]
-      : undefined,
-    action: { label: "View backups", href: consolePage(ctx, "/backups") },
-    footer: footerFor(ctx),
-  };
+/** "1 backup and 1 restore drill failed". */
+function failedHeading(failed: BackupSummaryRow[]): string {
+  const parts = (["backup", "restore", "import", "drill"] as const).flatMap((kind) => {
+    const n = failed.filter((r) => r.kind === kind).length;
+    return n ? [plural(n, KIND_NOUNS[kind][0], KIND_NOUNS[kind][1])] : [];
+  });
+  const list = parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}` : parts[0];
+  return `${list} failed`;
 }
 
-export function backupFailedMail(event: BackupFailedEvent, ctx: MailContext): NotificationMailBody {
-  const failures = event.failures?.length
-    ? event.failures
-    : event.errors
-        .split("; ")
-        .filter(Boolean)
-        .map((entry) => {
-          const at = entry.indexOf(": ");
-          return at > 0 ? { name: entry.slice(0, at), error: entry.slice(at + 2) } : { name: "Source", error: entry };
-        });
+const KIND_TITLES: Record<BackupSummaryRow["kind"], string> = {
+  backup: "Backed up",
+  restore: "Restores",
+  import: "Imports",
+  drill: "Restore drills",
+};
 
-  const facts: MailFact[] = [{ label: "Failed", value: `${event.failedCount} of ${event.totalCount}` }];
-  if (event.durationMs !== undefined) facts.push({ label: "Duration", value: formatDuration(event.durationMs) });
+function rowLabel(row: BackupSummaryRow): string {
+  return row.appName === row.volumeName ? row.volumeName : `${row.appName} / ${row.volumeName}`;
+}
+
+function change(row: BackupSummaryRow): string {
+  if (row.previousSize === undefined || row.previousSize <= 0) return "";
+  const pct = Math.round(((row.sizeBytes - row.previousSize) / row.previousSize) * 100);
+  return pct === 0 ? " · same as last run" : ` · ${pct > 0 ? "+" : ""}${pct}% vs last run`;
+}
+
+function rowValue(row: BackupSummaryRow): string {
+  const runs = row.runs > 1 ? ` · ${row.runs} runs` : "";
+  if (row.outcome === "failed") {
+    const what = row.kind === "backup" ? "" : `${KIND_NOUNS[row.kind][0][0].toUpperCase()}${KIND_NOUNS[row.kind][0].slice(1)} failed: `;
+    return `${what}${row.error ?? "Failed"}${runs}`;
+  }
+  if (row.outcome === "skipped") return `Skipped${row.error ? `: ${row.error}` : ""}`;
+  switch (row.kind) {
+    case "backup":
+      return `${formatBytesIec(row.sizeBytes)}${change(row)}${runs}`;
+    case "import":
+      return `Imported ${formatBytesIec(row.sizeBytes)}`;
+    case "restore":
+      return `Restored in ${formatDuration(row.durationMs)}`;
+    case "drill":
+      return "Restorable";
+  }
+}
+
+function rowFact(row: BackupSummaryRow, ctx: MailContext): MailFact {
+  const href = row.outcome === "failed" && row.appId ? appPage(ctx, row.appId, "backups") : undefined;
+  return { label: rowLabel(row), value: rowValue(row), href };
+}
+
+function timeOfDay(iso: string): string {
+  return new Date(iso).toISOString().slice(11, 16);
+}
+
+export function backupSummaryMail(event: BackupSummaryEvent, ctx: MailContext): NotificationMailBody {
+  const failed = event.rows.filter((r) => r.outcome === "failed");
+  const shrunk = event.rows.filter((r) => r.shrunk);
+  const stale = event.staleVolumes ?? [];
+  const backups = event.rows.filter((r) => r.kind === "backup");
+  const total = event.succeeded + event.failed + event.skipped;
+
+  const tone: MailTone = failed.length ? "fail" : shrunk.length || stale.length ? "warn" : "success";
+  const heading = failed.length
+    ? failedHeading(failed)
+    : backups.length
+      ? `${plural(event.succeeded, "backup")} finished`
+      : "Restores and drills finished";
+
+  const paragraphs: string[] = [];
+  if (failed.length) paragraphs.push("The last good backup for each is still there. Fix the cause, then run the job again.");
+  if (shrunk.length) paragraphs.push("Some backups came out much smaller than usual. That can mean the data they copy went missing.");
+  if (stale.length) paragraphs.push(`${plural(stale.length, "volume")} ${stale.length === 1 ? "hasn't" : "haven't"} had a successful backup in 48 hours.`);
+
+  const visuals: MailVisual[] = [];
+  if (total > 1) {
+    visuals.push({
+      kind: "stacked",
+      title: "This batch",
+      segments: [
+        { label: "Succeeded", value: event.succeeded, tone: "success", detail: String(event.succeeded) },
+        { label: "Failed", value: event.failed, tone: "fail", detail: String(event.failed) },
+        { label: "Skipped", value: event.skipped, tone: 2, detail: String(event.skipped) },
+      ],
+    });
+  }
+  for (const row of [...failed, ...shrunk].filter((r) => r.kind === "backup").slice(0, CHARTED_ROWS)) {
+    const chart = backupColumns(rowLabel(row), row.history, row.outcome === "failed" ? null : row.sizeBytes);
+    if (chart) visuals.push(chart.visual);
+  }
+
+  const facts: MailFact[] = [];
+  if (backups.length) facts.push({ label: "Backed up", value: `${event.succeeded} of ${total}, ${formatBytesIec(event.totalSize)}` });
+  if (event.durationMs > 0) facts.push({ label: "Time spent", value: formatDuration(event.durationMs) });
+  facts.push({
+    label: "Window",
+    value: event.windowStart === event.windowEnd ? `${timeOfDay(event.windowStart)} UTC` : `${timeOfDay(event.windowStart)}–${timeOfDay(event.windowEnd)} UTC`,
+  });
+
+  const sections: { title: string; facts: MailFact[] }[] = [];
+  if (failed.length) sections.push({ title: "Failed", facts: failed.map((r) => rowFact(r, ctx)) });
+  if (shrunk.length) {
+    sections.push({
+      title: "Smaller than usual",
+      facts: shrunk.map((r) => ({
+        label: rowLabel(r),
+        value: `${formatBytesIec(r.sizeBytes)}, ${Math.round(r.shrunk!.drop * 100)}% below its usual ${formatBytesIec(r.shrunk!.median)}`,
+      })),
+    });
+  }
+  if (stale.length) {
+    sections.push({
+      title: "No successful backup in 48 hours",
+      facts: stale.map((v) => ({
+        label: v.appName === v.volumeName ? v.volumeName : `${v.appName} / ${v.volumeName}`,
+        value: v.lastSuccessAt ? `Last good ${new Date(v.lastSuccessAt).toISOString().slice(0, 10)}` : "Never succeeded",
+      })),
+    });
+  }
+  const rest = event.rows.filter((r) => r.outcome !== "failed" && !r.shrunk);
+  for (const kind of ["backup", "restore", "import", "drill"] as const) {
+    const ofKind = rest.filter((r) => r.kind === kind);
+    if (ofKind.length) sections.push({ title: KIND_TITLES[kind], facts: ofKind.map((r) => rowFact(r, ctx)) });
+  }
+  if (event.hiddenRows) sections.push({ title: "More", facts: [{ label: "", value: `${event.hiddenRows} more in Backups` }] });
 
   return {
-    tone: "fail",
-    status: "Backup failed",
-    heading: `Backup ${event.jobName} failed`,
-    preheader: failures[0] ? `${failures[0].name}: ${failures[0].error}` : event.message,
-    paragraphs: [event.message, "The last good backup is still there. Fix the cause, then run the job again."],
+    tone,
+    status: failed.length ? "Backup failed" : tone === "warn" ? "Check backups" : "Backed up",
+    heading,
+    preheader: failed[0] ? `${rowLabel(failed[0])}: ${failed[0].error ?? "failed"}` : event.message,
+    paragraphs,
+    visuals,
     facts,
-    visuals: failures
-      .slice(0, CHARTED_SOURCES)
-      .map((f) => backupColumns(f.name, ctx.series?.backupHistory?.[f.name], null)?.visual)
-      .filter((v) => v !== undefined),
-    sections: failures.length ? [{ title: "What failed", facts: failures.map((f) => ({ label: f.name, value: f.error })) }] : undefined,
+    sections,
     action: { label: "View backups", href: consolePage(ctx, "/backups") },
     footer: footerFor(ctx),
   };

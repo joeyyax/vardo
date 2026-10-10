@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   bigint,
   boolean,
@@ -6,7 +7,9 @@ import {
   primaryKey,
   text,
   timestamp,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
+import type { BackupBatchItem } from "@/lib/backups/batch-rules";
 import { backupStatusEnum, backupTargetTypeEnum } from "./enums";
 import { organizations } from "./organizations";
 import { apps } from "./apps";
@@ -172,3 +175,20 @@ export const initialBackups = pgTable("initial_backup", {
   outcome: text("outcome"),
   finishedAt: timestamp("finished_at"),
 });
+
+// Backup, drill, restore and import results waiting to go out as one summary per org.
+export const backupBatches = pgTable(
+  "backup_batch",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    openedAt: timestamp("opened_at").notNull(),
+    // Latest send time. A failure pulls it in.
+    flushAt: timestamp("flush_at").notNull(),
+    flushedAt: timestamp("flushed_at"),
+    items: jsonb("items").$type<BackupBatchItem[]>().default([]).notNull(),
+  },
+  (t) => [uniqueIndex("backup_batch_open_idx").on(t.organizationId).where(sql`${t.flushedAt} is null`)],
+);

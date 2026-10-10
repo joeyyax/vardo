@@ -15,7 +15,6 @@ export const TOAST_EVENTS: Partial<Record<BusEventType, ToastSeverity>> = {
   "cron.failed": "error",
   "disk.write-alert": "error",
   "system.service-down": "error",
-  "system.disk-alert": "error",
   "system.restart-loop": "error",
   "system.cert-expiring": "error",
 };
@@ -24,5 +23,6 @@ export const TOAST_EVENTS: Partial<Record<BusEventType, ToastSeverity>> = {
 export function toastSeverityFor(event: BusEvent): ToastSeverity | undefined {
   // A self-heal that gave up needs attention.
   if (event.type === "app.auto-restarted" && event.gaveUp) return "error";
+  if (event.type === "alert.fired") return event.alerts.some((a) => a.severity === "critical") ? "error" : "warning";
   return TOAST_EVENTS[event.type];
 }
