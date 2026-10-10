@@ -1,6 +1,7 @@
 "use client";
 
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { DisclosureChevron } from "@/components/ui/disclosure-chevron";
+import {  } from "lucide-react";
 import {
   Collapsible,
   CollapsibleContent,
@@ -29,8 +30,7 @@ export function BuildPlanPanel({ plan, id }: { plan: BuildPlanRecord; id?: strin
   return (
     <Collapsible id={id} className="border-t border-border/60">
       <CollapsibleTrigger className="group flex w-full items-center gap-1.5 px-4 py-2 text-left text-xs text-foreground/80 transition-colors hover:text-foreground">
-        <ChevronRight className="size-3.5 text-muted-foreground group-data-[state=open]:hidden" />
-        <ChevronDown className="hidden size-3.5 text-muted-foreground group-data-[state=open]:block" />
+        <DisclosureChevron />
         <span className="font-medium">Build plan</span>
         <span className="truncate text-muted-foreground">
           {provider} · {engine}
@@ -61,8 +61,7 @@ export function BuildPlanPanel({ plan, id }: { plan: BuildPlanRecord; id?: strin
           </dl>
           <Collapsible>
             <CollapsibleTrigger className="group flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground">
-              <ChevronRight className="size-3 group-data-[state=open]:hidden" />
-              <ChevronDown className="hidden size-3 group-data-[state=open]:block" />
+              <DisclosureChevron className="text-current" />
               Full plan
             </CollapsibleTrigger>
             <CollapsibleContent>

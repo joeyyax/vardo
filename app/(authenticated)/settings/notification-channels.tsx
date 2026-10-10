@@ -1,4 +1,5 @@
 "use client";
+import { DisclosureChevron } from "@/components/ui/disclosure-chevron";
 import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,7 +10,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "@/lib/messenger";
-import { Loader2, Plus, Trash2, Bell, ChevronDown, ChevronRight, Filter, Send } from "lucide-react";
+import { Loader2, Plus, Trash2, Bell, Filter, Send } from "lucide-react";
 import { EVENT_CATEGORIES, type BusEventType, type EventCategory } from "@/lib/bus/events";
 import { CATEGORY_LABELS, EVENT_LABELS } from "@/lib/notifications/labels";
 import type { ChannelType } from "@/lib/notifications/channel-types";
@@ -83,7 +84,7 @@ function EventFilterEditor({
         onClick={() => setExpanded(!expanded)}
         className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
       >
-        {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+        <DisclosureChevron open={expanded} />
         <Filter className="h-3 w-3" />
         {isAll ? "All events" : `${subscribedEvents.length} event type(s)`}
       </button>

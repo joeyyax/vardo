@@ -1,5 +1,6 @@
 "use client";
 
+import { DisclosureChevron } from "@/components/ui/disclosure-chevron";
 import { useState, useEffect } from "react";
 import {
   Loader2,
@@ -13,8 +14,6 @@ import {
   Trash2,
   AlertTriangle,
   GitCompareArrows,
-  ChevronDown,
-  ChevronRight,
   FileWarning,
   FilePlus,
   FileMinus,
@@ -246,11 +245,7 @@ function VolumeDiffSection({
         onClick={handleToggle}
         className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
       >
-        {expanded ? (
-          <ChevronDown className="size-3" />
-        ) : (
-          <ChevronRight className="size-3" />
-        )}
+        <DisclosureChevron open={expanded} className="text-current" />
         <GitCompareArrows className="size-3" />
         <span>Changes</span>
         {totalChanges > 0 && (

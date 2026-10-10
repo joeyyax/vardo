@@ -61,7 +61,7 @@ export function AppSwitcher({ current, siblings }: { current: SwitcherApp; sibli
           className="text-muted-foreground"
           aria-label="Switch app"
         >
-          <ChevronsUpDown />
+          <ChevronsUpDown className="size-3.5" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start">
