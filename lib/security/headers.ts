@@ -15,14 +15,14 @@ type HeaderCheck = {
 const HEADER_CHECKS: HeaderCheck[] = [
   {
     header: "strict-transport-security",
-    severity: "critical",
+    severity: "warning",
     title: "Missing Strict-Transport-Security header",
     description:
       "HSTS is not set. Browsers may connect over HTTP before being redirected, enabling man-in-the-middle attacks.",
   },
   {
     header: "content-security-policy",
-    severity: "warning",
+    severity: "info",
     title: "Missing Content-Security-Policy header",
     description:
       "No CSP is set. This increases exposure to cross-site scripting (XSS) attacks.",

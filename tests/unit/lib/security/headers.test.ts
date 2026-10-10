@@ -47,15 +47,15 @@ describe("checkSecurityHeaders", () => {
     expect(findings).toEqual([]);
   });
 
-  it("flags missing Strict-Transport-Security as critical", async () => {
+  it("flags missing Strict-Transport-Security as warning", async () => {
     mockFetch.mockResolvedValue(mockHeadResponse({}));
     const findings = await checkSecurityHeaders("example.com");
     const hsts = findings.find((f) => f.detail === "strict-transport-security");
     expect(hsts).toBeDefined();
-    expect(hsts?.severity).toBe("critical");
+    expect(hsts?.severity).toBe("warning");
   });
 
-  it("flags missing Content-Security-Policy as warning", async () => {
+  it("flags missing Content-Security-Policy as info", async () => {
     mockFetch.mockResolvedValue(
       mockHeadResponse({
         "strict-transport-security": "max-age=31536000",
@@ -68,7 +68,7 @@ describe("checkSecurityHeaders", () => {
     const findings = await checkSecurityHeaders("example.com");
     const csp = findings.find((f) => f.detail === "content-security-policy");
     expect(csp).toBeDefined();
-    expect(csp?.severity).toBe("warning");
+    expect(csp?.severity).toBe("info");
   });
 
   it("flags misconfigured X-Content-Type-Options", async () => {
