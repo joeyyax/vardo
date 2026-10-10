@@ -729,14 +729,13 @@ ensure_buildkit_profile() {
   log "Added buildkit to COMPOSE_PROFILES: vardo-buildkit is in use"
 }
 
-# Redis limit in MB: 512 below 24 GiB of RAM, 1024 below 96 GiB, else 2048. Mirrors lib/resources/defaults.ts.
+# Redis limit in MB: RAM/32 to the nearest 64, between 256 and 2048. Mirrors lib/resources/defaults.ts.
 default_redis_mem_mb() {
   local mb
-  mb=$(get_ram_mb)
-  if (( mb < 24 * 1024 )); then echo 512
-  elif (( mb < 96 * 1024 )); then echo 1024
-  else echo 2048
-  fi
+  mb=$(( ($(get_ram_mb) / 32 + 32) / 64 * 64 ))
+  (( mb < 256 )) && mb=256
+  (( mb > 2048 )) && mb=2048
+  echo "$mb"
 }
 
 REDIS_DERIVED_MARK="# derived:"

@@ -5,10 +5,7 @@ import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { requireAppAdmin } from "@/lib/auth/admin";
 import {
   ADMIN_RESOURCE_KEYS,
-  SIZE_CLASSES,
   envLock,
-  memoryMiB,
-  sizeClass,
   validateAdminValue,
   type AdminResourceKey,
   type AdminResourceSettings,
@@ -26,10 +23,9 @@ const updateSchema = z
 async function payload() {
   const { host, defaults } = await currentDefaults();
   return {
-    host: host && { ...host, sizeClass: sizeClass(memoryMiB(host.memoryBytes)).name },
+    host,
     hostCpus: hostCpuCount(host),
     defaults,
-    sizeClasses: SIZE_CLASSES.map((c) => ({ ...c, belowGiB: Number.isFinite(c.belowGiB) ? c.belowGiB : null })),
   };
 }
 

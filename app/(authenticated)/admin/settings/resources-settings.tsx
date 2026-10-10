@@ -13,14 +13,13 @@ import {
   type DefaultSource,
   type HostSize,
   type ResourceDefault,
-  type SizeClass,
 } from "@/lib/resources/defaults";
+import { FORMULA_NOTES, formulaTable, hostSummary } from "@/lib/ui/resource-formulas";
 
 type Data = {
-  host: (HostSize & { sizeClass: SizeClass["name"] }) | null;
+  host: HostSize | null;
   hostCpus: number;
   defaults: ResourceDefault[];
-  sizeClasses: (Omit<SizeClass, "belowGiB"> & { belowGiB: number | null })[];
 };
 
 const SOURCE_LABEL: Record<DefaultSource, string> = {
@@ -200,20 +199,15 @@ export function ResourcesSettings() {
       <div className="space-y-1">
         <h2 className="type-h2">Resources</h2>
         <p className="text-sm text-muted-foreground">
-          Sizing defaults picked from the host&apos;s CPUs and memory, read from Docker each time Vardo
-          starts. An env var wins over your value, and your value wins over the rule.
+          Sizing defaults computed from the host&apos;s CPUs and memory, read from Docker each time Vardo
+          starts. An env var wins over your value, and your value wins over the formula.
         </p>
         <p className="text-sm text-muted-foreground">Changes apply to each app on its next deploy.</p>
       </div>
 
       <Card variant="surface" className="p-4">
         {host ? (
-          <p className="text-sm">
-            <span className="font-medium">
-              {host.cpus} CPUs · {(host.memoryBytes / 1024 ** 3).toFixed(1)} GiB memory
-            </span>
-            <span className="text-muted-foreground"> · {host.sizeClass} host</span>
-          </p>
+          <p className="text-sm">{hostSummary(host, data.defaults)}</p>
         ) : (
           <p className="text-sm text-status-warning">
             Couldn&apos;t read the host&apos;s size from Docker, so the fixed fallbacks apply.
@@ -265,41 +259,32 @@ export function ResourcesSettings() {
       </Card>
 
       <div className="space-y-2">
-        <h3 className="text-sm font-medium">Rules</h3>
-        <p className="text-xs text-muted-foreground">
-          Host memory picks the row. Deploys at once is also capped at one per two CPUs. Standard apps
-          get every CPU but one, disposable apps half and critical apps no cap.
-        </p>
+        <h3 className="text-sm font-medium">Formulas</h3>
         <Card variant="surface" className="overflow-x-auto">
-          <table className="w-full text-xs tabular-nums">
+          <table className="w-full text-xs">
             <thead className="text-muted-foreground">
               <tr className="text-left">
-                <th className="p-3 font-medium">Host memory</th>
-                <th className="p-3 font-medium">Critical</th>
-                <th className="p-3 font-medium">Standard</th>
-                <th className="p-3 font-medium">Disposable</th>
-                <th className="p-3 font-medium">Deploys</th>
-                <th className="p-3 font-medium">Redis</th>
+                <th className="p-3 font-medium">Default</th>
+                <th className="p-3 font-medium">Formula</th>
+                <th className="p-3 text-right font-medium">On this server</th>
               </tr>
             </thead>
             <tbody className="divide-y">
-              {data.sizeClasses.map((c, i) => {
-                const prev = i > 0 ? data.sizeClasses[i - 1].belowGiB : null;
-                const range = c.belowGiB === null ? `${prev} GiB and up` : prev === null ? `Under ${c.belowGiB} GiB` : `${prev}–${c.belowGiB} GiB`;
-                return (
-                  <tr key={c.name} className={host?.sizeClass === c.name ? "bg-muted/50 font-medium" : undefined}>
-                    <td className="p-3">{range}</td>
-                    <td className="p-3">{formatMb(c.memoryMb.critical)}</td>
-                    <td className="p-3">{formatMb(c.memoryMb.standard)}</td>
-                    <td className="p-3">{formatMb(c.memoryMb.disposable)}</td>
-                    <td className="p-3">{c.deploys}</td>
-                    <td className="p-3">{formatMb(c.redisMb)}</td>
-                  </tr>
-                );
-              })}
+              {formulaTable(data.defaults).map((row) => (
+                <tr key={row.key}>
+                  <td className="p-3 font-medium">{row.label}</td>
+                  <td className="p-3 text-muted-foreground">{row.formula}</td>
+                  <td className="p-3 text-right tabular-nums">{host ? (row.here ?? "–") : "–"}</td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </Card>
+        <ul className="space-y-1 text-xs text-muted-foreground">
+          {FORMULA_NOTES.map((note) => (
+            <li key={note}>{note}</li>
+          ))}
+        </ul>
       </div>
     </div>
   );

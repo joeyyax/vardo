@@ -39,15 +39,18 @@ export function limitOrigin(input: {
   appliedMb: number | null;
   containerLimitBytes: number | null;
   tierDefaultMb: number;
+  /** The app's learned default, which also counts as a default. */
+  learnedMb?: number | null;
 }): LimitOrigin {
-  const { appLimitMb, appliedMb, containerLimitBytes, tierDefaultMb } = input;
+  const { appLimitMb, appliedMb, containerLimitBytes, tierDefaultMb, learnedMb } = input;
   if (appLimitMb !== null) {
     if (appLimitMb > 0 && appliedMb === appLimitMb) return "autotune";
     return appLimitMb > 0 ? "app" : "none";
   }
   if (containerLimitBytes === null) return "unknown";
   if (containerLimitBytes === 0) return "none";
-  return Math.abs(containerLimitBytes - tierDefaultMb * MIB) <= MIB ? "default" : "compose";
+  const near = (mb: number) => Math.abs(containerLimitBytes - mb * MIB) <= MIB;
+  return near(tierDefaultMb) || (!!learnedMb && near(learnedMb)) ? "default" : "compose";
 }
 
 /** Whether the auto profile may change this app's limit. An inherited auto skips limits someone set. */
@@ -117,16 +120,18 @@ export function decideRaise(input: RaiseInput): RaiseDecision {
   return { action: "raise", fromMb: currentMb, toMb, capped: toMb < wanted };
 }
 
-export type DailyPeak = { day: string; bytes: number };
+/** `p99` is the day's 99th-percentile working set, recorded once the day is over. */
+export type DailyPeak = { day: string; bytes: number; p99?: number };
 
 /** Keeps the higher reading per day and the last `LOWER_AFTER_DAYS + 1` days. */
-export function addDailyPeak(peaks: DailyPeak[], day: string, bytes: number): DailyPeak[] {
-  const byDay = new Map(peaks.map((p) => [p.day, p.bytes]));
-  byDay.set(day, Math.max(byDay.get(day) ?? 0, bytes));
-  return [...byDay]
-    .map(([d, b]) => ({ day: d, bytes: b }))
-    .sort((a, b) => a.day.localeCompare(b.day))
-    .slice(-(LOWER_AFTER_DAYS + 1));
+export function addDailyPeak(peaks: DailyPeak[], day: string, bytes: number, p99?: number): DailyPeak[] {
+  const byDay = new Map(peaks.map((p) => [p.day, p]));
+  const prev = byDay.get(day);
+  const next: DailyPeak = { day, bytes: Math.max(prev?.bytes ?? 0, bytes) };
+  const dayP99 = p99 ?? prev?.p99;
+  if (dayP99 !== undefined) next.p99 = dayP99;
+  byDay.set(day, next);
+  return [...byDay.values()].sort((a, b) => a.day.localeCompare(b.day)).slice(-(LOWER_AFTER_DAYS + 1));
 }
 
 export type LowerInput = {

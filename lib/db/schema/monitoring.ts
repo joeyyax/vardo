@@ -85,7 +85,7 @@ export const appMemoryAutotune = pgTable("app_memory_autotune", {
   raiseStreak: integer("raise_streak").notNull().default(0),
   /** Set when the streak hit the cap; auto-adjust stops until someone sets the limit. */
   haltedAt: timestamp("halted_at"),
-  /** Highest memory use per day, newest last. */
-  dailyPeaks: jsonb("daily_peaks").$type<{ day: string; bytes: number }[]>().notNull().default([]),
+  /** Highest memory use per day, newest last, with the day's p99 once it's over. */
+  dailyPeaks: jsonb("daily_peaks").$type<{ day: string; bytes: number; p99?: number }[]>().notNull().default([]),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

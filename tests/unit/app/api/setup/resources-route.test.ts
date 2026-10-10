@@ -31,10 +31,10 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("GET /api/setup/resources", () => {
-  it("shows the host's size class and the defaults it picked", async () => {
+  it("shows the host's size and the defaults it picked", async () => {
     state.host = { cpus: 8, memoryBytes: 32 * 1024 ** 3 };
     const body = await (await get()).json();
-    expect(body.host).toMatchObject({ cpus: 8, sizeClass: "large" });
+    expect(body.host).toEqual({ cpus: 8, memoryBytes: 32 * 1024 ** 3 });
     const by = Object.fromEntries(body.defaults.map((d: { key: string; value: number }) => [d.key, d.value]));
     expect(by).toEqual({
       memoryCritical: 4096,

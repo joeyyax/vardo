@@ -8,25 +8,25 @@ export type HostSize = { cpus: number; memoryBytes: number };
 /** Detected: the rule applied to the host. Override: an env var set it. Admin: set in System settings. Fallback: the host couldn't be read. */
 export type DefaultSource = "detected" | "override" | "admin" | "fallback";
 
-export type SizeClass = {
-  name: "small" | "medium" | "large" | "xlarge";
-  /** The class covers hosts with less memory than this, in GiB. */
-  belowGiB: number;
-  /** Memory cap (MB) per tier when an app sets none. */
-  memoryMb: Record<QosTier, number>;
-  /** Most deploys at once, before the CPU cap. */
-  deploys: number;
-  /** vardo-redis container limit (MB). */
-  redisMb: number;
-};
+const MIB_STEP = 64;
 
-/** Host memory decides the class. The boundaries sit below round sizes because MemTotal reads under the installed RAM. */
-export const SIZE_CLASSES: readonly SizeClass[] = [
-  { name: "small", belowGiB: 6, memoryMb: { critical: 1024, standard: 1024, disposable: 512 }, deploys: 1, redisMb: 512 },
-  { name: "medium", belowGiB: 24, memoryMb: { critical: 2048, standard: 1024, disposable: 512 }, deploys: 2, redisMb: 512 },
-  { name: "large", belowGiB: 96, memoryMb: { critical: 4096, standard: 2048, disposable: 1024 }, deploys: 4, redisMb: 1024 },
-  { name: "xlarge", belowGiB: Infinity, memoryMb: { critical: 8192, standard: 4096, disposable: 2048 }, deploys: 6, redisMb: 2048 },
-];
+/** Whole MiB to the nearest 64. install.sh does the same integer math. */
+export function roundMiB(mb: number): number {
+  return Math.floor((Math.floor(mb) + MIB_STEP / 2) / MIB_STEP) * MIB_STEP;
+}
+
+const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
+
+/** Per-tier memory formula: a share of RAM between a floor and a ceiling, in MiB. Disposable is half of standard. */
+export const TIER_MEMORY_FORMULA = {
+  critical: { divisor: 8, minMb: 1024, maxMb: 8192 },
+  standard: { divisor: 16, minMb: 512, maxMb: 4096 },
+  disposable: { minMb: 256 },
+} as const;
+
+export const DEPLOYS_FORMULA = { coresPer: 2, gibPer: 4, min: 1, max: 6 } as const;
+
+export const REDIS_FORMULA = { divisor: 32, minMb: 256, maxMb: 2048 } as const;
 
 /** The values used when the host can't be read: Vardo's fixed defaults before sizing. */
 export const FALLBACK = {
@@ -41,8 +41,18 @@ export function memoryMiB(memoryBytes: number): number {
   return Math.floor(memoryBytes / 1024 / 1024);
 }
 
-export function sizeClass(memoryMb: number): SizeClass {
-  return SIZE_CLASSES.find((c) => memoryMb < c.belowGiB * 1024) ?? SIZE_CLASSES[SIZE_CLASSES.length - 1];
+/** Memory cap (MiB) for a tier on a host with this much RAM. */
+export function tierMemoryRuleMb(tier: QosTier, memoryMb: number): number {
+  const { critical, standard, disposable } = TIER_MEMORY_FORMULA;
+  const std = clamp(roundMiB(memoryMb / standard.divisor), standard.minMb, standard.maxMb);
+  if (tier === "standard") return std;
+  if (tier === "disposable") return Math.max(disposable.minMb, roundMiB(std / 2));
+  return clamp(roundMiB(memoryMb / critical.divisor), critical.minMb, critical.maxMb);
+}
+
+/** vardo-redis's container limit in MiB. */
+export function redisMemMb(memoryMb: number): number {
+  return clamp(roundMiB(memoryMb / REDIS_FORMULA.divisor), REDIS_FORMULA.minMb, REDIS_FORMULA.maxMb);
 }
 
 /** Standard leaves one core free, disposable gets half, critical is uncapped. */
@@ -51,9 +61,11 @@ export function tierCpus(tier: QosTier, cpus: number): number | null {
   return Math.max(1, tier === "disposable" ? Math.ceil(cpus / 2) : cpus - 1);
 }
 
-/** The class's deploy count, capped at one per two cores. */
+/** One deploy per two cores and per 4 GiB, between 1 and 6. */
 export function deployConcurrency(host: HostSize): number {
-  return Math.max(1, Math.min(sizeClass(memoryMiB(host.memoryBytes)).deploys, Math.floor(host.cpus / 2)));
+  const { coresPer, gibPer, min, max } = DEPLOYS_FORMULA;
+  const byRam = Math.floor(host.memoryBytes / 1024 ** 3 / gibPer);
+  return clamp(Math.min(Math.floor(host.cpus / coresPer), byRam), min, max);
 }
 
 /** A quarter of RAM, between 4 and 16 GiB. */
@@ -69,7 +81,7 @@ export function buildkitCacheMaxBytes(diskBytes: number): number {
 
 /** vardo-redis's container limit and maxmemory, as install.sh writes them. maxmemory is 62.5% of the limit, leaving room for the AOF rewrite and snapshot forks. */
 export function redisMemory(memoryMb: number): { mem: string; maxmemory: string } {
-  const mb = sizeClass(memoryMb).redisMb;
+  const mb = redisMemMb(memoryMb);
   return { mem: `${mb}m`, maxmemory: `${Math.floor((mb * 5) / 8)}mb` };
 }
 
@@ -102,7 +114,7 @@ export function resolveTierMemory(
 ): Resolved<number> {
   const raw = env[`VARDO_DEFAULT_MEMORY_${tier.toUpperCase()}`];
   const parsed = raw ? parseInt(raw, 10) : NaN;
-  const rule = host ? sizeClass(memoryMiB(host.memoryBytes)).memoryMb[tier] : FALLBACK.memoryMb[tier];
+  const rule = host ? tierMemoryRuleMb(tier, memoryMiB(host.memoryBytes)) : FALLBACK.memoryMb[tier];
   return resolve(!isNaN(parsed) && parsed >= 64 ? parsed : undefined, admin, host, rule, FALLBACK.memoryMb[tier]);
 }
 
@@ -241,7 +253,8 @@ export function describeDefaults(
   diskBytes: number | null = null,
 ): ResourceDefault[] {
   const memMb = host ? memoryMiB(host.memoryBytes) : null;
-  const redisRule = memMb !== null ? sizeClass(memMb).redisMb : FALLBACK.redisMb;
+  const redisRule = memMb !== null ? redisMemMb(memMb) : FALLBACK.redisMb;
+  const maxmemoryOf = (mb: number) => Math.floor((mb * 5) / 8);
   return [
     ...TIERS.map((tier) => ({
       key: `memory${cap(tier)}` as ResourceDefaultKey,
@@ -320,8 +333,8 @@ export function describeDefaults(
       ...resolveInstallerMb(
         env.VARDO_REDIS_MAXMEMORY,
         host,
-        Math.floor((redisRule * 3) / 4),
-        Math.floor((FALLBACK.redisMb * 3) / 4),
+        maxmemoryOf(redisRule),
+        maxmemoryOf(FALLBACK.redisMb),
       ),
     },
   ];

@@ -5,7 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import type { DefaultSource, ResourceDefault } from "@/lib/resources/defaults";
 
 type Summary = {
-  host: { cpus: number; memoryBytes: number; sizeClass: string } | null;
+  host: { cpus: number; memoryBytes: number } | null;
   defaults: { key: ResourceDefault["key"]; label: string; unit: ResourceDefault["unit"]; value: number | null; source: DefaultSource }[];
 };
 
@@ -49,7 +49,6 @@ export function ResourcesSummary() {
               <span className="font-medium">
                 {host.cpus} CPUs · {(host.memoryBytes / 1024 ** 3).toFixed(1)} GiB memory
               </span>
-              <span className="text-muted-foreground"> · {host.sizeClass} host</span>
             </>
           ) : (
             <span className="text-muted-foreground">Couldn&apos;t read the host&apos;s size, so Vardo uses fixed defaults.</span>

@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   FALLBACK,
   buildkitMemGb,
+  deployConcurrency,
   describeDefaults,
   envLock,
   parseAdminSettings,
@@ -10,7 +11,9 @@ import {
   resolveDeployConcurrency,
   resolveTierCpus,
   resolveTierMemory,
-  sizeClass,
+  redisMemMb,
+  roundMiB,
+  tierMemoryRuleMb,
   validateAdminValue,
   type HostSize,
 } from "@/lib/resources/defaults";
@@ -26,29 +29,102 @@ const HOSTS = {
   "128 GB": host(32, 128),
 };
 
-describe("rules by host size", () => {
+// Bands before formulas, kept to show what changed.
+const BANDS = [
+  { belowGiB: 6, memory: { critical: 1024, standard: 1024, disposable: 512 }, deploys: 1, redis: 512 },
+  { belowGiB: 24, memory: { critical: 2048, standard: 1024, disposable: 512 }, deploys: 2, redis: 512 },
+  { belowGiB: 96, memory: { critical: 4096, standard: 2048, disposable: 1024 }, deploys: 4, redis: 1024 },
+  { belowGiB: Infinity, memory: { critical: 8192, standard: 4096, disposable: 2048 }, deploys: 6, redis: 2048 },
+];
+
+function before(h: HostSize) {
+  const mb = Math.floor(h.memoryBytes / 1024 / 1024);
+  const band = BANDS.find((b) => mb < b.belowGiB * 1024)!;
+  return { ...band.memory, deploys: Math.max(1, Math.min(band.deploys, Math.floor(h.cpus / 2))), redis: band.redis };
+}
+
+function after(h: HostSize) {
+  const mb = Math.floor(h.memoryBytes / 1024 / 1024);
+  return {
+    critical: resolveTierMemory("critical", h, {}).value,
+    standard: resolveTierMemory("standard", h, {}).value,
+    disposable: resolveTierMemory("disposable", h, {}).value,
+    deploys: resolveDeployConcurrency(h, {}).value,
+    redis: redisMemMb(mb),
+  };
+}
+
+describe("formulas by host size", () => {
+  // Host, cores, then [critical, standard, disposable, deploys, redis] before and after.
   it.each([
-    ["2 GB", "small", { critical: 1024, standard: 1024, disposable: 512 }, 1, "512m", "320mb", 4],
-    ["8 GB", "medium", { critical: 2048, standard: 1024, disposable: 512 }, 2, "512m", "320mb", 4],
-    ["32 GB", "large", { critical: 4096, standard: 2048, disposable: 1024 }, 4, "1024m", "640mb", 7],
-    ["128 GB", "xlarge", { critical: 8192, standard: 4096, disposable: 2048 }, 6, "2048m", "1280mb", 16],
-  ] as const)("%s host", (name, cls, memory, deploys, redisMem, redisMax, buildkitGb) => {
-    const h = HOSTS[name];
-    const mb = Math.floor(h.memoryBytes / 1024 / 1024);
-    expect(sizeClass(mb).name).toBe(cls);
-    for (const tier of ["critical", "standard", "disposable"] as const) {
-      expect(resolveTierMemory(tier, h, {})).toEqual({ value: memory[tier], source: "detected", rule: memory[tier] });
-    }
-    expect(resolveDeployConcurrency(h, {}).value).toBe(deploys);
-    expect(redisMemory(mb)).toEqual({ mem: redisMem, maxmemory: redisMax });
-    expect(buildkitMemGb(mb)).toBe(buildkitGb);
+    [4, 2, [1024, 1024, 512, 1, 512], [1024, 512, 256, 1, 256]],
+    [8, 4, [2048, 1024, 512, 2, 512], [1024, 512, 256, 1, 256]],
+    [16, 4, [2048, 1024, 512, 2, 512], [1984, 960, 512, 2, 512]],
+    [32, 8, [4096, 2048, 1024, 4, 1024], [3904, 1984, 1024, 4, 960]],
+    [48, 12, [4096, 2048, 1024, 4, 1024], [5888, 2944, 1472, 6, 1472]],
+    [64, 16, [4096, 2048, 1024, 4, 1024], [7872, 3904, 1984, 6, 1984]],
+    [128, 32, [8192, 4096, 2048, 6, 2048], [8192, 4096, 2048, 6, 2048]],
+    [256, 64, [8192, 4096, 2048, 6, 2048], [8192, 4096, 2048, 6, 2048]],
+  ] as const)("%i GiB, %i cores", (gb, cpus, was, now) => {
+    const h = host(cpus, gb);
+    const shape = ([critical, standard, disposable, deploys, redis]: readonly number[]) => ({ critical, standard, disposable, deploys, redis });
+    expect(before(h)).toEqual(shape(was));
+    expect(after(h)).toEqual(shape(now));
   });
 
-  it("matches today's fixed defaults on an 8 GB host", () => {
-    for (const tier of ["critical", "standard", "disposable"] as const) {
-      expect(resolveTierMemory(tier, HOSTS["8 GB"], {}).value).toBe(FALLBACK.memoryMb[tier]);
-    }
-    expect(resolveDeployConcurrency(HOSTS["8 GB"], {}).value).toBe(FALLBACK.deploys);
+  it("reports the formula as the detected rule", () => {
+    expect(resolveTierMemory("standard", HOSTS["32 GB"], {})).toEqual({ value: 1984, source: "detected", rule: 1984 });
+  });
+
+  it("holds critical between 1 and 8 GiB at RAM/8", () => {
+    expect(tierMemoryRuleMb("critical", 4096)).toBe(1024);
+    expect(tierMemoryRuleMb("critical", 8192)).toBe(1024);
+    expect(tierMemoryRuleMb("critical", 8192 + 512)).toBe(1088);
+    expect(tierMemoryRuleMb("critical", 65536)).toBe(8192);
+    expect(tierMemoryRuleMb("critical", 65536 + 1024)).toBe(8192);
+  });
+
+  it("holds standard between 512 MiB and 4 GiB at RAM/16", () => {
+    expect(tierMemoryRuleMb("standard", 8192)).toBe(512);
+    expect(tierMemoryRuleMb("standard", 8192 + 1024)).toBe(576);
+    expect(tierMemoryRuleMb("standard", 65536)).toBe(4096);
+    expect(tierMemoryRuleMb("standard", 1_000_000)).toBe(4096);
+  });
+
+  it("keeps disposable at half of standard, at least 256 MiB", () => {
+    expect(tierMemoryRuleMb("disposable", 2048)).toBe(256);
+    expect(tierMemoryRuleMb("disposable", 16384)).toBe(512);
+    expect(tierMemoryRuleMb("disposable", 1_000_000)).toBe(2048);
+  });
+
+  it("holds Redis between 256 MiB and 2 GiB at RAM/32", () => {
+    expect(redisMemMb(8192)).toBe(256);
+    expect(redisMemMb(16384)).toBe(512);
+    expect(redisMemMb(65536)).toBe(2048);
+    expect(redisMemMb(1_000_000)).toBe(2048);
+  });
+
+  it("writes Redis maxmemory at 5/8 of the limit and keeps BuildKit at a quarter of RAM", () => {
+    expect(redisMemory(16384)).toEqual({ mem: "512m", maxmemory: "320mb" });
+    expect(redisMemory(31457)).toEqual({ mem: "960m", maxmemory: "600mb" });
+    expect(buildkitMemGb(31457)).toBe(7);
+  });
+
+  it("rounds to the nearest 64 MiB", () => {
+    expect(roundMiB(991)).toBe(960);
+    expect(roundMiB(992)).toBe(1024);
+    expect(roundMiB(1023.9)).toBe(1024);
+  });
+
+  it("allows one deploy per two cores and per 4 GiB, from 1 to 6", () => {
+    const at = (cpus: number, gib: number) => deployConcurrency({ cpus, memoryBytes: gib * GiB });
+    expect(at(1, 2)).toBe(1);
+    expect(at(8, 7.9)).toBe(1);
+    expect(at(8, 8)).toBe(2);
+    expect(at(3, 64)).toBe(1);
+    expect(at(64, 23.9)).toBe(5);
+    expect(at(64, 24)).toBe(6);
+    expect(at(64, 512)).toBe(6);
   });
 
   it("caps deploys at one per two CPUs", () => {
@@ -120,16 +196,22 @@ describe("installer values", () => {
     )!;
 
   it("counts a value matching the rule as detected", () => {
-    expect(row({ VARDO_REDIS_MEM: "1024m" })).toMatchObject({ source: "detected", value: 1024, rule: 1024 });
+    expect(row({ VARDO_REDIS_MEM: "960m" })).toMatchObject({ source: "detected", value: 960, rule: 960 });
   });
 
   it("counts a different value as an override", () => {
-    expect(row({ VARDO_REDIS_MEM: "1g" }).source).toBe("detected");
+    expect(row({ VARDO_REDIS_MEM: "1g" }).source).toBe("override");
     expect(row({ VARDO_REDIS_MEM: "768m" }).source).toBe("override");
   });
 
   it("treats unset as compose's default", () => {
-    expect(row({})).toMatchObject({ source: "fallback", value: 512, rule: 1024 });
+    expect(row({})).toMatchObject({ source: "fallback", value: 512, rule: 960 });
+  });
+
+  it("matches maxmemory to the 5/8 install.sh writes", () => {
+    const max = describeDefaults(h, 8, { VARDO_REDIS_MAXMEMORY: "600mb" }).find((d) => d.key === "redisMaxmemory")!;
+    expect(max).toMatchObject({ source: "detected", rule: 600 });
+    expect(describeDefaults(h, 8, {}).find((d) => d.key === "redisMaxmemory")).toMatchObject({ value: 320, source: "fallback" });
   });
 
   it("carries the running limit", () => {
