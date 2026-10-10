@@ -8,6 +8,7 @@ import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { eq } from "drizzle-orm";
 import { hashInvitationToken } from "@/lib/invitations/token";
 import { claimInvitation } from "@/lib/invitations/accept";
+import { SYSTEM_ORG_MEMBERS_ONLY_ADMINS } from "@/lib/auth/system-org";
 
 export async function acceptInvitation(token: string): Promise<{ error?: string }> {
   if (!(await isFeatureEnabledAsync("teams"))) {
@@ -40,9 +41,9 @@ export async function acceptInvitation(token: string): Promise<{ error?: string 
     return { error: "This invitation was sent to a different email address" };
   }
 
-  if (!(await claimInvitation(invitation, session.user.id))) {
-    return { error: "This invitation is no longer valid" };
-  }
+  const claim = await claimInvitation(invitation, session.user.id);
+  if (claim === "not-allowed") return { error: SYSTEM_ORG_MEMBERS_ONLY_ADMINS };
+  if (claim === "invalid") return { error: "This invitation is no longer valid" };
 
   redirect("/projects");
 }

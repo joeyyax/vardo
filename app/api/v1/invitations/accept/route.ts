@@ -8,6 +8,7 @@ import { requirePlugin } from "@/lib/api/require-plugin";
 import { eq } from "drizzle-orm";
 import { hashInvitationToken } from "@/lib/invitations/token";
 import { claimInvitation } from "@/lib/invitations/accept";
+import { SYSTEM_ORG_MEMBERS_ONLY_ADMINS } from "@/lib/auth/system-org";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
@@ -71,7 +72,11 @@ async function handlePost(request: NextRequest) {
       );
     }
 
-    if (!(await claimInvitation(invitation, session.user.id))) {
+    const claim = await claimInvitation(invitation, session.user.id);
+    if (claim === "not-allowed") {
+      return NextResponse.json({ error: SYSTEM_ORG_MEMBERS_ONLY_ADMINS }, { status: 403 });
+    }
+    if (claim === "invalid") {
       return NextResponse.json({ error: "This invitation is no longer valid" }, { status: 410 });
     }
 
