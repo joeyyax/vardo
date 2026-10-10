@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { networkRates, type CounterSample } from "@/lib/metrics/rates";
+import {
+  networkRates, currentNetworkRate, totalRateSeries, recentWindow, CARD_WINDOW_MS,
+  type CounterSample,
+} from "@/lib/metrics/rates";
 
 const GB = 1024 ** 3;
 
@@ -57,5 +60,45 @@ describe("networkRates", () => {
 
   it("handles an empty series", () => {
     expect(networkRates([])).toEqual([]);
+  });
+});
+
+describe("currentNetworkRate", () => {
+  it("uses the newest counter delta, not lifetime totals", () => {
+    const rate = currentNetworkRate([
+      { timestamp: 0, networkRx: 30 * GB, networkTx: 10 * GB },
+      { timestamp: 10_000, networkRx: 30 * GB + 4000, networkTx: 10 * GB + 1000 },
+    ]);
+    expect(rate).toEqual({ rx: 400, tx: 100, total: 500 });
+  });
+
+  it("falls back to the last known rate after a reset", () => {
+    const rate = currentNetworkRate([sample(0, 1000), sample(10, 3000), sample(20, 0)]);
+    expect(rate).toEqual({ rx: 200, tx: 200, total: 400 });
+  });
+
+  it("is null with fewer than two samples or only resets", () => {
+    expect(currentNetworkRate([])).toBeNull();
+    expect(currentNetworkRate([sample(0, 1000)])).toBeNull();
+    expect(currentNetworkRate([sample(0, 1000), sample(10, 0)])).toBeNull();
+  });
+});
+
+describe("totalRateSeries", () => {
+  it("sums both directions and drops unknown samples", () => {
+    expect(totalRateSeries([sample(0, 0), sample(10, 1000), sample(20, 0), sample(30, 500)])).toEqual([200]);
+  });
+});
+
+describe("recentWindow", () => {
+  it("keeps samples within the card window of the newest", () => {
+    const min = 60;
+    const pts = [sample(0, 0), sample(10 * min, 0), sample(20 * min, 0), sample(30 * min, 0)];
+    expect(recentWindow(pts).map((p) => p.timestamp)).toEqual([20 * min * 1000, 30 * min * 1000]);
+    expect(CARD_WINDOW_MS).toBe(900_000);
+  });
+
+  it("handles an empty series", () => {
+    expect(recentWindow([])).toEqual([]);
   });
 });

@@ -50,3 +50,34 @@ export function networkRates(points: CounterSample[]): NetworkRates[] {
 
   return out;
 }
+
+/** Window the stat-card sparklines cover. */
+export const CARD_WINDOW_MS = 15 * 60 * 1000;
+
+/** Samples within `windowMs` of the newest one. */
+export function recentWindow<T extends { timestamp: number }>(points: T[], windowMs = CARD_WINDOW_MS): T[] {
+  const last = points[points.length - 1];
+  if (!last) return [];
+  return points.filter((p) => p.timestamp >= last.timestamp - windowMs);
+}
+
+export type CurrentRate = { rx: number; tx: number; total: number };
+
+/** Total throughput per sample, skipping samples with an unknown rate. */
+export function totalRateSeries(points: CounterSample[]): number[] {
+  const out: number[] = [];
+  for (const r of networkRates(points)) {
+    if (r.networkRxRate !== null && r.networkTxRate !== null) out.push(r.networkRxRate + r.networkTxRate);
+  }
+  return out;
+}
+
+/** Newest sample with a known rate in both directions; null when none. */
+export function currentNetworkRate(points: CounterSample[]): CurrentRate | null {
+  const rates = networkRates(points);
+  for (let i = rates.length - 1; i >= 0; i--) {
+    const { networkRxRate: rx, networkTxRate: tx } = rates[i];
+    if (rx !== null && tx !== null) return { rx, tx, total: rx + tx };
+  }
+  return null;
+}
