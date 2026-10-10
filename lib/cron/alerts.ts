@@ -43,8 +43,9 @@ export async function noteCronFailure(
     const settings = await readOrgNotificationSettings(job.organizationId);
     if (!settings.categories.cron) return false;
     const item = cronFailureItem(job, event.message.split("\n")[0] || "The last run failed.", now);
-    if (!(await claimAlert(job.organizationId, CRON_ALERT, item, now))) return false;
-    emit(job.organizationId, { type: "cron.failed", ...event });
+    const claimed = await claimAlert(job.organizationId, CRON_ALERT, item, now);
+    if (!claimed) return false;
+    emit(job.organizationId, { type: "cron.failed", ...event, ...(claimed.incident ? { incident: claimed.incident } : {}) });
     return true;
   } catch (err) {
     log.error(`Failed to send notification for ${job.name}:`, err);

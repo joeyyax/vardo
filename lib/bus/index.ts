@@ -1,5 +1,6 @@
 /** Event bus: writes typed BusEvents to Redis Streams and runs local emit hooks. */
 
+import { nanoid } from "nanoid";
 import { addEvent } from "@/lib/stream/producer";
 import type { BusEvent } from "./events";
 import { logger } from "@/lib/logger";
@@ -21,7 +22,8 @@ export function onEmit(name: string, hook: EmitHook): void {
  * Emits a typed event to an org's stream and runs emit hooks. Never throws.
  * Import emit from @/lib/notifications/dispatch, or channels won't fire.
  */
-export function emit(orgId: string, event: BusEvent): void {
+export function emit(orgId: string, input: BusEvent): void {
+  const event: BusEvent = input.id ? input : { ...input, id: `evt_${nanoid(20)}` };
   addEvent(orgId, event).catch((err) => {
     log.error("stream emit failed:", err);
   });

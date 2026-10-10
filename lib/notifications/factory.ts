@@ -1,4 +1,7 @@
-import type { NotificationChannel } from "./port";
+import type { BusEvent } from "@/lib/bus/events";
+import { singleIncident } from "@/lib/incidents/event";
+import { channelMessage, rememberChannelMessage, safely } from "@/lib/incidents/store";
+import type { DeliveryReceipt, NotificationChannel } from "./port";
 import type { ChannelType } from "./channel-types";
 import { EmailNotificationChannel } from "./email-channel";
 import { WebhookNotificationChannel, SlackNotificationChannel } from "./webhook-channel";
@@ -22,8 +25,30 @@ function build(type: string, config: unknown, organizationId: string): Notificat
   }
 }
 
+/** Channels that edit or reply to an incident's earlier message. */
+const THREADED: ReadonlySet<string> = new Set(["discord", "telegram"]);
+
+/** Sends with the channel's earlier message for the incident, and remembers the opening one. */
+async function threadedSend(
+  send: NotificationChannel["send"],
+  row: { id?: string; type: string },
+  event: BusEvent,
+): Promise<DeliveryReceipt | void> {
+  const incident = singleIncident(event);
+  const channelId = row.id;
+  if (!incident || !channelId || !THREADED.has(row.type)) return send(event);
+  const prior = incident.transition === "opened" ? null : await safely("read message", () => channelMessage(incident.id, channelId), null);
+  const receipt = await send(event, prior ? { priorMessageId: prior } : {});
+  const id = receipt?.providerMessageIds?.[0];
+  if (id && id !== prior && (!prior || row.type === "discord")) {
+    await safely("remember message", () => rememberChannelMessage(incident.id, channelId, id), undefined);
+  }
+  return receipt;
+}
+
 /** A channel whose every send is redacted first. */
 export function createChannel(row: {
+  id?: string;
   type: ChannelType;
   name?: string;
   organizationId: string;
@@ -31,6 +56,6 @@ export function createChannel(row: {
 }): NotificationChannel {
   const channel = build(row.type, openChannelConfig(row), row.organizationId);
   const send = channel.send.bind(channel);
-  channel.send = async (event) => send(await redactEvent(row.organizationId, event));
+  channel.send = async (event) => threadedSend(send, row, await redactEvent(row.organizationId, event));
   return channel;
 }

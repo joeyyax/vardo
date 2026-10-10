@@ -1,6 +1,7 @@
 /** Typed event definitions for the event bus, as a discriminated union on `type`. */
 
 import type { StageTimings } from "@/lib/docker/stage-timings";
+import type { IncidentRef } from "@/lib/incidents/types";
 
 // Event categories for grouping in the settings UI.
 
@@ -657,6 +658,8 @@ export type AlertItem = {
   facts?: { label: string; value: string }[];
   /** ISO time the condition started. */
   since?: string;
+  /** Set when the alert goes out. */
+  incident?: IncidentRef;
 };
 
 /** Alerts that fired in one pass, coalesced into one notice per org. */
@@ -682,9 +685,19 @@ export type AlertResolvedEvent = {
   title: string;
   message: string;
   alerts: (AlertItem & { firedAt: string; resolvedAt: string })[];
+  /** Closes incidents for webhooks only: email and push leave it out. */
+  quiet?: boolean;
 };
 
-export type BusEvent =
+/** Fields every event can carry. */
+export type EventEnvelope = {
+  /** Stable per event, kept across retries. Set by emit. */
+  id?: string;
+  /** The incident a single-subject notice belongs to. */
+  incident?: IncidentRef;
+};
+
+export type BusEvent = EventEnvelope & (
   | DeploySuccessEvent
   | DeployFailedEvent
   | DeployIncompleteEvent
@@ -722,7 +735,8 @@ export type BusEvent =
   | AppOomKilledEvent
   | AlertFiredEvent
   | AlertResolvedEvent
-  | NotificationTestEvent;
+  | NotificationTestEvent
+);
 
 export type BusEventType = BusEvent["type"];
 

@@ -1,5 +1,6 @@
 import type { DeliveryReceipt, NotificationChannel } from "./port";
 import type { BusEvent } from "@/lib/bus/events";
+import { singleIncident } from "@/lib/incidents/event";
 import { DEFAULT_NTFY_SERVER } from "./channel-schemas";
 import { postJson } from "./provider-http";
 import { pushMessageForOrg, type PushMessage, type PushSeverity } from "./push-message";
@@ -51,6 +52,7 @@ export class NtfyNotificationChannel implements NotificationChannel {
     if (!msg) return {};
 
     const markdown = this.config.markdown !== false;
+    const incident = singleIncident(event);
     const server = (this.config.serverUrl || DEFAULT_NTFY_SERVER).replace(/\/+$/, "");
     const { status, body } = await postJson(
       "ntfy",
@@ -62,6 +64,8 @@ export class NtfyNotificationChannel implements NotificationChannel {
         priority: PRIORITY[msg.severity],
         tags: [msg.emoji],
         ...(markdown ? { markdown: true } : {}),
+        // Servers that support it replace the incident's earlier notification.
+        ...(incident ? { sequence_id: incident.id } : {}),
         ...(msg.url ? { click: msg.url, actions: [{ action: "view", label: msg.urlLabel, url: msg.url }] } : {}),
       },
       {

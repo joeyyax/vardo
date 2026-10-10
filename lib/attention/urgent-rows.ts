@@ -52,7 +52,7 @@ export function deployFailureRows(apps: Subject[], latest: LatestDeploy[], now: 
   ];
 }
 
-export type OpenAnomaly = { about: string; appId: string | null; title: string; sentAt: Date };
+export type OpenAnomaly = { about: string; appId: string | null; title: string; sentAt: Date; incidentId?: string };
 
 /** Anomaly alerts that haven't cleared. Every one is urgent. */
 export function anomalyRows(apps: Subject[], open: OpenAnomaly[]): AttentionRow[] {
@@ -69,6 +69,7 @@ export function anomalyRows(apps: Subject[], open: OpenAnomaly[]): AttentionRow[
       href: appHref(app.name, "metrics"),
       detail: alert.title,
       since: alert.sentAt.toISOString(),
+      ...(alert.incidentId ? { incidentId: alert.incidentId } : {}),
       urgent: true,
     });
   }

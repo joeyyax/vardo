@@ -282,7 +282,14 @@ export async function sweepStuckDeployments(): Promise<void> {
         const app = appMap.get(deploy.appId);
         if (app) {
           const projectName = app.displayName || app.name;
+          const { deployIncident } = await import("@/lib/incidents/deploy");
+          const incident = await deployIncident(
+            app.organizationId,
+            { appId: deploy.appId, deploymentId: deploy.id, displayName: projectName },
+            false,
+          );
           emit(app.organizationId, {
+            ...(incident ? { incident } : {}),
             type: "deploy.failed",
             title: `Deploy timed out: ${projectName}`,
             message: `Deployment exceeded the ${TIMEOUT_MINUTES}-minute timeout and was marked as failed.`,

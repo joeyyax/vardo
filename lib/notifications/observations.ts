@@ -8,7 +8,10 @@ import type { AlertItem } from "@/lib/bus/events";
 import { emit } from "./dispatch";
 import { readOrgNotificationSettings } from "./preferences";
 import { ALERTS, severityRank, type AlertSeverity, type AlertType } from "./registry";
-import { claimNotifications, clearNotifications, clearSubjects } from "./throttle";
+import { claimNotifications, clearNotifications, clearSubjects, type Cleared } from "./throttle";
+import { incidentKey } from "@/lib/incidents/key";
+import { lowerSeverity, openIncident, openSeverities, resolveIncidents, safely } from "@/lib/incidents/store";
+import type { IncidentRef } from "@/lib/incidents/types";
 
 export type Observation = {
   type: AlertType;
@@ -67,6 +70,55 @@ async function closeHistory(organizationId: string, type: string, abouts: string
     );
 }
 
+/** The alert with the incident its notice opens or updates. */
+async function withIncident(organizationId: string, item: AlertItem, now: Date): Promise<AlertItem> {
+  const incident = await safely(
+    "open",
+    () => openIncident(organizationId, { kind: item.type, about: item.about, severity: item.severity, title: item.title, appId: item.appId }, now),
+    null,
+  );
+  return incident ? { ...item, incident } : item;
+}
+
+/** Resolves the incidents behind cleared rows, by subject. */
+async function resolveCleared(organizationId: string, type: string, cleared: Cleared[], now: Date): Promise<Map<string, IncidentRef>> {
+  return safely("resolve", () => resolveIncidents(organizationId, type, cleared.map((c) => c.about), now), new Map());
+}
+
+function resolvedItem(row: Cleared, now: Date, incident: IncidentRef | undefined): ResolvedItem {
+  return { ...(row.detail as AlertItem), firedAt: row.sentAt.toISOString(), resolvedAt: now.toISOString(), ...(incident ? { incident } : {}) };
+}
+
+/** A resolution only webhooks see: the incident and Vardo's title, nothing from the alert's detail. */
+function quietItem(row: Cleared, now: Date, incident: IncidentRef): ResolvedItem {
+  const detail = (row.detail ?? {}) as Partial<AlertItem>;
+  return {
+    type: incident.kind,
+    about: row.about,
+    severity: incident.severity,
+    title: incident.title,
+    detail: "",
+    ...(detail.appId ? { appId: detail.appId } : {}),
+    ...(detail.appName ? { appName: detail.appName } : {}),
+    firedAt: row.sentAt.toISOString(),
+    resolvedAt: now.toISOString(),
+    incident,
+  };
+}
+
+function emitResolved(organizationId: string, items: ResolvedItem[], quiet = false): void {
+  if (items.length === 0) return;
+  const alerts = sortAlerts(items);
+  emit(organizationId, {
+    type: "alert.resolved",
+    title: alerts.length === 1 ? `Resolved: ${alerts[0].title}` : `${alerts.length} alerts resolved`,
+    message: alerts.map((a) => a.title).join("; "),
+    alerts,
+    ...(alerts.length === 1 && alerts[0].incident ? { incident: alerts[0].incident } : {}),
+    ...(quiet ? { quiet } : {}),
+  });
+}
+
 /** Runs the evaluated types for one org and emits at most one fired and one resolved notice. */
 export async function notifyObservations(
   organizationId: string,
@@ -77,6 +129,8 @@ export async function notifyObservations(
   const settings = await readOrgNotificationSettings(organizationId);
   const fired: AlertItem[] = [];
   const resolved: ResolvedItem[] = [];
+  const quiet: ResolvedItem[] = [];
+  const severities = await safely("read", () => openSeverities(organizationId), new Map<string, string>());
 
   for (const type of evaluated) {
     const def = ALERTS[type];
@@ -93,21 +147,36 @@ export async function notifyObservations(
     const byAbout = new Map(ofType.map((o) => [o.about, o.item]));
     const opened: AlertItem[] = [];
     const escalated: AlertItem[] = [];
+    const claimed = new Set<string>();
     for (const claim of claims) {
-      const item = byAbout.get(claim.about);
-      if (!item) continue;
+      const base = byAbout.get(claim.about);
+      if (!base) continue;
+      claimed.add(claim.about);
+      const item = await withIncident(organizationId, base, now);
       fired.push(item);
       (claim.previous && claim.previous.clearedAt === null ? escalated : opened).push(item);
     }
     await openHistory(organizationId, type, opened, escalated, now);
 
+    // A drop in severity updates the incident without a notice.
+    for (const o of ofType) {
+      if (claimed.has(o.about)) continue;
+      const key = incidentKey(type, o.about);
+      const current = severities.get(key);
+      if (current && severityRank(o.severity) < severityRank(current)) {
+        await safely("lower", () => lowerSeverity(organizationId, key, o.severity, now), undefined);
+      }
+    }
+
     const cleared = await clearNotifications(organizationId, type, ofType.map((o) => o.about), now);
     await closeHistory(organizationId, type, cleared.map((c) => c.about), now);
-    // A switch turned off clears quietly.
-    if (!def.resolves || muted) continue;
+    const incidents = await resolveCleared(organizationId, type, cleared, now);
+    // A switch turned off, or a type without a resolved notice, closes the incident for webhooks only.
+    const notify = def.resolves && !muted;
     for (const row of cleared) {
-      if (!row.detail) continue;
-      resolved.push({ ...(row.detail as AlertItem), firedAt: row.sentAt.toISOString(), resolvedAt: now.toISOString() });
+      const incident = incidents.get(row.about);
+      if (notify && row.detail) resolved.push(resolvedItem(row, now, incident));
+      else if (incident) quiet.push(quietItem(row, now, incident));
     }
   }
 
@@ -118,33 +187,35 @@ export async function notifyObservations(
       title: firedTitle(alerts),
       message: alerts.map((a) => a.title).join("; "),
       alerts,
+      ...(alerts.length === 1 && alerts[0].incident ? { incident: alerts[0].incident } : {}),
     });
   }
-  if (resolved.length > 0) {
-    const alerts = sortAlerts(resolved);
-    emit(organizationId, {
-      type: "alert.resolved",
-      title: alerts.length === 1 ? `Resolved: ${alerts[0].title}` : `${alerts.length} alerts resolved`,
-      message: alerts.map((a) => a.title).join("; "),
-      alerts,
-    });
-  }
+  emitResolved(organizationId, resolved);
+  emitResolved(organizationId, quiet, true);
   return { fired, resolved };
 }
 
-/** Claims one alert through the throttle and records it, without sending. Returns whether it's due. */
-export async function claimAlert(organizationId: string, type: AlertType, item: AlertItem, now: Date): Promise<boolean> {
+/** Claims one alert through the throttle and records it, without sending. Returns the alert with its incident when due, else null. */
+export async function claimAlert(organizationId: string, type: AlertType, item: AlertItem, now: Date): Promise<AlertItem | null> {
   const claims = await claimNotifications(organizationId, type, [{ about: item.about, severity: item.severity, detail: item }], ALERTS[type].throttle.minHours, now);
-  if (claims.length === 0) return false;
+  if (claims.length === 0) return null;
   const reopened = claims[0].previous !== null && claims[0].previous.clearedAt === null;
-  await openHistory(organizationId, type, reopened ? [] : [item], reopened ? [item] : [], now);
-  return true;
+  const claimed = await withIncident(organizationId, item, now);
+  await openHistory(organizationId, type, reopened ? [] : [claimed], reopened ? [claimed] : [], now);
+  return claimed;
 }
 
 /** Sends one alert now, through the throttle, whatever the org's switches. Returns whether it sent. */
 export async function fireAlert(organizationId: string, type: AlertType, item: AlertItem, now: Date): Promise<boolean> {
-  if (!(await claimAlert(organizationId, type, item, now))) return false;
-  emit(organizationId, { type: "alert.fired", title: item.title, message: item.title, alerts: [item] });
+  const claimed = await claimAlert(organizationId, type, item, now);
+  if (!claimed) return false;
+  emit(organizationId, {
+    type: "alert.fired",
+    title: claimed.title,
+    message: claimed.title,
+    alerts: [claimed],
+    ...(claimed.incident ? { incident: claimed.incident } : {}),
+  });
   return true;
 }
 
@@ -154,14 +225,23 @@ export async function resolveAlert(organizationId: string, type: AlertType, abou
   if (cleared.length === 0) return false;
   await closeHistory(organizationId, type, [about], now);
   const row = cleared[0];
-  if (!notify || !ALERTS[type].resolves || !row.detail) return true;
-  const item: ResolvedItem = { ...(row.detail as AlertItem), firedAt: row.sentAt.toISOString(), resolvedAt: now.toISOString() };
-  emit(organizationId, { type: "alert.resolved", title: `Resolved: ${item.title}`, message: item.title, alerts: [item] });
+  const incident = (await resolveCleared(organizationId, type, cleared, now)).get(about);
+  if (notify && ALERTS[type].resolves && row.detail) emitResolved(organizationId, [resolvedItem(row, now, incident)]);
+  else if (incident) emitResolved(organizationId, [quietItem(row, now, incident)], true);
   return true;
 }
 
-/** Clears alerts whose subjects recovered, without a notice. */
+/** Clears alerts whose subjects recovered. Webhooks see the incident close; email and push stay quiet. */
 export async function settleAlerts(organizationId: string, type: AlertType, abouts: string[], now: Date): Promise<void> {
   const cleared = await clearSubjects(organizationId, type, abouts, now);
-  await closeHistory(organizationId, type, cleared, now);
+  await closeHistory(organizationId, type, cleared.map((c) => c.about), now);
+  const incidents = await resolveCleared(organizationId, type, cleared, now);
+  emitResolved(
+    organizationId,
+    cleared.flatMap((row) => {
+      const incident = incidents.get(row.about);
+      return incident ? [quietItem(row, now, incident)] : [];
+    }),
+    true,
+  );
 }

@@ -39,19 +39,19 @@ function detailOf(body: unknown): string {
   return "";
 }
 
-/** POSTs JSON. Throws ProviderError on a non-2xx answer or a failed request, so dispatch retries and a test reports it. */
+/** POSTs JSON, or PATCHes with `method`. Throws ProviderError on a non-2xx answer or a failed request, so dispatch retries and a test reports it. */
 export async function postJson(
   provider: string,
   url: string,
   payload: unknown,
-  opts: { headers?: Record<string, string>; secrets?: readonly string[] } = {},
+  opts: { headers?: Record<string, string>; secrets?: readonly string[]; method?: "POST" | "PATCH" } = {},
 ): Promise<ProviderResponse> {
   const secrets = opts.secrets ?? [];
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
     const response = await safeFetch(url, {
-      method: "POST",
+      method: opts.method ?? "POST",
       headers: { "Content-Type": "application/json", ...opts.headers },
       body: JSON.stringify(payload),
       signal: controller.signal,

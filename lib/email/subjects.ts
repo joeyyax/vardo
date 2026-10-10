@@ -126,13 +126,14 @@ export function subjectLine(event: BusEvent): string {
     case "alert.fired": {
       const [first] = event.alerts;
       const mark = event.alerts.some((a) => a.severity === "critical") ? "✗" : "⚠";
+      if (event.alerts.length === 1 && first.incident) return `${mark} ${first.incident.title}`;
       const more = event.alerts.length > 1 ? ` · ${event.alerts.length - 1} more` : "";
       return `${mark} ${first.title}${more}`;
     }
     case "alert.resolved": {
       const [first] = event.alerts;
       if (event.alerts.length > 1) return `✓ ${event.alerts.length} alerts resolved`;
-      return first.type === "cron.failure" ? cronRecovered(first) : `✓ Resolved · ${first.title}`;
+      return first.type === "cron.failure" ? cronRecovered(first) : `✓ Resolved · ${first.incident?.title ?? first.title}`;
     }
     case "app.auto-restarted":
       return event.gaveUp ? `✗ ${event.appName} keeps failing, restarts stopped` : `⚠ ${event.appName} restarted`;

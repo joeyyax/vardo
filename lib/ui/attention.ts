@@ -49,6 +49,8 @@ export type AttentionItem = {
   aside?: { label: string; href: string };
   /** Broken right now and needs a person. Set through lib/ui/urgency. */
   urgent?: boolean;
+  /** The open incident behind the item; `since` is when it opened. */
+  incidentId?: string;
 };
 
 /** Serializable; rows cross the API boundary, so no ReactNode. */

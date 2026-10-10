@@ -11,6 +11,7 @@ import {
   backupJobVolumes,
   backups,
   deployments,
+  incidents,
   notificationSends,
   projects,
   volumes,
@@ -26,6 +27,7 @@ import { calmQuietSubjects, conditionRows, hadRecentHostOom, oomRows, type Atten
 import { projectHref } from "@/lib/ui/hrefs";
 import { isQuiet } from "@/lib/ui/urgency";
 import { ANOMALY_ALERT_TYPES } from "@/lib/anomaly/pass";
+import { incidentKey } from "@/lib/incidents/key";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { BACKUP_TITLE } from "@/lib/ui/conditions";
 import { isVardoManagedApp } from "@/lib/infra/instance-apps";
@@ -295,7 +297,7 @@ async function loadLatestDeploys(appIds: string[], now: number) {
 /** Anomaly alerts that fired and haven't cleared. */
 async function loadOpenAnomalies(orgId: string) {
   const rows = await db
-    .select({ about: notificationSends.about, sentAt: notificationSends.sentAt, detail: notificationSends.detail })
+    .select({ type: notificationSends.type, about: notificationSends.about, sentAt: notificationSends.sentAt, detail: notificationSends.detail })
     .from(notificationSends)
     .where(
       and(
@@ -304,9 +306,23 @@ async function loadOpenAnomalies(orgId: string) {
         isNull(notificationSends.clearedAt),
       ),
     );
+  const open = rows.length
+    ? await db
+        .select({ id: incidents.id, key: incidents.key, openedAt: incidents.openedAt })
+        .from(incidents)
+        .where(and(eq(incidents.organizationId, orgId), eq(incidents.state, "open"), inArray(incidents.key, rows.map((r) => incidentKey(r.type, r.about)))))
+    : [];
+  const byKey = new Map(open.map((i) => [i.key, i]));
   return rows.map((r) => {
     const detail = (r.detail ?? {}) as { appId?: string; title?: string };
-    return { about: r.about, appId: detail.appId ?? null, title: detail.title ?? "Unusual activity", sentAt: r.sentAt };
+    const incident = byKey.get(incidentKey(r.type, r.about));
+    return {
+      about: r.about,
+      appId: detail.appId ?? null,
+      title: detail.title ?? "Unusual activity",
+      sentAt: incident?.openedAt ?? r.sentAt,
+      incidentId: incident?.id,
+    };
   });
 }
 

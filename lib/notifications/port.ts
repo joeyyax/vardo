@@ -11,6 +11,12 @@ export type DeliveryReceipt = {
   providerStatus?: number;
 };
 
+/** What the factory knows about earlier sends for the same incident. */
+export type SendContext = {
+  /** This channel's message for the incident's opening notice. */
+  priorMessageId?: string;
+};
+
 export interface NotificationChannel {
-  send(event: BusEvent): Promise<DeliveryReceipt | void>;
+  send(event: BusEvent, ctx?: SendContext): Promise<DeliveryReceipt | void>;
 }

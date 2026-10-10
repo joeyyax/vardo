@@ -1,7 +1,8 @@
-import type { DeliveryReceipt, NotificationChannel } from "./port";
+import type { DeliveryReceipt, NotificationChannel, SendContext } from "./port";
 import type { BusEvent } from "@/lib/bus/events";
+import { singleIncident } from "@/lib/incidents/event";
 import { parseDiscordWebhook } from "./channel-schemas";
-import { postJson } from "./provider-http";
+import { postJson, ProviderError } from "./provider-http";
 import { pushMessageForOrg, type PushMessage, type PushSeverity } from "./push-message";
 
 export type DiscordConfig = { webhookUrl: string };
@@ -39,22 +40,33 @@ export class DiscordNotificationChannel implements NotificationChannel {
     private organizationId?: string,
   ) {}
 
-  /** Throws when Discord refuses the message, so dispatch retries. */
-  async send(event: BusEvent): Promise<DeliveryReceipt> {
+  /** Throws when Discord refuses the message, so dispatch retries. A resolution edits the incident's opening message in place. */
+  async send(event: BusEvent, ctx: SendContext = {}): Promise<DeliveryReceipt> {
     const url = parseDiscordWebhook(this.config.webhookUrl);
     if (!url) throw new Error("The Discord webhook URL isn't a Discord webhook");
 
     const msg = await pushMessageForOrg(event, this.organizationId);
     if (!msg) return {};
 
+    const payload = { embeds: [discordEmbed(msg)], allowed_mentions: { parse: [] } };
+    const secrets = [this.config.webhookUrl, url.pathname.split("/").filter(Boolean).at(-1) ?? ""];
+    const prior = ctx.priorMessageId;
+    if (prior && /^\d+$/.test(prior) && singleIncident(event)?.transition === "resolved") {
+      const edit = new URL(`${url.origin}${url.pathname.replace(/\/+$/, "")}/messages/${prior}`);
+      const thread = url.searchParams.get("thread_id");
+      if (thread) edit.searchParams.set("thread_id", thread);
+      try {
+        const { status } = await postJson("Discord", edit.toString(), payload, { secrets, method: "PATCH" });
+        return { providerStatus: status, providerMessageIds: [prior] };
+      } catch (err) {
+        // A deleted message gets a new one.
+        if (!(err instanceof ProviderError && err.providerStatus === 404)) throw err;
+      }
+    }
+
     // wait=true returns the created message instead of an empty 204.
     url.searchParams.set("wait", "true");
-    const { status, body } = await postJson(
-      "Discord",
-      url.toString(),
-      { embeds: [discordEmbed(msg)], allowed_mentions: { parse: [] } },
-      { secrets: [this.config.webhookUrl, url.pathname.split("/").filter(Boolean).at(-1) ?? ""] },
-    );
+    const { status, body } = await postJson("Discord", url.toString(), payload, { secrets });
     const id = (body as { id?: unknown } | null)?.id;
     return { providerStatus: status, ...(typeof id === "string" ? { providerMessageIds: [id] } : {}) };
   }

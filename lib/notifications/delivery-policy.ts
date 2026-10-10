@@ -35,6 +35,8 @@ export function emailsEvent(event: BusEvent, settings: Settings): boolean {
     case "app.auto-restarted":
       // A restart that recovered is self-healing; the digest counts it.
       return event.gaveUp || !event.success;
+    case "alert.resolved":
+      return !event.quiet;
     default:
       return deliveryClass(event.type) !== "digest";
   }

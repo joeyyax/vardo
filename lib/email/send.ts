@@ -4,6 +4,7 @@ import { getEmailProviderConfig, getInstanceDisplayName, type EmailProviderConfi
 import { DEFAULT_APP_NAME } from "@/lib/app-name";
 import { logger } from "@/lib/logger";
 import { sendViaPouch } from "@/lib/email/pouch";
+import { smtpThread, threadHeaders, type MailThread, type OutboundMessage } from "@/lib/email/thread";
 
 const log = logger.child("email");
 
@@ -12,6 +13,7 @@ type SendEmailOpts = {
   subject: string;
   from?: string;
   replyTo?: string;
+  thread?: MailThread;
 } & (
   | { template: ReactElement; html?: never; text?: never }
   /** Pre-rendered parts. */
@@ -66,18 +68,18 @@ export async function sendEmail(opts: SendEmailOpts): Promise<SendResult> {
 
   switch (config.provider) {
     case "mailpace":
-      return sendViaMailpace(config, { to, subject, html, text, from: fromAddress, replyTo: replyToAddress });
+      return sendViaMailpace(config, { to, subject, html, text, from: fromAddress, replyTo: replyToAddress, thread: opts.thread });
     case "resend":
-      return sendViaResend(config, { to, subject, html, text, from: fromAddress, replyTo: replyToAddress });
+      return sendViaResend(config, { to, subject, html, text, from: fromAddress, replyTo: replyToAddress, thread: opts.thread });
     case "postmark":
-      return sendViaPostmark(config, { to, subject, html, text, from: fromAddress, replyTo: replyToAddress });
+      return sendViaPostmark(config, { to, subject, html, text, from: fromAddress, replyTo: replyToAddress, thread: opts.thread });
     case "pouch": {
-      const result = await sendViaPouch(config, { to, subject, html, text, from: fromAddress, replyTo: replyToAddress });
+      const result = await sendViaPouch(config, { to, subject, html, text, from: fromAddress, replyTo: replyToAddress, thread: opts.thread });
       if (result.error) log.error(result.error);
       return result;
     }
     case "smtp":
-      return sendViaSmtp(config, { to, subject, html, text, from: fromAddress, replyTo: replyToAddress });
+      return sendViaSmtp(config, { to, subject, html, text, from: fromAddress, replyTo: replyToAddress, thread: opts.thread });
     default:
       log.error(`Unknown provider: ${(config as EmailProviderConfig).provider}`);
       return { success: false, error: `Unknown email provider` };
@@ -86,7 +88,7 @@ export async function sendEmail(opts: SendEmailOpts): Promise<SendResult> {
 
 async function sendViaMailpace(
   config: EmailProviderConfig,
-  msg: { to: string; subject: string; html: string; text: string; from: string; replyTo?: string },
+  msg: OutboundMessage,
 ): Promise<SendResult> {
   if (!config.apiKey) return { success: false, error: "Mailpace API token not configured" };
 
@@ -104,6 +106,8 @@ async function sendViaMailpace(
       htmlbody: msg.html,
       textbody: msg.text,
       ...(msg.replyTo ? { replyto: msg.replyTo } : {}),
+      ...(msg.thread?.reply ? { inreplyto: msg.thread.root } : {}),
+      ...(msg.thread ? { references: msg.thread.root } : {}),
     }),
   });
 
@@ -118,7 +122,7 @@ async function sendViaMailpace(
 
 async function sendViaResend(
   config: EmailProviderConfig,
-  msg: { to: string; subject: string; html: string; text: string; from: string; replyTo?: string },
+  msg: OutboundMessage,
 ): Promise<SendResult> {
   if (!config.apiKey) return { success: false, error: "Resend API key not configured" };
 
@@ -135,6 +139,7 @@ async function sendViaResend(
       html: msg.html,
       text: msg.text,
       ...(msg.replyTo ? { reply_to: [msg.replyTo] } : {}),
+      ...(msg.thread ? { headers: threadHeaders(msg.thread) } : {}),
     }),
   });
 
@@ -149,7 +154,7 @@ async function sendViaResend(
 
 async function sendViaPostmark(
   config: EmailProviderConfig,
-  msg: { to: string; subject: string; html: string; text: string; from: string; replyTo?: string },
+  msg: OutboundMessage,
 ): Promise<SendResult> {
   if (!config.apiKey) return { success: false, error: "Postmark server token not configured" };
 
@@ -167,6 +172,7 @@ async function sendViaPostmark(
       HtmlBody: msg.html,
       TextBody: msg.text,
       ...(msg.replyTo ? { ReplyTo: msg.replyTo } : {}),
+      ...(msg.thread ? { Headers: Object.entries(threadHeaders(msg.thread)).map(([Name, Value]) => ({ Name, Value })) } : {}),
       MessageStream: "outbound",
     }),
   });
@@ -182,7 +188,7 @@ async function sendViaPostmark(
 
 async function sendViaSmtp(
   config: EmailProviderConfig,
-  msg: { to: string; subject: string; html: string; text: string; from: string; replyTo?: string },
+  msg: OutboundMessage,
 ): Promise<SendResult> {
   if (!config.smtpHost) return { success: false, error: "SMTP host not configured" };
 
@@ -208,6 +214,7 @@ async function sendViaSmtp(
       html: msg.html,
       text: msg.text,
       ...(msg.replyTo ? { replyTo: msg.replyTo } : {}),
+      ...smtpThread(msg.thread),
     });
     return { success: true };
   } catch (err) {

@@ -1,4 +1,4 @@
-import type { DeliveryReceipt, NotificationChannel } from "./port";
+import type { DeliveryReceipt, NotificationChannel, SendContext } from "./port";
 import type { BusEvent } from "@/lib/bus/events";
 import { postJson } from "./provider-http";
 import { pushMessageForOrg, type PushMessage } from "./push-message";
@@ -30,10 +30,11 @@ export class TelegramNotificationChannel implements NotificationChannel {
     private organizationId?: string,
   ) {}
 
-  /** Throws when Telegram refuses the message, so dispatch retries. */
-  async send(event: BusEvent): Promise<DeliveryReceipt> {
+  /** Throws when Telegram refuses the message, so dispatch retries. Updates and resolutions reply to the incident's opening message. */
+  async send(event: BusEvent, ctx: SendContext = {}): Promise<DeliveryReceipt> {
     const msg = await pushMessageForOrg(event, this.organizationId);
     if (!msg) return {};
+    const replyTo = ctx.priorMessageId && /^\d+$/.test(ctx.priorMessageId) ? Number(ctx.priorMessageId) : undefined;
 
     const { status, body } = await postJson(
       "Telegram",
@@ -44,6 +45,7 @@ export class TelegramNotificationChannel implements NotificationChannel {
         parse_mode: "MarkdownV2",
         link_preview_options: { is_disabled: true },
         disable_notification: msg.severity === "info" || msg.severity === "success",
+        ...(replyTo !== undefined ? { reply_parameters: { message_id: replyTo, allow_sending_without_reply: true } } : {}),
       },
       { secrets: [this.config.botToken] },
     );

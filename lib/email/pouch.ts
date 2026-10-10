@@ -1,19 +1,13 @@
 import { createHmac, timingSafeEqual } from "crypto";
 import type { EmailProviderConfig } from "@/lib/system-settings";
+import { threadHeaders, type OutboundMessage } from "./thread";
 
 export const POUCH_DEFAULT_BASE_URL = "https://pouch.email";
 
 /** Webhook timestamps older than this are rejected. */
 const WEBHOOK_TOLERANCE_SECONDS = 5 * 60;
 
-export type PouchMessage = {
-  to: string;
-  subject: string;
-  html: string;
-  text: string;
-  from: string;
-  replyTo?: string;
-};
+export type PouchMessage = OutboundMessage;
 
 export type PouchSendResult = { success: boolean; messageId?: string; error?: string };
 
@@ -23,23 +17,21 @@ export function pouchBaseUrl(config: Pick<EmailProviderConfig, "baseUrl">): stri
   return (config.baseUrl?.trim() || POUCH_DEFAULT_BASE_URL).replace(/\/+$/, "");
 }
 
-/** The `error.message` from a Pouch error body, or null. */
-async function pouchErrorMessage(res: Response): Promise<string | null> {
+/** The `error` from a Pouch error body, or null. */
+async function pouchError(res: Response): Promise<{ message: string | null; field: string | null }> {
   try {
-    const body = (await res.json()) as { error?: { message?: unknown } };
-    return typeof body.error?.message === "string" ? body.error.message : null;
+    const body = (await res.json()) as { error?: { message?: unknown; field?: unknown } };
+    return {
+      message: typeof body.error?.message === "string" ? body.error.message : null,
+      field: typeof body.error?.field === "string" ? body.error.field : null,
+    };
   } catch {
-    return null;
+    return { message: null, field: null };
   }
 }
 
-export async function sendViaPouch(
-  config: EmailProviderConfig,
-  msg: PouchMessage,
-): Promise<PouchSendResult> {
-  if (!config.apiKey) return { success: false, error: "Pouch API key not configured" };
-
-  const res = await fetch(`${pouchBaseUrl(config)}/v1/emails`, {
+function postEmail(config: EmailProviderConfig, msg: PouchMessage, headers: Record<string, string>): Promise<Response> {
+  return fetch(`${pouchBaseUrl(config)}/v1/emails`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${config.apiKey}`,
@@ -53,12 +45,28 @@ export async function sendViaPouch(
       text: msg.text,
       tags: ["vardo"],
       ...(msg.replyTo ? { reply_to: msg.replyTo } : {}),
+      ...(Object.keys(headers).length > 0 ? { headers } : {}),
     }),
   });
+}
 
-  if (!res.ok) {
-    const message = await pouchErrorMessage(res);
-    return { success: false, error: message ? `Pouch: ${message}` : `Pouch: ${res.status}` };
+/** Thread headers go as custom headers; a domain that refuses them gets the email without. */
+export async function sendViaPouch(
+  config: EmailProviderConfig,
+  msg: PouchMessage,
+): Promise<PouchSendResult> {
+  if (!config.apiKey) return { success: false, error: "Pouch API key not configured" };
+
+  const headers = threadHeaders(msg.thread);
+  let res = await postEmail(config, msg, headers);
+  let error = res.ok ? null : await pouchError(res);
+  if (error && res.status === 422 && error.field === "headers" && Object.keys(headers).length > 0) {
+    res = await postEmail(config, msg, {});
+    error = res.ok ? null : await pouchError(res);
+  }
+
+  if (error) {
+    return { success: false, error: error.message ? `Pouch: ${error.message}` : `Pouch: ${res.status}` };
   }
 
   const body = (await res.json().catch(() => null)) as { id?: unknown } | null;
@@ -84,7 +92,7 @@ export async function verifyPouch(config: EmailProviderConfig): Promise<{ ok: bo
     const res = await fetch(url, { headers: { Authorization: `Bearer ${config.apiKey}` } });
     if (res.status === 401) return { ok: false, message: "Pouch rejected the API key" };
     if (!res.ok) {
-      const message = await pouchErrorMessage(res);
+      const { message } = await pouchError(res);
       return { ok: false, message: `Pouch returned ${res.status}${message ? `: ${message}` : ""}` };
     }
 

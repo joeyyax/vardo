@@ -86,8 +86,11 @@ function Subjects({ row, wide = false }: { row: AttentionRow; wide?: boolean }) 
               <span className="font-medium">{item.name}</span>
               {item.detail && <span className="text-muted-foreground">{item.detail}</span>}
               {item.since && (
-                <span className="text-xs text-muted-foreground/70">
-                  for {formatSpan(item.since)}
+                <span
+                  className="text-xs text-muted-foreground/70"
+                  title={item.incidentId ? `Incident ${item.incidentId}` : undefined}
+                >
+                  {item.incidentId ? "open for" : "for"} {formatSpan(item.since)}
                 </span>
               )}
             </>
@@ -95,7 +98,7 @@ function Subjects({ row, wide = false }: { row: AttentionRow; wide?: boolean }) 
           const className =
             "squircle -mx-1.5 flex flex-wrap items-baseline gap-x-2 rounded-md px-1.5 transition-colors hover:bg-muted/60";
           return (
-            <li key={item.id} className={wide ? "mb-1 break-inside-avoid" : undefined}>
+            <li key={item.id} data-incident={item.incidentId} className={wide ? "mb-1 break-inside-avoid" : undefined}>
               {!item.href ? (
                 <span className={className}>{content}</span>
               ) : item.external ? (

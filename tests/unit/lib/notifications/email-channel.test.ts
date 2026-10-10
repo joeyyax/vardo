@@ -84,4 +84,19 @@ describe("EmailNotificationChannel", () => {
     await expect(channel(["a@x.com"]).send(status)).resolves.toEqual({});
     expect(sendEmail).not.toHaveBeenCalled();
   });
+
+  it("threads an incident's emails on its id and leaves one-off emails unthreaded", async () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://vardo.example.com");
+    sendEmail.mockResolvedValue({ success: true });
+    const incident = {
+      id: "inc_1", key: "app:app_1:deploy.failed", kind: "deploy.failed", state: "open" as const, transition: "updated" as const,
+      severity: "critical" as const, peakSeverity: "critical" as const, subject: { type: "app" as const, id: "app_1" }, title: "api failed to deploy",
+      openedAt: "2026-10-10T10:00:00.000Z", updatedAt: "2026-10-10T11:00:00.000Z", resolvedAt: null, updates: 1, url: "https://vardo.example.com/apps/app_1",
+    };
+    await channel(["a@x.com"]).send({ ...event, incident } as BusEvent);
+    await channel(["a@x.com"]).send(event);
+    expect(sendEmail.mock.calls[0][0].thread).toEqual({ root: "<inc_1@vardo.example.com>", reply: true });
+    expect(sendEmail.mock.calls[1][0].thread).toBeUndefined();
+    vi.unstubAllEnvs();
+  });
 });

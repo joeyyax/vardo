@@ -51,6 +51,7 @@ import { createStageTimings, formatTimings, STAGE_PHASE, type StageTimings } fro
 import { crashReason, relevantLogTail } from "./deploy-log-tail";
 import { repoWebUrl } from "@/lib/email/format";
 import { recordSelfDeploy, type MarkerOutcome } from "@/lib/lifecycle/self-deploy";
+import { deployIncident } from "@/lib/incidents/deploy";
 
 export type { DeployStage } from "./deploy-logger";
 
@@ -831,6 +832,12 @@ export async function sendDeployNotification(notice: DeployNotice) {
     };
     const gitSha = deployment?.gitSha ?? ctx?.gitSha ?? undefined;
     const gitMessage = deployment?.gitMessage ?? ctx?.gitMessage ?? undefined;
+    const incident = await deployIncident(
+      organizationId,
+      { appId: app.id, deploymentId, displayName, environmentId: deployment?.environmentId ?? null },
+      success,
+    );
+    const incidentField = incident ? { incident } : {};
 
     if (success) {
       emit(organizationId, {
@@ -846,6 +853,7 @@ export async function sendDeployNotification(notice: DeployNotice) {
         gitMessage,
         triggeredBy: triggeredByName,
         ...details,
+        ...incidentField,
       });
     } else {
       const lines = notice.logLines ?? [];
@@ -867,6 +875,7 @@ export async function sendDeployNotification(notice: DeployNotice) {
         logTail: relevantLogTail(lines),
         serving,
         ...details,
+        ...incidentField,
       });
     }
   } catch (err) { logger.child("notifications").error("Deploy notification error:", err); }

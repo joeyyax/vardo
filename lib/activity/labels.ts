@@ -63,6 +63,8 @@ const PHRASES: Record<string, Phrase> = {
   "mesh.webhook_relay_failed": { text: "couldn't relay a GitHub webhook to a linked instance", standalone: true },
   "mesh.webhook_relay_received": { text: "received a relayed GitHub webhook for" },
   "app.github_feedback_failed": { text: "couldn't post deploy status to GitHub for" },
+  "app.incident_resolved": { text: "saw an incident clear on" },
+  "system.incident_resolved": { text: "saw an incident clear", standalone: true },
 
   "volume.sync": { text: "synced volumes on" },
   "volume.drift_detected": { text: "detected volume drift on" },
@@ -126,6 +128,11 @@ export function detailsFor(group: ActivityGroup): string[] {
 
   const duration = metadata.durationMs;
   if (typeof duration === "number") details.push(`in ${formatDuration(duration)}`);
+
+  const incidentTitle = metadata.incidentId ? metadata.title : undefined;
+  if (typeof incidentTitle === "string" && incidentTitle) details.push(incidentTitle);
+  const openFor = metadata.openForMs;
+  if (typeof openFor === "number") details.push(`open for ${formatDuration(openFor)}`);
 
   const trigger = metadata.trigger;
   if (typeof trigger === "string" && trigger) details.push(`via ${triggerLabel(trigger)}`);

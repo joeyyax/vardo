@@ -4,10 +4,20 @@ import { mailContext, orgWantsEvent } from "./mail-context";
 import { sendEmail } from "@/lib/email/send";
 import { renderNotificationEmail } from "@/lib/email/notification-email";
 import { logger } from "@/lib/logger";
+import { singleIncident } from "@/lib/incidents/event";
+import { incidentThread } from "@/lib/email/thread";
 
 const log = logger.child("notifications");
 
 type EmailConfig = { recipients: string[] };
+
+function hostOf(baseUrl: string): string {
+  try {
+    return new URL(baseUrl).hostname;
+  } catch {
+    return "";
+  }
+}
 
 export class EmailNotificationChannel implements NotificationChannel {
   constructor(
@@ -22,12 +32,14 @@ export class EmailNotificationChannel implements NotificationChannel {
     const [ctx, series] = await Promise.all([mailContext(this.organizationId), loadMailSeries(event).catch(() => ({}))]);
     const email = await renderNotificationEmail(event, { ...ctx, series });
     if (!email || this.config.recipients.length === 0) return {};
+    const incident = singleIncident(event);
+    const thread = incident ? incidentThread(incident, hostOf(ctx.baseUrl)) : undefined;
 
     const providerMessageIds: string[] = [];
     const failures: string[] = [];
     for (const recipient of this.config.recipients) {
       try {
-        const result = await sendEmail({ to: recipient, subject: email.subject, html: email.html, text: email.text });
+        const result = await sendEmail({ to: recipient, subject: email.subject, html: email.html, text: email.text, thread });
         if (!result.success) {
           failures.push(`${recipient}: ${result.error ?? "rejected"}`);
           continue;

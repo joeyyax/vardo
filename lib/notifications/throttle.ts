@@ -104,10 +104,10 @@ export async function clearNotifications(
     });
 }
 
-/** Clears these subjects of the type, so each can send again. */
-export async function clearSubjects(organizationId: string, type: string, abouts: string[], now: Date): Promise<string[]> {
+/** Clears these subjects of the type, so each can send again. Returns what cleared. */
+export async function clearSubjects(organizationId: string, type: string, abouts: string[], now: Date): Promise<Cleared[]> {
   if (abouts.length === 0) return [];
-  const rows = await db
+  return db
     .update(notificationSends)
     .set({ clearedAt: now })
     .where(
@@ -118,8 +118,12 @@ export async function clearSubjects(organizationId: string, type: string, abouts
         inArray(notificationSends.about, abouts),
       ),
     )
-    .returning({ about: notificationSends.about });
-  return rows.map((r) => r.about);
+    .returning({
+      about: notificationSends.about,
+      severity: notificationSends.severity,
+      sentAt: notificationSends.sentAt,
+      detail: notificationSends.detail,
+    });
 }
 
 /** Claims a send for a subject at most once per `hours`, across restarts. False inside the cooldown or when another process won. */

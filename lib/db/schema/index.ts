@@ -13,6 +13,7 @@ export * from "./app-transfers";
 export * from "./config";
 export * from "./backups";
 export * from "./notifications";
+export * from "./incidents";
 export * from "./cron";
 export * from "./mesh";
 export * from "./monitoring";
