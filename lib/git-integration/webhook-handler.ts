@@ -10,6 +10,7 @@ import { getSystemManagedApp, createVardoPreview, destroyVardoPreview } from "@/
 import { isFeatureEnabled, isFeatureEnabledAsync } from "@/lib/config/features";
 import { previewRefusalReason } from "@/lib/git-integration/pull-request";
 import { logger } from "@/lib/logger";
+import { previewLive, previewRemoved } from "./github-feedback";
 import type { PullRequestEvent, PushEvent } from "./webhook-event";
 
 const log = logger.child("webhook");
@@ -119,13 +120,7 @@ export async function handlePullRequestEvent(event: PullRequestEvent, scope: Eve
       if (previewsEnabled && (action === "opened" || action === "reopened" || action === "synchronize")) {
         try {
           const result = await createVardoPreview({ prNumber, branch, repoFullName });
-          try {
-            await postPreviewComment(repoFullName, prNumber, [
-              { appName: "vardo", domain: result.domain },
-            ]);
-          } catch (err) {
-            log.error("Failed to post PR comment:", err);
-          }
+          void previewLive(repoFullName, prNumber, [{ appName: "vardo", domain: result.domain }]);
           return NextResponse.json({ ok: true, preview: result });
         } catch (err) {
           log.error(`Vardo preview creation failed for PR #${prNumber}:`, err);
@@ -136,6 +131,7 @@ export async function handlePullRequestEvent(event: PullRequestEvent, scope: Eve
         try {
           await destroyVardoPreview(prNumber);
           log.info(`Vardo preview for PR #${prNumber} destroyed`);
+          void previewRemoved(repoFullName, prNumber, null);
         } catch (err) {
           log.error(`Vardo preview cleanup failed for PR #${prNumber}:`, err);
         }
@@ -169,15 +165,6 @@ export async function handlePullRequestEvent(event: PullRequestEvent, scope: Eve
 
         if (!result) {
           log.info(`No preview for ${repoFullName}#${prNumber} (no grouped project, or closed meanwhile)`);
-          return;
-        }
-
-        if (result.domains.length > 0) {
-          try {
-            await postPreviewComment(repoFullName, prNumber, result.domains);
-          } catch (err) {
-            log.error("Failed to post PR comment:", err);
-          }
         }
       } catch (err) {
         log.error(`Preview creation failed for PR #${prNumber}:`, err);
@@ -191,6 +178,7 @@ export async function handlePullRequestEvent(event: PullRequestEvent, scope: Eve
       try {
         const destroyed = await destroyPreview(repoFullName, prNumber, orgIds);
         log.info(`Preview for PR #${prNumber} ${destroyed ? "destroyed" : "not found"}`);
+        if (destroyed) void previewRemoved(repoFullName, prNumber, orgIds);
       } catch (err) {
         log.error(`Preview cleanup failed for PR #${prNumber}:`, err);
       }
@@ -202,59 +190,4 @@ export async function handlePullRequestEvent(event: PullRequestEvent, scope: Eve
     ok: true,
     skipped: previewsEnabled ? `PR action: ${action}` : "previews disabled",
   });
-}
-
-/** Posts preview environment URLs as a GitHub PR comment. */
-async function postPreviewComment(
-  repoFullName: string,
-  prNumber: number,
-  previewDomains: { appName: string; domain: string }[]
-): Promise<void> {
-  const { getInstallationToken } = await import("@/lib/git-integration/app");
-
-  // First installation token with access to this repo.
-  const allInstallations = await db.query.githubAppInstallations.findMany();
-
-  let token: string | null = null;
-  for (const inst of allInstallations) {
-    try {
-      token = await getInstallationToken(inst.installationId);
-      break;
-    } catch { /* try next */ }
-  }
-
-  if (!token) {
-    log.info("No GitHub token available for PR comment");
-    return;
-  }
-
-  const lines = [
-    "## Preview Environment",
-    "",
-    "| Service | URL |",
-    "|---------|-----|",
-    ...previewDomains.map(
-      (d) => `| ${d.appName} | https://${d.domain} |`
-    ),
-    "",
-    "_Deployed by [Vardo](https://vardo.run)_",
-  ];
-
-  const response = await fetch(
-    `https://api.github.com/repos/${repoFullName}/issues/${prNumber}/comments`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/vnd.github+json",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ body: lines.join("\n") }),
-    }
-  );
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`GitHub API error ${response.status}: ${text}`);
-  }
 }

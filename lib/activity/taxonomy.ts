@@ -52,6 +52,7 @@ const OUTCOME_OVERRIDES: Record<string, ActivityOutcome> = {
   "deployment.instant_rollback": "neutral",
   "deployment.cancelled": "neutral",
   "mesh.webhook_relay_failed": "failure",
+  "app.github_feedback_failed": "failure",
 };
 
 const FAILURE_SUFFIXES = [".failed", ".failure", ".error", ".unreachable"];

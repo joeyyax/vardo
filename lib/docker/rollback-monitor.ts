@@ -19,6 +19,7 @@ import { createDeployLogger } from "./deploy-logger";
 import type { RollbackStage, DeployStatus } from "./deploy-logger";
 import { recordActivity } from "@/lib/activity";
 import { logger } from "@/lib/logger";
+import { deployRolledBack } from "@/lib/git-integration/github-feedback";
 import { execFileAsync } from "@/lib/utils/exec";
 import { assertSlotWithinApp } from "./slot-guard";
 import { dockerEnv } from "@/lib/docker/docker-env";
@@ -293,6 +294,7 @@ export async function performRollback(opts: PerformRollbackOpts): Promise<boolea
         .update(deployments)
         .set({ status: "rolled_back" })
         .where(eq(deployments.id, deploymentId));
+      void deployRolledBack(deploymentId);
       await finish("failed", "error");
       await sendRollbackNotification(
         organizationId,
@@ -313,6 +315,7 @@ export async function performRollback(opts: PerformRollbackOpts): Promise<boolea
       .update(deployments)
       .set({ status: "rolled_back" })
       .where(eq(deployments.id, deploymentId));
+    void deployRolledBack(deploymentId);
 
     rollbackLog(`[rollback] ${appName} is serving from ${previousSlot} again`);
     stage("done", "success");

@@ -9,6 +9,7 @@ import { eq, and } from "drizzle-orm";
 import { logger } from "@/lib/logger";
 import { createDeployment, runDeployment } from "./deploy";
 import { DeployBlockedError } from "./errors";
+import { trackDeploy } from "@/lib/git-integration/github-feedback";
 import type { DeployOpts, DeployResult, DeployStage } from "./deploy";
 import {
   enqueueAndTryAcquire,
@@ -346,8 +347,23 @@ export async function requestDeploy(opts: DeployOpts): Promise<DeployResult> {
   }, ACTIVE_HEARTBEAT_MS);
   workerRenew.unref?.();
 
+  // GitHub statuses and PR comments. Fire-and-forget; never throws.
+  const feedback = trackDeploy(newDeploymentId, { trigger: opts.trigger, gitSha: opts.gitSha });
+  const onStage = opts.onStage;
+
   try {
-    return await runRequestedDeploy(newDeploymentId, opts);
+    const result = await runRequestedDeploy(newDeploymentId, {
+      ...opts,
+      onStage: (stage, status) => {
+        feedback.stage(stage, status);
+        onStage?.(stage, status);
+      },
+    });
+    feedback.finish(result);
+    return result;
+  } catch (err) {
+    feedback.finish({ status: "cancelled" });
+    throw err;
   } finally {
     clearInterval(workerRenew);
     await clearWorkerLease(newDeploymentId);
