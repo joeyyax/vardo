@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const settings = new Map<string, string>();
 const files = new Map<string, string>();
@@ -47,7 +47,7 @@ vi.mock("fs/promises", () => ({
   },
 }));
 
-const { checkUpdateMarker, startLifecycleMonitor, UPDATE_MARKER_FILE } = await import("@/lib/lifecycle/monitor");
+const { checkUpdateMarker, startLifecycleMonitor, UPDATE_MARKER_FILE, UPDATE_POLL_MS, UPDATE_WAIT_MS } = await import("@/lib/lifecycle/monitor");
 
 const nowS = () => Math.floor(Date.now() / 1000);
 
@@ -126,5 +126,75 @@ describe("update event flow", () => {
     settings.set("lifecycle_heartbeat", JSON.stringify({ at: Date.now() - 60_000, hostBootAt: null, version: "x" }));
     await startLifecycleMonitor();
     expect(emitted.map((e) => e.event.type)).toEqual(["system.recovered-unclean"]);
+  });
+});
+
+describe("booting into an update", () => {
+  // node-a, bc2083d → 559e5b2: the new console booted with the marker "started"; install.sh wrote "updated" 2s later.
+  const id = "20261010004345-434368";
+  const started = (startedAt: number) => ({ id, state: "started", startedAt, fromVersion: "bc2083d", toVersion: "559e5b2", fromSlot: "green", toSlot: "blue" });
+
+  function bootIntoUpdate() {
+    const startedAt = nowS() - 170;
+    // The old console stopped without its marker, so this boot classifies unclean.
+    settings.set("lifecycle_heartbeat", JSON.stringify({ at: Date.now() - 25_000, hostBootAt: null, version: "x" }));
+    settings.set("lifecycle_update_seen", JSON.stringify({ id, states: ["started"] }));
+    writeMarker(started(startedAt));
+    return startedAt;
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("holds the boot message until the update reports, then sends only system.updated", async () => {
+    const startedAt = bootIntoUpdate();
+    await startLifecycleMonitor();
+    expect(emitted).toEqual([]);
+
+    await vi.advanceTimersByTimeAsync(2_000);
+    writeMarker({ ...started(startedAt), state: "updated", finishedAt: nowS(), swapStartedAt: nowS() - 20, healthyAt: nowS() });
+    await vi.advanceTimersByTimeAsync(UPDATE_POLL_MS);
+    expect(emitted.map((e) => e.event.type)).toEqual(["system.updated"]);
+    expect(emitted[0].event).toMatchObject({ fromVersion: "bc2083d", toVersion: "559e5b2", downSeconds: 20 });
+
+    // Heartbeat ticks and the rest of the wait add nothing.
+    await vi.advanceTimersByTimeAsync(UPDATE_WAIT_MS);
+    expect(emitted.map((e) => e.event.type)).toEqual(["system.updated"]);
+  });
+
+  it("sends a failure when the update reports one", async () => {
+    const startedAt = bootIntoUpdate();
+    await startLifecycleMonitor();
+    writeMarker({ ...started(startedAt), state: "failed", finishedAt: nowS(), step: "Health check", rolledBack: true });
+    await vi.advanceTimersByTimeAsync(UPDATE_POLL_MS);
+    expect(emitted.map((e) => e.event.type)).toEqual(["system.update-failed"]);
+    expect(emitted[0].event).toMatchObject({ step: "Health check", rolledBack: true });
+  });
+
+  it("reports an update that never finishes, once", async () => {
+    bootIntoUpdate();
+    await startLifecycleMonitor();
+    await vi.advanceTimersByTimeAsync(UPDATE_WAIT_MS - UPDATE_POLL_MS);
+    expect(emitted).toEqual([]);
+
+    await vi.advanceTimersByTimeAsync(2 * UPDATE_POLL_MS);
+    expect(emitted.map((e) => e.event.type)).toEqual(["system.update-failed"]);
+    expect(String(emitted[0].event.error)).toContain("didn't report");
+
+    await vi.advanceTimersByTimeAsync(UPDATE_WAIT_MS);
+    expect(emitted).toHaveLength(1);
+  });
+
+  it("sends system.updated alone when the marker finished before the console looked", async () => {
+    settings.set("lifecycle_heartbeat", JSON.stringify({ at: Date.now() - 25_000, hostBootAt: null, version: "x" }));
+    settings.set("lifecycle_update_seen", JSON.stringify({ id, states: ["started"] }));
+    writeMarker({ ...started(nowS() - 170), state: "updated", finishedAt: nowS() });
+    await startLifecycleMonitor();
+    expect(emitted.map((e) => e.event.type)).toEqual(["system.updated"]);
   });
 });
