@@ -11,7 +11,11 @@ if (!DATABASE_URL) {
   process.exit(1);
 }
 
-const sql = postgres(DATABASE_URL);
+// One connection, so the advisory lock and every migration share a session.
+const sql = postgres(DATABASE_URL, { max: 1 });
+
+// Serializes migrations across containers starting together.
+const MIGRATE_LOCK_ID = 73_521_184_113;
 
 // The object is already in its target state. Only reachable on a database left
 // half-applied by the older non-transactional runner, or altered out of band.
@@ -45,6 +49,8 @@ const recordSql = (db, tag) =>
   db`INSERT INTO __drizzle_migrations (hash, created_at) VALUES (${tag}, ${Date.now()})`;
 
 try {
+  await sql`SELECT pg_advisory_lock(${MIGRATE_LOCK_ID})`;
+
   // Ensure migration tracking table exists
   await sql`
     CREATE TABLE IF NOT EXISTS __drizzle_migrations (
@@ -110,5 +116,6 @@ try {
   console.error("[migrate] Failed:", err.message);
   process.exit(1);
 } finally {
+  await sql`SELECT pg_advisory_unlock(${MIGRATE_LOCK_ID})`.catch(() => {});
   await sql.end();
 }
