@@ -48,6 +48,7 @@ import {
   MARKERS_FILE,
   MIN_VALID_GZIP_BYTES,
   PROTECT_LIST_FILE,
+  VANISHED_LIST_FILE,
   buildBindPreflightScript,
   buildFileBackupScript,
   buildFileRestoreScript,
@@ -55,6 +56,7 @@ import {
   buildTarBackupScript,
   buildTarStreamScript,
   buildTarRestoreScript,
+  parseVanishedPaths,
 } from "./archive";
 import {
   assertExcludedPath,
@@ -397,6 +399,13 @@ async function streamTarBackup(opts: {
 
   const excludedPaths =
     findArgv.length === 0 ? [] : parseExcludedPaths(await readFile(join(workDir, EXCLUDE_LIST_FILE), "utf8"));
+  const vanished = parseVanishedPaths(await readFile(join(workDir, VANISHED_LIST_FILE), "utf8").catch(() => ""));
+  if (vanished.length > 0) {
+    const shown = vanished.slice(0, 20).join(", ");
+    const more = vanished.length > 20 ? ` and ${vanished.length - 20} more` : "";
+    opts.logFn(`WARNING: ${vanished.length} file(s) changed or disappeared while being archived and were left out: ${shown}${more}`);
+    log.warn(`${label}: left out ${vanished.length} file(s) that changed or disappeared mid-archive`);
+  }
   return { ...result, excludedPaths, sourceWasEmpty };
 }
 

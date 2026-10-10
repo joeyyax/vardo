@@ -17,17 +17,69 @@ export const PROTECT_LIST_FILE = "protect.list";
 
 const RESTORE_STAGE_DIR = ".vardo-restore-staging";
 
+/** Written by the backup scripts, inside the backup dir: tar's messages for files that vanished or changed mid-read. */
+export const VANISHED_LIST_FILE = "vanished.list";
+
+const VANISHED_MESSAGE = "(No such file or directory|file changed as we read it|file removed before we read it)";
+
+// Busybox tar has no --ignore-failed-read: it skips a file gone between listing and reading, then exits 1.
+const TOLERATED_TAR_ERRORS = [
+  `: ${VANISHED_MESSAGE}$`,
+  "error exit delayed from previous errors",
+  "Exiting with failure status due to previous errors",
+].join("|");
+
+/**
+ * Lists exclusions and runs tar into `out`. Exit 1 passes when every message is about a file that vanished or
+ * changed mid-read; anything else fails the script with the tool's own output.
+ */
+function tarTolerantOfVanishedFiles(out: string, dataDir: string, backupDir: string): string[] {
+  const err = `"${backupDir}/tar.err"`;
+  return [
+    "tolerate_vanished() {",
+    '  [ "$1" -eq 0 ] && return 0',
+    `  if [ "$1" -eq 1 ] && [ -s ${err} ] && ! grep -q "can't execute" ${err} && ! grep -qvE '${TOLERATED_TAR_ERRORS}' ${err}; then`,
+    `    grep -E ': ${VANISHED_MESSAGE}$' ${err} >> "${backupDir}/${VANISHED_LIST_FILE}" || true`,
+    "    return 0",
+    "  fi",
+    `  cat ${err} >&2`,
+    '  exit "$1"',
+    "}",
+    "rc=0",
+    'if [ "$#" -gt 0 ]; then',
+    `  find . "$@" > "${backupDir}/${EXCLUDE_LIST_FILE}" 2> ${err} || rc=$?`,
+    '  tolerate_vanished "$rc"',
+    "  rc=0",
+    `  tar czf ${out} -X "${backupDir}/${EXCLUDE_LIST_FILE}" -C "${dataDir}" . 2> ${err} || rc=$?`,
+    "else",
+    `  tar czf ${out} -C "${dataDir}" . 2> ${err} || rc=$?`,
+    "fi",
+    'tolerate_vanished "$rc"',
+    `rm -f ${err}`,
+  ];
+}
+
+const VANISHED_LINE = new RegExp(
+  `^[^:]*: (?:can't open '(.+)'|(.+?)(?:: Cannot \\w+)?): ${VANISHED_MESSAGE}$`,
+);
+
+/** Paths in a VANISHED_LIST_FILE, relative to the volume root. */
+export function parseVanishedPaths(body: string): string[] {
+  const paths = new Set<string>();
+  for (const line of body.split("\n")) {
+    const m = VANISHED_LINE.exec(line.trim());
+    const path = m?.[1] ?? m?.[2];
+    if (path) paths.add(path.replace(/^\.\//, ""));
+  }
+  return [...paths];
+}
+
 /** Shell script that copies a volume aside as a tar.gz, as the pre-restore snapshot. */
 export function buildTarBackupScript(dataDir = "/data", backupDir = "/backup"): string {
   return [
     "set -e",
     `cd "${dataDir}"`,
-    'if [ "$#" -gt 0 ]; then',
-    `  find . "$@" > "${backupDir}/${EXCLUDE_LIST_FILE}"`,
-    `  tar czf "${backupDir}/volume.tar.gz" -X "${backupDir}/${EXCLUDE_LIST_FILE}" -C "${dataDir}" .`,
-    "else",
-    `  tar czf "${backupDir}/volume.tar.gz" -C "${dataDir}" .`,
-    "fi",
+    ...tarTolerantOfVanishedFiles(`"${backupDir}/volume.tar.gz"`, dataDir, backupDir),
     `if [ -z "$(ls -A "${dataDir}")" ]; then echo "${EMPTY_SOURCE_MARKER}"; fi`,
   ].join("\n");
 }
@@ -40,12 +92,7 @@ export function buildTarStreamScript(dataDir = "/data", backupDir = "/backup"): 
   return [
     "set -e",
     `cd "${dataDir}"`,
-    'if [ "$#" -gt 0 ]; then',
-    `  find . "$@" > "${backupDir}/${EXCLUDE_LIST_FILE}"`,
-    `  tar czf - -X "${backupDir}/${EXCLUDE_LIST_FILE}" -C "${dataDir}" .`,
-    "else",
-    `  tar czf - -C "${dataDir}" .`,
-    "fi",
+    ...tarTolerantOfVanishedFiles("-", dataDir, backupDir),
     `if [ -z "$(ls -A "${dataDir}")" ]; then echo "${EMPTY_SOURCE_MARKER}" > "${backupDir}/${MARKERS_FILE}"; fi`,
   ].join("\n");
 }
