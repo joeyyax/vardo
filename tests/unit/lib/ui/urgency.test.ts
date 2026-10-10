@@ -35,9 +35,10 @@ const subject = (name: string, over: Partial<{ status: string; parked: boolean }
 });
 
 describe("urgent signals", () => {
-  it("treats a crashed app as urgent and a missing container as routine", () => {
+  it("treats a crashed app and a missing container as urgent", () => {
     expect(appDownUrgent({ status: "error" })).toBe(true);
-    expect(appDownUrgent({ status: "missing" })).toBe(false);
+    expect(appDownUrgent({ status: "missing" })).toBe(true);
+    expect(appDownUrgent({ status: "missing", parked: true })).toBe(false);
     expect(appDownUrgent({ status: "active" })).toBe(false);
   });
 

@@ -36,9 +36,9 @@ export function isQuiet(app: LiveSubject): boolean {
   return !!app.parked || app.status === "stopped";
 }
 
-/** Crashed while meant to run. A missing container stays a routine warning. */
+/** Crashed, or its container is gone, while meant to run. */
 export function appDownUrgent(app: LiveSubject): boolean {
-  return !isQuiet(app) && app.status === "error";
+  return !isQuiet(app) && (app.status === "error" || app.status === "missing");
 }
 
 /** Which conditions are urgent: crash loops, critical findings and certificates near or past expiry. */
