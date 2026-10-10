@@ -75,7 +75,7 @@ export function deployProblem(d: DeployRowInput, role: DeployRole, appStatus: st
 
 export function triggerLabel(trigger: string): string {
   return (
-    { manual: "Manual deploy", webhook: "Auto deploy", api: "API deploy", rollback: "Rollback" }[trigger] ??
+    { manual: "Manual deploy", webhook: "Auto deploy", api: "API deploy", rollback: "Rollback", relay: "Relayed deploy", poll: "Polled deploy" }[trigger] ??
     `${trigger.charAt(0).toUpperCase()}${trigger.slice(1)} deploy`
   );
 }

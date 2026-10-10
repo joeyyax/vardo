@@ -20,7 +20,7 @@ async function handlePost(request: NextRequest) {
     const gate = await requirePlugin("mesh");
     if (gate) return gate;
 
-    const sent = (await request.json().catch(() => null)) as { vardo?: unknown } | null;
+    const sent = (await request.json().catch(() => null)) as { vardo?: unknown; acceptsWebhookRelay?: unknown } | null;
     await db
       .update(meshPeers)
       .set({
@@ -28,6 +28,7 @@ async function handlePost(request: NextRequest) {
         lastSeenAt: new Date(),
         updatedAt: new Date(),
         ...vardoStatusColumns(parseVardoStatus(sent?.vardo)),
+        ...(typeof sent?.acceptsWebhookRelay === "boolean" ? { peerAcceptsWebhookRelay: sent.acceptsWebhookRelay } : {}),
       })
       .where(eq(meshPeers.id, peer.id));
 
@@ -63,6 +64,7 @@ async function handlePost(request: NextRequest) {
         vardo: localVardoStatus(),
       },
       peers: allPeers,
+      acceptsWebhookRelay: peer.acceptWebhookRelay,
     });
   } catch (error) {
     return handleRouteError(error, "Error processing heartbeat");

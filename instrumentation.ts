@@ -242,6 +242,14 @@ export async function register() {
         })
         .catch((err) => log.error("Failed to start mesh heartbeat scheduler:", err)),
 
+      // Auto-deploy for apps whose host can't reach this instance with a webhook.
+      import("./lib/git-integration/poll-scheduler")
+        .then(({ startGitPollScheduler }) => {
+          startGitPollScheduler();
+          log.info("Git poll scheduler started");
+        })
+        .catch((err) => log.error("Failed to start git poll scheduler:", err)),
+
       // Nothing else removes expired preview environments.
       import("./lib/config/features")
         .then(({ isFeatureEnabledAsync }) => isFeatureEnabledAsync("previews"))

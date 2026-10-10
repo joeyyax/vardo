@@ -66,6 +66,8 @@ const TRIGGER_LABELS: Record<string, string> = {
   webhook: "Push",
   api: "API",
   rollback: "Rollback",
+  relay: "Push (relayed)",
+  poll: "Push (polled)",
 };
 
 export function triggerLabel(trigger: string | undefined, by?: string): string | undefined {

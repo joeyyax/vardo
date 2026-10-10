@@ -32,6 +32,14 @@ export const meshPeers = pgTable("mesh_peer", {
   organizationId: text("organization_id").references(() => organizations.id, { onDelete: "set null" }),
   // Accept MCP tool calls this peer forwards on behalf of a user with the same verified email.
   acceptMcp: boolean("accept_mcp").default(false).notNull(),
+  // Accept GitHub webhook events this peer relays. Only a signed-in instance admin sets it.
+  acceptWebhookRelay: boolean("accept_webhook_relay").default(false).notNull(),
+  // The peer accepts our relays, as its last heartbeat said.
+  peerAcceptsWebhookRelay: boolean("peer_accepts_webhook_relay").default(false).notNull(),
+  lastRelaySentAt: timestamp("last_relay_sent_at"),
+  lastRelaySentStatus: text("last_relay_sent_status"),
+  lastRelayReceivedAt: timestamp("last_relay_received_at"),
+  lastRelayReceivedStatus: text("last_relay_received_status"),
   lastSeenAt: timestamp("last_seen_at"),
   // What the peer last reported about its own Vardo, for canary update ordering.
   vardoSha: text("vardo_sha"),

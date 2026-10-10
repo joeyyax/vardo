@@ -35,7 +35,7 @@ export const EVENT_CATEGORIES = {
 
 export type EventCategory = keyof typeof EVENT_CATEGORIES;
 
-export type DeployTrigger = "manual" | "webhook" | "api" | "rollback";
+export type DeployTrigger = "manual" | "webhook" | "api" | "rollback" | "relay" | "poll";
 
 /** Deploy facts the notification emails show. Older emitters leave them out. */
 export type DeployDetails = {

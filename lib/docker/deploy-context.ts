@@ -83,7 +83,7 @@ export type DeployContext = {
   deploymentId: string;
   appId: string;
   organizationId: string;
-  trigger: "manual" | "webhook" | "api" | "rollback";
+  trigger: "manual" | "webhook" | "api" | "rollback" | "relay" | "poll";
   triggeredBy?: string;
   environmentId?: string;
   groupEnvironmentId?: string;

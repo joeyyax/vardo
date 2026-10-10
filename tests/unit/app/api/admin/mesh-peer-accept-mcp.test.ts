@@ -1,4 +1,4 @@
-// Only a signed-in instance admin lets a peer forward MCP calls here.
+// Only a signed-in instance admin lets a peer forward MCP calls or relay webhooks here.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
@@ -8,6 +8,7 @@ const state = vi.hoisted(() => ({ authMethod: "session" as "session" | "token", 
 vi.mock("@/lib/auth/admin", () => ({
   requireAppAdmin: async () => ({ user: { id: "admin-1" }, authMethod: state.authMethod }),
 }));
+vi.mock("@/lib/mesh/heartbeat", () => ({ sendHeartbeatToPeer: vi.fn() }));
 vi.mock("@/lib/api/require-plugin", () => ({ requirePlugin: vi.fn().mockResolvedValue(null) }));
 vi.mock("@/lib/api/with-rate-limit", async () => (await import("@/tests/helpers/mocks")).withRateLimitModule());
 vi.mock("@/lib/db", () => ({
@@ -43,6 +44,19 @@ describe("PATCH /api/v1/admin/mesh/peers/[peerId] acceptMcp", () => {
   it("is refused to an admin-scoped token", async () => {
     state.authMethod = "token";
     const res = await patch({ acceptMcp: true });
+    expect(res.status).toBe(403);
+    expect(state.set).toBeNull();
+  });
+
+  it("lets an admin's session accept relayed webhooks", async () => {
+    const res = await patch({ acceptWebhookRelay: true });
+    expect(res.status).toBe(200);
+    expect(state.set).toMatchObject({ acceptWebhookRelay: true });
+  });
+
+  it("refuses relayed webhooks to an admin-scoped token", async () => {
+    state.authMethod = "token";
+    const res = await patch({ acceptWebhookRelay: true });
     expect(res.status).toBe(403);
     expect(state.set).toBeNull();
   });

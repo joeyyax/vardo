@@ -25,6 +25,7 @@ import {
 } from "@/lib/ui/app-settings-fields";
 
 import type { App } from "./types";
+import { AutoDeployTriggers } from "./auto-deploy-triggers";
 import { can } from "@/lib/auth/permissions";
 import { cpuLimitHint } from "@/lib/ui/cpu-limit";
 import { MemoryProfileFields, type MemoryProfileValues } from "./memory-profile-fields";
@@ -633,6 +634,7 @@ export function AppSettingsPanel({
               <Label htmlFor="edit-auto-deploy">Auto deploy</Label>
             </div>
           )}
+          {fields.autoDeploy && <AutoDeployTriggers orgId={orgId} appId={app.id} />}
           {fields.autoRollback && (
             <div className="flex items-center gap-3">
               <Switch
