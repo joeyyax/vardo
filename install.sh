@@ -599,10 +599,14 @@ resolve_compose_file() {
   fi
 }
 
-# Resolve the source dir — self-deploy slot, legacy slot or legacy flat
+# Resolve the source dir — self-deploy slot (or the engine's checkout), legacy slot or legacy flat
 resolve_source_dir() {
   if is_self_deploy; then
-    echo "$VARDO_DIR/apps/vardo/production/current"
+    if [ ! -d "$VARDO_DIR/apps/vardo/production/current/.git" ] && [ -d "$VARDO_DIR/apps/vardo/repo/.git" ]; then
+      echo "$VARDO_DIR/apps/vardo/repo"
+    else
+      echo "$VARDO_DIR/apps/vardo/production/current"
+    fi
   elif has_slot_layout; then
     active_slot_dir
   else
@@ -3042,6 +3046,53 @@ _do_rebuild() {
 # DOCTOR
 # ══════════════════════════════════════════════════════════════════════════════
 
+# One doctor line per container status.
+doctor_container_status() {
+  local name="$1" status="$2"
+  if echo "$status" | grep -qi "unhealthy"; then
+    doctor_fail "$name — $status"
+  elif echo "$status" | grep -qi "healthy"; then
+    doctor_pass "$name — healthy"
+  elif echo "$status" | grep -qi "^up\|running"; then
+    doctor_warn "$name — running (no healthcheck)"
+  else
+    doctor_fail "$name — $status"
+  fi
+}
+
+# Self-deploy: shared services in project vardo, the console in vardo-production-<slot>.
+doctor_self_deploy_containers() {
+  local slot shared console consoles
+  slot=$(self_deploy_slot)
+
+  shared=$(docker ps -a --filter "label=com.docker.compose.project=vardo" \
+    --format '{{.Names}}\t{{.Status}}' 2>/dev/null | grep -v '^vardo-frontend	' || true)
+  if [ -z "$shared" ]; then
+    doctor_fail "No shared services in project vardo"
+  else
+    while IFS=$'\t' read -r name status; do
+      doctor_container_status "$name" "$status"
+    done <<< "$shared"
+  fi
+
+  console=$(docker ps -a --filter "label=com.docker.compose.project=vardo-production-$slot" \
+    --filter "label=com.docker.compose.service=frontend" --format '{{.Names}}\t{{.Status}}' 2>/dev/null | head -n 1)
+  if [ -z "$console" ]; then
+    doctor_fail "No console in vardo-production-$slot, which production/current points at"
+  else
+    doctor_container_status "${console%%	*}" "${console#*	}"
+  fi
+
+  consoles=$(slot_consoles | wc -l | tr -d ' ')
+  if [ "$consoles" -gt 1 ]; then
+    doctor_warn "$consoles slot consoles running; only $slot should be"
+  fi
+
+  if [ -n "$(docker ps -q --filter name='^vardo-frontend$' 2>/dev/null)" ]; then
+    doctor_warn "Legacy vardo-frontend still running. Retire it with: vardo migrate-self-deploy"
+  fi
+}
+
 do_doctor() {
   local pass=0 warn_count=0 fail_count=0
 
@@ -3136,6 +3187,10 @@ do_doctor() {
     doctor_fail ".env not found"
   fi
 
+  if is_self_deploy; then
+    doctor_pass "Self-deploy: $(self_deploy_slot) active"
+  fi
+
   local doctor_src
   doctor_src=$(resolve_source_dir)
   if [ -d "$doctor_src/.git" ]; then
@@ -3144,7 +3199,7 @@ do_doctor() {
     branch=$(git -C "$doctor_src" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
     doctor_pass "Git: $version ($branch)"
 
-    if has_slot_layout; then
+    if ! is_self_deploy && has_slot_layout; then
       doctor_pass "Slot layout: $(read_active_slot) active"
     fi
 
@@ -3200,9 +3255,12 @@ do_doctor() {
 
   step "Containers"
 
-  local doctor_compose
+  local doctor_compose doctor_console=""
   doctor_compose=$(resolve_compose_file)
-  if [ -f "$doctor_compose" ]; then
+  if is_self_deploy; then
+    doctor_self_deploy_containers
+    doctor_console=$(self_deploy_frontend)
+  elif [ -f "$doctor_compose" ]; then
     local containers
     containers=$(docker compose -f "$doctor_compose" ps --format "{{.Name}}\t{{.Status}}" 2>/dev/null || true)
 
@@ -3210,13 +3268,7 @@ do_doctor() {
       doctor_fail "No containers running"
     else
       while IFS=$'\t' read -r name status; do
-        if echo "$status" | grep -qi "healthy"; then
-          doctor_pass "$name — healthy"
-        elif echo "$status" | grep -qi "up\|running"; then
-          doctor_warn "$name — running (no healthcheck)"
-        else
-          doctor_fail "$name — $status"
-        fi
+        doctor_container_status "$name" "$status"
       done <<< "$containers"
     fi
   fi
@@ -3225,8 +3277,15 @@ do_doctor() {
 
   step "Connectivity"
 
+  # Shared services keep their container names in both layouts.
+  local pg_exec=(docker exec vardo-postgres) redis_exec=(docker exec vardo-redis)
+  if ! is_self_deploy; then
+    pg_exec=(docker compose -f "$doctor_compose" exec -T postgres)
+    redis_exec=(docker compose -f "$doctor_compose" exec -T redis)
+  fi
+
   # PostgreSQL
-  if docker compose -f "$doctor_compose" exec -T postgres pg_isready -U host -q 2>/dev/null; then
+  if "${pg_exec[@]}" pg_isready -U host -q 2>/dev/null; then
     doctor_pass "PostgreSQL: accepting connections"
   else
     doctor_fail "PostgreSQL: not responding"
@@ -3234,7 +3293,7 @@ do_doctor() {
 
   # Redis
   # shellcheck disable=SC2016
-  if docker compose -f "$doctor_compose" exec -T redis sh -c '[ -z "${REDIS_PASSWORD:-}" ] || export REDISCLI_AUTH="$REDIS_PASSWORD"; redis-cli ping' 2>/dev/null | grep -q PONG; then
+  if "${redis_exec[@]}" sh -c '[ -z "${REDIS_PASSWORD:-}" ] || export REDISCLI_AUTH="$REDIS_PASSWORD"; redis-cli ping' 2>/dev/null | grep -q PONG; then
     doctor_pass "Redis: PONG"
   else
     doctor_fail "Redis: not responding"
@@ -3247,6 +3306,12 @@ do_doctor() {
       doctor_pass "App: /api/health OK (dev server)"
     else
       doctor_warn "App: dev server not running on localhost:3000"
+    fi
+  elif is_self_deploy; then
+    if [ -n "$doctor_console" ] && docker exec "$doctor_console" curl -sf http://localhost:3000/api/health > /dev/null 2>&1; then
+      doctor_pass "App: /api/health OK ($(self_deploy_slot))"
+    else
+      doctor_fail "App: /api/health unreachable"
     fi
   else
     if docker compose -f "$doctor_compose" exec -T frontend \
