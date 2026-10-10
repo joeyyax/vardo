@@ -9,6 +9,7 @@ import { createExec, startExec, resizeExec } from "@/lib/docker/exec";
 import { requirePlugin } from "@/lib/api/require-plugin";
 import net from "node:net";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
+import { isSystemExecTarget, refuseSystemExec } from "@/lib/api/system-exec";
 import { recordActivity } from "@/lib/activity";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
@@ -23,6 +24,7 @@ type ExecSession = {
   orgId: string;
   appId: string;
   userId: string;
+  systemExec: boolean;
   createdAt: number;
 };
 
@@ -65,6 +67,7 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
         composeService: true,
         containerName: true,
         importedContainerId: true,
+        isSystemManaged: true,
       },
       with: { parentApp: { columns: { name: true } } },
     });
@@ -72,6 +75,9 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
     if (!app) {
       return new Response("Not found", { status: 404 });
     }
+
+    const refused = await refuseSystemExec(org.organization, app);
+    if (refused) return refused;
 
     // Get container from query param, or find the first running container
     const searchParams = request.nextUrl.searchParams;
@@ -122,6 +128,7 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
       orgId,
       appId,
       userId: org.session.user.id,
+      systemExec: isSystemExecTarget(org.organization, app),
       createdAt: Date.now(),
     });
 
@@ -243,6 +250,9 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     if (session.orgId !== orgId || session.appId !== appId) {
       return apiError.forbidden();
     }
+
+    const refused = await refuseSystemExec(org.organization, { isSystemManaged: session.systemExec });
+    if (refused) return refused;
 
     if (session.socket.destroyed) {
       sessions.delete(sessionId);

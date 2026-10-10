@@ -7,6 +7,7 @@ import { nanoid } from "nanoid";
 import { z } from "zod";
 import { verifyAppAccess } from "@/lib/api/verify-access";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
+import { refuseSystemExec } from "@/lib/api/system-exec";
 import { can } from "@/lib/auth/permissions";
 import { requirePlugin } from "@/lib/api/require-plugin";
 
@@ -76,6 +77,9 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       return apiError.notFound("app");
     }
 
+    const refused = await refuseSystemExec(orgAccess.organization, app);
+    if (refused) return refused;
+
     const body = await request.json();
     const parsed = createCronSchema.safeParse(body);
 
@@ -120,6 +124,9 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
     if (!app) {
       return apiError.notFound("app");
     }
+
+    const refused = await refuseSystemExec(orgAccess.organization, app);
+    if (refused) return refused;
 
     const body = await request.json();
     const parsed = updateCronSchema.safeParse(body);
@@ -173,6 +180,9 @@ async function handleDelete(request: NextRequest, { params }: RouteParams) {
     if (!app) {
       return apiError.notFound("app");
     }
+
+    const refused = await refuseSystemExec(orgAccess.organization, app);
+    if (refused) return refused;
 
     const body = await request.json();
     const parsed = deleteCronSchema.safeParse(body);

@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { cronJobs } from "@/lib/db/schema";
 import { and, eq } from "drizzle-orm";
 import { verifyAppAccess, verifyOrgAccess } from "@/lib/api/verify-access";
+import { refuseSystemExec } from "@/lib/api/system-exec";
 import { can } from "@/lib/auth/permissions";
 import { requirePlugin } from "@/lib/api/require-plugin";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
@@ -24,6 +25,9 @@ async function handlePost(_request: NextRequest, { params }: RouteParams) {
     if (!orgAccess) return apiError.forbidden();
     const app = await verifyAppAccess(orgId, appId, "app.cron");
     if (!app) return apiError.notFound("app");
+
+    const refused = await refuseSystemExec(orgAccess.organization, app);
+    if (refused) return refused;
 
     const job = await db.query.cronJobs.findFirst({
       where: and(eq(cronJobs.id, cronId), eq(cronJobs.appId, appId)),

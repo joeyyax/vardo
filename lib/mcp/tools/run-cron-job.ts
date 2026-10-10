@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { cronJobs } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { runCronJob } from "@/lib/cron/engine";
+import { isSystemExecTarget } from "@/lib/api/system-exec";
 import type { McpAuthContext } from "../auth";
 import { accessDenied, canAccessOrg } from "../scope";
 
@@ -29,14 +30,20 @@ export function registerRunCronJob(server: McpServer, context: McpAuthContext) {
               composeService: true,
               containerName: true,
               importedContainerId: true,
+              isSystemManaged: true,
             },
-            with: { parentApp: { columns: { name: true } } },
+            with: {
+              parentApp: { columns: { name: true } },
+              organization: { columns: { isSystemManaged: true } },
+            },
           },
         },
       });
 
+      // Tokens never carry instance-admin power, so cron on Vardo's own apps stays session-only.
       const allowed =
         job &&
+        !isSystemExecTarget(job.app.organization, job.app) &&
         (await canAccessOrg(context, job.app.organizationId, "app.cron")) &&
         (job.type !== "command" ||
           (await canAccessOrg(context, job.app.organizationId, "app.cron.command")));
