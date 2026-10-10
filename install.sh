@@ -1864,7 +1864,7 @@ build_and_start() {
   else
     local src_dir
     src_dir=$(resolve_source_dir)
-    export GIT_SHA=$(git -C "$src_dir" rev-parse --short HEAD 2>/dev/null || true)
+    export GIT_SHA=$(git -c safe.directory="$src_dir" -C "$src_dir" rev-parse --short HEAD 2>/dev/null || true)
     run_with_spinner "Building containers (this may take a few minutes)" docker compose -f "$compose_file" build
     snapshot_redis
     run_with_spinner "Starting services" docker compose -f "$compose_file" up -d --remove-orphans
@@ -2974,7 +2974,7 @@ do_update() {
   step "Building $new_slot slot"
 
   local new_compose="$new_slot_dir/$COMPOSE_FILE"
-  export GIT_SHA=$(git -C "$new_slot_dir" rev-parse --short HEAD 2>/dev/null || true)
+  export GIT_SHA=$(git -c safe.directory="$new_slot_dir" -C "$new_slot_dir" rev-parse --short HEAD 2>/dev/null || true)
   run_with_spinner "Building frontend" docker compose -f "$new_compose" build frontend
 
   # Stop the old frontend before starting the new one (container name collision)
@@ -3083,7 +3083,7 @@ _do_rebuild() {
   compose_file=$(resolve_compose_file)
   src_dir=$(resolve_source_dir)
 
-  export GIT_SHA=$(git -C "$src_dir" rev-parse --short HEAD 2>/dev/null || true)
+  export GIT_SHA=$(git -c safe.directory="$src_dir" -C "$src_dir" rev-parse --short HEAD 2>/dev/null || true)
   run_with_spinner "Building containers" docker compose -f "$compose_file" build
 
   info "Restarting services..."
