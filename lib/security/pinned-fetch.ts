@@ -5,7 +5,7 @@ import http from "node:http";
 import https from "node:https";
 import { lookup as dnsLookup, type LookupAddress, type LookupOptions } from "node:dns";
 import { Readable } from "node:stream";
-import { blockedAddressReason, BlockedUrlError } from "./ssrf";
+import { alwaysBlockedReason, blockedAddressReason, BlockedUrlError } from "./ssrf";
 
 type LookupCallback = (err: NodeJS.ErrnoException | null, address: string | LookupAddress[], family?: number) => void;
 
@@ -14,6 +14,12 @@ export function guardedLookup(allowPrivate: boolean) {
   return (hostname: string, options: LookupOptions, callback: LookupCallback): void => {
     dnsLookup(hostname, { ...options, all: true }, (err, addresses) => {
       if (err) return callback(err, []);
+      for (const { address } of addresses) {
+        const reason = alwaysBlockedReason(address);
+        if (reason) {
+          return callback(new BlockedUrlError(`Refusing to reach ${hostname} — it resolves to ${address} (${reason})`), []);
+        }
+      }
       if (!allowPrivate) {
         for (const { address } of addresses) {
           const reason = blockedAddressReason(address);

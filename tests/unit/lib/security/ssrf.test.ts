@@ -162,3 +162,15 @@ describe("assertOutboundUrlAllowed", () => {
     ).rejects.toThrow(/private/);
   });
 });
+
+describe("allowlisted hosts", () => {
+  it("still can't reach instance metadata", async () => {
+    await expect(
+      assertOutboundUrlAllowed("http://169.254.169.254/latest/meta-data/", { allowlist: ["169.254.169.254"] }),
+    ).rejects.toThrow(/link-local/);
+  });
+
+  it("may reach a private address", async () => {
+    await expect(assertOutboundUrlAllowed("http://10.1.2.3/", { allowlist: ["10.1.2.3"] })).resolves.toBeInstanceOf(URL);
+  });
+});

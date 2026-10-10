@@ -114,6 +114,13 @@ export function inRange(bytes: number[], net: number[], bits: number): boolean {
 const V4_MAPPED_PREFIX = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff, 0, 0, 0, 0];
 const NAT64_PREFIX = [0, 0x64, 0xff, 0x9b, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 
+/** Refused even for allowlisted and trusted hosts: instance metadata and "this network". */
+export function alwaysBlockedReason(address: string): string | null {
+  const reason = blockedAddressReason(address);
+  if (!reason) return null;
+  return /link-local|this network/.test(reason) ? reason : null;
+}
+
 /**
  * Why this address is refused, or null when it may be reached.
  * IPv4-mapped and NAT64 forms are judged as their IPv4 address; skipping that unwrap bypasses the filter.
@@ -176,10 +183,13 @@ export async function assertOutboundUrlAllowed(
     );
   }
 
-  if (isAllowlisted(url.hostname, policy.allowlist)) return url;
-
   // A bare address skips the resolver.
   const literal = url.hostname.replace(/^\[|\]$/g, "");
+  const always = parseIPv4(literal) || parseIPv6(literal) ? alwaysBlockedReason(literal) : null;
+  if (always) throw new BlockedUrlError(`Refusing to reach ${literal} — ${always}`);
+
+  if (isAllowlisted(url.hostname, policy.allowlist)) return url;
+
   if (parseIPv4(literal) || parseIPv6(literal)) {
     const reason = blockedAddressReason(literal);
     if (reason) {
