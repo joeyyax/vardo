@@ -17,8 +17,15 @@ import {
 } from "@/components/image-updates/update-row";
 import { IgnoreMenu, type IgnoreChoice } from "@/components/image-updates/ignore-menu";
 import { SelfManagedUpdates } from "@/components/image-updates/self-managed-updates";
+import {
+  MajorVersions,
+  majorEntries,
+  type MajorEntry,
+} from "@/components/image-updates/major-versions";
+import { saveTrack, trackMessage } from "@/components/image-updates/track-request";
+import type { TrackMode } from "@/lib/docker/image-updates/track-policy";
 import { toast } from "@/lib/messenger";
-import { requiresMigration, type MigrationPlan } from "@/lib/docker/image-updates/migration-path";
+import { isMajorJump, requiresMigration, type MigrationPlan } from "@/lib/docker/image-updates/migration-path";
 import { describeRule } from "@/lib/docker/image-updates/ignore";
 import { pendingImageChange } from "@/lib/docker/image-updates/pending";
 import type { MajorGateBlock } from "@/lib/docker/image-updates/major-gate";
@@ -136,6 +143,7 @@ export function AppUpdatesPanel({
   const [chosen, setChosen] = useState<Record<string, string>>({});
   const [migration, setMigration] = useState<MigrationPrompt | null>(null);
   const [migrationPlan, setMigrationPlan] = useState<MigrationPlan | null>(null);
+  const [trackBusy, setTrackBusy] = useState<string | null>(null);
 
   // A stopped deploy opens the dialog on arrival.
   const blocked = data?.blockedMigration ?? null;
@@ -156,6 +164,26 @@ export function AppUpdatesPanel({
   );
 
   const ignored = data?.ignored ?? [];
+  const majors = majorEntries(
+    [...(data?.services ?? []), ...ignored.map((entry) => entry.service)].map((service) => ({
+      appId,
+      service,
+    })),
+  );
+
+  async function setTrack(entry: MajorEntry, mode: TrackMode) {
+    const label = entry.service.service ?? appName;
+    setTrackBusy(entry.key);
+    try {
+      await saveTrack(orgId, { appId, service: entry.service.service, image: entry.service.image }, mode);
+      toast.success(trackMessage(label, mode, entry.service.track.major));
+      refresh();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Couldn't save that choice");
+    } finally {
+      setTrackBusy(null);
+    }
+  }
 
   async function setIgnore(entry: ServiceUpdate, choice: IgnoreChoice | null) {
     const body = JSON.stringify({ appId, service: entry.service, ...(choice ?? {}) });
@@ -225,27 +253,50 @@ export function AppUpdatesPanel({
     );
   }
 
+  const majorSection = (
+    <MajorVersions
+      entries={majors}
+      busyKey={trackBusy ?? (applying?.startsWith("major:") ? applying.slice(6) : null)}
+      disabled={deploying}
+      onTrack={setTrack}
+      onPlan={(entry, tag) => apply(entry.service, false, tag)}
+    />
+  );
+
   if (actionable.length === 0 && unverified.length === 0 && ignored.length === 0) {
     return (
-      <section
-        aria-label="Image updates"
-        className={cn(cardVariants({ variant: "surface" }), "px-4 py-6 text-center")}
-      >
-        {gateSurface && <div className="mb-3 text-left">{gateSurface}</div>}
-        <p className="type-body text-muted-foreground">Every image in compose is up to date.</p>
-        {undeployed.length > 0 && (
-          <div className="mt-3">
-            <UndeployedNote count={undeployed.length} onDeploy={onDeploy} deploying={deploying} />
-          </div>
-        )}
-        <button
-          type="button"
-          onClick={refresh}
-          className="type-body-sm mt-1 text-muted-foreground/70 underline underline-offset-2 transition-opacity hover:opacity-80"
+      <div className="space-y-3">
+        <section
+          aria-label="Image updates"
+          className={cn(cardVariants({ variant: "surface" }), "px-4 py-6 text-center")}
         >
-          Check again
-        </button>
-      </section>
+          {gateSurface && <div className="mb-3 text-left">{gateSurface}</div>}
+          <p className="type-body text-muted-foreground">Every image in compose is up to date.</p>
+          {undeployed.length > 0 && (
+            <div className="mt-3">
+              <UndeployedNote count={undeployed.length} onDeploy={onDeploy} deploying={deploying} />
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={refresh}
+            className="type-body-sm mt-1 text-muted-foreground/70 underline underline-offset-2 transition-opacity hover:opacity-80"
+          >
+            Check again
+          </button>
+        </section>
+        {majorSection}
+        <MigrationDialog
+          prompt={migration}
+          plan={migrationPlan}
+          orgId={orgId}
+          onClose={() => setMigration(null)}
+          onConfirm={(prompt) => {
+            setMigration(null);
+            apply(prompt.entry, true, prompt.tag);
+          }}
+        />
+      </div>
     );
   }
 
@@ -253,9 +304,11 @@ export function AppUpdatesPanel({
     return defaultTarget(entry, chosen[entry.service ?? ""]);
   }
 
-  async function apply(entry: ServiceUpdate, acknowledgeMigration = false) {
-    const key = entry.service ?? "";
-    const tag = targetTag(entry);
+  /** `tagOverride` is a major picked in the majors section. */
+  async function apply(entry: ServiceUpdate, acknowledgeMigration = false, tagOverride?: string) {
+    const tag = tagOverride ?? targetTag(entry);
+    const crossesMajor = tag !== null && isMajorJump(entry.currentTag, tag);
+    const key = crossesMajor ? `major:${appId}:${entry.service ?? ""}` : (entry.service ?? "");
     if (!tag) {
       // A drifted floating tag has no new tag — deploying re-pulls it.
       onDeploy();
@@ -267,7 +320,7 @@ export function AppUpdatesPanel({
       setMigration({ appId, appName, entry, tag });
       return;
     }
-    if (entry.severity === "major" && !acknowledgeMigration && confirming !== key) {
+    if (!crossesMajor && entry.severity === "major" && !acknowledgeMigration && confirming !== key) {
       setConfirming(key);
       return;
     }
@@ -303,74 +356,77 @@ export function AppUpdatesPanel({
   }
 
   return (
-    <section aria-label="Image updates" className={cn(cardVariants({ variant: "surface" }), "divide-y")}>
-      <header className="flex items-center gap-2 px-4 py-2.5">
-        <h2 className="type-label text-muted-foreground/60">Image updates</h2>
-        <button
-          type="button"
-          onClick={refresh}
-          className="ml-auto text-muted-foreground/50 hover:text-foreground transition-colors"
-          aria-label="Re-read update status"
-        >
-          <RefreshCw className="size-3.5" aria-hidden="true" />
-        </button>
-      </header>
+    <div className="space-y-3">
+      <section aria-label="Image updates" className={cn(cardVariants({ variant: "surface" }), "divide-y")}>
+        <header className="flex items-center gap-2 px-4 py-2.5">
+          <h2 className="type-label text-muted-foreground/60">Image updates</h2>
+          <button
+            type="button"
+            onClick={refresh}
+            className="ml-auto text-muted-foreground/50 hover:text-foreground transition-colors"
+            aria-label="Re-read update status"
+          >
+            <RefreshCw className="size-3.5" aria-hidden="true" />
+          </button>
+        </header>
 
-      {gateSurface && <div className="px-4 py-2.5">{gateSurface}</div>}
+        {gateSurface && <div className="px-4 py-2.5">{gateSurface}</div>}
 
-      <UpdateRowHeader />
+        <UpdateRowHeader />
 
-      {actionable.map((entry) => {
-        const key = entry.service ?? "";
-        return (
-          <UpdateRow
-            key={key}
-            entry={entry}
-            target={targetTag(entry)}
-            onTargetChange={(tag) => setChosen((prev) => ({ ...prev, [key]: tag }))}
-            onApply={() => apply(entry)}
-            applying={applying === key}
-            disabled={deploying}
-            confirming={confirming === key}
-            ignoreSlot={
-              <IgnoreMenu
-                label={entry.service ?? entry.image}
-                disabled={deploying}
-                onChoose={(choice) => setIgnore(entry, choice)}
-              />
-            }
-          />
-        );
-      })}
+        {actionable.map((entry) => {
+          const key = entry.service ?? "";
+          return (
+            <UpdateRow
+              key={key}
+              entry={entry}
+              target={targetTag(entry)}
+              onTargetChange={(tag) => setChosen((prev) => ({ ...prev, [key]: tag }))}
+              onApply={() => apply(entry)}
+              applying={applying === key}
+              disabled={deploying}
+              confirming={confirming === key}
+              ignoreSlot={
+                <IgnoreMenu
+                  label={entry.service ?? entry.image}
+                  disabled={deploying}
+                  onChoose={(choice) => setIgnore(entry, choice)}
+                />
+              }
+            />
+          );
+        })}
 
-      {ignored.length > 0 && (
-        <IgnoredRows entries={ignored} onRestore={(entry) => setIgnore(entry, null)} />
-      )}
+        {ignored.length > 0 && (
+          <IgnoredRows entries={ignored} onRestore={(entry) => setIgnore(entry, null)} />
+        )}
 
-      {unverified.length > 0 && (
-        <p className="px-4 py-2.5 text-xs text-muted-foreground">
-          {unverified.length} image{unverified.length === 1 ? "" : "s"} couldn&apos;t be checked
-          {unverified[0].error ? ` — ${unverified[0].error}` : ""}.
-        </p>
-      )}
+        {unverified.length > 0 && (
+          <p className="px-4 py-2.5 text-xs text-muted-foreground">
+            {unverified.length} image{unverified.length === 1 ? "" : "s"} couldn&apos;t be checked
+            {unverified[0].error ? ` — ${unverified[0].error}` : ""}.
+          </p>
+        )}
 
-      {undeployed.length > 0 && (
-        <div className="px-4 py-2.5">
-          <UndeployedNote count={undeployed.length} onDeploy={onDeploy} deploying={deploying} />
-        </div>
-      )}
+        {undeployed.length > 0 && (
+          <div className="px-4 py-2.5">
+            <UndeployedNote count={undeployed.length} onDeploy={onDeploy} deploying={deploying} />
+          </div>
+        )}
 
-      <MigrationDialog
-        prompt={migration}
-        plan={migrationPlan}
-        orgId={orgId}
-        onClose={() => setMigration(null)}
-        onConfirm={(prompt) => {
-          setMigration(null);
-          apply(prompt.entry, true);
-        }}
-      />
-    </section>
+        <MigrationDialog
+          prompt={migration}
+          plan={migrationPlan}
+          orgId={orgId}
+          onClose={() => setMigration(null)}
+          onConfirm={(prompt) => {
+            setMigration(null);
+            apply(prompt.entry, true, prompt.tag);
+          }}
+        />
+      </section>
+      {majorSection}
+    </div>
   );
 }
 

@@ -13,6 +13,13 @@ import {
 import { IgnoreMenu, type IgnoreChoice } from "@/components/image-updates/ignore-menu";
 import { SelfManagedUpdates } from "@/components/image-updates/self-managed-updates";
 import {
+  MajorVersions,
+  majorEntries,
+  type MajorEntry,
+} from "@/components/image-updates/major-versions";
+import { saveTrack, trackMessage } from "@/components/image-updates/track-request";
+import type { TrackMode } from "@/lib/docker/image-updates/track-policy";
+import {
   UpdateRow,
   UpdateRowHeader,
   defaultTarget,
@@ -59,6 +66,7 @@ export function FleetUpdates({ orgId }: { orgId: string }) {
   /** Set when the migration dialog was opened by a checkbox rather than a button. */
   const [migrationSelects, setMigrationSelects] = useState(false);
   const [report, setReport] = useState<BatchReport | null>(null);
+  const [majorBusy, setMajorBusy] = useState<string | null>(null);
 
   const applyStatus = useCallback((status: FleetUpdateStatus | null) => {
     setData(status);
@@ -86,6 +94,52 @@ export function FleetUpdates({ orgId }: { orgId: string }) {
       ),
     [data],
   );
+
+  const majors = useMemo(
+    () =>
+      majorEntries(
+        [...(data?.majorNotices ?? []), ...(data?.majors ?? [])].map((notice) => ({
+          appId: notice.appId,
+          service: notice.service,
+          app: { displayName: notice.displayName, href: appHref(notice.name, "updates") },
+        })),
+      ),
+    [data],
+  );
+
+  async function setTrack(entry: MajorEntry, mode: TrackMode) {
+    const label = `${entry.service.service ?? entry.service.image} on ${entry.app?.displayName ?? "this app"}`;
+    setMajorBusy(entry.key);
+    try {
+      await saveTrack(
+        orgId,
+        { appId: entry.appId, service: entry.service.service, image: entry.service.image },
+        mode,
+      );
+      toast.success(trackMessage(label, mode, entry.service.track.major));
+      await refresh();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Couldn't save that choice");
+    } finally {
+      setMajorBusy(null);
+    }
+  }
+
+  /** New majors go one service at a time, through the migration dialog when the data needs it. */
+  function planUpgrade(entry: MajorEntry, tag: string) {
+    const prompt = {
+      appId: entry.appId,
+      appName: entry.app?.displayName ?? "",
+      entry: entry.service,
+      tag,
+    };
+    if (requiresMigration(entry.service.image, entry.service.currentTag, tag)) {
+      setMigrationSelects(false);
+      setMigration(prompt);
+      return;
+    }
+    applyOne(entry.appId, entry.service, tag);
+  }
 
   function targetFor(appId: string, entry: ServiceUpdate): string | null {
     return defaultTarget(entry, chosen[rowKey(appId, entry.service)]);
@@ -389,6 +443,14 @@ export function FleetUpdates({ orgId }: { orgId: string }) {
           </section>
         ))
       )}
+
+      <MajorVersions
+        entries={majors}
+        busyKey={majorBusy ?? busyRow}
+        disabled={applying}
+        onTrack={setTrack}
+        onPlan={planUpgrade}
+      />
 
       {data.selfManaged.map((app) => (
         <SelfManagedUpdates key={app.appId} title={app.displayName} services={app.services} />

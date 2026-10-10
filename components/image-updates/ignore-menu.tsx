@@ -8,14 +8,13 @@ import {
   DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { IGNORE_DURATIONS, type IgnoreScope } from "@/lib/docker/image-updates/ignore";
 
 export type IgnoreChoice = { scope: IgnoreScope; days: number | null };
 
-/** Silences one service, not the stack. Major-only keeps patches and holds majors. */
+/** Silences one service, not the stack. Majors are held by the track policy instead. */
 export function IgnoreMenu({
   label,
   disabled,
@@ -40,29 +39,14 @@ export function IgnoreMenu({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-52">
-        <DropdownMenuGroup aria-label="Ignore majors only">
+        <DropdownMenuGroup aria-label="Ignore updates">
           <DropdownMenuLabel className="type-label text-muted-foreground/60">
-            Ignore majors only
+            Ignore updates
           </DropdownMenuLabel>
           {IGNORE_DURATIONS.map((duration) => (
             <DropdownMenuItem
-              key={`major-${duration.label}`}
-              aria-label={`Ignore majors for ${duration.label}`}
-              onSelect={() => onChoose({ scope: "major", days: duration.days })}
-            >
-              {duration.label}
-            </DropdownMenuItem>
-          ))}
-        </DropdownMenuGroup>
-        <DropdownMenuSeparator />
-        <DropdownMenuGroup aria-label="Ignore all updates">
-          <DropdownMenuLabel className="type-label text-muted-foreground/60">
-            Ignore all updates
-          </DropdownMenuLabel>
-          {IGNORE_DURATIONS.map((duration) => (
-            <DropdownMenuItem
-              key={`all-${duration.label}`}
-              aria-label={`Ignore all updates for ${duration.label}`}
+              key={duration.label}
+              aria-label={`Ignore updates for ${duration.label}`}
               onSelect={() => onChoose({ scope: "all", days: duration.days })}
             >
               {duration.label}

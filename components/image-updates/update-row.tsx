@@ -26,9 +26,9 @@ export function severityLabel(entry: ServiceUpdate): string {
   return entry.severity && entry.severity !== "unknown" ? entry.severity : "";
 }
 
-/** What a row will apply: the user's pick, else the safe default. */
+/** What a row will apply: the user's pick, else the newest tag within the running major. */
 export function defaultTarget(entry: ServiceUpdate, chosen?: string): string | null {
-  return chosen ?? entry.latestTag ?? entry.majorAvailable ?? null;
+  return chosen ?? entry.latestTag ?? null;
 }
 
 const COLS = "sm:grid-cols-[minmax(6rem,10rem)_auto_1rem_13rem_minmax(0,1fr)_auto_auto]";
