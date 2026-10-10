@@ -46,13 +46,13 @@ describe.skipIf(!hasCompose)("self compose (#889)", () => {
 
   it("runs Redis with a password when the .env sets one, and the console sends it", () => {
     const cfg = resolve({ REDIS_PASSWORD: "abc123" });
-    expect(cfg.services.redis.environment?.REDIS_ARGS).toBe("--maxmemory 384mb --maxmemory-policy volatile-lru --requirepass abc123");
+    expect(cfg.services.redis.environment?.REDIS_ARGS).toBe("--appendonly yes --appendfsync everysec --maxmemory 320mb --maxmemory-policy volatile-lru --requirepass abc123");
     expect(cfg.services.frontend.environment?.REDIS_URL).toBe("redis://:abc123@vardo-redis:6379");
   });
 
   it("keeps an install without one running passwordless", () => {
     const cfg = resolve({});
-    expect(cfg.services.redis.environment?.REDIS_ARGS).toBe("--maxmemory 384mb --maxmemory-policy volatile-lru");
+    expect(cfg.services.redis.environment?.REDIS_ARGS).toBe("--appendonly yes --appendfsync everysec --maxmemory 320mb --maxmemory-policy volatile-lru");
     expect(cfg.services.frontend.environment?.REDIS_URL).toBe("redis://:@vardo-redis:6379");
   });
 

@@ -696,7 +696,7 @@ ensure_redis_mem() {
   local env_file="$1" mb mem max derived marked current
   mb=$(default_redis_mem_mb)
   mem="${mb}m"
-  max="$(( mb * 3 / 4 ))mb"
+  max="$(( mb * 5 / 8 ))mb"
   derived="VARDO_REDIS_MEM=$mem VARDO_REDIS_MAXMEMORY=$max"
 
   if ! grep -qE "^VARDO_REDIS_(MEM|MAXMEMORY)=" "$env_file" 2>/dev/null; then
@@ -731,7 +731,16 @@ ensure_redis_password() {
   log "Generated REDIS_PASSWORD"
 }
 
-# Recreates Redis when .env has a password the running container lacks. SAVE first: a stop exits before Redis writes its snapshot.
+# Writes a snapshot before Redis is recreated. A container from before redis-entrypoint.sh exits on stop without saving.
+snapshot_redis() {
+  $DRY_RUN && return 0
+  docker inspect vardo-redis > /dev/null 2>&1 || return 0
+  # shellcheck disable=SC2016
+  docker exec vardo-redis sh -c '[ -z "${REDIS_PASSWORD:-}" ] || export REDISCLI_AUTH="$REDIS_PASSWORD"; redis-cli SAVE' > /dev/null 2>&1 \
+    || warn "Couldn't snapshot Redis first. It restarts from its last snapshot."
+}
+
+# Recreates Redis when .env has a password the running container lacks.
 apply_redis_password() {
   local compose="$1" pass running
   pass=$(env_get REDIS_PASSWORD)
@@ -740,11 +749,7 @@ apply_redis_password() {
   running=$(printf '%s\n' "$running" | grep -m1 '^REDIS_PASSWORD=' | cut -d= -f2- || true)
   [ "$running" != "$pass" ] || return 0
   info "Restarting Redis with its password..."
-  if ! $DRY_RUN; then
-    # shellcheck disable=SC2016
-    docker exec vardo-redis sh -c '[ -z "${REDIS_PASSWORD:-}" ] || export REDISCLI_AUTH="$REDIS_PASSWORD"; redis-cli SAVE' > /dev/null 2>&1 \
-      || warn "Couldn't snapshot Redis first. It restarts from its last snapshot."
-  fi
+  snapshot_redis
   if run_cmd docker compose -f "$compose" up -d --no-deps redis; then
     log "Redis requires a password"
   else
@@ -1839,6 +1844,7 @@ build_and_start() {
     src_dir=$(resolve_source_dir)
     export GIT_SHA=$(git -C "$src_dir" rev-parse --short HEAD 2>/dev/null || true)
     run_with_spinner "Building containers (this may take a few minutes)" docker compose -f "$compose_file" build
+    snapshot_redis
     run_with_spinner "Starting services" docker compose -f "$compose_file" up -d --remove-orphans
   fi
 }
@@ -2479,6 +2485,8 @@ do_update() {
   docker compose -f "$active_compose" stop frontend 2>/dev/null || true
   docker compose -f "$active_compose" rm -f frontend 2>/dev/null || true
 
+  # Starting the frontend recreates Redis when its config changed.
+  snapshot_redis
   apply_redis_password "$new_compose"
 
   info "Starting new frontend..."
@@ -2576,6 +2584,7 @@ _do_rebuild() {
   run_with_spinner "Building containers" docker compose -f "$compose_file" build
 
   info "Restarting services..."
+  snapshot_redis
   run_cmd docker compose -f "$compose_file" up -d --remove-orphans
 
   wait_healthy 120 3 || true

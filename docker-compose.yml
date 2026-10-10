@@ -172,16 +172,20 @@ services:
     x-vardo-shared: true
     image: redis/redis-stack-server:7.4.0-v3
     restart: unless-stopped
+    # Final AOF/RDB write on stop; the wrapper makes SIGTERM reach redis-server.
+    stop_grace_period: 60s
+    entrypoint: ["/usr/bin/dumb-init", "/bin/sh", "/usr/local/bin/vardo-redis-entrypoint"]
     mem_limit: ${VARDO_REDIS_MEM:-512m}
     environment:
       # Unset on installs from before #889, which keep running without a password.
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
-      # install.sh sizes both from RAM. Keep maxmemory about 75% of VARDO_REDIS_MEM. volatile-lru never evicts queues, streams or time series.
-      REDIS_ARGS: --maxmemory ${VARDO_REDIS_MAXMEMORY:-384mb} --maxmemory-policy volatile-lru${REDIS_PASSWORD:+ --requirepass ${REDIS_PASSWORD}}
+      # install.sh sizes both from RAM. Keep maxmemory about 62% of VARDO_REDIS_MEM: AOF rewrites and snapshots fork, and writes during a fork copy pages (at 75% a write burst OOM-killed the container). volatile-lru never evicts queues, streams or time series.
+      REDIS_ARGS: --appendonly yes --appendfsync everysec --maxmemory ${VARDO_REDIS_MAXMEMORY:-320mb} --maxmemory-policy volatile-lru${REDIS_PASSWORD:+ --requirepass ${REDIS_PASSWORD}}
     ports:
       - "127.0.0.1:${REDIS_PORT:-7200}:6379"
     volumes:
       - redis_data:/data
+      - ./scripts/redis-entrypoint.sh:/usr/local/bin/vardo-redis-entrypoint:ro
     healthcheck:
       test: ["CMD-SHELL", "[ -z \"$$REDIS_PASSWORD\" ] || export REDISCLI_AUTH=\"$$REDIS_PASSWORD\"; redis-cli ping | grep -q PONG"]
       interval: 10s

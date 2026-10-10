@@ -67,10 +67,10 @@ export function buildkitCacheMaxBytes(diskBytes: number): number {
   return Math.min(50, Math.max(5, Math.floor(diskBytes / gib / 10))) * gib;
 }
 
-/** vardo-redis's container limit and maxmemory, as install.sh writes them. maxmemory is 75% of the limit. */
+/** vardo-redis's container limit and maxmemory, as install.sh writes them. maxmemory is 62.5% of the limit, leaving room for the AOF rewrite and snapshot forks. */
 export function redisMemory(memoryMb: number): { mem: string; maxmemory: string } {
   const mb = sizeClass(memoryMb).redisMb;
-  return { mem: `${mb}m`, maxmemory: `${Math.floor((mb * 3) / 4)}mb` };
+  return { mem: `${mb}m`, maxmemory: `${Math.floor((mb * 5) / 8)}mb` };
 }
 
 /** Docker and Redis size strings (512m, 4g, 384mb) in MiB. Null when unparseable. */
