@@ -185,7 +185,13 @@ describe("APP_SETTINGS_FIELD_PAGE", () => {
   });
 
   it("leaves Settings the app's identity", () => {
-    expect(shown("settings", plainApp).sort()).toEqual(["identity", "project"]);
+    expect(shown("settings", plainApp).sort()).toEqual(["identity", "kind", "project"]);
+  });
+
+  it("offers a kind on every app but a compose parent", () => {
+    expect(appSettingsFields(plainApp).kind).toBe(true);
+    expect(appSettingsFields(childService).kind).toBe(true);
+    expect(appSettingsFields(composeParent).kind).toBe(false);
   });
 
   it("gives every field exactly one page, and no field none", () => {

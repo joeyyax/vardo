@@ -27,6 +27,7 @@ import type { App } from "./types";
 import { can } from "@/lib/auth/permissions";
 import { cpuLimitHint } from "@/lib/ui/cpu-limit";
 import { MemoryProfileFields, type MemoryProfileValues } from "./memory-profile-fields";
+import { effectiveKind, isServiceKind, SERVICE_KINDS, SERVICE_KIND_LABEL, type ServiceKind } from "@/lib/ui/service-kind";
 
 /** Said under every field the container only picks up when it is recreated. */
 const REDEPLOY_NOTE = "Requires a redeploy to take effect.";
@@ -96,6 +97,8 @@ export function AppSettingsPanel({
   const [backendProtocol, setBackendProtocol] = useState<"auto" | "http" | "https">(app.backendProtocol || "auto");
   const [securityHeaders, setSecurityHeaders] = useState(app.securityHeaders ?? true);
   const [diskWriteAlertThreshold, setDiskWriteAlertThreshold] = useState(app.diskWriteAlertThreshold ? (app.diskWriteAlertThreshold / 1_073_741_824).toString() : "");
+  const [kind, setKind] = useState<ServiceKind | "inferred">(app.kindOverride ?? "inferred");
+  const inferredKind = effectiveKind({ ...app, kindOverride: null });
   const [anomalyAlerts, setAnomalyAlerts] = useState(app.anomalyAlerts ?? true);
   const [healthCheckTimeout, setHealthCheckTimeout] = useState(app.healthCheckTimeout?.toString() || "60");
   const [autoRollback, setAutoRollback] = useState(app.autoRollback ?? false);
@@ -138,6 +141,7 @@ export function AppSettingsPanel({
         body.healthCheckTimeout = healthCheckTimeout ? parseInt(healthCheckTimeout, 10) : null;
       }
       if (fields.project) body.projectId = editParentId || null;
+      if (fields.kind) body.kindOverride = kind === "inferred" ? null : kind;
       if (fields.containerPort) {
         body.containerPort = containerPort ? parseInt(containerPort, 10) : null;
       }
@@ -669,6 +673,28 @@ export function AppSettingsPanel({
               </p>
             </div>
           )}
+        </div>
+      )}
+
+      {fields.kind && (
+        <div className="grid gap-2 sm:w-1/2">
+          <Label htmlFor="edit-kind">Kind</Label>
+          <Select value={kind} onValueChange={(v) => setKind(isServiceKind(v) ? v : "inferred")}>
+            <SelectTrigger id="edit-kind">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="inferred">From the image ({SERVICE_KIND_LABEL[inferredKind].toLowerCase()})</SelectItem>
+              {SERVICE_KINDS.map((k) => (
+                <SelectItem key={k} value={k}>
+                  {SERVICE_KIND_LABEL[k]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            A database, cache or worker another app in the project depends on is listed under that app on Projects.
+          </p>
         </div>
       )}
 

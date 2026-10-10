@@ -7,6 +7,7 @@ import { eq, and, sql, inArray } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import type { ComposeFile, ComposeService } from "./compose";
 import { parsePortString } from "./compose-inject";
+import { inferServiceKind } from "@/lib/ui/service-kind";
 
 type SyncResult = {
   created: string[];
@@ -177,6 +178,11 @@ export async function syncComposeServices(opts: {
         : Object.keys(dependsOnRaw)
       : null;
     const dependsOn = dependsOnServiceNames?.map((dep) => `${parentAppName}-${dep}`) ?? null;
+    const kind = inferServiceKind({
+      image: svc.image,
+      serviceName,
+      hasPort: servicePorts.length > 0 || !!svc.expose?.length,
+    });
 
     const existing = childByService.get(serviceName) ?? childByName.get(childName);
 
@@ -196,6 +202,7 @@ export async function syncComposeServices(opts: {
           projectId,
           parentAppId,
           composeService: serviceName,
+          kind,
           isSystemManaged,
         })
         .where(eq(apps.id, existing.id));
@@ -217,13 +224,13 @@ export async function syncComposeServices(opts: {
           "source", "deploy_type", "image_name", "status",
           "parent_app_id", "compose_service", "container_name", "project_id",
           "cpu_limit", "memory_limit", "priority", "persistent_volumes", "exposed_ports", "depends_on", "sort_order",
-          "is_system_managed", "created_at", "updated_at"
+          "is_system_managed", "kind", "created_at", "updated_at"
         ) VALUES (
           ${id}, ${organizationId}, ${childName}, ${displayName}, ${`Compose service: ${serviceName}`},
           ${"direct"}, ${"compose"}, ${svc.image || null}, ${"active"},
           ${parentAppId}, ${serviceName}, ${containerName}, ${projectId},
           ${null}, ${null}, ${null}, ${volsJson}, ${portsJson}, ${depsJson}, ${0},
-          ${isSystemManaged}, ${now}, ${now}
+          ${isSystemManaged}, ${kind}, ${now}, ${now}
         )
       `);
 

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
-import { apps, projects, RESOURCE_PROFILES } from "@/lib/db/schema";
+import { apps, projects, RESOURCE_PROFILES, SERVICE_KINDS } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
 import { cpuLimitSchema, repoFilePathSchema, imageRefSchema } from "@/lib/api/create-app-schema";
@@ -66,6 +66,8 @@ const updateAppSchema = z.object({
   memoryAutoMaxMb: z.number().int().min(64).max(1048576).nullable().optional(),
   priority: z.enum(["critical", "standard", "disposable"]).nullable().optional(), // null = inherit parent (decomposed child)
   gpuEnabled: z.boolean().optional(),
+  // Null goes back to the kind inferred on deploy.
+  kindOverride: z.enum(SERVICE_KINDS).nullable().optional(),
   // Services that get the app's own certificates at /certs. Null or empty turns it off.
   certServices: z.array(z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/).max(63)).max(32).nullable().optional(),
   backendProtocol: z.enum(["http", "https"]).nullable().optional(),

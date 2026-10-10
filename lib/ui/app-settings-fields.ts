@@ -33,6 +33,8 @@ export type AppSettingsFields = {
   priority: boolean;
   /** Offers the "inherit" tier, which only a child can resolve. */
   priorityInherit: boolean;
+  /** Database, cache, worker, web or other. */
+  kind: boolean;
   healthCheckTimeout: boolean;
   autoDeploy: boolean;
   autoRollback: boolean;
@@ -69,6 +71,7 @@ export function appSettingsFields(ctx: AppSettingsFieldContext): AppSettingsFiel
     anomalyAlerts: true,
     priority: true,
     priorityInherit: isChildService,
+    kind: !isComposeParent,
     healthCheckTimeout: true,
     autoDeploy: ownsBuild,
     autoRollback: ownsBuild,
@@ -89,6 +92,7 @@ export type AppSettingsFieldName = Exclude<keyof AppSettingsFields, "priorityInh
 export const APP_SETTINGS_FIELD_PAGE: Record<AppSettingsFieldName, AppSettingsPage> = {
   identity: "settings",
   project: "settings",
+  kind: "settings",
   containerPort: "networking",
   backendProtocol: "networking",
   securityHeaders: "networking",

@@ -1,3 +1,4 @@
+import type { ServiceKind } from "@/lib/db/schema/enums";
 import type { AppCondition } from "@/lib/docker/conditions";
 import type { ExitReason } from "@/lib/docker/exit-reason";
 import type { FeatureFlags } from "@/lib/config/features";
@@ -150,6 +151,8 @@ export type App = {
   memoryAutoMinMb?: number | null;
   memoryAutoMaxMb?: number | null;
   priority: "critical" | "standard" | "disposable" | null;
+  kind?: ServiceKind | null;
+  kindOverride?: ServiceKind | null;
   gpuEnabled: boolean | null;
   backendProtocol: "http" | "https" | null;
   securityHeaders?: boolean;
