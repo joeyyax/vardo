@@ -32,6 +32,8 @@ export const organizations = pgTable("organization", {
   cpuProfile: text("cpu_profile", { enum: RESOURCE_PROFILES }).default("fixed").notNull(),
   // Highest memory limit the auto profile may set, in MB. Null leaves only the host cap.
   memoryAutoMaxMb: integer("memory_auto_max_mb"),
+  // Default for apps that leave "Post deploy status to GitHub" unset.
+  githubFeedback: boolean("github_feedback").default(true).notNull(),
   // DNS TXT challenge for baseDomain.
   baseDomainToken: text("base_domain_token"),
   baseDomainVerifiedAt: timestamp("base_domain_verified_at"),

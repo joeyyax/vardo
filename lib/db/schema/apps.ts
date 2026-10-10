@@ -64,6 +64,11 @@ export const apps = pgTable(
     gitPolledSha: text("git_polled_sha"),
     // Why the last check failed. Null after a good one.
     gitPollError: text("git_poll_error"),
+    // Post deploy status to GitHub. Null follows the org.
+    githubFeedback: boolean("github_feedback"),
+    // Why GitHub refused feedback, and when. Cleared when the setting is saved.
+    githubFeedbackError: text("github_feedback_error"),
+    githubFeedbackBlockedAt: timestamp("github_feedback_blocked_at"),
     /** @deprecated Replaced by the `volumes` table. */
     persistentVolumes: jsonb("persistent_volumes").$type<
       { name: string; mountPath: string }[]
