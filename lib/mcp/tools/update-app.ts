@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { cpuLimitSchema, repoFilePathSchema } from "@/lib/api/create-app-schema";
+import { cpuLimitSchema, repoFilePathSchema, imageRefSchema } from "@/lib/api/create-app-schema";
 import { db } from "@/lib/db";
 import { apps, projects } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
@@ -32,7 +32,7 @@ const updateSchema = z.object({
   composeFilePath: repoFilePathSchema.nullable().optional(),
   dockerfilePath: repoFilePathSchema.nullable().optional(),
   gitUrl: gitUrlUpdateSchema.nullable().optional(),
-  imageName: z.string().nullable().optional(),
+  imageName: imageRefSchema.nullable().optional(),
   restartPolicy: z.string().nullable().optional(),
   cpuLimit: cpuLimitSchema.nullable().optional(),
   memoryLimit: z.number().int().min(64).max(65536).nullable().optional(),

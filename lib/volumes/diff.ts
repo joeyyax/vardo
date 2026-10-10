@@ -3,9 +3,9 @@ import { assertSafeSyncPath } from "@/lib/utils/exec";
 import { execFileAsync } from "@/lib/utils/exec";
 import { dockerEnv } from "@/lib/docker/docker-env";
 
-/** Throws unless the image ref is alphanumerics, `.`, `-`, `_`, `/`, `:` or `@`. */
-function assertSafeImageRef(ref: string): void {
-  if (!/^[a-zA-Z0-9._\-/:@]+$/.test(ref)) {
+/** Throws unless the image ref starts alphanumeric and holds only alphanumerics, `.`, `-`, `_`, `/`, `:` or `@`. */
+export function assertSafeImageRef(ref: string): void {
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._\-/:@]*$/.test(ref)) {
     throw new Error(`Invalid image reference: ${ref}`);
   }
 }
@@ -212,6 +212,7 @@ export async function syncFilesFromImage(
 ): Promise<{ synced: string[]; failed: string[] }> {
   if (paths.length === 0) return { synced: [], failed: [] };
 
+  assertSafeImageRef(imageName);
   assertSafeName(volumeDockerName);
   assertSafeMountPath(mountPath);
 

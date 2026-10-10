@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { apps, projects } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
-import { cpuLimitSchema, repoFilePathSchema } from "@/lib/api/create-app-schema";
+import { cpuLimitSchema, repoFilePathSchema, imageRefSchema } from "@/lib/api/create-app-schema";
 import { deleteApp } from "@/lib/docker/delete-app";
 import { assertAppDirOwnership, AppDirOwnershipError } from "@/lib/docker/app-dir-owner";
 import { recordActivity } from "@/lib/activity";
@@ -48,7 +48,7 @@ const updateAppSchema = z.object({
   startCommand: buildOverrideSchema,
   buildProvider: z.enum(["railpack", "nixpacks"]).nullable().optional(),
   gitUrl: gitUrlUpdateSchema.nullable().optional(),
-  imageName: z.string().nullable().optional(),
+  imageName: imageRefSchema.nullable().optional(),
   restartPolicy: z.string().nullable().optional(),
   exposedPorts: z.array(z.object({
     internal: z.number().int().positive(),
