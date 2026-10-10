@@ -60,6 +60,9 @@ UPDATE_FROM_SLOT=""
 UPDATE_TO_SLOT=""
 UPDATE_ROLLED_BACK=false
 
+# The command line, for handing an update to the new version's install.sh.
+ORIG_ARGS=()
+
 # ── Platform detection ────────────────────────────────────────────────────────
 
 detect_platform() {
@@ -277,6 +280,11 @@ pkg_check() {
 # ── Logging ──────────────────────────────────────────────────────────────────
 
 setup_logging() {
+  # A handed-off update already writes through the first script's tee.
+  if [ "${VARDO_UPDATE_REEXEC:-}" = 1 ]; then
+    INSTALL_LOG="${VARDO_INSTALL_LOG:-}"
+    return
+  fi
   if [[ "$PLATFORM" == "macos" ]]; then
     INSTALL_LOG="$HOME/vardo-install.log"
   else
@@ -408,6 +416,19 @@ on_update_exit() {
       "\"rolledBack\":$UPDATE_ROLLED_BACK" \
       "\"logTail\":$(update_log_tail_json)"
   fi
+}
+
+# Picks up the marker the handing-off script started, so an early exit still marks it failed.
+resume_update_marker() {
+  [ "${VARDO_UPDATE_REEXEC:-}" = 1 ] && [ -n "${VARDO_UPDATE_MARKER_ID:-}" ] || return 0
+  UPDATE_MARKER_ID="$VARDO_UPDATE_MARKER_ID"
+  UPDATE_STARTED_AT="${VARDO_UPDATE_STARTED_AT:-$(date +%s)}"
+  UPDATE_FROM_VERSION="${VARDO_UPDATE_FROM_VERSION:-}"
+  UPDATE_BRANCH="${VARDO_UPDATE_BRANCH:-}"
+  UPDATE_FROM_SLOT="${VARDO_UPDATE_FROM_SLOT:-}"
+  UPDATE_TO_SLOT="${VARDO_UPDATE_TO_SLOT:-}"
+  UPDATE_MARKER_STATE=started
+  trap on_update_exit EXIT
 }
 
 # Run a command with elapsed timer — for long-running operations
@@ -699,6 +720,36 @@ ensure_redis_mem() {
   cat "$tmp" > "$env_file"
   rm -f "$tmp"
   log "Resized Redis to VARDO_REDIS_MEM=$mem, VARDO_REDIS_MAXMEMORY=$max"
+}
+
+# Installs from before #889 have no Redis password.
+ensure_redis_password() {
+  local env_file="$1"
+  is_dev && return 0
+  [ -z "$(env_get REDIS_PASSWORD "$env_file")" ] || return 0
+  env_upsert "$env_file" REDIS_PASSWORD "$(openssl rand -hex 32)"
+  log "Generated REDIS_PASSWORD"
+}
+
+# Recreates Redis when .env has a password the running container lacks. SAVE first: a stop exits before Redis writes its snapshot.
+apply_redis_password() {
+  local compose="$1" pass running
+  pass=$(env_get REDIS_PASSWORD)
+  [ -n "$pass" ] || return 0
+  running=$(docker inspect vardo-redis --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null) || return 0
+  running=$(printf '%s\n' "$running" | grep -m1 '^REDIS_PASSWORD=' | cut -d= -f2- || true)
+  [ "$running" != "$pass" ] || return 0
+  info "Restarting Redis with its password..."
+  if ! $DRY_RUN; then
+    # shellcheck disable=SC2016
+    docker exec vardo-redis sh -c '[ -z "${REDIS_PASSWORD:-}" ] || export REDISCLI_AUTH="$REDIS_PASSWORD"; redis-cli SAVE' > /dev/null 2>&1 \
+      || warn "Couldn't snapshot Redis first. It restarts from its last snapshot."
+  fi
+  if run_cmd docker compose -f "$compose" up -d --no-deps redis; then
+    log "Redis requires a password"
+  else
+    warn "Couldn't recreate Redis. Check: docker logs vardo-redis"
+  fi
 }
 
 # ── Disk space check ─────────────────────────────────────────────────────────
@@ -2206,6 +2257,7 @@ run_env_migrations() {
   ensure_buildkit_mem "$env_file"
   ensure_buildkit_cache_max "$env_file"
   ensure_redis_mem "$env_file"
+  ensure_redis_password "$env_file"
   apply_install_options "$env_file"
 
   # Remove deprecated feature flags
@@ -2215,8 +2267,33 @@ run_env_migrations() {
   secure_env_file "$env_file"
 }
 
+# Hands the update to the target version's install.sh so its migrations and steps run. The new script reruns the update from the top.
+handoff_update() {
+  local branch="$1" script
+  [ "${VARDO_UPDATE_REEXEC:-}" != 1 ] || return 0
+  if $DRY_RUN; then return 0; fi
+  script=$(mktemp "${TMPDIR:-/tmp}/vardo-install.XXXXXX") || return 0
+  if ! git show "origin/$branch:install.sh" > "$script" 2>/dev/null || ! bash -n "$script" 2>/dev/null; then
+    rm -f "$script"
+    warn "Couldn't read the new version's install.sh. Updating with this one."
+    return 0
+  fi
+  if cmp -s "$script" "$0"; then
+    rm -f "$script"
+    return 0
+  fi
+  info "Handing off to the new version's install.sh..."
+  log_to_file "Handoff: $script"
+  exec env VARDO_UPDATE_REEXEC=1 VARDO_UPDATE_SCRIPT="$script" VARDO_DIR="$VARDO_DIR" VARDO_INSTALL_LOG="$INSTALL_LOG" \
+    VARDO_UPDATE_MARKER_ID="$UPDATE_MARKER_ID" VARDO_UPDATE_STARTED_AT="$UPDATE_STARTED_AT" \
+    VARDO_UPDATE_FROM_VERSION="$UPDATE_FROM_VERSION" VARDO_UPDATE_BRANCH="$UPDATE_BRANCH" \
+    VARDO_UPDATE_FROM_SLOT="$UPDATE_FROM_SLOT" VARDO_UPDATE_TO_SLOT="$UPDATE_TO_SLOT" \
+    bash "$script" update --yes --force ${ORIG_ARGS[@]+"${ORIG_ARGS[@]}"}
+}
+
 do_update() {
   [[ "$PLATFORM" != "macos" ]] && check_root
+  resume_update_marker
 
   # Once Vardo deploys itself, this path would start a second frontend
   # competing for the same domain. See docs/self-deploy-migration.md.
@@ -2275,7 +2352,7 @@ do_update() {
   log "Branch: $current_branch"
   log "Active slot: $active → deploying to $new_slot"
 
-  # Env migrations
+  # Env migrations. After a handoff these are the new version's.
   run_env_migrations
 
   # Ensure network
@@ -2315,14 +2392,16 @@ do_update() {
     fi
   fi
 
-  UPDATE_MARKER_ID="$(date +%Y%m%d%H%M%S)-$$"
-  UPDATE_STARTED_AT=$(date +%s)
+  [ -n "$UPDATE_MARKER_ID" ] || UPDATE_MARKER_ID="$(date +%Y%m%d%H%M%S)-$$"
+  [ "$UPDATE_STARTED_AT" -gt 0 ] || UPDATE_STARTED_AT=$(date +%s)
   UPDATE_FROM_VERSION="$current_version"
   UPDATE_BRANCH="$current_branch"
   UPDATE_FROM_SLOT="$active"
   UPDATE_TO_SLOT="$new_slot"
   trap on_update_exit EXIT
   write_update_marker started
+
+  handoff_update "$current_branch"
 
   # Backup database
   step "Backup"
@@ -2379,12 +2458,9 @@ do_update() {
   log "New version: $new_version"
   UPDATE_TO_VERSION="$new_version"
 
-  # Run env migrations from the updated code
-  run_env_migrations
-
   # Build the new frontend image from the inactive slot.
   # Only the frontend service swaps — infra (postgres, redis, traefik, etc.)
-  # keeps running throughout. Container names are hardcoded in compose, so we
+  # keeps running throughout, except Redis gaining its password. Container names are hardcoded in compose, so we
   # can't run two frontends simultaneously. The swap is: build → stop old →
   # start new → health check. Brief downtime, but with rollback capability.
   step "Building $new_slot slot"
@@ -2403,8 +2479,10 @@ do_update() {
   docker compose -f "$active_compose" stop frontend 2>/dev/null || true
   docker compose -f "$active_compose" rm -f frontend 2>/dev/null || true
 
+  apply_redis_password "$new_compose"
+
   info "Starting new frontend..."
-  run_cmd docker compose -f "$new_compose" up -d frontend
+  run_cmd docker compose -f "$new_compose" up -d frontend || warn "Starting the new frontend failed"
 
   # Health check the new frontend
   step "Health check"
@@ -2715,7 +2793,8 @@ do_doctor() {
   fi
 
   # Redis
-  if docker compose -f "$doctor_compose" exec -T redis redis-cli ping 2>/dev/null | grep -q PONG; then
+  # shellcheck disable=SC2016
+  if docker compose -f "$doctor_compose" exec -T redis sh -c '[ -z "${REDIS_PASSWORD:-}" ] || export REDISCLI_AUTH="$REDIS_PASSWORD"; redis-cli ping' 2>/dev/null | grep -q PONG; then
     doctor_pass "Redis: PONG"
   else
     doctor_fail "Redis: not responding"
@@ -3060,12 +3139,17 @@ parse_args() {
 }
 
 main() {
+  ORIG_ARGS=("$@")
+  # The handoff's copy of install.sh. Bash holds it open, so it's safe to remove.
+  if [ "${VARDO_UPDATE_REEXEC:-}" = 1 ] && [ "${VARDO_UPDATE_SCRIPT:-}" = "$0" ]; then
+    rm -f "$0"
+  fi
   detect_platform
   detect_distro
   parse_args "$@"
   validate_install_options
   setup_logging
-  print_banner
+  [ "${VARDO_UPDATE_REEXEC:-}" = 1 ] || print_banner
 
   if $DRY_RUN; then
     info "Dry-run mode — no changes will be made"
