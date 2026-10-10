@@ -127,7 +127,8 @@ Nothing is renamed, copied or deleted, so rollback is starting the old console a
 Run these in order, whether `vardo-frontend` is still running or was removed:
 
 ```
-docker rm -f vardo-production-<slot>-frontend-1
+slot=$(basename "$(readlink /opt/vardo/apps/vardo/production/current)")
+docker rm -f vardo-production-$slot-frontend-1
 rm -f "$(docker volume inspect -f '{{.Mountpoint}}' vardo_traefik_dynamic)/cutover-vardo-production.yml"
 rm -f /opt/vardo/apps/vardo/production/current
 cd /opt/vardo/apps/vardo/env/current

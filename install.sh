@@ -2667,11 +2667,10 @@ handover_to_engine() {
 
 print_self_deploy_rollback() {
   echo ""
-  local slot="<slot>"
-  is_self_deploy && slot=$(self_deploy_slot)
   echo -e "  ${BOLD}Rollback${RESET}    Nothing was renamed, copied or deleted. The shared services never stopped."
   dimln "  In this order, whether or not vardo-frontend still runs:"
-  dimln "    docker rm -f vardo-production-$slot-frontend-1"
+  dimln "    slot=\$(basename \"\$(readlink $VARDO_DIR/apps/vardo/production/current)\")"
+  dimln "    docker rm -f vardo-production-\$slot-frontend-1"
   dimln "    rm -f \"\$(docker volume inspect -f '{{.Mountpoint}}' vardo_traefik_dynamic)/cutover-vardo-production.yml\""
   dimln "    rm -f $VARDO_DIR/apps/vardo/production/current"
   dimln "    cd $VARDO_DIR/apps/vardo/env/current && docker compose -p vardo up -d --no-deps frontend"
@@ -3216,7 +3215,7 @@ do_doctor() {
   if [[ "$PLATFORM" != "macos" ]]; then
     if swapon --show 2>/dev/null | grep -q .; then
       local swap_mb
-      swap_mb=$(swapon --show --noheadings --raw 2>/dev/null | awk '{sum+=$3} END {printf "%.0f", sum/1024/1024}')
+      swap_mb=$(swapon --show --noheadings --raw --bytes 2>/dev/null | awk '{sum+=$3} END {printf "%.0f", sum/1024/1024}')
       doctor_pass "Swap: ${swap_mb}MB"
     elif [ "$ram_mb" -lt 4096 ]; then
       doctor_warn "No swap configured (recommended when RAM < 4GB)"
@@ -3264,7 +3263,9 @@ do_doctor() {
   if [ -d "$doctor_src/.git" ]; then
     local version branch
     version=$(get_version)
-    branch=$(git -C "$doctor_src" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
+    # The slot checkout belongs to the console's user, not root.
+    doctor_src=$(cd -P "$doctor_src" && pwd)
+    branch=$(git -c safe.directory="$doctor_src" -C "$doctor_src" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
     doctor_pass "Git: $version ($branch)"
 
     if ! is_self_deploy && has_slot_layout; then
@@ -3272,9 +3273,9 @@ do_doctor() {
     fi
 
     # Check for available updates
-    git -C "$doctor_src" fetch --quiet 2>/dev/null || true
+    git -c safe.directory="$doctor_src" -C "$doctor_src" fetch --quiet 2>/dev/null || true
     local behind
-    behind=$(git -C "$doctor_src" rev-list HEAD..origin/"$branch" --count 2>/dev/null || echo "0")
+    behind=$(git -c safe.directory="$doctor_src" -C "$doctor_src" rev-list HEAD..origin/"$branch" --count 2>/dev/null || echo "0")
     if [ "$behind" -gt 0 ]; then
       doctor_warn "$behind update(s) available"
     else

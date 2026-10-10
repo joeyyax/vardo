@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import { spawnSync } from "child_process";
@@ -45,11 +45,12 @@ function instance(): string {
 function doctor(vardo: string, env: Record<string, string> = {}) {
   const log = join(vardo, "docker.log");
   writeFileSync(log, "");
-  const r = spawnSync("bash", ["-c", `source "${lib}"\nPLATFORM=macos\ndo_doctor`], {
+  const r = spawnSync("bash", ["-c", `source "${lib}"\nPLATFORM=${env.TEST_PLATFORM ?? "macos"}\ndo_doctor`], {
     encoding: "utf8",
-    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, VARDO_DIR: vardo, DOCKER_LOG: log, ...env },
+    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, VARDO_DIR: vardo, DOCKER_LOG: log, GIT_LOG: join(vardo, "git.log"), ...env },
   });
-  return { out: `${r.stdout}${r.stderr}`, docker: readFileSync(log, "utf8") };
+  const gitLog = join(vardo, "git.log");
+  return { out: `${r.stdout}${r.stderr}`, docker: readFileSync(log, "utf8"), git: existsSync(gitLog) ? readFileSync(gitLog, "utf8") : "" };
 }
 
 beforeAll(() => {
@@ -63,6 +64,11 @@ beforeAll(() => {
   writeFileSync(join(bin, "docker"), FAKE_DOCKER);
   chmodSync(join(bin, "docker"), 0o755);
   // No DNS or TLS lookups from a test.
+  writeFileSync(join(bin, "git"), '#!/usr/bin/env bash\necho "$*" >> "$GIT_LOG"\ncase "$*" in *rev-parse*) echo main ;; *rev-list*) echo 0 ;; *describe*) echo v1.0.0 ;; esac\n');
+  chmodSync(join(bin, "git"), 0o755);
+  // Human sizes unless --bytes is passed, like util-linux.
+  writeFileSync(join(bin, "swapon"), '#!/usr/bin/env bash\ncase "$*" in *--bytes*) echo "/swapfile file 2147483648 0 -2" ;; *--raw*) echo "/swapfile file 2G 0B -2" ;; *) echo "NAME TYPE SIZE USED PRIO" ;; esac\n');
+  chmodSync(join(bin, "swapon"), 0o755);
   for (const tool of ["dig", "host", "curl"]) {
     writeFileSync(join(bin, tool), "#!/usr/bin/env bash\nexit 1\n");
     chmodSync(join(bin, tool), 0o755);
@@ -99,5 +105,22 @@ describe("vardo doctor on a self-deploy instance", { timeout: 30_000 }, () => {
     const r = doctor(instance(), { FAKE_TWO_SLOTS: "1", FAKE_LEGACY: "1" });
     expect(r.out).toContain("2 slot consoles running; only blue should be");
     expect(r.out).toContain("Legacy vardo-frontend still running");
+  });
+});
+
+describe("vardo doctor host checks", { timeout: 30_000 }, () => {
+  it("passes safe.directory to every git call on the slot checkout", () => {
+    const vardo = instance();
+    mkdirSync(join(vardo, "apps/vardo/production/blue/.git"));
+    const r = doctor(vardo);
+    expect(r.out).toContain("Git: v1.0.0 (main)");
+    const calls = r.git.trim().split("\n");
+    expect(calls.length).toBeGreaterThanOrEqual(3);
+    expect(calls.every((c) => c.includes("safe.directory="))).toBe(true);
+  });
+
+  it("reports swap in MB", () => {
+    const r = doctor(instance(), { TEST_PLATFORM: "linux" });
+    expect(r.out).toContain("Swap: 2048MB");
   });
 });

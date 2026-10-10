@@ -299,12 +299,19 @@ describe("apply_held_data_stores", () => {
 });
 
 describe("print_self_deploy_rollback", () => {
+  it("names the slot at run time, so a later update can't leave it stale", () => {
+    const out = sh(instance("self-deploy"), "print_self_deploy_rollback").out;
+    expect(out).toContain("slot=$(basename");
+    expect(out).toContain("vardo-production-$slot-frontend-1");
+    expect(out).not.toContain("vardo-production-blue-frontend-1");
+  });
+
   it("removes the slot console and the cutover pin before starting vardo-frontend", () => {
     const out = sh(instance("self-deploy"), "print_self_deploy_rollback").out;
     const steps = [
-      "docker rm -f vardo-production-blue-frontend-1",
+      "docker rm -f vardo-production-$slot-frontend-1",
       "vardo_traefik_dynamic)/cutover-vardo-production.yml",
-      "/apps/vardo/production/current",
+      "rm -f /",
       "docker compose -p vardo up -d --no-deps frontend",
     ].map((s) => out.indexOf(s));
     expect(steps.every((i) => i >= 0)).toBe(true);
