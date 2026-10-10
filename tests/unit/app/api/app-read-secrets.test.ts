@@ -4,14 +4,16 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
 import { tokenScopeCapabilities } from "@/lib/auth/permissions";
 
-const { mockVerifyOrgAccess, appsFindFirst, appsFindMany, mockUpdate } = vi.hoisted(() => ({
+const { mockVerifyOrgAccess, mockActorForOrg, appsFindFirst, appsFindMany, mockUpdate } = vi.hoisted(() => ({
   mockVerifyOrgAccess: vi.fn(),
+  mockActorForOrg: vi.fn(),
   appsFindFirst: vi.fn(),
   appsFindMany: vi.fn(),
   mockUpdate: vi.fn(),
 }));
 
 vi.mock("@/lib/api/verify-access", () => ({ verifyOrgAccess: mockVerifyOrgAccess }));
+vi.mock("@/lib/app-services/session-actor", () => ({ actorForOrg: mockActorForOrg }));
 vi.mock("@/lib/api/with-rate-limit", async () => (await import("@/tests/helpers/mocks")).withRateLimitModule());
 vi.mock("@/lib/db", () => ({
   db: {
@@ -54,12 +56,17 @@ function appRow() {
 const appParams = { params: Promise.resolve({ orgId: "org-1", appId: "app-1" }) };
 const orgParams = { params: Promise.resolve({ orgId: "org-1" }) };
 
-function as(role: string) {
+function asMembership(membership: { role: string; scopes?: ReturnType<typeof tokenScopeCapabilities> }) {
   mockVerifyOrgAccess.mockResolvedValue({
     organization: { id: "org-1" },
-    membership: { role },
+    membership,
     session: { user: { id: "user-1" } },
   });
+  mockActorForOrg.mockResolvedValue({ userId: "user-1", org: { id: "org-1" }, membership, instanceAdmin: false });
+}
+
+function as(role: string) {
+  asMembership({ role });
 }
 
 async function getApp() {
@@ -100,11 +107,7 @@ describe("GET app", () => {
   });
 
   it("masks compose for a read-scoped token on an admin account", async () => {
-    mockVerifyOrgAccess.mockResolvedValue({
-      organization: { id: "org-1" },
-      membership: { role: "admin", scopes: tokenScopeCapabilities("read", null) },
-      session: { user: { id: "user-1" } },
-    });
+    asMembership({ role: "admin", scopes: tokenScopeCapabilities("read", null) });
     const app = await getApp();
     expect(JSON.stringify(app)).not.toContain("inline-secret-1");
   });

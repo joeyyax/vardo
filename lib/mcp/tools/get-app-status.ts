@@ -1,11 +1,10 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { db } from "@/lib/db";
-import { apps } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { getApp } from "@/lib/app-services/apps";
+import { mcpActor } from "@/lib/app-services/mcp-actor";
 import type { McpAuthContext } from "../auth";
-import { readableApp } from "@/lib/api/readable-app";
-import { accessDenied, canAccessOrg } from "../scope";
+import { serviceErrorResult } from "../actors";
+import { accessDenied, resolveAppOrg } from "../scope";
 
 export function registerGetAppStatus(
   server: McpServer,
@@ -18,48 +17,34 @@ export function registerGetAppStatus(
       appId: z.string().describe("The app ID to get status for"),
     },
     async ({ appId }) => {
-      const app = await db.query.apps.findFirst({
-        where: eq(apps.id, appId),
-        with: {
-          deployments: {
-            columns: {
-              id: true,
-              status: true,
-              trigger: true,
-              startedAt: true,
-              finishedAt: true,
+      const orgId = await resolveAppOrg(context, appId, "app.view");
+      const actor = orgId ? await mcpActor(context, orgId, "app.view") : null;
+      if (!actor) return accessDenied("App");
+
+      try {
+        const { envVars: _envVars, ...app } = await getApp(actor, appId);
+        const status = {
+          ...app,
+          deployments: app.deployments.slice(0, 5).map((d) => ({
+            id: d.id,
+            status: d.status,
+            trigger: d.trigger,
+            startedAt: d.startedAt,
+            finishedAt: d.finishedAt,
+          })),
+          domains: app.domains.map((d) => ({ id: d.id, domain: d.domain, sslEnabled: d.sslEnabled })),
+        };
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({ app: status }, null, 2),
             },
-            orderBy: (d, { desc }) => [desc(d.startedAt)],
-            limit: 5,
-          },
-          project: {
-            columns: { id: true, name: true, displayName: true },
-          },
-          domains: {
-            columns: { id: true, domain: true, sslEnabled: true },
-          },
-          environments: {
-            columns: { id: true, name: true, type: true, isDefault: true },
-          },
-        },
-      });
-
-      if (!app || !(await canAccessOrg(context, app.organizationId, "app.view"))) {
-        return accessDenied("App");
+          ],
+        };
+      } catch (error) {
+        return serviceErrorResult(error, "App");
       }
-
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify(
-              { app: readableApp(app, await canAccessOrg(context, app.organizationId, "env.reveal")) },
-              null,
-              2,
-            ),
-          },
-        ],
-      };
     }
   );
 }

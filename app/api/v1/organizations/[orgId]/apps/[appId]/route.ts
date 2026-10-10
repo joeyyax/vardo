@@ -9,6 +9,8 @@ import { deleteApp } from "@/lib/docker/delete-app";
 import { assertAppDirOwnership, AppDirOwnershipError } from "@/lib/docker/app-dir-owner";
 import { recordActivity } from "@/lib/activity";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
+import { actorForOrg } from "@/lib/app-services/session-actor";
+import { getApp } from "@/lib/app-services/apps";
 import { can } from "@/lib/auth/permissions";
 import { refuseSystemManaged } from "@/lib/api/system-managed";
 import { sharedMarkerTypeErrors } from "@/lib/docker/compose";
@@ -103,31 +105,10 @@ const deleteAppSchema = z.object({
 async function handleGet(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, appId } = await params;
-    const org = await verifyOrgAccess(orgId, "app.view");
-    if (!org) return apiError.forbidden();
+    const actor = await actorForOrg(orgId);
+    if (!actor) return apiError.forbidden();
 
-    const app = await db.query.apps.findFirst({
-      where: and(
-        eq(apps.id, appId),
-        eq(apps.organizationId, orgId)
-      ),
-      with: {
-        deployments: {
-          orderBy: (d, { desc }) => [desc(d.startedAt)],
-          limit: 10,
-        },
-        domains: true,
-        envVars: {
-          columns: { id: true, key: true, isSecret: true, createdAt: true, updatedAt: true },
-        },
-      },
-    });
-
-    if (!app) {
-      return apiError.notFound("app");
-    }
-
-    return NextResponse.json({ app: readableApp(app, can(org.membership, "env.reveal")) });
+    return NextResponse.json({ app: await getApp(actor, appId) });
   } catch (error) {
     return handleRouteError(error, "Error fetching app");
   }

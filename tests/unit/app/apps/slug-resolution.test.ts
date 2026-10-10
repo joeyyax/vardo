@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-const { appsFindFirstMock, getCurrentOrgMock, notFoundMock, redirectMock } = vi.hoisted(() => ({
+const { appsFindFirstMock, currentActorMock, notFoundMock, redirectMock } = vi.hoisted(() => ({
   appsFindFirstMock: vi.fn(),
-  getCurrentOrgMock: vi.fn(),
+  currentActorMock: vi.fn(),
   notFoundMock: vi.fn(() => {
     throw new Error("NEXT_NOT_FOUND");
   }),
@@ -12,7 +12,7 @@ const { appsFindFirstMock, getCurrentOrgMock, notFoundMock, redirectMock } = vi.
 }));
 
 vi.mock("next/navigation", () => ({ notFound: notFoundMock, redirect: redirectMock }));
-vi.mock("@/lib/auth/session", () => ({ getCurrentOrg: getCurrentOrgMock }));
+vi.mock("@/lib/app-services/session-actor", () => ({ currentActor: currentActorMock }));
 vi.mock("@/lib/db", () => ({
   db: {
     query: {
@@ -54,7 +54,7 @@ async function resolveSlug(slug: string[]) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  getCurrentOrgMock.mockResolvedValue({ organization: { id: ORG_ID } });
+  currentActorMock.mockResolvedValue({ userId: "user-1", org: { id: ORG_ID }, membership: { role: "member" }, instanceAdmin: false });
   appsFindFirstMock.mockResolvedValue(undefined);
 });
 
