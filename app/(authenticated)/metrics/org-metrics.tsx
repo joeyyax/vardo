@@ -24,6 +24,9 @@ import { NetworkChart } from "@/components/network-chart";
 import { Card } from "@/components/ui/card";
 import { EntityLink } from "@/components/entity-link";
 import { appHref } from "@/lib/ui/hrefs";
+import { scopePhrase } from "@/lib/metrics/core-services";
+import { groupServerApps, type ServerApp } from "@/lib/metrics/server-groups";
+import { ServerBreakdownView } from "./server-breakdown";
 
 type AppSummary = {
   id: string;
@@ -36,9 +39,10 @@ type AppSummary = {
 type OrgMetricsProps = {
   orgId: string;
   apps: AppSummary[];
+  orgName: string;
   projectCount?: number;
-  /** When true, uses admin system-wide endpoints instead of org-scoped ones */
-  adminMode?: boolean;
+  /** "server" reads the admin whole-server endpoints; "org" the organization's own. */
+  scope: "server" | "org";
 };
 
 type AppMeta = {
@@ -47,7 +51,12 @@ type AppMeta = {
   displayName: string;
   status: string;
   parentAppId?: string | null;
-  containers: { containerId: string; cpuPercent: number; memoryUsage: number; memoryLimit: number; networkRx: number; networkTx: number }[];
+  organizationId?: string | null;
+  organizationName?: string | null;
+  projectId?: string | null;
+  projectName?: string | null;
+  isCore?: boolean;
+  containers: { containerId: string; containerName: string; composeService: string | null; cpuPercent: number; memoryUsage: number; memoryLimit: number; networkRx: number; networkTx: number }[];
 };
 
 // Defined outside render so they aren't recreated.
@@ -200,14 +209,15 @@ function ShareBar({ title, subtitle, total, totalLabel, slices, footnote }: {
   );
 }
 
-export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsProps) {
-  const isEmpty = !adminMode && apps.length === 0;
+export function OrgMetrics({ orgId, orgName, apps, projectCount, scope: scopeKind }: OrgMetricsProps) {
+  const serverMode = scopeKind === "server";
+  const isEmpty = !serverMode && apps.length === 0;
   const [timeRange, setTimeRange] = useState<TimeRange>("1h");
 
-  const historyUrl = adminMode
+  const historyUrl = serverMode
     ? `/api/v1/admin/stats`
     : `/api/v1/organizations/${orgId}/stats`;
-  const streamUrl = adminMode
+  const streamUrl = serverMode
     ? `/api/v1/admin/stats/stream`
     : `/api/v1/organizations/${orgId}/stats/stream`;
 
@@ -217,16 +227,29 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
     timeRange,
   });
 
-  const metaApps = meta?.apps as AppMeta[] | undefined;
+  const allMetaApps = meta?.apps as AppMeta[] | undefined;
+  // Vardo's own services get their own group on the server scope, not a place among the apps.
+  const metaApps = useMemo(
+    () => (serverMode ? allMetaApps?.filter((a) => !a.isCore) : allMetaApps),
+    [serverMode, allMetaApps],
+  );
+  const breakdown = useMemo(
+    () => (serverMode && allMetaApps ? groupServerApps(allMetaApps as ServerApp[]) : null),
+    [serverMode, allMetaApps],
+  );
+  const hostContainerCount = meta?.containerCount as number | undefined;
   const streamProjectCount = meta?.projectCount as number | undefined;
   const orgDiskTotal = meta?.orgDiskTotal as number | undefined;
   const cpuCores = (meta?.system as { cpus?: number } | null)?.cpus ?? meta?.cpuCount ?? 0;
   // Org scope sums per-app disk; admin scope reports the host's docker usage.
   const diskTotal = orgDiskTotal ?? points[points.length - 1]?.diskTotal ?? 0;
-  const scopeNote = adminMode ? "all organizations" : "this organization";
+  const scopeIn = scopePhrase(scopeKind, orgName);
+  const scopeNote = serverMode ? "this server" : orgName;
 
   // Container counts only ever come from the stream; history points don't carry them.
-  const containerCountKnown = Boolean(metaApps && metaApps.length > 0);
+  const containerCountKnown = serverMode
+    ? hostContainerCount !== undefined
+    : Boolean(metaApps && metaApps.length > 0);
   const hasSamples = points.length > 0 || containerCountKnown;
 
   // Grace period so a first paint or a blip isn't an outage. Deferred both
@@ -308,6 +331,17 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
 
   // Totals from latest point or from meta apps containers
   const totals = useMemo(() => {
+    // Whole server: the host's own totals, Vardo and any unlabeled containers included.
+    if (serverMode) {
+      const latest = points[points.length - 1];
+      return {
+        cpu: latest?.cpu ?? 0,
+        memory: latest?.memory ?? 0,
+        networkRx: latest?.networkRx ?? 0,
+        networkTx: latest?.networkTx ?? 0,
+        containers: hostContainerCount ?? 0,
+      };
+    }
     if (metaApps && metaApps.length > 0) {
       // Stack children are also listed under their parent; flattening counts them twice.
       const allContainers = dedupeByContainer(metaApps.map((a) => a.containers));
@@ -331,7 +365,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
       };
     }
     return { cpu: 0, memory: 0, networkRx: 0, networkTx: 0, containers: 0 };
-  }, [metaApps, points]);
+  }, [serverMode, hostContainerCount, metaApps, points]);
 
   // Status counts cover top-level apps — the same set /projects lists.
   const statusCounts = useMemo(() => countApps(appRows).byStatus, [appRows]);
@@ -387,7 +421,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
           icon={Cpu}
           label="CPU"
           value={cardsLoading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : hasSamples ? cpu.headline : <NoValue />}
-          detail={cpu.detail ?? `summed across containers · ${scopeNote}`}
+          detail={cpu.detail ? `${cpu.detail} ${scopeIn}` : `summed across containers ${scopeIn}`}
           spark={cpuSparkData}
           color={CHART_COLORS.cpu}
         />
@@ -396,8 +430,8 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
           label="Memory"
           value={cardsLoading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : hasSamples ? formatBytes(totals.memory) : <NoValue />}
           detail={containerCountKnown
-            ? `across ${totals.containers} running container${totals.containers === 1 ? "" : "s"}`
-            : `running containers · ${scopeNote}`}
+            ? `across ${totals.containers} running container${totals.containers === 1 ? "" : "s"} ${scopeIn}`
+            : `running containers ${scopeIn}`}
           spark={memSparkData}
           color={CHART_COLORS.memory}
         />
@@ -406,9 +440,9 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
           label="Disk"
           value={cardsLoading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : hasSamples ? formatBytes(diskTotal) : <NoValue />}
           detail={!cardsLoading && hasSamples
-            ? adminMode
-              ? "images, volumes and build cache · whole host"
-              : `across ${scope.topLevel} app${scope.topLevel !== 1 ? "s" : ""} in ${scopeNote}`
+            ? serverMode
+              ? "images, volumes and build cache · whole server"
+              : `across ${scope.topLevel} app${scope.topLevel !== 1 ? "s" : ""} ${scopeIn}`
             : undefined}
           spark={diskSparkData}
           color={CHART_COLORS.disk}
@@ -429,7 +463,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
           icon={Box}
           label="Containers"
           value={cardsLoading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : containerCountKnown ? totals.containers : <NoValue />}
-          detail={`reporting to cAdvisor now · ${scopeNote}`}
+          detail={`reporting to cAdvisor now ${scopeIn}`}
         />
       </div>
 
@@ -606,6 +640,10 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
           return top;
         }
 
+        if (serverMode && breakdown && breakdown.core.rows.length > 0) {
+          allActive.push({ name: "Vardo", cpu: breakdown.core.totals.cpu, memory: breakdown.core.totals.memory, network: 0 });
+        }
+
         const memApps = topN(allActive, "memory");
         const cpuApps = topN(allActive, "cpu");
         const netApps = topN(allActive, "network");
@@ -648,7 +686,9 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
       })()}
 
       {/* Per-app stats */}
-      {displayApps.length === 0 ? (
+      {serverMode ? (
+        breakdown && <ServerBreakdownView breakdown={breakdown} awaiting={awaitingFirstFrame} />
+      ) : displayApps.length === 0 ? (
         <Card variant="inset" className="flex flex-col items-center justify-center gap-4 p-12">
           <Activity className="size-8 text-muted-foreground/50" />
           <div className="text-center space-y-1">
@@ -669,7 +709,7 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
           <div className="flex items-center justify-between gap-2 px-4 py-3">
             <h3 className="type-h4">Apps</h3>
             <span className="text-xs text-muted-foreground">
-              top-level apps in {scopeNote}
+              top-level apps {scopeIn}
               {scope.composeServices > 0 && ` · compose services counted on their parent`}
             </span>
           </div>

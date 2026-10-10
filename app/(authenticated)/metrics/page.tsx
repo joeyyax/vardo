@@ -1,44 +1,61 @@
 import { redirect } from "next/navigation";
-import { db } from "@/lib/db";
-import { apps } from "@/lib/db/schema";
-import { getCurrentOrg } from "@/lib/auth/session";
 import { isAppAdmin } from "@/lib/auth/admin";
 import { getFlagConfig, isFeatureEnabledAsync } from "@/lib/config/features";
-import { eq, asc, desc } from "drizzle-orm";
+import { loadMetricsPageScope } from "@/lib/metrics/page-scope";
 import { PageToolbar } from "@/components/page-toolbar";
 import { FeatureDisabled } from "@/components/feature-disabled";
 import { OrgMetrics } from "./org-metrics";
+import { ScopePicker, ScopeSwitch } from "./scope-picker";
 
-export default async function MetricsPage() {
-  const orgData = await getCurrentOrg();
+type PageProps = {
+  searchParams: Promise<{ scope?: string | string[] }>;
+};
 
-  if (!orgData) {
-    redirect("/login");
+export default async function MetricsPage({ searchParams }: PageProps) {
+  const { scope: rawScope } = await searchParams;
+  const scope = await loadMetricsPageScope(Array.isArray(rawScope) ? rawScope[0] : rawScope);
+
+  if (scope.kind === "none") redirect("/login");
+
+  const metricsEnabled = await isFeatureEnabledAsync("metrics");
+  const flag = getFlagConfig("metrics");
+
+  if (scope.kind === "switch") {
+    return (
+      <div className="space-y-6">
+        <PageToolbar>
+          <h1 className="type-h1">Metrics</h1>
+        </PageToolbar>
+        <ScopeSwitch orgId={scope.orgId} />
+      </div>
+    );
   }
 
-  const orgId = orgData.organization.id;
-  const metricsEnabled = await isFeatureEnabledAsync("metrics");
-
-  const appList = metricsEnabled
-    ? await db.query.apps.findMany({
-        where: eq(apps.organizationId, orgId),
-        orderBy: [asc(apps.sortOrder), desc(apps.createdAt)],
-        columns: { id: true, name: true, displayName: true, status: true, parentAppId: true },
-      })
-    : [];
-
-  const flag = getFlagConfig("metrics");
+  const pickerValue = scope.kind === "server" ? "server" : scope.orgId;
 
   return (
     <div className="space-y-6">
       <PageToolbar>
-        <h1 className="type-h1">Metrics</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="type-h1">Metrics</h1>
+          {metricsEnabled && (scope.canServer || scope.orgs.length > 1) && (
+            <ScopePicker
+              value={pickerValue}
+              canServer={scope.canServer}
+              orgs={scope.orgs}
+              currentOrgId={scope.orgId}
+            />
+          )}
+        </div>
       </PageToolbar>
 
       {metricsEnabled ? (
         <OrgMetrics
-          orgId={orgId}
-          apps={appList}
+          key={pickerValue}
+          scope={scope.kind}
+          orgId={scope.orgId}
+          orgName={scope.orgName}
+          apps={scope.apps}
         />
       ) : (
         <FeatureDisabled
