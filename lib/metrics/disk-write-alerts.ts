@@ -8,6 +8,7 @@ import { queryDiskWriteRange } from "./store";
 import { formatBytesIec } from "./format";
 import { stackedName } from "@/lib/email/format";
 import { isBulkWriting } from "./bulk-write";
+import { claimCooldown } from "@/lib/notifications/throttle";
 import type { ContainerMetrics } from "./types";
 import { logger } from "@/lib/logger";
 
@@ -19,11 +20,29 @@ export const DEFAULT_THRESHOLD_BYTES = 1_073_741_824;
 // 8 GiB/hour for data engines.
 export const DATA_ENGINE_THRESHOLD_BYTES = 8 * 1_073_741_824;
 
-// One alert per container per hour.
-const ALERT_COOLDOWN_MS = 60 * 60 * 1000;
+// One alert per container per six hours.
+export const ALERT_COOLDOWN_MS = 6 * 60 * 60 * 1000;
 
 // containerKey -> last alert timestamp.
 const lastAlertTimes = new Map<string, number>();
+
+/** The throttle key: the compose service, so a blue-green swap to a new container doesn't send again. */
+export function alertKey(projectName: string, container: Pick<ContainerMetrics, "containerId" | "containerName" | "labels">): string {
+  const service = container.labels["com.docker.compose.service"];
+  return `${projectName}:${service || container.containerName || container.containerId}`;
+}
+
+/** The name an alert shows: the app's, after its stack's; else the compose service after the project. */
+export function alertName(
+  app: { displayName?: string | null } | undefined,
+  parentName: string | undefined,
+  container: Pick<ContainerMetrics, "containerName" | "labels">,
+  projectName: string,
+): { name: string; stack?: string } {
+  if (app?.displayName) return { name: app.displayName, stack: parentName };
+  const service = container.labels["com.docker.compose.service"];
+  return service ? { name: service, stack: projectName } : { name: container.containerName };
+}
 
 /** The app's own threshold, else the data engine default, else the general default. */
 export function effectiveThreshold(custom: number | null | undefined, dataEngine: boolean): number {
@@ -90,9 +109,9 @@ export async function checkDiskWriteAlerts(
 
   for (const [projectName, containers] of projectContainers) {
     for (const container of containers) {
-      const alertKey = `${projectName}:${container.containerId}`;
+      const key = alertKey(projectName, container);
 
-      const lastAlert = lastAlertTimes.get(alertKey);
+      const lastAlert = lastAlertTimes.get(key);
       if (lastAlert && now - lastAlert < ALERT_COOLDOWN_MS) continue;
 
       const points = await queryDiskWriteRange(
@@ -121,9 +140,8 @@ export async function checkDiskWriteAlerts(
         const threshold = effectiveThreshold(custom, dataEngine);
 
         if (writtenInHour > threshold) {
-          lastAlertTimes.set(alertKey, now);
+          lastAlertTimes.set(key, now);
 
-          const appName = app?.displayName || container.containerName;
           const orgId = app?.organizationId || container.organizationId;
 
           let parentName: string | undefined;
@@ -134,15 +152,17 @@ export async function checkDiskWriteAlerts(
             });
             parentName = parent?.displayName;
           }
+          const { name, stack } = alertName(app, parentName, container, projectName);
+          const appName = stackedName(name, stack);
 
-          if (orgId) {
+          if (orgId && (await claimCooldown(orgId, key, new Date(now)))) {
             emit(orgId, {
               type: "disk.write-alert",
-              title: `High disk writes: ${stackedName(appName, parentName)}`,
-              message: `App '${stackedName(appName, parentName)}' wrote ${formatBytesIec(writtenInHour)} in the last hour (threshold: ${formatBytesIec(threshold)})`,
+              title: `High disk writes: ${appName}`,
+              message: `App '${appName}' wrote ${formatBytesIec(writtenInHour)} in the last hour (threshold: ${formatBytesIec(threshold)})`,
               appId: app?.id || "",
-              appName: app?.displayName,
-              projectName: parentName,
+              appName: name,
+              projectName: stack,
               composeService: app?.composeService ?? container.labels["com.docker.compose.service"] ?? undefined,
               dataEngine,
               containerName: container.containerName,

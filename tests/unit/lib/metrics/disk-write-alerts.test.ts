@@ -9,6 +9,7 @@ const m = vi.hoisted(() => ({
   inspectContainer: vi.fn(),
   isBulkWriting: vi.fn(),
   findFirst: vi.fn(),
+  claim: vi.fn(),
 }));
 
 vi.mock("@/lib/logger", () => ({ logger: { child: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }) } }));
@@ -17,8 +18,9 @@ vi.mock("@/lib/metrics/store", () => ({ queryDiskWriteRange: m.queryDiskWriteRan
 vi.mock("@/lib/docker/client", () => ({ inspectContainer: m.inspectContainer }));
 vi.mock("@/lib/metrics/bulk-write", () => ({ isBulkWriting: m.isBulkWriting }));
 vi.mock("@/lib/db", () => ({ db: { query: { apps: { findFirst: m.findFirst } } } }));
+vi.mock("@/lib/notifications/throttle", () => ({ claimCooldown: m.claim }));
 
-import { checkDiskWriteAlerts, effectiveThreshold } from "@/lib/metrics/disk-write-alerts";
+import { ALERT_COOLDOWN_MS, alertKey, alertName, checkDiskWriteAlerts, effectiveThreshold } from "@/lib/metrics/disk-write-alerts";
 
 let seq = 0;
 function container(overrides: Partial<ContainerMetrics> = {}): ContainerMetrics {
@@ -48,6 +50,7 @@ beforeEach(() => {
   m.isBulkWriting.mockResolvedValue(false);
   m.inspectContainer.mockResolvedValue({ image: "mysql:8" });
   m.findFirst.mockImplementation(async () => childApp);
+  m.claim.mockResolvedValue(true);
 });
 
 function written(bytes: number) {
@@ -110,5 +113,47 @@ describe("checkDiskWriteAlerts", () => {
     await checkDiskWriteAlerts([container()]);
     expect(m.emit).not.toHaveBeenCalled();
     expect(m.isBulkWriting).toHaveBeenCalledWith(["parent1", "child1", "parent1"]);
+  });
+});
+
+describe("disk write alert throttle and names", () => {
+  it("holds each container for six hours", () => {
+    expect(ALERT_COOLDOWN_MS).toBe(6 * 60 * 60 * 1000);
+  });
+
+  it("keys on the compose service, so a blue-green swap doesn't alert again", () => {
+    const blue = { containerId: "aaa", containerName: "shop-production-blue-mysql-1", labels: { "com.docker.compose.service": "mysql" } };
+    const green = { containerId: "bbb", containerName: "shop-production-green-mysql-1", labels: { "com.docker.compose.service": "mysql" } };
+    expect(alertKey("shop", blue)).toBe(alertKey("shop", green));
+  });
+
+  it("sends once per container until the cooldown passes", async () => {
+    const c = container();
+    written(9 * GIB);
+    await checkDiskWriteAlerts([c]);
+    await checkDiskWriteAlerts([{ ...c, containerId: "swapped" }]);
+    expect(m.emit).toHaveBeenCalledOnce();
+  });
+
+  it("leaves the email to another console that already sent it", async () => {
+    m.claim.mockResolvedValue(false);
+    written(9 * GIB);
+    await checkDiskWriteAlerts([container()]);
+    expect(m.emit).not.toHaveBeenCalled();
+  });
+
+  it("names an app it can't resolve by its service and project, never the raw container", async () => {
+    m.findFirst.mockResolvedValue(undefined);
+    m.inspectContainer.mockResolvedValue({ image: "nginx" });
+    written(2 * GIB);
+    await checkDiskWriteAlerts([container({ projectName: "shop-staging-data", containerName: "shop-staging-data-production-blue-mysql-1" })]);
+    const event = m.emit.mock.calls[0][1];
+    expect(event.title).toBe("High disk writes: shop-staging-data mysql");
+    expect(event).toMatchObject({ appName: "mysql", projectName: "shop-staging-data" });
+  });
+
+  it("puts the stack before the app's own name", () => {
+    expect(alertName({ displayName: "MySQL" }, "Shop Staging", { containerName: "x", labels: {} }, "p")).toEqual({ name: "MySQL", stack: "Shop Staging" });
+    expect(alertName(undefined, undefined, { containerName: "lone-1", labels: {} }, "p")).toEqual({ name: "lone-1" });
   });
 });

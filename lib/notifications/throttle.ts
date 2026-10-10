@@ -121,3 +121,32 @@ export async function clearSubjects(organizationId: string, type: string, abouts
     .returning({ about: notificationSends.about });
   return rows.map((r) => r.about);
 }
+
+/** Claims a send for a subject at most once per `hours`, across restarts. False inside the cooldown or when another process won. */
+export async function claimCooldown(organizationId: string, about: string, now: Date, hours = 6, type = "disk.write"): Promise<boolean> {
+  try {
+    const [existing] = await db
+      .select({ sentAt: notificationSends.sentAt })
+      .from(notificationSends)
+      .where(key(organizationId, type, about))
+      .limit(1);
+    if (!existing) {
+      const inserted = await db
+        .insert(notificationSends)
+        .values({ organizationId, type, about, severity: "warning", sentAt: now, clearedAt: now, detail: null })
+        .onConflictDoNothing()
+        .returning({ about: notificationSends.about });
+      return inserted.length > 0;
+    }
+    if (now.getTime() - existing.sentAt.getTime() < hours * HOUR_MS) return false;
+    const updated = await db
+      .update(notificationSends)
+      .set({ sentAt: now, clearedAt: now })
+      .where(and(key(organizationId, type, about), eq(notificationSends.sentAt, existing.sentAt)))
+      .returning({ about: notificationSends.about });
+    return updated.length > 0;
+  } catch {
+    // The in-memory cooldown still holds.
+    return true;
+  }
+}
