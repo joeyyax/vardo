@@ -4,6 +4,7 @@ import type {
   ComposeFile,
   ComposeService,
   ComposePreviewApp,
+  HeadersMiddleware,
   DeployTransformDomain,
   PortMapping,
   ResourceLimits,
@@ -98,13 +99,9 @@ export function defaultPidsLimit(): number | null {
   return DEFAULT_PIDS_LIMIT;
 }
 
-/** Headers middleware options for an app's HTTPS router. Traefik overwrites any value the app sends. */
-export const SECURITY_HEADERS: Readonly<Record<string, string>> = {
-  stsSeconds: "31536000",
-  contentTypeNosniff: "true",
-  customFrameOptionsValue: "SAMEORIGIN",
-  referrerPolicy: "strict-origin-when-cross-origin",
-};
+function hasHeaders(headers: HeadersMiddleware | null | undefined): headers is HeadersMiddleware {
+  return !!headers && ("ref" in headers || Object.keys(headers.options).length > 0);
+}
 
 /**
  * Add Traefik labels to one service and clear this app's routing labels from the rest.
@@ -131,8 +128,8 @@ export function injectTraefikLabels(
     stripPathPrefix?: boolean;
     /** Middlewares the domain asks for, ahead of Vardo's own. */
     middlewares?: string[];
-    /** Add the default security headers to the HTTPS router. */
-    securityHeaders?: boolean;
+    /** The app's security headers, added to the HTTPS router. */
+    headers?: HeadersMiddleware | null;
   },
 ): ComposeFile {
   const { projectName, domain, containerPort, certResolver = "le-dns", ssl = true } = opts;
@@ -176,11 +173,15 @@ export function injectTraefikLabels(
 
   // Middlewares on the router that serves the app: security headers, the domain's own, then the redirect or the path strip.
   const appMiddlewares: string[] = [];
-  if (ssl && opts.securityHeaders) {
-    for (const [option, value] of Object.entries(SECURITY_HEADERS)) {
-      labels[`traefik.http.middlewares.${projectName}-headers.headers.${option}`] = value;
+  if (ssl && hasHeaders(opts.headers)) {
+    if ("ref" in opts.headers) {
+      appMiddlewares.push(opts.headers.ref);
+    } else {
+      for (const [option, value] of Object.entries(opts.headers.options)) {
+        labels[`traefik.http.middlewares.${projectName}-headers.headers.${option}`] = value;
+      }
+      appMiddlewares.push(`${projectName}-headers`);
     }
-    appMiddlewares.push(`${projectName}-headers`);
   }
   appMiddlewares.push(...(opts.middlewares ?? []));
   if (isRedirect) {
@@ -269,17 +270,17 @@ export function domainRouteOptions(domain: DeployTransformDomain, org: { trusted
 }
 
 /**
- * Strip Traefik labels from every service before re-injecting, so stale router names don't pile up.
- * Keeps `traefik.enable: "false"` and self-routed services.
- */
-/**
  * Adds the security headers middleware to HTTPS routers an app declares in its own labels.
  * Run before Vardo injects its routers, which carry their own.
  */
-export function injectHeadersIntoOwnRouters(compose: ComposeFile, appName: string): ComposeFile {
+export function injectHeadersIntoOwnRouters(
+  compose: ComposeFile,
+  appName: string,
+  headers: HeadersMiddleware | null | undefined,
+): ComposeFile {
   // The console sets its own headers.
-  if (appName === VARDO_SELF_APP_NAME) return compose;
-  const middleware = `${appName}-vardo-headers`;
+  if (appName === VARDO_SELF_APP_NAME || !hasHeaders(headers)) return compose;
+  const middleware = "ref" in headers ? headers.ref : `${appName}-vardo-headers`;
   const updatedServices: Record<string, ComposeService> = {};
   for (const [svcName, svc] of Object.entries(compose.services)) {
     const labels = svc.labels;
@@ -302,8 +303,10 @@ export function injectHeadersIntoOwnRouters(compose: ComposeFile, appName: strin
       continue;
     }
     const next: Record<string, string> = { ...labels };
-    for (const [option, value] of Object.entries(SECURITY_HEADERS)) {
-      next[`traefik.http.middlewares.${middleware}.headers.${option}`] = value;
+    if ("options" in headers) {
+      for (const [option, value] of Object.entries(headers.options)) {
+        next[`traefik.http.middlewares.${middleware}.headers.${option}`] = value;
+      }
     }
     for (const r of https) {
       const key = `traefik.http.routers.${r}.middlewares`;
@@ -315,6 +318,10 @@ export function injectHeadersIntoOwnRouters(compose: ComposeFile, appName: strin
   return { ...compose, services: updatedServices };
 }
 
+/**
+ * Strip Traefik labels from every service before re-injecting, so stale router names don't pile up.
+ * Keeps `traefik.enable: "false"` and self-routed services.
+ */
 export function stripTraefikLabels(compose: ComposeFile): ComposeFile {
   const updatedServices: Record<string, ComposeService> = {};
   for (const [svcName, svc] of Object.entries(compose.services)) {
@@ -883,7 +890,7 @@ export function applyDeployTransforms(
     networkName: string;
     backendProtocol?: "http" | "https" | null;
     orgTrusted?: boolean;
-    securityHeaders?: boolean;
+    headers?: HeadersMiddleware | null;
   },
 ): ComposeFile {
   let result = compose;
@@ -906,7 +913,7 @@ export function applyDeployTransforms(
     servicesWithCustomNetwork.length === Object.keys(result.services).length;
 
   if (!allServicesCustomNetwork && opts.domains.length > 0) result = stripTraefikLabels(result);
-  if (opts.securityHeaders ?? true) result = injectHeadersIntoOwnRouters(result, opts.appName);
+  result = injectHeadersIntoOwnRouters(result, opts.appName, opts.headers);
 
   if (!allServicesCustomNetwork && opts.domains.length > 0) {
     // Vardo owns routing once the app has a domain.
@@ -925,7 +932,7 @@ export function applyDeployTransforms(
         containerPort: port,
         serviceName: targetService,
         backendProtocol: resolvedProtocol,
-        securityHeaders: opts.securityHeaders ?? true,
+        headers: opts.headers,
       });
     }
   }
@@ -996,6 +1003,6 @@ export function buildComposePreview(
     networkName,
     backendProtocol: app.backendProtocol,
     orgTrusted,
-    securityHeaders: app.securityHeaders,
+    headers: app.headers,
   });
 }

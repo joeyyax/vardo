@@ -813,6 +813,13 @@
       "when": 1791671898242,
       "tag": "0115_worker_leases",
       "breakpoints": true
+    },
+    {
+      "idx": 116,
+      "version": "7",
+      "when": 1791672884279,
+      "tag": "0116_security_header_settings",
+      "breakpoints": true
     }
   ]
 }

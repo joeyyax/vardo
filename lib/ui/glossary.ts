@@ -426,6 +426,30 @@ const entries = {
     aliases: ["Compose domain"],
   },
 
+  // Security headers
+  hsts: {
+    term: "HSTS",
+    label: "Strict Transport Security",
+    what: "Tells browsers to use HTTPS for this domain for the chosen time, even when someone types http://. Turning it off only takes effect as each browser's copy expires.",
+  },
+  framing: {
+    term: "Framing",
+    what: "Whether other sites can show this app inside a frame. Blocking it stops clickjacking, where a page tricks people into clicking something hidden.",
+  },
+  "referrer-policy": {
+    term: "Referrer policy",
+    what: "How much of the current page's address the browser shares when someone follows a link or the page loads something from another site.",
+  },
+  "permissions-policy": {
+    term: "Permissions policy",
+    what: "Which browser features, like the camera or location, pages on this domain may use. Features it leaves out keep the browser's defaults.",
+  },
+  "csp-report-only": {
+    term: "CSP report-only",
+    label: "Content Security Policy (report-only)",
+    what: "A policy limiting where pages load scripts, styles and other content from. In report-only mode browsers log violations instead of blocking them.",
+  },
+
   // Organizations and services
   "trusted-org": {
     term: "Trusted",

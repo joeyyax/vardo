@@ -13,6 +13,7 @@ import {
 } from "@/lib/docker/compose";
 import { listContainers, inspectContainer } from "@/lib/docker/client";
 import { buildTraefikConfigYaml } from "@/lib/ssl/generate-config";
+import { headersMiddlewareRef } from "@/lib/security/response-headers";
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
@@ -90,7 +91,7 @@ async function handler(_request: NextRequest, { params }: RouteParams) {
           middlewares: d.middlewares ?? null,
         })),
         backendProtocol: narrowBackendProtocol(app.backendProtocol),
-        securityHeaders: app.securityHeaders,
+        headers: { ref: headersMiddlewareRef(app.id) },
       },
       volumesList,
       NETWORK_NAME,

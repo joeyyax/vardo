@@ -1,0 +1,5 @@
+ALTER TABLE "app" ADD COLUMN "security_header_config" jsonb DEFAULT '{"hsts":{"enabled":true,"maxAge":31536000,"includeSubDomains":false,"preload":false},"nosniff":true,"framing":"sameorigin","referrerPolicy":"strict-origin-when-cross-origin","permissionsPolicy":{"mode":"off","custom":""},"cspReportOnly":{"enabled":false,"policy":""}}'::jsonb NOT NULL;--> statement-breakpoint
+ALTER TABLE "app" ADD COLUMN "security_headers_live" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+-- On keeps the column default, the same four headers. Off maps to every header off.
+UPDATE "app" SET "security_header_config" = '{"hsts":{"enabled":false,"maxAge":31536000,"includeSubDomains":false,"preload":false},"nosniff":false,"framing":"off","referrerPolicy":"off","permissionsPolicy":{"mode":"off","custom":""},"cspReportOnly":{"enabled":false,"policy":""}}'::jsonb WHERE "security_headers" = false;--> statement-breakpoint
+ALTER TABLE "app" DROP COLUMN "security_headers";

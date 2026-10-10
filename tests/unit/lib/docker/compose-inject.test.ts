@@ -10,11 +10,11 @@ import {
   injectNetwork,
   injectTraefikLabels,
   isTraefikSelfRouted,
-  SECURITY_HEADERS,
   stripTraefikLabels,
   stripVardoInjections,
 } from "@/lib/docker/compose-inject";
 import { parseCompose } from "@/lib/docker/compose-parse";
+import { RECOMMENDED_HEADERS, headersLabelOptions } from "@/lib/security/response-headers";
 import { sharedNetworks } from "@/lib/docker/shared-networks";
 import { selectRoutedService } from "@/lib/docker/routed-service";
 import type { ComposeFile, DeployTransformDomain } from "@/lib/docker/compose-types";
@@ -407,12 +407,21 @@ describe("injectTraefikLabels domain middlewares", () => {
 
 describe("injectTraefikLabels security headers", () => {
   const base = (): ComposeFile => ({ services: { web: { name: "web", image: "app:latest" } } });
-  const opts = { projectName: "site-abc", appName: "site", domain: "site.test", containerPort: 80, securityHeaders: true };
+  const FILE_REF = { ref: "vardo-headers-app1@file" };
+  const LABELS = { options: headersLabelOptions(RECOMMENDED_HEADERS) };
+  const opts = { projectName: "site-abc", appName: "site", domain: "site.test", containerPort: 80, headers: FILE_REF };
   const headerLabels = (labels: Record<string, string>) =>
     Object.fromEntries(Object.entries(labels).filter(([k]) => k.startsWith("traefik.http.middlewares.site-abc-headers.")));
 
-  it("defines the headers middleware and puts it on the HTTPS router only", () => {
+  it("references the file middleware on the HTTPS router only, defining nothing in labels", () => {
     const labels = injectTraefikLabels(base(), opts).services.web.labels!;
+    expect(headerLabels(labels)).toEqual({});
+    expect(labels["traefik.http.routers.site-abc.middlewares"]).toBe("vardo-headers-app1@file");
+    expect(labels["traefik.http.routers.site-abc-http.middlewares"]).toBe("site-abc-https-redirect");
+  });
+
+  it("falls back to label-defined headers without a Traefik volume", () => {
+    const labels = injectTraefikLabels(base(), { ...opts, headers: LABELS }).services.web.labels!;
     expect(headerLabels(labels)).toEqual({
       "traefik.http.middlewares.site-abc-headers.headers.stsSeconds": "31536000",
       "traefik.http.middlewares.site-abc-headers.headers.contentTypeNosniff": "true",
@@ -420,13 +429,6 @@ describe("injectTraefikLabels security headers", () => {
       "traefik.http.middlewares.site-abc-headers.headers.referrerPolicy": "strict-origin-when-cross-origin",
     });
     expect(labels["traefik.http.routers.site-abc.middlewares"]).toBe("site-abc-headers");
-    expect(labels["traefik.http.routers.site-abc-http.middlewares"]).toBe("site-abc-https-redirect");
-  });
-
-  it("sends HSTS without includeSubDomains or preload", () => {
-    expect(Object.keys(SECURITY_HEADERS)).not.toContain("stsIncludeSubdomains");
-    expect(Object.keys(SECURITY_HEADERS)).not.toContain("stsPreload");
-    expect(Object.keys(SECURITY_HEADERS)).not.toContain("contentSecurityPolicy");
   });
 
   it("runs ahead of the domain's middlewares and the redirect", () => {
@@ -435,13 +437,15 @@ describe("injectTraefikLabels security headers", () => {
       middlewares: ["cloudflare-only@file"],
       redirectTo: "https://new.test",
     }).services.web.labels!;
-    expect(labels["traefik.http.routers.site-abc.middlewares"]).toBe("site-abc-headers,cloudflare-only@file,site-abc-redirect");
+    expect(labels["traefik.http.routers.site-abc.middlewares"]).toBe("vardo-headers-app1@file,cloudflare-only@file,site-abc-redirect");
   });
 
-  it("adds nothing when the app opts out", () => {
-    const labels = injectTraefikLabels(base(), { ...opts, securityHeaders: false }).services.web.labels!;
-    expect(headerLabels(labels)).toEqual({});
-    expect(labels["traefik.http.routers.site-abc.middlewares"]).toBeUndefined();
+  it("adds nothing without headers or with every label header off", () => {
+    for (const headers of [null, { options: {} }]) {
+      const labels = injectTraefikLabels(base(), { ...opts, headers }).services.web.labels!;
+      expect(headerLabels(labels)).toEqual({});
+      expect(labels["traefik.http.routers.site-abc.middlewares"]).toBeUndefined();
+    }
   });
 
   it("adds nothing to a plain-HTTP domain", () => {
@@ -450,7 +454,7 @@ describe("injectTraefikLabels security headers", () => {
     expect(labels["traefik.http.routers.site-abc.middlewares"]).toBeUndefined();
   });
 
-  it("is on by default in applyDeployTransforms and off when the app opts out", () => {
+  it("passes the app's headers through applyDeployTransforms", () => {
     const domain: DeployTransformDomain = {
       id: "abcdef123456",
       domain: "site.test",
@@ -460,16 +464,16 @@ describe("injectTraefikLabels security headers", () => {
       redirectTo: null,
       redirectCode: null,
     };
-    const run = (securityHeaders?: boolean) =>
+    const run = (headers?: typeof FILE_REF | null) =>
       applyDeployTransforms(base(), {
         appName: "site",
         containerPort: 80,
         domains: [domain],
         networkName: "vardo-network",
-        securityHeaders,
+        headers,
       }).services.web.labels!["traefik.http.routers.site-abcdef.middlewares"];
-    expect(run()).toBe("site-abcdef-headers");
-    expect(run(false)).toBeUndefined();
+    expect(run(FILE_REF)).toBe("vardo-headers-app1@file");
+    expect(run(null)).toBeUndefined();
   });
 
   it("is pruned from a sibling service when the route moves", () => {
@@ -479,8 +483,8 @@ describe("injectTraefikLabels security headers", () => {
         api: { name: "api", image: "api:latest" },
       },
     };
-    const first = injectTraefikLabels(compose, { ...opts, serviceName: "api" });
-    const moved = injectTraefikLabels(first, { ...opts, serviceName: "web" });
+    const first = injectTraefikLabels(compose, { ...opts, headers: LABELS, serviceName: "api" });
+    const moved = injectTraefikLabels(first, { ...opts, headers: LABELS, serviceName: "web" });
     expect(Object.keys(moved.services.api.labels ?? {}).filter((k) => k.includes("site-abc-headers"))).toEqual([]);
   });
 });

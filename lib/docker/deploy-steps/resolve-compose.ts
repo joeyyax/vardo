@@ -20,6 +20,8 @@ import { detectExposedPorts } from "../client";
 import type { ComposeFile } from "../compose-types";
 import { normalizeCompose } from "../compose-normalize";
 import { removeAppRouteConfig } from "@/lib/ssl/generate-config";
+import { normalizeHeaderConfig } from "@/lib/security/response-headers";
+import { deployHeadersMiddleware } from "../headers-file";
 import {
   NETWORK_NAME as VARDO_NETWORK,
   DEFAULT_CONTAINER_PORT,
@@ -214,12 +216,15 @@ export async function resolveCompose(ctx: DeployContext): Promise<DeployContext>
     }
   }
 
+  // Routers reference the app's file middleware, so saved header settings apply without a redeploy.
+  const headerPlan = await deployHeadersMiddleware(app.id, normalizeHeaderConfig(app.securityHeaders));
+  const headers = headerPlan.headers;
+  ctx.headersLive = headerPlan.live;
+  if (headerPlan.error) log(`[deploy] Security headers: couldn't write the Traefik file, using labels (${headerPlan.error})`);
   // Self-routed and domainless apps keep their own routers; Vardo's carry headers already.
-  if (app.securityHeaders ?? true) {
-    compose = injectHeadersIntoOwnRouters(compose, app.name);
-    // Self-routed labels reach the container through the bare file, not the overlay.
-    ctx.bareCompose = injectHeadersIntoOwnRouters(ctx.bareCompose, app.name);
-  }
+  compose = injectHeadersIntoOwnRouters(compose, app.name, headers);
+  // Self-routed labels reach the container through the bare file, not the overlay.
+  ctx.bareCompose = injectHeadersIntoOwnRouters(ctx.bareCompose, app.name, headers);
   if (!allServicesCustomNetwork && app.domains.length > 0) {
 
     // Inspect images only when compose doesn't say which service serves the port.
@@ -266,7 +271,7 @@ export async function resolveCompose(ctx: DeployContext): Promise<DeployContext>
         containerPort: port,
         serviceName: targetService,
         backendProtocol: resolvedProtocol,
-        securityHeaders: app.securityHeaders ?? true,
+        headers,
       });
       const svcSuffix = targetService ? ` → ${targetService}` : "";
       const route = formatRoute(domain.domain, domain.pathPrefix);

@@ -1,4 +1,5 @@
 import type { ResourceProfile } from "@/lib/db/schema/enums";
+import type { SecurityHeaderConfig } from "@/lib/security/response-headers";
 // Deploy pipeline state. Steps mutate their own fields and throw on failure; runDeployment handles recovery.
 
 import type { ComposeFile, ServiceConfigOverride } from "./compose-types";
@@ -54,7 +55,8 @@ export type DeployApp = {
   autoRollback: boolean | null;
   rollbackGracePeriod: number | null;
   backendProtocol: "http" | "https" | null;
-  securityHeaders?: boolean;
+  securityHeaders?: SecurityHeaderConfig;
+  securityHeadersLive?: boolean;
   envContent: string | null;
   parentAppId: string | null;
   composeService: string | null;
@@ -134,6 +136,9 @@ export type DeployContext = {
 
   /** The compose before Vardo removed the app's own Traefik labels. */
   declaredCompose?: ComposeFile;
+
+  /** The routers reference the app's headers file, so later header changes apply live. */
+  headersLive?: boolean;
 
   /** Per-service overrides from decomposed child apps, keyed by service name. (#745) */
   serviceConfig: Record<string, ServiceConfigOverride>;

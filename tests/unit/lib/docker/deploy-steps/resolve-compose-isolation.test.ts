@@ -17,9 +17,20 @@ vi.mock("@/lib/docker/client", () => ({
 vi.mock("@/lib/db", () => ({
   db: { query: { apps: { findMany: vi.fn().mockResolvedValue([]) } } },
 }));
+// No Traefik volume: headers go on as labels.
+vi.mock("@/lib/docker/headers-file", async () => {
+  const { headersLabelOptions } = await import("@/lib/security/response-headers");
+  return {
+    deployHeadersMiddleware: vi.fn(async (_id: string, config: Parameters<typeof headersLabelOptions>[0]) => {
+      const options = headersLabelOptions(config);
+      return { headers: Object.keys(options).length > 0 ? { options } : null, live: false };
+    }),
+  };
+});
 
 import { resolveCompose } from "@/lib/docker/deploy-steps/resolve-compose";
 import { removeAppRouteConfig } from "@/lib/ssl/generate-config";
+import { OFF_HEADERS } from "@/lib/security/response-headers";
 
 type Domain = DeployApp["domains"][number];
 
@@ -213,7 +224,7 @@ describe("resolveCompose — production names", () => {
   it("leave out security headers when the app opts out", async () => {
     const app = makeApp(
       [{ id: "dom-id-abcdef12", domain: "notes.example.com", isPrimary: true, port: 3500, sslEnabled: true }],
-      { securityHeaders: false },
+      { securityHeaders: OFF_HEADERS },
     );
     const compose: ComposeFile = { services: { web: { name: "web", image: "notes:latest" } } };
     const ctx = await resolveCompose(makeCtx(compose, app, { name: "production", isolated: false }));

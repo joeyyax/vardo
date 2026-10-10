@@ -16,6 +16,8 @@ import { refuseSystemManaged } from "@/lib/api/system-managed";
 import { sharedMarkerTypeErrors } from "@/lib/docker/compose";
 import { MaskedComposeError, unmaskComposeEnv } from "@/lib/docker/compose-mask";
 import { readableApp } from "@/lib/api/readable-app";
+import { securityHeadersInputSchema } from "@/lib/security/response-headers";
+import { applyAppHeaders } from "@/lib/docker/headers-sync";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { GIT_URL_MASKED_MESSAGE, gitBranchUpdateSchema, gitUrlUpdateSchema } from "@/lib/api/git-fields";
@@ -74,7 +76,8 @@ const updateAppSchema = z.object({
   // Services that get the app's own certificates at /certs. Null or empty turns it off.
   certServices: z.array(z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/).max(63)).max(32).nullable().optional(),
   backendProtocol: z.enum(["http", "https"]).nullable().optional(),
-  securityHeaders: z.boolean().optional(),
+  // Header settings, or true/false for Recommended/Off.
+  securityHeaders: securityHeadersInputSchema.optional(),
   diskWriteAlertThreshold: z.number().int().min(0).nullable().optional(), // bytes/hour, null = default 1GB
   anomalyAlerts: z.boolean().optional(),
   // Null follows the org default.
@@ -231,6 +234,8 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
       return apiError.notFound("app");
     }
 
+    const securityHeaders = parsed.data.securityHeaders !== undefined ? await applyAppHeaders(updated) : undefined;
+
     recordActivity({
       organizationId: orgId,
       action: "app.updated",
@@ -239,7 +244,10 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
       metadata: { changes: Object.keys(parsed.data) },
     });
 
-    return NextResponse.json({ app: readableApp(updated, can(org.membership, "env.reveal")) });
+    return NextResponse.json({
+      app: readableApp(updated, can(org.membership, "env.reveal")),
+      ...(securityHeaders ? { securityHeaders } : {}),
+    });
   } catch (error) {
     return handleRouteError(error, "Error updating app");
   }
