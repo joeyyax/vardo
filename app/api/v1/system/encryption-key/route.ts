@@ -11,11 +11,13 @@ async function handleGet(request: NextRequest) {
     await requireAdminAuth(request);
 
     const state = await reconcileKeyFingerprint();
-    const { severity, headline } = describeKeyEscrow(state);
+    const { severity, headline, detail, technical } = describeKeyEscrow(state);
 
     return NextResponse.json({
       severity,
       headline,
+      detail,
+      technical,
       status: state.status.kind,
       fingerprint: "running" in state.status
         ? state.status.running

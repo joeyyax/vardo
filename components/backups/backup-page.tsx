@@ -320,7 +320,7 @@ export function BackupPage({
               </li>
               <li className="flex items-start gap-2.5">
                 <Info className="size-4 text-muted-foreground/50 shrink-0 mt-0.5" aria-hidden="true" />
-                <span className="text-muted-foreground">Not ENCRYPTION_MASTER_KEY or BETTER_AUTH_SECRET. Escrow both, or a restore can&apos;t read env vars or two-factor secrets</span>
+                <span className="text-muted-foreground">Not the recovery key or sign-in secret. Save both, or a restore on a new server can&apos;t read saved secrets or two-factor sign-in</span>
               </li>
             </ul>
           </div>
@@ -331,7 +331,7 @@ export function BackupPage({
             <ul className="text-sm space-y-2">
               <li className="flex items-start gap-2.5">
                 <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />
-                <span className="text-muted-foreground">Each archive is encrypted with its own key, wrapped by the master key</span>
+                <span className="text-muted-foreground">Each archive is encrypted, and the recovery key protects its key</span>
               </li>
               <li className="flex items-start gap-2.5">
                 <Check className="size-4 text-status-success shrink-0 mt-0.5" aria-hidden="true" />

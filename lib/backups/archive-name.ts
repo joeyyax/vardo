@@ -6,7 +6,7 @@ export type ArchiveFormat = "tar" | "dump";
 export const ENCRYPTED_SUFFIX = ".enc";
 
 export const DOWNLOAD_HINT =
-  "Downloads arrive decrypted. Archives copied straight from storage end in .enc; open them with vardo backup decrypt <in> <out>.";
+  "Downloads arrive decrypted. Archives copied straight from storage end in .enc and need the recovery key; open them with vardo backup decrypt <in> <out>.";
 
 /** Extension for a new archive, without the leading dot. */
 export function archiveExtension(format: ArchiveFormat, encrypted: boolean): string {

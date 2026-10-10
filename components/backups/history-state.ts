@@ -7,6 +7,11 @@ export type RestoreTest =
   | { kind: "failed"; at: string | null; detail: string | null }
   | { kind: "unsupported"; detail: string | null };
 
+/** Whether the archive was written encrypted and is still stored. */
+export function isEncryptedRun(run: { storagePath: string | null; archiveKeyFingerprint?: string | null }): boolean {
+  return !!run.storagePath && !!run.archiveKeyFingerprint;
+}
+
 /** Whether a restore drill has proven this backup restorable. */
 export function restoreTestFor(
   backup: Pick<RecentBackup, "status" | "storagePath" | "verifiedAt" | "verifyOutcome" | "verifyDetail">,
