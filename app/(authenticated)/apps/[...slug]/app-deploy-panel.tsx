@@ -1,23 +1,18 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   Loader2,
   Rocket,
-  ChevronDown,
   RotateCcw,
   X,
-  Clock,
   Zap,
-  Settings,
   RefreshCw,
-  AlertTriangle,
   Play,
   Square,
   type LucideIcon,
 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Switch } from "@/components/ui/switch";
@@ -42,11 +37,14 @@ import {
   BottomSheetDescription,
 } from "@/components/ui/bottom-sheet";
 import { DeploymentLog } from "@/components/log-viewer";
-import { DeploymentStatusBadge, LiveBadge } from "@/components/app-status";
+import { DetailPanel, DETAIL_PANEL_GUTTER, PanelSection } from "@/components/detail-panel";
+import { ListRow } from "@/components/list-row";
+import { StatFilter, StatGroup } from "@/components/stat-filter";
+import { StatusDot } from "@/components/ui/status-dot";
 import { formatDuration } from "@/lib/metrics/format";
 import { toast } from "@/lib/messenger";
 import { RelativeTime } from "@/components/relative-time";
-import { Uptime } from "./timer";
+import { compactUptime } from "@/lib/ui/app-row";
 import { InProgressDeployCard } from "./in-progress-deploy-card";
 import { BuildPlanPanel } from "./build-plan-panel";
 import { useCancelDeploy } from "./hooks/use-app-actions";
@@ -57,6 +55,19 @@ import {
   type LifecycleKind,
 } from "@/lib/ui/lifecycle";
 import { typicalElapsedMs } from "@/lib/ui/deploy-timing";
+import {
+  DEPLOY_WINDOW_DAYS,
+  deployCounts,
+  deployMark,
+  deployProblem,
+  isDeployFilter,
+  matchesDeployFilter,
+  triggerLabel,
+  type DeployFilter,
+  type DeployRole,
+} from "@/lib/ui/deploy-list";
+import { focusRowByKey, useRowKeys } from "@/hooks/use-row-keys";
+import type { UiDensity } from "@/lib/db/schema/enums";
 
 import type { useDeploy } from "./hooks/use-deploy";
 import type { Deployment, SlotStatus } from "./types";
@@ -80,6 +91,9 @@ export interface AppDeployPanelProps {
   deployActionLabel: string;
   /** Restarts, stops and starts an operator ran, newest first. */
   lifecycleEvents?: LifecycleEvent[];
+  /** The tab's URL, or one deploy's when given an id. */
+  deployPath: (deploymentId: string | null) => string;
+  density?: UiDensity;
 }
 
 const LIFECYCLE_ICONS: Record<LifecycleKind, LucideIcon> = {
@@ -88,11 +102,11 @@ const LIFECYCLE_ICONS: Record<LifecycleKind, LucideIcon> = {
   started: Play,
 };
 
-/** A non-deploy action on the app's timeline. */
+/** A non-deploy action on the app's timeline, set between the deploy rows. */
 function LifecycleLine({ event }: { event: LifecycleEvent }) {
   const Icon = LIFECYCLE_ICONS[event.kind];
   return (
-    <div className="flex items-center gap-2 px-4 py-1.5 text-xs text-muted-foreground">
+    <div role="none" className="flex items-center gap-2 py-1.5 pr-2 pl-[30px] text-xs text-muted-foreground">
       <Icon className="size-3 shrink-0" aria-hidden="true" />
       <span className="text-foreground/70">{event.label}</span>
       {event.detail && <span className="truncate">{event.detail}</span>}
@@ -109,17 +123,25 @@ function LifecycleLine({ event }: { event: LifecycleEvent }) {
   );
 }
 
-function triggerLabel(trigger: string): string {
-  return {
-    manual: "Manual deploy",
-    webhook: "Auto deploy",
-    api: "API deploy",
-    rollback: "Rollback",
-  }[trigger] ?? `${trigger.charAt(0).toUpperCase()}${trigger.slice(1)} deploy`;
+/** Client-only so server and client never disagree. */
+function LiveFor({ since }: { since: Date | string }) {
+  const [text, setText] = useState<string | null>(null);
+  useEffect(() => {
+    const tick = () => setText(compactUptime(since));
+    tick();
+    const id = setInterval(tick, 30_000);
+    return () => clearInterval(id);
+  }, [since]);
+  return <>live{text && ` for ${text}`}</>;
 }
 
 function deployLabel(d: Deployment): string {
   return d.gitMessage || d.gitSha?.slice(0, 7) || triggerLabel(d.trigger);
+}
+
+function triggeredBy(d: Deployment): string {
+  const by = d.triggeredByUser?.name;
+  return by ? `${triggerLabel(d.trigger)} by ${by}` : triggerLabel(d.trigger);
 }
 
 function CommitSha({ sha, gitUrl }: { sha: string; gitUrl: string | null }) {
@@ -130,27 +152,30 @@ function CommitSha({ sha, gitUrl }: { sha: string; gitUrl: string | null }) {
       href={`${commitUrl}/commit/${sha}`}
       target="_blank"
       rel="noopener noreferrer"
-      onClick={(e) => e.stopPropagation()}
-      className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded shrink-0 hover:bg-accent transition-colors"
+      className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs transition-colors hover:bg-accent focus-visible:outline-2 focus-visible:outline-brass"
       aria-label={`View commit ${sha7}`}
     >
       {sha7}
     </a>
   ) : (
-    <code className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded shrink-0" aria-label={`Commit ${sha7}`}>
-      {sha7}
-    </code>
+    <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">{sha7}</code>
   );
 }
 
-function SlotPill({ slot }: { slot: string | null }) {
-  if (!slot) return null;
-  const color = slot === "green" ? "bg-emerald-500/15 text-emerald-600" : "bg-blue-500/15 text-blue-600";
+function Fact({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <span className={`text-xs font-mono px-1.5 py-0.5 rounded ${color}`}>
-      {slot}
-    </span>
+    <>
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="min-w-0 [overflow-wrap:anywhere]">{children}</dd>
+    </>
   );
+}
+
+const PROBLEM_TONE = { error: "text-status-error", warning: "text-status-warning" } as const;
+
+/** Modal layers own Escape while they are open. */
+function overlayOpen(): boolean {
+  return !!document.querySelector('[role="dialog"]:not([aria-modal="false"]), [role="alertdialog"], [role="menu"]');
 }
 
 export function AppDeployPanel({
@@ -166,6 +191,8 @@ export function AppDeployPanel({
   onDeploy,
   deployActionLabel,
   lifecycleEvents = [],
+  deployPath,
+  density = "comfortable",
 }: AppDeployPanelProps) {
   const {
     deploying,
@@ -196,21 +223,43 @@ export function AppDeployPanel({
     setCancelRequested,
     cancelDeploy,
   } = useCancelDeploy(orgId, appId);
-  const [showInfra, setShowInfra] = useState(false);
   const [slotStatus, setSlotStatus] = useState<SlotStatus | null>(null);
   const [instantRollingBack, setInstantRollingBack] = useState(false);
   const [confirmRollbackOpen, setConfirmRollbackOpen] = useState(false);
-  const liveCardRef = useRef<HTMLDivElement>(null);
+  const [flash, setFlash] = useState<string | null>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const onRowKeys = useRowKeys(listRef);
   const router = useRouter();
+  const pathname = usePathname();
+  const params = useSearchParams();
+  const rawFilter = params.get("show");
+  const filter: DeployFilter | null = isDeployFilter(rawFilter) ? rawFilter : null;
+  // Read once per render so every row agrees on the window.
+  const [now] = useState(() => Date.now());
 
-  // A deploy opened by URL scrolls into view once.
+  // A deploy opened by URL scrolls into view and flashes once.
   const linkedDeploy = useRef(viewingLogId);
   useEffect(() => {
     const id = linkedDeploy.current;
     if (!id) return;
     linkedDeploy.current = null;
-    document.getElementById(deployAnchor(id))?.scrollIntoView({ block: "start" });
+    document.getElementById(deployAnchor(id))?.scrollIntoView({ block: "center" });
+    setFlash(id);
+    const t = setTimeout(() => setFlash(null), 1800);
+    return () => clearTimeout(t);
   }, []);
+
+  // The URL names the open deploy, so it can be shared or reopened.
+  const syncedOnce = useRef(false);
+  useEffect(() => {
+    if (!syncedOnce.current) {
+      syncedOnce.current = true;
+      return;
+    }
+    const qs = window.location.search;
+    window.history.replaceState(null, "", deployPath(viewingLogId) + qs);
+  }, [viewingLogId, deployPath]);
 
   const prevDeploying = useRef(deploying);
   useEffect(() => {
@@ -244,7 +293,6 @@ export function AppDeployPanel({
       if (res.ok) {
         toast.success(`Rolled back in ${formatDuration(data.durationMs)}`);
         router.refresh();
-        requestAnimationFrame(() => liveCardRef.current?.focus());
       } else {
         toast.error(data.error || "Instant rollback failed");
       }
@@ -274,6 +322,17 @@ export function AppDeployPanel({
       });
     }
   }, [cancelDeploy, router]);
+
+  const setFilter = useCallback(
+    (next: DeployFilter | null) => {
+      const sp = new URLSearchParams(params.toString());
+      if (next) sp.set("show", next);
+      else sp.delete("show");
+      const qs = sp.toString();
+      window.history.replaceState(null, "", qs ? `${pathname}?${qs}` : pathname);
+    },
+    [params, pathname],
+  );
 
   // Containers exist but no deployment records — the app was adopted from Docker.
   const adopted =
@@ -315,7 +374,7 @@ export function AppDeployPanel({
     (d) => d.id !== liveDeploy?.id && d.id !== instantRollbackDeploy?.id
   );
 
-  // Lifecycle actions after the live release read above that card.
+  // Lifecycle actions after the live release read above that row.
   const lifecycle = partitionLifecycle(
     lifecycleEvents,
     liveDeploy?.finishedAt ?? liveDeploy?.startedAt ?? null,
@@ -326,198 +385,142 @@ export function AppDeployPanel({
     (d) => d.finishedAt ?? d.startedAt,
   );
 
-  function toggleLog(deploymentId: string) {
-    setViewingLogId(viewingLogId === deploymentId ? null : deploymentId);
-  }
+  const counts = deployCounts(completedDeployments, now);
 
-  function renderDeploymentCard(
-    deployment: Deployment,
-    variant: "live" | "rollback" | "history",
-  ) {
-    const isDeploying = variant === "live" && appStatus === "deploying";
-    const isLive = variant === "live" && (appStatus === "active" || isDeploying);
-    const isStopped = variant === "live" && appStatus === "stopped";
-    const isErrored = variant === "live" && appStatus === "error";
+  const roleOf = (d: Deployment): DeployRole =>
+    d.id === liveDeploy?.id ? "live" : d.id === instantRollbackDeploy?.id ? "standby" : d.status === "queued" ? "queued" : "history";
 
-    // Serving, but something behind the cutover did not finish.
-    const unfinishedWork = deployment.postDeployError;
+  const viewing = viewingLogId ? filteredDeployments.find((d) => d.id === viewingLogId) ?? null : null;
 
-    const bgColor = unfinishedWork
-      ? "bg-status-warning-muted"
-      : variant === "live"
-      ? isLive ? "bg-status-success-muted" : isStopped ? "bg-status-neutral-muted" : isErrored ? "bg-status-error-muted" : "bg-card"
-      : variant === "rollback"
-      ? "bg-status-warning-muted"
-      : ({
-          success: "bg-card",
-          failed: "bg-status-error-muted",
-          cancelled: "bg-status-neutral-muted",
-          rolled_back: "bg-status-warning-muted",
-          superseded: "bg-status-neutral-muted",
-        } as Record<string, string>)[deployment.status] || "bg-card";
+  const openDeploy = useCallback(
+    (id: string) => setViewingLogId(viewingLogId === id ? null : id),
+    [viewingLogId, setViewingLogId],
+  );
 
-    const errorSnippet = (deployment.status === "failed" || isErrored) && deployment.log ? (() => {
-      const lines = deployment.log!.split("\n");
-      const errorLine = [...lines].reverse().find(
-        (l) => l.includes("ERROR") || l.includes("FATAL") || l.includes("failed") || l.includes("crashed")
-      );
-      if (!errorLine) return null;
-      return errorLine
-        .replace(/^\[.*?\]\s*/, "")
-        .replace(/x-access-token:[^\s@]+/g, "x-access-token:***")
-        .replace(/ghs_[A-Za-z0-9]+/g, "***")
-        .trim();
-    })() : null;
+  const closePanel = useCallback(() => {
+    const returnTo = viewingLogId;
+    setViewingLogId(null);
+    if (returnTo) requestAnimationFrame(() => focusRowByKey(listRef.current, returnTo));
+  }, [viewingLogId, setViewingLogId]);
 
-    const isExpanded = viewingLogId === deployment.id;
-    const logPanelId = `deploy-log-${deployment.id}`;
+  // Escape closes the floating panel; the phone sheet handles its own.
+  useEffect(() => {
+    if (!viewing) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key !== "Escape" || e.defaultPrevented || overlayOpen()) return;
+      closePanel();
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [viewing, closePanel]);
+
+  function renderRow(deployment: Deployment, role: DeployRole) {
+    const mark = deployMark(deployment, role, appStatus);
+    const problem = deployProblem(deployment, role, appStatus);
     const label = deployLabel(deployment);
+    const sha = deployment.gitSha?.slice(0, 7);
+    const isLiveRunning = role === "live" && (appStatus === "active" || appStatus === "deploying");
+    const isCancelling = cancellingIds.has(deployment.id);
+    const queuePosition = role === "queued" ? queuedDeployments.indexOf(deployment) + 1 : 0;
+
+    const text = problem ? (
+      <span className={PROBLEM_TONE[problem.tone]} title={problem.text}>
+        {problem.text}
+      </span>
+    ) : role === "queued" ? (
+      `${queuePosition} of ${queuedDeployments.length} in queue`
+    ) : isLiveRunning && deployment.finishedAt ? (
+      <LiveFor since={deployment.finishedAt} />
+    ) : role === "standby" ? (
+      "standby"
+    ) : null;
+
+    // Phones keep one value: the state when there is one, else the time.
+    const status = (
+      <span className="flex min-w-0 items-center gap-3 text-muted-foreground/70 tabular-nums">
+        {text ? (
+          <span className="min-w-0 truncate">{text}</span>
+        ) : (
+          deployment.durationMs != null && <span className="max-sm:hidden">took {formatDuration(deployment.durationMs)}</span>
+        )}
+        <RelativeTime date={deployment.startedAt} className={cn("shrink-0", text && "max-sm:hidden")} />
+      </span>
+    );
+
+    const action =
+      role === "queued" ? (
+        <Button
+          variant="ghost"
+          size="sm"
+          tabIndex={-1}
+          className="h-7 gap-1 px-2 text-xs"
+          disabled={isCancelling}
+          aria-label={`Cancel ${label}`}
+          onClick={() => handleCancelQueued(deployment.id)}
+        >
+          {isCancelling ? <Loader2 className="size-3 animate-spin" /> : <X className="size-3" />}
+          Cancel
+        </Button>
+      ) : role === "standby" && !deploying ? (
+        <Button
+          variant="outline"
+          size="sm"
+          tabIndex={-1}
+          className="h-7 gap-1.5 px-2.5 text-xs"
+          disabled={instantRollingBack}
+          aria-label={`Roll back to ${label}`}
+          onClick={() => setConfirmRollbackOpen(true)}
+        >
+          {instantRollingBack ? <Loader2 className="size-3 animate-spin" /> : <Zap className="size-3" />}
+          Roll back
+        </Button>
+      ) : undefined;
 
     return (
-      <Card
-        key={deployment.id}
-        id={deployAnchor(deployment.id)}
-        ref={variant === "live" ? liveCardRef : undefined}
-        tabIndex={variant === "live" ? -1 : undefined}
-        variant="surface"
-        className={cn(bgColor, "scroll-mt-28 overflow-hidden")}
-      >
-        <div className="flex items-center justify-between gap-4 p-4 cursor-pointer hover:bg-accent/50 transition-colors"
-          onClick={() => toggleLog(deployment.id)}
-        >
-          <div className="flex items-center gap-3 min-w-0">
-            {variant === "live" ? (
-              isLive ? (
-                <LiveBadge label={isDeploying ? "Live · still serving" : "Live"} />
-              ) : isStopped ? (
-                <Badge variant="neutral" className="shrink-0">
-                  Stopped
-                </Badge>
-              ) : isErrored ? (
-                <Badge variant="error" className="shrink-0">
-                  Crashed
-                </Badge>
-              ) : (
-                <DeploymentStatusBadge status={deployment.status} />
-              )
-            ) : variant === "rollback" ? (
-              // Names the standby slot, not a state — no status hue.
-              <Badge variant="outline" className="shrink-0 gap-1">
-                <Zap className="size-3" />
-                Instant rollback
-              </Badge>
-            ) : deployment.status === "success" ? (
-              <Badge variant="neutral" className="shrink-0">
-                Superseded
-              </Badge>
-            ) : (
-              <DeploymentStatusBadge status={deployment.status} />
-            )}
-            {unfinishedWork && (
-              <Badge variant="warning" className="shrink-0 gap-1">
-                <AlertTriangle className="size-3" />
-                Post-deploy incomplete
-              </Badge>
-            )}
-            {showInfra && <SlotPill slot={deployment.slot} />}
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <p className="text-sm font-medium">
-                  {deployment.gitMessage || triggerLabel(deployment.trigger)}
-                </p>
-                {deployment.gitSha && <CommitSha sha={deployment.gitSha} gitUrl={gitUrl} />}
-              </div>
-              <p className="text-xs text-foreground/60 mt-0.5">
-                {(() => {
-                  const tl = triggerLabel(deployment.trigger);
-                  const by = deployment.triggeredByUser?.name;
-                  return by ? `${tl} by ${by}` : tl;
-                })()}
-              </p>
-              {errorSnippet && (
-                <p className="text-xs text-status-error mt-1 truncate max-w-md" title={errorSnippet}>
-                  {errorSnippet}
-                </p>
-              )}
-              {unfinishedWork && (
-                <p className="text-xs text-status-warning mt-1 max-w-md" title={unfinishedWork}>
-                  Deployed and serving, but {unfinishedWork.split("\n").join(" · ")}
-                </p>
-              )}
-            </div>
-          </div>
-          <div className="flex items-center gap-4 text-xs text-foreground/50 shrink-0">
-            {variant === "live" && isLive && deployment.finishedAt && (
-              <span className="text-status-success">
-                <Uptime since={deployment.finishedAt} />
-              </span>
-            )}
-            {deployment.durationMs != null && (
-              <span>built in {formatDuration(deployment.durationMs)}</span>
-            )}
-            <RelativeTime date={deployment.startedAt} />
-            {variant === "rollback" && !deploying && (
-              <div onClick={(e) => e.stopPropagation()}>
-                <Button
-                  variant="default"
-                  size="sm"
-                  className="h-7 px-3 text-xs gap-1.5"
-                  disabled={instantRollingBack}
-                  aria-label={`Roll back to ${label}`}
-                  onClick={() => setConfirmRollbackOpen(true)}
-                >
-                  {instantRollingBack ? (
-                    <Loader2 className="size-3 animate-spin" />
-                  ) : (
-                    <Zap className="size-3" />
-                  )}
-                  Roll back
-                </Button>
-              </div>
-            )}
-            {variant === "history" && deployment.status === "success" && !deploying && (
-              <div onClick={(e) => e.stopPropagation()}>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 px-2 text-xs gap-1"
-                  aria-label={`Rebuild ${label}`}
-                  onClick={() => handleRollbackPreview(deployment.id)}
-                >
-                  <RefreshCw className="size-3" />
-                  Rebuild
-                </Button>
-              </div>
-            )}
-            <button
-              onClick={(e) => { e.stopPropagation(); toggleLog(deployment.id); }}
-              aria-expanded={isExpanded}
-              aria-controls={logPanelId}
-              aria-label={`Toggle deploy log for ${label}`}
-              className="p-0.5 rounded hover:bg-accent transition-colors"
-            >
-              <ChevronDown className={`size-4 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
-            </button>
-          </div>
-        </div>
-        {isExpanded && deployment.buildPlan && <BuildPlanPanel plan={deployment.buildPlan} />}
-        {isExpanded && deployment.log && (
-          <div id={logPanelId}>
-            <DeploymentLog log={deployment.log} />
-          </div>
-        )}
-        {isExpanded && !deployment.log && (
-          <div id={logPanelId} className="px-4 pb-4">
-            <p className="text-xs text-muted-foreground">No log output for this deployment.</p>
-          </div>
-        )}
-      </Card>
+      <div key={deployment.id} id={deployAnchor(deployment.id)} role="none" className="scroll-mt-28">
+        <ListRow
+          navKey={deployment.id}
+          mark={mark}
+          name={label}
+          nameTitle={deployment.gitMessage ?? undefined}
+          href={deployPath(deployment.id)}
+          linkOpens
+          signal={[sha && sha !== label ? sha : null, triggeredBy(deployment)].filter(Boolean).join(" · ")}
+          status={status}
+          action={action}
+          selected={viewingLogId === deployment.id}
+          flash={flash === deployment.id}
+          onOpen={() => openDeploy(deployment.id)}
+        />
+      </div>
     );
   }
 
+  const filtered = filter ? completedDeployments.filter((d) => matchesDeployFilter(d, filter, now)) : null;
+  const filterNoun = filter === "failed" ? "failed deploys" : "rollbacks";
+
+  const statFilter = (key: DeployFilter, value: number, label: string, tone: string) => (
+    <StatFilter
+      id={`deploy-stat-${key}`}
+      value={value}
+      label={label}
+      tone={value ? tone : undefined}
+      pressed={filter === key}
+      controls="deploy-list"
+      onPress={() => setFilter(filter === key ? null : key)}
+    />
+  );
+
+  const viewingRole = viewing ? roleOf(viewing) : null;
+  const viewingMark = viewing && viewingRole ? deployMark(viewing, viewingRole, appStatus) : null;
+  const viewingProblem = viewing && viewingRole ? deployProblem(viewing, viewingRole, appStatus) : null;
+
   return (
     <>
-      <div className="space-y-4">
+      <div
+        data-density={density}
+        className={cn("grid grid-cols-1 gap-(--section-gap)", viewing && DETAIL_PANEL_GUTTER)}
+      >
         {filteredDeployments.length === 0 && !deploying && !serverRunningDeploy ? (
           <>
             {/* A compose child never deploys on its own — these are all it has. */}
@@ -551,150 +554,182 @@ export function AppDeployPanel({
           </>
         ) : (
           <>
-            {/* Infrastructure toggle */}
             {completedDeployments.length > 0 && (
-              <div className="flex justify-end">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className={`h-7 px-2 text-xs gap-1.5 ${showInfra ? "text-foreground" : "text-muted-foreground"}`}
-                  onClick={() => setShowInfra(!showInfra)}
-                  aria-pressed={showInfra}
-                >
-                  <Settings className="size-3" />
-                  {showInfra ? "Hide containers" : "Show containers"}
-                </Button>
-              </div>
+              <StatGroup label="Deploy numbers" active={!!filter || (!!liveDeploy && viewingLogId === liveDeploy.id)}>
+                <StatFilter
+                  id="deploy-stat-live"
+                  value={liveDeploy ? <RelativeTime date={liveDeploy.startedAt} /> : "None"}
+                  label={liveDeploy ? "live release" : "nothing live"}
+                  tone={appStatus === "error" ? "text-status-error" : undefined}
+                  pressed={!!liveDeploy && viewingLogId === liveDeploy.id}
+                  controls="deploy-list"
+                  onPress={() => liveDeploy && openDeploy(liveDeploy.id)}
+                />
+                {statFilter("failed", counts.failed, `failed in ${DEPLOY_WINDOW_DAYS} days`, "text-status-error")}
+                {statFilter("rollbacks", counts.rollbacks, `${counts.rollbacks === 1 ? "rollback" : "rollbacks"} in ${DEPLOY_WINDOW_DAYS} days`, "text-status-warning")}
+              </StatGroup>
             )}
 
-            <div className="space-y-2">
-              {/* In-progress deploys */}
-              {deploying && (
-                <InProgressDeployCard
-                  stages={deployStages}
-                  stageTimes={deployStageTimes}
-                  log={deployLog}
-                  startTime={deployStartTime}
-                  expanded={expandedDeployLog}
-                  onToggleExpand={() => setExpandedDeployLog(!expandedDeployLog)}
-                  onAbort={() => handleAbortDeploy()}
-                  canAbort={!abortingDeploy}
-                  cancelling={cancelRequested}
-                  typicalElapsedMs={typicalMs}
-                />
-              )}
-              {!deploying && serverRunningDeploy && serverRunningDeploy.status === "running" && (
-                <InProgressDeployCard
-                  stages={{}}
-                  log={serverRunningDeploy.log ? serverRunningDeploy.log.split("\n") : []}
-                  startTime={new Date(serverRunningDeploy.startedAt).getTime()}
-                  expanded={expandedServerDeploy}
-                  onToggleExpand={() => setExpandedServerDeploy((prev) => !prev)}
-                  onAbort={() => handleAbortDeploy(serverRunningDeploy.id)}
-                  canAbort={!abortingDeploy}
-                  cancelling={cancelRequested}
-                  trigger={serverRunningDeploy.trigger}
-                  typicalElapsedMs={typicalMs}
-                />
-              )}
+            {/* In-progress deploys */}
+            {deploying && (
+              <InProgressDeployCard
+                stages={deployStages}
+                stageTimes={deployStageTimes}
+                log={deployLog}
+                startTime={deployStartTime}
+                expanded={expandedDeployLog}
+                onToggleExpand={() => setExpandedDeployLog(!expandedDeployLog)}
+                onAbort={() => handleAbortDeploy()}
+                canAbort={!abortingDeploy}
+                cancelling={cancelRequested}
+                typicalElapsedMs={typicalMs}
+              />
+            )}
+            {!deploying && serverRunningDeploy && serverRunningDeploy.status === "running" && (
+              <InProgressDeployCard
+                stages={{}}
+                log={serverRunningDeploy.log ? serverRunningDeploy.log.split("\n") : []}
+                startTime={new Date(serverRunningDeploy.startedAt).getTime()}
+                expanded={expandedServerDeploy}
+                onToggleExpand={() => setExpandedServerDeploy((prev) => !prev)}
+                onAbort={() => handleAbortDeploy(serverRunningDeploy.id)}
+                canAbort={!abortingDeploy}
+                cancelling={cancelRequested}
+                trigger={serverRunningDeploy.trigger}
+                typicalElapsedMs={typicalMs}
+              />
+            )}
 
-              {/* Queued */}
-              {queuedDeployments.length > 0 && (
-                <div className="space-y-2">
-                  <h3 className="type-label text-muted-foreground px-1">Queued</h3>
-                  {queuedDeployments.map((deployment, idx) => {
-                    const position = idx + 1;
-                    const total = queuedDeployments.length;
-                    const isCancelling = cancellingIds.has(deployment.id);
-                    const label = triggerLabel(deployment.trigger);
-                    const by = deployment.triggeredByUser?.name;
-                    return (
-                      <Card
-                        key={deployment.id}
-                        variant="surface"
-                        className="bg-status-neutral-muted overflow-hidden"
-                      >
-                        <div className="flex items-center justify-between gap-4 p-4">
-                          <div className="flex items-center gap-3 min-w-0">
-                            <Badge variant="neutral" className="shrink-0 gap-1.5">
-                              <Clock className="size-3" />
-                              Queued
-                            </Badge>
-                            <div className="min-w-0">
-                              <p className="text-sm font-medium">
-                                {deployment.gitMessage || label}
-                              </p>
-                              <p className="text-xs text-foreground/60 mt-0.5">
-                                {by ? `${label} by ${by}` : label}
-                                {" · "}
-                                Position {position} of {total}
-                              </p>
-                            </div>
-                          </div>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 px-2 text-xs gap-1 shrink-0"
-                            disabled={isCancelling}
-                            aria-label={`Cancel ${deployment.gitMessage || label}`}
-                            onClick={() => handleCancelQueued(deployment.id)}
-                          >
-                            {isCancelling ? (
-                              <Loader2 className="size-3 animate-spin" />
-                            ) : (
-                              <X className="size-3" />
-                            )}
-                            Cancel
-                          </Button>
-                        </div>
-                      </Card>
-                    );
-                  })}
-                </div>
-              )}
-
-              {/* Since release */}
-              {lifecycle.since.map((event) => (
-                <LifecycleLine key={event.id} event={event} />
-              ))}
-
-              {/* Live */}
-              {liveDeploy ? (
-                renderDeploymentCard(liveDeploy, "live")
-              ) : completedDeployments.length > 0 && !deploying && (
-                <Card variant="inset" className="p-4">
-                  <p className="text-sm text-muted-foreground text-center">No active deployment</p>
-                </Card>
-              )}
-
-              {/* Instant rollback */}
-              {instantRollbackDeploy && (
-                <div className="space-y-2">
-                  <h3 className="type-label text-muted-foreground px-1 flex items-center gap-1.5">
-                    <Zap className="size-3" />
-                    Standby
-                  </h3>
-                  {renderDeploymentCard(instantRollbackDeploy, "rollback")}
-                </div>
-              )}
-
-              {/* History */}
-              {historyTimeline.length > 0 && (
-                <div className="space-y-2">
-                  <h3 className="type-label text-muted-foreground px-1">History</h3>
-                  {historyTimeline.map((item) =>
-                    item.kind === "deploy" ? (
-                      renderDeploymentCard(item.deploy, "history")
-                    ) : (
-                      <LifecycleLine key={item.event.id} event={item.event} />
-                    ),
+            {(completedDeployments.length > 0 || queuedDeployments.length > 0) && (
+              <Card variant="surface" className="p-1.5">
+                <div id="deploy-list" ref={listRef} role="tree" aria-label="Deployments" onKeyDown={onRowKeys}>
+                  {filtered ? (
+                    <>
+                      <div role="none" className="flex flex-wrap items-center gap-x-3 px-2.5 pt-1.5 pb-2 text-[13px] text-muted-foreground">
+                        {filtered.length === 0
+                          ? `No ${filterNoun} in the last ${DEPLOY_WINDOW_DAYS} days.`
+                          : `${filtered.length} ${filtered.length === 1 ? filterNoun.replace(/s$/, "") : filterNoun} in the last ${DEPLOY_WINDOW_DAYS} days`}
+                        <button
+                          type="button"
+                          onClick={() => setFilter(null)}
+                          className="rounded-[3px] text-foreground underline-offset-[3px] hover:underline focus-visible:outline-2 focus-visible:outline-brass"
+                        >
+                          Show all deploys
+                        </button>
+                      </div>
+                      {filtered.map((d) => renderRow(d, roleOf(d)))}
+                    </>
+                  ) : (
+                    <>
+                      {queuedDeployments.map((d) => renderRow(d, "queued"))}
+                      {lifecycle.since.map((event) => (
+                        <LifecycleLine key={event.id} event={event} />
+                      ))}
+                      {liveDeploy ? (
+                        renderRow(liveDeploy, "live")
+                      ) : completedDeployments.length > 0 && !deploying && (
+                        <p role="none" className="px-2.5 py-2 pl-[30px] text-[13px] text-muted-foreground">No active deployment</p>
+                      )}
+                      {instantRollbackDeploy && renderRow(instantRollbackDeploy, "standby")}
+                      {historyTimeline.map((item) =>
+                        item.kind === "deploy" ? (
+                          renderRow(item.deploy, "history")
+                        ) : (
+                          <LifecycleLine key={item.event.id} event={item.event} />
+                        ),
+                      )}
+                    </>
                   )}
                 </div>
-              )}
-            </div>
+              </Card>
+            )}
           </>
         )}
       </div>
+
+      <DetailPanel
+        ref={panelRef}
+        open={!!viewing}
+        onClose={closePanel}
+        label={viewing ? `Deploy ${deployLabel(viewing)}` : "Deploy"}
+        eyebrow={
+          viewing && viewingMark ? (
+            <div className="flex flex-wrap items-center gap-x-2 text-[12.5px] text-muted-foreground">
+              <StatusDot tone={viewingMark.tone} pending={viewingMark.pending} className="text-[12.5px]">
+                {viewingMark.label}
+              </StatusDot>
+              <span aria-hidden="true">·</span>
+              <RelativeTime date={viewing.startedAt} />
+            </div>
+          ) : undefined
+        }
+        title={viewing ? deployLabel(viewing) : ""}
+      >
+        {viewing && (
+          <div className="grid gap-5">
+            {viewingProblem && (
+              <p className={cn("text-sm [overflow-wrap:anywhere]", PROBLEM_TONE[viewingProblem.tone])}>{viewingProblem.text}</p>
+            )}
+            {viewing.postDeployError && (
+              <p className="text-sm text-status-warning">
+                Deployed and serving, but {viewing.postDeployError.split("\n").join(" · ")}
+              </p>
+            )}
+            {!deploying && (viewingRole === "standby" || (viewingRole === "history" && viewing.status === "success") || viewingRole === "queued") && (
+              <div className="flex flex-wrap gap-2">
+                {viewingRole === "standby" && (
+                  <Button size="sm" disabled={instantRollingBack} onClick={() => setConfirmRollbackOpen(true)}>
+                    {instantRollingBack ? <Loader2 className="size-3.5 animate-spin" /> : <Zap className="size-3.5" />}
+                    Roll back to this
+                  </Button>
+                )}
+                {viewingRole === "history" && viewing.status === "success" && (
+                  <Button size="sm" variant="outline" onClick={() => handleRollbackPreview(viewing.id)}>
+                    <RefreshCw className="size-3.5" />
+                    Rebuild
+                  </Button>
+                )}
+                {viewingRole === "queued" && (
+                  <Button size="sm" variant="outline" disabled={cancellingIds.has(viewing.id)} onClick={() => handleCancelQueued(viewing.id)}>
+                    <X className="size-3.5" />
+                    Cancel
+                  </Button>
+                )}
+              </div>
+            )}
+            <PanelSection title="Details">
+              <dl className="grid grid-cols-[7rem_1fr] gap-x-3 gap-y-1.5 text-[13px]">
+                {viewing.gitSha && (
+                  <Fact label="Commit">
+                    <CommitSha sha={viewing.gitSha} gitUrl={gitUrl} />
+                  </Fact>
+                )}
+                {viewing.gitMessage && <Fact label="Message">{viewing.gitMessage}</Fact>}
+                <Fact label="Started by">{triggeredBy(viewing)}</Fact>
+                <Fact label="Started">
+                  <RelativeTime date={viewing.startedAt} absoluteFirst />
+                </Fact>
+                {viewing.durationMs != null && <Fact label="Took">{formatDuration(viewing.durationMs)}</Fact>}
+                {viewing.slot && <Fact label="Container set">{viewing.slot}</Fact>}
+              </dl>
+            </PanelSection>
+            {viewing.buildPlan && (
+              <div className="-mx-4">
+                <BuildPlanPanel plan={viewing.buildPlan} />
+              </div>
+            )}
+            <PanelSection title="Log">
+              {viewing.log ? (
+                <div className="-mx-2 overflow-hidden rounded-lg">
+                  <DeploymentLog log={viewing.log} maxHeight="max-h-[60vh]" />
+                </div>
+              ) : (
+                <p className="text-[13px] text-muted-foreground">No log output for this deployment.</p>
+              )}
+            </PanelSection>
+          </div>
+        )}
+      </DetailPanel>
 
       {/* Rollback confirmation */}
       <AlertDialog open={confirmRollbackOpen} onOpenChange={setConfirmRollbackOpen}>

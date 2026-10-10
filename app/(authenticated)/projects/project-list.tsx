@@ -33,6 +33,8 @@ import { cn } from "@/lib/utils";
 const ROW_LIMIT = 8;
 
 export type ListContext = {
+  /** One project's page: rows without the section header. */
+  flat?: boolean;
   dense: boolean;
   query: string;
   selected: string | null;
@@ -372,15 +374,16 @@ function SectionNumbers({ section, ctx }: { section: Section; ctx: ListContext }
 /** Every project as a section: a header row and, when open, its apps. */
 export function ProjectList({ sections, ctx }: { sections: Section[]; ctx: ListContext }) {
   return (
-    <div role="tree" aria-label="Projects" className={cn("grid", ctx.dense ? "gap-1" : "gap-1")}>
+    <div role="tree" aria-label={ctx.flat ? "Apps" : "Projects"} className={cn("grid", ctx.dense ? "gap-1" : "gap-1")}>
       {sections.map((section) => {
         const { project } = section;
-        const open = ctx.isProjectOpen(project.id);
+        const open = ctx.flat || ctx.isProjectOpen(project.id);
         const roots = section.nodes.filter((n) => ctx.matches(n, section));
-        const all = ctx.query || ctx.showsAll(project.id) || roots.length <= ROW_LIMIT + 2;
+        const all = ctx.flat || ctx.query || ctx.showsAll(project.id) || roots.length <= ROW_LIMIT + 2;
         const shown = all ? roots : roots.slice(0, ROW_LIMIT);
         return (
-          <div key={project.id} role="none" className={cn("grid", open && "mt-1.5 mb-3.5")}>
+          <div key={project.id} role="none" className={cn("grid", open && !ctx.flat && "mt-1.5 mb-3.5")}>
+            {!ctx.flat && (
             <SectionHeader
               navKey={`project:${project.id}`}
               title={project.displayName}
@@ -391,6 +394,7 @@ export function ProjectList({ sections, ctx }: { sections: Section[]; ctx: ListC
             >
               <SectionNumbers section={section} ctx={ctx} />
             </SectionHeader>
+            )}
             {open && (
               <Card variant="surface" role="group" className={cn("mt-0.5", ctx.dense ? "px-1.5 py-1.5" : "p-1.5")}>
                 {roots.length === 0 ? (

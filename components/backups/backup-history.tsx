@@ -1,20 +1,17 @@
 "use client";
 
-import { Fragment, useState } from "react";
+import { Fragment } from "react";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Archive, Download, Loader2, RotateCcw, Trash2 } from "lucide-react";
-import { formatBytes, formatDuration } from "@/lib/metrics/format";
-import { MIN_VALID_GZIP_BYTES } from "@/lib/backups/archive";
-import { toast } from "@/lib/messenger";
+import { formatDuration } from "@/lib/metrics/format";
 import { DOWNLOAD_HINT } from "@/lib/backups/archive-name";
 import { RelativeTime } from "@/components/relative-time";
 import { StatusBadge } from "./status-badge";
 import { RestoreTestBadge } from "./restore-test-badge";
 import { failureReason, restoreTestFor } from "./history-state";
-import { deleteDescription, orphanScope, plural } from "./delete-copy";
+import { useBackupActions } from "./use-backup-actions";
+import { archiveSize } from "./job-state";
 import { useCan } from "@/components/capabilities-provider";
 import type { RecentBackup } from "./types";
 import { Card } from "@/components/ui/card";
@@ -33,13 +30,6 @@ function backupDuration(startedAt: string, finishedAt: string | null): string {
   return formatDuration(new Date(finishedAt).getTime() - new Date(startedAt).getTime());
 }
 
-/** An archive under the floor means the engine confirmed the source empty. */
-function formatArchiveSize(sizeBytes: number | null): string {
-  if (sizeBytes == null) return "—";
-  if (sizeBytes < MIN_VALID_GZIP_BYTES) return "Empty";
-  return formatBytes(sizeBytes);
-}
-
 export function BackupHistory({
   history,
   orgId,
@@ -53,84 +43,7 @@ export function BackupHistory({
   jobHref?: (jobId: string) => string;
 }) {
   const can = useCan();
-  const [restoringBackups, setRestoringBackups] = useState<Set<string>>(new Set());
-  const [pendingRestore, setPendingRestore] = useState<RecentBackup | null>(null);
-  const [acknowledged, setAcknowledged] = useState(false);
-  const [pendingDelete, setPendingDelete] = useState<RecentBackup | null>(null);
-  const [deleteAll, setDeleteAll] = useState(false);
-  const [orphanTotal, setOrphanTotal] = useState<{ backups: number; bytes: number } | null>(null);
-  const [deleting, setDeleting] = useState(false);
-
-  const pendingScope = pendingDelete ? orphanScope(pendingDelete) : null;
-
-  async function openDelete(backup: RecentBackup) {
-    setPendingDelete(backup);
-    setDeleteAll(false);
-    setOrphanTotal(null);
-    const scope = orphanScope(backup);
-    if (!scope) return;
-    try {
-      const res = await fetch(`/api/v1/organizations/${orgId}/backups/history?${scope.query}`);
-      if (res.ok) setOrphanTotal(await res.json());
-    } catch {
-      // The single delete still works.
-    }
-  }
-
-  async function deleteBackup() {
-    if (!pendingDelete) return;
-    setDeleting(true);
-    try {
-      const base = `/api/v1/organizations/${orgId}/backups/history`;
-      const res = await fetch(
-        deleteAll && pendingScope ? `${base}?${pendingScope.query}` : `${base}/${pendingDelete.id}`,
-        { method: "DELETE" },
-      );
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        toast.error(data.error ?? "Couldn't delete backup");
-        return;
-      }
-      if (deleteAll) {
-        toast.success(`${plural(data.deleted, "backup")} deleted`);
-        if (data.kept > 0) {
-          toast.warning(`${plural(data.kept, "backup")} kept: storage wouldn't delete the archive`);
-        }
-      } else {
-        toast.success("Backup deleted");
-      }
-      setPendingDelete(null);
-      onRefresh();
-    } catch {
-      toast.error("Couldn't delete backup");
-    } finally {
-      setDeleting(false);
-    }
-  }
-
-  async function restoreBackup(backupId: string) {
-    setRestoringBackups((prev) => new Set([...prev, backupId]));
-    try {
-      const res = await fetch(
-        `/api/v1/organizations/${orgId}/backups/history/${backupId}/restore`,
-        { method: "POST" }
-      );
-      if (res.ok) {
-        toast.success("Backup restored");
-        onRefresh();
-      } else {
-        toast.error("Restore failed");
-      }
-    } catch {
-      toast.error("Restore failed");
-    } finally {
-      setRestoringBackups((prev) => {
-        const next = new Set(prev);
-        next.delete(backupId);
-        return next;
-      });
-    }
-  }
+  const { restoring: restoringBackups, askRestore, askDelete, dialogs } = useBackupActions({ orgId, onRefresh });
 
   if (history.length === 0) {
     return (
@@ -194,7 +107,7 @@ export function BackupHistory({
                 {backupDuration(backup.startedAt, backup.finishedAt)}
               </td>
               <td className="px-4 py-3 text-muted-foreground text-xs">
-                {formatArchiveSize(backup.sizeBytes)}
+                {archiveSize(backup.sizeBytes)}
               </td>
               <td className="px-4 py-3 text-xs">
                 <RestoreTestBadge test={restoreTestFor(backup)} />
@@ -213,10 +126,7 @@ export function BackupHistory({
                           variant="ghost"
                           aria-label="Restore backup"
                           disabled={restoringBackups.has(backup.id)}
-                          onClick={() => {
-                            setAcknowledged(false);
-                            setPendingRestore(backup);
-                          }}
+                          onClick={() => askRestore(backup)}
                         >
                           {restoringBackups.has(backup.id) ? (
                             <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
@@ -239,7 +149,7 @@ export function BackupHistory({
                       size="icon-xs"
                       variant="ghost"
                       aria-label="Delete backup"
-                      onClick={() => openDelete(backup)}
+                      onClick={() => askDelete(backup)}
                     >
                       <Trash2 className="size-3.5" aria-hidden="true" />
                     </Button>
@@ -267,67 +177,7 @@ export function BackupHistory({
         </tbody>
       </table>
 
-      <ConfirmDeleteDialog
-        open={!!pendingRestore}
-        onOpenChange={(open) => {
-          if (!open) setPendingRestore(null);
-        }}
-        onConfirm={() => {
-          const id = pendingRestore?.id;
-          setPendingRestore(null);
-          if (id) restoreBackup(id);
-        }}
-        title="Restore this backup"
-        description={
-          pendingRestore
-            ? `This overwrites ${pendingRestore.app?.displayName}'s current volume data with the archive from ${new Date(pendingRestore.startedAt).toLocaleString()}. Containers using a restored volume stop until it finishes. Anything written since is lost, and there is no undo.`
-            : ""
-        }
-        confirmLabel="Restore"
-        loadingLabel="Restoring..."
-        confirmDisabled={!acknowledged}
-      >
-        <label className="flex cursor-pointer select-none items-start gap-3">
-          <Checkbox
-            checked={acknowledged}
-            onCheckedChange={(checked) => setAcknowledged(checked === true)}
-            className="mt-0.5"
-          />
-          <span className="text-sm text-muted-foreground">
-            I understand current data will be overwritten
-          </span>
-        </label>
-      </ConfirmDeleteDialog>
-
-      <ConfirmDeleteDialog
-        open={!!pendingDelete}
-        onOpenChange={(open) => {
-          if (!open) setPendingDelete(null);
-        }}
-        onConfirm={deleteBackup}
-        loading={deleting}
-        title="Delete backup"
-        description={
-          !pendingDelete
-            ? ""
-            : deleteAll && pendingScope && orphanTotal
-              ? `Deletes all ${plural(orphanTotal.backups, "backup")} of ${pendingScope.label} and their archives (${formatBytes(orphanTotal.bytes)}) from storage. This can't be undone.`
-              : deleteDescription(pendingDelete)
-        }
-      >
-        {pendingScope && orphanTotal && orphanTotal.backups > 1 && (
-          <label className="flex cursor-pointer select-none items-start gap-3">
-            <Checkbox
-              checked={deleteAll}
-              onCheckedChange={(checked) => setDeleteAll(checked === true)}
-              className="mt-0.5"
-            />
-            <span className="text-sm text-muted-foreground">
-              Delete all {orphanTotal.backups} backups of {pendingScope.label}
-            </span>
-          </label>
-        )}
-      </ConfirmDeleteDialog>
+      {dialogs}
     </Card>
   );
 }

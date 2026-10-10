@@ -24,8 +24,10 @@ type AdminPanelProps = {
 export function AdminPanel({ activeTab, orgId, metricsEnabled, metricsFlag }: AdminPanelProps) {
   const router = useRouter();
 
+  const tabPath = (tab: string) => (tab === "overview" ? "/admin" : `/admin/${tab}`);
+
   function setActiveTab(tab: string) {
-    router.push(tab === "overview" ? "/admin" : `/admin/${tab}`, { scroll: false });
+    router.push(tabPath(tab), { scroll: false });
   }
 
   return (
@@ -53,6 +55,8 @@ export function AdminPanel({ activeTab, orgId, metricsEnabled, metricsFlag }: Ad
         <aside className="lg:w-48 lg:shrink-0">
           <div className="lg:sticky lg:top-24">
             <SectionNav
+              label="Admin sections"
+              hrefFor={tabPath}
               groups={[
                 { items: [{ value: "overview", label: "Overview" }] },
                 {

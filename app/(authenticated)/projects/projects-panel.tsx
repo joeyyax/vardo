@@ -10,7 +10,7 @@ import { DeployProgress } from "@/components/deploy-progress";
 import { CopyButton, DomainLink, EntityLink, entityLinkClass } from "@/components/entity-link";
 import { appHref, deployHref, imageUrl, projectHref, siteUrl } from "@/lib/ui/hrefs";
 import { FixButton, type FixTarget, type RunAction } from "@/components/fix-action";
-import { AllClear, Since } from "@/components/issue-group";
+import { AllClear, IssueGroup, IssueItem, Since } from "@/components/issue-group";
 import { RelativeTime } from "@/components/relative-time";
 import type { AppMetrics, MetricsHistory } from "@/components/app-metrics-card";
 import { formatBytes, formatCores, formatMemLimit } from "@/lib/metrics/format";
@@ -20,6 +20,7 @@ import { SERVICE_KIND_LABEL } from "@/lib/ui/service-kind";
 import { statusMarkTone } from "@/lib/ui/status-colors";
 import {
   appsIn,
+  issueGroups,
 
   markSubject,
   problemOf,
@@ -235,6 +236,33 @@ function SlimItem({ loc, ctx, right }: { loc: Located; ctx: PanelContext; right?
   );
 }
 
+/** Every open problem in the listed apps, by kind. For a page scoped to one project. */
+function IssuesBody({ ctx }: { ctx: PanelContext }) {
+  const groups = issueGroups(ctx.sections);
+  if (groups.length === 0) return <AllClear title="Nothing needs attention" detail="Every app is running as expected." />;
+  return (
+    <>
+      {groups.map((g) => (
+        <IssueGroup key={g.key} title={g.meta.title} count={g.items.length} why={g.meta.why}>
+          {g.items.map((item) => (
+            <IssueItem
+              key={item.node.app.id}
+              itemKey={item.node.app.name}
+              name={item.node.app.displayName}
+              href={appHref(item.node.app.name)}
+              problem={item.problem}
+              showTitle
+              selected={ctx.selected === item.node.app.name}
+              actions={<FixActions loc={item} problem={item.problem} ctx={ctx} />}
+              onActivate={() => ctx.jump(item.node.app.name)}
+            />
+          ))}
+        </IssueGroup>
+      ))}
+    </>
+  );
+}
+
 /** The list a page stat opens. */
 export function PanelList({ panel, ctx }: { panel: PanelKey; ctx: PanelContext }) {
   switch (panel) {
@@ -243,6 +271,8 @@ export function PanelList({ panel, ctx }: { panel: PanelKey; ctx: PanelContext }
     case "running":
     case "stopped":
       return <StateBody ctx={ctx} kind={panel} />;
+    case "attention":
+      return <IssuesBody ctx={ctx} />;
   }
 }
 

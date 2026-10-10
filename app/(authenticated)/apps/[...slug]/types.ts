@@ -1,3 +1,4 @@
+import type { UiDensity } from "@/lib/db/schema/enums";
 import type { ServiceKind } from "@/lib/db/schema/enums";
 import type { AppCondition } from "@/lib/docker/conditions";
 import type { ExitReason } from "@/lib/docker/exit-reason";
@@ -206,4 +207,5 @@ export type AppDetailProps = {
   initialSubView?: string;
   featureFlags: FeatureFlags;
   parentApp?: { id: string; name: string; displayName: string } | null;
+  density?: UiDensity;
 };

@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment } from "react";
+import { Fragment, type MouseEvent } from "react";
 import { Tabs as TabsPrimitive } from "radix-ui";
 import { cn } from "@/lib/utils";
 
@@ -15,11 +15,28 @@ export type SectionGroup = {
   items: SectionItem[];
 };
 
-/** Vertical rail on lg+, horizontal scroll strip below. Renders inside a Radix Tabs root. */
-export function SectionNav({ groups }: { groups: SectionGroup[] }) {
+/** A click that should open the link elsewhere rather than switch the tab in place. */
+function opensElsewhere(e: MouseEvent) {
+  return e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0;
+}
+
+/**
+ * Vertical rail on lg+, horizontal scroll strip below. Renders inside a Radix Tabs root. With
+ * `hrefFor`, each tab is a real link: a plain click switches in place, Cmd/Ctrl-, Shift- and
+ * middle-click open it in a new browser tab.
+ */
+export function SectionNav({
+  groups,
+  label = "App sections",
+  hrefFor,
+}: {
+  groups: SectionGroup[];
+  label?: string;
+  hrefFor?: (value: string) => string;
+}) {
   return (
     <TabsPrimitive.List
-      aria-label="App sections"
+      aria-label={label}
       className={cn(
         "flex items-center gap-1 overflow-x-auto scroll-smooth",
         // Fades the cut edges.
@@ -41,6 +58,9 @@ export function SectionNav({ groups }: { groups: SectionGroup[] }) {
             <TabsPrimitive.Trigger
               key={item.value}
               value={item.value}
+              asChild={!!hrefFor}
+              // Radix switches on mousedown; a modified press leaves that to the link.
+              onMouseDown={hrefFor ? (e) => opensElsewhere(e) && e.preventDefault() : undefined}
               className={cn(
                 "flex shrink-0 items-center gap-2 rounded-md px-2.5 py-1.5 text-sm whitespace-nowrap transition-colors",
                 "text-muted-foreground hover:text-foreground hover:bg-muted",
@@ -54,16 +74,33 @@ export function SectionNav({ groups }: { groups: SectionGroup[] }) {
                 }
               }}
             >
-              {item.label}
-              {typeof item.count === "number" && item.count > 0 && (
-                <span className="text-xs tabular-nums text-muted-foreground lg:ml-auto">
-                  {item.count}
-                </span>
+              {hrefFor ? (
+                <a
+                  href={hrefFor(item.value)}
+                  onClick={(e) => {
+                    if (!opensElsewhere(e)) e.preventDefault();
+                  }}
+                >
+                  <TabLabel item={item} />
+                </a>
+              ) : (
+                <TabLabel item={item} />
               )}
             </TabsPrimitive.Trigger>
           ))}
         </Fragment>
       ))}
     </TabsPrimitive.List>
+  );
+}
+
+function TabLabel({ item }: { item: SectionItem }) {
+  return (
+    <>
+      {item.label}
+      {typeof item.count === "number" && item.count > 0 && (
+        <span className="text-xs tabular-nums text-muted-foreground lg:ml-auto">{item.count}</span>
+      )}
+    </>
   );
 }

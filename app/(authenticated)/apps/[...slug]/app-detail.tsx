@@ -94,7 +94,7 @@ function buildAppPath(appName: string, environments: Environment[], envId: strin
   return tab && tab !== "deployments" ? `${base}/${tab}` : base;
 }
 
-export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = [], allAppNames = [], orgVarKeys = [], siblings = [], stabilityIncidents = [], restarts = null, lifecycleEvents = [], initialTab = "deployments", initialEnv, initialSubView, featureFlags, parentApp = null }: AppDetailProps) {
+export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = [], allAppNames = [], orgVarKeys = [], siblings = [], stabilityIncidents = [], restarts = null, lifecycleEvents = [], initialTab = "deployments", initialEnv, initialSubView, featureFlags, parentApp = null, density }: AppDetailProps) {
   const router = useRouter();
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteEnvOpen, setDeleteEnvOpen] = useState(false);
@@ -132,6 +132,14 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
     setActiveTabState(tab);
     window.history.replaceState({}, "", buildAppPath(app.name, app.environments, selectedEnvId, tab));
   }, [app.name, app.environments, selectedEnvId]);
+
+  const deployPath = useCallback(
+    (id: string | null) =>
+      id
+        ? `${buildAppPath(app.name, app.environments, selectedEnvId)}/deployments/${encodeURIComponent(id)}`
+        : buildAppPath(app.name, app.environments, selectedEnvId, "deployments"),
+    [app.name, app.environments, selectedEnvId],
+  );
 
   const setSelectedEnvId = useCallback((envId: string | undefined) => {
     setSelectedEnvIdRaw(envId);
@@ -330,6 +338,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         restarts={restarts}
         lifecycleEvents={lifecycleEvents}
         allParentApps={allParentApps}
+        density={density}
       />
     );
   }
@@ -662,6 +671,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         <aside className="lg:w-48 lg:shrink-0">
           <div className="lg:sticky lg:top-24">
             <SectionNav
+              hrefFor={(tab) => buildAppPath(app.name, app.environments, selectedEnvId, tab)}
               groups={[
                 {
                   items: [
@@ -747,6 +757,8 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
             onDeploy={handleDeploy}
             deployActionLabel={app.status === "error" ? "Retry" : "Deploy"}
             lifecycleEvents={lifecycleEvents}
+            deployPath={deployPath}
+            density={density}
           />
         </TabsContent>
 

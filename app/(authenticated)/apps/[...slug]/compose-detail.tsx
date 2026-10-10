@@ -53,6 +53,7 @@ import { readingLabel, statusRank } from "@/lib/ui/app-row";
 import type { ContainerPoint } from "@/lib/metrics/types";
 import { formatBytes, formatCores } from "@/lib/metrics/format";
 import { AppDeployPanel } from "./app-deploy-panel";
+import type { UiDensity } from "@/lib/db/schema/enums";
 import { AppNetworking } from "./app-networking";
 import { AppSecurity } from "./app-security";
 import { AppErrors } from "./app-errors";
@@ -659,6 +660,7 @@ export function ComposeDetail({
   restarts = null,
   lifecycleEvents = [],
   allParentApps = [],
+  density,
 }: {
   app: App & { childApps: NonNullable<App["childApps"]> };
   orgId: string;
@@ -675,6 +677,7 @@ export function ComposeDetail({
   /** Restarts, stops and starts an operator ran, newest first. */
   lifecycleEvents?: LifecycleEvent[];
   allParentApps?: { id: string; name: string; color: string }[];
+  density?: UiDensity;
 }) {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState(initialTab);
@@ -763,14 +766,22 @@ export function ComposeDetail({
     [services],
   );
 
+  const tabPath = useCallback(
+    (tab: string) => (tab === "services" ? `/apps/${app.name}` : `/apps/${app.name}/${tab}`),
+    [app.name],
+  );
+
+  const deployPath = useCallback(
+    (id: string | null) => (id ? `/apps/${app.name}/deployments/${encodeURIComponent(id)}` : tabPath("deployments")),
+    [app.name, tabPath],
+  );
+
   const setActiveTabAndUrl = useCallback(
     (tab: string) => {
       setActiveTab(tab);
-      const path =
-        tab === "services" ? `/apps/${app.name}` : `/apps/${app.name}/${tab}`;
-      window.history.replaceState({}, "", path);
+      window.history.replaceState({}, "", tabPath(tab));
     },
-    [app.name],
+    [tabPath],
   );
 
   // Real-time updates from the app's event stream, with a polling fallback
@@ -1060,6 +1071,7 @@ export function ComposeDetail({
         <aside className="lg:w-48 lg:shrink-0">
           <div className="lg:sticky lg:top-24">
             <SectionNav
+              hrefFor={tabPath}
               groups={[
                 {
                   items: [
@@ -1152,6 +1164,8 @@ export function ComposeDetail({
             onDeploy={handleDeployClick}
             deployActionLabel="Deploy stack"
             lifecycleEvents={lifecycleEvents}
+            deployPath={deployPath}
+            density={density}
           />
         </TabsContent>
 

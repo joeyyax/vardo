@@ -87,6 +87,11 @@
   :root { --pane-pad: 1.75rem; }
 }
 
+/* A scrollbar coming or going never shifts the page sideways. */
+html {
+  scrollbar-gutter: stable;
+}
+
 /* List density. Comfortable is the default; a dense scope tightens rows and sections. */
 :root,
 [data-density="comfortable"] {
@@ -100,11 +105,6 @@
   --row-h-child: 1.875rem;
   --row-gap: 0.5rem;
   --section-gap: 1.5rem;
-}
-
-/* Healthy is quiet: a running mark takes the kit's neutral ink, so only problems carry color. */
-[data-healthy="quiet"] svg.text-success {
-  color: color-mix(in oklch, var(--muted-foreground) 50%, transparent);
 }
 
 /* A row the user jumped to from the panel. */

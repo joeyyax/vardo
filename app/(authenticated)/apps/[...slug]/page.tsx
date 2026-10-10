@@ -2,8 +2,10 @@ import { redirect, notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { restartCountsByApp, restartReading } from "@/lib/db/app-restarts";
 import { apps, deployments, projects, tags, orgEnvVars, environments } from "@/lib/db/schema";
-import { getCurrentOrg } from "@/lib/auth/session";
-import { eq, and, asc, desc, or, type AnyColumn } from "drizzle-orm";
+import { getCurrentOrg, getSession } from "@/lib/auth/session";
+import { getUserPreferences, DEFAULT_PREFERENCES } from "@/lib/user/preferences";
+import { eq, and, asc, desc, gte, inArray, or, sql, type AnyColumn } from "drizzle-orm";
+import { DEPLOY_WINDOW_DAYS } from "@/lib/ui/deploy-list";
 import { nanoid } from "nanoid";
 import { AppDetail } from "./app-detail";
 import { getFeatureFlags } from "@/lib/config/features";
@@ -159,6 +161,22 @@ export default async function AppDetailPage({ params }: PageProps) {
     notFound();
   }
 
+  // Every failure and rollback in the stats window loads, so the counts are complete.
+  const loaded = new Set(app.deployments.map((d) => d.id));
+  const notable = await db.query.deployments.findMany({
+    where: and(
+      eq(deployments.appId, app.id),
+      gte(deployments.startedAt, sql`now() - make_interval(days => ${DEPLOY_WINDOW_DAYS})`),
+      or(inArray(deployments.status, ["failed", "rolled_back"]), eq(deployments.trigger, "rollback")),
+    ),
+    orderBy: [desc(deployments.startedAt)],
+    limit: 50,
+    columns: appWith.deployments.columns,
+    with: appWith.deployments.with,
+  });
+  for (const d of notable) if (!loaded.has(d.id)) app.deployments.push(d);
+  app.deployments.sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime());
+
   // A linked deploy older than the latest ten still opens.
   if (tab === "deployments" && subSegment && !app.deployments.some((d) => d.id === subSegment)) {
     const linked = await db.query.deployments.findFirst({
@@ -263,9 +281,11 @@ export default async function AppDetailPage({ params }: PageProps) {
   };
   const effectiveTab = resolveAppTab(tab, tabContext);
 
-  const [stabilityIncidents, lifecycleEvents] = await Promise.all([
+  const session = await getSession();
+  const [stabilityIncidents, lifecycleEvents, prefs] = await Promise.all([
     loadStabilityHistory(app.id),
     loadLifecycleHistory(app.id),
+    session?.user?.id ? getUserPreferences(session.user.id) : Promise.resolve(DEFAULT_PREFERENCES),
   ]);
 
   // Which services a deploy leaves running, for the Services tab to mark.
@@ -302,6 +322,7 @@ export default async function AppDetailPage({ params }: PageProps) {
       initialSubView={subSegment}
       featureFlags={featureFlags}
       parentApp={parentApp}
+      density={prefs.density}
     />
   );
 }

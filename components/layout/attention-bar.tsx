@@ -187,7 +187,7 @@ function AttentionTriagePanel() {
 
   return (
     <DetailPanel ref={panelRef} open={!!target} onClose={closeAndReturn} label="Needs attention" title="Needs attention">
-      <div id={ATTENTION_PANEL_ID} data-healthy="quiet" className="grid gap-7">
+      <div id={ATTENTION_PANEL_ID} className="grid gap-7">
         {summary.urgent.length > 0 && (
           <section className="grid gap-4">
             <h3 className="text-[13px] font-semibold text-status-error">Broken now</h3>

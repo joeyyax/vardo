@@ -21,6 +21,7 @@ export function ListRow({
   name,
   nameTitle,
   href,
+  linkOpens = false,
   signal,
   status,
   action,
@@ -44,6 +45,8 @@ export function ListRow({
   nameTitle?: string;
   /** The page the name links to. The rest of the row opens details. */
   href?: string;
+  /** The href is the row's own panel: a plain click on the name opens it in place. */
+  linkOpens?: boolean;
   signal?: ReactNode;
   /** The problem, toned, or a quiet value such as uptime. */
   status?: ReactNode;
@@ -124,6 +127,15 @@ export function ListRow({
           tabIndex={-1}
           data-row-link
           title={nameTitle ? `Open ${nameTitle}` : undefined}
+          onClick={
+            linkOpens
+              ? (e) => {
+                  if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+                  e.preventDefault();
+                  onOpen();
+                }
+              : undefined
+          }
           className={cn("min-w-[6em] shrink truncate", depth > 0 ? "font-normal" : "font-medium", dim && "opacity-50")}
         >
           {name}

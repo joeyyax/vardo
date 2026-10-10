@@ -54,6 +54,14 @@ describe("entity names are links", () => {
   }
 });
 
+describe("tab rails are links", () => {
+  it("SectionNav is always given hrefFor", () => {
+    const found = usages("SectionNav");
+    expect(found.length).toBeGreaterThan(0);
+    for (const u of found) expect(u.props, `${u.path}: <SectionNav> without hrefFor`).toMatch(/\shrefFor=/);
+  });
+});
+
 describe("navigation has an href", () => {
   it("never navigates from an onClick or onSelect alone", () => {
     const offenders = files.filter(({ source }) => /on(Click|Select)=\{\(\) => router\.push\(/.test(source)).map((f) => f.path);

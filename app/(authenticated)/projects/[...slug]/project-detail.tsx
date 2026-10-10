@@ -18,14 +18,23 @@ import {
   FileText,
   Activity,
 } from "lucide-react";
-import { type AppMetrics as AppMetricsSample, useAppMetrics } from "@/components/app-metrics-card";
-import { useImageUpdates } from "../updates-banner";
 import { toast } from "@/lib/messenger";
 import { PageToolbar } from "@/components/page-toolbar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { SectionNav, type SectionGroup } from "@/components/section-nav";
+import { appHref, deployHref, projectHref } from "@/lib/ui/hrefs";
+import Link from "next/link";
+import { DetailPanel, DETAIL_PANEL_GUTTER, PanelSection } from "@/components/detail-panel";
+import { EntityLink } from "@/components/entity-link";
+import { ListRow } from "@/components/list-row";
+import { StatusDot } from "@/components/ui/status-dot";
+import { focusRowByKey, useRowKeys } from "@/hooks/use-row-keys";
+import { deployMark, deployProblem, triggerLabel, type DeployRole } from "@/lib/ui/deploy-list";
+import type { ProjectsApp } from "@/lib/ui/projects";
+import type { UiDensity } from "@/lib/db/schema/enums";
+import { ProjectsView } from "../projects-view";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -48,15 +57,10 @@ import {
 } from "@/components/ui/bottom-sheet";
 import { summarizeBulkResult, type BulkOutcome } from "@/lib/ui/bulk-result";
 import { envTypeDotColor } from "@/lib/ui/status-colors";
-import { statusRank } from "@/lib/ui/app-row";
 import { appStatusFromEvent } from "@/lib/bus/refresh";
 import type { BusEvent } from "@/lib/bus/events";
 import type { AppCondition } from "@/lib/docker/conditions";
-import { Uptime, DeploymentStatusBadge, LiveBadge } from "@/components/app-status";
 import { formatDuration } from "@/lib/metrics/format";
-import { AppRow } from "@/components/app-row";
-import { AppRowCard } from "@/components/app-row-card";
-import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { LogViewer, DeploymentLog } from "@/components/log-viewer";
 import { EnvEditor } from "@/components/env-editor-lazy";
 import { AppMetrics } from "@/app/(authenticated)/apps/[...slug]/app-metrics-lazy";
@@ -86,6 +90,7 @@ type Deployment = {
   gitMessage: string | null;
   durationMs: number | null;
   log: string | null;
+  postDeployError: string | null;
   startedAt: Date;
   finishedAt: Date | null;
   triggeredByUser: {
@@ -168,73 +173,35 @@ type Project = {
   groupEnvironments: GroupEnvironment[];
 };
 
-function AppLedgerRow({
-  app,
-  href,
-  series,
-  usage,
-  updateCount = 0,
-  statusOverride,
-  sharedStatus,
-  related = false,
-  indented = false,
-  onHoverStart,
-  onHoverEnd,
-}: {
-  app: ProjectApp | ComposeChildApp;
-  href: string;
-  series?: number[];
-  usage?: AppMetricsSample;
-  updateCount?: number;
-  statusOverride?: string;
-  sharedStatus?: string | null;
-  related?: boolean;
-  indented?: boolean;
-  onHoverStart?: () => void;
-  onHoverEnd?: () => void;
-}) {
-  const withStatus = { ...app, status: statusOverride ?? app.status };
-  const tags = "appTags" in app ? app.appTags.map((t) => t.tag.name) : [];
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <AppRow
-          app={{ ...withStatus, tags }}
-          href={href}
-          series={series}
-          updateCount={updateCount}
-          sharedStatus={sharedStatus}
-          related={related}
-          indented={indented}
-          onMouseEnter={onHoverStart}
-          onMouseLeave={onHoverEnd}
-        />
-      </TooltipTrigger>
-      <TooltipContent
-        /* side="right" flips onto the nav rail. */
-        side="bottom"
-        align="start"
-        sideOffset={4}
-        collisionPadding={12}
-        className="bg-popover text-popover-foreground border shadow-card-hover px-3 py-2.5 [&>span]:hidden"
-      >
-        <AppRowCard app={withStatus} updateCount={updateCount} usage={usage} />
-      </TooltipContent>
-    </Tooltip>
-  );
-}
+/** Every app's recent deploys as list rows, newest first. A row opens its log in the panel. */
+function ProjectDeployments({ apps }: { apps: ProjectApp[] }) {
+  const listRef = useRef<HTMLDivElement>(null);
+  const onRowKeys = useRowKeys(listRef);
+  const [viewing, setViewing] = useState<string | null>(null);
 
-
-function ProjectDeployments({ apps, color }: { apps: ProjectApp[]; color: string }) {
-  const [viewingLogId, setViewingLogId] = useState<string | null>(null);
-
-  const allDeployments = apps
-    .flatMap((app) =>
-      app.deployments.map((d) => ({ ...d, app }))
-    )
+  const all = apps
+    .flatMap((app) => app.deployments.map((d) => ({ ...d, app })))
+    .filter((d) => d.status !== "queued")
     .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
 
-  if (allDeployments.length === 0) {
+  const close = useCallback(() => {
+    const from = viewing;
+    setViewing(null);
+    if (from) requestAnimationFrame(() => focusRowByKey(listRef.current, from));
+  }, [viewing]);
+
+  useEffect(() => {
+    if (!viewing) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      if (document.querySelector('[role="dialog"]:not([aria-modal="false"]), [role="alertdialog"], [role="menu"]')) return;
+      close();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [viewing, close]);
+
+  if (all.length === 0) {
     return (
       <EmptyState
         icon={Rocket}
@@ -244,131 +211,122 @@ function ProjectDeployments({ apps, color }: { apps: ProjectApp[]; color: string
     );
   }
 
+  // The newest success of a running app is its live release.
+  const roleOf = (d: (typeof all)[number]): DeployRole =>
+    d.status === "success" && d.app.deployments.find((x) => x.status === "success")?.id === d.id ? "live" : "history";
+  const open = viewing ? all.find((d) => d.id === viewing) ?? null : null;
+  const openMark = open ? deployMark(open, roleOf(open), open.app.status) : null;
+  const openProblem = open ? deployProblem(open, roleOf(open), open.app.status) : null;
+
   return (
-    <div className="space-y-2">
-      {allDeployments
-        .filter((d) => d.status !== "queued" && d.status !== "running")
-        .map((deployment) => {
-          const isLatestForApp = deployment.app.deployments[0]?.id === deployment.id;
-          const isLive = deployment.status === "success" &&
-            deployment.app.status === "active" && isLatestForApp;
-          const isStopped = deployment.status === "success" &&
-            deployment.app.status === "stopped" && isLatestForApp;
-          const isErrored = deployment.status === "success" &&
-            deployment.app.status === "error" && isLatestForApp;
-          const isSuperseded = deployment.status === "success" &&
-            !isLatestForApp && deployment.app.status === "active";
+    <div className={cn("grid grid-cols-1", open && DETAIL_PANEL_GUTTER)}>
+      <Card variant="surface" className="p-1.5">
+        <div ref={listRef} role="tree" aria-label="Recent deploys" onKeyDown={onRowKeys}>
+          {all.map((d) => {
+            const role = roleOf(d);
+            const problem = deployProblem(d, role, d.app.status);
+            const sha = d.gitSha?.slice(0, 7);
+            return (
+              <ListRow
+                key={d.id}
+                navKey={d.id}
+                mark={deployMark(d, role, d.app.status)}
+                name={d.gitMessage || sha || triggerLabel(d.trigger)}
+                nameTitle={d.gitMessage ?? undefined}
+                href={deployHref(d.app.name, d.id)}
+                signal={
+                  <>
+                    <EntityLink href={appHref(d.app.name)} tabIndex={-1} className="hover:text-foreground">
+                      {d.app.displayName}
+                    </EntityLink>
+                    {sha && sha !== d.gitMessage && ` · ${sha}`}
+                  </>
+                }
+                status={
+                  <span className="flex min-w-0 items-center gap-3 text-muted-foreground/70 tabular-nums">
+                    {problem ? (
+                      <span className={cn("min-w-0 truncate", problem.tone === "error" ? "text-status-error" : "text-status-warning")} title={problem.text}>
+                        {problem.text}
+                      </span>
+                    ) : d.status === "running" ? (
+                      <span className="text-status-info">deploying</span>
+                    ) : (
+                      d.durationMs != null && <span className="max-sm:hidden">took {formatDuration(d.durationMs)}</span>
+                    )}
+                    <RelativeTime date={d.startedAt} className={cn("shrink-0", problem && "max-sm:hidden")} />
+                  </span>
+                }
+                selected={viewing === d.id}
+                onOpen={() => setViewing(viewing === d.id ? null : d.id)}
+              />
+            );
+          })}
+        </div>
+      </Card>
 
-          const bgColor = isLive
-            ? "bg-status-success-muted"
-            : isStopped
-              ? "bg-status-neutral-muted"
-              : isErrored
-                ? "bg-status-error-muted"
-                : deployment.status === "failed"
-                  ? "bg-status-error-muted"
-                  : "bg-card";
-
-          return (
-            <Card key={deployment.id} variant="surface" className={cn(bgColor, "overflow-hidden")}>
-              <button
-                type="button"
-                onClick={() => setViewingLogId(viewingLogId === deployment.id ? null : deployment.id)}
-                className="flex items-center justify-between gap-4 p-4 w-full text-left hover:bg-accent/50 transition-colors"
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  {isLive ? (
-                    <LiveBadge />
-                  ) : isStopped ? (
-                    <Badge variant="neutral" className="shrink-0">
-                      Stopped
-                    </Badge>
-                  ) : isErrored ? (
-                    <Badge variant="error" className="shrink-0">
-                      Crashed
-                    </Badge>
-                  ) : isSuperseded ? (
-                    <Badge variant="neutral" className="shrink-0">
-                      Superseded
-                    </Badge>
-                  ) : (
-                    <DeploymentStatusBadge status={deployment.status} />
-                  )}
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className="size-2 rounded-full shrink-0"
-                        style={{ backgroundColor: color }}
-                      />
-                      <p className="text-xs font-medium text-muted-foreground shrink-0">
-                        {deployment.app.displayName}
-                      </p>
-                      <p className="text-sm font-medium truncate">
-                        {deployment.gitMessage || (
-                          <span className="capitalize">{deployment.trigger}</span>
-                        )}
-                      </p>
-                      {deployment.gitSha && (
-                        <code className="text-xs font-mono bg-muted px-1.5 py-0.5 rounded shrink-0">
-                          {deployment.gitSha.slice(0, 7)}
-                        </code>
-                      )}
-                    </div>
-                    <p className="text-xs text-foreground/60 mt-0.5">
-                      {(() => {
-                        const triggerLabel = {
-                          manual: "Manual deploy",
-                          webhook: "Auto deploy",
-                          api: "API deploy",
-                          rollback: "Rollback",
-                        }[deployment.trigger];
-                        const by = deployment.triggeredByUser?.name;
-                        return by ? `${triggerLabel} by ${by}` : triggerLabel;
-                      })()}
-                    </p>
-                    {(deployment.status === "failed" || isErrored) && deployment.log && (() => {
-                      const lines = deployment.log.split("\n");
-                      const errorLine = [...lines].reverse().find(
-                        (l) => l.includes("ERROR") || l.includes("FATAL") || l.includes("failed") || l.includes("crashed")
-                      );
-                      if (!errorLine) return null;
-                      const cleaned = errorLine
-                        .replace(/^\[.*?\]\s*/, "")
-                        .replace(/x-access-token:[^\s@]+/g, "x-access-token:***")
-                        .replace(/ghs_[A-Za-z0-9]+/g, "***")
-                        .trim();
-                      return (
-                        <p className="text-xs text-status-error mt-1 truncate max-w-md" title={cleaned}>
-                          {cleaned}
-                        </p>
-                      );
-                    })()}
-                  </div>
+      <DetailPanel
+        open={!!open}
+        onClose={close}
+        label={open ? `Deploy of ${open.app.displayName}` : "Deploy"}
+        eyebrow={
+          open && openMark ? (
+            <div className="flex flex-wrap items-center gap-x-2 text-[12.5px] text-muted-foreground">
+              <StatusDot tone={openMark.tone} pending={openMark.pending} className="text-[12.5px]">
+                {openMark.label}
+              </StatusDot>
+              <span aria-hidden="true">·</span>
+              <EntityLink href={appHref(open.app.name)} className="hover:text-foreground">
+                {open.app.displayName}
+              </EntityLink>
+            </div>
+          ) : undefined
+        }
+        title={open ? open.gitMessage || open.gitSha?.slice(0, 7) || triggerLabel(open.trigger) : ""}
+        actions={
+          open ? (
+            <Button asChild size="sm" variant="ghost">
+              <Link href={deployHref(open.app.name, open.id)}>Open in app</Link>
+            </Button>
+          ) : undefined
+        }
+      >
+        {open && (
+          <div className="grid gap-5">
+            {openProblem && <p className={cn("text-sm [overflow-wrap:anywhere]", openProblem.tone === "error" ? "text-status-error" : "text-status-warning")}>{openProblem.text}</p>}
+            <PanelSection title="Details">
+              <dl className="grid grid-cols-[7rem_1fr] gap-x-3 gap-y-1.5 text-[13px]">
+                {open.gitSha && (
+                  <>
+                    <dt className="text-muted-foreground">Commit</dt>
+                    <dd className="font-mono text-xs">{open.gitSha.slice(0, 7)}</dd>
+                  </>
+                )}
+                <dt className="text-muted-foreground">Started by</dt>
+                <dd>{open.triggeredByUser?.name ? `${triggerLabel(open.trigger)} by ${open.triggeredByUser.name}` : triggerLabel(open.trigger)}</dd>
+                <dt className="text-muted-foreground">Started</dt>
+                <dd>
+                  <RelativeTime date={open.startedAt} absoluteFirst />
+                </dd>
+                {open.durationMs != null && (
+                  <>
+                    <dt className="text-muted-foreground">Took</dt>
+                    <dd>{formatDuration(open.durationMs)}</dd>
+                  </>
+                )}
+              </dl>
+            </PanelSection>
+            <PanelSection title="Log">
+              {open.log ? (
+                <div className="-mx-2 overflow-hidden rounded-lg">
+                  <DeploymentLog log={open.log} maxHeight="max-h-[60vh]" />
                 </div>
-                <div className="flex items-center gap-4 text-xs text-foreground/50 shrink-0">
-                  {isLive && deployment.finishedAt && (
-                    <span className="text-status-success">
-                      <Uptime since={deployment.finishedAt} />
-                    </span>
-                  )}
-                  {deployment.durationMs != null && (
-                    <span>built in {formatDuration(deployment.durationMs)}</span>
-                  )}
-                  <RelativeTime date={deployment.startedAt} />
-                  <ChevronDown className={`size-4 transition-transform ${viewingLogId === deployment.id ? "rotate-180" : ""}`} />
-                </div>
-              </button>
-              {viewingLogId === deployment.id && deployment.log && (
-                <DeploymentLog log={deployment.log} />
+              ) : (
+                <p className="text-[13px] text-muted-foreground">No log output for this deployment.</p>
               )}
-              {viewingLogId === deployment.id && !deployment.log && (
-                <div className="px-4 pb-4">
-                  <p className="text-xs text-muted-foreground">No log output for this deployment.</p>
-                </div>
-              )}
-            </Card>
-          );
-        })}
+            </PanelSection>
+          </div>
+        )}
+      </DetailPanel>
     </div>
   );
 }
@@ -533,6 +491,8 @@ export function ProjectDetail({
   environmentsEnabled = true,
   meshPeers = [],
   projectInstances = [],
+  listApps,
+  density,
 }: {
   project: Project;
   orgId: string;
@@ -545,15 +505,11 @@ export function ProjectDetail({
   environmentsEnabled?: boolean;
   meshPeers?: MeshPeerSummary[];
   projectInstances?: ProjectInstanceSummary[];
+  /** The apps shaped for the Projects list rows. */
+  listApps: ProjectsApp[];
+  density: UiDensity;
 }) {
   const router = useRouter();
-  const color = "#a1a1aa"; // Project color is unused.
-  const { metrics, history } = useAppMetrics(orgId);
-  const updates = useImageUpdates(orgId);
-  const updatesByApp = useMemo(
-    () => new Map((updates?.appsWithUpdates ?? []).map((a) => [a.id, a.count])),
-    [updates],
-  );
   const [activeTab, setActiveTab] = useState(initialTab);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -566,7 +522,6 @@ export function ProjectDetail({
   const [appStatusOverrides, setAppStatusOverrides] = useState<Map<string, string>>(new Map());
   const eventSourcesRef = useRef<EventSource[]>([]);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const [hoveredAppName, setHoveredAppName] = useState<string | null>(null);
   const [editDisplayName, setEditDisplayName] = useState(project.displayName);
   const [editDescription, setEditDescription] = useState(project.description || "");
   const [editAllowBindMounts, setEditAllowBindMounts] = useState(project.allowBindMounts);
@@ -584,34 +539,10 @@ export function ProjectDetail({
     [project.apps]
   );
 
-  const sortedApps = useMemo(
-    () =>
-      [...topLevelApps].sort(
-        (x, y) =>
-          statusRank(x.status, !!x.parked) - statusRank(y.status, !!y.parked) ||
-          Number(y.priority === "critical") - Number(x.priority === "critical") ||
-          x.displayName.localeCompare(y.displayName),
-      ),
-    [topLevelApps],
-  );
-
   const environments = [
     { name: "production", type: "production" },
     ...project.groupEnvironments.map((e) => ({ name: e.name, type: e.type })),
   ];
-
-  // Build reverse dependency map: for each app name, which app names depend on it
-  const dependentsMap = useMemo(() => {
-    const map = new Map<string, Set<string>>();
-    for (const app of topLevelApps) {
-      for (const dep of app.dependsOn ?? []) {
-        const set = map.get(dep) || new Set();
-        set.add(app.name);
-        map.set(dep, set);
-      }
-    }
-    return map;
-  }, [topLevelApps]);
 
   // Clean up SSE connections and poll timers on unmount
   useEffect(() => {
@@ -727,25 +658,20 @@ export function ProjectDetail({
     }, 180000);
   }, [topLevelApps, orgId, project.id, router]);
 
-  // Rows either side of a dependency edge from the hovered row.
-  const isRelated = useCallback(
-    (appName: string): boolean => {
-      if (!hoveredAppName || appName === hoveredAppName) return false;
-      const hoveredApp = topLevelApps.find((a) => a.name === hoveredAppName);
-      if (!hoveredApp) return false;
-      if ((hoveredApp.dependsOn ?? []).includes(appName)) return true;
-      return dependentsMap.get(hoveredAppName)?.has(appName) ?? false;
-    },
-    [hoveredAppName, topLevelApps, dependentsMap]
+  const listProject = useMemo(
+    () => ({ id: project.id, name: project.name, displayName: project.displayName, isSystemManaged: project.isSystemManaged }),
+    [project.id, project.name, project.displayName, project.isSystemManaged],
+  );
+
+  const tabPath = useCallback(
+    (tab: string) => (tab === "apps" ? projectHref(project.name) : `${projectHref(project.name)}/${tab}`),
+    [project.name],
   );
 
   const handleTabChange = useCallback((tab: string) => {
     setActiveTab(tab);
-    const path = tab === "apps"
-      ? `/projects/${project.name}`
-      : `/projects/${project.name}/${tab}`;
-    window.history.replaceState(null, "", path);
-  }, [project.name]);
+    window.history.replaceState(null, "", tabPath(tab));
+  }, [tabPath]);
 
   // Count total deployments and env vars for badges
   const totalDeployments = topLevelApps.reduce((sum, app) => sum + app.deployments.length, 0);
@@ -1038,6 +964,8 @@ export function ProjectDetail({
         <aside className="lg:w-48 lg:shrink-0">
           <div className="lg:sticky lg:top-24">
             <SectionNav
+              label="Project sections"
+              hrefFor={tabPath}
               groups={[
                 {
                   items: [
@@ -1082,47 +1010,18 @@ export function ProjectDetail({
               action={<AddAppDropdown projectId={project.id} align="center" canImportContainers={canImportContainers} />}
             />
           ) : (
-            /* One row per app, problems first, compose services under their stack. */
-            <Card variant="surface" className="@container p-1.5">
-              {sortedApps.map((app) => (
-                <Fragment key={app.id}>
-                  <AppLedgerRow
-                    app={app}
-                    href={`/apps/${app.name}`}
-                    series={history.get(app.id)?.cpu}
-                    usage={metrics.get(app.id)}
-                    updateCount={updatesByApp.get(app.id) ?? 0}
-                    statusOverride={appStatusOverrides.get(app.id)}
-                    related={isRelated(app.name)}
-                    onHoverStart={() => setHoveredAppName(app.name)}
-                    onHoverEnd={() => setHoveredAppName(null)}
-                  />
-                  {[...(app.childApps ?? [])]
-                    .sort(
-                      (x, y) =>
-                        statusRank(x.status, !!x.parked) - statusRank(y.status, !!y.parked) ||
-                        x.displayName.localeCompare(y.displayName),
-                    )
-                    .map((child) => (
-                      /* A child row only shows status that differs from its stack. */
-                      <AppLedgerRow
-                        key={child.id}
-                        app={child}
-                        href={`/apps/${child.name}`}
-                        series={history.get(child.id)?.cpu}
-                        usage={metrics.get(child.id)}
-                        sharedStatus={app.status}
-                        indented
-                      />
-                    ))}
-                </Fragment>
-              ))}
-            </Card>
+            <ProjectsView
+              orgId={orgId}
+              apps={listApps.map((a) => (appStatusOverrides.has(a.id) ? { ...a, status: appStatusOverrides.get(a.id)! } : a))}
+              projects={[listProject]}
+              project={listProject}
+              initialDensity={density}
+            />
           )}
         </TabsContent>
 
         <TabsContent value="deployments">
-          <ProjectDeployments apps={topLevelApps} color={color} />
+          <ProjectDeployments apps={topLevelApps} />
         </TabsContent>
 
         <TabsContent value="variables">
