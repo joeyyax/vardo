@@ -86,10 +86,10 @@ describe("BuildKit cache ceiling", () => {
     expect(out).toBe(String(buildkitCacheMaxBytes(gb * GIB)));
   });
 
-  it("sizes a tenth of the disk between 5 and 50 GiB, in bytes", () => {
+  it("sizes an eighth of the disk between 5 and 60 GiB, in bytes", () => {
     expect(buildkitCacheMaxBytes(20 * GIB)).toBe(5 * GIB);
-    expect(buildkitCacheMaxBytes(250 * GIB)).toBe(25 * GIB);
-    expect(buildkitCacheMaxBytes(2000 * GIB)).toBe(50 * GIB);
+    expect(buildkitCacheMaxBytes(250 * GIB)).toBe(31 * GIB);
+    expect(buildkitCacheMaxBytes(2000 * GIB)).toBe(60 * GIB);
   });
 
   it("falls back to 10 GiB when the disk can't be read", () => {
@@ -103,11 +103,22 @@ describe("BuildKit cache ceiling", () => {
     return readFileSync(file, "utf8");
   };
 
-  it("writes the ceiling once", () => {
-    expect(envOf(run("")).VARDO_BUILDKIT_CACHE_MAX).toBe(String(25 * GIB));
+  it("writes the ceiling when missing", () => {
+    expect(envOf(run("")).VARDO_BUILDKIT_CACHE_MAX).toBe(String(31 * GIB));
+  });
+
+  it("raises a value the earlier tenth-of-disk rule derived", () => {
+    expect(run(`A=1\nVARDO_BUILDKIT_CACHE_MAX=${25 * GIB}\n`)).toBe(`A=1\nVARDO_BUILDKIT_CACHE_MAX=${31 * GIB}\n`);
   });
 
   it("keeps a value the owner set", () => {
     expect(run("VARDO_BUILDKIT_CACHE_MAX=20GB\n")).toBe("VARDO_BUILDKIT_CACHE_MAX=20GB\n");
+    expect(run(`VARDO_BUILDKIT_CACHE_MAX=${24 * GIB}\n`)).toBe(`VARDO_BUILDKIT_CACHE_MAX=${24 * GIB}\n`);
+  });
+
+  it("runs on a self-deploy update", () => {
+    const script = readFileSync(join(__dirname, "../../../install.sh"), "utf8");
+    const selfUpdate = script.slice(script.indexOf("do_self_update() {"), script.indexOf('step "Redeploying Vardo"'));
+    expect(selfUpdate).toContain('ensure_buildkit_cache_max "$VARDO_DIR/.env"');
   });
 });

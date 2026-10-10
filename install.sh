@@ -681,24 +681,41 @@ get_docker_disk_kb() {
   df -Pk "$path" 2>/dev/null | awk 'NR==2 {print $2}'
 }
 
-# BuildKit's cache ceiling in bytes: a tenth of the disk, between 5 and 50 GiB. Mirrors lib/resources/defaults.ts.
+# BuildKit's cache ceiling in bytes: an eighth of the disk, between 5 and 60 GiB. Mirrors lib/resources/defaults.ts.
 default_buildkit_cache_bytes() {
   local kb="${1:-$(get_docker_disk_kb)}"
-  [[ "$kb" =~ ^[0-9]+$ && "$kb" -gt 0 ]] || kb=$(( 100 * 1024 * 1024 ))
+  [[ "$kb" =~ ^[0-9]+$ && "$kb" -gt 0 ]] || kb=$(( 80 * 1024 * 1024 ))
+  local gb=$(( kb / 1024 / 1024 / 8 ))
+  (( gb < 5 )) && gb=5
+  (( gb > 60 )) && gb=60
+  echo $(( gb * 1024 * 1024 * 1024 ))
+}
+
+# The earlier rule: a tenth of the disk, between 5 and 50 GiB. Empty when the disk can't be read.
+legacy_buildkit_cache_bytes() {
+  local kb="${1:-$(get_docker_disk_kb)}"
+  [[ "$kb" =~ ^[0-9]+$ && "$kb" -gt 0 ]] || return 0
   local gb=$(( kb / 1024 / 1024 / 10 ))
   (( gb < 5 )) && gb=5
   (( gb > 50 )) && gb=50
   echo $(( gb * 1024 * 1024 * 1024 ))
 }
 
-# Sets the ceiling once; an existing value is the owner's.
+# Sets the ceiling when missing and moves a value the earlier rule derived to the current one. Any other value is the owner's.
 ensure_buildkit_cache_max() {
-  local env_file="$1"
-  grep -q "^VARDO_BUILDKIT_CACHE_MAX=" "$env_file" 2>/dev/null && return
-  local bytes
+  local env_file="$1" bytes current legacy
   bytes=$(default_buildkit_cache_bytes)
-  printf '\n# BuildKit cache ceiling in bytes (vardo-buildkit)\nVARDO_BUILDKIT_CACHE_MAX=%s\n' "$bytes" >> "$env_file"
-  log "Set VARDO_BUILDKIT_CACHE_MAX=$bytes"
+  current=$(grep "^VARDO_BUILDKIT_CACHE_MAX=" "$env_file" 2>/dev/null | tail -n 1 | cut -d= -f2- || true)
+  if [ -z "$current" ]; then
+    printf '\n# BuildKit cache ceiling in bytes (vardo-buildkit)\nVARDO_BUILDKIT_CACHE_MAX=%s\n' "$bytes" >> "$env_file"
+    log "Set VARDO_BUILDKIT_CACHE_MAX=$bytes"
+    return
+  fi
+  legacy=$(legacy_buildkit_cache_bytes)
+  if [ -n "$legacy" ] && [ "$current" = "$legacy" ] && [ "$current" != "$bytes" ]; then
+    env_upsert "$env_file" VARDO_BUILDKIT_CACHE_MAX "$bytes"
+    log "Raised VARDO_BUILDKIT_CACHE_MAX to $bytes"
+  fi
 }
 
 # Redis limit in MB: 512 below 24 GiB of RAM, 1024 below 96 GiB, else 2048. Mirrors lib/resources/defaults.ts.
@@ -2709,6 +2726,8 @@ do_self_update() {
 
   # Only the options given on this command line; the deploy seeds the slot from .env.
   apply_install_options "$VARDO_DIR/.env"
+  ensure_buildkit_mem "$VARDO_DIR/.env"
+  ensure_buildkit_cache_max "$VARDO_DIR/.env"
 
   step "Redeploying Vardo"
   request_self_deploy

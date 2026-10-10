@@ -371,11 +371,18 @@ services:
 
 # Caps BuildKit's cache. VARDO_BUILDKIT_CACHE_MAX is bytes or a size with a unit
 # ("20GB" is binary, 20 GiB); install.sh sets it from the disk size.
+# Policies run in order: layers unused for 7 days go first, then anything least recently used.
 configs:
   buildkitd:
     content: |
       [worker.oci]
         gc = true
+        [[worker.oci.gcpolicy]]
+          all = true
+          filters = ["type!=exec.cachemount"]
+          keepDuration = "168h"
+          maxUsedSpace = "${VARDO_BUILDKIT_CACHE_MAX:-10737418240}"
+          minFreeSpace = "5000000000"
         [[worker.oci.gcpolicy]]
           all = true
           reservedSpace = "1000000000"

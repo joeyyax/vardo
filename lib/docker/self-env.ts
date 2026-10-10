@@ -1,4 +1,5 @@
-import { chmod, copyFile, readFile, realpath, writeFile } from "fs/promises";
+import { chmod, copyFile, readFile, realpath, statfs, writeFile } from "fs/promises";
+import { buildkitCacheMaxBytes } from "@/lib/resources/defaults";
 import { basename, dirname, join } from "path";
 import { VARDO_SELF_APP_NAME } from "@/lib/api/system-managed";
 import { VARDO_HOME_DIR } from "@/lib/paths";
@@ -20,6 +21,25 @@ export function isSelfApp(appName: string): boolean {
 export interface SeedSelfEnvOptions {
   log: (line: string) => void;
   globalEnvPath?: string;
+  /** Size of the disk BuildKit's cache lives on. Null when unreadable. */
+  diskBytes?: () => Promise<number | null>;
+}
+
+/** Appends the BuildKit cache ceiling derived from the disk when the env doesn't set it. */
+export function withBuildKitCacheMax(content: string, diskBytes: number | null): string {
+  if (diskBytes === null || parseEnvLines(content).has("VARDO_BUILDKIT_CACHE_MAX")) return content;
+  const line = `VARDO_BUILDKIT_CACHE_MAX=${buildkitCacheMaxBytes(diskBytes)}`;
+  return `${content.replace(/\s+$/, "")}${content.trim() ? "\n\n" : ""}# Derived from the disk size\n${line}\n`;
+}
+
+async function rootDiskBytes(): Promise<number | null> {
+  try {
+    const s = await statfs("/");
+    const bytes = Number(s.blocks) * Number(s.bsize);
+    return bytes > 0 ? bytes : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -31,7 +51,7 @@ export async function seedSelfEnv(
   appDir: string,
   slotDir: string,
   activeSlot: string | null,
-  { log, globalEnvPath = GLOBAL_ENV_PATH }: SeedSelfEnvOptions,
+  { log, globalEnvPath = GLOBAL_ENV_PATH, diskBytes = rootDiskBytes }: SeedSelfEnvOptions,
 ): Promise<string | null> {
   if (!isSelfApp(appName)) return null;
 
@@ -46,6 +66,11 @@ export async function seedSelfEnv(
 
   const previousContent = previous ? await readFile(target, "utf-8") : "";
   const merged = mergeSelfEnv(globalContent, previousContent);
+  const derived = withBuildKitCacheMax(merged.content, await diskBytes());
+  if (derived !== merged.content) {
+    log(`[deploy] .env: VARDO_BUILDKIT_CACHE_MAX is unset in ${globalEnvPath}; using an eighth of the disk until install.sh writes it`);
+  }
+  merged.content = derived;
   await writeFile(target, merged.content, { encoding: "utf-8", mode: 0o600 });
   await chmod(target, 0o600);
 

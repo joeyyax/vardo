@@ -111,7 +111,14 @@ describe.skipIf(!hasCompose)("self compose (#889)", () => {
   });
 
   describe("BuildKit cache ceiling (#801)", () => {
-    type Policy = { all?: boolean; reservedSpace: string; maxUsedSpace: string; minFreeSpace: string };
+    type Policy = {
+      all?: boolean;
+      filters?: string[];
+      keepDuration?: string;
+      reservedSpace?: string;
+      maxUsedSpace: string;
+      minFreeSpace: string;
+    };
     const buildkitd = (env: Record<string, string>) => {
       const cfg = resolve(env);
       expect(cfg.services.buildkit.configs).toEqual([
@@ -130,20 +137,28 @@ describe.skipIf(!hasCompose)("self compose (#889)", () => {
       expect(resolve({}).services.buildkit.image).toMatch(/^moby\/buildkit:v\d+\.\d+\.\d+$/);
     });
 
-    it("turns gc on with one policy holding 10 GiB by default", () => {
+    it("turns gc on, evicting layers unused for 7 days before the catch-all holding 10 GiB by default", () => {
       const oci = buildkitd({});
       expect(oci.gc).toBe(true);
-      expect(oci.gcpolicy).toHaveLength(1);
-      const [p] = oci.gcpolicy;
-      expect(p.all).toBe(true);
-      expect(bytesOf(p.maxUsedSpace)).toBe(10 * 1024 ** 3);
-      expect(bytesOf(p.reservedSpace)).toBe(1e9);
-      expect(bytesOf(p.minFreeSpace)).toBe(5e9);
+      expect(oci.gcpolicy).toHaveLength(2);
+      const [old, all] = oci.gcpolicy;
+      expect(old.filters).toEqual(["type!=exec.cachemount"]);
+      expect(old.keepDuration).toBe("168h");
+      expect(old.reservedSpace).toBeUndefined();
+      expect(bytesOf(old.maxUsedSpace)).toBe(10 * 1024 ** 3);
+      expect(bytesOf(old.minFreeSpace)).toBe(5e9);
+      expect(all.all).toBe(true);
+      expect(all.filters).toBeUndefined();
+      expect(all.keepDuration).toBeUndefined();
+      expect(bytesOf(all.maxUsedSpace)).toBe(10 * 1024 ** 3);
+      expect(bytesOf(all.reservedSpace!)).toBe(1e9);
+      expect(bytesOf(all.minFreeSpace)).toBe(5e9);
     });
 
-    it("reads VARDO_BUILDKIT_CACHE_MAX as bytes", () => {
-      const [p] = buildkitd({ VARDO_BUILDKIT_CACHE_MAX: String(23 * 1024 ** 3) }).gcpolicy;
-      expect(bytesOf(p.maxUsedSpace)).toBe(23 * 1024 ** 3);
+    it("reads VARDO_BUILDKIT_CACHE_MAX as bytes in both policies", () => {
+      for (const p of buildkitd({ VARDO_BUILDKIT_CACHE_MAX: String(23 * 1024 ** 3) }).gcpolicy) {
+        expect(bytesOf(p.maxUsedSpace)).toBe(23 * 1024 ** 3);
+      }
     });
 
     it("keeps build steps off the network Postgres and Redis share", () => {

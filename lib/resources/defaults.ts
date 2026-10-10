@@ -61,10 +61,10 @@ export function buildkitMemGb(memoryMb: number): number {
   return Math.min(16, Math.max(4, Math.floor(memoryMb / 1024 / 4)));
 }
 
-/** BuildKit's cache ceiling in bytes: a tenth of the disk, between 5 and 50 GiB. install.sh mirrors it. */
+/** BuildKit's cache ceiling in bytes: an eighth of the disk, between 5 and 60 GiB. install.sh mirrors it. */
 export function buildkitCacheMaxBytes(diskBytes: number): number {
   const gib = 1024 ** 3;
-  return Math.min(50, Math.max(5, Math.floor(diskBytes / gib / 10))) * gib;
+  return Math.min(60, Math.max(5, Math.floor(diskBytes / gib / 8))) * gib;
 }
 
 /** vardo-redis's container limit and maxmemory, as install.sh writes them. maxmemory is 62.5% of the limit, leaving room for the AOF rewrite and snapshot forks. */

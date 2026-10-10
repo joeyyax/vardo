@@ -36,7 +36,14 @@ Caveats:
 
 ## Cache size ceiling
 
-BuildKit is capped by the gc policy in `docker-compose.yml` (`VARDO_BUILDKIT_CACHE_MAX`, default 10 GiB). One Next app plus one Node app fills about 6 GB, so the default holds a handful of apps before LRU eviction starts.
+BuildKit is capped by the gc policy in `docker-compose.yml` (`VARDO_BUILDKIT_CACHE_MAX`). install.sh sets it to an eighth of the disk, between 5 and 60 GiB, on install and on every update when it's missing; a value equal to the earlier tenth-of-disk rule is raised to the current one. A self-deploy with no value in `.env` derives the same number for its slot. Without any of these the compose default is 10 GiB. One Next app plus one Node app fills about 6 GB.
+
+Two gc policies run in order:
+
+1. Layers and other records unused for 7 days go first, until the cache is under the ceiling. Cache mounts (`exec.cachemount`: npm, pnpm, `.next/cache`) are left alone.
+2. Then anything, least recently used first, keeping 1 GB reserved and 5 GB of disk free.
+
+So a full cache gives up stale layers before a recent app's layers or any package-manager cache.
 
 Admin → Settings → Maintenance reports and prunes both caches; BuildKit's is read with `buildctl du`, since `docker system df` can't see inside its volume (#815).
 

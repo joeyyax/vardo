@@ -2,7 +2,7 @@ import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { mkdtemp, mkdir, writeFile, readFile, rm } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
-import { isSelfApp, mergeSelfEnv, seedSelfEnv } from "@/lib/docker/self-env";
+import { isSelfApp, mergeSelfEnv, seedSelfEnv, withBuildKitCacheMax } from "@/lib/docker/self-env";
 
 const noGlobal = { log: () => {}, globalEnvPath: "/nonexistent/vardo/.env" };
 
@@ -168,9 +168,37 @@ describe("seedSelfEnv with a global .env", () => {
     await writeFile(globalEnvPath, "A=1\n");
 
     await expect(
-      seedSelfEnv("vardo", appDir, join(appDir, "blue"), null, { log: (l) => lines.push(l), globalEnvPath }),
+      seedSelfEnv("vardo", appDir, join(appDir, "blue"), null, {
+        log: (l) => lines.push(l),
+        globalEnvPath,
+        diskBytes: async () => null,
+      }),
     ).resolves.toBe(globalEnvPath);
     await expect(readFile(join(appDir, "blue", ".env"), "utf-8")).resolves.toBe("A=1\n");
     expect(lines).toEqual([]);
+  });
+
+  it("derives the BuildKit cache ceiling from the disk when no file sets it", async () => {
+    await rm(join(appDir, "current"), { recursive: true });
+    await writeFile(globalEnvPath, "A=1\n");
+    await seedSelfEnv("vardo", appDir, join(appDir, "blue"), null, {
+      log: (l) => lines.push(l),
+      globalEnvPath,
+      diskBytes: async () => 400 * 1024 ** 3,
+    });
+    await expect(readFile(join(appDir, "blue", ".env"), "utf-8")).resolves.toBe(
+      `A=1\n\n# Derived from the disk size\nVARDO_BUILDKIT_CACHE_MAX=${50 * 1024 ** 3}\n`,
+    );
+    expect(lines.join("\n")).toContain("VARDO_BUILDKIT_CACHE_MAX is unset");
+  });
+});
+
+describe("withBuildKitCacheMax", () => {
+  it("keeps a value the env sets", () => {
+    expect(withBuildKitCacheMax("VARDO_BUILDKIT_CACHE_MAX=20GB\n", 400 * 1024 ** 3)).toBe("VARDO_BUILDKIT_CACHE_MAX=20GB\n");
+  });
+
+  it("adds nothing when the disk can't be read", () => {
+    expect(withBuildKitCacheMax("A=1\n", null)).toBe("A=1\n");
   });
 });
