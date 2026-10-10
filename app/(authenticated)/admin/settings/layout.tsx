@@ -3,6 +3,9 @@ import { isAppAdmin } from "@/lib/auth/admin";
 import { getSession } from "@/lib/auth/session";
 import { PageToolbar } from "@/components/page-toolbar";
 import { SettingsNav } from "@/components/settings-nav";
+import Link from "next/link";
+import { Shield } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { isFeatureEnabledAsync, type FeatureFlag } from "@/lib/config/features";
 
 type NavItem = {
@@ -49,7 +52,16 @@ export default async function AdminSettingsLayout({
 
   return (
     <div className="space-y-6">
-      <PageToolbar>
+      <PageToolbar
+        actions={
+          <Button variant="outline" size="sm" className="gap-2" asChild>
+            <Link href="/admin">
+              <Shield className="size-4" />
+              Admin
+            </Link>
+          </Button>
+        }
+      >
         <h1 className="type-h1">
           System settings
         </h1>

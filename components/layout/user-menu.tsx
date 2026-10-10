@@ -160,7 +160,7 @@ export function UserMenu({ collapsed, compact, currentOrgId, organizations, team
           <>
             <DropdownMenuSeparator />
             <DropdownMenuItem asChild className="gap-2 cursor-pointer">
-              <Link href="/admin/settings">
+              <Link href="/admin">
                 <Shield className="size-4" />
                 Admin
               </Link>
