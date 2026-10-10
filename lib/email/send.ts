@@ -1,6 +1,7 @@
 import { render } from "react-email";
 import type { ReactElement } from "react";
-import { getEmailProviderConfig, type EmailProviderConfig } from "@/lib/system-settings";
+import { getEmailProviderConfig, getInstanceDisplayName, type EmailProviderConfig } from "@/lib/system-settings";
+import { DEFAULT_APP_NAME } from "@/lib/app-name";
 import { logger } from "@/lib/logger";
 import { sendViaPouch } from "@/lib/email/pouch";
 
@@ -31,6 +32,20 @@ export function emailDelivery(result: SendResult): EmailDelivery {
   };
 }
 
+/** The From display name: a custom `fromName`, else "{instance} · Vardo". */
+export function fromDisplayName(fromName: string | undefined, instanceName: string | null | undefined): string {
+  const custom = fromName?.trim();
+  if (custom && custom !== DEFAULT_APP_NAME) return custom;
+  const instance = instanceName?.trim();
+  return instance && instance !== DEFAULT_APP_NAME ? `${instance} · ${DEFAULT_APP_NAME}` : DEFAULT_APP_NAME;
+}
+
+/** RFC 5322 display name, quoted when it holds specials. */
+function formatFrom(name: string, address: string): string {
+  const quoted = /[",.;:<>@()[\]\\]/.test(name) ? `"${name.replace(/(["\\])/g, "\\$1")}"` : name;
+  return `${quoted} <${address}>`;
+}
+
 export async function sendEmail(opts: SendEmailOpts): Promise<SendResult> {
   const { to, subject, from, replyTo } = opts;
   const config = await getEmailProviderConfig();
@@ -45,9 +60,8 @@ export async function sendEmail(opts: SendEmailOpts): Promise<SendResult> {
   const html = opts.html ?? (await render(opts.template!));
   const text = opts.text ?? (await render(opts.template!, { plainText: true }));
 
-  const fromAddress = from || (config.fromName && config.fromEmail
-    ? `${config.fromName} <${config.fromEmail}>`
-    : config.fromEmail || "Vardo <noreply@vardo.run>");
+  const instanceName = from ? null : await getInstanceDisplayName().catch(() => null);
+  const fromAddress = from || formatFrom(fromDisplayName(config.fromName, instanceName), config.fromEmail || "noreply@vardo.run");
   const replyToAddress = replyTo;
 
   switch (config.provider) {

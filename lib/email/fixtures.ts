@@ -7,7 +7,6 @@ import type { MailContext, MailSeries } from "./templates/context";
 export const FIXTURE_CONTEXT: MailContext = {
   baseUrl: "https://vardo.example.com",
   instanceName: "node-a",
-  orgName: "Acme Studio",
 };
 
 const timings = (ms: Partial<Record<"clone" | "build" | "pull" | "up" | "healthWait" | "cleanup", number>>) =>
@@ -131,6 +130,13 @@ function backupSummary(items: BackupResultItem[], extra: Partial<BackupSummaryEv
     ...extra,
   };
 }
+
+/** Newest first, as GitHub's compare reads after parseCompare. */
+const COMMITS = [
+  { sha: "4f1a9b2", subject: "fix(email): one instance name in every subject", author: "Dev Example" },
+  { sha: "9c0d1e2", subject: "feat(backups): quiet nightly summaries", author: "Dev Example" },
+  { sha: "3b4c5d6", subject: "chore: bump dependencies", author: "Dev Example" },
+];
 
 export const EMAIL_FIXTURES: { name: string; event: BusEvent; series?: MailSeries }[] = [
   {
@@ -256,27 +262,6 @@ export const EMAIL_FIXTURES: { name: string; event: BusEvent; series?: MailSerie
     },
   },
   {
-    name: "backup-run-started",
-    event: {
-      type: "backup.run-started",
-      title: "Nightly backups starting",
-      message: "10 volumes across 5 apps, about 33 min.",
-      runId: "run_1",
-      kind: "nightly",
-      label: "Nightly backups",
-      apps: [
-        { appId: "app_acme", appName: "Acme Data", volumes: ["postgres-data", "uploads"], lastBytes: 685 * MiB },
-        { appId: "app_0bs", appName: "Observability", volumes: ["grafana-data", "loki-data", "prometheus-data", "redis-data"], lastBytes: 35.5 * MiB },
-        { appId: "app_srch", appName: "Search", volumes: ["meili-data"], lastBytes: 1_093 * MiB },
-        { appId: "app_kuma", appName: "Uptime Kuma", volumes: ["kuma-data"] },
-        { appId: "app_shop", appName: "Shop", volumes: ["mysql-data", "wp-content"], lastBytes: 8_090 * MiB },
-      ],
-      volumeCount: 10,
-      estimatedMs: 33 * 60_000,
-      target: "R2 backups · backups/apps",
-    },
-  },
-  {
     name: "backup-failure",
     event: {
       type: "alert.fired",
@@ -314,6 +299,12 @@ export const EMAIL_FIXTURES: { name: string; event: BusEvent; series?: MailSerie
       NIGHTLY.map((i) => (i.volumeName === "mysql-data" ? { ...i, sizeBytes: 104_857_600 } : i)),
       { staleVolumes: [{ appName: "Search", volumeName: "meili-data", lastSuccessAt: "2026-10-06T07:12:00.000Z" }] },
     ),
+  },
+  {
+    name: "backup-summary-problems",
+    event: backupSummary([...NIGHTLY, ...OBSERVABILITY], {
+      run: { kind: "nightly", label: "Nightly backups", estimatedMs: 33 * 60_000, actualMs: 41 * 60_000, problemsOnly: true },
+    }),
   },
   {
     name: "backup-summary-failed",
@@ -642,8 +633,11 @@ export const EMAIL_FIXTURES: { name: string; event: BusEvent; series?: MailSerie
       type: "system.updated",
       title: "Vardo updated",
       message: "Updated e36c2e3 → 4f1a9b2.",
-      fromVersion: "e36c2e3",
-      toVersion: "4f1a9b2",
+      fromVersion: "0.1.0 (e36c2e3)",
+      toVersion: "0.1.0 (4f1a9b2)",
+      commits: COMMITS,
+      moreCommits: 9,
+      changesUrl: "https://github.com/example/vardo/compare/e36c2e3...4f1a9b2",
       fromSlot: "blue",
       toSlot: "green",
       durationSeconds: 212,
@@ -696,6 +690,57 @@ export const EMAIL_FIXTURES: { name: string; event: BusEvent; series?: MailSerie
       channel: "main",
       commitsBehind: 12,
       selfDeploy: true,
+      commits: COMMITS,
+      moreCommits: 9,
+      changesUrl: "https://github.com/example/vardo/compare/e36c2e3...4f1a9b2",
+    },
+  },
+  {
+    name: "security-scan-batch",
+    event: {
+      type: "security.scan-findings",
+      title: "New security findings: Shop, Acme Docs",
+      message: "3 new findings on Shop, Acme Docs.",
+      appId: "app_shop",
+      appName: "Shop",
+      scanId: "scan_1",
+      criticalCount: 1,
+      warningCount: 2,
+      domain: "shop.example.com",
+      trigger: "scheduled",
+      scanned: 14,
+      apps: [
+        {
+          appId: "app_shop",
+          appName: "Shop",
+          domain: "shop.example.com",
+          findings: [
+            { severity: "critical", title: ".env is publicly accessible", description: "The file at /.env is served to anyone and may hold secrets." },
+            { severity: "warning", title: "Missing HSTS header", description: "Browsers may connect over plain HTTP before the redirect." },
+          ],
+        },
+        {
+          appId: "app_d0cs",
+          appName: "Acme Docs",
+          domain: "docs.example.com",
+          findings: [{ severity: "warning", title: "TLS certificate expires in 9 days", description: "Renewal hasn't succeeded yet." }],
+        },
+      ],
+    },
+  },
+  {
+    name: "security-scan-manual-clean",
+    event: {
+      type: "security.scan-findings",
+      title: "Security scan: Acme Docs",
+      message: "0 findings on Acme Docs.",
+      appId: "app_d0cs",
+      appName: "Acme Docs",
+      scanId: "scan_2",
+      criticalCount: 0,
+      warningCount: 0,
+      trigger: "manual",
+      apps: [{ appId: "app_d0cs", appName: "Acme Docs", domain: "docs.example.com", findings: [] }],
     },
   },
   {

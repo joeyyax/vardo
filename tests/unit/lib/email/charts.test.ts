@@ -62,7 +62,7 @@ describe("backup size history", () => {
 
   it("warns in the subject and body", async () => {
     const fixture = EMAIL_FIXTURES.find((f) => f.name === "backup-summary-shrunk")!;
-    expect(notificationSubject(fixture.event, FIXTURE_CONTEXT)).toBe("⚠ Nightly backups · Shop much smaller than usual");
+    expect(notificationSubject(fixture.event, FIXTURE_CONTEXT)).toBe("node-a · ⚠ Nightly backups · Shop much smaller than usual");
     const email = (await renderNotificationEmail(fixture.event, FIXTURE_CONTEXT))!;
     expect(email.text).toContain("Shop / mysql-data: 100 MiB, 95% below its usual");
     expect(email.text).toContain("Shop / mysql-data, last 7 runs (older → this run · 100 MiB)\n██████▁");
@@ -73,7 +73,7 @@ describe("backup size history", () => {
     const fixture = EMAIL_FIXTURES.find((f) => f.name === "backup-summary")!;
     const email = (await renderNotificationEmail(fixture.event, FIXTURE_CONTEXT))!;
     expect(email.text).not.toContain("last 7 runs");
-    expect(email.subject).toMatch(/^✓ Nightly backups · 6 done · /);
+    expect(email.subject).toMatch(/^node-a · ✓ Nightly backups · 6 done · /);
   });
 });
 

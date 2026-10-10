@@ -18,7 +18,6 @@ export type ShareableMeshConfig = {
     smtpPort?: number;
     smtpUser?: string;
     fromEmail?: string;
-    fromName?: string;
     baseUrl?: string;
   } | null;
   backup: {
@@ -67,7 +66,6 @@ export async function buildShareableConfig(): Promise<ShareableMeshConfig> {
           smtpPort: email.smtpPort,
           smtpUser: email.smtpUser,
           fromEmail: email.fromEmail,
-          fromName: email.fromName,
           baseUrl: email.baseUrl,
         }
       : null,

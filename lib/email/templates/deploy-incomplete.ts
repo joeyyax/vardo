@@ -16,7 +16,7 @@ export function splitCommand(reason: string): { text: string; command?: string; 
     const text = reason.replace(backticked[0], "the command below").replace(/\s+/g, " ").trim();
     return { text, command: backticked[1].trim() };
   }
-  const bare = reason.match(/\b((?:sudo\s+)?docker(?:\s+compose)?\s+[^\n]+?)(?:[.;]\s|[.;]?$)/);
+  const bare = reason.match(/((?:\bcd\s+\S+\s+&&\s+)?(?:\bsudo\s+)?\bdocker(?:\s+compose)?\s+[^\n]+?)(?:[.;]\s|[.;]?$)/);
   if (bare) {
     const text = reason.replace(bare[1], "the command below").replace(/\s+/g, " ").trim();
     return { text, command: bare[1].trim() };

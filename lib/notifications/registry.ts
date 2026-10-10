@@ -9,14 +9,19 @@ export type Throttle =
 /** Per-org switches. A summary with a failure in it sends whatever the switch says. */
 export const NOTIFICATION_CATEGORIES = {
   backups: {
-    label: "Backup summaries",
-    description: "One email when a backup run finishes. Failures always send, as they happen.",
+    label: "Backup failures",
+    description: "Failures as they happen, and a run summary when something failed, was skipped or changed size sharply.",
     default: true,
   },
-  backupStarts: {
-    label: "Backup start notices",
-    description: "What a run will back up and how long it should take, as it starts.",
-    default: true,
+  backupSummaries: {
+    label: "Every nightly backup summary",
+    description: "Email the nightly summary even when nothing needs a look. Off, a clean run goes to the digest.",
+    default: false,
+  },
+  deploySuccess: {
+    label: "Every successful deploy",
+    description: "Email deploys started by a push or the API too. Off, only deploys started by hand email; the rest go to the digest.",
+    default: false,
   },
   host: {
     label: "Host alerts",
@@ -40,7 +45,7 @@ export type NotificationCategory = keyof typeof NOTIFICATION_CATEGORIES;
 export const NOTIFICATION_CATEGORY_KEYS = Object.keys(NOTIFICATION_CATEGORIES) as NotificationCategory[];
 
 export interface AlertDef {
-  category: Exclude<NotificationCategory, "backupStarts">;
+  category: Exclude<NotificationCategory, "backupSummaries" | "deploySuccess">;
   label: string;
   throttle: Throttle;
   /** Emails again when the condition clears. */

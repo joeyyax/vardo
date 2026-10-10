@@ -21,7 +21,7 @@ export function deploySuccessMail(event: DeploySuccessEvent, ctx: MailContext): 
     status: "Deployed",
     heading: `${name} is live`,
     preheader: [event.gitMessage, duration && `in ${duration}`].filter(Boolean).join(" · ") || `${name} deployed`,
-    visuals: [phaseVisual(event.stageTimings)].filter((v) => v !== undefined),
+    visuals: [phaseVisual(event.stageTimings, undefined, { caption: !duration })].filter((v) => v !== undefined),
     facts: [...placeFacts(event), ...changeFacts(event), ...run],
     action: primary ? { label: `Open ${primary}`, href: `https://${primary}` } : { label: "Open app", href: appPage(ctx, event.appId) },
     links: [
