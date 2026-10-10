@@ -1,5 +1,6 @@
 // Deploy steps 10-12: post-swap checks and syncs, the commit, then old-slot stop, cleanup and notifications.
 
+import { deploymentImageName } from "@/lib/docker/image-tag";
 import { db } from "@/lib/db";
 import { statusChange } from "@/lib/db/app-status";
 import { setParked } from "@/lib/db/app-parked";
@@ -389,7 +390,7 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
 
     // Production's older tags are its rollback targets; a preview leaves them alone.
     if (ctx.builtLocally && !ctx.envIsolated) {
-      const currentImageName = `host/${app.name}:${ctx.deploymentId.slice(0, 8)}`;
+      const currentImageName = deploymentImageName(app.name, ctx.deploymentId);
       const appImages = await listImages({ reference: [`host/${app.name}`] });
       const imagePrefix = `host/${app.name}:`;
       const staleImages = appImages.filter(
