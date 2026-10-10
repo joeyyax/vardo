@@ -44,6 +44,8 @@ import { reportOomDuringDeploy } from "../deploy-oom";
 import { checkVolumeLimits } from "./volume-limits";
 import { execFileAsync } from "@/lib/utils/exec";
 import { boundedBuild, explainBuildOom } from "../build-memory";
+import { buildKitContainerName, DEFAULT_BUILDKIT_HOST } from "../buildkit";
+import { isDeployQueueDrained } from "../deploy-concurrency";
 import { withFailedStepOutput } from "../build-failure";
 import { dockerEnv } from "@/lib/docker/docker-env";
 import { exportMsFromBuildOutput } from "../stage-timings";
@@ -753,6 +755,11 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
         definitionsFile: join(appDir, SHARED_DEFINITIONS_FILE),
         // The pre-self-deploy layout created Vardo's infra containers from here.
         legacyComposeFile: isSelfApp(app.name) ? join(appDir, "..", "env", "current", "docker-compose.yml") : undefined,
+        // Recreating BuildKit kills the builds in it.
+        holdRecreate: async (_service, container) =>
+          container === buildKitContainerName(process.env.BUILDKIT_HOST || DEFAULT_BUILDKIT_HOST) && !(await isDeployQueueDrained())
+            ? "other deploys are running and may be building in it"
+            : null,
       });
       for (const outcome of outcomes) {
         log(describeSharedOutcome(outcome));

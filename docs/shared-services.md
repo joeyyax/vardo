@@ -6,6 +6,8 @@ A deploy recreates a shared service only when its definition changes. It compare
 
 When the hashes differ, the deploy compares a fingerprint of the definition the container was created from, kept in `shared-definitions.json` in the environment's directory. The fingerprint skips labels and CPU weights, counts limits by value however they're written and counts networks by name. A container whose fingerprint matches is left running and logged as `unchanged (only labels, CPU weights or how limits are written differ)`. A container with no record is judged by its hash alone.
 
+The hash leaves out inline `content` of the `configs:` and `secrets:` a service mounts, so a deploy also reads each one back from the running container and recreates the service when it differs. That covers variables the content interpolates. A container without `cat` is judged by its hash alone.
+
 ## Profiles
 
 With `COMPOSE_PROFILES` in the app's environment, a deploy skips services whose `profiles` it doesn't list, as compose does. Without it every service deploys.

@@ -718,6 +718,17 @@ ensure_buildkit_cache_max() {
   fi
 }
 
+# Keeps buildkit in COMPOSE_PROFILES while vardo-buildkit exists. Deploys skip a service outside it and leave its config stale.
+ensure_buildkit_profile() {
+  local env_file="$1" current
+  docker inspect vardo-buildkit > /dev/null 2>&1 || return 0
+  current=$(grep "^COMPOSE_PROFILES=" "$env_file" 2>/dev/null | tail -n 1 | cut -d= -f2- || true)
+  [ -n "$current" ] || return 0
+  [[ ",$current," == *",buildkit,"* || ",$current," == *",*,"* ]] && return 0
+  env_upsert "$env_file" COMPOSE_PROFILES "$current,buildkit"
+  log "Added buildkit to COMPOSE_PROFILES: vardo-buildkit is in use"
+}
+
 # Redis limit in MB: 512 below 24 GiB of RAM, 1024 below 96 GiB, else 2048. Mirrors lib/resources/defaults.ts.
 default_redis_mem_mb() {
   local mb
@@ -2382,6 +2393,7 @@ run_env_migrations() {
 
   ensure_buildkit_mem "$env_file"
   ensure_buildkit_cache_max "$env_file"
+  is_dev || ensure_buildkit_profile "$env_file"
   ensure_redis_mem "$env_file"
   ensure_redis_password "$env_file"
   apply_install_options "$env_file"
@@ -2728,6 +2740,7 @@ do_self_update() {
   apply_install_options "$VARDO_DIR/.env"
   ensure_buildkit_mem "$VARDO_DIR/.env"
   ensure_buildkit_cache_max "$VARDO_DIR/.env"
+  ensure_buildkit_profile "$VARDO_DIR/.env"
 
   step "Redeploying Vardo"
   request_self_deploy

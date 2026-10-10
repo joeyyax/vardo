@@ -862,11 +862,31 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
   const applied = applyComposeProfiles(compose, profiles);
   if (applied.skipped.length > 0) {
     log(`[deploy] Skipped ${applied.skipped.join(", ")}: no active profile (COMPOSE_PROFILES=${[...profiles!].join(",")})`);
+    for (const name of applied.skipped) {
+      const service = compose.services[name];
+      if (!service.container_name || !(await isContainerRunning(service.container_name))) continue;
+      log(
+        `[deploy] Warning: ${service.container_name} is running, but deploys leave it on its old definition while ` +
+          `COMPOSE_PROFILES leaves out ${service.profiles?.join(" or ")}`,
+      );
+    }
   }
 
   ctx.compose = applied.compose;
   ctx.profileSkipped = applied.skipped;
   return ctx;
+}
+
+async function isContainerRunning(container: string): Promise<boolean> {
+  try {
+    const { stdout } = await execFileAsync("docker", ["inspect", "-f", "{{.State.Running}}", container], {
+      env: dockerEnv(),
+      timeout: DOCKER_CLEANUP_TIMEOUT,
+    });
+    return stdout.trim() === "true";
+  } catch {
+    return false;
+  }
 }
 
 /** COMPOSE_PROFILES for this app: the host .env for Vardo itself, else the app's env. */
