@@ -26,7 +26,7 @@ function job(over: Partial<BackupJob> = {}, runs: Partial<JobRun>[] = []): Backu
 
 describe("runMark", () => {
   it("keeps good runs quiet and flags the rest", () => {
-    expect(runMark("success").tone).toBe("good");
+    expect(runMark("success").tone).toBe("neutral");
     expect(runMark("failed").tone).toBe("issue");
     expect(runMark("skipped").tone).toBe("warn");
     expect(runMark("running").pending).toBe(true);

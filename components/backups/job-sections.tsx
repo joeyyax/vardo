@@ -205,7 +205,7 @@ export function JobSections({
 
   return (
     <>
-      <div ref={listRef} role="tree" aria-label="Backup jobs" data-healthy="quiet" onKeyDown={onRowKeys} className="grid grid-cols-1 gap-1">
+      <div ref={listRef} role="tree" aria-label="Backup jobs" onKeyDown={onRowKeys} className="grid grid-cols-1 gap-1">
         {sections.length === 0 && empty}
         {sections.map(({ job, runs }) => {
           const open = !collapsed.has(job.id);
@@ -309,7 +309,7 @@ function RunDetail({ run, orgId, actions }: { run: RecentBackup; orgId: string; 
   const canDownload = !!run.storagePath && can("backup.download");
   const canDelete = can("backup.delete") && run.status !== "pending" && run.status !== "running";
   return (
-    <div data-healthy="quiet" className="grid gap-5">
+    <div className="grid gap-5">
       {reason && <p className={cn("text-sm [overflow-wrap:anywhere]", run.status === "failed" ? "text-status-error" : "text-status-warning")}>{reason}</p>}
       {(canRestore || canDownload || canDelete) && (
         <div className="flex flex-wrap gap-2">

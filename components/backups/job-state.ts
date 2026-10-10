@@ -6,11 +6,11 @@ import type { BackupJob, JobRun, RecentBackup } from "./types";
 
 const mark = (tone: StatusMarkState["tone"], label: string, pending = false): StatusMarkState => ({ tone, label, pending });
 
-/** A run's mark. A good run is quiet; only failures and skips carry color. */
+/** A run's mark. A good run is quiet; failures and skips carry color. Green is for liveness only. */
 export function runMark(status: string): StatusMarkState {
   switch (status) {
     case "success":
-      return mark("good", "Backed up");
+      return mark("neutral", "Backed up");
     case "failed":
       return mark("issue", "Failed");
     case "skipped":

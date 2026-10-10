@@ -419,7 +419,6 @@ export function ProjectsView({
   return (
     <div
       data-density={density}
-      data-healthy={dense ? undefined : "quiet"}
       className={cn("grid gap-9", open && DETAIL_PANEL_GUTTER)}
     >
       <StatGroup label="Open a list" active={!!(panel || attentionTarget)}>
@@ -527,7 +526,7 @@ export function ProjectsView({
         }
         actions={loc ? <OpenAppLink name={loc.node.app.name} /> : undefined}
       >
-        <div id={PANEL_ID} data-healthy="quiet" className="grid gap-5.5">
+        <div id={PANEL_ID} className="grid gap-5.5">
           {loc ? <AppDetail loc={loc} ctx={panelCtx} /> : panel ? <PanelList panel={panel} ctx={panelCtx} /> : null}
         </div>
       </DetailPanel>

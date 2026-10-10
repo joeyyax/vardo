@@ -519,7 +519,6 @@ export function AppDeployPanel({
     <>
       <div
         data-density={density}
-        data-healthy={density === "dense" ? undefined : "quiet"}
         className={cn("grid grid-cols-1 gap-(--section-gap)", viewing && DETAIL_PANEL_GUTTER)}
       >
         {filteredDeployments.length === 0 && !deploying && !serverRunningDeploy ? (
@@ -667,7 +666,7 @@ export function AppDeployPanel({
         title={viewing ? deployLabel(viewing) : ""}
       >
         {viewing && (
-          <div data-healthy="quiet" className="grid gap-5">
+          <div className="grid gap-5">
             {viewingProblem && (
               <p className={cn("text-sm [overflow-wrap:anywhere]", PROBLEM_TONE[viewingProblem.tone])}>{viewingProblem.text}</p>
             )}
