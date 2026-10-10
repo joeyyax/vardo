@@ -14,7 +14,7 @@ vi.mock("@/lib/system-settings", () => ({
   ),
 }));
 
-const { fetchRemoteDigest } = await import("@/lib/docker/image-updates/registry");
+const { fetchRemoteDigest, fetchTags } = await import("@/lib/docker/image-updates/registry");
 const { parseImageRef } = await import("@/lib/docker/image-updates/image-ref");
 
 function challenge(realm: string) {
@@ -25,6 +25,14 @@ function challenge(realm: string) {
 }
 
 const ref = parseImageRef("reg.example.test/app:latest")!;
+const REGISTRY = "https://reg.example.test/";
+
+/** Registry responses in order; anything else is the token realm. */
+function serve(registry: Response[], token: Response = Response.json({ token: "t" })) {
+  safeFetch.mockImplementation(async (url: string) => (url.startsWith(REGISTRY) ? registry.shift() : token));
+}
+
+const realmCalls = () => safeFetch.mock.calls.filter(([url]) => !String(url).startsWith(REGISTRY));
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -32,14 +40,33 @@ beforeEach(() => {
   lookup.mockResolvedValue([{ address: "93.184.216.34" }]);
 });
 
+describe("registry requests", () => {
+  it("go through the outbound guard with the operator's policy", async () => {
+    serve([new Response(null, { headers: { "docker-content-digest": "sha256:a" } })]);
+    expect(await fetchRemoteDigest(ref, "latest")).toBe("sha256:a");
+    expect(safeFetch).toHaveBeenCalledWith(
+      "https://reg.example.test/v2/app/manifests/latest",
+      expect.objectContaining({ policy: expect.any(Object), method: "HEAD" }),
+    );
+  });
+
+  it("follow tag pages through the guard too", async () => {
+    safeFetch.mockImplementationOnce(async () =>
+      new Response(JSON.stringify({ tags: ["1"] }), { headers: { link: '<https://169.254.169.254/v2/x>; rel="next"' } }),
+    );
+    safeFetch.mockImplementationOnce(async () => {
+      throw new Error("blocked");
+    });
+    await expect(fetchTags(ref)).rejects.toThrow("blocked");
+    expect(safeFetch).toHaveBeenLastCalledWith("https://169.254.169.254/v2/x", expect.objectContaining({ policy: expect.any(Object) }));
+  });
+});
+
 describe("registry token realm", () => {
   it("fetches a public https realm", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(challenge("https://auth.example.test/token"));
-    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(null, { headers: { "docker-content-digest": "sha256:a" } }));
-    safeFetch.mockResolvedValueOnce(Response.json({ token: "t" }));
-
+    serve([challenge("https://auth.example.test/token"), new Response(null, { headers: { "docker-content-digest": "sha256:a" } })]);
     expect(await fetchRemoteDigest(ref, "latest")).toBe("sha256:a");
-    expect(safeFetch).toHaveBeenCalledOnce();
+    expect(realmCalls()).toHaveLength(1);
   });
 
   for (const realm of [
@@ -49,25 +76,23 @@ describe("registry token realm", () => {
     "https://10.0.0.5/token",
   ]) {
     it(`refuses ${realm} without sending credentials`, async () => {
-      vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(challenge(realm));
+      serve([challenge(realm)]);
       await expect(fetchRemoteDigest(ref, "latest")).rejects.toThrow();
-      expect(safeFetch).not.toHaveBeenCalled();
+      expect(realmCalls()).toHaveLength(0);
     });
   }
 
   it("refuses a host that resolves to a private address", async () => {
     lookup.mockResolvedValue([{ address: "10.0.0.9" }]);
-    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(challenge("https://auth.example.test/token"));
+    serve([challenge("https://auth.example.test/token")]);
     await expect(fetchRemoteDigest(ref, "latest")).rejects.toThrow(/resolves to 10\.0\.0\.9/);
-    expect(safeFetch).not.toHaveBeenCalled();
+    expect(realmCalls()).toHaveLength(0);
   });
 
   it("allows a private realm the operator allowlisted", async () => {
     process.env.VARDO_OUTBOUND_ALLOWLIST = "auth.lan";
     lookup.mockResolvedValue([{ address: "10.0.0.9" }]);
-    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(challenge("https://auth.lan/token"));
-    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response(null, { headers: { "docker-content-digest": "sha256:b" } }));
-    safeFetch.mockResolvedValueOnce(Response.json({ token: "t" }));
+    serve([challenge("https://auth.lan/token"), new Response(null, { headers: { "docker-content-digest": "sha256:b" } })]);
     expect(await fetchRemoteDigest(ref, "latest")).toBe("sha256:b");
   });
 });
