@@ -1,6 +1,6 @@
 import { readFile } from "fs/promises";
-import { join } from "path";
 import TOML from "@iarna/toml";
+import { repoFilePath } from "@/lib/docker/compose-root";
 
 export type HostConfig = {
   project?: {
@@ -27,11 +27,12 @@ export type HostConfig = {
 
 const CONFIG_FILES = ["host.toml", ".host.toml", "host.config.toml"];
 
-/** Read host.toml, .host.toml or host.config.toml from a project directory. */
+/** Read host.toml, .host.toml or host.config.toml from a project directory. Throws when one points outside it. */
 export async function readHostConfig(projectDir: string): Promise<HostConfig | null> {
   for (const filename of CONFIG_FILES) {
+    const path = repoFilePath(projectDir, projectDir, filename);
     try {
-      const content = await readFile(join(projectDir, filename), "utf-8");
+      const content = await readFile(path, "utf-8");
       return TOML.parse(content) as unknown as HostConfig;
     } catch {
       continue;
