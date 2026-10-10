@@ -1,264 +1,121 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { DEFAULT_DIGEST, digestWindow, isDigestDue, scheduleFor, bucketStarts } from "@/lib/digest/window";
 
-// ---------------------------------------------------------------------------
-// isDueNow — tick scheduling logic
-// ---------------------------------------------------------------------------
-// Extracted from lib/digest/tick.ts for isolated unit testing.
+vi.mock("@/lib/db", async () => (await import("@/tests/helpers/db")).dbModule());
+vi.mock("@/lib/logger", async () => (await import("@/tests/helpers/mocks")).loggerModule());
 
-type DigestSettings = {
-  enabled: boolean;
-  day: number;  // 0=Sunday … 6=Saturday
-  hour: number; // 0-23
-};
+const mocks = vi.hoisted(() => ({ emit: vi.fn(), collect: vi.fn() }));
+vi.mock("@/lib/notifications/dispatch", () => ({ emit: mocks.emit }));
+vi.mock("@/lib/notifications/admin-orgs", () => ({ adminOrgIds: async () => ["org1"] }));
+vi.mock("@/lib/digest/collector", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/digest/collector")>()),
+  collectDigestData: mocks.collect,
+}));
 
-function isDueNow(settings: DigestSettings, now: Date): boolean {
-  return now.getDay() === settings.day && now.getHours() === settings.hour;
-}
+import { dbMock } from "@/tests/helpers/db";
+import { hasActivity, topAlerts, windowLabel } from "@/lib/digest/collector";
+const { tickDigestJobs } = await import("@/lib/digest/tick");
 
-describe("isDueNow — digest tick scheduling", () => {
-  // Monday (day=1) at 09:00 UTC
-  const mondayAt9 = new Date(2026, 2, 23, 9, 0, 0); // March 23, 2026 is a Monday
+// Monday, Oct 12 2026, 08:20 UTC.
+const monday = new Date("2026-10-12T08:20:00Z");
 
-  it("returns true when day and hour match exactly", () => {
-    const settings: DigestSettings = { enabled: true, day: 1, hour: 9 };
-    expect(isDueNow(settings, mondayAt9)).toBe(true);
+describe("digestWindow", () => {
+  it("covers yesterday for a daily digest, never part of today", () => {
+    const w = digestWindow("daily", monday);
+    expect(w.since.toISOString()).toBe("2026-10-11T00:00:00.000Z");
+    expect(w.until.toISOString()).toBe("2026-10-12T00:00:00.000Z");
+    expect(w.windowKey).toBe("daily:2026-10-11");
   });
 
-  it("returns false when the day does not match", () => {
-    const settings: DigestSettings = { enabled: true, day: 2, hour: 9 }; // Tuesday
-    expect(isDueNow(settings, mondayAt9)).toBe(false);
+  it("covers the seven full days before today for a weekly digest", () => {
+    const w = digestWindow("weekly", monday);
+    expect(w.since.toISOString()).toBe("2026-10-05T00:00:00.000Z");
+    expect(w.until.toISOString()).toBe("2026-10-12T00:00:00.000Z");
+    expect(bucketStarts(w, 86_400_000)).toHaveLength(7);
   });
 
-  it("returns false when the hour does not match", () => {
-    const settings: DigestSettings = { enabled: true, day: 1, hour: 10 };
-    expect(isDueNow(settings, mondayAt9)).toBe(false);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// isSameHour — duplicate-send guard (TOCTOU prevention)
-// ---------------------------------------------------------------------------
-// Mirrors lib/digest/tick.ts:isSameHour — used to prevent two concurrent ticks
-// from both sending the digest in the same scheduling window.
-
-function isSameHour(a: Date, b: Date): boolean {
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate() &&
-    a.getHours() === b.getHours()
-  );
-}
-
-describe("isSameHour — duplicate-send guard", () => {
-  it("returns true for two dates in the same hour", () => {
-    const a = new Date(2026, 2, 23, 9, 0, 0);
-    const b = new Date(2026, 2, 23, 9, 59, 59);
-    expect(isSameHour(a, b)).toBe(true);
+  it("keeps the same key for every tick in the window", () => {
+    expect(digestWindow("weekly", monday).windowKey).toBe(digestWindow("weekly", new Date("2026-10-12T08:59:00Z")).windowKey);
   });
 
-  it("returns false for dates one hour apart", () => {
-    const a = new Date(2026, 2, 23, 9, 0, 0);
-    const b = new Date(2026, 2, 23, 10, 0, 0);
-    expect(isSameHour(a, b)).toBe(false);
-  });
-
-  it("returns false for the same time on different days", () => {
-    const a = new Date(2026, 2, 23, 9, 0, 0);
-    const b = new Date(2026, 2, 24, 9, 0, 0);
-    expect(isSameHour(a, b)).toBe(false);
+  it("labels a week and a day", () => {
+    expect(windowLabel(digestWindow("weekly", monday))).toBe("Oct 5 – Oct 11, 2026");
+    expect(windowLabel(digestWindow("daily", monday))).toBe("Oct 11, 2026");
   });
 });
 
-// ---------------------------------------------------------------------------
-// Atomic lastSentAt claim — TOCTOU prevention
-// ---------------------------------------------------------------------------
-// The tick writes lastSentAt BEFORE sending the digest so that a concurrent
-// tick that reads lastSentAt sees it and aborts. These tests model that
-// contract without touching the DB.
-
-describe("atomic lastSentAt claim", () => {
-  it("a concurrent tick that reads a claimed lastSentAt is blocked", () => {
-    // Simulate: tick A claims the hour, tick B checks and finds it claimed
-    const sendHour = new Date(2026, 2, 23, 9, 0, 0);
-
-    let claimedAt: Date | null = null;
-
-    function claimSend(now: Date): boolean {
-      if (claimedAt && isSameHour(claimedAt, now)) return false; // already claimed
-      claimedAt = now;
-      return true;
-    }
-
-    const tickA = claimSend(sendHour);
-    const tickB = claimSend(new Date(2026, 2, 23, 9, 30, 0)); // same hour
-
-    expect(tickA).toBe(true);
-    expect(tickB).toBe(false); // blocked — same hour already claimed
+describe("isDigestDue", () => {
+  it("defaults to weekly on Monday at 08:00 UTC", () => {
+    expect(scheduleFor(undefined)).toEqual(DEFAULT_DIGEST);
+    expect(isDigestDue(DEFAULT_DIGEST, monday)).toBe(true);
+    expect(isDigestDue(DEFAULT_DIGEST, new Date("2026-10-13T08:20:00Z"))).toBe(false);
+    expect(isDigestDue(DEFAULT_DIGEST, new Date("2026-10-12T09:00:00Z"))).toBe(false);
   });
 
-  it("allows a send in a different hour after one has been claimed", () => {
-    const hour9 = new Date(2026, 2, 23, 9, 0, 0);
-    const hour10 = new Date(2026, 2, 23, 10, 0, 0);
-
-    let claimedAt: Date | null = null;
-
-    function claimSend(now: Date): boolean {
-      if (claimedAt && isSameHour(claimedAt, now)) return false;
-      claimedAt = now;
-      return true;
-    }
-
-    claimSend(hour9);
-    const nextHour = claimSend(hour10);
-    expect(nextHour).toBe(true);
+  it("sends a daily digest every day at its hour", () => {
+    const daily = { ...DEFAULT_DIGEST, cadence: "daily" as const };
+    expect(isDigestDue(daily, new Date("2026-10-13T08:05:00Z"))).toBe(true);
   });
 
-  it("markSent before send prevents duplicate even with parallel ticks", async () => {
-    let lastSentAt: Date | null = null;
-    let sendCount = 0;
+  it("never sends when switched off", () => {
+    expect(isDigestDue({ ...DEFAULT_DIGEST, enabled: false }, monday)).toBe(false);
+  });
 
-    async function tick(now: Date): Promise<void> {
-      // isDueNow check (simplified — always due in this test)
-      if (lastSentAt && isSameHour(lastSentAt, now)) return;
-
-      // Claim immediately (write-before-send)
-      lastSentAt = now;
-
-      // Simulate async send work
-      await Promise.resolve();
-      sendCount++;
-    }
-
-    const now = new Date(2026, 2, 23, 9, 0, 0);
-    await Promise.all([tick(now), tick(now)]);
-    expect(sendCount).toBe(1);
+  it("falls back to weekly for a cadence it doesn't know", () => {
+    expect(scheduleFor({ enabled: true, cadence: "hourly", dayOfWeek: 1, hourOfDay: 8 }).cadence).toBe("weekly");
   });
 });
 
-// ---------------------------------------------------------------------------
-// Upsert behaviour for digest settings
-// ---------------------------------------------------------------------------
-
-describe("upsert behaviour for digest settings", () => {
-  type StoredSettings = {
-    organizationId: string;
-    enabled: boolean;
-    dayOfWeek: number;
-    hourOfDay: number;
-    updatedAt: Date;
+describe("digest content", () => {
+  const empty = {
+    deploys: { total: 0, succeeded: 0, failed: 0 },
+    backups: { succeeded: 0, failed: 0, totalSize: 0, drillsPassed: 0, drillsFailed: 0, staleVolumes: 0 },
+    cron: { failed: 0, affectedJobs: [] },
+    alerts: { fired: 0, resolved: 0, open: 0, top: [] },
   };
 
-  function upsertSettings(
-    store: Map<string, StoredSettings>,
-    orgId: string,
-    patch: Partial<Pick<StoredSettings, "enabled" | "dayOfWeek" | "hourOfDay">>
-  ): StoredSettings {
-    const existing = store.get(orgId);
-    const defaults = { enabled: false, dayOfWeek: 1, hourOfDay: 8 };
-
-    const merged: StoredSettings = existing
-      ? {
-          ...existing,
-          ...(patch.enabled !== undefined && { enabled: patch.enabled }),
-          ...(patch.dayOfWeek !== undefined && { dayOfWeek: patch.dayOfWeek }),
-          ...(patch.hourOfDay !== undefined && { hourOfDay: patch.hourOfDay }),
-          updatedAt: new Date(),
-        }
-      : {
-          organizationId: orgId,
-          enabled: patch.enabled ?? defaults.enabled,
-          dayOfWeek: patch.dayOfWeek ?? defaults.dayOfWeek,
-          hourOfDay: patch.hourOfDay ?? defaults.hourOfDay,
-          updatedAt: new Date(),
-        };
-
-    store.set(orgId, merged);
-    return merged;
-  }
-
-  it("creates a new record with supplied values on first PATCH", () => {
-    const store = new Map<string, StoredSettings>();
-    const result = upsertSettings(store, "org_1", { enabled: true, dayOfWeek: 2, hourOfDay: 10 });
-
-    expect(result.enabled).toBe(true);
-    expect(result.dayOfWeek).toBe(2);
-    expect(result.hourOfDay).toBe(10);
+  it("stays silent for a window where nothing happened", () => {
+    expect(hasActivity(empty)).toBe(false);
+    expect(hasActivity({ ...empty, alerts: { ...empty.alerts, open: 1 } })).toBe(true);
   });
 
-  it("uses defaults for unspecified fields on first PATCH", () => {
-    const store = new Map<string, StoredSettings>();
-    const result = upsertSettings(store, "org_1", { enabled: true });
-
-    expect(result.dayOfWeek).toBe(1); // default Monday
-    expect(result.hourOfDay).toBe(8); // default 8 AM UTC
-  });
-
-  it("updates only the specified field without clobbering others", () => {
-    const store = new Map<string, StoredSettings>();
-    upsertSettings(store, "org_1", { enabled: true, dayOfWeek: 5, hourOfDay: 14 });
-
-    // Patch only hourOfDay
-    const result = upsertSettings(store, "org_1", { hourOfDay: 16 });
-    expect(result.enabled).toBe(true);   // preserved
-    expect(result.dayOfWeek).toBe(5);    // preserved
-    expect(result.hourOfDay).toBe(16);   // updated
+  it("counts alerts by their registry label", () => {
+    expect(topAlerts([{ type: "host.memory" }, { type: "app.oom" }, { type: "host.memory" }])).toEqual([
+      { label: "Host memory", count: 2 },
+      { label: "Killed for memory", count: 1 },
+    ]);
   });
 });
 
-// ---------------------------------------------------------------------------
-// Digest collector data aggregation
-// ---------------------------------------------------------------------------
-
-describe("digest collector data aggregation", () => {
-  type DeployRow = { status: "success" | "failed" | "running" };
-  type CronRunRow = { status: "success" | "failed"; cronJobId: string };
-
-  function aggregateDeploys(rows: DeployRow[]) {
-    let total = 0, succeeded = 0, failed = 0;
-    for (const row of rows) {
-      total++;
-      if (row.status === "success") succeeded++;
-      if (row.status === "failed") failed++;
-    }
-    return { total, succeeded, failed };
-  }
-
-  function aggregateCronFailures(runs: CronRunRow[]) {
-    const failed = runs.filter((r) => r.status === "failed");
-    const affectedJobs = [...new Set(failed.map((r) => r.cronJobId))];
-    return { totalFailures: failed.length, affectedJobs };
-  }
-
-  it("correctly counts deploy totals, successes, and failures", () => {
-    const rows: DeployRow[] = [
-      { status: "success" },
-      { status: "success" },
-      { status: "failed" },
-      { status: "running" },
-    ];
-    const result = aggregateDeploys(rows);
-    expect(result.total).toBe(4);
-    expect(result.succeeded).toBe(2);
-    expect(result.failed).toBe(1);
+describe("tickDigestJobs", () => {
+  beforeEach(() => {
+    dbMock.reset();
+    vi.clearAllMocks();
+    dbMock.query.organizations.findMany.mockResolvedValue([{ id: "org1", name: "Acme" }]);
   });
 
-  it("returns zeros for an empty deploy set", () => {
-    const result = aggregateDeploys([]);
-    expect(result).toEqual({ total: 0, succeeded: 0, failed: 0 });
+  it("sends an org with no settings row on the default schedule", async () => {
+    dbMock.query.digestSettings.findMany.mockResolvedValue([]);
+    dbMock.updateReturns([{ id: "d1" }]);
+    mocks.collect.mockResolvedValue({ deploys: { total: 3, succeeded: 3, failed: 0 }, backups: {}, cron: { failed: 0 }, alerts: { fired: 0, resolved: 0, open: 0 } });
+    await tickDigestJobs(monday);
+    expect(mocks.collect).toHaveBeenCalledWith("org1", "Acme", expect.objectContaining({ windowKey: "weekly:2026-10-05" }), expect.objectContaining({ withHost: true }));
+    expect(mocks.emit).toHaveBeenCalledTimes(1);
+    expect(mocks.emit.mock.calls[0][1].type).toBe("digest.health");
   });
 
-  it("counts total cron failures and deduplicated affected jobs", () => {
-    const runs: CronRunRow[] = [
-      { status: "failed", cronJobId: "job_1" },
-      { status: "failed", cronJobId: "job_1" }, // same job — deduplicated
-      { status: "failed", cronJobId: "job_2" },
-      { status: "success", cronJobId: "job_3" },
-    ];
-    const result = aggregateCronFailures(runs);
-    expect(result.totalFailures).toBe(3);
-    expect(result.affectedJobs).toHaveLength(2);
-    expect(result.affectedJobs).toContain("job_1");
-    expect(result.affectedJobs).toContain("job_2");
+  it("skips a window another process already claimed", async () => {
+    dbMock.query.digestSettings.findMany.mockResolvedValue([]);
+    dbMock.updateReturns([]);
+    await tickDigestJobs(monday);
+    expect(mocks.collect).not.toHaveBeenCalled();
+  });
+
+  it("skips a window it already sent without touching the database", async () => {
+    dbMock.query.digestSettings.findMany.mockResolvedValue([
+      { organizationId: "org1", enabled: true, cadence: "weekly", dayOfWeek: 1, hourOfDay: 8, lastWindowKey: "weekly:2026-10-05" },
+    ]);
+    await tickDigestJobs(monday);
+    expect(dbMock.updates).toHaveLength(0);
   });
 });

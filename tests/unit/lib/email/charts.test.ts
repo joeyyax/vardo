@@ -3,7 +3,7 @@ import { percentages, sparkline, visualText } from "@/lib/email/templates/compon
 import { backupColumns, backupDrop } from "@/lib/email/templates/visuals";
 import { phaseVisual } from "@/lib/email/templates/deploy-facts";
 import { hourlyDeltas, loadMailSeries } from "@/lib/email/series";
-import { deployDays } from "@/lib/digest/collector";
+import { deployBuckets } from "@/lib/digest/collector";
 import { EMAIL_FIXTURES, FIXTURE_CONTEXT } from "@/lib/email/fixtures";
 import { renderNotificationEmail } from "@/lib/email/notification-email";
 import { notificationSubject } from "@/lib/email/subjects";
@@ -102,19 +102,21 @@ describe("series helpers", () => {
     expect(deltas.slice(-2)).toEqual([300, 1000]);
   });
 
-  it("buckets deploys by UTC day", () => {
-    const now = new Date("2026-10-09T17:00:00Z");
-    const days = deployDays(
+  it("buckets deploys by UTC day across the window", () => {
+    const window = { since: new Date("2026-10-03T00:00:00Z"), until: new Date("2026-10-10T00:00:00Z") };
+    const days = deployBuckets(
       [
         { status: "success", startedAt: new Date("2026-10-09T01:00:00Z") },
         { status: "failed", startedAt: new Date("2026-10-07T12:00:00Z") },
         { status: "success", startedAt: new Date("2026-09-01T12:00:00Z") },
+        { status: "success", startedAt: new Date("2026-10-10T00:00:00Z") },
       ],
-      now,
+      window,
+      86_400_000,
     );
     expect(days).toHaveLength(7);
-    expect(days[0].day).toBe("2026-10-03");
-    expect(days[6]).toEqual({ day: "2026-10-09", succeeded: 1, failed: 0 });
-    expect(days[4]).toEqual({ day: "2026-10-07", succeeded: 0, failed: 1 });
+    expect(days[0].start).toBe("2026-10-03T00:00:00.000Z");
+    expect(days[6]).toEqual({ start: "2026-10-09T00:00:00.000Z", succeeded: 1, failed: 0 });
+    expect(days[4]).toEqual({ start: "2026-10-07T00:00:00.000Z", succeeded: 0, failed: 1 });
   });
 });

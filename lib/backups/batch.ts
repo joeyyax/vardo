@@ -132,7 +132,7 @@ async function loadHistory(organizationId: string, items: BackupBatchItem[], now
 }
 
 /** Volumes backed up this week with no success in 48 hours. */
-async function loadStaleVolumes(organizationId: string, now: number) {
+export async function loadStaleVolumes(organizationId: string, now: number) {
   const rows = await db
     .select({
       appName: backups.appName,

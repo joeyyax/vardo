@@ -15,7 +15,7 @@ import { cronFailedMail } from "./templates/cron-failed";
 import { diskWriteAlertMail } from "./templates/disk-write-alert";
 import { volumeDriftMail } from "./templates/volume-drift";
 import { systemAlertMail } from "./templates/system-alert";
-import { weeklyDigestMail } from "./templates/weekly-digest";
+import { healthDigestMail } from "./templates/health-digest";
 import { lifecycleMail } from "./templates/lifecycle";
 import { alertFiredMail, alertResolvedMail } from "./templates/alerts";
 
@@ -79,8 +79,8 @@ export function notificationMailBody(event: BusEvent, ctx: MailContext): Notific
     case "system.update-failed":
     case "system.containers-missing":
       return lifecycleMail(event, ctx);
-    case "digest.weekly":
-      return weeklyDigestMail(event, ctx);
+    case "digest.health":
+      return healthDigestMail(event, ctx);
     default:
       return genericMail(event, ctx);
   }

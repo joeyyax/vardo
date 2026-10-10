@@ -109,8 +109,8 @@ export function notificationSubject(event: BusEvent, ctx: SubjectContext): strin
       return `✗ Vardo update failed on ${host} at ${event.step}`;
     case "system.containers-missing":
       return `⚠ ${event.containers.length} container${event.containers.length === 1 ? "" : "s"} didn't come back on ${host}`;
-    case "digest.weekly":
-      return `Weekly digest · ${event.orgName} · ${event.weekLabel}`;
+    case "digest.health":
+      return `${event.cadence === "daily" ? "Daily" : "Weekly"} summary · ${event.orgName} · ${event.windowLabel}`;
     default:
       return event.title;
   }

@@ -31,6 +31,7 @@ export const REPLACED_EVENT_TYPES: Partial<Record<BusEventType, string[]>> = {
   "alert.fired": ["system.disk-alert", "app.oom-killed"],
   "alert.resolved": ["system.disk-alert"],
   "backup.summary": ["backup.success", "backup.failed"],
+  "digest.health": ["digest.weekly"],
 };
 
 /** Whether a channel's subscribedEvents filter allows this event. Empty means all. */

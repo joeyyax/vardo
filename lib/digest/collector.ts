@@ -1,285 +1,242 @@
+// What happened in one org over a digest window. A record of the window, not live state, except certs and updates.
+
+import { and, count, eq, gte, inArray, isNull, lt } from "drizzle-orm";
+import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { db } from "@/lib/db";
-import {
-  apps,
-  backups,
-  cronJobs,
-  cronJobRuns,
-  deployments,
-  activities,
-} from "@/lib/db/schema";
-import { eq, and, gte, inArray, count } from "drizzle-orm";
-import type {
-  DigestDeploySummary,
-  DigestBackupSummary,
-  DigestCronSummary,
-  DigestAlertSummary,
-  DigestProjectRow,
-  DigestDayRow,
-} from "@/lib/email/templates/weekly-digest";
+import { alertHistory, apps, backups, cronJobRuns, cronJobs, deployments, domainCertChecks, domains } from "@/lib/db/schema";
+import type { DigestHealthEvent, DigestProjectRow } from "@/lib/bus/events";
+import { ALERTS, isAlertType } from "@/lib/notifications/registry";
+import { CERT_EXPIRY_THRESHOLD_DAYS } from "@/lib/system-alerts/cert-expiry";
+import { bucketMsFor, bucketStarts, type DigestWindow } from "./window";
 
-export type DigestData = {
-  orgName: string;
-  weekLabel: string;
-  deploys: DigestDeploySummary;
-  backups: DigestBackupSummary;
-  cron: DigestCronSummary;
-  alerts: DigestAlertSummary;
-  projects: DigestProjectRow[];
-  deploysByDay: DigestDayRow[];
-};
+export type DigestData = Omit<DigestHealthEvent, "type" | "title" | "message">;
 
-/** Deploys per UTC day for the last 7 days, oldest first. */
-export function deployDays(rows: { status: string; startedAt: Date }[], now: Date): DigestDayRow[] {
-  const days: DigestDayRow[] = [];
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - i));
-    days.push({ day: d.toISOString().slice(0, 10), succeeded: 0, failed: 0 });
-  }
-  const byDay = new Map(days.map((d) => [d.day, d]));
+const DAY_MS = 86_400_000;
+const TOP_ALERTS = 5;
+
+/** Deploys per bucket across the window, oldest first. */
+export function deployBuckets(
+  rows: { status: string; startedAt: Date }[],
+  window: Pick<DigestWindow, "since" | "until">,
+  bucketMs: number,
+): NonNullable<DigestHealthEvent["deploysByBucket"]> {
+  const starts = bucketStarts(window, bucketMs);
+  const buckets = starts.map((start) => ({ start: new Date(start).toISOString(), succeeded: 0, failed: 0 }));
   for (const row of rows) {
-    const day = byDay.get(row.startedAt.toISOString().slice(0, 10));
-    if (!day) continue;
-    if (row.status === "failed") day.failed += 1;
-    else if (row.status === "success") day.succeeded += 1;
+    const i = Math.floor((row.startedAt.getTime() - window.since.getTime()) / bucketMs);
+    if (i < 0 || i >= buckets.length) continue;
+    if (row.status === "failed") buckets[i].failed += 1;
+    else if (row.status === "success") buckets[i].succeeded += 1;
   }
-  return days;
+  return buckets;
 }
 
-/** Collect the past 7 days of health data for an org. */
+export function windowLabel(window: Pick<DigestWindow, "since" | "until">): string {
+  const fmt = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+  const last = new Date(window.until.getTime() - DAY_MS);
+  const year = last.getUTCFullYear();
+  return last.getTime() <= window.since.getTime() ? `${fmt(window.since)}, ${year}` : `${fmt(window.since)} – ${fmt(last)}, ${year}`;
+}
+
+/** Whether anything happened in the window. An empty window sends nothing. */
+export function hasActivity(data: Pick<DigestData, "deploys" | "backups" | "cron" | "alerts">): boolean {
+  return (
+    data.deploys.total > 0 ||
+    data.backups.succeeded + data.backups.failed + data.backups.drillsPassed + data.backups.drillsFailed > 0 ||
+    data.cron.failed > 0 ||
+    data.alerts.fired + data.alerts.resolved + data.alerts.open > 0
+  );
+}
+
+/** Top alert types fired in the window, by count. */
+export function topAlerts(rows: { type: string }[]): { label: string; count: number }[] {
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    const label = isAlertType(row.type) ? ALERTS[row.type].label : row.type;
+    counts.set(label, (counts.get(label) ?? 0) + 1);
+  }
+  return [...counts].map(([label, n]) => ({ label, count: n })).sort((a, b) => b.count - a.count).slice(0, TOP_ALERTS);
+}
+
+async function hostTrends(window: DigestWindow): Promise<DigestHealthEvent["resources"]> {
+  const { queryHostHistory } = await import("@/lib/metrics/store-host");
+  const bucketMs = window.cadence === "daily" ? 60 * 60_000 : 6 * 60 * 60_000;
+  const from = window.since.getTime();
+  const to = window.until.getTime() - 1;
+  const series = [
+    { metric: "cpu" as const, label: "CPU", unit: "percent" as const },
+    { metric: "memory" as const, label: "Memory", unit: "percent" as const },
+    { metric: "disk" as const, label: "Disk", unit: "percent" as const },
+    { metric: "load" as const, label: "Load", unit: "per-core" as const },
+  ];
+  const out = await Promise.all(
+    series.map(async ({ metric, label, unit }) => {
+      const values = (await queryHostHistory(metric, from, to, bucketMs)).map(([, v]) => v);
+      if (values.length < 2) return null;
+      return { label, values, latest: values.at(-1)!, peak: Math.max(...values), unit };
+    }),
+  );
+  const trends = out.filter((t) => t !== null);
+  return trends.length ? trends : undefined;
+}
+
+async function expiringCerts(orgId: string, now: Date): Promise<DigestHealthEvent["certs"]> {
+  const rows = await db
+    .select({ domain: domains.domain, expiresAt: domainCertChecks.expiresAt })
+    .from(domainCertChecks)
+    .innerJoin(domains, eq(domains.id, domainCertChecks.domainId))
+    .innerJoin(apps, eq(apps.id, domains.appId))
+    .where(and(eq(apps.organizationId, orgId), lt(domainCertChecks.expiresAt, new Date(now.getTime() + CERT_EXPIRY_THRESHOLD_DAYS * DAY_MS))));
+  return rows
+    .flatMap((r) => (r.expiresAt ? [{ domain: r.domain, daysLeft: Math.floor((r.expiresAt.getTime() - now.getTime()) / DAY_MS) }] : []))
+    .sort((a, b) => a.daysLeft - b.daysLeft);
+}
+
+async function imageUpdates(orgId: string): Promise<DigestHealthEvent["imageUpdates"]> {
+  const { isFeatureEnabledAsync } = await import("@/lib/config/features");
+  if (!(await isFeatureEnabledAsync("image-updates"))) return [];
+  const { getAggregateUpdateStatus } = await import("@/lib/docker/image-updates/status");
+  const { getCooldownUntil } = await import("@/lib/docker/image-updates/check");
+  const rows = await db
+    .select({
+      id: apps.id,
+      name: apps.name,
+      displayName: apps.displayName,
+      deployType: apps.deployType,
+      imageName: apps.imageName,
+      composeContent: apps.composeContent,
+      composeService: apps.composeService,
+      isSystemManaged: apps.isSystemManaged,
+    })
+    .from(apps)
+    .where(and(eq(apps.organizationId, orgId), isNull(apps.parentAppId)));
+  const status = await getAggregateUpdateStatus(orgId, rows, await getCooldownUntil());
+  return status.appsWithUpdates.map((a) => ({ appName: a.displayName || a.name, count: a.count }));
+}
+
+/** One org's digest for a window. `withHost` adds host trends, for orgs with an instance admin. */
 export async function collectDigestData(
   orgId: string,
   orgName: string,
+  window: DigestWindow,
+  opts: { withHost?: boolean; now?: Date } = {},
 ): Promise<DigestData> {
-  const now = new Date();
-  const since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-
-  // e.g. "Mar 14 – Mar 20, 2026"
-  const fmt = (d: Date) =>
-    d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  const weekLabel = `${fmt(since)} – ${fmt(now)}, ${now.getFullYear()}`;
+  const now = opts.now ?? new Date();
+  const inWindow = (column: AnyPgColumn) => and(gte(column, window.since), lt(column, window.until));
 
   const orgApps = await db.query.apps.findMany({
     where: eq(apps.organizationId, orgId),
-    columns: { id: true, name: true, projectId: true },
+    columns: { id: true, name: true, displayName: true, projectId: true },
   });
-
-  if (orgApps.length === 0) {
-    return {
-      orgName,
-      weekLabel,
-      deploys: { total: 0, succeeded: 0, failed: 0 },
-      backups: { total: 0, succeeded: 0, failed: 0 },
-      cron: { totalFailures: 0, affectedJobs: [] },
-      alerts: { diskWriteAlerts: 0, volumeDrifts: 0 },
-      projects: [],
-      deploysByDay: deployDays([], now),
-    };
-  }
-
   const appIds = orgApps.map((a) => a.id);
+  const orgCronJobs = appIds.length
+    ? await db.query.cronJobs.findMany({ where: inArray(cronJobs.appId, appIds), columns: { id: true, name: true, appId: true } })
+    : [];
 
-  const orgCronJobs = await db.query.cronJobs.findMany({
-    where: inArray(cronJobs.appId, appIds),
-    columns: { id: true, name: true, appId: true },
-  });
-
-  const orgCronJobIds = orgCronJobs.map((j) => j.id);
-
-  const [
-    deployCountRows,
-    backupCountRows,
-    cronRuns,
-    alertCountRows,
-  ] = await Promise.all([
-    // Deployment counts by status
-    db
-      .select({ status: deployments.status, n: count() })
-      .from(deployments)
-      .where(
-        and(
-          inArray(deployments.appId, appIds),
-          gte(deployments.startedAt, since),
-        ),
-      )
-      .groupBy(deployments.status),
-
-    // Backup counts by status
-    db
-      .select({ status: backups.status, n: count() })
-      .from(backups)
-      .where(
-        and(
-          inArray(backups.appId, appIds),
-          gte(backups.startedAt, since),
-        ),
-      )
-      .groupBy(backups.status),
-
-    // Cron runs, full rows for the per-project breakdown
-    orgCronJobIds.length > 0
-      ? db.query.cronJobRuns.findMany({
-          where: and(
-            inArray(cronJobRuns.cronJobId, orgCronJobIds),
-            gte(cronJobRuns.startedAt, since),
-          ),
-          columns: {
-            id: true,
-            cronJobId: true,
-            status: true,
-          },
-        })
-      : Promise.resolve([]),
-
-    // Alert counts
-    db
-      .select({ action: activities.action, n: count() })
-      .from(activities)
-      .where(
-        and(
-          eq(activities.organizationId, orgId),
-          gte(activities.createdAt, since),
-          inArray(activities.action, ["volume.drift_detected"]),
-        ),
-      )
-      .groupBy(activities.action),
-  ]);
-
-  let deployTotal = 0;
-  let deploySucceeded = 0;
-  let deployFailed = 0;
-  for (const row of deployCountRows) {
-    deployTotal += row.n;
-    if (row.status === "success") deploySucceeded = row.n;
-    if (row.status === "failed") deployFailed = row.n;
-  }
-
-  let backupTotal = 0;
-  let backupSucceeded = 0;
-  let backupFailed = 0;
-  for (const row of backupCountRows) {
-    backupTotal += row.n;
-    if (row.status === "success") backupSucceeded = row.n;
-    if (row.status === "failed") backupFailed = row.n;
-  }
-
-  const cronJobById = new Map(orgCronJobs.map((j) => [j.id, j]));
-
-  const failedCronRuns = cronRuns.filter((r) => r.status === "failed");
-  const affectedJobNames = [
-    ...new Set(
-      failedCronRuns
-        .map((r) => cronJobById.get(r.cronJobId)?.name)
-        .filter((n): n is string => Boolean(n)),
-    ),
-  ];
-
-  // Disk-write alerts aren't in the activity log yet, so this stays 0.
-  const diskWriteAlerts = 0;
-  let volumeDrifts = 0;
-  for (const row of alertCountRows) {
-    if (row.action === "volume.drift_detected") volumeDrifts = row.n;
-  }
-
-  const projectMap = new Map<string, DigestProjectRow>();
-
-  for (const app of orgApps) {
-    const projectKey = app.projectId ?? `__no_project_${app.id}`;
-    if (!projectMap.has(projectKey)) {
-      projectMap.set(projectKey, {
-        name: app.name,
-        deploys: 0,
-        failures: 0,
-        backupFailures: 0,
-        cronFailures: 0,
-      });
-    }
-  }
-
-  // appId and status rows for the per-project breakdown.
-  const [deployRows, backupRows] = await Promise.all([
-    deployTotal > 0
+  const [deployRows, backupRows, drillRows, cronRuns, fired, resolvedCount, openCount, stale, certs, updates, resources] = await Promise.all([
+    appIds.length
       ? db
           .select({ appId: deployments.appId, status: deployments.status, startedAt: deployments.startedAt })
           .from(deployments)
-          .where(
-            and(
-              inArray(deployments.appId, appIds),
-              gte(deployments.startedAt, since),
-            ),
-          )
+          .where(and(inArray(deployments.appId, appIds), inWindow(deployments.startedAt)))
       : Promise.resolve([]),
-    backupTotal > 0
-      ? db
-          .select({ appId: backups.appId, status: backups.status })
-          .from(backups)
-          .where(
-            and(
-              inArray(backups.appId, appIds),
-              gte(backups.startedAt, since),
-            ),
-          )
+    db
+      .select({ appId: backups.appId, status: backups.status, size: backups.sizeBytes })
+      .from(backups)
+      .where(and(eq(backups.organizationId, orgId), inWindow(backups.startedAt))),
+    db
+      .select({ outcome: backups.verifyOutcome, n: count() })
+      .from(backups)
+      .where(and(eq(backups.organizationId, orgId), inWindow(backups.verifiedAt)))
+      .groupBy(backups.verifyOutcome),
+    orgCronJobs.length
+      ? db.query.cronJobRuns.findMany({
+          where: and(inArray(cronJobRuns.cronJobId, orgCronJobs.map((j) => j.id)), inWindow(cronJobRuns.startedAt), eq(cronJobRuns.status, "failed")),
+          columns: { cronJobId: true },
+        })
       : Promise.resolve([]),
+    db.select({ type: alertHistory.type }).from(alertHistory).where(and(eq(alertHistory.organizationId, orgId), inWindow(alertHistory.firedAt))),
+    db.select({ n: count() }).from(alertHistory).where(and(eq(alertHistory.organizationId, orgId), inWindow(alertHistory.resolvedAt))),
+    db
+      .select({ n: count() })
+      .from(alertHistory)
+      .where(and(eq(alertHistory.organizationId, orgId), isNull(alertHistory.resolvedAt), lt(alertHistory.firedAt, window.until))),
+    import("@/lib/backups/batch").then(({ loadStaleVolumes }) => loadStaleVolumes(orgId, window.until.getTime())),
+    expiringCerts(orgId, now),
+    imageUpdates(orgId).catch(() => []),
+    opts.withHost ? hostTrends(window).catch(() => undefined) : Promise.resolve(undefined),
   ]);
 
-  const appById = new Map(orgApps.map((a) => [a.id, a]));
+  const deploys = {
+    total: deployRows.length,
+    succeeded: deployRows.filter((d) => d.status === "success").length,
+    failed: deployRows.filter((d) => d.status === "failed").length,
+  };
 
-  for (const dep of deployRows) {
-    const app = appById.get(dep.appId);
-    if (!app) continue;
-    const projectKey = app.projectId ?? `__no_project_${app.id}`;
-    const row = projectMap.get(projectKey);
+  const jobById = new Map(orgCronJobs.map((j) => [j.id, j]));
+  const appById = new Map(orgApps.map((a) => [a.id, a]));
+  const projects = new Map<string, DigestProjectRow>();
+  const project = (appId: string | null) => {
+    const app = appId ? appById.get(appId) : undefined;
+    if (!app) return null;
+    const key = app.projectId ?? `app:${app.id}`;
+    const row = projects.get(key) ?? { name: app.displayName || app.name, deploys: 0, failures: 0, backupFailures: 0, cronFailures: 0 };
+    projects.set(key, row);
+    return row;
+  };
+  for (const d of deployRows) {
+    const row = project(d.appId);
     if (!row) continue;
     row.deploys += 1;
-    if (dep.status === "failed") row.failures += 1;
+    if (d.status === "failed") row.failures += 1;
+  }
+  for (const b of backupRows) {
+    const row = b.status === "failed" ? project(b.appId) : null;
+    if (row) row.backupFailures += 1;
+  }
+  for (const run of cronRuns) {
+    const row = project(jobById.get(run.cronJobId)?.appId ?? null);
+    if (row) row.cronFailures += 1;
   }
 
-  for (const bk of backupRows) {
-    if (!bk.appId) continue; // system backup
-    const app = appById.get(bk.appId);
-    if (!app) continue;
-    const projectKey = app.projectId ?? `__no_project_${app.id}`;
-    const row = projectMap.get(projectKey);
-    if (!row) continue;
-    if (bk.status === "failed") row.backupFailures += 1;
-  }
-
-  for (const run of failedCronRuns) {
-    const job = cronJobById.get(run.cronJobId);
-    if (!job) continue;
-    const app = appById.get(job.appId);
-    if (!app) continue;
-    const projectKey = app.projectId ?? `__no_project_${app.id}`;
-    const row = projectMap.get(projectKey);
-    if (!row) continue;
-    row.cronFailures += 1;
-  }
-
-  const projects = [...projectMap.values()].filter(
-    (p) => p.deploys > 0 || p.failures > 0 || p.backupFailures > 0 || p.cronFailures > 0,
-  );
-
+  const drills = new Map(drillRows.map((r) => [r.outcome, r.n]));
   return {
+    cadence: window.cadence,
     orgName,
-    weekLabel,
-    deploysByDay: deployDays(deployRows, now),
-    deploys: {
-      total: deployTotal,
-      succeeded: deploySucceeded,
-      failed: deployFailed,
-    },
+    windowLabel: windowLabel(window),
+    since: window.since.toISOString(),
+    until: window.until.toISOString(),
+    deploys,
+    deploysByBucket: deployBuckets(deployRows, window, bucketMsFor(window.cadence)),
     backups: {
-      total: backupTotal,
-      succeeded: backupSucceeded,
-      failed: backupFailed,
+      succeeded: backupRows.filter((b) => b.status === "success").length,
+      failed: backupRows.filter((b) => b.status === "failed").length,
+      totalSize: backupRows.reduce((sum, b) => sum + (b.status === "success" ? b.size ?? 0 : 0), 0),
+      drillsPassed: drills.get("verified") ?? 0,
+      drillsFailed: drills.get("failed") ?? 0,
+      staleVolumes: stale.length,
     },
     cron: {
-      totalFailures: failedCronRuns.length,
-      affectedJobs: affectedJobNames,
+      failed: cronRuns.length,
+      affectedJobs: [...new Set(cronRuns.map((r) => jobById.get(r.cronJobId)?.name).filter((n): n is string => Boolean(n)))],
     },
-    alerts: {
-      diskWriteAlerts,
-      volumeDrifts,
-    },
-    projects,
+    alerts: { fired: fired.length, resolved: resolvedCount[0]?.n ?? 0, open: openCount[0]?.n ?? 0, top: topAlerts(fired) },
+    resources,
+    certs,
+    imageUpdates: updates,
+    projects: [...projects.values()]
+      .filter((p) => p.deploys + p.failures + p.backupFailures + p.cronFailures > 0)
+      .sort((a, b) => b.failures + b.backupFailures + b.cronFailures - (a.failures + a.backupFailures + a.cronFailures) || b.deploys - a.deploys),
+  };
+}
+
+/** The bus event for a digest. */
+export function digestEvent(data: DigestData): DigestHealthEvent {
+  const period = data.cadence === "daily" ? "Daily" : "Weekly";
+  return {
+    type: "digest.health",
+    title: `${period} health summary: ${data.orgName}`,
+    message: `${data.deploys.total} deploys, ${data.deploys.failed} failed; ${data.backups.failed} backup failures; ${data.alerts.fired} alerts.`,
+    ...data,
   };
 }

@@ -29,7 +29,7 @@ export const EVENT_CATEGORIES = {
     "system.update-failed",
     "system.containers-missing",
   ],
-  digest: ["digest.weekly"],
+  digest: ["digest.health"],
 } as const;
 
 export type EventCategory = keyof typeof EVENT_CATEGORIES;
@@ -315,26 +315,37 @@ export type SecurityDomainClaimedEvent = {
   appIds: string[];
 };
 
-export type DigestWeeklyEvent = {
-  type: "digest.weekly";
+export type DigestProjectRow = {
+  name: string;
+  deploys: number;
+  failures: number;
+  backupFailures: number;
+  cronFailures: number;
+};
+
+/** A daily or weekly record of one org's window: deploys, backups, alerts, trends and what's coming due. */
+export type DigestHealthEvent = {
+  type: "digest.health";
   title: string;
   message: string;
+  cadence: "daily" | "weekly";
   orgName: string;
-  weekLabel: string;
-  deploysTotal: number;
-  deploysSucceeded: number;
-  deploysFailed: number;
-  backupsTotal: number;
-  backupsFailed: number;
-  cronTotal: number;
-  cronFailed: number;
-  backupsSucceeded?: number;
-  cronAffectedJobs?: string[];
-  diskWriteAlerts?: number;
-  volumeDrifts?: number;
-  projects?: { name: string; deploys: number; failures: number; backupFailures: number; cronFailures: number }[];
-  /** Last 7 UTC days, oldest first. */
-  deploysByDay?: { day: string; succeeded: number; failed: number }[];
+  /** "Oct 2 – Oct 8, 2026", or one day for a daily digest. */
+  windowLabel: string;
+  since: string;
+  until: string;
+  deploys: { total: number; succeeded: number; failed: number };
+  /** Per hour for a daily digest, per day for a weekly one. Oldest first. */
+  deploysByBucket?: { start: string; succeeded: number; failed: number }[];
+  backups: { succeeded: number; failed: number; totalSize: number; drillsPassed: number; drillsFailed: number; staleVolumes: number };
+  cron: { failed: number; affectedJobs: string[] };
+  alerts: { fired: number; resolved: number; open: number; top: { label: string; count: number }[] };
+  /** Host trends, for orgs with an instance admin. */
+  resources?: { label: string; values: number[]; latest: number; peak: number; unit: "percent" | "per-core" }[];
+  /** Live at send time, not part of the window. */
+  certs: { domain: string; daysLeft: number }[];
+  imageUpdates: { appName: string; count: number }[];
+  projects: DigestProjectRow[];
 };
 
 // Vardo's own lifecycle, sent to orgs with an instance admin.
@@ -545,7 +556,7 @@ export type BusEvent =
   | SecurityFileExposedEvent
   | SecurityScanFindingsEvent
   | SecurityDomainClaimedEvent
-  | DigestWeeklyEvent
+  | DigestHealthEvent
   | SystemShutdownEvent
   | SystemStartedEvent
   | SystemRecoveredUncleanEvent

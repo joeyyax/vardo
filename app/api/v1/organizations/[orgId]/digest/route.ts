@@ -5,7 +5,9 @@ import { digestSettings, notificationChannels, organizations } from "@/lib/db/sc
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
-import { collectDigestData } from "@/lib/digest/collector";
+import { collectDigestData, digestEvent } from "@/lib/digest/collector";
+import { DIGEST_CADENCES, digestWindow, scheduleFor } from "@/lib/digest/window";
+import { adminOrgIds } from "@/lib/notifications/admin-orgs";
 import { createChannel } from "@/lib/notifications/factory";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 
@@ -16,6 +18,7 @@ type RouteParams = { params: Promise<{ orgId: string }> };
 const patchSchema = z
   .object({
     enabled: z.boolean().optional(),
+    cadence: z.enum(DIGEST_CADENCES).optional(),
     dayOfWeek: z.number().int().min(0).max(6).optional(),
     hourOfDay: z.number().int().min(0).max(23).optional(),
   })
@@ -23,8 +26,12 @@ const patchSchema = z
     message: "No fields to update",
   });
 
+function view(row: { enabled: boolean; cadence: string; dayOfWeek: number; hourOfDay: number; lastSentAt: Date | null } | undefined) {
+  return { ...scheduleFor(row), lastSentAt: row?.lastSentAt?.toISOString() ?? null };
+}
+
 // GET /api/v1/organizations/[orgId]/digest
-// Returns the org's digest settings, or unsaved defaults.
+// Returns the org's digest settings, or the defaults.
 async function handleGet(_req: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
@@ -34,27 +41,7 @@ async function handleGet(_req: NextRequest, { params }: RouteParams) {
     const setting = await db.query.digestSettings.findFirst({
       where: eq(digestSettings.organizationId, orgId),
     });
-
-    if (!setting) {
-      // Settings are persisted on the first PATCH.
-      return NextResponse.json({
-        digestSettings: {
-          enabled: false,
-          dayOfWeek: 1,
-          hourOfDay: 8,
-          lastSentAt: null,
-        },
-      });
-    }
-
-    return NextResponse.json({
-      digestSettings: {
-        enabled: setting.enabled,
-        dayOfWeek: setting.dayOfWeek,
-        hourOfDay: setting.hourOfDay,
-        lastSentAt: setting.lastSentAt?.toISOString() ?? null,
-      },
-    });
+    return NextResponse.json({ digestSettings: view(setting) });
   } catch (error) {
     return handleRouteError(error, "Error fetching digest settings");
   }
@@ -73,43 +60,23 @@ async function handlePatch(req: NextRequest, { params }: RouteParams) {
     }
 
     const now = new Date();
-
     const [upserted] = await db
       .insert(digestSettings)
-      .values({
-        id: nanoid(),
-        organizationId: orgId,
-        enabled: parsed.data.enabled ?? false,
-        dayOfWeek: parsed.data.dayOfWeek ?? 1,
-        hourOfDay: parsed.data.hourOfDay ?? 8,
-        updatedAt: now,
-      })
+      .values({ id: nanoid(), organizationId: orgId, ...parsed.data, updatedAt: now })
       .onConflictDoUpdate({
         target: digestSettings.organizationId,
-        set: {
-          ...(parsed.data.enabled !== undefined && { enabled: parsed.data.enabled }),
-          ...(parsed.data.dayOfWeek !== undefined && { dayOfWeek: parsed.data.dayOfWeek }),
-          ...(parsed.data.hourOfDay !== undefined && { hourOfDay: parsed.data.hourOfDay }),
-          updatedAt: now,
-        },
+        set: { ...parsed.data, updatedAt: now },
       })
       .returning();
 
-    return NextResponse.json({
-      digestSettings: {
-        enabled: upserted.enabled,
-        dayOfWeek: upserted.dayOfWeek,
-        hourOfDay: upserted.hourOfDay,
-        lastSentAt: upserted.lastSentAt?.toISOString() ?? null,
-      },
-    });
+    return NextResponse.json({ digestSettings: view(upserted) });
   } catch (error) {
     return handleRouteError(error, "Error updating digest settings");
   }
 }
 
 // POST /api/v1/organizations/[orgId]/digest
-// Sends a digest now and returns its data as a preview. Admins and owners only.
+// Sends the last complete window's digest now and returns its data. Admins and owners only.
 async function handlePost(_req: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
@@ -125,28 +92,11 @@ async function handlePost(_req: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Organization not found" }, { status: 404 });
     }
 
-    const data = await collectDigestData(orgRecord.id, orgRecord.name);
-
-    const event = {
-      type: "digest.weekly" as const,
-      title: `Weekly Digest — ${orgRecord.name}`,
-      message: `Weekly health summary for ${orgRecord.name}: ${data.deploys.total} deploys, ${data.deploys.failed} failures.`,
-      orgName: orgRecord.name,
-      weekLabel: data.weekLabel,
-      deploysTotal: data.deploys.total,
-      deploysSucceeded: data.deploys.succeeded,
-      deploysFailed: data.deploys.failed,
-      backupsTotal: data.backups.total,
-      backupsFailed: data.backups.failed,
-      cronTotal: data.cron.totalFailures,
-      cronFailed: data.cron.totalFailures,
-      backupsSucceeded: data.backups.succeeded,
-      cronAffectedJobs: data.cron.affectedJobs,
-      diskWriteAlerts: data.alerts.diskWriteAlerts,
-      volumeDrifts: data.alerts.volumeDrifts,
-      projects: data.projects,
-      deploysByDay: data.deploysByDay,
-    };
+    const setting = await db.query.digestSettings.findFirst({ where: eq(digestSettings.organizationId, orgId) });
+    const window = digestWindow(scheduleFor(setting).cadence, new Date());
+    const withHost = (await adminOrgIds()).includes(orgId);
+    const data = await collectDigestData(orgRecord.id, orgRecord.name, window, { withHost });
+    const event = digestEvent(data);
 
     const channels = await db.query.notificationChannels.findMany({
       where: and(

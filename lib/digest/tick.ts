@@ -1,83 +1,59 @@
+import { and, eq, isNull, ne, or } from "drizzle-orm";
+import { nanoid } from "nanoid";
 import { db } from "@/lib/db";
 import { digestSettings } from "@/lib/db/schema";
-import { eq, sql } from "drizzle-orm";
 import { emit } from "@/lib/notifications/dispatch";
-import { collectDigestData } from "./collector";
+import { adminOrgIds } from "@/lib/notifications/admin-orgs";
 import { logger } from "@/lib/logger";
+import { collectDigestData, digestEvent, hasActivity } from "./collector";
+import { digestWindow, isDigestDue, scheduleFor } from "./window";
 
 const log = logger.child("digest");
 
-/** Send the digest for every org that's due. Runs every minute. */
-export async function tickDigestJobs(): Promise<void> {
-  const now = new Date();
-  const currentDay = now.getUTCDay(); // 0 = Sunday
-  const currentHour = now.getUTCHours();
-  // Fire only in minutes 0-4 of the hour.
-  const currentMinute = now.getUTCMinutes();
-  if (currentMinute >= 5) return;
+/** Claims the window for the org. False when it already went out. */
+async function claimWindow(organizationId: string, windowKey: string, now: Date): Promise<boolean> {
+  await db.insert(digestSettings).values({ id: nanoid(), organizationId }).onConflictDoNothing();
+  const claimed = await db
+    .update(digestSettings)
+    .set({ lastWindowKey: windowKey, lastSentAt: now, updatedAt: now })
+    .where(
+      and(
+        eq(digestSettings.organizationId, organizationId),
+        or(isNull(digestSettings.lastWindowKey), ne(digestSettings.lastWindowKey, windowKey)),
+      ),
+    )
+    .returning({ id: digestSettings.id });
+  return claimed.length > 0;
+}
 
-  const settings = await db.query.digestSettings.findMany({
-    where: eq(digestSettings.enabled, true),
-    with: { organization: true },
-  });
+/** Sends each org's digest once per window, during its hour. Runs every minute. */
+export async function tickDigestJobs(now = new Date()): Promise<void> {
+  const [orgs, rows] = await Promise.all([
+    db.query.organizations.findMany({ columns: { id: true, name: true } }),
+    db.query.digestSettings.findMany(),
+  ]);
+  const byOrg = new Map(rows.map((r) => [r.organizationId, r]));
+  let hostOrgs: Set<string> | null = null;
 
-  await Promise.allSettled(
-    settings.map(async (setting) => {
-      try {
-        if (setting.dayOfWeek !== currentDay) return;
-        if (setting.hourOfDay !== currentHour) return;
+  for (const org of orgs) {
+    const row = byOrg.get(org.id);
+    const schedule = scheduleFor(row);
+    if (!isDigestDue(schedule, now)) continue;
+    const window = digestWindow(schedule.cadence, now);
+    if (row?.lastWindowKey === window.windowKey) continue;
 
-        // Atomic claim; zero rows means another instance already sent this digest.
-
-        const claimed = await db
-          .update(digestSettings)
-          .set({ lastSentAt: now, updatedAt: now })
-          .where(
-            sql`${digestSettings.id} = ${setting.id} AND (${digestSettings.lastSentAt} IS NULL OR ${digestSettings.lastSentAt} < NOW() - INTERVAL '50 minutes')`,
-          )
-          .returning({ id: digestSettings.id });
-
-        if (claimed.length === 0) {
-          log.info(
-            `Skipping org ${setting.organizationId} — already claimed by another process`,
-          );
-          return;
-        }
-
-        const org = setting.organization;
-
-        log.info(`Sending weekly digest to org "${org.name}" (${org.id})`);
-
-        const data = await collectDigestData(org.id, org.name);
-
-        emit(org.id, {
-          type: "digest.weekly",
-          title: `Weekly Digest — ${org.name}`,
-          message: `Weekly health summary for ${org.name}: ${data.deploys.total} deploys, ${data.deploys.failed} failures.`,
-          orgName: org.name,
-          weekLabel: data.weekLabel,
-          deploysTotal: data.deploys.total,
-          deploysSucceeded: data.deploys.succeeded,
-          deploysFailed: data.deploys.failed,
-          backupsTotal: data.backups.total,
-          backupsFailed: data.backups.failed,
-          cronTotal: data.cron.totalFailures,
-          cronFailed: data.cron.totalFailures,
-          backupsSucceeded: data.backups.succeeded,
-          cronAffectedJobs: data.cron.affectedJobs,
-          diskWriteAlerts: data.alerts.diskWriteAlerts,
-          volumeDrifts: data.alerts.volumeDrifts,
-          projects: data.projects,
-          deploysByDay: data.deploysByDay,
-        });
-
-        log.info(`Digest sent for org "${org.name}"`);
-      } catch (err) {
-        log.error(
-          `Error sending digest for org ${setting.organizationId}:`,
-          err,
-        );
+    try {
+      if (!(await claimWindow(org.id, window.windowKey, now))) continue;
+      hostOrgs ??= new Set(await adminOrgIds());
+      const data = await collectDigestData(org.id, org.name, window, { withHost: hostOrgs.has(org.id), now });
+      if (!hasActivity(data)) {
+        log.info(`${window.windowKey} digest for "${org.name}": nothing happened, skipping`);
+        continue;
       }
-    }),
-  );
+      emit(org.id, digestEvent(data));
+      log.info(`Sent ${window.windowKey} digest to "${org.name}"`);
+    } catch (err) {
+      log.error(`Digest for org ${org.id} failed:`, err);
+    }
+  }
 }

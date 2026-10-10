@@ -30,7 +30,7 @@ export const notificationChannels = pgTable(
   (t) => [index("notification_channel_org_idx").on(t.organizationId)]
 );
 
-// Weekly digest settings per org.
+// Health digest settings per org. No row means the defaults.
 
 export const digestSettings = pgTable("digest_setting", {
   id: text("id").primaryKey(),
@@ -39,11 +39,15 @@ export const digestSettings = pgTable("digest_setting", {
     .unique()
     .references(() => organizations.id, { onDelete: "cascade" }),
   enabled: boolean("enabled").default(true).notNull(),
-  // 0 = Sunday ... 6 = Saturday
+  // "daily" or "weekly".
+  cadence: text("cadence").default("weekly").notNull(),
+  // 0 = Sunday ... 6 = Saturday. Weekly only.
   dayOfWeek: integer("day_of_week").default(1).notNull(),
   // 0-23 UTC
   hourOfDay: integer("hour_of_day").default(8).notNull(),
   lastSentAt: timestamp("last_sent_at"),
+  // The window last sent, so each sends once.
+  lastWindowKey: text("last_window_key"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
