@@ -20,13 +20,13 @@ const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n
 /** Per-tier memory formula: a share of RAM between a floor and a ceiling, in MiB. Disposable is half of standard. */
 export const TIER_MEMORY_FORMULA = {
   critical: { divisor: 8, minMb: 1024, maxMb: 8192 },
-  standard: { divisor: 16, minMb: 512, maxMb: 4096 },
-  disposable: { minMb: 256 },
+  standard: { divisor: 16, minMb: 1024, maxMb: 4096 },
+  disposable: { minMb: 512 },
 } as const;
 
 export const DEPLOYS_FORMULA = { coresPer: 2, gibPer: 4, min: 1, max: 6 } as const;
 
-export const REDIS_FORMULA = { divisor: 32, minMb: 256, maxMb: 2048 } as const;
+export const REDIS_FORMULA = { divisor: 32, minMb: 512, maxMb: 2048 } as const;
 
 /** The values used when the host can't be read: Vardo's fixed defaults before sizing. */
 export const FALLBACK = {
@@ -41,18 +41,24 @@ export function memoryMiB(memoryBytes: number): number {
   return Math.floor(memoryBytes / 1024 / 1024);
 }
 
-/** Memory cap (MiB) for a tier on a host with this much RAM. */
-export function tierMemoryRuleMb(tier: QosTier, memoryMb: number): number {
-  const { critical, standard, disposable } = TIER_MEMORY_FORMULA;
-  const std = clamp(roundMiB(memoryMb / standard.divisor), standard.minMb, standard.maxMb);
-  if (tier === "standard") return std;
-  if (tier === "disposable") return Math.max(disposable.minMb, roundMiB(std / 2));
-  return clamp(roundMiB(memoryMb / critical.divisor), critical.minMb, critical.maxMb);
+/** Installed RAM in whole GiB from MemTotal in MiB, which reads about 4% under. install.sh does the same integer math. */
+export function installedGiB(memoryMb: number): number {
+  return Math.floor((Math.floor(memoryMb) * 100 + 96 * 512) / (96 * 1024));
 }
 
-/** vardo-redis's container limit in MiB. */
+/** Memory cap (MiB) for a tier, from the host's MemTotal in MiB. */
+export function tierMemoryRuleMb(tier: QosTier, memoryMb: number): number {
+  const { critical, standard, disposable } = TIER_MEMORY_FORMULA;
+  const ram = installedGiB(memoryMb) * 1024;
+  const std = clamp(roundMiB(ram / standard.divisor), standard.minMb, standard.maxMb);
+  if (tier === "standard") return std;
+  if (tier === "disposable") return Math.max(disposable.minMb, roundMiB(std / 2));
+  return clamp(roundMiB(ram / critical.divisor), critical.minMb, critical.maxMb);
+}
+
+/** vardo-redis's container limit in MiB, from the host's MemTotal in MiB. */
 export function redisMemMb(memoryMb: number): number {
-  return clamp(roundMiB(memoryMb / REDIS_FORMULA.divisor), REDIS_FORMULA.minMb, REDIS_FORMULA.maxMb);
+  return clamp(roundMiB((installedGiB(memoryMb) * 1024) / REDIS_FORMULA.divisor), REDIS_FORMULA.minMb, REDIS_FORMULA.maxMb);
 }
 
 /** Standard leaves one core free, disposable gets half, critical is uncapped. */
@@ -61,10 +67,10 @@ export function tierCpus(tier: QosTier, cpus: number): number | null {
   return Math.max(1, tier === "disposable" ? Math.ceil(cpus / 2) : cpus - 1);
 }
 
-/** One deploy per two cores and per 4 GiB, between 1 and 6. */
+/** One deploy per two cores and per 4 GiB installed, between 1 and 6. */
 export function deployConcurrency(host: HostSize): number {
   const { coresPer, gibPer, min, max } = DEPLOYS_FORMULA;
-  const byRam = Math.floor(host.memoryBytes / 1024 ** 3 / gibPer);
+  const byRam = Math.floor(installedGiB(memoryMiB(host.memoryBytes)) / gibPer);
   return clamp(Math.min(Math.floor(host.cpus / coresPer), byRam), min, max);
 }
 

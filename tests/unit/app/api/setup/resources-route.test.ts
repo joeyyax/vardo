@@ -32,9 +32,9 @@ afterEach(() => vi.unstubAllEnvs());
 
 describe("GET /api/setup/resources", () => {
   it("shows the host's size and the defaults it picked", async () => {
-    state.host = { cpus: 8, memoryBytes: 32 * 1024 ** 3 };
+    state.host = { cpus: 8, memoryBytes: Math.floor(32 * 1024 ** 3 * 0.96) };
     const body = await (await get()).json();
-    expect(body.host).toEqual({ cpus: 8, memoryBytes: 32 * 1024 ** 3 });
+    expect(body.host).toEqual({ cpus: 8, memoryBytes: Math.floor(32 * 1024 ** 3 * 0.96) });
     const by = Object.fromEntries(body.defaults.map((d: { key: string; value: number }) => [d.key, d.value]));
     expect(by).toEqual({
       memoryCritical: 4096,

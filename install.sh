@@ -729,11 +729,16 @@ ensure_buildkit_profile() {
   log "Added buildkit to COMPOSE_PROFILES: vardo-buildkit is in use"
 }
 
-# Redis limit in MB: RAM/32 to the nearest 64, between 256 and 2048. Mirrors lib/resources/defaults.ts.
+# Installed RAM in whole GiB: MemTotal reads about 4% under. Mirrors lib/resources/defaults.ts.
+installed_ram_gib() {
+  echo $(( ($(get_ram_mb) * 100 + 96 * 512) / (96 * 1024) ))
+}
+
+# Redis limit in MB: installed RAM/32 to the nearest 64, between 512 and 2048. Mirrors lib/resources/defaults.ts.
 default_redis_mem_mb() {
   local mb
-  mb=$(( ($(get_ram_mb) / 32 + 32) / 64 * 64 ))
-  (( mb < 256 )) && mb=256
+  mb=$(( ($(installed_ram_gib) * 1024 / 32 + 32) / 64 * 64 ))
+  (( mb < 512 )) && mb=512
   (( mb > 2048 )) && mb=2048
   echo "$mb"
 }

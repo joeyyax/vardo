@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync, rmSync, readFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import { spawnSync } from "child_process";
-import { buildkitCacheMaxBytes, buildkitMemGb, redisMemory } from "@/lib/resources/defaults";
+import { buildkitCacheMaxBytes, buildkitMemGb, installedGiB, redisMemory } from "@/lib/resources/defaults";
 
 // install.sh's sizing must match lib/resources/defaults.ts.
 
@@ -32,8 +32,8 @@ beforeAll(() => {
 
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
-// Around every clamp and 64 MiB rounding edge of RAM/32.
-const RAM_MB = [1900, 2048, 3900, 7800, 8192, 10239, 10240, 15800, 24575, 24576, 31500, 64000, 65535, 65536, 98303, 98304, 126000, 515000];
+// Around the installed-GiB rounding, the clamps and the 64 MiB steps of RAM/32.
+const RAM_MB = [1900, 2048, 3900, 7800, 7864, 8192, 8355, 8356, 15700, 15800, 16384, 16800, 24575, 24576, 31500, 61440, 62000, 64000, 65536, 98304, 126000, 515000];
 
 describe("install.sh sizing matches lib/resources/defaults.ts", () => {
   it.each(RAM_MB)("%i MB of RAM", (mb) => {
@@ -45,6 +45,7 @@ describe("install.sh sizing matches lib/resources/defaults.ts", () => {
     expect(env.VARDO_REDIS_MEM).toBe(mem);
     expect(env.VARDO_REDIS_MAXMEMORY).toBe(maxmemory);
     expect(env.BUILDKIT).toBe(`${buildkitMemGb(mb)}g`);
+    expect(sh(`installed_ram_gib`, mb).trim()).toBe(String(installedGiB(mb)));
   });
 });
 
@@ -57,18 +58,18 @@ describe("ensure_redis_mem", () => {
   };
 
   it("marks the lines it writes as derived", () => {
-    expect(run("", 8000)).toContain("# derived: VARDO_REDIS_MEM=256m VARDO_REDIS_MAXMEMORY=160mb\n");
+    expect(run("", 8000)).toContain("# derived: VARDO_REDIS_MEM=512m VARDO_REDIS_MAXMEMORY=320mb\n");
   });
 
   it("resizes derived values after the host grows", () => {
     const after = run(run("", 8000), 64000);
-    expect(envOf(after)).toMatchObject({ VARDO_REDIS_MEM: "1984m", VARDO_REDIS_MAXMEMORY: "1240mb" });
-    expect(after).toContain("# derived: VARDO_REDIS_MEM=1984m VARDO_REDIS_MAXMEMORY=1240mb\n");
+    expect(envOf(after)).toMatchObject({ VARDO_REDIS_MEM: "2048m", VARDO_REDIS_MAXMEMORY: "1280mb" });
+    expect(after).toContain("# derived: VARDO_REDIS_MEM=2048m VARDO_REDIS_MAXMEMORY=1280mb\n");
     expect(after.match(/VARDO_REDIS_MEM=/g)).toHaveLength(2);
   });
 
   it("leaves values edited since they were derived", () => {
-    const edited = run("", 8000).replace("VARDO_REDIS_MEM=256m\n", "VARDO_REDIS_MEM=768m\n");
+    const edited = run("", 8000).replace("VARDO_REDIS_MEM=512m\n", "VARDO_REDIS_MEM=768m\n");
     expect(run(edited, 64000)).toBe(edited);
   });
 

@@ -23,7 +23,7 @@ export const FORMULA_ROWS: readonly FormulaRow[] = [
 ];
 
 export const FORMULA_NOTES = [
-  "Memory values round to the nearest 64 MB.",
+  "RAM means installed memory: what the kernel reports plus about 4%, to the nearest GB. Memory values round to the nearest 64 MB.",
   "Standard apps get every core but one, disposable apps half and critical apps no CPU cap.",
   `After ${LEARN_MIN_DAYS} days, an app with no limit of its own gets its daily 99th-percentile memory plus ${Math.round((LEARN_HEADROOM - 1) * 100)}%, kept between half and twice its tier's default. It applies on the next deploy.`,
 ];

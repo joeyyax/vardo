@@ -4,6 +4,7 @@ import {
   buildkitMemGb,
   deployConcurrency,
   describeDefaults,
+  installedGiB,
   envLock,
   parseAdminSettings,
   parseSizeMb,
@@ -57,12 +58,12 @@ function after(h: HostSize) {
 describe("formulas by host size", () => {
   // Host, cores, then [critical, standard, disposable, deploys, redis] before and after.
   it.each([
-    [4, 2, [1024, 1024, 512, 1, 512], [1024, 512, 256, 1, 256]],
-    [8, 4, [2048, 1024, 512, 2, 512], [1024, 512, 256, 1, 256]],
-    [16, 4, [2048, 1024, 512, 2, 512], [1984, 960, 512, 2, 512]],
-    [32, 8, [4096, 2048, 1024, 4, 1024], [3904, 1984, 1024, 4, 960]],
-    [48, 12, [4096, 2048, 1024, 4, 1024], [5888, 2944, 1472, 6, 1472]],
-    [64, 16, [4096, 2048, 1024, 4, 1024], [7872, 3904, 1984, 6, 1984]],
+    [4, 2, [1024, 1024, 512, 1, 512], [1024, 1024, 512, 1, 512]],
+    [8, 4, [2048, 1024, 512, 2, 512], [1024, 1024, 512, 2, 512]],
+    [16, 4, [2048, 1024, 512, 2, 512], [2048, 1024, 512, 2, 512]],
+    [32, 8, [4096, 2048, 1024, 4, 1024], [4096, 2048, 1024, 4, 1024]],
+    [48, 12, [4096, 2048, 1024, 4, 1024], [6144, 3072, 1536, 6, 1536]],
+    [64, 16, [4096, 2048, 1024, 4, 1024], [8192, 4096, 2048, 6, 2048]],
     [128, 32, [8192, 4096, 2048, 6, 2048], [8192, 4096, 2048, 6, 2048]],
     [256, 64, [8192, 4096, 2048, 6, 2048], [8192, 4096, 2048, 6, 2048]],
   ] as const)("%i GiB, %i cores", (gb, cpus, was, now) => {
@@ -73,40 +74,65 @@ describe("formulas by host size", () => {
   });
 
   it("reports the formula as the detected rule", () => {
-    expect(resolveTierMemory("standard", HOSTS["32 GB"], {})).toEqual({ value: 1984, source: "detected", rule: 1984 });
+    expect(resolveTierMemory("standard", HOSTS["32 GB"], {})).toEqual({ value: 2048, source: "detected", rule: 2048 });
+  });
+
+  // MemTotal in MiB for a host with this much installed RAM.
+  const mt = (gib: number) => Math.floor(gib * 1024 * 0.96);
+
+  it("reads installed RAM from MemTotal", () => {
+    expect(installedGiB(mt(8))).toBe(8);
+    expect(installedGiB(mt(16))).toBe(16);
+    expect(installedGiB(8192)).toBe(8);
+    expect(installedGiB(8355)).toBe(8);
+    expect(installedGiB(8356)).toBe(9);
+  });
+
+  it("never sizes below the bands on round hosts", () => {
+    for (const gib of [2, 4, 6, 8, 16, 24, 32, 48, 64, 96, 128, 256]) {
+      const h = host(Math.max(1, gib / 2), gib);
+      const was = before(h);
+      const now = after(h);
+      expect(now.standard).toBeGreaterThanOrEqual(was.standard);
+      expect(now.disposable).toBeGreaterThanOrEqual(was.disposable);
+      expect(now.redis).toBeGreaterThanOrEqual(was.redis);
+      expect(now.deploys).toBeGreaterThanOrEqual(was.deploys);
+    }
   });
 
   it("holds critical between 1 and 8 GiB at RAM/8", () => {
-    expect(tierMemoryRuleMb("critical", 4096)).toBe(1024);
-    expect(tierMemoryRuleMb("critical", 8192)).toBe(1024);
-    expect(tierMemoryRuleMb("critical", 8192 + 512)).toBe(1088);
-    expect(tierMemoryRuleMb("critical", 65536)).toBe(8192);
-    expect(tierMemoryRuleMb("critical", 65536 + 1024)).toBe(8192);
+    expect(tierMemoryRuleMb("critical", mt(4))).toBe(1024);
+    expect(tierMemoryRuleMb("critical", mt(8))).toBe(1024);
+    expect(tierMemoryRuleMb("critical", mt(9))).toBe(1152);
+    expect(tierMemoryRuleMb("critical", mt(64))).toBe(8192);
+    expect(tierMemoryRuleMb("critical", mt(65))).toBe(8192);
   });
 
-  it("holds standard between 512 MiB and 4 GiB at RAM/16", () => {
-    expect(tierMemoryRuleMb("standard", 8192)).toBe(512);
-    expect(tierMemoryRuleMb("standard", 8192 + 1024)).toBe(576);
-    expect(tierMemoryRuleMb("standard", 65536)).toBe(4096);
-    expect(tierMemoryRuleMb("standard", 1_000_000)).toBe(4096);
+  it("holds standard between 1 and 4 GiB at RAM/16", () => {
+    expect(tierMemoryRuleMb("standard", mt(8))).toBe(1024);
+    expect(tierMemoryRuleMb("standard", mt(16))).toBe(1024);
+    expect(tierMemoryRuleMb("standard", mt(17))).toBe(1088);
+    expect(tierMemoryRuleMb("standard", mt(64))).toBe(4096);
+    expect(tierMemoryRuleMb("standard", mt(1000))).toBe(4096);
   });
 
-  it("keeps disposable at half of standard, at least 256 MiB", () => {
-    expect(tierMemoryRuleMb("disposable", 2048)).toBe(256);
-    expect(tierMemoryRuleMb("disposable", 16384)).toBe(512);
-    expect(tierMemoryRuleMb("disposable", 1_000_000)).toBe(2048);
+  it("keeps disposable at half of standard, at least 512 MiB", () => {
+    expect(tierMemoryRuleMb("disposable", mt(2))).toBe(512);
+    expect(tierMemoryRuleMb("disposable", mt(32))).toBe(1024);
+    expect(tierMemoryRuleMb("disposable", mt(1000))).toBe(2048);
   });
 
-  it("holds Redis between 256 MiB and 2 GiB at RAM/32", () => {
-    expect(redisMemMb(8192)).toBe(256);
-    expect(redisMemMb(16384)).toBe(512);
-    expect(redisMemMb(65536)).toBe(2048);
-    expect(redisMemMb(1_000_000)).toBe(2048);
+  it("holds Redis between 512 MiB and 2 GiB at RAM/32", () => {
+    expect(redisMemMb(mt(8))).toBe(512);
+    expect(redisMemMb(mt(16))).toBe(512);
+    expect(redisMemMb(mt(17))).toBe(576);
+    expect(redisMemMb(mt(64))).toBe(2048);
+    expect(redisMemMb(mt(1000))).toBe(2048);
   });
 
   it("writes Redis maxmemory at 5/8 of the limit and keeps BuildKit at a quarter of RAM", () => {
-    expect(redisMemory(16384)).toEqual({ mem: "512m", maxmemory: "320mb" });
-    expect(redisMemory(31457)).toEqual({ mem: "960m", maxmemory: "600mb" });
+    expect(redisMemory(mt(16))).toEqual({ mem: "512m", maxmemory: "320mb" });
+    expect(redisMemory(mt(32))).toEqual({ mem: "1024m", maxmemory: "640mb" });
     expect(buildkitMemGb(31457)).toBe(7);
   });
 
@@ -116,15 +142,19 @@ describe("formulas by host size", () => {
     expect(roundMiB(1023.9)).toBe(1024);
   });
 
-  it("allows one deploy per two cores and per 4 GiB, from 1 to 6", () => {
-    const at = (cpus: number, gib: number) => deployConcurrency({ cpus, memoryBytes: gib * GiB });
+  it("allows one deploy per two cores and per 4 GiB installed, from 1 to 6", () => {
+    const at = (cpus: number, gib: number) => deployConcurrency(host(cpus, gib));
     expect(at(1, 2)).toBe(1);
-    expect(at(8, 7.9)).toBe(1);
+    expect(at(8, 7)).toBe(1);
     expect(at(8, 8)).toBe(2);
     expect(at(3, 64)).toBe(1);
-    expect(at(64, 23.9)).toBe(5);
+    expect(at(64, 23)).toBe(5);
     expect(at(64, 24)).toBe(6);
     expect(at(64, 512)).toBe(6);
+  });
+
+  it("allows two deploys from 4 cores and 8 GB installed", () => {
+    for (const cpus of [4, 5, 8, 64]) for (const gib of [8, 9, 12, 512]) expect(deployConcurrency(host(cpus, gib))).toBeGreaterThanOrEqual(2);
   });
 
   it("caps deploys at one per two CPUs", () => {
@@ -196,21 +226,21 @@ describe("installer values", () => {
     )!;
 
   it("counts a value matching the rule as detected", () => {
-    expect(row({ VARDO_REDIS_MEM: "960m" })).toMatchObject({ source: "detected", value: 960, rule: 960 });
+    expect(row({ VARDO_REDIS_MEM: "1024m" })).toMatchObject({ source: "detected", value: 1024, rule: 1024 });
   });
 
   it("counts a different value as an override", () => {
-    expect(row({ VARDO_REDIS_MEM: "1g" }).source).toBe("override");
+    expect(row({ VARDO_REDIS_MEM: "1g" }).source).toBe("detected");
     expect(row({ VARDO_REDIS_MEM: "768m" }).source).toBe("override");
   });
 
   it("treats unset as compose's default", () => {
-    expect(row({})).toMatchObject({ source: "fallback", value: 512, rule: 960 });
+    expect(row({})).toMatchObject({ source: "fallback", value: 512, rule: 1024 });
   });
 
   it("matches maxmemory to the 5/8 install.sh writes", () => {
-    const max = describeDefaults(h, 8, { VARDO_REDIS_MAXMEMORY: "600mb" }).find((d) => d.key === "redisMaxmemory")!;
-    expect(max).toMatchObject({ source: "detected", rule: 600 });
+    const max = describeDefaults(h, 8, { VARDO_REDIS_MAXMEMORY: "640mb" }).find((d) => d.key === "redisMaxmemory")!;
+    expect(max).toMatchObject({ source: "detected", rule: 640 });
     expect(describeDefaults(h, 8, {}).find((d) => d.key === "redisMaxmemory")).toMatchObject({ value: 320, source: "fallback" });
   });
 
