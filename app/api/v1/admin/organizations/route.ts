@@ -1,6 +1,6 @@
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { NextResponse } from "next/server";
-import { apiError, handleRouteError } from "@/lib/api/error-response";
+import { handleRouteError } from "@/lib/api/error-response";
 import { requireAppAdmin } from "@/lib/auth/admin";
 import { db } from "@/lib/db";
 import { apps, memberships, deployments } from "@/lib/db/schema";
@@ -68,9 +68,6 @@ async function handleGet() {
 
     return NextResponse.json({ organizations: result });
   } catch (error) {
-    if (error instanceof Error && error.message === "Forbidden") {
-      return apiError.forbidden();
-    }
     return handleRouteError(error, "Error fetching organizations");
   }
 }

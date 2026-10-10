@@ -47,9 +47,6 @@ async function handleGet() {
       })),
     });
   } catch (error) {
-    if (error instanceof Error && error.message === "Forbidden") {
-      return apiError.forbidden();
-    }
     return handleRouteError(error, "Error fetching users");
   }
 }
@@ -121,9 +118,6 @@ async function handlePost(request: NextRequest) {
       { status: 201 }
     );
   } catch (error) {
-    if (error instanceof Error && error.message === "Forbidden") {
-      return apiError.forbidden();
-    }
     return handleRouteError(error, "Error creating user");
   }
 }

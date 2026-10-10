@@ -79,9 +79,6 @@ async function handleGet(request: NextRequest) {
     if (error instanceof Error && error.message === "Unauthorized") {
       return apiError.unauthorized();
     }
-    if (error instanceof Error && error.message === "Forbidden") {
-      return apiError.forbidden();
-    }
     return handleRouteError(error, "Error checking DNS");
   }
 }

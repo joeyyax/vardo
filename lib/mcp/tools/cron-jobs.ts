@@ -146,7 +146,7 @@ export function registerCronJobTools(server: McpServer, context: McpAuthContext)
       const type = input.type ?? job.type;
       const changesCommand =
         type === "command" && (type !== job.type || (input.command !== undefined && input.command !== job.command));
-      // Tokens never carry instance-admin power, so cron on Vardo's own org and apps stays session-only.
+      // MCP cron tools never act as instance admin, so cron on Vardo's own org and apps stays session-only.
       const allowed =
         !isSystemExecTarget(job.organization, job.app) &&
         (await canAccessOrg(context, job.organizationId, "app.cron")) &&

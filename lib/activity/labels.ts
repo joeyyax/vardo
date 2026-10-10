@@ -51,6 +51,7 @@ const PHRASES: Record<string, Phrase> = {
   "backup.app_inherited": { text: "reset the backup setting for" },
 
   "token.created": { text: "created an API token", standalone: true },
+  "token.updated": { text: "changed an API token's admin scope", standalone: true },
 
   "volume.sync": { text: "synced volumes on" },
   "volume.drift_detected": { text: "detected volume drift on" },

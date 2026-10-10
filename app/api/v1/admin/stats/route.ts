@@ -1,6 +1,6 @@
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { NextRequest, NextResponse } from "next/server";
-import { apiError, handleRouteError } from "@/lib/api/error-response";
+import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { fetchAllMetrics } from "@/lib/metrics/provider";
 import { groupMetricsByApp } from "@/lib/metrics/app-match";
@@ -63,9 +63,6 @@ async function handleGet(request: NextRequest) {
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
-    if (error instanceof Error && error.message === "Forbidden") {
-      return apiError.forbidden();
-    }
     return handleRouteError(error, "Error fetching admin stats");
   }
 }

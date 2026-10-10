@@ -715,6 +715,13 @@
       "when": 1791614019522,
       "tag": "0101_time_zones",
       "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "7",
+      "when": 1791614743547,
+      "tag": "0102_api_token_admin_scope",
+      "breakpoints": true
     }
   ]
 }

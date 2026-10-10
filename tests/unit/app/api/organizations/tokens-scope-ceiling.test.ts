@@ -1,7 +1,7 @@
 // POST/PATCH /api/v1/organizations/[orgId]/tokens
 //
 // A token could mint a cross-org token or flip its own cross-org flag, widening
-// itself past the scope it was issued with.
+// itself past the scope it was issued with. Only an instance admin's session grants the admin scope.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
@@ -16,6 +16,8 @@ const { mockVerifyOrgAccess, mockInsert, mockUpdate, inserted } = vi.hoisted(() 
 vi.mock("@/lib/api/verify-access", () => ({ verifyOrgAccess: mockVerifyOrgAccess }));
 const recordActivity = vi.hoisted(() => vi.fn(async () => {}));
 vi.mock("@/lib/activity", () => ({ recordActivity }));
+const isAppAdmin = vi.hoisted(() => vi.fn(async () => false));
+vi.mock("@/lib/auth/admin", () => ({ isAppAdmin }));
 vi.mock("@/lib/api/require-plugin", () => ({ requirePlugin: vi.fn().mockResolvedValue(null) }));
 vi.mock("@/lib/api/with-rate-limit", async () => (await import("@/tests/helpers/mocks")).withRateLimitModule());
 vi.mock("@/lib/db", () => ({ db: { insert: mockInsert, update: mockUpdate, query: {} } }));
@@ -48,6 +50,7 @@ function asCookie() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  isAppAdmin.mockResolvedValue(false);
   inserted.length = 0;
   mockInsert.mockReturnValue({
     values: async (v: Record<string, unknown>) => {
@@ -67,11 +70,31 @@ describe("minting a token", () => {
     expect(inserted).toHaveLength(0);
   });
 
-  it("rejects a request for an admin token", async () => {
+  it("refuses the admin scope to a user who isn't an instance admin", async () => {
     asCookie();
     const res = await POST(req("POST", { name: "admin", adminAccess: true }), params);
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(403);
     expect(inserted).toHaveLength(0);
+  });
+
+  it("refuses the admin scope to a token, even an admin's", async () => {
+    asToken();
+    isAppAdmin.mockResolvedValue(true);
+    const res = await POST(req("POST", { name: "admin", adminAccess: true }), params);
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "A token cannot grant the admin scope" });
+    expect(inserted).toHaveLength(0);
+  });
+
+  it("mints an admin-scoped token for an instance admin's session and records it", async () => {
+    asCookie();
+    isAppAdmin.mockResolvedValue(true);
+    const res = await POST(req("POST", { name: "admin", adminAccess: true }), params);
+    expect(res.status).toBe(201);
+    expect(inserted[0]).toMatchObject({ adminAccess: true });
+    expect(recordActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "token.created", metadata: expect.objectContaining({ adminAccess: true }) }),
+    );
   });
 
   it("refuses a never-expiring token from an expiring one", async () => {
@@ -85,8 +108,7 @@ describe("minting a token", () => {
     const expiresAt = new Date(Date.now() + 86_400_000).toISOString();
     const res = await POST(req("POST", { name: "ci", expiresAt }), params);
     expect(res.status).toBe(201);
-    expect(inserted[0]).toMatchObject({ crossOrg: false });
-    expect(inserted[0]).not.toHaveProperty("adminAccess");
+    expect(inserted[0]).toMatchObject({ crossOrg: false, adminAccess: false });
     expect((inserted[0].expiresAt as Date).toISOString()).toBe(expiresAt);
     expect(recordActivity).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -173,11 +195,33 @@ describe("changing a token's scope", () => {
     expect(mockUpdate).not.toHaveBeenCalled();
   });
 
-  it("rejects a request to grant admin", async () => {
+  it("refuses to grant admin unless an instance admin's session asks", async () => {
     asCookie();
-    const res = await PATCH(req("PATCH", { id: "t2", adminAccess: true }), params);
-    expect(res.status).toBe(400);
+    expect((await PATCH(req("PATCH", { id: "t2", adminAccess: true }), params)).status).toBe(403);
+    asToken();
+    isAppAdmin.mockResolvedValue(true);
+    expect((await PATCH(req("PATCH", { id: "t2", adminAccess: true }), params)).status).toBe(403);
     expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
+  it("grants admin for an instance admin's session", async () => {
+    asCookie();
+    isAppAdmin.mockResolvedValue(true);
+    const res = await PATCH(req("PATCH", { id: "t2", adminAccess: true }), params);
+    expect(res.status).toBe(200);
+    expect(mockUpdate).toHaveBeenCalled();
+  });
+
+  it("lets anyone drop the admin scope", async () => {
+    asToken();
+    const res = await PATCH(req("PATCH", { id: "t2", adminAccess: false }), params);
+    expect(res.status).toBe(200);
+  });
+
+  it("rejects a change with nothing to change", async () => {
+    asCookie();
+    const res = await PATCH(req("PATCH", { id: "t2" }), params);
+    expect(res.status).toBe(400);
   });
 
   it("lets a token narrow scope", async () => {

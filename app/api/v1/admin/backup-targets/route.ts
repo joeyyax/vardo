@@ -35,9 +35,6 @@ async function handleGet() {
 
     return NextResponse.json({ targets: targets.map(presentTarget), allowLocalBackups: isLocalBackupsAllowed() });
   } catch (error) {
-    if (error instanceof Error && error.message === "Forbidden") {
-      return apiError.forbidden();
-    }
     return handleRouteError(error, "Error fetching admin backup targets");
   }
 }
@@ -83,9 +80,6 @@ async function handlePost(request: NextRequest) {
     reconcileInBackground({});
     return NextResponse.json({ target: presentTarget(target) }, { status: 201 });
   } catch (error) {
-    if (error instanceof Error && error.message === "Forbidden") {
-      return apiError.forbidden();
-    }
     return handleRouteError(error, "Error creating admin backup target");
   }
 }

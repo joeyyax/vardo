@@ -1,6 +1,6 @@
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { NextResponse } from "next/server";
-import { apiError, handleRouteError } from "@/lib/api/error-response";
+import { handleRouteError } from "@/lib/api/error-response";
 import { requireAppAdmin } from "@/lib/auth/admin";
 import { getSystemHealth } from "@/lib/config/health";
 import { getAllFeatureFlags } from "@/lib/config/features";
@@ -20,9 +20,6 @@ async function handleGet() {
       featureFlags,
     });
   } catch (error) {
-    if (error instanceof Error && error.message === "Forbidden") {
-      return apiError.forbidden();
-    }
     return handleRouteError(error, "Error fetching system health");
   }
 }

@@ -37,7 +37,7 @@ export const apiTokens = pgTable(
     scope: text("scope").$type<TokenScopeKind>().default("full").notNull(),
     // Only read when scope is "custom".
     capabilities: text("capabilities").array(),
-    // Unused: tokens never carry instance-admin power.
+    // Instance-admin scope; only an instance admin with a session grants it.
     adminAccess: boolean("admin_access").default(false).notNull(),
     // Null never expires.
     expiresAt: timestamp("expires_at"),

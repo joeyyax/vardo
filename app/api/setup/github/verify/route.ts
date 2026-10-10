@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { setupTokenRefusal } from "@/lib/setup-token";
 import { requireAdminAuth } from "@/lib/auth/admin";
+import { adminVerifyRefusal } from "@/lib/auth/admin-error";
 import { getGitHubAppConfig } from "@/lib/system-settings";
 import { createAppAuth } from "@octokit/auth-app";
 
@@ -11,8 +12,8 @@ async function handlePost(request: NextRequest) {
   if (refused) return refused;
   try {
     await requireAdminAuth();
-  } catch {
-    return NextResponse.json({ ok: false, message: "Sign in to continue." }, { status: 401 });
+  } catch (error) {
+    return adminVerifyRefusal(error);
   }
 
   const config = await getGitHubAppConfig();

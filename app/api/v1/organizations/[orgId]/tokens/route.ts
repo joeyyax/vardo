@@ -10,6 +10,7 @@ import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { recordActivity } from "@/lib/activity";
 import { hashApiToken, scopeCeilingViolation, type TokenScope } from "@/lib/auth/api-token";
 import { isCapability, tokenScopeCapabilities, TOKEN_PRESETS } from "@/lib/auth/permissions";
+import { isAppAdmin } from "@/lib/auth/admin";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { requirePlugin } from "@/lib/api/require-plugin";
@@ -18,6 +19,7 @@ const createTokenSchema = z
   .object({
     name: z.string().min(1, "Name is required").max(100).trim(),
     crossOrg: z.boolean().default(false),
+    adminAccess: z.boolean().default(false),
     scope: z.enum([...TOKEN_PRESETS, "custom"]).default("full"),
     capabilities: z
       .array(z.string().refine(isCapability, "Unknown capability"))
@@ -41,13 +43,21 @@ const deleteTokenSchema = z.object({ id: z.string().min(1, "Token ID is required
 const updateTokenSchema = z
   .object({
     id: z.string().min(1, "Token ID is required"),
-    crossOrg: z.boolean(),
+    crossOrg: z.boolean().optional(),
+    adminAccess: z.boolean().optional(),
   })
-  .strict();
+  .strict()
+  .refine((d) => d.crossOrg !== undefined || d.adminAccess !== undefined, { message: "Nothing to change" });
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
 };
+
+/** Why the caller can't grant the admin scope, or null when it can. */
+async function adminGrantRefusal(session: { authMethod: string }): Promise<string | null> {
+  if (session.authMethod !== "session") return "A token cannot grant the admin scope";
+  return (await isAppAdmin()) ? null : "Only an instance admin can grant the admin scope";
+}
 
 /** The scope of the token making this request, or null for a cookie session. */
 function callerScope(session: { authMethod: string; tokenScope?: TokenScope }): TokenScope | null {
@@ -73,6 +83,7 @@ async function handleGet(_request: NextRequest, { params }: RouteParams) {
         id: true,
         name: true,
         crossOrg: true,
+        adminAccess: true,
         scope: true,
         capabilities: true,
         expiresAt: true,
@@ -86,6 +97,7 @@ async function handleGet(_request: NextRequest, { params }: RouteParams) {
         id: t.id,
         name: t.name,
         crossOrg: t.crossOrg,
+        adminAccess: t.adminAccess,
         scope: t.scope,
         capabilities: t.scope === "custom" ? (t.capabilities ?? []) : null,
         expiresAt: t.expiresAt?.toISOString() || null,
@@ -117,11 +129,12 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       return apiError.validation(parsed.error, { details: true });
     }
 
-    const { scope, capabilities = null } = parsed.data;
-    const violation = scopeCeilingViolation({
-      caller: callerScope(org.session),
-      requested: { ...parsed.data, capabilities: tokenScopeCapabilities(scope, capabilities) },
-    });
+    const { scope, capabilities = null, adminAccess } = parsed.data;
+    const violation =
+      scopeCeilingViolation({
+        caller: callerScope(org.session),
+        requested: { ...parsed.data, admin: adminAccess, capabilities: tokenScopeCapabilities(scope, capabilities) },
+      }) ?? (adminAccess ? await adminGrantRefusal(org.session) : null);
     if (violation) return NextResponse.json({ error: violation }, { status: 403 });
 
     const rawToken = `vardo_${randomBytes(32).toString("hex")}`;
@@ -135,6 +148,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       name: parsed.data.name,
       tokenHash,
       crossOrg: parsed.data.crossOrg,
+      adminAccess,
       scope,
       capabilities,
       expiresAt: parsed.data.expiresAt,
@@ -144,7 +158,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       organizationId: orgId,
       action: "token.created",
       userId: org.session.user.id,
-      metadata: { tokenId, name: parsed.data.name, crossOrg: parsed.data.crossOrg, scope, capabilities },
+      metadata: { tokenId, name: parsed.data.name, crossOrg: parsed.data.crossOrg, adminAccess, scope, capabilities },
     }).catch(() => {});
 
     // The raw token is returned only once.
@@ -172,10 +186,11 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
     }
 
     const { id, ...requested } = parsed.data;
-    const violation = scopeCeilingViolation({
-      caller: callerScope(org.session),
-      requested,
-    });
+    const violation =
+      scopeCeilingViolation({
+        caller: callerScope(org.session),
+        requested: { crossOrg: requested.crossOrg, admin: requested.adminAccess },
+      }) ?? (requested.adminAccess ? await adminGrantRefusal(org.session) : null);
     if (violation) return NextResponse.json({ error: violation }, { status: 403 });
 
     const [updated] = await db
@@ -191,10 +206,20 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
       .returning({
         id: apiTokens.id,
         crossOrg: apiTokens.crossOrg,
+        adminAccess: apiTokens.adminAccess,
       });
 
     if (!updated) {
       return NextResponse.json({ error: "Token not found" }, { status: 404 });
+    }
+
+    if (requested.adminAccess !== undefined) {
+      recordActivity({
+        organizationId: orgId,
+        action: "token.updated",
+        userId: org.session.user.id,
+        metadata: { tokenId: id, adminAccess: requested.adminAccess },
+      }).catch(() => {});
     }
 
     return NextResponse.json({ token: updated });

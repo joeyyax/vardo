@@ -11,6 +11,7 @@ export type ApiTokenRow = {
   crossOrg: boolean;
   scope?: string | null;
   capabilities?: string[] | null;
+  adminAccess?: boolean;
   expiresAt: Date | null;
 };
 
@@ -20,6 +21,8 @@ export type TokenScope = {
   expiresAt: Date | null;
   /** Null or absent allows everything the role does. */
   capabilities?: ReadonlySet<Capability> | null;
+  /** Instance-admin scope, still bounded by the user's live admin flag. */
+  admin?: boolean;
 };
 
 export function hashApiToken(rawToken: string): string {
@@ -42,6 +45,7 @@ export async function findApiToken(rawToken: string): Promise<ApiTokenRow | null
       crossOrg: true,
       scope: true,
       capabilities: true,
+      adminAccess: true,
       expiresAt: true,
     },
   });
@@ -59,6 +63,9 @@ export function scopeCeilingViolation(opts: {
 }): string | null {
   const { caller, requested } = opts;
 
+  if (requested.admin && caller) {
+    return "A token cannot grant the admin scope";
+  }
   if (requested.crossOrg && caller && !caller.crossOrg) {
     return "A token cannot grant access to organizations it cannot reach";
   }

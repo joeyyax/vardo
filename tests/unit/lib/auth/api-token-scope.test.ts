@@ -1,5 +1,5 @@
-// A token never carries instance-admin reach, stops working once expired, and
-// can't mint or widen a token beyond its own scope.
+// A token carries instance-admin reach only with the admin scope and a live admin user, stops working
+// once expired, and can't mint or widen a token beyond its own scope.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
@@ -34,7 +34,7 @@ vi.mock("@/lib/db", () => ({
 }));
 
 import { getSession } from "@/lib/auth/session";
-import { isAppAdmin, requireAppAdmin } from "@/lib/auth/admin";
+import { ADMIN_FORBIDDEN_MESSAGE, isAppAdmin, requireAppAdmin } from "@/lib/auth/admin";
 import { scopeCeilingViolation, isTokenExpired } from "@/lib/auth/api-token";
 import { GET as exportConfig } from "@/app/api/v1/admin/config/export/route";
 import { NextRequest } from "next/server";
@@ -70,21 +70,35 @@ describe("instance-admin reach through a token", () => {
     await expect(requireAppAdmin()).rejects.toThrow("Forbidden");
   });
 
-  it("is withheld from a token minted with the retired admin grant", async () => {
-    tokenFindFirst.mockResolvedValue(token({ adminAccess: true }));
-
-    expect(await isAppAdmin()).toBe(false);
-    await expect(requireAppAdmin()).rejects.toThrow("Forbidden");
-  });
-
-  it("keeps a token out of the secrets export", async () => {
-    tokenFindFirst.mockResolvedValue(token({ adminAccess: true }));
+  it("keeps a token without the admin scope out of the secrets export, with a 403 that says why", async () => {
+    tokenFindFirst.mockResolvedValue(token());
 
     const res = await exportConfig(
       new NextRequest("http://localhost/api/v1/admin/config/export?include=secrets"),
     );
     expect(res.status).toBe(403);
-    expect(await res.text()).not.toContain("s3cret");
+    const body = await res.text();
+    expect(body).not.toContain("s3cret");
+    expect(JSON.parse(body)).toEqual({ error: ADMIN_FORBIDDEN_MESSAGE });
+  });
+
+  it("is granted to an admin's token with the admin scope", async () => {
+    tokenFindFirst.mockResolvedValue(token({ adminAccess: true }));
+
+    expect(await isAppAdmin()).toBe(true);
+    await expect(requireAppAdmin()).resolves.toBeTruthy();
+    const res = await exportConfig(
+      new NextRequest("http://localhost/api/v1/admin/config/export?include=secrets"),
+    );
+    expect(res.status).toBe(200);
+  });
+
+  it("is withheld from an admin-scoped token once its user is no longer an admin", async () => {
+    tokenFindFirst.mockResolvedValue(token({ adminAccess: true }));
+    userFindFirst.mockResolvedValue({ ...ADMIN_USER, isAppAdmin: false });
+
+    expect(await isAppAdmin()).toBe(false);
+    await expect(requireAppAdmin()).rejects.toThrow("Forbidden");
   });
 
   it("still holds for the same admin signed in with a session", async () => {

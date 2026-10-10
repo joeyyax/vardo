@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { extractIdentifier } from "./request-identity";
 import { rateLimit } from "./rate-limit";
+import { adminAuthErrorResponse } from "@/lib/auth/admin-error";
 
 /** Rate limit tiers by endpoint type, tuned for self-hosted use. */
 const TIERS = {
@@ -48,6 +49,13 @@ export function withRateLimit(
 
     if (limited) return limited;
 
-    return handler(request, context);
+    // Admin guards that throw outside a handler's try block still answer 401 or 403.
+    try {
+      return await handler(request, context);
+    } catch (error) {
+      const refusal = adminAuthErrorResponse(error);
+      if (refusal) return refusal;
+      throw error;
+    }
   };
 }

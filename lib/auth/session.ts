@@ -25,7 +25,7 @@ type SessionResult = Awaited<ReturnType<typeof auth.api.getSession>> & AuthMeta;
 
 /**
  * Current session from a Bearer token (when api-tokens is enabled), then the session cookie. Null if unauthenticated.
- * Token sessions never carry instance-admin power.
+ * Token sessions carry instance-admin power only with the admin scope; see credentialMayAdmin.
  */
 export const getSession = cache(async (): Promise<SessionResult | null> => {
   const reqHeaders = await headers();
@@ -72,6 +72,7 @@ export const getSession = cache(async (): Promise<SessionResult | null> => {
               crossOrg: token.crossOrg,
               expiresAt: token.expiresAt,
               capabilities: tokenScopeCapabilities(token.scope, token.capabilities),
+              admin: token.adminAccess === true,
             },
           } as SessionResult;
         }

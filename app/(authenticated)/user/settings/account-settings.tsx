@@ -26,6 +26,17 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { CAPABILITIES, type Capability, type TokenScopeKind } from "@/lib/auth/permissions";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Callout } from "@/components/ui/callout";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { RelativeTime } from "@/components/relative-time";
 import { authClient, useSession, passkey as passkeyMethods } from "@/lib/auth/client";
 
@@ -831,6 +842,7 @@ type ApiToken = {
   id: string;
   name: string;
   crossOrg: boolean;
+  adminAccess: boolean;
   scope: TokenScopeKind;
   capabilities: Capability[] | null;
   expiresAt: string | null;
@@ -879,7 +891,10 @@ async function requestTokens(orgId: string): Promise<ApiToken[] | null> {
   }
 }
 
-export function ApiTokens({ orgId }: { orgId: string }) {
+const ADMIN_SCOPE_WARNING =
+  "This token can change instance settings, like email, SSL and auth methods, while you're an instance admin. Give it a short expiry and store it like a root password.";
+
+export function ApiTokens({ orgId, canGrantAdmin = false }: { orgId: string; canGrantAdmin?: boolean }) {
   const [tokens, setTokens] = useState<ApiToken[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -888,11 +903,13 @@ export function ApiTokens({ orgId }: { orgId: string }) {
   const [newTokenScope, setNewTokenScope] = useState<TokenScopeKind>("full");
   const [newTokenCaps, setNewTokenCaps] = useState<Capability[]>([]);
   const [newTokenCrossOrg, setNewTokenCrossOrg] = useState(false);
+  const [newTokenAdmin, setNewTokenAdmin] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [createdToken, setCreatedToken] = useState<string | null>(null);
   const tokenRef = useRef<HTMLElement>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [togglingScope, setTogglingScope] = useState<string | null>(null);
+  const [adminTarget, setAdminTarget] = useState<ApiToken | null>(null);
 
   const applyTokens = useCallback((list: ApiToken[] | null) => {
     if (list) setTokens(list);
@@ -932,6 +949,7 @@ export function ApiTokens({ orgId }: { orgId: string }) {
             expiresAt: expiryFromOption(newTokenExpiry),
             scope: newTokenScope,
             crossOrg: newTokenCrossOrg,
+            ...(newTokenAdmin && { adminAccess: true }),
             ...(newTokenScope === "custom" && { capabilities: newTokenCaps }),
           }),
         }
@@ -943,6 +961,7 @@ export function ApiTokens({ orgId }: { orgId: string }) {
         setNewTokenScope("full");
         setNewTokenCaps([]);
         setNewTokenCrossOrg(false);
+        setNewTokenAdmin(false);
         setShowCreate(false);
         fetchTokens();
         toast.success("Token created");
@@ -959,7 +978,7 @@ export function ApiTokens({ orgId }: { orgId: string }) {
 
   async function handleScopeChange(
     id: string,
-    change: { crossOrg: boolean },
+    change: { crossOrg: boolean } | { adminAccess: boolean },
   ) {
     setTogglingScope(id);
     try {
@@ -1014,7 +1033,7 @@ export function ApiTokens({ orgId }: { orgId: string }) {
         <div className="flex items-center justify-between">
           <div>
             <CardTitle>API tokens</CardTitle>
-            <CardDescription>Tokens authenticate API requests. Treat them like passwords. A token never does more than your role allows and never carries instance-admin access. Turn on &quot;all my organizations&quot; to let a token act on every organization you belong to.</CardDescription>
+            <CardDescription>Tokens authenticate API requests. Treat them like passwords. A token never does more than your role allows and carries instance-admin access only with the admin scope. Turn on &quot;all my organizations&quot; to let a token act on every organization you belong to.</CardDescription>
           </div>
           <Button
             size="sm"
@@ -1132,6 +1151,17 @@ export function ApiTokens({ orgId }: { orgId: string }) {
                 Create
               </Button>
             </div>
+            {canGrantAdmin && (
+              <div className="space-y-2">
+                <Label htmlFor="token-admin" className="flex items-center gap-2 text-sm font-normal">
+                  <Switch id="token-admin" checked={newTokenAdmin} onCheckedChange={setNewTokenAdmin} />
+                  Instance admin scope
+                </Label>
+                {newTokenAdmin && (
+                  <Callout variant="error">{ADMIN_SCOPE_WARNING}</Callout>
+                )}
+              </div>
+            )}
             {newTokenScope === "custom" && (
               <fieldset className="space-y-2">
                 <legend className="text-sm font-medium">Capabilities</legend>
@@ -1186,6 +1216,11 @@ export function ApiTokens({ orgId }: { orgId: string }) {
                     >
                       {scopeLabel(token)}
                     </Badge>
+                    {token.adminAccess && (
+                      <Badge variant="outline" className="shrink-0 text-status-error" title={ADMIN_SCOPE_WARNING}>
+                        Instance admin
+                      </Badge>
+                    )}
                   </div>
                   <p className="text-xs text-muted-foreground">
                     Created <RelativeTime date={token.createdAt} />
@@ -1204,6 +1239,22 @@ export function ApiTokens({ orgId }: { orgId: string }) {
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
+                  {(canGrantAdmin || token.adminAccess) && (
+                    <Label
+                      htmlFor={`admin-${token.id}`}
+                      className="flex items-center gap-2 text-xs text-muted-foreground"
+                    >
+                      Instance admin
+                      <Switch
+                        id={`admin-${token.id}`}
+                        checked={token.adminAccess}
+                        disabled={togglingScope === token.id || (!canGrantAdmin && !token.adminAccess)}
+                        onCheckedChange={(checked) =>
+                          checked ? setAdminTarget(token) : handleScopeChange(token.id, { adminAccess: false })
+                        }
+                      />
+                    </Label>
+                  )}
                   <Label
                     htmlFor={`cross-org-${token.id}`}
                     className="flex items-center gap-2 text-xs text-muted-foreground"
@@ -1235,6 +1286,27 @@ export function ApiTokens({ orgId }: { orgId: string }) {
             ))}
           </div>
         )}
+
+        <AlertDialog open={adminTarget !== null} onOpenChange={(open) => !open && setAdminTarget(null)}>
+          <AlertDialogContent size="sm">
+            <AlertDialogHeader>
+              <AlertDialogTitle>Give {adminTarget?.name} the instance admin scope?</AlertDialogTitle>
+              <AlertDialogDescription>{ADMIN_SCOPE_WARNING}</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                variant="destructive"
+                onClick={() => {
+                  if (adminTarget) handleScopeChange(adminTarget.id, { adminAccess: true });
+                  setAdminTarget(null);
+                }}
+              >
+                Grant admin scope
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </CardContent>
     </Card>
   );
