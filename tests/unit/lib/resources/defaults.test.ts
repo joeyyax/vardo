@@ -237,11 +237,11 @@ describe("BuildKit cache ceiling", () => {
     describeDefaults(HOSTS["32 GB"], 8, env, undefined, {}, disk).find((d) => d.key === "buildkitCache")!;
 
   it("is the rule in MiB, not bytes", () => {
-    expect(row({}, 250 * GIB).rule).toBe(25 * 1024);
+    expect(row({}, 250 * GIB).rule).toBe(31 * 1024);
   });
 
   it("counts the installer's bytes as detected when they match the disk's rule", () => {
-    expect(row({ VARDO_BUILDKIT_CACHE_MAX: String(25 * GIB) }, 250 * GIB)).toMatchObject({ source: "detected", value: 25 * 1024 });
+    expect(row({ VARDO_BUILDKIT_CACHE_MAX: String(31 * GIB) }, 250 * GIB)).toMatchObject({ source: "detected", value: 31 * 1024 });
   });
 
   it("reads a pinned value with a unit as an override", () => {
