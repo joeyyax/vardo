@@ -180,7 +180,11 @@ export async function resolveCompose(ctx: DeployContext): Promise<DeployContext>
     compose = stripTraefikLabels(compose);
   }
   // Self-routed and domainless apps keep their own routers; Vardo's carry headers already.
-  if (app.securityHeaders ?? true) compose = injectHeadersIntoOwnRouters(compose, app.name);
+  if (app.securityHeaders ?? true) {
+    compose = injectHeadersIntoOwnRouters(compose, app.name);
+    // Self-routed labels reach the container through the bare file, not the overlay.
+    ctx.bareCompose = injectHeadersIntoOwnRouters(ctx.bareCompose, app.name);
+  }
   if (!allServicesCustomNetwork && app.domains.length > 0) {
 
     // Inspect images only when compose doesn't say which service serves the port.
