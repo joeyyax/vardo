@@ -87,6 +87,11 @@
   :root { --pane-pad: 1.75rem; }
 }
 
+/* A scrollbar coming or going never shifts the page sideways. */
+html {
+  scrollbar-gutter: stable;
+}
+
 /* List density. Comfortable is the default; a dense scope tightens rows and sections. */
 :root,
 [data-density="comfortable"] {

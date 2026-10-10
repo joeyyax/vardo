@@ -420,7 +420,7 @@ export function ProjectsView({
     <div
       data-density={density}
       data-healthy={dense ? undefined : "quiet"}
-      className={cn("grid gap-(--section-gap)", open && DETAIL_PANEL_GUTTER)}
+      className={cn("grid gap-9", open && DETAIL_PANEL_GUTTER)}
     >
       <StatGroup label="Open a list" active={!!(panel || attentionTarget)}>
         {stat("running", counts.running, "apps running", undefined, `of ${counts.apps}`)}
@@ -456,23 +456,20 @@ export function ProjectsView({
               /
             </kbd>
           </div>
-          {dense && (
-            <>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setCollapsed(new Set());
-                  setOpenApps(new Set(sections.flatMap((s) => walk(s.nodes)).filter((n) => n.children.length).map((n) => n.app.name)));
-                }}
-              >
-                Expand all
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => setOpenApps(new Set())}>
-                Collapse all
-              </Button>
-            </>
-          )}
+          {/* Both densities, so switching never adds or drops controls above the list. */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setCollapsed(new Set());
+              setOpenApps(new Set(sections.flatMap((s) => walk(s.nodes)).filter((n) => n.children.length).map((n) => n.app.name)));
+            }}
+          >
+            Expand all
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setOpenApps(new Set())}>
+            Collapse all
+          </Button>
           <div className="ml-auto flex items-center gap-1">
             <DensityToggle value={density} onChange={setDensity} />
             <Popover open={keysOpen} onOpenChange={setKeysOpen}>
