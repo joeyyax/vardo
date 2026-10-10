@@ -4,7 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
-    "build": "next build",
+    "dev:worker": "tsx watch --env-file=.env worker/index.ts",
+    "build": "next build && node scripts/build-worker.mjs",
+    "build:worker": "node scripts/build-worker.mjs",
     "start": "node scripts/migrate.mjs && next start",
     "lint": "eslint --max-warnings 0",
     "typecheck": "tsc --noEmit",
@@ -87,6 +89,7 @@
     "@types/react-dom": "^19.3.0",
     "@vitest/coverage-v8": "^5.0.3",
     "drizzle-kit": "^0.31.11",
+    "esbuild": "^0.28.2",
     "eslint": "^9.39.5",
     "eslint-config-next": "16.3.8",
     "shadcn": "^4.21.2",

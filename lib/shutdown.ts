@@ -13,6 +13,8 @@ type ShutdownState = {
   shuttingDown: boolean;
   installed: boolean;
   signal?: string;
+  drainMs?: number;
+  exitWhenDrained?: boolean;
 };
 
 // Must live on globalThis; Next duplicates module state across bundles.
@@ -35,6 +37,12 @@ export function closeOnShutdown(closer: Closer): () => void {
   return () => {
     state.closers.delete(closer);
   };
+}
+
+/** Sets the drain budget and whether the process exits once every closer settles. The worker sets both. */
+export function configureShutdown(opts: { drainMs?: number; exitWhenDrained?: boolean }): void {
+  if (opts.drainMs !== undefined) state.drainMs = opts.drainMs;
+  if (opts.exitWhenDrained !== undefined) state.exitWhenDrained = opts.exitWhenDrained;
 }
 
 /** The signal that started the shutdown, if one has. */
@@ -62,7 +70,8 @@ function shutdown(signal: string) {
   state.shuttingDown = true;
   state.signal = signal;
 
-  log.info(`${signal} received, draining (${DRAIN_MS}ms max)`);
+  const drainMs = state.drainMs ?? DRAIN_MS;
+  log.info(`${signal} received, draining (${drainMs}ms max)`);
 
   const pending = state.closers.size;
   const work = [...state.closers].map(runCloser);
@@ -73,11 +82,11 @@ function shutdown(signal: string) {
   const deadline = setTimeout(() => {
     log.warn("Drain deadline reached, exiting");
     process.exit(0);
-  }, DRAIN_MS);
+  }, drainMs);
   deadline.unref();
 
   // With NEXT_MANUAL_SIG_HANDLE, Next leaves the exit to us.
-  if (process.env.NEXT_MANUAL_SIG_HANDLE) {
+  if (state.exitWhenDrained ?? !!process.env.NEXT_MANUAL_SIG_HANDLE) {
     void Promise.allSettled(work).then(() => {
       clearTimeout(deadline);
       process.exit(0);

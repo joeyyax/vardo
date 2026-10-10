@@ -1,5 +1,6 @@
 // Backups, restores, drills and imports running in this process, so a stop of the console can wait for them.
 
+import { hostname } from "os";
 import { logger } from "@/lib/logger";
 import { backupSlotsBusy } from "./run-limit";
 
@@ -81,8 +82,8 @@ export function endBackupDrain(): void {
   state.draining = false;
 }
 
-/** Redis key the watchdog and install.sh read to hold a console restart. */
-export const backupBusyKey = (pid: number = process.pid) => `backup:busy:${pid}`;
+/** Redis key the watchdog and install.sh read to hold a restart. Host-qualified: web and worker containers share pids. */
+export const backupBusyKey = (pid: number = process.pid, host: string = hostname()) => `backup:busy:${host}:${pid}`;
 
 const BUSY_TTL_MS = 30_000;
 const BUSY_BEAT_MS = 10_000;

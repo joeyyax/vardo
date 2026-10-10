@@ -77,3 +77,6 @@ load-*.json
 
 # email previews
 /.email-preview/
+
+# Worker bundle
+/dist/

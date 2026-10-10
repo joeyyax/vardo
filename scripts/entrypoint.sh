@@ -30,6 +30,11 @@ TRAEFIK_DYNAMIC_DIR="${TRAEFIK_DYNAMIC_DIR:-/etc/traefik/dynamic}"
 mkdir -p "$TRAEFIK_DYNAMIC_DIR"
 chown -R nextjs:nodejs "$TRAEFIK_DYNAMIC_DIR"
 
+# The worker waits for the console's migrations instead of running them.
+if [ "${1:-}" = "worker" ]; then
+  exec gosu nextjs node --enable-source-maps dist/worker.mjs
+fi
+
 # Run migrations as the app user.
 gosu nextjs node scripts/migrate.mjs
 

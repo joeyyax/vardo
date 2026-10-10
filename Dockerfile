@@ -73,6 +73,8 @@ RUN apt-get update -qq && \
 
 # Copy built app + runtime dependencies
 COPY --from=builder --chown=nextjs:nodejs /app/.next ./.next
+# The worker bundle (scripts/build-worker.mjs), run with `command: ["worker"]`.
+COPY --from=builder --chown=nextjs:nodejs /app/dist ./dist
 COPY --from=prod-deps --chown=nextjs:nodejs /app/node_modules ./node_modules
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/drizzle ./drizzle
@@ -84,7 +86,7 @@ COPY --from=builder --chown=nextjs:nodejs /app/next.config.ts ./next.config.ts
 COPY --chown=nextjs:nodejs scripts/entrypoint.sh ./scripts/entrypoint.sh
 RUN chmod +x ./scripts/entrypoint.sh
 
-EXPOSE 3000
+EXPOSE 3000 3001
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 STOPSIGNAL SIGTERM
