@@ -1,159 +1,125 @@
-# Migrating Vardo's own stack to the deploy engine
+# Vardo deploys itself
 
-Vardo used to be the one app deployed by hand:
+Vardo runs its console as an app, `vardo`, deployed by its own engine. Fresh installs end in this layout, and `vardo migrate-self-deploy` moves an older install onto it. This page covers the layout, updates, the migration and rollback.
+
+Older installs ran the console as one `vardo-frontend` container, swapped by hand-written blue/green steps in `install.sh`:
 
 ```
 cd /opt/vardo/apps/vardo/env/<standby> && git reset --hard origin/main \
   && docker compose -p vardo build frontend && docker compose -p vardo up -d frontend
 ```
 
-This is the procedure that moved it onto the product path. It was run against production on 2 August 2026.
+## The layout
 
-## What changes
-
-`docker-compose.yml` marks `postgres`, `redis`, `traefik` and `wireguard` with `x-vardo-shared: true`. Those four stay in compose project `vardo`, on the volumes and networks they already have, and a deploy leaves them running. When a shared service's definition changes, the deploy recreates `traefik` and `wireguard` and holds `postgres` and `redis`, logging the command to apply it and finishing with a warning. Only `frontend` rotates, into `vardo-production-blue` and `vardo-production-green`.
+`docker-compose.yml` marks `postgres`, `redis`, `traefik`, `wireguard`, `buildkit` and `watchdog` with `x-vardo-shared: true`. Those stay in compose project `vardo`, on the volumes and networks they already have, and a deploy leaves them running. When a shared service's definition changes, the deploy recreates the stateless ones and holds `postgres` and `redis`, logging the command to apply it and finishing with a warning. Only `frontend` rotates, into `vardo-production-blue` and `vardo-production-green`.
 
 Shared services in any app, and the commit-tag pattern for one that runs the app's own build, are covered in [shared-services.md](shared-services.md).
 
-That is what the manual procedure always did. The difference is that the engine now understands it.
-
-| | Before | After |
+| | Legacy | Self-deploy |
 | --- | --- | --- |
 | Infra project | `vardo` | `vardo`, unchanged |
-| Frontend project | `vardo` | `vardo-production-{blue,green}` |
-| Slot dirs | `/opt/vardo/apps/vardo/env/{blue,green}` | `/opt/vardo/apps/vardo/production/{blue,green}` |
+| Console project | `vardo` | `vardo-production-{blue,green}` |
+| Slot dirs | `/opt/vardo/apps/vardo/env/{blue,green}` | `/opt/vardo/apps/vardo/production/{blue,green}` + `current` |
 | Infra volumes and networks | `vardo_*` | unchanged |
 | Infra container names | `vardo-postgres`, … | unchanged |
-| Updated by | `vardo update` | the dashboard / API |
+| Updated by | the legacy swap in `install.sh` | a deploy of the `vardo` app |
 
 The shared project is pinned by the compose file's top-level `name: vardo`, so **no volume, network or container is renamed and no data is copied**.
 
-`/opt/vardo/.env` stays the instance's settings file. Each deploy builds the slot `.env` from it, keeping only `GIT_SHA` and `COMPOSE_PROJECT_NAME` from the previous slot. To change a setting, edit `/opt/vardo/.env` and redeploy; shared services whose definition changes are recreated or held as above.
+`/opt/vardo/.env` stays the instance's settings file. Each deploy builds the slot `.env` from it, keeping only `GIT_SHA` and `COMPOSE_PROJECT_NAME` from the previous slot. To change a setting, edit `/opt/vardo/.env` and redeploy. `vardo key set` and `vardo setup-token` redeploy for you.
 
-## The dashboard can drive this
+The `vardo` app record comes from `lib/docker/self-register.ts`, which runs on every boot once `production/current` exists, or when Self-management is on. Self-management defaults on in this layout.
 
-An earlier draft of this document claimed it could not, on the grounds that the frontend is the deploy engine and would be stopping itself. That turned out to be wrong, for a load-bearing reason:
+## Updating
 
-`detectActiveSlot` looks for slot containers and a `current` symlink under `production/`. Before the migration there are none, so the engine sees **no active slot and stops nothing**. It builds the new frontend into `vardo-production-blue`, starts it alongside the old one, and finishes. The old `vardo-frontend` is in a project the engine does not know about, so it survives.
+Any of these redeploys the `vardo` app:
 
-You then remove the old container yourself. That is the only manual step.
+- **Redeploy** on the `vardo` app in the dashboard. The app lives in the Vardo system organization.
+- `vardo update` on the host.
+- `POST /api/v1/admin/maintenance/update` as an instance admin.
 
-## Before you start
+The running console builds the new one, starts it beside itself, waits for it to pass its health check, records the deploy and stops itself last. Both serve during the cutover.
 
-Take a database backup and confirm it restores.
+### How `vardo update` reaches the console
 
-Note the live slot, for rollback:
+`install.sh` writes `/opt/vardo/lifecycle/deploy-request.json`. Every console polls that directory, claims the request by renaming it and answers in `deploy-request.result.json` with the deployment id. `install.sh` then follows the deployment row in Postgres until it ends and checks:
 
-```
-docker ps --filter name=vardo-frontend \
-  --format '{{.Label "com.docker.compose.project.working_dir"}}'
-```
+- `production/current` points at the slot that's running and answering `/api/health`
+- one slot console is running
+- Redis `deploy:system:active` is back to 0
+- the deployment row says `success`
 
-## Procedure
+Nothing listens on the network for this. Only root and the console's own user can write the lifecycle directory. A console writes `deploy-requests.ready` every few seconds; when it's missing or stale, `vardo update` stops and says why.
 
-### 1. Deploy Vardo from the dashboard
+`vardo update` never runs the legacy swap on a self-deploy instance, and leaves `.env` alone apart from install-time options given with it (`--set`, `--trusted-proxies` and the rest).
 
-Switch to the organization that owns the `vardo` app — it is not necessarily your active one, and the app page 404s from the wrong org. Then **Redeploy stack**.
+### Notifications
 
-Watch the log. It should say:
+A deploy of the `vardo` app writes `/opt/vardo/lifecycle/update.json` the way the legacy update does, with `kind: "self-deploy"`. The same events go out:
 
-```
-Active slot: none, deploying to: blue
-Externalized 1 volume(s): traefik_dynamic → vardo_traefik_dynamic
-Shared network(s): internal, mesh
-Seeded slot .env from /opt/vardo/.env (slot keys from /opt/vardo/apps/vardo/env/current/.env)
-Shared services (not rotated): postgres, redis, traefik, wireguard
-  Container vardo-traefik Running
-  Container vardo-postgres Running
-  ...
-```
+- **Vardo updating**, from the running console once the new image is built
+- **Vardo updated**, from the new console once the old one recorded success. "Console down" is 0s when both slots served through the cutover.
+- **Vardo update failed**, from the console that keeps serving, with the stage, error and log tail. "Rolled back" means the new slot was removed and the old one never stopped.
 
-`Running`, not `Recreated`, is the line that matters — the shared services were left alone.
+The new console starts while the old one is still running. It finds the update in flight and waits for its result, so it isn't reported as a restart. The old console sends no shutdown email for the stop that ends its own deploy.
 
-### 2. Verify the new frontend before touching the old one
+A self-deploy runs on the old slot's code. A change to the deploy path, or to these markers, takes effect from the second deploy after it ships.
 
-Both are up, and Traefik treats them as two backends of one service, so check the new one directly:
+## Migrating a legacy install
 
 ```
-docker exec vardo-production-blue-frontend-1 \
-  node -e "fetch('http://localhost:3000/api/health').then(r=>r.text()).then(console.log)"
+sudo vardo migrate-self-deploy          # asks before it changes anything
+sudo vardo migrate-self-deploy --yes    # no prompt
 ```
 
-Expect `{"status":"ok","services":{"postgres":"ok","redis":"ok"}}`.
-
-Confirm Traefik has picked it up:
+`vardo update` on a legacy install offers the same migration; `--yes` accepts it. On a host whose `vardo` command predates the migration, run the current script:
 
 ```
-docker exec vardo-traefik wget -qO- http://localhost:8080/api/http/services \
-  | python3 -c "import sys,json;[print(s['name'],len(s.get('loadBalancer',{}).get('servers',[]))) for s in json.load(sys.stdin) if 'vardo' in s['name']]"
+curl -fsSL https://vardo.run/install.sh | sudo bash -s migrate-self-deploy --yes
 ```
 
-`vardo@docker 2` means both are serving. If anything above fails, go to Rollback — the old frontend never stopped.
+What it does, in order:
 
-### 3. Retire the old frontend
+1. **Backup.** `pg_dump` to `/opt/vardo/backups/pre-self-deploy-<time>.sql`. It stops here if the dump fails.
+2. **Console.** If the running console predates deploy requests, it updates it the legacy way first, then waits for it to listen.
+3. **Deploy.** It asks the console to deploy the `vardo` app. The engine finds no active slot under `production/`, so it builds into `vardo-production-blue` and starts it beside `vardo-frontend`, which it doesn't know about and doesn't stop. Shared services report `Running`, not `Recreated`.
+4. **Checks.** The four checks under [Updating](#updating), plus the new console's health.
+5. **Retire.** Only once the new console is healthy: `docker stop vardo-frontend`, `docker rm vardo-frontend`, and removal of the empty `vardo-production-<slot>_*` copies of volumes only the shared services mount. Docker refuses to remove any volume still in use. Nothing named `vardo_*` is touched.
 
-```
-docker rm -f vardo-frontend
-```
+Running it again is safe. On an instance that already deploys itself it only retires a `vardo-frontend` that's still running, once the slot console is healthy.
 
-Traefik drops to one backend within a second or two. The `current` symlink was already written by the deploy, so the next one picks the other slot.
+`/opt/vardo/apps/vardo/env` is no longer used afterward. Keep it until a redeploy has succeeded; it's what rollback starts from.
 
-### 4. Confirm
+### Fresh installs
 
-```
-docker ps --format '{{.Names}}\t{{.Status}}' | grep vardo
-curl -o /dev/null -w '%{http_code}\n' https://<your-domain>/login
-```
-
-The four shared services should still show their pre-migration uptime.
-
-### 5. Clean up
-
-The slot project creates empty copies of volumes declared in the compose but mounted only by shared services. They are unused — the real data stays in `vardo_*` — but they are clutter:
-
-```
-docker volume rm vardo-production-<slot>_postgres_data \
-                 vardo-production-<slot>_redis_data \
-                 vardo-production-<slot>_wireguard_config
-```
-
-Do not remove anything named `vardo_*`. That is the live data.
-
-### 6. Stop using `vardo update`
-
-`vardo update` in `install.sh` still targets project `vardo` and would start a second frontend competing for the domain. Remove it from the host.
-
-The old `env/` directory can be deleted once you have deployed successfully from the dashboard.
+`install.sh` brings the first console up as `vardo-frontend` from `apps/vardo/env/blue`, then runs steps 3 to 5. A host without a deploy request answer within a few minutes stays on the legacy layout with a warning; `vardo migrate-self-deploy` finishes it. The image is built twice, the second time mostly from cache.
 
 ## Rollback
 
-Nothing is renamed, copied or deleted, so rollback is starting the old frontend again.
+Nothing is renamed, copied or deleted, so rollback is starting the old console again. The shared services run throughout, so the database is never in question. The migration's backup is in `/opt/vardo/backups/`.
 
-Before step 3, while `vardo-frontend` is still running:
+While `vardo-frontend` is still running:
 
 ```
 docker rm -f vardo-production-<slot>-frontend-1
+rm -f /opt/vardo/apps/vardo/production/current
 ```
 
-That is the whole rollback. The old container never stopped.
-
-After step 3:
+After it was removed:
 
 ```
-cd /opt/vardo/apps/vardo/env/<the slot that was live before>
+cd /opt/vardo/apps/vardo/env/current
 docker compose -p vardo up -d --no-deps frontend
 docker rm -f vardo-production-<slot>-frontend-1
 rm -f /opt/vardo/apps/vardo/production/current
 ```
 
-The shared services run throughout either way, so the database is never in question.
+Without `production/current`, `vardo update` takes the legacy path again.
 
 ## Risk
 
-**Downtime is one frontend swap, not an outage.** Traefik, Postgres, Redis and WireGuard keep running, so tenant apps are unaffected. Measured on the real migration: no failed request.
+**Downtime is one console swap, not an outage.** Traefik, Postgres, Redis and WireGuard keep running, so tenant apps are unaffected.
 
-Residual risks:
-
-- **Step 1 leaves two frontends against one database briefly.** Same commit, so the schema matches, and it is the overlap every app deploy already has. A release carrying a migration is the exception — for those, do step 3 before step 2 and accept the gap.
-- **A failed deploy leaves a stopped container and an empty volume.** Harmless; the next deploy's pre-clean removes the container, and step 5 covers the volume.
-- **`vardo update` run out of habit** starts a competing frontend. That is what step 6 is for.
+- **The migration runs two consoles against one database for a minute.** Same commit, so the schema matches, and it's the overlap every app deploy has.
+- **A failed deploy leaves a stopped container and an empty volume.** The next deploy's pre-clean removes the container; the retire step or `docker volume rm` covers the volume.
+- **A stale `production/current` is the dangerous failure.** The engine trusts it to pick the active slot, so the next deploy would replace the console that's serving. `vardo update` checks it after every deploy.
