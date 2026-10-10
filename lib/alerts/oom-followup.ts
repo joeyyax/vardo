@@ -10,6 +10,7 @@ import { autotuneAfterOom } from "@/lib/autotune/run";
 import { hasGivenUp, recentRestarts } from "@/lib/docker/self-heal-store";
 import { logger } from "@/lib/logger";
 import { detectHost, loadResourceSettings, tierMemoryMb } from "@/lib/resources/host";
+import { learnedDefault } from "@/lib/resources/learned";
 import { getOrgTimeZone } from "@/lib/time-zone-settings";
 import type { OomFollowup, OomRecord } from "./oom";
 
@@ -47,6 +48,7 @@ export async function oomFollowup(record: OomRecord, now: number): Promise<OomFo
       parentName: parents.name,
       parentPriority: parents.priority,
       appliedMb: appMemoryAutotune.appliedMb,
+      dailyPeaks: appMemoryAutotune.dailyPeaks,
     })
     .from(apps)
     .leftJoin(parents, eq(parents.id, apps.parentAppId))
@@ -61,6 +63,7 @@ export async function oomFollowup(record: OomRecord, now: number): Promise<OomFo
     killedLimit(record.containerIds).catch(() => null),
   ]);
   const limitBytes = inspected ?? app.containerMemoryLimit ?? null;
+  const tierMb = tierMemoryMb(app.priority ?? app.parentPriority ?? "standard");
   const ids = [...record.containerIds];
   const vardoRestarts = ids.reduce((n, id) => n + recentRestarts(id, now).filter((t) => t >= record.firstAt).length, 0);
 
@@ -78,7 +81,8 @@ export async function oomFollowup(record: OomRecord, now: number): Promise<OomFo
       appLimitMb: app.memoryLimit,
       appliedMb: app.appliedMb ?? null,
       containerLimitBytes: limitBytes,
-      tierDefaultMb: tierMemoryMb(app.priority ?? app.parentPriority ?? "standard"),
+      tierDefaultMb: tierMb,
+      learnedMb: learnedDefault(app.dailyPeaks ?? [], tierMb, now)?.mb ?? null,
     }),
     peakBytes: peaks.get(app.id) ?? null,
     timeZone,

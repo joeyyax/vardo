@@ -143,6 +143,9 @@ export type DeployContext = {
   /** Per-service overrides from decomposed child apps, keyed by service name. (#745) */
   serviceConfig: Record<string, ServiceConfigOverride>;
 
+  /** The app's learned memory default and why, when it has one. */
+  learnedMemory?: { mb: number; reason: string } | null;
+
   /** The project network every service joins. Null or unset keeps the app off it. */
   projectNetwork?: string | null;
 

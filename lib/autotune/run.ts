@@ -10,6 +10,7 @@ import type { AutotuneNote } from "@/lib/alerts/oom";
 import type { AppCondition } from "@/lib/docker/conditions";
 import { logger } from "@/lib/logger";
 import { detectHost, loadResourceSettings, tierMemoryMb } from "@/lib/resources/host";
+import { learnedDefault } from "@/lib/resources/learned";
 import { zonedDateKey, UTC } from "@/lib/time-zone";
 import { applyLimitChange, haltAutotune } from "./apply";
 import {
@@ -142,6 +143,7 @@ function originOf(app: AppRow, row: StateRow | undefined, containerLimitBytes: n
     appliedMb: row?.appliedMb ?? null,
     containerLimitBytes,
     tierDefaultMb: tierDefaultMb(app),
+    learnedMb: learnedDefault(row?.dailyPeaks ?? [], tierDefaultMb(app), Date.now())?.mb ?? null,
   });
 }
 

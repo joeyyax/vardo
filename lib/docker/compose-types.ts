@@ -194,6 +194,8 @@ export type ServiceConfigOverride = {
   memoryLimit: number | null;
   /** Burstable baseline in MB. Null reserves nothing. */
   memoryReservation?: number | null;
+  /** Learned default in MB, used when neither the app nor the compose sets a limit. */
+  learnedMemoryMb?: number | null;
   gpuEnabled: boolean;
   /** Resolved QoS tier: the child's priority, else the parent's. Null means "standard". */
   priority: "critical" | "standard" | "disposable" | null;

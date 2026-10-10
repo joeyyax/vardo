@@ -44,6 +44,8 @@ export function describeMemory(input: {
   reservationMb: number | null;
   tierDefaultMb: number;
   tier: string;
+  /** The app's learned default, when it has one. */
+  learned?: { mb: number; reason: string } | null;
   /** Bytes the running container reports. Null when nothing runs. */
   containerLimitBytes: number | null;
   autotune: { appliedMb: number | null; lastChangedAt: Date | null; lastRaisedAt: Date | null; lastReason: string | null; haltedAt: Date | null } | null;
@@ -52,7 +54,8 @@ export function describeMemory(input: {
   const profile = effectiveProfile(input.appProfile, input.orgProfile);
   const inherited = input.appProfile === null ? " (organization default)" : "";
   const running = input.containerLimitBytes ? Math.round(input.containerLimitBytes / 1024 / 1024) : null;
-  const limitMb = input.appLimitMb && input.appLimitMb > 0 ? input.appLimitMb : (running ?? input.tierDefaultMb);
+  const learned = input.learned ?? null;
+  const limitMb = input.appLimitMb && input.appLimitMb > 0 ? input.appLimitMb : (running ?? learned?.mb ?? input.tierDefaultMb);
   const reservationMb = memoryReservationFor({ profile, reservationMb: input.reservationMb, limitMb });
 
   const auto = input.autotune;
@@ -64,6 +67,8 @@ export function describeMemory(input: {
     if (auto.haltedAt) why += ". Auto-adjust has stopped: it kept outgrowing the limit";
   } else if (input.appLimitMb && input.appLimitMb > 0) {
     why = "Set in Vardo";
+  } else if (learned && (running === null || running === learned.mb)) {
+    why = learned.reason;
   } else if (running !== null && running !== input.tierDefaultMb) {
     why = "Set in compose";
   } else {

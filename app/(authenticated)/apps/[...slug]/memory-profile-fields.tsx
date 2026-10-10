@@ -29,6 +29,7 @@ export function MemoryProfileFields({
   onChange: (next: MemoryProfileValues) => void;
 }) {
   const [why, setWhy] = useState<string | null>(null);
+  const [learned, setLearned] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -38,6 +39,7 @@ export function MemoryProfileFields({
         if (cancelled || !data?.memory) return;
         const limit = data.memory.limitMb ? `${data.memory.limitMb} MB` : "No limit";
         setWhy(`${limit}: ${data.memory.why}`);
+        setLearned(typeof data.learned?.summary === "string" ? data.learned.summary : null);
       })
       .catch(() => {});
     return () => {
@@ -99,6 +101,7 @@ export function MemoryProfileFields({
       )}
 
       {why && <p className="text-xs text-muted-foreground">Now: {why}</p>}
+      {learned && <p className="text-xs text-muted-foreground">{learned}</p>}
     </div>
   );
 }

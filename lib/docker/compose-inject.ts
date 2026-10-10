@@ -438,6 +438,8 @@ export function buildVardoOverlay(opts: {
   memoryLimit?: number | null;
   /** Burstable baseline in MB, under deploy.resources.reservations. */
   memoryReservation?: number | null;
+  /** Learned default in MB, ahead of the tier default. */
+  learnedMemoryMb?: number | null;
   gpuEnabled?: boolean;
   /** QoS tier, compiled into oom_score_adj, memory reservation and cpu_shares. */
   priority?: "critical" | "standard" | "disposable" | null;
@@ -501,14 +503,15 @@ export function buildVardoOverlay(opts: {
     const effCpuLimit = cfg ? cfg.cpuLimit : cpuLimit;
     const explicitMemoryLimit = cfg ? cfg.memoryLimit : memoryLimit;
     const burstReservation = cfg ? cfg.memoryReservation : memoryReservation;
+    const learnedMb = cfg ? cfg.learnedMemoryMb : opts.learnedMemoryMb;
     const effGpuEnabled = cfg ? cfg.gpuEnabled : gpuEnabled;
     const effPriority = cfg ? cfg.priority : priority;
     const tier = effPriority ?? "standard";
-    // App limit, then compose limit, then tier default. Explicit 0 means no cap.
+    // App limit, then compose limit, then learned default, then tier default. Explicit 0 means no cap.
     const declaredMemory = svc.deploy?.resources?.limits?.memory;
     const effMemory =
       explicitMemoryLimit == null
-        ? declaredMemory ?? `${defaultMemoryLimitMb(tier)}M`
+        ? declaredMemory ?? `${learnedMb && learnedMb > 0 ? learnedMb : defaultMemoryLimitMb(tier)}M`
         : explicitMemoryLimit > 0
           ? `${explicitMemoryLimit}M`
           : undefined;

@@ -288,7 +288,9 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
     }
     const tier = app.priority ?? "standard";
     ctx.log(
-      `[deploy] No memory limit set — applying the ${tier} tier default of ${defaultMemoryLimitMb(tier)}MB`,
+      ctx.learnedMemory
+        ? `[deploy] No memory limit set — applying the learned default of ${ctx.learnedMemory.mb}MB (${ctx.learnedMemory.reason})`
+        : `[deploy] No memory limit set — applying the ${tier} tier default of ${defaultMemoryLimitMb(tier)}MB`,
     );
   }
 
@@ -382,8 +384,9 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
     memoryReservation: memoryReservationFor({
       profile: effectiveProfile(app.memoryProfile, ctx.org?.memoryProfile),
       reservationMb: app.memoryReservation,
-      limitMb: app.memoryLimit ?? defaultMemoryLimitMb(app.priority ?? "standard"),
+      limitMb: app.memoryLimit ?? ctx.learnedMemory?.mb ?? defaultMemoryLimitMb(app.priority ?? "standard"),
     }),
+    learnedMemoryMb: app.memoryLimit == null ? (ctx.learnedMemory?.mb ?? null) : null,
     priority: app.priority,
     gpuEnabled: app.gpuEnabled ?? false,
     externalVolumes: compose.volumes ?? {},

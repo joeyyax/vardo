@@ -33,6 +33,8 @@ import { namespaceTraefikNames } from "../traefik-names";
 import { and, eq } from "drizzle-orm";
 import { effectiveProfile, memoryReservationFor } from "@/lib/resources/profile";
 import { defaultMemoryLimitMb } from "../compose-inject";
+import { detectHost, loadResourceSettings } from "@/lib/resources/host";
+import { learnedDefaults } from "@/lib/resources/learned-store";
 import type { DeployContext } from "../deploy-context";
 import type { ServiceConfigOverride } from "../compose-types";
 import { appScope } from "@/lib/infra/instance-apps";
@@ -103,16 +105,29 @@ export async function resolveCompose(ctx: DeployContext): Promise<DeployContext>
       eq(apps.parentAppId, app.id),
       eq(apps.organizationId, ctx.organizationId),
     ),
-    columns: { composeService: true, cpuLimit: true, memoryLimit: true, memoryProfile: true, memoryReservation: true, gpuEnabled: true, priority: true },
+    columns: { id: true, composeService: true, cpuLimit: true, memoryLimit: true, memoryProfile: true, memoryReservation: true, gpuEnabled: true, priority: true },
   });
   const childByService = new Map(
     children.filter((c) => c.composeService).map((c) => [c.composeService!, c]),
   );
+
+  // Learned defaults cover only apps without a limit of their own.
+  await Promise.all([detectHost(), loadResourceSettings()]);
+  const unlimited = [
+    ...(app.memoryLimit == null ? [{ id: app.id, tier: app.priority ?? "standard" }] : []),
+    ...children
+      .filter((c) => (c.memoryLimit ?? app.memoryLimit) == null)
+      .map((c) => ({ id: c.id, tier: c.priority ?? app.priority ?? "standard" })),
+  ];
+  const learned = await learnedDefaults(unlimited);
+  const own = learned.get(app.id);
+  ctx.learnedMemory = own ? { mb: own.mb, reason: own.reason } : null;
+
   const reservationOf = (child: (typeof children)[number], memoryLimit: number | null) => {
     const reserved = memoryReservationFor({
       profile: effectiveProfile(child.memoryProfile ?? app.memoryProfile, ctx.org?.memoryProfile),
       reservationMb: child.memoryReservation ?? app.memoryReservation,
-      limitMb: memoryLimit ?? defaultMemoryLimitMb(child.priority ?? app.priority ?? "standard"),
+      limitMb: memoryLimit ?? learned.get(child.id)?.mb ?? defaultMemoryLimitMb(child.priority ?? app.priority ?? "standard"),
     });
     return reserved ? { memoryReservation: reserved } : {};
   };
@@ -125,6 +140,7 @@ export async function resolveCompose(ctx: DeployContext): Promise<DeployContext>
       cpuLimit: child.cpuLimit ?? app.cpuLimit,
       memoryLimit,
       ...reservationOf(child, memoryLimit),
+      ...(memoryLimit == null && learned.has(child.id) ? { learnedMemoryMb: learned.get(child.id)!.mb } : {}),
       // GPU is on if the parent or the child enables it.
       gpuEnabled: !!app.gpuEnabled || child.gpuEnabled,
       priority: child.priority ?? app.priority,

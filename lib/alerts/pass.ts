@@ -65,6 +65,23 @@ async function maybeSweepAutotune(kills: OomRecord[], now: number): Promise<void
   }
 }
 
+// TODO: register as a worker loop once lib/worker lands.
+let lastUsageDay = -1;
+
+/** Once per UTC day: records yesterday's memory p99 for learned defaults. */
+async function maybeRecordUsage(now: number): Promise<void> {
+  const day = Math.floor(now / (24 * 60 * 60_000));
+  if (day === lastUsageDay) return;
+  lastUsageDay = day;
+  try {
+    const { recordDailyUsage } = await import("@/lib/resources/learned-store");
+    const recorded = await recordDailyUsage(new Date(now));
+    if (recorded > 0) log.info(`Recorded memory use for ${recorded} app(s)`);
+  } catch (err) {
+    log.error("Recording memory use for learned defaults failed:", err);
+  }
+}
+
 async function conditionApps(): Promise<ConditionApp[]> {
   const stacks = alias(apps, "stacks");
   const rows = await db
@@ -114,6 +131,7 @@ export async function runAlertPass(input: { disk: HostSample["disk"] }, now = Da
   for (const record of kills) add(record.organizationId, await oomAlert(record, now));
   for (const { organizationId, observation } of await autotuneAlerts()) add(organizationId, observation);
   await maybeSweepAutotune(kills, now);
+  await maybeRecordUsage(now);
 
   let anomalies: Map<string, Observation[]> | null = null;
   try {

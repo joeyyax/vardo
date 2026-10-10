@@ -7,6 +7,8 @@ import { db } from "@/lib/db";
 import { appMemoryAutotune, apps } from "@/lib/db/schema";
 import { detectHost, loadResourceSettings, tierMemoryMb } from "@/lib/resources/host";
 import { describeMemory } from "@/lib/resources/profile";
+import { learnedStatus } from "@/lib/resources/learned";
+import { learnedSummary } from "@/lib/ui/resource-formulas";
 import { getOrgTimeZone } from "@/lib/time-zone-settings";
 
 type RouteParams = {
@@ -33,6 +35,9 @@ async function handleGet(_request: NextRequest, { params }: RouteParams) {
       loadResourceSettings(),
     ]);
     const tier = app.priority ?? "standard";
+    const status = learnedStatus(state?.dailyPeaks ?? [], tierMemoryMb(tier), Date.now());
+    const explicit = app.memoryLimit !== null;
+    const running = app.status === "active" && app.containerMemoryLimit ? Math.round(app.containerMemoryLimit / 1024 / 1024) : null;
     const memory = describeMemory({
       appProfile: app.memoryProfile,
       orgProfile: org.organization.memoryProfile,
@@ -40,11 +45,13 @@ async function handleGet(_request: NextRequest, { params }: RouteParams) {
       reservationMb: app.memoryReservation,
       tierDefaultMb: tierMemoryMb(tier),
       tier,
+      learned: explicit ? null : status.learned,
       containerLimitBytes: app.status === "active" ? app.containerMemoryLimit : null,
       autotune: state ?? null,
       formatDate: (d) => d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone }),
     });
-    return NextResponse.json({ memory, cpu: { profile: "fixed" } });
+    const learned = { mb: status.learned?.mb ?? null, summary: learnedSummary(status, { explicit, runningMb: running }) };
+    return NextResponse.json({ memory, learned, cpu: { profile: "fixed" } });
   } catch (error) {
     return handleRouteError(error, "Error reading the resource profile");
   }
