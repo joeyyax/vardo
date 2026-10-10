@@ -6,6 +6,7 @@ import { stripVardoInjections } from "@/lib/docker/compose-inject";
 const SRC = `services:
   wireguard:
     image: linuxserver/wireguard
+    x-vardo-shared: true
     networks:
       internal:
       mesh:
@@ -70,6 +71,20 @@ describe("per-network service settings", () => {
       frontend: {}
 `);
     expect(compose.services.web.network_options).toEqual({ backend: { aliases: ["api"] } });
+  });
+
+  it("drops fixed addresses on a slotted service, keeping the rest", () => {
+    const compose = parseCompose(`services:
+  frontend:
+    image: app
+    networks:
+      mesh:
+        ipv4_address: 10.88.0.3
+        aliases: [console]
+      internal:
+        ipv4_address: 10.88.1.3
+`);
+    expect(compose.services.frontend.network_options).toEqual({ mesh: { aliases: ["console"] } });
   });
 
   it("drops settings for a network the service leaves", () => {

@@ -165,6 +165,18 @@ function volumeToShort(entry: unknown, tmpfs: string[]): string | null {
   return `${source}:${target}${opts.length ? `:${opts.join(",")}` : ""}`;
 }
 
+const FIXED_ADDRESS_KEYS = ["ipv4_address", "ipv6_address", "mac_address"];
+
+/** Fixed addresses only on shared services; blue and green would collide. */
+function dropFixedAddresses(svc: ComposeService): void {
+  const kept: Record<string, Record<string, unknown>> = {};
+  for (const [net, opts] of Object.entries(svc.network_options ?? {})) {
+    const rest = Object.fromEntries(Object.entries(opts).filter(([k]) => !FIXED_ADDRESS_KEYS.includes(k)));
+    if (Object.keys(rest).length > 0) kept[net] = rest;
+  }
+  svc.network_options = Object.keys(kept).length > 0 ? kept : undefined;
+}
+
 /** Parse a YAML string into a ComposeFile. */
 export function parseCompose(yamlString: string): ComposeFile {
   const parsed = parseComposeYaml(yamlString);
@@ -341,6 +353,7 @@ export function parseCompose(yamlString: string): ComposeFile {
     if (svc[SHARED_MARKER] && typeof raw.container_name === "string") {
       svc.container_name = raw.container_name;
     }
+    if (!svc[SHARED_MARKER] && svc.network_options) dropFixedAddresses(svc);
 
     services[name] = svc;
   }
