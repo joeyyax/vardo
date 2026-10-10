@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-// Mock DNS and fetch before importing the module under test.
 vi.mock("dns", () => ({
   promises: {
     resolve4: vi.fn().mockResolvedValue(["93.184.216.34"]),
@@ -14,111 +13,131 @@ vi.mock("@/lib/security/outbound-policy", () => ({ getDomainProbePolicy: async (
 
 import { checkFileExposure } from "@/lib/security/file-exposure";
 
-function mockResponse(status: number, body: string): Response {
-  return {
-    status,
-    arrayBuffer: async () => new TextEncoder().encode(body).buffer,
-  } as unknown as Response;
+type Body = string | Uint8Array<ArrayBuffer>;
+
+function respond(status: number, body: Body = "", contentType = "text/plain"): Response {
+  return new Response(status === 204 ? null : body, { status, headers: { "content-type": contentType } });
 }
 
-beforeEach(() => {
-  mockFetch.mockResolvedValue(mockResponse(404, ""));
-});
+/** Serves `files` exactly and `fallback` for every other path. */
+function site(files: Record<string, () => Response>, fallback: () => Response = () => respond(404, "Not found")) {
+  mockFetch.mockImplementation(async (url: string) => {
+    const path = new URL(url).pathname;
+    return (files[path] ?? fallback)();
+  });
+}
+
+const SPA_HTML = `<!DOCTYPE html><html><head><title>App</title></head><body><div id="root"></div>${"x".repeat(4000)}</body></html>`;
+const PEM = "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASC\n-----END PRIVATE KEY-----\n";
+const DS_STORE: Uint8Array<ArrayBuffer> = new Uint8Array([0x00, 0x00, 0x00, 0x01, 0x42, 0x75, 0x64, 0x31, 0x00, 0x00, 0x10, 0x00]);
+
+beforeEach(() => site({}));
 
 afterEach(() => {
   vi.clearAllMocks();
 });
 
 describe("checkFileExposure", () => {
-  it("returns no findings when all paths return 404", async () => {
-    const findings = await checkFileExposure("example.com");
-    expect(findings).toEqual([]);
+  it("returns no findings when every path is a 404", async () => {
+    expect(await checkFileExposure("example.com")).toEqual([]);
   });
 
-  it("flags a critical finding when /.env is accessible with key=value content", async () => {
-    mockFetch.mockImplementation((url: string) => {
-      if (url.endsWith("/.env")) {
-        return Promise.resolve(mockResponse(200, "APP_SECRET=abc123\nDB_URL=postgres://..."));
-      }
-      return Promise.resolve(mockResponse(404, ""));
-    });
-
-    const findings = await checkFileExposure("example.com");
-    const envFinding = findings.find((f) => f.detail === "/.env");
-    expect(envFinding).toBeDefined();
-    expect(envFinding?.severity).toBe("critical");
-    expect(envFinding?.type).toBe("file-exposure");
+  it("ignores an SPA that serves its HTML for every path", async () => {
+    site({}, () => respond(200, SPA_HTML, "text/html; charset=utf-8"));
+    expect(await checkFileExposure("example.com")).toEqual([]);
   });
 
-  it("flags a critical finding when /.git/config is accessible", async () => {
-    mockFetch.mockImplementation((url: string) => {
-      if (url.endsWith("/.git/config")) {
-        return Promise.resolve(mockResponse(200, "[core]\n\trepositoryformatversion = 0"));
-      }
-      return Promise.resolve(mockResponse(404, ""));
-    });
-
-    const findings = await checkFileExposure("example.com");
-    const finding = findings.find((f) => f.detail === "/.git/config");
-    expect(finding).toBeDefined();
-    expect(finding?.severity).toBe("critical");
+  it("ignores HTML for a non-HTML file even when it differs from the baseline", async () => {
+    site({ "/.env": () => respond(200, "<html><body>a=b</body></html>", "text/html") });
+    expect(await checkFileExposure("example.com")).toEqual([]);
   });
 
-  it("does not flag /.env when body has no = sign", async () => {
-    mockFetch.mockImplementation((url: string) => {
-      if (url.endsWith("/.env")) {
-        return Promise.resolve(mockResponse(200, "not a key value file"));
-      }
-      return Promise.resolve(mockResponse(404, ""));
-    });
-
-    const findings = await checkFileExposure("example.com");
-    expect(findings.find((f) => f.detail === "/.env")).toBeUndefined();
+  it("ignores an API that answers 401 for every path", async () => {
+    site({}, () => respond(401, '{"error":"unauthorized"}', "application/json"));
+    expect(await checkFileExposure("example.com")).toEqual([]);
   });
 
-  it("does not flag /config.yml for arbitrary HTTP responses", async () => {
-    // HTML response should not match the YAML heuristic
-    mockFetch.mockImplementation((url: string) => {
-      if (url.endsWith("/config.yml")) {
-        return Promise.resolve(mockResponse(200, "<html><body>Hello world</body></html>"));
-      }
-      return Promise.resolve(mockResponse(404, ""));
-    });
-
-    const findings = await checkFileExposure("example.com");
-    expect(findings.find((f) => f.detail === "/config.yml")).toBeUndefined();
+  it("ignores 403 even when the body looks like the file", async () => {
+    site({ "/.env": () => respond(403, "SECRET=abc") });
+    expect(await checkFileExposure("example.com")).toEqual([]);
   });
 
-  it("flags /config.yml when body contains YAML key-value lines", async () => {
-    mockFetch.mockImplementation((url: string) => {
-      if (url.endsWith("/config.yml")) {
-        return Promise.resolve(mockResponse(200, "database:\n  host: localhost\n  port: 5432\n"));
-      }
-      return Promise.resolve(mockResponse(404, ""));
-    });
-
-    const findings = await checkFileExposure("example.com");
-    expect(findings.find((f) => f.detail === "/config.yml")).toBeDefined();
+  it("ignores a catch-all that returns the same plain text for every path", async () => {
+    site({}, () => respond(200, "OK=1"));
+    expect(await checkFileExposure("example.com")).toEqual([]);
   });
 
-  it("ignores responses larger than the size cap by reading only the first 64 KB", async () => {
-    // A 128 KB body of '=' chars would match /.env heuristic regardless
-    const bigBody = "=".repeat(128 * 1024);
-    mockFetch.mockImplementation((url: string) => {
-      if (url.endsWith("/.env")) {
-        return Promise.resolve(mockResponse(200, bigBody));
-      }
-      return Promise.resolve(mockResponse(404, ""));
-    });
-
-    // Should still detect exposure — the slice includes the = char
+  it("flags a real .env as critical", async () => {
+    site({ "/.env": () => respond(200, "APP_SECRET=abc123\nDATABASE_URL=postgres://u:p@db/app\n") });
     const findings = await checkFileExposure("example.com");
-    expect(findings.find((f) => f.detail === "/.env")).toBeDefined();
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toMatchObject({ type: "file-exposure", severity: "critical", detail: "/.env" });
+  });
+
+  it("flags a real .env on an SPA whose catch-all is HTML", async () => {
+    site(
+      { "/.env": () => respond(200, "API_KEY=abc\n", "application/octet-stream") },
+      () => respond(200, SPA_HTML, "text/html"),
+    );
+    const findings = await checkFileExposure("example.com");
+    expect(findings.map((f) => f.detail)).toEqual(["/.env"]);
+  });
+
+  it("does not flag a .env without KEY=VALUE lines", async () => {
+    site({ "/.env": () => respond(200, "not a key value file") });
+    expect(await checkFileExposure("example.com")).toEqual([]);
+  });
+
+  it("flags a real PEM key", async () => {
+    site({ "/server.key": () => respond(200, PEM, "application/x-pem-file") });
+    const findings = await checkFileExposure("example.com");
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toMatchObject({ severity: "critical", detail: "/server.key" });
+  });
+
+  it("flags a real .DS_Store by its magic bytes", async () => {
+    site({ "/.DS_Store": () => respond(200, DS_STORE, "application/octet-stream") });
+    const findings = await checkFileExposure("example.com");
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toMatchObject({ severity: "warning", detail: "/.DS_Store" });
+  });
+
+  it("does not flag a .DS_Store without the magic bytes", async () => {
+    site({ "/.DS_Store": () => respond(200, "hello", "application/octet-stream") });
+    expect(await checkFileExposure("example.com")).toEqual([]);
+  });
+
+  it("flags .git/config and .git/HEAD by signature", async () => {
+    site({
+      "/.git/config": () => respond(200, "[core]\n\trepositoryformatversion = 0\n"),
+      "/.git/HEAD": () => respond(200, "ref: refs/heads/main\n"),
+    });
+    const details = (await checkFileExposure("example.com")).map((f) => f.detail).sort();
+    expect(details).toEqual(["/.git/HEAD", "/.git/config"]);
+  });
+
+  it("flags phpinfo even though it is HTML", async () => {
+    site({ "/phpinfo.php": () => respond(200, "<html><body><h1>PHP Version 8.2.1</h1>phpinfo()</body></html>", "text/html") });
+    expect((await checkFileExposure("example.com")).map((f) => f.detail)).toEqual(["/phpinfo.php"]);
+  });
+
+  it("only reads a bounded prefix of large bodies", async () => {
+    let pulled = 0;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulled += 1024;
+        controller.enqueue(new TextEncoder().encode("A=1\n".repeat(256)));
+        if (pulled > 10 * 1024 * 1024) controller.close();
+      },
+    });
+    site({ "/.env": () => new Response(stream, { status: 200, headers: { "content-type": "text/plain" } }) });
+    const findings = await checkFileExposure("example.com");
+    expect(findings.map((f) => f.detail)).toEqual(["/.env"]);
+    expect(pulled).toBeLessThan(64 * 1024);
   });
 
   it("returns no findings on network error", async () => {
     mockFetch.mockRejectedValue(new Error("ECONNREFUSED"));
-    const findings = await checkFileExposure("example.com");
-    expect(findings).toEqual([]);
+    expect(await checkFileExposure("example.com")).toEqual([]);
   });
 });
