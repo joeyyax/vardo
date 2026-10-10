@@ -164,3 +164,7 @@ export const activityOutcomeEnum = pgEnum("activity_outcome", [
   "failure",
   "neutral",
 ]);
+
+/** How Vardo treats an app's limit: as set, as a baseline plus a ceiling, or tuned over time. */
+export const RESOURCE_PROFILES = ["fixed", "burstable", "auto"] as const;
+export type ResourceProfile = (typeof RESOURCE_PROFILES)[number];

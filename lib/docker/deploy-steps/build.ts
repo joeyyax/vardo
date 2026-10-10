@@ -1,6 +1,7 @@
 // Deploy steps 4-5: slot selection, compose files, volume externalization and .env.
 
 import { detectHost, loadResourceSettings } from "@/lib/resources/host";
+import { effectiveProfile, memoryReservationFor } from "@/lib/resources/profile";
 import { db } from "@/lib/db";
 import { orgEnvVars, apps } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
@@ -365,6 +366,11 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
     projectNetwork: ctx.projectNetwork,
     cpuLimit: app.cpuLimit,
     memoryLimit: app.memoryLimit,
+    memoryReservation: memoryReservationFor({
+      profile: effectiveProfile(app.memoryProfile, ctx.org?.memoryProfile),
+      reservationMb: app.memoryReservation,
+      limitMb: app.memoryLimit ?? defaultMemoryLimitMb(app.priority ?? "standard"),
+    }),
     priority: app.priority,
     gpuEnabled: app.gpuEnabled ?? false,
     externalVolumes: compose.volumes ?? {},

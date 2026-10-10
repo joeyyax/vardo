@@ -26,6 +26,7 @@ import {
 import type { App } from "./types";
 import { can } from "@/lib/auth/permissions";
 import { cpuLimitHint } from "@/lib/ui/cpu-limit";
+import { MemoryProfileFields, type MemoryProfileValues } from "./memory-profile-fields";
 
 /** Said under every field the container only picks up when it is recreated. */
 const REDEPLOY_NOTE = "Requires a redeploy to take effect.";
@@ -81,6 +82,12 @@ export function AppSettingsPanel({
   const [editParentId, setEditParentId] = useState<string | null>(app.projectId ?? null);
   const [cpuLimit, setCpuLimit] = useState(app.cpuLimit?.toString() || "");
   const [memoryLimit, setMemoryLimit] = useState(app.memoryLimit?.toString() || "");
+  const [memoryProfile, setMemoryProfile] = useState<MemoryProfileValues>({
+    profile: app.memoryProfile ?? "inherit",
+    reservation: app.memoryReservation?.toString() ?? "",
+    autoMin: app.memoryAutoMinMb?.toString() ?? "",
+    autoMax: app.memoryAutoMaxMb?.toString() ?? "",
+  });
   const [gpuEnabled, setGpuEnabled] = useState(app.gpuEnabled ?? false);
   // A decomposed child can inherit the parent's tier (priority === null).
   const [priority, setPriority] = useState<"critical" | "standard" | "disposable" | "inherit">(
@@ -117,6 +124,13 @@ export function AppSettingsPanel({
       if (fields.resourceLimits) {
         body.cpuLimit = cpuLimit ? parseFloat(cpuLimit) : null;
         body.memoryLimit = memoryLimit ? parseInt(memoryLimit, 10) : null;
+        if (!isComposeParent) {
+          const mb = (v: string) => (v ? parseInt(v, 10) : null);
+          body.memoryProfile = memoryProfile.profile === "inherit" ? null : memoryProfile.profile;
+          body.memoryReservation = memoryProfile.profile === "burstable" ? mb(memoryProfile.reservation) : null;
+          body.memoryAutoMinMb = mb(memoryProfile.autoMin);
+          body.memoryAutoMaxMb = mb(memoryProfile.autoMax);
+        }
       }
       if (fields.priority) body.priority = priority === "inherit" ? null : priority;
       if (fields.gpu) body.gpuEnabled = gpuEnabled;
@@ -175,6 +189,8 @@ export function AppSettingsPanel({
         restartPolicy: app.restartPolicy || "unless-stopped",
         cpuLimit: app.cpuLimit,
         memoryLimit: app.memoryLimit,
+        memoryProfile: app.memoryProfile ?? null,
+        memoryReservation: app.memoryReservation ?? null,
         priority: app.priority,
         gpuEnabled: app.gpuEnabled ?? false,
       };
@@ -523,6 +539,9 @@ export function AppSettingsPanel({
             <p className="text-xs text-muted-foreground">
               Each service gets these limits, unless it sets its own in Services.
             </p>
+          )}
+          {!isComposeParent && (
+            <MemoryProfileFields orgId={orgId} appId={app.id} values={memoryProfile} onChange={setMemoryProfile} />
           )}
         </div>
       )}

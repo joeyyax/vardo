@@ -37,6 +37,9 @@ const PHRASES: Record<string, Phrase> = {
   "app.crash_looping": { text: "detected a crash loop on" },
   "app.recovered": { text: "confirmed recovery of" },
   "app.self_healed": { text: "restarted an unhealthy container on" },
+  "app.memory_raised": { text: "raised the memory limit of" },
+  "app.memory_lowered": { text: "lowered the memory limit of" },
+  "app.memory_autotune_stopped": { text: "stopped auto-adjusting memory for" },
   "app.certs_exported": { text: "loaded new certificates into" },
   "app.certs_missing": { text: "timed out waiting for certificates on" },
 

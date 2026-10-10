@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { judgeThreshold, type Point } from "@/lib/alerts/threshold";
 import { HOST_RULES, HostSampleBuffer, hostObservations, parseMeminfo, type HostSample } from "@/lib/alerts/host";
-import { conditionObservations, oomObservation, UNHEALTHY_ALERT_MS } from "@/lib/alerts/apps";
-import { recentOomKills, recordOomKill, resetOomKills, OOM_HOLD_MS } from "@/lib/alerts/oom";
+import { conditionObservations, UNHEALTHY_ALERT_MS } from "@/lib/alerts/apps";
+import { oomObservation, recentOomKills, recordOomKill, resetOomKills, OOM_HOLD_MS } from "@/lib/alerts/oom";
 
 const MIN = 60_000;
 const now = 10 * 60 * MIN;

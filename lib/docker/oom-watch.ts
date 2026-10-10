@@ -116,6 +116,7 @@ async function reportContainerKills(subjects: OomSubject[], now: number): Promis
       containerName: subject.containerName,
       containerId: subject.containerId,
       kind: host ? "oom-host" : "oom-limit",
+      path: "process",
       exitCode: 137,
       at: new Date(now).toISOString(),
     });

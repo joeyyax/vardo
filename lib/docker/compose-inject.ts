@@ -429,6 +429,8 @@ export function buildVardoOverlay(opts: {
   projectNetwork?: string | null;
   cpuLimit?: number | null;
   memoryLimit?: number | null;
+  /** Burstable baseline in MB, under deploy.resources.reservations. */
+  memoryReservation?: number | null;
   gpuEnabled?: boolean;
   /** QoS tier, compiled into oom_score_adj, memory reservation and cpu_shares. */
   priority?: "critical" | "standard" | "disposable" | null;
@@ -454,6 +456,7 @@ export function buildVardoOverlay(opts: {
     networkName,
     cpuLimit,
     memoryLimit,
+    memoryReservation,
     gpuEnabled,
     priority = "standard",
     externalVolumes = {},
@@ -490,6 +493,7 @@ export function buildVardoOverlay(opts: {
     const cfg = serviceConfig[name];
     const effCpuLimit = cfg ? cfg.cpuLimit : cpuLimit;
     const explicitMemoryLimit = cfg ? cfg.memoryLimit : memoryLimit;
+    const burstReservation = cfg ? cfg.memoryReservation : memoryReservation;
     const effGpuEnabled = cfg ? cfg.gpuEnabled : gpuEnabled;
     const effPriority = cfg ? cfg.priority : priority;
     const tier = effPriority ?? "standard";
@@ -565,6 +569,7 @@ export function buildVardoOverlay(opts: {
       overlayService.oom_score_adj = 0;
       overlayService.cpu_shares = 1024;
     }
+    if (!infra && burstReservation) memReservation = `${burstReservation}M`;
 
     const svcPorts = serviceExposedPorts[name];
     if (svcPorts && svcPorts.length > 0) {

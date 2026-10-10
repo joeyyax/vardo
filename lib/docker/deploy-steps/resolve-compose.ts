@@ -27,6 +27,8 @@ import {
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
 import { and, eq } from "drizzle-orm";
+import { effectiveProfile, memoryReservationFor } from "@/lib/resources/profile";
+import { defaultMemoryLimitMb } from "../compose-inject";
 import type { DeployContext } from "../deploy-context";
 import type { ServiceConfigOverride } from "../compose-types";
 import { appScope } from "@/lib/infra/instance-apps";
@@ -96,18 +98,28 @@ export async function resolveCompose(ctx: DeployContext): Promise<DeployContext>
       eq(apps.parentAppId, app.id),
       eq(apps.organizationId, ctx.organizationId),
     ),
-    columns: { composeService: true, cpuLimit: true, memoryLimit: true, gpuEnabled: true, priority: true },
+    columns: { composeService: true, cpuLimit: true, memoryLimit: true, memoryProfile: true, memoryReservation: true, gpuEnabled: true, priority: true },
   });
   const childByService = new Map(
     children.filter((c) => c.composeService).map((c) => [c.composeService!, c]),
   );
+  const reservationOf = (child: (typeof children)[number], memoryLimit: number | null) => {
+    const reserved = memoryReservationFor({
+      profile: effectiveProfile(child.memoryProfile ?? app.memoryProfile, ctx.org?.memoryProfile),
+      reservationMb: child.memoryReservation ?? app.memoryReservation,
+      limitMb: memoryLimit ?? defaultMemoryLimitMb(child.priority ?? app.priority ?? "standard"),
+    });
+    return reserved ? { memoryReservation: reserved } : {};
+  };
   const serviceConfig: Record<string, ServiceConfigOverride> = {};
   for (const name of Object.keys(compose.services)) {
     const child = childByService.get(name);
     if (!child) continue;
+    const memoryLimit = child.memoryLimit ?? app.memoryLimit;
     serviceConfig[name] = {
       cpuLimit: child.cpuLimit ?? app.cpuLimit,
-      memoryLimit: child.memoryLimit ?? app.memoryLimit,
+      memoryLimit,
+      ...reservationOf(child, memoryLimit),
       // GPU is on if the parent or the child enables it.
       gpuEnabled: !!app.gpuEnabled || child.gpuEnabled,
       priority: child.priority ?? app.priority,

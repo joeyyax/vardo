@@ -1,13 +1,14 @@
 import {
   boolean,
   index,
+  integer,
   pgTable,
   text,
   timestamp,
   unique,
 } from "drizzle-orm/pg-core";
 import { user } from "./auth";
-import { invitationScopeEnum, invitationStatusEnum } from "./enums";
+import { invitationScopeEnum, invitationStatusEnum, RESOURCE_PROFILES } from "./enums";
 
 export const organizations = pgTable("organization", {
   id: text("id").primaryKey(),
@@ -26,6 +27,11 @@ export const organizations = pgTable("organization", {
   timeZone: text("time_zone"),
   // How far an app may stray from its baseline before it alerts.
   anomalySensitivity: text("anomaly_sensitivity", { enum: ["low", "normal", "high"] }).default("normal").notNull(),
+  // Default resource profiles for apps that set none.
+  memoryProfile: text("memory_profile", { enum: RESOURCE_PROFILES }).default("fixed").notNull(),
+  cpuProfile: text("cpu_profile", { enum: RESOURCE_PROFILES }).default("fixed").notNull(),
+  // Highest memory limit the auto profile may set, in MB. Null leaves only the host cap.
+  memoryAutoMaxMb: integer("memory_auto_max_mb"),
   // DNS TXT challenge for baseDomain.
   baseDomainToken: text("base_domain_token"),
   baseDomainVerifiedAt: timestamp("base_domain_verified_at"),

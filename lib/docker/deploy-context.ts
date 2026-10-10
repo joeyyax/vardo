@@ -1,3 +1,4 @@
+import type { ResourceProfile } from "@/lib/db/schema/enums";
 // Deploy pipeline state. Steps mutate their own fields and throw on failure; runDeployment handles recovery.
 
 import type { ComposeFile, ServiceConfigOverride } from "./compose-types";
@@ -42,6 +43,8 @@ export type DeployApp = {
   needsRedeploy: boolean | null;
   cpuLimit: number | null;
   memoryLimit: number | null;
+  memoryProfile?: ResourceProfile | null;
+  memoryReservation?: number | null;
   priority: "critical" | "standard" | "disposable" | null;
   gpuEnabled: boolean | null;
   certServices?: string[] | null;
@@ -95,7 +98,7 @@ export type DeployContext = {
   app: DeployApp;
 
   /** Organization record (subset). */
-  org: { id: string; name: string; baseDomain: string | null; trusted: boolean } | null;
+  org: { id: string; name: string; baseDomain: string | null; trusted: boolean; memoryProfile?: ResourceProfile } | null;
   orgTrusted: boolean;
   projectAllowBindMounts: boolean;
   projectAllowDockerSocket: boolean;

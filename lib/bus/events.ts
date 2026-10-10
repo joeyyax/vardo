@@ -607,6 +607,10 @@ export type AppOomKilledEvent = {
   containerName: string;
   containerId: string;
   kind: "oom-host" | "oom-limit";
+  /** `process`: a child was killed and the container kept running. `exit`: the container exited. */
+  path?: "process" | "exit";
+  /** Docker's restart count for the app when the kill was seen. */
+  restartCount?: number | null;
   exitCode: number;
   /** ISO timestamp the container finished. */
   at: string;
@@ -623,6 +627,8 @@ export type AlertItem = {
   title: string;
   /** One or two sentences: what's wrong and what to do. */
   detail: string;
+  /** What to do, when it reads better as its own line. */
+  next?: string;
   appId?: string;
   appName?: string;
   gauge?: { title: string; percent: number; warn: number; critical: number };

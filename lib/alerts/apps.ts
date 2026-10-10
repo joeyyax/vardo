@@ -1,11 +1,10 @@
-// App alerts from the health monitor's conditions and recent OOM kills.
+// App alerts from the health monitor's conditions.
 
 import type { AlertItem } from "@/lib/bus/events";
 import type { AppCondition } from "@/lib/docker/conditions";
 import type { Observation } from "@/lib/notifications/observations";
 import type { AlertType } from "@/lib/notifications/registry";
 import { formatDuration } from "@/lib/email/format";
-import type { OomRecord } from "./oom";
 
 export const APP_ALERT_TYPES: AlertType[] = ["app.oom", "app.restart-loop", "app.memory-limit", "app.unhealthy"];
 
@@ -83,30 +82,4 @@ export function conditionObservations(app: ConditionApp, now: number): Observati
     );
   }
   return out;
-}
-
-export function oomObservation(record: OomRecord): Observation {
-  const containers = [...record.containers].map(([name, n]) => (n > 1 ? `${name} (${n})` : name));
-  return {
-    type: "app.oom",
-    about: record.appId,
-    severity: "critical",
-    fires: true,
-    item: {
-      type: "app.oom",
-      about: record.appId,
-      appId: record.appId,
-      appName: record.appName,
-      severity: "critical",
-      title: `${record.appName} was killed for memory`,
-      detail: record.hostKill
-        ? "The host ran out of memory and the kernel killed it. Free memory on the host or give the app a limit."
-        : "It hit its own memory limit. Raise the limit or find what's using more than it was given.",
-      facts: [
-        { label: "Kills", value: String(record.kills) },
-        { label: containers.length === 1 ? "Container" : "Containers", value: containers.join(", ") },
-      ],
-      since: new Date(record.firstAt).toISOString(),
-    },
-  };
 }

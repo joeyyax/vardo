@@ -1,5 +1,6 @@
 import {
   index,
+  integer,
   jsonb,
   pgTable,
   text,
@@ -65,3 +66,26 @@ export const containerSelfHeal = pgTable(
   },
   (t) => [index("container_self_heal_updated_at_idx").on(t.updatedAt)]
 );
+
+/** Auto memory profile state per app: what it last set, when and why. */
+export const appMemoryAutotune = pgTable("app_memory_autotune", {
+  appId: text("app_id")
+    .primaryKey()
+    .references(() => apps.id, { onDelete: "cascade" }),
+  organizationId: text("organization_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  /** The limit auto-adjust last wrote, in MB. A different app limit means a person changed it. */
+  appliedMb: integer("applied_mb"),
+  lastRaisedAt: timestamp("last_raised_at"),
+  lastChangedAt: timestamp("last_changed_at"),
+  /** Why the last change happened: "after an OOM kill". */
+  lastReason: text("last_reason"),
+  /** Raises since the app last ran a day without needing one. */
+  raiseStreak: integer("raise_streak").notNull().default(0),
+  /** Set when the streak hit the cap; auto-adjust stops until someone sets the limit. */
+  haltedAt: timestamp("halted_at"),
+  /** Highest memory use per day, newest last. */
+  dailyPeaks: jsonb("daily_peaks").$type<{ day: string; bytes: number }[]>().notNull().default([]),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});

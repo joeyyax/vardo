@@ -189,6 +189,8 @@ export type ValidateOptions = {
 export type ServiceConfigOverride = {
   cpuLimit: number | null;
   memoryLimit: number | null;
+  /** Burstable baseline in MB. Null reserves nothing. */
+  memoryReservation?: number | null;
   gpuEnabled: boolean;
   /** Resolved QoS tier: the child's priority, else the parent's. Null means "standard". */
   priority: "critical" | "standard" | "disposable" | null;

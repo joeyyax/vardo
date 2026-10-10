@@ -19,6 +19,7 @@ import {
   cloneStrategyEnum,
   deployTypeEnum,
   sourceEnum,
+  RESOURCE_PROFILES,
 } from "./enums";
 import { organizations } from "./organizations";
 import { projects } from "./projects";
@@ -106,6 +107,15 @@ export const apps = pgTable(
     needsRedeploy: boolean("needs_redeploy").default(false),
     cpuLimit: real("cpu_limit"), // CPU cores (e.g. 0.5, 1, 2)
     memoryLimit: integer("memory_limit"), // Memory in MB (e.g. 256, 512, 1024)
+    // Resource profile for memory. Null follows the org default.
+    memoryProfile: text("memory_profile", { enum: RESOURCE_PROFILES }),
+    // Burstable memory baseline in MB. Null is half the limit.
+    memoryReservation: integer("memory_reservation"),
+    // Auto profile bounds in MB. Null floor is the tier default; null ceiling is the org's.
+    memoryAutoMinMb: integer("memory_auto_min_mb"),
+    memoryAutoMaxMb: integer("memory_auto_max_mb"),
+    // Resource profile for CPU. Only fixed acts so far.
+    cpuProfile: text("cpu_profile", { enum: RESOURCE_PROFILES }),
     priority: appPriorityEnum("priority").default("standard"), // QoS tier. Null on a child inherits the parent's tier.
     gpuEnabled: boolean("gpu_enabled").notNull().default(false),
     // Services that get this app's own TLS certificates read-only at /certs. Null is off.

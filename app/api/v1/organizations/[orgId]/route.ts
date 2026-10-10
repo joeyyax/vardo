@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { isValidTimeZone } from "@/lib/time-zone";
 import { db } from "@/lib/db";
-import { organizations } from "@/lib/db/schema";
+import { organizations, RESOURCE_PROFILES } from "@/lib/db/schema";
 import { requireSession } from "@/lib/auth/session";
 import { isAppAdmin } from "@/lib/auth/admin";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
@@ -24,6 +24,9 @@ const updateOrgSchema = z.object({
   trusted: z.boolean().optional(),
   // Null follows the instance.
   timeZone: z.string().refine(isValidTimeZone, "Unknown time zone").nullable().optional(),
+  memoryProfile: z.enum(RESOURCE_PROFILES).optional(),
+  // MB. Null leaves only the host cap.
+  memoryAutoMaxMb: z.number().int().min(64).max(1048576).nullable().optional(),
 }).strict().refine(data => Object.keys(data).length > 0, { message: "No valid updates provided" });
 
 type RouteParams = {
@@ -95,6 +98,8 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
     }
     if (parsed.data.trusted !== undefined) updates.trusted = parsed.data.trusted;
     if (parsed.data.timeZone !== undefined) updates.timeZone = parsed.data.timeZone;
+    if (parsed.data.memoryProfile !== undefined) updates.memoryProfile = parsed.data.memoryProfile;
+    if (parsed.data.memoryAutoMaxMb !== undefined) updates.memoryAutoMaxMb = parsed.data.memoryAutoMaxMb;
 
     if (Object.keys(updates).length === 0 && parsed.data.baseDomain === undefined) {
       return NextResponse.json({ error: "No valid updates provided" }, { status: 400 });

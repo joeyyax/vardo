@@ -145,6 +145,10 @@ export type App = {
   exposedPorts: { internal: number; external?: number; description?: string }[] | null;
   cpuLimit: number | null;
   memoryLimit: number | null;
+  memoryProfile?: "fixed" | "burstable" | "auto" | null;
+  memoryReservation?: number | null;
+  memoryAutoMinMb?: number | null;
+  memoryAutoMaxMb?: number | null;
   priority: "critical" | "standard" | "disposable" | null;
   gpuEnabled: boolean | null;
   backendProtocol: "http" | "https" | null;

@@ -30,7 +30,8 @@ export function timeLabel(iso: string, tz: string = UTC): string {
 function itemLink(item: AlertItem, ctx: MailContext): MailLink {
   if (item.appId) {
     const tab = APP_TAB[item.type];
-    return { label: `Open ${item.appName ?? "app"}`, href: appPage(ctx, item.appId, tab) };
+    const label = item.type === "app.oom" ? "Change memory limit" : `Open ${item.appName ?? "app"}`;
+    return { label, href: appPage(ctx, item.appId, tab) };
   }
   if (item.type === "cron.failure") return { label: "Open cron jobs", href: consolePage(ctx, "/cron") };
   return { label: "Open metrics", href: consolePage(ctx, "/metrics") };
@@ -70,7 +71,7 @@ export function alertFiredMail(event: AlertFiredEvent, ctx: MailContext): Notifi
       status: critical ? "Critical" : "Warning",
       heading: first.title,
       preheader: first.detail,
-      paragraphs: [first.detail],
+      paragraphs: [first.detail, ...(first.next ? [first.next] : [])],
       visuals: itemVisuals(first, ctx),
       facts: itemFacts(first, ctx.timeZone),
       action: itemLink(first, ctx),
@@ -88,7 +89,7 @@ export function alertFiredMail(event: AlertFiredEvent, ctx: MailContext): Notifi
     visuals: items.slice(0, CHARTED_ALERTS).flatMap((item) => itemVisuals(item, ctx)),
     sections: items.map((item) => ({
       title: `${item.severity === "critical" ? "✗" : "!"} ${item.title}`,
-      facts: [{ label: "", value: item.detail }, ...itemFacts(item, ctx.timeZone)],
+      facts: [{ label: "", value: item.next ? `${item.detail} ${item.next}` : item.detail }, ...itemFacts(item, ctx.timeZone)],
     })),
     action: itemLink(first, ctx),
     links: links.filter((link, i) => links.findIndex((l) => l.href === link.href) === i && link.href !== itemLink(first, ctx).href),

@@ -230,6 +230,7 @@ type OomSubject = {
   appName: string;
   exitReason: ExitReason | null;
   oomFirstSeen: boolean;
+  restarts: { count: number | null };
 };
 
 /** One notification per OOM kill. */
@@ -254,6 +255,8 @@ async function reportOomKills(subjects: OomSubject[]): Promise<void> {
       containerName: reason.containerName,
       containerId: reason.containerId,
       kind: host ? "oom-host" : "oom-limit",
+      path: "exit",
+      restartCount: s.restarts.count,
       exitCode: reason.exitCode,
       at: reason.at,
     });

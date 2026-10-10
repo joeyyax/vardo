@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
-import { apps, projects } from "@/lib/db/schema";
+import { apps, projects, RESOURCE_PROFILES } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { z } from "zod";
 import { cpuLimitSchema, repoFilePathSchema, imageRefSchema } from "@/lib/api/create-app-schema";
@@ -58,6 +58,12 @@ const updateAppSchema = z.object({
   })).nullable().optional(),
   cpuLimit: cpuLimitSchema.nullable().optional(),
   memoryLimit: z.number().int().min(64).max(65536).nullable().optional(),
+  // Null follows the org default.
+  memoryProfile: z.enum(RESOURCE_PROFILES).nullable().optional(),
+  // MB: the burstable baseline and the Auto bounds.
+  memoryReservation: z.number().int().min(64).max(65536).nullable().optional(),
+  memoryAutoMinMb: z.number().int().min(64).max(65536).nullable().optional(),
+  memoryAutoMaxMb: z.number().int().min(64).max(1048576).nullable().optional(),
   priority: z.enum(["critical", "standard", "disposable"]).nullable().optional(), // null = inherit parent (decomposed child)
   gpuEnabled: z.boolean().optional(),
   // Services that get the app's own certificates at /certs. Null or empty turns it off.
@@ -73,7 +79,15 @@ const updateAppSchema = z.object({
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
   cloneStrategy: z.enum(["clone", "clone_data", "empty", "skip"]).optional(),
   dependsOn: z.array(z.string()).nullable().optional(),
-}).strict();
+}).strict()
+  .refine((d) => !(d.memoryReservation && d.memoryLimit && d.memoryReservation > d.memoryLimit), {
+    message: "The guaranteed memory can't be more than the limit",
+    path: ["memoryReservation"],
+  })
+  .refine((d) => !(d.memoryAutoMinMb && d.memoryAutoMaxMb && d.memoryAutoMinMb > d.memoryAutoMaxMb), {
+    message: "The Auto floor can't be above its ceiling",
+    path: ["memoryAutoMinMb"],
+  });
 
 // Only an explicit `true` destroys volumes and bind-mounted data.
 const deleteAppSchema = z.object({

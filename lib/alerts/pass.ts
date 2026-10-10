@@ -12,9 +12,10 @@ import { storeHostSample } from "@/lib/metrics/store-host";
 import { adminOrgIds } from "@/lib/notifications/admin-orgs";
 import { notifyObservations, type Observation } from "@/lib/notifications/observations";
 import type { AlertType } from "@/lib/notifications/registry";
-import { APP_ALERT_TYPES, conditionObservations, oomObservation, type ConditionApp } from "./apps";
+import { APP_ALERT_TYPES, conditionObservations, type ConditionApp } from "./apps";
+import { autotuneHaltObservation } from "./autotune";
 import { HostSampleBuffer, hostObservations, readHostSample, type HostSample } from "./host";
-import { recentOomKills } from "./oom";
+import { oomObservation, OOM_SETTLE_MS, recentOomKills, type OomRecord } from "./oom";
 
 const log = logger.child("alerts");
 
@@ -24,6 +25,45 @@ const OOM_CONFIRMS_MS = 5 * 60_000;
 const TOP_CONTAINERS = 3;
 
 const buffer = new HostSampleBuffer();
+
+/** How often auto-adjust sweeps for pressure, settling and lowering. */
+const AUTOTUNE_SWEEP_MS = 60 * 60_000;
+let lastSweepAt = 0;
+
+/** The OOM alert, with the follow-up once the kill has settled and before it's sent. */
+async function oomAlert(record: OomRecord, now: number): Promise<Observation> {
+  const settled = record.path === "process" || now - record.lastAt >= OOM_SETTLE_MS;
+  if (record.sent || !settled) return oomObservation(record, null, now);
+  try {
+    const { oomFollowup } = await import("./oom-followup");
+    return oomObservation(record, await oomFollowup(record, now), now);
+  } catch (err) {
+    log.error(`OOM follow-up failed for ${record.appId}:`, err);
+    return oomObservation(record, null, now);
+  }
+}
+
+async function autotuneAlerts(): Promise<{ organizationId: string; observation: Observation }[]> {
+  try {
+    const { haltedApps } = await import("@/lib/autotune/run");
+    return (await haltedApps()).map((h) => ({ organizationId: h.organizationId, observation: autotuneHaltObservation(h) }));
+  } catch (err) {
+    log.error("Reading auto-adjust state failed:", err);
+    return [];
+  }
+}
+
+async function maybeSweepAutotune(kills: OomRecord[], now: number): Promise<void> {
+  if (now - lastSweepAt < AUTOTUNE_SWEEP_MS) return;
+  lastSweepAt = now;
+  const lastKill = new Map(kills.map((k) => [k.appId, k.lastAt]));
+  try {
+    const { runAutotuneSweep } = await import("@/lib/autotune/run");
+    await runAutotuneSweep(new Date(now), (appId) => lastKill.get(appId) ?? null);
+  } catch (err) {
+    log.error("Auto-adjust sweep failed:", err);
+  }
+}
 
 async function conditionApps(): Promise<ConditionApp[]> {
   const stacks = alias(apps, "stacks");
@@ -71,7 +111,9 @@ export async function runAlertPass(input: { disk: HostSample["disk"] }, now = Da
   for (const app of await conditionApps()) {
     for (const o of conditionObservations(app, now)) add(app.organizationId, o);
   }
-  for (const record of kills) add(record.organizationId, oomObservation(record));
+  for (const record of kills) add(record.organizationId, await oomAlert(record, now));
+  for (const { organizationId, observation } of await autotuneAlerts()) add(organizationId, observation);
+  await maybeSweepAutotune(kills, now);
 
   let anomalies: Map<string, Observation[]> | null = null;
   try {
@@ -89,7 +131,11 @@ export async function runAlertPass(input: { disk: HostSample["disk"] }, now = Da
     const evaluated: AlertType[] = [...(isHostOrg ? host.evaluated : []), ...APP_ALERT_TYPES, ...(anomalies ? ANOMALY_ALERT_TYPES : [])];
     const observations = [...(isHostOrg ? host.observations : []), ...(byOrg.get(id) ?? [])];
     try {
-      await notifyObservations(id, evaluated, observations, at);
+      const { fired } = await notifyObservations(id, evaluated, observations, at);
+      for (const item of fired) {
+        const record = item.type === "app.oom" ? kills.find((k) => k.organizationId === id && k.appId === item.about) : undefined;
+        if (record) record.sent = true;
+      }
     } catch (err) {
       log.error(`Alert pass failed for org ${id}:`, err);
     }

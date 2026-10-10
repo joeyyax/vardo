@@ -340,7 +340,7 @@ export async function runDeployment(
 
     const org = await db.query.organizations.findFirst({
       where: eq(organizations.id, opts.organizationId),
-      columns: { id: true, name: true, slug: true, baseDomain: true, trusted: true, isSystemManaged: true },
+      columns: { id: true, name: true, slug: true, baseDomain: true, trusted: true, isSystemManaged: true, memoryProfile: true },
     });
     const orgTrusted = org?.trusted ?? false;
     const projectRow = app.projectId

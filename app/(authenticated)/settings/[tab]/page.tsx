@@ -13,6 +13,7 @@ import { NotificationCategoriesEditor } from "../notification-categories";
 import { TeamMembers } from "@/app/(authenticated)/team/team-members";
 import { InvitationsPanel } from "../invitations";
 import { OrgGeneralSettings } from "../org-general-settings";
+import { OrgResourceProfiles } from "../org-resource-profiles";
 import { BackupPage } from "@/components/backups/backup-page";
 import { getEmailProviderConfig } from "@/lib/system-settings";
 import { getInstanceBaseDomain } from "@/lib/domain-monitoring/base-domain";
@@ -55,12 +56,19 @@ export default async function OrgSettingsTabPage({
   switch (tab as ValidTab) {
     case "general":
       return (
-        <OrgGeneralSettings
-          orgId={orgId}
-          orgName={orgData.organization.name}
-          orgTimeZone={orgData.organization.timeZone ?? null}
-          instanceTimeZone={await getInstanceTimeZone()}
-        />
+        <div className="space-y-4">
+          <OrgGeneralSettings
+            orgId={orgId}
+            orgName={orgData.organization.name}
+            orgTimeZone={orgData.organization.timeZone ?? null}
+            instanceTimeZone={await getInstanceTimeZone()}
+          />
+          <OrgResourceProfiles
+            orgId={orgId}
+            memoryProfile={orgData.organization.memoryProfile}
+            autoMaxMb={orgData.organization.memoryAutoMaxMb ?? null}
+          />
+        </div>
       );
 
     case "variables":

@@ -736,6 +736,13 @@
       "when": 1791651550538,
       "tag": "0104_anomaly_alerts",
       "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "7",
+      "when": 1791652680195,
+      "tag": "0105_resource_profiles",
+      "breakpoints": true
     }
   ]
 }

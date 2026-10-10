@@ -125,6 +125,8 @@ export const APP_SETTINGS_REDEPLOY_KEYS: readonly string[] = [
   "restartPolicy",
   "cpuLimit",
   "memoryLimit",
+  "memoryProfile",
+  "memoryReservation",
   "priority",
   "gpuEnabled",
 ];

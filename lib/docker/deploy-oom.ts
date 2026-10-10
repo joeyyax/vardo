@@ -90,6 +90,7 @@ export async function reportOomDuringDeploy(
       containerName: reason.containerName,
       containerId: reason.containerId,
       kind: host ? "oom-host" : "oom-limit",
+      path: "exit",
       exitCode: reason.exitCode,
       at: reason.at,
     });

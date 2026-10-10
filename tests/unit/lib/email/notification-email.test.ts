@@ -29,7 +29,8 @@ describe("notification subjects", () => {
   it("never repeats the instance at the end", () => {
     for (const { event } of EMAIL_FIXTURES) expect(subject(event)).not.toMatch(/ on node-a\b/);
     expect(subjectLine(fixture("alert-host-disk"))).toBe("⚠ Disk 91% full");
-    expect(subjectLine(fixture("alert-coalesced"))).toBe("✗ Shop was killed for memory · 2 more");
+    expect(subjectLine(fixture("alert-coalesced"))).toBe("✗ Shop killed for memory · still down · 2 more");
+    expect(subjectLine(fixture("alert-oom"))).toBe("✗ Shop killed for memory · running again");
     expect(subjectLine(fixture("alert-resolved"))).toBe("✓ 2 alerts resolved");
     expect(subjectLine(fixture("system-service-down"))).toMatch(/^✗ \S+ down$/);
   });
