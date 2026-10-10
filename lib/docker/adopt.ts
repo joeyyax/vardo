@@ -134,7 +134,7 @@ export async function adoptCompose(
         })
       : null;
     const bindMountsEnabled = adoptAllowsBindMounts({
-      environmentType: data.environmentType,
+      orgTrusted: org?.trusted ?? false,
       projectAllowBindMounts: adoptProject?.allowBindMounts,
       featureEnabled: isFeatureEnabled("bindMounts"),
     });

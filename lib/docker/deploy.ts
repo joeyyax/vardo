@@ -391,11 +391,6 @@ export async function runDeployment(
       app.domains = routable;
     }
 
-    // Local environments always allow bind mounts. The Docker socket stays on the project flag (#803).
-    if (envType === "local") {
-      projectAllowBindMounts = true;
-    }
-
     stage("clone", "running");
     log(`[deploy] App: ${app.displayName} (${app.name})`);
     log(`[deploy] Source: ${app.source}, Type: ${app.deployType}`);

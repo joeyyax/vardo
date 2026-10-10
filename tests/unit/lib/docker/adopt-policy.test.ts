@@ -3,7 +3,7 @@ import { describe, it, expect } from "vitest";
 import { adoptAllowsBindMounts } from "@/lib/docker/adopt-policy";
 
 const base = {
-  environmentType: "production",
+  orgTrusted: false,
   projectAllowBindMounts: false,
   featureEnabled: false,
 };
@@ -19,8 +19,8 @@ describe("adoptAllowsBindMounts", () => {
     expect(adoptAllowsBindMounts(base)).toBe(false);
   });
 
-  it("still allows local, which has no project to speak for it", () => {
-    expect(adoptAllowsBindMounts({ ...base, environmentType: "local" })).toBe(true);
+  it("allows a trusted org", () => {
+    expect(adoptAllowsBindMounts({ ...base, orgTrusted: true })).toBe(true);
   });
 
   it("treats a project that does not exist yet as not allowing them", () => {
@@ -30,14 +30,5 @@ describe("adoptAllowsBindMounts", () => {
 
   it("honors the instance feature flag", () => {
     expect(adoptAllowsBindMounts({ ...base, featureEnabled: true })).toBe(true);
-  });
-
-  it("does not depend on which non-local environment it is", () => {
-    for (const environmentType of ["production", "staging", "preview"]) {
-      expect(adoptAllowsBindMounts({ ...base, environmentType })).toBe(false);
-      expect(
-        adoptAllowsBindMounts({ ...base, environmentType, projectAllowBindMounts: true }),
-      ).toBe(true);
-    }
   });
 });

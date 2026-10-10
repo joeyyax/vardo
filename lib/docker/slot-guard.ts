@@ -4,7 +4,7 @@ import { access } from "fs/promises";
 import { join } from "path";
 import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { apps, environments, organizations, projects } from "@/lib/db/schema";
+import { apps, organizations, projects } from "@/lib/db/schema";
 import { appBaseDir, appEnvDir } from "@/lib/paths";
 import { slotComposeFiles } from "./compose";
 import { assertComposeWithinApp } from "./compose-policy";
@@ -39,12 +39,6 @@ export async function assertSlotWithinApp(opts: {
         columns: { allowBindMounts: true, allowDockerSocket: true },
       })
     : null;
-  const env = app
-    ? await db.query.environments.findFirst({
-        where: and(eq(environments.appId, app.id), eq(environments.name, opts.envName)),
-        columns: { type: true },
-      })
-    : null;
 
   const repoDir = join(appBaseDir(opts.appName), "repo");
   const hasRepo = await access(repoDir).then(() => true, () => false);
@@ -57,8 +51,7 @@ export async function assertSlotWithinApp(opts: {
     stableVolumePrefix: volumePrefix(opts.appName, opts.envName),
     composeFileArgs: await slotComposeFiles(opts.slotDir),
     orgTrusted,
-    // Local environments always allow bind mounts; the socket stays on the project flag.
-    projectAllowBindMounts: (project?.allowBindMounts ?? false) || env?.type === "local",
+    projectAllowBindMounts: project?.allowBindMounts ?? false,
     projectAllowDockerSocket: project?.allowDockerSocket ?? false,
     projectNetwork: app?.projectId ? projectNetworkName(app.projectId, opts.envName) : null,
     reuse: opts.reuse,
