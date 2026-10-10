@@ -49,6 +49,21 @@ Admin → Settings → Maintenance reports and prunes both caches; BuildKit's is
 
 Nixpacks builds land in the Docker daemon's own builder cache. That one is already bounded: `post-deploy.ts` prunes it to `BUILD_CACHE_MAX_BYTES` after each deploy. No separate Nixpacks ceiling is needed.
 
+## Checkout and build tree
+
+Every environment of an app shares one shallow checkout at `<app>/repo`. Each deploy fetches its branch with an explicit refspec (`+refs/heads/<b>:refs/remotes/origin/<b>`, depth 1), so a preview of another branch no longer fails the reset and re-clones, and production no longer re-clones after it.
+
+A per-app lock (in-process, plus a Redis lease) covers the fetch, the checkout and writing the build tree, so a preview and production can't move the checkout under each other. It's held for seconds, not the build.
+
+Builds read `<app>/<env>/build-source`: the deployed commit's files written by `git read-tree -u` with the environment's own index (`build-source.index`). Only changed files are rewritten, and it has no `.git`, so a fetch, which rewrites `.git/index`, no longer invalidates `COPY . .`. It works the same for Dockerfile, compose, Railpack and Nixpacks builds, and the repo's own `.dockerignore` still applies. Compose bind mounts still resolve through the shared checkout.
+
+Limits:
+
+- A Dockerfile that reads `.git` (`COPY .git`, a `.git` bind mount, or `git rev-parse`, `describe`, `log` and the like in a step) gets the checkout's `.git` copied in, pointed at the deployed commit. Compose services' Dockerfiles are checked too. Those builds rebuild from that `COPY` on every commit, as before.
+- Railpack and Nixpacks builds aren't scanned. One whose build runs git (a `next.config` calling `git rev-parse` without a fallback) sets `VARDO_BUILD_INCLUDE_GIT=true` in the app's env.
+- The alternative is a build arg: Dockerfile and compose builds get `VARDO_GIT_SHA` (compose only when the file doesn't set it). Declare `ARG VARDO_GIT_SHA` to use it; undeclared, it changes nothing.
+- Each environment's build tree is a full copy of the commit's files.
+
 ## Change: per-app Railpack cache key
 
 Railpack names its cache mounts `next`, `node-modules` and `npm-install` with no app prefix, so every app on the daemon shared them. A build could read another app's `.next/cache`: a marker file written by one app's build was readable from a second app's build. Vardo now passes `--cache-key <appId>`, which scopes the mounts per app. Layer cache is unaffected: a fresh key on identical content rebuilt in 1.1s, and a source change took 10.9s with a key vs 9.8s without.

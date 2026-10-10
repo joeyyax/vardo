@@ -47,6 +47,7 @@ import { volumePrefix } from "../volume-prefix";
 import { appRootDir } from "../compose-root";
 import { SLOT_OVERLAY_FILE, SLOT_VARS_FILE, slotEnvFileArgs, writeSlotVars } from "../slot-files";
 import { CERTS_VOLUME_KEY, syncAppCerts } from "@/lib/ssl/cert-export";
+import { withGitShaArg, type BuildSpec } from "../build-source";
 
 const NETWORK_NAME = VARDO_NETWORK;
 
@@ -199,9 +200,9 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
     try { await rm(stale, { force: true }); } catch { /* gone already */ }
   }
 
-  // Build contexts point at repoDir, not the slot: BuildKit won't follow the slot's symlinks out of the context.
+  // Build contexts point at the build tree, not the slot: BuildKit won't follow the slot's symlinks out of the context.
   if (repoDir) {
-    const buildRoot = appRootDir(repoDir, app.rootDirectory || ctx.hostConfig?.project?.rootDirectory);
+    const buildRoot = appRootDir(ctx.buildSourceDir ?? repoDir, app.rootDirectory || ctx.hostConfig?.project?.rootDirectory);
 
     const rewriteBuildContext = (composeFile: typeof compose) => {
       for (const service of Object.values(composeFile.services)) {
@@ -219,6 +220,7 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
             : join(buildRoot, service.build.context);
           service.build.context = ctxPath;
         }
+        if (ctx.gitSha) withGitShaArg(service.build as BuildSpec, ctx.gitSha);
       }
     };
     rewriteBuildContext(compose);

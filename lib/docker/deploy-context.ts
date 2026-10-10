@@ -152,6 +152,9 @@ export type DeployContext = {
   /** Cloned repo directory (app-level, shared across environments). */
   repoDir: string | null;
 
+  /** This environment's copy of the deployed commit without .git; builds read it. Unset falls back to repoDir. */
+  buildSourceDir?: string;
+
   /** Commit this deploy ships. Unset for an app without a repo. */
   gitSha?: string;
   gitMessage?: string;

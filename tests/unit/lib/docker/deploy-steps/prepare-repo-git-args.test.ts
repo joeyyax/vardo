@@ -225,7 +225,9 @@ describe("prepareRepo git arguments", () => {
     const { ctx } = makeCtx(gitApp("feature/x"));
     await prepareRepo(ctx);
     const fetch = gitCalls.find((a) => a.includes("fetch"))!;
-    expect(fetch.slice(fetch.indexOf("fetch") + 1)).toEqual(["--", "origin", "feature/x"]);
+    expect(fetch.slice(fetch.indexOf("fetch") + 1)).toEqual([
+      "--depth", "1", "--", "origin", "+refs/heads/feature/x:refs/remotes/origin/feature/x",
+    ]);
     const setUrl = gitCalls.find((a) => a.includes("set-url"))!;
     expect(setUrl.slice(setUrl.indexOf("set-url") + 1)).toEqual(["--", "origin", "https://example.com/acme/web.git"]);
   });

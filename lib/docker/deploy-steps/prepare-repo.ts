@@ -58,6 +58,43 @@ import { ENGINE_NAME, buildPlanLogLines, captureBuildPlan, describeMarkers, prov
 import { boundedBuild, buildKitLimit, explainBuildOom } from "../build-memory";
 import { applyComposeProfiles, parseComposeProfiles } from "../compose-profiles";
 import { globalEnvValue, isSelfApp } from "../self-env";
+import { acquireCheckoutLock, type CheckoutLock } from "../checkout-lock";
+import {
+  INCLUDE_GIT_ENV,
+  branchFetchArgs,
+  composeCandidates,
+  copyGitDir,
+  dockerfileNeedsGit,
+  dockerfilesIn,
+  syncBuildSource,
+} from "../build-source";
+import type { HostConfig } from "@/lib/config/host-config";
+
+/** Writes the env's build tree at `sha`, with .git only when a Dockerfile reads it or the app asks. */
+async function writeBuildSource(
+  ctx: DeployContext,
+  repoDir: string,
+  sha: string,
+  hostConfig: HostConfig | null,
+): Promise<string> {
+  const git = (args: string[], env?: Record<string, string>) =>
+    execFileAsync("git", ["-C", repoDir, ...args], { timeout: GIT_CLONE_TIMEOUT, env: { ...process.env, ...env } });
+  const dir = await syncBuildSource({ git, appDir: ctx.appDir, sha });
+  const root = appRootDir(dir, ctx.app.rootDirectory || hostConfig?.project?.rootDirectory);
+  const asked = ctx.envMap[INCLUDE_GIT_ENV] === "true";
+  const reads = !asked && ctx.app.deployType !== "nixpacks" && ctx.app.deployType !== "railpack"
+    ? (await dockerfilesIn(root, {
+        dockerfilePath: ctx.app.dockerfilePath,
+        composeFilePath: ctx.app.composeFilePath,
+        compose: ctx.app.deployType === "compose",
+      })).some(dockerfileNeedsGit)
+    : false;
+  if (asked || reads) {
+    await copyGitDir({ git, repoDir, dir, sha });
+    ctx.log(`[build] ${asked ? `${INCLUDE_GIT_ENV} is set` : "A Dockerfile reads .git"}, so the build context includes .git; every commit rebuilds from the first COPY of it`);
+  }
+  return dir;
+}
 
 type ParseAndSanitizeOpts = {
   allowBindMounts?: boolean;
@@ -436,84 +473,105 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
       tokenAuth = true;
     }
 
+    const { readHostConfig, applyHostConfig } = await import("@/lib/config/host-config");
+
+    // Every environment fetches into this checkout; one deploy at a time until its build tree is written.
+    let checkoutLock: CheckoutLock;
     try {
-      const execOpts = { timeout: GIT_CLONE_TIMEOUT, env: { ...process.env, ...gitEnv } };
+      checkoutLock = await acquireCheckoutLock(ctx.appId, { log, signal });
+    } catch (err) {
+      if (sshKeyFile) await cleanupKeyFile(sshKeyFile);
+      throw err;
+    }
+    let hostConfig: HostConfig | null = null;
+    try {
       try {
-        await execFileAsync("git", ["-C", repoDir, "remote", "set-url", "--", "origin", cloneUrl], execOpts);
-        await execFileAsync("git", ["-C", repoDir, ...GIT_NO_REDIRECT, "fetch", "--", "origin", branch], execOpts);
-        await execFileAsync("git", ["-C", repoDir, "reset", "--hard", `origin/${branch}`, "--"], execOpts);
-        log(`[deploy] Pulled latest from ${branch}`);
-      } catch {
+        const execOpts = { timeout: GIT_CLONE_TIMEOUT, env: { ...process.env, ...gitEnv } };
         try {
-          await rm(repoDir, { recursive: true, force: true });
-        } catch (rmErr: unknown) {
-          if (rmErr && typeof rmErr === "object" && "code" in rmErr && rmErr.code === "EACCES") {
-            if (!repoDir.startsWith(PROJECTS_DIR + "/")) {
-              throw new Error(`Refusing to docker-rm path outside apps dir: ${repoDir}`);
+          await execFileAsync("git", ["-C", repoDir, "remote", "set-url", "--", "origin", cloneUrl], execOpts);
+          await execFileAsync("git", ["-C", repoDir, ...GIT_NO_REDIRECT, ...branchFetchArgs(branch)], execOpts);
+          await execFileAsync("git", ["-C", repoDir, "reset", "--hard", `origin/${branch}`, "--"], execOpts);
+          log(`[deploy] Pulled latest from ${branch}`);
+        } catch {
+          try {
+            await rm(repoDir, { recursive: true, force: true });
+          } catch (rmErr: unknown) {
+            if (rmErr && typeof rmErr === "object" && "code" in rmErr && rmErr.code === "EACCES") {
+              if (!repoDir.startsWith(PROJECTS_DIR + "/")) {
+                throw new Error(`Refusing to docker-rm path outside apps dir: ${repoDir}`);
+              }
+              log(`[deploy] Permission denied removing ${repoDir}, retrying as root via docker`);
+              await execFileAsync("docker", [
+                "run", "--rm", "--log-driver", "none", "-v", `${repoDir}:/target`, "alpine",
+                "sh", "-c", `rm -rf /target/* /target/.[!.]* /target/..?* 2>/dev/null; chown ${APP_UID}:${APP_UID} /target`,
+              ], { env: dockerEnv(), timeout: DOCKER_CLEANUP_TIMEOUT });
+            } else {
+              throw rmErr;
             }
-            log(`[deploy] Permission denied removing ${repoDir}, retrying as root via docker`);
-            await execFileAsync("docker", [
-              "run", "--rm", "--log-driver", "none", "-v", `${repoDir}:/target`, "alpine",
-              "sh", "-c", `rm -rf /target/* /target/.[!.]* /target/..?* 2>/dev/null; chown ${APP_UID}:${APP_UID} /target`,
-            ], { env: dockerEnv(), timeout: DOCKER_CLEANUP_TIMEOUT });
-          } else {
-            throw rmErr;
           }
+          try {
+            await execFileAsync("git", [...GIT_NO_REDIRECT, "clone", "--depth", "1", "--branch", branch, "--", cloneUrl, repoDir], execOpts);
+          } catch (cloneErr) {
+            if (tokenAuth || sshKeyFile || !cloneUrl.startsWith("https://github.com/")) throw cloneErr;
+            const detail = (cloneErr as { stderr?: string }).stderr?.trim() || (cloneErr instanceof Error ? cloneErr.message : String(cloneErr));
+            throw new Error(`Couldn't clone ${cloneUrl} without a GitHub token: ${detail}\n${LINK_INSTALLATION_HINT}`);
+          }
+          log(`[deploy] Cloned repo (${branch})`);
         }
-        try {
-          await execFileAsync("git", [...GIT_NO_REDIRECT, "clone", "--depth", "1", "--branch", branch, "--", cloneUrl, repoDir], execOpts);
-        } catch (cloneErr) {
-          if (tokenAuth || sshKeyFile || !cloneUrl.startsWith("https://github.com/")) throw cloneErr;
-          const detail = (cloneErr as { stderr?: string }).stderr?.trim() || (cloneErr instanceof Error ? cloneErr.message : String(cloneErr));
-          throw new Error(`Couldn't clone ${cloneUrl} without a GitHub token: ${detail}\n${LINK_INSTALLATION_HINT}`);
+
+        // Rollback deploys ship the target commit, not the branch tip.
+        if (ctx.rollback) {
+          if (!ctx.rollback.gitSha) {
+            throw new DeployBlockedError(
+              `Rollback target ${ctx.rollback.targetDeploymentId} has no recorded git SHA — cannot roll back to it`,
+            );
+          }
+          await checkoutRollbackSha(
+            (args) => execFileAsync("git", ["-C", repoDir, ...GIT_NO_REDIRECT, ...args], execOpts),
+            ctx.rollback.gitSha,
+            log,
+          );
+        } else if (ctx.pinnedGitSha) {
+          await checkoutRollbackSha(
+            (args) => execFileAsync("git", ["-C", repoDir, ...GIT_NO_REDIRECT, ...args], execOpts),
+            ctx.pinnedGitSha,
+            log,
+          );
+          log(`[deploy] Pinned to ${ctx.pinnedGitSha.slice(0, 7)}`);
         }
-        log(`[deploy] Cloned repo (${branch})`);
+      } finally {
+        if (sshKeyFile) {
+          await cleanupKeyFile(sshKeyFile);
+        }
       }
 
-      // Rollback deploys ship the target commit, not the branch tip.
-      if (ctx.rollback) {
-        if (!ctx.rollback.gitSha) {
-          throw new DeployBlockedError(
-            `Rollback target ${ctx.rollback.targetDeploymentId} has no recorded git SHA — cannot roll back to it`,
-          );
-        }
-        await checkoutRollbackSha(
-          (args) => execFileAsync("git", ["-C", repoDir, ...GIT_NO_REDIRECT, ...args], execOpts),
-          ctx.rollback.gitSha,
-          log,
-        );
-      } else if (ctx.pinnedGitSha) {
-        await checkoutRollbackSha(
-          (args) => execFileAsync("git", ["-C", repoDir, ...GIT_NO_REDIRECT, ...args], execOpts),
-          ctx.pinnedGitSha,
-          log,
-        );
-        log(`[deploy] Pinned to ${ctx.pinnedGitSha.slice(0, 7)}`);
+      try {
+        const { stdout: sha } = await execFileAsync("git", ["-C", repoDir, "rev-parse", "HEAD"], { timeout: GIT_METADATA_TIMEOUT });
+        const { stdout: meta } = await execFileAsync("git", ["-C", repoDir, "log", "-1", "--format=%an%x00%s"], { timeout: GIT_METADATA_TIMEOUT });
+        const gitSha = sha.trim();
+        const [author, ...subject] = meta.trim().split("\0");
+        const gitMessage = subject.join(" ").trim();
+        log(`[deploy] Commit: ${gitSha.slice(0, 7)} ${gitMessage}`);
+        ctx.gitSha = gitSha;
+        ctx.gitMessage = gitMessage;
+        ctx.gitAuthor = author || undefined;
+        await db
+          .update(deployments)
+          .set({ gitSha, gitMessage })
+          .where(eq(deployments.id, ctx.deploymentId));
+      } catch { /* not critical */ }
+
+      hostConfig = await readHostConfig(repoDir);
+      if (ctx.gitSha) {
+        ctx.buildSourceDir = await writeBuildSource(ctx, repoDir, ctx.gitSha, hostConfig).catch((err) => {
+          log(`[build] Warning: couldn't write the build tree, building from the checkout: ${err instanceof Error ? err.message : err}`);
+          return undefined;
+        });
       }
     } finally {
-      if (sshKeyFile) {
-        await cleanupKeyFile(sshKeyFile);
-      }
+      await checkoutLock.release();
     }
 
-    try {
-      const { stdout: sha } = await execFileAsync("git", ["-C", repoDir, "rev-parse", "HEAD"], { timeout: GIT_METADATA_TIMEOUT });
-      const { stdout: meta } = await execFileAsync("git", ["-C", repoDir, "log", "-1", "--format=%an%x00%s"], { timeout: GIT_METADATA_TIMEOUT });
-      const gitSha = sha.trim();
-      const [author, ...subject] = meta.trim().split("\0");
-      const gitMessage = subject.join(" ").trim();
-      log(`[deploy] Commit: ${gitSha.slice(0, 7)} ${gitMessage}`);
-      ctx.gitSha = gitSha;
-      ctx.gitMessage = gitMessage;
-      ctx.gitAuthor = author || undefined;
-      await db
-        .update(deployments)
-        .set({ gitSha, gitMessage })
-        .where(eq(deployments.id, ctx.deploymentId));
-    } catch { /* not critical */ }
-
-    const { readHostConfig, applyHostConfig } = await import("@/lib/config/host-config");
-    const hostConfig = await readHostConfig(repoDir);
     ctx.hostConfig = hostConfig;
     if (hostConfig) {
       const applied = applyHostConfig(hostConfig);
@@ -550,20 +608,13 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
       }
     }
 
-    const root = appRootDir(repoDir, app.rootDirectory || hostConfig?.project?.rootDirectory);
-    const composeFilePath = app.composeFilePath || "docker-compose.yml";
-    const composeCandidates = [
-      composeFilePath,
-      "docker-compose.yml",
-      "docker-compose.yaml",
-      "compose.yml",
-      "compose.yaml",
-    ];
-
+    // Builds and the files that pick the build engine read the build tree, never the shared checkout.
+    const srcDir = ctx.buildSourceDir ?? repoDir;
+    const root = appRootDir(srcDir, app.rootDirectory || hostConfig?.project?.rootDirectory);
     let composeContent: string | null = null;
     if (app.deployType === "compose") {
-      for (const candidate of composeCandidates) {
-        const path = repoFilePath(repoDir, root, candidate);
+      for (const candidate of composeCandidates(app.composeFilePath)) {
+        const path = repoFilePath(srcDir, root, candidate);
         try {
           composeContent = await readFile(path, "utf-8");
           log(`[deploy] Found ${candidate}`);
@@ -586,7 +637,7 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
 
       if (buildType === "compose" && !composeContent) {
         const dockerfileToCheck = app.dockerfilePath || "Dockerfile";
-        const dockerfile = repoFilePath(repoDir, root, dockerfileToCheck);
+        const dockerfile = repoFilePath(srcDir, root, dockerfileToCheck);
         try {
           await readFile(dockerfile, "utf-8");
           buildType = "dockerfile";
@@ -611,8 +662,8 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
         }
       }
 
-      if (buildType === "dockerfile") repoFilePath(repoDir, root, app.dockerfilePath || "Dockerfile");
-      const preventiveFixes = await detectPreventiveFixes(root, repoDir);
+      if (buildType === "dockerfile") repoFilePath(srcDir, root, app.dockerfilePath || "Dockerfile");
+      const preventiveFixes = await detectPreventiveFixes(root, srcDir);
       if (preventiveFixes.length > 0) {
         for (const fix of preventiveFixes) {
           log(`[compat] ${fix.name}: ${fix.description}`);
