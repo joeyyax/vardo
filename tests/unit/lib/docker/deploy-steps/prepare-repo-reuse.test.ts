@@ -6,11 +6,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { DeployContext, DeployApp } from "@/lib/docker/deploy-context";
 
-const { dbSets, dockerCalls, localImages, earlier } = vi.hoisted(() => ({
+const { dbSets, dockerCalls, localImages, earlier, nixpacks } = vi.hoisted(() => ({
   dbSets: [] as Record<string, unknown>[],
   dockerCalls: [] as string[][],
   localImages: new Set<string>(),
   earlier: { rows: [] as { id: string; buildPlan: unknown }[] },
+  nixpacks: { generates: false, calls: [] as string[][] },
 }));
 
 vi.mock("child_process", () => ({
@@ -19,6 +20,13 @@ vi.mock("child_process", () => ({
       dockerCalls.push(args);
       if (args[0] === "image" && args[1] === "inspect" && !localImages.has(args.at(-1)!)) return cb(new Error("No such image"));
       return cb(null, { stdout: "", stderr: "" });
+    }
+    if (cmd === "nixpacks") {
+      nixpacks.calls.push(args);
+      const plan = nixpacks.generates && args[0] === "plan"
+        ? JSON.stringify({ variables: { NODE_ENV: "production", NEXT_PUBLIC_API: "https://api.example.com" } })
+        : "";
+      return cb(null, { stdout: plan, stderr: "" });
     }
     if (cmd !== "git") return cb(null, { stdout: "", stderr: "" });
     const a = args[0] === "-C" ? args.slice(2) : args;
@@ -34,7 +42,10 @@ vi.mock("fs/promises", () => ({
   writeFile: vi.fn().mockResolvedValue(undefined),
   rm: vi.fn().mockResolvedValue(undefined),
   stat: vi.fn().mockResolvedValue({}),
-  readFile: vi.fn().mockRejectedValue(Object.assign(new Error("ENOENT"), { code: "ENOENT" })),
+  readFile: vi.fn(async (path: string) => {
+    if (nixpacks.generates && path.endsWith(".nixpacks/Dockerfile")) return "FROM ghcr.io/railwayapp/nixpacks:ubuntu\n";
+    throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+  }),
   readdir: vi.fn().mockResolvedValue(["package.json"]),
 }));
 
@@ -207,6 +218,8 @@ describe("prepareRepo image reuse", () => {
     localImages.clear();
     earlier.rows = [{ id: PREVIOUS, buildPlan: { engine: "nixpacks" } }];
     localImages.add(previousImage);
+    nixpacks.generates = false;
+    nixpacks.calls.length = 0;
     vi.mocked(spawn).mockImplementation(() => {
       const proc = Object.assign(new EventEmitter(), { stdout: new EventEmitter(), stderr: new EventEmitter(), pid: 1 });
       setImmediate(() => proc.emit("close", 0));
@@ -286,5 +299,31 @@ describe("prepareRepo image reuse", () => {
     const [cmd, args] = vi.mocked(spawn).mock.calls[0] as unknown as [string, string[]];
     expect(cmd).toBe("nixpacks");
     expect(args).toContain("--no-cache");
+  });
+
+  it("builds Nixpacks from its generated Dockerfile with docker build", async () => {
+    earlier.rows = [];
+    nixpacks.generates = true;
+    const ctx = makeCtx();
+    await prepareRepo(ctx);
+
+    const generate = nixpacks.calls.find((a) => a[0] === "build");
+    expect(generate).toEqual(expect.arrayContaining(["--out", "--cache-key", "app-1"]));
+    const [cmd, args] = vi.mocked(spawn).mock.calls[0] as unknown as [string, string[]];
+    expect(cmd).toBe("docker");
+    expect(args[args.indexOf("-f") + 1]).toMatch(/\.nixpacks\/Dockerfile$/);
+    expect(args).toContain("NODE_ENV=production");
+    expect(args.some((a) => a.startsWith("VARDO_GIT_SHA="))).toBe(false);
+    expect(ctx.logLines).toContain("[build] Building with Nixpacks (generated Dockerfile)...");
+  });
+
+  it("falls back to Nixpacks' own build when generating the Dockerfile fails", async () => {
+    earlier.rows = [];
+    const ctx = makeCtx();
+    await prepareRepo(ctx);
+
+    const [cmd] = vi.mocked(spawn).mock.calls[0] as unknown as [string, string[]];
+    expect(cmd).toBe("nixpacks");
+    expect(ctx.logLines.some((l) => l.startsWith("[build] Couldn't generate the Nixpacks Dockerfile"))).toBe(true);
   });
 });

@@ -3,7 +3,7 @@
 import { createHash } from "crypto";
 
 /** Bump when Vardo changes how it builds (flags, context, args), so no earlier image matches. */
-export const BUILD_CONFIG_VERSION = 1;
+export const BUILD_CONFIG_VERSION = 2;
 
 /** Label carrying the key on Dockerfile builds. */
 export const BUILD_KEY_LABEL = "vardo.build.key";

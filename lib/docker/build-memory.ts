@@ -4,6 +4,7 @@ import { homedir } from "os";
 import { join } from "path";
 import { buildKitContainerName, DEFAULT_BUILDKIT_HOST, isBuildKitReachable } from "./buildkit";
 import { COMPOSE_QUERY_TIMEOUT } from "./constants";
+import { exportArgs, exportOutput, exportStore } from "./build-export";
 import { execFileAsync } from "@/lib/utils/exec";
 import { dockerEnv } from "@/lib/docker/docker-env";
 import { VARDO_HOME_DIR } from "@/lib/paths";
@@ -16,6 +17,8 @@ export type BoundedBuild = {
   env: Record<string, string>;
   /** `docker build` leaves the result in the builder's cache unless told to load it. */
   loadArgs: string[];
+  /** The docker exporter's options for bake's `*.output`; null loads with buildx's default. */
+  output?: string | null;
   /** The container's memory limit in bytes, 0 when it has none, null when building on the daemon. */
   limitBytes: number | null;
 };
@@ -95,12 +98,15 @@ export async function boundedBuild(log: (line: string) => void, signal?: AbortSi
   }
 
   const limitBytes = await memoryLimit(container);
+  const store = await exportStore(signal);
+  const output = exportOutput(store);
+  if (output) log(`[build] Exporting ${output.includes("zstd") ? "zstd" : "uncompressed"} layers to the ${store} image store`);
   log(
     limitBytes > 0
       ? `[build] Building in ${container} (memory limit ${formatGiB(limitBytes)})`
       : `[build] Warning: building in ${container}, which has no memory limit — set VARDO_BUILDKIT_MEM and recreate it`,
   );
-  return { env: { ...env, BUILDX_BUILDER: BOUNDED_BUILDER }, loadArgs: ["--load"], limitBytes };
+  return { env: { ...env, BUILDX_BUILDER: BOUNDED_BUILDER }, loadArgs: exportArgs(store), output, limitBytes };
 }
 
 /** What BuildKit and the kernel report when a build step runs out of memory. */

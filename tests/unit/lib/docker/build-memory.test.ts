@@ -9,7 +9,7 @@ import { promisify } from "util";
 const { execFileMock, calls, answers } = vi.hoisted(() => ({
   execFileMock: vi.fn() as unknown as Record<symbol, unknown>,
   calls: [] as { args: string[]; env?: NodeJS.ProcessEnv }[],
-  answers: { running: true, builderExists: true, createFails: false, memory: String(12 * 1024 ** 3) },
+  answers: { running: true, builderExists: true, createFails: false, memory: String(12 * 1024 ** 3), info: "" },
 }));
 
 (execFileMock as Record<symbol, unknown>)[promisify.custom] = async (
@@ -21,6 +21,7 @@ const { execFileMock, calls, answers } = vi.hoisted(() => ({
   const line = args.join(" ");
   if (line.includes("{{.State.Running}}")) return { stdout: answers.running ? "true\n" : "false\n", stderr: "" };
   if (line.includes("{{.HostConfig.Memory}}")) return { stdout: `${answers.memory}\n`, stderr: "" };
+  if (line.startsWith("info")) return { stdout: answers.info, stderr: "" };
   if (line.startsWith("buildx inspect")) {
     if (answers.builderExists) return { stdout: "", stderr: "" };
     throw new Error("no builder");
@@ -39,6 +40,7 @@ const { execFileMock, calls, answers } = vi.hoisted(() => ({
 vi.mock("child_process", () => ({ execFile: execFileMock }));
 
 const { boundedBuild, explainBuildOom, isBuildOom } = await import("@/lib/docker/build-memory");
+const { resetImageStoreCache } = await import("@/lib/docker/build-export");
 
 const lines: string[] = [];
 const log = (line: string) => void lines.push(line);
@@ -46,7 +48,8 @@ const log = (line: string) => void lines.push(line);
 beforeEach(() => {
   calls.length = 0;
   lines.length = 0;
-  Object.assign(answers, { running: true, builderExists: true, createFails: false, memory: String(12 * 1024 ** 3) });
+  Object.assign(answers, { running: true, builderExists: true, createFails: false, memory: String(12 * 1024 ** 3), info: "" });
+  resetImageStoreCache();
   delete process.env.VARDO_BUILD_BUILDER;
   delete process.env.BUILDKIT_HOST;
 });
@@ -64,6 +67,16 @@ describe("boundedBuild", () => {
     expect(build.loadArgs).toEqual(["--load"]);
     expect(build.limitBytes).toBe(12 * 1024 ** 3);
     expect(lines.join("\n")).toContain("memory limit 12 GiB");
+  });
+
+  it("exports zstd layers when the daemon uses the containerd image store", async () => {
+    answers.info = 'overlayfs|[["driver-type","io.containerd.snapshotter.v1"]]';
+
+    const build = await boundedBuild(log);
+
+    expect(build.loadArgs).toEqual(["--output", "type=docker,compression=zstd", "--provenance=false", "--sbom=false"]);
+    expect(build.output).toBe("type=docker,compression=zstd");
+    expect(lines.join("\n")).toContain("Exporting zstd layers to the containerd image store");
   });
 
   it("registers the builder against the container when it is missing", async () => {

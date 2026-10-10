@@ -58,6 +58,7 @@ import { ENGINE_NAME, buildPlanLogLines, captureBuildPlan, describeMarkers, prov
 import { buildKey, findReusableImage } from "../build-key";
 import { engineVersion } from "../engine-version";
 import { boundedBuild, buildKitLimit, explainBuildOom } from "../build-memory";
+import { generateNixpacksDockerfile, removeNixpacksDir } from "../nixpacks-dockerfile";
 import { applyComposeProfiles, parseComposeProfiles } from "../compose-profiles";
 import { globalEnvValue, isSelfApp } from "../self-env";
 import { exportMsFromBuildOutput } from "../stage-timings";
@@ -361,6 +362,24 @@ async function buildFromRepo(build: RepoBuild): Promise<void> {
     const buildEnv = { ...authEnv };
 
     if (build.engine === "nixpacks") {
+      const generated = await generateNixpacksDockerfile({
+        source: repoPath,
+        cacheKey,
+        envVars,
+        overrides,
+        log: (line) => logs.push(line),
+        signal,
+      });
+      if (generated) {
+        try {
+          logs.push(`[build] Building with Nixpacks (generated Dockerfile)...`);
+          await dockerBuild({ ...build, dockerfile: generated.dockerfile, buildArgs: generated.buildArgs, gitSha: undefined }, authEnv);
+          logs.push(`[build] Nixpacks build complete: ${imageName}`);
+        } finally {
+          await removeNixpacksDir(repoPath);
+        }
+        return;
+      }
       logs.push(`[build] Building with Nixpacks...`);
       const args = nixpacksBuildArgs(imageName, repoPath, envVars, overrides, noCache);
       await spawnStream("nixpacks", args, { cwd: repoPath, env: buildEnv, signal }, logs, "[build][nixpacks]", build.capture);
@@ -386,24 +405,33 @@ async function buildFromRepo(build: RepoBuild): Promise<void> {
 
     const dfPath = build.dockerfilePath || "Dockerfile";
     logs.push(`[build] Building with Dockerfile (${dfPath})...`);
-    const bounded = await boundedBuild((line) => logs.push(line), signal);
-    const args = dockerfileBuildArgs({
-      imageName,
-      dockerfile: join(repoPath, dfPath),
-      context: repoPath,
-      loadArgs: bounded.loadArgs,
-      envVars,
-      noCache,
-      buildKey: build.buildKey,
-      gitSha: build.gitSha,
-    });
-    try {
-      await spawnStream("docker", args, { cwd: repoPath, env: { ...authEnv, ...bounded.env }, signal }, logs, "[build][docker]", build.capture);
-    } catch (err) {
-      throw explainBuildOom(err, bounded);
-    }
+    await dockerBuild({ ...build, dockerfile: join(repoPath, dfPath), buildArgs: envVars }, authEnv);
     logs.push(`[build] Docker build complete: ${imageName}`);
   });
+}
+
+/** `docker build` on the bounded builder when BuildKit runs, else on the daemon. */
+async function dockerBuild(
+  build: RepoBuild & { dockerfile: string; buildArgs: Record<string, string> },
+  authEnv: NodeJS.ProcessEnv,
+): Promise<void> {
+  const { repoPath, logs, signal } = build;
+  const bounded = await boundedBuild((line) => logs.push(line), signal);
+  const args = dockerfileBuildArgs({
+    imageName: build.imageName,
+    dockerfile: build.dockerfile,
+    context: repoPath,
+    loadArgs: bounded.loadArgs,
+    envVars: build.buildArgs,
+    noCache: build.noCache,
+    buildKey: build.buildKey,
+    gitSha: build.gitSha,
+  });
+  try {
+    await spawnStream("docker", args, { cwd: repoPath, env: { ...authEnv, ...bounded.env }, signal }, logs, "[build][docker]", build.capture);
+  } catch (err) {
+    throw explainBuildOom(err, bounded);
+  }
 }
 
 export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
