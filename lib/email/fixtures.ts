@@ -1,7 +1,7 @@
 // Realistic events for the email preview and template tests.
 
 import type { AlertItem, BackupSummaryEvent, BusEvent } from "@/lib/bus/events";
-import { summarizeBatch, volumeKey, type BackupBatchItem } from "@/lib/backups/batch-rules";
+import { summarizeResults, volumeKey, type BackupResultItem } from "@/lib/backups/run-rules";
 import type { MailContext, MailSeries } from "./templates/context";
 
 export const FIXTURE_CONTEXT: MailContext = {
@@ -59,7 +59,7 @@ const hostDisk: AlertItem = {
 const MiB = 1024 ** 2;
 
 /** A night of backups, one result per app and volume. */
-const NIGHTLY: BackupBatchItem[] = [
+const NIGHTLY: BackupResultItem[] = [
   ["app_wh4", "Shop", "mysql-data", 1_932 * MiB],
   ["app_wh4", "Shop", "wp-content", 6_240 * MiB],
   ["app_acme", "Acme", "uploads", 480 * MiB],
@@ -75,7 +75,7 @@ const NIGHTLY: BackupBatchItem[] = [
   outcome: "success" as const,
   sizeBytes: sizeBytes as number,
   durationMs: 20_000 + i * 9_000,
-  at: `2026-10-09T03:${String(2 + i * 4).padStart(2, "0")}:00.000Z`,
+  at: `2026-10-09T02:${String(2 + i * 4).padStart(2, "0")}:00.000Z`,
 }));
 
 /** Six earlier runs per volume, each a touch smaller than tonight. */
@@ -83,16 +83,16 @@ const NIGHTLY_HISTORY = new Map(
   NIGHTLY.map((i) => [volumeKey(i.appId, i.volumeName), [0.94, 0.95, 0.96, 0.97, 0.98, 0.99].map((f) => Math.round(i.sizeBytes! * f))]),
 );
 
-function backupSummary(items: BackupBatchItem[], extra: Partial<BackupSummaryEvent>): BackupSummaryEvent {
-  const rows = summarizeBatch(items, NIGHTLY_HISTORY);
+function backupSummary(items: BackupResultItem[], extra: Partial<BackupSummaryEvent>): BackupSummaryEvent {
+  const rows = summarizeResults(items, NIGHTLY_HISTORY);
   const backups = rows.filter((r) => r.kind === "backup");
-  const times = items.map((i) => i.at).sort();
   return {
     type: "backup.summary",
-    title: "Backups",
+    title: "Nightly backups finished",
     message: `${backups.filter((r) => r.outcome === "success").length} of ${backups.length} backups succeeded.`,
-    windowStart: times[0],
-    windowEnd: times.at(-1)!,
+    run: { kind: "nightly", label: "Nightly backups", estimatedMs: 33 * 60_000, actualMs: 41 * 60_000 },
+    windowStart: "2026-10-09T02:00:00.000Z",
+    windowEnd: "2026-10-09T02:41:00.000Z",
     succeeded: backups.filter((r) => r.outcome === "success").length,
     failed: backups.filter((r) => r.outcome === "failed").length,
     skipped: backups.filter((r) => r.outcome === "skipped").length,
@@ -227,6 +227,50 @@ export const EMAIL_FIXTURES: { name: string; event: BusEvent; series?: MailSerie
     },
   },
   {
+    name: "backup-run-started",
+    event: {
+      type: "backup.run-started",
+      title: "Nightly backups starting",
+      message: "6 volumes across 4 apps, about 33 min.",
+      runId: "run_1",
+      kind: "nightly",
+      label: "Nightly backups",
+      apps: [
+        { appId: "app_acme", appName: "Acme", volumes: ["postgres-data", "uploads"] },
+        { appId: "app_srch", appName: "Search", volumes: ["meili-data"] },
+        { appId: "app_kuma", appName: "Uptime Kuma", volumes: ["kuma-data"] },
+        { appId: "app_wh4", appName: "Shop", volumes: ["mysql-data", "wp-content"] },
+      ],
+      volumeCount: 6,
+      estimatedMs: 33 * 60_000,
+      target: "System default · R2 vardo-backups/node-a",
+    },
+  },
+  {
+    name: "backup-failure",
+    event: {
+      type: "alert.fired",
+      title: "Backup of Shop / mysql-data failed",
+      message: "Backup of Shop / mysql-data failed",
+      alerts: [
+        {
+          type: "backup.failure",
+          about: "backup:app_wh4:mysql-data",
+          severity: "critical",
+          title: "Backup of Shop / mysql-data failed",
+          detail: "mysqldump: Got error: 2013: Lost connection to server during query. The last good backup is still there. Fix the cause, then run the job again.",
+          appId: "app_wh4",
+          appName: "Shop",
+          facts: [
+            { label: "Job", value: "Auto: Shop" },
+            { label: "Volume", value: "mysql-data" },
+          ],
+          since: "2026-10-09T02:06:00.000Z",
+        },
+      ],
+    },
+  },
+  {
     name: "backup-summary",
     event: backupSummary(NIGHTLY, {}),
   },
@@ -246,8 +290,8 @@ export const EMAIL_FIXTURES: { name: string; event: BusEvent; series?: MailSerie
             ? { ...i, outcome: "failed" as const, sizeBytes: 0, error: "mysqldump: Got error: 2013: Lost connection to server during query" }
             : i,
         ),
-        { kind: "drill", appId: "app_acme", appName: "Acme", volumeName: "uploads", outcome: "failed", error: "extract exited 2", durationMs: 41_000, at: "2026-10-09T03:40:00.000Z" },
-        { kind: "restore", appId: "app_wh4s", appName: "Shop Staging", volumeName: "wp-content", outcome: "success", durationMs: 74_000, at: "2026-10-09T03:31:00.000Z" },
+        { kind: "drill", appId: "app_acme", appName: "Acme", volumeName: "uploads", outcome: "failed", error: "extract exited 2", durationMs: 41_000, at: "2026-10-09T02:38:00.000Z" },
+        { kind: "restore", appId: "app_wh4s", appName: "Shop Staging", volumeName: "wp-content", outcome: "success", durationMs: 74_000, at: "2026-10-09T02:31:00.000Z" },
       ],
       {},
     ),

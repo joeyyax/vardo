@@ -48,20 +48,24 @@ export function notificationSubject(event: BusEvent, ctx: SubjectContext): strin
         ? `↩ ${appLabel(event)} rolled back${event.restoredSlot ? ` to ${event.restoredSlot}` : ""}`
         : `✗ ${appLabel(event)} rollback failed`;
     case "backup.summary": {
+      const label = event.run.label;
       const failed = event.rows.filter((r) => r.outcome === "failed");
       if (failed.length) {
         const total = event.succeeded + event.failed + event.skipped;
         return event.failed === failed.length && total > 0
-          ? `✗ Backups · ${event.failed} of ${total} failed`
-          : `✗ Backups · ${failed.length} failed`;
+          ? `✗ ${label} · ${event.failed} of ${total} failed`
+          : `✗ ${label} · ${failed.length} failed`;
       }
+      if (event.run.unfinished?.length) return `⚠ ${label} · ${event.run.unfinished.length} didn't finish`;
       const shrunk = event.rows.filter((r) => r.shrunk);
-      if (shrunk.length) return `⚠ Backups · ${shrunk[0].appName} much smaller than usual`;
-      if (event.staleVolumes?.length) return `⚠ Backups · ${event.staleVolumes.length} with no success in 48 h`;
+      if (shrunk.length) return `⚠ ${label} · ${shrunk[0].appName} much smaller than usual`;
+      if (event.staleVolumes?.length) return `⚠ ${label} · ${event.staleVolumes.length} with no success in 48 h`;
       return event.succeeded > 0
-        ? `✓ Backups · ${event.succeeded} done · ${formatBytesIec(event.totalSize)}`
-        : `✓ Backups · ${event.rows.length} finished`;
+        ? `✓ ${label} · ${event.succeeded} done · ${formatBytesIec(event.totalSize)}`
+        : `✓ ${label} · ${event.rows.length} finished`;
     }
+    case "backup.run-started":
+      return `↻ ${event.label} starting · ${event.volumeCount} volume${event.volumeCount === 1 ? "" : "s"}${event.estimatedMs ? ` · ~${formatDuration(event.estimatedMs)}` : ""}`;
     case "cron.failed":
       return `✗ Cron ${event.cronJobName} failed on ${event.projectName || "an app"}`;
     case "disk.write-alert":

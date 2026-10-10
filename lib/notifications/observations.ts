@@ -8,7 +8,7 @@ import type { AlertItem } from "@/lib/bus/events";
 import { emit } from "./dispatch";
 import { readOrgNotificationSettings } from "./preferences";
 import { ALERTS, severityRank, type AlertSeverity, type AlertType } from "./registry";
-import { claimNotifications, clearNotifications } from "./throttle";
+import { claimNotifications, clearNotifications, clearSubjects } from "./throttle";
 
 export type Observation = {
   type: AlertType;
@@ -130,4 +130,20 @@ export async function notifyObservations(
     });
   }
   return { fired, resolved };
+}
+
+/** Sends one alert now, through the throttle, whatever the org's switches. Returns whether it sent. */
+export async function fireAlert(organizationId: string, type: AlertType, item: AlertItem, now: Date): Promise<boolean> {
+  const claims = await claimNotifications(organizationId, type, [{ about: item.about, severity: item.severity, detail: item }], ALERTS[type].throttle.minHours, now);
+  if (claims.length === 0) return false;
+  const reopened = claims[0].previous !== null && claims[0].previous.clearedAt === null;
+  await openHistory(organizationId, type, reopened ? [] : [item], reopened ? [item] : [], now);
+  emit(organizationId, { type: "alert.fired", title: item.title, message: item.title, alerts: [item] });
+  return true;
+}
+
+/** Clears alerts whose subjects recovered, without a notice. */
+export async function settleAlerts(organizationId: string, type: AlertType, abouts: string[], now: Date): Promise<void> {
+  const cleared = await clearSubjects(organizationId, type, abouts, now);
+  await closeHistory(organizationId, type, cleared, now);
 }

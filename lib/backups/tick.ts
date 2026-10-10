@@ -15,10 +15,6 @@ const log = logger.child("backup");
 /** Jobs waiting for or holding a slot, so an every-minute schedule can't stack runs behind a slow one. */
 const queued = new Set<string>();
 
-/** Jobs queued or running in this process. */
-export function queuedBackupJobIds(): ReadonlySet<string> {
-  return queued;
-}
 
 /** Concurrent backups and drills: the host-sized deploy concurrency. */
 async function backupConcurrency(): Promise<number> {
@@ -39,12 +35,23 @@ export async function tickBackupJobs(): Promise<void> {
 
   const limit = await backupConcurrency();
   const runs: Promise<void>[] = [];
+  const { markJobDone, startJobRun, startNightlyRuns } = await import("./runs");
+  const nightlyRun = await startNightlyRuns(now).catch((err) => {
+    log.error("Nightly run start error:", err);
+    return new Map<string, string>();
+  });
+  // A nightly job that won't run now still counts as done, or its run waits out the deadline.
+  const skipInRun = (jobId: string) => {
+    const runId = nightlyRun.get(jobId);
+    if (runId) markJobDone(runId, jobId).catch(() => {});
+  };
 
   for (const job of jobs) {
     try {
-      if (!shouldRunNow(job.schedule, now)) continue;
+      if (job.nightly ? !nightlyRun.has(job.id) : !shouldRunNow(job.schedule, now)) continue;
       if (queued.has(job.id)) {
         log.info(`Skipping job "${job.name}" — still waiting on its last run`);
+        skipInRun(job.id);
         continue;
       }
 
@@ -66,15 +73,21 @@ export async function tickBackupJobs(): Promise<void> {
         log.info(
           `Skipping job "${job.name}" — already running (backup ${runningBackup.id})`,
         );
+        skipInRun(job.id);
         continue;
       }
 
+      const runId = nightlyRun.get(job.id) ?? (await startJobRun(job, now).catch(() => null));
       queued.add(job.id);
       runs.push(
-        withBackupSlot(limit, () => runJob(job)).finally(() => queued.delete(job.id)),
+        withBackupSlot(limit, () => runJob(job, runId))
+          .finally(() => queued.delete(job.id))
+          .then(() => (runId ? markJobDone(runId, job.id) : undefined))
+          .catch((err) => log.error(`Job "${job.name}" didn't report to its run:`, err)),
       );
     } catch (err) {
       log.error(`Job "${job.name}" (${job.id}) error:`, err);
+      skipInRun(job.id);
     }
   }
 
@@ -88,11 +101,11 @@ export async function tickBackupJobs(): Promise<void> {
   await Promise.all(runs);
 }
 
-async function runJob(job: { id: string; name: string }): Promise<void> {
+async function runJob(job: { id: string; name: string }, runId: string | null): Promise<void> {
   try {
     log.info(`Running job "${job.name}" (${job.id})`);
 
-    const results = await runBackup(job.id);
+    const results = await runBackup(job.id, { runId });
 
     const succeeded = results.filter((r) => r.outcome === "success").length;
     const failed = results.filter((r) => r.outcome === "failed").length;

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { apps, backupJobs, backupJobApps, backupTargets } from "@/lib/db/schema";
-import { eq, and, or, inArray, isNull } from "drizzle-orm";
+import { eq, and, or, inArray, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { requirePlugin } from "@/lib/api/require-plugin";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
@@ -131,7 +131,14 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
 
     const [updated] = await db
       .update(backupJobs)
-      .set({ ...updateData, updatedAt: new Date() })
+      .set({
+        ...updateData,
+        // A schedule of its own takes the job out of the nightly run.
+        ...(updateData.schedule !== undefined
+          ? { nightly: sql`${backupJobs.nightly} and ${backupJobs.schedule} = ${updateData.schedule}` }
+          : {}),
+        updatedAt: new Date(),
+      })
       .where(
         and(eq(backupJobs.id, jobId), eq(backupJobs.organizationId, orgId))
       )

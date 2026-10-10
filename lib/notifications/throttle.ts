@@ -1,6 +1,6 @@
 // The until_clear throttle: one row per org, alert type and subject in `notification_send`.
 
-import { and, eq, isNull, notInArray } from "drizzle-orm";
+import { and, eq, inArray, isNull, notInArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { notificationSends } from "@/lib/db/schema";
 import { severityRank, type AlertSeverity } from "./registry";
@@ -100,4 +100,22 @@ export async function clearNotifications(
       sentAt: notificationSends.sentAt,
       detail: notificationSends.detail,
     });
+}
+
+/** Clears these subjects of the type, so each can send again. */
+export async function clearSubjects(organizationId: string, type: string, abouts: string[], now: Date): Promise<string[]> {
+  if (abouts.length === 0) return [];
+  const rows = await db
+    .update(notificationSends)
+    .set({ clearedAt: now })
+    .where(
+      and(
+        eq(notificationSends.organizationId, organizationId),
+        eq(notificationSends.type, type),
+        isNull(notificationSends.clearedAt),
+        inArray(notificationSends.about, abouts),
+      ),
+    )
+    .returning({ about: notificationSends.about });
+  return rows.map((r) => r.about);
 }
