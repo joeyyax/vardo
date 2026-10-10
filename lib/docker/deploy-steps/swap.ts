@@ -473,12 +473,12 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
     // Builds pull base images too, so both phases use registry credentials.
     await withRegistryAuth(async (env) => {
       if (buildServices.length > 0) {
-        log(`[deploy] Pre-building ${newSlot} slot images (old slot still serving)...`);
+        log(`[deploy] Pre-building ${newSlot} slot images${ctx.rebuild === "no-cache" ? " without the build cache" : ""} (old slot still serving)...`);
         const bounded = await boundedBuild(log, ctx.signal);
         const buildStart = Date.now();
         const { stdout, stderr } = await execFileAsync(
           "docker",
-          ["compose", "--progress=plain", ...composeFileArgs, "-p", newProjectName, "build"],
+          ["compose", "--progress=plain", ...composeFileArgs, "-p", newProjectName, "build", ...(ctx.rebuild === "no-cache" ? ["--no-cache"] : [])],
           { cwd: slotDir, env: { ...env, ...bounded.env }, timeout: COMPOSE_BUILD_UP_TIMEOUT, maxBuffer: EXEC_MAX_BUFFER, signal: ctx.signal }
         ).catch((err: unknown) => {
           ctx.timer.range("build", buildStart, Date.now());

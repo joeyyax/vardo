@@ -48,6 +48,7 @@ import { loadEnvironmentEnv } from "./environment-env";
 import { productionHostRefs } from "@/lib/env/environment-env";
 import { dockerEnv } from "@/lib/docker/docker-env";
 import { createStageTimings, formatTimings, STAGE_PHASE, type StageTimings } from "./stage-timings";
+import type { RebuildMode } from "./build-key";
 import { crashReason, relevantLogTail } from "./deploy-log-tail";
 import { repoWebUrl } from "@/lib/email/format";
 import { recordSelfDeploy, type MarkerOutcome } from "@/lib/lifecycle/self-deploy";
@@ -99,6 +100,8 @@ export type DeployOpts = {
   rollback?: { targetDeploymentId: string; includeEnvVars?: boolean };
   /** Deploy this commit of the branch, not its tip. Git apps only. */
   gitSha?: string;
+  /** Build even when an earlier image matches; "no-cache" skips the layer cache too. */
+  rebuild?: RebuildMode;
 };
 
 export type DeployResult = {
@@ -474,6 +477,7 @@ export async function runDeployment(
         ? { targetDeploymentId: rollbackTarget.targetDeploymentId, gitSha: rollbackTarget.gitSha }
         : undefined,
       pinnedGitSha: rollbackTarget ? undefined : opts.gitSha,
+      rebuild: opts.rebuild,
 
       app: app as DeployContext["app"],
       projectName: projectRow?.name,

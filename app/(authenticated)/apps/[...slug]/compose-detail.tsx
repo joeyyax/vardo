@@ -16,6 +16,7 @@ import {
   Square,
   EllipsisVertical,
   AlertTriangle,
+  Hammer,
   Play,
   ScrollText,
   Undo2,
@@ -840,6 +841,7 @@ export function ComposeDetail({
     hasDeployed: totalDeployments > 0,
     rollbackTarget: !!rollbackTargetId,
     stopRefusal,
+    rebuildable: app.source === "git",
   });
 
   const statusTrigger = (() => {
@@ -889,6 +891,7 @@ export function ComposeDetail({
   const ACTION_LABEL: Record<AppAction, { icon: LucideIcon; label: string }> = {
     "cancel-deploy": { icon: X, label: "Cancel deploy" },
     deploy: { icon: Rocket, label: app.status === "error" ? "Retry deploy" : "Redeploy stack" },
+    rebuild: { icon: Hammer, label: "Rebuild without cache" },
     start: { icon: Play, label: "Start stack" },
     restart: { icon: RotateCcw, label: "Restart stack" },
     recreate: { icon: RefreshCw, label: "Recreate stack" },
@@ -901,6 +904,7 @@ export function ComposeDetail({
   const ACTION_HANDLER: Record<AppAction, () => void> = {
     "cancel-deploy": () => { void cancelDeploy(); },
     deploy: handleDeployClick,
+    rebuild: () => { void deploy.handleRebuild(); },
     start: handleStart,
     restart: handleRestart,
     recreate: handleRecreate,

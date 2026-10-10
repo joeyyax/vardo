@@ -9,6 +9,7 @@ import { createSSEResponse } from "@/lib/api/sse";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { refuseSystemManaged } from "@/lib/api/system-managed";
+import type { RebuildMode } from "@/lib/docker/build-key";
 
 // POST /api/v1/organizations/[orgId]/apps/[appId]/deploy
 // Returns SSE stream of deploy log lines, final event is the result
@@ -37,11 +38,13 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ org
     let environmentId: string | undefined;
     let groupEnvironmentId: string | undefined;
     let deployAll = false;
+    let rebuild: RebuildMode | undefined;
     try {
       const body = await request.json();
       environmentId = body?.environmentId;
       groupEnvironmentId = body?.groupEnvironmentId;
       deployAll = body?.deployAll === true;
+      rebuild = body?.rebuild === "force" || body?.rebuild === "no-cache" ? body.rebuild : undefined;
     } catch {
       // No body or invalid JSON — deploy to default (production)
     }
@@ -78,6 +81,7 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ org
         trigger: "manual",
         triggeredBy: org.session.user.id,
         environmentId,
+        rebuild,
         onLog: (line) => sendEvent("log", line),
         onStage: (stg, status) => sendEvent("stage", { stage: stg, status }),
       });

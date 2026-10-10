@@ -25,8 +25,12 @@ export function registerDeployApp(
         .string()
         .optional()
         .describe("Optional environment ID to deploy to (defaults to production)"),
+      rebuild: z
+        .enum(["force", "no-cache"])
+        .optional()
+        .describe("Build even when an earlier image matches this commit and config; no-cache also skips the layer cache"),
     },
-    async ({ appId, environmentId }) => {
+    async ({ appId, environmentId, rebuild }) => {
       const rl = await slidingWindowRateLimit(
         `${context.userId}:${context.organizationId}`,
         "mcp:deploy-app",
@@ -74,6 +78,7 @@ export function registerDeployApp(
         triggeredBy: context.userId,
         deploymentId,
         environmentId,
+        rebuild,
       }).catch(() => {
         // Failures are recorded on the deployment record.
       });

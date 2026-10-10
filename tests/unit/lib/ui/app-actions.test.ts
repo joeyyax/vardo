@@ -152,4 +152,17 @@ describe("appActionMenu", () => {
       }
     }
   });
+
+  it("offers a no-cache rebuild right after deploy for a repo-built app", () => {
+    const actions = shown(context({ rebuildable: true }));
+    expect(actions.slice(actions.indexOf("deploy"), actions.indexOf("deploy") + 2)).toEqual(["deploy", "rebuild"]);
+    expect(has(context({ rebuildable: true, status: "error" }), "rebuild")).toBe(true);
+  });
+
+  it("hides the rebuild for image apps, while deploying, before the first deploy and on child services", () => {
+    expect(has(context(), "rebuild")).toBe(false);
+    expect(has(context({ rebuildable: true, deploying: true }), "rebuild")).toBe(false);
+    expect(has(context({ rebuildable: true, hasDeployed: false, status: "stopped" }), "rebuild")).toBe(false);
+    expect(has(context({ rebuildable: true, isChildService: true }), "rebuild")).toBe(false);
+  });
 });

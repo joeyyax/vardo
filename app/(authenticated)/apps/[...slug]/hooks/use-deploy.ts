@@ -226,7 +226,7 @@ export function useDeploy({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [attachedDeployId]);
 
-  const handleDeploy = useCallback(async () => {
+  const runDeploy = useCallback(async (rebuild?: "force" | "no-cache") => {
     announce("");
     setDeploying(true);
     onDeployStartedRef.current?.();
@@ -246,7 +246,7 @@ export function useDeploy({
           method: "POST",
           signal: abort.signal,
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ environmentId: selectedEnvId }),
+          body: JSON.stringify({ environmentId: selectedEnvId, ...(rebuild ? { rebuild } : {}) }),
         }
       );
 
@@ -312,6 +312,9 @@ export function useDeploy({
       setDeployAbort(null);
     }
   }, [orgId, appId, selectedEnvId, setDeploying, announce, router, recordStage]);
+
+  const handleDeploy = useCallback(() => runDeploy(), [runDeploy]);
+  const handleRebuild = useCallback(() => runDeploy("no-cache"), [runDeploy]);
 
   async function handleRollbackPreview(deploymentId: string) {
     setRollbackTarget(deploymentId);
@@ -443,6 +446,7 @@ export function useDeploy({
     viewingLogId,
     setViewingLogId,
     handleDeploy,
+    handleRebuild,
     rollbackTarget,
     setRollbackTarget,
     rollbackPreview,

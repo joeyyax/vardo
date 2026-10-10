@@ -7,6 +7,7 @@ import {
   Trash2,
   Loader2,
   Plus,
+  Hammer,
   Play,
   ScrollText,
   X,
@@ -361,6 +362,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
     hasDeployed: filteredDeployments.length > 0,
     rollbackTarget: !!rollbackTargetId,
     stopRefusal,
+    rebuildable: app.source === "git",
   });
 
   const statusTrigger = (() => {
@@ -420,6 +422,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
       : app.source === "direct"
         ? { icon: Rocket, label: "Deploy" }
         : { icon: GitBranch, label: "Pull latest & redeploy" },
+    rebuild: { icon: Hammer, label: "Rebuild without cache" },
     start: { icon: Play, label: "Start" },
     restart: { icon: RotateCcw, label: "Restart containers" },
     recreate: { icon: RefreshCw, label: "Recreate containers" },
@@ -432,6 +435,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
   const ACTION_HANDLER: Record<AppAction, () => void> = {
     "cancel-deploy": () => { void cancelDeploy(); },
     deploy: handleDeploy,
+    rebuild: () => { void deploy.handleRebuild(); },
     start: handleStart,
     restart: handleRestart,
     recreate: handleRecreate,

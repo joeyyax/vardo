@@ -2,6 +2,7 @@
 export const APP_ACTIONS = [
   "cancel-deploy",
   "deploy",
+  "rebuild",
   "start",
   "restart",
   "recreate",
@@ -29,6 +30,8 @@ export type AppActionContext = {
   rollbackTarget: boolean;
   /** Why stop is refused, when it is. */
   stopRefusal?: string | null;
+  /** Deploys build from a repo, so a no-cache rebuild applies. */
+  rebuildable?: boolean;
 };
 
 const DEPLOY_IN_FLIGHT = "A deploy is running. Cancel it first.";
@@ -39,6 +42,13 @@ const NO_ROLLBACK_TARGET = "No successful deployment to roll back to.";
  * and instant rollback are hidden; rollback stays visible with its reason.
  */
 export function appActionMenu(ctx: AppActionContext): AppActionItem[] {
+  const items = baseMenu(ctx);
+  if (!ctx.rebuildable || !ctx.hasDeployed || ctx.deploying || ctx.status === "deploying" || ctx.isChildService) return items;
+  const at = items.findIndex((i) => i.action === "deploy");
+  return at < 0 ? items : [...items.slice(0, at + 1), { action: "rebuild" }, ...items.slice(at + 1)];
+}
+
+function baseMenu(ctx: AppActionContext): AppActionItem[] {
   // Deploy and stop act on the parent's whole compose project.
   if (ctx.isChildService) return [{ action: "restart" }, { action: "logs" }];
 
