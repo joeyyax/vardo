@@ -21,7 +21,7 @@ vi.mock("@/lib/db", () => ({
       apps: { findFirst: appFindFirst },
       organizations: { findFirst: orgFindFirst },
       projects: { findFirst: vi.fn().mockResolvedValue({ allowBindMounts: false, allowDockerSocket: false }) },
-      environments: { findFirst: vi.fn().mockResolvedValue({ type: "production" }) },
+      environments: { findFirst: vi.fn().mockResolvedValue({ type: "local" }) },
     },
   },
 }));
@@ -66,6 +66,12 @@ describe("assertSlotWithinApp", () => {
       expect(rmMock).not.toHaveBeenCalled();
     },
   );
+
+  it("refuses a host bind mount in an untrusted local environment", async () => {
+    execFileAsyncMock.mockResolvedValue(configWith("/var/spool/cron"));
+
+    await expect(slot("start")).rejects.toThrow(DeployBlockedError);
+  });
 
   it("passes an untrusted slot that stays inside the app", async () => {
     execFileAsyncMock.mockResolvedValue({

@@ -218,6 +218,13 @@ async function handlePullRequest(payload: Record<string, unknown>): Promise<Next
     }
   }
 
+  // Only orgs the delivering installation is linked to.
+  const installationId = (payload.installation as Record<string, unknown> | undefined)?.id;
+  const orgIds = typeof installationId === "number" ? await orgsForInstallation(installationId) : [];
+  if (orgIds.length === 0) {
+    return NextResponse.json({ ok: true, skipped: "installation not linked" });
+  }
+
   // Runs after the response; GitHub times out after ten seconds. preview.ts serializes per PR.
   if (previewsEnabled && (action === "opened" || action === "reopened" || action === "synchronize")) {
     after(async () => {
@@ -228,6 +235,7 @@ async function handlePullRequest(payload: Record<string, unknown>): Promise<Next
           prUrl,
           branch,
           author,
+          organizationIds: orgIds,
         });
 
         if (!result) {
@@ -252,7 +260,7 @@ async function handlePullRequest(payload: Record<string, unknown>): Promise<Next
   if (action === "closed") {
     after(async () => {
       try {
-        const destroyed = await destroyPreview(repoFullName, prNumber);
+        const destroyed = await destroyPreview(repoFullName, prNumber, orgIds);
         log.info(`Preview for PR #${prNumber} ${destroyed ? "destroyed" : "not found"}`);
       } catch (err) {
         log.error(`Preview cleanup failed for PR #${prNumber}:`, err);

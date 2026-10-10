@@ -1,6 +1,9 @@
 // External data import: load a pg_dump, mysqldump or volume tar into an app's database or volume.
 // Files stream to disk and into the container; nothing holds a whole archive in memory.
 
+import { safeFetch } from "@/lib/security/safe-fetch";
+import { BlockedUrlError } from "@/lib/security/ssrf";
+import { getOutboundPolicy } from "@/lib/security/outbound-policy";
 import { spawn } from "child_process";
 import { createReadStream, createWriteStream } from "fs";
 import { mkdir, open, rename, rm, writeFile } from "fs/promises";
@@ -182,7 +185,15 @@ export async function openSource(source: ImportSource): Promise<{ stream: Readab
     if (url.protocol !== "https:" && url.protocol !== "http:") {
       throw new ImportError("Only http and https URLs can be fetched");
     }
-    const res = await fetch(url, { redirect: "follow" });
+    // Only trusted orgs import by URL; their own host may be private, metadata never.
+    const { allowlist = [] } = await getOutboundPolicy();
+    let res: Response;
+    try {
+      res = await safeFetch(url.toString(), { policy: { allowlist: [...allowlist, url.hostname] } });
+    } catch (err) {
+      if (err instanceof BlockedUrlError) throw new ImportError(err.message);
+      throw err;
+    }
     if (!res.ok || !res.body) throw new ImportError(`Fetching the URL returned ${res.status}`);
     return {
       stream: Readable.fromWeb(res.body as import("stream/web").ReadableStream),

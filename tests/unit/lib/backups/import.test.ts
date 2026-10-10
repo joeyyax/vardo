@@ -1,10 +1,12 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { createServer } from "http";
+import type { AddressInfo } from "net";
 import { mkdtempSync, rmSync, readFileSync, statSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { Readable } from "stream";
 import { gzipSync, gunzipSync } from "zlib";
-import { detectFormat, ImportError, stageImport, writesMysqlSystemSchema } from "@/lib/backups/import";
+import { detectFormat, ImportError, openSource, stageImport, writesMysqlSystemSchema } from "@/lib/backups/import";
 import { buildRestoreArgv, defaultDatabase } from "@/lib/backups/dump-spec";
 
 function tarHeader(): Buffer {
@@ -102,5 +104,27 @@ describe("restore argv for imports", () => {
     expect(defaultDatabase("mariadb", env)).toBe("wp");
     expect(defaultDatabase("postgres", env)).toBe("appdb");
     expect(defaultDatabase("mysql", [])).toBeNull();
+  });
+});
+
+describe("openSource from a URL", () => {
+  beforeEach(() => vi.stubEnv("VARDO_OUTBOUND_ALLOWLIST", "unused.example.com"));
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("refuses instance metadata", async () => {
+    await expect(openSource({ type: "url", url: "http://169.254.169.254/latest/meta-data" })).rejects.toThrow(ImportError);
+  });
+
+  it("refuses a redirect to another private host", async () => {
+    const server = createServer((_req, res) => {
+      res.writeHead(302, { location: "http://169.254.169.254/latest/meta-data" }).end();
+    });
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+    const { port } = server.address() as AddressInfo;
+    try {
+      await expect(openSource({ type: "url", url: `http://127.0.0.1:${port}/dump.sql` })).rejects.toThrow(/link-local/);
+    } finally {
+      server.close();
+    }
   });
 });

@@ -128,6 +128,7 @@ export function registerCreatePreview(
         prUrl: pr_url ?? `https://github.com/${repo}/pull/${pr_number}`,
         branch,
         ttlDays: ttl_days,
+        organizationIds: candidateOrgs,
       });
 
       if (!result) {

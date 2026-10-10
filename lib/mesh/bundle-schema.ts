@@ -1,3 +1,4 @@
+import { imageRefSchema } from "@/lib/api/create-app-schema";
 import { z } from "zod";
 import { gitBranchUpdateSchema, gitUrlUpdateSchema } from "@/lib/api/git-fields";
 
@@ -10,7 +11,7 @@ export const appBundleSchema = z.object({
   deployType: z.enum(["compose", "dockerfile", "image", "static", "nixpacks", "railpack"]),
   gitUrl: gitUrlUpdateSchema.nullable(),
   gitBranch: gitBranchUpdateSchema.nullable(),
-  imageName: z.string().nullable(),
+  imageName: imageRefSchema.nullable(),
   composeContent: z.string().nullable(),
   composeFilePath: z.string().nullable(),
   rootDirectory: z.string().nullable(),

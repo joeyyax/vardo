@@ -8,6 +8,8 @@ import { eq, or, isNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { createTargetSchema, presentTarget, sealTargetConfig } from "@/lib/backups/target-config";
+import { assertTargetAllowed, targetGuardContext, TargetRefusedError } from "@/lib/backups/target-guard";
+import { isAppAdmin } from "@/lib/auth/admin";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { reconcileInBackground } from "@/lib/backups/switch";
@@ -78,6 +80,13 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
         { error: "Local backup targets aren't available on this instance" },
         { status: 403 },
       );
+    }
+
+    try {
+      await assertTargetAllowed(data.type, data.config, await targetGuardContext(orgId, await isAppAdmin()));
+    } catch (err) {
+      if (err instanceof TargetRefusedError) return NextResponse.json({ error: err.message }, { status: 400 });
+      throw err;
     }
 
     if (data.type === "local") {

@@ -29,7 +29,7 @@ vi.mock("@/lib/organizations/create-default-org", () => ({
 
 const { auth } = await import("@/lib/auth");
 
-type Hook = (user: { id: string; email: string; name: string }) => Promise<unknown>;
+type Hook = (user: { id: string; email: string; name: string; emailVerified?: boolean }) => Promise<unknown>;
 const hooks = () =>
   (auth.options.databaseHooks?.user?.create ?? {}) as { before?: Hook; after?: Hook };
 
@@ -60,9 +60,14 @@ describe("user creation respects registrationMode", () => {
     await expect(hooks().before!(newUser)).resolves.not.toBe(false);
   });
 
-  it("lets an invited email through while closed", async () => {
+  it("lets an invited email through while closed once the mailbox is proven", async () => {
     state.invitation = { id: "inv1" };
-    await expect(hooks().before!(newUser)).resolves.not.toBe(false);
+    await expect(hooks().before!({ ...newUser, emailVerified: true })).resolves.not.toBe(false);
+  });
+
+  it("refuses an unverified signup for an invited email", async () => {
+    state.invitation = { id: "inv1" };
+    await expect(hooks().before!({ ...newUser, emailVerified: false })).rejects.toThrow(/Registration is closed/);
   });
 
   it("lets anyone through when open", async () => {

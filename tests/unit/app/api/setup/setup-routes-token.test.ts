@@ -122,6 +122,28 @@ describe("setup routes", () => {
   });
 });
 
+describe("admin routes open during setup", () => {
+  const ADMIN = path.resolve(__dirname, "../../../../../app/api/v1/admin");
+  const OPEN_DURING_SETUP = ["config/import/route.ts", "mesh/join/route.ts"];
+
+  it("covers every API route that skips auth while setup is open", () => {
+    const API_ROOT = path.resolve(API, "..");
+    const skipsAuth = routeFiles(API_ROOT)
+      .filter((f) => !f.startsWith(API + path.sep) && !f.includes(`${path.sep}auth${path.sep}`))
+      .filter((f) => fs.readFileSync(f, "utf8").includes("needsSetup"))
+      .map((f) => path.relative(ADMIN, f))
+      .sort();
+    expect(skipsAuth).toEqual(OPEN_DURING_SETUP);
+  });
+
+  it.each(OPEN_DURING_SETUP)("%s refuses a request without the token", async (rel) => {
+    const { POST } = (await import(/* @vite-ignore */ path.join(ADMIN, rel))) as { POST: Handler };
+    expect(await isRefusal(await call(POST))).toBe(true);
+    expect(await isRefusal(await call(POST, { "x-setup-token": "wrong" }))).toBe(true);
+    expect(await isRefusal(await call(POST, { "x-setup-token": TOKEN }))).toBe(false);
+  });
+});
+
 describe("setup config routes after setup", () => {
   const CONFIG = ["general", "auth", "email", "backup", "github"].map((r) => `${r}/route.ts`);
 

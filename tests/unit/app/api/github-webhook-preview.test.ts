@@ -38,15 +38,19 @@ vi.mock("@/lib/docker/self-preview", () => ({
 }));
 vi.mock("@/lib/docker/deploy-cancel", () => ({ requestDeploy: vi.fn() }));
 vi.mock("@/lib/db", () => ({ db: { query: {} } }));
+vi.mock("@/lib/git-integration/org-installations", () => ({
+  orgsForInstallation: vi.fn(async (id: number) => (id === 7 ? ["org-1"] : [])),
+}));
 
 import { POST } from "@/app/api/v1/github/webhook/route";
 import { NextRequest } from "next/server";
 import { isFeatureEnabled, isFeatureEnabledAsync } from "@/lib/config/features";
 import { getSystemManagedApp, createVardoPreview, destroyVardoPreview } from "@/lib/docker/self-preview";
 
-function prEvent(action: string) {
+function prEvent(action: string, installationId = 7) {
   const body = JSON.stringify({
     action,
+    installation: { id: installationId },
     repository: { full_name: "acme/tools-api" },
     pull_request: {
       number: 25,
@@ -88,8 +92,14 @@ describe("GitHub pull_request webhook", () => {
 
     void afterCallbacks[0]();
     expect(createPreviewMock).toHaveBeenCalledWith(
-      expect.objectContaining({ repoFullName: "acme/tools-api", prNumber: 25, branch: "feat/x" }),
+      expect.objectContaining({ repoFullName: "acme/tools-api", prNumber: 25, branch: "feat/x", organizationIds: ["org-1"] }),
     );
+  });
+
+  it("builds nothing for an installation linked to no org", async () => {
+    const res = await POST(prEvent("opened", 99), {});
+    expect(await res.json()).toMatchObject({ skipped: "installation not linked" });
+    expect(afterCallbacks).toHaveLength(0);
   });
 
   it("answers 202 before the teardown finishes", async () => {
@@ -98,7 +108,7 @@ describe("GitHub pull_request webhook", () => {
     expect(res).not.toBe("timeout");
     expect((res as Response).status).toBe(202);
     void afterCallbacks[0]();
-    expect(destroyPreviewMock).toHaveBeenCalledWith("acme/tools-api", 25);
+    expect(destroyPreviewMock).toHaveBeenCalledWith("acme/tools-api", 25, ["org-1"]);
   });
 });
 
@@ -119,7 +129,7 @@ describe("GitHub pull_request webhook with previews off", () => {
     await POST(prEvent("closed"), {});
     void afterCallbacks[0]();
 
-    expect(destroyPreviewMock).toHaveBeenCalledWith("acme/tools-api", 25);
+    expect(destroyPreviewMock).toHaveBeenCalledWith("acme/tools-api", 25, ["org-1"]);
   });
 
   it("never builds a Vardo self-preview", async () => {

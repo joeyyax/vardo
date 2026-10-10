@@ -7,6 +7,12 @@ export const repoFilePathSchema = z
   .regex(/^[a-zA-Z0-9._-][a-zA-Z0-9._\-/]*$/, "Invalid file path")
   .refine((p) => !p.split("/").includes(".."), { message: "Invalid file path" });
 
+/** An image reference. A leading `-` would read as a docker flag. */
+export const imageRefSchema = z
+  .string()
+  .max(512)
+  .regex(/^[a-zA-Z0-9][a-zA-Z0-9._\-/:@]*$/, "Invalid image name");
+
 /** CPU cores. Null uses the tier default; 0 removes the cap. */
 export const cpuLimitSchema = z.number().min(0).max(64);
 
@@ -23,7 +29,7 @@ export const createAppSchema = z
     deployType: z.enum(["compose", "dockerfile", "image", "static", "nixpacks", "railpack"]),
     gitUrl: gitUrlSchema.optional(),
     gitBranch: gitBranchSchema.optional(),
-    imageName: z.string().optional(),
+    imageName: imageRefSchema.optional(),
     composeContent: z.string().max(512000).optional(),
     composeFilePath: repoFilePathSchema.optional(),
     dockerfilePath: repoFilePathSchema.optional(),

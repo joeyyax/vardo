@@ -82,7 +82,7 @@ import { db } from "@/lib/db";
 const REPO = "acme/tools-api";
 const tick = () => new Promise((r) => setTimeout(r, 20));
 const open = () =>
-  createPreview({ repoFullName: REPO, prNumber: 25, prUrl: "https://github.com/x/pull/25", branch: "feat" });
+  createPreview({ repoFullName: REPO, prNumber: 25, prUrl: "https://github.com/x/pull/25", branch: "feat", organizationIds: ["org-1"] });
 
 async function until(cond: () => boolean) {
   for (let i = 0; i < 200 && !cond(); i++) await tick();
@@ -100,7 +100,7 @@ describe("open and close a PR within seconds", () => {
     const opening = open();
     await until(() => gate.entered);
 
-    const closing = destroyPreview(REPO, 25);
+    const closing = destroyPreview(REPO, 25, ["org-1"]);
     await tick();
     gate.release();
 
@@ -111,7 +111,7 @@ describe("open and close a PR within seconds", () => {
   it("never deploys a preview that was closed before its deploy started", async () => {
     const opening = open();
     await until(() => gate.entered);
-    const closing = destroyPreview(REPO, 25);
+    const closing = destroyPreview(REPO, 25, ["org-1"]);
     await tick();
     gate.release();
     await Promise.all([opening, closing]);
@@ -122,7 +122,7 @@ describe("open and close a PR within seconds", () => {
   it("keeps the preview when the PR is reopened after the close", async () => {
     const opening = open();
     await until(() => gate.entered);
-    const closing = destroyPreview(REPO, 25);
+    const closing = destroyPreview(REPO, 25, ["org-1"]);
     await tick();
     gate.release();
     await Promise.all([opening, closing]);
@@ -155,7 +155,7 @@ describe("with previews off", () => {
 
   it("tears down only a preview-type group environment on close", async () => {
     vi.mocked(db.query.groupEnvironments.findFirst).mockClear();
-    await destroyPreview(REPO, 25);
+    await destroyPreview(REPO, 25, ["org-1"]);
 
     const { where } = vi.mocked(db.query.groupEnvironments.findFirst).mock.calls[0][0] as { where: unknown };
     expect(JSON.stringify(where, (_k, v) => (typeof v === "object" && v?.constructor?.name === "PgTable" ? undefined : v)))

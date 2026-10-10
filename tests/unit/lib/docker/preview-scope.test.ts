@@ -68,6 +68,7 @@ const openPr = () =>
     prNumber: 25,
     prUrl: "https://github.com/acme/tools-api/pull/25",
     branch: "feat/x",
+    organizationIds: ["org-1"],
   });
 
 describe("createPreview scope", () => {
@@ -135,5 +136,20 @@ describe("normalizeGitRepo", () => {
     expect(normalizeGitRepo("https://github.com/acme/tools-api-old.git")).not.toBe(
       "github.com/acme/tools-api",
     );
+  });
+});
+
+describe("preview org scope", () => {
+  it("takes no app when no org may hold the preview", async () => {
+    appsFindMany.mockClear();
+    const result = await createPreview({
+      repoFullName: "acme/tools-api",
+      prNumber: 26,
+      prUrl: "https://github.com/acme/tools-api/pull/26",
+      branch: "feat/x",
+      organizationIds: [],
+    });
+    expect(result).toBeNull();
+    expect(appsFindMany).not.toHaveBeenCalled();
   });
 });

@@ -2,7 +2,7 @@
 
 import { db } from "@/lib/db";
 import { apps, groupEnvironments } from "@/lib/db/schema";
-import { eq, and, ilike } from "drizzle-orm";
+import { eq, and, ilike, inArray } from "drizzle-orm";
 import {
   createGroupEnvironment,
   destroyGroupEnvironment,
@@ -29,6 +29,8 @@ type CreatePreviewOpts = {
   author?: string;
   /** Days before auto-cleanup. Default 7. */
   ttlDays?: number;
+  /** Orgs whose apps may take the preview. */
+  organizationIds: string[];
 };
 
 type PreviewResult = {
@@ -65,9 +67,10 @@ async function withPreviewLock<T>(
 }
 
 /** Apps built from this GitHub repo, whatever form their git URL takes. */
-async function appsForRepo(repoFullName: string) {
+async function appsForRepo(repoFullName: string, organizationIds: string[]) {
+  if (organizationIds.length === 0) return [];
   const candidates = await db.query.apps.findMany({
-    where: ilike(apps.gitUrl, `%${repoFullName}%`),
+    where: and(ilike(apps.gitUrl, `%${repoFullName}%`), inArray(apps.organizationId, organizationIds)),
   });
   return candidates.filter((a) => matchesGitHubRepo(a.gitUrl, repoFullName));
 }
@@ -97,7 +100,7 @@ async function createPreviewLocked(
   const closed = () => isPreviewClosed(opts.repoFullName, opts.prNumber);
   if (await closed()) return null;
 
-  const matchingApps = await appsForRepo(opts.repoFullName);
+  const matchingApps = await appsForRepo(opts.repoFullName, opts.organizationIds);
   if (matchingApps.length === 0) return null;
 
   // First repo app in a project, regardless of its configured branch.
@@ -209,7 +212,8 @@ async function createPreviewLocked(
  */
 export async function destroyPreview(
   repoFullName: string,
-  prNumber: number
+  prNumber: number,
+  organizationIds: string[],
 ): Promise<boolean> {
   const marked = await markPreviewClosed(repoFullName, prNumber).then(
     () => true,
@@ -221,7 +225,7 @@ export async function destroyPreview(
     async () => {
       // Reopened while this waited for the lock: the open wins.
       if (marked && !(await isPreviewClosed(repoFullName, prNumber))) return false;
-      return destroyPreviewLocked(repoFullName, prNumber);
+      return destroyPreviewLocked(repoFullName, prNumber, organizationIds);
     },
     false,
   );
@@ -229,9 +233,10 @@ export async function destroyPreview(
 
 async function destroyPreviewLocked(
   repoFullName: string,
-  prNumber: number
+  prNumber: number,
+  organizationIds: string[],
 ): Promise<boolean> {
-  const matchingApps = await appsForRepo(repoFullName);
+  const matchingApps = await appsForRepo(repoFullName, organizationIds);
   const groupedApp = matchingApps.find((a) => a.projectId);
   if (!groupedApp || !groupedApp.projectId) return false;
 
