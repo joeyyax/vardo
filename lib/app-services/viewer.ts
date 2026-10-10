@@ -1,5 +1,3 @@
-import "server-only";
-
 import { and, count, eq, gt } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { session as sessionTable } from "@/lib/db/schema";

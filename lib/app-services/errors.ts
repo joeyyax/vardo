@@ -3,7 +3,7 @@ import type { FeatureFlag } from "@/lib/config/features";
 // Errors a service throws for the adapter to translate: a 4xx response, notFound() or an MCP refusal.
 
 export class ServiceError extends Error {
-  constructor(message: string, readonly status: 403 | 404) {
+  constructor(message: string, readonly status: 400 | 403 | 404 | 409) {
     super(message);
     this.name = new.target.name;
   }
@@ -27,5 +27,19 @@ export class NotFoundError extends ServiceError {
 export class FeatureDisabledError extends ServiceError {
   constructor(readonly flag: FeatureFlag) {
     super(`Feature "${flag}" isn't enabled.`, 404);
+  }
+}
+
+/** The input breaks a rule the service enforces for every caller. */
+export class InvalidInputError extends ServiceError {
+  constructor(message: string) {
+    super(message, 400);
+  }
+}
+
+/** The write collides with something that already exists. */
+export class ConflictError extends ServiceError {
+  constructor(message: string) {
+    super(message, 409);
   }
 }

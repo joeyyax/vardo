@@ -14,6 +14,7 @@ const GUARDS = new Set([
   "verifyOrgAccess",
   "verifyAppAccess",
   "verifyProjectAccess",
+  "actorForOrg",
   "verifyAccess",
   "requireAdmin",
   "requireAdminAuth",

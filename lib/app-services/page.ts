@@ -6,7 +6,7 @@ export async function pageData<T>(read: Promise<T>): Promise<T> {
   try {
     return await read;
   } catch (error) {
-    if (error instanceof ServiceError) notFound();
+    if (error instanceof ServiceError && (error.status === 403 || error.status === 404)) notFound();
     throw error;
   }
 }
