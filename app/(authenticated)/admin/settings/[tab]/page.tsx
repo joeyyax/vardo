@@ -1,8 +1,7 @@
 import { notFound } from "next/navigation";
-import { db } from "@/lib/db";
-import { apps } from "@/lib/db/schema";
-import { getCurrentOrg } from "@/lib/auth/session";
-import { eq } from "drizzle-orm";
+import { currentActor } from "@/lib/app-services/session-actor";
+import { pageData } from "@/lib/app-services/page";
+import { listBackupAppOptions } from "@/lib/app-services/backups";
 import { isFeatureEnabledAsync, type FeatureFlag } from "@/lib/config/features";
 import { GeneralSettings } from "../general-settings";
 import { EmailSettings } from "@/components/notifications/settings";
@@ -61,19 +60,15 @@ export default async function AdminSettingsTabPage({
 
   // Backup renders the full BackupPage with admin scope.
   if (tab === "backup") {
-    const orgData = await getCurrentOrg();
-    const orgId = orgData?.organization.id;
-    if (!orgId) return <BackupSettings />;
+    const actor = await currentActor();
+    if (!actor) return <BackupSettings />;
 
-    const appList = await db.query.apps.findMany({
-      where: eq(apps.organizationId, orgId),
-      columns: { id: true, name: true, displayName: true },
-    });
+    const appList = await pageData(listBackupAppOptions(actor));
 
     return (
       <div className="space-y-12">
         <SystemBackupSection />
-        <BackupPage scope="admin" orgId={orgId} apps={appList} />
+        <BackupPage scope="admin" orgId={actor.org.id} apps={appList} />
       </div>
     );
   }

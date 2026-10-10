@@ -8,6 +8,8 @@ import { nanoid } from "nanoid";
 import { sendEmail, emailDelivery } from "@/lib/email/send";
 import { InviteEmail } from "@/lib/email/templates/invite";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
+import { actorForOrg } from "@/lib/app-services/session-actor";
+import { listInvitations } from "@/lib/app-services/team";
 import { generateInvitationToken, invitationUrl } from "@/lib/invitations/token";
 import { requirePlugin } from "@/lib/api/require-plugin";
 import { SYSTEM_ORG_NO_INVITES } from "@/lib/auth/system-org";
@@ -27,35 +29,10 @@ type RouteParams = {
 async function handleGet(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const org = await verifyOrgAccess(orgId, "org.view");
-    if (!org) return apiError.forbidden();
+    const actor = await actorForOrg(orgId);
+    if (!actor) return apiError.forbidden();
 
-    const gate = await requirePlugin("teams");
-    if (gate) return gate;
-
-    const pending = await db.query.invitations.findMany({
-      where: and(
-        eq(invitations.targetId, orgId),
-        eq(invitations.scope, "org"),
-      ),
-      // Selected explicitly so the token hash is never serialized.
-      columns: {
-        id: true,
-        email: true,
-        role: true,
-        status: true,
-        createdAt: true,
-        expiresAt: true,
-      },
-      with: {
-        inviter: {
-          columns: { id: true, name: true, email: true },
-        },
-      },
-      orderBy: (t, { desc }) => [desc(t.createdAt)],
-    });
-
-    return NextResponse.json({ invitations: pending });
+    return NextResponse.json({ invitations: await listInvitations(actor) });
   } catch (error) {
     return handleRouteError(error, "Error fetching invitations");
   }

@@ -1,10 +1,11 @@
 import { notFound, redirect } from "next/navigation";
-import { db } from "@/lib/db";
-import { memberships, invitations, apps } from "@/lib/db/schema";
-import { getSession, getCurrentOrg, getUserOrganizations } from "@/lib/auth/session";
-import { isInstanceAdminUser } from "@/lib/auth/system-org";
+import { getUserOrganizations } from "@/lib/auth/session";
 import { isFeatureEnabledAsync, type FeatureFlag } from "@/lib/config/features";
-import { eq, and } from "drizzle-orm";
+import { currentActor } from "@/lib/app-services/session-actor";
+import { pageData } from "@/lib/app-services/page";
+import { loadOrgDomainSettings, loadOrgGeneralSettings } from "@/lib/app-services/settings";
+import { listBackupAppOptions } from "@/lib/app-services/backups";
+import { loadInvitationsTab, loadTeamTab } from "@/lib/app-services/team";
 import { OrgEnvVarsEditor } from "../org-env-vars";
 import { OrgDomainEditor } from "../org-domain-editor";
 import { NotificationChannelsEditor } from "../notification-channels";
@@ -15,9 +16,6 @@ import { InvitationsPanel } from "../invitations";
 import { OrgGeneralSettings } from "../org-general-settings";
 import { OrgResourceProfiles } from "../org-resource-profiles";
 import { BackupPage } from "@/components/backups/backup-page";
-import { getEmailProviderConfig } from "@/lib/system-settings";
-import { getInstanceBaseDomain } from "@/lib/domain-monitoring/base-domain";
-import { getInstanceTimeZone } from "@/lib/time-zone-settings";
 
 const VALID_TABS = ["general", "variables", "domains", "backups", "notifications", "team", "invitations"] as const;
 type ValidTab = (typeof VALID_TABS)[number];
@@ -44,52 +42,52 @@ export default async function OrgSettingsTabPage({
     notFound();
   }
 
-  const session = await getSession();
-  const orgData = await getCurrentOrg();
+  const actor = await currentActor();
 
-  if (!orgData || !session?.user?.id) {
+  if (!actor) {
     redirect("/onboarding");
   }
 
-  const orgId = orgData.organization.id;
+  const orgId = actor.org.id;
 
   switch (tab as ValidTab) {
-    case "general":
+    case "general": {
+      const settings = await pageData(loadOrgGeneralSettings(actor));
       return (
         <div className="space-y-4">
           <OrgGeneralSettings
             orgId={orgId}
-            orgName={orgData.organization.name}
-            orgTimeZone={orgData.organization.timeZone ?? null}
-            instanceTimeZone={await getInstanceTimeZone()}
-            githubFeedback={orgData.organization.githubFeedback ?? true}
+            orgName={settings.name}
+            orgTimeZone={settings.timeZone}
+            instanceTimeZone={settings.instanceTimeZone}
+            githubFeedback={settings.githubFeedback}
           />
           <OrgResourceProfiles
             orgId={orgId}
-            memoryProfile={orgData.organization.memoryProfile}
-            autoMaxMb={orgData.organization.memoryAutoMaxMb ?? null}
+            memoryProfile={settings.memoryProfile}
+            autoMaxMb={settings.memoryAutoMaxMb}
           />
         </div>
       );
+    }
 
     case "variables":
       return <OrgEnvVarsEditor orgId={orgId} />;
 
-    case "domains":
+    case "domains": {
+      const settings = await pageData(loadOrgDomainSettings(actor));
       return (
         <OrgDomainEditor
           orgId={orgId}
-          defaultDomain={await getInstanceBaseDomain()}
-          sslEnabled={orgData.organization.sslEnabled ?? true}
-          serverIP={process.env.VARDO_SERVER_IP}
+          defaultDomain={settings.defaultDomain}
+          sslEnabled={settings.sslEnabled}
+          serverIP={settings.serverIP}
         />
       );
+    }
 
     case "backups": {
-      const appList = await db.query.apps.findMany({
-        where: eq(apps.organizationId, orgId),
-        columns: { id: true, name: true, displayName: true },
-      });
+      const appList = await pageData(listBackupAppOptions(actor));
       return <BackupPage scope="org" orgId={orgId} apps={appList} />;
     }
 
@@ -103,75 +101,32 @@ export default async function OrgSettingsTabPage({
       );
 
     case "team": {
-      const organizations = await getUserOrganizations();
-
-      const orgMemberships = await db.query.memberships.findMany({
-        where: eq(memberships.organizationId, orgId),
-        with: {
-          user: {
-            columns: { id: true, name: true, email: true, image: true },
-          },
-        },
-      });
-
-      const members = orgMemberships.map((m) => ({
-        id: m.user.id,
-        name: m.user.name,
-        email: m.user.email,
-        image: m.user.image,
-        role: m.role,
-        joinedAt: m.createdAt.toISOString(),
-      }));
-
+      const [organizations, team] = await Promise.all([getUserOrganizations(), pageData(loadTeamTab(actor))]);
       return (
         <TeamMembers
-          members={members}
+          members={team.members}
           orgId={orgId}
-          orgName={orgData.organization.name}
-          currentRole={orgData.membership.role}
-          currentUserId={session.user.id}
+          orgName={actor.org.name}
+          currentRole={actor.membership.role}
+          currentUserId={actor.userId}
           organizations={organizations}
           embedded
-          systemOrg={orgData.organization.isSystemManaged}
-          instanceAdmin={orgData.organization.isSystemManaged && (await isInstanceAdminUser(session.user.id))}
+          systemOrg={team.systemOrg}
+          instanceAdmin={team.instanceAdmin}
         />
       );
     }
 
     case "invitations": {
-      const orgInvitations = await db.query.invitations.findMany({
-        where: and(
-          eq(invitations.scope, "org"),
-          eq(invitations.targetId, orgId),
-        ),
-        with: {
-          inviter: {
-            columns: { id: true, name: true },
-          },
-        },
-        orderBy: (t, { desc }) => [desc(t.createdAt)],
-      });
-
-      const invitationList = orgInvitations.map((inv) => ({
-        id: inv.id,
-        email: inv.email,
-        role: inv.role,
-        status: inv.status as "pending" | "accepted" | "expired",
-        createdAt: inv.createdAt.toISOString(),
-        expiresAt: inv.expiresAt.toISOString(),
-        inviter: inv.inviter
-          ? { id: inv.inviter.id, name: inv.inviter.name }
-          : null,
-      }));
-
+      const data = await pageData(loadInvitationsTab(actor));
       return (
         <InvitationsPanel
           orgId={orgId}
-          orgName={orgData.organization.name}
-          currentRole={orgData.membership.role}
-          invitations={invitationList}
-          emailConfigured={!!(await getEmailProviderConfig())}
-          systemOrg={orgData.organization.isSystemManaged}
+          orgName={actor.org.name}
+          currentRole={actor.membership.role}
+          invitations={data.invitations}
+          emailConfigured={data.emailConfigured}
+          systemOrg={data.systemOrg}
         />
       );
     }
