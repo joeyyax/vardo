@@ -83,8 +83,10 @@ async function reportContainerKills(subjects: OomSubject[], now: number): Promis
     const count = await readContainerOomKills(subject.containerId);
     if (count === null) continue;
 
-    const seen = containerLast.get(subject.containerId) ?? 0;
+    const seen = containerLast.get(subject.containerId);
     containerLast.set(subject.containerId, count);
+    // The first reading after a restart is a baseline; its kills were reported before.
+    if (seen === undefined) continue;
     // A count that dropped is a recreated cgroup, not a kill.
     if (count > seen) fresh.push({ subject, kills: count - seen });
   }
