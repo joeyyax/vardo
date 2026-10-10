@@ -24,6 +24,7 @@ export type AppSettingsFields = {
   buildProvider: boolean;
   containerPort: boolean;
   backendProtocol: boolean;
+  securityHeaders: boolean;
   restartPolicy: boolean;
   resourceLimits: boolean;
   diskWriteAlert: boolean;
@@ -58,6 +59,7 @@ export function appSettingsFields(ctx: AppSettingsFieldContext): AppSettingsFiel
     buildProvider: buildpack && ctx.deployType === "compose",
     containerPort: ownsBuild,
     backendProtocol: ownsBuild,
+    securityHeaders: ownsBuild,
     restartPolicy: true,
     resourceLimits: true,
     // Alerts match containers by name, which belong to child rows.
@@ -86,6 +88,7 @@ export const APP_SETTINGS_FIELD_PAGE: Record<AppSettingsFieldName, AppSettingsPa
   project: "settings",
   containerPort: "networking",
   backendProtocol: "networking",
+  securityHeaders: "networking",
   image: "build",
   gitSource: "build",
   deployType: "build",
@@ -114,6 +117,7 @@ export const APP_SETTINGS_REDEPLOY_KEYS: readonly string[] = [
   "rootDirectory",
   "containerPort",
   "backendProtocol",
+  "securityHeaders",
   "restartPolicy",
   "cpuLimit",
   "memoryLimit",

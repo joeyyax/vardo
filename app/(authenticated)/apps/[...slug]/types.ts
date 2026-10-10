@@ -148,6 +148,7 @@ export type App = {
   priority: "critical" | "standard" | "disposable" | null;
   gpuEnabled: boolean | null;
   backendProtocol: "http" | "https" | null;
+  securityHeaders?: boolean;
   diskWriteAlertThreshold: number | null;
   healthCheckTimeout: number | null;
   autoRollback: boolean | null;

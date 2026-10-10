@@ -170,6 +170,7 @@ export type ComposePreviewApp = {
   exposedPorts: { internal: number; external?: number; protocol?: string }[] | null;
   domains: DeployTransformDomain[];
   backendProtocol?: "http" | "https" | null;
+  securityHeaders?: boolean;
 };
 
 export type ValidateOptions = {

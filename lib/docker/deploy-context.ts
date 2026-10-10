@@ -49,6 +49,7 @@ export type DeployApp = {
   autoRollback: boolean | null;
   rollbackGracePeriod: number | null;
   backendProtocol: "http" | "https" | null;
+  securityHeaders?: boolean;
   envContent: string | null;
   parentAppId: string | null;
   composeService: string | null;

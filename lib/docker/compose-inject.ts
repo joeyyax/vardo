@@ -97,6 +97,14 @@ export function defaultPidsLimit(): number | null {
   return DEFAULT_PIDS_LIMIT;
 }
 
+/** Headers middleware options for an app's HTTPS router. Traefik overwrites any value the app sends. */
+export const SECURITY_HEADERS: Readonly<Record<string, string>> = {
+  stsSeconds: "31536000",
+  contentTypeNosniff: "true",
+  customFrameOptionsValue: "SAMEORIGIN",
+  referrerPolicy: "strict-origin-when-cross-origin",
+};
+
 /**
  * Add Traefik labels to one service and clear this app's routing labels from the rest.
  * Opted-out and self-routed services are left untouched.
@@ -122,6 +130,8 @@ export function injectTraefikLabels(
     stripPathPrefix?: boolean;
     /** Middlewares the domain asks for, ahead of Vardo's own. */
     middlewares?: string[];
+    /** Add the default security headers to the HTTPS router. */
+    securityHeaders?: boolean;
   },
 ): ComposeFile {
   const { projectName, domain, containerPort, certResolver = "le-dns", ssl = true } = opts;
@@ -163,8 +173,15 @@ export function injectTraefikLabels(
   };
   if (pathPrefix) labels[`traefik.http.routers.${projectName}.priority`] = String(pathRoutePriority(pathPrefix));
 
-  // Middlewares on the router that serves the app: the domain's own, then the redirect or the path strip.
-  const appMiddlewares: string[] = [...(opts.middlewares ?? [])];
+  // Middlewares on the router that serves the app: security headers, the domain's own, then the redirect or the path strip.
+  const appMiddlewares: string[] = [];
+  if (ssl && opts.securityHeaders) {
+    for (const [option, value] of Object.entries(SECURITY_HEADERS)) {
+      labels[`traefik.http.middlewares.${projectName}-headers.headers.${option}`] = value;
+    }
+    appMiddlewares.push(`${projectName}-headers`);
+  }
+  appMiddlewares.push(...(opts.middlewares ?? []));
   if (isRedirect) {
     // Redirect domain: redirectregex middleware, still TLS-terminated.
     labels[`traefik.http.middlewares.${projectName}-redirect.redirectregex.regex`] = "^https?://[^/]+(.*)$";
@@ -811,6 +828,7 @@ export function applyDeployTransforms(
     networkName: string;
     backendProtocol?: "http" | "https" | null;
     orgTrusted?: boolean;
+    securityHeaders?: boolean;
   },
 ): ComposeFile {
   let result = compose;
@@ -850,6 +868,7 @@ export function applyDeployTransforms(
         containerPort: port,
         serviceName: targetService,
         backendProtocol: resolvedProtocol,
+        securityHeaders: opts.securityHeaders ?? true,
       });
     }
   }
@@ -920,5 +939,6 @@ export function buildComposePreview(
     networkName,
     backendProtocol: app.backendProtocol,
     orgTrusted,
+    securityHeaders: app.securityHeaders,
   });
 }
