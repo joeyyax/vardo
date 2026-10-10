@@ -3,12 +3,8 @@ import { z } from "zod";
 import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
-import {
-  MAX_BATCH_WINDOW_MINUTES,
-  MIN_BATCH_WINDOW_MINUTES,
-  readOrgNotificationSettings,
-  updateOrgNotificationSettings,
-} from "@/lib/notifications/preferences";
+import { readOrgNotificationSettings, updateOrgNotificationSettings } from "@/lib/notifications/preferences";
+import { NIGHTLY_TIME } from "@/lib/backups/run-rules";
 import { NOTIFICATION_CATEGORY_KEYS } from "@/lib/notifications/registry";
 
 type RouteParams = { params: Promise<{ orgId: string }> };
@@ -18,7 +14,7 @@ const categoryKeys = NOTIFICATION_CATEGORY_KEYS as [string, ...string[]];
 const patchSchema = z
   .object({
     categories: z.partialRecord(z.enum(categoryKeys), z.boolean()).optional(),
-    batchWindowMinutes: z.number().int().min(MIN_BATCH_WINDOW_MINUTES).max(MAX_BATCH_WINDOW_MINUTES).optional(),
+    nightlyBackupTime: z.string().regex(NIGHTLY_TIME, "Use HH:MM, 24-hour").optional(),
   })
   .strict()
   .refine((data) => Object.keys(data).length > 0, { message: "No fields to update" });

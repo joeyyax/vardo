@@ -65,6 +65,11 @@ vi.mock("@/lib/backups/engine", async (importOriginal) => ({
   runBackup: runBackupMock,
 }));
 vi.mock("@/lib/backups/initial-backup", () => ({ startDueInitialBackups: async () => [] }));
+vi.mock("@/lib/backups/runs", () => ({
+  startNightlyRuns: async () => new Map(),
+  startJobRun: async () => null,
+  markJobDone: async () => {},
+}));
 vi.mock("@/lib/logger", () => ({
   logger: { child: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }) },
 }));
@@ -124,7 +129,7 @@ describe("tickBackupJobs — before first-run setup", () => {
   it("runs a due job once setup is done", async () => {
     withExistingBackup(null);
     await tickBackupJobs();
-    expect(runBackupMock).toHaveBeenCalledWith("job-1");
+    expect(runBackupMock).toHaveBeenCalledWith("job-1", { runId: null });
   });
 });
 
@@ -134,7 +139,7 @@ describe("tickBackupJobs — the in-flight guard is time-bounded", () => {
 
     await tickBackupJobs();
 
-    expect(runBackupMock).toHaveBeenCalledWith("job-1");
+    expect(runBackupMock).toHaveBeenCalledWith("job-1", { runId: null });
   });
 
   it("still skips while a backup is genuinely in flight", async () => {
@@ -158,7 +163,7 @@ describe("tickBackupJobs — the in-flight guard is time-bounded", () => {
 
     await tickBackupJobs();
 
-    expect(runBackupMock).toHaveBeenCalledWith("job-1");
+    expect(runBackupMock).toHaveBeenCalledWith("job-1", { runId: null });
   });
 });
 

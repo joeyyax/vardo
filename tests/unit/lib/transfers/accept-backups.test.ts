@@ -37,6 +37,7 @@ vi.mock("@/lib/db", async () => {
 
   const query = {
     appTransfers: { findFirst: async () => s.transfer },
+    organizations: { findFirst: async () => ({ nightlyBackupTime: "02:00" }) },
     apps: {
       findFirst: async ({ where }: { where: unknown }) => s.apps.find((a) => has(params(where), a.id)),
       findMany: async ({ where, columns }: { where: unknown; columns?: Record<string, boolean> }) => {

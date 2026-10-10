@@ -7,9 +7,10 @@ import {
   primaryKey,
   text,
   timestamp,
+  index,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
-import type { BackupBatchItem } from "@/lib/backups/batch-rules";
+import type { BackupResultItem, BackupRunPlan } from "@/lib/backups/run-rules";
 import { backupStatusEnum, backupTargetTypeEnum } from "./enums";
 import { organizations } from "./organizations";
 import { apps } from "./apps";
@@ -74,6 +75,8 @@ export const backupJobs = pgTable("backup_job", {
   keepYearly: integer("keep_yearly"),
   notifyOnSuccess: boolean("notify_on_success").default(false),
   notifyOnFailure: boolean("notify_on_failure").default(true),
+  // Runs in the org's nightly run, not on its own schedule. The schedule mirrors the nightly time.
+  nightly: boolean("nightly").default(false).notNull(),
   lastRunAt: timestamp("last_run_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -176,19 +179,30 @@ export const initialBackups = pgTable("initial_backup", {
   finishedAt: timestamp("finished_at"),
 });
 
-// Backup, drill, restore and import results waiting to go out as one summary per org.
-export const backupBatches = pgTable(
-  "backup_batch",
+// One run of backups with a start notice and a completion summary: the org's nightly run, or a long job.
+export const backupRuns = pgTable(
+  "backup_run",
   {
     id: text("id").primaryKey(),
     organizationId: text("organization_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
-    openedAt: timestamp("opened_at").notNull(),
-    // Latest send time. A failure pulls it in.
-    flushAt: timestamp("flush_at").notNull(),
-    flushedAt: timestamp("flushed_at"),
-    items: jsonb("items").$type<BackupBatchItem[]>().default([]).notNull(),
+    // "nightly", "job" or "restore".
+    kind: text("kind").notNull(),
+    // Unique per org, so a run starts once: `nightly:2026-10-10`, `job:<id>:<minute>`.
+    runKey: text("run_key").notNull(),
+    label: text("label").notNull(),
+    startedAt: timestamp("started_at").notNull(),
+    estimatedMs: integer("estimated_ms"),
+    // Sends the summary by then even if jobs never report.
+    deadlineAt: timestamp("deadline_at").notNull(),
+    finishedAt: timestamp("finished_at"),
+    plan: jsonb("plan").$type<BackupRunPlan>().notNull(),
+    jobsDone: jsonb("jobs_done").$type<string[]>().default([]).notNull(),
+    items: jsonb("items").$type<BackupResultItem[]>().default([]).notNull(),
   },
-  (t) => [uniqueIndex("backup_batch_open_idx").on(t.organizationId).where(sql`${t.flushedAt} is null`)],
+  (t) => [
+    uniqueIndex("backup_run_key_idx").on(t.organizationId, t.runKey),
+    index("backup_run_open_idx").on(t.organizationId).where(sql`${t.finishedAt} is null`),
+  ],
 );

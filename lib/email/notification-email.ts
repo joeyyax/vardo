@@ -10,7 +10,7 @@ import { deploySuccessMail } from "./templates/deploy-success";
 import { deployFailedMail } from "./templates/deploy-failed";
 import { deployIncompleteMail } from "./templates/deploy-incomplete";
 import { autoRollbackMail } from "./templates/auto-rollback";
-import { backupSummaryMail } from "./templates/backup";
+import { backupRunStartedMail, backupSummaryMail } from "./templates/backup";
 import { cronFailedMail } from "./templates/cron-failed";
 import { diskWriteAlertMail } from "./templates/disk-write-alert";
 import { volumeDriftMail } from "./templates/volume-drift";
@@ -55,6 +55,8 @@ export function notificationMailBody(event: BusEvent, ctx: MailContext): Notific
       return autoRollbackMail(event, ctx);
     case "backup.summary":
       return backupSummaryMail(event, ctx);
+    case "backup.run-started":
+      return backupRunStartedMail(event, ctx);
     case "cron.failed":
       return cronFailedMail(event, ctx);
     case "disk.write-alert":

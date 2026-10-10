@@ -186,7 +186,7 @@ export const alertHistory = pgTable(
   ]
 );
 
-// Per-org notification switches and the backup batch window.
+// Per-org notification switches.
 
 export const notificationSettings = pgTable("notification_setting", {
   organizationId: text("organization_id")
@@ -194,6 +194,5 @@ export const notificationSettings = pgTable("notification_setting", {
     .references(() => organizations.id, { onDelete: "cascade" }),
   // Category on/off. A missing key is the category's default.
   categories: jsonb("categories").$type<Record<string, boolean>>().default({}).notNull(),
-  batchWindowMinutes: integer("batch_window_minutes").default(30).notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

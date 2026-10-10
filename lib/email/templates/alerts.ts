@@ -13,6 +13,7 @@ const APP_TAB: Record<string, string> = {
   "app.memory-limit": "resources",
   "app.restart-loop": "stability",
   "app.unhealthy": "logs",
+  "backup.failure": "backups",
 };
 
 export function timeLabel(iso: string): string {

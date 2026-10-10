@@ -71,7 +71,7 @@ vi.mock("@/lib/db", () => ({
 }));
 vi.mock("child_process", () => ({ execFile: execFileMock, spawn: spawnMock }));
 vi.mock("@/lib/notifications/dispatch", () => ({ emit: emitMock }));
-vi.mock("@/lib/backups/batch", () => ({ recordBackupResults: recordMock }));
+vi.mock("@/lib/backups/runs", () => ({ recordBackupResults: recordMock }));
 vi.mock("@/lib/docker/client", () => ({
   listContainers: listContainersMock,
   inspectContainer: vi.fn(),
@@ -742,7 +742,7 @@ describe("runBackup — empty bind sources", () => {
     expect(backupsFindFirst).not.toHaveBeenCalled();
   });
 
-  it("hands the run to the org's batch, without never-populated sources", async () => {
+  it("hands the results to the org's run, without never-populated sources", async () => {
     backupJobsFindFirst.mockResolvedValue(job());
     volumesPerApp([volume({ id: "vol-1", name: "pgdata" }), bindVolume({ id: "vol-2" })]);
     stubBind(true);

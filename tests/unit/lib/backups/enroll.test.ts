@@ -46,6 +46,7 @@ vi.mock("@/lib/db", async () => {
       backupJobApps: { findMany: async () => state.links },
       backupTargets: { findFirst: async () => state.target },
       backupJobs: { findMany: async () => state.jobs },
+      organizations: { findFirst: async () => ({ nightlyBackupTime: "02:00" }) },
     },
     select: () => ({ from: () => ({ innerJoin: () => ({ where: async () => [] }) }) }),
     update: () => ({

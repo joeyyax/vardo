@@ -1,7 +1,7 @@
 // Auto-created system backup target, Vardo's own database job and per-app daily jobs.
 
 import { db } from "@/lib/db";
-import { backupTargets, backupJobs, backupJobApps, backupJobVolumes, backups, volumes } from "@/lib/db/schema";
+import { backupTargets, backupJobs, backupJobApps, backupJobVolumes, backups, organizations, volumes } from "@/lib/db/schema";
 import { eq, and, isNull, inArray, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { createHash } from "crypto";
@@ -10,6 +10,7 @@ import { assertSafeName } from "@/lib/docker/validate";
 import { logger } from "@/lib/logger";
 import { isBackupSelected } from "./durability";
 import { sealTargetConfig } from "./target-config";
+import { nightlyCron } from "./run-rules";
 
 const log = logger.child("auto-backup");
 
@@ -230,7 +231,7 @@ export async function ensureAutoBackupJob(opts: {
   return createAutoJob({ appId, appName, organizationId, targetId: target.id });
 }
 
-/** Create a daily "Auto:" job on a target, linking the app atomically so no orphan job is left. */
+/** Create an "Auto:" job in the org's nightly run, linking the app atomically so no orphan job is left. */
 async function createAutoJob(opts: {
   appId: string;
   appName: string;
@@ -239,13 +240,18 @@ async function createAutoJob(opts: {
 }): Promise<string> {
   const { appId, appName, organizationId, targetId } = opts;
   const jobId = nanoid();
+  const org = await db.query.organizations.findFirst({
+    where: eq(organizations.id, organizationId),
+    columns: { nightlyBackupTime: true },
+  });
   await db.transaction(async (tx) => {
     await tx.insert(backupJobs).values({
       id: jobId,
       organizationId,
       targetId,
       name: `Auto: ${appName}`,
-      schedule: staggeredSchedule(appId),
+      schedule: nightlyCron(org?.nightlyBackupTime ?? "02:00"),
+      nightly: true,
       enabled: true,
       keepLast: 1,
       keepDaily: 7,

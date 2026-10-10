@@ -65,7 +65,7 @@ import { listContainers, inspectContainer } from "@/lib/docker/client";
 import { resolveDefaultEnv } from "@/lib/docker/resolve-env";
 import { logger } from "@/lib/logger";
 import type { BusEvent } from "@/lib/bus/events";
-import type { BackupBatchItem } from "./batch-rules";
+import type { BackupResultItem } from "./run-rules";
 import { execFileAsync } from "@/lib/utils/exec";
 import { dockerEnv } from "@/lib/docker/docker-env";
 import { archiveExtension, formatFromArchiveName } from "./archive-name";
@@ -122,6 +122,8 @@ export type RunBackupOptions = {
   trigger?: string;
   /** False holds back the failure notice, for a run that will be retried. */
   notifyFailure?: boolean;
+  /** The backup run this belongs to, for its summary. */
+  runId?: string | null;
 };
 
 type VolumeToBackup = {
@@ -1261,7 +1263,7 @@ export async function runBackup(
     }
 
     if (!onlyPaused) {
-      await batchRunResults(job, results, volumesToBackup, { holdFailures: !notifyOnFailure });
+      await recordRunResults(job, results, volumesToBackup, { holdFailures: !notifyOnFailure, runId: options.runId ?? null });
     }
   } catch (err) {
     log.error("Backup notification error:", err);
@@ -1276,16 +1278,16 @@ export async function runBackup(
   return results;
 }
 
-/** Each org's share of a run, into its backup batch. */
-async function batchRunResults(
-  job: { name: string; organizationId: string | null },
+/** Each org's share of a run: failures as they happen, everything into the run's summary. */
+async function recordRunResults(
+  job: { id: string; name: string; organizationId: string | null },
   results: BackupResult[],
   sources: VolumeToBackup[],
-  opts: { holdFailures: boolean },
+  opts: { holdFailures: boolean; runId: string | null },
 ): Promise<void> {
-  const { recordBackupResults } = await import("./batch");
+  const { recordBackupResults } = await import("./runs");
   const sourceByKey = new Map(sources.map((v) => [`${v.appId ?? ""}:${v.name}`, v]));
-  const byOrg = new Map<string, BackupBatchItem[]>();
+  const byOrg = new Map<string, BackupResultItem[]>();
   const at = new Date().toISOString();
   for (const r of results) {
     if (r.emptySource) continue;
@@ -1299,6 +1301,7 @@ async function batchRunResults(
       appId: r.appId || null,
       appName: source?.appName ?? null,
       volumeName: r.volumeName,
+      jobId: job.id,
       jobName: job.name,
       outcome: r.outcome,
       sizeBytes: r.sizeBytes,
@@ -1309,7 +1312,9 @@ async function batchRunResults(
     });
     byOrg.set(orgId, items);
   }
-  for (const [orgId, items] of byOrg) await recordBackupResults(orgId, items);
+  for (const [orgId, items] of byOrg) {
+    await recordBackupResults(orgId, items, { runId: orgId === job.organizationId ? opts.runId : null });
+  }
 }
 
 // Retention (GFS: grandfather-father-son)
@@ -1903,12 +1908,13 @@ export async function restoreBackup(
 ): Promise<{ success: boolean; log: string }> {
   const row = await db.query.backups.findFirst({
     where: eq(backups.id, backupId),
-    columns: { appId: true, appName: true, volumeName: true, organizationId: true },
+    columns: { id: true, appId: true, appName: true, volumeName: true, organizationId: true, startedAt: true, finishedAt: true },
   });
+  const { markJobDone, recordBackupResults, startRestoreRun } = await import("./runs");
+  const runId = row ? await startRestoreRun(row).catch(() => null) : null;
   const startedAt = Date.now();
   const result = await withBulkWrite(row?.appId, () => restoreBackupUnmarked(backupId, opts));
   if (row?.organizationId) {
-    const { recordBackupResults } = await import("./batch");
     await recordBackupResults(row.organizationId, [
       {
         kind: "restore",
@@ -1921,7 +1927,8 @@ export async function restoreBackup(
         backupId,
         at: new Date().toISOString(),
       },
-    ]);
+    ], { runId });
+    if (runId) await markJobDone(runId, `restore:${backupId}`).catch(() => {});
   }
   return result;
 }

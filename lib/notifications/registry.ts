@@ -10,7 +10,12 @@ export type Throttle =
 export const NOTIFICATION_CATEGORIES = {
   backups: {
     label: "Backup summaries",
-    description: "One email per batch of backups, drills, restores and imports. Failures always send.",
+    description: "One email when a backup run finishes. Failures always send, as they happen.",
+    default: true,
+  },
+  backupStarts: {
+    label: "Backup start notices",
+    description: "What a run will back up and how long it should take, as it starts.",
     default: true,
   },
   host: {
@@ -30,7 +35,7 @@ export type NotificationCategory = keyof typeof NOTIFICATION_CATEGORIES;
 export const NOTIFICATION_CATEGORY_KEYS = Object.keys(NOTIFICATION_CATEGORIES) as NotificationCategory[];
 
 export interface AlertDef {
-  category: Exclude<NotificationCategory, "backups">;
+  category: Exclude<NotificationCategory, "backupStarts">;
   label: string;
   throttle: Throttle;
   /** Emails again when the condition clears. */
@@ -50,6 +55,7 @@ export const ALERTS = {
   "app.oom": define({ category: "apps", label: "Killed for memory", throttle: { kind: "until_clear", minHours: 1 }, resolves: false }),
   "app.restart-loop": define({ category: "apps", label: "Restart loop", throttle: { kind: "until_clear", minHours: 1 }, resolves: true }),
   "app.memory-limit": define({ category: "apps", label: "Memory near limit", throttle: { kind: "until_clear", minHours: 6 }, resolves: true }),
+  "backup.failure": define({ category: "backups", label: "Backup failed", throttle: { kind: "until_clear", minHours: 6 }, resolves: false }),
   "app.unhealthy": define({ category: "apps", label: "Health check failing", throttle: { kind: "until_clear", minHours: 1 }, resolves: true }),
 };
 

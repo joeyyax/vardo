@@ -161,7 +161,7 @@ export async function collectDigestData(
       .select({ n: count() })
       .from(alertHistory)
       .where(and(eq(alertHistory.organizationId, orgId), isNull(alertHistory.resolvedAt), lt(alertHistory.firedAt, window.until))),
-    import("@/lib/backups/batch").then(({ loadStaleVolumes }) => loadStaleVolumes(orgId, window.until.getTime())),
+    import("@/lib/backups/runs").then(({ loadStaleVolumes }) => loadStaleVolumes(orgId, window.until.getTime())),
     expiringCerts(orgId, now),
     imageUpdates(orgId).catch(() => []),
     opts.withHost ? hostTrends(window).catch(() => undefined) : Promise.resolve(undefined),

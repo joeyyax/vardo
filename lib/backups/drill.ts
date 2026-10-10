@@ -297,7 +297,7 @@ async function batchDrill(
   durationMs: number,
 ): Promise<void> {
   if (!backup.organizationId || outcome === "unsupported") return;
-  const { recordBackupResults } = await import("./batch");
+  const { recordBackupResults } = await import("./runs");
   await recordBackupResults(backup.organizationId, [
     {
       kind: "drill",

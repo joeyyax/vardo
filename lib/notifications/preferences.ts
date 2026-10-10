@@ -1,50 +1,64 @@
-// Each org's notification switches and backup batch window. No row means the defaults.
+// Each org's notification switches and nightly backup time. No row means the defaults.
 
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { notificationSettings } from "@/lib/db/schema";
+import { backupJobs, notificationSettings, organizations } from "@/lib/db/schema";
+import { nightlyCron } from "@/lib/backups/run-rules";
 import { NOTIFICATION_CATEGORIES, NOTIFICATION_CATEGORY_KEYS, type NotificationCategory } from "./registry";
 
-export const DEFAULT_BATCH_WINDOW_MINUTES = 30;
-export const MIN_BATCH_WINDOW_MINUTES = 5;
-export const MAX_BATCH_WINDOW_MINUTES = 240;
+export const DEFAULT_NIGHTLY_TIME = "02:00";
 
 export type OrgNotificationSettings = {
   categories: Record<NotificationCategory, boolean>;
-  batchWindowMinutes: number;
+  /** HH:MM UTC. */
+  nightlyBackupTime: string;
 };
 
 /** Stored switches over the defaults. Unknown keys are dropped. */
-export function resolveSettings(row: { categories: Record<string, boolean>; batchWindowMinutes: number } | null | undefined): OrgNotificationSettings {
-  const categories = Object.fromEntries(
-    NOTIFICATION_CATEGORY_KEYS.map((key) => [key, row?.categories[key] ?? NOTIFICATION_CATEGORIES[key].default]),
+export function resolveCategories(stored: Record<string, boolean> | null | undefined): Record<NotificationCategory, boolean> {
+  return Object.fromEntries(
+    NOTIFICATION_CATEGORY_KEYS.map((key) => [key, stored?.[key] ?? NOTIFICATION_CATEGORIES[key].default]),
   ) as Record<NotificationCategory, boolean>;
-  return { categories, batchWindowMinutes: row?.batchWindowMinutes ?? DEFAULT_BATCH_WINDOW_MINUTES };
 }
 
 export async function readOrgNotificationSettings(organizationId: string): Promise<OrgNotificationSettings> {
-  const row = await db.query.notificationSettings.findFirst({
-    where: eq(notificationSettings.organizationId, organizationId),
-    columns: { categories: true, batchWindowMinutes: true },
-  });
-  return resolveSettings(row);
+  const [row, org] = await Promise.all([
+    db.query.notificationSettings.findFirst({
+      where: eq(notificationSettings.organizationId, organizationId),
+      columns: { categories: true },
+    }),
+    db.query.organizations.findFirst({ where: eq(organizations.id, organizationId), columns: { nightlyBackupTime: true } }),
+  ]);
+  return { categories: resolveCategories(row?.categories), nightlyBackupTime: org?.nightlyBackupTime ?? DEFAULT_NIGHTLY_TIME };
 }
 
-/** Merges a patch. A category back at its default drops out of the stored map. */
+/** Merges a patch. A category back at its default drops out of the stored map. A new time moves every nightly job. */
 export async function updateOrgNotificationSettings(
   organizationId: string,
-  patch: { categories?: Partial<Record<NotificationCategory, boolean>>; batchWindowMinutes?: number },
+  patch: { categories?: Partial<Record<NotificationCategory, boolean>>; nightlyBackupTime?: string },
 ): Promise<OrgNotificationSettings> {
   const current = await readOrgNotificationSettings(organizationId);
-  const merged = { ...current.categories, ...patch.categories };
-  const stored = Object.fromEntries(
-    NOTIFICATION_CATEGORY_KEYS.filter((key) => merged[key] !== NOTIFICATION_CATEGORIES[key].default).map((key) => [key, merged[key]]),
-  );
-  const batchWindowMinutes = patch.batchWindowMinutes ?? current.batchWindowMinutes;
   const now = new Date();
-  await db
-    .insert(notificationSettings)
-    .values({ organizationId, categories: stored, batchWindowMinutes, updatedAt: now })
-    .onConflictDoUpdate({ target: notificationSettings.organizationId, set: { categories: stored, batchWindowMinutes, updatedAt: now } });
-  return resolveSettings({ categories: stored, batchWindowMinutes });
+
+  if (patch.categories) {
+    const merged = { ...current.categories, ...patch.categories };
+    const stored = Object.fromEntries(
+      NOTIFICATION_CATEGORY_KEYS.filter((key) => merged[key] !== NOTIFICATION_CATEGORIES[key].default).map((key) => [key, merged[key]]),
+    );
+    await db
+      .insert(notificationSettings)
+      .values({ organizationId, categories: stored, updatedAt: now })
+      .onConflictDoUpdate({ target: notificationSettings.organizationId, set: { categories: stored, updatedAt: now } });
+    current.categories = resolveCategories(stored);
+  }
+
+  if (patch.nightlyBackupTime && patch.nightlyBackupTime !== current.nightlyBackupTime) {
+    await db.update(organizations).set({ nightlyBackupTime: patch.nightlyBackupTime }).where(eq(organizations.id, organizationId));
+    await db
+      .update(backupJobs)
+      .set({ schedule: nightlyCron(patch.nightlyBackupTime), updatedAt: now })
+      .where(and(eq(backupJobs.organizationId, organizationId), eq(backupJobs.nightly, true)));
+    current.nightlyBackupTime = patch.nightlyBackupTime;
+  }
+  return current;
 }

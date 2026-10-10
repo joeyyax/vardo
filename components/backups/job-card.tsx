@@ -7,6 +7,7 @@ import { Play, Loader2, Power, PowerOff, Clock, Trash2 } from "lucide-react";
 import { toast } from "@/lib/messenger";
 import { UncapturedWarning, uncapturedSources } from "./uncaptured-warning";
 import { scheduleLabel } from "./constants";
+import { describeSchedule } from "./schedule-summary";
 import { StatusBadge } from "./status-badge";
 import { RetentionSummary } from "./retention-summary";
 import { NextRun } from "./next-run";
@@ -163,7 +164,7 @@ export function JobCard({
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
           <span className="flex items-center gap-1">
             <Clock className="size-3" aria-hidden="true" />
-            {scheduleLabel(job.schedule)}
+            {job.nightly ? `Nightly run · ${describeSchedule(job.schedule).toLowerCase()} UTC` : scheduleLabel(job.schedule)}
           </span>
           <NextRun schedule={job.schedule} />
           <span>Target: {job.target.name}</span>

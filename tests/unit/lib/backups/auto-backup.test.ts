@@ -27,6 +27,7 @@ vi.mock("@/lib/db", () => ({
       volumes: { findMany: volumesFindMany },
       backupJobApps: { findMany: backupJobAppsFindMany },
       backupTargets: { findFirst: backupTargetsFindFirst },
+      organizations: { findFirst: async () => ({ nightlyBackupTime: "02:00" }) },
     },
     transaction: transactionMock,
   },

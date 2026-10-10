@@ -410,7 +410,7 @@ async function batchImport(
   durationMs: number,
 ): Promise<void> {
   const app = await db.query.apps.findFirst({ where: eq(apps.id, opts.appId), columns: { displayName: true } });
-  const { recordBackupResults } = await import("./batch");
+  const { recordBackupResults } = await import("./runs");
   const { lastLogLine } = await import("./engine");
   await recordBackupResults(opts.organizationId, [
     {

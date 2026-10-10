@@ -8,7 +8,7 @@ export const EVENT_CATEGORIES = {
   deploy: ["deploy.success", "deploy.failed", "deploy.incomplete", "deploy.rollback"],
   app: ["app.state-changed", "app.auto-restarted"],
   alert: ["alert.fired", "alert.resolved"],
-  backup: ["backup.summary"],
+  backup: ["backup.run-started", "backup.summary"],
   cron: ["cron.failed"],
   volume: ["volume.drift"],
   disk: ["disk.write-alert"],
@@ -162,12 +162,36 @@ export type BackupSummaryRow = {
   shrunk?: { median: number; drop: number };
 };
 
-/** Backups, drills, restores and imports from one run window, in one notice. */
+/** A run of backups is starting: what it covers and how long it should take. */
+export type BackupRunStartedEvent = {
+  type: "backup.run-started";
+  title: string;
+  message: string;
+  runId: string;
+  kind: "nightly" | "job" | "restore";
+  /** "Nightly backups", a job name or the restore. */
+  label: string;
+  apps: { appId: string | null; appName: string; volumes: string[] }[];
+  volumeCount: number;
+  estimatedMs: number | null;
+  /** Where archives go, without credentials. */
+  target: string | null;
+};
+
+/** A finished run: every result in it, failures first. */
 export type BackupSummaryEvent = {
   type: "backup.summary";
   title: string;
   message: string;
-  /** ISO times of the first and last result. */
+  run: {
+    kind: "nightly" | "job" | "restore";
+    label: string;
+    estimatedMs: number | null;
+    actualMs: number;
+    /** Jobs that hadn't reported when the deadline passed. */
+    unfinished?: string[];
+  };
+  /** ISO times the run started and finished. */
   windowStart: string;
   windowEnd: string;
   /** Backup rows only. */
@@ -544,6 +568,7 @@ export type BusEvent =
   | BackupSuccessEvent
   | BackupFailedEvent
   | BackupSummaryEvent
+  | BackupRunStartedEvent
   | CronFailedEvent
   | VolumeDriftEvent
   | DiskWriteAlertEvent

@@ -43,6 +43,8 @@ export type BackupJob = {
   id: string;
   name: string;
   schedule: string;
+  /** Runs in the org's nightly run. */
+  nightly?: boolean;
   enabled: boolean;
   keepLast: number | null;
   keepDaily: number | null;

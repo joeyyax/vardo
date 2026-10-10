@@ -33,8 +33,10 @@ describe("notification subjects", () => {
 
   it("formats bytes for humans", () => {
     expect(subject(fixture("disk-write-alert"))).toBe("⚠ MySQL wrote 7.7 GiB in 1h");
-    expect(subject(fixture("backup-summary"))).toBe("✓ Backups · 6 done · 9.8 GiB");
-    expect(subject(fixture("backup-summary-failed"))).toBe("✗ Backups · 2 failed");
+    expect(subject(fixture("backup-summary"))).toBe("✓ Nightly backups · 6 done · 9.8 GiB");
+    expect(subject(fixture("backup-summary-failed"))).toBe("✗ Nightly backups · 2 failed");
+    expect(subject(fixture("backup-run-started"))).toBe("↻ Nightly backups starting · 6 volumes · ~33 min");
+    expect(subject(fixture("backup-failure"))).toBe("✗ Backup of Shop / mysql-data failed");
   });
 
   it("never says Unknown when the display name is missing", () => {
