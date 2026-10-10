@@ -1,6 +1,11 @@
 // The build step's volume externalization: unmounted volumes are dropped, shared-only ones take the shared project's names.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+vi.mock("@/lib/docker/volume-owner", () => ({
+  volumeOwnerProblem: vi.fn().mockResolvedValue(null),
+  appFamily: vi.fn(async (id: string) => [id]),
+  foreignVolumeHolders: vi.fn().mockResolvedValue([]),
+}));
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";

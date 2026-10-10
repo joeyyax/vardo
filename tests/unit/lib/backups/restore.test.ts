@@ -5,6 +5,11 @@
 // strategy, with docker/bash/storage/db mocked.
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
+vi.mock("@/lib/docker/volume-owner", () => ({
+  volumeOwnerProblem: vi.fn().mockResolvedValue(null),
+  appFamily: vi.fn(async (id: string) => [id]),
+  foreignVolumeHolders: vi.fn().mockResolvedValue([]),
+}));
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync } from "fs";
 import { copyFile } from "fs/promises";
 import { spawnSync } from "child_process";
@@ -496,6 +501,21 @@ describe("#756 — volume resolution targets the real env-scoped volume", () => 
     // restore into one — that's the data-integrity guarantee.
     const mutating = dockerArgs.filter((a) => a.includes("volume create") || a.includes("run"));
     expect(mutating.some((a) => /-blue_|-green_/.test(a))).toBe(false);
+  });
+
+  it("never restores into a volume another app's names derive", async () => {
+    const { volumeOwnerProblem } = await import("@/lib/docker/volume-owner");
+    vi.mocked(volumeOwnerProblem).mockResolvedValue("named for another app (myapp-production)");
+    backupsFindFirst.mockResolvedValue(backupRow({ appId: "app-1", volumeName: "data" }));
+    volumesFindFirst.mockResolvedValue({ backupStrategy: "tar", backupMeta: null, mountPath: "/app/data" });
+    listContainersMock.mockResolvedValue([]);
+
+    const result = await restoreBackup("bk-1");
+
+    vi.mocked(volumeOwnerProblem).mockResolvedValue(null);
+    expect(result.success).toBe(false);
+    const mutating = allDockerArgs().filter((a) => a.includes("volume create") || a.startsWith("run"));
+    expect(mutating).toEqual([]);
   });
 });
 

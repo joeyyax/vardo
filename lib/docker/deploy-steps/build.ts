@@ -8,6 +8,7 @@ import { mkdir, writeFile, rm, symlink, copyFile, stat, lstat, readdir, chmod } 
 import { dirname, join } from "path";
 import { decryptOrFallback } from "@/lib/crypto/encrypt";
 import { DeployBlockedError } from "../errors";
+import { appFamily, foreignVolumeHolders } from "../volume-owner";
 import { parseEnvToMap } from "@/lib/env/parse-env";
 import { composeEnvFile } from "@/lib/env/compose-env-file";
 import { resolveAllEnvVars, type ResolveContext } from "@/lib/env/resolve";
@@ -121,6 +122,8 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
   ctx.stableVolumePrefix = stableVolumePrefix;
   if (compose.volumes && Object.keys(compose.volumes).length > 0) {
     const externalized: string[] = [];
+    let familyIds: string[] | null = null;
+    const family = async () => (familyIds ??= await appFamily(app.id));
     // Drop volumes no remaining service mounts (a profile removed its service).
     const mounted = mountedVolumeNames(compose);
     for (const volName of Object.keys(compose.volumes)) {
@@ -141,6 +144,13 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
           ? crossBoundaryVolumeName(compose, volName, stableVolumePrefix)
           : `${stableVolumePrefix}_${volName}`;
 
+      const holders = await foreignVolumeHolders(await family(), stableName).catch(() => []);
+      if (holders.length > 0) {
+        if (!ctx.orgTrusted) {
+          throw new DeployBlockedError(`Couldn't deploy: volume ${stableName} belongs to another app (${holders.join(", ")})`);
+        }
+        log(`[deploy] Warning: volume ${stableName} is also mounted by ${holders.join(", ")}`);
+      }
       try {
         await execFileAsync("docker", ["volume", "create", stableName], { env: dockerEnv(), timeout: VOLUME_CREATE_TIMEOUT });
       } catch { /* already exists — fine */ }
