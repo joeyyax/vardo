@@ -1,4 +1,5 @@
-import type { BackupRunStartedEvent, BackupSummaryEvent, BackupSummaryRow } from "@/lib/bus/events";
+import { summarizeApps } from "@/lib/backups/run-rules";
+import type { BackupRunStartedEvent, BackupSummaryApp, BackupSummaryEvent, BackupSummaryRow } from "@/lib/bus/events";
 import { formatBytesIec } from "@/lib/metrics/format";
 import { formatDuration, plural } from "../format";
 import type { MailFact, MailTone, MailVisual, NotificationMailBody } from "./components";
@@ -25,8 +26,7 @@ function failedHeading(failed: BackupSummaryRow[]): string {
   return `${list} failed`;
 }
 
-const KIND_TITLES: Record<BackupSummaryRow["kind"], string> = {
-  backup: "Backed up",
+const KIND_TITLES: Record<Exclude<BackupSummaryRow["kind"], "backup">, string> = {
   restore: "Restores",
   import: "Imports",
   drill: "Restore drills",
@@ -36,10 +36,10 @@ function rowLabel(row: BackupSummaryRow): string {
   return row.appName === row.volumeName ? row.volumeName : `${row.appName} / ${row.volumeName}`;
 }
 
-function change(row: BackupSummaryRow): string {
-  if (row.previousSize === undefined || row.previousSize <= 0) return "";
-  const pct = Math.round(((row.sizeBytes - row.previousSize) / row.previousSize) * 100);
-  return pct === 0 ? " · same as last run" : ` · ${pct > 0 ? "+" : ""}${pct}% vs last run`;
+/** "+241%", "-3%" or "same". */
+function pctChange(fraction: number): string {
+  const pct = Math.round(fraction * 100);
+  return pct === 0 ? "same as last run" : `${pct > 0 ? "+" : ""}${pct.toLocaleString("en-US")}% vs last run`;
 }
 
 function rowValue(row: BackupSummaryRow): string {
@@ -51,7 +51,7 @@ function rowValue(row: BackupSummaryRow): string {
   if (row.outcome === "skipped") return `Skipped${row.error ? `: ${row.error}` : ""}`;
   switch (row.kind) {
     case "backup":
-      return `${formatBytesIec(row.sizeBytes)}${change(row)}${runs}`;
+      return `${formatBytesIec(row.sizeBytes)}${runs}`;
     case "import":
       return `Imported ${formatBytesIec(row.sizeBytes)}`;
     case "restore":
@@ -66,6 +66,31 @@ function rowFact(row: BackupSummaryRow, ctx: MailContext): MailFact {
   return { label: rowLabel(row), value: rowValue(row), href };
 }
 
+/** One line for a row that needs a look. */
+function attentionFact(row: BackupSummaryRow, ctx: MailContext): MailFact {
+  if (row.shrunk) {
+    return {
+      label: rowLabel(row),
+      value: `${formatBytesIec(row.sizeBytes)}, ${Math.round(row.shrunk.drop * 100)}% below its usual ${formatBytesIec(row.shrunk.median)}`,
+    };
+  }
+  if (row.grew) {
+    return {
+      label: rowLabel(row),
+      value: `${formatBytesIec(row.sizeBytes)}, +${row.grew.pct.toLocaleString("en-US")}% vs last run's ${formatBytesIec(row.previousSize ?? 0)}`,
+    };
+  }
+  return rowFact(row, ctx);
+}
+
+function appFact(app: BackupSummaryApp, ctx: MailContext): MailFact {
+  const parts = [formatBytesIec(app.sizeBytes), plural(app.volumes, "volume")];
+  if (app.change !== undefined) parts.push(pctChange(app.change));
+  if (app.failed) parts.push(`${app.failed} failed`);
+  if (app.skipped) parts.push(`${app.skipped} skipped`);
+  return { label: app.appName, value: parts.join(" · "), href: app.failed && app.appId ? appPage(ctx, app.appId, "backups") : undefined };
+}
+
 function timeOfDay(iso: string): string {
   return new Date(iso).toISOString().slice(11, 16);
 }
@@ -73,12 +98,13 @@ function timeOfDay(iso: string): string {
 export function backupSummaryMail(event: BackupSummaryEvent, ctx: MailContext): NotificationMailBody {
   const failed = event.rows.filter((r) => r.outcome === "failed");
   const shrunk = event.rows.filter((r) => r.shrunk);
+  const grew = event.rows.filter((r) => r.grew);
   const stale = event.staleVolumes ?? [];
-  const backups = event.rows.filter((r) => r.kind === "backup");
+  const apps = event.apps ?? summarizeApps(event.rows);
   const total = event.succeeded + event.failed + event.skipped;
 
   const unfinished = event.run.unfinished ?? [];
-  const tone: MailTone = failed.length ? "fail" : shrunk.length || stale.length || unfinished.length ? "warn" : "success";
+  const tone: MailTone = failed.length ? "fail" : shrunk.length || grew.length || stale.length || unfinished.length ? "warn" : "success";
   const heading = failed.length
     ? `${event.run.label}: ${failedHeading(failed)}`
     : `${event.run.label} finished`;
@@ -89,6 +115,7 @@ export function backupSummaryMail(event: BackupSummaryEvent, ctx: MailContext): 
     paragraphs.push(`${plural(unfinished.length, "job")} hadn't finished when this run timed out: ${unfinished.join(", ")}. They may still be running.`);
   }
   if (shrunk.length) paragraphs.push("Some backups came out much smaller than usual. That can mean the data they copy went missing.");
+  if (grew.length) paragraphs.push("Some backups came out much larger than last run. Check for runaway logs or data that belongs elsewhere.");
   if (stale.length) paragraphs.push(`${plural(stale.length, "volume")} ${stale.length === 1 ? "hasn't" : "haven't"} had a successful backup in 48 hours.`);
 
   const visuals: MailVisual[] = [];
@@ -103,13 +130,13 @@ export function backupSummaryMail(event: BackupSummaryEvent, ctx: MailContext): 
       ],
     });
   }
-  for (const row of [...failed, ...shrunk].filter((r) => r.kind === "backup").slice(0, CHARTED_ROWS)) {
+  for (const row of [...failed, ...shrunk, ...grew].filter((r) => r.kind === "backup").slice(0, CHARTED_ROWS)) {
     const chart = backupColumns(rowLabel(row), row.history, row.outcome === "failed" ? null : row.sizeBytes);
     if (chart) visuals.push(chart.visual);
   }
 
   const facts: MailFact[] = [];
-  if (backups.length) facts.push({ label: "Backed up", value: `${event.succeeded} of ${total}, ${formatBytesIec(event.totalSize)}` });
+  if (total) facts.push({ label: "Backed up", value: `${event.succeeded} of ${total}, ${formatBytesIec(event.totalSize)}` });
   facts.push({
     label: "Took",
     value: `${formatDuration(event.run.actualMs)}${event.run.estimatedMs ? `, estimated ${formatDuration(event.run.estimatedMs)}` : ""}`,
@@ -117,31 +144,21 @@ export function backupSummaryMail(event: BackupSummaryEvent, ctx: MailContext): 
   facts.push({ label: "Ran", value: `${timeOfDay(event.windowStart)}–${timeOfDay(event.windowEnd)} UTC` });
 
   const sections: { title: string; facts: MailFact[] }[] = [];
-  if (failed.length) sections.push({ title: "Failed", facts: failed.map((r) => rowFact(r, ctx)) });
-  if (shrunk.length) {
-    sections.push({
-      title: "Smaller than usual",
-      facts: shrunk.map((r) => ({
-        label: rowLabel(r),
-        value: `${formatBytesIec(r.sizeBytes)}, ${Math.round(r.shrunk!.drop * 100)}% below its usual ${formatBytesIec(r.shrunk!.median)}`,
-      })),
-    });
-  }
-  if (stale.length) {
-    sections.push({
-      title: "No successful backup in 48 hours",
-      facts: stale.map((v) => ({
-        label: v.appName === v.volumeName ? v.volumeName : `${v.appName} / ${v.volumeName}`,
-        value: v.lastSuccessAt ? `Last good ${new Date(v.lastSuccessAt).toISOString().slice(0, 10)}` : "Never succeeded",
-      })),
-    });
-  }
-  const rest = event.rows.filter((r) => r.outcome !== "failed" && !r.shrunk);
-  for (const kind of ["backup", "restore", "import", "drill"] as const) {
+  const attention: MailFact[] = [
+    ...[...failed, ...shrunk, ...grew].map((r) => attentionFact(r, ctx)),
+    ...stale.map((v) => ({
+      label: v.appName === v.volumeName ? v.volumeName : `${v.appName} / ${v.volumeName}`,
+      value: v.lastSuccessAt ? `No success since ${new Date(v.lastSuccessAt).toISOString().slice(0, 10)}` : "Never succeeded",
+    })),
+  ];
+  if (attention.length) sections.push({ title: "Needs a look", facts: attention });
+  if (apps.length) sections.push({ title: "By app", facts: apps.map((a) => appFact(a, ctx)) });
+  const rest = event.rows.filter((r) => r.kind !== "backup" && r.outcome !== "failed");
+  for (const kind of ["restore", "import", "drill"] as const) {
     const ofKind = rest.filter((r) => r.kind === kind);
     if (ofKind.length) sections.push({ title: KIND_TITLES[kind], facts: ofKind.map((r) => rowFact(r, ctx)) });
   }
-  if (event.hiddenRows) sections.push({ title: "More", facts: [{ label: "", value: `${event.hiddenRows} more in Backups` }] });
+  sections.push({ title: "Run", facts });
 
   return {
     tone,
@@ -150,14 +167,13 @@ export function backupSummaryMail(event: BackupSummaryEvent, ctx: MailContext): 
     preheader: failed[0] ? `${rowLabel(failed[0])}: ${failed[0].error ?? "failed"}` : event.message,
     paragraphs,
     visuals,
-    facts,
     sections,
     action: { label: "View backups", href: consolePage(ctx, "/backups") },
     footer: footerFor(ctx),
   };
 }
 
-/** Volumes listed per app before the rest are counted. */
+/** Apps listed before the rest are counted. */
 const LISTED_APPS = 40;
 
 export function backupRunStartedMail(event: BackupRunStartedEvent, ctx: MailContext): NotificationMailBody {
@@ -170,6 +186,7 @@ export function backupRunStartedMail(event: BackupRunStartedEvent, ctx: MailCont
   return {
     tone: "info",
     status: "Starting",
+    mark: "↻",
     heading: `${event.label} starting`,
     preheader: event.message,
     paragraphs: ["Failures email as they happen. A summary follows when every job is done."],
@@ -178,7 +195,10 @@ export function backupRunStartedMail(event: BackupRunStartedEvent, ctx: MailCont
       {
         title: "Backing up",
         facts: [
-          ...shown.map((a) => ({ label: a.appName, value: a.volumes.join(", ") })),
+          ...shown.map((a) => ({
+            label: a.appName,
+            value: `${plural(a.volumes.length, "volume")}${a.lastBytes !== undefined ? ` · ${formatBytesIec(a.lastBytes)} last run` : ""}`,
+          })),
           ...(event.apps.length > shown.length ? [{ label: "", value: `and ${plural(event.apps.length - shown.length, "more app")}` }] : []),
         ],
       },

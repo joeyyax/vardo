@@ -1,11 +1,12 @@
 import type { DiskWriteAlertEvent } from "@/lib/bus/events";
 import { formatBytesIec } from "@/lib/metrics/format";
+import { stackedName } from "../format";
 import type { MailFact, NotificationMailBody } from "./components";
 import { appPage, footerFor, type MailContext } from "./context";
 import { hourlyColumns } from "./visuals";
 
 export function diskWriteAlertMail(event: DiskWriteAlertEvent, ctx: MailContext): NotificationMailBody {
-  const name = event.appName || event.containerName;
+  const name = stackedName(event.appName || event.containerName, event.projectName);
   const period = event.window || "1h";
   const stack = [event.projectName, event.composeService].filter(Boolean).join(" / ");
 

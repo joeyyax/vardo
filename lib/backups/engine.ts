@@ -26,6 +26,7 @@ import { createArchiveInspector, type ArchiveStats } from "./archive-stream";
 import { createBackupStorage } from "./storage-factory";
 import { holdBackupLease } from "./run-lease";
 import { assertSafeName } from "@/lib/docker/validate";
+import { skipsAsConfig } from "./bind-config";
 import { isUncapturedSource, pausedDumpReason, uncapturedReason } from "./coverage";
 import { exclusionReason, isBackupSelected, type DatabaseKind } from "./durability";
 import { checkRestoreKey, holdsInstanceSecrets } from "./key-guard";
@@ -132,6 +133,8 @@ type VolumeToBackup = {
   mountPath: string | null;
   appId: string | null;
   appName: string | null;
+  /** The app's display name, for notifications. */
+  appLabel: string | null;
   /** apps.status for the owning app. Null for a directly linked volume. */
   appStatus: string | null;
   /** Owning org, so an instance-level job reports progress to each app's org. */
@@ -867,7 +870,7 @@ export async function runBackup(
 
     for (const vol of persistentVols) {
       // Not covered by the job: no row and no archive.
-      const excluded = exclusionReason(vol.durability);
+      const excluded = exclusionReason(vol.durability) ?? (await skipsAsConfig(vol));
       if (excluded) {
         excludedSources.push({ name: vol.name, appName: app.name, reason: excluded });
         continue;
@@ -879,6 +882,7 @@ export async function runBackup(
         mountPath: vol.mountPath,
         appId: app.id,
         appName: app.name,
+        appLabel: app.displayName ?? app.name,
         appStatus: app.status,
         orgId: app.organizationId,
         orgSlug,
@@ -907,6 +911,7 @@ export async function runBackup(
       mountPath: vol.mountPath,
       appId: vol.appId,
       appName: null,
+      appLabel: null,
       appStatus: null,
       orgId: null,
       orgSlug: null,
@@ -955,7 +960,7 @@ export async function runBackup(
     try {
       const progressOrgId = vol.orgId ?? job!.organizationId;
       if (!emitEvent || !progressOrgId) return;
-      const appName = vol.appName ?? vol.name;
+      const appName = vol.appLabel ?? vol.appName ?? vol.name;
       emitEvent(progressOrgId, {
         type: "backup.progress",
         title: `Backing up ${appName}`,
@@ -1299,7 +1304,7 @@ async function recordRunResults(
     items.push({
       kind: "backup",
       appId: r.appId || null,
-      appName: source?.appName ?? null,
+      appName: source?.appLabel ?? source?.appName ?? null,
       volumeName: r.volumeName,
       jobId: job.id,
       jobName: job.name,

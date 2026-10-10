@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  backupGrowth,
   estimateRunMs,
+  JOB_OVERHEAD_MS,
   failureSubject,
   MAX_DEADLINE_MS,
   MIN_DEADLINE_MS,
@@ -9,8 +11,10 @@ import {
   nightlyRunKey,
   runDeadline,
   runIsDone,
+  summarizeApps,
   summarizeResults,
   unfinishedJobs,
+  VOLUME_OVERHEAD_MS,
   volumeKey,
   type BackupResultItem,
   type BackupRunPlan,
@@ -66,9 +70,29 @@ describe("nightly schedule", () => {
 });
 
 describe("estimates and deadlines", () => {
-  it("spreads recent durations over the concurrency, never under the slowest volume", () => {
-    expect(estimateRunMs([10 * MIN, 10 * MIN, 10 * MIN, 10 * MIN], 2)).toBe(20 * MIN);
-    expect(estimateRunMs([40 * MIN, MIN], 4)).toBe(40 * MIN);
+  const job = (volumes: number) => JOB_OVERHEAD_MS + volumes * VOLUME_OVERHEAD_MS;
+
+  it("runs a job's volumes back to back, whatever the concurrency", () => {
+    expect(estimateRunMs([[10 * MIN, 10 * MIN, 10 * MIN]], 4)).toBe(30 * MIN + job(3));
+  });
+
+  it("queues jobs over the slots", () => {
+    expect(estimateRunMs([[10 * MIN], [10 * MIN], [10 * MIN], [10 * MIN]], 2)).toBe(20 * MIN + 2 * job(1));
+    expect(estimateRunMs([[40 * MIN], [MIN], [MIN]], 4)).toBe(40 * MIN + job(1));
+  });
+
+  it("matches a night where one stack holds most of the volumes", () => {
+    // 37 volumes, 10 of them in one stack's job; the old per-volume spread said under 2 minutes.
+    const stack = Array.from({ length: 10 }, () => 15_000);
+    const singles = Array.from({ length: 27 }, () => [8_000]);
+    const ms = estimateRunMs([stack, ...singles], 3)!;
+    expect(ms).toBeGreaterThan(3 * MIN);
+    expect(ms).toBeLessThan(5 * MIN);
+  });
+
+  it("gives a volume with no history the median of the rest", () => {
+    expect(estimateRunMs([[MIN, null, 3 * MIN]], 1)).toBe(MIN + 3 * MIN + 3 * MIN + job(3));
+    expect(estimateRunMs([[null]], 4)).toBeNull();
     expect(estimateRunMs([], 4)).toBeNull();
   });
 
@@ -112,6 +136,54 @@ describe("summarizeResults", () => {
     expect(needsAttention(ok, 1)).toBe(true);
   });
 
+  it("flags big growth, not small volumes doubling", () => {
+    const MiB = 1024 ** 2;
+    expect(backupGrowth(1.71 * MiB, 532.6 * MiB)?.pct).toBe(31046);
+    expect(backupGrowth(21.06 * MiB, 71.8 * MiB)?.pct).toBe(241);
+    expect(backupGrowth(0.44 * MiB, 0.82 * MiB)).toBeNull();
+    expect(backupGrowth(4096 * MiB, 4200 * MiB)).toBeNull();
+    expect(backupGrowth(0, 100 * MiB)).toBeNull();
+  });
+
+  it("ranks growth after shrinks and before the rest", () => {
+    const MiB = 1024 ** 2;
+    const history = new Map([
+      [volumeKey("a1", "loki"), [MiB, MiB, MiB]],
+      [volumeKey("a2", "db"), [1000, 1000, 1000]],
+    ]);
+    const rows = summarizeResults(
+      [
+        item({ appId: "a3", appName: "Apple", volumeName: "x" }),
+        item({ appId: "a1", appName: "Obs", volumeName: "loki", sizeBytes: 500 * MiB }),
+        item({ appId: "a2", appName: "Zed", volumeName: "db", sizeBytes: 100 }),
+      ],
+      history,
+    );
+    expect(rows.map((r) => r.volumeName)).toEqual(["db", "loki", "x"]);
+    expect(rows[1].grew?.pct).toBe(49900);
+  });
+
+  it("rolls rows up per app with the change against last run", () => {
+    const history = new Map([
+      [volumeKey("a1", "data"), [1000]],
+      [volumeKey("a1", "db"), [1000]],
+    ]);
+    const rows = summarizeResults(
+      [
+        item({ volumeName: "data", sizeBytes: 1500 }),
+        item({ volumeName: "db", sizeBytes: 1500 }),
+        item({ volumeName: "new", sizeBytes: 700 }),
+        item({ volumeName: "bad", outcome: "failed" }),
+        item({ appId: "a2", appName: "Alpha", volumeName: "x", sizeBytes: 10 }),
+      ],
+      history,
+    );
+    expect(summarizeApps(rows)).toEqual([
+      { appId: "a2", appName: "Alpha", volumes: 1, failed: 0, skipped: 0, sizeBytes: 10 },
+      { appId: "a1", appName: "Shop", volumes: 4, failed: 1, skipped: 0, sizeBytes: 3700, change: 0.5 },
+    ]);
+  });
+
   it("keys a failure by kind, app and volume", () => {
     expect(failureSubject(item({ kind: "drill" }))).toBe("drill:a1:data");
   });
@@ -121,6 +193,11 @@ describe("describeTarget", () => {
   it("names the bucket and prefix, never credentials", () => {
     const text = describeTarget({ name: "System default", type: "r2", config: { bucket: "vardo-backups", prefix: "/node-a/", accessKeyId: "AKIA", secretAccessKey: "s" } });
     expect(text).toBe("System default · R2 vardo-backups/node-a");
+  });
+
+  it("names the type once when the target's name already has it", () => {
+    const text = describeTarget({ name: "R2 backups", type: "r2", config: { bucket: "backups", prefix: "apps" } });
+    expect(text).toBe("R2 backups · backups/apps");
   });
 });
 
@@ -137,6 +214,12 @@ describe("recordBackupResults", () => {
     expect(mocks.fire.mock.calls[0][2]).toMatchObject({ about: "backup:a1:data", title: "Backup of Shop / data failed" });
     expect(mocks.settle).toHaveBeenCalledWith("org1", "backup.failure", ["backup:a1:other"], new Date(t0));
     expect(dbMock.updates).toHaveLength(1);
+  });
+
+  it("names apps by their display name, whatever the producer sent", async () => {
+    dbMock.query.apps.findMany.mockResolvedValue([{ id: "a1", displayName: "Acme.org Data" }]);
+    await recordBackupResults("org1", [item({ appName: "acme-org-data", outcome: "failed", error: "boom" })], { runId: "r1" }, t0);
+    expect(mocks.fire.mock.calls[0][2]).toMatchObject({ title: "Backup of Acme.org Data / data failed", appName: "Acme.org Data" });
   });
 
   it("folds a result outside any run into the org's open run", async () => {

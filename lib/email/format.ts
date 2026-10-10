@@ -52,3 +52,9 @@ export function triggerLabel(trigger: string | undefined, by?: string): string |
 export function plural(n: number, one: string, many = `${one}s`): string {
   return `${n} ${n === 1 ? one : many}`;
 }
+
+/** A stack child's name after its stack's: "Site Audit Runner". Unchanged when it already starts with the stack's. */
+export function stackedName(name: string, stack: string | null | undefined): string {
+  if (!stack || name.toLowerCase().startsWith(stack.toLowerCase())) return name;
+  return `${stack} ${name}`;
+}

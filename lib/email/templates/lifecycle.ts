@@ -39,6 +39,7 @@ export function lifecycleMail(event: LifecycleEvent, ctx: MailContext): Notifica
       return {
         tone: "info",
         status: "Shutting down",
+        mark: "↓",
         heading: `Vardo is shutting down on ${host}`,
         paragraphs: ["Deployed apps keep running. You'll get another email when the console is back."],
         facts: [
@@ -90,6 +91,7 @@ export function lifecycleMail(event: LifecycleEvent, ctx: MailContext): Notifica
       return {
         tone: "info",
         status: "Updating",
+        mark: "↑",
         heading: `Vardo is updating on ${host}`,
         paragraphs: ["The console is briefly unavailable during the swap. Deployed apps keep running."],
         facts: [

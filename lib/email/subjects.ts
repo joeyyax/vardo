@@ -2,7 +2,7 @@
 
 import type { BusEvent } from "@/lib/bus/events";
 import { formatBytesIec } from "@/lib/metrics/format";
-import { formatDuration, shortSha } from "./format";
+import { formatDuration, shortSha, stackedName } from "./format";
 import type { MailSeries } from "./templates/context";
 
 export type SubjectContext = { instanceName: string; series?: MailSeries };
@@ -59,6 +59,8 @@ export function notificationSubject(event: BusEvent, ctx: SubjectContext): strin
       if (event.run.unfinished?.length) return `⚠ ${label} · ${event.run.unfinished.length} didn't finish`;
       const shrunk = event.rows.filter((r) => r.shrunk);
       if (shrunk.length) return `⚠ ${label} · ${shrunk[0].appName} much smaller than usual`;
+      const grew = event.rows.filter((r) => r.grew);
+      if (grew.length) return `⚠ ${label} · ${grew[0].appName} much larger than last run`;
       if (event.staleVolumes?.length) return `⚠ ${label} · ${event.staleVolumes.length} with no success in 48 h`;
       return event.succeeded > 0
         ? `✓ ${label} · ${event.succeeded} done · ${formatBytesIec(event.totalSize)}`
@@ -69,7 +71,7 @@ export function notificationSubject(event: BusEvent, ctx: SubjectContext): strin
     case "cron.failed":
       return `✗ Cron ${event.cronJobName} failed on ${event.projectName || "an app"}`;
     case "disk.write-alert":
-      return `⚠ ${event.appName || event.containerName} wrote ${formatBytesIec(event.writtenBytes)} in ${event.window || "1h"}`;
+      return `⚠ ${stackedName(event.appName || event.containerName, event.projectName)} wrote ${formatBytesIec(event.writtenBytes)} in ${event.window || "1h"}`;
     case "volume.drift":
       return `⚠ ${event.appName} volumes drifted · ${event.totalDrift} files`;
     case "system.service-down":

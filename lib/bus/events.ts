@@ -160,6 +160,22 @@ export type BackupSummaryRow = {
   previousSize?: number;
   /** Well below its usual size. */
   shrunk?: { median: number; drop: number };
+  /** Much larger than last run, as a percentage. */
+  grew?: { pct: number };
+};
+
+/** One app's backups in a run. */
+export type BackupSummaryApp = {
+  appId: string | null;
+  /** Display name. */
+  appName: string;
+  volumes: number;
+  failed: number;
+  skipped: number;
+  /** Successful archives' total. */
+  sizeBytes: number;
+  /** Change against last run's sizes of the same volumes, as a fraction. Undefined without history. */
+  change?: number;
 };
 
 /** A run of backups is starting: what it covers and how long it should take. */
@@ -171,7 +187,7 @@ export type BackupRunStartedEvent = {
   kind: "nightly" | "job" | "restore";
   /** "Nightly backups", a job name or the restore. */
   label: string;
-  apps: { appId: string | null; appName: string; volumes: string[] }[];
+  apps: { appId: string | null; appName: string; volumes: string[]; lastBytes?: number }[];
   volumeCount: number;
   estimatedMs: number | null;
   /** Where archives go, without credentials. */
@@ -203,6 +219,8 @@ export type BackupSummaryEvent = {
   /** Failures first. Capped; `hiddenRows` counts the rest. */
   rows: BackupSummaryRow[];
   hiddenRows?: number;
+  /** Backups grouped by app, by display name. */
+  apps?: BackupSummaryApp[];
   /** Volumes backed up this week with no success in 48 hours. */
   staleVolumes?: { appName: string; volumeName: string; lastSuccessAt: string | null }[];
 };

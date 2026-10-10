@@ -1,7 +1,9 @@
 // One alert pass: reads the host, the apps' conditions and recent OOM kills, then notifies each org once.
 
-import { and, isNotNull, sql } from "drizzle-orm";
+import { and, eq, isNotNull, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/lib/db";
+import { stackedName } from "@/lib/email/format";
 import { apps } from "@/lib/db/schema";
 import { logger } from "@/lib/logger";
 import { getLatestSnapshot } from "@/lib/metrics/broadcast";
@@ -23,11 +25,21 @@ const TOP_CONTAINERS = 3;
 const buffer = new HostSampleBuffer();
 
 async function conditionApps(): Promise<ConditionApp[]> {
+  const stacks = alias(apps, "stacks");
   const rows = await db
-    .select({ id: apps.id, name: apps.displayName, organizationId: apps.organizationId, conditions: apps.conditions })
+    .select({
+      id: apps.id,
+      name: apps.displayName,
+      stack: stacks.displayName,
+      organizationId: apps.organizationId,
+      conditions: apps.conditions,
+    })
     .from(apps)
+    .leftJoin(stacks, eq(stacks.id, apps.parentAppId))
     .where(and(isNotNull(apps.conditions), sql`jsonb_array_length(${apps.conditions}) > 0`));
-  return rows.flatMap((r) => (r.conditions?.length ? [{ ...r, conditions: r.conditions }] : []));
+  return rows.flatMap(({ stack, ...r }) =>
+    r.conditions?.length ? [{ ...r, name: stackedName(r.name, stack), conditions: r.conditions }] : [],
+  );
 }
 
 function topMemory(): { name: string; bytes: number }[] {

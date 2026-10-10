@@ -32,10 +32,11 @@ describe("notification subjects", () => {
   });
 
   it("formats bytes for humans", () => {
-    expect(subject(fixture("disk-write-alert"))).toBe("⚠ MySQL wrote 7.7 GiB in 1h");
+    expect(subject(fixture("disk-write-alert"))).toBe("⚠ Shop Staging MySQL wrote 7.7 GiB in 1h");
     expect(subject(fixture("backup-summary"))).toBe("✓ Nightly backups · 6 done · 9.8 GiB");
     expect(subject(fixture("backup-summary-failed"))).toBe("✗ Nightly backups · 2 failed");
-    expect(subject(fixture("backup-run-started"))).toBe("↻ Nightly backups starting · 6 volumes · ~33 min");
+    expect(subject(fixture("backup-run-started"))).toBe("↻ Nightly backups starting · 10 volumes · ~33 min");
+    expect(subject(fixture("backup-summary-grew"))).toBe("⚠ Nightly backups · Observability much larger than last run");
     expect(subject(fixture("backup-failure"))).toBe("✗ Backup of Shop / mysql-data failed");
   });
 
@@ -116,6 +117,38 @@ describe("notification emails", () => {
     expect(email.text).toContain("Last success: None on record");
     expect(email.text).toContain("Output\n    testing failure path");
     expect(email.text).toContain("Open run history: https://vardo.example.com/apps/app_d0cs/cron");
+  });
+
+  it("starts a backup run with one row per app and the target once", async () => {
+    const email = (await renderNotificationEmail(fixture("backup-run-started"), FIXTURE_CONTEXT))!;
+    expect(email.text).toContain("[↻ Starting] Nightly backups starting");
+    expect(email.text).toContain("Writing to: R2 backups · backups/apps");
+    expect(email.text).toContain("Acme.org Data: 2 volumes · 685 MiB last run");
+    expect(email.text).toContain("Uptime Kuma: 1 volume\n");
+    expect(email.text).not.toContain("postgres-data");
+    expect(email.html).not.toContain("· Starting");
+  });
+
+  it("puts big growth up top and rolls the rest up per app", async () => {
+    const email = (await renderNotificationEmail(fixture("backup-summary-grew"), FIXTURE_CONTEXT))!;
+    const look = email.text.indexOf("Needs a look");
+    const byApp = email.text.indexOf("By app");
+    expect(look).toBeGreaterThan(-1);
+    expect(byApp).toBeGreaterThan(look);
+    expect(email.text).toContain("Observability / loki-data: 532.6 MiB, +31,046% vs last run's 1.7 MiB");
+    expect(email.text).toContain("Observability / prometheus-data: 71.8 MiB, +241% vs last run's 21.1 MiB");
+    expect(email.text).not.toContain("redis-data");
+    expect(email.text).toContain("Observability: 617.6 MiB · 4 volumes · +1,639% vs last run");
+    expect(email.text).not.toContain("same as last run");
+  });
+
+  it("names a stack child with its stack in a disk write alert", async () => {
+    const email = (await renderNotificationEmail(
+      { ...fixture<"disk.write-alert">("disk-write-alert"), appName: "Runner", projectName: "Site Audit", dataEngine: false },
+      FIXTURE_CONTEXT,
+    ))!;
+    expect(email.subject).toBe("⚠ Site Audit Runner wrote 7.7 GiB in 1h");
+    expect(email.text).toContain("Site Audit Runner is writing a lot to disk");
   });
 
   it("skips UI-only events", async () => {

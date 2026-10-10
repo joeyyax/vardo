@@ -73,6 +73,7 @@ export function systemAlertMail(event: SystemAlertEvent, ctx: MailContext): Noti
       return {
         tone: "info",
         status: "Update available",
+        mark: "↑",
         heading: `A Vardo update is available for ${ctx.instanceName}`,
         paragraphs: ["Update when it suits you. Deployed apps keep running during the update."],
         facts: [

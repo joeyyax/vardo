@@ -66,7 +66,7 @@ describe("backup size history", () => {
     const email = (await renderNotificationEmail(fixture.event, FIXTURE_CONTEXT))!;
     expect(email.text).toContain("Shop / mysql-data: 100 MiB, 95% below its usual");
     expect(email.text).toContain("Shop / mysql-data, last 7 runs (older → this run · 100 MiB)\n██████▁");
-    expect(email.text).toContain("No successful backup in 48 hours");
+    expect(email.text).toContain("Search / meili-data: No success since 2026-10-06");
   });
 
   it("charts only what needs a look", async () => {

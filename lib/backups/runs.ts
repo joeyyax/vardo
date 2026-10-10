@@ -10,7 +10,9 @@ import { logger } from "@/lib/logger";
 import { emit } from "@/lib/notifications/dispatch";
 import { fireAlert, settleAlerts } from "@/lib/notifications/observations";
 import { readOrgNotificationSettings } from "@/lib/notifications/preferences";
-import { isBackupSelected } from "./durability";
+import { skipsAsConfig } from "./bind-config";
+import { isUncapturedSource } from "./coverage";
+import { exclusionReason, isBackupSelected } from "./durability";
 import {
   estimateRunMs,
   failureSubject,
@@ -20,6 +22,7 @@ import {
   nightlyRunKey,
   runDeadline,
   runIsDone,
+  summarizeApps,
   summarizeResults,
   unfinishedJobs,
   volumeKey,
@@ -50,7 +53,10 @@ export function describeTarget(target: { name: string; type: string; config: Rec
       : target.type === "local"
         ? String(c.path ?? "")
         : [c.bucket, typeof c.prefix === "string" ? c.prefix.replace(/^\/+|\/+$/g, "") : ""].filter(Boolean).join("/");
-  return `${target.name} · ${target.type.toUpperCase()}${where ? ` ${where}` : ""}`;
+  const type = target.type.toUpperCase();
+  const named = target.name.toUpperCase().includes(type);
+  const detail = [named ? "" : type, where].filter(Boolean).join(" ");
+  return detail ? `${target.name} · ${detail}` : target.name;
 }
 
 async function backupConcurrency(): Promise<number> {
@@ -59,13 +65,23 @@ async function backupConcurrency(): Promise<number> {
   return maxDeployConcurrency();
 }
 
-/** Average of each volume's last few successful backups, by `appId:volume`. */
-async function volumeDurations(organizationId: string | null, keys: string[], now: number): Promise<Map<string, number>> {
-  const out = new Map<string, number>();
+/** Each volume's average duration over its last few successful backups and its last size, by `appId:volume`. */
+async function volumeHistory(
+  organizationId: string | null,
+  keys: string[],
+  now: number,
+): Promise<Map<string, { durationMs: number; lastBytes: number }>> {
+  const out = new Map<string, { durationMs: number; lastBytes: number }>();
   if (keys.length === 0) return out;
   const names = [...new Set(keys.map((k) => k.slice(k.indexOf(":") + 1)))];
   const rows = await db
-    .select({ appId: backups.appId, volumeName: backups.volumeName, startedAt: backups.startedAt, finishedAt: backups.finishedAt })
+    .select({
+      appId: backups.appId,
+      volumeName: backups.volumeName,
+      startedAt: backups.startedAt,
+      finishedAt: backups.finishedAt,
+      sizeBytes: backups.sizeBytes,
+    })
     .from(backups)
     .where(
       and(
@@ -78,15 +94,17 @@ async function volumeDurations(organizationId: string | null, keys: string[], no
     )
     .orderBy(desc(backups.startedAt));
   const wanted = new Set(keys);
-  const samples = new Map<string, number[]>();
+  const samples = new Map<string, { durations: number[]; lastBytes: number }>();
   for (const row of rows) {
     const key = volumeKey(row.appId, row.volumeName ?? "");
     if (!wanted.has(key)) continue;
-    const list = samples.get(key) ?? [];
-    if (list.length < ESTIMATE_RUNS) list.push(row.finishedAt!.getTime() - row.startedAt.getTime());
-    samples.set(key, list);
+    const entry = samples.get(key) ?? { durations: [], lastBytes: row.sizeBytes ?? 0 };
+    if (entry.durations.length < ESTIMATE_RUNS) entry.durations.push(row.finishedAt!.getTime() - row.startedAt.getTime());
+    samples.set(key, entry);
   }
-  for (const [key, list] of samples) out.set(key, list.reduce((a, b) => a + b, 0) / list.length);
+  for (const [key, { durations, lastBytes }] of samples) {
+    out.set(key, { durationMs: durations.reduce((a, b) => a + b, 0) / durations.length, lastBytes });
+  }
   return out;
 }
 
@@ -98,7 +116,7 @@ export async function planJobs(jobIds: string[]): Promise<BackupRunPlan> {
     columns: { id: true, name: true, targetId: true },
   });
   const links = await db
-    .select({ appId: apps.id, appName: apps.displayName, status: apps.status })
+    .select({ jobId: backupJobApps.backupJobId, appId: apps.id, appName: apps.displayName, status: apps.status })
     .from(backupJobApps)
     .innerJoin(apps, eq(apps.id, backupJobApps.appId))
     .where(inArray(backupJobApps.backupJobId, jobIds));
@@ -108,25 +126,40 @@ export async function planJobs(jobIds: string[]): Promise<BackupRunPlan> {
     : [];
   const byApp = new Map<string, string[]>();
   for (const v of vols) {
-    if (!v.appId || !isBackupSelected(v) || v.durability === "rebuildable" || v.durability === "external") continue;
+    if (!v.appId || !isBackupSelected(v) || exclusionReason(v.durability) || isUncapturedSource(v)) continue;
+    if (await skipsAsConfig(v)) continue;
     byApp.set(v.appId, [...(byApp.get(v.appId) ?? []), v.name]);
   }
   const targetIds = [...new Set(jobs.map((j) => j.targetId))];
   const targets = await db.query.backupTargets.findMany({ where: inArray(backupTargets.id, targetIds) });
+  const described = [...new Set(targets.map((t) => describeTarget({ ...t, config: t.config as Record<string, unknown> })))];
   return {
-    jobs: jobs.map((j) => ({ jobId: j.id, jobName: j.name })),
+    jobs: jobs.map((j) => ({
+      jobId: j.id,
+      jobName: j.name,
+      appIds: live.filter((l) => l.jobId === j.id && byApp.has(l.appId)).map((l) => l.appId),
+    })),
     apps: [...new Map(live.map((l) => [l.appId, l])).values()]
       .filter((l) => byApp.has(l.appId))
       .map((l) => ({ appId: l.appId, appName: l.appName, volumes: byApp.get(l.appId)!.sort() }))
       .sort((a, b) => a.appName.localeCompare(b.appName)),
-    target: targets.length ? targets.map((t) => describeTarget({ ...t, config: t.config as Record<string, unknown> })).join(", ") : null,
+    target: described.length ? described.join(", ") : null,
   };
 }
 
+/** Estimates the run and fills in each app's last size. */
 async function estimatePlan(organizationId: string | null, plan: BackupRunPlan, now: number): Promise<number | null> {
   const keys = plan.apps.flatMap((a) => a.volumes.map((v) => volumeKey(a.appId, v)));
-  const durations = await volumeDurations(organizationId, keys, now);
-  return estimateRunMs([...durations.values()], await backupConcurrency());
+  const history = await volumeHistory(organizationId, keys, now);
+  const appKeys = new Map(plan.apps.map((a) => [a.appId, a.volumes.map((v) => volumeKey(a.appId, v))]));
+  for (const app of plan.apps) {
+    const known = appKeys.get(app.appId)!.flatMap((k) => (history.has(k) ? [history.get(k)!.lastBytes] : []));
+    if (known.length) app.lastBytes = known.reduce((a, b) => a + b, 0);
+  }
+  const jobs = plan.jobs.map((j) =>
+    (j.appIds ?? []).flatMap((id) => (appKeys.get(id) ?? []).map((k) => history.get(k)?.durationMs ?? null)),
+  );
+  return estimateRunMs(jobs, await backupConcurrency());
 }
 
 /** Opens a run once per key and sends its start notice. Null when another process opened it. */
@@ -237,7 +270,10 @@ export async function startRestoreRun(backup: {
   const estimatedMs = backup.finishedAt.getTime() - backup.startedAt.getTime();
   if (estimatedMs < LONG_RUN_MS) return null;
   const now = Date.now();
-  const appName = backup.appName ?? backup.volumeName ?? "a volume";
+  const app = backup.appId
+    ? await db.query.apps.findFirst({ where: eq(apps.id, backup.appId), columns: { displayName: true } })
+    : undefined;
+  const appName = app?.displayName ?? backup.appName ?? backup.volumeName ?? "a volume";
   return openRun({
     organizationId: backup.organizationId,
     kind: "restore",
@@ -279,6 +315,15 @@ function failureItem(item: BackupResultItem): AlertItem {
   };
 }
 
+/** Items with each app's display name in place of whatever the producer had. */
+async function withDisplayNames(items: BackupResultItem[]): Promise<BackupResultItem[]> {
+  const ids = [...new Set(items.flatMap((i) => (i.appId ? [i.appId] : [])))];
+  if (ids.length === 0) return items;
+  const rows = await db.query.apps.findMany({ where: inArray(apps.id, ids), columns: { id: true, displayName: true } });
+  const names = new Map((rows ?? []).map((r) => [r.id, r.displayName]));
+  return items.map((i) => (i.appId && names.get(i.appId) ? { ...i, appName: names.get(i.appId)! } : i));
+}
+
 /**
  * Takes results as they come: failures email now through the throttle, a success clears its
  * failure, and everything lands in its run or the org's open run for the summary.
@@ -291,6 +336,7 @@ export async function recordBackupResults(
 ): Promise<void> {
   if (items.length === 0) return;
   try {
+    items = await withDisplayNames(items);
     const at = new Date(now);
     for (const item of items.filter((i) => i.outcome === "failed")) {
       await fireAlert(organizationId, "backup.failure", failureItem(item), at);
@@ -356,11 +402,12 @@ async function loadHistory(organizationId: string, items: BackupResultItem[], no
 export async function loadStaleVolumes(organizationId: string, now: number) {
   const rows = await db
     .select({
-      appName: backups.appName,
+      appName: sql<string | null>`coalesce(max(${apps.displayName}), ${backups.appName})`,
       volumeName: backups.volumeName,
       lastSuccess: sql<Date | null>`max(${backups.finishedAt}) filter (where ${backups.status} = 'success')`.mapWith((v) => (v ? new Date(v) : null)),
     })
     .from(backups)
+    .leftJoin(apps, eq(apps.id, backups.appId))
     .where(and(eq(backups.organizationId, organizationId), gt(backups.startedAt, new Date(now - COVERED_DAYS * 86_400_000))))
     .groupBy(backups.appId, backups.appName, backups.volumeName);
   return rows
@@ -404,6 +451,7 @@ async function sendSummary(run: RunRow, now: number): Promise<void> {
     durationMs: backed.reduce((sum, r) => sum + r.durationMs, 0),
     rows: rows.slice(0, MAX_SUMMARY_ROWS),
     hiddenRows: rows.length > MAX_SUMMARY_ROWS ? rows.length - MAX_SUMMARY_ROWS : undefined,
+    apps: summarizeApps(rows),
     staleVolumes: staleVolumes.length ? staleVolumes : undefined,
   });
 }

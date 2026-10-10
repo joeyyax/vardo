@@ -1,7 +1,7 @@
 // Realistic events for the email preview and template tests.
 
 import type { AlertItem, BackupSummaryEvent, BusEvent } from "@/lib/bus/events";
-import { summarizeResults, volumeKey, type BackupResultItem } from "@/lib/backups/run-rules";
+import { summarizeApps, summarizeResults, volumeKey, type BackupResultItem } from "@/lib/backups/run-rules";
 import type { MailContext, MailSeries } from "./templates/context";
 
 export const FIXTURE_CONTEXT: MailContext = {
@@ -62,8 +62,8 @@ const MiB = 1024 ** 2;
 const NIGHTLY: BackupResultItem[] = [
   ["app_wh4", "Shop", "mysql-data", 1_932 * MiB],
   ["app_wh4", "Shop", "wp-content", 6_240 * MiB],
-  ["app_acme", "Acme", "uploads", 480 * MiB],
-  ["app_acme", "Acme", "postgres-data", 212 * MiB],
+  ["app_acme", "Acme.org Data", "uploads", 480 * MiB],
+  ["app_acme", "Acme.org Data", "postgres-data", 212 * MiB],
   ["app_srch", "Search", "meili-data", 1_104 * MiB],
   ["app_kuma", "Uptime Kuma", "kuma-data", 38 * MiB],
 ].map(([appId, appName, volumeName, sizeBytes], i) => ({
@@ -83,8 +83,36 @@ const NIGHTLY_HISTORY = new Map(
   NIGHTLY.map((i) => [volumeKey(i.appId, i.volumeName), [0.94, 0.95, 0.96, 0.97, 0.98, 0.99].map((f) => Math.round(i.sizeBytes! * f))]),
 );
 
+/** Observability's volumes: Loki and Prometheus jumped, Redis grew a little. [volume, tonight, last run]. */
+const OBSERVABILITY_SIZES: [string, number, number][] = [
+  ["loki-data", 532.6 * MiB, 1.71 * MiB],
+  ["prometheus-data", 71.8 * MiB, 21.06 * MiB],
+  ["grafana-data", 12.4 * MiB, 12.3 * MiB],
+  ["redis-data", 0.82 * MiB, 0.44 * MiB],
+];
+
+const OBSERVABILITY: BackupResultItem[] = OBSERVABILITY_SIZES.map(([volumeName, sizeBytes], i) => ({
+  kind: "backup" as const,
+  appId: "app_0bs",
+  appName: "Observability",
+  volumeName,
+  jobName: "Auto: Observability",
+  outcome: "success" as const,
+  sizeBytes: Math.round(sizeBytes),
+  durationMs: 8_000 + i * 3_000,
+  at: `2026-10-09T02:${String(3 + i).padStart(2, "0")}:00.000Z`,
+}));
+
+const HISTORY = new Map([
+  ...NIGHTLY_HISTORY,
+  ...OBSERVABILITY_SIZES.map(([volumeName, , last]): [string, number[]] => [
+    volumeKey("app_0bs", volumeName),
+    [0.97, 0.98, 0.99, 1].map((f) => Math.round(last * f)),
+  ]),
+]);
+
 function backupSummary(items: BackupResultItem[], extra: Partial<BackupSummaryEvent>): BackupSummaryEvent {
-  const rows = summarizeResults(items, NIGHTLY_HISTORY);
+  const rows = summarizeResults(items, HISTORY);
   const backups = rows.filter((r) => r.kind === "backup");
   return {
     type: "backup.summary",
@@ -99,6 +127,7 @@ function backupSummary(items: BackupResultItem[], extra: Partial<BackupSummaryEv
     totalSize: backups.reduce((sum, r) => sum + (r.outcome === "success" ? r.sizeBytes : 0), 0),
     durationMs: backups.reduce((sum, r) => sum + r.durationMs, 0),
     rows,
+    apps: summarizeApps(rows),
     ...extra,
   };
 }
@@ -231,19 +260,20 @@ export const EMAIL_FIXTURES: { name: string; event: BusEvent; series?: MailSerie
     event: {
       type: "backup.run-started",
       title: "Nightly backups starting",
-      message: "6 volumes across 4 apps, about 33 min.",
+      message: "10 volumes across 5 apps, about 33 min.",
       runId: "run_1",
       kind: "nightly",
       label: "Nightly backups",
       apps: [
-        { appId: "app_acme", appName: "Acme", volumes: ["postgres-data", "uploads"] },
-        { appId: "app_srch", appName: "Search", volumes: ["meili-data"] },
+        { appId: "app_acme", appName: "Acme.org Data", volumes: ["postgres-data", "uploads"], lastBytes: 685 * MiB },
+        { appId: "app_0bs", appName: "Observability", volumes: ["grafana-data", "loki-data", "prometheus-data", "redis-data"], lastBytes: 35.5 * MiB },
+        { appId: "app_srch", appName: "Search", volumes: ["meili-data"], lastBytes: 1_093 * MiB },
         { appId: "app_kuma", appName: "Uptime Kuma", volumes: ["kuma-data"] },
-        { appId: "app_wh4", appName: "Shop", volumes: ["mysql-data", "wp-content"] },
+        { appId: "app_wh4", appName: "Shop", volumes: ["mysql-data", "wp-content"], lastBytes: 8_090 * MiB },
       ],
-      volumeCount: 6,
+      volumeCount: 10,
       estimatedMs: 33 * 60_000,
-      target: "System default · R2 vardo-backups/node-a",
+      target: "R2 backups · backups/apps",
     },
   },
   {
@@ -275,6 +305,10 @@ export const EMAIL_FIXTURES: { name: string; event: BusEvent; series?: MailSerie
     event: backupSummary(NIGHTLY, {}),
   },
   {
+    name: "backup-summary-grew",
+    event: backupSummary([...NIGHTLY, ...OBSERVABILITY], {}),
+  },
+  {
     name: "backup-summary-shrunk",
     event: backupSummary(
       NIGHTLY.map((i) => (i.volumeName === "mysql-data" ? { ...i, sizeBytes: 104_857_600 } : i)),
@@ -290,7 +324,7 @@ export const EMAIL_FIXTURES: { name: string; event: BusEvent; series?: MailSerie
             ? { ...i, outcome: "failed" as const, sizeBytes: 0, error: "mysqldump: Got error: 2013: Lost connection to server during query" }
             : i,
         ),
-        { kind: "drill", appId: "app_acme", appName: "Acme", volumeName: "uploads", outcome: "failed", error: "extract exited 2", durationMs: 41_000, at: "2026-10-09T02:38:00.000Z" },
+        { kind: "drill", appId: "app_acme", appName: "Acme.org Data", volumeName: "uploads", outcome: "failed", error: "extract exited 2", durationMs: 41_000, at: "2026-10-09T02:38:00.000Z" },
         { kind: "restore", appId: "app_wh4s", appName: "Shop Staging", volumeName: "wp-content", outcome: "success", durationMs: 74_000, at: "2026-10-09T02:31:00.000Z" },
       ],
       {},
