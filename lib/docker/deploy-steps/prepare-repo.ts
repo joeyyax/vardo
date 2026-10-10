@@ -689,6 +689,7 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
   }
 
   ctx.compose = applied.compose;
+  ctx.profileSkipped = applied.skipped;
   return ctx;
 }
 

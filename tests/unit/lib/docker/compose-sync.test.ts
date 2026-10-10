@@ -9,6 +9,9 @@ const mockUpdate = vi.fn();
 const mockFindMany = vi.fn();
 const mockFindFirst = vi.fn().mockResolvedValue({ isSystemManaged: false });
 const mockExecute = vi.fn().mockResolvedValue(undefined);
+const mockDeleteWhere = vi.fn().mockResolvedValue(undefined);
+const mockVolumesFindMany = vi.fn().mockResolvedValue([]);
+const mockRecordActivity = vi.fn().mockResolvedValue(undefined);
 
 vi.mock("@/lib/db", () => ({
   db: {
@@ -17,13 +20,19 @@ vi.mock("@/lib/db", () => ({
         findMany: (...args: unknown[]) => mockFindMany(...args),
         findFirst: (...args: unknown[]) => mockFindFirst(...args),
       },
+      volumes: { findMany: (...args: unknown[]) => mockVolumesFindMany(...args) },
     },
+    delete: () => ({ where: mockDeleteWhere }),
     transaction: vi.fn(),
     insert: (...args: unknown[]) => mockInsert(...args),
     update: (...args: unknown[]) => mockUpdate(...args),
     execute: (...args: unknown[]) => mockExecute(...args),
   },
 }));
+
+vi.mock("@/lib/activity", () => ({ recordActivity: (...args: unknown[]) => mockRecordActivity(...args) }));
+vi.mock("@/lib/backups/auto-backup", () => ({ deleteEmptyAutoJobs: vi.fn().mockResolvedValue([]) }));
+vi.mock("@/lib/metrics/series-cleanup", () => ({ deleteAppSeries: vi.fn().mockResolvedValue(0) }));
 
 vi.mock("nanoid", () => ({
   nanoid: () => "test-id",
@@ -212,7 +221,7 @@ describe("syncComposeServices — projectId on update (existing children)", () =
     }
   });
 
-  it("does not include projectId in the orphan stopped update", async () => {
+  it("does not stop a removed service's child before deleting it", async () => {
     // Add a child for a service no longer in the compose file
     mockFindMany.mockResolvedValue([
       { id: "child-web", name: "myapp-web", composeService: "web", status: "active" },
@@ -226,12 +235,106 @@ describe("syncComposeServices — projectId on update (existing children)", () =
       compose: TWO_SERVICE_COMPOSE,
     });
 
-    // The orphan stop update must only set status — no projectId
     const stoppedCalls = (updateChain.set.mock.calls as Array<[Record<string, unknown>]>).filter(
       ([vals]) => vals.status === "stopped",
     );
-    expect(stoppedCalls).toHaveLength(1);
-    expect(stoppedCalls[0][0]).not.toHaveProperty("projectId");
+    expect(stoppedCalls).toHaveLength(0);
+    expect(mockDeleteWhere).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// syncComposeServices — removal of children whose service left the compose file
+// ---------------------------------------------------------------------------
+
+describe("syncComposeServices — removed services", () => {
+  const CHILDREN = [
+    { id: "child-web", name: "myapp-web", composeService: "web", status: "active" },
+    { id: "child-db", name: "myapp-db", composeService: "db", status: "active" },
+    { id: "child-searxng", name: "myapp-searxng", composeService: "searxng", status: "missing" },
+  ];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockFindFirst.mockResolvedValue({ isSystemManaged: false });
+    mockFindMany.mockResolvedValue(CHILDREN);
+    mockVolumesFindMany.mockResolvedValue([]);
+    mockUpdate.mockReturnValue({ set: makeUpdateChain().set });
+  });
+
+  it("removes the child of a dropped service and logs it", async () => {
+    const lines: string[] = [];
+    const result = await syncComposeServices({
+      ...BASE_OPTS,
+      projectId: "p",
+      compose: TWO_SERVICE_COMPOSE,
+      log: (l) => lines.push(l),
+    });
+
+    expect(result.removed).toEqual(["searxng"]);
+    expect(mockDeleteWhere).toHaveBeenCalledTimes(1);
+    expect(lines).toContain("[compose-sync] removed child app myapp-searxng: service no longer in compose");
+    expect(mockRecordActivity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organizationId: "org-1",
+        action: "app.deleted",
+        metadata: expect.objectContaining({ name: "myapp-searxng", composeService: "searxng" }),
+      }),
+    );
+  });
+
+  it("removes a child recorded without a composeService by its name", async () => {
+    mockFindMany.mockResolvedValue([
+      ...CHILDREN.slice(0, 2),
+      { id: "child-old", name: "myapp-searxng", composeService: null, status: "missing" },
+    ]);
+
+    const result = await syncComposeServices({ ...BASE_OPTS, projectId: "p", compose: TWO_SERVICE_COMPOSE });
+
+    expect(result.removed).toEqual(["searxng"]);
+  });
+
+  it("stops, not removes, the child of a service skipped by a profile or excluded", async () => {
+    const result = await syncComposeServices({
+      ...BASE_OPTS,
+      projectId: "p",
+      compose: TWO_SERVICE_COMPOSE,
+      keepServices: ["searxng"],
+    });
+
+    expect(result.removed).toEqual([]);
+    expect(result.kept).toEqual(["searxng"]);
+    expect(mockDeleteWhere).not.toHaveBeenCalled();
+    expect(mockRecordActivity).not.toHaveBeenCalled();
+  });
+
+  it("moves volume rows that are shared or still mounted to the parent and drops the rest", async () => {
+    const compose: ComposeFile = {
+      services: {
+        web: { name: "web", image: "nginx", volumes: ["cache:/cache"] },
+        db: { name: "db", image: "postgres:16" },
+      },
+    };
+    // The child's rows come first, then the parent's.
+    mockVolumesFindMany.mockImplementation(async () => {
+      return mockVolumesFindMany.mock.calls.length === 1
+        ? [
+            { id: "v1", name: "cache", mountPath: "/cache", shared: false, source: null },
+            { id: "v2", name: "shared-data", mountPath: "/shared", shared: true, source: null },
+            { id: "v3", name: "gone", mountPath: "/gone", shared: false, source: null },
+          ]
+        : [];
+    });
+    const chain = makeUpdateChain();
+    mockUpdate.mockReturnValue({ set: chain.set });
+
+    await syncComposeServices({ ...BASE_OPTS, projectId: "p", compose });
+
+    const moves = (chain.set.mock.calls as Array<[Record<string, unknown>]>).filter(
+      ([vals]) => vals.appId === "parent-1",
+    );
+    expect(moves).toHaveLength(2);
+    expect(chain.where).toHaveBeenCalled();
   });
 });
 

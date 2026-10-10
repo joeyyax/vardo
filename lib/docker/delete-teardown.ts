@@ -17,9 +17,10 @@ function labelQuery(label: string, extra: Record<string, unknown> = {}): string 
   return encodeURIComponent(JSON.stringify({ label: [label], ...extra }));
 }
 
-/** Remove every container labeled with these app ids, in any state, then the networks of their compose projects. */
+/** Remove every container labeled with these app ids, in any state, then the networks of their compose projects unless `networks` is false. */
 export async function removeAppContainersAndNetworks(
   appIds: string[],
+  opts: { networks?: boolean } = {},
 ): Promise<{ containers: string[]; networks: string[]; log: string[] }> {
   const log: string[] = [];
   const containers: string[] = [];
@@ -49,7 +50,7 @@ export async function removeAppContainersAndNetworks(
     }
   }
 
-  for (const project of projects) {
+  for (const project of opts.networks === false ? [] : projects) {
     const found = await dockerRequest<{ Id: string; Name: string }[]>(
       "GET",
       `/networks?filters=${labelQuery(`${COMPOSE_PROJECT_LABEL}=${project}`)}`,

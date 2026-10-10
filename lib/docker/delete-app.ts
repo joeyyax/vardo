@@ -112,12 +112,17 @@ export async function deleteApp(opts: {
   const data = await findAppData(app);
   const bindPaths = app.parentAppId ? [] : await appBindPaths(app.name);
 
-  // Containers come down without --volumes; removal below is per volume.
-  const stop = await stopProject(appId, app.name, undefined, false);
-  if (stop.log.trim()) logs.push(stop.log.trim());
+  // Containers come down without --volumes; removal below is per volume. A child has no stack of its own: the parent's keeps running.
+  if (!app.parentAppId) {
+    const stop = await stopProject(appId, app.name, undefined, false);
+    if (stop.log.trim()) logs.push(stop.log.trim());
+  }
 
   // compose down misses exited and orphaned containers; the id label finds them in any state.
-  const leftovers = await removeAppContainersAndNetworks([appId, ...childApps.map((c) => c.id)]);
+  const teardownIds = [appId, ...childApps.map((c) => c.id)];
+  const leftovers = app.parentAppId
+    ? await removeAppContainersAndNetworks(teardownIds, { networks: false })
+    : await removeAppContainersAndNetworks(teardownIds);
   logs.push(...leftovers.log);
 
   const removedVolumes: string[] = [];

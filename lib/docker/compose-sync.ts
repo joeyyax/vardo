@@ -8,11 +8,14 @@ import { nanoid } from "nanoid";
 import type { ComposeFile, ComposeService } from "./compose";
 import { parsePortString } from "./compose-inject";
 import { inferServiceKind } from "@/lib/ui/service-kind";
+import { removeComposeChild, type RemovableChild } from "./compose-child-remove";
 
 type SyncResult = {
   created: string[];
   updated: string[];
   removed: string[];
+  /** Children stopped, not removed: their service is skipped by a profile or excluded. */
+  kept: string[];
 };
 
 /** A service's named volumes, shaped like apps.persistentVolumes. */
@@ -64,16 +67,19 @@ function humanizeServiceName(name: string): string {
     .join(" ");
 }
 
-/** Create, update or stop child app records to match the compose services after a successful deploy. */
+/** Create or update child app records to match the compose services; remove those whose service is gone. */
 export async function syncComposeServices(opts: {
   parentAppId: string;
   organizationId: string;
   projectId: string;
   compose: ComposeFile;
   parentAppName: string;
+  /** Services the deploy leaves out on purpose (inactive profile, environment exclude). Their children are stopped, not removed. */
+  keepServices?: string[];
   log?: (line: string) => void;
 }): Promise<SyncResult> {
   const { parentAppId, organizationId, projectId, compose, parentAppName, log } = opts;
+  const keepServices = new Set(opts.keepServices ?? []);
 
   // Undefined values would be coerced to null in Drizzle transactions.
   if (!organizationId) {
@@ -86,9 +92,29 @@ export async function syncComposeServices(opts: {
     throw new Error("syncComposeServices: parentAppName is required but was undefined or empty");
   }
 
-  const result: SyncResult = { created: [], updated: [], removed: [] };
+  const result: SyncResult = { created: [], updated: [], removed: [], kept: [] };
 
   const serviceNames = Object.keys(compose.services);
+
+  const mountedVolumes = new Set(
+    Object.values(compose.services).flatMap((svc) => parseServiceVolumes(svc).map((v) => v.name)),
+  );
+
+  /** A child's service: the recorded one, else the name suffix. */
+  const serviceOf = (c: { name: string; composeService: string | null }): string | null =>
+    c.composeService ?? (c.name.startsWith(`${parentAppName}-`) ? c.name.slice(parentAppName.length + 1) : null);
+
+  /** Stop a child whose service is left out on purpose; remove one whose service is gone. */
+  const retire = async (child: RemovableChild, service: string) => {
+    if (keepServices.has(service)) {
+      await db.update(apps).set(statusChange("stopped")).where(eq(apps.id, child.id));
+      result.kept.push(service);
+      return;
+    }
+    await removeComposeChild({ child, service, parentAppId, organizationId, mountedVolumes });
+    result.removed.push(service);
+    log?.(`[compose-sync] removed child app ${child.name}: service no longer in compose`);
+  };
 
   if (serviceNames.length <= 1) {
     // Single service: stop children left from a previous multi-service compose.
@@ -100,16 +126,15 @@ export async function syncComposeServices(opts: {
       columns: { id: true, name: true, composeService: true },
     });
 
-    if (existingChildren.length > 0) {
-      await db.transaction(async (tx) => {
-        for (const child of existingChildren) {
-          await tx
-            .update(apps)
-            .set(statusChange("stopped"))
-            .where(eq(apps.id, child.id));
-          result.removed.push(child.composeService || child.name);
-        }
-      });
+    for (const child of existingChildren) {
+      const service = serviceOf(child);
+      if (!service) continue;
+      // The remaining service runs under the parent itself.
+      if (serviceNames.includes(service)) {
+        await db.update(apps).set(statusChange("stopped")).where(eq(apps.id, child.id));
+        continue;
+      }
+      await retire(child, service);
     }
 
     return result;
@@ -238,7 +263,7 @@ export async function syncComposeServices(opts: {
     }
   }
 
-  // Stop children whose service left the compose file, deduped by ID across both maps.
+  // Children whose service left the compose file, deduped by ID across both maps.
   const orphanedById = new Map<string, { serviceName: string; child: typeof existingChildren[0] }>();
   for (const [serviceName, child] of childByService) {
     orphanedById.set(child.id, { serviceName, child });
@@ -248,12 +273,15 @@ export async function syncComposeServices(opts: {
       orphanedById.set(child.id, { serviceName, child });
     }
   }
+  // Children recorded without a composeService never enter the maps above.
+  for (const child of existingChildren) {
+    const service = serviceOf(child);
+    if (service && !child.composeService && !serviceNames.includes(service) && !orphanedById.has(child.id)) {
+      orphanedById.set(child.id, { serviceName: service, child });
+    }
+  }
   for (const [, { serviceName, child }] of orphanedById) {
-    await db
-      .update(apps)
-      .set(statusChange("stopped"))
-      .where(eq(apps.id, child.id));
-    result.removed.push(child.composeService || serviceName);
+    await retire(child, serviceOf(child) ?? serviceName);
   }
 
   if (log) {
@@ -263,8 +291,8 @@ export async function syncComposeServices(opts: {
     if (result.updated.length > 0) {
       log(`[compose-sync] Updated child services: ${result.updated.join(", ")}`);
     }
-    if (result.removed.length > 0) {
-      log(`[compose-sync] Orphaned services stopped: ${result.removed.join(", ")}`);
+    if (result.kept.length > 0) {
+      log(`[compose-sync] Stopped children of skipped services: ${result.kept.join(", ")}`);
     }
   }
 

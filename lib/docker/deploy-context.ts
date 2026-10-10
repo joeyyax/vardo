@@ -125,6 +125,9 @@ export type DeployContext = {
   /** Parsed compose file. */
   compose: ComposeFile;
 
+  /** Services left out of `compose` by an inactive profile. */
+  profileSkipped?: string[];
+
   /** The bare compose before Vardo injections (for docker-compose.yml). */
   bareCompose: ComposeFile;
 

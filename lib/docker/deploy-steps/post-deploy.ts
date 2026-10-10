@@ -26,6 +26,7 @@ import {
   pruneBuildCache,
 } from "../client";
 import { syncComposeServices } from "../compose-sync";
+import { readProjectConfig } from "@/lib/config/vardo-config";
 import { observedMajors } from "./major-gate";
 import { clearMajorGateBlock } from "../image-updates/major-gate-store";
 import { isDeployQueueDrained, releaseConcurrencySlot } from "../deploy-concurrency";
@@ -293,12 +294,16 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
   // A preview's compose must never add or remove production's children.
   if (!ctx.envIsolated && app.deployType === "compose" && Object.keys(compose.services).length > 0) {
     try {
+      const excluded = ctx.repoDir
+        ? ((await readProjectConfig(ctx.repoDir).catch(() => null))?.environments?.[ctx.envType]?.exclude ?? [])
+        : [];
       const syncResult = await syncComposeServices({
         parentAppId: ctx.appId,
         organizationId: ctx.organizationId,
         projectId: app.projectId,
         compose,
         parentAppName: app.name,
+        keepServices: [...(ctx.profileSkipped ?? []), ...excluded],
         log,
       });
       const totalSync = syncResult.created.length + syncResult.updated.length + syncResult.removed.length;

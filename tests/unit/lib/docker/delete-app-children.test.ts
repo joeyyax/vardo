@@ -7,6 +7,8 @@ const {
   deleteWhereMock,
   stopProjectMock,
   recordActivityMock,
+  removeAppDirMock,
+  removeContainersMock,
 } = vi.hoisted(() => {
   const deleteWhere = vi.fn().mockResolvedValue(undefined);
   return {
@@ -16,6 +18,8 @@ const {
     deleteWhereMock: deleteWhere,
     stopProjectMock: vi.fn().mockResolvedValue({ success: true, log: "" }),
     recordActivityMock: vi.fn(),
+    removeAppDirMock: vi.fn().mockResolvedValue({ removed: true }),
+    removeContainersMock: vi.fn().mockResolvedValue({ containers: [], networks: [], log: [] }),
   };
 });
 
@@ -40,7 +44,7 @@ vi.mock("@/lib/docker/client", () => ({
   stripDockerProjectPrefix: (n: string) => n,
 }));
 vi.mock("@/lib/docker/delete-teardown", () => ({
-  removeAppContainersAndNetworks: vi.fn().mockResolvedValue({ containers: [], networks: [], log: [] }),
+  removeAppContainersAndNetworks: removeContainersMock,
   claimAppDirTopLevel: vi.fn(),
   isPermissionError: () => false,
 }));
@@ -50,7 +54,7 @@ vi.mock("@/lib/docker/app-dir-owner", async () => {
   const actual = await vi.importActual<typeof import("@/lib/docker/app-dir-owner")>(
     "@/lib/docker/app-dir-owner",
   );
-  return { ...actual, assertAppDirOwnership: vi.fn().mockResolvedValue(undefined) };
+  return { ...actual, assertAppDirOwnership: vi.fn().mockResolvedValue(undefined), removeAppDir: removeAppDirMock };
 });
 
 import { deleteApp } from "@/lib/docker/delete-app";
@@ -142,5 +146,28 @@ describe("deleting a compose child on its own", () => {
     });
 
     expect(result.deleted).toBe(true);
+  });
+
+  it("leaves the parent's directory and stack alone", async () => {
+    findManyMock.mockResolvedValue([]);
+    const result = await deleteApp({
+      appId: "child-web",
+      organizationId: "org-1",
+      allowChildDelete: true,
+    });
+
+    expect(removeAppDirMock).not.toHaveBeenCalled();
+    expect(result.removedAppDir).toBe(false);
+    expect(stopProjectMock).not.toHaveBeenCalled();
+    expect(removeContainersMock).toHaveBeenCalledWith(["child-web"], { networks: false });
+  });
+});
+
+describe("deleting a parent compose app tears down its stack", () => {
+  it("removes the directory and stops the project", async () => {
+    await deleteApp({ appId: "app-parent", organizationId: "org-1" });
+
+    expect(removeAppDirMock).toHaveBeenCalledWith(expect.objectContaining({ appName: "glitchtip" }));
+    expect(stopProjectMock).toHaveBeenCalled();
   });
 });
