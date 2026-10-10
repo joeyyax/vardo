@@ -78,10 +78,12 @@ export function systemAlertMail(event: SystemAlertEvent, ctx: MailContext): Noti
         paragraphs: ["Update when it suits you. Deployed apps keep running during the update."],
         facts: [
           { label: "Running", value: event.localHead, mono: true },
-          { label: "Latest", value: event.remoteHead, mono: true },
+          { label: "Latest", value: event.target ? `${event.target} (${event.remoteHead})` : event.remoteHead, mono: true },
+          ...(event.commitsBehind ? [{ label: "Behind", value: `${event.commitsBehind} commit${event.commitsBehind === 1 ? "" : "s"}` }] : []),
         ],
-        command: { title: "Run on the host", text: "sudo vardo update" },
-        action: admin,
+        ...(event.selfDeploy
+          ? { action: { label: "Update now", href: consolePage(ctx, "/admin/settings/maintenance?update=now#updates") } }
+          : { command: { title: "Run on the host", text: "sudo vardo update" }, action: admin }),
         footer,
       };
     case "app.auto-restarted":

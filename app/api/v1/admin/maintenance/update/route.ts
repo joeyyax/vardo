@@ -6,19 +6,34 @@ import { handleRouteError } from "@/lib/api/error-response";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { logger } from "@/lib/logger";
 import { isSelfDeployLayout, VARDO_HOME_DIR } from "@/lib/paths";
-import { triggerSelfDeploy } from "@/lib/lifecycle/deploy-request";
+import { effectiveChannel } from "@/lib/self-update/policy";
+import { startUpdate, UpdateBlockedError } from "@/lib/self-update/runner";
+import { getUpdatePolicy } from "@/lib/self-update/store";
+import { getChannelUpdate } from "@/lib/version";
 
 const log = logger.child("admin:maintenance:update");
 
-// POST /api/v1/admin/maintenance/update — redeploys the `vardo` app, or runs install.sh update on a legacy install.
+// POST /api/v1/admin/maintenance/update — Update now: dumps the database and redeploys the `vardo` app on the policy's
+// channel, then verifies it. A legacy install runs install.sh update.
 async function handlePost(_request: NextRequest) {
   try {
     const session = await requireAppAdmin();
 
     if (isSelfDeployLayout()) {
-      const { deploymentId } = await triggerSelfDeploy({ triggeredBy: session.user.id });
-      log.info(`redeploying Vardo as ${deploymentId}`);
-      return NextResponse.json({ ok: true, deploymentId, message: "Redeploying Vardo." });
+      const channel = effectiveChannel(await getUpdatePolicy());
+      try {
+        const run = await startUpdate({
+          trigger: "manual",
+          triggeredBy: session.user.id,
+          channel,
+          update: await getChannelUpdate(channel),
+        });
+        log.info(`redeploying Vardo as ${run.deploymentId}`);
+        return NextResponse.json({ ok: true, deploymentId: run.deploymentId, message: `Updating Vardo to ${run.toLabel}.` });
+      } catch (err) {
+        if (err instanceof UpdateBlockedError) return NextResponse.json({ error: err.message }, { status: 409 });
+        throw err;
+      }
     }
 
     const installScript = join(VARDO_HOME_DIR, "install.sh");

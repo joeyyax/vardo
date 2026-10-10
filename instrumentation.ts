@@ -265,6 +265,11 @@ export async function register() {
         .then(({ startDeployRequestWatcher }) => startDeployRequestWatcher())
         .catch((err) => log.error("Failed to start the deploy request watcher:", err)),
 
+      // Auto updates in the maintenance window, and health checks after any update.
+      import("./lib/self-update/runner")
+        .then(({ startSelfUpdateScheduler }) => startSelfUpdateScheduler())
+        .catch((err) => log.error("Failed to start the update scheduler:", err)),
+
       // Stamps app directory owners while top-level app names are still globally unique.
       import("./lib/docker/app-dir-owner")
         .then(({ stampAppDirOwnersAtStartup }) => stampAppDirOwnersAtStartup())

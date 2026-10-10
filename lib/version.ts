@@ -155,4 +155,106 @@ export async function getCommitUpdate(): Promise<CommitUpdate | null> {
 
 export function resetCommitUpdateCache(): void {
   commitCache = null;
+  channelCache.clear();
+}
+
+// Channel update check: the head of main, or the latest GitHub release, compared with the build commit.
+
+export type UpdateChannelName = "main" | "releases";
+
+export type ChannelUpdate = {
+  channel: UpdateChannelName;
+  localSha: string;
+  /** Full commit the channel points at. */
+  targetSha: string;
+  /** Release tag, or the short commit on main. */
+  targetLabel: string;
+  /** Commits the target is ahead of this build. Null when GitHub couldn't compare them. */
+  commitsBehind: number | null;
+  hasUpdate: boolean;
+  url: string;
+};
+
+type CompareStatus = "ahead" | "behind" | "identical" | "diverged";
+
+/** Reads GitHub's compare of `<local>...<target>`. */
+export function parseCompare(body: unknown): { status: CompareStatus; aheadBy: number } | null {
+  if (!body || typeof body !== "object") return null;
+  const { status, ahead_by } = body as { status?: unknown; ahead_by?: unknown };
+  if (status !== "ahead" && status !== "behind" && status !== "identical" && status !== "diverged") return null;
+  return { status, aheadBy: typeof ahead_by === "number" ? ahead_by : 0 };
+}
+
+/** Whether the target is news to this build. A release behind the build is not. */
+export function channelHasUpdate(localSha: string, targetSha: string, compare: { status: CompareStatus; aheadBy: number } | null): boolean {
+  if (targetSha.toLowerCase().startsWith(localSha.toLowerCase())) return false;
+  if (!compare) return true;
+  return compare.status === "ahead" || (compare.status === "diverged" && compare.aheadBy > 0);
+}
+
+const channelCache = new Map<UpdateChannelName, { result: ChannelUpdate | null; checkedAt: number }>();
+
+const GITHUB_HEADERS = { "User-Agent": "vardo-update-check" };
+
+async function github(path: string, accept: string): Promise<Response> {
+  return fetch(`https://api.github.com/repos/${GITHUB_REPO}${path}`, {
+    headers: { ...GITHUB_HEADERS, Accept: accept },
+    signal: AbortSignal.timeout(5000),
+  });
+}
+
+async function resolveTarget(channel: UpdateChannelName): Promise<{ sha: string; label: string; url: string } | null> {
+  if (channel === "main") {
+    const res = await github(`/commits/${UPDATE_BRANCH}`, "application/vnd.github.sha");
+    if (!res.ok) return null;
+    const sha = (await res.text()).trim();
+    return SHA_RE.test(sha) ? { sha, label: sha.slice(0, 7), url: `https://github.com/${GITHUB_REPO}/commits/${UPDATE_BRANCH}` } : null;
+  }
+  const rel = await github("/releases/latest", "application/vnd.github+json");
+  if (!rel.ok) return null;
+  const release = (await rel.json()) as { tag_name?: string; html_url?: string };
+  const tag = release.tag_name;
+  if (!tag || !/^[\w.-]{1,64}$/.test(tag)) return null;
+  const res = await github(`/commits/${encodeURIComponent(tag)}`, "application/vnd.github.sha");
+  if (!res.ok) return null;
+  const sha = (await res.text()).trim();
+  if (!SHA_RE.test(sha)) return null;
+  const url = release.html_url?.startsWith("https://") ? release.html_url : `https://github.com/${GITHUB_REPO}/releases`;
+  return { sha, label: tag, url };
+}
+
+/** The channel's target against the build commit. Null without a build commit or GitHub. Cached like getCommitUpdate. */
+export async function getChannelUpdate(channel: UpdateChannelName, opts: { fresh?: boolean } = {}): Promise<ChannelUpdate | null> {
+  const localSha = getBuildSha().trim();
+  if (!SHA_RE.test(localSha)) return null;
+
+  const now = Date.now();
+  const cached = channelCache.get(channel);
+  if (cached && !opts.fresh && now - cached.checkedAt < COMMIT_CHECK_TTL_MS) return cached.result;
+  channelCache.set(channel, { result: null, checkedAt: now });
+
+  try {
+    const target = await resolveTarget(channel);
+    if (!target) return null;
+    let compare: ReturnType<typeof parseCompare> = null;
+    if (!target.sha.toLowerCase().startsWith(localSha.toLowerCase())) {
+      const res = await github(`/compare/${localSha}...${target.sha}`, "application/vnd.github+json");
+      compare = res.ok ? parseCompare(await res.json()) : null;
+    }
+    const hasUpdate = channelHasUpdate(localSha, target.sha, compare);
+    const result: ChannelUpdate = {
+      channel,
+      localSha,
+      targetSha: target.sha,
+      targetLabel: target.label,
+      commitsBehind: hasUpdate ? (compare?.aheadBy ?? null) : 0,
+      hasUpdate,
+      url: target.url,
+    };
+    channelCache.set(channel, { result, checkedAt: now });
+    return result;
+  } catch (err) {
+    log.debug("Channel update check failed:", err);
+    return null;
+  }
 }

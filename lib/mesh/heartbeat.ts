@@ -5,6 +5,7 @@ import { nanoid } from "nanoid";
 import { logger } from "@/lib/logger";
 import { meshFetch } from "./client";
 import { toCidr } from "./ip-allocator";
+import { localVardoStatus, parseVardoStatus, vardoStatusColumns } from "@/lib/self-update/peer-status";
 
 const log = logger.child("mesh-heartbeat");
 
@@ -29,7 +30,7 @@ type PeerManifestEntry = {
 
 type HeartbeatResponse = {
   ok: boolean;
-  instance: { id: string; name: string; internalIp: string };
+  instance: { id: string; name: string; internalIp: string; vardo?: unknown };
   peers: PeerManifestEntry[];
 };
 
@@ -44,6 +45,8 @@ export async function sendHeartbeatToPeer(peerId: string): Promise<boolean> {
   try {
     const res = await meshFetch(peerId, "/api/v1/mesh/heartbeat", {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ vardo: localVardoStatus() }),
     });
 
     ok = res.ok;
@@ -62,7 +65,7 @@ export async function sendHeartbeatToPeer(peerId: string): Promise<boolean> {
     .update(meshPeers)
     .set({
       status: ok ? "online" : "offline",
-      ...(ok ? { lastSeenAt: new Date() } : {}),
+      ...(ok ? { lastSeenAt: new Date(), ...vardoStatusColumns(parseVardoStatus(body?.instance?.vardo)) } : {}),
       updatedAt: new Date(),
     })
     .where(eq(meshPeers.id, peerId));

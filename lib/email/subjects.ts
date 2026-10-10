@@ -83,7 +83,9 @@ export function notificationSubject(event: BusEvent, ctx: SubjectContext): strin
         ? `✗ Certificate expired · ${event.domain}`
         : `⚠ Certificate expires in ${event.daysLeft} d · ${event.domain}`;
     case "system.update-available":
-      return `↑ Vardo update available on ${host}`;
+      return event.target
+        ? `↑ Vardo ${event.target} available on ${host}`
+        : `↑ Vardo update available on ${host}${event.commitsBehind ? ` · ${event.commitsBehind} commit${event.commitsBehind === 1 ? "" : "s"}` : ""}`;
     case "alert.fired": {
       const [first] = event.alerts;
       const mark = event.alerts.some((a) => a.severity === "critical") ? "✗" : "⚠";
@@ -113,6 +115,8 @@ export function notificationSubject(event: BusEvent, ctx: SubjectContext): strin
       return `✓ Vardo updated on ${host} · ${event.fromVersion} → ${event.toVersion}`;
     case "system.update-failed":
       return `✗ Vardo update failed on ${host} at ${event.step}`;
+    case "system.update-skipped":
+      return `⚠ Vardo update skipped on ${host} · ${event.target}`;
     case "system.containers-missing":
       return `⚠ ${event.containers.length} container${event.containers.length === 1 ? "" : "s"} didn't come back on ${host}`;
     case "digest.health":

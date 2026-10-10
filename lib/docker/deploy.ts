@@ -96,6 +96,8 @@ export type DeployOpts = {
   deploymentId?: string;
   /** Redeploy a previous deployment's git SHA, config snapshot and optionally env snapshot. */
   rollback?: { targetDeploymentId: string; includeEnvVars?: boolean };
+  /** Deploy this commit of the branch, not its tip. Git apps only. */
+  gitSha?: string;
 };
 
 export type DeployResult = {
@@ -474,6 +476,7 @@ export async function runDeployment(
       rollback: rollbackTarget
         ? { targetDeploymentId: rollbackTarget.targetDeploymentId, gitSha: rollbackTarget.gitSha }
         : undefined,
+      pinnedGitSha: rollbackTarget ? undefined : opts.gitSha,
 
       app: app as DeployContext["app"],
       projectName: projectRow?.name,

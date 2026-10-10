@@ -27,6 +27,7 @@ export const EVENT_CATEGORIES = {
     "system.update-started",
     "system.updated",
     "system.update-failed",
+    "system.update-skipped",
     "system.containers-missing",
   ],
   digest: ["digest.health"],
@@ -326,6 +327,13 @@ export type SystemUpdateAvailableEvent = {
   message: string;
   remoteHead: string;
   localHead: string;
+  /** "main" or "releases". */
+  channel?: string;
+  /** Release tag when the channel is releases. */
+  target?: string;
+  commitsBehind?: number;
+  /** True when the console can update itself; false shows the host command. */
+  selfDeploy?: boolean;
 };
 
 export type SecurityFileExposedEvent = {
@@ -464,6 +472,16 @@ export type SystemUpdateFailedEvent = {
   durationSeconds?: number;
   rolledBack?: boolean;
   logTail?: string[];
+};
+
+/** An automatic update that didn't start because a pre-flight check failed. */
+export type SystemUpdateSkippedEvent = {
+  type: "system.update-skipped";
+  title: string;
+  message: string;
+  fromVersion: string;
+  target: string;
+  reasons: string[];
 };
 
 /** Containers running before a host restart that didn't come back. */
@@ -607,6 +625,7 @@ export type BusEvent =
   | SystemUpdateStartedEvent
   | SystemUpdatedEvent
   | SystemUpdateFailedEvent
+  | SystemUpdateSkippedEvent
   | SystemContainersMissingEvent
   | BackupProgressEvent
   | DeployStatusEvent

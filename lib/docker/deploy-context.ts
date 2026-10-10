@@ -88,6 +88,9 @@ export type DeployContext = {
   /** Set for a rollback; `app` is already overlaid with the target's snapshot. */
   rollback?: { targetDeploymentId: string; gitSha: string | null };
 
+  /** A commit on the branch to deploy instead of its tip. */
+  pinnedGitSha?: string;
+
   // Resolved by earlier steps
   app: DeployApp;
 

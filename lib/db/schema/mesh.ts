@@ -1,4 +1,5 @@
 import {
+  boolean,
   index,
   pgTable,
   text,
@@ -30,6 +31,10 @@ export const meshPeers = pgTable("mesh_peer", {
   // The only org this peer may read or write through promote, clone and pull.
   organizationId: text("organization_id").references(() => organizations.id, { onDelete: "set null" }),
   lastSeenAt: timestamp("last_seen_at"),
+  // What the peer last reported about its own Vardo, for canary update ordering.
+  vardoSha: text("vardo_sha"),
+  vardoShaSince: timestamp("vardo_sha_since"),
+  vardoHealthy: boolean("vardo_healthy"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

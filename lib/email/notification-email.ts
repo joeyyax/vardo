@@ -79,6 +79,7 @@ export function notificationMailBody(event: BusEvent, ctx: MailContext): Notific
     case "system.update-started":
     case "system.updated":
     case "system.update-failed":
+    case "system.update-skipped":
     case "system.containers-missing":
       return lifecycleMail(event, ctx);
     case "digest.health":

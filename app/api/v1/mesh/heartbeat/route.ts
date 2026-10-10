@@ -7,6 +7,7 @@ import { requireMeshPeer } from "@/lib/mesh/auth";
 import { getHubAddress } from "@/lib/mesh";
 import { getInstanceId } from "@/lib/constants";
 import { getInstanceConfig } from "@/lib/system-settings";
+import { localVardoStatus, parseVardoStatus, vardoStatusColumns } from "@/lib/self-update/peer-status";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { requirePlugin } from "@/lib/api/require-plugin";
@@ -19,12 +20,14 @@ async function handlePost(request: NextRequest) {
     const gate = await requirePlugin("mesh");
     if (gate) return gate;
 
+    const sent = (await request.json().catch(() => null)) as { vardo?: unknown } | null;
     await db
       .update(meshPeers)
       .set({
         status: "online",
         lastSeenAt: new Date(),
         updatedAt: new Date(),
+        ...vardoStatusColumns(parseVardoStatus(sent?.vardo)),
       })
       .where(eq(meshPeers.id, peer.id));
 
@@ -57,6 +60,7 @@ async function handlePost(request: NextRequest) {
         id: instanceId,
         name: config.instanceName,
         internalIp,
+        vardo: localVardoStatus(),
       },
       peers: allPeers,
     });

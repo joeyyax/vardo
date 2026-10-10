@@ -13,6 +13,7 @@ export type LifecycleEvent = Extract<
       | "system.update-started"
       | "system.updated"
       | "system.update-failed"
+      | "system.update-skipped"
       | "system.containers-missing";
   }
 >;
@@ -135,6 +136,21 @@ export function lifecycleMail(event: LifecycleEvent, ctx: MailContext): Notifica
         ],
         log: event.logTail?.length ? { title: "Last log lines", lines: event.logTail } : undefined,
         command: { title: "Retry on the host", text: "sudo vardo update" },
+        footer,
+      };
+    case "system.update-skipped":
+      return {
+        tone: "warn",
+        status: "Update skipped",
+        heading: `Vardo didn't update on ${host}`,
+        preheader: event.reasons[0] ?? event.message,
+        paragraphs: [`The automatic update to ${event.target} didn't pass its checks. It tries again in the next maintenance window.`],
+        facts: [
+          { label: "Running", value: event.fromVersion, mono: true },
+          { label: "Target", value: event.target, mono: true },
+        ],
+        sections: [{ title: "Checks that failed", facts: event.reasons.map((r, i) => ({ label: String(i + 1), value: r })) }],
+        action: { label: "Open updates", href: consolePage(ctx, "/admin/settings/maintenance#updates") },
         footer,
       };
     case "system.containers-missing":

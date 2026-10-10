@@ -694,6 +694,13 @@
       "when": 1791607481647,
       "tag": "0098_org_cron",
       "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1791612845701,
+      "tag": "0099_self_update_peer_version",
+      "breakpoints": true
     }
   ]
 }
