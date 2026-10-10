@@ -28,6 +28,13 @@ export type TokenScope = {
   linkedInstances?: boolean;
 };
 
+/** A read-only token never carries instance-admin power. */
+export function scopeAllowsAdmin(scope: string | null | undefined): boolean {
+  return scope !== "read";
+}
+
+export const READ_SCOPE_ADMIN_MESSAGE = "A read-only token can't carry the admin scope";
+
 export function hashApiToken(rawToken: string): string {
   return createHash("sha256").update(rawToken).digest("hex");
 }

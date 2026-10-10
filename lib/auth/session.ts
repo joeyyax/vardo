@@ -3,7 +3,7 @@ import { headers, cookies } from "next/headers";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { memberships, apiTokens, user } from "@/lib/db/schema";
-import { findApiToken, type TokenScope } from "@/lib/auth/api-token";
+import { findApiToken, scopeAllowsAdmin, type TokenScope } from "@/lib/auth/api-token";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { tokenScopeCapabilities } from "@/lib/auth/permissions";
 import { isInstanceAdminUser } from "@/lib/auth/system-org";
@@ -72,7 +72,7 @@ export const getSession = cache(async (): Promise<SessionResult | null> => {
               crossOrg: token.crossOrg,
               expiresAt: token.expiresAt,
               capabilities: tokenScopeCapabilities(token.scope, token.capabilities),
-              admin: token.adminAccess === true,
+              admin: token.adminAccess === true && scopeAllowsAdmin(token.scope),
             },
           } as SessionResult;
         }

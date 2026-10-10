@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { invitations } from "@/lib/db/schema";
-import { getSession } from "@/lib/auth/session";
+import { getSession, isScopedToken } from "@/lib/auth/session";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { eq } from "drizzle-orm";
 import { hashInvitationToken } from "@/lib/invitations/token";
@@ -19,6 +19,10 @@ export async function acceptInvitation(token: string): Promise<{ error?: string 
 
   if (!session?.user?.id) {
     return { error: "Authentication required" };
+  }
+  // A scoped token only acts through org capabilities.
+  if (isScopedToken(session)) {
+    return { error: "A scoped API token can't accept invitations" };
   }
 
   const invitation = await db.query.invitations.findFirst({

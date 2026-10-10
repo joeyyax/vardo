@@ -113,3 +113,45 @@ describe("GPU rollback in a widened org", () => {
     expect(parse(res).error).toMatch(/not found or access denied/);
   });
 });
+
+describe("restoring env vars through a rollback", () => {
+  async function rollbackWithScope(scope: "deploy" | "full"): Promise<Handler> {
+    const { registerRollbackApp } = await import("@/lib/mcp/tools/rollback-app");
+    const { tokenScopeCapabilities } = await import("@/lib/auth/permissions");
+    let captured: Handler | undefined;
+    const server = {
+      tool: (_n: string, _d: string, _s: unknown, fn: Handler) => {
+        captured = fn;
+      },
+    };
+    registerRollbackApp(server as never, {
+      userId: "u1",
+      organizationId: OTHER,
+      crossOrg: false,
+      scopes: tokenScopeCapabilities(scope, null),
+    } as never);
+    return captured!;
+  }
+
+  beforeEach(() => {
+    membershipFindFirst.mockResolvedValue({ id: "m1", role: "owner" });
+    deploymentFindFirst.mockResolvedValue({ id: "dep-old", status: "success", gitSha: "abc", gitMessage: "old", configSnapshot: {} });
+  });
+
+  it("refuses a deploy-scoped token", async () => {
+    const res = await (await rollbackWithScope("deploy"))({ appId: "a1", deploymentId: "dep-old", includeEnvVars: true });
+    expect(res.isError).toBe(true);
+    expect(parse(res).error).toMatch(/permission to change them/);
+    expect(createDeployment).not.toHaveBeenCalled();
+  });
+
+  it("still lets a deploy-scoped token roll back without env vars", async () => {
+    const res = await (await rollbackWithScope("deploy"))({ appId: "a1", deploymentId: "dep-old", includeEnvVars: false });
+    expect(res.isError).toBeFalsy();
+  });
+
+  it("allows a token that may write env vars", async () => {
+    const res = await (await rollbackWithScope("full"))({ appId: "a1", deploymentId: "dep-old", includeEnvVars: true });
+    expect(res.isError).toBeFalsy();
+  });
+});
