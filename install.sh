@@ -393,6 +393,8 @@ write_update_marker() {
   shift
   local dir="$VARDO_DIR/lifecycle"
   mkdir -p "$dir" 2>/dev/null || return 0
+  # A self-deploying console writes here too.
+  chown 1001:1001 "$dir" 2>/dev/null || true
   local body member
   body="{\"id\":$(json_str "$UPDATE_MARKER_ID"),\"state\":$(json_str "$state"),\"startedAt\":$UPDATE_STARTED_AT"
   body="$body,\"fromVersion\":$(json_str "$UPDATE_FROM_VERSION"),\"toVersion\":$(json_str "$UPDATE_TO_VERSION")"
@@ -545,7 +547,17 @@ is_installed() {
   [[ -d "$VARDO_DIR" && -f "$VARDO_DIR/.env" ]]
 }
 
-# True if the slot-based layout exists (current symlink is the source of truth)
+# True once Vardo deploys itself: the engine rotates the console through production/{blue,green}.
+is_self_deploy() {
+  [[ -L "$VARDO_DIR/apps/vardo/production/current" ]]
+}
+
+# The self-deploy slot serving now.
+self_deploy_slot() {
+  basename "$(readlink "$VARDO_DIR/apps/vardo/production/current")"
+}
+
+# True if the legacy slot layout exists (current symlink is the source of truth)
 has_slot_layout() {
   [[ -L "$VARDO_DIR/apps/vardo/env/current" ]]
 }
@@ -576,18 +588,22 @@ active_slot_dir() {
   echo "$VARDO_DIR/apps/vardo/env/$(read_active_slot)"
 }
 
-# Resolve the compose file — slot layout or legacy flat
+# Resolve the compose file — self-deploy slot, legacy slot or legacy flat
 resolve_compose_file() {
-  if has_slot_layout; then
+  if is_self_deploy; then
+    echo "$VARDO_DIR/apps/vardo/production/current/$COMPOSE_FILE"
+  elif has_slot_layout; then
     echo "$VARDO_DIR/apps/vardo/env/current/$COMPOSE_FILE"
   else
     echo "$VARDO_DIR/$COMPOSE_FILE"
   fi
 }
 
-# Resolve the source dir — slot layout or legacy flat
+# Resolve the source dir — self-deploy slot, legacy slot or legacy flat
 resolve_source_dir() {
-  if has_slot_layout; then
+  if is_self_deploy; then
+    echo "$VARDO_DIR/apps/vardo/production/current"
+  elif has_slot_layout; then
     active_slot_dir
   else
     echo "$VARDO_DIR"
@@ -1902,30 +1918,84 @@ install_shortcut() {
   # Create a vardo wrapper script in /usr/local/bin
   # Write the shebang + VARDO_DIR (interpolated now so the actual path is baked in),
   # then append the rest of the script with a quoted heredoc so $@ etc. are preserved.
-  printf '#!/usr/bin/env bash\nVARDO_DIR="%s"\n' "$VARDO_DIR" > /usr/local/bin/vardo
-  cat >> /usr/local/bin/vardo <<'WRAPPER'
+  local bin="${VARDO_BIN:-/usr/local/bin/vardo}"
+  printf '#!/usr/bin/env bash\nVARDO_DIR="%s"\n' "$VARDO_DIR" > "$bin"
+  cat >> "$bin" <<'WRAPPER'
 
-# Resolve compose file — slot layout or legacy flat
-if [ -L "$VARDO_DIR/apps/vardo/env/current" ]; then
+# Self-deploy: the engine rotates the console through production/{blue,green}; the rest stays in project vardo.
+SELF_DEPLOY=false
+[ -L "$VARDO_DIR/apps/vardo/production/current" ] && SELF_DEPLOY=true
+
+# Resolve compose file — self-deploy slot, legacy slot or legacy flat
+if $SELF_DEPLOY; then
+  COMPOSE_PATH="$VARDO_DIR/apps/vardo/production/current/docker-compose.yml"
+elif [ -L "$VARDO_DIR/apps/vardo/env/current" ]; then
   COMPOSE_PATH="$VARDO_DIR/apps/vardo/env/current/docker-compose.yml"
 else
   COMPOSE_PATH="$VARDO_DIR/docker-compose.yml"
 fi
 
-# Resolve install.sh — prefer active slot, fall back to root
-if [ -L "$VARDO_DIR/apps/vardo/env/current" ] && [ -f "$VARDO_DIR/apps/vardo/env/current/install.sh" ]; then
-  INSTALL_SH="$VARDO_DIR/apps/vardo/env/current/install.sh"
-else
+# Resolve install.sh — the serving slot's, falling back to root
+INSTALL_SH="$VARDO_DIR/install.sh"
+for candidate in "$VARDO_DIR/apps/vardo/production/current/install.sh" "$VARDO_DIR/apps/vardo/env/current/install.sh"; do
+  if [ -f "$candidate" ]; then INSTALL_SH="$candidate"; break; fi
+done
+# The legacy slot's install.sh would run the legacy update.
+if $SELF_DEPLOY && [ "$INSTALL_SH" = "$VARDO_DIR/apps/vardo/env/current/install.sh" ]; then
   INSTALL_SH="$VARDO_DIR/install.sh"
 fi
 
+# The console container, stopped ones too with -a.
+console() {
+  if $SELF_DEPLOY; then
+    docker ps ${1:-} -q --filter "label=com.docker.compose.service=frontend" \
+      --filter "label=com.docker.compose.project=vardo-production-$(basename "$(readlink "$VARDO_DIR/apps/vardo/production/current")")" | head -n 1
+  else
+    echo vardo-frontend
+  fi
+}
+
+# Every container in project vardo, plus the serving console on self-deploy.
+stack() {
+  docker ps ${1:-} -q --filter "label=com.docker.compose.project=vardo"
+  if $SELF_DEPLOY; then console "${1:-}"; fi
+}
+
+# Runs a command in the console with stdin attached and VARDO_API_KEY passed through.
+console_exec() {
+  if $SELF_DEPLOY; then
+    docker exec -i -e VARDO_API_KEY "$(console)" "$@"
+  else
+    docker compose -f "$COMPOSE_PATH" exec -T -e VARDO_API_KEY frontend "$@"
+  fi
+}
+
+# Applies a changed .env: self-deploy seeds each slot from it, so redeploy.
+apply_env() {
+  if $SELF_DEPLOY; then
+    bash "$INSTALL_SH" update --yes >&2
+  else
+    # up -d recreates the container; restart would keep the old environment.
+    docker compose -f "$COMPOSE_PATH" up -d frontend >&2
+  fi
+}
+
 case "${1:-}" in
-  logs)     shift; docker compose -f "$COMPOSE_PATH" logs -f "$@" ;;
-  restart)  docker compose -f "$COMPOSE_PATH" restart ;;
-  stop)     docker compose -f "$COMPOSE_PATH" stop ;;
-  start)    docker compose -f "$COMPOSE_PATH" up -d ;;
-  ps)       docker compose -f "$COMPOSE_PATH" ps ;;
+  logs)
+    shift
+    if $SELF_DEPLOY && { [ $# -eq 0 ] || [ "$1" = frontend ]; }; then
+      docker logs -f "$(console)"
+    else
+      docker compose -f "$COMPOSE_PATH" logs -f "$@"
+    fi
+    ;;
+  restart)  if $SELF_DEPLOY; then docker restart $(stack); else docker compose -f "$COMPOSE_PATH" restart; fi ;;
+  stop)     if $SELF_DEPLOY; then docker stop $(stack); else docker compose -f "$COMPOSE_PATH" stop; fi ;;
+  # docker start, not compose up: up would create a second console in project vardo.
+  start)    if $SELF_DEPLOY; then docker start $(stack -a); else docker compose -f "$COMPOSE_PATH" up -d; fi ;;
+  ps)       if $SELF_DEPLOY; then docker ps -a --filter "name=^vardo-"; else docker compose -f "$COMPOSE_PATH" ps; fi ;;
   update)   shift; bash "$INSTALL_SH" update "$@" ;;
+  migrate-self-deploy) shift; bash "$INSTALL_SH" migrate-self-deploy "$@" ;;
   doctor)   shift; bash "$INSTALL_SH" doctor "$@" ;;
   key)
     if [ "${2:-}" = "set" ]; then
@@ -1959,8 +2029,7 @@ case "${1:-}" in
       }
       set_env ENCRYPTION_MASTER_KEY "$NEW_KEY"
       [ -n "$NEW_AUTH" ] && set_env BETTER_AUTH_SECRET "$NEW_AUTH"
-      # up -d recreates the container; restart would keep the old environment.
-      docker compose -f "$COMPOSE_PATH" up -d frontend
+      apply_env
       echo "Escrowed secrets loaded." >&2
       exit 0
     fi
@@ -1987,13 +2056,15 @@ case "${1:-}" in
       [ -w "$VARDO_DIR/.env" ] || { echo "Cannot write $VARDO_DIR/.env — run as root." >&2; exit 1; }
       TOKEN=$(openssl rand -hex 16)
       printf 'SETUP_TOKEN=%s\n' "$TOKEN" >> "$VARDO_DIR/.env"
-      # up -d recreates the container; restart would keep the old environment.
-      docker compose -f "$COMPOSE_PATH" up -d frontend >&2
+      apply_env
     fi
     echo "$TOKEN"
     ;;
   uninstall) bash "$INSTALL_SH" uninstall "$@" ;;
-  shell)    shift; docker compose -f "$COMPOSE_PATH" exec frontend "${@:-sh}" ;;
+  shell)
+    shift
+    if $SELF_DEPLOY; then docker exec -it "$(console)" "${@:-sh}"; else docker compose -f "$COMPOSE_PATH" exec frontend "${@:-sh}"; fi
+    ;;
   adopt)
     shift
     if [ -f "$VARDO_DIR/apps/vardo/env/current/scripts/adopt-cli.ts" ]; then
@@ -2056,7 +2127,7 @@ case "${1:-}" in
     upload() {
       local q="volume=$VOLUME"
       [ -n "$DB" ] && q="$q&database=$DB"
-      docker compose -f "$COMPOSE_PATH" exec -T -e VARDO_API_KEY frontend sh -c \
+      console_exec sh -c \
         'exec curl -sS -X PUT -T - -H "Authorization: Bearer $VARDO_API_KEY" -H "Content-Type: application/octet-stream" "$1"' \
         sh "$API?$q"
     }
@@ -2066,7 +2137,7 @@ case "${1:-}" in
       OUT=$(upload < "$SRC")
     elif [[ "$SRC" =~ ^https?://[^\"\\[:space:]]+$ ]]; then
       BODY="{\"volume\":\"$VOLUME\",${DB:+\"database\":\"$DB\",}\"source\":{\"type\":\"url\",\"url\":\"$SRC\"}}"
-      OUT=$(printf '%s' "$BODY" | docker compose -f "$COMPOSE_PATH" exec -T -e VARDO_API_KEY frontend sh -c \
+      OUT=$(printf '%s' "$BODY" | console_exec sh -c \
         'exec curl -sS -X POST --data-binary @- -H "Authorization: Bearer $VARDO_API_KEY" -H "Content-Type: application/json" "$1"' \
         sh "$API")
     elif [[ "$SRC" =~ ^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+:/ ]]; then
@@ -2093,7 +2164,8 @@ case "${1:-}" in
     echo "  stop             Stop all services"
     echo "  start            Start all services"
     echo "  ps               Show running containers"
-    echo "  update           Pull latest and rebuild"
+    echo "  update           Redeploy Vardo (a legacy install offers to migrate first)"
+    echo "  migrate-self-deploy  Move a legacy install onto Vardo's own deploy engine"
     echo "  doctor           Run health checks"
     echo "  key              Print the master key and auth secret (escrow them)"
     echo "  key set          Load escrowed secrets (fresh installs, before a restore)"
@@ -2106,7 +2178,7 @@ case "${1:-}" in
     ;;
 esac
 WRAPPER
-  chmod +x /usr/local/bin/vardo
+  chmod +x "$bin"
   log "Installed 'vardo' command"
 }
 
@@ -2162,7 +2234,7 @@ print_install_summary() {
   dimln "  vardo logs           View logs (follows)"
   dimln "  vardo ps             Show running containers"
   dimln "  vardo restart        Restart all services"
-  dimln "  vardo update         Pull latest and rebuild"
+  dimln "  vardo update         Redeploy Vardo"
   dimln "  vardo doctor         Run health checks"
   dimln "  vardo key            Print the master key and auth secret"
   dimln "  vardo setup-token    Print the setup token"
@@ -2190,6 +2262,8 @@ do_install() {
   STEP_CURRENT=0
 
   [[ "$PLATFORM" != "macos" ]] && check_root
+  # Reinstalling over a self-deploy would start a second console beside the engine's.
+  is_self_deploy && fail "Vardo is installed at $VARDO_DIR and deploys itself. Update it with: vardo update"
   preflight_checks
   setup_swap
   install_packages
@@ -2202,8 +2276,25 @@ do_install() {
     wait_healthy 120 2 || true
     seed_templates
     install_shortcut
+    install_handover
   fi
   print_install_summary
+}
+
+# The first console runs as vardo-frontend; this hands it to the engine's slot layout, as a migration would.
+install_handover() {
+  STEP_TOTAL=$((STEP_TOTAL + 1))
+  step "Handing Vardo to its deploy engine"
+  if $DRY_RUN; then return 0; fi
+  if ! wait_for_request_listener 180; then
+    warn "The console isn't taking deploy requests yet. Finish later with: vardo migrate-self-deploy"
+    return 0
+  fi
+  if ( handover_to_engine ); then
+    log "Vardo deploys itself from apps/vardo/production"
+  else
+    warn "Vardo is running, but on the legacy layout. Retry with: vardo migrate-self-deploy"
+  fi
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -2297,15 +2388,355 @@ handoff_update() {
     bash "$script" update --yes --force ${ORIG_ARGS[@]+"${ORIG_ARGS[@]}"}
 }
 
+# ══════════════════════════════════════════════════════════════════════════════
+# SELF-DEPLOY
+# ══════════════════════════════════════════════════════════════════════════════
+
+# The console polls $VARDO_DIR/lifecycle for deploy requests (lib/lifecycle/deploy-request.ts).
+SELF_DEPLOY_ID=""
+SELF_DEPLOY_TIMEOUT="${VARDO_DEPLOY_TIMEOUT:-2700}"
+
+# The lifecycle dir, writable by the console's uid.
+ensure_lifecycle_dir() {
+  mkdir -p "$VARDO_DIR/lifecycle"
+  chown 1001:1001 "$VARDO_DIR/lifecycle" 2>/dev/null || true
+}
+
+# Seconds since a console last said it takes deploy requests. Fails when none ever has.
+request_listener_age() {
+  local file="$VARDO_DIR/lifecycle/deploy-requests.ready" at
+  [ -f "$file" ] || return 1
+  at=$(grep -o '"at":[0-9]*' "$file" 2>/dev/null | cut -d: -f2)
+  [ -n "$at" ] || return 1
+  echo $(( $(date +%s) - at ))
+}
+
+# Waits up to $1 seconds for a console that takes deploy requests.
+wait_for_request_listener() {
+  local limit="${1:-30}" waited=0 age
+  while :; do
+    age=$(request_listener_age) && [ "$age" -lt 30 ] && return 0
+    [ "$waited" -lt "$limit" ] || return 1
+    sleep 2
+    waited=$((waited + 2))
+  done
+}
+
+# Container id of the console serving from the self-deploy slot.
+self_deploy_frontend() {
+  is_self_deploy || return 0
+  docker ps -q \
+    --filter "label=com.docker.compose.project=vardo-production-$(self_deploy_slot)" \
+    --filter "label=com.docker.compose.service=frontend" 2>/dev/null | head -n 1
+}
+
+# Running slot consoles, one "<name> <project>" per line.
+slot_consoles() {
+  docker ps --filter "label=com.docker.compose.service=frontend" \
+    --format '{{.Names}} {{.Label "com.docker.compose.project"}}' 2>/dev/null \
+    | grep -E ' vardo-production-(blue|green)$' || true
+}
+
+# Status of a deployment row, or empty.
+deployment_status() {
+  docker exec vardo-postgres psql -U host -d host -tAc \
+    "select status from deployment where id = '$1'" 2>/dev/null | tr -d '[:space:]' || true
+}
+
+# A JSON string member of a one-line file.
+json_member() {
+  grep -o "\"$1\":\"[^\"]*\"" "$2" 2>/dev/null | head -n 1 | cut -d'"' -f4
+}
+
+# Asks the console to redeploy the vardo app. Sets SELF_DEPLOY_ID to the deployment.
+request_self_deploy() {
+  local dir="$VARDO_DIR/lifecycle" id waited=0
+  id="$(date +%Y%m%d%H%M%S)-$$"
+  ensure_lifecycle_dir
+  rm -f "$dir/deploy-request.result.json"
+  printf '{"id":"%s","requestedAt":%s}\n' "$id" "$(date +%s)" > "$dir/deploy-request.json.tmp"
+  chmod 644 "$dir/deploy-request.json.tmp"
+  mv -f "$dir/deploy-request.json.tmp" "$dir/deploy-request.json"
+  info "Asked the console to redeploy Vardo..."
+
+  while [ "$waited" -lt 60 ]; do
+    if [ "$(json_member id "$dir/deploy-request.result.json")" = "$id" ]; then
+      if [ "$(json_member state "$dir/deploy-request.result.json")" = accepted ]; then
+        SELF_DEPLOY_ID=$(json_member deploymentId "$dir/deploy-request.result.json")
+        [[ "$SELF_DEPLOY_ID" =~ ^[A-Za-z0-9_-]+$ ]] || fail "The console answered with an unreadable deployment id."
+        log "Deployment $SELF_DEPLOY_ID queued"
+        return 0
+      fi
+      fail "The console refused the deploy: $(json_member error "$dir/deploy-request.result.json")"
+    fi
+    sleep 2
+    waited=$((waited + 2))
+  done
+  rm -f "$dir/deploy-request.json"
+  fail "No console picked up the deploy request within 60s. Check it's running: docker ps --filter name=frontend"
+}
+
+# Follows a self-deploy to its end through the deployment row and update.json. Returns 0 on success.
+follow_self_deploy() {
+  local id="$1" marker="$VARDO_DIR/lifecycle/update.json" waited=0 status="" last="" announced=""
+  while [ "$waited" -lt "$SELF_DEPLOY_TIMEOUT" ]; do
+    status=$(deployment_status "$id")
+    if [ "$status" != "$last" ] && [ -n "$status" ]; then
+      info "Deployment $id: $status"
+      last="$status"
+    fi
+    if [ -z "$announced" ] && [ "$(json_member id "$marker")" = "$id" ] && [ "$(json_member state "$marker")" = started ]; then
+      info "Built $(json_member toVersion "$marker"); starting the $(json_member toSlot "$marker") console beside the current one"
+      announced=1
+    fi
+    case "$status" in
+      success) return 0 ;;
+      failed|cancelled|superseded)
+        if [ "$(json_member id "$marker")" = "$id" ]; then
+          warn "Failed at $(json_member step "$marker"): $(json_member error "$marker")"
+        fi
+        dimln "Full log: the vardo app's Deployments tab, or"
+        dimln "docker exec vardo-postgres psql -U host -d host -tAc \"select log from deployment where id = '$id'\""
+        return 1
+        ;;
+    esac
+    sleep 3
+    waited=$((waited + 3))
+  done
+  warn "Deployment $id hasn't finished after ${SELF_DEPLOY_TIMEOUT}s. It may still be running; check the dashboard."
+  return 1
+}
+
+# Checks what has gone wrong after self-deploys before. Returns 1 when something needs a look.
+verify_self_deploy() {
+  local id="$1" ok=0 slot frontend consoles active="" waited=0
+  is_self_deploy || { warn "No production/current symlink after the deploy"; return 1; }
+  slot=$(self_deploy_slot)
+  frontend=$(self_deploy_frontend)
+  if [ -z "$frontend" ]; then
+    warn "current points at $slot, but vardo-production-$slot isn't running a console"
+    ok=1
+  elif docker exec "$frontend" curl -sf http://localhost:3000/api/health > /dev/null 2>&1; then
+    log "Console on $slot is healthy"
+  else
+    warn "Console on $slot doesn't answer /api/health"
+    ok=1
+  fi
+
+  # The old slot stops as the deploy's last step.
+  while :; do
+    consoles=$(slot_consoles | wc -l | tr -d ' ')
+    [ "$consoles" -le 1 ] || [ "$waited" -ge 60 ] && break
+    sleep 3
+    waited=$((waited + 3))
+  done
+  if [ "$consoles" -gt 1 ]; then
+    warn "More than one slot console is running:"
+    slot_consoles | while read -r line; do dimln "  $line"; done
+    ok=1
+  fi
+
+  active=$(docker exec vardo-redis sh -c '[ -z "${REDIS_PASSWORD:-}" ] || export REDISCLI_AUTH="$REDIS_PASSWORD"; redis-cli get deploy:system:active' 2>/dev/null | tr -d '[:space:]' || true)
+  if [ -n "$active" ] && [ "$active" != 0 ]; then
+    warn "Redis deploy:system:active is $active, not 0. Redeploy stays disabled until it drops."
+    ok=1
+  fi
+
+  if [ "$(deployment_status "$id")" != success ]; then
+    warn "Deployment $id isn't recorded as success"
+    ok=1
+  fi
+  return "$ok"
+}
+
+# Dumps the database to $VARDO_DIR/backups. Prints the file.
+backup_database() {
+  local label="$1" compose_file backup_dir="$VARDO_DIR/backups" backup_file
+  backup_file="$backup_dir/$label-$(date +%Y%m%d%H%M%S).sql"
+  mkdir -p "$backup_dir"
+  touch "$backup_file" && chmod 600 "$backup_file"
+  if docker exec vardo-postgres pg_dump -U host host > "$backup_file" 2>/dev/null && [ -s "$backup_file" ]; then
+    log "Backup: $backup_file ($(du -h "$backup_file" | cut -f1))"
+    BACKUP_FILE="$backup_file"
+    return 0
+  fi
+  rm -f "$backup_file"
+  return 1
+}
+
+# Removes the pre-self-deploy console once the slot one is healthy. Never touches vardo_* data.
+retire_legacy_frontend() {
+  local frontend slot vol
+  docker inspect vardo-frontend > /dev/null 2>&1 || return 0
+  frontend=$(self_deploy_frontend)
+  if [ -z "$frontend" ] || ! docker exec "$frontend" curl -sf http://localhost:3000/api/health > /dev/null 2>&1; then
+    warn "Keeping vardo-frontend: the new console isn't healthy"
+    return 1
+  fi
+  info "Stopping vardo-frontend..."
+  # stop, not rm -f: a clean stop lets it skip its shutdown email.
+  docker stop vardo-frontend > /dev/null 2>&1 || true
+  docker rm vardo-frontend > /dev/null 2>&1 || true
+  log "Removed vardo-frontend"
+
+  # Empty copies of volumes only the shared services mount. Docker refuses any still in use.
+  slot=$(self_deploy_slot)
+  for vol in postgres_data redis_data wireguard_config buildkit_data letsencrypt; do
+    docker volume rm "vardo-production-${slot}_${vol}" > /dev/null 2>&1 || true
+  done
+}
+
+# Starts the slot console through the engine and retires the old one. Needs a console taking requests.
+handover_to_engine() {
+  request_self_deploy
+  follow_self_deploy "$SELF_DEPLOY_ID" || return 1
+  if ! verify_self_deploy "$SELF_DEPLOY_ID"; then
+    warn "The deploy finished, but the checks above need a look before vardo-frontend is removed."
+    return 1
+  fi
+  retire_legacy_frontend || return 1
+  cp "$VARDO_DIR/apps/vardo/production/current/install.sh" "$VARDO_DIR/install.sh" 2>/dev/null || true
+}
+
+print_self_deploy_rollback() {
+  echo ""
+  echo -e "  ${BOLD}Rollback${RESET}    Nothing was renamed, copied or deleted. The shared services never stopped."
+  dimln "  While vardo-frontend runs: docker rm -f vardo-production-<slot>-frontend-1"
+  dimln "  Once it's removed:         cd $VARDO_DIR/apps/vardo/env/current && docker compose -p vardo up -d --no-deps frontend"
+  dimln "                             docker rm -f vardo-production-<slot>-frontend-1"
+  dimln "                             rm -f $VARDO_DIR/apps/vardo/production/current"
+  dimln "  Database backup:           ${BACKUP_FILE:-none}"
+  dimln "  Details:                   docs/self-deploy-migration.md"
+  echo ""
+}
+
+# An older install.sh handing off here wrote a "started" marker for a legacy update that won't run.
+drop_handed_off_marker() {
+  local marker="$VARDO_DIR/lifecycle/update.json"
+  [ "${VARDO_UPDATE_REEXEC:-}" = 1 ] && [ -n "${VARDO_UPDATE_MARKER_ID:-}" ] || return 0
+  if [ "$(json_member id "$marker")" = "$VARDO_UPDATE_MARKER_ID" ] && [ "$(json_member state "$marker")" = started ]; then
+    rm -f "$marker"
+  fi
+}
+
+# vardo update on a self-deploy instance: a redeploy of the vardo app, never the legacy swap.
+do_self_update() {
+  # A wrapper from before self-deploy runs a stale install.sh on `vardo update`.
+  install_shortcut
+
+  if ! wait_for_request_listener 30; then
+    fail "No console is taking deploy requests. If it's running, it's older than this script: redeploy the vardo app from the dashboard once, then run vardo update again."
+  fi
+
+  echo ""
+  info "This redeploys the vardo app from its branch. The current console serves until the new one is healthy."
+  if ! $UNATTENDED && ! $AUTO_YES && ! confirm "Redeploy Vardo?" y; then
+    echo "  Update cancelled."
+    exit 0
+  fi
+
+  # Only the options given on this command line; the deploy seeds the slot from .env.
+  apply_install_options "$VARDO_DIR/.env"
+
+  step "Redeploying Vardo"
+  request_self_deploy
+  follow_self_deploy "$SELF_DEPLOY_ID" || fail "Redeploy failed. The previous console is still serving."
+
+  step "Verifying"
+  verify_self_deploy "$SELF_DEPLOY_ID" || warn "Redeployed, with the warnings above."
+  cp "$VARDO_DIR/apps/vardo/production/current/install.sh" "$VARDO_DIR/install.sh" 2>/dev/null || true
+
+  load_env_display
+  echo ""
+  echo -e "${GREEN}${BOLD}  Update complete!${RESET}"
+  echo ""
+  echo -e "  ${BOLD}Dashboard${RESET}   https://${VARDO_DOMAIN:-localhost}"
+  echo -e "  ${BOLD}Version${RESET}     $(get_version)"
+  echo -e "  ${BOLD}Slot${RESET}        $(self_deploy_slot)"
+  echo ""
+}
+
+# Moves a legacy install (one vardo-frontend in project vardo) onto the deploy engine. Safe to rerun.
+do_migrate_self_deploy() {
+  [[ "$PLATFORM" != "macos" ]] && check_root
+  load_env_display
+  is_dev && fail "A development instance runs no console to migrate."
+
+  if is_self_deploy; then
+    log "Vardo already deploys itself (slot $(self_deploy_slot))."
+    retire_legacy_frontend || true
+    install_shortcut
+    return 0
+  fi
+
+  has_slot_layout || fail "No Vardo install at $VARDO_DIR/apps/vardo/env. Run a fresh install instead."
+  [ -n "$(docker ps -q --filter name='^vardo-frontend$' 2>/dev/null)" ] \
+    || fail "vardo-frontend isn't running. Start it with 'docker compose -f $(resolve_compose_file) up -d frontend', then rerun."
+
+  echo ""
+  info "This moves the console onto Vardo's own deploy engine (docs/self-deploy-migration.md)."
+  dimln "            Postgres, Redis, Traefik and WireGuard keep running in project vardo; no volume,"
+  dimln "            network or container is renamed. vardo-frontend is removed only once the new console is healthy."
+  echo ""
+  if ! $UNATTENDED && ! $AUTO_YES && ! confirm "Migrate to self-deploy?"; then
+    echo "  Migration cancelled."
+    exit 0
+  fi
+
+  STEP_TOTAL=4
+  STEP_CURRENT=0
+
+  step "Backup"
+  backup_database pre-self-deploy || fail "Database backup failed. Check that vardo-postgres is running."
+
+  step "Console"
+  if wait_for_request_listener 10; then
+    log "The running console takes deploy requests"
+  else
+    info "The running console predates deploy requests. Updating it the legacy way first..."
+    # A subshell: the update's handoff execs a new install.sh, which returns here when it exits.
+    ( export VARDO_UPDATE_LEGACY=1; ORIG_ARGS=(); AUTO_YES=true; do_update )
+    wait_for_request_listener 300 || fail "The updated console still isn't taking deploy requests. Is the slot on a branch with this script's version?"
+  fi
+
+  step "Deploying through the engine"
+  if ! ( handover_to_engine ); then
+    print_self_deploy_rollback
+    fail "Migration stopped. vardo-frontend is still serving unless noted above."
+  fi
+
+  step "Finishing"
+  install_shortcut
+  echo ""
+  echo -e "${GREEN}${BOLD}  Vardo deploys itself now.${RESET}"
+  dimln "  Update with: vardo update, or Redeploy on the vardo app in the dashboard."
+  dimln "  $VARDO_DIR/apps/vardo/env is no longer used; remove it after a successful redeploy."
+  print_self_deploy_rollback
+}
+
 do_update() {
   [[ "$PLATFORM" != "macos" ]] && check_root
+
+  # The legacy swap would start a second console and rewrite .env. Checked before anything else runs.
+  if is_self_deploy; then
+    drop_handed_off_marker
+    do_self_update
+    return
+  fi
+
   resume_update_marker
 
-  # Once Vardo deploys itself, this path would start a second frontend
-  # competing for the same domain. See docs/self-deploy-migration.md.
-  if [ -L "$VARDO_DIR/apps/vardo/production/current" ]; then
-    dimln "            Redeploy the 'vardo' app, or POST to its deploy endpoint."
-    fail "This instance deploys itself. Update it from the dashboard instead."
+  load_env_display
+  if [ "${VARDO_UPDATE_LEGACY:-}" != 1 ] && [ "${VARDO_UPDATE_REEXEC:-}" != 1 ] && ! is_dev && has_slot_layout; then
+    echo ""
+    warn "This instance runs its console as one vardo-frontend container. Vardo now deploys itself instead."
+    dimln "            Migrating keeps every volume, network and container name, and deploys the latest version."
+    if confirm "Migrate to self-deploy now?"; then
+      AUTO_YES=true
+      do_migrate_self_deploy
+      return
+    fi
+    info "Updating the legacy way. Migrate later with: vardo migrate-self-deploy"
   fi
 
   # Migrate legacy flat installs to slot layout before proceeding
@@ -2950,7 +3381,17 @@ do_uninstall() {
   local uninstall_compose
   uninstall_compose=$(resolve_compose_file)
   info "Stopping containers..."
-  run_cmd docker compose -f "$uninstall_compose" down 2>/dev/null || true
+  local self_deploy=false slot_containers
+  is_self_deploy && self_deploy=true
+  # Self-deploy consoles live in their own slot projects.
+  slot_containers=$(docker ps -aq --filter "name=^vardo-production-" 2>/dev/null || true)
+  if $self_deploy && ! $PURGE; then
+    # Stopped, not removed, so `vardo start` brings back the same containers.
+    run_cmd docker stop $(docker ps -q --filter "label=com.docker.compose.project=vardo") $slot_containers > /dev/null 2>&1 || true
+  else
+    run_cmd docker compose -f "$uninstall_compose" down 2>/dev/null || true
+    [ -z "$slot_containers" ] || run_cmd docker rm -f $slot_containers > /dev/null 2>&1 || true
+  fi
   log "Containers stopped"
 
   if $PURGE; then
@@ -2972,6 +3413,9 @@ do_uninstall() {
 
     info "Removing Docker volumes..."
     run_cmd docker compose -f "$uninstall_compose" down -v 2>/dev/null || true
+    local slot_volumes
+    slot_volumes=$(docker volume ls -q --filter "name=^vardo-production-" 2>/dev/null || true)
+    [ -z "$slot_volumes" ] || run_cmd docker volume rm $slot_volumes > /dev/null 2>&1 || true
     if ! $DRY_RUN; then log "Volumes removed"; fi
 
     info "Removing $VARDO_DIR..."
@@ -2993,7 +3437,11 @@ do_uninstall() {
     echo ""
     dimln "Data and configuration preserved at $VARDO_DIR"
     dimln "To remove everything: sudo bash install.sh uninstall --purge"
-    dimln "To start again:       docker compose -f $uninstall_compose up -d"
+    if $self_deploy; then
+      dimln "To start again:       vardo start"
+    else
+      dimln "To start again:       docker compose -f $uninstall_compose up -d"
+    fi
   fi
   echo ""
 }
@@ -3069,7 +3517,7 @@ parse_args() {
     local arg="$1"
     shift
     case "$arg" in
-      install|update|doctor|uninstall)
+      install|update|doctor|uninstall|migrate-self-deploy)
         COMMAND="$arg"
         ;;
       --unattended)
@@ -3106,7 +3554,8 @@ parse_args() {
         echo ""
         echo "Commands:"
         echo "  install      Fresh installation (default if not installed)"
-        echo "  update       Pull latest changes and rebuild"
+        echo "  update       Redeploy Vardo (a legacy install offers to migrate first)"
+        echo "  migrate-self-deploy  Move a legacy install onto Vardo's own deploy engine"
         echo "  doctor       Run health diagnostics"
         echo "  uninstall    Stop and remove Vardo"
         echo ""
@@ -3185,6 +3634,7 @@ main() {
       update)    do_update ;;
       doctor)    do_doctor ;;
       uninstall) do_uninstall ;;
+      migrate-self-deploy) do_migrate_self_deploy ;;
     esac
     return
   fi
