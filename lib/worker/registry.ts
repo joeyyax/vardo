@@ -22,6 +22,9 @@ const BOTH: LoopRole[] = ["web", "worker"];
 const WEB: LoopRole[] = ["web"];
 
 export const LOOP_REGISTRY: LoopEntry[] = [
+  // Per process: feature flags and resource settings follow writes from any process.
+  { name: "config-sync", roles: BOTH, singleton: false, load: async () => (await import("@/lib/config/sync")).configSyncLoop },
+
   // Deploys
   { name: "deploy-sweep", roles: BOTH, singleton: true, load: async () => (await import("@/lib/deploy/scheduler")).deploySweepLoop },
   { name: "rollback-watch", roles: BOTH, singleton: true, load: async () => (await import("@/lib/deploy/scheduler")).rollbackWatchLoop },

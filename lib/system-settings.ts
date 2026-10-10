@@ -56,6 +56,9 @@ export async function setSystemSetting(key: string, value: string) {
       set: { value: encrypted, updatedAt: new Date() },
     });
   cache.delete(key);
+  import("@/lib/config/sync")
+    .then(({ publishConfigChange }) => publishConfigChange(key))
+    .catch((err) => log.warn(`Couldn't announce the ${key} change to other processes:`, err));
 }
 
 function parseJson<T>(raw: string, label: string): T | null {

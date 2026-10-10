@@ -250,19 +250,20 @@ export function featureFlagFromEnv(flag: FeatureFlag): boolean | undefined {
   return undefined;
 }
 
-// Sync cache, loaded at startup and refreshed by isFeatureEnabledAsync().
-
-let flagCache: Record<string, boolean> | null = null;
+// Sync cache, loaded at startup and refreshed by isFeatureEnabledAsync() and config sync.
+// On globalThis: Next bundles instrumentation and routes separately, and a write in one must reach the other.
+const globalForFlags = globalThis as unknown as { __vardo_flags?: { cache: Record<string, boolean> | null } };
+const flagState = (globalForFlags.__vardo_flags ??= { cache: null });
 
 /** Populates the sync flag cache at startup. */
 export async function loadFeatureFlags(): Promise<void> {
   const { getFeatureFlagsConfig } = await import("@/lib/system-settings");
-  flagCache = (await getFeatureFlagsConfig()) ?? {};
+  flagState.cache = (await getFeatureFlagsConfig()) ?? {};
 }
 
 /** Reloads the sync flag cache after flags are written. */
 export async function invalidateFlagCache(): Promise<void> {
-  flagCache = null;
+  flagState.cache = null;
   await loadFeatureFlags().catch(() => {
     // Sync callers use defaults until the next async call.
   });
@@ -272,7 +273,7 @@ export async function invalidateFlagCache(): Promise<void> {
 export function isFeatureEnabled(flag: FeatureFlag): boolean {
   const fromEnv = featureFlagFromEnv(flag);
   if (fromEnv !== undefined) return fromEnv;
-  if (flagCache && flag in flagCache) return flagCache[flag];
+  if (flagState.cache && flag in flagState.cache) return flagState.cache[flag];
   return flagDefault(flag);
 }
 
@@ -285,7 +286,7 @@ export async function isFeatureEnabledAsync(flag: FeatureFlag): Promise<boolean>
   const flags = await getFeatureFlagsConfig();
 
   // Merge, so flags missing from this result survive.
-  if (flags) flagCache = { ...flagCache, ...flags };
+  if (flags) flagState.cache = { ...flagState.cache, ...flags };
 
   if (flags && flag in flags) return flags[flag];
   return flagDefault(flag);
