@@ -1,16 +1,20 @@
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { NextRequest, NextResponse } from "next/server";
 import { getSystemHealth } from "@/lib/config/health";
+import { readLoopStatus } from "@/lib/worker/status";
 import { requireAdminAuth } from "@/lib/auth/admin";
 import { apiError, handleRouteError } from "@/lib/api/error-response";
 
-// GET /api/health/system — full system health for the dashboard UI
+// GET /api/health/system — full system health for the dashboard UI, background loops included
 async function handleGet(request: NextRequest) {
   try {
     await requireAdminAuth(request);
 
-    const health = await getSystemHealth();
-    return NextResponse.json(health);
+    const [health, loops] = await Promise.all([
+      getSystemHealth(),
+      readLoopStatus().catch(() => null),
+    ]);
+    return NextResponse.json({ ...health, loops });
   } catch (error) {
     if (error instanceof Error && error.message === "Unauthorized") {
       return apiError.unauthorized();

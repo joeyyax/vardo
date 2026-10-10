@@ -36,10 +36,35 @@ type ResourceStatus = {
   unit: string;
 };
 
+type LoopStatus = {
+  name: string;
+  singleton: boolean;
+  enabled: boolean;
+  lease: { holder: string; live: boolean } | null;
+  state: "ok" | "failing" | "stale" | "never";
+  lastTickAt: string | null;
+  lastError: string | null;
+  consecutiveFailures: number;
+};
+
 type HealthData = {
   services: ServiceStatus[];
   resources: ResourceStatus[];
+  loops: LoopStatus[];
 };
+
+/** The host part of a lease holder (host:pid:boot). */
+function holderHost(holder: string): string {
+  return holder.split(":")[0] ?? holder;
+}
+
+function LoopBadge({ loop }: { loop: LoopStatus }) {
+  if (!loop.enabled) return <Badge variant="neutral">Off</Badge>;
+  if (loop.state === "ok") return <Badge variant="success">OK</Badge>;
+  if (loop.state === "never") return <Badge variant="neutral">Not run yet</Badge>;
+  if (loop.state === "stale") return <Badge variant="warning">Stale</Badge>;
+  return <Badge variant="error">Failing</Badge>;
+}
 
 function alertTypeLabel(type: string): string {
   const labels: Record<string, string> = {
@@ -89,7 +114,7 @@ export function SystemAlertsPanel() {
 
       if (healthRes.ok) {
         const data = await healthRes.json();
-        setHealthData({ services: data.services ?? [], resources: data.resources ?? [] });
+        setHealthData({ services: data.services ?? [], resources: data.resources ?? [], loops: data.loops?.loops ?? [] });
       } else {
         // Preserve the first error; only set if not already set
         setError((prev) => prev ?? `Couldn't load system health (${healthRes.status})`);
@@ -118,7 +143,7 @@ export function SystemAlertsPanel() {
         }
         if (healthRes.ok) {
           const data = await healthRes.json();
-          setHealthData({ services: data.services ?? [], resources: data.resources ?? [] });
+          setHealthData({ services: data.services ?? [], resources: data.resources ?? [], loops: data.loops?.loops ?? [] });
         } else {
           setError((prev) => prev ?? `Couldn't load system health (${healthRes.status})`);
         }
@@ -162,7 +187,7 @@ export function SystemAlertsPanel() {
         <div>
           <h3 className="type-h4">System health</h3>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Infrastructure services and active alerts
+            Infrastructure services, background jobs and active alerts
           </p>
         </div>
         <Button
@@ -252,6 +277,28 @@ export function SystemAlertsPanel() {
                   </div>
                   <StatusBadge status={resource.status} />
                 </div>
+              </div>
+            ))}
+          </Card>
+        </div>
+      )}
+
+      {/* Background jobs */}
+      {healthData && healthData.loops.length > 0 && (
+        <div className="space-y-2">
+          <h4 className="type-label text-muted-foreground">Background jobs</h4>
+          <Card variant="surface" className="divide-y">
+            {healthData.loops.map((loop) => (
+              <div key={loop.name} className="flex items-center justify-between gap-4 px-4 py-2.5">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">{loop.name}</p>
+                  <p className="text-xs text-muted-foreground truncate">
+                    {loop.lastTickAt ? `Ran ${formatRelativeTime(loop.lastTickAt)}` : "No run recorded"}
+                    {loop.singleton && loop.lease?.live && ` · leader ${holderHost(loop.lease.holder)}`}
+                    {loop.state === "failing" && loop.lastError && ` · ${loop.lastError}`}
+                  </p>
+                </div>
+                <LoopBadge loop={loop} />
               </div>
             ))}
           </Card>
