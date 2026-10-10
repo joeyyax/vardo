@@ -4,6 +4,7 @@ import { z } from "zod";
 import YAML from "yaml";
 import JSZip from "jszip";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
+import { setupTokenRefusal } from "@/lib/setup-token";
 
 import {
   importVardoConfig,
@@ -72,6 +73,9 @@ const secretsSchema = z.object({
  */
 async function handlePost(request: NextRequest) {
   try {
+    const refused = await setupTokenRefusal(request);
+    if (refused) return refused;
+
     const { needsSetup } = await import("@/lib/setup");
     const isSetup = await needsSetup();
 

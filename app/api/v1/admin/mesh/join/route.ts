@@ -9,6 +9,7 @@ import { getInstanceId } from "@/lib/constants";
 import { getInstanceDisplayName } from "@/lib/system-settings";
 import { hostname as osHostname } from "node:os";
 import { needsSetup } from "@/lib/setup";
+import { setupTokenRefusal } from "@/lib/setup-token";
 import { inheritConfigFromHub, validateHubUrl, EMPTY_INHERITED_CONFIG } from "@/lib/mesh/config-inheritance";
 import { rebuildAndSync } from "@/lib/mesh/wireguard";
 import { db } from "@/lib/db";
@@ -44,6 +45,9 @@ const joinResponseSchema = z.object({
  */
 async function handlePost(request: NextRequest) {
   try {
+    const refused = await setupTokenRefusal(request);
+    if (refused) return refused;
+
     const isSetup = await needsSetup();
     if (!isSetup) {
       await requireAppAdmin();
