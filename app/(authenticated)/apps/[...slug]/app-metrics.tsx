@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useEffect, useState, useMemo } from "react";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
@@ -8,7 +8,7 @@ import { Activity, AlertTriangle, Container, Cpu, Microchip, MemoryStick, Networ
 import { ChartCard } from "@/components/app-status";
 import { EmptyState } from "@/components/ui/empty-state";
 import { cpuDisplay, formatBytes, formatBytesShort, formatCores, formatCoresShort, formatMemLimit, formatTime, type CpuCeiling } from "@/lib/metrics/format";
-import { CHART_COLORS, chartTickStyle, TIME_RANGES, type TimeRange } from "@/lib/metrics/constants";
+import { CHART_COLORS, chartTickStyle, RANGE_MS, TIME_RANGES, type TimeRange } from "@/lib/metrics/constants";
 import { networkRates } from "@/lib/metrics/rates";
 import { networkBarPoint, type NetworkBarPoint } from "@/lib/metrics/network-chart";
 import { MetricsTooltip } from "@/components/metrics-chart";
@@ -34,6 +34,8 @@ type ChartPoint = NetworkBarPoint & {
   time: string;
   timestamp: number;
   cpu: number;
+  /** The app's normal CPU range for this hour, once it has a baseline. */
+  cpuBand: [number, number] | null;
   memory: number;
   memoryLimit: number;
   networkRx: number;
@@ -43,6 +45,32 @@ type ChartPoint = NetworkBarPoint & {
   gpuMemoryTotal: number;
   gpuTemperature: number;
 };
+
+type BaselineBand = { at: number; typical: number; high: number };
+
+const HOUR_MS = 60 * 60_000;
+
+/** Hourly normal CPU range for the visible window. Empty until the app has a baseline. */
+function useCpuBaseline(orgId: string, appId: string, timeRange: TimeRange): BaselineBand[] {
+  const [bands, setBands] = useState<BaselineBand[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    const to = Date.now();
+    const from = to - RANGE_MS[timeRange];
+    fetch(`/api/v1/organizations/${orgId}/apps/${appId}/baseline?from=${from}&to=${to + HOUR_MS}`)
+      .then((res) => (res.ok ? res.json() : { cpu: [] }))
+      .then((data: { cpu?: BaselineBand[] }) => {
+        if (!cancelled) setBands(data.cpu ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setBands([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [orgId, appId, timeRange]);
+  return bands;
+}
 
 // Tooltip components live outside render to avoid re-creation.
 
@@ -178,25 +206,31 @@ export function AppMetrics({ orgId, appId, environmentName, gpuEnabled, cpuLimit
     streamUrl: `/api/v1/organizations/${orgId}/apps/${appId}/stats/stream${environmentName ? "?environment=" + environmentName : ""}`,
     timeRange,
   });
+  const cpuBaseline = useCpuBaseline(orgId, appId, timeRange);
 
   // Map MetricsPoint[] to chart-friendly shape with network rates
   const chartData = useMemo<ChartPoint[]>(() => {
     const rates = networkRates(points);
-    return points.map((p, i) => ({
-      time: formatTime(p.timestamp),
-      timestamp: p.timestamp,
-      cpu: Math.round(p.cpu * 100) / 100,
-      memory: p.memory,
-      memoryLimit: p.memoryLimit,
-      networkRx: p.networkRx,
-      networkTx: p.networkTx,
-      ...networkBarPoint(rates[i]),
-      gpuUtilization: p.gpuUtilization,
-      gpuMemoryUsed: p.gpuMemoryUsed,
-      gpuMemoryTotal: p.gpuMemoryTotal,
-      gpuTemperature: p.gpuTemperature,
-    }));
-  }, [points]);
+    const bandByHour = new Map(cpuBaseline.map((b) => [b.at, b]));
+    return points.map((p, i) => {
+      const band = bandByHour.get(Math.floor(p.timestamp / HOUR_MS) * HOUR_MS);
+      return {
+        time: formatTime(p.timestamp),
+        timestamp: p.timestamp,
+        cpu: Math.round(p.cpu * 100) / 100,
+        cpuBand: band ? ([band.typical, band.high] as [number, number]) : null,
+        memory: p.memory,
+        memoryLimit: p.memoryLimit,
+        networkRx: p.networkRx,
+        networkTx: p.networkTx,
+        ...networkBarPoint(rates[i]),
+        gpuUtilization: p.gpuUtilization,
+        gpuMemoryUsed: p.gpuMemoryUsed,
+        gpuMemoryTotal: p.gpuMemoryTotal,
+        gpuTemperature: p.gpuTemperature,
+      };
+    });
+  }, [points, cpuBaseline]);
 
   // GPU data in the stream, even when gpuEnabled isn't set on the app.
   const hasGpuData = useMemo(
@@ -320,6 +354,18 @@ export function AppMetrics({ orgId, appId, environmentName, gpuEnabled, cpuLimit
             <XAxis dataKey="time" tick={chartTickStyle} />
             <YAxis width={45} tickFormatter={formatCoresShort} tick={chartTickStyle} domain={[0, "auto"]} />
             <Tooltip content={<CpuTooltip />} />
+            {cpuBaseline.length > 0 && (
+              <Area
+                isAnimationActive={false}
+                type="stepAfter"
+                dataKey="cpuBand"
+                name="Normal range"
+                tooltipType="none"
+                stroke="none"
+                fill={CHART_COLORS.reference}
+                fillOpacity={0.15}
+              />
+            )}
             <Area isAnimationActive={false} type="monotone" dataKey="cpu" stroke={CHART_COLORS.cpu} fill="url(#appCpuGradient)" />
           </AreaChart>
         </ResponsiveContainer>

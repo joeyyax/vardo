@@ -112,6 +112,8 @@ export const apps = pgTable(
     certServices: jsonb("cert_services").$type<string[]>(),
     backupsEnabled: boolean("backups_enabled"), // null = inherit the org's, then the system's default
     diskWriteAlertThreshold: bigint("disk_write_alert_threshold", { mode: "number" }), // bytes/hour, null = default 1GB
+    // Alerts when the app strays from its own learned baseline.
+    anomalyAlerts: boolean("anomaly_alerts").notNull().default(true),
     healthCheckTimeout: integer("health_check_timeout"), // Seconds; null = system default 60s
     autoRollback: boolean("auto_rollback").default(false),
     rollbackGracePeriod: integer("rollback_grace_period").default(60), // Seconds to monitor after deploy

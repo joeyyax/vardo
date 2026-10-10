@@ -14,6 +14,9 @@ const APP_TAB: Record<string, string> = {
   "app.memory-limit": "resources",
   "app.restart-loop": "stability",
   "app.unhealthy": "logs",
+  "app.anomaly": "resources",
+  "app.new-port": "resources",
+  "app.new-process": "resources",
   "backup.failure": "backups",
   "cron.failure": "cron",
 };

@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { backupJobs, notificationSettings, organizations } from "@/lib/db/schema";
 import { nightlyCron } from "@/lib/backups/run-rules";
 import { getInstanceTimeZone, resolveTimeZone } from "@/lib/time-zone-settings";
+import { isSensitivity, type Sensitivity } from "@/lib/anomaly/signals";
 import { NOTIFICATION_CATEGORIES, NOTIFICATION_CATEGORY_KEYS, type NotificationCategory } from "./registry";
 
 export const DEFAULT_NIGHTLY_TIME = "02:00";
@@ -15,6 +16,8 @@ export type OrgNotificationSettings = {
   nightlyBackupTime: string;
   /** The org's effective zone. */
   timeZone: string;
+  /** How far an app may stray from its baseline before it alerts. */
+  anomalySensitivity: Sensitivity;
 };
 
 /** Stored switches over the defaults. Unknown keys are dropped. */
@@ -32,20 +35,21 @@ export async function readOrgNotificationSettings(organizationId: string): Promi
     }),
     db.query.organizations.findFirst({
       where: eq(organizations.id, organizationId),
-      columns: { nightlyBackupTime: true, timeZone: true },
+      columns: { nightlyBackupTime: true, timeZone: true, anomalySensitivity: true },
     }),
   ]);
   return {
     categories: resolveCategories(row?.categories),
     nightlyBackupTime: org?.nightlyBackupTime ?? DEFAULT_NIGHTLY_TIME,
     timeZone: resolveTimeZone(org?.timeZone, await getInstanceTimeZone()),
+    anomalySensitivity: isSensitivity(org?.anomalySensitivity) ? org.anomalySensitivity : "normal",
   };
 }
 
 /** Merges a patch. A category back at its default drops out of the stored map. A new time moves every nightly job. */
 export async function updateOrgNotificationSettings(
   organizationId: string,
-  patch: { categories?: Partial<Record<NotificationCategory, boolean>>; nightlyBackupTime?: string },
+  patch: { categories?: Partial<Record<NotificationCategory, boolean>>; nightlyBackupTime?: string; anomalySensitivity?: Sensitivity },
 ): Promise<OrgNotificationSettings> {
   const current = await readOrgNotificationSettings(organizationId);
   const now = new Date();
@@ -69,6 +73,11 @@ export async function updateOrgNotificationSettings(
       .set({ schedule: nightlyCron(patch.nightlyBackupTime), updatedAt: now })
       .where(and(eq(backupJobs.organizationId, organizationId), eq(backupJobs.nightly, true)));
     current.nightlyBackupTime = patch.nightlyBackupTime;
+  }
+
+  if (patch.anomalySensitivity && patch.anomalySensitivity !== current.anomalySensitivity) {
+    await db.update(organizations).set({ anomalySensitivity: patch.anomalySensitivity }).where(eq(organizations.id, organizationId));
+    current.anomalySensitivity = patch.anomalySensitivity;
   }
   return current;
 }

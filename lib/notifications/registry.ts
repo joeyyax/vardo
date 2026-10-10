@@ -33,6 +33,11 @@ export const NOTIFICATION_CATEGORIES = {
     description: "Out-of-memory kills, restart loops, memory limits and failing health checks.",
     default: true,
   },
+  anomalies: {
+    label: "Unusual app activity",
+    description: "An app using far more CPU, network or disk than its own normal, or running a process or port it never has.",
+    default: true,
+  },
   cron: {
     label: "Cron failures",
     description: "Once when a cron job starts failing and again when it recovers.",
@@ -67,6 +72,9 @@ export const ALERTS = {
   "app.memory-limit": define({ category: "apps", label: "Memory near limit", throttle: { kind: "until_clear", minHours: 6 }, resolves: true }),
   "backup.failure": define({ category: "backups", label: "Backup failed", throttle: { kind: "until_clear", minHours: 6 }, resolves: false }),
   "app.unhealthy": define({ category: "apps", label: "Health check failing", throttle: { kind: "until_clear", minHours: 1 }, resolves: true }),
+  "app.anomaly": define({ category: "anomalies", label: "Unusual resource use", throttle: { kind: "until_clear", minHours: 1 }, resolves: true }),
+  "app.new-port": define({ category: "anomalies", label: "New listening port", throttle: { kind: "until_clear", minHours: 1 }, resolves: false }),
+  "app.new-process": define({ category: "anomalies", label: "Unexpected process", throttle: { kind: "until_clear", minHours: 1 }, resolves: false }),
   "cron.failure": define({ category: "cron", label: "Cron job failing", throttle: { kind: "until_clear", minHours: 1 }, resolves: true }),
 };
 

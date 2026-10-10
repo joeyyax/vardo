@@ -150,6 +150,7 @@ export type App = {
   backendProtocol: "http" | "https" | null;
   securityHeaders?: boolean;
   diskWriteAlertThreshold: number | null;
+  anomalyAlerts?: boolean;
   healthCheckTimeout: number | null;
   autoRollback: boolean | null;
   rollbackGracePeriod: number | null;

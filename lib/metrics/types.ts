@@ -19,6 +19,8 @@ export type ContainerMetrics = {
   diskLimit: number | null;
   /** Cumulative block I/O writes. Null when cAdvisor reports no io_service_bytes. */
   diskWriteBytes: number | null;
+  /** Processes in the container. Absent when cAdvisor doesn't report process stats. */
+  processCount?: number | null;
   gpuUtilization: number; // percent (summed duty_cycle across accelerators)
   gpuMemoryUsed: number; // bytes
   gpuMemoryTotal: number; // bytes

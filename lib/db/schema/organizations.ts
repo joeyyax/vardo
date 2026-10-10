@@ -24,6 +24,8 @@ export const organizations = pgTable("organization", {
   nightlyBackupTime: text("nightly_backup_time").default("02:00").notNull(),
   // IANA zone for schedules and printed times. Null follows the instance.
   timeZone: text("time_zone"),
+  // How far an app may stray from its baseline before it alerts.
+  anomalySensitivity: text("anomaly_sensitivity", { enum: ["low", "normal", "high"] }).default("normal").notNull(),
   // DNS TXT challenge for baseDomain.
   baseDomainToken: text("base_domain_token"),
   baseDomainVerifiedAt: timestamp("base_domain_verified_at"),
