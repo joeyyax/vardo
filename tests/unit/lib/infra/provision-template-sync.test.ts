@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
+vi.mock("@/lib/infra/monitoring-network", () => ({ ensureMonitoringNetwork: vi.fn().mockResolvedValue(undefined) }));
 
 // A core service's compose is copied onto the app row at creation, so a
 // template fix reaches new installs only unless provisioning re-syncs it.

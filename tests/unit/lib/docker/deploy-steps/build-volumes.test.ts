@@ -1,6 +1,11 @@
 // The build step's volume externalization: unmounted volumes are dropped, shared-only ones take the shared project's names.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+vi.mock("@/lib/docker/volume-owner", () => ({
+  volumeOwnerProblem: vi.fn().mockResolvedValue(null),
+  appFamily: vi.fn(async (id: string) => [id]),
+  foreignVolumeHolders: vi.fn().mockResolvedValue([]),
+}));
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
@@ -19,7 +24,8 @@ vi.mock("@/lib/db", () => ({
 }));
 vi.mock("@/lib/env/resolve", () => ({ resolveAllEnvVars: vi.fn(async (env: Record<string, string>) => env) }));
 vi.mock("@/lib/docker/slots", () => ({ detectActiveSlot: vi.fn(async () => null) }));
-vi.mock("@/lib/docker/compose-policy", () => ({ assertComposeWithinApp: vi.fn() }));
+vi.mock("@/lib/docker/compose-policy", () => ({ assertComposeWithinApp: vi.fn(async () => ({ legacyPaths: [] })) }));
+vi.mock("@/lib/docker/bind-roots", () => ({ setBindWarnings: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("@/lib/docker/self-env", () => ({ isSelfApp: () => false, seedSelfEnv: vi.fn(async () => null) }));
 
 import { build } from "@/lib/docker/deploy-steps/build";

@@ -6,7 +6,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
 
-const { mockVerifyOrgAccess, mockInsert, mockUpdate, inserted } = vi.hoisted(() => ({
+const { mockVerifyOrgAccess, mockInsert, mockUpdate, inserted, tokenFindFirst } = vi.hoisted(() => ({
+  tokenFindFirst: vi.fn(),
   mockVerifyOrgAccess: vi.fn(),
   mockInsert: vi.fn(),
   mockUpdate: vi.fn(),
@@ -20,7 +21,7 @@ const isAppAdmin = vi.hoisted(() => vi.fn(async () => false));
 vi.mock("@/lib/auth/admin", () => ({ isAppAdmin }));
 vi.mock("@/lib/api/require-plugin", () => ({ requirePlugin: vi.fn().mockResolvedValue(null) }));
 vi.mock("@/lib/api/with-rate-limit", async () => (await import("@/tests/helpers/mocks")).withRateLimitModule());
-vi.mock("@/lib/db", () => ({ db: { insert: mockInsert, update: mockUpdate, query: {} } }));
+vi.mock("@/lib/db", () => ({ db: { insert: mockInsert, update: mockUpdate, query: { apiTokens: { findFirst: tokenFindFirst } } } }));
 
 const { POST, PATCH } = await import("@/app/api/v1/organizations/[orgId]/tokens/route");
 
@@ -51,6 +52,7 @@ function asCookie() {
 beforeEach(() => {
   vi.clearAllMocks();
   isAppAdmin.mockResolvedValue(false);
+  tokenFindFirst.mockResolvedValue({ scope: "full" });
   inserted.length = 0;
   mockInsert.mockReturnValue({
     values: async (v: Record<string, unknown>) => {
@@ -83,6 +85,14 @@ describe("minting a token", () => {
     const res = await POST(req("POST", { name: "admin", adminAccess: true }), params);
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({ error: "A token cannot grant the admin scope" });
+    expect(inserted).toHaveLength(0);
+  });
+
+  it("refuses the admin scope on a read-only token", async () => {
+    asCookie();
+    isAppAdmin.mockResolvedValue(true);
+    const res = await POST(req("POST", { name: "ro", scope: "read", adminAccess: true }), params);
+    expect(res.status).toBe(400);
     expect(inserted).toHaveLength(0);
   });
 
@@ -201,6 +211,15 @@ describe("changing a token's scope", () => {
     asToken();
     isAppAdmin.mockResolvedValue(true);
     expect((await PATCH(req("PATCH", { id: "t2", adminAccess: true }), params)).status).toBe(403);
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
+  it("refuses admin on a read-only token", async () => {
+    asCookie();
+    isAppAdmin.mockResolvedValue(true);
+    tokenFindFirst.mockResolvedValue({ scope: "read" });
+    const res = await PATCH(req("PATCH", { id: "t2", adminAccess: true }), params);
+    expect(res.status).toBe(400);
     expect(mockUpdate).not.toHaveBeenCalled();
   });
 

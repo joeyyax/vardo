@@ -2,7 +2,7 @@ import { db } from "@/lib/db";
 import { apiTokens, user } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
-import { findApiToken } from "@/lib/auth/api-token";
+import { findApiToken, scopeAllowsAdmin } from "@/lib/auth/api-token";
 import { tokenScopeCapabilities, type Capability } from "@/lib/auth/permissions";
 
 export type McpAuthContext = {
@@ -55,7 +55,7 @@ export async function authenticateRequest(
     organizationId: token.organizationId,
     crossOrg: token.crossOrg,
     scopes: tokenScopeCapabilities(token.scope, token.capabilities),
-    adminScope: token.adminAccess === true,
+    adminScope: token.adminAccess === true && scopeAllowsAdmin(token.scope),
     linkedInstances: token.linkedInstances === true,
   };
 }

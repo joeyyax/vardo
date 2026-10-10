@@ -4,7 +4,7 @@ import { and, eq, inArray, notInArray, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { logger } from "@/lib/logger";
 import { meshFetch } from "./client";
-import { toCidr } from "./ip-allocator";
+import { HUB_IP, toCidr } from "./ip-allocator";
 import { localVardoStatus, parseVardoStatus, vardoStatusColumns } from "@/lib/self-update/peer-status";
 
 const log = logger.child("mesh-heartbeat");
@@ -14,6 +14,19 @@ const WG_KEY_RE = /^[A-Za-z0-9+/]{43}=$/;
 // Bare IPv4 or IPv4 CIDR with octets 0-255
 const IP_OR_CIDR_RE =
   /^(25[0-5]|2[0-4]\d|1\d{2}|[1-9]\d|\d)(\.(25[0-5]|2[0-4]\d|1\d{2}|[1-9]\d|\d)){3}(\/\d{1,2})?$/;
+
+/** The mesh /24 every tunnel address sits in. */
+const MESH_PREFIX = HUB_IP.split(".").slice(0, 3).join(".") + ".";
+
+/** A peer's own tunnel address: one host in the mesh subnet, bare or /32. */
+export function ownMeshAddress(internalIp: string): string | null {
+  if (!IP_OR_CIDR_RE.test(internalIp)) return null;
+  const [ip, bits] = internalIp.split("/");
+  if (bits !== undefined && bits !== "32") return null;
+  if (!ip.startsWith(MESH_PREFIX)) return null;
+  const host = Number(ip.slice(MESH_PREFIX.length));
+  return host >= 1 && host <= 254 ? ip : null;
+}
 
 type PeerManifestEntry = {
   id: string;
@@ -103,20 +116,22 @@ export async function syncVisiblePeers(
       );
       return false;
     }
-    if (!IP_OR_CIDR_RE.test(p.internalIp)) {
+    const own = ownMeshAddress(p.internalIp);
+    if (!own) {
       log.warn(
         `syncVisiblePeers: skipping peer ${p.instanceId} — invalid internalIp`
       );
       return false;
     }
-    if (p.allowedIps && !IP_OR_CIDR_RE.test(p.allowedIps)) {
+    // A visible peer routes its own address and nothing else.
+    if (p.allowedIps && p.allowedIps !== own && p.allowedIps !== toCidr(own)) {
       log.warn(
         `syncVisiblePeers: skipping peer ${p.instanceId} — invalid allowedIps`
       );
       return false;
     }
     return true;
-  });
+  }).map((p) => ({ ...p, internalIp: ownMeshAddress(p.internalIp)! }));
 
   if (valid.length === 0) return;
 
@@ -159,7 +174,7 @@ export async function syncVisiblePeers(
           type: p.type,
           status: p.status,
           internalIp: p.internalIp,
-          allowedIps: p.allowedIps || toCidr(p.internalIp),
+          allowedIps: toCidr(p.internalIp),
           publicKey: p.publicKey,
           endpoint: p.endpoint ?? null,
           connectionType: "visible" as const,

@@ -19,7 +19,6 @@ import { withBulkWrite } from "@/lib/metrics/bulk-write";
 import { assertSafeName } from "@/lib/docker/validate";
 import { isSelfApp } from "@/lib/docker/self-env";
 import { resolveDefaultEnv } from "@/lib/docker/resolve-env";
-import { dockerEnv } from "@/lib/docker/docker-env";
 import { execFileAsync } from "@/lib/utils/exec";
 import { buildTarBackupScript, buildTarRestoreScript } from "./archive";
 import { buildRestoreArgv, defaultDatabase } from "./dump-spec";
@@ -30,6 +29,7 @@ import { createMissingDumpRoles, replacePostgresDatabase } from "./pg-cluster";
 import {
   BACKUPS_DIR,
   resolveDockerVolume,
+  createOwnVolume,
   restoreDumpWithSnapshot,
   restoreFilesWithSnapshot,
 } from "./engine";
@@ -378,8 +378,7 @@ async function importIntoAppUnmarked(opts: {
         const env = await resolveDefaultEnv(app.id);
         dockerVolume = `${app.name}-${env.name}_${opts.volumeName}`;
         assertSafeName(dockerVolume);
-        log(`Creating volume ${dockerVolume}`);
-        await execFileAsync("docker", ["volume", "create", dockerVolume], { env: dockerEnv(), timeout: 10_000 });
+        await createOwnVolume(app.id, dockerVolume, log);
       }
       await loadIntoVolume({ dockerVolume, staged, tmpDir, quiesce: true, log });
     } else {

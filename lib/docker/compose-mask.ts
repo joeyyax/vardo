@@ -1,7 +1,7 @@
 import { isAlias, isMap, isScalar, isSeq, parseDocument, Scalar, visit, type Document, type Pair } from "yaml";
-import { redactSecrets } from "@/lib/redact";
+import { redactSecrets, REDACTED } from "@/lib/redact";
 
-// Masks compose `environment:` values for callers who can't reveal secrets.
+// Masks compose `environment:` and build `args:` values, and credentials anywhere else, for callers who can't reveal secrets.
 
 export const ENV_MASK = "********";
 
@@ -27,7 +27,10 @@ function parse(content: string): Document | null {
   }
 }
 
-/** Every `environment:` map or list, through aliases and merge keys. */
+/** Keys whose map or list holds one value per variable. */
+const VALUE_MAPS = new Set(["environment", "args"]);
+
+/** Every `environment:` or `args:` map or list, through aliases and merge keys. */
 function envNodes(doc: Document): Set<unknown> {
   const out = new Set<unknown>();
   const add = (node: unknown): void => {
@@ -46,9 +49,28 @@ function envNodes(doc: Document): Set<unknown> {
   };
   visit(doc, {
     Pair(_, pair) {
-      if (isScalar(pair.key) && pair.key.value === "environment") add(pair.value);
+      if (isScalar(pair.key) && VALUE_MAPS.has(String(pair.key.value))) add(pair.value);
     },
   });
+  return out;
+}
+
+/** Every string value scalar keyed by its path from the root, skipping the env nodes' own values. */
+function stringScalars(doc: Document, skip: Set<unknown>): Map<string, Scalar> {
+  const out = new Map<string, Scalar>();
+  const seen = new Set<unknown>();
+  const walk = (node: unknown, path: string): void => {
+    if (!node || isAlias(node) || seen.has(node) || skip.has(node)) return;
+    seen.add(node);
+    if (isScalar(node)) {
+      if (typeof node.value === "string") out.set(path, node);
+    } else if (isMap(node)) {
+      for (const pair of node.items) walk(pair.value, `${path}/${isScalar(pair.key) ? String(pair.key.value) : "?"}`);
+    } else if (isSeq(node)) {
+      node.items.forEach((item, i) => walk(item, `${path}/${i}`));
+    }
+  };
+  walk(doc.contents, "");
   return out;
 }
 
@@ -107,25 +129,33 @@ function maskable(value: unknown): boolean {
   return !(typeof value === "string" && REFS_ONLY.test(value));
 }
 
-/** Compose with every `environment:` value masked. Keys and references stay. */
+/** Compose with every `environment:` and `args:` value masked and credentials elsewhere redacted. Keys and references stay. */
 export function maskComposeEnv(content: string): string {
   const doc = parse(content);
   if (!doc) return redactSecrets(content);
 
   let changed = false;
-  for (const node of envNodes(doc)) {
+  const nodes = envNodes(doc);
+  for (const node of nodes) {
     for (const entry of entries(node)) {
       if (!maskable(entry.value)) continue;
       entry.set(ENV_MASK);
       changed = true;
     }
   }
+  // Commands, healthchecks, URLs and config content can carry a credential too.
+  for (const scalar of stringScalars(doc, nodes).values()) {
+    const redacted = redactSecrets(scalar.value as string);
+    if (redacted === scalar.value) continue;
+    scalar.value = redacted;
+    changed = true;
+  }
   return changed ? doc.toString(STRINGIFY) : content;
 }
 
 /** Puts saved values back where an edit kept the mask. Throws when one has no saved value. */
 export function unmaskComposeEnv(next: string, previous: string | null | undefined): string {
-  if (!next.includes(ENV_MASK)) return next;
+  if (!next.includes(ENV_MASK) && !next.includes(REDACTED)) return next;
   const doc = parse(next);
   if (!doc) return next;
 
@@ -138,7 +168,8 @@ export function unmaskComposeEnv(next: string, previous: string | null | undefin
   }
 
   let changed = false;
-  for (const [path, node] of locate(doc, envNodes(doc))) {
+  const nodes = envNodes(doc);
+  for (const [path, node] of locate(doc, nodes)) {
     for (const entry of entries(node)) {
       if (entry.value !== ENV_MASK) continue;
       const id = `${path}\0${entry.key}`;
@@ -148,6 +179,19 @@ export function unmaskComposeEnv(next: string, previous: string | null | undefin
       entry.set(saved.get(id));
       changed = true;
     }
+  }
+
+  // A redacted value comes back only where the edit left it as it was shown.
+  const previousScalars = prevDoc ? stringScalars(prevDoc, envNodes(prevDoc)) : new Map<string, Scalar>();
+  for (const [path, scalar] of stringScalars(doc, nodes)) {
+    const value = scalar.value as string;
+    if (!value.includes(REDACTED)) continue;
+    const before = previousScalars.get(path)?.value;
+    if (typeof before !== "string" || redactSecrets(before) !== value) {
+      throw new MaskedComposeError(`A value at ${path || "/"} is redacted and has no saved value. Enter it in full.`);
+    }
+    scalar.value = before;
+    changed = true;
   }
   return changed ? doc.toString(STRINGIFY) : next;
 }

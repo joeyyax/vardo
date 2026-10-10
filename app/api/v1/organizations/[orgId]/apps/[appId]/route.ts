@@ -16,7 +16,7 @@ import { MaskedComposeError, unmaskComposeEnv } from "@/lib/docker/compose-mask"
 import { readableApp } from "@/lib/api/readable-app";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
-import { gitBranchUpdateSchema, gitUrlUpdateSchema } from "@/lib/api/git-fields";
+import { GIT_URL_MASKED_MESSAGE, gitBranchUpdateSchema, gitUrlUpdateSchema, unmaskGitUrl } from "@/lib/api/git-fields";
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
@@ -160,7 +160,7 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
 
     const existingApp = await db.query.apps.findFirst({
       where: and(eq(apps.id, appId), eq(apps.organizationId, orgId)),
-      columns: { id: true, name: true, projectId: true, isSystemManaged: true, composeContent: true },
+      columns: { id: true, name: true, projectId: true, isSystemManaged: true, composeContent: true, gitUrl: true },
     });
     if (!existingApp) {
       return apiError.notFound("app");
@@ -168,6 +168,12 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
 
     const refused = refuseSystemManaged(existingApp, "edit");
     if (refused) return refused;
+
+    if (parsed.data.gitUrl) {
+      const gitUrl = unmaskGitUrl(parsed.data.gitUrl, existingApp.gitUrl);
+      if (gitUrl === null) return NextResponse.json({ error: GIT_URL_MASKED_MESSAGE }, { status: 400 });
+      parsed.data.gitUrl = gitUrl;
+    }
 
     // A masked read sent back keeps the saved values.
     if (parsed.data.composeContent) {

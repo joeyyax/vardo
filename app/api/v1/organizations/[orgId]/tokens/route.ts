@@ -8,7 +8,7 @@ import { nanoid } from "nanoid";
 import { randomBytes } from "crypto";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { recordActivity } from "@/lib/activity";
-import { hashApiToken, scopeCeilingViolation, type TokenScope } from "@/lib/auth/api-token";
+import { hashApiToken, READ_SCOPE_ADMIN_MESSAGE, scopeAllowsAdmin, scopeCeilingViolation, type TokenScope } from "@/lib/auth/api-token";
 import { isCapability, tokenScopeCapabilities, TOKEN_PRESETS } from "@/lib/auth/permissions";
 import { isAppAdmin } from "@/lib/auth/admin";
 
@@ -138,6 +138,9 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     }
 
     const { scope, capabilities = null, adminAccess, linkedInstances } = parsed.data;
+    if (adminAccess && !scopeAllowsAdmin(scope)) {
+      return NextResponse.json({ error: READ_SCOPE_ADMIN_MESSAGE }, { status: 400 });
+    }
     const violation =
       scopeCeilingViolation({
         caller: callerScope(org.session),
@@ -205,6 +208,16 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
       (requested.adminAccess ? await adminGrantRefusal(org.session) : null) ??
       (requested.linkedInstances ? await adminGrantRefusal(org.session, LINKED_SCOPE) : null);
     if (violation) return NextResponse.json({ error: violation }, { status: 403 });
+
+    if (requested.adminAccess) {
+      const current = await db.query.apiTokens.findFirst({
+        where: and(eq(apiTokens.id, id), eq(apiTokens.userId, org.session.user.id), eq(apiTokens.organizationId, orgId)),
+        columns: { scope: true },
+      });
+      if (current && !scopeAllowsAdmin(current.scope)) {
+        return NextResponse.json({ error: READ_SCOPE_ADMIN_MESSAGE }, { status: 400 });
+      }
+    }
 
     const [updated] = await db
       .update(apiTokens)

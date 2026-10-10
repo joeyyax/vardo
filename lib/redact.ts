@@ -40,6 +40,18 @@ const PATTERNS: { pattern: RegExp; replacement: string }[] = [
     pattern: /\b((?:[A-Za-z0-9_]*_)?KEYS?(?:_[A-Za-z0-9_]*)?)=\S+/gi,
     replacement: `$1=${REDACTED}`,
   },
+  // Short secret names as a whole segment: SMTP_PASS, DB_PW, SENTRY_DSN, not BYPASS.
+  {
+    pattern:
+      /\b((?:[A-Za-z0-9_]*_)?(?:PASS|PASSPHRASE|PW|PIN|AUTH|DSN|SALT|SIG|SIGNATURE|COOKIE|SEED|CERT|LICENSE)(?:_[A-Za-z0-9_]*)?)=\S+/gi,
+    replacement: `$1=${REDACTED}`,
+  },
+  // Values quoted in YAML, JSON or shell: PASSWORD: "x", "api_key": "x".
+  {
+    pattern:
+      /(["']?\b[A-Za-z0-9_]*(?:PASSWORD|PASSWD|SECRET|TOKEN|API_?KEY|ACCESS_KEY|PRIVATE_KEY|CREDENTIALS?|_PASS|_PW|_DSN)\b["']?\s*:\s*)(["'])[^"'\n]+\2/gi,
+    replacement: `$1$2${REDACTED}$2`,
+  },
   // CLI flags that carry a credential, joined or separated.
   {
     pattern:
@@ -89,7 +101,7 @@ export function redactError<T>(error: T, values: Iterable<string> = []): T {
 }
 
 /** Env keys whose values are secret. */
-const SECRET_KEY = /SECRET|TOKEN|PASSWORD|PASSWD|PWD|KEY|PRIVATE|CREDENTIAL|DSN|AUTH|SALT|SIGNATURE/i;
+const SECRET_KEY = /SECRET|TOKEN|PASSWORD|PASSWD|PWD|KEY|PRIVATE|CREDENTIAL|DSN|AUTH|SALT|SIGNATURE|PASSPHRASE|COOKIE|(?:^|_)(?:PASS|PW|PIN|SEED)(?:_|$)/i;
 
 /** Shortest value masked on key name alone. */
 const MIN_KEYED_LENGTH = 4;

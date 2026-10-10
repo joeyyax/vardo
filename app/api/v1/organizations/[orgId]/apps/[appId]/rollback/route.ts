@@ -44,6 +44,9 @@ async function handler(request: NextRequest, { params }: { params: Promise<{ org
       return apiError.validation(parsed.error, { details: true });
     }
     const { deploymentId, includeEnvVars } = parsed.data;
+    if (includeEnvVars && !can(org.membership, "env.write")) {
+      return NextResponse.json({ error: "Restoring env vars needs permission to change them" }, { status: 403 });
+    }
 
     const app = await db.query.apps.findFirst({
       where: and(

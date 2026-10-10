@@ -39,8 +39,7 @@ services:
       NEXT_PUBLIC_BETTER_AUTH_URL: https://${VARDO_DOMAIN:-localhost}
       NEXT_PUBLIC_APP_URL: https://${VARDO_DOMAIN:-localhost}
       VARDO_HOME_DIR: ${VARDO_HOME_DIR:-${VARDO_DIR:-/opt/vardo}}
-      # Service names on vardo-network. Empty here meant the health probes fell
-      # back to localhost, which is this container, so they always failed.
+      # cAdvisor and Loki are on vardo-monitoring, which the console joins at startup.
       CADVISOR_URL: ${CADVISOR_URL:-http://cadvisor:8080}
       LOKI_URL: ${LOKI_URL:-http://loki:3100}
       TRAEFIK_URL: ${TRAEFIK_URL:-http://vardo-traefik:8080}
@@ -229,7 +228,7 @@ services:
   traefik:
     container_name: vardo-traefik
     x-vardo-shared: true
-    image: traefik:v3
+    image: traefik:v3.7
     restart: unless-stopped
     mem_limit: ${VARDO_TRAEFIK_MEM:-256m}
     command:

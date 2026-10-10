@@ -59,6 +59,12 @@ export function registerRollbackApp(
       if (!app || !(await canAccessOrg(context, app.organizationId, "app.deploy"))) {
         return accessDenied("App");
       }
+      if (includeEnvVars && !(await canAccessOrg(context, app.organizationId, "env.write"))) {
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ error: "Restoring env vars needs permission to change them" }) }],
+          isError: true,
+        };
+      }
 
       // Local environments have no blue-green slots.
       const defaultEnv = await db.query.environments.findFirst({

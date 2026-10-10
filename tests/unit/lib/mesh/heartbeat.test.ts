@@ -373,4 +373,28 @@ describe("syncVisiblePeers", () => {
     const inserted = callArg<Array<{ allowedIps: string; internalIp: string }>>(mockTxInsertValues);
     expect(inserted[0].allowedIps).toBe(`${peer.internalIp}/32`);
   });
+
+  it.each([
+    ["a default route", { allowedIps: "0.0.0.0/0" }],
+    ["another peer's address", { allowedIps: "10.99.0.3/32" }],
+    ["the whole mesh", { allowedIps: "10.99.0.0/24" }],
+  ])("refuses a peer that claims %s", async (_label, overrides) => {
+    await syncVisiblePeers([makePeer({ instanceId: "evil", ...overrides })], "hub-1");
+    expect(mockTxInsert).not.toHaveBeenCalled();
+    expect(mockLogWarn).toHaveBeenCalledWith(expect.stringContaining("invalid allowedIps"));
+  });
+
+  it.each(["10.99.0.0/24", "192.0.2.10", "10.99.0.0", "10.99.0.255"])(
+    "refuses a tunnel address %s that isn't one mesh host",
+    async (internalIp) => {
+      await syncVisiblePeers([makePeer({ instanceId: "evil", internalIp, allowedIps: "" })], "hub-1");
+      expect(mockTxInsert).not.toHaveBeenCalled();
+    },
+  );
+
+  it("stores only the peer's own /32", async () => {
+    await syncVisiblePeers([makePeer({ internalIp: "10.99.0.9/32", allowedIps: "10.99.0.9" })], "hub-1");
+    const inserted = callArg<Array<{ allowedIps: string; internalIp: string }>>(mockTxInsertValues);
+    expect(inserted[0]).toMatchObject({ internalIp: "10.99.0.9", allowedIps: "10.99.0.9/32" });
+  });
 });

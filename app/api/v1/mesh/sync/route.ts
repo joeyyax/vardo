@@ -4,14 +4,11 @@ import { handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { projects } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
-import { requireMeshPeer } from "@/lib/mesh/auth";
+import { peerOrganizationId, requireMeshPeer } from "@/lib/mesh/auth";
 import { getInstanceId } from "@/lib/constants";
 import { requirePlugin } from "@/lib/api/require-plugin";
 
-/**
- * GET /api/v1/mesh/sync?orgId=xxx — this instance's project manifest.
- * Any authenticated peer can read any org's manifest. Peers are trusted.
- */
+/** GET /api/v1/mesh/sync?orgId=xxx — this instance's project manifest, for the org the peer is bound to only. */
 async function handleGet(request: NextRequest) {
   try {
     const peer = await requireMeshPeer(request);
@@ -26,6 +23,7 @@ async function handleGet(request: NextRequest) {
         { status: 400 }
       );
     }
+    if (orgId !== peerOrganizationId(peer)) throw new Error("Forbidden");
 
     const orgProjects = await db.query.projects.findMany({
       where: eq(projects.organizationId, orgId),

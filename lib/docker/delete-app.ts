@@ -11,6 +11,7 @@ import { deleteEmptyAutoJobs } from "@/lib/backups/auto-backup";
 import { logger } from "@/lib/logger";
 import { recordActivity } from "@/lib/activity";
 import { deleteAppSeries } from "@/lib/metrics/series-cleanup";
+import { volumeOwnerProblem } from "@/lib/docker/volume-owner";
 
 const log = logger.child("delete-app");
 
@@ -127,6 +128,12 @@ export async function deleteApp(opts: {
   for (const { name } of data.volumes) {
     if (!deleteVolumes || keepSet.has(name) || keepSet.has(stripDockerProjectPrefix(name))) {
       keptVolumes.push(name);
+      continue;
+    }
+    const ownerProblem = await volumeOwnerProblem(appId, name).catch(() => "its owner couldn't be checked");
+    if (ownerProblem) {
+      skippedVolumes.push(name);
+      logs.push(`Kept volume ${name} (${ownerProblem})`);
       continue;
     }
     try {

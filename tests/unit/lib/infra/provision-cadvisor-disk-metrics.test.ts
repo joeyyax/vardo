@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, beforeEach, vi } from "vitest";
+vi.mock("@/lib/infra/monitoring-network", () => ({ ensureMonitoringNetwork: vi.fn().mockResolvedValue(undefined) }));
 
 // Issue #79: the cAdvisor disk metrics setting must reach the compose content
 // that provisioning writes to the app row — at boot reconcile, not just via

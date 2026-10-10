@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { execFile } from "child_process";
-import { redactSecrets, redactValues, redactError, REDACTED } from "@/lib/redact";
+import { redactSecrets, redactValues, redactError, secretEnvValues, REDACTED } from "@/lib/redact";
 import { execFileAsync } from "@/lib/utils/exec";
 
 // ---------------------------------------------------------------------------
@@ -182,5 +182,27 @@ describe("exec call sites", () => {
     });
 
     expect(err.message).toContain(GITHUB_TOKEN);
+  });
+});
+
+describe("short secret names", () => {
+  it.each(["SMTP_PASS", "DB_PW", "PASS", "SENTRY_DSN", "MAIL_AUTH", "GPG_PASSPHRASE", "SESSION_COOKIE_VALUE"])(
+    "redacts %s assignments",
+    (name) => {
+      expect(redactSecrets(`${name}=s3cr3tvalue`)).toBe(`${name}=${REDACTED}`);
+    },
+  );
+
+  it("leaves names that only contain the letters alone", () => {
+    expect(redactSecrets("BYPASS_CACHE=true COMPASS=north")).toBe("BYPASS_CACHE=true COMPASS=north");
+  });
+
+  it("redacts quoted YAML and JSON values", () => {
+    expect(redactSecrets('DB_PASSWORD: "hunter2x"')).toBe(`DB_PASSWORD: "${REDACTED}"`);
+    expect(redactSecrets('{"api_key": "abc123def"}')).toBe(`{"api_key": "${REDACTED}"}`);
+  });
+
+  it("masks env values under short secret names", () => {
+    expect(secretEnvValues({ SMTP_PASS: "hunter2", DB_PW: "letmein", BYPASS: "enabled" })).toEqual(["hunter2", "letmein"]);
   });
 });

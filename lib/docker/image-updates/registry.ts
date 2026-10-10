@@ -101,19 +101,15 @@ function retryAfterMs(response: Response): number | null {
   return Number.isFinite(date) ? Math.max(0, date - Date.now()) : null;
 }
 
+/** A registry request through the outbound guard, which vets the host and every redirect hop. */
 async function timedFetch(url: string, init: RequestInit): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-  try {
-    return await fetch(url, {
-      ...init,
-      signal: controller.signal,
-      headers: { "user-agent": USER_AGENT, ...init.headers },
-      cache: "no-store",
-    });
-  } finally {
-    clearTimeout(timer);
-  }
+  return safeFetch(url, {
+    ...init,
+    policy: await getOutboundPolicy(),
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    headers: { "user-agent": USER_AGENT, ...(init.headers as Record<string, string> | undefined) },
+    cache: "no-store",
+  });
 }
 
 async function fetchToken(

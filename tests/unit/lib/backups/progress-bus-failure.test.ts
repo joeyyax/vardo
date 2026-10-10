@@ -3,6 +3,11 @@
 // still capture and record every volume.
 
 import { describe, it, expect, beforeEach, afterAll, vi } from "vitest";
+vi.mock("@/lib/docker/volume-owner", () => ({
+  volumeOwnerProblem: vi.fn().mockResolvedValue(null),
+  appFamily: vi.fn(async (id: string) => [id]),
+  foreignVolumeHolders: vi.fn().mockResolvedValue([]),
+}));
 import { mkdtempSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";

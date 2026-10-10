@@ -4,6 +4,9 @@
 // `deleteVolumes: true`.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
+
+const { volumeOwnerProblemMock } = vi.hoisted(() => ({ volumeOwnerProblemMock: vi.fn() }));
+vi.mock("@/lib/docker/volume-owner", () => ({ volumeOwnerProblem: volumeOwnerProblemMock }));
 import { NextRequest } from "next/server";
 
 const {
@@ -88,6 +91,7 @@ function del(body?: unknown) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  volumeOwnerProblemMock.mockResolvedValue(null);
   mockVerifyOrgAccess.mockResolvedValue({
     membership: { role: "owner" },
     session: { user: { id: "user-1" } },
@@ -136,6 +140,17 @@ describe("deleting an app", () => {
     ]);
     expect(body.removedVolumes).toHaveLength(2);
     expect(removeAppDirMock).toHaveBeenCalledWith(expect.objectContaining({ keep: [] }));
+  });
+
+  it("keeps a volume another app holds", async () => {
+    volumeOwnerProblemMock.mockImplementation(async (_id: string, name: string) =>
+      name === "api-production_pgdata" ? "named for another app (api-production)" : null,
+    );
+    const res = await DELETE(del({ deleteVolumes: true }), params);
+    const body = await res.json();
+
+    expect(removeVolumeMock.mock.calls.map((c) => c[0])).toEqual(["api-production-shared_redis"]);
+    expect(body.removedVolumes).toEqual(["api-production-shared_redis"]);
   });
 
   it("refuses anything but a boolean", async () => {

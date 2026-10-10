@@ -3,6 +3,11 @@
 // legacy plaintext archives.
 
 import { describe, it, expect, afterAll, beforeEach, vi } from "vitest";
+vi.mock("@/lib/docker/volume-owner", () => ({
+  volumeOwnerProblem: vi.fn().mockResolvedValue(null),
+  appFamily: vi.fn(async (id: string) => [id]),
+  foreignVolumeHolders: vi.fn().mockResolvedValue([]),
+}));
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "fs";
 import { copyFile } from "fs/promises";
 import { createHash } from "crypto";

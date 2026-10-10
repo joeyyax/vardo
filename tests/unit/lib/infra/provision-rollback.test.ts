@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
+vi.mock("@/lib/infra/monitoring-network", () => ({ ensureMonitoringNetwork: vi.fn().mockResolvedValue(undefined) }));
 
 // Issue #741: the interactive integration toggle (provisionForFlag) must await
 // the first deploy and roll back the app(s) on failure, all-or-nothing.

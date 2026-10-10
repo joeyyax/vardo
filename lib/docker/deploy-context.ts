@@ -98,7 +98,7 @@ export type DeployContext = {
   app: DeployApp;
 
   /** Organization record (subset). */
-  org: { id: string; name: string; baseDomain: string | null; trusted: boolean; memoryProfile?: ResourceProfile } | null;
+  org: { id: string; name: string; baseDomain: string | null; trusted: boolean; memoryProfile?: ResourceProfile; isSystemManaged?: boolean } | null;
   orgTrusted: boolean;
   projectAllowBindMounts: boolean;
   projectAllowDockerSocket: boolean;

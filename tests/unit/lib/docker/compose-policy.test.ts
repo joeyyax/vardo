@@ -1,6 +1,8 @@
 // Every #886 escape, as `docker compose config` resolves it, is refused for an untrusted org.
 
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+
+vi.mock("@/lib/system-settings", () => ({ getSystemSettingRaw: vi.fn().mockResolvedValue(null), setSystemSetting: vi.fn() }));
 import { execFileSync } from "child_process";
 import { mkdtemp, mkdir, rm, symlink, writeFile, realpath } from "fs/promises";
 import { tmpdir } from "os";
@@ -8,9 +10,12 @@ import { join } from "path";
 import { appRootDir } from "@/lib/docker/compose-root";
 import {
   assertComposeWithinApp,
+  collectBindSources,
   composePolicyErrors,
+  composePolicyReport,
   type ComposePolicy,
 } from "@/lib/docker/compose-policy";
+import { envBindRoots, DEFAULT_BIND_ROOTS } from "@/lib/docker/bind-roots";
 import { parseCompose } from "@/lib/docker/compose-parse";
 import { dockerEnv } from "@/lib/docker/docker-env";
 
@@ -251,6 +256,62 @@ describe("composePolicyErrors", () => {
       ]);
     });
 
+    it("bind mounts reach only the allowed host roots", () => {
+      const roots = { ...withBinds, bindRoots: ["/mnt", "/srv"] };
+      for (const path of ["/var/spool/cron", "/home/user/.ssh", "/usr", "/lib/modules", "/mntx"]) {
+        expect(composePolicyErrors(config(bind(path)), roots)).toEqual([
+          `Service "web" mounts host path "${path}", which is outside the allowed host roots (/mnt, /srv)`,
+        ]);
+      }
+      expect(composePolicyErrors(config(bind("/srv/media")), roots)).toEqual([]);
+      expect(composePolicyErrors(config(bind("/mnt/../usr")), roots)).toHaveLength(1);
+    });
+
+    it("keeps a path the running deploy already mounts, with a warning", () => {
+      const policy = { ...withBinds, bindRoots: ["/mnt"], legacyBinds: ["/home/user/media"] };
+      expect(composePolicyReport(config(bind("/home/user/media")), policy)).toEqual({
+        errors: [],
+        legacyPaths: ["/home/user/media"],
+      });
+      expect(composePolicyErrors(config(bind("/home/user/.ssh")), policy)).toHaveLength(1);
+    });
+
+    it("never keeps a denied path, even one already mounted", () => {
+      const policy = { ...withBinds, bindRoots: ["/mnt"], legacyBinds: ["/etc"] };
+      expect(composePolicyErrors(config(bind("/etc")), policy)).toEqual([
+        'Service "web" mounts host path "/etc", and nothing under /etc can be mounted',
+      ]);
+    });
+
+    it("checks a volume's device and overlay layers against the roots", () => {
+      const roots = { ...withBinds, bindRoots: ["/mnt"] };
+      const vol = (driver_opts: Obj) => config({}, { volumes: { extra: { driver_opts } } });
+      expect(composePolicyErrors(vol({ type: "none", o: "bind", device: "/usr" }), roots)).toHaveLength(1);
+      expect(composePolicyErrors(vol({ type: "overlay", o: "lowerdir=/mnt/a:/usr,upperdir=/mnt/b,workdir=/mnt/c" }), roots)).toEqual([
+        'Volume "extra" mounts host path "/usr", which is outside the allowed host roots (/mnt)',
+      ]);
+      expect(composePolicyErrors(vol({ type: "overlay", o: "lowerdir=/mnt/a,upperdir=/mnt/b,workdir=/mnt/c" }), roots)).toEqual([]);
+      expect(composePolicyErrors(vol({ type: "ext4", device: "/dev/sdb1" }), roots)).toEqual([
+        'Volume "extra" mounts host path "/dev/sdb1", and nothing under /dev can be mounted',
+      ]);
+      expect(composePolicyErrors(vol({ type: "overlay", o: "index=off" }), roots)).toEqual([
+        'Volume "extra" mounts an overlay without its layers',
+      ]);
+    });
+
+    it("collects every host path a compose mounts", () => {
+      const cfg = config(bind("/srv/a"), {
+        volumes: { extra: { driver_opts: { type: "overlay", o: "lowerdir=/x:/y,upperdir=/z,workdir=/w" } } },
+        configs: { c: { file: "/etc/app.conf" } },
+      });
+      expect(collectBindSources(cfg)).toEqual(["/etc/app.conf", "/srv/a", "/w", "/x", "/y", "/z"]);
+    });
+
+    it("reads roots from VARDO_BIND_ROOTS", () => {
+      expect(envBindRoots(undefined)).toEqual(DEFAULT_BIND_ROOTS);
+      expect(envBindRoots("/data/, relative, /opt/media")).toEqual(["/data", "/opt/media"]);
+    });
+
     it("bind mounts allow /etc/localtime read-only", () => {
       expect(composePolicyErrors(config(bind("/etc/localtime", { read_only: true })), withBinds)).toEqual([]);
       expect(composePolicyErrors(config(bind("/etc/localtime")), withBinds)).toHaveLength(1);
@@ -384,6 +445,6 @@ describe("assertComposeWithinApp", () => {
         projectAllowBindMounts: false,
         projectAllowDockerSocket: false,
       }),
-    ).resolves.toBeUndefined();
+    ).resolves.toEqual({ legacyPaths: [] });
   });
 });

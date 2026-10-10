@@ -23,7 +23,7 @@ export async function createInvite(hub: {
 }): Promise<string> {
   await cleanExpiredInvites();
 
-  const code = randomBytes(4).toString("hex");
+  const code = randomBytes(16).toString("hex");
 
   const invite: MeshInvite = {
     code,

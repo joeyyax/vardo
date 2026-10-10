@@ -79,6 +79,7 @@ import type { BusEvent } from "@/lib/bus/events";
 import type { BackupResultItem } from "./run-rules";
 import { execFileAsync } from "@/lib/utils/exec";
 import { dockerEnv } from "@/lib/docker/docker-env";
+import { volumeOwnerProblem } from "@/lib/docker/volume-owner";
 import { archiveExtension, formatFromArchiveName } from "./archive-name";
 
 const log = logger.child("backup");
@@ -841,15 +842,28 @@ export async function resolveDockerVolume(
   for (const candidate of candidates) {
     try {
       await execFileAsync("docker", ["volume", "inspect", candidate], { env: dockerEnv(), timeout: 10_000 });
-      logFn(`Resolved ${volumeName} → ${candidate}`);
-      return candidate;
     } catch {
-      // not this one
+      continue;
     }
+    const problem = appId ? await volumeOwnerProblem(appId, candidate) : null;
+    if (problem) {
+      logFn(`Skipped ${candidate}: ${problem}`);
+      continue;
+    }
+    logFn(`Resolved ${volumeName} → ${candidate}`);
+    return candidate;
   }
 
   logFn(`No Docker volume found for ${volumeName} (tried ${candidates.join(", ")})`);
   return null;
+}
+
+/** Create an app's env-scoped volume; refuses a name another app already holds. */
+export async function createOwnVolume(appId: string, name: string, log: (msg: string) => void): Promise<void> {
+  const problem = await volumeOwnerProblem(appId, name);
+  if (problem) throw new Error(`Can't restore into ${name}: ${problem}`);
+  log(`Creating volume ${name}`);
+  await execFileAsync("docker", ["volume", "create", name], { env: dockerEnv(), timeout: 10_000 });
 }
 
 /** Run a backup job over its linked apps and volumes. Pass `appIds` to run a subset of the apps. */
@@ -1971,8 +1985,7 @@ async function restoreBackupUnmarked(
         const env = await resolveDefaultEnv(backup.appId);
         dockerVolumeName = `${backup.app.name}-${env.name}_${backup.volumeName}`;
         assertSafeName(dockerVolumeName);
-        log(`Creating volume ${dockerVolumeName}`);
-        await execFileAsync("docker", ["volume", "create", dockerVolumeName], { env: dockerEnv(), timeout: 10_000 });
+        await createOwnVolume(backup.appId, dockerVolumeName, log);
       }
 
       log(`Restoring to volume ${dockerVolumeName}`);

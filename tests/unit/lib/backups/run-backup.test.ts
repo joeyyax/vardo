@@ -6,6 +6,11 @@
 //     job. The unscoped test below is the reproduction; the scoped one is the fix.
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
+vi.mock("@/lib/docker/volume-owner", () => ({
+  volumeOwnerProblem: vi.fn().mockResolvedValue(null),
+  appFamily: vi.fn(async (id: string) => [id]),
+  foreignVolumeHolders: vi.fn().mockResolvedValue([]),
+}));
 import { mkdtempSync, writeFileSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
