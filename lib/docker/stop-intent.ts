@@ -78,7 +78,7 @@ export async function stopIntentFor(
     appStatus: app.status,
     parked: app.parked,
     operatorStoppedAt: null,
-    heldBy: stopHolder(info.id),
+    heldBy: await stopHolder(info.id),
     slot,
     currentSlot: null,
     siblingRunning: siblingRunning({ id: info.id, labels: info.labels }, running),

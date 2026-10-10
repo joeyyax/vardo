@@ -5,6 +5,11 @@
 // strategy, with docker/bash/storage/db mocked.
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
+vi.mock("@/lib/docker/stop-holds", () => ({
+  holdStopped: vi.fn(async () => {}),
+  releaseStopped: vi.fn(async () => {}),
+  stopHolder: vi.fn(async () => null),
+}));
 vi.mock("@/lib/docker/volume-owner", () => ({
   volumeOwnerProblem: vi.fn().mockResolvedValue(null),
   appFamily: vi.fn(async (id: string) => [id]),

@@ -61,7 +61,7 @@ export async function quiesce(
         failed.push(c.name);
         log(`WARNING: ${c.name} did not start again — ${err instanceof Error ? err.message : err}`);
       } finally {
-        releaseStopped(c.id);
+        await releaseStopped(c.id).catch(() => {});
       }
     }
     if (stopped.length > 0 && failed.length === 0) {
@@ -73,11 +73,11 @@ export async function quiesce(
   for (const c of targets) {
     try {
       log(`Stopping ${c.name} for the restore`);
-      holdStopped(c.id, "restore");
+      await holdStopped(c.id, "restore");
       await stopContainer(c.id, STOP_TIMEOUT_SECONDS);
       stopped.push(c);
     } catch (err) {
-      releaseStopped(c.id);
+      await releaseStopped(c.id).catch(() => {});
       await resume();
       throw new Error(
         `Could not stop ${c.name} before restoring — ${err instanceof Error ? err.message : err}`,

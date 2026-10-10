@@ -9,6 +9,14 @@ vi.mock("@/lib/docker/client", () => ({
   startContainer: vi.fn(),
 }));
 
+// The container_hold table, in memory. tests/integration/worker-leases.test.ts covers the SQL.
+const holds = vi.hoisted(() => new Map<string, string>());
+vi.mock("@/lib/docker/stop-holds", () => ({
+  holdStopped: vi.fn(async (id: string, holder: string) => void holds.set(id, holder)),
+  releaseStopped: vi.fn(async (id: string) => void holds.delete(id)),
+  stopHolder: vi.fn(async (id: string) => holds.get(id) ?? null),
+}));
+
 import { containersMounting, mountTouches, quiesce } from "@/lib/backups/quiesce";
 import { stopHolder } from "@/lib/docker/stop-holds";
 
@@ -16,9 +24,9 @@ describe("quiesce", () => {
   it("holds stopped containers against self-heal until they are started again", async () => {
     const q = await quiesce({ kind: "volume", name: "v" }, () => {});
     expect(q.stopped).toContain("app-1");
-    expect(stopHolder("app")).toBe("restore");
+    expect(await stopHolder("app")).toBe("restore");
     await q.resume();
-    expect(stopHolder("app")).toBeNull();
+    expect(await stopHolder("app")).toBeNull();
   });
 });
 
