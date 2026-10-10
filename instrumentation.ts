@@ -252,6 +252,11 @@ export async function register() {
         })
         .catch((err) => log.error("Failed to start git poll scheduler:", err)),
 
+      // Integration permissions: shortly after boot, then daily.
+      import("./lib/integrations/check")
+        .then(({ startIntegrationCheckScheduler }) => startIntegrationCheckScheduler())
+        .catch((err) => log.error("Failed to start the integration permission check:", err)),
+
       // Nothing else removes expired preview environments.
       import("./lib/config/features")
         .then(({ isFeatureEnabledAsync }) => isFeatureEnabledAsync("previews"))
