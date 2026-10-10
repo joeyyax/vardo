@@ -22,13 +22,16 @@ try {
 
 let dir = "";
 
-function resolve(env: Record<string, string>): Config {
-  const out = execFileSync(
+function resolveRaw(env: Record<string, string>): string {
+  return execFileSync(
     "docker",
     ["compose", "-f", join(dir, "docker-compose.yml"), "--profile", "production", "--profile", "buildkit", "config", "--format", "json"],
-    { cwd: dir, encoding: "utf-8", env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", ...env } as unknown as NodeJS.ProcessEnv },
+    { cwd: dir, encoding: "utf-8", stdio: "pipe", env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", ...env } as unknown as NodeJS.ProcessEnv },
   );
-  return JSON.parse(out) as Config;
+}
+
+function resolve(env: Record<string, string>): Config {
+  return JSON.parse(resolveRaw({ DB_PASSWORD: "db-pass", ...env })) as Config;
 }
 
 describe.skipIf(!hasCompose)("self compose (#889)", () => {
@@ -51,6 +54,16 @@ describe.skipIf(!hasCompose)("self compose (#889)", () => {
     const cfg = resolve({});
     expect(cfg.services.redis.environment?.REDIS_ARGS).toBe("--maxmemory 384mb --maxmemory-policy volatile-lru");
     expect(cfg.services.frontend.environment?.REDIS_URL).toBe("redis://:@vardo-redis:6379");
+  });
+
+  it("refuses to resolve without a database password", () => {
+    expect(() => resolveRaw({})).toThrow(/DB_PASSWORD/);
+  });
+
+  it("passes the database password to Postgres and the console", () => {
+    const cfg = resolve({});
+    expect(cfg.services.postgres.environment?.POSTGRES_PASSWORD).toBe("db-pass");
+    expect(cfg.services.frontend.environment?.DATABASE_URL).toBe("postgresql://host:db-pass@vardo-postgres:5432/host");
   });
 
   it("never serves Traefik's API insecurely", () => {

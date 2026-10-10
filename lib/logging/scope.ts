@@ -1,8 +1,8 @@
 // Which containers a log request covers. A child app resolves through its parent's compose project.
 
 import { db } from "@/lib/db";
-import { apps } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { apps, environments } from "@/lib/db/schema";
+import { and, eq, inArray } from "drizzle-orm";
 
 export type LogScopeApp = {
   id: string;
@@ -53,4 +53,21 @@ export async function resolveLogScope(
     services,
     prefixed: !service && services.length > 1,
   };
+}
+
+export const DEFAULT_LOG_ENVIRONMENT = "production";
+
+/** The requested environment if the app (or its parent) has it, else null. Unset means production. */
+export async function resolveLogEnvironment(
+  app: Pick<LogScopeApp, "id" | "parentAppId">,
+  requested: string | null,
+): Promise<string | null> {
+  if (!requested || requested === DEFAULT_LOG_ENVIRONMENT) return DEFAULT_LOG_ENVIRONMENT;
+
+  const appIds = app.parentAppId ? [app.id, app.parentAppId] : [app.id];
+  const env = await db.query.environments.findFirst({
+    where: and(inArray(environments.appId, appIds), eq(environments.name, requested)),
+    columns: { name: true },
+  });
+  return env?.name ?? null;
 }

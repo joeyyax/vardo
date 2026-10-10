@@ -122,6 +122,7 @@ function buildAuth() {
   emailAndPassword: {
     enabled: passwordEnabled(),
     minPasswordLength: 8,
+    revokeSessionsOnPasswordReset: true,
   },
 
   plugins,

@@ -22,6 +22,7 @@ type ExecSession = {
   containerId: string;
   orgId: string;
   appId: string;
+  userId: string;
   createdAt: number;
 };
 
@@ -120,6 +121,7 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
       containerId,
       orgId,
       appId,
+      userId: org.session.user.id,
       createdAt: Date.now(),
     });
 
@@ -229,7 +231,8 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     };
 
     const session = sessions.get(sessionId);
-    if (!session) {
+    // Only the user who opened a session can drive it.
+    if (!session || session.userId !== org.session.user.id) {
       return NextResponse.json(
         { error: "Session not found or expired" },
         { status: 404 },
