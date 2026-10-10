@@ -8,6 +8,7 @@ import { OrgEnvVarsEditor } from "../org-env-vars";
 import { OrgDomainEditor } from "../org-domain-editor";
 import { NotificationChannelsEditor } from "../notification-channels";
 import { DigestSettingsEditor } from "../digest-settings";
+import { NotificationCategoriesEditor } from "../notification-categories";
 import { TeamMembers } from "@/app/(authenticated)/team/team-members";
 import { InvitationsPanel } from "../invitations";
 import { OrgGeneralSettings } from "../org-general-settings";
@@ -83,6 +84,7 @@ export default async function OrgSettingsTabPage({
       return (
         <div className="space-y-4">
           <NotificationChannelsEditor orgId={orgId} />
+          <NotificationCategoriesEditor orgId={orgId} />
           <DigestSettingsEditor orgId={orgId} />
         </div>
       );

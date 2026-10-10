@@ -171,7 +171,7 @@ export function NotificationChannelsEditor({ orgId }: { orgId: string }) {
     <Card>
       <CardContent className="space-y-4">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">Configure where notifications are sent for deploy, backup and cron failures.</p>
+        <p className="text-sm text-muted-foreground">Where notifications go: deploys, backups, alerts and summaries.</p>
         {!showForm && <Button size="sm" onClick={() => setShowForm(true)}><Plus className="h-4 w-4 mr-1" />Add channel</Button>}
       </div>
       {showForm && (
