@@ -36,6 +36,9 @@ vi.mock("@/lib/db", () => ({
 
 import { checkServiceByName } from "@/lib/config/health";
 
+// What a signed-in request passes; the worker passes nothing.
+const request = { isAdmin: async () => state.admin };
+
 const FLAG_VARS = [
   "VARDO_FEATURE_LOGGING",
   "VARDO_FEATURE_METRICS",
@@ -77,7 +80,7 @@ describe("Loki probe", () => {
     const server = await listen((res) => res.end("ready"));
     process.env.LOKI_URL = urlOf(server);
 
-    await expect(checkServiceByName("Loki")).resolves.toMatchObject({
+    await expect(checkServiceByName("Loki", request)).resolves.toMatchObject({
       name: "Loki",
       status: "healthy",
     });
@@ -92,7 +95,7 @@ describe("Loki probe", () => {
     });
     process.env.LOKI_URL = urlOf(server);
 
-    await expect(checkServiceByName("Loki")).resolves.toMatchObject({
+    await expect(checkServiceByName("Loki", request)).resolves.toMatchObject({
       status: "unhealthy",
       error: "HTTP 502",
     });
@@ -106,7 +109,7 @@ describe("Loki probe", () => {
     await close(server);
     process.env.LOKI_URL = url;
 
-    const status = await checkServiceByName("Loki");
+    const status = await checkServiceByName("Loki", request);
     expect(status?.status).toBe("unhealthy");
     expect(status?.error).toBeTruthy();
   });
@@ -117,12 +120,12 @@ describe("Loki probe", () => {
       res.end();
     });
     process.env.LOKI_URL = urlOf(down);
-    expect((await checkServiceByName("Loki"))?.status).toBe("unhealthy");
+    expect((await checkServiceByName("Loki", request))?.status).toBe("unhealthy");
     await close(down);
 
     const up = await listen((res) => res.end("ready"));
     process.env.LOKI_URL = urlOf(up);
-    expect((await checkServiceByName("Loki"))?.status).toBe("healthy");
+    expect((await checkServiceByName("Loki", request))?.status).toBe("healthy");
     await close(up);
   });
 });
@@ -135,7 +138,7 @@ describe("Promtail probe", () => {
   it("reports healthy while its container runs", async () => {
     state.promtailContainers = [{ id: "abc", name: "vardo-promtail", state: "running" }];
 
-    await expect(checkServiceByName("Promtail")).resolves.toMatchObject({
+    await expect(checkServiceByName("Promtail", request)).resolves.toMatchObject({
       name: "Promtail",
       status: "healthy",
     });
@@ -144,7 +147,7 @@ describe("Promtail probe", () => {
   it("catches a Promtail that has stopped shipping", async () => {
     state.promtailContainers = [];
 
-    await expect(checkServiceByName("Promtail")).resolves.toMatchObject({
+    await expect(checkServiceByName("Promtail", request)).resolves.toMatchObject({
       status: "unhealthy",
       error: "not running",
     });
@@ -160,9 +163,16 @@ describe("logs hrefs", () => {
     state.promtailContainers = [{ id: "abc" }];
     state.systemManagedApps = [{ name: "promtail" }];
 
-    await expect(checkServiceByName("Promtail")).resolves.toMatchObject({
+    await expect(checkServiceByName("Promtail", request)).resolves.toMatchObject({
       logsHref: "/apps/promtail/logs",
     });
+  });
+
+  it("offers no link without a request, as in the worker", async () => {
+    state.promtailContainers = [{ id: "abc" }];
+    state.systemManagedApps = [{ name: "promtail" }];
+
+    expect((await checkServiceByName("Promtail"))?.logsHref).toBeUndefined();
   });
 
   it("offers no link to someone who is not an app admin", async () => {
@@ -170,20 +180,20 @@ describe("logs hrefs", () => {
     state.promtailContainers = [{ id: "abc" }];
     state.systemManagedApps = [{ name: "promtail" }];
 
-    expect((await checkServiceByName("Promtail"))?.logsHref).toBeUndefined();
+    expect((await checkServiceByName("Promtail", request))?.logsHref).toBeUndefined();
   });
 
   it("offers no link when the logs tab is switched off", async () => {
     process.env.VARDO_FEATURE_LOGGING = "false";
     state.systemManagedApps = [{ name: "cadvisor" }];
 
-    expect((await checkServiceByName("cAdvisor"))?.logsHref).toBeUndefined();
+    expect((await checkServiceByName("cAdvisor", request))?.logsHref).toBeUndefined();
   });
 
   it("offers no link for a service this instance does not run as an app", async () => {
     state.promtailContainers = [{ id: "abc" }];
     state.systemManagedApps = [];
 
-    expect((await checkServiceByName("Promtail"))?.logsHref).toBeUndefined();
+    expect((await checkServiceByName("Promtail", request))?.logsHref).toBeUndefined();
   });
 });
