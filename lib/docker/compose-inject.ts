@@ -271,6 +271,47 @@ export function domainRouteOptions(domain: DeployTransformDomain, org: { trusted
  * Strip Traefik labels from every service before re-injecting, so stale router names don't pile up.
  * Keeps `traefik.enable: "false"` and self-routed services.
  */
+/**
+ * Adds the security headers middleware to HTTPS routers an app declares in its own labels.
+ * Skips self-routed Traefik blocks; Vardo-generated routers already carry it.
+ */
+export function injectHeadersIntoOwnRouters(compose: ComposeFile, appName: string): ComposeFile {
+  const middleware = `${appName}-vardo-headers`;
+  const updatedServices: Record<string, ComposeService> = {};
+  for (const [svcName, svc] of Object.entries(compose.services)) {
+    const labels = svc.labels;
+    if (!labels || isTraefikSelfRouted(svc)) {
+      updatedServices[svcName] = svc;
+      continue;
+    }
+    const routers = new Set<string>();
+    for (const key of Object.keys(labels)) {
+      const m = /^traefik\.http\.routers\.([^.]+)\.rule$/i.exec(key);
+      if (m) routers.add(m[1]);
+    }
+    const https = [...routers].filter((r) => {
+      const tls = Object.keys(labels).some((k) => k.toLowerCase().startsWith(`traefik.http.routers.${r.toLowerCase()}.tls`));
+      const entry = labels[`traefik.http.routers.${r}.entrypoints`] ?? "";
+      return tls || /websecure/i.test(entry);
+    });
+    if (https.length === 0) {
+      updatedServices[svcName] = svc;
+      continue;
+    }
+    const next: Record<string, string> = { ...labels };
+    for (const [option, value] of Object.entries(SECURITY_HEADERS)) {
+      next[`traefik.http.middlewares.${middleware}.headers.${option}`] = value;
+    }
+    for (const r of https) {
+      const key = `traefik.http.routers.${r}.middlewares`;
+      const current = (next[key] ?? "").split(",").map((m) => m.trim()).filter(Boolean);
+      if (!current.includes(middleware)) next[key] = [middleware, ...current].join(",");
+    }
+    updatedServices[svcName] = { ...svc, labels: next };
+  }
+  return { ...compose, services: updatedServices };
+}
+
 export function stripTraefikLabels(compose: ComposeFile): ComposeFile {
   const updatedServices: Record<string, ComposeService> = {};
   for (const [svcName, svc] of Object.entries(compose.services)) {
@@ -871,6 +912,10 @@ export function applyDeployTransforms(
         securityHeaders: opts.securityHeaders ?? true,
       });
     }
+  }
+
+  if (opts.securityHeaders !== false && (allServicesCustomNetwork || opts.domains.length === 0)) {
+    result = injectHeadersIntoOwnRouters(result, opts.appName);
   }
 
   // Only routed services join vardo-network; an empty set attaches nothing.
