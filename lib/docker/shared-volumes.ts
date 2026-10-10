@@ -6,7 +6,16 @@ function volumeSource(mount: string): string {
   return mount.split(":")[0];
 }
 
-/** Named volumes mounted only by shared services; these stay compose-native so the shared project keeps its names. */
+/** Volume names any service in the file mounts. */
+export function mountedVolumeNames(compose: ComposeFile): Set<string> {
+  const names = new Set<string>();
+  for (const service of Object.values(compose.services ?? {})) {
+    for (const mount of service.volumes ?? []) names.add(volumeSource(mount));
+  }
+  return names;
+}
+
+/** Named volumes mounted only by shared services. */
 export function sharedOnlyVolumes(compose: ComposeFile): Set<string> {
   return volumesByOwner(compose).sharedOnly;
 }

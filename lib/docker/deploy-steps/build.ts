@@ -26,9 +26,9 @@ import {
 } from "../constants";
 import type { DeployContext } from "../deploy-context";
 import { detectActiveSlot } from "../slots";
-import { crossBoundaryVolumeName, volumesByOwner } from "../shared-volumes";
+import { crossBoundaryVolumeName, mountedVolumeNames, volumesByOwner } from "../shared-volumes";
 import { isSelfApp, seedSelfEnv } from "../self-env";
-import { nonRotatingServices } from "../slot-partition";
+import { nonRotatingServices, sharedProjectName } from "../slot-partition";
 import { slotComposePair } from "../traefik-slot-names";
 import { anchorSharedPaths, sharedPathsDir } from "../shared-paths";
 import {
@@ -121,15 +121,25 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
   ctx.stableVolumePrefix = stableVolumePrefix;
   if (compose.volumes && Object.keys(compose.volumes).length > 0) {
     const externalized: string[] = [];
-    // Shared-only volumes keep compose-native names so the shared project still finds its data.
+    // Drop volumes no remaining service mounts (a profile removed its service).
+    const mounted = mountedVolumeNames(compose);
+    for (const volName of Object.keys(compose.volumes)) {
+      if (isAnonymousVolume(volName) || mounted.has(volName)) continue;
+      delete compose.volumes[volName];
+      if (ctx.bareCompose.volumes) delete ctx.bareCompose.volumes[volName];
+    }
+
+    // Shared-only volumes use the shared project's own names, so the slot project creates no empty copies.
     const { sharedOnly, crossBoundary } = volumesByOwner(compose);
+    const sharedProject = sharedProjectName(app.name, ctx.envName, compose.name);
 
     for (const volName of Object.keys(compose.volumes)) {
       if (isAnonymousVolume(volName)) continue;
-      if (sharedOnly.has(volName)) continue;
-      const stableName = crossBoundary.has(volName)
-        ? crossBoundaryVolumeName(compose, volName, stableVolumePrefix)
-        : `${stableVolumePrefix}_${volName}`;
+      const stableName = sharedOnly.has(volName)
+        ? `${sharedProject}_${volName}`
+        : crossBoundary.has(volName)
+          ? crossBoundaryVolumeName(compose, volName, stableVolumePrefix)
+          : `${stableVolumePrefix}_${volName}`;
 
       try {
         await execFileAsync("docker", ["volume", "create", stableName], { env: dockerEnv(), timeout: VOLUME_CREATE_TIMEOUT });
