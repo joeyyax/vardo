@@ -434,6 +434,46 @@ const entries = {
     docs: "service-kind",
     aliases: ["Kind"],
   },
+
+  // Vardo's own services
+  "core-vardo": {
+    term: "Vardo services",
+    what: "The services that run Vardo itself: console, database, proxy and the rest. Every organization shares them; only admins see them.",
+  },
+  "core-postgres": {
+    term: "Postgres",
+    label: "Database",
+    what: "Holds Vardo's own data: apps, deployments, users and settings.",
+  },
+  "core-redis": {
+    term: "Redis",
+    label: "Cache",
+    what: "A fast in-memory store Vardo uses for queues, sessions and short-lived state.",
+  },
+  "core-traefik": {
+    term: "Traefik",
+    label: "Proxy",
+    what: "Receives web traffic and routes each domain to the right app. It also handles TLS certificates.",
+  },
+  "core-buildkit": {
+    term: "BuildKit",
+    label: "Builder",
+    what: "Builds images for apps deployed from source. Memory use climbs during a build.",
+  },
+  "core-watchdog": {
+    term: "Watchdog",
+    what: "Watches the console and restarts it if it stops responding.",
+  },
+  "core-cadvisor": {
+    term: "cAdvisor",
+    label: "Metrics",
+    what: "Reads CPU, memory and network use for every container on the server. These pages are built from it.",
+  },
+  "core-logs": {
+    term: "Loki/Promtail",
+    label: "Logs",
+    what: "Promtail collects container logs and Loki stores them so you can search them later.",
+  },
 } satisfies Record<string, GlossaryEntry>;
 
 export type GlossaryId = keyof typeof entries;

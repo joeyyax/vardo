@@ -1,7 +1,6 @@
 import { withStreamCap } from "@/lib/api/stream-cap";
 import { NextRequest } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
-import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth/session";
 import { isAppAdmin } from "@/lib/auth/admin";
 import { getSystemInfo } from "@/lib/docker/client";
@@ -11,7 +10,7 @@ import { isMetricsEnabled } from "@/lib/metrics/config";
 import { subscribe } from "@/lib/metrics/broadcast";
 import { aggregateContainers, containerToPoint } from "@/lib/metrics/aggregate";
 import { groupMetricsByApp } from "@/lib/metrics/app-match";
-import { METRICS_APP_COLUMNS } from "@/lib/metrics/app-columns";
+import { loadServerApps } from "@/lib/metrics/server-apps";
 
 // GET /api/v1/admin/stats/stream
 async function handleGet(request: NextRequest) {
@@ -25,9 +24,7 @@ async function handleGet(request: NextRequest) {
       return new Response(null, { status: 204 });
     }
 
-    const allApps = await db.query.apps.findMany({
-      columns: { ...METRICS_APP_COLUMNS, displayName: true, projectId: true },
-    });
+    const allApps = await loadServerApps();
     const projectCount = new Set(allApps.map((a) => a.projectId).filter(Boolean)).size;
 
     return createSSEResponse(request, async (sendEvent) => {
@@ -62,12 +59,17 @@ async function handleGet(request: NextRequest) {
         const payload: Record<string, unknown> = {
           ...point,
           projectCount,
+          containerCount: allMetrics.length,
           apps: allApps.map((app) => ({
             id: app.id,
             name: app.name,
             displayName: app.displayName,
             status: app.status,
             organizationId: app.organizationId,
+            organizationName: app.organizationName,
+            projectId: app.projectId,
+            projectName: app.projectName,
+            isCore: app.isCore,
             parentAppId: app.parentAppId,
             diskUsage: 0,
             containers: (byApp.get(app.id) ?? []).map(containerToPoint),

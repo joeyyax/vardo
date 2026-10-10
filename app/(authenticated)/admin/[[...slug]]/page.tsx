@@ -1,10 +1,9 @@
 import { redirect } from "next/navigation";
 import { isAppAdmin } from "@/lib/auth/admin";
-import { getSession, getCurrentOrg } from "@/lib/auth/session";
-import { getFlagConfig, isFeatureEnabledAsync } from "@/lib/config/features";
+import { getSession } from "@/lib/auth/session";
 import { AdminPanel } from "../admin-panel";
 
-const VALID_TABS = ["overview", "organizations", "users", "metrics"] as const;
+const VALID_TABS = ["overview", "organizations", "users"] as const;
 type ValidTab = (typeof VALID_TABS)[number];
 
 type PageProps = {
@@ -16,6 +15,8 @@ export default async function AdminPage({ params }: PageProps) {
 
   // Maintenance lives under system settings.
   if (slug?.[0] === "maintenance") redirect("/admin/settings/maintenance");
+  // Server metrics are the Metrics page's whole-server scope.
+  if (slug?.[0] === "metrics") redirect("/metrics?scope=server");
 
   const activeTab: ValidTab = (slug?.[0] && VALID_TABS.includes(slug[0] as ValidTab))
     ? slug[0] as ValidTab
@@ -26,18 +27,5 @@ export default async function AdminPage({ params }: PageProps) {
 
   if (!(await isAppAdmin())) redirect("/projects");
 
-  const orgData = await getCurrentOrg();
-  if (!orgData) redirect("/login");
-
-  const metricsEnabled = await isFeatureEnabledAsync("metrics");
-  const { label, description } = getFlagConfig("metrics");
-
-  return (
-    <AdminPanel
-      activeTab={activeTab}
-      orgId={orgData.organization.id}
-      metricsEnabled={metricsEnabled}
-      metricsFlag={{ label, description }}
-    />
-  );
+  return <AdminPanel activeTab={activeTab} />;
 }

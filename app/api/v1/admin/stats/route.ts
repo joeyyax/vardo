@@ -1,10 +1,10 @@
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
-import { db } from "@/lib/db";
 import { fetchAllMetrics } from "@/lib/metrics/provider";
 import { groupMetricsByApp } from "@/lib/metrics/app-match";
-import { METRICS_APP_COLUMNS } from "@/lib/metrics/app-columns";
+import { loadServerApps } from "@/lib/metrics/server-apps";
+import { groupServerApps } from "@/lib/metrics/server-groups";
 import { queryAllPoints } from "@/lib/metrics/store";
 import { isMetricsEnabled } from "@/lib/metrics/config";
 import { requireAppAdmin } from "@/lib/auth/admin";
@@ -35,9 +35,7 @@ async function handleGet(request: NextRequest) {
 
     // Live snapshot
     const [allApps, allMetrics] = await Promise.all([
-      db.query.apps.findMany({
-        columns: { ...METRICS_APP_COLUMNS, displayName: true },
-      }),
+      loadServerApps(),
       // Disk and system info are slow (3s+) and arrive via the SSE stream.
       fetchAllMetrics(),
     ]);
@@ -49,6 +47,7 @@ async function handleGet(request: NextRequest) {
       containers: (byApp.get(app.id) ?? []).map((m) => ({
         containerId: m.containerId,
         containerName: m.containerName,
+        composeService: m.labels["com.docker.compose.service"] ?? null,
         cpuPercent: m.cpuPercent,
         memoryUsage: m.memoryUsage,
         memoryLimit: m.memoryLimit,
@@ -58,8 +57,12 @@ async function handleGet(request: NextRequest) {
       })),
     }));
 
+    // Organization, project, app; Vardo's own services under `core`.
+    const groups = groupServerApps(appStats);
+
     return NextResponse.json({
       apps: appStats,
+      groups,
       timestamp: new Date().toISOString(),
     });
   } catch (error) {

@@ -7,21 +7,16 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { SectionNav, type SectionGroup } from "@/components/section-nav";
 import { PageToolbar } from "@/components/page-toolbar";
-import { FeatureDisabled } from "@/components/feature-disabled";
 import { UserManagement } from "./admin-actions";
 import { AdminOverview } from "./admin-overview";
 import { AdminOrganizations } from "./admin-organizations";
-import { AdminMetrics } from "./admin-metrics";
 
 
 type AdminPanelProps = {
   activeTab: string;
-  orgId: string;
-  metricsEnabled: boolean;
-  metricsFlag: { label: string; description: string };
 };
 
-export function AdminPanel({ activeTab, orgId, metricsEnabled, metricsFlag }: AdminPanelProps) {
+export function AdminPanel({ activeTab }: AdminPanelProps) {
   const router = useRouter();
 
   const tabPath = (tab: string) => (tab === "overview" ? "/admin" : `/admin/${tab}`);
@@ -66,10 +61,6 @@ export function AdminPanel({ activeTab, orgId, metricsEnabled, metricsFlag }: Ad
                     { value: "users", label: "Users" },
                   ],
                 },
-                {
-                  label: "Operate",
-                  items: [{ value: "metrics", label: "Metrics" }],
-                },
               ] satisfies SectionGroup[]}
             />
           </div>
@@ -87,14 +78,6 @@ export function AdminPanel({ activeTab, orgId, metricsEnabled, metricsFlag }: Ad
 
         <TabsContent value="users">
           <UserManagement />
-        </TabsContent>
-
-        <TabsContent value="metrics">
-          {metricsEnabled ? (
-            <AdminMetrics orgId={orgId} />
-          ) : (
-            <FeatureDisabled name={metricsFlag.label} description={metricsFlag.description} canManage />
-          )}
         </TabsContent>
 
         </div>

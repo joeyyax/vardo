@@ -21,6 +21,7 @@ type MetricsMeta = {
   apps: unknown[];
   projectCount?: number;
   cpuCount?: number;
+  containerCount?: number;
   orgDiskTotal?: number;
   [key: string]: unknown;
 };
@@ -201,13 +202,14 @@ export function useMetricsStream(
           }
 
           // Auxiliary metadata — merge incrementally
-          if (data.disk || data.system || data.apps || data.projectCount !== undefined || data.cpuCount !== undefined || data.orgDiskTotal !== undefined) {
+          if (data.disk || data.system || data.apps || data.projectCount !== undefined || data.cpuCount !== undefined || data.containerCount !== undefined || data.orgDiskTotal !== undefined) {
             setMeta((prev) => ({
               disk: data.disk ?? prev?.disk ?? null,
               system: data.system ?? prev?.system ?? null,
               apps: data.apps ?? prev?.apps ?? [],
               projectCount: data.projectCount ?? prev?.projectCount,
               cpuCount: data.cpuCount ?? prev?.cpuCount,
+              containerCount: data.containerCount ?? prev?.containerCount,
               orgDiskTotal: data.orgDiskTotal ?? prev?.orgDiskTotal,
             }));
           }
