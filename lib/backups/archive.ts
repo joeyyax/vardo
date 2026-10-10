@@ -126,13 +126,11 @@ export function buildFileBackupScript(dataDir = "/data", backupDir = "/backup"):
 export function buildFileRestoreScript(dataDir = "/data", backupDir = "/backup"): string {
   return [
     "set -e",
-    'stage="/tmp/vardo-restore"',
-    'rm -rf "$stage"',
-    'mkdir -p "$stage"',
+    'stage=$(mktemp -d /tmp/vardo-restore.XXXXXX)',
+    'trap \'rm -rf "$stage"\' EXIT',
     `if ! tar xzf "${backupDir}/volume.tar.gz" -C "$stage"; then echo "restore: archive could not be extracted" >&2; exit 1; fi`,
     `if [ ! -f "$stage/${FILE_PAYLOAD_NAME}" ]; then echo "restore: archive does not hold a single file" >&2; exit 1; fi`,
     `cat "$stage/${FILE_PAYLOAD_NAME}" > "${dataDir}/${FILE_PAYLOAD_NAME}"`,
-    'rm -rf "$stage"',
   ].join("\n");
 }
 

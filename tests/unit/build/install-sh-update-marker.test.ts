@@ -48,7 +48,8 @@ describe("install.sh update marker", () => {
 write_update_marker started
 cat "$VARDO_DIR/lifecycle/update.json" > "$VARDO_DIR/started.json"
 UPDATE_TO_VERSION="4f1a9b2"
-write_update_marker updated "\\"finishedAt\\":$(date +%s)" "\\"swapStartedAt\\":$(( $(date +%s) - 18 ))" "\\"healthyAt\\":$(date +%s)"`,
+now=$(date +%s)
+write_update_marker updated "\\"finishedAt\\":$now" "\\"swapStartedAt\\":$(( now - 18 ))" "\\"healthyAt\\":$now"`,
     );
     expect(r.stderr).toBe("");
     expect(parseUpdateMarker(readFileSync(join(vardo, "started.json"), "utf8"))).toMatchObject({

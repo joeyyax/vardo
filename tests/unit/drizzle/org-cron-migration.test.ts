@@ -3,20 +3,13 @@
 // Same connection rules as migrate-run.test.ts; skips without a Postgres it can create databases on.
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { execFileSync } from "node:child_process";
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import postgres from "postgres";
+import { DRIZZLE, MIGRATE_TIMEOUT, connectScratchServer, journal, projectBefore, runMigrate, scratchName } from "./scratch-db";
 
-const ROOT = process.cwd();
-const DRIZZLE = join(ROOT, "drizzle");
-const MIGRATE = join(ROOT, "scripts/migrate.mjs");
 const TAG = "0098_org_cron";
 const SQL_TEXT = readFileSync(join(DRIZZLE, `${TAG}.sql`), "utf8");
-
-type Journal = { version: string; dialect: string; entries: { idx: number; tag: string }[] };
-const journal = JSON.parse(readFileSync(join(DRIZZLE, "meta/_journal.json"), "utf8")) as Journal;
 
 describe("0098 org cron migration, as text", () => {
   it("is in the journal at 98", () => {
@@ -33,67 +26,17 @@ describe("0098 org cron migration, as text", () => {
   });
 });
 
-function adminUrl(): string | null {
-  const fromEnv = process.env.MIGRATE_TEST_ADMIN_URL ?? process.env.DATABASE_URL;
-  if (fromEnv) return fromEnv;
-  try {
-    return readFileSync(join(ROOT, ".env"), "utf8").match(/^DATABASE_URL=(.+)$/m)?.[1].trim() ?? null;
-  } catch {
-    return null;
-  }
-}
+const conn = await connectScratchServer();
 
-function withDatabase(url: string, name: string): string {
-  const u = new URL(url);
-  u.pathname = `/${name}`;
-  return u.toString();
-}
-
-async function connect() {
-  const url = adminUrl();
-  if (!url) return null;
-  const admin = postgres(withDatabase(url, "postgres"), { max: 1, connect_timeout: 2, onnotice: () => {} });
-  try {
-    await admin`select 1`;
-    return { admin, url };
-  } catch {
-    await admin.end({ timeout: 1 }).catch(() => {});
-    return null;
-  }
-}
-
-const conn = await connect();
-
-function runMigrate(databaseUrl: string, cwd: string) {
-  return execFileSync("node", [MIGRATE], {
-    cwd,
-    env: { ...process.env, DATABASE_URL: databaseUrl },
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-}
-
-/** A project whose journal stops before `tag`. */
-function projectBefore(tag: string): string {
-  const dir = mkdtempSync(join(tmpdir(), "migrate-0098-"));
-  mkdirSync(join(dir, "drizzle/meta"), { recursive: true });
-  const stop = journal.entries.findIndex((e) => e.tag === tag);
-  const entries = journal.entries.slice(0, stop);
-  writeFileSync(join(dir, "drizzle/meta/_journal.json"), JSON.stringify({ ...journal, entries }));
-  for (const e of entries) copyFileSync(join(DRIZZLE, `${e.tag}.sql`), join(dir, `drizzle/${e.tag}.sql`));
-  return dir;
-}
-
-describe.skipIf(!conn)("0098 org cron migration, on a scratch database", () => {
-  const dbName = `vardo_migrate_0098_${process.pid}_${Date.now()}`;
+describe.skipIf(!conn)("0098 org cron migration, on a scratch database", { timeout: MIGRATE_TIMEOUT }, () => {
+  const dbName = scratchName("0098");
   let sql: ReturnType<typeof postgres>;
   let before: string;
 
   beforeAll(async () => {
-    await conn!.admin.unsafe(`CREATE DATABASE "${dbName}"`);
-    const url = withDatabase(conn!.url, dbName);
+    const url = await conn!.create(dbName);
     before = projectBefore(TAG);
-    runMigrate(url, before);
+    expect((await runMigrate(url, before)).code).toBe(0);
     sql = postgres(url, { max: 1, onnotice: () => {} });
     await sql.begin(async (t) => {
       await t`set local session_replication_role = replica`;
@@ -103,15 +46,14 @@ describe.skipIf(!conn)("0098 org cron migration, on a scratch database", () => {
       await t`insert into cron_job (id, app_id, name, schedule, command) values ('c1', 'a1', 'cleanup', '0 * * * *', 'id')`;
       await t`insert into cron_job (id, app_id, name, type, schedule, command) values ('c2', 'a2', 'ping', 'url', '* * * * *', 'https://example.com')`;
     });
-    runMigrate(url, ROOT);
-  }, 60_000);
+    expect((await runMigrate(url)).code).toBe(0);
+  }, MIGRATE_TIMEOUT);
 
   afterAll(async () => {
     await sql?.end({ timeout: 1 });
     if (before) rmSync(before, { recursive: true, force: true });
-    await conn!.admin.unsafe(`DROP DATABASE IF EXISTS "${dbName}" WITH (FORCE)`);
-    await conn!.admin.end({ timeout: 1 });
-  });
+    await conn!.dropAll();
+  }, MIGRATE_TIMEOUT);
 
   it("gives existing jobs their app's org and the URL defaults", async () => {
     const rows = await sql`select id, organization_id, method, timeout_ms, retries, expected_status, headers from cron_job order by id`;

@@ -127,7 +127,8 @@ describe("decide", () => {
   });
 });
 
-describe("tick", () => {
+// Each tick spawns a few dozen processes; 15 ticks take seconds when the suite saturates the CPU.
+describe("tick", { timeout: 30_000 }, () => {
   it("restarts Traefik after three unhealthy checks and records it", () => {
     setState("vardo-traefik", "running unhealthy");
     ticks(2);

@@ -7,8 +7,7 @@
 // database-backed tests skip; the journal checks always run. Takes about a second.
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import postgres from "postgres";
@@ -16,13 +15,8 @@ import { is } from "drizzle-orm";
 import { getTableConfig, PgTable } from "drizzle-orm/pg-core";
 import * as schema from "@/lib/db/schema";
 import { TOP_LEVEL_NAME_CONSTRAINT } from "@/lib/db/app-name";
+import { DRIZZLE, MIGRATE_TIMEOUT, connectScratchServer, journal, projectWith, runMigrate, scratchName } from "./scratch-db";
 
-const ROOT = process.cwd();
-const DRIZZLE = join(ROOT, "drizzle");
-const MIGRATE = join(ROOT, "scripts/migrate.mjs");
-
-type Journal = { entries: { idx: number; tag: string; when: number }[] };
-const journal = JSON.parse(readFileSync(join(DRIZZLE, "meta/_journal.json"), "utf8")) as Journal;
 const tags = journal.entries.map((e) => e.tag);
 
 // SQL files the journal never lists: they run nowhere.
@@ -53,92 +47,26 @@ describe("migration journal", () => {
   });
 });
 
-function adminUrl(): string | null {
-  const fromEnv = process.env.MIGRATE_TEST_ADMIN_URL ?? process.env.DATABASE_URL;
-  if (fromEnv) return fromEnv;
-  try {
-    return readFileSync(join(ROOT, ".env"), "utf8").match(/^DATABASE_URL=(.+)$/m)?.[1].trim() ?? null;
-  } catch {
-    return null;
-  }
-}
+const conn = await connectScratchServer();
 
-function withDatabase(url: string, name: string): string {
-  const u = new URL(url);
-  u.pathname = `/${name}`;
-  return u.toString();
-}
-
-async function connect(): Promise<{ admin: ReturnType<typeof postgres>; url: string } | null> {
-  const url = adminUrl();
-  if (!url) return null;
-  const admin = postgres(withDatabase(url, "postgres"), { max: 1, connect_timeout: 2, onnotice: () => {} });
-  try {
-    await admin`select 1`;
-    return { admin, url };
-  } catch {
-    await admin.end({ timeout: 1 }).catch(() => {});
-    return null;
-  }
-}
-
-const conn = await connect();
-
-/** Runs the production runner; `cwd` holds the drizzle/ folder it reads. */
-function runMigrate(databaseUrl: string, cwd = ROOT) {
-  try {
-    const stdout = execFileSync("node", [MIGRATE], {
-      cwd,
-      env: { ...process.env, DATABASE_URL: databaseUrl },
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    return { code: 0, out: stdout };
-  } catch (err) {
-    const e = err as { status: number; stdout: string; stderr: string };
-    return { code: e.status, out: `${e.stdout}${e.stderr}` };
-  }
-}
-
-// Parallel runs can collide on template1; retry briefly.
-async function createDatabase(name: string) {
-  for (let attempt = 0; ; attempt++) {
-    try {
-      return await conn!.admin.unsafe(`CREATE DATABASE "${name}"`);
-    } catch (err) {
-      if (attempt >= 5 || !/being accessed by other users/.test(String(err))) throw err;
-      await new Promise((r) => setTimeout(r, 200 * (attempt + 1)));
-    }
-  }
-}
-
-describe.skipIf(!conn)("migrate run against a scratch database", () => {
-  const dbName = `vardo_migrate_${process.pid}_${Date.now()}`;
-  const extras: string[] = [];
+describe.skipIf(!conn)("migrate run against a scratch database", { timeout: MIGRATE_TIMEOUT }, () => {
+  const dbName = scratchName("run");
   let sql: ReturnType<typeof postgres>;
   let scratchUrl: string;
   let firstRun: { code: number; out: string };
 
-  async function scratch(name: string) {
-    await createDatabase(name);
-    extras.push(name);
-    return withDatabase(conn!.url, name);
-  }
+  const scratch = (suffix: string) => conn!.create(`${dbName}_${suffix}`);
 
   beforeAll(async () => {
-    await createDatabase(dbName);
-    scratchUrl = withDatabase(conn!.url, dbName);
-    firstRun = runMigrate(scratchUrl);
+    scratchUrl = await conn!.create(dbName);
+    firstRun = await runMigrate(scratchUrl);
     sql = postgres(scratchUrl, { max: 1, onnotice: () => {} });
-  }, 60_000);
+  }, MIGRATE_TIMEOUT);
 
   afterAll(async () => {
     await sql?.end({ timeout: 1 });
-    for (const name of [dbName, ...extras]) {
-      await conn!.admin.unsafe(`DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`);
-    }
-    await conn!.admin.end({ timeout: 1 });
-  }, 60_000);
+    await conn!.dropAll();
+  }, MIGRATE_TIMEOUT);
 
   it("applies every journal entry on an empty database", () => {
     expect(firstRun.code).toBe(0);
@@ -151,7 +79,7 @@ describe.skipIf(!conn)("migrate run against a scratch database", () => {
   });
 
   it("does nothing on a second run", async () => {
-    const again = runMigrate(scratchUrl);
+    const again = await runMigrate(scratchUrl);
     expect(again.code).toBe(0);
     expect(again.out).toContain("Database is up to date");
     const [{ count }] = await sql`select count(*)::int as count from __drizzle_migrations`;
@@ -194,14 +122,10 @@ describe.skipIf(!conn)("migrate run against a scratch database", () => {
   });
 
   it("keeps API tokens made before 0087 at full access", async () => {
-    const url = await scratch(`${dbName}_tokens`);
-    const dir = mkdtempSync(join(tmpdir(), "migrate-"));
-    const before = journal.entries.filter((e) => e.idx < 87);
+    const url = await scratch("tokens");
+    const dir = projectWith((e) => e.idx < 87);
     try {
-      mkdirSync(join(dir, "drizzle/meta"), { recursive: true });
-      writeFileSync(join(dir, "drizzle/meta/_journal.json"), JSON.stringify({ ...journal, entries: before }));
-      for (const e of before) writeFileSync(join(dir, `drizzle/${e.tag}.sql`), readFileSync(join(DRIZZLE, `${e.tag}.sql`)));
-      expect(runMigrate(url, dir).code).toBe(0);
+      expect((await runMigrate(url, dir)).code).toBe(0);
 
       const check = postgres(url, { max: 1, onnotice: () => {} });
       try {
@@ -209,7 +133,7 @@ describe.skipIf(!conn)("migrate run against a scratch database", () => {
           await t`set local session_replication_role = replica`;
           await t`insert into api_token (id, user_id, organization_id, name, token_hash) values ('old', 'u', 'o', 'ci', 'h')`;
         });
-        expect(runMigrate(url).code).toBe(0);
+        expect((await runMigrate(url)).code).toBe(0);
         const [row] = await check`select scope, capabilities from api_token where id = 'old'`;
         expect(row).toEqual({ scope: "full", capabilities: null });
       } finally {
@@ -261,14 +185,14 @@ describe.skipIf(!conn)("migrate run against a scratch database", () => {
     }
 
     it("rolls back a failing migration whole, records nothing and stops", async () => {
-      const url = await scratch(`${dbName}_fail`);
+      const url = await scratch("fail");
       const dir = fakeProject({
         "0000_ok": 'CREATE TABLE "t_ok" ("id" int);',
         "0001_bad": 'CREATE TABLE "t_half" ("id" int);--> statement-breakpoint\nSELECT * FROM "no_such_table";',
         "0002_never": 'CREATE TABLE "t_never" ("id" int);',
       });
       try {
-        const result = runMigrate(url, dir);
+        const result = await runMigrate(url, dir);
         const check = postgres(url, { max: 1 });
         const tables = (await check`select table_name from information_schema.tables where table_schema = 'public'`).map((r) => r.table_name);
         const recorded = (await check`select hash from __drizzle_migrations order by id`).map((r) => r.hash);
@@ -285,13 +209,13 @@ describe.skipIf(!conn)("migrate run against a scratch database", () => {
     });
 
     it("skips an object that already exists and still records the migration", async () => {
-      const url = await scratch(`${dbName}_replay`);
+      const url = await scratch("replay");
       const dir = fakeProject({
         "0000_make": 'CREATE TABLE "t_dup" ("id" int);',
         "0001_again": 'CREATE TABLE "t_dup" ("id" int);--> statement-breakpoint\nCREATE TABLE "t_next" ("id" int);',
       });
       try {
-        const result = runMigrate(url, dir);
+        const result = await runMigrate(url, dir);
         const check = postgres(url, { max: 1 });
         const recorded = (await check`select hash from __drizzle_migrations order by id`).map((r) => r.hash);
         const [{ n }] = await check`select count(*)::int as n from information_schema.tables where table_name = 't_next'`;
