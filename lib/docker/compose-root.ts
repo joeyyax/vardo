@@ -33,3 +33,12 @@ export function appRootDir(repoDir: string, rootDirectory: string | null | undef
   }
   return root;
 }
+
+/** `dir/file`, refused when it or a symlink on its path resolves outside `repoDir`. */
+export function repoFilePath(repoDir: string, dir: string, file: string): string {
+  const path = resolve(join(dir, file));
+  if (!isUnder(path, resolve(repoDir)) || !isUnder(realpathLenient(path), realpathLenient(repoDir))) {
+    throw new DeployBlockedError(`Couldn't deploy: ${file} points outside the repository.`);
+  }
+  return path;
+}

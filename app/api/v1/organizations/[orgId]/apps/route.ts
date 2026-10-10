@@ -16,6 +16,8 @@ import { sharedMarkerTypeErrors } from "@/lib/docker/compose";
 import { recordActivity } from "@/lib/activity";
 import { isReservedSlug } from "@/lib/domain-monitoring/reserved";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
+import { readableApp } from "@/lib/api/readable-app";
+import { can } from "@/lib/auth/permissions";
 import { getSslConfig, getDefaultCertResolver } from "@/lib/system-settings";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
@@ -60,8 +62,9 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
         .where(eq(apps.organizationId, orgId)),
     ]);
 
+    const reveal = can(org.membership, "env.reveal");
     return NextResponse.json({
-      apps: appList,
+      apps: appList.map((app) => readableApp(app, reveal)),
       total: totalResult[0]?.count ?? 0,
       limit,
       offset,
@@ -240,7 +243,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       metadata: { name: data.name, displayName: data.displayName },
     });
 
-    return NextResponse.json({ app }, { status: 201 });
+    return NextResponse.json({ app: readableApp(app, true) }, { status: 201 });
   } catch (error) {
     // Unique constraint violation (Postgres error code 23505)
     if (isAppNameViolation(error)) {

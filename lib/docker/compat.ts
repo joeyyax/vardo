@@ -88,15 +88,16 @@ export function applyCompatFixes(
 
 /** Preventive fixes detected from package.json before the first build. */
 export async function detectPreventiveFixes(
-  repoPath: string
+  repoPath: string,
+  repoDir: string = repoPath,
 ): Promise<CompatFix[]> {
   const fixes: CompatFix[] = [];
   const { readFile } = await import("fs/promises");
-  const { join } = await import("path");
+  const { repoFilePath } = await import("./compose-root");
 
   try {
     const pkgJson = JSON.parse(
-      await readFile(join(repoPath, "package.json"), "utf-8")
+      await readFile(repoFilePath(repoDir, repoPath, "package.json"), "utf-8")
     );
     const deps = { ...pkgJson.dependencies, ...pkgJson.devDependencies };
 

@@ -24,7 +24,7 @@ import {
 import { isFeatureEnabled } from "@/lib/config/features";
 import { assertSafeBranch, assertSafeGitUrl } from "../validate";
 import { assertGitHostAllowed, GIT_NO_REDIRECT } from "../git-host";
-import { appRootDir } from "../compose-root";
+import { appRootDir, repoFilePath } from "../compose-root";
 import { DeployBlockedError } from "../errors";
 import { assertBuildKitReachable, isBuildKitReachable, DEFAULT_BUILDKIT_HOST } from "../buildkit";
 import { assertAppDirOwnership } from "../app-dir-owner";
@@ -544,8 +544,9 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
     let composeContent: string | null = null;
     if (app.deployType === "compose") {
       for (const candidate of composeCandidates) {
+        const path = repoFilePath(repoDir, root, candidate);
         try {
-          composeContent = await readFile(join(root, candidate), "utf-8");
+          composeContent = await readFile(path, "utf-8");
           log(`[deploy] Found ${candidate}`);
           break;
         } catch { /* try next */ }
@@ -566,8 +567,9 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
 
       if (buildType === "compose" && !composeContent) {
         const dockerfileToCheck = app.dockerfilePath || "Dockerfile";
+        const dockerfile = repoFilePath(repoDir, root, dockerfileToCheck);
         try {
-          await readFile(join(root, dockerfileToCheck), "utf-8");
+          await readFile(dockerfile, "utf-8");
           buildType = "dockerfile";
           log(`[deploy] No compose file, found ${dockerfileToCheck}`);
         } catch {
@@ -590,7 +592,8 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
         }
       }
 
-      const preventiveFixes = await detectPreventiveFixes(root);
+      if (buildType === "dockerfile") repoFilePath(repoDir, root, app.dockerfilePath || "Dockerfile");
+      const preventiveFixes = await detectPreventiveFixes(root, repoDir);
       if (preventiveFixes.length > 0) {
         for (const fix of preventiveFixes) {
           log(`[compat] ${fix.name}: ${fix.description}`);
