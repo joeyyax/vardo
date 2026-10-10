@@ -30,7 +30,7 @@ function issue(over: Partial<IntegrationIssue> = {}): IntegrationIssue {
       { id: "deployments", label: "Deployments", access: "write" },
       { id: "statuses", label: "Commit statuses", access: "write" },
     ],
-    fixUrl: "https://github.com/organizations/acme/settings/installations/42",
+    fixUrl: "https://github.com/organizations/acme/settings/installations/42/permissions/update",
     features: ["Deployments on GitHub", "Commit status checks"],
     purposes: ["show deploy progress on pull requests"],
     ...over,
@@ -130,7 +130,7 @@ describe("issueCopy", () => {
   it("asks the App's owner to add permissions", () => {
     const copy = issueCopy(issue({ key: "github:app", scope: { kind: "app", name: "acme-vardo" } }));
     expect(copy.title).toBe("GitHub App needs more permissions");
-    expect(copy.actionLabel).toBe("Open App permissions");
+    expect(copy.actionLabel).toBe("Add permissions on GitHub");
   });
 });
 

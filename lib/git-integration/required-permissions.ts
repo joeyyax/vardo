@@ -68,8 +68,8 @@ export function appPermissionsUrl(slug: string, owner: GitHubAccount): string {
 /** The installation page where the account accepts new permissions. */
 export function installationUrl(installationId: number, account: GitHubAccount): string {
   return account.type === "Organization"
-    ? `https://github.com/organizations/${enc(account.login)}/settings/installations/${installationId}`
-    : `https://github.com/settings/installations/${installationId}`;
+    ? `https://github.com/organizations/${enc(account.login)}/settings/installations/${installationId}/permissions/update`
+    : `https://github.com/settings/installations/${installationId}/permissions/update`;
 }
 
 function toIssueFields(missing: RequiredPermission[]): Pick<IntegrationIssue, "missing" | "features" | "purposes"> {

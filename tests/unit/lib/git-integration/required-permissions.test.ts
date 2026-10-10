@@ -68,12 +68,12 @@ describe("fix URLs", () => {
   });
 
   it("links a user installation to personal settings", () => {
-    expect(installationUrl(42, { login: "jdoe", type: "User" })).toBe("https://github.com/settings/installations/42");
+    expect(installationUrl(42, { login: "jdoe", type: "User" })).toBe("https://github.com/settings/installations/42/permissions/update");
   });
 
   it("links an org installation to the org's settings", () => {
     expect(installationUrl(42, { login: "acme", type: "Organization" })).toBe(
-      "https://github.com/organizations/acme/settings/installations/42",
+      "https://github.com/organizations/acme/settings/installations/42/permissions/update",
     );
   });
 });
@@ -85,7 +85,7 @@ describe("issues", () => {
       key: "github:installation:42",
       provider: "github",
       scope: { kind: "installation", id: "42", account: "acme" },
-      fixUrl: "https://github.com/organizations/acme/settings/installations/42",
+      fixUrl: "https://github.com/organizations/acme/settings/installations/42/permissions/update",
       features: ["Deployments on GitHub", "Commit status checks"],
       purposes: ["show deploy progress on pull requests"],
     });

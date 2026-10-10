@@ -391,7 +391,9 @@ export function ProjectsView({
   const memory = usage.reduce((n, u) => n + u.memory, 0);
 
   const loc = selected ? locate(sections, selected) : null;
-  const open = !!(panel || loc || attentionTarget);
+  const ownPanel = !!(panel || loc);
+  // The shared attention panel takes the same spot, so the list keeps its gutter for either.
+  const open = ownPanel || !!attentionTarget;
 
   const stat = (key: PanelKey, value: ReactNode, label: string, tone?: string, unit?: ReactNode) => (
     <StatFilter
@@ -517,7 +519,7 @@ export function ProjectsView({
 
       <DetailPanel
         ref={panelRef}
-        open={open}
+        open={ownPanel}
         onClose={closePanel}
         label={loc ? `${loc.node.app.displayName} details` : panel ? PANEL_TITLE[panel] : "Details"}
         eyebrow={

@@ -44,7 +44,7 @@ describe("checkGitHubPermissions", () => {
     }));
     expect(raised).toHaveLength(1);
     expect(raised[0].organizationIds).toEqual(["org-1"]);
-    expect(raised[0].issue.fixUrl).toBe("https://github.com/settings/installations/42");
+    expect(raised[0].issue.fixUrl).toBe("https://github.com/settings/installations/42/permissions/update");
     expect(raised[0].issue.missing.map((m) => m.id)).toEqual(["deployments", "statuses"]);
   });
 

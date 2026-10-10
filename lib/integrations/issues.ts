@@ -61,7 +61,7 @@ export function issueCopy(issue: IntegrationIssue): IssueCopy {
       title: `${provider} App needs more permissions`,
       message: `Vardo's ${provider} App doesn't ask for ${names} yet. Add ${issue.missing.length === 1 ? "it" : "them"} on the App's permissions page${why}, then accept the change on each installation.`,
       degraded,
-      actionLabel: "Open App permissions",
+      actionLabel: "Add permissions on GitHub",
     };
   }
   return {

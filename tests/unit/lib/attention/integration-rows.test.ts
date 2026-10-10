@@ -14,7 +14,7 @@ const install: IntegrationIssue = {
   ...base,
   key: "github:installation:42",
   scope: { kind: "installation", id: "42", account: "acme" },
-  fixUrl: "https://github.com/organizations/acme/settings/installations/42",
+  fixUrl: "https://github.com/organizations/acme/settings/installations/42/permissions/update",
 };
 
 const app: IntegrationIssue = {
