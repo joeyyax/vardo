@@ -3,6 +3,7 @@ import { meshPeers } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { openOutboundToken } from "./outbound-token";
 import { signMeshRequest } from "./signing";
+import { recordTunnelFailure, recordTunnelOk } from "./tunnel-status";
 
 type PeerTarget = { name: string; apiUrl: string | null; publicApiUrl: string | null };
 
@@ -63,8 +64,10 @@ export async function meshFetch(
         headers: authHeaders,
         signal: AbortSignal.timeout(5_000),
       });
+      recordTunnelOk(peerId, peer.name);
       return res;
-    } catch {
+    } catch (err) {
+      recordTunnelFailure(peerId, peer.name, peer.apiUrl, err);
     }
   }
 
@@ -119,11 +122,13 @@ export async function meshJsonFetch<T = unknown>(
 export type MeshTransport = "tunnel" | "public";
 
 /** True when the tunnel URL answers at all; the status doesn't matter. */
-async function tunnelAnswers(apiUrl: string, timeoutMs: number): Promise<boolean> {
+async function tunnelAnswers(peerId: string, name: string, apiUrl: string, timeoutMs: number): Promise<boolean> {
   try {
     await fetch(`${apiUrl}/api/health`, { signal: AbortSignal.timeout(timeoutMs) });
+    recordTunnelOk(peerId, name);
     return true;
-  } catch {
+  } catch (err) {
+    recordTunnelFailure(peerId, name, apiUrl, err);
     return false;
   }
 }
@@ -139,7 +144,7 @@ export async function meshSignedPost<T = unknown>(
 
   let base: string;
   let transport: MeshTransport;
-  if (peer.apiUrl && (await tunnelAnswers(peer.apiUrl, probeMs))) {
+  if (peer.apiUrl && (await tunnelAnswers(peerId, peer.name, peer.apiUrl, probeMs))) {
     base = peer.apiUrl;
     transport = "tunnel";
   } else if (peer.publicApiUrl?.startsWith("https://")) {
