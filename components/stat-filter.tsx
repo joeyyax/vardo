@@ -1,6 +1,8 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { Term, useTermDescription } from "@/components/term";
+import type { GlossaryId } from "@/lib/ui/glossary";
 import { cn } from "@/lib/utils";
 
 /** Page-level numbers. When one is pressed, the rest dim. */
@@ -39,6 +41,7 @@ export function StatFilter({
   value,
   unit,
   label,
+  term,
   tone,
   pressed,
   controls,
@@ -50,6 +53,8 @@ export function StatFilter({
   /** Set small after the value, such as "of 40". */
   unit?: ReactNode;
   label: string;
+  /** Explains the label on hover. */
+  term?: GlossaryId | null;
   /** A text class for a value that is a problem. */
   tone?: string;
   pressed: boolean;
@@ -59,12 +64,14 @@ export function StatFilter({
   trigger?: string;
   onPress: () => void;
 }) {
+  const { describedBy, description } = useTermDescription(term);
   return (
     <button
       type="button"
       id={id}
       aria-pressed={pressed}
       aria-controls={controls}
+      aria-describedby={describedBy}
       data-pressed={pressed}
       data-attention-trigger={trigger}
       onClick={onPress}
@@ -79,7 +86,16 @@ export function StatFilter({
         {value}
         {unit && <small className={UNIT}> {unit}</small>}
       </span>
-      <span className={LABEL}>{label}</span>
+      <span className={LABEL}>
+        {term ? (
+          <Term id={term} passive>
+            {label}
+          </Term>
+        ) : (
+          label
+        )}
+      </span>
+      {description}
     </button>
   );
 }

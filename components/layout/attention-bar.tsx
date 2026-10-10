@@ -7,6 +7,8 @@ import { AttentionRowList } from "@/components/attention-panel";
 import { AttentionIssueGroup } from "@/components/attention-issues";
 import { useAttention, useAttentionTarget } from "@/components/attention-provider";
 import { DetailPanel } from "@/components/detail-panel";
+import { Term, TermNote } from "@/components/term";
+import { attentionGroupTerm } from "@/lib/ui/glossary";
 import { AllClear } from "@/components/issue-group";
 import { announceAttention, sameTarget, showsBar, type AttentionGroup, type AttentionTarget } from "@/lib/ui/attention";
 import { cn } from "@/lib/utils";
@@ -63,12 +65,14 @@ function BarStrip({
   target?: AttentionTarget | null;
   onToggle?: (t: AttentionTarget) => void;
 }) {
-  const trigger = (t: AttentionTarget, className: string, children: ReactNode) => (
+  const trigger = (t: AttentionTarget, className: string, children: ReactNode, noteId?: string) => (
     <button
+      key={triggerKey(t)}
       type="button"
       data-attention-trigger={triggerKey(t)}
       aria-expanded={sameTarget(target, t)}
       aria-controls={ATTENTION_PANEL_ID}
+      aria-describedby={noteId}
       disabled={!onToggle}
       onClick={() => onToggle?.(t)}
       className={cn(
@@ -92,16 +96,26 @@ function BarStrip({
             {count} {count === 1 ? "needs" : "need"} attention now
           </>,
         )}
-        {groups.map((g, i) =>
-          trigger(
+        {groups.map((g, i) => {
+          const term = attentionGroupTerm(g.key);
+          const noteId = term ? `attention-bar-term-${g.key}` : undefined;
+          return trigger(
             { group: g.key },
             cn(g.tone === "error" ? "text-status-error" : "text-status-warning", i === 0 ? "inline-flex" : "hidden sm:inline-flex"),
             <>
-              {g.title}
+              {term ? (
+                <Term id={term} passive>
+                  {g.title}
+                </Term>
+              ) : (
+                g.title
+              )}
               <span className="ml-1 tabular-nums opacity-70">{g.items.length}</span>
+              {term && noteId && <TermNote id={term} noteId={noteId} />}
             </>,
-          ),
-        )}
+            noteId,
+          );
+        })}
       </div>
     </div>
   );

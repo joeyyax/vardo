@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent } from "@/components/ui/card";
+import { Term } from "@/components/term";
 import { EmptyState } from "@/components/ui/empty-state";
 import { toast } from "@/lib/messenger";
 import { Loader2, Bell, AlertCircle } from "lucide-react";
@@ -291,7 +292,9 @@ export function UserNotificationPreferences({ orgId }: { orgId: string }) {
         <CardContent className="space-y-2">
           <div className="flex items-center justify-between">
             <div>
-              <p className="type-h3">Weekly digest</p>
+              <p className="type-h3">
+                <Term id="delivery-digest">Weekly digest</Term>
+              </p>
               <p className="text-xs text-muted-foreground">
                 Receive a weekly summary of org activity alongside real-time
                 notifications.

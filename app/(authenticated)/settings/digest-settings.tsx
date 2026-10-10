@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { Term } from "@/components/term";
 import {
   Select,
   SelectContent,
@@ -145,7 +146,9 @@ export function DigestSettingsEditor({ orgId }: { orgId: string }) {
         <div className="space-y-1">
           <div className="flex items-center gap-2">
             <Mail className="h-4 w-4 text-muted-foreground" />
-            <p className="type-h3">Health summary</p>
+            <p className="type-h3">
+              <Term id="delivery-digest">Health summary</Term>
+            </p>
             {saving && (
               <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
             )}

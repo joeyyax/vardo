@@ -9,6 +9,7 @@ import { UncapturedWarning, uncapturedSources } from "./uncaptured-warning";
 import { scheduleLabel } from "./constants";
 import { describeSchedule } from "./schedule-summary";
 import { StatusBadge } from "./status-badge";
+import { Term } from "@/components/term";
 import { RetentionSummary } from "./retention-summary";
 import { NextRun } from "./next-run";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
@@ -114,7 +115,7 @@ export function JobCard({
             ) : (
               <Badge variant="neutral" className="text-xs">
                 <PowerOff className="mr-1 size-3" aria-hidden="true" />
-                Paused
+                <Term id="backup-paused">Paused</Term>
               </Badge>
             )}
             {progress ? (

@@ -1,4 +1,5 @@
 import { Badge } from "@/components/ui/badge";
+import { Term } from "@/components/term";
 import { CheckCircle2, XCircle, Loader2, Clock, AlertTriangle } from "lucide-react";
 
 export function StatusBadge({ status }: { status: string }) {
@@ -21,14 +22,14 @@ export function StatusBadge({ status }: { status: string }) {
       return (
         <Badge variant="error">
           <XCircle className="mr-1 size-3" aria-hidden="true" />
-          Failed
+          <Term id="backup-failed">Failed</Term>
         </Badge>
       );
     case "skipped":
       return (
         <Badge variant="warning">
           <AlertTriangle className="mr-1 size-3" aria-hidden="true" />
-          Skipped
+          <Term id="backup-skipped">Skipped</Term>
         </Badge>
       );
     case "pending":

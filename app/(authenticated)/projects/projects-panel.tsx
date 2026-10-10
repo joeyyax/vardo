@@ -31,6 +31,14 @@ import {
   type TreeNode,
 } from "@/lib/ui/projects";
 import { fixTarget, RowMenu, Sparkline, usageOf } from "./project-list";
+import { Term } from "@/components/term";
+import { termForText } from "@/lib/ui/glossary";
+
+/** A problem title, explained when the glossary has it. */
+function PanelTerm({ text }: { text: string }) {
+  const id = termForText(text);
+  return id ? <Term id={id}>{text}</Term> : text;
+}
 
 export type PanelContext = {
   orgId: string;
@@ -293,7 +301,9 @@ export function AppDetail({ loc, ctx }: { loc: Located; ctx: PanelContext }) {
         <span className="grid gap-0.5">
           {p ? (
             <>
-              <span className={p.tone === "error" ? "text-status-error" : "text-status-warning"}>{p.title}</span>
+              <span className={p.tone === "error" ? "text-status-error" : "text-status-warning"}>
+                <PanelTerm text={p.title} />
+              </span>
               {(p.detail || p.since) && (
                 <span className="text-muted-foreground">
                   {p.detail}
@@ -303,12 +313,16 @@ export function AppDetail({ loc, ctx }: { loc: Located; ctx: PanelContext }) {
               )}
             </>
           ) : stopped ? (
-            <span className="text-muted-foreground">Stopped by you. Vardo leaves it down until you start it.</span>
+            <span className="text-muted-foreground">
+              <Term id="parked">Stopped by you</Term>. Vardo leaves it down until you start it.
+            </span>
           ) : app.status === "deploying" ? (
-            <span className="text-status-info">Deploying</span>
+            <span className="text-status-info">
+              <Term id="deploying">Deploying</Term>
+            </span>
           ) : (
             <span className="text-muted-foreground">
-              Running{app.containerStartedAt && <> · <Since since={new Date(app.containerStartedAt).toISOString()} /></>}
+              <Term id="running">Running</Term>{app.containerStartedAt && <> · <Since since={new Date(app.containerStartedAt).toISOString()} /></>}
             </span>
           )}
         </span>
@@ -437,7 +451,9 @@ export function AppDetail({ loc, ctx }: { loc: Located; ctx: PanelContext }) {
             )}
           </EntityLink>
         </dd>
-        <dt className="text-muted-foreground">Kind</dt>
+        <dt className="text-muted-foreground">
+          <Term id="service-kind">Kind</Term>
+        </dt>
         <dd>{SERVICE_KIND_LABEL[app.kind]}</dd>
         {app.priority === "critical" && (
           <>

@@ -3,7 +3,9 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { StatusMark } from "@/components/ui/status-dot";
 import { EntityLink, entityLinkClass } from "@/components/entity-link";
+import { Term, TermScope, useTermDescription } from "@/components/term";
 import type { Problem } from "@/lib/ui/conditions";
+import { termForText, type GlossaryId } from "@/lib/ui/glossary";
 import { formatAbsoluteDateTime, formatSpan } from "@/lib/ui/relative-time";
 import { cn } from "@/lib/utils";
 
@@ -28,12 +30,15 @@ export function Since({ since }: { since: string | null }) {
 /** One kind of problem: a count, what it means and a bulk fix where one fits. */
 export function IssueGroup({
   title,
+  term,
   count,
   why,
   bulk,
   children,
 }: {
   title: string;
+  /** Explains the title. */
+  term?: GlossaryId | null;
   count: number;
   why: string;
   bulk?: ReactNode;
@@ -42,14 +47,16 @@ export function IssueGroup({
   return (
     <section className="grid gap-1.5">
       <div className="flex items-center gap-2">
-        <h3 className="text-sm font-semibold">{title}</h3>
+        <h3 className="text-sm font-semibold">{term ? <Term id={term}>{title}</Term> : title}</h3>
         <span className="rounded-full bg-accent px-[7px] text-[12.5px] leading-[19px] text-muted-foreground tabular-nums">
           {count}
         </span>
         {bulk && <span className="ml-auto">{bulk}</span>}
       </div>
       <p className="text-[13px] text-muted-foreground">{why}</p>
-      <div className="mt-0.5 grid gap-0.5">{children}</div>
+      <div className="mt-0.5 grid gap-0.5">
+        <TermScope>{children}</TermScope>
+      </div>
     </section>
   );
 }
@@ -86,6 +93,8 @@ export function IssueItem({
   actions?: ReactNode;
   onActivate: () => void;
 }) {
+  const term = showTitle ? termForText(problem.title) : null;
+  const { describedBy, description } = useTermDescription(term);
   return (
     <div
       data-selected={selected}
@@ -125,6 +134,7 @@ export function IssueItem({
           type="button"
           data-panel-item={itemKey}
           aria-label={`${name}: ${problem.title}`}
+          aria-describedby={describedBy}
           onClick={(e) => {
             e.stopPropagation();
             onActivate();
@@ -134,7 +144,15 @@ export function IssueItem({
           <span className="text-[13.5px]">
             {showTitle && (
               <>
-                <span className={problem.tone === "error" ? "text-status-error" : "text-status-warning"}>{problem.title}</span>
+                <span className={problem.tone === "error" ? "text-status-error" : "text-status-warning"}>
+                  {term ? (
+                    <Term id={term} passive>
+                      {problem.title}
+                    </Term>
+                  ) : (
+                    problem.title
+                  )}
+                </span>
                 {problem.detail && " · "}
               </>
             )}
@@ -145,6 +163,7 @@ export function IssueItem({
               <Since since={problem.since} />
             </span>
           )}
+          {description}
         </button>
       </div>
       {actions && (

@@ -5,6 +5,7 @@ import { Shield, ShieldAlert, ShieldCheck, RefreshCw, Loader2, AlertTriangle, In
 import { Button } from "@/components/ui/button";
 import { toast } from "@/lib/messenger";
 import { RelativeTime } from "@/components/relative-time";
+import { Term } from "@/components/term";
 import type { SecurityFinding } from "@/lib/db/schema/security";
 import { entityLinkClass } from "@/components/entity-link";
 import { useHashTarget } from "@/hooks/use-hash-target";
@@ -102,17 +103,17 @@ function ScanSummary({ scan, anchored = false, linked = null }: { scan: Scan; an
             <span>
               {scan.criticalCount > 0 && (
                 <span className="text-status-error font-medium mr-2">
-                  {scan.criticalCount} critical
+                  {scan.criticalCount} <Term id="severity-critical">critical</Term>
                 </span>
               )}
               {scan.warningCount > 0 && (
                 <span className="text-status-warning font-medium mr-2">
-                  {scan.warningCount} warning
+                  {scan.warningCount} <Term id="severity-warning">warning</Term>
                 </span>
               )}
               {info.length > 0 && (
                 <span className="text-muted-foreground">
-                  {info.length} info
+                  {info.length} <Term id="severity-info">info</Term>
                 </span>
               )}
             </span>

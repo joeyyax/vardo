@@ -6,6 +6,7 @@ import { Switch } from "@/components/ui/switch";
 import { EmptyState } from "@/components/ui/empty-state";
 import { toast } from "@/lib/messenger";
 import { Card } from "@/components/ui/card";
+import { Term } from "@/components/term";
 
 type OrgBreakdown = {
   id: string;
@@ -88,7 +89,9 @@ export function AdminOrganizations() {
         <span className="text-right">CPU</span>
         <span className="text-right">Memory</span>
         <span className="text-right">Containers</span>
-        <span className="text-right">Trusted</span>
+        <span className="text-right">
+          <Term id="trusted-org">Trusted</Term>
+        </span>
       </div>
       <div className="divide-y">
         {orgs.map((org) => (

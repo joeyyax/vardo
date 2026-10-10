@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { TermScope } from "@/components/term";
 import { TopNav } from "@/components/layout/top-nav";
 import { CommandPalette } from "@/components/command-palette";
 import { KeyboardShortcuts } from "@/components/keyboard-shortcuts";
@@ -80,7 +81,7 @@ export default async function AppLayout({
             <main className="flex-1">
               <section className="py-10 sm:py-14">
                 <div className="container">
-                  {children}
+                  <TermScope>{children}</TermScope>
                 </div>
               </section>
             </main>

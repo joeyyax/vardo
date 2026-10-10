@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Term } from "@/components/term";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
@@ -150,7 +151,9 @@ export function JobForm({
             </div>
 
             <div className="grid gap-2">
-              <Label>Retention</Label>
+              <Label>
+                <Term id="retention">Retention</Term>
+              </Label>
               <p className="text-xs text-muted-foreground">
                 How many snapshots to keep at each tier. Older backups are pruned automatically.
               </p>

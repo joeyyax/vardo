@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Term } from "@/components/term";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "@/lib/messenger";
 import { MEMORY_PROFILE_HINTS, type ResourceProfile } from "@/lib/ui/resource-profiles";
@@ -69,15 +70,23 @@ export function OrgResourceProfiles({ orgId, memoryProfile: initialProfile, auto
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="max-w-md space-y-2">
-          <Label htmlFor="org-memory-profile">Default memory profile</Label>
+          <Label htmlFor="org-memory-profile">
+            Default <Term id="memory-profile">memory profile</Term>
+          </Label>
           <Select value={profile} onValueChange={(v) => changeProfile(v as ResourceProfile)} disabled={saving}>
             <SelectTrigger id="org-memory-profile">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="fixed">Fixed</SelectItem>
-              <SelectItem value="burstable">Burstable</SelectItem>
-              <SelectItem value="auto">Auto</SelectItem>
+              <SelectItem value="fixed">
+              <Term id="profile-fixed" passive>Fixed</Term>
+            </SelectItem>
+              <SelectItem value="burstable">
+              <Term id="profile-burstable" passive>Burstable</Term>
+            </SelectItem>
+              <SelectItem value="auto">
+              <Term id="profile-auto" passive>Auto</Term>
+            </SelectItem>
             </SelectContent>
           </Select>
           <p className="text-xs text-muted-foreground">

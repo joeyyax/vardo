@@ -25,6 +25,8 @@ import { formatBytes, formatCores } from "@/lib/metrics/format";
 import { RelativeTime } from "@/components/relative-time";
 import { statusMarkTone } from "@/lib/ui/status-colors";
 import { markSubject, problemOf, walk, type Section, type TreeNode } from "@/lib/ui/projects";
+import { termForText, type GlossaryId } from "@/lib/ui/glossary";
+import { Term } from "@/components/term";
 import { cn } from "@/lib/utils";
 
 /** Rows shown before "Show N more". */
@@ -165,6 +167,18 @@ export function RowMenu({ node, ctx }: { node: TreeNode; ctx: Pick<ListContext, 
   );
 }
 
+/** Status text in a row, explained on hover without adding a tab stop. */
+function RowTerm({ text, id }: { text: string; id?: GlossaryId }) {
+  const term = id ?? termForText(text);
+  return term ? (
+    <Term id={term} passive>
+      {text}
+    </Term>
+  ) : (
+    text
+  );
+}
+
 function ComfortableRows({ section, nodes, depth, ctx }: { section: Section; nodes: TreeNode[]; depth: number; ctx: ListContext }) {
   const shown = nodes.filter((n) => ctx.matches(n, section));
   return (
@@ -179,15 +193,21 @@ function ComfortableRows({ section, nodes, depth, ctx }: { section: Section; nod
         const stopped = app.parked || app.status === "stopped";
         const usage = app.status === "active" || app.status === "deploying" ? usageOf(node, ctx.metrics, ctx.history) : null;
         const status = p ? (
-          <span className={toneClass(p)}>{p.title}</span>
+          <span className={toneClass(p)}>
+            <RowTerm text={p.title} />
+          </span>
         ) : inner ? (
           <span className={toneClass(inner[1]!)}>
             {inner[0].app.displayName}: {inner[1]!.title.toLowerCase()}
           </span>
         ) : app.status === "deploying" && !quietParent ? (
-          <span className="text-status-info">Deploying</span>
+          <span className="text-status-info">
+            <RowTerm text="Deploying" />
+          </span>
         ) : stopped && !quietParent ? (
-          <span className="text-muted-foreground/70">Stopped</span>
+          <span className="text-muted-foreground/70">
+            <RowTerm text="Stopped" id={app.parked ? "parked" : "stopped"} />
+          </span>
         ) : app.status === "active" && app.containerStartedAt ? (
           <span className="text-muted-foreground/70 tabular-nums">
             <Uptime since={app.containerStartedAt} />
