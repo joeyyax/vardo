@@ -1,0 +1,1 @@
+ALTER TABLE "volume" ADD COLUMN "removed_at" timestamp;

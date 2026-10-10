@@ -310,7 +310,7 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
   const appVolumes = await db.query.volumes.findMany({
     where: eq(volumes.appId, ctx.appId),
   });
-  const volumesList = appVolumes.filter((v) => v.persistent).map((v) => ({ name: v.name, mountPath: v.mountPath }));
+  const volumesList = appVolumes.filter((v) => v.persistent && !v.removedAt).map((v) => ({ name: v.name, mountPath: v.mountPath }));
   ctx.appVolumes = appVolumes;
   ctx.volumesList = volumesList;
 
@@ -534,7 +534,7 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
           where: eq(volumes.appId, ctx.appId),
         });
         volumesList.length = 0;
-        volumesList.push(...refreshed.filter((v) => v.persistent).map((v) => ({ name: v.name, mountPath: v.mountPath })));
+        volumesList.push(...refreshed.filter((v) => v.persistent && !v.removedAt).map((v) => ({ name: v.name, mountPath: v.mountPath })));
         log(`[deploy] host.toml: ${applied.persistentVolumes.length} volume(s)`);
       }
     }

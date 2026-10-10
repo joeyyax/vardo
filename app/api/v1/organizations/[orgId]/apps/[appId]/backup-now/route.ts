@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { apiError, describeIssue, handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
-import { apps, backupJobApps, backupJobs, backups, volumes } from "@/lib/db/schema";
+import { apps, backupJobApps, backupJobs, backups } from "@/lib/db/schema";
 import { requirePlugin } from "@/lib/api/require-plugin";
 import { and, eq, gt, inArray } from "drizzle-orm";
 import { z } from "zod";
@@ -14,6 +14,7 @@ import { assessPreMigrationBackup } from "@/lib/backups/pre-migration";
 import { isBackupSelected } from "@/lib/backups/durability";
 import { isUncapturedSource } from "@/lib/backups/coverage";
 import { logger } from "@/lib/logger";
+import { liveVolumesOf } from "@/lib/volumes/reconcile";
 
 const log = logger.child("backup-now");
 
@@ -63,7 +64,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     }
 
     const appVolumes = await db.query.volumes.findMany({
-      where: eq(volumes.appId, appId),
+      where: liveVolumesOf(appId),
       columns: {
         type: true,
         persistent: true,

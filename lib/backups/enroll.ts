@@ -19,6 +19,7 @@ import {
   type SelectionDecision,
 } from "./selection";
 import { dockerEnv } from "@/lib/docker/docker-env";
+import { liveVolumesOf } from "@/lib/volumes/reconcile";
 
 const log = logger.child("backup-enroll");
 
@@ -45,7 +46,7 @@ export async function loadBindSources(): Promise<SelectionContext["otherBinds"]>
     .select({ appId: volumes.appId, appName: apps.name, source: volumes.source })
     .from(volumes)
     .innerJoin(apps, eq(apps.id, volumes.appId))
-    .where(eq(volumes.type, "bind"));
+    .where(and(eq(volumes.type, "bind"), isNull(volumes.removedAt)));
   return rows.flatMap((r) => (r.appId && r.source ? [{ appId: r.appId, appName: r.appName, source: r.source }] : []));
 }
 
@@ -89,7 +90,7 @@ export async function planAppVolumes(
     otherBinds?: SelectionContext["otherBinds"];
   },
 ): Promise<PlannedVolume[]> {
-  const rows = await db.query.volumes.findMany({ where: eq(volumes.appId, app.id) });
+  const rows = await db.query.volumes.findMany({ where: liveVolumesOf(app.id) });
   const selected = opts.volumeIds ? rows.filter((r) => opts.volumeIds!.includes(r.id)) : rows;
   if (selected.length === 0) return [];
 

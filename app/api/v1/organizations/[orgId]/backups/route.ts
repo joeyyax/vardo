@@ -59,6 +59,7 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
               with: {
                 volumes: {
                   columns: { name: true, type: true, source: true, backupStrategy: true },
+                  where: (v, { isNull }) => isNull(v.removedAt),
                 },
               },
             },

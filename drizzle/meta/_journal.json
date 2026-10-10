@@ -701,6 +701,13 @@
       "when": 1791612845701,
       "tag": "0099_self_update_peer_version",
       "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "7",
+      "when": 1791614009414,
+      "tag": "0100_volume_removed_at",
+      "breakpoints": true
     }
   ]
 }

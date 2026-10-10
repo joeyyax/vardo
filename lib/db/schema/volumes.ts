@@ -50,6 +50,8 @@ export const volumes = pgTable(
       kind: "postgres" | "mysql" | "mariadb" | "mongo" | "uptime-kuma";
       service: string;
     }>(),
+    // Set when a deploy no longer mounts it. Kept for history; backups skip it.
+    removedAt: timestamp("removed_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },

@@ -158,7 +158,7 @@ async function handleGet(_request: NextRequest, { params }: RouteParams) {
 
     // Add saved volumes that aren't running (may not be deployed yet)
     for (const saved of savedVolumes) {
-      if (!dockerNames.has(saved.name)) {
+      if (!dockerNames.has(saved.name) && !saved.removedAt) {
         dockerVolumes.push({
           id: saved.id,
           name: saved.name,
@@ -229,6 +229,7 @@ async function handlePut(request: NextRequest, { params }: RouteParams) {
             description: vol.description ?? prev.description,
             maxSizeBytes: vol.maxSizeBytes !== undefined ? vol.maxSizeBytes : prev.maxSizeBytes,
             warnAtPercent: vol.warnAtPercent ?? prev.warnAtPercent,
+            removedAt: null,
             updatedAt: new Date(),
           })
           .where(eq(volumes.id, prev.id));

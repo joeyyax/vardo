@@ -212,6 +212,7 @@ async function loadPausedDumps(orgId: string) {
         eq(apps.organizationId, orgId),
         eq(apps.status, "stopped"),
         eq(volumes.backupStrategy, "dump"),
+        isNull(volumes.removedAt),
       ),
     );
 

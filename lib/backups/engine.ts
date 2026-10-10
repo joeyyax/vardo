@@ -28,7 +28,14 @@ import { holdBackupLease } from "./run-lease";
 import { trackBackupWork } from "./in-flight";
 import { assertSafeName } from "@/lib/docker/validate";
 import { skipsAsConfig } from "./bind-config";
-import { isUncapturedSource, pausedDumpReason, uncapturedReason } from "./coverage";
+import {
+  isUncapturedSource,
+  pausedDumpReason,
+  removedVolumeReason,
+  uncapturedReason,
+  undeclaredVolumeReason,
+} from "./coverage";
+import { liveVolumesOf } from "@/lib/volumes/reconcile";
 import { exclusionReason, isBackupSelected, type DatabaseKind } from "./durability";
 import { checkRestoreKey, holdsInstanceSecrets } from "./key-guard";
 import { runningKeyFingerprint } from "@/lib/crypto/encrypt";
@@ -108,6 +115,8 @@ export type BackupResult = {
   paused?: boolean;
   /** Skipped because the bind source is empty and has never held data. */
   emptySource?: boolean;
+  /** Skipped because the app no longer declares the volume. */
+  undeclared?: boolean;
   durationMs: number;
 };
 
@@ -116,7 +125,7 @@ export type BackupResult = {
  * an empty bind source that never held data.
  */
 export function runSucceeded(results: BackupResult[]): boolean {
-  return results.length > 0 && results.every((r) => r.emptySource || r.outcome === "success");
+  return results.length > 0 && results.every((r) => r.emptySource || r.undeclared || r.outcome === "success");
 }
 
 /** `trigger` on a row someone started by hand. Null means the schedule started it. */
@@ -158,7 +167,34 @@ type VolumeToBackup = {
   /** Paths the archive leaves out. Read live, then recorded on the backup row. */
   backupExcludePatterns: string[] | null;
   backupSelection: "include" | "exclude" | null;
+  /** Set when a deploy no longer mounts it. */
+  removedAt: Date | null;
 };
+
+/** A named volume the app no longer mounts. */
+class UndeclaredVolumeError extends Error {
+  constructor(reason: string) {
+    super(reason);
+    this.name = "UndeclaredVolumeError";
+  }
+}
+
+/** Mounts of the app's running containers, or null when nothing runs or a container can't be read. */
+async function runningMounts(
+  appId: string,
+  appName: string,
+): Promise<{ destination: string; type: string; source: string }[] | null> {
+  try {
+    const env = await resolveDefaultEnv(appId);
+    const containers = await listContainers({ id: appId, name: appName }, env?.name);
+    if (containers.length === 0) return null;
+    const mounts: { destination: string; type: string; source: string }[] = [];
+    for (const c of containers) mounts.push(...(await inspectContainer(c.id)).mounts);
+    return mounts;
+  } catch {
+    return null;
+  }
+}
 
 function timestamp(): string {
   return new Date().toISOString().replace(/[:.]/g, "-");
@@ -888,7 +924,7 @@ async function runBackupUntracked(
     const orgSlug = app.organization.slug;
 
     const appVolumes = await db.query.volumes.findMany({
-      where: eq(volumes.appId, app.id),
+      where: liveVolumesOf(app.id),
     });
     const persistentVols = appVolumes.filter(isBackupSelected);
 
@@ -918,6 +954,7 @@ async function runBackupUntracked(
         durability: vol.durability,
         backupExcludePatterns: vol.backupExcludePatterns,
         backupSelection: vol.backupSelection,
+        removedAt: null,
       });
     }
   }
@@ -947,6 +984,7 @@ async function runBackupUntracked(
       durability: vol.durability,
       backupExcludePatterns: vol.backupExcludePatterns,
       backupSelection: vol.backupSelection,
+      removedAt: vol.removedAt,
     });
   }
 
@@ -1015,8 +1053,8 @@ async function runBackupUntracked(
     };
 
     // Sources the engine can't archive are recorded as skipped, not failed.
-    if (isUncapturedSource(vol)) {
-      const reason = uncapturedReason(vol);
+    if (vol.removedAt || isUncapturedSource(vol)) {
+      const reason = vol.removedAt ? removedVolumeReason(vol, vol.removedAt) : uncapturedReason(vol);
       log(`Skipping volume ${vol.name}: ${reason}`);
       const finishedAt = new Date();
       await db.insert(backups).values({
@@ -1042,6 +1080,7 @@ async function runBackupUntracked(
         sizeBytes: 0,
         storagePath: "",
         error: reason,
+        undeclared: Boolean(vol.removedAt),
         durationMs: finishedAt.getTime() - startedAt.getTime(),
       });
       continue;
@@ -1135,6 +1174,8 @@ async function runBackupUntracked(
         }
         const dockerVolumeName = await resolveDockerVolume(vol.appId, vol.appName, vol.name, vol.mountPath, log);
         if (!dockerVolumeName) {
+          const gone = vol.appId ? undeclaredVolumeReason(vol, await runningMounts(vol.appId, vol.appName)) : null;
+          if (gone) throw new UndeclaredVolumeError(gone);
           throw new Error(`Volume not found: ${vol.name}`);
         }
         const tar = await backupVolumeTar(backupId, dockerVolumeName, storageKey, storage, log, excludePatterns);
@@ -1197,6 +1238,27 @@ async function runBackupUntracked(
         continue;
       }
 
+      if (err instanceof UndeclaredVolumeError) {
+        log(`Skipping volume ${vol.name}: ${errorMsg}`);
+        const finishedAt = new Date();
+        await db
+          .update(backups)
+          .set({ status: "skipped", log: logLines.join("\n"), finishedAt })
+          .where(eq(backups.id, backupId));
+        results.push({
+          backupId,
+          appId: vol.appId || "",
+          volumeName: vol.name,
+          outcome: "skipped",
+          sizeBytes: 0,
+          storagePath: "",
+          error: errorMsg,
+          undeclared: true,
+          durationMs: finishedAt.getTime() - startedAt.getTime(),
+        });
+        continue;
+      }
+
       log(`Backup failed: ${errorMsg}`);
 
       // Classified after the attempt: apps.status is cached and may say stopped while the container is up.
@@ -1236,7 +1298,7 @@ async function runBackupUntracked(
     jobApps.length === job.backupJobApps.length - (scoped.length - switchedOn.length) &&
     jobVolumes.length === job.backupJobVolumes.length;
   const capturedSomething = results.some((r) => r.outcome === "success");
-  const onlyEmptySources = results.length > 0 && results.every((r) => r.emptySource);
+  const onlyEmptySources = results.length > 0 && results.every((r) => r.emptySource || r.undeclared);
   if (coveredWholeJob && (capturedSomething || onlyEmptySources)) {
     const finishedRunAt = new Date();
     await db
@@ -1250,7 +1312,7 @@ async function runBackupUntracked(
     const failed = results.filter((r) => r.outcome === "failed");
     const allSkipped = results.filter((r) => r.outcome === "skipped");
     // Empty, never-populated bind sources don't count either way.
-    const skipped = allSkipped.filter((r) => !r.emptySource);
+    const skipped = allSkipped.filter((r) => !r.emptySource && !r.undeclared);
     // Capturing nothing is a failure, unless every miss is a dump waiting on a stopped app.
     const capturedNothing = succeeded.length === 0;
     const onlyPaused =

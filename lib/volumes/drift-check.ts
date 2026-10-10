@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { volumes, apps } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { computeVolumeDiff } from "./diff";
+import { liveVolumesOf } from "./reconcile";
 import { listContainers, inspectContainer, resolveVolumeName } from "@/lib/docker/client";
 import { isAnonymousVolume } from "@/lib/docker/compose";
 import { resolveDefaultEnv } from "@/lib/docker/resolve-env";
@@ -25,7 +26,7 @@ export async function runPostDeployDriftCheck(opts: DriftCheckOpts): Promise<voi
 
   try {
     const appVolumes = await db.query.volumes.findMany({
-      where: eq(volumes.appId, appId),
+      where: liveVolumesOf(appId),
     });
 
     if (appVolumes.length === 0) return;

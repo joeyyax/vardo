@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { statusChange } from "@/lib/db/app-status";
 import { setParked } from "@/lib/db/app-parked";
 import { deployments, apps, volumes } from "@/lib/db/schema";
-import { eq, sql } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { formatRoute } from "@/lib/domains/path-prefix";
 import { nanoid } from "nanoid";
 import { encrypt, decryptOrFallback } from "@/lib/crypto/encrypt";
@@ -47,6 +47,12 @@ import { isSelfApp } from "../self-env";
 import { proposeDurability, isSafeToApply } from "@/lib/backups/durability";
 import { refreshDumpSpec } from "@/lib/backups/dump-spec";
 import { CERTS_VOLUME_KEY, watchAppCerts } from "@/lib/ssl/cert-export";
+import {
+  declaredMountPaths,
+  describeReconcile,
+  isNewSlotContainer,
+  planVolumeReconcile,
+} from "@/lib/volumes/reconcile";
 
 const POST_DEPLOY_SCAN_DELAY_MS = 30_000;
 
@@ -89,9 +95,12 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
     else logs.push(`[health] ${route} not yet reachable (DNS/TLS propagation)`);
   }
 
-  // Detect volumes from running containers. Rows describe the default environment.
+  // Reconcile volume rows with the new slot's mounts. Rows describe the default environment.
   if (!ctx.envIsolated) try {
-    const runningContainers = await listContainers({ id: ctx.appId, name: app.name }, ctx.envName);
+    // The old slot still runs here; its mounts are the previous compose's.
+    const runningContainers = (await listContainers({ id: ctx.appId, name: app.name }, ctx.envName)).filter((c) =>
+      isNewSlotContainer(c.labels?.["com.docker.compose.project"], ctx.newProjectName),
+    );
     const detectedVolumes: {
       name: string;
       mountPath: string;
@@ -101,9 +110,14 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
       source: string | null;
     }[] = [];
     const seen = new Set<string>();
+    let inspectedAll = true;
 
     for (const c of runningContainers) {
-      const info = await inspectContainer(c.id);
+      const info = await inspectContainer(c.id).catch(() => null);
+      if (!info) {
+        inspectedAll = false;
+        continue;
+      }
       for (const mount of info.mounts) {
         if (seen.has(mount.destination)) continue;
 
@@ -126,28 +140,42 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
       }
     }
 
-    if (detectedVolumes.length > 0) {
-      const currentVolumes = await db.query.volumes.findMany({
-        where: eq(volumes.appId, ctx.appId),
-      });
-      const existingByPath = new Map(currentVolumes.map((v) => [v.mountPath, v]));
-      const newDetected = detectedVolumes.filter((v) => !existingByPath.has(v.mountPath));
-      // Rows prepare-repo inserted during this deploy count as found by it.
-      const deployStart = new Date(ctx.startTime);
-      const touchedIds = currentVolumes.filter((v) => v.createdAt >= deployStart).map((v) => v.id);
-      const firstDetection = touchedIds.length === currentVolumes.length;
+    const priorVolumes = await db.query.volumes.findMany({
+      where: eq(volumes.appId, ctx.appId),
+    });
+    // Removal needs a full view of the new slot.
+    const declared =
+      runningContainers.length > 0 && inspectedAll && Object.keys(compose.services).length > 0
+        ? declaredMountPaths(compose)
+        : null;
+    const plan = planVolumeReconcile(priorVolumes, detectedVolumes, declared);
+    // Rows prepare-repo inserted during this deploy count as found by it.
+    const deployStart = new Date(ctx.startTime);
+    const touchedIds = priorVolumes.filter((v) => v.createdAt >= deployStart).map((v) => v.id);
+    const firstDetection = touchedIds.length === priorVolumes.length;
 
-      // A mount path whose source changed is a different volume; reset its backup selection.
-      for (const vol of detectedVolumes) {
-        const row = existingByPath.get(vol.mountPath);
-        if (!row || (row.type === vol.type && (vol.type !== "bind" || row.source === vol.source))) continue;
-        await db
-          .update(volumes)
-          .set({ type: vol.type, source: vol.source, backupSelection: null, updatedAt: new Date() })
-          .where(eq(volumes.id, row.id));
-        if (!touchedIds.includes(row.id)) touchedIds.push(row.id);
-        log(`[deploy] ${vol.mountPath} now mounts ${vol.source ?? vol.name}`);
-      }
+    for (const update of plan.updates) {
+      await db
+        .update(volumes)
+        .set({ ...update.set, ...(update.resetSelection && { backupSelection: null }), updatedAt: new Date() })
+        .where(eq(volumes.id, update.id));
+      if (update.resetSelection && !touchedIds.includes(update.id)) touchedIds.push(update.id);
+    }
+    if (plan.removals.length > 0) {
+      await db
+        .update(volumes)
+        .set({ removedAt: new Date(), updatedAt: new Date() })
+        .where(inArray(volumes.id, plan.removals.map((r) => r.id)));
+    }
+    const reconciled = describeReconcile(plan);
+    if (reconciled) log(reconciled);
+
+    if (detectedVolumes.length > 0) {
+      const currentVolumes = plan.updates.length
+        ? await db.query.volumes.findMany({ where: eq(volumes.appId, ctx.appId) })
+        : priorVolumes;
+      const existingByPath = new Map(currentVolumes.map((v) => [v.mountPath, v]));
+      const newDetected = detectedVolumes.filter((v) => plan.added.some((a) => a.mountPath === v.mountPath));
 
       // A renamed service or changed engine moves the dump target; user-set fields stay.
       for (const vol of detectedVolumes) {

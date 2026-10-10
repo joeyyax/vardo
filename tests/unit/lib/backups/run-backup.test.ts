@@ -881,3 +881,57 @@ describe("runBackup — expected size", () => {
     expect(uploadMock.mock.calls[0][2]).toMatchObject({ expectedBytes: null });
   });
 });
+
+describe("runBackup — volumes the app no longer declares", () => {
+  const noVolume = (...args: unknown[]) => {
+    const cb = args[args.length - 1] as (e: unknown, r?: unknown) => void;
+    const argv = args[1] as string[];
+    if (argv[0] === "volume" && argv[1] === "inspect") cb(new Error("no such volume"));
+    else cb(null, { stdout: "", stderr: "" });
+  };
+
+  it("skips a named volume whose mount path became a bind mount", async () => {
+    const { inspectContainer } = await import("@/lib/docker/client");
+    backupJobsFindFirst.mockResolvedValue(job());
+    volumesPerApp([volume({ name: "config", mountPath: "/config" })]);
+    listContainersMock.mockResolvedValue([{ id: "c1" }]);
+    vi.mocked(inspectContainer).mockResolvedValue({
+      mounts: [{ type: "bind", name: "", source: "/srv/app-data/config", destination: "/config" }],
+    } as never);
+    execFileMock.mockImplementation(noVolume);
+
+    const results = await runBackup("job-1");
+
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({ outcome: "skipped", undeclared: true });
+    expect(results[0].error).toMatch(/bind mount of \/srv\/app-data\/config/);
+    expect(runSucceeded(results)).toBe(true);
+    expect(emitted("backup.failed")).toHaveLength(0);
+    expect(updated.some((u) => u.set.status === "skipped")).toBe(true);
+  });
+
+  it("still fails a missing named volume while nothing runs to say otherwise", async () => {
+    backupJobsFindFirst.mockResolvedValue(job());
+    volumesPerApp([volume({ name: "config", mountPath: "/config" })]);
+    execFileMock.mockImplementation(noVolume);
+
+    const results = await runBackup("job-1");
+
+    expect(results[0].outcome).toBe("failed");
+  });
+
+  it("skips a linked volume a deploy marked removed", async () => {
+    backupJobsFindFirst.mockResolvedValue(
+      job({
+        backupJobApps: [],
+        backupJobVolumes: [{ volume: volume({ appId: "app-a", removedAt: new Date("2026-10-01T00:00:00Z") }) }],
+      }),
+    );
+
+    const results = await runBackup("job-1");
+
+    expect(results[0]).toMatchObject({ outcome: "skipped", undeclared: true });
+    expect(results[0].error).toMatch(/No longer declared/);
+    expect(dockerRuns()).toHaveLength(0);
+  });
+});

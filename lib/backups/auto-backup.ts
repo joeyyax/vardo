@@ -11,6 +11,7 @@ import { logger } from "@/lib/logger";
 import { isBackupSelected } from "./durability";
 import { sealTargetConfig } from "./target-config";
 import { nightlyCron } from "./run-rules";
+import { liveVolumesOf } from "@/lib/volumes/reconcile";
 
 const log = logger.child("auto-backup");
 
@@ -202,7 +203,7 @@ export async function ensureAutoBackupJob(opts: {
 
   // Not `persistent`: a bind-mounted database is persistent = false and still needs a job.
   const appVolumes = await db.query.volumes.findMany({
-    where: eq(volumes.appId, appId),
+    where: liveVolumesOf(appId),
   });
 
   if (!appVolumes.some(isBackupSelected)) {

@@ -298,6 +298,94 @@ describe("postDeploy backup enrollment", () => {
   });
 });
 
+describe("postDeploy volume reconcile", () => {
+  const oldRow = (id: string, name: string, mountPath: string) => ({
+    id, appId: "app-1", name, mountPath, type: "named", source: null, removedAt: null,
+    durability: null, backupStrategy: "tar", backupSpec: null, backupSelection: "include",
+    createdAt: new Date(Date.now() - 86_400_000),
+  });
+  const container = (id: string, project: string, mounts: unknown[]) => ({
+    state: { status: "running" },
+    image: "app:latest",
+    labels: { "com.docker.compose.service": "web", "com.docker.compose.project": project },
+    mounts,
+    id,
+  });
+
+  beforeEach(() => {
+    writes.length = 0;
+    enrollNewVolumes.mockClear();
+  });
+
+  it("switches rows to bind mounts when the compose moves named volumes to host paths", async () => {
+    const green = container("old", "app-production-green", [
+      { type: "volume", name: "app-production_config", source: "", destination: "/config" },
+      { type: "volume", name: "app-production_data", source: "", destination: "/data" },
+    ]);
+    const blue = container("new", "app-production-blue", [
+      { type: "bind", name: "", source: "/srv/app-data/config", destination: "/config" },
+      { type: "bind", name: "", source: "/srv/app-data/data", destination: "/data" },
+    ]);
+    // The old slot is listed first and still running.
+    vi.mocked(listContainers).mockResolvedValue([
+      { id: "old", labels: green.labels },
+      { id: "new", labels: blue.labels },
+    ] as never);
+    vi.mocked(inspectContainer).mockImplementation(async (id: string) => (id === "old" ? green : blue) as never);
+    dbMock.query.volumes.findMany.mockResolvedValue([oldRow("v1", "config", "/config"), oldRow("v2", "data", "/data")]);
+    const ctx = makeContext({
+      isLocalEnv: false,
+      compose: {
+        services: { web: { name: "web", volumes: ["/srv/app-data/config:/config", "/srv/app-data/data:/data"] } },
+      },
+    });
+
+    await postDeploy(ctx);
+
+    expect(writes.map((w) => w.values)).toContainEqual(
+      expect.objectContaining({ type: "bind", source: "/srv/app-data/config", persistent: false, backupSelection: null }),
+    );
+    expect(writes.map((w) => w.values)).toContainEqual(
+      expect.objectContaining({ type: "bind", source: "/srv/app-data/data", persistent: false, backupSelection: null }),
+    );
+    expect(writes.some((w) => w.values.removedAt instanceof Date)).toBe(false);
+    const note = ctx.logLines.filter((l) => l.startsWith("[deploy] Volume records updated"));
+    expect(note).toHaveLength(1);
+    expect(note[0]).toContain("/config now mounts /srv/app-data/config");
+    expect(enrollNewVolumes).toHaveBeenCalledWith(expect.objectContaining({ volumeIds: ["v1", "v2"] }));
+  });
+
+  it("marks a row removed when the compose drops its volume", async () => {
+    const blue = container("new", "app-production-blue", [
+      { type: "volume", name: "app-production_data", source: "", destination: "/data" },
+    ]);
+    vi.mocked(listContainers).mockResolvedValue([{ id: "new", labels: blue.labels }] as never);
+    vi.mocked(inspectContainer).mockResolvedValue(blue as never);
+    dbMock.query.volumes.findMany.mockResolvedValue([oldRow("v1", "data", "/data"), oldRow("v2", "cache", "/cache")]);
+    const ctx = makeContext({
+      compose: { services: { web: { name: "web", volumes: ["data:/data"] } }, volumes: { data: {} } },
+    });
+
+    await postDeploy(ctx);
+
+    const removed = writes.filter((w) => w.values.removedAt instanceof Date);
+    expect(removed).toHaveLength(1);
+    expect(ctx.logLines).toContain(
+      "[deploy] Volume records updated: no longer declared: cache (/cache) — backups skip them",
+    );
+  });
+
+  it("removes nothing when a container of the new slot can't be inspected", async () => {
+    vi.mocked(listContainers).mockResolvedValue([{ id: "new", labels: {} }] as never);
+    vi.mocked(inspectContainer).mockRejectedValue(new Error("gone"));
+    dbMock.query.volumes.findMany.mockResolvedValue([oldRow("v2", "cache", "/cache")]);
+
+    await postDeploy(makeContext({ compose: { services: { web: { name: "web" } } } }));
+
+    expect(writes.some((w) => w.values.removedAt instanceof Date)).toBe(false);
+  });
+});
+
 describe("postDeploy dump classification for Uptime Kuma", () => {
   const kumaMount = {
     type: "volume",

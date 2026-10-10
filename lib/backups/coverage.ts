@@ -32,3 +32,24 @@ export function pausedDumpReason(vol: {
   if (vol.appStatus !== "stopped") return null;
   return "App is stopped — a database dump needs a running container. Start the app to capture it.";
 }
+
+/** Why a row a deploy marked removed is skipped. */
+export function removedVolumeReason(vol: { name: string; mountPath: string | null }, removedAt: Date): string {
+  const at = vol.mountPath ? ` at ${vol.mountPath}` : "";
+  return `No longer declared by the app — ${vol.name}${at} left its compose on ${removedAt.toISOString().slice(0, 10)}`;
+}
+
+/**
+ * Why a named volume with no Docker volume behind it is skipped, from the running containers' mounts.
+ * Null when the app still mounts a volume there or nothing is running to tell.
+ */
+export function undeclaredVolumeReason(
+  vol: { name: string; mountPath: string | null },
+  mounts: { destination: string; type: string; source: string }[] | null,
+): string | null {
+  if (!mounts || !vol.mountPath) return null;
+  const at = mounts.find((m) => m.destination === vol.mountPath);
+  if (at && at.type !== "bind") return null;
+  const now = at ? `${vol.mountPath} is now a bind mount of ${at.source}` : `nothing mounts ${vol.mountPath}`;
+  return `No longer declared by the app — ${now}. Redeploy to update its volume records`;
+}

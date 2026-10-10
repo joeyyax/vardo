@@ -126,7 +126,7 @@ export async function planJobs(jobIds: string[]): Promise<BackupRunPlan> {
     : [];
   const byApp = new Map<string, string[]>();
   for (const v of vols) {
-    if (!v.appId || !isBackupSelected(v) || exclusionReason(v.durability) || isUncapturedSource(v)) continue;
+    if (!v.appId || v.removedAt || !isBackupSelected(v) || exclusionReason(v.durability) || isUncapturedSource(v)) continue;
     if (await skipsAsConfig(v)) continue;
     byApp.set(v.appId, [...(byApp.get(v.appId) ?? []), v.name]);
   }
