@@ -28,6 +28,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Card, CardContent } from "@/components/ui/card";
 import { can } from "@/lib/auth/permissions";
 import { RelativeTime } from "@/components/relative-time";
+import { SYSTEM_ORG_NO_INVITES } from "@/lib/auth/system-org-messages";
 
 type Invitation = {
   id: string;
@@ -45,6 +46,8 @@ type InvitationsPanelProps = {
   currentRole: string;
   invitations: Invitation[];
   emailConfigured: boolean;
+  /** The built-in system org, which takes no invitations. */
+  systemOrg?: boolean;
 };
 
 const ROLE_LABELS: Record<string, string> = {
@@ -65,6 +68,7 @@ export function InvitationsPanel({
   currentRole,
   invitations: serverInvitations,
   emailConfigured,
+  systemOrg = false,
 }: InvitationsPanelProps) {
   const router = useRouter();
   const [revokedIds, setRevokedIds] = useState<string[]>([]);
@@ -82,6 +86,7 @@ export function InvitationsPanel({
   );
 
   const canManage = can(currentRole, "org.members.manage");
+  const canInvite = canManage && !systemOrg;
 
   // Only the token's hash is stored, so copying issues a new link and retires the old one.
   async function copyInviteLink(invitationId: string) {
@@ -240,7 +245,11 @@ export function InvitationsPanel({
 
       <Card>
         <CardContent className="space-y-4">
-        {canManage && !emailConfigured && (
+        {systemOrg && (
+          <p className="text-sm text-muted-foreground">{SYSTEM_ORG_NO_INVITES}</p>
+        )}
+
+        {canInvite && !emailConfigured && (
           <Card variant="warning" className="flex items-start gap-2 px-4 py-2.5 text-sm text-status-warning">
             <AlertTriangle className="size-4 shrink-0 mt-0.5" aria-hidden="true" />
             <span className="flex-1">
@@ -254,7 +263,7 @@ export function InvitationsPanel({
             {invitations.filter((i) => i.status === "pending").length} pending
             invitation{invitations.filter((i) => i.status === "pending").length !== 1 ? "s" : ""}
           </p>
-          {canManage && (
+          {canInvite && (
             <Button size="sm" onClick={() => setInviteOpen(true)}>
               <Plus className="mr-1.5 size-4" />
               Invite
@@ -266,9 +275,9 @@ export function InvitationsPanel({
           <EmptyState
             icon={Mail}
             title="No invitations yet"
-            body="Invite a teammate to give them access to this organization."
+            body={systemOrg ? undefined : "Invite a teammate to give them access to this organization."}
             action={
-              canManage && (
+              canInvite && (
                 <Button size="sm" variant="outline" onClick={() => setInviteOpen(true)}>
                   Send your first invitation
                 </Button>

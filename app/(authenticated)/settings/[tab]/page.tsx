@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { memberships, invitations, apps } from "@/lib/db/schema";
 import { getSession, getCurrentOrg, getUserOrganizations } from "@/lib/auth/session";
+import { isInstanceAdminUser } from "@/lib/auth/system-org";
 import { isFeatureEnabledAsync, type FeatureFlag } from "@/lib/config/features";
 import { eq, and } from "drizzle-orm";
 import { OrgEnvVarsEditor } from "../org-env-vars";
@@ -117,6 +118,8 @@ export default async function OrgSettingsTabPage({
           currentUserId={session.user.id}
           organizations={organizations}
           embedded
+          systemOrg={orgData.organization.isSystemManaged}
+          instanceAdmin={orgData.organization.isSystemManaged && (await isInstanceAdminUser(session.user.id))}
         />
       );
     }
@@ -154,6 +157,7 @@ export default async function OrgSettingsTabPage({
           currentRole={orgData.membership.role}
           invitations={invitationList}
           emailConfigured={!!(await getEmailProviderConfig())}
+          systemOrg={orgData.organization.isSystemManaged}
         />
       );
     }
