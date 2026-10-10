@@ -1,5 +1,6 @@
 "use client";
 
+import { DisclosureChevron } from "@/components/ui/disclosure-chevron";
 import { Fragment, useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { RelativeTime } from "@/components/relative-time";
@@ -17,6 +18,7 @@ import {
   Variable,
   FileText,
   Activity,
+  ChevronsUpDown,
 } from "lucide-react";
 import { toast } from "@/lib/messenger";
 import { PageToolbar } from "@/components/page-toolbar";
@@ -363,7 +365,7 @@ function ProjectVariables({ apps, orgId }: { apps: ProjectApp[]; orgId: string }
                 </Badge>
               )}
             </div>
-            <ChevronDown className={`size-4 text-muted-foreground transition-transform ${expandedApp === app.id ? "rotate-180" : ""}`} />
+            <DisclosureChevron open={expandedApp === app.id} />
           </button>
           {expandedApp === app.id && (
             <div className="px-4 pb-4">
@@ -922,7 +924,7 @@ export function ProjectDetail({
                   environments.find((e) => e.name === selectedEnv)?.type || "production"
                 )}`} />
                 {selectedEnv}
-                <ChevronDown className="size-3.5 opacity-60" />
+                <ChevronsUpDown className="size-3.5 shrink-0 text-muted-foreground" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start">

@@ -1,8 +1,9 @@
 "use client";
 
+import { DisclosureChevron } from "@/components/ui/disclosure-chevron";
 import { copyToClipboard } from "@/lib/clipboard";
 import { useState } from "react";
-import { ChevronDown, ExternalLink, Copy, Check } from "lucide-react";
+import { ExternalLink, Copy, Check } from "lucide-react";
 import {
   Collapsible,
   CollapsibleContent,
@@ -33,10 +34,7 @@ export function ProviderGuide({
             <div className="text-xs text-muted-foreground">{description}</div>
           )}
         </div>
-        <ChevronDown
-          aria-hidden="true"
-          className={`size-4 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`}
-        />
+<DisclosureChevron open={open} />
       </CollapsibleTrigger>
       <CollapsibleContent>
         <div className="rounded-b-lg bg-background-deep px-3 pt-1 pb-3 space-y-3 text-sm">

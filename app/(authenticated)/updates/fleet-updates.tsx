@@ -1,8 +1,9 @@
 "use client";
 
+import { DisclosureChevron } from "@/components/ui/disclosure-chevron";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { BellOff, ChevronDown, CircleCheck, RefreshCw, TriangleAlert } from "lucide-react";
+import { BellOff, CircleCheck, RefreshCw, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -421,11 +422,11 @@ function IgnoredList({
   onRestore: (entry: FleetIgnoredUpdate) => void;
 }) {
   return (
-    <details className={cn(cardVariants({ variant: "surface" }), "overflow-hidden")}>
+    <details className={cn(cardVariants({ variant: "surface" }), "group overflow-hidden")}>
       <summary className="type-body-sm flex cursor-pointer list-none items-center gap-2 px-4 py-2.5 text-muted-foreground transition-colors hover:text-foreground [&::-webkit-details-marker]:hidden">
         <BellOff className="size-3.5" aria-hidden="true" />
         Ignored ({entries.length})
-        <ChevronDown className="ml-auto size-4 transition-transform" aria-hidden="true" />
+        <DisclosureChevron className="ml-auto" />
       </summary>
       <ul className="divide-y bg-background-deep">
         {entries.map((entry) => (

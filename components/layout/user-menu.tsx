@@ -94,7 +94,7 @@ export function UserMenu({ collapsed, compact, currentOrgId, organizations, team
                   {currentOrg?.name || email}
                 </span>
               </div>
-              <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
+              <ChevronsUpDown className="size-3.5 shrink-0 text-muted-foreground" />
             </>
           )}
         </Button>

@@ -1,6 +1,7 @@
 "use client";
 
-import { Loader2, X, ChevronDown } from "lucide-react";
+import { DisclosureChevron } from "@/components/ui/disclosure-chevron";
+import { Loader2, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { TerminalOutput, highlightLogLine, detectLogLevel } from "@/components/log-viewer";
@@ -145,7 +146,7 @@ export function InProgressDeployCard({
               }}
               className="rounded p-0.5 hover:bg-accent focus-visible:outline-2 focus-visible:outline-brass"
             >
-              <ChevronDown className={`size-4 text-muted-foreground transition-transform ${expanded ? "rotate-180" : ""}`} />
+              <DisclosureChevron open={expanded} />
             </button>
           )}
         </div>

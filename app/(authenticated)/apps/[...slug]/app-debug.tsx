@@ -1,8 +1,9 @@
 "use client";
 
+import { DisclosureChevron } from "@/components/ui/disclosure-chevron";
 import { copyToClipboard } from "@/lib/clipboard";
 import { useState, useCallback, useEffect, useMemo } from "react";
-import { Copy, Check, RefreshCw, ChevronDown, ChevronRight } from "lucide-react";
+import { Copy, Check, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Collapsible,
@@ -47,8 +48,7 @@ function CodeBlock({
     >
       <div className="flex items-center justify-between px-3 py-2 bg-background-deep">
         <CollapsibleTrigger className="type-h4 flex items-center gap-1.5 text-foreground/80 hover:text-foreground transition-colors group">
-          <ChevronRight className="size-3.5 text-muted-foreground group-data-[state=open]:hidden" />
-          <ChevronDown className="size-3.5 text-muted-foreground hidden group-data-[state=open]:block" />
+          <DisclosureChevron />
           {label}
         </CollapsibleTrigger>
         {!loading && content && (

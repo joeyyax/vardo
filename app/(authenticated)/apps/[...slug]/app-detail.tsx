@@ -20,6 +20,7 @@ import {
   Undo2,
   Zap,
   type LucideIcon,
+  ChevronsUpDown,
 } from "lucide-react";
 import { toast } from "@/lib/messenger";
 import { PageToolbar } from "@/components/page-toolbar";
@@ -521,7 +522,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
                 >
                   <span className={`size-2 rounded-full ${envTypeDotColor(selectedEnv?.type ?? "production")}`} />
                   {selectedEnv?.name ?? "production"}
-                  <ChevronDown className="size-3.5 opacity-60" />
+                  <ChevronsUpDown className="size-3.5 shrink-0 text-muted-foreground" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start">

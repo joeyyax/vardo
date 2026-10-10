@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Check, ChevronDown, Loader2, GitBranch } from "lucide-react";
+import { Check, Loader2, GitBranch, ChevronsUpDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -87,7 +87,7 @@ export function BranchSelect({
           ) : (
             <span className="text-muted-foreground">{placeholder}</span>
           )}
-          <ChevronDown className="ml-2 size-3.5 shrink-0 opacity-50" />
+          <ChevronsUpDown className="ml-2 size-3.5 shrink-0 text-muted-foreground" />
         </Button>
       </PopoverTrigger>
       <PopoverContent

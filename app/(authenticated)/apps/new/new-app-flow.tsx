@@ -1,5 +1,6 @@
 "use client";
 
+import { DisclosureChevron } from "@/components/ui/disclosure-chevron";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -14,7 +15,6 @@ import {
   FileText,
   Globe2,
   RefreshCw,
-  ChevronDown,
 } from "lucide-react";
 import { Github } from "@/components/icons/github";
 import { toast } from "@/lib/messenger";
@@ -884,9 +884,7 @@ export function NewAppFlow({ orgId, templates, parentApps = [], baseDomain: base
                     onClick={() => setAdvancedOpen((v) => !v)}
                     className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground w-fit"
                   >
-                    <ChevronDown
-                      className={`size-4 transition-transform ${advancedOpen ? "rotate-180" : ""}`}
-                    />
+                    <DisclosureChevron open={advancedOpen} className="text-current" />
                     Advanced
                   </button>
                   {advancedOpen && (

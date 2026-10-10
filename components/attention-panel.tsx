@@ -1,7 +1,8 @@
 "use client";
 
+import { DisclosureChevron } from "@/components/ui/disclosure-chevron";
 import Link from "next/link";
-import { ChevronDown } from "lucide-react";
+import {  } from "lucide-react";
 
 import { isInlineRow, type AttentionRow, type AttentionTone } from "@/lib/ui/attention";
 import { formatSpan } from "@/lib/ui/relative-time";
@@ -57,10 +58,7 @@ export function AttentionRowList({ rows, highlight = null }: { rows: AttentionRo
               <span className="ml-auto tabular-nums text-muted-foreground">
                 {row.items.length}
               </span>
-              <ChevronDown
-                aria-hidden="true"
-                className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180"
-              />
+              <DisclosureChevron />
             </summary>
             <div className="flex items-start gap-x-2 px-3 pb-2.5">
               <span aria-hidden="true" className={`hidden shrink-0 sm:block ${LABEL_WIDTH}`} />
