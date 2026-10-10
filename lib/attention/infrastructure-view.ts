@@ -110,6 +110,7 @@ function unreachableRow(): AttentionRow {
     key: "vardo-unreachable",
     label: "Vardo unreachable",
     tone: "error",
+    group: "vardo",
     items: [{ id: "vardo-unreachable", name: "Vardo", detail: "Not responding" }],
     footer: "The console stopped answering. This page keeps trying.",
   };

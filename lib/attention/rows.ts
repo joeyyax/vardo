@@ -1,10 +1,10 @@
 import "server-only";
 
-import { and, desc, eq, gte, inArray, isNotNull, isNull } from "drizzle-orm";
+import { and, eq, gte, inArray, isNotNull, isNull } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 
 import { db } from "@/lib/db";
-import { apps, backupJobApps, backupJobs, backupJobVolumes, backups, volumes } from "@/lib/db/schema";
+import { apps, backupJobApps, backupJobs, backupJobVolumes, backups, projects, volumes } from "@/lib/db/schema";
 import { resolveBackupTarget } from "@/lib/backups/auto-backup";
 import { isBackupSelected } from "@/lib/backups/durability";
 import { listUncoveredApps } from "@/lib/backups/enroll";
@@ -14,6 +14,7 @@ import { getCooldownUntil } from "@/lib/docker/image-updates/check";
 import { getAggregateUpdateStatus } from "@/lib/docker/image-updates/status";
 import { conditionRows, hadRecentHostOom, oomRows, type AttentionRow } from "@/lib/ui/attention";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
+import { BACKUP_TITLE } from "@/lib/ui/conditions";
 import { isVardoManagedApp } from "@/lib/infra/instance-apps";
 import { getBuildSha, getChannelUpdate } from "@/lib/version";
 import { isSelfDeployLayout } from "@/lib/paths";
@@ -32,6 +33,7 @@ import {
   withParentNames,
 } from "./app-status-rows";
 import { backupCoverageRows, type SystemJobState } from "./backup-coverage-rows";
+import { standingBackupFailures } from "./backup-failures";
 import { errorRateRows } from "./error-rate-rows";
 import { getFleetAttention } from "./fleet";
 
@@ -64,27 +66,23 @@ async function loadVardoUpdateRow(): Promise<AttentionRow | null> {
   });
 }
 
-/** Most recent failure per app, so one broken job is one row. */
+/** Each app's most recent failure that no later run has cleared. */
 async function loadFailedBackups(appIds: string[]) {
   if (appIds.length === 0) return [];
   const since = new Date(Date.now() - BACKUP_FAILURE_WINDOW_HOURS * 3_600_000);
   const rows = await db
-    .select({ id: backups.id, appId: backups.appId, startedAt: backups.startedAt })
+    .select({
+      id: backups.id,
+      appId: backups.appId,
+      jobId: backups.jobId,
+      volumeName: backups.volumeName,
+      status: backups.status,
+      startedAt: backups.startedAt,
+      log: backups.log,
+    })
     .from(backups)
-    .where(
-      and(
-        eq(backups.status, "failed"),
-        gte(backups.startedAt, since),
-        inArray(backups.appId, appIds),
-      ),
-    )
-    .orderBy(desc(backups.startedAt));
-
-  const latest = new Map<string, (typeof rows)[number]>();
-  for (const row of rows) {
-    if (row.appId && !latest.has(row.appId)) latest.set(row.appId, row);
-  }
-  return [...latest.values()];
+    .where(and(gte(backups.startedAt, since), inArray(backups.appId, appIds)));
+  return standingBackupFailures(rows);
 }
 
 /** Jobs that have captured nothing for several schedule intervals, read from the jobs, not the apps. */
@@ -105,7 +103,7 @@ async function loadOverdueBackupJobs(orgId: string, now: Date) {
   if (overdue.length === 0) return [];
 
   const links = await db
-    .select({ jobId: backupJobApps.backupJobId, appName: apps.name })
+    .select({ jobId: backupJobApps.backupJobId, id: apps.id, name: apps.name, displayName: apps.displayName })
     .from(backupJobApps)
     .innerJoin(apps, eq(apps.id, backupJobApps.appId))
     .where(
@@ -115,18 +113,12 @@ async function loadOverdueBackupJobs(orgId: string, now: Date) {
       ),
     );
 
-  const appsByJob = new Map<string, string[]>();
-  for (const link of links) {
-    appsByJob.set(link.jobId, [...(appsByJob.get(link.jobId) ?? []), link.appName]);
+  const appsByJob = new Map<string, { id: string; name: string; displayName: string }[]>();
+  for (const { jobId, ...app } of links) {
+    appsByJob.set(jobId, [...(appsByJob.get(jobId) ?? []), app]);
   }
 
-  return overdue.map((entry) => {
-    const covered = appsByJob.get(entry.job.id) ?? [];
-    return {
-      ...entry,
-      href: covered.length === 1 ? `/apps/${covered[0]}/backups` : "/backups",
-    };
-  });
+  return overdue.map((entry) => ({ ...entry, apps: appsByJob.get(entry.job.id) ?? [] }));
 }
 
 const COVERAGE_TTL_MS = 30_000;
@@ -253,8 +245,10 @@ async function loadStatusSubjects(orgId: string) {
       parentAppId: apps.parentAppId,
       conditions: apps.conditions,
       isSystemManaged: apps.isSystemManaged,
+      projectName: projects.displayName,
     })
     .from(apps)
+    .leftJoin(projects, eq(projects.id, apps.projectId))
     .where(eq(apps.organizationId, orgId));
   return rows.filter((a) => !isVardoManagedApp(a));
 }
@@ -325,16 +319,17 @@ export async function buildAttentionRows(
   ]);
 
   const rows = conditionRows(withParentNames(subjects));
+  rows.push(...oomRows(exited, Date.now(), OOM_WINDOW_HOURS * 3_600_000));
   rows.push(...appStatusRows(subjects, Date.now(), APP_DOWN_WINDOW_HOURS * 3_600_000));
   rows.push(...appStoppedRows(subjects));
-  rows.push(...oomRows(exited, Date.now(), OOM_WINDOW_HOURS * 3_600_000));
   rows.push(...errorRateRows(appRows, elevated));
 
   if (fleet.unreachableDomains.length > 0) {
     rows.push({
       key: "domain-unreachable",
-      label: "Domain unreachable",
+      label: "Unreachable",
       tone: "error",
+      group: "domains",
       items: fleet.unreachableDomains.map((d) => ({
         id: d.id,
         name: d.domain,
@@ -345,7 +340,7 @@ export async function buildAttentionRows(
     });
   }
 
-  // Containers with no memory limit can take the whole host. Neutral, unless a recent host kill promotes it.
+  // Informational, unless a recent host kill makes it a problem.
   const unlimited = appRows.filter(
     (a) => a.status === "active" && a.containerMemoryLimit === 0,
   );
@@ -355,6 +350,7 @@ export async function buildAttentionRows(
       key: "no-memory-limit",
       label: "No memory limit",
       tone: hostOom ? "warning" : "neutral",
+      ...(hostOom ? { group: "memory" as const } : {}),
       items: unlimited
         .map((a) => {
           const tier = (a.priority ?? "standard") as QosTier;
@@ -398,38 +394,60 @@ export async function buildAttentionRows(
     });
   }
 
+  const backUp = (app: { id: string; name: string }) =>
+    ({ label: "Back up now", run: "backup", app: { id: app.id, name: app.name } }) as const;
+
   if (failedBackups.length > 0) {
     const byApp = new Map(appRows.map((a) => [a.id, a]));
     rows.push({
       key: "backup-failed",
-      label: "Backup failed",
+      label: BACKUP_TITLE.failed,
       tone: "error",
-      items: failedBackups.map((b) => {
+      group: "backups",
+      items: failedBackups.flatMap((b) => {
         const app = b.appId ? byApp.get(b.appId) : undefined;
-        return {
-          id: b.id,
-          name: app?.displayName ?? "Unknown app",
-          href: app ? `/apps/${app.name}/backups` : "/backups",
-          since: b.startedAt.toISOString(),
-        };
+        if (!app) return [];
+        return [
+          {
+            id: b.id,
+            subject: app.id,
+            name: app.displayName,
+            href: `/apps/${app.name}/backups`,
+            detail: b.volumeName ? `Volume ${b.volumeName}` : undefined,
+            since: b.startedAt.toISOString(),
+            fix: backUp(app),
+          },
+        ];
       }),
-      footer: `${failedBackups.length} app${failedBackups.length === 1 ? "" : "s"} failed a backup in the last ${BACKUP_FAILURE_WINDOW_HOURS} hours. Each row is its most recent failure.`,
+      footer: `Apps whose latest backup in the last ${BACKUP_FAILURE_WINDOW_HOURS} hours failed.`,
     });
   }
 
   if (overdueJobs.length > 0) {
     rows.push({
       key: "backup-overdue",
-      label: "Backup overdue",
+      label: BACKUP_TITLE.overdue,
       tone: "warning",
-      items: overdueJobs.map((o) => ({
-        id: o.job.id,
-        name: o.job.name,
-        href: o.href,
-        detail: o.neverRan ? "Has never captured a backup" : undefined,
-        since: o.since.toISOString(),
-      })),
-      footer: `Each of these jobs has captured nothing for more than ${OVERDUE_INTERVALS} runs of its own schedule. The time shown is since its last archive, or since the job was created.`,
+      group: "backups",
+      items: overdueJobs.flatMap((o) => {
+        const title = o.neverRan ? BACKUP_TITLE.never : BACKUP_TITLE.overdue;
+        const since = o.since.toISOString();
+        // The job's apps are the subjects, so each counts once.
+        if (o.apps.length === 0) {
+          return [{ id: o.job.id, name: o.job.name, title, href: "/backups", detail: "Backup job", since }];
+        }
+        return o.apps.map((app) => ({
+          id: `${o.job.id}:${app.id}`,
+          subject: app.id,
+          name: app.displayName,
+          title,
+          href: `/apps/${app.name}/backups`,
+          detail: `Job ${o.job.name}`,
+          since,
+          fix: backUp(app),
+        }));
+      }),
+      footer: `Each of these jobs has captured nothing for more than ${OVERDUE_INTERVALS} runs of its own schedule.`,
     });
   }
 
@@ -438,14 +456,16 @@ export async function buildAttentionRows(
   if (pausedDumps.length > 0) {
     rows.push({
       key: "backup-paused",
-      label: "Backup paused",
+      label: BACKUP_TITLE.paused,
       tone: "warning",
+      group: "backups",
       items: pausedDumps.map((a) => ({
         id: a.id,
         name: a.parentName ? `${a.parentName} · ${a.displayName}` : a.displayName,
         href: `/apps/${a.name}/backups`,
         detail: "Database dump needs a running container",
         since: a.statusChangedAt?.toISOString(),
+        fix: { label: "Start", run: "restart", app: { id: a.id, name: a.name } },
       })),
       footer:
         "These apps are stopped. Their volumes are still archived on schedule, but a database dump cannot run until the app is started.",
@@ -456,5 +476,23 @@ export async function buildAttentionRows(
 
   if (version) rows.push(version);
 
-  return rows;
+  return withWhere(rows, subjects);
+}
+
+/** Names each app item's project, and parent when nested. */
+function withWhere(
+  rows: AttentionRow[],
+  subjects: { id: string; parentAppId: string | null; displayName: string; projectName: string | null }[],
+): AttentionRow[] {
+  const byId = new Map(subjects.map((s) => [s.id, s]));
+  const where = (id: string) => {
+    const app = byId.get(id);
+    if (!app) return undefined;
+    const parent = app.parentAppId ? byId.get(app.parentAppId)?.displayName : undefined;
+    return [app.projectName, parent].filter(Boolean).join(" / ") || undefined;
+  };
+  return rows.map((row) => ({
+    ...row,
+    items: row.items.map((item) => ({ ...item, where: item.where ?? where(item.subject ?? item.id) })),
+  }));
 }

@@ -1,6 +1,6 @@
 import { AlertTriangle, ShieldAlert } from "lucide-react";
 
-import { conditionKindLabel } from "@/lib/ui/conditions";
+import { conditionTitle } from "@/lib/ui/conditions";
 import { formatSpan } from "@/lib/ui/relative-time";
 import { worstCondition, type AppCondition, type ConditionSeverity } from "@/lib/docker/conditions";
 import { Card } from "@/components/ui/card";
@@ -44,8 +44,8 @@ export function AppConditionsPanel({ conditions }: { conditions: AppCondition[] 
       <ul className="mt-2 space-y-1.5">
         {list.map((c) => (
           <li key={c.kind} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-            <span className={`w-20 shrink-0 font-medium ${TONE[c.severity].text}`}>
-              {conditionKindLabel(c.kind)}
+            <span className={`shrink-0 font-medium ${TONE[c.severity].text}`}>
+              {conditionTitle(c)}
             </span>
             <span className="text-muted-foreground">{c.detail}</span>
             <span className="text-xs text-muted-foreground/70">

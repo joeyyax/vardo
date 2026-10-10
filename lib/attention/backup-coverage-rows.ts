@@ -1,4 +1,5 @@
 import type { AttentionRow } from "@/lib/ui/attention";
+import { BACKUP_TITLE } from "@/lib/ui/conditions";
 
 export type CoverageApp = {
   id: string;
@@ -33,7 +34,16 @@ export function backupCoverageRows(input: {
       key: "backup-no-target",
       label: "No backup target",
       tone: "warning",
-      items: [{ id: "backup-no-target", name: "No backup target configured", href: "/backups" }],
+      group: "backups",
+      items: [
+        {
+          id: "backup-no-target",
+          name: "Backup storage",
+          href: "/backups",
+          detail: "Nothing is backed up until storage is added",
+          fix: { label: "Add storage", href: "/backups" },
+        },
+      ],
       footer: "Nothing is backed up until storage is added, including Vardo's own database.",
     });
   }
@@ -41,16 +51,16 @@ export function backupCoverageRows(input: {
   if (input.uncovered.length > 0) {
     rows.push({
       key: "backup-uncovered",
-      label: "Not backed up",
+      label: BACKUP_TITLE.uncovered,
       tone: "warning",
+      group: "backups",
       items: input.uncovered.map((a) => ({
         id: `backup-uncovered-${a.id}`,
+        subject: a.id,
         name: a.displayName ?? a.name,
         href: `/apps/${a.name}/backups`,
-        detail:
-          a.status === "partial"
-            ? "Some volumes left out"
-            : `${plural(a.volumeCount, "volume")}, no backup job`,
+        detail: a.status === "partial" ? "Some volumes left out" : plural(a.volumeCount, "volume"),
+        fix: { label: "Choose what to back up", href: "/backups" },
       })),
       footer: `${plural(input.uncovered.length, "app")} with data no backup job captures.`,
       action: { label: "Choose what to back up", href: "/backups" },
@@ -63,19 +73,21 @@ export function backupCoverageRows(input: {
       key: "backup-system-db",
       label: "Vardo database",
       tone: "error",
+      group: "backups",
       items: [
         {
           id: "backup-system-db",
-          name: "Vardo database isn't being backed up",
+          name: "Vardo database",
           href: "/admin/settings/backup",
-          detail:
+          title:
             job.kind === "missing"
-              ? "No backup job"
+              ? BACKUP_TITLE.uncovered
               : job.kind === "disabled"
-                ? "Backup job is switched off"
+                ? BACKUP_TITLE.paused
                 : job.neverRan
-                  ? "Has never captured a backup"
-                  : undefined,
+                  ? BACKUP_TITLE.never
+                  : BACKUP_TITLE.overdue,
+          detail: job.kind === "disabled" ? "Backup job is switched off" : "Holds every app definition, variable and domain",
           since: job.kind === "overdue" ? job.since.toISOString() : undefined,
         },
       ],

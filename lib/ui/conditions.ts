@@ -1,4 +1,9 @@
-import { worstCondition, type AppCondition, type ConditionSeverity } from "@/lib/docker/conditions";
+import {
+  BACKUP_NEVER_RAN_DETAIL,
+  worstCondition,
+  type AppCondition,
+  type ConditionSeverity,
+} from "@/lib/docker/conditions";
 import type { ExitReason } from "@/lib/docker/exit-reason";
 import { exitReasonShort } from "@/lib/ui/exit-reason";
 
@@ -30,25 +35,36 @@ export function conditionLabel(c: AppCondition): string {
   }
 }
 
-/** Categorical name. */
-export function conditionKindLabel(kind: AppCondition["kind"]): string {
-  switch (kind) {
+/** Precise labels for each backup problem, shared by every source that reports one. */
+export const BACKUP_TITLE = {
+  failed: "Backup failed",
+  overdue: "Overdue",
+  never: "Never backed up",
+  uncovered: "Not covered by a backup job",
+  paused: "Paused",
+} as const;
+
+/** What one condition says is wrong, as an item label. */
+export function conditionTitle(c: AppCondition): string {
+  switch (c.kind) {
     case "crash-looping":
-      return "Crash loop";
+      return "Crash looping";
     case "self-heal-exhausted":
-      return "Self-heal";
+      return "Restarts exhausted";
     case "unhealthy":
-      return "Health";
+      return "Health check failing";
     case "memory-pressure":
-      return "Memory";
+      return `Memory at ${conditionLabel(c).replace(" memory", "")}`;
     case "security-findings":
-      return "Security";
+      return "Security findings";
     case "backup-missing":
+      return BACKUP_TITLE.uncovered;
     case "backup-stale":
-      return "Backups";
+      return c.detail === BACKUP_NEVER_RAN_DETAIL ? BACKUP_TITLE.never : BACKUP_TITLE.overdue;
     case "cert-expiring":
+      return "Certificate expiring";
     case "cert-expired":
-      return "Certificate";
+      return "Certificate expired";
   }
 }
 
@@ -101,11 +117,14 @@ export function countNeedingAttention(
 // --- Problems ---------------------------------------------------------------
 
 export type ProblemGroup =
+  | "vardo"
   | "crash"
   | "failed"
   | "missing"
+  | "domains"
   | "health"
   | "memory"
+  | "errors"
   | "backups"
   | "certs"
   | "security"
@@ -156,6 +175,7 @@ export type ProblemGroupMeta = {
 };
 
 export const PROBLEM_GROUPS: Record<ProblemGroup, ProblemGroupMeta> = {
+  vardo: { title: "Vardo", why: "Vardo's own stack and the services it runs on.", bulk: null },
   crash: { title: "Crash looping", why: "Restarting over and over. The logs usually say why.", bulk: null },
   failed: { title: "Failed or crashed", why: "The last deploy or the running container failed.", bulk: "Retry" },
   missing: {
@@ -163,12 +183,14 @@ export const PROBLEM_GROUPS: Record<ProblemGroup, ProblemGroupMeta> = {
     why: "Vardo expects these to run, but Docker has no container for them.",
     bulk: "Deploy",
   },
+  domains: { title: "Unreachable domains", why: "The last check for these domains failed.", bulk: null },
   health: { title: "Failing health checks", why: "Running, but the image's own health check fails.", bulk: null },
   memory: {
     title: "Memory pressure",
     why: "Close to the memory limit. At the limit the container is killed.",
     bulk: null,
   },
+  errors: { title: "Errors up", why: "Logging errors far faster than usual.", bulk: null },
   backups: { title: "Backups", why: "Volumes without a recent good backup.", bulk: "Back up" },
   certs: { title: "Certificates", why: "Renewal runs on its own. These haven't renewed yet.", bulk: null },
   security: { title: "Security findings", why: "The image scan found issues to review.", bulk: null },
@@ -177,11 +199,14 @@ export const PROBLEM_GROUPS: Record<ProblemGroup, ProblemGroupMeta> = {
 
 /** Worst first. */
 export const PROBLEM_GROUP_ORDER: ProblemGroup[] = [
+  "vardo",
   "crash",
   "failed",
   "missing",
+  "domains",
   "health",
   "memory",
+  "errors",
   "backups",
   "certs",
   "security",
@@ -197,28 +222,27 @@ const sentence = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s)
 export function conditionProblem(appName: string, c: AppCondition): Problem {
   const tone = c.severity === "critical" ? "error" : "warning";
   const look = (label: string) => ({ label, href: conditionHref(appName, c.kind) });
-  const base = { tone, detail: sentence(c.detail), since: c.since } as const;
+  const detail = c.kind === "backup-missing" ? "" : sentence(c.detail);
+  const base = { tone, detail, since: c.since } as const;
   const backup = { label: "Back up now", run: "backup" } as const;
   const restart = { label: "Restart", run: "restart" } as const;
+  const title = conditionTitle(c);
   switch (c.kind) {
     case "crash-looping":
-      return { ...base, group: "crash", title: "Crash looping", fix: restart, look: look("View logs") };
     case "self-heal-exhausted":
-      return { ...base, group: "crash", title: "Restarts exhausted", fix: restart, look: look("View logs") };
+      return { ...base, group: "crash", title, fix: restart, look: look("View logs") };
     case "unhealthy":
-      return { ...base, group: "health", title: "Health check failing", fix: null, look: look("View logs") };
+      return { ...base, group: "health", title, fix: null, look: look("View logs") };
     case "memory-pressure":
-      return { ...base, group: "memory", title: `Memory at ${conditionLabel(c).replace(" memory", "")}`, fix: null, look: look("Adjust limit") };
+      return { ...base, group: "memory", title, fix: null, look: look("Adjust limit") };
     case "security-findings":
-      return { ...base, group: "security", title: "Security findings", fix: null, look: look("Review") };
+      return { ...base, group: "security", title, fix: null, look: look("Review") };
     case "backup-missing":
-      return { ...base, group: "backups", title: "Never backed up", fix: backup, look: look("Backups") };
     case "backup-stale":
-      return { ...base, group: "backups", title: "Backup overdue", fix: backup, look: look("Backups") };
+      return { ...base, group: "backups", title, fix: backup, look: look("Backups") };
     case "cert-expiring":
-      return { ...base, group: "certs", title: "Certificate expiring", fix: null, look: look("Networking") };
     case "cert-expired":
-      return { ...base, group: "certs", title: "Certificate expired", fix: null, look: look("Networking") };
+      return { ...base, group: "certs", title, fix: null, look: look("Networking") };
   }
 }
 

@@ -62,6 +62,9 @@ const SEVERITY: Record<ConditionKind, ConditionSeverity> = {
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
+/** The backup-stale detail for a job that has never captured anything. */
+export const BACKUP_NEVER_RAN_DETAIL = "Backup job has never run";
+
 /** A backup that has not run in this long is overdue regardless of schedule. */
 export const BACKUP_STALE_MS = 48 * 60 * 60 * 1000;
 
@@ -134,7 +137,7 @@ function rawSignals(input: ConditionInput): Partial<Record<ConditionKind, Signal
   if (input.backup?.configured) {
     const { lastRunAt } = input.backup;
     if (lastRunAt === null) {
-      out["backup-stale"] = { detail: "Backup job has never run" };
+      out["backup-stale"] = { detail: BACKUP_NEVER_RAN_DETAIL };
     } else if (input.now - lastRunAt > BACKUP_STALE_MS) {
       const days = Math.floor((input.now - lastRunAt) / MS_PER_DAY);
       out["backup-stale"] = { detail: `Last backup ${days} day${days === 1 ? "" : "s"} ago` };

@@ -79,7 +79,7 @@ describe("problem", () => {
 
   it("uses the condition's since", () => {
     const p = problem({ name: "a", status: "active", conditions: [cond("backup-stale", "warning", "2026-10-07T00:00:00.000Z")] });
-    expect(p).toMatchObject({ group: "backups", title: "Backup overdue", since: "2026-10-07T00:00:00.000Z" });
+    expect(p).toMatchObject({ group: "backups", title: "Overdue", since: "2026-10-07T00:00:00.000Z" });
   });
 
   it("reports a pending config change last", () => {

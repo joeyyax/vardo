@@ -14,6 +14,7 @@ export function errorRateRows(apps: AppSubject[], elevated: ElevatedSubject[]): 
     return [
       {
         id: `error-rate-${e.appId}`,
+        subject: e.appId,
         name: app.displayName,
         href: `/apps/${app.name}/errors`,
         detail: `${e.recent} in 30 min · usually ${e.baseline}`,
@@ -28,6 +29,7 @@ export function errorRateRows(apps: AppSubject[], elevated: ElevatedSubject[]): 
       key: "error-rate",
       label: "Errors up",
       tone: "warning",
+      group: "errors",
       items,
       footer:
         "Matching lines in the last half hour, against every other half hour in the past week. Deploys and restarts are excluded.",

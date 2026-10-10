@@ -34,7 +34,7 @@ describe("appStatusRows", () => {
   it("reports an app that broke inside the window", () => {
     const [row] = rows([app({ name: "hub", displayName: "Hub", status: "missing", statusChangedAt: justNow })]);
 
-    expect(row).toMatchObject({ key: "app-down", label: "App down", tone: "error" });
+    expect(row).toMatchObject({ key: "app-down", label: "App down", tone: "warning", group: "failed" });
     expect(row.items).toEqual([
       {
         id: "app-hub",
@@ -42,8 +42,34 @@ describe("appStatusRows", () => {
         href: "/apps/hub",
         detail: "No container on the host",
         since: justNow.toISOString(),
+        group: "missing",
+        title: "No container",
+        tone: "warning",
+        fix: { label: "Deploy", run: "deploy", app: { id: "app-hub", name: "hub" } },
       },
     ]);
+  });
+
+  // Same groups as the Projects panel: a crash is "failed", a missing container is "missing".
+  it("titles a crashed app precisely and offers a restart", () => {
+    const [row] = rows([app({ name: "hub", status: "error", statusChangedAt: justNow })]);
+
+    expect(row.tone).toBe("error");
+    expect(row.items[0]).toMatchObject({
+      title: "Crashed",
+      fix: { run: "restart", app: { id: "app-hub" } },
+    });
+    expect(row.items[0].group).toBeUndefined();
+  });
+
+  it("deploys a missing service through its parent", () => {
+    const parent = app({ name: "stack", status: "active" });
+    const [row] = rows([
+      parent,
+      app({ name: "db", status: "missing", statusChangedAt: justNow, parentAppId: parent.id }),
+    ]);
+
+    expect(row.items[0].fix).toMatchObject({ run: "deploy", app: { id: parent.id, name: "stack" } });
   });
 
   it("calls a failed container what it is", () => {
