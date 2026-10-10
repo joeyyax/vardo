@@ -1,9 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { db } from "@/lib/db";
-import { projects } from "@/lib/db/schema";
-import { desc } from "drizzle-orm";
+import { listProjects } from "@/lib/app-services/projects";
 import type { McpAuthContext } from "../auth";
-import { accessibleOrgIds, orgFilter, orgLabels } from "../scope";
+import { accessibleActors } from "../actors";
 
 export function registerListProjects(
   server: McpServer,
@@ -14,25 +12,16 @@ export function registerListProjects(
     "List all projects in the organization. Projects group related apps together. Returns project name, description, color, and the apps within each project. A cross-org token lists projects across every organization its user belongs to, each labeled with the organization it lives in.",
     {},
     async () => {
-      const orgIds = await accessibleOrgIds(context, "org.view");
-
-      const projectList = await db.query.projects.findMany({
-        where: orgFilter(projects.organizationId, orgIds),
-        with: {
-          apps: {
-            columns: { id: true, name: true, displayName: true, status: true },
-          },
-        },
-        orderBy: [desc(projects.createdAt)],
-      });
-
-      const labels = context.crossOrg ? await orgLabels(orgIds) : null;
-      const result = labels
-        ? projectList.map((p) => ({
-            ...p,
-            organization: labels.get(p.organizationId) ?? { id: p.organizationId },
-          }))
-        : projectList;
+      const actors = await accessibleActors(context, "org.view");
+      const perOrg = await Promise.all(
+        actors.map(async (actor) => {
+          const projects = await listProjects(actor);
+          // Cross-org results are labeled with their org.
+          const label = { id: actor.org.id, name: actor.org.name, slug: actor.org.slug };
+          return context.crossOrg ? projects.map((p) => ({ ...p, organization: label })) : projects;
+        }),
+      );
+      const result = perOrg.flat().sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
 
       return {
         content: [

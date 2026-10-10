@@ -9,35 +9,14 @@ import { refuseSystemManaged } from "@/lib/api/system-managed";
 import { isAppAdmin } from "@/lib/auth/admin";
 import { logger } from "@/lib/logger";
 import { recordActivity } from "@/lib/activity";
+import { actorForOrg } from "@/lib/app-services/session-actor";
+import { getProject } from "@/lib/app-services/projects";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
 type RouteParams = {
   params: Promise<{ orgId: string; projectId: string }>;
 };
-
-/** Look up by ID first, then fall back to name. */
-async function findProject(orgId: string, projectId: string) {
-  let project = await db.query.projects.findFirst({
-    where: and(eq(projects.organizationId, orgId), eq(projects.id, projectId)),
-    with: {
-      apps: {
-        columns: { id: true, name: true, displayName: true, status: true },
-      },
-    },
-  });
-  if (!project) {
-    project = await db.query.projects.findFirst({
-      where: and(eq(projects.organizationId, orgId), eq(projects.name, projectId)),
-      with: {
-        apps: {
-          columns: { id: true, name: true, displayName: true, status: true },
-        },
-      },
-    });
-  }
-  return project;
-}
 
 /** Look up by ID first, then fall back to name (without relations). */
 async function findProjectBasic(orgId: string, projectId: string) {
@@ -58,16 +37,10 @@ async function findProjectBasic(orgId: string, projectId: string) {
 async function handleGet(_request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId, projectId } = await params;
-    const org = await verifyOrgAccess(orgId, "org.view");
-    if (!org) return apiError.forbidden();
+    const actor = await actorForOrg(orgId);
+    if (!actor) return apiError.forbidden();
 
-    const project = await findProject(orgId, projectId);
-
-    if (!project) {
-      return NextResponse.json({ error: "Project not found" }, { status: 404 });
-    }
-
-    return NextResponse.json({ project });
+    return NextResponse.json({ project: await getProject(actor, projectId) });
   } catch (error) {
     return handleRouteError(error, "Error fetching project");
   }
