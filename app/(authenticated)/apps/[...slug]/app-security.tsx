@@ -6,6 +6,10 @@ import { Button } from "@/components/ui/button";
 import { toast } from "@/lib/messenger";
 import { RelativeTime } from "@/components/relative-time";
 import type { SecurityFinding } from "@/lib/db/schema/security";
+import { entityLinkClass } from "@/components/entity-link";
+import { useHashTarget } from "@/hooks/use-hash-target";
+import { findingAnchors } from "@/lib/ui/security-anchor";
+import { cn } from "@/lib/utils";
 
 type Scan = {
   id: string;
@@ -40,12 +44,27 @@ function severityClass(severity: SecurityFinding["severity"]) {
   }
 }
 
-function FindingCard({ finding }: { finding: SecurityFinding }) {
+function FindingCard({ finding, anchor, linked }: { finding: SecurityFinding; anchor?: string; linked?: boolean }) {
   return (
-    <div className={`flex items-start gap-3 rounded-lg px-4 py-3 ${severityClass(finding.severity)}`}>
+    <div
+      id={anchor}
+      className={cn(
+        "flex scroll-mt-28 items-start gap-3 rounded-lg px-4 py-3",
+        severityClass(finding.severity),
+        linked && "shadow-[inset_2px_0_0_var(--brass)]",
+      )}
+    >
       {severityIcon(finding.severity)}
       <div className="flex-1 min-w-0 space-y-0.5">
-        <p className="text-sm font-medium leading-snug">{finding.title}</p>
+        <p className="text-sm font-medium leading-snug">
+          {anchor ? (
+            <a href={`#${anchor}`} className={entityLinkClass} title="Link to this finding">
+              {finding.title}
+            </a>
+          ) : (
+            finding.title
+          )}
+        </p>
         <p className="text-xs text-muted-foreground leading-relaxed">{finding.description}</p>
         {finding.detail && (
           <p className="text-xs font-mono text-muted-foreground/70 mt-1">{finding.detail}</p>
@@ -55,11 +74,14 @@ function FindingCard({ finding }: { finding: SecurityFinding }) {
   );
 }
 
-function ScanSummary({ scan }: { scan: Scan }) {
+/** `anchored` gives each finding an id, for the latest scan only so ids stay unique. */
+function ScanSummary({ scan, anchored = false, linked = null }: { scan: Scan; anchored?: boolean; linked?: string | null }) {
   const findings = scan.findings ?? [];
   const critical = findings.filter((f) => f.severity === "critical");
   const warning = findings.filter((f) => f.severity === "warning");
   const info = findings.filter((f) => f.severity === "info");
+  const ordered = [...critical, ...warning, ...info];
+  const anchors = anchored ? findingAnchors(ordered) : null;
 
   const scannedAt = scan.completedAt ?? scan.startedAt;
   const triggerLabel = scan.trigger === "deploy" ? "after deploy" : scan.trigger === "scheduled" ? "scheduled" : "manual";
@@ -104,8 +126,13 @@ function ScanSummary({ scan }: { scan: Scan }) {
       {findings.length > 0 && (
         <div className="space-y-2">
           {/* Critical first, then warning, then info */}
-          {[...critical, ...warning, ...info].map((finding, i) => (
-            <FindingCard key={`${finding.type}-${finding.title}-${i}`} finding={finding} />
+          {ordered.map((finding, i) => (
+            <FindingCard
+              key={`${finding.type}-${finding.title}-${i}`}
+              finding={finding}
+              anchor={anchors?.[i]}
+              linked={!!anchors && anchors[i] === linked}
+            />
           ))}
         </div>
       )}
@@ -186,6 +213,7 @@ export function AppSecurity({ appId, orgId }: AppSecurityProps) {
   const [scans, setScans] = useState<Scan[] | null>(null);
   const [bindMounts, setBindMounts] = useState<BindMounts>({ outsideRoots: [], canAllow: false });
   const [loading, setLoading] = useState(true);
+  const linked = useHashTarget(!loading);
   const [scanning, setScanning] = useState(false);
 
   const scansUrl = `/api/v1/organizations/${orgId}/apps/${appId}/security`;
@@ -285,7 +313,7 @@ export function AppSecurity({ appId, orgId }: AppSecurityProps) {
         </div>
       ) : (
         <div className="space-y-6">
-          <ScanSummary scan={latest} />
+          <ScanSummary scan={latest} anchored linked={linked} />
 
           {scans && scans.length > 1 && (
             <div className="space-y-2">

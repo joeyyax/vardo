@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import { ChevronRight } from "lucide-react";
+import { EntityLink } from "@/components/entity-link";
 import { cn } from "@/lib/utils";
 
 /**
@@ -11,6 +12,7 @@ import { cn } from "@/lib/utils";
 export function SectionHeader({
   navKey,
   title,
+  href,
   badge,
   expanded,
   onToggle,
@@ -18,6 +20,8 @@ export function SectionHeader({
 }: {
   navKey: string;
   title: string;
+  /** The page the title links to. The rest of the row folds the section. */
+  href?: string;
   /** Beside the title, such as a system badge. */
   badge?: ReactNode;
   expanded: boolean;
@@ -42,7 +46,15 @@ export function SectionHeader({
           aria-hidden="true"
           className={cn("size-5 shrink-0 p-0.5 text-muted-foreground/70 transition-transform", expanded && "rotate-90")}
         />
-        <h2 className="type-h3 truncate">{title}</h2>
+        <h2 className="type-h3 truncate">
+          {href ? (
+            <EntityLink href={href} tabIndex={-1} data-row-link>
+              {title}
+            </EntityLink>
+          ) : (
+            title
+          )}
+        </h2>
         {badge}
       </span>
       {children && (

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChevronsUpDown, Plus, Building2, Check, Loader2, Settings, Users } from "lucide-react";
 import { toast } from "@/lib/messenger";
@@ -163,23 +164,21 @@ export function OrgSwitcher({ currentOrgId, organizations: initialOrganizations 
             </DropdownMenuItem>
           ))}
           <DropdownMenuSeparator />
-          <DropdownMenuItem
-            className="gap-2 cursor-pointer"
-            onClick={() => router.push("/settings")}
-          >
-            <div className="flex size-5 items-center justify-center rounded-sm bg-muted">
-              <Settings className="size-3" />
-            </div>
-            <span>Settings</span>
+          <DropdownMenuItem asChild className="gap-2 cursor-pointer">
+            <Link href="/settings">
+              <div className="flex size-5 items-center justify-center rounded-sm bg-muted">
+                <Settings className="size-3" />
+              </div>
+              <span>Settings</span>
+            </Link>
           </DropdownMenuItem>
-          <DropdownMenuItem
-            className="gap-2 cursor-pointer"
-            onClick={() => router.push("/settings/team")}
-          >
-            <div className="flex size-5 items-center justify-center rounded-sm bg-muted">
-              <Users className="size-3" />
-            </div>
-            <span>Team</span>
+          <DropdownMenuItem asChild className="gap-2 cursor-pointer">
+            <Link href="/settings/team">
+              <div className="flex size-5 items-center justify-center rounded-sm bg-muted">
+                <Users className="size-3" />
+              </div>
+              <span>Team</span>
+            </Link>
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem

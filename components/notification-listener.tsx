@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "@/lib/messenger";
 import { useNotificationStream } from "@/hooks/use-notification-stream";
@@ -10,15 +11,21 @@ import { toastSeverityFor } from "@/lib/bus/toasts";
 import { toastActionFor } from "@/lib/bus/toast-action";
 import type { BusEvent } from "@/lib/bus/events";
 
-function showToast(event: BusEvent, canLinkToAdmin: boolean, navigate: (url: string) => void): void {
+let toastSeq = 0;
+
+function showToast(event: BusEvent, canLinkToAdmin: boolean): void {
   const severity = toastSeverityFor(event);
   if (!severity) return;
 
   const link = toastActionFor(event, { canLinkToAdmin });
-  const options = {
-    description: event.message,
-    action: link ? { label: link.label, onClick: () => navigate(link.url) } : undefined,
-  };
+  const id = `bus-${++toastSeq}`;
+  // A real link, so Cmd/Ctrl-click and middle-click open a new tab.
+  const action = link ? (
+    <Link href={link.url} data-button data-action onClick={() => toast.dismiss(id)}>
+      {link.label}
+    </Link>
+  ) : undefined;
+  const options = { id, description: event.message, action };
 
   switch (severity) {
     case "success":
@@ -67,8 +74,8 @@ export function NotificationListener({
       window.dispatchEvent(new Event(INFRA_RECHECK_EVENT));
     }
     if (event.historical) return;
-    showToast(event, canLinkToAdmin, (url) => router.push(url));
-  }, [canLinkToAdmin, router]);
+    showToast(event, canLinkToAdmin);
+  }, [canLinkToAdmin]);
 
   useNotificationStream({ orgId, onEvent });
 

@@ -2,6 +2,7 @@
 
 import { CheckCircle2, Clock, Loader2, XCircle } from "lucide-react";
 import { describeSchedule } from "@/lib/cron/describe";
+import { quietLinkClass } from "@/components/entity-link";
 
 export type CronHeaderRow = { name: string; value: string };
 
@@ -87,4 +88,21 @@ export function urlOptionsSummary(job: Pick<CronJob, "method" | "retries" | "tim
   if (job.expectedStatus) parts.push(`expects ${job.expectedStatus}`);
   if (job.headers?.length) parts.push(`${job.headers.length} ${job.headers.length === 1 ? "header" : "headers"}`);
   return parts.join(", ");
+}
+
+/** The element id of a cron job's card, for `#cron-<id>` links. */
+export function cronAnchor(jobId: string): string {
+  return `cron-${jobId}`;
+}
+
+/** A job's command; an absolute URL job opens its URL in a new tab. */
+export function CronCommand({ job }: { job: Pick<CronJob, "type" | "command"> }) {
+  if (job.type === "url" && /^https?:\/\//i.test(job.command)) {
+    return (
+      <a href={job.command} target="_blank" rel="noopener noreferrer" className={quietLinkClass}>
+        {job.command}
+      </a>
+    );
+  }
+  return <>{job.command}</>;
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment } from "react";
-import Link from "next/link";
+import { EntityLink } from "@/components/entity-link";
 import { AlertTriangle } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { getInitials } from "@/lib/initials";
@@ -19,14 +19,11 @@ function formatTime(date: Date): string {
 }
 
 function SubjectName({ subject }: { subject: ActivitySubjectRef }) {
-  if (!subject.app) return <span className="font-semibold">{subject.label}</span>;
+  if (!subject.href) return <span className="font-semibold">{subject.label}</span>;
   return (
-    <Link
-      href={`/apps/${subject.app.name}`}
-      className="font-semibold hover:underline"
-    >
+    <EntityLink href={subject.href} className="font-semibold">
       {subject.label}
-    </Link>
+    </EntityLink>
   );
 }
 

@@ -19,11 +19,15 @@ import { RelativeTime } from "@/components/relative-time";
 import { Card } from "@/components/ui/card";
 import { CronJobSheet, type CronJobBody } from "@/components/cron/cron-job-sheet";
 import {
+  CronCommand,
   CronStatusIcon,
+  cronAnchor,
   scheduleWithZone,
   urlOptionsSummary,
   type CronJob,
 } from "@/components/cron/cron-shared";
+import { useHashTarget } from "@/hooks/use-hash-target";
+import { cn } from "@/lib/utils";
 
 type Props = {
   appId: string;
@@ -54,6 +58,7 @@ export function CronManager({ appId, orgId, userRole }: Props) {
   const [deleting, setDeleting] = useState(false);
   const [expandedLog, setExpandedLog] = useState<string | null>(null);
   const [runningId, setRunningId] = useState<string | null>(null);
+  const linked = useHashTarget(!loading);
 
   const baseUrl = `/api/v1/organizations/${orgId}/apps/${appId}/cron`;
 
@@ -229,7 +234,8 @@ export function CronManager({ appId, orgId, userRole }: Props) {
                 <Card
                   variant="inset"
                   key={job.id}
-                  className="p-4"
+                  id={cronAnchor(job.id)}
+                  className={cn("scroll-mt-28 p-4", linked === cronAnchor(job.id) && "bg-brass-muted")}
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1 min-w-0 space-y-1.5">
@@ -262,7 +268,7 @@ export function CronManager({ appId, orgId, userRole }: Props) {
                         <Badge variant="outline" className="mr-1.5 font-sans">
                           {job.type === "url" ? "URL" : "CMD"}
                         </Badge>
-                        {job.command}
+                        <CronCommand job={job} />
                       </p>
                       {job.lastLog && (
                         <button

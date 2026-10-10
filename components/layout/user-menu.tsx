@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import { LogOut, ChevronsUpDown, Loader2, Settings, Shield, Building2, Check, Plus, Sun, Moon, Monitor } from "lucide-react";
@@ -103,23 +104,15 @@ export function UserMenu({ collapsed, compact, currentOrgId, organizations, team
         className="min-w-56"
       >
         {/* Profile */}
-        <DropdownMenuLabel className="font-normal">
-          <div className="flex items-center justify-between">
-            <div className="flex flex-col gap-1">
-              <p className="text-sm font-medium">{displayName}</p>
-              <p className="text-xs text-muted-foreground">{email}</p>
-            </div>
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              onClick={() => router.push("/user/settings/profile")}
-              className="text-muted-foreground hover:text-foreground"
-              aria-label="Account settings"
-            >
-              <Settings className="size-3.5" />
-            </Button>
-          </div>
-        </DropdownMenuLabel>
+        <DropdownMenuItem asChild className="cursor-pointer">
+          <Link href="/user/settings/profile" aria-label={`Account settings for ${displayName}`} className="flex items-center justify-between gap-3">
+            <span className="flex min-w-0 flex-col gap-1">
+              <span className="truncate text-sm font-medium">{displayName}</span>
+              <span className="truncate text-xs text-muted-foreground">{email}</span>
+            </span>
+            <Settings className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+          </Link>
+        </DropdownMenuItem>
 
         {/* Organizations */}
         <DropdownMenuSeparator />
@@ -128,13 +121,14 @@ export function UserMenu({ collapsed, compact, currentOrgId, organizations, team
             {teamsEnabled ? "Organizations" : "Organization"}
           </span>
           <Button
+            asChild
             variant="ghost"
             size="icon-xs"
-            onClick={() => router.push("/settings")}
             className="text-muted-foreground hover:text-foreground"
-            aria-label="Organization settings"
           >
-            <Settings className="size-3.5" />
+            <Link href="/settings" aria-label="Organization settings">
+              <Settings className="size-3.5" />
+            </Link>
           </Button>
         </DropdownMenuLabel>
         {teamsEnabled && (
@@ -152,12 +146,11 @@ export function UserMenu({ collapsed, compact, currentOrgId, organizations, team
                 )}
               </DropdownMenuItem>
             ))}
-            <DropdownMenuItem
-              className="gap-2 cursor-pointer"
-              onClick={() => router.push("/onboarding")}
-            >
-              <Plus className="size-4" />
-              New organization
+            <DropdownMenuItem asChild className="gap-2 cursor-pointer">
+              <Link href="/onboarding">
+                <Plus className="size-4" />
+                New organization
+              </Link>
             </DropdownMenuItem>
           </>
         )}
@@ -166,12 +159,11 @@ export function UserMenu({ collapsed, compact, currentOrgId, organizations, team
         {isAdmin && (
           <>
             <DropdownMenuSeparator />
-            <DropdownMenuItem
-              className="gap-2 cursor-pointer"
-              onClick={() => router.push("/admin/settings")}
-            >
-              <Shield className="size-4" />
-              Admin
+            <DropdownMenuItem asChild className="gap-2 cursor-pointer">
+              <Link href="/admin/settings">
+                <Shield className="size-4" />
+                Admin
+              </Link>
             </DropdownMenuItem>
           </>
         )}

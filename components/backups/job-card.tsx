@@ -16,6 +16,9 @@ import { RunProgressLine } from "./run-progress";
 import type { BackupJob, RunProgress } from "./types";
 import { useCan } from "@/components/capabilities-provider";
 import { Card } from "@/components/ui/card";
+import { EntityLink } from "@/components/entity-link";
+import { appHref } from "@/lib/ui/hrefs";
+import { jobAnchor } from "./job-anchor";
 
 export function JobCard({
   job,
@@ -99,7 +102,7 @@ export function JobCard({
 
   return (
     <>
-      <Card variant="inset" className="p-4 space-y-2">
+      <Card id={jobAnchor(job.id)} variant="inset" className="scroll-mt-28 p-4 space-y-2 target:bg-brass-muted">
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-2 min-w-0">
             <p className="text-sm font-medium">{job.name}</p>
@@ -181,7 +184,7 @@ export function JobCard({
           <div className="flex flex-wrap gap-1">
             {job.backupJobApps.map((bja) => (
               <Badge key={bja.app.id} variant="secondary" className="text-xs">
-                {bja.app.displayName}
+                <EntityLink href={appHref(bja.app.name, "backups")}>{bja.app.displayName}</EntityLink>
               </Badge>
             ))}
           </div>

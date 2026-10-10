@@ -18,6 +18,9 @@ import { deleteDescription, orphanScope, plural } from "./delete-copy";
 import { useCan } from "@/components/capabilities-provider";
 import type { RecentBackup } from "./types";
 import { Card } from "@/components/ui/card";
+import { EntityLink } from "@/components/entity-link";
+import { appHref } from "@/lib/ui/hrefs";
+import { jobAnchor } from "./job-anchor";
 
 const TRIGGER_LABELS: Record<string, string> = {
   initial: "Initial snapshot",
@@ -41,10 +44,13 @@ export function BackupHistory({
   history,
   orgId,
   onRefresh,
+  jobHref = (id) => `#${jobAnchor(id)}`,
 }: {
   history: RecentBackup[];
   orgId: string;
   onRefresh: () => void;
+  /** Where a run's job name links. Defaults to the job card on the same page. */
+  jobHref?: (jobId: string) => string;
 }) {
   const can = useCan();
   const [restoringBackups, setRestoringBackups] = useState<Set<string>>(new Set());
@@ -166,7 +172,7 @@ export function BackupHistory({
               </td>
               <td className="px-4 py-3 font-medium">
                 {backup.app ? (
-                  backup.app.displayName
+                  <EntityLink href={appHref(backup.app.name, "backups")}>{backup.app.displayName}</EntityLink>
                 ) : (
                   <>
                     {backup.appName ?? "Unknown app"}{" "}
@@ -175,7 +181,11 @@ export function BackupHistory({
                 )}
               </td>
               <td className="px-4 py-3 text-muted-foreground">
-                {backup.job ? backup.job.name : `${backup.jobName ?? "Unknown job"} (deleted)`}
+                {backup.job ? (
+                  <EntityLink href={jobHref(backup.job.id)}>{backup.job.name}</EntityLink>
+                ) : (
+                  `${backup.jobName ?? "Unknown job"} (deleted)`
+                )}
                 {backup.trigger && TRIGGER_LABELS[backup.trigger] && (
                   <span className="block text-xs">{TRIGGER_LABELS[backup.trigger]}</span>
                 )}

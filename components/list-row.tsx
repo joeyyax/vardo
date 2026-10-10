@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { ChevronRight } from "lucide-react";
 import { StatusMark } from "@/components/ui/status-dot";
 import { TreeConnector } from "@/components/tree-connector";
+import { EntityLink } from "@/components/entity-link";
 import type { StatusMarkState } from "@/lib/ui/status-colors";
 import { cn } from "@/lib/utils";
 
@@ -19,6 +20,7 @@ export function ListRow({
   mark,
   name,
   nameTitle,
+  href,
   signal,
   status,
   action,
@@ -40,6 +42,8 @@ export function ListRow({
   mark: StatusMarkState;
   name: string;
   nameTitle?: string;
+  /** The page the name links to. The rest of the row opens details. */
+  href?: string;
   signal?: ReactNode;
   /** The problem, toned, or a quiet value such as uptime. */
   status?: ReactNode;
@@ -114,16 +118,24 @@ export function ListRow({
         <StatusMark tone={mark.tone} pending={mark.pending} />
       </span>
 
-      <span
-        title={nameTitle}
-        className={cn(
-          "min-w-[6em] shrink truncate",
-          depth > 0 ? "font-normal" : "font-medium",
-          dim && "opacity-50",
-        )}
-      >
-        {name}
-      </span>
+      {href ? (
+        <EntityLink
+          href={href}
+          tabIndex={-1}
+          data-row-link
+          title={nameTitle ? `Open ${nameTitle}` : undefined}
+          className={cn("min-w-[6em] shrink truncate", depth > 0 ? "font-normal" : "font-medium", dim && "opacity-50")}
+        >
+          {name}
+        </EntityLink>
+      ) : (
+        <span
+          title={nameTitle}
+          className={cn("min-w-[6em] shrink truncate", depth > 0 ? "font-normal" : "font-medium", dim && "opacity-50")}
+        >
+          {name}
+        </span>
+      )}
       {signal && (
         <span className={cn("min-w-0 shrink-[3] truncate text-[13px] text-muted-foreground/70 max-sm:hidden", dim && "opacity-50")}>
           {signal}

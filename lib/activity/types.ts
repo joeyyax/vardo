@@ -50,6 +50,8 @@ export type ActivitySubjectRef = {
   label: string;
   /** Present while the subject is still a live app, so the row can link to it. */
   app: ActivitySubject | null;
+  /** The tab or deploy the action concerns. Null without a live app. */
+  href: string | null;
 };
 
 /**

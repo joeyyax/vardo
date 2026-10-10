@@ -1213,8 +1213,8 @@ export function NewAppFlow({ orgId, templates, parentApps = [], baseDomain: base
                 "Create app"
               )}
             </Button>
-            <Button variant="ghost" onClick={() => router.push("/projects")}>
-              Cancel
+            <Button variant="ghost" asChild>
+              <Link href="/projects">Cancel</Link>
             </Button>
           </div>
 

@@ -32,6 +32,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { toast } from "@/lib/messenger";
+import { DomainLink } from "@/components/entity-link";
 
 type ExternalRoute = {
   id: string;
@@ -294,7 +295,7 @@ export function ExternalRoutesSettings() {
                   <div className="min-w-0 space-y-0.5">
                     <div className="flex items-center gap-2 flex-wrap">
                       <p className="text-sm font-medium font-mono truncate">
-                        {route.hostname}
+                        {route.hostname.includes("*") ? route.hostname : <DomainLink domain={route.hostname} />}
                       </p>
                       {route.tls && (
                         <Badge variant="outline" className="text-xs px-1.5 py-0">
@@ -316,7 +317,7 @@ export function ExternalRoutesSettings() {
                       {route.redirectUrl ? (
                         <>
                           <ExternalLink className="inline size-3 mr-1" aria-hidden="true" />
-                          {route.redirectUrl}
+                          <DomainLink domain={route.redirectUrl} />
                         </>
                       ) : (
                         route.targetUrl

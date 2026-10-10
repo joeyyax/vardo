@@ -9,6 +9,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatBytes } from "@/lib/metrics/format";
 import { toast } from "@/lib/messenger";
+import { EntityLink } from "@/components/entity-link";
+import { appHref } from "@/lib/ui/hrefs";
 import type { UncoveredApp } from "@/lib/backups/enroll";
 import type { BackupTarget } from "./types";
 
@@ -67,7 +69,9 @@ function AppRow({
     <li className="space-y-3 py-4 first:pt-0 last:pb-0">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <span className="font-medium">{app.displayName ?? app.name}</span>
+          <EntityLink href={appHref(app.name, "backups")} className="font-medium">
+            {app.displayName ?? app.name}
+          </EntityLink>
           {app.status === "partial" && <Badge variant="warning">Partly backed up</Badge>}
         </div>
         <div className="flex items-center gap-2">

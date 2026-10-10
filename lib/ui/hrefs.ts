@@ -31,6 +31,17 @@ export function deployAnchor(deploymentId: string): string {
   return `deploy-${deploymentId}`;
 }
 
+/** An image's registry page. Docker Hub for bare names, the registry host otherwise. Null when unparseable. */
+export function imageUrl(image: string): string | null {
+  const ref = image.split("@")[0].replace(/:[^/:]+$/, "");
+  if (!ref || /\s/.test(ref)) return null;
+  const parts = ref.split("/");
+  const hasHost = (parts.length > 1 && /[.:]/.test(parts[0])) || parts[0] === "localhost";
+  if (hasHost) return parts[0] === "localhost" || parts[0].includes(":") ? null : `https://${ref}`;
+  if (parts.length === 1 || parts[0] === "library") return `https://hub.docker.com/_/${parts[parts.length - 1]}`;
+  return `https://hub.docker.com/r/${parts.join("/")}`;
+}
+
 /** A domain as a URL. Keeps a scheme that is already there. */
 export function siteUrl(domain: string): string {
   return /^[a-z][a-z0-9+.-]*:\/\//i.test(domain) ? domain : `https://${domain}`;

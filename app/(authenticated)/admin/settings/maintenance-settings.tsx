@@ -33,6 +33,8 @@ import { formatBytes } from "@/lib/metrics/format";
 import { containerStateVariant } from "@/lib/ui/container-state";
 import { DetachedVolumesCard } from "./detached-volumes-card";
 import { UpdatesCard } from "./updates-card";
+import { EntityLink } from "@/components/entity-link";
+import { appHref } from "@/lib/ui/hrefs";
 
 type ServiceStatus = {
   name: string;
@@ -710,7 +712,9 @@ export function MaintenanceSettings() {
                 {images.plan.candidates.map((c) => (
                   <li key={c.appId} className="flex items-start justify-between gap-4 px-3 py-2">
                     <div className="min-w-0 space-y-0.5">
-                      <p className="text-sm font-medium">{c.displayName}</p>
+                      <p className="text-sm font-medium">
+                        <EntityLink href={appHref(c.appName)}>{c.displayName}</EntityLink>
+                      </p>
                       <p className="text-xs text-muted-foreground truncate">
                         {c.images.filter((i) => i.present).map((i) => i.image).join(", ")}
                       </p>
@@ -740,7 +744,9 @@ export function MaintenanceSettings() {
                   .filter((s) => showAllSkips || NOTABLE_SKIPS.has(s.reason))
                   .map((s) => (
                     <li key={s.appId} className="text-xs text-muted-foreground">
-                      <span className="font-medium text-foreground">{s.displayName}</span>{" "}
+                      <EntityLink href={appHref(s.appName)} className="font-medium text-foreground">
+                        {s.displayName}
+                      </EntityLink>{" "}
                       — {s.explanation}
                       {s.image && <span className="font-mono"> ({s.image})</span>}
                     </li>
@@ -773,7 +779,9 @@ export function MaintenanceSettings() {
                 {images.slotPlan.candidates.map((c) => (
                   <li key={c.project} className="flex items-start justify-between gap-4 px-3 py-2">
                     <div className="min-w-0 space-y-0.5">
-                      <p className="text-sm font-medium">{c.project}</p>
+                      <p className="text-sm font-medium">
+                        <EntityLink href={appHref(c.appName)}>{c.project}</EntityLink>
+                      </p>
                       <p className="text-xs text-muted-foreground truncate">
                         {c.images.filter((i) => i.present).map((i) => i.image).join(", ")}
                       </p>
@@ -919,7 +927,10 @@ export function MaintenanceSettings() {
                   <ul aria-labelledby="owner-gaps" className={cn(cardVariants({ variant: "inset" }), "divide-y rounded-md")}>
                     {owners.gaps.map((g) => (
                       <li key={g.dir} className="px-3 py-2 space-y-0.5">
-                        <p className="text-sm font-medium">{g.appName}</p>
+                        <p className="text-sm font-medium">
+                          {/* An orphaned directory's app is gone. */}
+                          {g.reason === "orphaned" ? g.appName : <EntityLink href={appHref(g.appName)}>{g.appName}</EntityLink>}
+                        </p>
                         <p className="text-xs text-muted-foreground">
                           {GAP_LABELS[g.reason]} — {g.detail}
                         </p>

@@ -72,11 +72,9 @@ export function InProgressDeployCard({
   return (
     <Card variant="surface" className="bg-status-info-muted overflow-hidden">
       <span className="sr-only" aria-live="assertive" aria-atomic="true">{liveAnnouncement}</span>
+      {/* The row is a mouse target; the chevron button is the control, so Abort isn't nested in one. */}
       <div
-        role="button"
-        tabIndex={0}
         onClick={onToggleExpand}
-        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onToggleExpand(); }}
         className="flex items-center justify-between gap-4 p-4 w-full text-left hover:bg-accent/50 transition-colors cursor-pointer"
       >
         <div className="flex items-center gap-3 min-w-0">
@@ -137,7 +135,18 @@ export function InProgressDeployCard({
             </Button>
           )}
           {log.length > 0 && (
-            <ChevronDown className={`size-4 text-muted-foreground transition-transform ${expanded ? "rotate-180" : ""}`} />
+            <button
+              type="button"
+              aria-expanded={expanded}
+              aria-label={expanded ? "Hide deploy log" : "Show deploy log"}
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleExpand();
+              }}
+              className="rounded p-0.5 hover:bg-accent focus-visible:outline-2 focus-visible:outline-brass"
+            >
+              <ChevronDown className={`size-4 text-muted-foreground transition-transform ${expanded ? "rotate-180" : ""}`} />
+            </button>
           )}
         </div>
       </div>

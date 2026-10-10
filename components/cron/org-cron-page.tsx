@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
 import { Clock, Loader2, Play, Plus, Trash2 } from "lucide-react";
 import { toast } from "@/lib/messenger";
 import { useCan } from "@/components/capabilities-provider";
@@ -14,7 +13,11 @@ import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { RelativeTime } from "@/components/relative-time";
 import { CronJobSheet, type CronJobBody } from "./cron-job-sheet";
 import { CronRuns } from "./cron-runs";
-import { CronStatusIcon, scheduleWithZone, urlOptionsSummary, type CronJob } from "./cron-shared";
+import { CronCommand, CronStatusIcon, cronAnchor, scheduleWithZone, urlOptionsSummary, type CronJob } from "./cron-shared";
+import { EntityLink } from "@/components/entity-link";
+import { useHashTarget } from "@/hooks/use-hash-target";
+import { appHref } from "@/lib/ui/hrefs";
+import { cn } from "@/lib/utils";
 
 const DESCRIPTION = "Hit a URL on a schedule, for sites on or off Vardo.";
 
@@ -34,6 +37,7 @@ export function OrgCronPage({ orgId }: { orgId: string }) {
   const canManage = can("app.cron");
   const canCommand = can("app.cron.command");
   const [jobs, setJobs] = useState<CronJob[] | null>(null);
+  const linked = useHashTarget(jobs !== null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sheetKey, setSheetKey] = useState(0);
   const [editing, setEditing] = useState<CronJob | null>(null);
@@ -165,19 +169,30 @@ export function OrgCronPage({ orgId }: { orgId: string }) {
     const appName = job.app ? job.app.displayName || job.app.name : null;
     const mayRun = canManage && (job.type === "url" || canCommand);
     return (
-      <Card variant="inset" key={job.id} className="p-4">
+      <Card
+        variant="inset"
+        key={job.id}
+        id={cronAnchor(job.id)}
+        className={cn("scroll-mt-28 p-4", linked === cronAnchor(job.id) && "bg-brass-muted")}
+      >
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0 flex-1 space-y-1.5">
             <div className="flex flex-wrap items-center gap-2">
               <CronStatusIcon status={job.lastStatus} />
-              <p className="text-sm font-medium">{job.name}</p>
+              <p className="text-sm font-medium">
+                {job.app ? (
+                  <EntityLink href={`${appHref(job.app.name, "cron")}#${cronAnchor(job.id)}`}>{job.name}</EntityLink>
+                ) : (
+                  job.name
+                )}
+              </p>
               <Badge variant={job.enabled ? "success" : "neutral"} className="text-xs">
                 {job.enabled ? "Active" : "Paused"}
               </Badge>
               {appName && job.app && (
-                <Link href={`/apps/${job.app.name}/cron`} className="text-xs text-muted-foreground hover:text-foreground">
+                <EntityLink href={appHref(job.app.name)} className="text-xs text-muted-foreground hover:text-foreground">
                   {appName}
-                </Link>
+                </EntityLink>
               )}
             </div>
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
@@ -196,7 +211,7 @@ export function OrgCronPage({ orgId }: { orgId: string }) {
               <Badge variant="outline" className="mr-1.5 font-sans">
                 {job.type === "url" ? "URL" : "CMD"}
               </Badge>
-              {job.command}
+              <CronCommand job={job} />
             </p>
             <button
               type="button"

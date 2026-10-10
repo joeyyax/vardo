@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { EntityLink } from "@/components/entity-link";
 import { FixButton, type RunAction } from "@/components/fix-action";
 import { IssueGroup, IssueItem } from "@/components/issue-group";
 import type { AttentionFix, AttentionGroup, GroupedItem } from "@/lib/ui/attention";
@@ -54,7 +55,17 @@ export function AttentionIssueGroup({ group, runner }: { group: AttentionGroup; 
           key={item.subject}
           itemKey={item.subject}
           name={item.name}
-          where={item.where}
+          href={item.href}
+          external={item.external}
+          where={
+            item.where && item.whereHref ? (
+              <EntityLink href={item.whereHref} className="hover:text-foreground">
+                {item.where}
+              </EntityLink>
+            ) : (
+              item.where
+            )
+          }
           problem={{ tone: item.tone, title: item.title, detail: itemDetail(item), since: item.since ?? null }}
           showTitle={item.title !== group.title}
           onActivate={() => runner.open(item)}

@@ -28,6 +28,9 @@ import {
   type RestartReading,
 } from "@/lib/ui/stability";
 import { DependencySelector } from "./dependency-selector";
+import { TabLink } from "@/components/tab-link";
+import { quietLinkClass } from "@/components/entity-link";
+import { appHref, deployHref, imageUrl } from "@/lib/ui/hrefs";
 import { AppUpdateStat } from "./app-updates";
 import { useNow } from "./app-stability";
 import type { App, Deployment, SlotStatus, Tag } from "./types";
@@ -45,6 +48,17 @@ function deployTypeLabel(deployType: string) {
     default:
       return deployType;
   }
+}
+
+/** The image reference, linked to its registry page when one can be derived. */
+function ImageName({ image }: { image: string }) {
+  const url = imageUrl(image);
+  if (!url) return <span className="font-mono">{image}</span>;
+  return (
+    <a href={url} target="_blank" rel="noopener noreferrer" className={`font-mono ${quietLinkClass}`}>
+      {image}
+    </a>
+  );
 }
 
 const STATUS_META: Record<string, { label: string; className: string }> = {
@@ -162,7 +176,7 @@ export function AppHeader({
 
   return (
     <div className="space-y-5">
-      <AppConditionsPanel conditions={app.conditions} />
+      <AppConditionsPanel conditions={app.conditions} appName={app.name} onNavigate={onNavigate} />
       <AppExitReason reason={app.exitReason} status={app.status} />
 
       <div className="flex gap-5">
@@ -206,13 +220,14 @@ export function AppHeader({
                       {primary.domain}
                     </a>
                     {rest > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => onNavigate("networking")}
-                        className="text-xs text-muted-foreground/60 hover:text-muted-foreground transition-colors"
+                      <TabLink
+                        href={appHref(app.name, "networking")}
+                        onSwitch={() => onNavigate("networking")}
+                        title="Every domain for this app"
+                        className="text-xs text-muted-foreground/60 hover:text-muted-foreground"
                       >
                         +{rest}
-                      </button>
+                      </TabLink>
                     )}
                   </>
                 );
@@ -223,15 +238,20 @@ export function AppHeader({
           {/* Source line */}
           <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
             {app.source === "git" && app.gitUrl && (
-              <span className="font-mono">
+              <a
+                href={splitGitUrl(app.gitUrl).url.replace(/\.git$/, "")}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`font-mono ${quietLinkClass}`}
+              >
                 {splitGitUrl(app.gitUrl).url.replace("https://github.com/", "").replace(".git", "")}
                 {app.gitBranch && app.gitBranch !== "main" && (
                   <span className="text-muted-foreground/50">:{app.gitBranch}</span>
                 )}
-              </span>
+              </a>
             )}
             {app.deployType === "image" && app.imageName && (
-              <span className="font-mono">{app.imageName}</span>
+              <ImageName image={app.imageName} />
             )}
             {app.containerPort && (
               <span>:{app.containerPort}</span>
@@ -338,14 +358,14 @@ export function AppHeader({
           label="Stability"
           hint="Crashes, crash loops, failed deploys and rollbacks recorded for this app, against the period before. Docker's restart count isn't history — a new container resets it — but a count the live container is still carrying holds the verdict off Stable."
         >
-          <button
-            type="button"
-            onClick={() => onNavigate("stability")}
-            className={`flex items-center gap-1.5 text-left transition-colors hover:opacity-80 ${stabilityTone(verdict.level)}`}
+          <TabLink
+            href={appHref(app.name, "stability")}
+            onSwitch={() => onNavigate("stability")}
+            className={`flex items-center gap-1.5 text-left ${stabilityTone(verdict.level)}`}
           >
             {verdict.headline}
             {cue && <span className="text-muted-foreground">· {cue}</span>}
-          </button>
+          </TabLink>
         </HeaderStat>
         {uptimeSince && (
           <HeaderStat
@@ -386,20 +406,20 @@ export function AppHeader({
         )}
         {!isChildService && lastSuccess && (
           <HeaderStat label="Last deploy">
-            <button
-              type="button"
-              onClick={() => onNavigate("deployments")}
-              className="hover:text-foreground transition-colors text-left"
+            <TabLink
+              href={deployHref(app.name, lastSuccess.id)}
+              onSwitch={() => onNavigate("deployments")}
+              className="text-left"
             >
               <RelativeTime date={lastSuccess.finishedAt || lastSuccess.startedAt} absoluteFirst />
               {lastSuccess.gitSha && (
                 <span className="font-mono text-muted-foreground"> · {lastSuccess.gitSha.slice(0, 7)}</span>
               )}
-            </button>
+            </TabLink>
           </HeaderStat>
         )}
         <HeaderStat label="Image">
-          <AppUpdateStat orgId={orgId} appId={app.id} />
+          <AppUpdateStat orgId={orgId} appId={app.id} appName={app.name} onNavigate={onNavigate} />
         </HeaderStat>
       </dl>
 

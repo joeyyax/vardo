@@ -26,9 +26,11 @@ export const DetailPanel = forwardRef<
     /** Small text over the title, such as the project or a back link. */
     eyebrow?: ReactNode;
     title: ReactNode;
+    /** Beside the close button, such as a link to the full page. */
+    actions?: ReactNode;
     children: ReactNode;
   }
->(function DetailPanel({ open, onClose, label, eyebrow, title, children }, ref) {
+>(function DetailPanel({ open, onClose, label, eyebrow, title, actions, children }, ref) {
   const floating = useMediaQuery(DETAIL_PANEL_QUERY);
 
   const close = (
@@ -52,7 +54,10 @@ export const DetailPanel = forwardRef<
                 {eyebrow}
                 <BottomSheetTitle className="type-h2 [overflow-wrap:anywhere]">{title}</BottomSheetTitle>
               </div>
-              {close}
+              <div className="flex shrink-0 items-center gap-1">
+                {actions}
+                {close}
+              </div>
             </div>
             {children}
           </div>
@@ -79,7 +84,10 @@ export const DetailPanel = forwardRef<
             {eyebrow}
             <h2 className="type-h2 [overflow-wrap:anywhere]">{title}</h2>
           </div>
-          {close}
+          <div className="flex shrink-0 items-center gap-1">
+            {actions}
+            {close}
+          </div>
         </div>
         {children}
       </div>

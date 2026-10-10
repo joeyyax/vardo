@@ -20,6 +20,7 @@ import { useSystemSetting } from "@/app/(authenticated)/admin/settings/use-syste
 import { FieldHint } from "@/components/setup/provider-guide";
 import type { SslIssuer } from "@/lib/system-settings";
 import { DnsVerdict } from "./dns-verdict";
+import { DomainLink } from "@/components/entity-link";
 import { diagnoseDns } from "./domain-diagnosis";
 import { baseDomainMismatch } from "@/lib/domain-monitoring/auto-domain";
 
@@ -555,7 +556,10 @@ export function DomainSettings() {
               {dnsChecks.map((check) => (
                 <div key={check.domain} className="flex items-center justify-between gap-4 px-6 py-2.5">
                   <div className="min-w-0">
-                    <p className="text-sm font-medium font-mono">{check.domain}</p>
+                    <p className="text-sm font-medium font-mono">
+                      {/* A wildcard has no single site to open. */}
+                      {check.domain.includes("*") ? check.domain : <DomainLink domain={check.domain} />}
+                    </p>
                     <p className="text-xs text-muted-foreground">
                       {check.resolved
                         ? `Resolves to ${check.ips.join(", ")}`

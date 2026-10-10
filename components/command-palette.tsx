@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef, type ReactNode } from "react";
+import Link from "next/link";
 import { runDeploy } from "@/lib/ui/run-deploy";
 import { useRouter } from "next/navigation";
 import {
@@ -46,6 +47,8 @@ import {
 } from "lucide-react";
 import { AppIcon } from "@/components/app-status";
 import { toast } from "@/lib/messenger";
+import { appHref, projectHref } from "@/lib/ui/hrefs";
+import { cn } from "@/lib/utils";
 import {
   byRelevance,
   fillApp,
@@ -100,6 +103,50 @@ type SearchableProject = {
 /** An action holding at its confirm step. */
 type PendingConfirm = { action: CommandActionDef; app: SearchableApp };
 
+
+/** How a link item was chosen: Enter, a plain click, or a click that opens a new tab. */
+type Via = "key" | "click" | "new-tab";
+
+/** A result that is a real link, so Cmd/Ctrl-click and middle-click open a new tab. */
+function NavItem({
+  href,
+  value,
+  keywords,
+  className,
+  onNavigate,
+  children,
+}: {
+  href: string;
+  value: string;
+  keywords?: string[];
+  className?: string;
+  onNavigate: (href: string, via: Via) => void;
+  children: ReactNode;
+}) {
+  const via = useRef<Via>("key");
+  return (
+    <CommandItem
+      asChild
+      value={value}
+      keywords={keywords}
+      className={cn("cursor-pointer", className)}
+      onSelect={() => {
+        const how = via.current;
+        via.current = "key";
+        onNavigate(href, how);
+      }}
+    >
+      <Link
+        href={href}
+        onClick={(e) => {
+          via.current = e.metaKey || e.ctrlKey || e.shiftKey ? "new-tab" : "click";
+        }}
+      >
+        {children}
+      </Link>
+    </CommandItem>
+  );
+}
 
 export function CommandPalette({ orgId, teamsEnabled = true, activityEnabled = true, cronEnabled = true }: CommandPaletteProps) {
   const [open, setOpen] = useState(false);
@@ -160,7 +207,7 @@ export function CommandPalette({ orgId, teamsEnabled = true, activityEnabled = t
           router.refresh();
         } else if (action.id === "deploy") {
           // Land on the app first so the run can be watched.
-          router.push(`/apps/${app.name}/deployments`);
+          router.push(appHref(app.name, "deployments"));
           toast.info(`Deploying ${app.displayName}…`);
           await runDeploy(orgId, app.id);
           toast.success(`Deployed ${app.displayName}`);
@@ -176,24 +223,28 @@ export function CommandPalette({ orgId, teamsEnabled = true, activityEnabled = t
     [orgId, router],
   );
 
-  /** Step two: the app is chosen, so navigate or ask before firing. */
+  // A click lets the link navigate; Enter pushes; a new-tab click leaves the palette open.
+  const navigate = useCallback(
+    (href: string, via: Via) => {
+      if (via === "new-tab") return;
+      runCommand(() => {
+        if (via === "key") router.push(href);
+      });
+    },
+    [router, runCommand],
+  );
+
+  /** Step two: an action's app is chosen, so ask before firing. */
   const chooseApp = useCallback(
     (app: SearchableApp) => {
       const action = pendingAction;
-      if (!action) {
-        runCommand(() => router.push(`/apps/${app.name}`));
-        return;
-      }
-      if (action.id === "logs") {
-        runCommand(() => router.push(`/apps/${app.name}/logs`));
-        return;
-      }
+      if (!action) return;
       setOpen(false);
       setSearch("");
       setPendingAction(null);
       setConfirming({ action, app });
     },
-    [pendingAction, router, runCommand],
+    [pendingAction],
   );
 
   // Cmd/Ctrl+K, plus an event for external triggers.
@@ -300,34 +351,37 @@ export function CommandPalette({ orgId, teamsEnabled = true, activityEnabled = t
             {/* Apps */}
             {apps.length > 0 && (
               <CommandGroup heading={pendingAction ? "Pick an app" : "Apps"}>
-                {rankedApps.map((app) => (
-                  <CommandItem
-                    key={app.id}
-                    // Name is the value and the rest are keywords, so cmdk ranks
-                    // exact names first.
-                    value={`${app.displayName}${ID_SEP}${app.id}`}
-                    keywords={[
-                      app.name,
-                      app.parentName,
-                      app.projectName,
-                      app.imageName,
-                      ...app.domains,
-                    ].filter((k): k is string => !!k)}
-                    onSelect={() => chooseApp(app)}
-                    className="gap-2"
-                  >
-                    <AppIcon app={app} size="sm" />
-                    <span>
-                      {pendingAction ? fillApp(`${pendingAction.verb} {app}`, app.displayName) : app.displayName}
-                    </span>
-                    {/* The parent tells same-named services apart. */}
-                    {(app.parentName || app.projectName) && (
-                      <span className="text-xs text-muted-foreground ml-auto truncate">
-                        {app.parentName ?? app.projectName}
+                {rankedApps.map((app) => {
+                  const keywords = [app.name, app.parentName, app.projectName, app.imageName, ...app.domains].filter(
+                    (k): k is string => !!k,
+                  );
+                  const body = (
+                    <>
+                      <AppIcon app={app} size="sm" />
+                      <span>
+                        {pendingAction ? fillApp(`${pendingAction.verb} {app}`, app.displayName) : app.displayName}
                       </span>
-                    )}
-                  </CommandItem>
-                ))}
+                      {/* The parent tells same-named services apart. */}
+                      {(app.parentName || app.projectName) && (
+                        <span className="text-xs text-muted-foreground ml-auto truncate">
+                          {app.parentName ?? app.projectName}
+                        </span>
+                      )}
+                    </>
+                  );
+                  // Name is the value and the rest are keywords, so cmdk ranks exact names first.
+                  const value = `${app.displayName}${ID_SEP}${app.id}`;
+                  const href = !pendingAction ? appHref(app.name) : pendingAction.id === "logs" ? appHref(app.name, "logs") : null;
+                  return href ? (
+                    <NavItem key={app.id} href={href} value={value} keywords={keywords} onNavigate={navigate} className="gap-2">
+                      {body}
+                    </NavItem>
+                  ) : (
+                    <CommandItem key={app.id} value={value} keywords={keywords} onSelect={() => chooseApp(app)} className="gap-2">
+                      {body}
+                    </CommandItem>
+                  );
+                })}
               </CommandGroup>
             )}
 
@@ -335,16 +389,17 @@ export function CommandPalette({ orgId, teamsEnabled = true, activityEnabled = t
             {!pendingAction && projects.length > 0 && (
               <CommandGroup heading="Projects">
                 {rankedProjects.map((project) => (
-                  <CommandItem
+                  <NavItem
                     key={project.id}
+                    href={projectHref(project.name)}
                     value={`${project.displayName}${ID_SEP}${project.id}`}
                     keywords={[project.name]}
-                    onSelect={() => runCommand(() => router.push(`/projects/${project.name}`))}
+                    onNavigate={navigate}
                     className="gap-2"
                   >
                     <FolderKanban className="size-4 shrink-0 text-muted-foreground" />
                     <span>{project.displayName}</span>
-                  </CommandItem>
+                  </NavItem>
                 ))}
               </CommandGroup>
             )}
@@ -353,16 +408,17 @@ export function CommandPalette({ orgId, teamsEnabled = true, activityEnabled = t
             {!pendingAction && orgEnvKeys.length > 0 && (
               <CommandGroup heading="Shared variables">
                 {orgEnvKeys.map((key) => (
-                  <CommandItem
+                  <NavItem
                     key={key}
+                    href="/settings/variables"
                     value={key}
                     keywords={["env", "variable"]}
-                    onSelect={() => runCommand(() => router.push("/settings/variables"))}
+                    onNavigate={navigate}
                     className="gap-2"
                   >
                     <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">{key}</code>
                     <span className="text-xs text-muted-foreground ml-auto">Organization variable</span>
-                  </CommandItem>
+                  </NavItem>
                 ))}
               </CommandGroup>
             )}
@@ -372,146 +428,162 @@ export function CommandPalette({ orgId, teamsEnabled = true, activityEnabled = t
             {/* Pages */}
             {!pendingAction && (
             <CommandGroup heading="Pages">
-              <CommandItem
+              <NavItem
+                href="/projects"
                 value="Dashboard Projects Home"
-                onSelect={() => runCommand(() => router.push("/projects"))}
+                onNavigate={navigate}
                 className="gap-2"
               >
                 <LayoutDashboard className="size-4" />
                 <span>Dashboard</span>
-              </CommandItem>
-              <CommandItem
+              </NavItem>
+              <NavItem
+                href="/metrics"
                 value="Metrics Monitoring"
-                onSelect={() => runCommand(() => router.push("/metrics"))}
+                onNavigate={navigate}
                 className="gap-2"
               >
                 <BarChart3 className="size-4" />
                 <span>Metrics</span>
-              </CommandItem>
-              <CommandItem
+              </NavItem>
+              <NavItem
+                href="/backups"
                 value="Backups"
-                onSelect={() => runCommand(() => router.push("/backups"))}
+                onNavigate={navigate}
                 className="gap-2"
               >
                 <Archive className="size-4" />
                 <span>Backups</span>
-              </CommandItem>
+              </NavItem>
               {cronEnabled && (
-                <CommandItem
+                <NavItem
+                  href="/cron"
                   value="Cron Scheduled Jobs"
-                  onSelect={() => runCommand(() => router.push("/cron"))}
+                  onNavigate={navigate}
                   className="gap-2"
                 >
                   <Clock className="size-4" />
                   <span>Cron</span>
-                </CommandItem>
+                </NavItem>
               )}
               {activityEnabled && (
-                <CommandItem
+                <NavItem
+                  href="/activity"
                   value="Activity Log"
-                  onSelect={() => runCommand(() => router.push("/activity"))}
+                  onNavigate={navigate}
                   className="gap-2"
                 >
                   <Activity className="size-4" />
                   <span>Activity</span>
-                </CommandItem>
+                </NavItem>
               )}
-              <CommandItem
+              <NavItem
+                href="/updates"
                 value="Updates Image updates"
-                onSelect={() => runCommand(() => router.push("/updates"))}
+                onNavigate={navigate}
                 className="gap-2"
               >
                 <ArrowUpCircle className="size-4" />
                 <span>Updates</span>
-              </CommandItem>
+              </NavItem>
               {teamsEnabled && (
-                <CommandItem
+                <NavItem
+                  href="/settings/team"
                   value="Team Members"
-                  onSelect={() => runCommand(() => router.push("/settings/team"))}
+                  onNavigate={navigate}
                   className="gap-2"
                 >
                   <Users className="size-4" />
                   <span>Team</span>
-                </CommandItem>
+                </NavItem>
               )}
-              <CommandItem
+              <NavItem
+                href="/settings"
                 value="Settings Organization"
-                onSelect={() => runCommand(() => router.push("/settings"))}
+                onNavigate={navigate}
                 className="gap-2"
               >
                 <Settings className="size-4" />
                 <span>Settings</span>
-              </CommandItem>
-              <CommandItem
+              </NavItem>
+              <NavItem
+                href="/user/settings/profile"
                 value="Profile Account Settings"
-                onSelect={() => runCommand(() => router.push("/user/settings/profile"))}
+                onNavigate={navigate}
                 className="gap-2"
               >
                 <UserCircle className="size-4" />
                 <span>Account settings</span>
-              </CommandItem>
+              </NavItem>
             </CommandGroup>
             )}
 
             {/* Admin */}
             {!pendingAction && (
             <CommandGroup heading="Admin">
-              <CommandItem
+              <NavItem
+                href="/admin"
                 value="Admin Overview"
-                onSelect={() => runCommand(() => router.push("/admin"))}
+                onNavigate={navigate}
                 className="gap-2"
               >
                 <Shield className="size-4" />
                 <span>Admin</span>
-              </CommandItem>
-              <CommandItem
+              </NavItem>
+              <NavItem
+                href="/admin"
                 value="Admin System Infrastructure Health"
-                onSelect={() => runCommand(() => router.push("/admin"))}
+                onNavigate={navigate}
                 className="gap-2"
               >
                 <Server className="size-4" />
                 <span>System health</span>
-              </CommandItem>
-              <CommandItem
+              </NavItem>
+              <NavItem
+                href="/admin/maintenance"
                 value="Admin Maintenance Docker Cleanup"
-                onSelect={() => runCommand(() => router.push("/admin/maintenance"))}
+                onNavigate={navigate}
                 className="gap-2"
               >
                 <Wrench className="size-4" />
                 <span>Maintenance</span>
-              </CommandItem>
-              <CommandItem
+              </NavItem>
+              <NavItem
+                href="/admin/settings/email"
                 value="Admin Settings System Email SMTP"
-                onSelect={() => runCommand(() => router.push("/admin/settings/email"))}
+                onNavigate={navigate}
                 className="gap-2"
               >
                 <Mail className="size-4" />
                 <span>Admin settings: Email</span>
-              </CommandItem>
-              <CommandItem
+              </NavItem>
+              <NavItem
+                href="/admin/settings/backup"
                 value="Admin Settings Backup Storage S3 R2"
-                onSelect={() => runCommand(() => router.push("/admin/settings/backup"))}
+                onNavigate={navigate}
                 className="gap-2"
               >
                 <HardDrive className="size-4" />
                 <span>Admin settings: Backup</span>
-              </CommandItem>
-              <CommandItem
+              </NavItem>
+              <NavItem
+                href="/admin/settings/github"
                 value="Admin Settings GitHub App Integration"
-                onSelect={() => runCommand(() => router.push("/admin/settings/github"))}
+                onNavigate={navigate}
                 className="gap-2"
               >
                 <GitBranch className="size-4" />
                 <span>Admin settings: GitHub App</span>
-              </CommandItem>
-              <CommandItem
+              </NavItem>
+              <NavItem
+                href="/admin/settings/services"
                 value="Admin Settings Services Metrics Logs"
-                onSelect={() => runCommand(() => router.push("/admin/settings/services"))}
+                onNavigate={navigate}
                 className="gap-2"
               >
                 <Blocks className="size-4" />
                 <span>Admin settings: Services</span>
-              </CommandItem>
+              </NavItem>
             </CommandGroup>
             )}
           </CommandList>

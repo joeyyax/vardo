@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useState, type ReactNode, type KeyboardEvent } from "react";
-import { Check } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
 import { StatusMark } from "@/components/ui/status-dot";
-import type { Handled } from "@/components/fix-action";
+import { EntityLink, entityLinkClass } from "@/components/entity-link";
 import type { Problem } from "@/lib/ui/conditions";
 import { formatAbsoluteDateTime, formatSpan } from "@/lib/ui/relative-time";
 import { cn } from "@/lib/utils";
@@ -55,10 +54,15 @@ export function IssueGroup({
   );
 }
 
-/** One app or item with a problem: the cause, how long and the fix. Activating it opens the subject. */
+/**
+ * One app or item with a problem: the cause, how long and the fix. The name links to its page and
+ * the rest of the row activates it. Links, the activator and actions are siblings, never nested.
+ */
 export function IssueItem({
   itemKey,
   name,
+  href,
+  external = false,
   where,
   problem,
   showTitle,
@@ -69,8 +73,12 @@ export function IssueItem({
   /** Identifies the item to the panel's keyboard handling. */
   itemKey: string;
   name: string;
-  /** Project, and parent when nested. */
-  where?: string;
+  /** The subject's page. */
+  href?: string;
+  /** Opens href in a new tab. */
+  external?: boolean;
+  /** Project, and parent when nested. Links allowed. */
+  where?: ReactNode;
   problem: Pick<Problem, "tone" | "title" | "detail" | "since">;
   /** Off when the group heading already says it. */
   showTitle: boolean;
@@ -78,24 +86,13 @@ export function IssueItem({
   actions?: ReactNode;
   onActivate: () => void;
 }) {
-  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.target !== e.currentTarget) return;
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      onActivate();
-    }
-  };
   return (
     <div
-      role="button"
-      tabIndex={0}
-      data-panel-item={itemKey}
-      aria-label={`${name}: ${problem.title}`}
+      data-selected={selected}
       onClick={onActivate}
-      onKeyDown={onKeyDown}
       className={cn(
-        "grid cursor-pointer grid-cols-[12px_minmax(0,1fr)] items-start gap-x-3 gap-y-0.5 rounded-[10px] p-2.5 outline-none",
-        "hover:bg-row-hover focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brass",
+        "grid cursor-pointer grid-cols-[12px_minmax(0,1fr)] items-start gap-x-3 gap-y-0.5 rounded-[10px] p-2.5",
+        "hover:bg-row-hover has-[[data-panel-item]:focus-visible]:bg-row-hover has-[[data-panel-item]:focus-visible]:outline-2 has-[[data-panel-item]:focus-visible]:-outline-offset-2 has-[[data-panel-item]:focus-visible]:outline-brass",
         selected && "bg-brass-muted",
       )}
     >
@@ -104,23 +101,51 @@ export function IssueItem({
       </span>
       <div className="grid min-w-0 gap-0.5">
         <div className="flex flex-wrap items-baseline gap-x-2 text-sm">
-          <span className="font-semibold">{name}</span>
+          {href && external ? (
+            <a
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              data-entity-link
+              onClick={(e) => e.stopPropagation()}
+              className={cn(entityLinkClass, "font-semibold")}
+            >
+              {name}
+            </a>
+          ) : href ? (
+            <EntityLink href={href} className="font-semibold">
+              {name}
+            </EntityLink>
+          ) : (
+            <span className="font-semibold">{name}</span>
+          )}
           {where && <span className="text-muted-foreground/70">{where}</span>}
         </div>
-        <div className="text-[13.5px]">
-          {showTitle && (
-            <>
-              <span className={problem.tone === "error" ? "text-status-error" : "text-status-warning"}>{problem.title}</span>
-              {problem.detail && " · "}
-            </>
+        <button
+          type="button"
+          data-panel-item={itemKey}
+          aria-label={`${name}: ${problem.title}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            onActivate();
+          }}
+          className="grid cursor-pointer gap-0.5 text-left outline-none"
+        >
+          <span className="text-[13.5px]">
+            {showTitle && (
+              <>
+                <span className={problem.tone === "error" ? "text-status-error" : "text-status-warning"}>{problem.title}</span>
+                {problem.detail && " · "}
+              </>
+            )}
+            {problem.detail}
+          </span>
+          {problem.since && (
+            <span className="text-[12.5px] text-muted-foreground/70">
+              <Since since={problem.since} />
+            </span>
           )}
-          {problem.detail}
-        </div>
-        {problem.since && (
-          <div className="text-[12.5px] text-muted-foreground/70">
-            <Since since={problem.since} />
-          </div>
-        )}
+        </button>
       </div>
       {actions && (
         <div className="col-start-2 flex flex-wrap items-center gap-1 pt-1.5" onClick={(e) => e.stopPropagation()}>
@@ -128,54 +153,6 @@ export function IssueItem({
         </div>
       )}
     </div>
-  );
-}
-
-/** "N open across M projects · K handled just now", with a bar once something is handled. */
-export function IssueProgress({ open, projects, handled }: { open: number; projects: number; handled: number }) {
-  const total = open + handled;
-  return (
-    <div className="grid gap-2" role="status">
-      <p className="text-sm text-muted-foreground">
-        <b className="font-semibold text-foreground">{open}</b> open across {projects} project{projects === 1 ? "" : "s"}
-        {handled > 0 && <span className="text-status-success"> · {handled} handled just now</span>}
-      </p>
-      {handled > 0 && (
-        <div
-          role="progressbar"
-          aria-label="Handled"
-          aria-valuemin={0}
-          aria-valuemax={total}
-          aria-valuenow={handled}
-          className="h-1 overflow-hidden rounded-full bg-accent"
-        >
-          <i
-            className="block h-full rounded-full bg-status-success transition-[width] duration-400 motion-reduce:transition-none"
-            style={{ width: `${Math.round((handled / total) * 100)}%` }}
-          />
-        </div>
-      )}
-    </div>
-  );
-}
-
-export function HandledList({ handled }: { handled: Handled[] }) {
-  if (handled.length === 0) return null;
-  return (
-    <details>
-      <summary className="cursor-pointer py-1 text-[13px] text-muted-foreground">Handled just now · {handled.length}</summary>
-      {handled.map((h, i) => (
-        <div key={`${h.name}-${i}`} className="flex items-center gap-2 py-1 pl-0.5 text-[13px]">
-          <span className="flex size-3 items-center justify-center rounded-full bg-status-success text-card">
-            <Check className="size-2" strokeWidth={4} aria-hidden="true" />
-          </span>
-          <span>{h.displayName}</span>
-          <span className="text-muted-foreground/70">
-            {h.title.toLowerCase()}, {h.outcome}
-          </span>
-        </div>
-      ))}
-    </details>
   );
 }
 

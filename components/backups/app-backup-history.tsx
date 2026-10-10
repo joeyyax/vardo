@@ -5,6 +5,7 @@ import { Archive, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/lib/messenger";
 import { BackupHistory } from "./backup-history";
+import { jobAnchor } from "./job-anchor";
 import { UncapturedWarning, uncapturedSources } from "./uncaptured-warning";
 import type { BackupJob, RecentBackup } from "./types";
 
@@ -104,7 +105,7 @@ export function AppBackupHistory({
         </Button>
       </div>
       <UncapturedWarning sources={uncaptured} />
-      <BackupHistory history={history} orgId={orgId} onRefresh={fetchData} />
+      <BackupHistory history={history} orgId={orgId} onRefresh={fetchData} jobHref={(id) => `/backups#${jobAnchor(id)}`} />
     </div>
   );
 }

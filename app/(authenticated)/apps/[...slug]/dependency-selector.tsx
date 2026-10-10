@@ -11,6 +11,8 @@ import {
 } from "@/components/ui/popover";
 import { HelpTip } from "@/components/ui/help-tip";
 import { statusDotColor } from "@/lib/ui/status-colors";
+import { EntityLink } from "@/components/entity-link";
+import { appHref } from "@/lib/ui/hrefs";
 
 export function DependencySelector({
   appId,
@@ -107,7 +109,7 @@ export function DependencySelector({
               className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-xs font-medium"
             >
               <span className={`size-1.5 rounded-full ${statusDotColor(sibling?.status ?? "stopped")}`} />
-              {sibling?.displayName ?? depName}
+              <EntityLink href={appHref(depName)}>{sibling?.displayName ?? depName}</EntityLink>
               <button
                 type="button"
                 onClick={() => handleRemove(depName)}

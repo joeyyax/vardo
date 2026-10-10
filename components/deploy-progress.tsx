@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { DEPLOY_STAGE_KEYS, STAGE_LABELS } from "@/lib/ui/deploy-stage";
+import { quietLinkClass } from "@/components/entity-link";
+import { appHref, deployHref } from "@/lib/ui/hrefs";
 import { cn } from "@/lib/utils";
 
 type StageStatus = "running" | "success" | "failed" | "skipped";
@@ -52,12 +54,15 @@ export function DeployProgress({
   orgId,
   appId,
   appName,
+  deploymentId,
   startedAt,
   typicalMs,
 }: {
   orgId: string;
   appId: string;
   appName: string;
+  /** The running deploy, so the link opens it. */
+  deploymentId?: string;
   startedAt: Date | string;
   /** End-to-end time of the last successful deploy. Null when there is none. */
   typicalMs: number | null;
@@ -127,7 +132,10 @@ export function DeployProgress({
           </span>
         )}
       </div>
-      <Link href={`/apps/${appName}/deployments`} className="w-fit text-[13px] text-muted-foreground hover:text-foreground">
+      <Link
+        href={deploymentId ? deployHref(appName, deploymentId) : appHref(appName, "deployments")}
+        className={cn(quietLinkClass, "w-fit text-[13px]")}
+      >
         Stream logs →
       </Link>
     </div>

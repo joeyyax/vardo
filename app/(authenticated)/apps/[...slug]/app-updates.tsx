@@ -29,6 +29,8 @@ import type {
 } from "@/lib/docker/image-updates/status";
 import { cardVariants, Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { TabLink } from "@/components/tab-link";
+import { appHref } from "@/lib/ui/hrefs";
 
 type AppUpdates = AppUpdateStatus;
 type Severity = ServiceUpdateStatus["severity"];
@@ -70,7 +72,18 @@ export function useImageUpdates(orgId: string, appId: string) {
 }
 
 /** Compact value for the header stat strip. */
-export function AppUpdateStat({ orgId, appId }: { orgId: string; appId: string }) {
+export function AppUpdateStat({
+  orgId,
+  appId,
+  appName,
+  onNavigate,
+}: {
+  orgId: string;
+  appId: string;
+  /** With onNavigate, "N available" links to the Updates tab. */
+  appName?: string;
+  onNavigate?: (tab: string) => void;
+}) {
   const { data, loading } = useImageUpdates(orgId, appId);
 
   if (loading) return <span className="text-muted-foreground/50">—</span>;
@@ -90,10 +103,12 @@ export function AppUpdateStat({ orgId, appId }: { orgId: string; appId: string }
     );
   }
 
+  const label = <span className={severityClass(data.highestSeverity as Severity)}>{data.updateCount} available</span>;
+  if (!appName || !onNavigate) return label;
   return (
-    <span className={severityClass(data.highestSeverity as Severity)}>
-      {data.updateCount} available
-    </span>
+    <TabLink href={appHref(appName, "updates")} onSwitch={() => onNavigate("updates")}>
+      {label}
+    </TabLink>
   );
 }
 

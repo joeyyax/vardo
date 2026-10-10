@@ -28,6 +28,8 @@ import type {
 } from "@/lib/docker/image-updates/status";
 import { cardVariants } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { EntityLink } from "@/components/entity-link";
+import { appHref } from "@/lib/ui/hrefs";
 
 /** Acknowledgements are tied to the tag they were given for. */
 function ackKey(appId: string, service: string | null, tag: string): string {
@@ -431,7 +433,9 @@ function IgnoredList({
             key={`${entry.appId}:${entry.service.service ?? ""}`}
             className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5"
           >
-            <span className="type-body-sm">{entry.displayName}</span>
+            <EntityLink href={appHref(entry.name, "updates")} className="type-body-sm">
+              {entry.displayName}
+            </EntityLink>
             <span className="font-mono text-xs text-muted-foreground">
               {entry.service.service ?? entry.service.image}
             </span>
@@ -477,7 +481,13 @@ function BatchOutcome({ report }: { report: BatchReport }) {
       <ul className="space-y-1">
         {report.apps.map((app) => (
           <li key={app.appId} className="type-body-sm text-muted-foreground">
-            <span className="text-foreground">{app.displayName}</span>
+            {app.appName ? (
+              <EntityLink href={appHref(app.appName, "updates")} className="text-foreground">
+                {app.displayName}
+              </EntityLink>
+            ) : (
+              <span className="text-foreground">{app.displayName}</span>
+            )}
             {app.applied > 0 && ` — ${app.applied} pinned`}
             {app.failed.map((item) => (
               <span key={`${item.service ?? ""}-${item.tag}`} className="block pl-4 text-status-warning">

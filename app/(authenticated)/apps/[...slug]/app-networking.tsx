@@ -49,6 +49,7 @@ import { HelpTip } from "@/components/ui/help-tip";
 import { formatRoute } from "@/lib/domains/path-prefix";
 import { CLOUDFLARE_ONLY_MIDDLEWARE, parseMiddlewares } from "@/lib/domains/middlewares";
 import { cn } from "@/lib/utils";
+import { DomainLink } from "@/components/entity-link";
 
 // Explicit picks; "Default" uses DNS-01 when the instance has Cloudflare credentials.
 const CERT_RESOLVER_OPTIONS = [
@@ -662,7 +663,9 @@ export function AppNetworking({
                         <ArrowRight className="size-3" />
                         {domain.redirectCode ?? 301}
                         {" "}
-                        {(() => { try { return new URL(domain.redirectTo).hostname; } catch { return domain.redirectTo; } })()}
+                        <DomainLink domain={domain.redirectTo}>
+                          {(() => { try { return new URL(domain.redirectTo).hostname; } catch { return domain.redirectTo; } })()}
+                        </DomainLink>
                       </Badge>
                     ) : domain.port ? (
                       <span className="text-xs text-muted-foreground">:{domain.port}</span>

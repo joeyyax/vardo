@@ -22,6 +22,8 @@ import { Sparkline } from "@/components/app-metrics-card";
 import { MetricsTooltip } from "@/components/metrics-chart";
 import { NetworkChart } from "@/components/network-chart";
 import { Card } from "@/components/ui/card";
+import { EntityLink } from "@/components/entity-link";
+import { appHref } from "@/lib/ui/hrefs";
 
 type AppSummary = {
   id: string;
@@ -115,7 +117,8 @@ function SortHeader({ label, sortKey, sort, onSort, align = "right" }: {
   );
 }
 
-type Slice = { label: string; value: number; color: string; detail?: string };
+/** `href` links the label, such as an app to its metrics. */
+type Slice = { label: string; value: number; color: string; detail?: string; href?: string };
 
 /** Share of a total: one bar the slices fill, with the total spelled out beside it. */
 function ShareBar({ title, subtitle, total, totalLabel, slices, footnote }: {
@@ -148,7 +151,7 @@ function ShareBar({ title, subtitle, total, totalLabel, slices, footnote }: {
           <div key={sl.label} className="flex items-center justify-between py-0.5">
             <span className="inline-flex items-center gap-1.5 text-xs truncate">
               <span className="size-2 rounded-full shrink-0" style={{ backgroundColor: sl.color }} />
-              {sl.label}
+              {sl.href ? <EntityLink href={sl.href} className="truncate">{sl.label}</EntityLink> : sl.label}
             </span>
             <span className="text-xs tabular-nums text-muted-foreground shrink-0 ml-2">
               {sl.detail ?? sl.value}
@@ -572,7 +575,13 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
 
         const allActive = runningApps
           .filter((a) => a.memory > 0)
-          .map((a) => ({ name: a.name, cpu: a.cpu, memory: a.memory, network: a.network }));
+          .map((a): { name: string; href?: string; cpu: number; memory: number; network: number } => ({
+            name: a.name,
+            href: appHref(a.appName, "metrics"),
+            cpu: a.cpu,
+            memory: a.memory,
+            network: a.network,
+          }));
 
         function topN(items: typeof allActive, key: "cpu" | "memory" | "network") {
           const sorted = [...items].sort((a, b) => b[key] - a[key]);
@@ -609,21 +618,21 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
               subtitle="by app"
               total={formatCores(totals.cpu)}
               totalLabel={cpuCores > 0 ? `of ${cpuCores} cores` : "total"}
-              slices={cpuApps.map((a, i) => ({ label: a.name, value: a.cpu, color: appColors[i % appColors.length], detail: formatCores(a.cpu) }))}
+              slices={cpuApps.map((a, i) => ({ label: a.name, href: a.href, value: a.cpu, color: appColors[i % appColors.length], detail: formatCores(a.cpu) }))}
             />
             <ShareBar
               title="Memory"
               subtitle="by app"
               total={formatBytes(totals.memory)}
               totalLabel="total"
-              slices={memApps.map((a, i) => ({ label: a.name, value: a.memory, color: appColors[i % appColors.length], detail: formatBytes(a.memory) }))}
+              slices={memApps.map((a, i) => ({ label: a.name, href: a.href, value: a.memory, color: appColors[i % appColors.length], detail: formatBytes(a.memory) }))}
             />
             <ShareBar
               title="Network"
               subtitle="by app · since container start"
               total={formatBytes(totals.networkRx + totals.networkTx)}
               totalLabel="total"
-              slices={netApps.map((a, i) => ({ label: a.name, value: a.network, color: appColors[i % appColors.length], detail: formatBytes(a.network) }))}
+              slices={netApps.map((a, i) => ({ label: a.name, href: a.href, value: a.network, color: appColors[i % appColors.length], detail: formatBytes(a.network) }))}
             />
           </div>
         );

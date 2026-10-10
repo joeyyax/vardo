@@ -1,6 +1,9 @@
+"use client";
+
 import { AlertTriangle, ShieldAlert } from "lucide-react";
 
-import { conditionTitle } from "@/lib/ui/conditions";
+import { conditionHref, conditionTitle } from "@/lib/ui/conditions";
+import { TabLink } from "@/components/tab-link";
 import { formatSpan } from "@/lib/ui/relative-time";
 import { worstCondition, type AppCondition, type ConditionSeverity } from "@/lib/docker/conditions";
 import { Card } from "@/components/ui/card";
@@ -25,7 +28,16 @@ const TONE: Record<ConditionSeverity, { border: string; surface: string; text: s
 };
 
 /** What needs a human on this app. Renders nothing when the app is healthy. */
-export function AppConditionsPanel({ conditions }: { conditions: AppCondition[] | null }) {
+export function AppConditionsPanel({
+  conditions,
+  appName,
+  onNavigate,
+}: {
+  conditions: AppCondition[] | null;
+  /** With onNavigate, each condition links to the tab that explains it. */
+  appName?: string;
+  onNavigate?: (tab: string) => void;
+}) {
   const list = conditions ?? [];
   if (list.length === 0) return null;
 
@@ -44,9 +56,13 @@ export function AppConditionsPanel({ conditions }: { conditions: AppCondition[] 
       <ul className="mt-2 space-y-1.5">
         {list.map((c) => (
           <li key={c.kind} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-            <span className={`shrink-0 font-medium ${TONE[c.severity].text}`}>
-              {conditionTitle(c)}
-            </span>
+            {appName && onNavigate ? (
+              <ConditionLink href={conditionHref(appName, c.kind)} onNavigate={onNavigate} className={`shrink-0 font-medium ${TONE[c.severity].text}`}>
+                {conditionTitle(c)}
+              </ConditionLink>
+            ) : (
+              <span className={`shrink-0 font-medium ${TONE[c.severity].text}`}>{conditionTitle(c)}</span>
+            )}
             <span className="text-muted-foreground">{c.detail}</span>
             <span className="text-xs text-muted-foreground/70">
               for {formatSpan(c.since)}
@@ -55,5 +71,25 @@ export function AppConditionsPanel({ conditions }: { conditions: AppCondition[] 
         ))}
       </ul>
     </Card>
+  );
+}
+
+/** A condition's title, linked to its tab; a plain click switches tabs in place. */
+function ConditionLink({
+  href,
+  onNavigate,
+  className,
+  children,
+}: {
+  href: string;
+  onNavigate: (tab: string) => void;
+  className: string;
+  children: string;
+}) {
+  const tab = href.split("/").pop() ?? "";
+  return (
+    <TabLink href={href} onSwitch={() => onNavigate(tab)} className={className}>
+      {children}
+    </TabLink>
   );
 }

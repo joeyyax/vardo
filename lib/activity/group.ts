@@ -5,6 +5,7 @@ import type {
   ActivitySubjectRef,
   ClassifiedActivity,
 } from "./types";
+import { subjectHref } from "./subject-href";
 
 /** Largest gap between two events that still reads as the same burst. */
 export const ADJACENT_GAP_MS = 5 * 60_000;
@@ -28,7 +29,7 @@ function actorKey(item: ClassifiedActivity): string {
 }
 
 function subjectRef(item: ClassifiedActivity): ActivitySubjectRef {
-  return { id: item.subjectId, label: item.subjectLabel, app: item.app };
+  return { id: item.subjectId, label: item.subjectLabel, app: item.app, href: subjectHref(item) };
 }
 
 /** Whether `item` belongs in the open bucket. Outcome is part of the identity. */
