@@ -139,6 +139,7 @@ describe("GET /api/v1/mesh/config", () => {
     });
     expect(body.email.provider).toBe("smtp");
     expect(body.email.smtpHost).toBe("smtp.example.com");
+    expect(body.email).not.toHaveProperty("fromName");
     expect(body.backup.bucket).toBe("vardo-backups");
     expect(body.ssl.activeIssuers).toEqual(["le"]);
     expect(body.ssl.challengeType).toBe("dns");

@@ -10,7 +10,8 @@ import { deploySuccessMail } from "./templates/deploy-success";
 import { deployFailedMail } from "./templates/deploy-failed";
 import { deployIncompleteMail } from "./templates/deploy-incomplete";
 import { autoRollbackMail } from "./templates/auto-rollback";
-import { backupRunStartedMail, backupSummaryMail } from "./templates/backup";
+import { backupSummaryMail } from "./templates/backup";
+import { securityScanMail } from "./templates/security-scan";
 import { cronFailedMail } from "./templates/cron-failed";
 import { diskWriteAlertMail } from "./templates/disk-write-alert";
 import { volumeDriftMail } from "./templates/volume-drift";
@@ -44,6 +45,7 @@ export function notificationMailBody(event: BusEvent, ctx: MailContext): Notific
     case "app.oom-killed":
     case "backup.success":
     case "backup.failed":
+    case "backup.run-started":
       return null;
     case "deploy.success":
       return deploySuccessMail(event, ctx);
@@ -55,14 +57,14 @@ export function notificationMailBody(event: BusEvent, ctx: MailContext): Notific
       return autoRollbackMail(event, ctx);
     case "backup.summary":
       return backupSummaryMail(event, ctx);
-    case "backup.run-started":
-      return backupRunStartedMail(event, ctx);
     case "cron.failed":
       return cronFailedMail(event, ctx);
     case "disk.write-alert":
       return diskWriteAlertMail(event, ctx);
     case "volume.drift":
       return volumeDriftMail(event, ctx);
+    case "security.scan-findings":
+      return securityScanMail(event, ctx);
     case "system.service-down":
     case "system.restart-loop":
     case "system.cert-expiring":

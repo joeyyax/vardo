@@ -24,7 +24,7 @@ export function cronFailureItem(job: CronAlertJob, detail: string, now: Date): A
     type: CRON_ALERT,
     about: job.id,
     severity: "critical",
-    title: `Cron job ${job.name} is failing`,
+    title: appName ? `${job.name} is failing on ${appName}` : `Cron job ${job.name} is failing`,
     detail,
     appId: job.app?.id,
     appName,

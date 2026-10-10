@@ -31,7 +31,7 @@ export function deployFailedMail(event: DeployFailedEvent, ctx: MailContext): No
     heading: stage ? `${name} failed at ${stage}` : `${name} failed to deploy`,
     preheader: event.crashReason || reason || paragraphs[0],
     paragraphs,
-    visuals: [phaseVisual(event.stageTimings, event.failedStage)].filter((v) => v !== undefined),
+    visuals: [phaseVisual(event.stageTimings, event.failedStage, { totalMs: event.durationMs })].filter((v) => v !== undefined),
     facts,
     log: event.logTail?.length ? { title: "Last log lines", lines: event.logTail } : undefined,
     action: { label: "Open deployment log", href: appPage(ctx, event.appId, "deployments") },

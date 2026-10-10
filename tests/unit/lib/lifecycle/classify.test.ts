@@ -6,6 +6,7 @@ import {
   parseBtime,
   parseUpdateMarker,
   updateAnnouncement,
+  UPDATE_SLOW_MS,
   type Heartbeat,
   type UpdateMarker,
 } from "@/lib/lifecycle/classify";
@@ -112,10 +113,16 @@ describe("update markers", () => {
     expect(parseUpdateMarker(JSON.stringify({ id: "x", state: "weird", startedAt: 1 }))).toBeNull();
   });
 
+  it("holds the start back until the update has run 10 minutes", () => {
+    expect(updateAnnouncement(started, null, NOW)).toBeNull();
+    expect(updateAnnouncement(started, null, started.startedAt + UPDATE_SLOW_MS)).toBe("started");
+  });
+
   it("announces each state once", () => {
-    expect(updateAnnouncement(started, null, NOW)).toBe("started");
+    const late = started.startedAt + UPDATE_SLOW_MS;
+    expect(updateAnnouncement(started, null, late)).toBe("started");
     const seen = markSeen(null, started, "started");
-    expect(updateAnnouncement(started, seen, NOW)).toBeNull();
+    expect(updateAnnouncement(started, seen, late)).toBeNull();
     expect(updateAnnouncement(updated, seen, NOW)).toBe("updated");
     expect(updateAnnouncement(updated, markSeen(seen, updated, "updated"), NOW)).toBeNull();
   });
@@ -126,7 +133,7 @@ describe("update markers", () => {
 
   it("treats a new run as new", () => {
     const next = { ...started, id: "20261010090000-99" };
-    expect(updateAnnouncement(next, markSeen(null, updated, "updated"), NOW)).toBe("started");
+    expect(updateAnnouncement(next, markSeen(null, updated, "updated"), next.startedAt + UPDATE_SLOW_MS)).toBe("started");
   });
 
   it("ignores stale markers", () => {

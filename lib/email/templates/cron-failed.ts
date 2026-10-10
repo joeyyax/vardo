@@ -20,7 +20,10 @@ export function cronFailedMail(event: CronFailedEvent, ctx: MailContext): Notifi
   const facts: MailFact[] = appId ? [{ label: "App", value: app, href: appPage(ctx, appId) }] : [];
   if (event.exitCode !== undefined) facts.push({ label: url ? "HTTP status" : "Exit code", value: String(event.exitCode) });
   if (event.command && !url) facts.push({ label: "Command", value: event.command, mono: true });
-  if (event.target) facts.push({ label: url ? "URL" : "Container", value: event.target, mono: true });
+  if (event.target) {
+    const link = url && /^https?:\/\//i.test(event.target) ? event.target : undefined;
+    facts.push({ label: url ? "URL" : "Container", value: event.target, mono: true, href: link });
+  }
   if (schedule) {
     const zone = event.scheduleTimeZone ? `, ${event.scheduleTimeZone}` : "";
     facts.push({ label: "Schedule", value: schedule === event.schedule ? `${schedule}${zone}` : `${schedule} (${event.schedule}${zone})` });

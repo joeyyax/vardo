@@ -163,6 +163,8 @@ export type BackupSummaryRow = {
   shrunk?: { median: number; drop: number };
   /** Much larger than last run, as a percentage. */
   grew?: { pct: number };
+  /** A routine skip: a stopped app or a source that can't be captured. */
+  expected?: boolean;
 };
 
 /** One app's backups in a run. */
@@ -207,6 +209,8 @@ export type BackupSummaryEvent = {
     actualMs: number;
     /** Jobs that hadn't reported when the deadline passed. */
     unfinished?: string[];
+    /** A scheduled run emailing because something needs a look: the email lists only the problems. */
+    problemsOnly?: boolean;
   };
   /** ISO times the run started and finished. */
   windowStart: string;
@@ -323,7 +327,21 @@ export type SystemCertExpiringEvent = {
   resolver: string;
 };
 
-export type SystemUpdateAvailableEvent = {
+/** One commit in an update's changelog. */
+export type UpdateCommit = { sha: string; subject: string; author?: string };
+
+/** What an update brings: newest commits first, capped, and where to read all of it. */
+export type UpdateChanges = {
+  commits?: UpdateCommit[];
+  /** Commits past the list. */
+  moreCommits?: number;
+  /** GitHub compare or release page. */
+  changesUrl?: string;
+  /** Release notes, for the releases channel. */
+  releaseNotes?: string;
+};
+
+export type SystemUpdateAvailableEvent = UpdateChanges & {
   type: "system.update-available";
   title: string;
   message: string;
@@ -347,16 +365,36 @@ export type SecurityFileExposedEvent = {
   exposedPaths: string[];
 };
 
+/** One finding as an email lists it. */
+export type ScanFindingLine = { severity: "critical" | "warning" | "info"; title: string; description: string };
+
+/** One app's findings to report from a scan. */
+export type ScanAppReport = {
+  appId: string;
+  appName: string;
+  domain?: string;
+  findings: ScanFindingLine[];
+  /** Findings the previous scan had that this one didn't. */
+  resolved?: number;
+};
+
+/** A manual scan's result, or the new and changed findings from scheduled or post-deploy scans. */
 export type SecurityScanFindingsEvent = {
   type: "security.scan-findings";
   title: string;
   message: string;
+  /** The first app's, for consumers that read one. */
   appId: string;
   appName: string;
   scanId: string;
   criticalCount: number;
   warningCount: number;
   domain?: string;
+  trigger?: "deploy" | "scheduled" | "manual";
+  /** Every finding on a manual scan; only new or changed ones otherwise. */
+  apps?: ScanAppReport[];
+  /** Apps the batch scanned. */
+  scanned?: number;
 };
 
 /** Another org verified a host, which removed this org's unverified rows for it. */
@@ -390,7 +428,19 @@ export type DigestHealthEvent = {
   deploys: { total: number; succeeded: number; failed: number };
   /** Per hour for a daily digest, per day for a weekly one. Oldest first. */
   deploysByBucket?: { start: string; succeeded: number; failed: number }[];
-  backups: { succeeded: number; failed: number; totalSize: number; drillsPassed: number; drillsFailed: number; staleVolumes: number };
+  backups: {
+    succeeded: number;
+    failed: number;
+    totalSize: number;
+    drillsPassed: number;
+    drillsFailed: number;
+    staleVolumes: number;
+    /** Runs that finished in the window, and the last one's ISO end. */
+    runs?: number;
+    lastRunAt?: string | null;
+  };
+  /** Security scans in the window: apps scanned and what the latest scan of each found. */
+  scans?: { scanned: number; apps: number; lastRunAt: string | null; appsWithFindings: number; critical: number; warnings: number };
   cron: { failed: number; affectedJobs: string[] };
   alerts: { fired: number; resolved: number; open: number; top: { label: string; count: number }[] };
   /** Host trends, for orgs with an instance admin. */
@@ -438,7 +488,7 @@ export type SystemRecoveredUncleanEvent = {
   lastHeartbeatAt?: string;
 };
 
-export type SystemUpdateStartedEvent = {
+export type SystemUpdateStartedEvent = UpdateChanges & {
   type: "system.update-started";
   title: string;
   message: string;
@@ -448,7 +498,7 @@ export type SystemUpdateStartedEvent = {
   toSlot?: string;
 };
 
-export type SystemUpdatedEvent = {
+export type SystemUpdatedEvent = UpdateChanges & {
   type: "system.updated";
   title: string;
   message: string;
@@ -461,7 +511,7 @@ export type SystemUpdatedEvent = {
   downSeconds?: number;
 };
 
-export type SystemUpdateFailedEvent = {
+export type SystemUpdateFailedEvent = UpdateChanges & {
   type: "system.update-failed";
   title: string;
   message: string;

@@ -5,7 +5,6 @@ export type MailContext = {
   /** Console origin, no trailing slash. */
   baseUrl: string;
   instanceName: string;
-  orgName?: string;
   /** IANA zone times print in. Unset prints UTC. */
   timeZone?: string;
   /** History the charts draw from; missing series leave their chart out. */
@@ -19,10 +18,19 @@ export type MailSeries = {
   diskWritesHourly?: number[];
 };
 
+/** The console's host, e.g. vardo.example.com. */
+export function consoleHost(ctx: MailContext): string | undefined {
+  try {
+    return new URL(ctx.baseUrl).host || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function footerFor(ctx: MailContext): MailFooter {
   return {
     instanceName: ctx.instanceName,
-    orgName: ctx.orgName,
+    consoleHost: consoleHost(ctx),
     settingsUrl: `${ctx.baseUrl}/user/settings/notifications`,
   };
 }

@@ -46,7 +46,12 @@ vi.mock("@/lib/shutdown", () => ({
   },
   shutdownSignal: () => "SIGTERM",
 }));
-vi.mock("@/lib/version", () => ({ getBuildSha: () => "4f1a9b2c" }));
+const compare = vi.hoisted(() => ({ fetch: vi.fn(async (): Promise<unknown> => null) }));
+vi.mock("@/lib/version", () => ({
+  getBuildSha: () => "4f1a9b2c",
+  fetchCompare: compare.fetch,
+  moreCommits: (total: number, listed: number) => (listed > 0 && total > listed ? { moreCommits: total - listed } : {}),
+}));
 vi.mock("fs/promises", () => ({
   readFile: async (path: string) => {
     const text = files.get(path);
@@ -95,10 +100,22 @@ describe("the console running a self-deploy", () => {
     process.env.CONTAINER_ID = OLD;
   });
 
-  it("announces the start", async () => {
+  it("stays quiet about the start while the update is quick", async () => {
     writeMarker(selfDeploy("started", { startedAt: Date.now() + 5_000 }));
-    expect(await checkUpdateMarker()).toBe("started");
-    expect(emitted.map((e) => e.event.type)).toEqual(["system.update-started"]);
+    expect(await checkUpdateMarker()).toBeNull();
+    expect(emitted).toEqual([]);
+  });
+
+  it("announces the start once the update runs past 10 minutes", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      writeMarker(selfDeploy("started", { startedAt: Date.now() + 5_000 }));
+      vi.setSystemTime(Date.now() + 11 * 60_000);
+      expect(await checkUpdateMarker()).toBe("started");
+      expect(emitted.map((e) => e.event.type)).toEqual(["system.update-started"]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("leaves the updated message to the new console", async () => {

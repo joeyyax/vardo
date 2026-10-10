@@ -14,8 +14,33 @@ export function formatDuration(ms: number): string {
   return rest ? `${hours} h ${rest} min` : `${hours} h`;
 }
 
+/** "4 min", "2 h 4 min": like formatDuration without the seconds once it's past a minute. */
+export function formatDurationRough(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 60_000) return formatDuration(ms);
+  return formatDuration(Math.floor(ms / 60_000) * 60_000);
+}
+
+/** Seven characters, the length git and GitHub show. */
 export function shortSha(sha: string | undefined | null): string {
   return (sha ?? "").slice(0, 7);
+}
+
+const SHA_RE = /^[0-9a-f]{7,40}$/i;
+
+/** The commit in a version label: "0.1.0 (bc2083d)" → "bc2083d". A tag or other label comes back as is. */
+export function versionShort(label: string): string {
+  const inParens = label.match(/\(([0-9a-f]{7,40})\)\s*$/i);
+  if (inParens) return shortSha(inParens[1]);
+  return SHA_RE.test(label.trim()) ? shortSha(label.trim()) : label;
+}
+
+/** Cut to `max` characters at a word, with an ellipsis. */
+export function truncate(value: string, max: number): string {
+  const line = value.replace(/\s+/g, " ").trim();
+  if (line.length <= max) return line;
+  const cut = line.slice(0, max - 1);
+  const space = cut.lastIndexOf(" ");
+  return `${(space > max / 2 ? cut.slice(0, space) : cut).replace(/[\s,;:.·—-]+$/, "")}…`;
 }
 
 /** Browse URL for a git remote: `git@github.com:a/b.git` → `https://github.com/a/b`. Null for anything else. */

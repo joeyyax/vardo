@@ -1,4 +1,4 @@
-// Backup runs: a start notice, failures as they happen and one summary when every job is done.
+// Backup runs: failures as they happen and one summary when every job is done, emailed when it needs a look.
 
 import { and, desc, eq, gt, inArray, isNotNull, isNull, notInArray, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
@@ -19,13 +19,14 @@ import {
   estimateRunMs,
   failureSubject,
   LONG_RUN_MS,
+  MANUAL_RUN_PREFIX,
   MAX_SUMMARY_ROWS,
-  needsAttention,
   nightlyRunKey,
   runDeadline,
   runIsDone,
   summarizeApps,
   summarizeResults,
+  summaryEmails,
   unfinishedJobs,
   volumeKey,
   type BackupResultItem,
@@ -192,8 +193,8 @@ async function openRun(opts: {
     .returning({ id: backupRuns.id });
   if (!opened) return null;
 
-  const settings = await readOrgNotificationSettings(opts.organizationId);
-  if (settings.categories.backupStarts && opts.plan.apps.length > 0) {
+  // Webhooks get the start notice; email leaves it out.
+  if (opts.plan.apps.length > 0) {
     const volumeCount = opts.plan.apps.reduce((n, a) => n + a.volumes.length, 0);
     emit(opts.organizationId, {
       type: "backup.run-started",
@@ -260,6 +261,23 @@ export async function startJobRun(job: { id: string; name: string; organizationI
     label: job.name,
     plan,
     estimatedMs,
+    now: now.getTime(),
+  });
+}
+
+/** Opens a run for a job someone started by hand, so its summary reports whatever it found. */
+export async function startManualRun(
+  job: { id: string; name: string; organizationId: string | null },
+  now: Date,
+): Promise<string | null> {
+  if (!job.organizationId) return null;
+  return openRun({
+    organizationId: job.organizationId,
+    kind: "job",
+    runKey: `${MANUAL_RUN_PREFIX}${job.id}:${now.getTime()}`,
+    label: job.name,
+    plan: { jobs: [{ jobId: job.id, jobName: job.name }], apps: [], target: null },
+    estimatedMs: null,
     now: now.getTime(),
   });
 }
@@ -434,7 +452,9 @@ async function sendSummary(run: RunRow, now: number): Promise<void> {
   const rows = summarizeResults(run.items, history);
   const unfinished = unfinishedJobs(run);
   if (rows.length === 0 && unfinished.length === 0) return;
-  if (!settings.categories.backups && !needsAttention(rows, staleVolumes.length, unfinished.length)) return;
+  const { send, problemsOnly } = summaryEmails(run, rows, staleVolumes.length, unfinished.length, settings.categories.backupSummaries);
+  // A clean scheduled run goes to the digest.
+  if (!send) return;
 
   const backed = rows.filter((r) => r.kind === "backup");
   const succeeded = backed.filter((r) => r.outcome === "success").length;
@@ -449,6 +469,7 @@ async function sendSummary(run: RunRow, now: number): Promise<void> {
       estimatedMs: run.estimatedMs,
       actualMs: now - run.startedAt.getTime(),
       unfinished: unfinished.length ? unfinished : undefined,
+      ...(problemsOnly ? { problemsOnly: true } : {}),
     },
     windowStart: run.startedAt.toISOString(),
     windowEnd: new Date(now).toISOString(),

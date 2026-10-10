@@ -57,31 +57,54 @@ const STAGE_PHASES: Record<string, TimedPhase[]> = {
   cleanup: ["cleanup"],
 };
 
-/** Phase timings as a stacked bar. A failed deploy's bar ends at its failing phase, in red. */
-export function phaseVisual(timings: StageTimings | undefined, failedStage?: string): MailVisual | undefined {
+/** Phase timings as a stacked bar, ending at a failed deploy's failing phase in red. */
+export function phaseVisual(
+  timings: StageTimings | undefined,
+  failedStage?: string,
+  opts: { totalMs?: number; caption?: boolean } = {},
+): MailVisual | undefined {
   if (!timings) return undefined;
   let phases = TIMED_PHASES.filter((p) => (timings[p]?.ms ?? 0) > 0);
-  if (phases.length === 0 || (phases.length < 2 && !failedStage)) return undefined;
-
-  let failedAt = -1;
-  if (failedStage) {
-    const covered = STAGE_PHASES[failedStage] ?? [];
-    failedAt = phases.findLastIndex((p) => covered.includes(p));
-    if (failedAt === -1) failedAt = phases.length - 1;
-    phases = phases.slice(0, failedAt + 1);
-  }
+  const covered = failedStage ? (STAGE_PHASES[failedStage] ?? []) : [];
+  if (phases.length === 0 || (phases.length < 2 && covered.length === 0)) return undefined;
 
   const ms = (p: TimedPhase) => timings[p]?.ms ?? 0;
-  const total = phases.reduce((sum, p) => sum + ms(p), 0);
+  let failedAt = -1;
+  let untimed: { phase: TimedPhase; ms: number } | null = null;
+  if (covered.length) {
+    failedAt = phases.findLastIndex((p) => covered.includes(p));
+    if (failedAt === -1) {
+      // The failing phase never reported a time; it gets the untimed remainder.
+      const start = TIMED_PHASES.indexOf(covered[0]);
+      phases = phases.filter((p) => TIMED_PHASES.indexOf(p) < start);
+      const timed = phases.reduce((sum, p) => sum + ms(p), 0);
+      untimed = { phase: covered[0], ms: Math.max(opts.totalMs !== undefined ? opts.totalMs - timed : 0, 1) };
+      failedAt = phases.length;
+    } else {
+      phases = phases.slice(0, failedAt + 1);
+    }
+  }
+
+  const segments = phases.map((p, i) => ({
+    label: PHASE_LABEL[p],
+    value: ms(p),
+    detail: formatDuration(ms(p)),
+    tone: i === failedAt ? ("fail" as const) : ((i % 4) as 0 | 1 | 2 | 3),
+  }));
+  if (untimed) {
+    segments.push({
+      label: PHASE_LABEL[untimed.phase],
+      value: untimed.ms,
+      detail: untimed.ms > 1 ? formatDuration(untimed.ms) : "untimed",
+      tone: "fail",
+    });
+  }
+  const total = segments.reduce((sum, s) => sum + s.value, 0);
+  const failed = failedAt !== -1;
   return {
     kind: "stacked",
-    title: failedStage ? "Where the time went" : "Phases",
-    segments: phases.map((p, i) => ({
-      label: PHASE_LABEL[p],
-      value: ms(p),
-      detail: formatDuration(ms(p)),
-      tone: i === failedAt ? "fail" : ((i % 4) as 0 | 1 | 2 | 3),
-    })),
-    caption: `${formatDuration(total)} timed${failedStage ? ", stopped at the red phase" : ""}`,
+    title: failed ? "Where the time went" : "Phases",
+    segments,
+    caption: opts.caption === false ? undefined : `${formatDuration(total)} timed${failed ? ", stopped at the red phase" : ""}`,
   };
 }

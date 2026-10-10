@@ -1,4 +1,3 @@
-import { eq } from "drizzle-orm";
 import type { DeliveryReceipt, NotificationChannel } from "./port";
 import type { BusEvent } from "@/lib/bus/events";
 import { sendEmail } from "@/lib/email/send";
@@ -9,29 +8,15 @@ const log = logger.child("notifications");
 
 type EmailConfig = { recipients: string[] };
 
-/** Console origin, instance name, org name and time zone for the email footer, links and times. */
+/** Console origin, instance name and time zone for the email header, footer, links and times. */
 async function mailContext(organizationId: string | undefined): Promise<MailContext> {
   const baseUrl = (process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000").replace(/\/+$/, "");
   let instanceName = "Vardo";
-  let orgName: string | undefined;
   try {
     const { getInstanceDisplayName } = await import("@/lib/system-settings");
     instanceName = (await getInstanceDisplayName()) || new URL(baseUrl).hostname;
   } catch {
     // Defaults stand.
-  }
-  if (organizationId) {
-    try {
-      const { db } = await import("@/lib/db");
-      const { organizations } = await import("@/lib/db/schema");
-      const org = await db.query.organizations.findFirst({
-        where: eq(organizations.id, organizationId),
-        columns: { name: true },
-      });
-      orgName = org?.name;
-    } catch {
-      // Footer leaves the org out.
-    }
   }
   let timeZone: string | undefined;
   try {
@@ -40,7 +25,7 @@ async function mailContext(organizationId: string | undefined): Promise<MailCont
   } catch {
     // Prints UTC.
   }
-  return { baseUrl, instanceName, orgName, timeZone };
+  return { baseUrl, instanceName, timeZone };
 }
 
 export class EmailNotificationChannel implements NotificationChannel {
@@ -49,8 +34,21 @@ export class EmailNotificationChannel implements NotificationChannel {
     private organizationId?: string,
   ) {}
 
+  /** The delivery policy's verdict for this org. Settings that can't be read leave the default. */
+  private async wants(event: BusEvent): Promise<boolean> {
+    const { emailsEvent, needsSettings } = await import("./delivery-policy");
+    if (!needsSettings(event) || !this.organizationId) return emailsEvent(event, { categories: {} });
+    try {
+      const { readOrgNotificationSettings } = await import("./preferences");
+      return emailsEvent(event, await readOrgNotificationSettings(this.organizationId));
+    } catch {
+      return emailsEvent(event, { categories: {} });
+    }
+  }
+
   /** Throws when no recipient got the email, so dispatch logs a failure and retries. */
   async send(event: BusEvent): Promise<DeliveryReceipt> {
+    if (!(await this.wants(event))) return {};
     const { loadMailSeries } = await import("@/lib/email/series");
     const [ctx, series] = await Promise.all([mailContext(this.organizationId), loadMailSeries(event).catch(() => ({}))]);
     const email = await renderNotificationEmail(event, { ...ctx, series });

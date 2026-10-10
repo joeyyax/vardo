@@ -38,7 +38,12 @@ vi.mock("@/lib/notifications/dispatch", () => ({
 }));
 vi.mock("@/lib/docker/client", () => ({ listContainers: async () => [], listAllContainers: async () => [] }));
 vi.mock("@/lib/shutdown", () => ({ closeOnShutdown: () => () => {}, shutdownSignal: () => "SIGTERM" }));
-vi.mock("@/lib/version", () => ({ getBuildSha: () => "4f1a9b2c" }));
+const compare = vi.hoisted(() => ({ fetch: vi.fn(async (): Promise<unknown> => null) }));
+vi.mock("@/lib/version", () => ({
+  getBuildSha: () => "4f1a9b2c",
+  fetchCompare: compare.fetch,
+  moreCommits: (total: number, listed: number) => (listed > 0 && total > listed ? { moreCommits: total - listed } : {}),
+}));
 vi.mock("fs/promises", () => ({
   readFile: async (path: string) => {
     const text = files.get(path);
@@ -63,13 +68,51 @@ beforeEach(() => {
 });
 
 describe("update event flow", () => {
-  it("announces a started update from the console that was running, once", async () => {
-    // Started after this process: the running console is the old one.
-    writeMarker({ id: "run-1", state: "started", startedAt: nowS() + 5, fromVersion: "e36c2e3", branch: "main", fromSlot: "blue", toSlot: "green" });
-    expect(await checkUpdateMarker()).toBe("started");
+  it("announces a slow update from the console that was running, once", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      // Started after this process: the running console is the old one.
+      writeMarker({ id: "run-1", state: "started", startedAt: nowS() + 5, fromVersion: "e36c2e3", branch: "main", fromSlot: "blue", toSlot: "green" });
+      expect(await checkUpdateMarker()).toBeNull();
+      vi.setSystemTime(Date.now() + 11 * 60_000);
+      expect(await checkUpdateMarker()).toBe("started");
+      expect(await checkUpdateMarker()).toBeNull();
+      expect(emitted.map((e) => e.event.type)).toEqual(["system.update-started"]);
+      expect(emitted[0]).toMatchObject({ orgId: "org_admin", event: { fromVersion: "e36c2e3", toSlot: "green" } });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("sends nothing when an update lands on the commit it started from", async () => {
+    writeMarker({
+      id: "run-same",
+      state: "updated",
+      startedAt: nowS() - 40,
+      finishedAt: nowS(),
+      fromVersion: "0.1.0 (0928e9c)",
+      toVersion: "0.1.0 (0928e9c)",
+    });
     expect(await checkUpdateMarker()).toBeNull();
-    expect(emitted.map((e) => e.event.type)).toEqual(["system.update-started"]);
-    expect(emitted[0]).toMatchObject({ orgId: "org_admin", event: { fromVersion: "e36c2e3", toSlot: "green" } });
+    expect(emitted).toEqual([]);
+    expect(await checkUpdateMarker()).toBeNull();
+  });
+
+  it("adds the update's commits from GitHub", async () => {
+    compare.fetch.mockResolvedValueOnce({
+      status: "ahead",
+      aheadBy: 3,
+      commits: [{ sha: "559e5b2", subject: "fix: quieter emails" }],
+      url: "https://github.com/example/vardo/compare/bc2083d...559e5b2",
+    });
+    writeMarker({ id: "run-c", state: "updated", startedAt: nowS() - 60, finishedAt: nowS(), fromVersion: "0.1.0 (bc2083d)", toVersion: "0.1.0 (559e5b2)" });
+    expect(await checkUpdateMarker()).toBe("updated");
+    expect(compare.fetch).toHaveBeenCalledWith("bc2083d", "559e5b2");
+    expect(emitted[0].event).toMatchObject({
+      commits: [{ sha: "559e5b2", subject: "fix: quieter emails" }],
+      moreCommits: 2,
+      changesUrl: "https://github.com/example/vardo/compare/bc2083d...559e5b2",
+    });
   });
 
   it("announces a failure with the step and log tail", async () => {

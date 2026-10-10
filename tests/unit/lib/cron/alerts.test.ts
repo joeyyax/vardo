@@ -47,7 +47,7 @@ vi.mock("@/lib/notifications/throttle", async (importOriginal) => {
   };
 });
 
-const { noteCronFailure, noteCronSuccess } = await import("@/lib/cron/alerts");
+const { cronFailureItem, noteCronFailure, noteCronSuccess } = await import("@/lib/cron/alerts");
 
 const job = { id: "job-1", name: "Site cron", organizationId: "org-1", app: null };
 const event = {
@@ -103,5 +103,17 @@ describe("cron failure alerts", () => {
     await noteCronFailure(job, event, at(0));
     await noteCronFailure({ ...job, id: "job-2" }, { ...event, cronJobId: "job-2" }, at(0));
     expect(sent("cron.failed")).toHaveLength(2);
+  });
+});
+
+describe("cron alert titles", () => {
+  it("names the app the job runs on", () => {
+    const item = cronFailureItem({ ...job, name: "WP Cron", app: { id: "app_1", name: "shop", displayName: "Shop" } }, "HTTP 521", at(0));
+    expect(item.title).toBe("WP Cron is failing on Shop");
+    expect(item.facts).toContainEqual({ label: "Job", value: "WP Cron" });
+  });
+
+  it("keeps the job's name alone for an org-level job", () => {
+    expect(cronFailureItem(job, "HTTP 500", at(0)).title).toBe("Cron job Site cron is failing");
   });
 });

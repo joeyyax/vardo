@@ -18,6 +18,8 @@ export type BackupResultItem = {
   durationMs?: number;
   error?: string;
   backupId?: string;
+  /** A skip that's routine: the app is stopped, or the source can't be or needn't be captured. */
+  expected?: boolean;
   /** ISO time the result came in. */
   at: string;
 };
@@ -134,6 +136,7 @@ export function summarizeResults(items: BackupResultItem[], history: Map<string,
       sizeBytes: item.sizeBytes ?? 0,
       durationMs: item.durationMs ?? 0,
       error: item.error,
+      ...(item.outcome === "skipped" && item.expected ? { expected: true } : {}),
       runs,
     });
   }
@@ -154,7 +157,8 @@ export function summarizeResults(items: BackupResultItem[], history: Map<string,
     out.push(row);
   }
 
-  const rank = (r: BackupSummaryRow) => (r.outcome === "failed" ? 0 : r.shrunk ? 1 : r.grew ? 2 : OUTCOME_ORDER[r.outcome]);
+  const rank = (r: BackupSummaryRow) =>
+    r.outcome === "failed" ? 0 : r.shrunk ? 1 : r.grew || (r.outcome === "skipped" && !r.expected) ? 2 : OUTCOME_ORDER[r.outcome];
   return out.sort(
     (a, b) => rank(a) - rank(b) || KIND_ORDER[a.kind] - KIND_ORDER[b.kind] || a.appName.localeCompare(b.appName) || a.volumeName.localeCompare(b.volumeName),
   );
@@ -195,7 +199,28 @@ export function summarizeApps(rows: BackupSummaryRow[]): BackupSummaryApp[] {
     .sort((a, b) => a.appName.localeCompare(b.appName));
 }
 
-/** Whether the summary has something that needs a person: a failure, a shrink, a stale volume or a job that never finished. */
+/** A row a person should look at: failed, skipped unexpectedly, or much smaller or larger than usual. */
+export function isProblemRow(row: BackupSummaryRow): boolean {
+  return row.outcome === "failed" || (row.outcome === "skipped" && !row.expected) || Boolean(row.shrunk || row.grew);
+}
+
+/** Whether the summary has something that needs a person: a problem row, a stale volume or a job that never finished. */
 export function needsAttention(rows: BackupSummaryRow[], staleVolumes: number, unfinished = 0): boolean {
-  return staleVolumes > 0 || unfinished > 0 || rows.some((r) => r.outcome === "failed" || r.shrunk);
+  return staleVolumes > 0 || unfinished > 0 || rows.some(isProblemRow);
+}
+
+/** Run keys of runs someone started by hand. */
+export const MANUAL_RUN_PREFIX = "manual:";
+
+/** A manual job or a restore always reports; a scheduled run emails only when something needs a look, unless the org opted in. */
+export function summaryEmails(
+  run: { kind: string; runKey: string },
+  rows: BackupSummaryRow[],
+  staleVolumes: number,
+  unfinished: number,
+  alwaysSummary: boolean,
+): { send: boolean; problemsOnly: boolean } {
+  const scheduled = run.kind === "nightly" || (run.kind === "job" && !run.runKey.startsWith(MANUAL_RUN_PREFIX));
+  if (!scheduled || alwaysSummary) return { send: true, problemsOnly: false };
+  return { send: needsAttention(rows, staleVolumes, unfinished), problemsOnly: true };
 }

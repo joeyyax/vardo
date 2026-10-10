@@ -8,12 +8,12 @@ const { resolveCategories, updateOrgNotificationSettings } = await import("@/lib
 describe("org notification settings", () => {
   beforeEach(() => dbMock.reset());
 
-  it("defaults every category on", () => {
-    expect(resolveCategories(null)).toEqual({ backups: true, backupStarts: true, host: true, apps: true, cron: true });
+  it("defaults alerts on and the noisy summaries off", () => {
+    expect(resolveCategories(null)).toEqual({ backups: true, backupSummaries: false, deploySuccess: false, host: true, apps: true, cron: true });
   });
 
   it("drops keys no category has", () => {
-    expect(resolveCategories({ host: false, retired: false })).toEqual({ backups: true, backupStarts: true, host: false, apps: true, cron: true });
+    expect(resolveCategories({ host: false, retired: false })).toEqual({ backups: true, backupSummaries: false, deploySuccess: false, host: false, apps: true, cron: true });
   });
 
   it("stores only what differs from the defaults", async () => {
@@ -21,7 +21,7 @@ describe("org notification settings", () => {
     dbMock.query.organizations.findFirst.mockResolvedValue({ nightlyBackupTime: "02:00" });
     const next = await updateOrgNotificationSettings("org1", { categories: { host: true, backups: false } });
     expect(dbMock.inserts[0].values).toMatchObject({ categories: { backups: false } });
-    expect(next.categories).toEqual({ backups: false, backupStarts: true, host: true, apps: true, cron: true });
+    expect(next.categories).toEqual({ backups: false, backupSummaries: false, deploySuccess: false, host: true, apps: true, cron: true });
   });
 
   it("moves every nightly job when the time changes", async () => {

@@ -13,6 +13,7 @@ import {
   runIsDone,
   summarizeApps,
   summarizeResults,
+  summaryEmails,
   unfinishedJobs,
   VOLUME_OVERHEAD_MS,
   volumeKey,
@@ -29,7 +30,7 @@ vi.mock("@/lib/notifications/observations", () => ({ fireAlert: mocks.fire, sett
 vi.mock("@/lib/notifications/preferences", () => ({ readOrgNotificationSettings: mocks.settings }));
 
 import { dbMock } from "@/tests/helpers/db";
-const { describeTarget, finishBackupRuns, recordBackupResults } = await import("@/lib/backups/runs");
+const { describeTarget, finishBackupRuns, recordBackupResults, startManualRun } = await import("@/lib/backups/runs");
 
 const MIN = 60_000;
 const t0 = Date.parse("2026-10-10T02:00:00Z");
@@ -136,6 +137,15 @@ describe("summarizeResults", () => {
     expect(needsAttention(ok, 1)).toBe(true);
   });
 
+  it("needs a look for big growth and unexpected skips, not routine ones", () => {
+    const MiB = 1024 ** 2;
+    const grew = summarizeResults([item({ volumeName: "loki", sizeBytes: 532.6 * MiB })], new Map([[volumeKey("a1", "loki"), [1.71 * MiB]]]));
+    expect(grew[0].grew?.pct).toBe(31046);
+    expect(needsAttention(grew, 0)).toBe(true);
+    expect(needsAttention(summarizeResults([item({ outcome: "skipped", error: "app stopped", expected: true })], new Map()), 0)).toBe(false);
+    expect(needsAttention(summarizeResults([item({ outcome: "skipped", error: "odd" })], new Map()), 0)).toBe(true);
+  });
+
   it("flags big growth, not small volumes doubling", () => {
     const MiB = 1024 ** 2;
     expect(backupGrowth(1.71 * MiB, 532.6 * MiB)?.pct).toBe(31046);
@@ -239,7 +249,7 @@ describe("finishBackupRuns", () => {
   beforeEach(() => {
     dbMock.reset();
     vi.clearAllMocks();
-    mocks.settings.mockResolvedValue({ categories: { backups: true, backupStarts: true, host: true, apps: true }, nightlyBackupTime: "02:00" });
+    mocks.settings.mockResolvedValue({ categories: { backups: true, backupSummaries: false, host: true, apps: true }, nightlyBackupTime: "02:00" });
   });
 
   it("waits while a planned job hasn't reported", async () => {
@@ -258,5 +268,49 @@ describe("finishBackupRuns", () => {
     await finishBackupRuns(t0 + 10 * MIN);
     expect(dbMock.updates).toHaveLength(1);
     expect(mocks.emit).not.toHaveBeenCalled();
+  });
+});
+
+describe("summaryEmails", () => {
+  const ok = summarizeResults([item()], new Map());
+  const failed = summarizeResults([item({ outcome: "failed", error: "boom" })], new Map());
+  const nightly = { kind: "nightly", runKey: "nightly:2026-10-10" };
+
+  it("keeps a clean nightly run out of the inbox", () => {
+    expect(summaryEmails(nightly, ok, 0, 0, false)).toEqual({ send: false, problemsOnly: true });
+    expect(summaryEmails({ kind: "job", runKey: "job:j1:1" }, ok, 0, 0, false).send).toBe(false);
+  });
+
+  it("emails a nightly run with a problem, listing only the problems", () => {
+    expect(summaryEmails(nightly, failed, 0, 0, false)).toEqual({ send: true, problemsOnly: true });
+    expect(summaryEmails(nightly, ok, 1, 0, false).send).toBe(true);
+  });
+
+  it("sends every nightly summary in full when the org opts in", () => {
+    expect(summaryEmails(nightly, ok, 0, 0, true)).toEqual({ send: true, problemsOnly: false });
+  });
+
+  it("always reports a manual run and a restore", () => {
+    expect(summaryEmails({ kind: "job", runKey: "manual:j1:1" }, ok, 0, 0, false)).toEqual({ send: true, problemsOnly: false });
+    expect(summaryEmails({ kind: "restore", runKey: "restore:b1:1" }, ok, 0, 0, false).send).toBe(true);
+  });
+});
+
+describe("startManualRun", () => {
+  beforeEach(() => {
+    dbMock.reset();
+    vi.clearAllMocks();
+  });
+
+  it("opens a run of its own for a job started by hand, with no start email", async () => {
+    dbMock.insertReturns([{ id: "run_m" }]);
+    const id = await startManualRun({ id: "j1", name: "Auto: Shop", organizationId: "org1" }, new Date(t0));
+    expect(id).toBeTruthy();
+    expect(dbMock.inserts[0].values).toMatchObject({ kind: "job", runKey: `manual:j1:${t0}`, plan: { jobs: [{ jobId: "j1", jobName: "Auto: Shop" }] } });
+    expect(mocks.emit).not.toHaveBeenCalled();
+  });
+
+  it("skips an instance-level job", async () => {
+    expect(await startManualRun({ id: "j1", name: "System", organizationId: null }, new Date(t0))).toBeNull();
   });
 });

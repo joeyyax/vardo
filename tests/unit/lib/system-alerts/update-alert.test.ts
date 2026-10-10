@@ -77,13 +77,48 @@ describe("checkUpdateAlert", () => {
       "org1",
       expect.objectContaining({
         type: "system.update-available",
-        remoteHead: "def56789",
+        remoteHead: "def5678",
         localHead: LOCAL,
         channel: "main",
         commitsBehind: 4,
         selfDeploy: true,
       }),
     );
+  });
+
+  it("carries the newest commits and the compare page", async () => {
+    const compare = "https://github.com/joeyyax/vardo/compare/abc1234...def5678";
+    github({
+      "/commits/main": REMOTE,
+      [`/compare/${LOCAL}...${REMOTE}`]: {
+        status: "ahead",
+        ahead_by: 14,
+        html_url: compare,
+        commits: [{ sha: REMOTE, commit: { message: "fix: the newest\n\nbody", author: { name: "Dev Example" } } }],
+      },
+    });
+
+    await checkUpdateAlert();
+
+    expect(emit.mock.calls[0][1]).toMatchObject({
+      commits: [{ sha: "def5678", subject: "fix: the newest", author: "Dev Example" }],
+      moreCommits: 13,
+      changesUrl: compare,
+    });
+  });
+
+  it("links the release and carries its notes on the releases channel", async () => {
+    policy.current = { ...DEFAULT_POLICY, channel: "releases" };
+    const release = "https://github.com/joeyyax/vardo/releases/tag/v0.2.0";
+    github({
+      "/releases/latest": { tag_name: "v0.2.0", html_url: release, body: "## Changes\n- Quieter emails" },
+      "/commits/v0.2.0": REMOTE,
+      [`/compare/${LOCAL}...${REMOTE}`]: { status: "ahead", ahead_by: 3 },
+    });
+
+    await checkUpdateAlert();
+
+    expect(emit.mock.calls[0][1]).toMatchObject({ target: "v0.2.0", changesUrl: release, releaseNotes: "## Changes\n- Quieter emails" });
   });
 
   it("follows releases when the policy says so, and ignores a release behind the build", async () => {

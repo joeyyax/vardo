@@ -10,6 +10,7 @@ import {
   Text,
 } from "react-email";
 import type { CSSProperties, ReactNode } from "react";
+import { truncate } from "../format";
 
 declare module "react" {
   interface TdHTMLAttributes<T> extends HTMLAttributes<T> {
@@ -80,7 +81,8 @@ export type MailLink = { label: string; href: string };
 
 export type MailFooter = {
   instanceName: string;
-  orgName?: string;
+  /** Console host, e.g. vardo.example.com. */
+  consoleHost?: string;
   settingsUrl: string;
 };
 
@@ -208,12 +210,19 @@ function Table({ children, ...props }: { children: ReactNode; width?: string; st
 }
 
 export function MailHeader({ instanceName }: { instanceName: string }) {
+  const instance = instanceName.trim();
   return (
     <p className="vd-fg" style={text(15, light.foreground, { fontWeight: 600, padding: "0 4px 16px" })}>
-      Vardo
-      <span className="vd-muted" style={{ color: light.muted, fontWeight: 400 }}>
-        {` · ${instanceName}`}
-      </span>
+      {instance && instance !== "Vardo" ? (
+        <>
+          {instance}
+          <span className="vd-muted" style={{ color: light.muted, fontWeight: 400 }}>
+            {" · Vardo"}
+          </span>
+        </>
+      ) : (
+        "Vardo"
+      )}
     </p>
   );
 }
@@ -366,11 +375,16 @@ export function SecondaryLinks({ links }: { links: MailLink[] }) {
   );
 }
 
+/** "Sent by Vardo on node-a (vardo.example.com)". */
+export function footerLine(footer: MailFooter): string {
+  const host = footer.consoleHost && footer.consoleHost !== footer.instanceName ? ` (${footer.consoleHost})` : "";
+  return `Sent by Vardo on ${footer.instanceName}${host}`;
+}
+
 export function MailFooterBlock({ footer }: { footer: MailFooter }) {
-  const scope = footer.orgName ? `${footer.orgName} on ${footer.instanceName}` : footer.instanceName;
   return (
     <p className="vd-muted" style={text(12, light.muted, { padding: "16px 4px 0", lineHeight: 1.5 })}>
-      {`Sent by Vardo for ${scope}. `}
+      {`${footerLine(footer)}. `}
       <Link className="vd-link" href={footer.settingsUrl} style={{ color: light.muted, textDecoration: "underline" }}>
         Notification settings
       </Link>
@@ -663,9 +677,17 @@ export function visualText(visual: MailVisual): string {
   }
 }
 
+/** Preheaders past this are cut at a word. */
+export const PREHEADER_MAX = 90;
+
+/** One line for the inbox preview, at most PREHEADER_MAX characters, cut at a word. */
+export function capPreheader(value: string, max = PREHEADER_MAX): string {
+  return truncate(value, max);
+}
+
 /** The layout every notification email renders through. */
 export function NotificationMail(body: NotificationMailBody) {
-  const preheader = body.preheader ?? body.paragraphs?.[0] ?? body.heading;
+  const preheader = capPreheader(body.preheader ?? body.paragraphs?.[0] ?? body.heading);
   return (
     <Html lang="en">
       <Head>
@@ -676,7 +698,7 @@ export function NotificationMail(body: NotificationMailBody) {
         <style dangerouslySetInnerHTML={{ __html: STYLE }} />
       </Head>
       <Body className="vd-bg" style={{ margin: 0, padding: 0, background: light.background }}>
-        <Preview>{preheader}</Preview>
+        <Preview useTitleTag={false}>{preheader}</Preview>
         <Table width="100%" className="vd-bg" style={{ background: light.background }}>
           <tr>
             <td align="center" className="vd-outer" style={{ padding: "32px 16px" }}>
@@ -759,8 +781,7 @@ export function notificationMailText(body: NotificationMailBody): string {
   if (body.command) blocks.push(`${body.command.title}\n    ${body.command.text}`);
   const links = [...(body.action ? [body.action] : []), ...(body.links ?? [])];
   if (links.length) blocks.push(links.map((l) => `${l.label}: ${l.href}`).join("\n"));
-  const scope = body.footer.orgName ? `${body.footer.orgName} on ${body.footer.instanceName}` : body.footer.instanceName;
-  blocks.push(`--\nSent by Vardo for ${scope}.\nNotification settings: ${body.footer.settingsUrl}`);
+  blocks.push(`--\n${footerLine(body.footer)}.\nNotification settings: ${body.footer.settingsUrl}`);
   return blocks.join("\n\n") + "\n";
 }
 

@@ -20,8 +20,32 @@ describe("channelHasUpdate", () => {
   });
 
   it("reads the compare body", () => {
-    expect(parseCompare({ status: "ahead", ahead_by: 7 })).toEqual({ status: "ahead", aheadBy: 7 });
+    expect(parseCompare({ status: "ahead", ahead_by: 7 })).toEqual({ status: "ahead", aheadBy: 7, commits: [] });
     expect(parseCompare({ status: "weird" })).toBeNull();
+  });
+
+  it("keeps the newest commits' first lines, short shas and authors, and the compare page", () => {
+    const commit = (n: number) => ({
+      sha: `${String(n).padStart(2, "0")}a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9`,
+      commit: { message: `feat: change ${n}\n\nBody text`, author: { name: "Dev Example" } },
+      author: { login: "dev" },
+    });
+    const parsed = parseCompare({
+      status: "ahead",
+      ahead_by: 12,
+      html_url: "https://github.com/example/vardo/compare/abc1234...def5678",
+      commits: Array.from({ length: 12 }, (_, i) => commit(i + 1)),
+    })!;
+    expect(parsed.url).toBe("https://github.com/example/vardo/compare/abc1234...def5678");
+    expect(parsed.commits).toHaveLength(10);
+    expect(parsed.commits[0]).toEqual({ sha: "12a1b2c", subject: "feat: change 12", author: "Dev Example" });
+    expect(parsed.commits.at(-1)?.subject).toBe("feat: change 3");
+  });
+
+  it("drops a compare page that isn't https and commits without a sha", () => {
+    const parsed = parseCompare({ status: "ahead", ahead_by: 1, html_url: "javascript:alert(1)", commits: [{ sha: "nope" }] })!;
+    expect(parsed.url).toBeUndefined();
+    expect(parsed.commits).toEqual([]);
   });
 });
 
@@ -49,6 +73,7 @@ describe("vardoUpdateRow", () => {
     commitsBehind: 3,
     hasUpdate: true,
     url: "https://github.com/joeyyax/vardo/commits/main",
+    commits: [],
   };
 
   it("offers Update now on a self-deploy instance", () => {

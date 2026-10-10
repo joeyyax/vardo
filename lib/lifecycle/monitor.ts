@@ -13,7 +13,7 @@ import { adminOrgIds } from "@/lib/notifications/admin-orgs";
 import { logger } from "@/lib/logger";
 import { LIFECYCLE_DIR } from "@/lib/paths";
 import { closeOnShutdown, shutdownSignal } from "@/lib/shutdown";
-import { getBuildSha } from "@/lib/version";
+import { fetchCompare, getBuildSha, moreCommits } from "@/lib/version";
 import { formatDuration } from "@/lib/email/format";
 import { formatVersion } from "./self-deploy";
 import {
@@ -176,6 +176,32 @@ function updateEvent(marker: UpdateMarker, state: UpdateMarker["state"], downSec
   }
 }
 
+const SHA_IN_LABEL = /(?:^|\()([0-9a-f]{7,40})\)?\s*$/i;
+
+/** The commit in a version label like "0.1.0 (bc2083d)". */
+export function labelSha(label: string | undefined): string | undefined {
+  return label?.match(SHA_IN_LABEL)?.[1];
+}
+
+/** An update that lands where it started: a redeploy of the same commit, nothing to tell anyone. */
+export function sameVersion(marker: Pick<UpdateMarker, "fromVersion" | "toVersion">): boolean {
+  if (!marker.toVersion) return false;
+  const from = labelSha(marker.fromVersion);
+  const to = labelSha(marker.toVersion);
+  return from && to ? to.toLowerCase().startsWith(from.toLowerCase()) || from.toLowerCase().startsWith(to.toLowerCase()) : marker.fromVersion === marker.toVersion;
+}
+
+/** The update's commits from GitHub, when both ends are commits it knows. Best effort. */
+async function withChanges(event: BusEvent): Promise<BusEvent> {
+  if (event.type !== "system.updated" && event.type !== "system.update-failed") return event;
+  const from = labelSha(event.fromVersion);
+  const to = labelSha(event.toVersion);
+  if (!from || !to) return event;
+  const compare = await fetchCompare(from, to).catch(() => null);
+  if (!compare?.commits.length) return event;
+  return { ...event, commits: compare.commits, ...moreCommits(compare.aheadBy, compare.commits.length), ...(compare.url ? { changesUrl: compare.url } : {}) };
+}
+
 /** This process's start, and how long the console was down before it. */
 const processStartedAt = Date.now() - Math.round(process.uptime() * 1000);
 let bootDownSeconds: number | undefined;
@@ -202,7 +228,11 @@ export function checkUpdateMarker(): Promise<UpdateMarker["state"] | null> {
     // A self-deploy's new console reports the result; the old one is about to stop.
     if (state === "updated" && ranSelfDeploy(marker, selfHost())) return null;
     await writeJson(UPDATE_SEEN_KEY, markSeen(seen, marker, state));
-    await emitToAdmins(updateEvent(marker, state, bootDownSeconds));
+    if (state === "updated" && sameVersion(marker)) {
+      log.info(`Update ${marker.id} kept ${marker.fromVersion}; nothing to announce`);
+      return null;
+    }
+    await emitToAdmins(await withChanges(updateEvent(marker, state, bootDownSeconds)));
     log.info(`Announced update ${marker.id}: ${state}`);
     return state;
   });

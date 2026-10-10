@@ -26,7 +26,7 @@ export function diskWriteAlertMail(event: DiskWriteAlertEvent, ctx: MailContext)
     status: "High disk writes",
     heading: `${name} is writing a lot to disk`,
     preheader: `${formatBytesIec(event.writtenBytes)} in ${period}, threshold ${formatBytesIec(event.thresholdBytes)}`,
-    paragraphs: [why, "If it's expected, raise the threshold in the app's settings."],
+    paragraphs: [why, "If it's expected, raise the disk write alert threshold in the app's resource settings."],
     visuals: [
       hourlyColumns("Written per hour, last 24 h", ctx.series?.diskWritesHourly, {
         over: event.thresholdBytes,
@@ -34,8 +34,13 @@ export function diskWriteAlertMail(event: DiskWriteAlertEvent, ctx: MailContext)
       }),
     ].filter((v) => v !== undefined),
     facts,
-    action: event.appId ? { label: "Check app logs", href: appPage(ctx, event.appId, "logs") } : undefined,
-    links: event.appId ? [{ label: "Metrics", href: appPage(ctx, event.appId, "metrics") }] : undefined,
+    action: event.appId ? { label: "Raise the threshold", href: `${appPage(ctx, event.appId, "resources")}#edit-disk-write-threshold` } : undefined,
+    links: event.appId
+      ? [
+          { label: "App logs", href: appPage(ctx, event.appId, "logs") },
+          { label: "Metrics", href: appPage(ctx, event.appId, "metrics") },
+        ]
+      : undefined,
     footer: footerFor(ctx),
   };
 }

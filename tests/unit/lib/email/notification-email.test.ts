@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import type { BusEvent } from "@/lib/bus/events";
 import { EMAIL_FIXTURES, FIXTURE_CONTEXT } from "@/lib/email/fixtures";
 import { renderNotificationEmail, notificationMailBody } from "@/lib/email/notification-email";
-import { notificationSubject } from "@/lib/email/subjects";
+import { notificationSubject, subjectLine } from "@/lib/email/subjects";
 import { splitCommand } from "@/lib/email/templates/deploy-incomplete";
 import { capLogLines } from "@/lib/email/templates/components";
 import { commitUrl, formatDuration, repoWebUrl } from "@/lib/email/format";
@@ -16,43 +16,82 @@ function fixture<T extends BusEvent["type"]>(name: string): Extract<BusEvent, { 
 const subject = (event: BusEvent) => notificationSubject(event, FIXTURE_CONTEXT);
 
 describe("notification subjects", () => {
-  it("leads with the state and ends with the commit", () => {
-    expect(subject(fixture("deploy-success"))).toBe("✓ acme-web deployed · a1b2c3d");
+  it("leads with the instance, then the state, and ends with the commit", () => {
+    expect(subject(fixture("deploy-success"))).toBe("node-a · ✓ acme-web deployed · a1b2c3d");
+    expect(subjectLine(fixture("deploy-success"))).toBe("✓ acme-web deployed · a1b2c3d");
   });
 
   it("names the failing phase", () => {
-    expect(subject(fixture("deploy-failed-build"))).toBe("✗ Shop Staging failed at build");
-    expect(subject(fixture("deploy-failed"))).toBe("✗ search-data failed at health check");
+    expect(subjectLine(fixture("deploy-failed-build"))).toBe("✗ Shop Staging failed at build");
+    expect(subjectLine(fixture("deploy-failed"))).toBe("✗ search-data failed at health check");
   });
 
-  it("names the host for host alerts and counts the rest", () => {
-    expect(subject(fixture("alert-host-disk"))).toBe("⚠ Disk 91% full on node-a");
-    expect(subject(fixture("alert-coalesced"))).toBe("✗ Shop was killed for memory · 2 more");
-    expect(subject(fixture("alert-resolved"))).toBe("✓ 2 alerts resolved on node-a");
+  it("never repeats the instance at the end", () => {
+    for (const { event } of EMAIL_FIXTURES) expect(subject(event)).not.toMatch(/ on node-a\b/);
+    expect(subjectLine(fixture("alert-host-disk"))).toBe("⚠ Disk 91% full");
+    expect(subjectLine(fixture("alert-coalesced"))).toBe("✗ Shop was killed for memory · 2 more");
+    expect(subjectLine(fixture("alert-resolved"))).toBe("✓ 2 alerts resolved");
+    expect(subjectLine(fixture("system-service-down"))).toMatch(/^✗ \S+ down$/);
   });
 
   it("formats bytes for humans", () => {
-    expect(subject(fixture("disk-write-alert"))).toBe("⚠ Shop Staging MySQL wrote 7.7 GiB in 1h");
-    expect(subject(fixture("backup-summary"))).toBe("✓ Nightly backups · 6 done · 9.8 GiB");
-    expect(subject(fixture("backup-summary-failed"))).toBe("✗ Nightly backups · 2 failed");
-    expect(subject(fixture("backup-run-started"))).toBe("↻ Nightly backups starting · 10 volumes · ~33 min");
-    expect(subject(fixture("backup-summary-grew"))).toBe("⚠ Nightly backups · Observability much larger than last run");
-    expect(subject(fixture("backup-failure"))).toBe("✗ Backup of Shop / mysql-data failed");
+    expect(subjectLine(fixture("disk-write-alert"))).toBe("⚠ Shop Staging MySQL wrote 7.7 GiB in 1h");
+    expect(subjectLine(fixture("backup-summary"))).toBe("✓ Nightly backups · 6 done · 9.8 GiB");
+    expect(subjectLine(fixture("backup-summary-failed"))).toBe("✗ Nightly backups · 2 failed");
+    expect(subjectLine(fixture("backup-summary-grew"))).toBe("⚠ Nightly backups · Observability much larger than last run");
+    expect(subjectLine(fixture("backup-failure"))).toBe("✗ Backup of Shop / mysql-data failed");
   });
 
   it("never says Unknown when the display name is missing", () => {
     const event = { ...fixture<"deploy.failed">("deploy-failed"), projectName: "" };
-    expect(subject(event)).toBe("✗ search-data failed at health check");
+    expect(subjectLine(event)).toBe("✗ search-data failed at health check");
     const bare = { ...event, appName: undefined, project: undefined };
     expect(subject(bare)).not.toMatch(/unknown/i);
   });
 
-  it("covers the lifecycle", () => {
-    expect(subject(fixture("system-started"))).toBe("✓ Vardo back on node-a after 2 min 29 s");
-    expect(subject(fixture("system-updated"))).toBe("✓ Vardo updated on node-a · e36c2e3 → 4f1a9b2");
-    expect(subject(fixture("system-update-failed"))).toBe("✗ Vardo update failed on node-a at Health check");
-    expect(subject(fixture("system-update-skipped"))).toBe("⚠ Vardo update skipped on node-a · v0.2.0");
-    expect(subject(fixture("system-update-available-self-deploy"))).toBe("↑ Vardo update available on node-a · 12 commits");
+  it("covers the lifecycle with commits, not package versions", () => {
+    expect(subjectLine(fixture("system-started"))).toBe("✓ Vardo back after 2 min 29 s");
+    expect(subjectLine(fixture("system-updated"))).toBe("✓ Vardo updated · e36c2e3 → 4f1a9b2 fix(email): one instance name in every subject");
+    expect(subjectLine(fixture("system-update-failed"))).toBe("✗ Vardo update failed at Health check");
+    expect(subjectLine(fixture("system-update-skipped"))).toBe("⚠ Vardo update skipped · v0.2.0");
+    expect(subjectLine(fixture("system-update-started"))).toBe("↑ Vardo updating · e36c2e3");
+  });
+
+  it("counts an update's commits and names the newest", () => {
+    expect(subject(fixture("system-update-available-self-deploy"))).toBe(
+      "node-a · ↑ Vardo update · 12 commits · fix(email): one instance name in every subject",
+    );
+    const long = { ...fixture<"system.update-available">("system-update-available-self-deploy"), commits: [{ sha: "abc1234", subject: "x".repeat(40) + " " + "y".repeat(60) }] };
+    expect(subjectLine(long)).toBe(`↑ Vardo update · 12 commits · ${"x".repeat(40)}…`);
+  });
+
+  it("names the job and app when a cron alert clears", () => {
+    const event: BusEvent = {
+      type: "alert.resolved",
+      title: "Resolved",
+      message: "",
+      alerts: [
+        {
+          type: "cron.failure",
+          about: "job_1",
+          severity: "critical",
+          title: "WP Cron is failing on Shop",
+          detail: "HTTP 521",
+          appId: "app_shop",
+          appName: "Shop",
+          facts: [{ label: "Job", value: "WP Cron" }, { label: "App", value: "Shop" }],
+          since: "2026-10-10T07:10:00.000Z",
+          firedAt: "2026-10-10T07:10:00.000Z",
+          resolvedAt: "2026-10-10T07:14:27.000Z",
+        },
+      ],
+    };
+    expect(subject(event)).toBe("node-a · ✓ WP Cron on Shop recovered after 4 min");
+  });
+
+  it("says what a scan found, once per batch", () => {
+    expect(subjectLine(fixture("security-scan-batch"))).toBe("✗ 3 new security findings on 2 apps");
+    expect(subjectLine(fixture("security-scan-manual-clean"))).toBe("✓ Security scan · Acme Docs · no issues");
   });
 
   it("links Update now in the update email on a self-deploy instance, and the host command otherwise", () => {
@@ -118,7 +157,7 @@ describe("notification emails", () => {
 
   it("gives a failed cron its command, exit code, schedule and units", async () => {
     const email = (await renderNotificationEmail(fixture("cron-failed-exit"), FIXTURE_CONTEXT))!;
-    expect(email.subject).toBe("✗ Cron failure test failed on Shop Docs");
+    expect(email.subject).toBe("node-a · ✗ Cron failure test failed on Shop Docs");
     expect(email.text).toContain("Command: echo testing failure path; exit 3");
     expect(email.text).toContain("Exit code: 3");
     expect(email.text).toContain("Schedule: every minute (* * * * *)");
@@ -129,14 +168,55 @@ describe("notification emails", () => {
     expect(email.text).toContain("Open run history: https://vardo.example.com/apps/app_d0cs/cron");
   });
 
-  it("starts a backup run with one row per app and the target once", async () => {
-    const email = (await renderNotificationEmail(fixture("backup-run-started"), FIXTURE_CONTEXT))!;
-    expect(email.text).toContain("[↻ Starting] Nightly backups starting");
-    expect(email.text).toContain("Writing to: R2 backups · backups/apps");
-    expect(email.text).toContain("Acme Data: 2 volumes · 685 MiB last run");
-    expect(email.text).toContain("Uptime Kuma: 1 volume\n");
-    expect(email.text).not.toContain("postgres-data");
-    expect(email.html).not.toContain("· Starting");
+  it("sends no email for a backup run starting", async () => {
+    const event: BusEvent = {
+      type: "backup.run-started",
+      title: "Nightly backups starting",
+      message: "",
+      runId: "run_1",
+      kind: "nightly",
+      label: "Nightly backups",
+      apps: [],
+      volumeCount: 0,
+      estimatedMs: null,
+      target: null,
+    };
+    expect(await renderNotificationEmail(event, FIXTURE_CONTEXT)).toBeNull();
+  });
+
+  it("lists only the problem rows when a quiet run emails, with a link to the full run", async () => {
+    const email = (await renderNotificationEmail(fixture("backup-summary-problems"), FIXTURE_CONTEXT))!;
+    expect(email.text).toContain("Observability / loki-data: 532.6 MiB, +31,046% vs last run's 1.7 MiB");
+    expect(email.text).not.toContain("By app");
+    expect(email.text).not.toContain("Shop: ");
+    expect(email.text).toContain("View the full run: https://vardo.example.com/backups");
+  });
+
+  it("lists each app's new findings with severity and a link to its security tab", async () => {
+    const email = (await renderNotificationEmail(fixture("security-scan-batch"), FIXTURE_CONTEXT))!;
+    expect(email.text).toContain("Shop · shop.example.com\nCritical: .env is publicly accessible. The file at /.env is served");
+    expect(email.text).toContain("Warning: TLS certificate expires in 9 days. Renewal hasn't succeeded yet.");
+    expect(email.text).toContain("14 apps scanned.");
+    expect(email.text).toContain("Open Shop security: https://vardo.example.com/apps/app_shop/security");
+    expect(email.text).toContain("Acme Docs security: https://vardo.example.com/apps/app_d0cs/security");
+    expect(email.html).toContain('href="https://vardo.example.com/apps/app_d0cs/security"');
+  });
+
+  it("shows what's new in an update, with Update now first", async () => {
+    const email = (await renderNotificationEmail(fixture("system-update-available-self-deploy"), FIXTURE_CONTEXT))!;
+    expect(email.text).toContain("What's new\n4f1a9b2: fix(email): one instance name in every subject · Dev Example");
+    expect(email.text).toContain("and 9 more commits");
+    const updateNow = email.text.indexOf("Update now:");
+    const all = email.text.indexOf("View all changes on GitHub: https://github.com/example/vardo/compare/e36c2e3...4f1a9b2");
+    expect(updateNow).toBeGreaterThan(-1);
+    expect(all).toBeGreaterThan(updateNow);
+  });
+
+  it("shows commits, not the package version, when Vardo updated", async () => {
+    const email = (await renderNotificationEmail(fixture("system-updated"), FIXTURE_CONTEXT))!;
+    expect(email.text).toContain("Version: e36c2e3 → 4f1a9b2 fix(email): one instance name in every subject");
+    expect(email.text).not.toContain("0.1.0");
+    expect(email.text).toContain("What's new\n4f1a9b2");
   });
 
   it("puts big growth up top and rolls the rest up per app", async () => {
@@ -157,7 +237,7 @@ describe("notification emails", () => {
       { ...fixture<"disk.write-alert">("disk-write-alert"), appName: "Runner", projectName: "Site Audit", dataEngine: false },
       FIXTURE_CONTEXT,
     ))!;
-    expect(email.subject).toBe("⚠ Site Audit Runner wrote 7.7 GiB in 1h");
+    expect(email.subject).toBe("node-a · ⚠ Site Audit Runner wrote 7.7 GiB in 1h");
     expect(email.text).toContain("Site Audit Runner is writing a lot to disk");
   });
 

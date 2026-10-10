@@ -186,10 +186,13 @@ export function stoppingForSelfDeploy(marker: UpdateMarker | null, host: string,
   return marker.state === "updated" && now - (marker.finishedAt ?? marker.startedAt) < SELF_DEPLOY_STOP_WINDOW_MS;
 }
 
+/** An update still running after this gets an "updating" email; a quicker one sends only its result. */
+export const UPDATE_SLOW_MS = 10 * 60_000;
+
 /** States of one update run already announced. */
 export type UpdateSeen = { id: string; states: UpdateMarker["state"][] };
 
-/** What to announce for a marker, or null. Grouped: a finished update never also announces its start. */
+/** What to announce for a marker, or null. One email per update: the start only when it runs long, never after the result. */
 export function updateAnnouncement(
   marker: UpdateMarker | null,
   seen: UpdateSeen | null,
@@ -200,6 +203,7 @@ export function updateAnnouncement(
   const announced = seen?.id === marker.id ? seen.states : [];
   if (announced.includes(marker.state)) return null;
   if (marker.state === "started" && announced.length > 0) return null;
+  if (marker.state === "started" && now - marker.startedAt < UPDATE_SLOW_MS) return null;
   return marker.state;
 }
 

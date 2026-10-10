@@ -139,7 +139,7 @@ export function EmailSettings() {
   const [smtpPass, setSmtpPass] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [fromEmail, setFromEmail] = useState("");
-  const [fromName, setFromName] = useState(DEFAULT_APP_NAME);
+  const [fromName, setFromName] = useState("");
   const [allowSmtp, setAllowSmtp] = useState(true);
   const [baseUrl, setBaseUrl] = useState("");
   const [webhookSecret, setWebhookSecret] = useState("");
@@ -167,7 +167,7 @@ export function EmailSettings() {
       maskedSmtpPass.current = pass;
       maskedApiKey.current = key;
       setFromEmail((data.fromEmail as string) || "");
-      setFromName((data.fromName as string) || DEFAULT_APP_NAME);
+      setFromName((data.fromName as string) || "");
       setBaseUrl((data.baseUrl as string) || "");
       const secret = (data.webhookSecret as string) || "";
       setWebhookSecret(secret);
@@ -473,6 +473,7 @@ export function EmailSettings() {
                 id="sys-fromName"
                 value={fromName}
                 onChange={(e) => setFromName(e.target.value)}
+                placeholder={`Instance name · ${DEFAULT_APP_NAME}`}
               />
             </div>
           </div>
