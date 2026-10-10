@@ -3,13 +3,14 @@ import { redis } from "@/lib/redis";
 import type { StreamEntry, ReadStreamOptions, ConsumeGroupOptions } from "./types";
 import { logger } from "@/lib/logger";
 import { closeOnShutdown } from "@/lib/shutdown";
+import { backoffDelay, sleep } from "@/lib/net/backoff";
 
 const log = logger.child("stream");
 
 /** Batch size for XRANGE pagination during catchup. */
 const CATCHUP_BATCH_SIZE = 200;
 
-/** Backoff after a consumer loop error, doubling up to the cap. */
+/** Backoff after a consumer loop error, doubling with jitter up to the cap. */
 const CONSUMER_BACKOFF_MIN_MS = 1_000;
 const CONSUMER_BACKOFF_MAX_MS = 60_000;
 /** Consecutive loop errors before the consumer gives up. */
@@ -187,7 +188,6 @@ export async function consumeGroup(opts: ConsumeGroupOptions): Promise<() => Pro
       // XREADGROUP takes every key, then every ID. Interleaving them breaks the command.
       const streamArgs = [...keys, ...keys.map(() => ">")];
       let consecutiveErrors = 0;
-      let backoffMs = CONSUMER_BACKOFF_MIN_MS;
 
       while (!stopSignal.aborted) {
         try {
@@ -199,7 +199,6 @@ export async function consumeGroup(opts: ConsumeGroupOptions): Promise<() => Pro
           ) as [string, [string, string[]][]][] | null;
 
           consecutiveErrors = 0;
-          backoffMs = CONSUMER_BACKOFF_MIN_MS;
 
           if (!result || stopSignal.aborted) continue;
 
@@ -230,8 +229,14 @@ export async function consumeGroup(opts: ConsumeGroupOptions): Promise<() => Pro
             return;
           }
 
-          await new Promise((r) => setTimeout(r, backoffMs));
-          backoffMs = Math.min(backoffMs * 2, CONSUMER_BACKOFF_MAX_MS);
+          await sleep(
+            backoffDelay(consecutiveErrors, {
+              baseMs: CONSUMER_BACKOFF_MIN_MS,
+              maxMs: CONSUMER_BACKOFF_MAX_MS,
+              jitter: "equal",
+            }),
+            stopSignal,
+          ).catch(() => {});
         }
       }
     } finally {

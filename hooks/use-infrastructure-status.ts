@@ -13,6 +13,7 @@ import {
   type InfrastructureView,
 } from "@/lib/attention/infrastructure-view";
 import type { AttentionRow } from "@/lib/ui/attention";
+import { retryAfterMs } from "@/lib/net/backoff";
 
 /**
  * Instance infrastructure, polled outside org scope. Cadence follows the state
@@ -32,10 +33,8 @@ export function useInfrastructureStatus(): { rows: AttentionRow[]; resolvedAt: n
     fetch("/api/v1/system/infrastructure", { cache: "no-store" })
       .then(async (res) => {
         if (res.status === 429) {
-          const seconds = Number(res.headers.get("Retry-After"));
-          setView((state) =>
-            applyInfrastructureThrottle(state, Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : null),
-          );
+          const wait = retryAfterMs(res.headers);
+          setView((state) => applyInfrastructureThrottle(state, wait && wait > 0 ? wait : null));
           setCheckedAt(Date.now());
           return;
         }

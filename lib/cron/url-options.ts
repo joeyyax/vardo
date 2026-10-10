@@ -9,6 +9,8 @@ export const DEFAULT_TIMEOUT_MS = 30_000;
 export const MIN_TIMEOUT_MS = 1_000;
 export const MAX_TIMEOUT_MS = 300_000;
 export const MAX_RETRIES = 3;
+/** Longest wait between attempts, Retry-After included. */
+export const MAX_RETRY_WAIT_MS = 60_000;
 export const MAX_HEADERS = 20;
 
 /** Shown in place of a stored header value. */

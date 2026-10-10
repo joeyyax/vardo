@@ -7,8 +7,17 @@ import { redactSecrets } from "@/lib/redact";
 import { safeFetch, type SafeFetchOptions } from "@/lib/security/safe-fetch";
 import { BlockedUrlError, type OutboundPolicy } from "@/lib/security/ssrf";
 import { getOutboundPolicy } from "@/lib/security/outbound-policy";
+import { backoffDelay, capDelay, retryAfterMs } from "@/lib/net/backoff";
+import { isRetryableStatus } from "@/lib/net/retry";
 import type { CronHeader } from "./headers";
-import { statusMatches, DEFAULT_TIMEOUT_MS, MAX_RETRIES, MAX_TIMEOUT_MS, type CronMethod } from "./url-options";
+import {
+  statusMatches,
+  DEFAULT_TIMEOUT_MS,
+  MAX_RETRIES,
+  MAX_RETRY_WAIT_MS,
+  MAX_TIMEOUT_MS,
+  type CronMethod,
+} from "./url-options";
 
 /** Bytes of response body kept per run. */
 export const BODY_SNIPPET_BYTES = 4096;
@@ -36,6 +45,7 @@ export type UrlDeps = {
   fetch?: (url: string, init: SafeFetchOptions) => Promise<Response>;
   sleep?: (ms: number) => Promise<void>;
   backoffMs?: number;
+  random?: () => number;
 };
 
 /** Outbound policy for an org's URL jobs. A trusted org may reach the job's own host on a private address. */
@@ -82,6 +92,12 @@ async function readSnippet(res: Response): Promise<string> {
 
 const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
 
+/** Wait before retry `attempt`: jittered backoff, or the server's Retry-After, within the cap. */
+function retryWaitMs(attempt: number, requested: number | null, baseMs: number, random?: () => number): number {
+  const backoff = backoffDelay(attempt, { baseMs, maxMs: MAX_RETRY_WAIT_MS, random });
+  return capDelay(Math.max(backoff, requested ?? 0), MAX_RETRY_WAIT_MS);
+}
+
 /** Sends the request, retrying failures with exponential backoff. Never throws. */
 export async function runUrlRequest(
   req: UrlRequest,
@@ -103,8 +119,10 @@ export async function runUrlRequest(
   let httpStatus: number | undefined;
   let attempts = 0;
 
+  let requestedWait: number | null = null;
   for (let attempt = 0; attempt <= retries; attempt++) {
-    if (attempt > 0) await sleep(backoff * 2 ** (attempt - 1));
+    if (attempt > 0) await sleep(retryWaitMs(attempt, requestedWait, backoff, deps.random));
+    requestedWait = null;
     attempts = attempt + 1;
     const tag = retries > 0 ? ` (attempt ${attempts} of ${retries + 1})` : "";
     const attemptStart = Date.now();
@@ -122,10 +140,12 @@ export async function runUrlRequest(
       const ms = Date.now() - attemptStart;
       const ok = statusMatches(req.expectedStatus, res.status);
       lines.push(`${method} ${target} → ${res.status} ${res.statusText} in ${ms}ms${tag}${ok ? "" : `, expected ${req.expectedStatus?.trim() || "2xx"}`}`);
-      if (ok || attempt === retries) {
+      // A status that won't change on retry ends the run.
+      if (ok || attempt === retries || !isRetryableStatus(res.status)) {
         if (body) lines.push(body);
         return { success: ok, log: redact(lines.join("\n")), durationMs: Date.now() - started, httpStatus, attempts, target };
       }
+      requestedWait = retryAfterMs(res.headers);
     } catch (err) {
       const aborted = controller.signal.aborted;
       const message = aborted ? `timed out after ${timeoutMs}ms` : err instanceof Error ? err.message : String(err);
