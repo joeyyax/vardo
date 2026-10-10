@@ -19,6 +19,7 @@ vi.mock("@/lib/docker/image-updates/check", () => ({
   CHECK_TTL_MS: 6 * 60 * 60 * 1000,
 }));
 vi.mock("@/lib/docker/image-updates/read-ignores", () => ({ readIgnoreRules }));
+vi.mock("@/lib/docker/image-updates/read-tracks", () => ({ readTrackPolicies: vi.fn(async () => []) }));
 vi.mock("@/lib/docker/image-updates/major-gate-store", () => ({ readMajorGateBlock }));
 
 import {

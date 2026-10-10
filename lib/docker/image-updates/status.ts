@@ -4,13 +4,17 @@ import { appImages, type UpdatableApp } from "./compose-images";
 import { readCachedChecks, CHECK_TTL_MS } from "./check";
 import { indexRules, silencedBy, type IgnoreRule } from "./ignore";
 import { readIgnoreRules } from "./read-ignores";
+import { readTrackPolicies } from "./read-tracks";
 import { readMajorGateBlock } from "./major-gate-store";
+import { splitCheck, resurfaceReasons, runningMajor, type ResurfaceReason } from "./majors";
+import { indexTracks, resolveTrack, type ResolvedTrack, type TrackMode, type TrackPolicy } from "./track-policy";
 import type { MajorGateBlock } from "./major-gate";
 import type { BumpSeverity } from "./tag-version";
 import type { CheckStatus } from "./check";
 
 // Read-only view over the check cache; never calls a registry.
 // Vardo-managed apps are reported but excluded from actionable counts.
+// Updates stay within the running major; new majors are informational and never counted.
 
 /** Name and flag needed to tell a Vardo-pinned app from a tenant's. */
 type Identity = { name?: string | null; isSystemManaged?: boolean | null };
@@ -20,13 +24,22 @@ export interface ServiceUpdateStatus {
   image: string;
   currentTag: string;
   status: CheckStatus;
+  /** Newest tag within the running major. */
   latestTag: string | null;
   severity: BumpSeverity | null;
   unorderable: string[];
-  /** Newer tags to choose from, newest first. */
+  /** Newer tags within the running major, newest first. */
   available: string[];
-  /** Newest tag crossing a major, offered separately from `latestTag`. */
+  /** Newest tag crossing a major. Never counted as an update. */
   majorAvailable: string | null;
+  /** Every tag on a higher major, newest first. */
+  majorTags: string[];
+  /** Which major this service follows. */
+  track: ResolvedTrack & { major: number | null };
+  /** A new major exists and a stay-on-major policy or an ignore rule holds it. */
+  majorHeld: boolean;
+  /** Why the running major needs a decision now. Empty when it doesn't. */
+  reasons: ResurfaceReason[];
   /** Whether a major bump means migrating a data directory. */
   majorLocked: boolean;
   error: string | null;
@@ -43,12 +56,16 @@ export interface IgnoredUpdate {
 
 export interface AppUpdateStatus {
   services: ServiceUpdateStatus[];
-  /** Services with a newer tag or a drifted floating tag. */
+  /** Services with a newer tag in the running major or a drifted floating tag. */
   updateCount: number;
   /** Highest severity among available updates, for UI emphasis. */
   highestSeverity: BumpSeverity | null;
   /** True when at least one service could not be answered. */
   hasUnknown: boolean;
+  /** New majors offered under "follow latest". Informational, outside `updateCount`. */
+  majorCount: number;
+  /** New majors held by a stay-on-major policy or an ignore rule. */
+  heldCount: number;
   /** Actionable updates withheld by an ignore rule. */
   ignored: IgnoredUpdate[];
   /** A deploy the major gate stopped, still waiting on a decision. */
@@ -67,36 +84,66 @@ const SEVERITY_RANK: Record<BumpSeverity, number> = {
 
 type CachedChecks = Awaited<ReturnType<typeof readCachedChecks>>;
 
-function buildServices(
-  app: UpdatableApp,
-  cached: CachedChecks,
-  cutoff: number,
-): ServiceUpdateStatus[] {
+interface BuildContext {
+  cached: CachedChecks;
+  cutoff: number;
+  now: number;
+  /** App that owns the compose. Track policies are keyed by it. */
+  ownerId: string | undefined;
+  tracks: Map<string, TrackMode>;
+}
+
+function buildServices(app: UpdatableApp, ctx: BuildContext): ServiceUpdateStatus[] {
   return appImages(app).map((entry) => {
-    const row = cached.get(refCacheKey(entry.ref));
+    const row = ctx.cached.get(refCacheKey(entry.ref));
+    const currentTag = entry.ref.tag;
+    const split = splitCheck(currentTag, {
+      latestTag: row?.latestTag ?? null,
+      severity: (row?.severity as BumpSeverity | null) ?? null,
+      available: row?.available ?? [],
+      majorAvailable: row?.majorAvailable ?? null,
+    });
+    // Older rows marked a major-only result as an update.
+    const status: CheckStatus =
+      row?.status === "update" && !split.latestTag ? "current" : (row?.status ?? "unknown");
+    const track = resolveTrack(ctx.tracks, ctx.ownerId, entry.service, entry.image);
+
     return {
       service: entry.service,
       image: entry.image,
-      currentTag: entry.ref.tag,
-      status: row?.status ?? "unknown",
-      latestTag: row?.latestTag ?? null,
-      severity: (row?.severity as BumpSeverity | null) ?? null,
+      currentTag,
+      status,
+      latestTag: split.latestTag,
+      severity: split.severity,
       unorderable: row?.unorderable ?? [],
-      available: row?.available ?? [],
-      majorAvailable: row?.majorAvailable ?? null,
+      available: split.available,
+      majorAvailable: split.majorAvailable,
+      majorTags: split.majorTags,
+      track: { ...track, major: runningMajor(currentTag) },
+      majorHeld: split.majorAvailable !== null && track.mode === "major",
+      reasons: resurfaceReasons(
+        { image: entry.image, currentTag, majorAvailable: split.majorAvailable },
+        ctx.now,
+      ),
       majorLocked: row?.majorLocked ?? false,
       error: row?.error ?? (row ? null : "Not checked yet"),
       checkedAt: row?.checkedAt.toISOString() ?? null,
-      stale: !row || row.checkedAt.getTime() < cutoff,
+      stale: !row || row.checkedAt.getTime() < ctx.cutoff,
     };
   });
 }
 
-function isActionable(service: ServiceUpdateStatus): boolean {
+/** An update within the running major, or a drifted floating tag. Majors never count. */
+export function isActionable(service: ServiceUpdateStatus): boolean {
   return service.status === "update" || service.status === "drift";
 }
 
-/** Splits an app's services into shown and ignored-by-rule. */
+/** A new major is out and nothing holds it. */
+export function isOfferedMajor(service: ServiceUpdateStatus): boolean {
+  return service.majorAvailable !== null && !service.majorHeld;
+}
+
+/** Splits an app's services into shown and ignored-by-rule. Any active rule also holds the major. */
 function partition(
   services: ServiceUpdateStatus[],
   appId: string | undefined,
@@ -108,11 +155,15 @@ function partition(
   const kept: ServiceUpdateStatus[] = [];
   const ignored: IgnoredUpdate[] = [];
   for (const service of services) {
-    const rule = isActionable(service)
-      ? silencedBy(rules, { appId, service: service.service, severity: service.severity }, now)
+    const holds =
+      service.majorAvailable !== null &&
+      silencedBy(rules, { appId, service: service.service, severity: "major" }, now) !== null;
+    const current = holds ? { ...service, majorHeld: true } : service;
+    const rule = isActionable(current)
+      ? silencedBy(rules, { appId, service: current.service, severity: current.severity }, now)
       : null;
-    if (rule) ignored.push({ service, rule });
-    else kept.push(service);
+    if (rule) ignored.push({ service: current, rule });
+    else kept.push(current);
   }
   return { services: kept, ignored };
 }
@@ -123,16 +174,20 @@ function rollUp(
   let highest: BumpSeverity | null = null;
   let updateCount = 0;
   let hasUnknown = false;
+  let majorCount = 0;
+  let heldCount = 0;
 
   for (const service of services) {
     if (service.status === "unknown") hasUnknown = true;
+    if (isOfferedMajor(service)) majorCount++;
+    else if (service.majorHeld) heldCount++;
     if (!isActionable(service)) continue;
     updateCount++;
     const severity = service.severity ?? "unknown";
     if (!highest || SEVERITY_RANK[severity] > SEVERITY_RANK[highest]) highest = severity;
   }
 
-  return { updateCount, highestSeverity: highest, hasUnknown };
+  return { updateCount, highestSeverity: highest, hasUnknown, majorCount, heldCount };
 }
 
 /** The major gate's block, narrowed to this app. A child service reads the parent's block. */
@@ -149,13 +204,21 @@ async function blockFor(app: UpdatableApp & { id?: string; composeOwnerId?: stri
 export async function getAppUpdateStatus(
   app: UpdatableApp & Identity & { id?: string; composeOwnerId?: string },
   rules: IgnoreRule[] = [],
+  tracks: TrackPolicy[] = [],
 ): Promise<AppUpdateStatus> {
   const entries = appImages(app);
   const [cached, blockedMigration] = await Promise.all([
     readCachedChecks(entries.map((entry) => refCacheKey(entry.ref))),
     blockFor(app),
   ]);
-  const all = buildServices(app, cached, Date.now() - CHECK_TTL_MS);
+  const now = Date.now();
+  const all = buildServices(app, {
+    cached,
+    cutoff: now - CHECK_TTL_MS,
+    now,
+    ownerId: app.composeOwnerId ?? app.id,
+    tracks: indexTracks(tracks),
+  });
   const selfManaged = isVardoManagedApp(app);
 
   // Rows stay visible; counts stay zero since the apply path refuses these.
@@ -166,18 +229,31 @@ export async function getAppUpdateStatus(
       updateCount: 0,
       highestSeverity: null,
       hasUnknown: false,
+      majorCount: 0,
+      heldCount: 0,
       blockedMigration,
       selfManaged,
     };
   }
 
-  const { services, ignored } = partition(all, app.id, indexRules(rules), Date.now());
+  const { services, ignored } = partition(all, app.id, indexRules(rules), now);
   return { services, ignored, ...rollUp(services), blockedMigration, selfManaged };
+}
+
+/** A service with a newer major, or a running major that needs a decision. */
+export interface MajorNotice {
+  appId: string;
+  name: string;
+  displayName: string;
+  service: ServiceUpdateStatus;
 }
 
 export interface AggregateUpdateStatus {
   appsWithUpdates: { id: string; name: string; displayName: string; count: number }[];
+  /** Updates within the running major. New majors are never in this count. */
   totalUpdates: number;
+  /** Running majors at or near end of life, or with a fix only in a newer major. */
+  majorNotices: MajorNotice[];
   unknownCount: number;
   /** Set while a registry rate limit is being waited out. */
   cooldownUntil: string | null;
@@ -212,6 +288,10 @@ export interface FleetUpdateStatus {
   ignored: FleetIgnoredUpdate[];
   /** Vardo-pinned apps that are behind upstream. Reported, never offered. */
   selfManaged: FleetAppUpdates[];
+  /** Every service with a newer major, offered first, then held. Informational. */
+  majors: MajorNotice[];
+  /** Running majors with a reason to decide now. */
+  majorNotices: MajorNotice[];
 }
 
 /** Every actionable service across the fleet, in one cache read. */
@@ -221,22 +301,26 @@ export async function getFleetUpdateStatus(
   cooldownUntil: number,
 ): Promise<FleetUpdateStatus> {
   const keys = appRows.flatMap((app) => appImages(app).map((entry) => refCacheKey(entry.ref)));
-  const [cached, rules] = await Promise.all([
+  const [cached, rules, trackRows] = await Promise.all([
     readCachedChecks([...new Set(keys)]),
     readIgnoreRules(orgId),
+    readTrackPolicies(orgId),
   ]);
   const now = Date.now();
   const cutoff = now - CHECK_TTL_MS;
   const ruleIndex = indexRules(rules);
+  const tracks = indexTracks(trackRows);
 
   const apps: FleetAppUpdates[] = [];
   const selfManaged: FleetAppUpdates[] = [];
   const ignoredAll: FleetIgnoredUpdate[] = [];
+  const majors: MajorNotice[] = [];
+  const majorNotices: MajorNotice[] = [];
   let totalUpdates = 0;
   let unknownCount = 0;
 
   for (const app of appRows) {
-    const all = buildServices(app, cached, cutoff);
+    const all = buildServices(app, { cached, cutoff, now, ownerId: app.id, tracks });
 
     // Vardo-managed apps are listed separately, outside totals and ignore rules.
     if (isVardoManagedApp(app)) {
@@ -257,13 +341,14 @@ export async function getFleetUpdateStatus(
     const { services, ignored } = partition(all, app.id, ruleIndex, now);
     const { updateCount, highestSeverity, hasUnknown } = rollUp(services);
 
+    const identity = { appId: app.id, name: app.name, displayName: app.displayName };
+    for (const service of [...services, ...ignored.map((entry) => entry.service)]) {
+      if (service.majorAvailable) majors.push({ ...identity, service });
+      if (service.reasons.length > 0) majorNotices.push({ ...identity, service });
+    }
+
     for (const entry of ignored) {
-      ignoredAll.push({
-        ...entry,
-        appId: app.id,
-        name: app.name,
-        displayName: app.displayName,
-      });
+      ignoredAll.push({ ...entry, ...identity });
     }
     if (hasUnknown) {
       unknownCount += services.filter((s) => s.status === "unknown").length;
@@ -271,9 +356,7 @@ export async function getFleetUpdateStatus(
     if (updateCount === 0) continue;
 
     apps.push({
-      appId: app.id,
-      name: app.name,
-      displayName: app.displayName,
+      ...identity,
       services: services.filter(isActionable),
       updateCount,
       highestSeverity,
@@ -288,6 +371,12 @@ export async function getFleetUpdateStatus(
   apps.sort(bySeverity);
   selfManaged.sort(bySeverity);
   ignoredAll.sort((a, b) => a.displayName.localeCompare(b.displayName));
+  majors.sort(
+    (a, b) =>
+      Number(a.service.majorHeld) - Number(b.service.majorHeld) ||
+      a.displayName.localeCompare(b.displayName),
+  );
+  majorNotices.sort((a, b) => a.displayName.localeCompare(b.displayName));
 
   return {
     apps,
@@ -295,6 +384,8 @@ export async function getFleetUpdateStatus(
     unknownCount,
     ignored: ignoredAll,
     selfManaged,
+    majors,
+    majorNotices,
     cooldownUntil: cooldownUntil > now ? new Date(cooldownUntil).toISOString() : null,
   };
 }
@@ -314,6 +405,7 @@ export async function getAggregateUpdateStatus(
       count: app.updateCount,
     })),
     totalUpdates: fleet.totalUpdates,
+    majorNotices: fleet.majorNotices,
     unknownCount: fleet.unknownCount,
     cooldownUntil: fleet.cooldownUntil,
   };

@@ -447,7 +447,10 @@ export type DigestHealthEvent = {
   resources?: { label: string; values: number[]; latest: number; peak: number; unit: "percent" | "per-core" }[];
   /** Live at send time, not part of the window. */
   certs: { domain: string; daysLeft: number }[];
+  /** Updates within the running major. New majors are never listed here. */
   imageUpdates: { appName: string; count: number }[];
+  /** Running majors at or near end of life. */
+  majorNotices?: { appName: string; detail: string }[];
   projects: DigestProjectRow[];
 };
 

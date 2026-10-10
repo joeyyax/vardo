@@ -128,9 +128,14 @@ async function expiringCerts(orgId: string, now: Date): Promise<DigestHealthEven
     .sort((a, b) => a.daysLeft - b.daysLeft);
 }
 
-async function imageUpdates(orgId: string): Promise<DigestHealthEvent["imageUpdates"]> {
+type ImageUpdateFacts = Pick<DigestHealthEvent, "imageUpdates" | "majorNotices">;
+
+const NO_IMAGE_UPDATES: ImageUpdateFacts = { imageUpdates: [], majorNotices: [] };
+
+async function imageUpdates(orgId: string): Promise<ImageUpdateFacts> {
   const { isFeatureEnabledAsync } = await import("@/lib/config/features");
-  if (!(await isFeatureEnabledAsync("image-updates"))) return [];
+  if (!(await isFeatureEnabledAsync("image-updates"))) return NO_IMAGE_UPDATES;
+  const { describeMajorNotice } = await import("@/lib/attention/major-notice-rows");
   const { getAggregateUpdateStatus } = await import("@/lib/docker/image-updates/status");
   const { getCooldownUntil } = await import("@/lib/docker/image-updates/check");
   const rows = await db
@@ -147,7 +152,13 @@ async function imageUpdates(orgId: string): Promise<DigestHealthEvent["imageUpda
     .from(apps)
     .where(and(eq(apps.organizationId, orgId), isNull(apps.parentAppId)));
   const status = await getAggregateUpdateStatus(orgId, rows, await getCooldownUntil());
-  return status.appsWithUpdates.map((a) => ({ appName: a.displayName || a.name, count: a.count }));
+  return {
+    imageUpdates: status.appsWithUpdates.map((a) => ({ appName: a.displayName || a.name, count: a.count })),
+    majorNotices: status.majorNotices.map((n) => ({
+      appName: n.service.service ? `${n.displayName} · ${n.service.service}` : n.displayName,
+      detail: describeMajorNotice(n.service),
+    })),
+  };
 }
 
 /** One org's digest for a window. `withHost` adds host trends, for orgs with an instance admin. */
@@ -200,7 +211,7 @@ export async function collectDigestData(
       .where(and(eq(alertHistory.organizationId, orgId), isNull(alertHistory.resolvedAt), lt(alertHistory.firedAt, window.until))),
     import("@/lib/backups/runs").then(({ loadStaleVolumes }) => loadStaleVolumes(orgId, window.until.getTime())),
     expiringCerts(orgId, now),
-    imageUpdates(orgId).catch(() => []),
+    imageUpdates(orgId).catch(() => NO_IMAGE_UPDATES),
     opts.withHost ? hostTrends(window).catch(() => undefined) : Promise.resolve(undefined),
     db
       .select({
@@ -279,7 +290,7 @@ export async function collectDigestData(
     alerts: { fired: fired.length, resolved: resolvedCount[0]?.n ?? 0, open: openCount[0]?.n ?? 0, top: topAlerts(fired) },
     resources,
     certs,
-    imageUpdates: updates,
+    ...updates,
     projects: [...projects.values()]
       .filter((p) => p.deploys + p.failures + p.backupFailures + p.cronFailures > 0)
       .sort((a, b) => b.failures + b.backupFailures + b.cronFailures - (a.failures + a.backupFailures + a.cronFailures) || b.deploys - a.deploys),

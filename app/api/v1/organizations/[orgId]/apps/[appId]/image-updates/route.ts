@@ -6,6 +6,7 @@ import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { applyImageUpdate } from "@/lib/docker/image-updates/apply-update";
 import { getAppUpdateStatus } from "@/lib/docker/image-updates/status";
 import { readIgnoreRules } from "@/lib/docker/image-updates/read-ignores";
+import { readTrackPolicies } from "@/lib/docker/image-updates/read-tracks";
 import { resolveUpdatableApp } from "@/lib/docker/image-updates/resolve-app";
 
 type RouteParams = { params: Promise<{ orgId: string; appId: string }> };
@@ -37,7 +38,8 @@ async function handleGet(_request: NextRequest, { params }: RouteParams) {
     const app = await resolveUpdatableApp(orgId, appId);
     if (!app) return apiError.notFound("app");
 
-    return NextResponse.json(await getAppUpdateStatus(app, await readIgnoreRules(orgId)));
+    const [rules, tracks] = await Promise.all([readIgnoreRules(orgId), readTrackPolicies(orgId)]);
+    return NextResponse.json(await getAppUpdateStatus(app, rules, tracks));
   } catch (error) {
     return handleRouteError(error, "Error reading image update status");
   }

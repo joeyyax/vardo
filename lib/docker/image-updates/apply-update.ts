@@ -4,7 +4,7 @@ import { apps } from "@/lib/db/schema";
 import { recordActivity } from "@/lib/activity";
 import { IMAGE_UPDATE_REFUSAL } from "@/lib/api/system-managed";
 import { isVardoManagedApp } from "@/lib/infra/instance-apps";
-import { planMigration, requiresMigration, type MigrationPlan } from "./migration-path";
+import { isMajorJump, planMigration, requiresMigration, type MigrationPlan } from "./migration-path";
 import { setImageRefTag, setServiceImageTag } from "./apply";
 import { getAppUpdateStatus, type AppUpdateStatus } from "./status";
 import { resolveUpdatableApp } from "./resolve-app";
@@ -19,6 +19,8 @@ export interface ApplyRequest {
   acknowledgeMigration?: boolean;
   /** Resolving a deploy the major gate stopped, which verified both majors itself. */
   majorGate?: boolean;
+  /** False refuses a tag on a higher major. Batch apply sets it. */
+  allowMajor?: boolean;
 }
 
 export type ApplyOutcome =
@@ -57,6 +59,7 @@ export async function applyImageUpdate({
   tag,
   acknowledgeMigration,
   majorGate,
+  allowMajor = true,
 }: ApplyRequest): Promise<ApplyOutcome> {
   const app = await resolveUpdatableApp(orgId, appId);
   if (!app) {
@@ -84,7 +87,7 @@ export async function applyImageUpdate({
 
   // Only apply a tag a check proposed.
   const offered = new Set(
-    [target.latestTag, target.majorAvailable, ...target.available].filter(
+    [target.latestTag, ...target.available, ...target.majorTags].filter(
       (t): t is string => t !== null,
     ),
   );
@@ -93,6 +96,11 @@ export async function applyImageUpdate({
 
   if (!offered.has(tag) && !gated) {
     return fail(identity, 409, `No verified update to ${tag}. Re-run the check first.`);
+  }
+
+  // New majors go through Plan upgrade, one service at a time.
+  if (!allowMajor && !gated && isMajorJump(target.currentTag, tag)) {
+    return fail(identity, 409, `${tag} is a new major version. Plan the upgrade from the app's Updates tab.`);
   }
 
   // Pinning the gate's new major is a data migration too.

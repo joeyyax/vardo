@@ -71,3 +71,28 @@ export const imageUpdateIgnores = pgTable(
     index("image_update_ignore_org_idx").on(t.organizationId),
   ],
 );
+
+/** Which major a service follows. No row means the image's default. */
+export const imageUpdateTracks = pgTable(
+  "image_update_track",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    /** App that owns the compose: the parent for a child service. */
+    appId: text("app_id")
+      .notNull()
+      .references(() => apps.id, { onDelete: "cascade" }),
+    /** Null for a single-image app. */
+    composeService: text("compose_service"),
+    /** `latest` offers new majors; `major` stays on the running one. */
+    mode: text("mode", { enum: ["latest", "major"] }).notNull(),
+    updatedBy: text("updated_by"),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    unique("image_update_track_target_key").on(t.appId, t.composeService).nullsNotDistinct(),
+    index("image_update_track_org_idx").on(t.organizationId),
+  ],
+);

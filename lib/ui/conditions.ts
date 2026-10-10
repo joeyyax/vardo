@@ -130,6 +130,7 @@ export type ProblemGroup =
   | "backups"
   | "certs"
   | "security"
+  | "lifecycle"
   | "config";
 
 /** A fix the console runs in place, or a page that handles it. */
@@ -201,6 +202,11 @@ export const PROBLEM_GROUPS: Record<ProblemGroup, ProblemGroupMeta> = {
   backups: { title: "Backups", why: "Volumes without a recent good backup.", bulk: "Back up" },
   certs: { title: "Certificates", why: "Renewal runs on its own. These haven't renewed yet.", bulk: null },
   security: { title: "Security findings", why: "The public-site scan found issues to review.", bulk: null },
+  lifecycle: {
+    title: "End of life",
+    why: "The running major stops getting security fixes soon, or already has. Plan the upgrade.",
+    bulk: null,
+  },
   config: { title: "Deploy needed", why: "Settings changed since the last deploy.", bulk: "Deploy" },
 };
 
@@ -218,6 +224,7 @@ export const PROBLEM_GROUP_ORDER: ProblemGroup[] = [
   "backups",
   "certs",
   "security",
+  "lifecycle",
   "config",
 ];
 

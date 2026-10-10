@@ -28,6 +28,7 @@ const PHRASES: Record<string, Phrase> = {
   "app.image_updated": { text: "updated the image for" },
   "app.image_update_ignored": { text: "ignored image updates for" },
   "app.image_update_unignored": { text: "stopped ignoring image updates for" },
+  "app.image_track_changed": { text: "changed which major version is followed for" },
   "app.restarted": { text: "restarted" },
   "app.stopped": { text: "stopped" },
   "app.started": { text: "started" },

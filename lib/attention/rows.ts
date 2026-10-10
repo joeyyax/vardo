@@ -38,6 +38,7 @@ import { isRunActive } from "@/lib/self-update/decide";
 import pkg from "@/package.json";
 import { vardoUpdateRow } from "./vardo-update-row";
 import { getElevatedApps } from "@/lib/logging/error-rate";
+import { majorNoticeRows } from "./major-notice-rows";
 import { activityRows, getFleetActivity } from "./activity";
 import {
   APP_DOWN_WINDOW_HOURS,
@@ -453,6 +454,8 @@ export async function buildAttentionRows(
       action: { label: "Review all updates", href: "/updates" },
     });
   }
+
+  if (imageUpdatesEnabled) rows.push(...majorNoticeRows(updates.majorNotices));
 
   const backUp = (app: { id: string; name: string }) =>
     ({ label: "Back up now", run: "backup", app: { id: app.id, name: app.name } }) as const;

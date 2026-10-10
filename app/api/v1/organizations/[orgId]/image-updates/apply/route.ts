@@ -59,6 +59,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
         service: item.service,
         tag: item.tag,
         acknowledgeMigration: item.acknowledgeMigration,
+        allowMajor: false,
       }).catch((error) => ({
         ok: false as const,
         appId: item.appId,

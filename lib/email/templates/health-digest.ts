@@ -99,6 +99,12 @@ export function healthDigestMail(event: DigestHealthEvent, ctx: MailContext): No
       facts: event.imageUpdates.slice(0, 10).map((u) => ({ label: u.appName, value: plural(u.count, "update") })),
     });
   }
+  if (event.majorNotices?.length) {
+    sections.push({
+      title: "Versions reaching end of life",
+      facts: event.majorNotices.slice(0, 10).map((n) => ({ label: n.appName, value: n.detail })),
+    });
+  }
   const projects = event.projects.slice(0, 10).map((p) => {
     const issues = [p.failures && `${p.failures} failed`, p.backupFailures && `${p.backupFailures} backup`, p.cronFailures && `${p.cronFailures} cron`].filter(Boolean);
     return { label: p.name, value: `${plural(p.deploys, "deploy")}${issues.length ? ` · ${issues.join(", ")}` : ""}` };
