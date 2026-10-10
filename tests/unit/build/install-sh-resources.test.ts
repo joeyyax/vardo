@@ -56,13 +56,13 @@ describe("ensure_redis_mem", () => {
   };
 
   it("marks the lines it writes as derived", () => {
-    expect(run("", 8000)).toContain("# derived: VARDO_REDIS_MEM=512m VARDO_REDIS_MAXMEMORY=384mb\n");
+    expect(run("", 8000)).toContain("# derived: VARDO_REDIS_MEM=512m VARDO_REDIS_MAXMEMORY=320mb\n");
   });
 
   it("resizes derived values after the host grows", () => {
     const after = run(run("", 8000), 64000);
-    expect(envOf(after)).toMatchObject({ VARDO_REDIS_MEM: "1024m", VARDO_REDIS_MAXMEMORY: "768mb" });
-    expect(after).toContain("# derived: VARDO_REDIS_MEM=1024m VARDO_REDIS_MAXMEMORY=768mb\n");
+    expect(envOf(after)).toMatchObject({ VARDO_REDIS_MEM: "1024m", VARDO_REDIS_MAXMEMORY: "640mb" });
+    expect(after).toContain("# derived: VARDO_REDIS_MEM=1024m VARDO_REDIS_MAXMEMORY=640mb\n");
     expect(after.match(/VARDO_REDIS_MEM=/g)).toHaveLength(2);
   });
 
