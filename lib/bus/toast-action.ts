@@ -43,6 +43,8 @@ export function toastActionFor(
       return canLinkToAdmin
         ? { label: "View domains", url: "/admin/settings/domain" }
         : undefined;
+    case "system.integration-permissions":
+      return { label: event.fixLabel, url: event.fixUrl };
     default:
       return undefined;
   }

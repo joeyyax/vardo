@@ -112,6 +112,8 @@ export function subjectLine(event: BusEvent): string {
       return event.daysLeft <= 0
         ? `✗ Certificate expired · ${event.domain}`
         : `⚠ Certificate expires in ${event.daysLeft} d · ${event.domain}`;
+    case "system.integration-permissions":
+      return `⚠ ${event.title}`;
     case "system.update-available":
       return [
         "↑ Vardo update",

@@ -19,6 +19,7 @@ export const EVENT_CATEGORIES = {
     "system.restart-loop",
     "system.cert-expiring",
     "system.update-available",
+    "system.integration-permissions",
   ],
   lifecycle: [
     "system.shutdown",
@@ -325,6 +326,22 @@ export type SystemCertExpiringEvent = {
   daysLeft: number;
   expiresAt: string;
   resolver: string;
+};
+
+/** A Git provider integration lacks a permission Vardo needs. */
+export type SystemIntegrationPermissionsEvent = {
+  type: "system.integration-permissions";
+  title: string;
+  message: string;
+  provider: "github" | "gitlab" | "gitea";
+  /** "app" when the App's owner must add permissions, "installation" when an account must accept them. */
+  scope: "app" | "installation";
+  /** The App's slug or the installing account. */
+  account: string;
+  missing: string[];
+  features: string[];
+  fixUrl: string;
+  fixLabel: string;
 };
 
 /** One commit in an update's changelog. */
@@ -682,6 +699,7 @@ export type BusEvent =
   | SystemRestartLoopEvent
   | SystemCertExpiringEvent
   | SystemUpdateAvailableEvent
+  | SystemIntegrationPermissionsEvent
   | SecurityFileExposedEvent
   | SecurityScanFindingsEvent
   | SecurityDomainClaimedEvent

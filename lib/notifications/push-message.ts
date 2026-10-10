@@ -17,7 +17,7 @@ export type PushMessage = {
   summary: string;
   severity: PushSeverity;
   facts: PushFact[];
-  /** A console page, never the app's own domain. */
+  /** A console page, never the app's own domain, except an integration fix on the provider. */
   url?: string;
   urlLabel?: string;
   instanceName: string;
@@ -58,7 +58,10 @@ export function pushMessageFor(event: BusEvent, ctx: MailContext): PushMessage |
   if (!body) return null;
 
   const candidates = [body.action, ...(body.links ?? [])].filter((l) => l !== undefined);
-  const link = candidates.find((l) => l.href.startsWith(`${ctx.baseUrl}/`) || l.href === ctx.baseUrl);
+  // An integration's fix lives on the provider's site.
+  const link = event.type === "system.integration-permissions"
+    ? body.action
+    : candidates.find((l) => l.href.startsWith(`${ctx.baseUrl}/`) || l.href === ctx.baseUrl);
   const summary = truncate(body.preheader ?? body.paragraphs?.[0] ?? event.message ?? "", SUMMARY_MAX);
   const facts = (body.facts ?? body.sections?.[0]?.facts ?? [])
     .filter((f) => f.label.trim() && f.value.trim() && truncate(f.value, SUMMARY_MAX) !== summary)
