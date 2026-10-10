@@ -7,12 +7,13 @@ import { toast } from "@/lib/messenger";
 import { Loader2, Bell, AlertCircle } from "lucide-react";
 import { EVENT_CATEGORIES, type BusEventType, type EventCategory } from "@/lib/bus/events";
 import { CATEGORY_LABELS, EVENT_LABELS } from "@/lib/notifications/labels";
+import type { ChannelType } from "@/lib/notifications/channel-types";
 import { CRITICAL_EVENT_TYPES, CHANNEL_TYPE_DEFAULTS } from "@/lib/notifications/channel-defaults";
 
 type Channel = {
   id: string;
   name: string;
-  type: "email" | "slack" | "webhook";
+  type: ChannelType;
   enabled: boolean;
 };
 
