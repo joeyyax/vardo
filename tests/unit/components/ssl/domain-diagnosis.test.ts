@@ -5,31 +5,55 @@ const now = Date.parse("2026-10-08T00:00:00Z");
 const day = 24 * 60 * 60 * 1000;
 
 describe("dnsFactsFromCheck + diagnoseDns", () => {
-  it("reads a configured domain as connected", () => {
-    const d = diagnoseDns(dnsFactsFromCheck({ status: "configured", resolves: true, configured: true, records: { a: ["1.2.3.4"] } }));
+  const diagnose = (data: Parameters<typeof dnsFactsFromCheck>[0]) => diagnoseDns(dnsFactsFromCheck(data));
+
+  it("reads a verified domain as connected", () => {
+    const d = diagnose({ status: "configured", resolves: true, configured: true, verified: true, records: { a: ["198.51.100.4"] } });
     expect(d.state).toBe("connected");
+    expect(d.hint).toBeUndefined();
   });
 
-  it("tells wrong IP from no records", () => {
-    const wrong = diagnoseDns(
-      dnsFactsFromCheck({ status: "wrong-target", resolves: true, configured: false, reachable: false, serverIp: "9.9.9.9", records: { a: ["1.2.3.4"] } }),
-    );
-    expect(wrong.state).toBe("not-responding");
-    const wrongIp = diagnoseDns(
-      dnsFactsFromCheck({ status: "wrong-target", resolves: true, configured: false, reachable: true, serverIp: "9.9.9.9", records: { a: ["1.2.3.4"] } }),
-    );
-    expect(wrongIp.state).toBe("wrong-ip");
-    expect(wrongIp.hint).toContain("9.9.9.9");
-    expect(diagnoseDns(dnsFactsFromCheck({ status: "no-records", resolves: false, configured: false })).state).toBe("no-records");
+  it("says when only the records vouch for it", () => {
+    const d = diagnose({ status: "configured", resolves: true, configured: true, verified: false, records: { a: ["192.0.2.10"] } });
+    expect(d.state).toBe("connected");
+    expect(d.hint).toContain("couldn't reach");
   });
 
-  it("names the Cloudflare proxy", () => {
-    const d = diagnoseDns(dnsFactsFromCheck({ status: "configured", resolves: true, configured: true, proxied: true, proxyProvider: "cloudflare", records: { a: ["104.16.0.1"] } }));
-    expect(d.label).toBe("Connected (via Cloudflare)");
+  it("names the proxy from the check", () => {
+    const cf = diagnose({ status: "configured", resolves: true, configured: true, verified: true, proxied: true, proxyProvider: "cloudflare" });
+    expect(cf.label).toBe("Connected (via Cloudflare)");
+    expect(cf.hint).toContain("nested subdomains");
+    const other = diagnose({ status: "configured", resolves: true, configured: true, verified: true, proxied: true, proxyProvider: "proxy" });
+    expect(other.state).toBe("proxied");
+    expect(other.label).toBe("Connected (via proxy)");
+    expect(other.hint).toBeUndefined();
+  });
+
+  it("calls a domain answered by someone else another server", () => {
+    const d = diagnose({ status: "wrong-target", resolves: true, configured: false, reachable: true, serverIp: "192.0.2.10", records: { a: ["198.51.100.4"] } });
+    expect(d).toMatchObject({ state: "other-server", label: "Reaches another server", tone: "error" });
+    expect(d.hint).toContain("198.51.100.4");
+    expect(d.hint).toContain("192.0.2.10");
+    const proxied = diagnose({ status: "wrong-target", resolves: true, configured: false, reachable: true, proxyProvider: "cloudflare", records: { a: ["198.51.100.4"] } });
+    expect(proxied.hint).toContain("through Cloudflare");
+  });
+
+  it("tells silence from missing records", () => {
+    const silent = diagnose({ status: "not-responding", resolves: true, configured: false, reachable: false, records: { a: ["198.51.100.4"] } });
+    expect(silent.state).toBe("not-responding");
+    expect(silent.hint).toContain("198.51.100.4");
+    const origin = diagnose({ status: "not-responding", resolves: true, configured: false, reachable: false, proxyProvider: "cloudflare" });
+    expect(origin.hint).toContain("Cloudflare answers");
+    expect(diagnose({ status: "no-records", resolves: false, configured: false }).state).toBe("no-records");
   });
 
   it("keeps a failed lookup apart from missing records", () => {
-    expect(diagnoseDns(dnsFactsFromCheck({ status: "error" })).state).toBe("error");
+    expect(diagnose({ status: "error" }).state).toBe("error");
+  });
+
+  it("reads the admin check shape directly", () => {
+    expect(diagnoseDns({ resolved: true, ips: ["198.51.100.4"], matches: false, reachable: true }).state).toBe("other-server");
+    expect(diagnoseDns({ resolved: true, ips: ["198.51.100.4"], matches: false, failed: true }).state).toBe("error");
   });
 });
 

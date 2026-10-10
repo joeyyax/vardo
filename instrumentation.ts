@@ -34,6 +34,8 @@ export async function register() {
     startCloudflareOnlySync();
     const { syncConsolePublicRoute } = await import("./lib/docker/console-lock");
     await syncConsolePublicRoute().catch((err) => log.warn("Failed to write the console's public route:", err));
+    const { writeReachRoute } = await import("./lib/docker/reach-route");
+    await writeReachRoute().catch((err) => log.warn("Failed to write the domain check route:", err));
     const { regenerateExternalRoutesConfig } = await import("./lib/ssl/generate-external-routes-config");
     await regenerateExternalRoutesConfig().catch((err) => log.warn("Failed to write external routes:", err));
 
