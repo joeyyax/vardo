@@ -10,6 +10,7 @@ import { InviteEmail } from "@/lib/email/templates/invite";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { generateInvitationToken, invitationUrl } from "@/lib/invitations/token";
 import { requirePlugin } from "@/lib/api/require-plugin";
+import { SYSTEM_ORG_NO_INVITES } from "@/lib/auth/system-org";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
@@ -69,6 +70,10 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
 
     const gate = await requirePlugin("teams");
     if (gate) return gate;
+
+    if (org.organization.isSystemManaged) {
+      return NextResponse.json({ error: SYSTEM_ORG_NO_INVITES }, { status: 403 });
+    }
 
     const body = await request.json();
     const parsed = createInvitationSchema.safeParse(body);

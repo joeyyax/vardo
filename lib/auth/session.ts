@@ -6,6 +6,7 @@ import { memberships, apiTokens, user } from "@/lib/db/schema";
 import { findApiToken, type TokenScope } from "@/lib/auth/api-token";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { tokenScopeCapabilities } from "@/lib/auth/permissions";
+import { isInstanceAdminUser } from "@/lib/auth/system-org";
 import { eq, and } from "drizzle-orm";
 
 export const CURRENT_ORG_COOKIE = "host_current_org";
@@ -90,6 +91,18 @@ export const getSession = cache(async (): Promise<SessionResult | null> => {
   } as SessionResult;
 });
 
+const instanceAdmin = cache(isInstanceAdminUser);
+
+/** Drops system-org memberships unless the user is an instance admin, so demotion takes effect without a restart. */
+async function allowedMemberships<T extends { organization: { isSystemManaged: boolean } }>(
+  userId: string,
+  rows: T[],
+): Promise<T[]> {
+  if (!rows.some((m) => m.organization.isSystemManaged)) return rows;
+  if (await instanceAdmin(userId)) return rows;
+  return rows.filter((m) => !m.organization.isSystemManaged);
+}
+
 /** Current org: the token's bound org, or the cookie preference then first membership. */
 export const getCurrentOrg = cache(async () => {
   const session = await getSession();
@@ -105,7 +118,7 @@ export const getCurrentOrg = cache(async () => {
     : (await cookies()).get(CURRENT_ORG_COOKIE)?.value;
 
   if (preferredOrgId) {
-    const membership = await db.query.memberships.findFirst({
+    const found = await db.query.memberships.findFirst({
       where: and(
         eq(memberships.userId, session.user.id),
         eq(memberships.organizationId, preferredOrgId)
@@ -114,6 +127,7 @@ export const getCurrentOrg = cache(async () => {
         organization: true,
       },
     });
+    const [membership] = found ? await allowedMemberships(session.user.id, [found]) : [];
 
     const showSystemOrgs = await isFeatureEnabledAsync("selfManagement");
     if (membership && (showSystemOrgs || !membership.organization.isSystemManaged)) {
@@ -133,12 +147,15 @@ export const getCurrentOrg = cache(async () => {
   if (isToken) return null;
 
   const showSystemOrgs = await isFeatureEnabledAsync("selfManagement");
-  const allMemberships = await db.query.memberships.findMany({
-    where: eq(memberships.userId, session.user.id),
-    with: {
-      organization: true,
-    },
-  });
+  const allMemberships = await allowedMemberships(
+    session.user.id,
+    await db.query.memberships.findMany({
+      where: eq(memberships.userId, session.user.id),
+      with: {
+        organization: true,
+      },
+    }),
+  );
 
   const membership = allMemberships.find(
     (m) => showSystemOrgs || !m.organization.isSystemManaged,
@@ -196,12 +213,15 @@ export const getUserOrganizations = cache(async () => {
     return [];
   }
 
-  const userMemberships = await db.query.memberships.findMany({
-    where: eq(memberships.userId, session.user.id),
-    with: {
-      organization: true,
-    },
-  });
+  const userMemberships = await allowedMemberships(
+    session.user.id,
+    await db.query.memberships.findMany({
+      where: eq(memberships.userId, session.user.id),
+      with: {
+        organization: true,
+      },
+    }),
+  );
 
   const showSystemOrgs = await isFeatureEnabledAsync("selfManagement");
 

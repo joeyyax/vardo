@@ -2,11 +2,18 @@ import { and, eq, gt } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { db } from "@/lib/db";
 import { invitations, memberships } from "@/lib/db/schema";
+import { mayBeMember } from "@/lib/auth/system-org";
 
 type Invitation = typeof invitations.$inferSelect;
 
-/** Claims a pending, unexpired invitation and adds the membership. False when it was revoked, expired or already used. */
-export async function claimInvitation(invitation: Invitation, userId: string): Promise<boolean> {
+export type ClaimResult = "claimed" | "invalid" | "not-allowed";
+
+/** Claims a pending, unexpired invitation and adds the membership. "invalid" when it was revoked, expired or already used. */
+export async function claimInvitation(invitation: Invitation, userId: string): Promise<ClaimResult> {
+  if (invitation.scope === "org" && invitation.targetId && !(await mayBeMember(invitation.targetId, userId))) {
+    return "not-allowed";
+  }
+
   return db.transaction(async (tx) => {
     const [claimed] = await tx
       .update(invitations)
@@ -19,7 +26,7 @@ export async function claimInvitation(invitation: Invitation, userId: string): P
         ),
       )
       .returning({ id: invitations.id });
-    if (!claimed) return false;
+    if (!claimed) return "invalid";
 
     if (invitation.scope === "org" && invitation.targetId) {
       const existing = await tx.query.memberships.findFirst({
@@ -34,6 +41,6 @@ export async function claimInvitation(invitation: Invitation, userId: string): P
         });
       }
     }
-    return true;
+    return "claimed";
   });
 }

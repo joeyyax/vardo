@@ -27,6 +27,7 @@ import {
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { Card } from "@/components/ui/card";
 import { can } from "@/lib/auth/permissions";
+import { SYSTEM_ORG_MEMBERS_ONLY_ADMINS } from "@/lib/auth/system-org-messages";
 import { OrgSwitcher } from "@/components/layout/org-switcher";
 import { getInitials } from "@/lib/initials";
 import type { Organization } from "@/lib/types";
@@ -49,6 +50,10 @@ type TeamMembersProps = {
   organizations: Organization[];
   /** Skips the page header when embedded in settings. */
   embedded?: boolean;
+  /** The built-in system org, whose members must be instance admins. */
+  systemOrg?: boolean;
+  /** The viewer is an instance admin. */
+  instanceAdmin?: boolean;
 };
 
 const ROLE_LABELS: Record<string, string> = {
@@ -57,7 +62,7 @@ const ROLE_LABELS: Record<string, string> = {
   member: "Member",
 };
 
-export function TeamMembers({ members: initialMembers, orgId, orgName, currentRole, currentUserId, organizations, embedded }: TeamMembersProps) {
+export function TeamMembers({ members: initialMembers, orgId, orgName, currentRole, currentUserId, organizations, embedded, systemOrg = false, instanceAdmin = false }: TeamMembersProps) {
   const router = useRouter();
   const [members, setMembers] = useState(initialMembers);
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -67,7 +72,7 @@ export function TeamMembers({ members: initialMembers, orgId, orgName, currentRo
   const [removeTarget, setRemoveTarget] = useState<Member | null>(null);
   const [removing, setRemoving] = useState(false);
 
-  const canManage = can(currentRole, "org.members.manage");
+  const canManage = can(currentRole, "org.members.manage") && (!systemOrg || instanceAdmin);
 
   async function handleInvite() {
     if (!inviteEmail.trim()) return;
@@ -172,9 +177,14 @@ export function TeamMembers({ members: initialMembers, orgId, orgName, currentRo
       <div className="space-y-6">
         {embedded ? (
           <div className="flex items-center justify-between">
-            <p className="text-sm text-muted-foreground">
-              {members.length} {members.length === 1 ? "member" : "members"}
-            </p>
+            <div className="space-y-1">
+              <p className="text-sm text-muted-foreground">
+                {members.length} {members.length === 1 ? "member" : "members"}
+              </p>
+              {systemOrg && (
+                <p className="text-sm text-muted-foreground">{SYSTEM_ORG_MEMBERS_ONLY_ADMINS}</p>
+              )}
+            </div>
             {canManage && (
               <Button size="sm" onClick={() => setInviteOpen(true)}>
                 <Plus className="mr-1.5 size-4" />

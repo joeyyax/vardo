@@ -3,6 +3,7 @@ import { apps, memberships, organizations, projects } from "@/lib/db/schema";
 import { and, eq, inArray, sql, type SQL } from "drizzle-orm";
 import type { PgColumn } from "drizzle-orm/pg-core";
 import { can, type Capability } from "@/lib/auth/permissions";
+import { isInstanceAdminUser } from "@/lib/auth/system-org";
 import type { McpAuthContext } from "./auth";
 
 // Organization scoping for MCP tools, checked against live memberships on every request.
@@ -22,8 +23,10 @@ export async function canAccessOrg(
       eq(memberships.organizationId, orgId)
     ),
     columns: { role: true },
+    with: { organization: { columns: { isSystemManaged: true } } },
   });
 
+  if (membership?.organization?.isSystemManaged && !(await isInstanceAdminUser(context.userId))) return false;
   return can({ role: membership?.role, scopes: context.scopes }, cap);
 }
 
@@ -32,10 +35,15 @@ export async function accessibleOrgIds(
   context: McpAuthContext,
   cap: Capability
 ): Promise<string[]> {
-  const rows = await db.query.memberships.findMany({
+  const all = await db.query.memberships.findMany({
     where: eq(memberships.userId, context.userId),
     columns: { organizationId: true, role: true },
+    with: { organization: { columns: { isSystemManaged: true } } },
   });
+  const rows =
+    all.some((r) => r.organization?.isSystemManaged) && !(await isInstanceAdminUser(context.userId))
+      ? all.filter((r) => !r.organization?.isSystemManaged)
+      : all;
 
   const memberOrgIds = [
     ...new Set(rows.filter((r) => can({ role: r.role, scopes: context.scopes }, cap)).map((r) => r.organizationId)),

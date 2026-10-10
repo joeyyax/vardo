@@ -7,6 +7,7 @@ import { db } from "@/lib/db";
 import { memberships } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { apiError } from "@/lib/api/error-response";
+import { mayBeMember, SYSTEM_ORG_MEMBERS_ONLY_ADMINS } from "@/lib/auth/system-org";
 
 const switchOrgSchema = z.object({
   organizationId: z.string().min(1, "organizationId is required"),
@@ -37,6 +38,10 @@ async function handler(request: NextRequest) {
 
   if (!membership) {
     return NextResponse.json({ error: "Not a member of this organization" }, { status: 403 });
+  }
+
+  if (!(await mayBeMember(orgId, session.user.id))) {
+    return NextResponse.json({ error: SYSTEM_ORG_MEMBERS_ONLY_ADMINS }, { status: 403 });
   }
 
   const cookieStore = await cookies();

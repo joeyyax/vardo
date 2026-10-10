@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { returning, insertValues, membershipFind, whereArgs } = vi.hoisted(() => ({
+const { returning, insertValues, membershipFind, whereArgs, mayBeMember } = vi.hoisted(() => ({
+  mayBeMember: vi.fn(),
   returning: vi.fn(),
   insertValues: vi.fn(),
   membershipFind: vi.fn(),
@@ -30,6 +31,8 @@ vi.mock("@/lib/db", () => {
   return { db: { transaction: async (fn: (t: typeof tx) => unknown) => fn(tx) } };
 });
 
+vi.mock("@/lib/auth/system-org", () => ({ mayBeMember }));
+
 const { claimInvitation } = await import("@/lib/invitations/accept");
 
 const invitation = {
@@ -44,6 +47,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   whereArgs.length = 0;
   membershipFind.mockResolvedValue(undefined);
+  mayBeMember.mockResolvedValue(true);
 });
 
 describe("claimInvitation", () => {
@@ -60,13 +64,22 @@ describe("claimInvitation", () => {
 
   it("adds no membership when the row wasn't claimable, e.g. revoked", async () => {
     returning.mockResolvedValue([]);
-    expect(await claimInvitation(invitation, "u-1")).toBe(false);
+    expect(await claimInvitation(invitation, "u-1")).toBe("invalid");
     expect(insertValues).not.toHaveBeenCalled();
   });
 
   it("adds the membership once claimed", async () => {
     returning.mockResolvedValue([{ id: "inv-1" }]);
-    expect(await claimInvitation(invitation, "u-1")).toBe(true);
+    expect(await claimInvitation(invitation, "u-1")).toBe("claimed");
     expect(insertValues).toHaveBeenCalledWith(expect.objectContaining({ organizationId: "org-1", userId: "u-1" }));
+  });
+
+  it("refuses a user the target org won't take, before claiming", async () => {
+    mayBeMember.mockResolvedValue(false);
+    returning.mockResolvedValue([{ id: "inv-1" }]);
+    expect(await claimInvitation(invitation, "u-1")).toBe("not-allowed");
+    expect(mayBeMember).toHaveBeenCalledWith("org-1", "u-1");
+    expect(returning).not.toHaveBeenCalled();
+    expect(insertValues).not.toHaveBeenCalled();
   });
 });

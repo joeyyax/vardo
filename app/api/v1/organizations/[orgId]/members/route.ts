@@ -7,6 +7,7 @@ import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { requirePlugin } from "@/lib/api/require-plugin";
+import { mayBeMember, SYSTEM_ORG_MEMBERS_ONLY_ADMINS } from "@/lib/auth/system-org";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
@@ -81,6 +82,10 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
         { error: "No user found with that email. They need to create an account first." },
         { status: 404 }
       );
+    }
+
+    if (!(await mayBeMember(orgId, targetUser.id))) {
+      return NextResponse.json({ error: SYSTEM_ORG_MEMBERS_ONLY_ADMINS }, { status: 403 });
     }
 
     const existing = await db.query.memberships.findFirst({
