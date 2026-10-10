@@ -1,7 +1,8 @@
 import { nanoid } from "nanoid";
 import { db } from "@/lib/db";
 import { appSecurityScans, apps } from "@/lib/db/schema";
-import { and, eq, desc, inArray } from "drizzle-orm";
+import { and, eq, desc, inArray, ne } from "drizzle-orm";
+import type { ScanAppReport, ScanFindingLine } from "@/lib/bus/events";
 import { logger } from "@/lib/logger";
 import { checkFileExposure } from "./file-exposure";
 import { checkSecurityHeaders } from "./headers";
@@ -20,8 +21,112 @@ type RunScanOpts = {
   trigger: ScanTrigger;
 };
 
-/** Runs a security scan for an app, persists it and notifies on findings. Never throws. */
+/** What a scan found, and what's new since the app's previous one. */
+export type ScanOutcome = {
+  scanId: string;
+  appName: string;
+  domain?: string;
+  findings: SecurityFinding[];
+  /** New or changed since the previous completed scan, info left out. */
+  fresh: SecurityFinding[];
+  /** On the previous scan, not on this one. */
+  resolved: number;
+};
+
+function findingKey(f: SecurityFinding): string {
+  return `${f.type}:${f.title}`;
+}
+
+/** Findings that are new, or whose severity changed, since `previous`. Info is never news. Null previous means a first scan. */
+export function diffFindings(
+  previous: SecurityFinding[] | null,
+  current: SecurityFinding[],
+): { fresh: SecurityFinding[]; resolved: number } {
+  const before = new Map((previous ?? []).map((f) => [findingKey(f), f]));
+  const fresh = current.filter((f) => f.severity !== "info" && before.get(findingKey(f))?.severity !== f.severity);
+  const now = new Set(current.map(findingKey));
+  const resolved = [...before.keys()].filter((k) => !now.has(k)).length;
+  return { fresh, resolved };
+}
+
+export function findingLine(f: SecurityFinding): ScanFindingLine {
+  return { severity: f.severity, title: f.title, description: f.description };
+}
+
+export function appReport(appId: string, outcome: ScanOutcome, findings: SecurityFinding[]): ScanAppReport {
+  return {
+    appId,
+    appName: outcome.appName,
+    ...(outcome.domain ? { domain: outcome.domain } : {}),
+    findings: findings.map(findingLine),
+    ...(outcome.resolved ? { resolved: outcome.resolved } : {}),
+  };
+}
+
+function countOf(findings: SecurityFinding[], severity: SecurityFinding["severity"]): number {
+  return findings.filter((f) => f.severity === severity).length;
+}
+
+async function emitScanFindings(
+  organizationId: string,
+  reports: { appId: string; outcome: ScanOutcome; findings: SecurityFinding[] }[],
+  trigger: ScanTrigger,
+  scanned?: number,
+): Promise<void> {
+  if (reports.length === 0) return;
+  try {
+    const { emit } = await import("@/lib/notifications/dispatch");
+    const [first] = reports;
+    const all = reports.flatMap((r) => r.findings);
+    const criticalCount = countOf(all, "critical");
+    const warningCount = countOf(all, "warning");
+    const names = reports.map((r) => r.outcome.appName).join(", ");
+    emit(organizationId, {
+      type: "security.scan-findings",
+      title: trigger === "manual" ? `Security scan: ${first.outcome.appName}` : `New security findings: ${names}`,
+      message:
+        trigger === "manual"
+          ? `${all.length} finding${all.length === 1 ? "" : "s"} on ${first.outcome.appName}.`
+          : `${all.length} new finding${all.length === 1 ? "" : "s"} on ${names}.`,
+      appId: first.appId,
+      appName: first.outcome.appName,
+      scanId: first.outcome.scanId,
+      criticalCount,
+      warningCount,
+      domain: first.outcome.domain,
+      trigger,
+      apps: reports.map((r) => appReport(r.appId, r.outcome, r.findings)),
+      ...(scanned !== undefined ? { scanned } : {}),
+    });
+  } catch (err) {
+    log.warn(`Failed to emit scan notification: ${err instanceof Error ? err.message : err}`);
+  }
+}
+
+/** Scans an app and persists it; a manual scan reports its result, a post-deploy scan what's new. Never throws. */
 export async function runSecurityScan(opts: RunScanOpts): Promise<string | null> {
+  const outcome = await scanApp(opts);
+  if (!outcome) return null;
+  if (opts.trigger === "manual") {
+    await emitScanFindings(opts.organizationId, [{ appId: opts.appId, outcome, findings: outcome.findings }], "manual");
+  } else if (opts.trigger === "deploy" && outcome.fresh.length > 0) {
+    await emitScanFindings(opts.organizationId, [{ appId: opts.appId, outcome, findings: outcome.fresh }], "deploy");
+  }
+  return outcome.scanId;
+}
+
+/** The app's last completed scan before `scanId`. */
+async function previousFindings(appId: string, scanId: string): Promise<SecurityFinding[] | null> {
+  const previous = await db.query.appSecurityScans.findFirst({
+    where: and(eq(appSecurityScans.appId, appId), eq(appSecurityScans.status, "completed"), ne(appSecurityScans.id, scanId)),
+    orderBy: [desc(appSecurityScans.startedAt)],
+    columns: { findings: true },
+  });
+  return previous ? (previous.findings ?? []) : null;
+}
+
+/** Scans and persists one app. Null when it didn't run. */
+async function scanApp(opts: RunScanOpts): Promise<ScanOutcome | null> {
   const { appId, organizationId, trigger } = opts;
 
   // Guard against concurrent scans for the same app.
@@ -125,32 +230,12 @@ export async function runSecurityScan(opts: RunScanOpts): Promise<string | null>
       `[${appName}] Scan complete — ${criticalCount} critical, ${warningCount} warning, ${allFindings.length} total findings`,
     );
 
-    if (criticalCount > 0 || warningCount > 0) {
-      try {
-        const { emit } = await import("@/lib/notifications/dispatch");
-        const parts: string[] = [];
-        if (criticalCount > 0) parts.push(`${criticalCount} critical`);
-        if (warningCount > 0) parts.push(`${warningCount} warning`);
-
-        emit(organizationId, {
-          type: "security.scan-findings",
-          title: `Security findings: ${appName}`,
-          message: `${parts.join(", ")} finding${allFindings.length === 1 ? "" : "s"} detected on ${appName}.`,
-          appId,
-          appName,
-          scanId,
-          criticalCount,
-          warningCount,
-          domain: primaryDomain?.domain,
-        });
-      } catch (err) {
-        log.warn(`[${appName}] Failed to emit scan notification: ${err instanceof Error ? err.message : err}`);
-      }
-    }
+    const previous = await previousFindings(appId, scanId).catch(() => undefined);
+    const { fresh, resolved } = previous === undefined ? { fresh: [], resolved: 0 } : diffFindings(previous, allFindings);
 
     await pruneOldScans(appId);
 
-    return scanId;
+    return { scanId, appName, domain: primaryDomain?.domain, findings: allFindings, fresh, resolved };
   } catch (err) {
     log.error(`Security scan failed for app ${appId}:`, err);
     await db
@@ -181,7 +266,7 @@ async function pruneOldScans(appId: string): Promise<void> {
   }
 }
 
-/** Scans every active app with a domain in an organization. */
+/** Scans every active app with a domain in an organization, then sends one email for what's new across them. */
 export async function runScheduledScans(organizationId: string): Promise<void> {
   const activeApps = await db.query.apps.findMany({
     where: eq(apps.organizationId, organizationId),
@@ -198,9 +283,18 @@ export async function runScheduledScans(organizationId: string): Promise<void> {
 
   log.info(`Scheduled scan: ${scannable.length} apps to scan in org ${organizationId}`);
 
+  const reports: { appId: string; outcome: ScanOutcome; findings: SecurityFinding[] }[] = [];
+  let scanned = 0;
   for (const app of scannable) {
-    await runSecurityScan({ appId: app.id, organizationId, trigger: "scheduled" }).catch((err) => {
+    const outcome = await scanApp({ appId: app.id, organizationId, trigger: "scheduled" }).catch((err) => {
       log.error(`Scheduled scan failed for ${app.name}:`, err);
+      return null;
     });
+    if (!outcome) continue;
+    scanned++;
+    if (outcome.fresh.length) reports.push({ appId: app.id, outcome, findings: outcome.fresh });
   }
+
+  // Nothing new stays out of the inbox; the digest counts the scans.
+  await emitScanFindings(organizationId, reports, "scheduled", scanned);
 }

@@ -117,6 +117,8 @@ export type BackupResult = {
   emptySource?: boolean;
   /** Skipped because the app no longer declares the volume. */
   undeclared?: boolean;
+  /** Skipped because the volume was removed or the engine can't capture the source. */
+  uncaptured?: boolean;
   durationMs: number;
 };
 
@@ -855,8 +857,30 @@ export async function runBackup(
   jobId: string,
   options: RunBackupOptions = {},
 ): Promise<BackupResult[]> {
+  if (options.trigger === MANUAL_TRIGGER && !options.runId) {
+    const runId = await openManualRun(jobId).catch(() => null);
+    if (runId) {
+      try {
+        return await runBackup(jobId, { ...options, runId });
+      } finally {
+        const { markJobDone } = await import("./runs");
+        await markJobDone(runId, jobId).catch(() => {});
+      }
+    }
+  }
   const label = `job ${jobId}${options.appIds ? ` (${options.appIds.length} app(s))` : ""}`;
   return trackBackupWork("backup", label, () => runBackupUntracked(jobId, options));
+}
+
+/** A run of its own for a job started by hand, so its summary always reports. */
+async function openManualRun(jobId: string): Promise<string | null> {
+  const job = await db.query.backupJobs.findFirst({
+    where: eq(backupJobs.id, jobId),
+    columns: { id: true, name: true, organizationId: true },
+  });
+  if (!job) return null;
+  const { startManualRun } = await import("./runs");
+  return startManualRun(job, new Date());
 }
 
 async function runBackupUntracked(
@@ -1081,6 +1105,7 @@ async function runBackupUntracked(
         storagePath: "",
         error: reason,
         undeclared: Boolean(vol.removedAt),
+        uncaptured: true,
         durationMs: finishedAt.getTime() - startedAt.getTime(),
       });
       continue;
@@ -1399,6 +1424,7 @@ async function recordRunResults(
       durationMs: r.durationMs,
       error: r.error,
       backupId: r.backupId,
+      ...(r.outcome === "skipped" && (r.paused || r.undeclared || r.uncaptured) ? { expected: true } : {}),
       at,
     });
     byOrg.set(orgId, items);

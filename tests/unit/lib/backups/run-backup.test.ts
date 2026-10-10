@@ -30,6 +30,8 @@ const {
   leases,
   volumeSizeMock,
   recordMock,
+  manualRunMock,
+  jobDoneMock,
 } = vi.hoisted(() => ({
   backupJobsFindFirst: vi.fn(),
   volumesFindMany: vi.fn(),
@@ -46,6 +48,8 @@ const {
   leases: new Set<string>(),
   volumeSizeMock: vi.fn(),
   recordMock: vi.fn(),
+  manualRunMock: vi.fn(),
+  jobDoneMock: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({
@@ -71,7 +75,7 @@ vi.mock("@/lib/db", () => ({
 }));
 vi.mock("child_process", () => ({ execFile: execFileMock, spawn: spawnMock }));
 vi.mock("@/lib/notifications/dispatch", () => ({ emit: emitMock }));
-vi.mock("@/lib/backups/runs", () => ({ recordBackupResults: recordMock }));
+vi.mock("@/lib/backups/runs", () => ({ recordBackupResults: recordMock, startManualRun: manualRunMock, markJobDone: jobDoneMock }));
 vi.mock("@/lib/docker/client", () => ({
   listContainers: listContainersMock,
   inspectContainer: vi.fn(),
@@ -93,7 +97,7 @@ vi.mock("@/lib/backups/storage-factory", () => ({
   createBackupStorage: () => ({ uploadStream: uploadMock, delete: vi.fn(), download: vi.fn() }),
 }));
 
-import { runBackup, runSucceeded } from "@/lib/backups/engine";
+import { MANUAL_TRIGGER, runBackup, runSucceeded } from "@/lib/backups/engine";
 import {
   DIRECTORY_SOURCE_MARKER,
   EMPTY_SOURCE_MARKER,
@@ -209,6 +213,8 @@ beforeEach(() => {
   spawnMock.mockReset().mockImplementation(spawnImpl);
   emitMock.mockReset();
   recordMock.mockReset();
+  manualRunMock.mockReset().mockResolvedValue("run_manual");
+  jobDoneMock.mockReset().mockResolvedValue(undefined);
   volumesFindMany.mockReset();
   backupsFindMany.mockReset().mockResolvedValue([]);
   backupsFindFirst.mockReset().mockResolvedValue(undefined);
@@ -933,5 +939,37 @@ describe("runBackup — volumes the app no longer declares", () => {
     expect(results[0]).toMatchObject({ outcome: "skipped", undeclared: true });
     expect(results[0].error).toMatch(/No longer declared/);
     expect(dockerRuns()).toHaveLength(0);
+  });
+});
+
+describe("runBackup — reporting", () => {
+  it("gives a run started by hand its own run, so its summary always reports", async () => {
+    backupJobsFindFirst.mockResolvedValue(job());
+    volumesPerApp([volume({ name: "a-data" })]);
+
+    await runBackup("job-1", { trigger: MANUAL_TRIGGER });
+
+    expect(manualRunMock).toHaveBeenCalledWith(expect.objectContaining({ id: "job-1", organizationId: "org-1" }), expect.any(Date));
+    expect(recordMock.mock.calls[0][2]).toEqual({ runId: "run_manual" });
+    expect(jobDoneMock).toHaveBeenCalledWith("run_manual", "job-1");
+  });
+
+  it("leaves a scheduled run's results to its nightly run", async () => {
+    backupJobsFindFirst.mockResolvedValue(job());
+    volumesPerApp([volume({ name: "a-data" })]);
+
+    await runBackup("job-1", { runId: "nightly_1" });
+
+    expect(manualRunMock).not.toHaveBeenCalled();
+    expect(recordMock.mock.calls[0][2]).toEqual({ runId: "nightly_1" });
+  });
+
+  it("marks a skip with a routine reason as expected, so it doesn't count as a problem", async () => {
+    backupJobsFindFirst.mockResolvedValue(job());
+    volumesPerApp([volume({ type: "bind", source: "/srv/app-a/data" })]);
+
+    await runBackup("job-1");
+
+    expect(recordMock.mock.calls[0][1][0]).toMatchObject({ outcome: "skipped", expected: true });
   });
 });

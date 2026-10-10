@@ -17,7 +17,10 @@ vi.mock("@/lib/digest/collector", async (importOriginal) => ({
 }));
 
 import { dbMock } from "@/tests/helpers/db";
-import { hasActivity, topAlerts, windowLabel } from "@/lib/digest/collector";
+import { backupRunRollup, hasActivity, scanRollup, topAlerts, windowLabel } from "@/lib/digest/collector";
+import { EMAIL_FIXTURES, FIXTURE_CONTEXT } from "@/lib/email/fixtures";
+import { renderNotificationEmail } from "@/lib/email/notification-email";
+import type { DigestHealthEvent } from "@/lib/bus/events";
 const { tickDigestJobs } = await import("@/lib/digest/tick");
 
 // Monday, Oct 12 2026, 08:20 UTC.
@@ -81,6 +84,39 @@ describe("digest content", () => {
   it("stays silent for a window where nothing happened", () => {
     expect(hasActivity(empty)).toBe(false);
     expect(hasActivity({ ...empty, alerts: { ...empty.alerts, open: 1 } })).toBe(true);
+  });
+
+  it("sends for a window where only scans ran, to say they found nothing new", () => {
+    expect(hasActivity({ ...empty, scans: { scanned: 12, apps: 12, lastRunAt: null, appsWithFindings: 0, critical: 0, warnings: 0 } })).toBe(true);
+  });
+
+  it("rolls scans up by each app's latest result", () => {
+    const at = (h: number) => new Date(Date.UTC(2026, 9, 11, h));
+    const rollup = scanRollup([
+      { appId: "a", status: "completed", criticalCount: 1, warningCount: 0, startedAt: at(2), completedAt: at(2) },
+      { appId: "a", status: "completed", criticalCount: 0, warningCount: 1, startedAt: at(3), completedAt: at(3) },
+      { appId: "b", status: "completed", criticalCount: 0, warningCount: 0, startedAt: at(2), completedAt: at(2) },
+      { appId: "c", status: "failed", criticalCount: 0, warningCount: 0, startedAt: at(4), completedAt: at(4) },
+    ]);
+    expect(rollup).toEqual({ scanned: 3, apps: 2, lastRunAt: at(3).toISOString(), appsWithFindings: 1, critical: 0, warnings: 1 });
+  });
+
+  it("counts backup runs and when the last one ended", () => {
+    const end = new Date(Date.UTC(2026, 9, 11, 2, 4));
+    expect(backupRunRollup([{ finishedAt: new Date(Date.UTC(2026, 9, 10, 2, 3)) }, { finishedAt: end }])).toEqual({ runs: 2, lastRunAt: end.toISOString() });
+    expect(backupRunRollup([])).toEqual({ runs: 0, lastRunAt: null });
+  });
+
+  it("puts scans and the last backup run in the digest email", async () => {
+    const base = EMAIL_FIXTURES.find((f) => f.name === "digest-daily")!.event as DigestHealthEvent;
+    const event: DigestHealthEvent = {
+      ...base,
+      backups: { ...base.backups, runs: 1, lastRunAt: "2026-10-11T09:04:00.000Z" },
+      scans: { scanned: 14, apps: 14, lastRunAt: "2026-10-11T09:20:00.000Z", appsWithFindings: 0, critical: 0, warnings: 0 },
+    };
+    const email = (await renderNotificationEmail(event, { ...FIXTURE_CONTEXT, timeZone: "America/Los_Angeles" }))!;
+    expect(email.text).toMatch(/Backups: .* · 1 run · last Oct 11, 02:04 PDT/);
+    expect(email.text).toMatch(/Security scans: 14 apps scanned, no open issues · last Oct 11, 02:20 PDT/);
   });
 
   it("counts alerts by their registry label", () => {

@@ -1,11 +1,11 @@
-import { summarizeApps } from "@/lib/backups/run-rules";
-import type { BackupRunStartedEvent, BackupSummaryApp, BackupSummaryEvent, BackupSummaryRow } from "@/lib/bus/events";
+import { isProblemRow, summarizeApps } from "@/lib/backups/run-rules";
+import type { BackupSummaryApp, BackupSummaryEvent, BackupSummaryRow } from "@/lib/bus/events";
 import { formatBytesIec } from "@/lib/metrics/format";
 import { formatDuration, plural } from "../format";
 import type { MailFact, MailTone, MailVisual, NotificationMailBody } from "./components";
 import { appPage, consolePage, footerFor, type MailContext } from "./context";
 import { backupColumns } from "./visuals";
-import { formatClockRange, UTC } from "@/lib/time-zone";
+import { formatClockRange, UTC, zonedDateKey } from "@/lib/time-zone";
 
 /** Charts for at most this many rows, the worst first. */
 const CHARTED_ROWS = 3;
@@ -63,7 +63,7 @@ function rowValue(row: BackupSummaryRow): string {
 }
 
 function rowFact(row: BackupSummaryRow, ctx: MailContext): MailFact {
-  const href = row.outcome === "failed" && row.appId ? appPage(ctx, row.appId, "backups") : undefined;
+  const href = row.appId && isProblemRow(row) ? appPage(ctx, row.appId, "backups") : undefined;
   return { label: rowLabel(row), value: rowValue(row), href };
 }
 
@@ -96,12 +96,14 @@ export function backupSummaryMail(event: BackupSummaryEvent, ctx: MailContext): 
   const failed = event.rows.filter((r) => r.outcome === "failed");
   const shrunk = event.rows.filter((r) => r.shrunk);
   const grew = event.rows.filter((r) => r.grew);
+  const skipped = event.rows.filter((r) => r.outcome === "skipped" && !r.expected);
+  const problemsOnly = event.run.problemsOnly === true;
   const stale = event.staleVolumes ?? [];
   const apps = event.apps ?? summarizeApps(event.rows);
   const total = event.succeeded + event.failed + event.skipped;
 
   const unfinished = event.run.unfinished ?? [];
-  const tone: MailTone = failed.length ? "fail" : shrunk.length || grew.length || stale.length || unfinished.length ? "warn" : "success";
+  const tone: MailTone = failed.length ? "fail" : shrunk.length || grew.length || skipped.length || stale.length || unfinished.length ? "warn" : "success";
   const heading = failed.length
     ? `${event.run.label}: ${failedHeading(failed)}`
     : `${event.run.label} finished`;
@@ -113,6 +115,8 @@ export function backupSummaryMail(event: BackupSummaryEvent, ctx: MailContext): 
   }
   if (shrunk.length) paragraphs.push("Some backups came out much smaller than usual. That can mean the data they copy went missing.");
   if (grew.length) paragraphs.push("Some backups came out much larger than last run. Check for runaway logs or data that belongs elsewhere.");
+  if (skipped.length) paragraphs.push(`${plural(skipped.length, "volume")} ${skipped.length === 1 ? "was" : "were"} skipped without a routine reason.`);
+  if (problemsOnly) paragraphs.push("Only what needs a look is listed. Everything else backed up as usual.");
   if (stale.length) paragraphs.push(`${plural(stale.length, "volume")} ${stale.length === 1 ? "hasn't" : "haven't"} had a successful backup in 48 hours.`);
 
   const visuals: MailVisual[] = [];
@@ -141,19 +145,22 @@ export function backupSummaryMail(event: BackupSummaryEvent, ctx: MailContext): 
   facts.push({ label: "Ran", value: formatClockRange(new Date(event.windowStart), new Date(event.windowEnd), ctx.timeZone ?? UTC) });
 
   const sections: { title: string; facts: MailFact[] }[] = [];
+  const tz = ctx.timeZone ?? UTC;
   const attention: MailFact[] = [
-    ...[...failed, ...shrunk, ...grew].map((r) => attentionFact(r, ctx)),
+    ...event.rows.filter(isProblemRow).map((r) => attentionFact(r, ctx)),
     ...stale.map((v) => ({
       label: v.appName === v.volumeName ? v.volumeName : `${v.appName} / ${v.volumeName}`,
-      value: v.lastSuccessAt ? `No success since ${new Date(v.lastSuccessAt).toISOString().slice(0, 10)}` : "Never succeeded",
+      value: v.lastSuccessAt ? `No success since ${zonedDateKey(new Date(v.lastSuccessAt), tz)}` : "Never succeeded",
     })),
   ];
   if (attention.length) sections.push({ title: "Needs a look", facts: attention });
-  if (apps.length) sections.push({ title: "By app", facts: apps.map((a) => appFact(a, ctx)) });
-  const rest = event.rows.filter((r) => r.kind !== "backup" && r.outcome !== "failed");
-  for (const kind of ["restore", "import", "drill"] as const) {
-    const ofKind = rest.filter((r) => r.kind === kind);
-    if (ofKind.length) sections.push({ title: KIND_TITLES[kind], facts: ofKind.map((r) => rowFact(r, ctx)) });
+  if (!problemsOnly) {
+    if (apps.length) sections.push({ title: "By app", facts: apps.map((a) => appFact(a, ctx)) });
+    const rest = event.rows.filter((r) => r.kind !== "backup" && r.outcome !== "failed");
+    for (const kind of ["restore", "import", "drill"] as const) {
+      const ofKind = rest.filter((r) => r.kind === kind);
+      if (ofKind.length) sections.push({ title: KIND_TITLES[kind], facts: ofKind.map((r) => rowFact(r, ctx)) });
+    }
   }
   sections.push({ title: "Run", facts });
 
@@ -165,42 +172,7 @@ export function backupSummaryMail(event: BackupSummaryEvent, ctx: MailContext): 
     paragraphs,
     visuals,
     sections,
-    action: { label: "View backups", href: consolePage(ctx, "/backups") },
-    footer: footerFor(ctx),
-  };
-}
-
-/** Apps listed before the rest are counted. */
-const LISTED_APPS = 40;
-
-export function backupRunStartedMail(event: BackupRunStartedEvent, ctx: MailContext): NotificationMailBody {
-  const facts: MailFact[] = [
-    { label: "Covers", value: `${plural(event.volumeCount, "volume")} across ${plural(event.apps.length, "app")}` },
-    { label: "Should take", value: event.estimatedMs ? `about ${formatDuration(event.estimatedMs)}` : "No estimate yet, first run" },
-  ];
-  if (event.target) facts.push({ label: "Writing to", value: event.target });
-  const shown = event.apps.slice(0, LISTED_APPS);
-  return {
-    tone: "info",
-    status: "Starting",
-    mark: "↻",
-    heading: `${event.label} starting`,
-    preheader: event.message,
-    paragraphs: ["Failures email as they happen. A summary follows when every job is done."],
-    facts,
-    sections: [
-      {
-        title: "Backing up",
-        facts: [
-          ...shown.map((a) => ({
-            label: a.appName,
-            value: `${plural(a.volumes.length, "volume")}${a.lastBytes !== undefined ? ` · ${formatBytesIec(a.lastBytes)} last run` : ""}`,
-          })),
-          ...(event.apps.length > shown.length ? [{ label: "", value: `and ${plural(event.apps.length - shown.length, "more app")}` }] : []),
-        ],
-      },
-    ],
-    action: { label: "View backups", href: consolePage(ctx, "/backups") },
+    action: { label: problemsOnly ? "View the full run" : "View backups", href: consolePage(ctx, "/backups") },
     footer: footerFor(ctx),
   };
 }

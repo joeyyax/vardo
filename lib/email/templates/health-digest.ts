@@ -4,7 +4,7 @@ import { plural } from "../format";
 import type { MailFact, MailTone, MailVisual, NotificationMailBody } from "./components";
 import { consolePage, footerFor, type MailContext } from "./context";
 import { sparkColumns } from "./visuals";
-import { UTC, zonedParts, zoneAbbreviation } from "@/lib/time-zone";
+import { formatDayTime, UTC, zonedParts, zoneAbbreviation } from "@/lib/time-zone";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -53,8 +53,25 @@ export function healthDigestMail(event: DigestHealthEvent, ctx: MailContext): No
 
   const facts: MailFact[] = [
     { label: "Deploys", value: rate(deploys.succeeded, deploys.total) },
-    { label: "Backups", value: `${rate(backups.succeeded, backups.succeeded + backups.failed)}${backups.totalSize ? `, ${formatBytesIec(backups.totalSize)}` : ""}` },
+    {
+      label: "Backups",
+      value: [
+        `${rate(backups.succeeded, backups.succeeded + backups.failed)}${backups.totalSize ? `, ${formatBytesIec(backups.totalSize)}` : ""}`,
+        backups.runs ? plural(backups.runs, "run") : undefined,
+        backups.lastRunAt ? `last ${formatDayTime(new Date(backups.lastRunAt), tz)}` : undefined,
+      ]
+        .filter(Boolean)
+        .join(" · "),
+    },
   ];
+  const scans = event.scans;
+  if (scans?.scanned) {
+    const found = scans.appsWithFindings
+      ? `${plural(scans.appsWithFindings, "app")} with findings${scans.critical ? ` (${scans.critical} critical)` : ""}`
+      : "no open issues";
+    const last = scans.lastRunAt ? ` · last ${formatDayTime(new Date(scans.lastRunAt), tz)}` : "";
+    facts.push({ label: "Security scans", value: `${plural(scans.apps, "app")} scanned, ${found}${last}`});
+  }
   if (backups.drillsPassed + backups.drillsFailed > 0) {
     facts.push({ label: "Restore drills", value: `${backups.drillsPassed} passed${backups.drillsFailed ? `, ${backups.drillsFailed} failed` : ""}` });
   }

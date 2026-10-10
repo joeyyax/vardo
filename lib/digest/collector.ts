@@ -3,7 +3,7 @@
 import { and, count, eq, gte, inArray, isNull, lt } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { db } from "@/lib/db";
-import { alertHistory, apps, backups, cronJobRuns, cronJobs, deployments, domainCertChecks, domains } from "@/lib/db/schema";
+import { alertHistory, appSecurityScans, apps, backupRuns, backups, cronJobRuns, cronJobs, deployments, domainCertChecks, domains } from "@/lib/db/schema";
 import type { DigestHealthEvent, DigestProjectRow } from "@/lib/bus/events";
 import { ALERTS, isAlertType } from "@/lib/notifications/registry";
 import { CERT_EXPIRY_THRESHOLD_DAYS } from "@/lib/system-alerts/cert-expiry";
@@ -44,13 +44,44 @@ export function windowLabel(window: Pick<DigestWindow, "since" | "until"> & { ti
 }
 
 /** Whether anything happened in the window. An empty window sends nothing. */
-export function hasActivity(data: Pick<DigestData, "deploys" | "backups" | "cron" | "alerts">): boolean {
+export function hasActivity(data: Pick<DigestData, "deploys" | "backups" | "cron" | "alerts"> & Pick<Partial<DigestData>, "scans">): boolean {
   return (
     data.deploys.total > 0 ||
     data.backups.succeeded + data.backups.failed + data.backups.drillsPassed + data.backups.drillsFailed > 0 ||
     data.cron.failed > 0 ||
-    data.alerts.fired + data.alerts.resolved + data.alerts.open > 0
+    data.alerts.fired + data.alerts.resolved + data.alerts.open > 0 ||
+    (data.scans?.scanned ?? 0) > 0
   );
+}
+
+type ScanRow = { appId: string; status: string; criticalCount: number; warningCount: number; startedAt: Date; completedAt: Date | null };
+
+/** Scans in the window rolled up: how many, how many apps, and what each app's latest scan found. */
+export function scanRollup(rows: ScanRow[]): NonNullable<DigestHealthEvent["scans"]> {
+  const done = rows.filter((r) => r.status === "completed");
+  const latest = new Map<string, ScanRow>();
+  for (const row of done) {
+    const seen = latest.get(row.appId);
+    if (!seen || seen.startedAt < row.startedAt) latest.set(row.appId, row);
+  }
+  const last = done.reduce<Date | null>((max, r) => (r.completedAt && (!max || r.completedAt > max) ? r.completedAt : max), null);
+  const current = [...latest.values()];
+  return {
+    scanned: done.length,
+    apps: latest.size,
+    lastRunAt: last?.toISOString() ?? null,
+    appsWithFindings: current.filter((r) => r.criticalCount + r.warningCount > 0).length,
+    critical: current.reduce((n, r) => n + r.criticalCount, 0),
+    warnings: current.reduce((n, r) => n + r.warningCount, 0),
+  };
+}
+
+type RunRow = { finishedAt: Date | null };
+
+/** Backup runs that finished in the window: how many, when the last ended. */
+export function backupRunRollup(rows: RunRow[]): { runs: number; lastRunAt: string | null } {
+  const last = rows.reduce<Date | null>((max, r) => (r.finishedAt && (!max || r.finishedAt > max) ? r.finishedAt : max), null);
+  return { runs: rows.length, lastRunAt: last?.toISOString() ?? null };
 }
 
 /** Top alert types fired in the window, by count. */
@@ -139,7 +170,7 @@ export async function collectDigestData(
     columns: { id: true, name: true, appId: true },
   });
 
-  const [deployRows, backupRows, drillRows, cronRuns, fired, resolvedCount, openCount, stale, certs, updates, resources] = await Promise.all([
+  const [deployRows, backupRows, drillRows, cronRuns, fired, resolvedCount, openCount, stale, certs, updates, resources, scanRows, runRows] = await Promise.all([
     appIds.length
       ? db
           .select({ appId: deployments.appId, status: deployments.status, startedAt: deployments.startedAt })
@@ -171,6 +202,23 @@ export async function collectDigestData(
     expiringCerts(orgId, now),
     imageUpdates(orgId).catch(() => []),
     opts.withHost ? hostTrends(window).catch(() => undefined) : Promise.resolve(undefined),
+    db
+      .select({
+        appId: appSecurityScans.appId,
+        status: appSecurityScans.status,
+        criticalCount: appSecurityScans.criticalCount,
+        warningCount: appSecurityScans.warningCount,
+        startedAt: appSecurityScans.startedAt,
+        completedAt: appSecurityScans.completedAt,
+      })
+      .from(appSecurityScans)
+      .where(and(eq(appSecurityScans.organizationId, orgId), inWindow(appSecurityScans.startedAt)))
+      .catch(() => []),
+    db
+      .select({ finishedAt: backupRuns.finishedAt })
+      .from(backupRuns)
+      .where(and(eq(backupRuns.organizationId, orgId), inWindow(backupRuns.finishedAt)))
+      .catch(() => []),
   ]);
 
   const deploys = {
@@ -221,7 +269,9 @@ export async function collectDigestData(
       drillsPassed: drills.get("verified") ?? 0,
       drillsFailed: drills.get("failed") ?? 0,
       staleVolumes: stale.length,
+      ...backupRunRollup(runRows),
     },
+    scans: scanRollup(scanRows),
     cron: {
       failed: cronRuns.length,
       affectedJobs: [...new Set(cronRuns.map((r) => jobById.get(r.cronJobId)?.name).filter((n): n is string => Boolean(n)))],
