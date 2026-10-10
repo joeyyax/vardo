@@ -6,6 +6,7 @@ import { inspectContainer } from "@/lib/docker/client";
 import { isDataEngine } from "@/lib/docker/routed-service";
 import { queryDiskWriteRange } from "./store";
 import { formatBytesIec } from "./format";
+import { stackedName } from "@/lib/email/format";
 import { isBulkWriting } from "./bulk-write";
 import type { ContainerMetrics } from "./types";
 import { logger } from "@/lib/logger";
@@ -137,8 +138,8 @@ export async function checkDiskWriteAlerts(
           if (orgId) {
             emit(orgId, {
               type: "disk.write-alert",
-              title: `High disk writes: ${appName}`,
-              message: `App '${appName}' wrote ${formatBytesIec(writtenInHour)} in the last hour (threshold: ${formatBytesIec(threshold)})`,
+              title: `High disk writes: ${stackedName(appName, parentName)}`,
+              message: `App '${stackedName(appName, parentName)}' wrote ${formatBytesIec(writtenInHour)} in the last hour (threshold: ${formatBytesIec(threshold)})`,
               appId: app?.id || "",
               appName: app?.displayName,
               projectName: parentName,
