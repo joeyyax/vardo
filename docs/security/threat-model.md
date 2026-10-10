@@ -40,6 +40,7 @@ Status: **fixed** (on main or in this branch), **open**, or **not a boundary**. 
 | Top-level `volumes:` with `external`/`name` reaches another tenant's or the console's volume | fixed | #886: untrusted external volumes must carry the app's `<app>-<env>_` prefix; other volumes keep Compose's project name, `lib/docker/compose-policy.ts` |
 | Invitation revoke | branch | both accept paths ignored `revoked`, `lib/invitations/accept.ts:17` now claims a pending row atomically |
 | Mesh peers read any org's manifest | not a boundary | peers are trusted, `app/api/v1/mesh/sync/route.ts:10` |
+| A linked instance runs MCP tools here as a user | not a boundary once accepted | off per peer until a signed-in admin turns on **Accept MCP calls**; then the peer can act as any verified-email user up to their role here. Calls are bearer-authenticated, HMAC-signed with a 60-second window and single-use nonce, and never forwarded again, `app/api/v1/mesh/mcp-call/route.ts`, `lib/mcp/remote.ts`, `docs/linked-instances.md` |
 
 ## 3. Member to admin
 

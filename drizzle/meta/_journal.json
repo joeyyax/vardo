@@ -722,6 +722,13 @@
       "when": 1791614743547,
       "tag": "0102_api_token_admin_scope",
       "breakpoints": true
+    },
+    {
+      "idx": 103,
+      "version": "7",
+      "when": 1791649765849,
+      "tag": "0103_mcp_linked_instances",
+      "breakpoints": true
     }
   ]
 }

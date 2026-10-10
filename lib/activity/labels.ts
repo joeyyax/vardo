@@ -51,7 +51,10 @@ const PHRASES: Record<string, Phrase> = {
   "backup.app_inherited": { text: "reset the backup setting for" },
 
   "token.created": { text: "created an API token", standalone: true },
-  "token.updated": { text: "changed an API token's admin scope", standalone: true },
+  "token.updated": { text: "changed an API token's scope", standalone: true },
+
+  "mesh.mcp_forwarded": { text: "ran an MCP tool on a linked instance", standalone: true },
+  "mesh.mcp_received": { text: "ran an MCP tool from a linked instance", standalone: true },
 
   "volume.sync": { text: "synced volumes on" },
   "volume.drift_detected": { text: "detected volume drift on" },
@@ -117,6 +120,12 @@ export function detailsFor(group: ActivityGroup): string[] {
 
   const trigger = metadata.trigger;
   if (typeof trigger === "string" && trigger) details.push(`via ${triggerLabel(trigger)}`);
+
+  const tool = metadata.tool;
+  if (typeof tool === "string" && tool) details.push(tool);
+
+  const instance = metadata.instance;
+  if (typeof instance === "string" && instance) details.push(`on ${instance}`);
 
   const changes = metadata.changes;
   if (Array.isArray(changes) && changes.length) {

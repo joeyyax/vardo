@@ -35,6 +35,11 @@ export async function canAdminInstance(context: McpAuthContext): Promise<boolean
   return context.adminScope === true && (await isInstanceAdminUser(context.userId));
 }
 
+/** True when the token may reach linked instances and its user is still an instance admin. Never for a forwarded call. */
+export async function canActOnLinkedInstances(context: McpAuthContext): Promise<boolean> {
+  return context.linkedInstances === true && !context.via && (await isInstanceAdminUser(context.userId));
+}
+
 /** Every organization the token may act on with `cap`, resolved from live memberships. */
 export async function accessibleOrgIds(
   context: McpAuthContext,

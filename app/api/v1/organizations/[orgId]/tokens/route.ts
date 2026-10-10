@@ -20,6 +20,7 @@ const createTokenSchema = z
     name: z.string().min(1, "Name is required").max(100).trim(),
     crossOrg: z.boolean().default(false),
     adminAccess: z.boolean().default(false),
+    linkedInstances: z.boolean().default(false),
     scope: z.enum([...TOKEN_PRESETS, "custom"]).default("full"),
     capabilities: z
       .array(z.string().refine(isCapability, "Unknown capability"))
@@ -45,19 +46,24 @@ const updateTokenSchema = z
     id: z.string().min(1, "Token ID is required"),
     crossOrg: z.boolean().optional(),
     adminAccess: z.boolean().optional(),
+    linkedInstances: z.boolean().optional(),
   })
   .strict()
-  .refine((d) => d.crossOrg !== undefined || d.adminAccess !== undefined, { message: "Nothing to change" });
+  .refine((d) => d.crossOrg !== undefined || d.adminAccess !== undefined || d.linkedInstances !== undefined, {
+    message: "Nothing to change",
+  });
 
 type RouteParams = {
   params: Promise<{ orgId: string }>;
 };
 
-/** Why the caller can't grant the admin scope, or null when it can. */
-async function adminGrantRefusal(session: { authMethod: string }): Promise<string | null> {
-  if (session.authMethod !== "session") return "A token cannot grant the admin scope";
-  return (await isAppAdmin()) ? null : "Only an instance admin can grant the admin scope";
+/** Why the caller can't grant an admin-only scope, or null when it can. */
+async function adminGrantRefusal(session: { authMethod: string }, scope = "the admin scope"): Promise<string | null> {
+  if (session.authMethod !== "session") return `A token cannot grant ${scope}`;
+  return (await isAppAdmin()) ? null : `Only an instance admin can grant ${scope}`;
 }
+
+const LINKED_SCOPE = "access to linked instances";
 
 /** The scope of the token making this request, or null for a cookie session. */
 function callerScope(session: { authMethod: string; tokenScope?: TokenScope }): TokenScope | null {
@@ -84,6 +90,7 @@ async function handleGet(_request: NextRequest, { params }: RouteParams) {
         name: true,
         crossOrg: true,
         adminAccess: true,
+        linkedInstances: true,
         scope: true,
         capabilities: true,
         expiresAt: true,
@@ -98,6 +105,7 @@ async function handleGet(_request: NextRequest, { params }: RouteParams) {
         name: t.name,
         crossOrg: t.crossOrg,
         adminAccess: t.adminAccess,
+        linkedInstances: t.linkedInstances,
         scope: t.scope,
         capabilities: t.scope === "custom" ? (t.capabilities ?? []) : null,
         expiresAt: t.expiresAt?.toISOString() || null,
@@ -129,12 +137,14 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       return apiError.validation(parsed.error, { details: true });
     }
 
-    const { scope, capabilities = null, adminAccess } = parsed.data;
+    const { scope, capabilities = null, adminAccess, linkedInstances } = parsed.data;
     const violation =
       scopeCeilingViolation({
         caller: callerScope(org.session),
         requested: { ...parsed.data, admin: adminAccess, capabilities: tokenScopeCapabilities(scope, capabilities) },
-      }) ?? (adminAccess ? await adminGrantRefusal(org.session) : null);
+      }) ??
+      (adminAccess ? await adminGrantRefusal(org.session) : null) ??
+      (linkedInstances ? await adminGrantRefusal(org.session, LINKED_SCOPE) : null);
     if (violation) return NextResponse.json({ error: violation }, { status: 403 });
 
     const rawToken = `vardo_${randomBytes(32).toString("hex")}`;
@@ -149,6 +159,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       tokenHash,
       crossOrg: parsed.data.crossOrg,
       adminAccess,
+      linkedInstances,
       scope,
       capabilities,
       expiresAt: parsed.data.expiresAt,
@@ -158,7 +169,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
       organizationId: orgId,
       action: "token.created",
       userId: org.session.user.id,
-      metadata: { tokenId, name: parsed.data.name, crossOrg: parsed.data.crossOrg, adminAccess, scope, capabilities },
+      metadata: { tokenId, name: parsed.data.name, crossOrg: parsed.data.crossOrg, adminAccess, linkedInstances, scope, capabilities },
     }).catch(() => {});
 
     // The raw token is returned only once.
@@ -189,8 +200,10 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
     const violation =
       scopeCeilingViolation({
         caller: callerScope(org.session),
-        requested: { crossOrg: requested.crossOrg, admin: requested.adminAccess },
-      }) ?? (requested.adminAccess ? await adminGrantRefusal(org.session) : null);
+        requested: { crossOrg: requested.crossOrg, admin: requested.adminAccess, linkedInstances: requested.linkedInstances },
+      }) ??
+      (requested.adminAccess ? await adminGrantRefusal(org.session) : null) ??
+      (requested.linkedInstances ? await adminGrantRefusal(org.session, LINKED_SCOPE) : null);
     if (violation) return NextResponse.json({ error: violation }, { status: 403 });
 
     const [updated] = await db
@@ -207,18 +220,19 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
         id: apiTokens.id,
         crossOrg: apiTokens.crossOrg,
         adminAccess: apiTokens.adminAccess,
+        linkedInstances: apiTokens.linkedInstances,
       });
 
     if (!updated) {
       return NextResponse.json({ error: "Token not found" }, { status: 404 });
     }
 
-    if (requested.adminAccess !== undefined) {
+    if (requested.adminAccess !== undefined || requested.linkedInstances !== undefined) {
       recordActivity({
         organizationId: orgId,
         action: "token.updated",
         userId: org.session.user.id,
-        metadata: { tokenId: id, adminAccess: requested.adminAccess },
+        metadata: { tokenId: id, adminAccess: requested.adminAccess, linkedInstances: requested.linkedInstances },
       }).catch(() => {});
     }
 

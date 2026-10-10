@@ -12,6 +12,7 @@ export type ApiTokenRow = {
   scope?: string | null;
   capabilities?: string[] | null;
   adminAccess?: boolean;
+  linkedInstances?: boolean;
   expiresAt: Date | null;
 };
 
@@ -23,6 +24,8 @@ export type TokenScope = {
   capabilities?: ReadonlySet<Capability> | null;
   /** Instance-admin scope, still bounded by the user's live admin flag. */
   admin?: boolean;
+  /** MCP calls may run on linked instances, still bounded by the user's live admin flag. */
+  linkedInstances?: boolean;
 };
 
 export function hashApiToken(rawToken: string): string {
@@ -46,6 +49,7 @@ export async function findApiToken(rawToken: string): Promise<ApiTokenRow | null
       scope: true,
       capabilities: true,
       adminAccess: true,
+      linkedInstances: true,
       expiresAt: true,
     },
   });
@@ -65,6 +69,9 @@ export function scopeCeilingViolation(opts: {
 
   if (requested.admin && caller) {
     return "A token cannot grant the admin scope";
+  }
+  if (requested.linkedInstances && caller) {
+    return "A token cannot grant access to linked instances";
   }
   if (requested.crossOrg && caller && !caller.crossOrg) {
     return "A token cannot grant access to organizations it cannot reach";

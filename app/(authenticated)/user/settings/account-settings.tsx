@@ -843,6 +843,7 @@ type ApiToken = {
   name: string;
   crossOrg: boolean;
   adminAccess: boolean;
+  linkedInstances: boolean;
   scope: TokenScopeKind;
   capabilities: Capability[] | null;
   expiresAt: string | null;
@@ -894,6 +895,9 @@ async function requestTokens(orgId: string): Promise<ApiToken[] | null> {
 const ADMIN_SCOPE_WARNING =
   "This token can change instance settings, like email, SSL and auth methods, while you're an instance admin. Give it a short expiry and store it like a root password.";
 
+const LINKED_SCOPE_WARNING =
+  "MCP calls through this token can run on linked instances that accept them, as the user with your verified email there, while you're an instance admin here.";
+
 export function ApiTokens({ orgId, canGrantAdmin = false }: { orgId: string; canGrantAdmin?: boolean }) {
   const [tokens, setTokens] = useState<ApiToken[]>([]);
   const [loading, setLoading] = useState(true);
@@ -904,12 +908,14 @@ export function ApiTokens({ orgId, canGrantAdmin = false }: { orgId: string; can
   const [newTokenCaps, setNewTokenCaps] = useState<Capability[]>([]);
   const [newTokenCrossOrg, setNewTokenCrossOrg] = useState(false);
   const [newTokenAdmin, setNewTokenAdmin] = useState(false);
+  const [newTokenLinked, setNewTokenLinked] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [createdToken, setCreatedToken] = useState<string | null>(null);
   const tokenRef = useRef<HTMLElement>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [togglingScope, setTogglingScope] = useState<string | null>(null);
   const [adminTarget, setAdminTarget] = useState<ApiToken | null>(null);
+  const [linkedTarget, setLinkedTarget] = useState<ApiToken | null>(null);
 
   const applyTokens = useCallback((list: ApiToken[] | null) => {
     if (list) setTokens(list);
@@ -950,6 +956,7 @@ export function ApiTokens({ orgId, canGrantAdmin = false }: { orgId: string; can
             scope: newTokenScope,
             crossOrg: newTokenCrossOrg,
             ...(newTokenAdmin && { adminAccess: true }),
+            ...(newTokenLinked && { linkedInstances: true }),
             ...(newTokenScope === "custom" && { capabilities: newTokenCaps }),
           }),
         }
@@ -962,6 +969,7 @@ export function ApiTokens({ orgId, canGrantAdmin = false }: { orgId: string; can
         setNewTokenCaps([]);
         setNewTokenCrossOrg(false);
         setNewTokenAdmin(false);
+        setNewTokenLinked(false);
         setShowCreate(false);
         fetchTokens();
         toast.success("Token created");
@@ -978,7 +986,7 @@ export function ApiTokens({ orgId, canGrantAdmin = false }: { orgId: string; can
 
   async function handleScopeChange(
     id: string,
-    change: { crossOrg: boolean } | { adminAccess: boolean },
+    change: { crossOrg: boolean } | { adminAccess: boolean } | { linkedInstances: boolean },
   ) {
     setTogglingScope(id);
     try {
@@ -1160,6 +1168,11 @@ export function ApiTokens({ orgId, canGrantAdmin = false }: { orgId: string; can
                 {newTokenAdmin && (
                   <Callout variant="error">{ADMIN_SCOPE_WARNING}</Callout>
                 )}
+                <Label htmlFor="token-linked" className="flex items-center gap-2 text-sm font-normal">
+                  <Switch id="token-linked" checked={newTokenLinked} onCheckedChange={setNewTokenLinked} />
+                  Linked instances
+                </Label>
+                {newTokenLinked && <Callout variant="warning">{LINKED_SCOPE_WARNING}</Callout>}
               </div>
             )}
             {newTokenScope === "custom" && (
@@ -1221,6 +1234,11 @@ export function ApiTokens({ orgId, canGrantAdmin = false }: { orgId: string; can
                         Instance admin
                       </Badge>
                     )}
+                    {token.linkedInstances && (
+                      <Badge variant="outline" className="shrink-0" title={LINKED_SCOPE_WARNING}>
+                        Linked instances
+                      </Badge>
+                    )}
                   </div>
                   <p className="text-xs text-muted-foreground">
                     Created <RelativeTime date={token.createdAt} />
@@ -1251,6 +1269,22 @@ export function ApiTokens({ orgId, canGrantAdmin = false }: { orgId: string; can
                         disabled={togglingScope === token.id || (!canGrantAdmin && !token.adminAccess)}
                         onCheckedChange={(checked) =>
                           checked ? setAdminTarget(token) : handleScopeChange(token.id, { adminAccess: false })
+                        }
+                      />
+                    </Label>
+                  )}
+                  {(canGrantAdmin || token.linkedInstances) && (
+                    <Label
+                      htmlFor={`linked-${token.id}`}
+                      className="flex items-center gap-2 text-xs text-muted-foreground"
+                    >
+                      Linked instances
+                      <Switch
+                        id={`linked-${token.id}`}
+                        checked={token.linkedInstances}
+                        disabled={togglingScope === token.id || (!canGrantAdmin && !token.linkedInstances)}
+                        onCheckedChange={(checked) =>
+                          checked ? setLinkedTarget(token) : handleScopeChange(token.id, { linkedInstances: false })
                         }
                       />
                     </Label>
@@ -1303,6 +1337,26 @@ export function ApiTokens({ orgId, canGrantAdmin = false }: { orgId: string; can
                 }}
               >
                 Grant admin scope
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        <AlertDialog open={linkedTarget !== null} onOpenChange={(open) => !open && setLinkedTarget(null)}>
+          <AlertDialogContent size="sm">
+            <AlertDialogHeader>
+              <AlertDialogTitle>Let {linkedTarget?.name} act on linked instances?</AlertDialogTitle>
+              <AlertDialogDescription>{LINKED_SCOPE_WARNING}</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  if (linkedTarget) handleScopeChange(linkedTarget.id, { linkedInstances: true });
+                  setLinkedTarget(null);
+                }}
+              >
+                Allow linked instances
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

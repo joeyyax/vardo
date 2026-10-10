@@ -39,6 +39,8 @@ export const apiTokens = pgTable(
     capabilities: text("capabilities").array(),
     // Instance-admin scope; only an instance admin with a session grants it.
     adminAccess: boolean("admin_access").default(false).notNull(),
+    // Lets MCP calls through this token run on linked instances; only an instance admin with a session grants it.
+    linkedInstances: boolean("linked_instances").default(false).notNull(),
     // Null never expires.
     expiresAt: timestamp("expires_at"),
     lastUsedAt: timestamp("last_used_at"),

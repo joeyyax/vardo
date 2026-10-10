@@ -15,6 +15,10 @@ export type McpAuthContext = {
   scopes?: ReadonlySet<Capability> | null;
   /** The token's opt-in instance-admin scope; canAdminInstance also checks the live admin flag. */
   adminScope?: boolean;
+  /** The token's opt-in scope for running tools on linked instances. */
+  linkedInstances?: boolean;
+  /** Set when a linked instance forwarded this call. */
+  via?: { peerId: string; instanceId: string; name: string };
 };
 
 /** Authenticates a raw MCP Request by Bearer token. Null if invalid or api-tokens is off. */
@@ -52,5 +56,6 @@ export async function authenticateRequest(
     crossOrg: token.crossOrg,
     scopes: tokenScopeCapabilities(token.scope, token.capabilities),
     adminScope: token.adminAccess === true,
+    linkedInstances: token.linkedInstances === true,
   };
 }

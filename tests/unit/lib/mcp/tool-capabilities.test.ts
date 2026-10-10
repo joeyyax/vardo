@@ -16,7 +16,7 @@ const GATES = new Set([
   "resolveOrgPreview",
 ]);
 const KNOWN = new Set(Object.keys(CAPABILITIES));
-const ADMIN_GATE = "canAdminInstance";
+const ADMIN_GATES = new Set(["canAdminInstance", "canActOnLinkedInstances"]);
 
 function gatesIn(node: ts.Node): { caps: string[]; adminGated: boolean } {
   const caps: string[] = [];
@@ -26,7 +26,7 @@ function gatesIn(node: ts.Node): { caps: string[]; adminGated: boolean } {
       if (GATES.has(n.expression.text)) {
         for (const arg of n.arguments) if (ts.isStringLiteral(arg)) caps.push(arg.text);
       }
-      if (n.expression.text === ADMIN_GATE) adminGated = true;
+      if (ADMIN_GATES.has(n.expression.text)) adminGated = true;
     }
     ts.forEachChild(n, visit);
   };

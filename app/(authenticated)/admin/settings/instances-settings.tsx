@@ -15,6 +15,7 @@ import {
   Timer,
   Check,
   Info,
+  Bot,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -51,6 +52,7 @@ type MeshPeer = {
   internalIp: string;
   apiUrl: string | null;
   connectionType: "direct" | "visible";
+  acceptMcp: boolean;
   lastSeenAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -79,6 +81,9 @@ async function requestPeers(): Promise<PeersResponse | null> {
     return null;
   }
 }
+
+const ACCEPT_MCP_WARNING =
+  "MCP calls this peer forwards run here as the user with the same verified email, up to that user's role here. Turn it on only for an instance you trust as much as this one.";
 
 function formatLastSeen(dateStr: string | null): string {
   if (!dateStr) return "Awaiting first heartbeat";
@@ -115,6 +120,8 @@ export function InstancesSettings() {
   const [deleteTarget, setDeleteTarget] = useState<MeshPeer | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [cancellingCode, setCancellingCode] = useState<string | null>(null);
+  const [mcpTarget, setMcpTarget] = useState<MeshPeer | null>(null);
+  const [savingMcp, setSavingMcp] = useState(false);
 
   function applyPeers(json: PeersResponse | null) {
     if (json) {
@@ -222,6 +229,29 @@ export function InstancesSettings() {
     } finally {
       setDeleting(false);
       setDeleteTarget(null);
+    }
+  }
+
+  async function handleAcceptMcp(peer: MeshPeer, acceptMcp: boolean) {
+    setSavingMcp(true);
+    try {
+      const res = await fetch(`/api/v1/admin/mesh/peers/${peer.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ acceptMcp }),
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        toast.error(json.error || "Couldn't change MCP access");
+        return;
+      }
+      setPeers((prev) => prev.map((p) => (p.id === peer.id ? { ...p, acceptMcp } : p)));
+      toast.success(acceptMcp ? `Accepting MCP calls from ${peer.name}` : `Stopped MCP calls from ${peer.name}`);
+    } catch {
+      toast.error("Couldn't change MCP access");
+    } finally {
+      setSavingMcp(false);
+      setMcpTarget(null);
     }
   }
 
@@ -408,6 +438,11 @@ export function InstancesSettings() {
                                 via hub
                               </Badge>
                             )}
+                            {peer.acceptMcp && (
+                              <Badge variant="outline" className="px-1.5 py-0 shrink-0" title={ACCEPT_MCP_WARNING}>
+                                MCP
+                              </Badge>
+                            )}
                           </div>
                           <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
                             <span className="font-mono">{peer.internalIp}</span>
@@ -440,6 +475,12 @@ export function InstancesSettings() {
                               >
                                 <Copy className="size-4" />
                                 Copy public key
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => (peer.acceptMcp ? handleAcceptMcp(peer, false) : setMcpTarget(peer))}
+                              >
+                                <Bot className="size-4" />
+                                {peer.acceptMcp ? "Stop accepting MCP calls" : "Accept MCP calls"}
                               </DropdownMenuItem>
                               <DropdownMenuItem
                                 className="text-destructive focus:text-destructive"
@@ -625,6 +666,17 @@ export function InstancesSettings() {
           </form>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDeleteDialog
+        open={!!mcpTarget}
+        onOpenChange={(open) => !open && setMcpTarget(null)}
+        title={`Accept MCP calls from ${mcpTarget?.name ?? "this peer"}?`}
+        description={ACCEPT_MCP_WARNING}
+        onConfirm={() => mcpTarget && handleAcceptMcp(mcpTarget, true)}
+        loading={savingMcp}
+        confirmLabel="Accept MCP calls"
+        loadingLabel="Saving..."
+      />
 
       {/* Delete confirmation */}
       <ConfirmDeleteDialog

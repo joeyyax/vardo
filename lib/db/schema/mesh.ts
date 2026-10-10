@@ -30,6 +30,8 @@ export const meshPeers = pgTable("mesh_peer", {
   sourceHubInstanceId: text("source_hub_instance_id"), // Hub that listed a visible peer
   // The only org this peer may read or write through promote, clone and pull.
   organizationId: text("organization_id").references(() => organizations.id, { onDelete: "set null" }),
+  // Accept MCP tool calls this peer forwards on behalf of a user with the same verified email.
+  acceptMcp: boolean("accept_mcp").default(false).notNull(),
   lastSeenAt: timestamp("last_seen_at"),
   // What the peer last reported about its own Vardo, for canary update ordering.
   vardoSha: text("vardo_sha"),

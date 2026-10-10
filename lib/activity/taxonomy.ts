@@ -25,6 +25,7 @@ const FAMILY_BY_PREFIX: Array<[string, ActivityFamily]> = [
   ["app.env_revealed", "security"],
   ["org.env_revealed", "security"],
   ["token.", "security"],
+  ["mesh.", "security"],
   ["app.", "app"],
   ["volume.", "app"],
   ["container.", "app"],

@@ -2,14 +2,12 @@ import { db } from "@/lib/db";
 import { meshPeers } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { openOutboundToken } from "./outbound-token";
+import { signMeshRequest } from "./signing";
 
-/** Authenticated request to a mesh peer's API: WireGuard URL first, then the public API URL. */
-export async function meshFetch(
-  peerId: string,
-  path: string,
-  options: RequestInit = {},
-  { requireTls = false }: { requireTls?: boolean } = {}
-): Promise<Response> {
+type PeerTarget = { name: string; apiUrl: string | null; publicApiUrl: string | null };
+
+/** The peer's URLs and the decrypted token it issued us. Throws MeshClientError. */
+async function peerCredentials(peerId: string): Promise<{ peer: PeerTarget; token: string }> {
   const peer = await db.query.meshPeers.findFirst({
     where: eq(meshPeers.id, peerId),
     columns: { apiUrl: true, publicApiUrl: true, outboundToken: true, name: true },
@@ -40,6 +38,18 @@ export async function meshFetch(
       "NO_TOKEN"
     );
   }
+
+  return { peer, token: outboundToken };
+}
+
+/** Authenticated request to a mesh peer's API: WireGuard URL first, then the public API URL. */
+export async function meshFetch(
+  peerId: string,
+  path: string,
+  options: RequestInit = {},
+  { requireTls = false }: { requireTls?: boolean } = {}
+): Promise<Response> {
+  const { peer, token: outboundToken } = await peerCredentials(peerId);
 
   const authHeaders = {
     ...options.headers,
@@ -104,6 +114,77 @@ export async function meshJsonFetch<T = unknown>(
   }
 
   return res.json() as Promise<T>;
+}
+
+export type MeshTransport = "tunnel" | "public";
+
+/** True when the tunnel URL answers at all; the status doesn't matter. */
+async function tunnelAnswers(apiUrl: string, timeoutMs: number): Promise<boolean> {
+  try {
+    await fetch(`${apiUrl}/api/health`, { signal: AbortSignal.timeout(timeoutMs) });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Signed JSON POST sent once: the tunnel when a probe answers, else the HTTPS public URL. Never retried across transports. */
+export async function meshSignedPost<T = unknown>(
+  peerId: string,
+  path: string,
+  payload: unknown,
+  { timeoutMs = 120_000, probeMs = 3_000 }: { timeoutMs?: number; probeMs?: number } = {}
+): Promise<{ data: T; transport: MeshTransport }> {
+  const { peer, token } = await peerCredentials(peerId);
+
+  let base: string;
+  let transport: MeshTransport;
+  if (peer.apiUrl && (await tunnelAnswers(peer.apiUrl, probeMs))) {
+    base = peer.apiUrl;
+    transport = "tunnel";
+  } else if (peer.publicApiUrl?.startsWith("https://")) {
+    base = peer.publicApiUrl;
+    transport = "public";
+  } else if (peer.publicApiUrl) {
+    throw new MeshClientError(
+      `Peer "${peer.name}" is off the mesh and its public URL isn't HTTPS; refusing to send the call`,
+      "INSECURE"
+    );
+  } else {
+    throw new MeshClientError(`Peer "${peer.name}" unreachable via mesh and has no public URL`, "UNREACHABLE");
+  }
+
+  const body = JSON.stringify(payload);
+  let res: Response;
+  try {
+    res = await fetch(`${base}${path}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+        ...signMeshRequest({ token, method: "POST", path, body }),
+      },
+      body,
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    throw new MeshClientError(
+      `Lost the connection to "${peer.name}" over the ${transport === "tunnel" ? "tunnel" : "public URL"} (${reason}); the call may have run`,
+      "UNREACHABLE"
+    );
+  }
+
+  if (!res.ok) {
+    let message = `Peer returned ${res.status}`;
+    try {
+      const data = await res.json();
+      if (typeof data?.error === "string") message = data.error;
+    } catch {}
+    throw new MeshClientError(message, "PEER_ERROR", res.status);
+  }
+
+  return { data: (await res.json()) as T, transport };
 }
 
 export class MeshClientError extends Error {

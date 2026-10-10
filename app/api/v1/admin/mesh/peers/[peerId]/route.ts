@@ -45,17 +45,21 @@ async function handleDelete(
 
 export const DELETE = withRateLimit(handleDelete, { tier: "admin", key: "mesh-peers" });
 
-const patchSchema = z.object({
-  organizationId: z.string().min(1).nullable(),
-}).strict();
+const patchSchema = z
+  .object({
+    organizationId: z.string().min(1).nullable().optional(),
+    acceptMcp: z.boolean().optional(),
+  })
+  .strict()
+  .refine((d) => d.organizationId !== undefined || d.acceptMcp !== undefined, { message: "Nothing to change" });
 
-/** PATCH /api/v1/admin/mesh/peers/[peerId] — bind a peer to the org its transfers act in */
+/** PATCH /api/v1/admin/mesh/peers/[peerId] — bind a peer to an org, or let it forward MCP calls */
 async function handlePatch(
   request: Request,
   { params }: { params: Promise<{ peerId: string }> }
 ) {
   try {
-    await requireAppAdmin();
+    const session = await requireAppAdmin();
 
     const gate = await requirePlugin("mesh");
     if (gate) return gate;
@@ -66,7 +70,10 @@ async function handlePatch(
       return apiError.validation(parsed.error, { details: true });
     }
 
-    const { organizationId } = parsed.data;
+    const { organizationId, acceptMcp } = parsed.data;
+    if (acceptMcp !== undefined && session.authMethod !== "session") {
+      return NextResponse.json({ error: "Only a signed-in instance admin can change MCP access for a peer" }, { status: 403 });
+    }
     if (organizationId) {
       const org = await db.query.organizations.findFirst({
         where: eq(organizations.id, organizationId),
@@ -79,9 +86,9 @@ async function handlePatch(
 
     const [peer] = await db
       .update(meshPeers)
-      .set({ organizationId, updatedAt: new Date() })
+      .set({ organizationId, acceptMcp, updatedAt: new Date() })
       .where(eq(meshPeers.id, peerId))
-      .returning({ id: meshPeers.id, organizationId: meshPeers.organizationId });
+      .returning({ id: meshPeers.id, organizationId: meshPeers.organizationId, acceptMcp: meshPeers.acceptMcp });
 
     if (!peer) {
       return NextResponse.json({ error: "Peer not found" }, { status: 404 });

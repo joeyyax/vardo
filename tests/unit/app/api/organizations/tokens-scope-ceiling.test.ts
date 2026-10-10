@@ -230,3 +230,44 @@ describe("changing a token's scope", () => {
     expect(res.status).toBe(200);
   });
 });
+
+describe("linked-instance scope", () => {
+  it("is off by default", async () => {
+    asCookie();
+    await POST(req("POST", { name: "ci" }), params);
+    expect(inserted[0]).toMatchObject({ linkedInstances: false });
+  });
+
+  it("is refused to a user who isn't an instance admin", async () => {
+    asCookie();
+    const res = await POST(req("POST", { name: "multi", linkedInstances: true }), params);
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "Only an instance admin can grant access to linked instances" });
+    expect(inserted).toHaveLength(0);
+  });
+
+  it("is refused to a token, even an admin's", async () => {
+    asToken();
+    isAppAdmin.mockResolvedValue(true);
+    expect((await POST(req("POST", { name: "multi", linkedInstances: true }), params)).status).toBe(403);
+    expect((await PATCH(req("PATCH", { id: "t2", linkedInstances: true }), params)).status).toBe(403);
+    expect(inserted).toHaveLength(0);
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
+  it("is granted by an instance admin's session and recorded", async () => {
+    asCookie();
+    isAppAdmin.mockResolvedValue(true);
+    expect((await POST(req("POST", { name: "multi", linkedInstances: true }), params)).status).toBe(201);
+    expect(inserted[0]).toMatchObject({ linkedInstances: true });
+    expect((await PATCH(req("PATCH", { id: "t2", linkedInstances: true }), params)).status).toBe(200);
+    expect(recordActivity).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "token.updated", metadata: expect.objectContaining({ linkedInstances: true }) }),
+    );
+  });
+
+  it("can be dropped by anyone", async () => {
+    asToken();
+    expect((await PATCH(req("PATCH", { id: "t2", linkedInstances: false }), params)).status).toBe(200);
+  });
+});
