@@ -44,6 +44,7 @@ import { reportOomDuringDeploy } from "../deploy-oom";
 import { checkVolumeLimits } from "./volume-limits";
 import { execFileAsync } from "@/lib/utils/exec";
 import { boundedBuild, explainBuildOom } from "../build-memory";
+import { composeBuild } from "../compose-build";
 import { buildKitContainerName, DEFAULT_BUILDKIT_HOST } from "../buildkit";
 import { isDeployQueueDrained } from "../deploy-concurrency";
 import { withFailedStepOutput } from "../build-failure";
@@ -478,14 +479,27 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
         log(`[deploy] Pre-building ${newSlot} slot images${ctx.rebuild === "no-cache" ? " without the build cache" : ""} (old slot still serving)...`);
         const bounded = await boundedBuild(log, ctx.signal);
         const buildStart = Date.now();
-        const { stdout, stderr } = await execFileAsync(
-          "docker",
-          ["compose", "--progress=plain", ...composeFileArgs, "-p", newProjectName, "build", ...(ctx.rebuild === "no-cache" ? ["--no-cache"] : [])],
-          { cwd: slotDir, env: { ...env, ...bounded.env }, timeout: COMPOSE_BUILD_UP_TIMEOUT, maxBuffer: EXEC_MAX_BUFFER, signal: ctx.signal }
-        ).catch((err: unknown) => {
+        const built = await composeBuild({
+          appId: ctx.appId,
+          slotDir,
+          composeFileArgs,
+          project: newProjectName,
+          services: buildServices,
+          noCache: ctx.rebuild === "no-cache",
+          rebuild: Boolean(ctx.rebuild),
+          bounded,
+          env,
+          sourceDir: ctx.buildSourceDir ?? ctx.repoDir ?? undefined,
+          repoDir: ctx.repoDir,
+          gitSha: ctx.gitSha,
+          withGitDir: ctx.buildSourceHasGit === true,
+          log,
+          signal: ctx.signal,
+        }).catch((err: unknown) => {
           ctx.timer.range("build", buildStart, Date.now());
           throw explainBuildOom(withFailedStepOutput(err), bounded);
         });
+        const { stdout, stderr } = built ?? { stdout: "", stderr: "" };
         // BuildKit runs the export inside the build; split it out of the build time.
         const buildEnd = Date.now();
         const exportMs = Math.min(exportMsFromBuildOutput(`${stdout}\n${stderr}`), buildEnd - buildStart);
