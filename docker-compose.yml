@@ -222,8 +222,9 @@ services:
     configs:
       - source: buildkitd
         target: /etc/buildkit/buildkitd.toml
+    # Build steps share this network; keep it apart from Postgres and Redis. The console reaches it through Docker.
     networks:
-      - internal
+      - builds
 
   traefik:
     container_name: vardo-traefik
@@ -392,6 +393,7 @@ volumes:
 
 networks:
   internal:
+  builds:
   mesh:
     ipam:
       config:

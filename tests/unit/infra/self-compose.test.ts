@@ -10,7 +10,7 @@ import { BUNDLED_RANGES } from "@/lib/docker/cloudflare-only";
 import { parse as parseToml } from "@iarna/toml";
 import { runningTrustedIps } from "@/lib/docker/trusted-proxies";
 
-type Service = { image?: string; configs?: { source: string; target: string }[]; environment?: Record<string, string>; command?: string[]; healthcheck?: { test?: string[] } };
+type Service = { image?: string; networks?: Record<string, unknown>; configs?: { source: string; target: string }[]; environment?: Record<string, string>; command?: string[]; healthcheck?: { test?: string[] } };
 type Config = { services: Record<string, Service>; configs?: Record<string, { content?: string }> };
 
 let hasCompose = true;
@@ -144,6 +144,15 @@ describe.skipIf(!hasCompose)("self compose (#889)", () => {
     it("reads VARDO_BUILDKIT_CACHE_MAX as bytes", () => {
       const [p] = buildkitd({ VARDO_BUILDKIT_CACHE_MAX: String(23 * 1024 ** 3) }).gcpolicy;
       expect(bytesOf(p.maxUsedSpace)).toBe(23 * 1024 ** 3);
+    });
+
+    it("keeps build steps off the network Postgres and Redis share", () => {
+      const cfg = resolve({});
+      const buildkitNets = Object.keys(cfg.services.buildkit.networks ?? {});
+      for (const svc of ["postgres", "redis"]) {
+        const shared = Object.keys(cfg.services[svc].networks ?? {}).filter((n) => buildkitNets.includes(n));
+        expect(shared, svc).toEqual([]);
+      }
     });
 
     it("passes a unit through for buildkitd to read, not as megabytes", () => {
