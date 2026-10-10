@@ -4,7 +4,7 @@ import {
   getEmailProviderConfig,
   getBackupStorageConfig,
   getGitHubAppConfig,
-  getSslConfig,
+  getSystemSettingRaw,
 } from "@/lib/system-settings";
 
 export type InheritedConfig = {
@@ -55,12 +55,9 @@ export async function inheritConfigFromHub(
     inherited.github = true;
   }
 
-  // Keep any local ACME credential — the hub never sends one.
-  if (config.ssl) {
-    const local = await getSslConfig();
-    if (!local.dnsApiToken && !local.zerosslEabKid) {
-      await setSystemSetting("ssl_config", JSON.stringify(config.ssl));
-    }
+  // A local SSL config can hold its ACME credential in the environment, not the row.
+  if (config.ssl && !(await getSystemSettingRaw("ssl_config"))) {
+    await setSystemSetting("ssl_config", JSON.stringify(config.ssl));
   }
 
   // Add missing feature flags without overwriting local ones.
