@@ -29,11 +29,10 @@ composeContent: |
         - /var/lib/docker/:/var/lib/docker:ro
       # 512m with disk metrics on (Core services toggle).
       mem_limit: 256m
-      # Vardo reaches this at http://cadvisor:8080. Without joining the shared
-      # network the container is unreachable and metrics silently never arrive.
+      # Vardo reaches this at http://cadvisor:8080 on the console-only monitoring network.
       networks:
-        - vardo-network
+        - vardo-monitoring
 
   networks:
-    vardo-network:
+    vardo-monitoring:
       external: true

@@ -25,16 +25,15 @@ composeContent: |
         - promtail-positions:/var/lib/promtail
       # Scales with the number of containers discovered on the host.
       mem_limit: 256m
-      # Promtail pushes to http://loki:3100 and Loki lives in its own compose
-      # project. Without the shared network the push has nowhere to land.
+      # Promtail pushes to http://loki:3100 on the console-only monitoring network.
       networks:
-        - vardo-network
+        - vardo-monitoring
 
   volumes:
     promtail-positions: {}
 
   networks:
-    vardo-network:
+    vardo-monitoring:
       external: true
 
   configs:

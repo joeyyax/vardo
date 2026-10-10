@@ -9,10 +9,11 @@ import {
   buildVardoOverlay,
   getTraefikRoutedServices,
 } from "@/lib/docker/compose-inject";
+import { MONITORING_NETWORK } from "@/lib/docker/constants";
+import { usesMonitoringNetwork } from "@/lib/infra/monitoring-network";
 
-// Core services carry no domain, so resolve-compose injects nothing: the shared
-// network has to come from the template and survive the split into
-// docker-compose.yml + docker-compose.override.yml.
+// Core services carry no domain and join a network only the console and the
+// collectors share, never the one routed tenant apps join.
 
 const NETWORK = "vardo-network";
 
@@ -31,19 +32,27 @@ function deployedFiles(name: string) {
   };
 }
 
-/** Service each client resolves on the shared network. */
+/** Service each client resolves on the monitoring network. */
 const ATTACHED: Record<string, string> = {
   cadvisor: "cadvisor",
   loki: "loki",
   promtail: "promtail",
 };
 
-describe("core service templates — shared network", () => {
+describe("core service templates — monitoring network", () => {
   for (const [template, service] of Object.entries(ATTACHED)) {
     describe(template, () => {
-      it("declares the network as external", () => {
+      it("declares the monitoring network as external", () => {
         const { compose } = deployedFiles(template);
-        expect(compose.networks?.[NETWORK]).toEqual({ external: true });
+        expect(compose.networks?.[MONITORING_NETWORK]).toEqual({ external: true });
+        expect(usesMonitoringNetwork(compose)).toBe(true);
+      });
+
+      it("never joins the network routed apps share", () => {
+        const { compose, overlay } = deployedFiles(template);
+        expect(compose.networks?.[NETWORK]).toBeUndefined();
+        expect(overlay.networks?.[NETWORK]).toBeUndefined();
+        expect(overlay.services[service]?.networks ?? []).not.toContain(NETWORK);
       });
 
       it("has no Traefik-routed service, so injection never runs", () => {
@@ -51,21 +60,18 @@ describe("core service templates — shared network", () => {
         expect(getTraefikRoutedServices(compose).size).toBe(0);
       });
 
-      it("attaches the service the client resolves", () => {
-        const { compose } = deployedFiles(template);
-        expect(compose.services[service].networks).toContain(NETWORK);
-      });
-
-      it("survives into the override, and only the override", () => {
-        const { bare, overlay } = deployedFiles(template);
-        expect(overlay.networks?.[NETWORK]).toEqual({ external: true });
-        expect(overlay.services[service].networks).toEqual([NETWORK]);
-        // Declaring it in both files makes Compose create a second network.
-        expect(bare.networks?.[NETWORK]).toBeUndefined();
-        expect(bare.services[service].networks ?? []).not.toContain(NETWORK);
+      it("keeps the service on the monitoring network once deployed", () => {
+        const { bare } = deployedFiles(template);
+        expect(bare.networks?.[MONITORING_NETWORK]).toEqual({ external: true });
+        expect(bare.services[service].networks).toEqual([MONITORING_NETWORK]);
       });
     });
   }
+
+  it("leaves other apps off the monitoring network", () => {
+    expect(usesMonitoringNetwork({ networks: { [NETWORK]: { external: true } } })).toBe(false);
+    expect(usesMonitoringNetwork({ networks: { mon: { external: true, name: MONITORING_NETWORK } } })).toBe(true);
+  });
 
   it("points Promtail at Loki's compose service name", () => {
     // container_name is stripped for blue/green, so only the service name resolves.

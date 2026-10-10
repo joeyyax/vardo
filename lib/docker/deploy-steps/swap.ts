@@ -11,6 +11,7 @@ import {
   getTraefikRoutedServices,
 } from "../compose";
 import { selectRoutedService } from "../routed-service";
+import { ensureMonitoringNetwork, usesMonitoringNetwork } from "@/lib/infra/monitoring-network";
 import { prepareBindMountOwnership } from "./bind-mount-ownership";
 import { demoteStandbyRestart, restoreSlotRestart } from "../restart-policy";
 import {
@@ -400,6 +401,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
   // Step 6: Ensure network
   try {
     await ensureNetwork(NETWORK_NAME);
+    if (usesMonitoringNetwork(compose)) await ensureMonitoringNetwork();
   } catch (err) {
     log(`[deploy] Warning: network — ${err instanceof Error ? err.message : err}`);
   }

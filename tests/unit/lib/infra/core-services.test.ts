@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
+vi.mock("@/lib/infra/monitoring-network", () => ({ ensureMonitoringNetwork: vi.fn().mockResolvedValue(undefined) }));
 
 // cAdvisor, Loki and Promtail are instance-level singletons. The lookup is by
 // app name across the whole instance, so an existing row is adopted wherever it

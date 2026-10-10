@@ -12,6 +12,7 @@ import { loadTemplates, type Template } from "@/lib/templates/load";
 import { requestDeploy } from "@/lib/docker/deploy-cancel";
 import { deleteApp } from "@/lib/docker/delete-app";
 import { ensureVardoOrg } from "@/lib/infra/vardo-org";
+import { ensureMonitoringNetwork } from "@/lib/infra/monitoring-network";
 import {
   CORE_SERVICE_FEATURES,
   recordCoreServiceStatus,
@@ -54,6 +55,7 @@ export async function ensureInfraServices(): Promise<void> {
     return;
   }
 
+  await ensureMonitoringNetwork();
   const templates = await loadTemplates();
   const statuses: Parameters<typeof recordCoreServiceStatus>[0] = [];
 
@@ -106,6 +108,7 @@ export async function provisionForFlag(flag: FeatureFlag, enabled: boolean): Pro
   const org = await ensureVardoOrg();
   if (!org) return;
 
+  await ensureMonitoringNetwork();
   const templates = await loadTemplates();
 
   // Interactive toggle is all-or-nothing: roll back sibling apps if any deploy fails (#741).

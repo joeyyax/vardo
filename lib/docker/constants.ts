@@ -7,6 +7,9 @@ export const DEFAULT_CONTAINER_PORT = 3000;
 /** Docker network shared by all deployed apps and Traefik. */
 export const NETWORK_NAME = "vardo-network";
 
+/** Internal network for cAdvisor, Loki and Promtail. Only the console and the collectors join it. */
+export const MONITORING_NETWORK = "vardo-monitoring";
+
 /** Ceiling the build cache is pruned to after every deploy. Too low and locally built apps evict each other. */
 const configuredCacheGb = Number(process.env.VARDO_BUILD_CACHE_MAX_GB);
 export const BUILD_CACHE_MAX_BYTES =

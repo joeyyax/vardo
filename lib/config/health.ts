@@ -203,7 +203,7 @@ export const SERVICE_PROBES: Probe[] = [
     name: "Promtail",
     description: "Log shipper",
     timeoutMs: 5000,
-    // Promtail isn't on vardo-network; a running container is the only signal.
+    // Promtail serves nothing the console reads; a running container is the only signal.
     run: async () => {
       const { listContainers } = await import("@/lib/docker/client");
       const running = await listContainers("promtail");

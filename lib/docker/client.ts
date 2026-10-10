@@ -185,7 +185,7 @@ export async function isDockerAvailable(): Promise<boolean> {
   }
 }
 
-export async function ensureNetwork(name: string): Promise<void> {
+export async function ensureNetwork(name: string, opts: { internal?: boolean } = {}): Promise<void> {
   const networks = await dockerRequest<{ Name: string }[]>(
     "GET",
     `/networks?filters=${encodeURIComponent(JSON.stringify({ name: [name] }))}`,
@@ -198,7 +198,20 @@ export async function ensureNetwork(name: string): Promise<void> {
     Name: name,
     Driver: "bridge",
     CheckDuplicate: true,
+    ...(opts.internal ? { Internal: true } : {}),
   });
+}
+
+/** Attach a container to a network unless it's already on it. */
+export async function connectToNetwork(network: string, container: string): Promise<boolean> {
+  const net = await dockerRequest<{ Containers?: Record<string, { Name?: string }> }>(
+    "GET",
+    `/networks/${encodeURIComponent(network)}`,
+  );
+  const members = Object.entries(net?.Containers ?? {});
+  if (members.some(([id, c]) => id.startsWith(container) || c.Name === container)) return false;
+  await dockerRequest("POST", `/networks/${encodeURIComponent(network)}/connect`, { Container: container });
+  return true;
 }
 
 /** Parse Docker's ExposedPorts keys ("80/tcp") into port numbers, skipping non-numeric keys. */
