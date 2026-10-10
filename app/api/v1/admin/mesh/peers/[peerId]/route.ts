@@ -49,11 +49,15 @@ const patchSchema = z
   .object({
     organizationId: z.string().min(1).nullable().optional(),
     acceptMcp: z.boolean().optional(),
+    acceptWebhookRelay: z.boolean().optional(),
   })
   .strict()
-  .refine((d) => d.organizationId !== undefined || d.acceptMcp !== undefined, { message: "Nothing to change" });
+  .refine(
+    (d) => d.organizationId !== undefined || d.acceptMcp !== undefined || d.acceptWebhookRelay !== undefined,
+    { message: "Nothing to change" },
+  );
 
-/** PATCH /api/v1/admin/mesh/peers/[peerId] — bind a peer to an org, or let it forward MCP calls */
+/** PATCH /api/v1/admin/mesh/peers/[peerId] — bind a peer to an org, let it forward MCP calls, or accept its webhook relays */
 async function handlePatch(
   request: Request,
   { params }: { params: Promise<{ peerId: string }> }
@@ -70,9 +74,12 @@ async function handlePatch(
       return apiError.validation(parsed.error, { details: true });
     }
 
-    const { organizationId, acceptMcp } = parsed.data;
+    const { organizationId, acceptMcp, acceptWebhookRelay } = parsed.data;
     if (acceptMcp !== undefined && session.authMethod !== "session") {
       return NextResponse.json({ error: "Only a signed-in instance admin can change MCP access for a peer" }, { status: 403 });
+    }
+    if (acceptWebhookRelay !== undefined && session.authMethod !== "session") {
+      return NextResponse.json({ error: "Only a signed-in instance admin can change webhook relays for a peer" }, { status: 403 });
     }
     if (organizationId) {
       const org = await db.query.organizations.findFirst({
@@ -86,12 +93,24 @@ async function handlePatch(
 
     const [peer] = await db
       .update(meshPeers)
-      .set({ organizationId, acceptMcp, updatedAt: new Date() })
+      .set({ organizationId, acceptMcp, acceptWebhookRelay, updatedAt: new Date() })
       .where(eq(meshPeers.id, peerId))
-      .returning({ id: meshPeers.id, organizationId: meshPeers.organizationId, acceptMcp: meshPeers.acceptMcp });
+      .returning({
+        id: meshPeers.id,
+        organizationId: meshPeers.organizationId,
+        acceptMcp: meshPeers.acceptMcp,
+        acceptWebhookRelay: meshPeers.acceptWebhookRelay,
+      });
 
     if (!peer) {
       return NextResponse.json({ error: "Peer not found" }, { status: 404 });
+    }
+
+    // Tells the peer now rather than at its next heartbeat.
+    if (acceptWebhookRelay !== undefined) {
+      import("@/lib/mesh/heartbeat")
+        .then(({ sendHeartbeatToPeer }) => sendHeartbeatToPeer(peerId))
+        .catch(() => {});
     }
 
     return NextResponse.json({ peer });

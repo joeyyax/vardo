@@ -45,6 +45,8 @@ type HeartbeatResponse = {
   ok: boolean;
   instance: { id: string; name: string; internalIp: string; vardo?: unknown };
   peers: PeerManifestEntry[];
+  /** Whether the peer accepts webhook relays from us. Absent from older versions. */
+  acceptsWebhookRelay?: boolean;
 };
 
 /**
@@ -55,11 +57,21 @@ export async function sendHeartbeatToPeer(peerId: string): Promise<boolean> {
   let ok = false;
   let body: HeartbeatResponse | null = null;
 
+  let before: { status: string; acceptWebhookRelay: boolean } | undefined;
+  try {
+    before = await db.query.meshPeers.findFirst({
+      where: eq(meshPeers.id, peerId),
+      columns: { status: true, acceptWebhookRelay: true },
+    });
+  } catch {
+    before = undefined;
+  }
+
   try {
     const res = await meshFetch(peerId, "/api/v1/mesh/heartbeat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ vardo: localVardoStatus() }),
+      body: JSON.stringify({ vardo: localVardoStatus(), acceptsWebhookRelay: before?.acceptWebhookRelay ?? false }),
     });
 
     ok = res.ok;
@@ -79,9 +91,17 @@ export async function sendHeartbeatToPeer(peerId: string): Promise<boolean> {
     .set({
       status: ok ? "online" : "offline",
       ...(ok ? { lastSeenAt: new Date(), ...vardoStatusColumns(parseVardoStatus(body?.instance?.vardo)) } : {}),
+      ...(ok && typeof body?.acceptsWebhookRelay === "boolean" ? { peerAcceptsWebhookRelay: body.acceptsWebhookRelay } : {}),
       updatedAt: new Date(),
     })
     .where(eq(meshPeers.id, peerId));
+
+  // Relays sent while the link was down never arrived.
+  if (ok && before && before.status !== "online") {
+    import("@/lib/git-integration/poll-scheduler")
+      .then(({ requestCatchUpPoll }) => requestCatchUpPoll(`link to peer ${peerId} restored`))
+      .catch(() => {});
+  }
 
   if (ok && body?.peers && body.peers.length > 0 && body.instance?.id) {
     try {

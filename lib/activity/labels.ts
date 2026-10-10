@@ -58,6 +58,9 @@ const PHRASES: Record<string, Phrase> = {
 
   "mesh.mcp_forwarded": { text: "ran an MCP tool on a linked instance", standalone: true },
   "mesh.mcp_received": { text: "ran an MCP tool from a linked instance", standalone: true },
+  "mesh.webhook_relayed": { text: "relayed a GitHub webhook to a linked instance", standalone: true },
+  "mesh.webhook_relay_failed": { text: "couldn't relay a GitHub webhook to a linked instance", standalone: true },
+  "mesh.webhook_relay_received": { text: "received a relayed GitHub webhook for" },
 
   "volume.sync": { text: "synced volumes on" },
   "volume.drift_detected": { text: "detected volume drift on" },

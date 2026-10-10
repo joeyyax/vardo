@@ -16,6 +16,7 @@ import {
   Check,
   Info,
   Bot,
+  Webhook,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -53,6 +54,12 @@ type MeshPeer = {
   apiUrl: string | null;
   connectionType: "direct" | "visible";
   acceptMcp: boolean;
+  acceptWebhookRelay: boolean;
+  peerAcceptsWebhookRelay: boolean;
+  lastRelaySentAt: string | null;
+  lastRelaySentStatus: string | null;
+  lastRelayReceivedAt: string | null;
+  lastRelayReceivedStatus: string | null;
   lastSeenAt: string | null;
   tunnelError?: string | null;
   createdAt: string;
@@ -85,6 +92,22 @@ async function requestPeers(): Promise<PeersResponse | null> {
 
 const ACCEPT_MCP_WARNING =
   "MCP calls this peer forwards run here as the user with the same verified email, up to that user's role here. Turn it on only for an instance you trust as much as this one.";
+
+const ACCEPT_RELAY_WARNING =
+  "This peer can then start deploys of auto-deploy apps and previews here, on the branches they already track. It can't choose code, branches or commands; each deploy fetches from the git host itself. Turn it on only for an instance you trust to report pushes honestly.";
+
+/** The latest relay in each direction, newest first. */
+function relaySummary(peer: MeshPeer): string | null {
+  const lines: { at: string; text: string }[] = [];
+  if (peer.lastRelayReceivedAt) {
+    lines.push({ at: peer.lastRelayReceivedAt, text: `Relayed from ${peer.name} ${formatRelativeTime(peer.lastRelayReceivedAt)}: ${peer.lastRelayReceivedStatus ?? "received"}` });
+  }
+  if (peer.lastRelaySentAt) {
+    lines.push({ at: peer.lastRelaySentAt, text: `Relayed to ${peer.name} ${formatRelativeTime(peer.lastRelaySentAt)}: ${peer.lastRelaySentStatus ?? "sent"}` });
+  }
+  if (lines.length === 0) return null;
+  return lines.sort((a, b) => b.at.localeCompare(a.at)).map((l) => l.text).join(" · ");
+}
 
 function formatLastSeen(dateStr: string | null): string {
   if (!dateStr) return "Awaiting first heartbeat";
@@ -123,6 +146,8 @@ export function InstancesSettings() {
   const [cancellingCode, setCancellingCode] = useState<string | null>(null);
   const [mcpTarget, setMcpTarget] = useState<MeshPeer | null>(null);
   const [savingMcp, setSavingMcp] = useState(false);
+  const [relayTarget, setRelayTarget] = useState<MeshPeer | null>(null);
+  const [savingRelay, setSavingRelay] = useState(false);
 
   function applyPeers(json: PeersResponse | null) {
     if (json) {
@@ -253,6 +278,31 @@ export function InstancesSettings() {
     } finally {
       setSavingMcp(false);
       setMcpTarget(null);
+    }
+  }
+
+  async function handleAcceptRelay(peer: MeshPeer, acceptWebhookRelay: boolean) {
+    setSavingRelay(true);
+    try {
+      const res = await fetch(`/api/v1/admin/mesh/peers/${peer.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ acceptWebhookRelay }),
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        toast.error(json.error || "Couldn't change webhook relays");
+        return;
+      }
+      setPeers((prev) => prev.map((p) => (p.id === peer.id ? { ...p, acceptWebhookRelay } : p)));
+      toast.success(
+        acceptWebhookRelay ? `Accepting relayed webhooks from ${peer.name}` : `Stopped relayed webhooks from ${peer.name}`,
+      );
+    } catch {
+      toast.error("Couldn't change webhook relays");
+    } finally {
+      setSavingRelay(false);
+      setRelayTarget(null);
     }
   }
 
@@ -449,6 +499,11 @@ export function InstancesSettings() {
                                 MCP
                               </Badge>
                             )}
+                            {peer.acceptWebhookRelay && (
+                              <Badge variant="outline" className="px-1.5 py-0 shrink-0" title={ACCEPT_RELAY_WARNING}>
+                                Relays
+                              </Badge>
+                            )}
                           </div>
                           <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
                             <span className="font-mono">{peer.internalIp}</span>
@@ -456,6 +511,11 @@ export function InstancesSettings() {
                               <span className="font-mono">{peer.endpoint}</span>
                             )}
                           </div>
+                          {relaySummary(peer) && (
+                            <p className="text-xs text-muted-foreground mt-0.5 truncate" title={relaySummary(peer) ?? undefined}>
+                              {relaySummary(peer)}
+                            </p>
+                          )}
                         </div>
                       </div>
 
@@ -487,6 +547,14 @@ export function InstancesSettings() {
                               >
                                 <Bot className="size-4" />
                                 {peer.acceptMcp ? "Stop accepting MCP calls" : "Accept MCP calls"}
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() =>
+                                  peer.acceptWebhookRelay ? handleAcceptRelay(peer, false) : setRelayTarget(peer)
+                                }
+                              >
+                                <Webhook className="size-4" />
+                                {peer.acceptWebhookRelay ? "Stop accepting relayed webhooks" : "Accept relayed webhooks"}
                               </DropdownMenuItem>
                               <DropdownMenuItem
                                 className="text-destructive focus:text-destructive"
@@ -681,6 +749,17 @@ export function InstancesSettings() {
         onConfirm={() => mcpTarget && handleAcceptMcp(mcpTarget, true)}
         loading={savingMcp}
         confirmLabel="Accept MCP calls"
+        loadingLabel="Saving..."
+      />
+
+      <ConfirmDeleteDialog
+        open={!!relayTarget}
+        onOpenChange={(open) => !open && setRelayTarget(null)}
+        title={`Accept relayed webhooks from ${relayTarget?.name ?? "this peer"}?`}
+        description={ACCEPT_RELAY_WARNING}
+        onConfirm={() => relayTarget && handleAcceptRelay(relayTarget, true)}
+        loading={savingRelay}
+        confirmLabel="Accept relayed webhooks"
         loadingLabel="Saving..."
       />
 

@@ -204,3 +204,34 @@ describe("POST /api/v1/mesh/heartbeat", () => {
     }
   });
 });
+
+describe("webhook relay opt-in exchange", () => {
+  async function setValues(): Promise<Record<string, unknown>> {
+    const { db } = await import("@/lib/db");
+    const update = vi.mocked(db.update).mock.results[0].value as { set: ReturnType<typeof vi.fn> };
+    return update.set.mock.calls[0][0];
+  }
+
+  it("records whether the caller accepts our relays", async () => {
+    await POST(
+      new NextRequest("http://localhost/api/v1/mesh/heartbeat", {
+        method: "POST",
+        headers: { Authorization: "Bearer test-token" },
+        body: JSON.stringify({ acceptsWebhookRelay: true }),
+      }),
+      {},
+    );
+    expect(await setValues()).toMatchObject({ peerAcceptsWebhookRelay: true });
+  });
+
+  it("leaves it alone for a caller that doesn't say", async () => {
+    await POST(makeRequest(), {});
+    expect(await setValues()).not.toHaveProperty("peerAcceptsWebhookRelay");
+  });
+
+  it("tells the caller whether we accept its relays", async () => {
+    mockRequireMeshPeer.mockResolvedValue({ ...FAKE_PEER, acceptWebhookRelay: true });
+    const body = (await (await POST(makeRequest(), {})).json()) as { acceptsWebhookRelay: boolean };
+    expect(body.acceptsWebhookRelay).toBe(true);
+  });
+});
