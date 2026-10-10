@@ -36,16 +36,22 @@ case "$1" in
   inspect)
     for last; do :; done
     case "$3" in
-      *Name*) echo "/vardo-production-green-frontend-1" ;;
+      *Name*) [ "$last" = wrk1 ] && echo "/$(cat "$F/worker")" || echo "/vardo-production-green-frontend-1" ;;
       *) cat "$F/state/$last" 2>/dev/null || exit 1 ;;
     esac ;;
-  ps) case "$*" in *vardo-production-green*) echo abc123 ;; esac ;;
+  ps)
+    case "$*" in
+      *service=worker*) case "$*" in *"$(cat "$F/worker-project" 2>/dev/null || echo vardo-production-green)"*) [ -f "$F/worker" ] && echo wrk1 ;; esac ;;
+      *vardo-production-green*) echo abc123 ;;
+    esac ;;
   exec)
     case "$*" in
       *backup:busy*) cat "$F/backups" 2>/dev/null || echo 0 ;;
+      *healthz*) cat "$F/healthz" 2>/dev/null || echo '{"draining":false}' ;;
       *) [ -f "$F/deploy" ] || exit 1; cat "$F/deploy" ;;
     esac ;;
   restart) echo "$4" >> "$F/restarts" ;;
+  stop|start) echo "$1 $2" >> "$F/restarts" ;;
 esac
 `;
 
@@ -234,6 +240,78 @@ describe("tick", { timeout: 30_000 }, () => {
     const out = sh("main", { VARDO_WATCHDOG: "false" });
     expect(out).toContain("disabled by VARDO_WATCHDOG=false");
     expect(out).toContain("slept");
+  });
+});
+
+describe("worker", { timeout: 30_000 }, () => {
+  const WORKER = "vardo-production-green-worker-1";
+  const withWorker = (health: string) => {
+    writeFileSync(join(dir, "fake/worker"), WORKER);
+    setState(WORKER, `running ${health}`);
+  };
+  // The worker restarts in the background; wait for it.
+  const workerTicks = (n: number) => sh(`${Array(n).fill("tick").join("\n")}\nwait`);
+
+  it("stops the current slot's unhealthy worker with its own grace period, then starts it", () => {
+    withWorker("unhealthy");
+    workerTicks(2);
+    expect(restarts()).toEqual([]);
+    workerTicks(1);
+    expect(restarts()).toEqual([`stop ${WORKER}`, `start ${WORKER}`]);
+    expect(events()).toMatchObject([{ role: "worker", container: WORKER, action: "restart", fails: 3 }]);
+  });
+
+  it("never restarts a draining worker", () => {
+    withWorker("unhealthy");
+    writeFileSync(join(dir, "fake/healthz"), '{"ok":true,"status":"draining","draining":true}');
+    workerTicks(6);
+    expect(restarts()).toEqual([]);
+  });
+
+  it("backs off after three restarts and records it once, like the other services", () => {
+    withWorker("unhealthy");
+    workerTicks(15);
+    expect(restarts().filter((r) => r.startsWith("stop"))).toHaveLength(3);
+    expect(events().map((e) => e.action)).toEqual(["restart", "restart", "restart", "backoff"]);
+  });
+
+  it("holds the worker while it runs backup work", () => {
+    withWorker("unhealthy");
+    writeFileSync(join(dir, "fake/backups"), "1\n");
+    workerTicks(5);
+    expect(restarts()).toEqual([]);
+  });
+
+  it("skips a release without a worker", () => {
+    workerTicks(5);
+    expect(restarts()).toEqual([]);
+  });
+
+  it("finds the worker in project vardo on a legacy install", () => {
+    rmSync(join(dir, "app/production/current"));
+    writeFileSync(join(dir, "fake/worker-project"), "project=vardo ");
+    withWorker("unhealthy");
+    workerTicks(3);
+    expect(restarts()).toEqual([`stop ${WORKER}`, `start ${WORKER}`]);
+  });
+});
+
+describe("alive file", () => {
+  it("is touched on every tick, not while paused", () => {
+    ticks(1);
+    expect(existsSync(join(dir, "state/alive"))).toBe(true);
+    rmSync(join(dir, "state/alive"));
+    writeFileSync(join(dir, "state/pause"), "");
+    ticks(1);
+    expect(existsSync(join(dir, "state/alive"))).toBe(false);
+  });
+
+  it("is removed when the watchdog is disabled, so the console doesn't call it silent", () => {
+    writeFileSync(join(dir, "state/alive"), "");
+    writeFileSync(join(dir, "bin/sleep"), "#!/bin/sh\nexit 0\n");
+    chmodSync(join(dir, "bin/sleep"), 0o755);
+    sh("main", { VARDO_WATCHDOG: "false" });
+    expect(existsSync(join(dir, "state/alive"))).toBe(false);
   });
 });
 

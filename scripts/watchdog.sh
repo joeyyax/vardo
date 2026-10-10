@@ -1,5 +1,5 @@
 #!/bin/sh
-# Restarts Vardo's core containers when Docker reports them unhealthy. See docs/watchdog.md.
+# Restarts Vardo's core containers and the worker when Docker reports them unhealthy. See docs/watchdog.md.
 # shellcheck disable=SC3043,SC2086,SC2046
 
 set -u
@@ -78,6 +78,43 @@ console_container() {
   echo vardo-frontend
 }
 
+# The active slot's worker, or nothing on a release without one.
+worker_container() {
+  local link="$APP_DIR/$CONSOLE_ENV/current" project=vardo id
+  [ -L "$link" ] && project="vardo-$CONSOLE_ENV-$(basename "$(readlink "$link")")"
+  id=$(docker ps -q \
+    --filter "label=com.docker.compose.project=$project" \
+    --filter "label=com.docker.compose.service=worker" 2>/dev/null | head -n 1)
+  [ -n "$id" ] || return 0
+  docker inspect --format '{{.Name}}' "$id" 2>/dev/null | sed 's#^/##'
+}
+
+# A draining worker reports healthy, but Docker's status can lag a check behind.
+worker_draining() {
+  docker exec "$1" curl -s -m 5 http://localhost:3001/healthz 2>/dev/null | grep -q '"draining":true'
+}
+
+# Stops the worker with its own stop_grace_period, then starts it, in the background so the drain doesn't hold the other checks.
+restart_worker() {
+  local name="$1" fails="$2" pidfile="$STATE_DIR/worker.restarting"
+  if [ -f "$pidfile" ] && kill -0 "$(cat "$pidfile")" 2>/dev/null; then
+    log "skip $name: a restart is still draining it"
+    return
+  fi
+  log "restart $name: unhealthy for $fails checks"
+  (
+    if docker stop "$name" > /dev/null 2>&1 && docker start "$name" > /dev/null 2>&1; then
+      now >> "$STATE_DIR/worker.restarts"
+      record worker "$name" restart "$fails"
+    else
+      log "restart $name failed"
+      record worker "$name" restart-failed "$fails"
+    fi
+    rm -f "$pidfile"
+  ) &
+  echo $! > "$pidfile"
+}
+
 # idle, active (any deploy:active:* lease) or unknown.
 deploy_state() {
   local out
@@ -89,7 +126,7 @@ deploy_state() {
   esac
 }
 
-# Whether the console runs backups, restores or drills (any backup:busy:* key): busy, idle or unknown.
+# Whether the console or worker runs backups, restores or drills (any backup:busy:* key): busy, idle or unknown.
 backup_state() {
   local out
   out=$(docker exec "$REDIS_CONTAINER" sh -c '[ -z "${REDIS_PASSWORD:-}" ] || export REDISCLI_AUTH="$REDIS_PASSWORD"; redis-cli --raw EVAL "return #redis.call(\"keys\", \"backup:busy:*\")" 0' 2>/dev/null) || { echo unknown; return; }
@@ -102,7 +139,7 @@ backup_state() {
 
 # hold while backup work runs, for up to BACKUP_HOLD seconds from the first unhealthy check that saw it.
 backup_hold() {
-  local file="$STATE_DIR/console.backup-hold" since
+  local file="$STATE_DIR/$1.backup-hold" since
   if [ "$(backup_state)" != busy ]; then rm -f "$file"; echo idle; return; fi
   [ -f "$file" ] || now > "$file"
   since=$(cat "$file" 2>/dev/null || now)
@@ -115,14 +152,23 @@ check() {
   fails=$(cat "$fails_file" 2>/dev/null || echo 0)
   health=$(health_of "$name")
   recent=$(recent_restarts "$role")
-  if [ "$role" = console ]; then
-    if [ "$health" = unhealthy ]; then backups=$(backup_hold); else rm -f "$STATE_DIR/console.backup-hold"; fi
+  if [ "$role" = worker ] && [ "$health" = unhealthy ] && worker_draining "$name"; then
+    log "skip $name: draining"
+    echo 0 > "$fails_file"
+    return
+  fi
+  if [ "$role" = console ] || [ "$role" = worker ]; then
+    if [ "$health" = unhealthy ]; then backups=$(backup_hold "$role"); else rm -f "$STATE_DIR/$role.backup-hold"; fi
   fi
   set -- $(decide "$kind" "$health" "$fails" "$recent" "$deploy" "$backups")
   action="$1" next="$2"
   echo "$next" > "$fails_file"
   case "$action" in
     restart)
+      if [ "$role" = worker ]; then
+        restart_worker "$name" "$((fails + 1))"
+        return
+      fi
       log "restart $name: unhealthy for $((fails + 1)) checks"
       if docker restart -t 30 "$name" > /dev/null 2>&1; then
         now >> "$STATE_DIR/$role.restarts"
@@ -150,9 +196,13 @@ check() {
 
 tick() {
   if [ -f "$STATE_DIR/pause" ]; then return; fi
-  local deploy
+  # The console reads its age: older than 10 minutes opens host.watchdog-silent.
+  touch "$STATE_DIR/alive"
+  local deploy worker
   deploy=$(deploy_state)
   check console app "$(console_container)" "$deploy"
+  worker=$(worker_container)
+  [ -z "$worker" ] || check worker app "$worker" "$deploy"
   check traefik app vardo-traefik "$deploy"
   check postgres data vardo-postgres "$deploy"
   check redis data vardo-redis "$deploy"
@@ -161,11 +211,12 @@ tick() {
 main() {
   if [ "${VARDO_WATCHDOG:-true}" = "false" ]; then
     log "disabled by VARDO_WATCHDOG=false"
+    rm -f "$STATE_DIR/alive"
     exec sleep 2147483647
   fi
   mkdir -p "$STATE_DIR"
   rm -f "$STATE_DIR"/*.fails
-  log "watching every ${INTERVAL}s: console, vardo-traefik, vardo-postgres, vardo-redis"
+  log "watching every ${INTERVAL}s: console, worker, vardo-traefik, vardo-postgres, vardo-redis"
   trap 'exit 0' TERM INT
   while :; do
     tick

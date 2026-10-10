@@ -1,6 +1,6 @@
 # Watchdog
 
-`vardo-watchdog` restarts Vardo's core containers when Docker reports them unhealthy. Docker's `restart: unless-stopped` only acts when a container exits, and the console's own health monitor can't help when the console is the one that's wedged.
+`vardo-watchdog` restarts Vardo's core containers and the worker when Docker reports them unhealthy. Docker's `restart: unless-stopped` only acts when a container exits, and the console's own health monitor can't help when the console is the one that's wedged.
 
 It's a shell script (`scripts/watchdog.sh`) on the stock `docker:cli` image. It has no network, no database and no Redis client: everything goes through the Docker socket.
 
@@ -11,25 +11,31 @@ Every 30 seconds it reads Docker's health status for:
 | Container | Restarted after |
 | --- | --- |
 | The active console slot | 3 unhealthy checks in a row (90s) |
+| The active slot's worker | 3 unhealthy checks in a row (90s) |
 | `vardo-traefik` | 3 unhealthy checks in a row (90s) |
 | `vardo-postgres` | 10 unhealthy checks in a row (5 min) |
 | `vardo-redis` | 10 unhealthy checks in a row (5 min) |
 
-The console slot comes from `/opt/vardo/apps/vardo/production/current`. Without that symlink it watches `vardo-frontend`.
+The console slot comes from `/opt/vardo/apps/vardo/production/current`. Without that symlink it watches `vardo-frontend` and project `vardo`'s worker. A release without a worker skips that check.
+
+The worker's `/healthz` turns unhealthy when the database is unreachable or a critical loop (deploy sweep, backup tick, cron tick, container health) stops beating. Its restart is a `docker stop` with its own `stop_grace_period`, then a `docker start`, run in the background so the drain doesn't hold the other checks.
 
 A container that isn't running is left to Docker's restart policy. A container with no healthcheck is never restarted.
 
 ## When it holds off
 
 - **During a deploy.** Any `deploy:active:*` lease in Redis means a deploy or rollback is running, and the count starts over.
-- **While the console runs backup work.** A `backup:busy:*` key means a backup, restore, drill or import is running. The console's restart waits up to 20 minutes for it, then goes ahead; the new console reruns interrupted scheduled backups.
+- **While the worker drains.** It reports `draining` on `/healthz` and is never restarted mid-drain.
+- **While the console or worker runs backup work.** A `backup:busy:*` key means a backup, restore, drill or import is running. The console's restart waits up to 20 minutes for it, then goes ahead; the new console reruns interrupted scheduled backups.
 - **When it can't read Redis.** The console and Traefik wait, since a missing Redis is usually why they're unhealthy. Postgres and Redis still restart after their 5-minute window.
 - **After 3 restarts in 30 minutes** of one container. It logs a backoff and tries again once the oldest restart ages out.
 - **While `/opt/vardo/watchdog/pause` exists.** Touch it for maintenance.
 
 ## Where it reports
 
-Each restart, failed restart and backoff goes to `docker logs vardo-watchdog` and to `/opt/vardo/watchdog/events.log`. The console reads that file every minute and sends each new entry as a **Service degraded** alert, so a restart made while the console was down shows up once it's back.
+Each restart, failed restart and backoff goes to `docker logs vardo-watchdog` and to `/opt/vardo/watchdog/events.log`.
+
+Every tick touches `/opt/vardo/watchdog/alive`. The console opens a **Watchdog stopped checking** incident (`host.watchdog-silent`) when it's older than 10 minutes. Pausing or `VARDO_WATCHDOG=false` stops the ticks; disabling also removes the file, so only a pause that runs past 10 minutes opens it. The console reads that file every minute and sends each new entry as a **Service degraded** alert, so a restart made while the console was down shows up once it's back.
 
 ## Settings
 
