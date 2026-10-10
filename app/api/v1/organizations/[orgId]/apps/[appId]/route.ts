@@ -16,7 +16,8 @@ import { MaskedComposeError, unmaskComposeEnv } from "@/lib/docker/compose-mask"
 import { readableApp } from "@/lib/api/readable-app";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
-import { GIT_URL_MASKED_MESSAGE, gitBranchUpdateSchema, gitUrlUpdateSchema, unmaskGitUrl } from "@/lib/api/git-fields";
+import { GIT_URL_MASKED_MESSAGE, gitBranchUpdateSchema, gitUrlUpdateSchema } from "@/lib/api/git-fields";
+import { gitUrlUpdateColumns } from "@/lib/api/git-credentials";
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
@@ -162,7 +163,7 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
 
     const existingApp = await db.query.apps.findFirst({
       where: and(eq(apps.id, appId), eq(apps.organizationId, orgId)),
-      columns: { id: true, name: true, projectId: true, isSystemManaged: true, composeContent: true, gitUrl: true },
+      columns: { id: true, name: true, projectId: true, isSystemManaged: true, composeContent: true, gitUrl: true, gitCredentials: true },
     });
     if (!existingApp) {
       return apiError.notFound("app");
@@ -171,10 +172,10 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
     const refused = refuseSystemManaged(existingApp, "edit");
     if (refused) return refused;
 
-    if (parsed.data.gitUrl) {
-      const gitUrl = unmaskGitUrl(parsed.data.gitUrl, existingApp.gitUrl);
-      if (gitUrl === null) return NextResponse.json({ error: GIT_URL_MASKED_MESSAGE }, { status: 400 });
-      parsed.data.gitUrl = gitUrl;
+    let gitColumns: ReturnType<typeof gitUrlUpdateColumns> | undefined;
+    if (parsed.data.gitUrl !== undefined) {
+      gitColumns = gitUrlUpdateColumns(parsed.data.gitUrl, existingApp, orgId);
+      if (!gitColumns) return NextResponse.json({ error: GIT_URL_MASKED_MESSAGE }, { status: 400 });
     }
 
     // A masked read sent back keeps the saved values.
@@ -221,6 +222,7 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
       .update(apps)
       .set({
         ...parsed.data,
+        ...gitColumns,
         ...(composeChanged ? { needsRedeploy: true } : {}),
         updatedAt: new Date(),
       })

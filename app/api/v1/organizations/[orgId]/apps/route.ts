@@ -17,6 +17,7 @@ import { recordActivity } from "@/lib/activity";
 import { isReservedSlug } from "@/lib/domain-monitoring/reserved";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { readableApp } from "@/lib/api/readable-app";
+import { gitUrlColumns } from "@/lib/api/git-credentials";
 import { can } from "@/lib/auth/permissions";
 import { getSslConfig, getDefaultCertResolver } from "@/lib/system-settings";
 
@@ -167,7 +168,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
         description: data.description,
         source: data.source,
         deployType: data.deployType,
-        gitUrl: data.gitUrl,
+        ...gitUrlColumns(data.gitUrl, orgId),
         gitBranch: data.gitBranch || "main",
         imageName: data.imageName,
         composeContent: data.composeContent,

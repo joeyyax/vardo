@@ -1,11 +1,31 @@
-/** Git config through the environment: a github.com auth header that isn't written to disk or argv. */
-export function githubTokenGitEnv(token: string): Record<string, string> {
-  const basic = Buffer.from(`x-access-token:${token}`).toString("base64");
+/** Git config through the environment: a basic auth header for one origin that isn't written to disk or argv. */
+export function basicAuthGitEnv(url: string, username: string, password: string): Record<string, string> {
+  const basic = Buffer.from(`${username}:${password}`).toString("base64");
   return {
     GIT_CONFIG_COUNT: "1",
-    GIT_CONFIG_KEY_0: "http.https://github.com/.extraheader",
+    GIT_CONFIG_KEY_0: `http.${new URL(url).origin}/.extraheader`,
     GIT_CONFIG_VALUE_0: `Authorization: Basic ${basic}`,
   };
+}
+
+export function githubTokenGitEnv(token: string): Record<string, string> {
+  return basicAuthGitEnv("https://github.com/", "x-access-token", token);
+}
+
+function decodeUserinfo(part: string): string {
+  try {
+    return decodeURIComponent(part);
+  } catch {
+    return part;
+  }
+}
+
+/** Auth env for a git URL's userinfo, `user:password` or a lone token. */
+export function credentialGitEnv(url: string, credentials: string): Record<string, string> {
+  const colon = credentials.indexOf(":");
+  const username = colon < 0 ? credentials : credentials.slice(0, colon);
+  const password = colon < 0 ? "" : credentials.slice(colon + 1);
+  return basicAuthGitEnv(url, decodeUserinfo(username), decodeUserinfo(password));
 }
 
 export function parseGithubRepo(gitUrl: string): { owner: string; repo: string } | null {

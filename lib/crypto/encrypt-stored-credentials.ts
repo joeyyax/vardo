@@ -1,7 +1,7 @@
 // Encrypts stored plaintext credentials on startup. Values already encrypted are left alone.
 
 import { db } from "@/lib/db";
-import { backupTargets, meshPeers, notificationChannels, orgEnvVars, systemSettings } from "@/lib/db/schema";
+import { apps, backupTargets, meshPeers, notificationChannels, orgEnvVars, systemSettings } from "@/lib/db/schema";
 import { and, eq, isNotNull } from "drizzle-orm";
 import { encrypt, encryptSystem, isEncrypted } from "./encrypt";
 import { plaintextSecretKeys, sealTargetConfig } from "@/lib/backups/target-config";
@@ -22,6 +22,7 @@ export type CredentialMigration = {
   peers: number;
   channels: number;
   orgEnvVars: number;
+  appGitCredentials: number;
 };
 
 /** Only a key this database already trusts may encrypt, or values are stranded under the wrong key. */
@@ -30,7 +31,7 @@ export function canEncryptStoredCredentials(state: KeyEscrowState | null): boole
 }
 
 export async function encryptStoredCredentials(): Promise<CredentialMigration> {
-  const result: CredentialMigration = { targets: 0, settings: 0, peers: 0, channels: 0, orgEnvVars: 0 };
+  const result: CredentialMigration = { targets: 0, settings: 0, peers: 0, channels: 0, orgEnvVars: 0, appGitCredentials: 0 };
 
   const targets = await db
     .select({ id: backupTargets.id, organizationId: backupTargets.organizationId, config: backupTargets.config })
@@ -107,11 +108,26 @@ export async function encryptStoredCredentials(): Promise<CredentialMigration> {
     if (updated.length > 0) result.orgEnvVars++;
   }
 
+  const gitRows = await db
+    .select({ id: apps.id, organizationId: apps.organizationId, gitCredentials: apps.gitCredentials })
+    .from(apps)
+    .where(isNotNull(apps.gitCredentials));
+
+  for (const row of gitRows) {
+    if (!row.gitCredentials || isEncrypted(row.gitCredentials)) continue;
+    const updated = await db
+      .update(apps)
+      .set({ gitCredentials: encrypt(row.gitCredentials, row.organizationId) })
+      .where(and(eq(apps.id, row.id), eq(apps.gitCredentials, row.gitCredentials)))
+      .returning({ id: apps.id });
+    if (updated.length > 0) result.appGitCredentials++;
+  }
+
   if (Object.values(result).some((n) => n > 0)) {
     log.info(
       `Encrypted stored credentials: ${result.targets} backup target(s), ${result.settings} setting(s), ` +
         `${result.peers} mesh peer(s), ${result.channels} notification channel(s), ` +
-        `${result.orgEnvVars} org env var(s)`,
+        `${result.orgEnvVars} org env var(s), ${result.appGitCredentials} git credential(s)`,
     );
   }
   return result;

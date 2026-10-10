@@ -5,6 +5,7 @@ import { nanoid } from "nanoid";
 import { getInstanceId } from "@/lib/constants";
 import { narrowBackendProtocol } from "@/lib/docker/compose";
 import { decrypt, decryptOrFallback, encrypt, isEncrypted } from "@/lib/crypto/encrypt";
+import { gitUrlColumns, openGitUrl } from "@/lib/api/git-credentials";
 
 /** Volume transfers need the backup engine. */
 export async function canTransferVolumes(): Promise<boolean> {
@@ -95,7 +96,7 @@ export async function buildProjectBundle(
       description: app.description,
       source: app.source,
       deployType: app.deployType,
-      gitUrl: app.gitUrl,
+      gitUrl: openGitUrl(app, project.organizationId),
       gitBranch: app.gitBranch,
       imageName: app.imageName,
       composeContent: app.composeContent,
@@ -210,7 +211,7 @@ export async function importProjectBundle(
           .update(apps)
           .set({
             composeContent: appBundle.composeContent,
-            gitUrl: appBundle.gitUrl,
+            ...gitUrlColumns(appBundle.gitUrl, orgId),
             gitBranch: appBundle.gitBranch,
             imageName: appBundle.imageName,
             // A bundle sent without env leaves the destination's env alone.
@@ -247,7 +248,7 @@ export async function importProjectBundle(
           description: appBundle.description,
           source: appBundle.source,
           deployType: appBundle.deployType,
-          gitUrl: appBundle.gitUrl,
+          ...gitUrlColumns(appBundle.gitUrl, orgId),
           gitBranch: appBundle.gitBranch,
           imageName: appBundle.imageName,
           composeContent: appBundle.composeContent,

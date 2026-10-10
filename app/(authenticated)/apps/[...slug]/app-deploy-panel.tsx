@@ -21,6 +21,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Switch } from "@/components/ui/switch";
+import { splitGitUrl } from "@/lib/api/git-fields";
 import { Label } from "@/components/ui/label";
 import {
   AlertDialog,
@@ -121,7 +122,7 @@ function deployLabel(d: Deployment): string {
 }
 
 function CommitSha({ sha, gitUrl }: { sha: string; gitUrl: string | null }) {
-  const commitUrl = gitUrl?.replace(/\.git$/, "");
+  const commitUrl = gitUrl ? splitGitUrl(gitUrl).url.replace(/\.git$/, "") : null;
   const sha7 = sha.slice(0, 7);
   return commitUrl ? (
     <a

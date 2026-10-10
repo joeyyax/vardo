@@ -54,17 +54,19 @@ export async function probeDecryptability(): Promise<DecryptProbe> {
   const probe: DecryptProbe = { encrypted: 0, undecryptable: 0, samples: [] };
 
   const rows = await db
-    .select({ name: apps.name, orgId: apps.organizationId, envContent: apps.envContent })
+    .select({ name: apps.name, orgId: apps.organizationId, envContent: apps.envContent, gitCredentials: apps.gitCredentials })
     .from(apps);
 
   for (const row of rows) {
-    if (!row.envContent) continue;
-    const result = decryptOrFallback(row.envContent, row.orgId);
-    if (!result.wasEncrypted) continue;
-    probe.encrypted++;
-    if (result.decryptFailed) {
-      probe.undecryptable++;
-      if (probe.samples.length < MAX_SAMPLES) probe.samples.push(row.name);
+    for (const value of [row.envContent, row.gitCredentials]) {
+      if (!value) continue;
+      const result = decryptOrFallback(value, row.orgId);
+      if (!result.wasEncrypted) continue;
+      probe.encrypted++;
+      if (result.decryptFailed) {
+        probe.undecryptable++;
+        if (probe.samples.length < MAX_SAMPLES) probe.samples.push(row.name);
+      }
     }
   }
 

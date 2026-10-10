@@ -41,6 +41,7 @@ export const apps = pgTable(
     source: sourceEnum("source").notNull().default("git"),
     deployType: deployTypeEnum("deploy_type").notNull().default("compose"),
     gitUrl: text("git_url"),
+    gitCredentials: text("git_credentials"), // Encrypted userinfo of the git URL
     gitBranch: text("git_branch").default("main"),
     gitKeyId: text("git_key_id").references(() => deployKeys.id, {
       onDelete: "set null",

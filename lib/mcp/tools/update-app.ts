@@ -11,7 +11,8 @@ import type { McpAuthContext } from "../auth";
 import { accessDenied, canAccessOrg } from "../scope";
 import { readableApp } from "@/lib/api/readable-app";
 import { MaskedComposeError, unmaskComposeEnv } from "@/lib/docker/compose-mask";
-import { GIT_URL_MASKED_MESSAGE, gitBranchUpdateSchema, gitUrlUpdateSchema, unmaskGitUrl } from "@/lib/api/git-fields";
+import { GIT_URL_MASKED_MESSAGE, gitBranchUpdateSchema, gitUrlUpdateSchema } from "@/lib/api/git-fields";
+import { gitUrlUpdateColumns } from "@/lib/api/git-credentials";
 
 // 10 updates per 5 minutes per user/org pair.
 const UPDATE_RATE_LIMIT = 10;
@@ -85,6 +86,7 @@ export function registerUpdateApp(
           isSystemManaged: true,
           composeContent: true,
           gitUrl: true,
+          gitCredentials: true,
         },
       });
 
@@ -133,15 +135,15 @@ export function registerUpdateApp(
         };
       }
 
-      if (config.gitUrl) {
-        const gitUrl = unmaskGitUrl(config.gitUrl, existingApp.gitUrl);
-        if (gitUrl === null) {
+      let gitColumns: ReturnType<typeof gitUrlUpdateColumns> | undefined;
+      if (config.gitUrl !== undefined) {
+        gitColumns = gitUrlUpdateColumns(config.gitUrl, existingApp, existingApp.organizationId);
+        if (!gitColumns) {
           return {
             content: [{ type: "text" as const, text: JSON.stringify({ error: GIT_URL_MASKED_MESSAGE }) }],
             isError: true,
           };
         }
-        config.gitUrl = gitUrl;
       }
 
       // A masked read sent back keeps the saved values.
@@ -159,7 +161,7 @@ export function registerUpdateApp(
 
       const [updated] = await db
         .update(apps)
-        .set({ ...config, updatedAt: new Date() })
+        .set({ ...config, ...gitColumns, updatedAt: new Date() })
         .where(
           and(eq(apps.id, appId), eq(apps.organizationId, existingApp.organizationId))
         )

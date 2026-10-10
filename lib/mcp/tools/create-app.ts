@@ -13,6 +13,8 @@ import type { McpAuthContext } from "../auth";
 import { resolveProjectOrg } from "../scope";
 import { findPrefixOwner, prefixCollisionMessage } from "@/lib/docker/volume-prefix";
 import { gitBranchSchema, gitUrlSchema } from "@/lib/api/git-fields";
+import { gitUrlColumns } from "@/lib/api/git-credentials";
+import { readableApp } from "@/lib/api/readable-app";
 
 // 5 app creations per 10 minutes per user/org pair.
 const CREATE_RATE_LIMIT = 5;
@@ -177,7 +179,7 @@ export function registerCreateApp(
             description: description ?? null,
             source: "git",
             deployType,
-            gitUrl,
+            ...gitUrlColumns(gitUrl, orgId),
             gitBranch,
             composeFilePath,
             rootDirectory: rootDirectory ?? null,
@@ -212,7 +214,7 @@ export function registerCreateApp(
             text: JSON.stringify(
               {
                 appId: result.app.id,
-                app: result.app,
+                app: readableApp(result.app, true),
                 environment: "production",
                 needsDeploy: true,
                 message:

@@ -7,6 +7,7 @@ import { nanoid } from "nanoid";
 import { execFileAsync } from "@/lib/utils/exec";
 
 import { db } from "@/lib/db";
+import { gitUrlColumns } from "@/lib/api/git-credentials";
 import { apps, deployments, projects } from "@/lib/db/schema";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
 import {
@@ -103,6 +104,7 @@ export async function ensureVardoProject(opts: { force?: boolean } = {}): Promis
 
   // An empty git_url blocks deploys.
   if (!gitUrl) gitUrl = DEFAULT_REPO_URL;
+  const gitColumns = gitUrlColumns(gitUrl, org.id);
 
   const infraServices = Object.keys(compose.services).filter((name) =>
     INFRA_SERVICES.has(name),
@@ -153,7 +155,7 @@ export async function ensureVardoProject(opts: { force?: boolean } = {}): Promis
         name: "vardo",
         displayName: "Vardo",
         source: "git",
-        gitUrl,
+        ...gitColumns,
         gitBranch: gitBranch ?? "main",
         isSystemManaged: true,
         deployType: "compose",
@@ -164,7 +166,7 @@ export async function ensureVardoProject(opts: { force?: boolean } = {}): Promis
         target: [apps.organizationId, apps.name],
         set: {
           projectId: project.id,
-          gitUrl,
+          ...gitColumns,
           // A detached checkout keeps the configured branch.
           ...(gitBranch ? { gitBranch } : {}),
           isSystemManaged: true,

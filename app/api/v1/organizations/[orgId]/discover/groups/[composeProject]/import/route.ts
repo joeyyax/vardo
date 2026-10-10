@@ -23,6 +23,8 @@ import { getSslConfig, getDefaultCertResolver } from "@/lib/system-settings";
 import { recordActivity } from "@/lib/activity";
 import { createDeployment } from "@/lib/docker/deploy";
 import { encrypt } from "@/lib/crypto/encrypt";
+import { gitUrlColumns } from "@/lib/api/git-credentials";
+import { readableApp } from "@/lib/api/readable-app";
 import {
   resolveProjectForImport,
   runAsyncContainerMigration,
@@ -302,6 +304,7 @@ async function handler(request: NextRequest, { params }: RouteParams) {
 
     // A git URL builds from the repo; otherwise deploy uses the generated compose.
     const useGitSource = !!effectiveGitUrl;
+    const gitColumns = gitUrlColumns(effectiveGitUrl, orgId);
 
     let result: { app: (typeof apps)["$inferSelect"] };
     try {
@@ -325,7 +328,7 @@ async function handler(request: NextRequest, { params }: RouteParams) {
             deployType: "compose",
             // Git source reads compose from the cloned repo.
             composeContent: useGitSource ? null : composeContent,
-            gitUrl: effectiveGitUrl ?? null,
+            ...gitColumns,
             gitBranch: effectiveGitBranch ?? null,
             // Traefik config lives in the compose; regenerating it would overwrite per-service routing.
             autoTraefikLabels: false,
@@ -453,7 +456,7 @@ async function handler(request: NextRequest, { params }: RouteParams) {
         displayName: data.displayName,
         composeProject,
         serviceCount: validDetails.length,
-        ...(autoDetectedGit && { gitAutoDetected: true, gitUrl: effectiveGitUrl }),
+        ...(autoDetectedGit && { gitAutoDetected: true, gitUrl: gitColumns.gitUrl }),
       },
     });
 
@@ -477,11 +480,11 @@ async function handler(request: NextRequest, { params }: RouteParams) {
     });
 
     return NextResponse.json({
-      app,
+      app: readableApp(app, true),
       warnings,
       deploymentId,
       migrated: false,
-      ...(autoDetectedGit && { gitAutoDetected: true, gitUrl: effectiveGitUrl }),
+      ...(autoDetectedGit && { gitAutoDetected: true, gitUrl: gitColumns.gitUrl }),
     }, { status: 201 });
   } catch (error) {
     return handleRouteError(error, "Error importing compose group");

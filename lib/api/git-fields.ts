@@ -9,27 +9,50 @@ export const gitBranchSchema = z.string().refine(isSafeBranch, { message: "Inval
 export const gitUrlUpdateSchema = z.union([gitUrlSchema, z.literal("")]);
 export const gitBranchUpdateSchema = z.union([gitBranchSchema, z.literal("")]);
 
-/** Shown in place of the secret part of a git URL's credentials. */
+/** Shown in place of a git URL's credentials. */
 export const GIT_URL_MASK = "********";
 
-/** A git URL with its password, or a lone token, masked. Unparseable input comes back as is. */
-export function maskGitUrl(url: string | null | undefined): string | null | undefined {
-  if (!url) return url;
-  try {
-    const parsed = new URL(url);
-    if (!parsed.username && !parsed.password) return url;
-    if (parsed.password) parsed.password = GIT_URL_MASK;
-    else parsed.username = GIT_URL_MASK;
-    return parsed.toString();
-  } catch {
-    return url;
-  }
+const URL_PARTS = /^([a-z][a-z0-9+.-]*:\/\/)([^/?#]*)([\s\S]*)$/i;
+
+/** A git URL without its userinfo, and the userinfo. Unparseable input comes back whole. */
+export function splitGitUrl(url: string): { url: string; credentials: string | null } {
+  const m = URL_PARTS.exec(url);
+  const at = m ? m[2].lastIndexOf("@") : -1;
+  if (!m || at < 0) return { url, credentials: null };
+  return { url: m[1] + m[2].slice(at + 1) + m[3], credentials: m[2].slice(0, at) || null };
 }
 
-/** The stored URL when `next` is its masked form sent back, `next` when unmasked, null when masked with nothing to restore. */
-export function unmaskGitUrl(next: string, stored: string | null | undefined): string | null {
-  if (!next.includes(GIT_URL_MASK)) return next;
-  return stored && maskGitUrl(stored) === next ? stored : null;
+/** A credential-free git URL with `credentials` as its userinfo. */
+export function joinGitUrl(url: string, credentials: string | null | undefined): string {
+  const m = credentials ? URL_PARTS.exec(url) : null;
+  return m ? `${m[1]}${credentials}@${m[2]}${m[3]}` : url;
+}
+
+/** Lowercased host and port of a git URL. */
+export function gitUrlHost(url: string | null | undefined): string | null {
+  if (!url) return null;
+  const m = URL_PARTS.exec(splitGitUrl(url).url);
+  return m ? m[2].toLowerCase() : null;
+}
+
+/** A git URL with its credentials, embedded or stored, shown as the mask. */
+export function maskGitUrl(url: string | null | undefined, hasStoredCredentials = false): string | null | undefined {
+  if (!url) return url;
+  const split = splitGitUrl(url);
+  return joinGitUrl(split.url, split.credentials || hasStoredCredentials ? GIT_URL_MASK : null);
+}
+
+export const KEEP_GIT_CREDENTIALS = Symbol("keep-git-credentials");
+
+/** A submitted git URL and the credentials to store. The mask keeps them on the same host, clears them on another, and is null with none stored. */
+export function resolveGitUrlInput(
+  next: string,
+  stored: { gitUrl: string | null; hasCredentials: boolean },
+): { url: string; credentials: string | null | typeof KEEP_GIT_CREDENTIALS } | null {
+  const { url, credentials } = splitGitUrl(next);
+  if (!credentials?.includes(GIT_URL_MASK)) return { url, credentials };
+  if (gitUrlHost(url) !== gitUrlHost(stored.gitUrl)) return { url, credentials: null };
+  return stored.hasCredentials ? { url, credentials: KEEP_GIT_CREDENTIALS } : null;
 }
 
 export const GIT_URL_MASKED_MESSAGE = "The git URL's credentials are masked. Enter them in full.";

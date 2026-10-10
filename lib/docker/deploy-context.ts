@@ -22,6 +22,7 @@ export type DeployApp = {
   source: "git" | "direct" | "image";
   deployType: "compose" | "dockerfile" | "nixpacks" | "railpack" | "image";
   gitUrl: string | null;
+  gitCredentials?: string | null;
   gitBranch: string | null;
   gitKeyId: string | null;
   imageName: string | null;

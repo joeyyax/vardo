@@ -757,6 +757,13 @@
       "when": 1791656465951,
       "tag": "0107_notification_channel_push_types",
       "breakpoints": true
+    },
+    {
+      "idx": 108,
+      "version": "7",
+      "when": 1791657315985,
+      "tag": "0108_store_git_credentials",
+      "breakpoints": true
     }
   ]
 }

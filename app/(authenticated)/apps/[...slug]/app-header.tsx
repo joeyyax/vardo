@@ -10,6 +10,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { detectAppType } from "@/lib/ui/app-type";
+import { splitGitUrl } from "@/lib/api/git-fields";
 import { Uptime } from "@/components/app-status";
 import { RelativeTime } from "@/components/relative-time";
 import { AppConditionsPanel } from "@/components/app-conditions-panel";
@@ -223,7 +224,7 @@ export function AppHeader({
           <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
             {app.source === "git" && app.gitUrl && (
               <span className="font-mono">
-                {app.gitUrl.replace("https://github.com/", "").replace(".git", "")}
+                {splitGitUrl(app.gitUrl).url.replace("https://github.com/", "").replace(".git", "")}
                 {app.gitBranch && app.gitBranch !== "main" && (
                   <span className="text-muted-foreground/50">:{app.gitBranch}</span>
                 )}

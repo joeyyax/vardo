@@ -16,21 +16,22 @@ export function readableDeployment<D extends object>(deployment: D, reveal: bool
 type ReadableAppInput = {
   envContent?: unknown;
   gitUrl?: string | null;
+  gitCredentials?: string | null;
   composeContent?: string | null;
   deployments?: object[];
 };
 
-type ReadableApp<A extends ReadableAppInput> = Omit<A, "envContent" | "deployments"> &
+type ReadableApp<A extends ReadableAppInput> = Omit<A, "envContent" | "gitCredentials" | "deployments"> &
   (A extends { deployments: (infer D extends object)[] }
     ? { deployments: Omit<D, "envSnapshot">[] }
     : unknown);
 
 export function readableApp<A extends ReadableAppInput>(app: A, reveal: boolean): ReadableApp<A> {
-  const { envContent: _envContent, ...rest } = app;
+  const { envContent: _envContent, gitCredentials, ...rest } = app;
   const out: Record<string, unknown> = { ...rest };
   if (!reveal && typeof app.composeContent === "string") out.composeContent = maskComposeEnv(app.composeContent);
   // Credentials in a git URL are never shown, whoever reads it.
-  if (typeof app.gitUrl === "string") out.gitUrl = maskGitUrl(app.gitUrl);
+  if (typeof app.gitUrl === "string") out.gitUrl = maskGitUrl(app.gitUrl, !!gitCredentials);
   if (Array.isArray(app.deployments)) out.deployments = app.deployments.map((d) => readableDeployment(d, reveal));
   return out as ReadableApp<A>;
 }

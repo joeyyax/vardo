@@ -30,7 +30,9 @@ import { DeployBlockedError } from "../errors";
 import { assertBuildKitReachable, isBuildKitReachable, DEFAULT_BUILDKIT_HOST } from "../buildkit";
 import { assertAppDirOwnership } from "../app-dir-owner";
 import { getInstallationToken, getRepoInstallationId } from "@/lib/git-integration/app";
-import { githubTokenGitEnv, parseGithubRepo, resolveCloneToken } from "@/lib/git-integration/clone-auth";
+import { credentialGitEnv, githubTokenGitEnv, parseGithubRepo, resolveCloneToken } from "@/lib/git-integration/clone-auth";
+import { splitGitUrl } from "@/lib/api/git-fields";
+import { openGitCredentials } from "@/lib/api/git-credentials";
 import { LINK_INSTALLATION_HINT, orgInstallations } from "@/lib/git-integration/org-installations";
 import {
   getDecryptedPrivateKey,
@@ -368,25 +370,27 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
     const repoDir = join(appBase, "repo");
     ctx.repoDir = repoDir;
     const branch = ctx.envBranchOverride || app.gitBranch || "main";
+    // Credentials travel in env config, never in the clone URL.
+    const split = splitGitUrl(app.gitUrl);
+    let cloneUrl = split.url;
+    let credentials: string | null;
     try {
       assertSafeBranch(branch);
-      assertSafeGitUrl(app.gitUrl);
-      await assertGitHostAllowed(app.gitUrl);
+      assertSafeGitUrl(cloneUrl);
+      await assertGitHostAllowed(cloneUrl);
+      credentials = openGitCredentials(app.gitCredentials, app.organizationId) ?? split.credentials;
     } catch (err) {
       throw new DeployBlockedError(err instanceof Error ? err.message : String(err));
     }
-
-    // Authenticated clone URL for private repos.
-    let cloneUrl = app.gitUrl;
     const gitEnv: Record<string, string> = {};
     let sshKeyFile: string | null = null;
     let tokenAuth = false;
 
-    // GitHub App token for github.com URLs.
-    if (cloneUrl.startsWith("https://github.com/")) {
+    // GitHub App token for github.com URLs without their own credentials.
+    if (!credentials && cloneUrl.startsWith("https://github.com/")) {
       try {
         const installations = await orgInstallations(ctx.organizationId);
-        const installToken = await resolveCloneToken(app.gitUrl, installations, {
+        const installToken = await resolveCloneToken(cloneUrl, installations, {
           getToken: getInstallationToken,
           getRepoInstallationId,
           log,
@@ -401,7 +405,7 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
         log(`[deploy] Warning: GitHub auth — ${err instanceof Error ? err.message : err}`);
       }
       if (!tokenAuth) {
-        const repo = parseGithubRepo(app.gitUrl);
+        const repo = parseGithubRepo(cloneUrl);
         log(`[deploy] No GitHub App installation linked to this organization covers ${repo ? `${repo.owner}/${repo.repo}` : "the repo"}; cloning without a token`);
       }
     }
@@ -425,6 +429,11 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
       } catch (err) {
         log(`[deploy] Warning: deploy key — ${err instanceof Error ? err.message : err}`);
       }
+    }
+
+    if (credentials && !tokenAuth && !sshKeyFile) {
+      Object.assign(gitEnv, credentialGitEnv(cloneUrl, credentials));
+      tokenAuth = true;
     }
 
     try {
@@ -456,7 +465,7 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
         } catch (cloneErr) {
           if (tokenAuth || sshKeyFile || !cloneUrl.startsWith("https://github.com/")) throw cloneErr;
           const detail = (cloneErr as { stderr?: string }).stderr?.trim() || (cloneErr instanceof Error ? cloneErr.message : String(cloneErr));
-          throw new Error(`Couldn't clone ${app.gitUrl} without a GitHub token: ${detail}\n${LINK_INSTALLATION_HINT}`);
+          throw new Error(`Couldn't clone ${cloneUrl} without a GitHub token: ${detail}\n${LINK_INSTALLATION_HINT}`);
         }
         log(`[deploy] Cloned repo (${branch})`);
       }
