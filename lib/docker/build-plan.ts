@@ -250,7 +250,7 @@ export async function captureBuildPlan(
 }
 
 /** Stderr's last line or the exit code. The error message itself carries argv, and argv carries env values. */
-function planErrorReason(err: unknown): string {
+export function planErrorReason(err: unknown): string {
   if (err instanceof SyntaxError) return "output wasn't JSON";
   const e = err as { stderr?: unknown; code?: unknown; killed?: boolean };
   if (e.killed) return "timed out";

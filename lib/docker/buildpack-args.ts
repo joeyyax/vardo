@@ -58,6 +58,16 @@ export function nixpacksBuildArgs(
   return ["build", repoPath, "--name", imageName, ...overrideArgs(overrides), ...envArgs(envVars), ...(noCache ? ["--no-cache"] : [])];
 }
 
+/** `nixpacks build --out`: writes `.nixpacks/Dockerfile` into the source instead of building. */
+export function nixpacksGenerateArgs(
+  repoPath: string,
+  cacheKey: string,
+  envVars?: Record<string, string>,
+  overrides?: BuildOverrides,
+): string[] {
+  return ["build", repoPath, "--out", repoPath, "--cache-key", cacheKey, ...overrideArgs(overrides), ...envArgs(envVars)];
+}
+
 /** `nixpacks plan --format json`. */
 export function nixpacksPlanArgs(
   repoPath: string,
