@@ -17,6 +17,7 @@ import { volumeDriftMail } from "./templates/volume-drift";
 import { systemAlertMail } from "./templates/system-alert";
 import { weeklyDigestMail } from "./templates/weekly-digest";
 import { lifecycleMail } from "./templates/lifecycle";
+import { alertFiredMail, alertResolvedMail } from "./templates/alerts";
 
 export type { MailContext } from "./templates/context";
 
@@ -40,6 +41,7 @@ export function notificationMailBody(event: BusEvent, ctx: MailContext): Notific
   switch (event.type) {
     case "deploy.status":
     case "backup.progress":
+    case "app.oom-killed":
       return null;
     case "deploy.success":
       return deploySuccessMail(event, ctx);
@@ -60,13 +62,15 @@ export function notificationMailBody(event: BusEvent, ctx: MailContext): Notific
     case "volume.drift":
       return volumeDriftMail(event, ctx);
     case "system.service-down":
-    case "system.disk-alert":
     case "system.restart-loop":
     case "system.cert-expiring":
     case "system.update-available":
     case "app.auto-restarted":
-    case "app.oom-killed":
       return systemAlertMail(event, ctx);
+    case "alert.fired":
+      return alertFiredMail(event, ctx);
+    case "alert.resolved":
+      return alertResolvedMail(event, ctx);
     case "system.shutdown":
     case "system.started":
     case "system.recovered-unclean":

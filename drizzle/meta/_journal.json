@@ -645,6 +645,13 @@
       "when": 1791589848071,
       "tag": "0091_notification_log_provider_ids",
       "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1791591631322,
+      "tag": "0092_alert_registry",
+      "breakpoints": true
     }
   ]
 }

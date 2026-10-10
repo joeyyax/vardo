@@ -44,12 +44,13 @@ export function resolveRecipients(
   eventType: BusEventType,
   members: Array<{ userId: string }>,
   prefs: EventPref[],
+  critical = CRITICAL_EVENT_TYPES.has(eventType),
 ): { shouldSend: boolean } {
   if (SILENT_EVENT_TYPES.has(eventType)) {
     return { shouldSend: false };
   }
 
-  if (CRITICAL_EVENT_TYPES.has(eventType)) {
+  if (critical) {
     return { shouldSend: true };
   }
 

@@ -1,6 +1,6 @@
 // Realistic events for the email preview and template tests.
 
-import type { BusEvent } from "@/lib/bus/events";
+import type { AlertItem, BusEvent } from "@/lib/bus/events";
 import type { MailContext, MailSeries } from "./templates/context";
 
 export const FIXTURE_CONTEXT: MailContext = {
@@ -26,6 +26,34 @@ function ramp(start: number, end: number, wobble = 0.02): number[] {
     return Math.round((start + (end - start) * t) * (1 + Math.sin(i * 1.7) * wobble));
   });
 }
+
+const hostMemory: AlertItem = {
+  type: "host.memory",
+  about: "host",
+  severity: "warning",
+  title: "Memory 91% used",
+  detail: "Available memory is low. Deploys can fail and the kernel starts killing containers. Stop or limit what's using it.",
+  gauge: { title: "Memory used", percent: 91.4, warn: 85, critical: 95 },
+  series: { title: "Memory, last hour", values: ramp(72, 92, 0.03).slice(-20), caption: "Over 85% for 5 min" },
+  facts: [
+    { label: "Used", value: "29.2 GiB of 31.9 GiB" },
+    { label: "Available", value: "2.7 GiB" },
+    { label: "Top containers", value: "shop-production-blue-wordpress-1 6.1 GiB, search-data-production-green-meilisearch-1 4.8 GiB, vardo-postgres 2.2 GiB" },
+  ],
+};
+
+const hostDisk: AlertItem = {
+  type: "host.disk",
+  about: "host",
+  severity: "warning",
+  title: "Disk 91% full",
+  detail: "Deploys and backups fail once the disk is full. Prune old images and build cache or grow the disk.",
+  gauge: { title: "Disk used", percent: 91.3, warn: 85, critical: 95 },
+  facts: [
+    { label: "Used", value: "204.0 GiB of 223.4 GiB" },
+    { label: "Free", value: "19.4 GiB" },
+  ],
+};
 
 export const EMAIL_FIXTURES: { name: string; event: BusEvent; series?: MailSeries }[] = [
   {
@@ -299,18 +327,89 @@ export const EMAIL_FIXTURES: { name: string; event: BusEvent; series?: MailSerie
     },
   },
   {
-    name: "system-disk-alert",
+    name: "alert-host-disk",
     event: {
-      type: "system.disk-alert",
-      title: "Disk usage at 91%",
-      message: "Vardo disk usage has reached 91% (threshold: 90%).",
-      percent: 91.3,
-      threshold: 90,
-      severity: "warning",
-      used: 219_043_332_096,
-      total: 239_903_502_336,
+      type: "alert.fired",
+      title: "Disk 91% full",
+      message: "Disk 91% full",
+      alerts: [
+        {
+          ...hostDisk,
+        },
+      ],
     },
     series: { dockerDisk24h: ramp(141 * GiB, 163 * GiB, 0.01) },
+  },
+  {
+    name: "alert-host-memory",
+    event: {
+      type: "alert.fired",
+      title: "Memory 91% used",
+      message: "Memory 91% used",
+      alerts: [hostMemory],
+    },
+  },
+  {
+    name: "alert-coalesced",
+    event: {
+      type: "alert.fired",
+      title: "3 alerts: Shop was killed for memory and more",
+      message: "Shop was killed for memory; Search was killed for memory; Memory 97% used",
+      alerts: [
+        {
+          type: "app.oom",
+          about: "app_wh4",
+          appId: "app_wh4",
+          appName: "Shop",
+          severity: "critical",
+          title: "Shop was killed for memory",
+          detail: "The host ran out of memory and the kernel killed it. Free memory on the host or give the app a limit.",
+          facts: [
+            { label: "Kills", value: "2" },
+            { label: "Container", value: "shop-production-blue-wordpress-1 (2)" },
+          ],
+          since: "2026-10-09T14:02:11.000Z",
+        },
+        {
+          type: "app.oom",
+          about: "app_srch",
+          appId: "app_srch",
+          appName: "Search",
+          severity: "critical",
+          title: "Search was killed for memory",
+          detail: "The host ran out of memory and the kernel killed it. Free memory on the host or give the app a limit.",
+          facts: [
+            { label: "Kills", value: "1" },
+            { label: "Container", value: "search-data-production-green-meilisearch-1" },
+          ],
+          since: "2026-10-09T14:02:40.000Z",
+        },
+        { ...hostMemory, severity: "critical", title: "Memory 97% used", gauge: { ...hostMemory.gauge!, percent: 97.2 } },
+      ],
+    },
+  },
+  {
+    name: "alert-resolved",
+    event: {
+      type: "alert.resolved",
+      title: "2 alerts resolved",
+      message: "Memory 91% used; Shop is near its memory limit",
+      alerts: [
+        { ...hostMemory, firedAt: "2026-10-09T14:05:00.000Z", resolvedAt: "2026-10-09T14:41:00.000Z" },
+        {
+          type: "app.memory-limit",
+          about: "app_wh4",
+          appId: "app_wh4",
+          appName: "Shop",
+          severity: "warning",
+          title: "Shop is near its memory limit",
+          detail: "It has stayed over 90% of its limit for 10 minutes.",
+          since: "2026-10-09T13:50:00.000Z",
+          firedAt: "2026-10-09T14:00:00.000Z",
+          resolvedAt: "2026-10-09T14:41:00.000Z",
+        },
+      ],
+    },
   },
   {
     name: "system-service-down",

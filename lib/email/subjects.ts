@@ -65,8 +65,6 @@ export function notificationSubject(event: BusEvent, ctx: SubjectContext): strin
       return `⚠ ${event.appName || event.containerName} wrote ${formatBytesIec(event.writtenBytes)} in ${event.window || "1h"}`;
     case "volume.drift":
       return `⚠ ${event.appName} volumes drifted · ${event.totalDrift} files`;
-    case "system.disk-alert":
-      return `${event.severity === "critical" ? "✗" : "⚠"} Disk ${Math.round(event.percent)}% on ${host}`;
     case "system.service-down":
       return `✗ ${event.service} down on ${host}`;
     case "system.restart-loop":
@@ -77,8 +75,19 @@ export function notificationSubject(event: BusEvent, ctx: SubjectContext): strin
         : `⚠ Certificate expires in ${event.daysLeft} d · ${event.domain}`;
     case "system.update-available":
       return `↑ Vardo update available on ${host}`;
-    case "app.oom-killed":
-      return `✗ ${event.appName} killed for memory`;
+    case "alert.fired": {
+      const [first] = event.alerts;
+      const mark = event.alerts.some((a) => a.severity === "critical") ? "✗" : "⚠";
+      const where = first.appId ? "" : ` on ${host}`;
+      const more = event.alerts.length > 1 ? ` · ${event.alerts.length - 1} more` : "";
+      return `${mark} ${first.title}${where}${more}`;
+    }
+    case "alert.resolved": {
+      const [first] = event.alerts;
+      return event.alerts.length === 1
+        ? `✓ Resolved · ${first.title}${first.appId ? "" : ` on ${host}`}`
+        : `✓ ${event.alerts.length} alerts resolved on ${host}`;
+    }
     case "app.auto-restarted":
       return event.gaveUp ? `✗ ${event.appName} keeps failing, restarts stopped` : `⚠ ${event.appName} restarted`;
     case "system.shutdown":

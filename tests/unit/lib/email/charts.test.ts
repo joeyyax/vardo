@@ -79,7 +79,7 @@ describe("backup size history", () => {
 
 describe("loadMailSeries", () => {
   it("drops a chart whose query fails or hangs", async () => {
-    const disk = EMAIL_FIXTURES.find((f) => f.name === "system-disk-alert")!.event;
+    const disk = EMAIL_FIXTURES.find((f) => f.name === "alert-host-disk")!.event;
     expect(await loadMailSeries(disk)).toEqual({ dockerDisk24h: undefined });
     const writes = EMAIL_FIXTURES.find((f) => f.name === "disk-write-alert")!.event;
     const started = Date.now();

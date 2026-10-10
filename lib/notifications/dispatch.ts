@@ -5,23 +5,15 @@ import { nanoid } from "nanoid";
 import { createChannel } from "./factory";
 import { enqueueRetry } from "./retry";
 import { onEmit } from "@/lib/bus";
-import type { BusEvent, BusEventType } from "@/lib/bus";
+import type { BusEvent } from "@/lib/bus";
 import { logger } from "@/lib/logger";
 import { fetchOrgMembers, fetchEventPrefs, resolveRecipients } from "./resolve-recipients";
 import { isUiOnlyEvent } from "./ui-only";
+import { channelAcceptsEvent, isCriticalEvent } from "./channel-defaults";
 import { isConsumedOrg } from "./consumer-state";
 import type { DeliveryReceipt } from "./port";
 
 const log = logger.child("notifications");
-
-/** Whether a channel's subscribedEvents filter allows this event. Empty means all. */
-function channelAcceptsEvent(
-  subscribedEvents: string[],
-  eventType: BusEventType,
-): boolean {
-  if (subscribedEvents.length === 0) return true;
-  return subscribedEvents.includes(eventType);
-}
 
 /** Best-effort insert into notification_log. */
 async function logNotification(
@@ -104,6 +96,7 @@ function dispatchToChannels(orgId: string, event: BusEvent): void {
             event.type,
             members,
             prefs,
+            isCriticalEvent(event),
           );
           if (!shouldSend) return;
 

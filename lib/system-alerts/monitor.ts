@@ -6,6 +6,7 @@ import { db } from "@/lib/db";
 import { domainCertChecks, systemSettings } from "@/lib/db/schema";
 import { sql } from "drizzle-orm";
 import { getCommitUpdate } from "@/lib/version";
+import { runAlertPass } from "@/lib/alerts/pass";
 import pLimit from "p-limit";
 import { logger } from "@/lib/logger";
 import { closeOnShutdown } from "@/lib/shutdown";
@@ -93,37 +94,14 @@ async function checkServiceAlerts(health: Awaited<ReturnType<typeof getSystemHea
   }
 }
 
-// Disk space: alert at 95%, 90% and 85%, highest first.
+// Host and app alerts: lib/alerts, through the notification registry.
 
-const DISK_THRESHOLDS = [95, 90, 85];
-
-async function checkDiskAlerts(health: Awaited<ReturnType<typeof getSystemHealth>>): Promise<void> {
+async function checkResourceAlerts(health: Awaited<ReturnType<typeof getSystemHealth>> | null): Promise<void> {
   try {
-    const disk = health.resources.find((r) => r.name === "Disk");
-    if (!disk) return;
-
-    for (const threshold of DISK_THRESHOLDS) {
-      if (disk.percent >= threshold) {
-        const key = `disk-${threshold}`;
-        if (!shouldFire("disk-space", key)) continue;
-        markFired("disk-space", key);
-
-        const isCritical = threshold >= 95;
-        await emitAll({
-          type: "system.disk-alert",
-          title: `Disk usage at ${Math.round(disk.percent)}%`,
-          message: `Vardo disk usage has reached ${Math.round(disk.percent)}% (threshold: ${threshold}%). Free up space to prevent service disruption.`,
-          percent: disk.percent,
-          threshold,
-          severity: isCritical ? "critical" : "warning",
-          used: disk.current,
-          total: disk.total,
-        });
-        break;
-      }
-    }
+    const disk = health?.resources.find((r) => r.name === "Disk");
+    await runAlertPass({ disk: disk ? { percent: disk.percent, used: disk.current, total: disk.total } : null });
   } catch (err) {
-    log.error("Disk check error:", err);
+    log.error("Alert pass error:", err);
   }
 }
 
@@ -321,10 +299,10 @@ export async function tickSystemAlerts(): Promise<void> {
     log.error("Health fetch error:", err);
   }
 
-  const checks: Promise<void>[] = [checkCertAlerts(), checkUpdateAlert(), checkWatchdogEvents()];
+  const checks: Promise<void>[] = [checkCertAlerts(), checkUpdateAlert(), checkWatchdogEvents(), checkResourceAlerts(health)];
 
   if (health) {
-    checks.push(checkServiceAlerts(health), checkDiskAlerts(health));
+    checks.push(checkServiceAlerts(health));
   }
 
   await Promise.allSettled(checks);

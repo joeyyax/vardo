@@ -69,8 +69,8 @@ async function backupHistory(jobId: string, volumes: string[], exclude: string[]
 /** History for the event's charts. Never throws; returns what it found in time. */
 export async function loadMailSeries(event: BusEvent, now = Date.now()): Promise<MailSeries> {
   switch (event.type) {
-    case "system.disk-alert":
-      return { dockerDisk24h: await withTimeout(dockerDisk(now)) };
+    case "alert.fired":
+      return event.alerts.some((a) => a.type === "host.disk") ? { dockerDisk24h: await withTimeout(dockerDisk(now)) } : {};
     case "disk.write-alert":
       return event.metricsProject
         ? { diskWritesHourly: await withTimeout(diskWrites(event.metricsProject, event.containerId, now)) }

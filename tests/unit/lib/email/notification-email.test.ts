@@ -25,8 +25,10 @@ describe("notification subjects", () => {
     expect(subject(fixture("deploy-failed"))).toBe("✗ search-data failed at health check");
   });
 
-  it("names the host for disk alerts", () => {
-    expect(subject(fixture("system-disk-alert"))).toBe("⚠ Disk 91% on node-a");
+  it("names the host for host alerts and counts the rest", () => {
+    expect(subject(fixture("alert-host-disk"))).toBe("⚠ Disk 91% full on node-a");
+    expect(subject(fixture("alert-coalesced"))).toBe("✗ Shop was killed for memory · 2 more");
+    expect(subject(fixture("alert-resolved"))).toBe("✓ 2 alerts resolved on node-a");
   });
 
   it("formats bytes for humans", () => {

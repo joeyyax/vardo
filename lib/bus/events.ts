@@ -6,7 +6,8 @@ import type { StageTimings } from "@/lib/docker/stage-timings";
 
 export const EVENT_CATEGORIES = {
   deploy: ["deploy.success", "deploy.failed", "deploy.incomplete", "deploy.rollback"],
-  app: ["app.state-changed", "app.auto-restarted", "app.oom-killed"],
+  app: ["app.state-changed", "app.auto-restarted"],
+  alert: ["alert.fired", "alert.resolved"],
   backup: ["backup.success", "backup.failed"],
   cron: ["cron.failed"],
   volume: ["volume.drift"],
@@ -15,7 +16,6 @@ export const EVENT_CATEGORIES = {
   security: ["security.file-exposed", "security.scan-findings", "security.domain-claimed"],
   system: [
     "system.service-down",
-    "system.disk-alert",
     "system.restart-loop",
     "system.cert-expiring",
     "system.update-available",
@@ -215,17 +215,6 @@ export type SystemServiceDownEvent = {
   service: string;
   description: string;
   latencyMs?: string;
-};
-
-export type SystemDiskAlertEvent = {
-  type: "system.disk-alert";
-  title: string;
-  message: string;
-  percent: number;
-  threshold: number;
-  severity: "warning" | "critical";
-  used: number;
-  total: number;
 };
 
 export type SystemRestartLoopEvent = {
@@ -458,6 +447,43 @@ export type AppOomKilledEvent = {
   at: string;
 };
 
+/** One alert in an alert email. Severity and wording come from the rule that fired it. */
+export type AlertItem = {
+  /** Registry key, e.g. `host.memory`. */
+  type: string;
+  /** Subject the throttle keys on. */
+  about: string;
+  severity: "warning" | "critical";
+  /** "Memory 92% used". */
+  title: string;
+  /** One or two sentences: what's wrong and what to do. */
+  detail: string;
+  appId?: string;
+  appName?: string;
+  gauge?: { title: string; percent: number; warn: number; critical: number };
+  /** Recent readings, oldest first. */
+  series?: { title: string; values: number[]; caption?: string };
+  facts?: { label: string; value: string }[];
+  /** ISO time the condition started. */
+  since?: string;
+};
+
+/** Alerts that fired in one pass, coalesced into one notice per org. */
+export type AlertFiredEvent = {
+  type: "alert.fired";
+  title: string;
+  message: string;
+  alerts: AlertItem[];
+};
+
+/** Alerts that cleared in one pass. */
+export type AlertResolvedEvent = {
+  type: "alert.resolved";
+  title: string;
+  message: string;
+  alerts: (AlertItem & { firedAt: string; resolvedAt: string })[];
+};
+
 export type BusEvent =
   | DeploySuccessEvent
   | DeployFailedEvent
@@ -471,7 +497,6 @@ export type BusEvent =
   | OrgInvitationSentEvent
   | OrgInvitationAcceptedEvent
   | SystemServiceDownEvent
-  | SystemDiskAlertEvent
   | SystemRestartLoopEvent
   | SystemCertExpiringEvent
   | SystemUpdateAvailableEvent
@@ -490,7 +515,9 @@ export type BusEvent =
   | DeployStatusEvent
   | AppStateChangedEvent
   | AppAutoRestartedEvent
-  | AppOomKilledEvent;
+  | AppOomKilledEvent
+  | AlertFiredEvent
+  | AlertResolvedEvent;
 
 export type BusEventType = BusEvent["type"];
 

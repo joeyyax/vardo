@@ -23,7 +23,7 @@ describe("toastActionFor", () => {
   });
 
   it("holds back instance links from non-admins", () => {
-    for (const type of ["system.service-down", "system.disk-alert", "system.restart-loop", "system.cert-expiring"]) {
+    for (const type of ["system.service-down", "system.restart-loop", "system.cert-expiring"]) {
       expect(toastActionFor(event(type), { canLinkToAdmin: false }), type).toBeUndefined();
     }
   });
