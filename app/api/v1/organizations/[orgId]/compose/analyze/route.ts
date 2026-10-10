@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handleRouteError } from "@/lib/api/error-response";
+import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { analyzeRawCompose } from "@/lib/docker/compose-analyze";
 import { z } from "zod";
@@ -21,7 +21,8 @@ const analyzeSchema = z.object({
 async function handlePost(req: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    await verifyOrgAccess(orgId, "app.create");
+    const org = await verifyOrgAccess(orgId, "app.create");
+    if (!org) return apiError.forbidden();
 
     const body = analyzeSchema.parse(await req.json());
 
