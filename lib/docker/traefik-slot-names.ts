@@ -117,3 +117,17 @@ export function slotTraefikNames(
   }
   return { ...compose, services };
 }
+
+/** The full compose and the bare file a slot writes, with per-slot Traefik names on blue and green. */
+export function slotComposePair(
+  compose: ComposeFile,
+  bare: ComposeFile,
+  slot: string,
+  shared: Set<string>,
+): { full: ComposeFile; bare: ComposeFile } {
+  if (slot !== "blue" && slot !== "green") return { full: compose, bare };
+  return {
+    full: slotTraefikNames(compose, slot, { shared }),
+    bare: slotTraefikNames(bare, slot, { shared, declaredIn: compose }),
+  };
+}
