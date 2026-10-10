@@ -89,6 +89,8 @@ export type NotificationMailBody = {
   tone: MailTone;
   /** Badge text: "Deployed", "Failed", "Warning". */
   status: string;
+  /** Glyph before the badge text. Defaults to the tone's; info has none. */
+  mark?: string;
   heading: string;
   /** Inbox preview line. Defaults to the first paragraph. */
   preheader?: string;
@@ -136,7 +138,13 @@ const TONE_COLOR: Record<MailTone, { fg: string; bg: string }> = {
   info: { fg: light.info, bg: light.infoSoft },
 };
 
-const TONE_MARK: Record<MailTone, string> = { success: "✓", warn: "!", fail: "✗", info: "·" };
+const TONE_MARK: Record<MailTone, string> = { success: "✓", warn: "!", fail: "✗", info: "" };
+
+/** "✓ Backed up", or the bare status when there's no glyph. */
+function badgeText(tone: MailTone, status: string, mark?: string): string {
+  const glyph = mark ?? TONE_MARK[tone];
+  return glyph ? `${glyph} ${status}` : status;
+}
 
 /** Neutral chart shades, darkest first; dark mode runs lightest first. */
 const CHART_LIGHT = ["#3f3f46", "#71717a", "#a1a1aa", "#d4d4d8"] as const;
@@ -210,7 +218,7 @@ export function MailHeader({ instanceName }: { instanceName: string }) {
   );
 }
 
-export function StatusBadge({ tone, children }: { tone: MailTone; children: string }) {
+export function StatusBadge({ tone, mark, children }: { tone: MailTone; mark?: string; children: string }) {
   const { fg, bg } = TONE_COLOR[tone];
   return (
     <span
@@ -227,7 +235,7 @@ export function StatusBadge({ tone, children }: { tone: MailTone; children: stri
         lineHeight: "18px",
       }}
     >
-      {`${TONE_MARK[tone]} ${children}`}
+      {badgeText(tone, children, mark)}
     </span>
   );
 }
@@ -683,7 +691,7 @@ export function NotificationMail(body: NotificationMailBody) {
                     className="vd-card"
                     style={{ background: light.card, border: `1px solid ${light.border}`, borderRadius: "12px", padding: "28px" }}
                   >
-                    <StatusBadge tone={body.tone}>{body.status}</StatusBadge>
+                    <StatusBadge tone={body.tone} mark={body.mark}>{body.status}</StatusBadge>
                     <h1 className="vd-fg" style={text(20, light.foreground, { margin: "12px 0 12px", fontWeight: 600, lineHeight: 1.3 })}>
                       {body.heading}
                     </h1>
@@ -737,7 +745,7 @@ function factsText(facts: MailFact[]): string {
 
 /** The plain-text part, from the same body the HTML renders. */
 export function notificationMailText(body: NotificationMailBody): string {
-  const blocks: string[] = [`[${TONE_MARK[body.tone]} ${body.status}] ${body.heading}`];
+  const blocks: string[] = [`[${badgeText(body.tone, body.status, body.mark)}] ${body.heading}`];
   blocks.push(...(body.paragraphs ?? []));
   for (const visual of body.visuals ?? []) blocks.push(visualText(visual));
   if (body.facts?.length) blocks.push(factsText(body.facts));
