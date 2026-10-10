@@ -113,16 +113,68 @@ function ScanSummary({ scan }: { scan: Scan }) {
   );
 }
 
-async function requestScans(url: string): Promise<Scan[]> {
+type BindMounts = { outsideRoots: string[]; canAllow: boolean };
+
+type SecurityData = { scans: Scan[]; bindMounts: BindMounts };
+
+async function requestScans(url: string): Promise<SecurityData> {
   try {
     const res = await fetch(url);
     if (!res.ok) throw new Error("Couldn't load");
     const data = await res.json();
-    return data.scans;
+    return { scans: data.scans, bindMounts: data.bindMounts ?? { outsideRoots: [], canAllow: false } };
   } catch {
     toast.error("Couldn't load security scans");
-    return [];
+    return { scans: [], bindMounts: { outsideRoots: [], canAllow: false } };
   }
+}
+
+function BindMountWarnings({ bindMounts, onAllowed }: { bindMounts: BindMounts; onAllowed: () => void }) {
+  const [allowing, setAllowing] = useState<string | null>(null);
+
+  const allow = async (path: string) => {
+    setAllowing(path);
+    try {
+      const res = await fetch("/api/v1/admin/bind-mounts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        toast.error(data.error || "Couldn't allow the path");
+        return;
+      }
+      toast.success(`Allowed ${path}`);
+      onAllowed();
+    } catch {
+      toast.error("Couldn't allow the path");
+    } finally {
+      setAllowing(null);
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      {bindMounts.outsideRoots.map((path) => (
+        <div key={path} className="flex items-start gap-3 rounded-lg bg-status-warning-muted px-4 py-3">
+          <AlertTriangle className="size-4 shrink-0 text-status-warning" aria-hidden="true" />
+          <div className="flex-1 min-w-0 space-y-0.5">
+            <p className="text-sm font-medium leading-snug">Bind mount outside the allowed host roots</p>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              It keeps working because the app already mounted it. New mounts outside the roots are refused.
+            </p>
+            <p className="text-xs font-mono text-muted-foreground/70 mt-1 break-all">{path}</p>
+          </div>
+          {bindMounts.canAllow && (
+            <Button size="sm" variant="outline" className="shrink-0" disabled={allowing !== null} onClick={() => void allow(path)}>
+              {allowing === path ? <Loader2 className="size-4 animate-spin" /> : "Allow this path"}
+            </Button>
+          )}
+        </div>
+      ))}
+    </div>
+  );
 }
 
 type AppSecurityProps = {
@@ -132,13 +184,15 @@ type AppSecurityProps = {
 
 export function AppSecurity({ appId, orgId }: AppSecurityProps) {
   const [scans, setScans] = useState<Scan[] | null>(null);
+  const [bindMounts, setBindMounts] = useState<BindMounts>({ outsideRoots: [], canAllow: false });
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
 
   const scansUrl = `/api/v1/organizations/${orgId}/apps/${appId}/security`;
 
-  const applyScans = useCallback((list: Scan[]) => {
-    setScans(list);
+  const applyScans = useCallback((data: SecurityData) => {
+    setScans(data.scans);
+    setBindMounts(data.bindMounts);
     setLoading(false);
   }, []);
 
@@ -148,8 +202,8 @@ export function AppSecurity({ appId, orgId }: AppSecurityProps) {
 
   useEffect(() => {
     let cancelled = false;
-    requestScans(scansUrl).then((list) => {
-      if (!cancelled) applyScans(list);
+    requestScans(scansUrl).then((data) => {
+      if (!cancelled) applyScans(data);
     });
     return () => {
       cancelled = true;
@@ -209,6 +263,10 @@ export function AppSecurity({ appId, orgId }: AppSecurityProps) {
           )}
         </Button>
       </div>
+
+      {bindMounts.outsideRoots.length > 0 && (
+        <BindMountWarnings bindMounts={bindMounts} onAllowed={() => void fetchScans()} />
+      )}
 
       {loading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground py-8 justify-center">

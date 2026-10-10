@@ -9,6 +9,7 @@ import { dirname, join } from "path";
 import { decryptOrFallback } from "@/lib/crypto/encrypt";
 import { DeployBlockedError } from "../errors";
 import { appFamily, foreignVolumeHolders } from "../volume-owner";
+import { setBindWarnings } from "../bind-roots";
 import { parseEnvToMap } from "@/lib/env/parse-env";
 import { composeEnvFile } from "@/lib/env/compose-env-file";
 import { resolveAllEnvVars, type ResolveContext } from "@/lib/env/resolve";
@@ -394,7 +395,14 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
 
   ctx.composeFileArgs = ["-f", bareComposePath, "-f", overridePath, ...(await slotEnvFileArgs(slotDir))];
 
-  await assertComposeWithinApp(ctx);
+  const { legacyPaths } = await assertComposeWithinApp({
+    ...ctx,
+    previousSlotDir: ctx.activeSlot ? join(ctx.appDir, ctx.activeSlot) : null,
+  });
+  for (const path of legacyPaths) {
+    ctx.log(`[deploy] Warning: bind mount ${path} is outside the allowed host roots; kept because the running deploy mounts it`);
+  }
+  if (!ctx.orgTrusted && !ctx.envIsolated) await setBindWarnings(ctx.app.id, legacyPaths).catch(() => {});
 
   // The repo-build path already closed compose and opened build in prepare-repo.
   if (!ctx.builtLocally) {

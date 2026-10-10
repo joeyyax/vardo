@@ -41,7 +41,8 @@ vi.mock("@/lib/env/resolve", () => ({
 }));
 vi.mock("@/lib/docker/slots", () => ({ detectActiveSlot: vi.fn().mockResolvedValue(null) }));
 // The resolved-compose check has its own tests; these fake every docker call.
-vi.mock("@/lib/docker/compose-policy", () => ({ assertComposeWithinApp: vi.fn() }));
+vi.mock("@/lib/docker/compose-policy", () => ({ assertComposeWithinApp: vi.fn(async () => ({ legacyPaths: [] })) }));
+vi.mock("@/lib/docker/bind-roots", () => ({ setBindWarnings: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("@/lib/docker/self-env", () => ({
   isSelfApp: () => false,
   seedSelfEnv: vi.fn().mockResolvedValue(null),

@@ -7,10 +7,11 @@ import { isUnder, realpathLenient } from "./compose-root";
 import { execFileAsync } from "@/lib/utils/exec";
 import { dockerEnv } from "./docker-env";
 import { DENIED_MOUNT_PATHS } from "./mount-paths";
+import { bindRoots, envBindRoots } from "./bind-roots";
 import { VARDO_HOME_DIR } from "@/lib/paths";
 import { NETWORK_NAME, COMPOSE_QUERY_TIMEOUT } from "./constants";
 import { DeployBlockedError } from "./errors";
-import { SLOT_OVERLAY_FILE, SLOT_VARS_FILE } from "./slot-files";
+import { SLOT_OVERLAY_FILE, SLOT_VARS_FILE, slotComposeFiles } from "./slot-files";
 
 export type ComposePolicy = {
   /** Trusted organizations keep their compose as written. */
@@ -25,8 +26,18 @@ export type ComposePolicy = {
   allowDockerSocket: boolean;
   /** The project network Vardo attaches the app to. */
   projectNetwork?: string | null;
+  /** Host roots a bind source may sit under, outside the app. Defaults to VARDO_BIND_ROOTS. */
+  bindRoots?: string[];
+  /** Sources outside bindRoots the running deploy already mounts. They pass with a warning. */
+  legacyBinds?: string[];
   /** Resolves symlinks. Defaults to the real filesystem. */
   realpath?: (path: string) => string;
+};
+
+export type ComposePolicyReport = {
+  errors: string[];
+  /** Host paths outside the allowed roots, kept because the running deploy already mounts them. */
+  legacyPaths: string[];
 };
 
 const DOCKER_SOCKETS = ["/var/run/docker.sock", "/run/docker.sock"];
@@ -84,9 +95,17 @@ const entries = (v: unknown): [string, unknown][] => (isObj(v) ? Object.entries(
 
 /** Policy errors for a resolved compose model. Empty means the deploy may go ahead. */
 export function composePolicyErrors(config: unknown, policy: ComposePolicy): string[] {
-  if (policy.trusted) return [];
+  return composePolicyReport(config, policy).errors;
+}
+
+/** Policy errors plus the legacy host paths that pass with a warning. */
+export function composePolicyReport(config: unknown, policy: ComposePolicy): ComposePolicyReport {
+  if (policy.trusted) return { errors: [], legacyPaths: [] };
   const real = policy.realpath ?? realpathLenient;
   const ownDirs = policy.ownDirs.flatMap((d) => [resolve(d), real(d)]);
+  const roots = policy.bindRoots ?? envBindRoots();
+  const legacy = new Set((policy.legacyBinds ?? []).map((p) => resolve(p)));
+  const legacyPaths = new Set<string>();
   const errors: string[] = [];
   const root = isObj(config) ? config : {};
 
@@ -111,7 +130,13 @@ export function composePolicyErrors(config: unknown, policy: ComposePolicy): str
     const under = DENIED_HOST_PATHS.find((d) => paths.some((p) => isUnder(p, d)));
     if (under) return `${what} host path "${source}", and nothing under ${under} can be mounted`;
     const over = DENIED_HOST_PATHS.find((d) => paths.some((p) => isUnder(d, p)));
-    return over ? `${what} host path "${source}", which contains ${over}` : null;
+    if (over) return `${what} host path "${source}", which contains ${over}`;
+    if (roots.some((r) => paths.every((p) => isUnder(p, r)))) return null;
+    if (legacy.has(lexical)) {
+      legacyPaths.add(lexical);
+      return null;
+    }
+    return `${what} host path "${source}", which is outside the allowed host roots (${roots.join(", ") || "none"})`;
   };
 
   // Paths the compose CLI reads inside the console: always the app's own.
@@ -137,11 +162,24 @@ export function composePolicyErrors(config: unknown, policy: ComposePolicy): str
     if (opts) {
       const type = String(opts.type ?? "");
       const o = String(opts.o ?? "").split(",").map((s) => s.trim());
+      const device = String(opts.device ?? "");
       if (o.includes("bind") || o.includes("rbind") || type === "none") {
-        const problem = hostPathProblem(String(opts.device ?? ""), `Volume "${key}" binds`);
+        const problem = hostPathProblem(device, `Volume "${key}" binds`);
         if (problem) errors.push(problem);
       } else if (type !== "tmpfs" && !policy.allowBindMounts) {
         errors.push(`Volume "${key}" mounts a "${type}" filesystem, and bind mounts are off for this project`);
+      } else if (type !== "tmpfs") {
+        // Overlay layers and block devices are host paths too.
+        const dirs = o.flatMap((opt) => {
+          const m = /^(lowerdir|upperdir|workdir)=(.*)$/.exec(opt);
+          return m ? m[2].split(":").filter(Boolean) : [];
+        });
+        if (device.startsWith("/")) dirs.push(device);
+        if (type === "overlay" && dirs.length === 0) errors.push(`Volume "${key}" mounts an overlay without its layers`);
+        for (const dir of dirs) {
+          const problem = hostPathProblem(dir, `Volume "${key}" mounts`);
+          if (problem) errors.push(problem);
+        }
       }
     }
     for (const k of Object.keys(vol)) {
@@ -293,7 +331,7 @@ export function composePolicyErrors(config: unknown, policy: ComposePolicy): str
     }
   }
 
-  return [...new Set(errors)];
+  return { errors: [...new Set(errors)], legacyPaths: [...legacyPaths].sort() };
 }
 
 /** A built image may only be tagged under the app's own prefix, so it can't replace a shared image such as `alpine`. */
@@ -370,6 +408,44 @@ async function resolveComposeConfig(opts: {
  * Refuses the deploy when the slot's resolved compose reaches outside the app. Removes the slot's files on refusal.
  * `reuse` names a start, restart or recreate of the running slot: its files stay and the message says to redeploy.
  */
+/** Absolute host paths a resolved compose mounts: binds, bind-like volumes and config files. */
+export function collectBindSources(config: unknown): string[] {
+  const root = isObj(config) ? config : {};
+  const out = new Set<string>();
+  const add = (p: unknown) => {
+    if (typeof p === "string" && isAbsolute(p)) out.add(resolve(p));
+  };
+  for (const [, raw] of entries(root.volumes)) {
+    const opts = isObj(raw) && isObj(raw.driver_opts) ? raw.driver_opts : null;
+    if (!opts) continue;
+    add(opts.device);
+    for (const opt of String(opts.o ?? "").split(",")) {
+      const m = /^\s*(lowerdir|upperdir|workdir)=(.*)$/.exec(opt);
+      if (m) m[2].split(":").forEach(add);
+    }
+  }
+  for (const kind of ["configs", "secrets"] as const) {
+    for (const [, raw] of entries(root[kind])) if (isObj(raw)) add(raw.file);
+  }
+  for (const [, raw] of entries(root.services)) {
+    const svc = isObj(raw) ? raw : {};
+    for (const mount of Array.isArray(svc.volumes) ? svc.volumes : []) {
+      if (isObj(mount) && mount.type === "bind") add(mount.source);
+    }
+  }
+  return [...out].sort();
+}
+
+/** Bind sources of a slot's existing files, or none when they can't be read. */
+async function slotBindSources(slotDir: string, projectName: string): Promise<string[]> {
+  try {
+    const composeFileArgs = await slotComposeFiles(slotDir);
+    return collectBindSources(await resolveComposeConfig({ cwd: slotDir, composeFileArgs, projectName }));
+  } catch {
+    return [];
+  }
+}
+
 export async function assertComposeWithinApp(ctx: {
   slotDir: string;
   appDir: string;
@@ -382,8 +458,10 @@ export async function assertComposeWithinApp(ctx: {
   projectAllowDockerSocket: boolean;
   projectNetwork?: string | null;
   reuse?: "start" | "restart" | "recreate" | "rollback";
-}): Promise<void> {
-  if (ctx.orgTrusted) return;
+  /** The running slot, whose bind sources outside the allowed roots keep working with a warning. */
+  previousSlotDir?: string | null;
+}): Promise<{ legacyPaths: string[] }> {
+  if (ctx.orgTrusted) return { legacyPaths: [] };
   let config: unknown;
   try {
     config = await resolveComposeConfig({
@@ -395,7 +473,13 @@ export async function assertComposeWithinApp(ctx: {
     const stderr = (err as { stderr?: string }).stderr?.trim();
     throw new DeployBlockedError(`Couldn't read the compose file: ${stderr || (err instanceof Error ? err.message : String(err))}`);
   }
-  const errors = composePolicyErrors(config, {
+  // A start or restart reuses files an earlier deploy already ran.
+  const legacyBinds = ctx.reuse
+    ? collectBindSources(config)
+    : ctx.previousSlotDir
+      ? await slotBindSources(ctx.previousSlotDir, ctx.newProjectName)
+      : [];
+  const { errors, legacyPaths } = composePolicyReport(config, {
     trusted: false,
     projectName: ctx.newProjectName,
     ownDirs: [ctx.appDir, ...(ctx.repoDir ? [ctx.repoDir] : [])],
@@ -403,8 +487,10 @@ export async function assertComposeWithinApp(ctx: {
     allowBindMounts: ctx.projectAllowBindMounts,
     allowDockerSocket: ctx.projectAllowDockerSocket,
     projectNetwork: ctx.projectNetwork,
+    bindRoots: await bindRoots(),
+    legacyBinds,
   });
-  if (errors.length === 0) return;
+  if (errors.length === 0) return { legacyPaths };
 
   if (ctx.reuse) {
     throw new DeployBlockedError(

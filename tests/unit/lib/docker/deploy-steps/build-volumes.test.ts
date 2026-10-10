@@ -24,7 +24,8 @@ vi.mock("@/lib/db", () => ({
 }));
 vi.mock("@/lib/env/resolve", () => ({ resolveAllEnvVars: vi.fn(async (env: Record<string, string>) => env) }));
 vi.mock("@/lib/docker/slots", () => ({ detectActiveSlot: vi.fn(async () => null) }));
-vi.mock("@/lib/docker/compose-policy", () => ({ assertComposeWithinApp: vi.fn() }));
+vi.mock("@/lib/docker/compose-policy", () => ({ assertComposeWithinApp: vi.fn(async () => ({ legacyPaths: [] })) }));
+vi.mock("@/lib/docker/bind-roots", () => ({ setBindWarnings: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("@/lib/docker/self-env", () => ({ isSelfApp: () => false, seedSelfEnv: vi.fn(async () => null) }));
 
 import { build } from "@/lib/docker/deploy-steps/build";

@@ -5,6 +5,9 @@ import { appSecurityScans } from "@/lib/db/schema";
 import { eq, desc, and } from "drizzle-orm";
 import { verifyAppAccess } from "@/lib/api/verify-access";
 import { apiError } from "@/lib/api/error-response";
+import { isAppAdmin } from "@/lib/auth/admin";
+import { bindRoots, getBindWarnings } from "@/lib/docker/bind-roots";
+import { isUnder } from "@/lib/docker/compose-root";
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
@@ -12,7 +15,7 @@ type RouteParams = {
 
 /**
  * GET /api/v1/organizations/[orgId]/apps/[appId]/security
- * The app's 10 most recent security scans.
+ * The app's 10 most recent security scans and its bind mounts outside the allowed host roots.
  */
 async function handleGet(_request: NextRequest, { params }: RouteParams) {
   try {
@@ -30,7 +33,10 @@ async function handleGet(_request: NextRequest, { params }: RouteParams) {
       limit: 10,
     });
 
-    return NextResponse.json({ scans });
+    const [warnings, roots, canAllow] = await Promise.all([getBindWarnings(appId), bindRoots(), isAppAdmin()]);
+    const outside = warnings.filter((p) => !roots.some((r) => isUnder(p, r)));
+
+    return NextResponse.json({ scans, bindMounts: { outsideRoots: outside, canAllow } });
   } catch (err) {
     console.error("[security] GET error:", err);
     return apiError.internal();
