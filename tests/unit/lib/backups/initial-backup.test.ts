@@ -1,6 +1,6 @@
 // #910: a new app sat unprotected until its first scheduled run, often most of a day away.
 
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 const m = vi.hoisted(() => ({
   appsFindFirst: vi.fn(),
@@ -204,6 +204,9 @@ describe("armInitialBackup", () => {
 });
 
 describe("startDueInitialBackups", () => {
+  beforeEach(() => vi.useFakeTimers({ now: NOW, toFake: ["Date"] }));
+  afterEach(() => vi.useRealTimers());
+
   const start = (queued = new Set<string>()) => startDueInitialBackups({ now: NOW, limit: 2, queued });
 
   it("claims the row, runs the app's job once and records success", async () => {
