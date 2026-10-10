@@ -7,6 +7,7 @@ import YAML from "yaml";
 import { TRAEFIK_DYNAMIC_DIR } from "@/lib/paths";
 import { CLOUDFLARE_IPV4_RANGES, CLOUDFLARE_IPV6_RANGES, parseTrustedProxies, trustedProxyRanges } from "@/lib/cloudflare-ips";
 import { logger } from "@/lib/logger";
+import { IntervalLoop } from "@/lib/worker/interval-loop";
 
 const log = logger.child("cloudflare-only");
 
@@ -173,15 +174,15 @@ export async function currentCloudflareRanges(dir: string = TRAEFIK_DYNAMIC_DIR)
   return (content !== null && renderedCloudflareRanges(content)) || [...BUNDLED_RANGES.v4, ...BUNDLED_RANGES.v6];
 }
 
-/** Writes the middleware now, then refreshes it daily. Traefik's trusted IPs follow the same list. */
-export function startCloudflareOnlySync(): void {
-  const tick = () =>
-    syncCloudflareOnly()
-      .then(async () => {
-        const { syncTraefikTrustedIps } = await import("./trusted-proxies");
-        await syncTraefikTrustedIps({ ranges: await currentCloudflareRanges() });
-      })
-      .catch((err) => log.error("Cloudflare range sync failed:", err));
-  void tick();
-  setInterval(tick, REFRESH_MS).unref?.();
-}
+/** Writes the middleware at start, then refreshes it daily. Traefik's trusted IPs follow the same list. */
+export const cloudflareOnlyLoop = new IntervalLoop({
+  name: "cloudflare-only-sync",
+  intervalMs: REFRESH_MS,
+  firstRunMs: 0,
+  log,
+  run: async () => {
+    await syncCloudflareOnly();
+    const { syncTraefikTrustedIps } = await import("./trusted-proxies");
+    await syncTraefikTrustedIps({ ranges: await currentCloudflareRanges() });
+  },
+});

@@ -9,7 +9,7 @@ vi.mock("@/lib/logger", () => ({
 }));
 
 const shutdown = vi.hoisted(() => ({
-  closers: [] as (() => void)[],
+  closers: [] as (() => void | Promise<void>)[],
   unregister: vi.fn(),
 }));
 
@@ -50,33 +50,29 @@ describe("monitor shutdown handlers", () => {
 
   it("registers the reconciler's stop only once it starts", async () => {
     vi.useFakeTimers();
-    const { startStatusReconciler, stopStatusReconciler } = await import(
-      "@/lib/docker/status-reconcile"
-    );
+    const { statusReconcileLoop } = await import("@/lib/docker/status-reconcile");
 
     expect(shutdown.closers).toHaveLength(0);
-    startStatusReconciler();
-    expect(shutdown.closers).toEqual([stopStatusReconciler]);
+    statusReconcileLoop.start();
+    expect(shutdown.closers).toHaveLength(1);
 
-    stopStatusReconciler();
+    await statusReconcileLoop.stop();
     expect(shutdown.unregister).toHaveBeenCalledTimes(1);
   });
 
   it("stops the reconciler when the registry drains it", async () => {
     vi.useFakeTimers();
-    const { startStatusReconciler, stopStatusReconciler } = await import(
-      "@/lib/docker/status-reconcile"
-    );
+    const { statusReconcileLoop } = await import("@/lib/docker/status-reconcile");
 
-    startStatusReconciler();
-    startStatusReconciler();
+    statusReconcileLoop.start();
+    statusReconcileLoop.start();
     expect(shutdown.closers).toHaveLength(1);
 
     // Only a stopped reconciler registers again — a running one is a no-op.
-    shutdown.closers[0]();
-    startStatusReconciler();
+    await shutdown.closers[0]();
+    statusReconcileLoop.start();
     expect(shutdown.closers).toHaveLength(2);
 
-    stopStatusReconciler();
+    await statusReconcileLoop.stop();
   });
 });

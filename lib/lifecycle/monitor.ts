@@ -13,6 +13,7 @@ import { adminOrgIds } from "@/lib/notifications/admin-orgs";
 import { logger } from "@/lib/logger";
 import { LIFECYCLE_DIR } from "@/lib/paths";
 import { closeOnShutdown, shutdownSignal } from "@/lib/shutdown";
+import { IntervalLoop } from "@/lib/worker/interval-loop";
 import { fetchCompare, getBuildSha, moreCommits } from "@/lib/version";
 import { formatDuration } from "@/lib/email/format";
 import { formatVersion } from "./self-deploy";
@@ -358,6 +359,20 @@ async function onShutdown(): Promise<void> {
   });
 }
 
+/** Per process: each console records its own heartbeat. */
+export const lifecycleHeartbeatLoop = new IntervalLoop({
+  name: "lifecycle-heartbeat",
+  intervalMs: HEARTBEAT_MS,
+  log,
+  run: async () => {
+    const [beaten] = await Promise.allSettled([
+      beat(),
+      checkUpdateMarker().catch((err) => log.warn("Update marker check failed:", err)),
+    ]);
+    if (beaten.status === "rejected") throw beaten.reason;
+  },
+});
+
 const globalForLifecycle = globalThis as unknown as { __vardo_lifecycle?: boolean };
 
 /** Whether another console container is running now. */
@@ -388,16 +403,9 @@ export async function startLifecycleMonitor(): Promise<void> {
   await clearSetting(SHUTDOWN_KEY).catch(() => {});
   await beat().catch((err) => log.warn("Heartbeat failed:", err));
 
-  const interval = setInterval(() => {
-    beat().catch((err) => log.warn("Heartbeat failed:", err));
-    checkUpdateMarker().catch((err) => log.warn("Update marker check failed:", err));
-  }, HEARTBEAT_MS);
-  interval.unref();
+  lifecycleHeartbeatLoop.start({ role: "web" });
 
-  closeOnShutdown(() => {
-    clearInterval(interval);
-    return onShutdown().catch(() => {});
-  });
+  closeOnShutdown(() => onShutdown().catch(() => {}));
 
   // One message per boot. A boot inside an update says only how the update ended.
   bootDownSeconds = boot.kind === "first-boot" ? undefined : boot.downSeconds;

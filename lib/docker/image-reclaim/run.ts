@@ -2,6 +2,7 @@
 // Removal is unforced: forcing an image a stopped container references frees nothing and breaks the container.
 
 import { removeImage } from "../client";
+import { holdsFence } from "@/lib/worker/fence";
 import { logger } from "@/lib/logger";
 
 const log = logger.child("image-reclaim");
@@ -72,6 +73,8 @@ export async function executeReclaimPlan(
         continue;
       }
 
+      // A scheduled sweep whose lease passed to another process stops here.
+      if (!(await holdsFence())) break;
       try {
         const result = await removeImage(image.image);
         reclaimed.push({

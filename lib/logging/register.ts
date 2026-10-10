@@ -1,16 +1,17 @@
 import { isFeatureEnabled } from "@/lib/config/features";
 import { logger } from "@/lib/logger";
 import { SAMPLE_MS } from "@/lib/ui/error-rate";
+import { IntervalLoop } from "@/lib/worker/interval-loop";
 
 const log = logger.child("logging");
 
+/** Checks Loki is reachable. Error rate sampling runs from the loop registry. */
 export async function registerLoggingFeature(): Promise<void> {
   if (!isFeatureEnabled("logging")) {
     log.info("Logging disabled, skipping registration");
     return;
   }
 
-  // Non-blocking Loki reachability check.
   try {
     const { isLokiAvailable } = await import("@/lib/logging/client");
     const ready = await isLokiAvailable();
@@ -22,20 +23,14 @@ export async function registerLoggingFeature(): Promise<void> {
   } catch (err) {
     log.warn("Failed to check Loki availability:", err);
   }
-
-  let ticking = false;
-  setInterval(async () => {
-    if (ticking) return;
-    ticking = true;
-    try {
-      const { collectErrorRates } = await import("@/lib/logging/error-rate");
-      await collectErrorRates();
-    } catch (err) {
-      log.error("Error rate collection failed:", err);
-    } finally {
-      ticking = false;
-    }
-  }, SAMPLE_MS);
-
-  log.info(`Error rate sampling started (every ${Math.round(SAMPLE_MS / 60_000)} minutes)`);
 }
+
+export const errorRateLoop = new IntervalLoop({
+  name: "error-rate",
+  intervalMs: SAMPLE_MS,
+  log,
+  run: async () => {
+    const { collectErrorRates } = await import("@/lib/logging/error-rate");
+    await collectErrorRates();
+  },
+});

@@ -4,6 +4,7 @@ import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { apps, notificationSends } from "@/lib/db/schema";
 import { logger } from "@/lib/logger";
+import { IntervalLoop } from "@/lib/worker/interval-loop";
 import { issueCopy, type IntegrationIssue, type RaisedIssue } from "./issues";
 import { createRechecker, ISSUE_TYPE, syncIssues, type IssueStore, type OpenIssue, type SyncResult } from "./sync";
 
@@ -152,15 +153,11 @@ export async function listOpenIssues(organizationId?: string): Promise<Integrati
   return [...byKey.values()];
 }
 
-let timer: NodeJS.Timeout | null = null;
-
-export function startIntegrationCheckScheduler(): void {
-  if (timer) return;
-  const tick = () => {
-    void runIntegrationCheck().catch((err) => log.warn(`permission check failed: ${err instanceof Error ? err.message : err}`));
-  };
-  const first = setTimeout(tick, STARTUP_DELAY_MS);
-  first.unref?.();
-  timer = setInterval(tick, DAY_MS);
-  timer.unref?.();
-}
+/** Shortly after start, then daily. */
+export const integrationCheckLoop = new IntervalLoop({
+  name: "integration-check",
+  intervalMs: DAY_MS,
+  firstRunMs: STARTUP_DELAY_MS,
+  log,
+  run: () => runIntegrationCheck(),
+});

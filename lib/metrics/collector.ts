@@ -8,11 +8,11 @@ import { getDiskSnapshot } from "@/lib/docker/disk-snapshot";
 import { collectBusinessMetrics } from "./collect-business-metrics";
 import { initGpuCollector, getGpuCollector, setGpuSnapshot } from "@/lib/gpu/collector";
 import { setLatestSnapshot } from "./broadcast";
+import { IntervalLoop } from "@/lib/worker/interval-loop";
 
 const log = logger.child("collector");
 
 type CollectorState = {
-  timeout: ReturnType<typeof setTimeout> | null;
   started: boolean;
   tickCount: number;
   consecutiveFailures: number;
@@ -22,10 +22,12 @@ type CollectorState = {
 };
 
 /** State lives on globalThis; Next.js bundles instrumentation and routes separately, which would start two loops. */
-const globalForCollector = globalThis as unknown as { __vardo_metrics_collector?: CollectorState };
+const globalForCollector = globalThis as unknown as {
+  __vardo_metrics_collector?: CollectorState;
+  __vardo_metrics_collector_loop?: IntervalLoop;
+};
 
 const state: CollectorState = (globalForCollector.__vardo_metrics_collector ??= {
-  timeout: null,
   started: false,
   tickCount: 0,
   consecutiveFailures: 0,
@@ -86,21 +88,21 @@ export async function startCollector() {
     log.warn("GPU collector init failed:", (err as Error).message);
   });
 
-  scheduleTick();
+  collectorLoop.start({ role: "web" });
 }
 
-function scheduleTick() {
-  if (!state.started || state.disabled) return;
-  const interval = nextInterval({
-    tickCount: state.tickCount,
-    consecutiveFailures: state.consecutiveFailures,
-  });
-  state.timeout = setTimeout(async () => {
+/** Per process: it feeds this process's live snapshot. Waits a full interval after each collection. */
+export const collectorLoop = (globalForCollector.__vardo_metrics_collector_loop ??= new IntervalLoop({
+  name: "metrics-collector",
+  intervalMs: () => nextInterval({ tickCount: state.tickCount, consecutiveFailures: state.consecutiveFailures }),
+  schedule: "delay",
+  log,
+  run: async () => {
     await collect();
     state.tickCount++;
-    scheduleTick();
-  }, interval);
-}
+    if (state.disabled) void collectorLoop.stop();
+  },
+}));
 
 async function collect() {
   let metrics: Awaited<ReturnType<typeof fetchAllMetrics>> = [];
@@ -282,10 +284,7 @@ async function collect() {
 }
 
 export function stopCollector() {
-  if (state.timeout) {
-    clearTimeout(state.timeout);
-    state.timeout = null;
-  }
+  void collectorLoop.stop();
   state.started = false;
   state.disabled = false;
   state.diskConsecutiveFailures = 0;

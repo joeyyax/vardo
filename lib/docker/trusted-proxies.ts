@@ -11,6 +11,7 @@ import { writeEnvKey } from "@/lib/env/write-env-key";
 import { logger } from "@/lib/logger";
 import { resolveVardoComposeFile } from "@/lib/paths";
 import { execFileAsync } from "@/lib/utils/exec";
+import { holdsFence } from "@/lib/worker/fence";
 
 const log = logger.child("trusted-proxies");
 
@@ -66,6 +67,7 @@ async function inspectTraefik(): Promise<TraefikContainer | null> {
 }
 
 async function recreateTraefik(composeFile: string, project: string, service: string, value: string): Promise<void> {
+  if (!(await holdsFence())) throw new Error("another process took the sync's lease");
   await execFileAsync(
     "docker",
     ["compose", "-p", project, "-f", composeFile, "up", "-d", "--no-deps", "--pull", "never", service],

@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { sendHeartbeatToPeer } from "./heartbeat";
 import { reconcileConsoleForward } from "./console-forward";
 import { logger } from "@/lib/logger";
+import { IntervalLoop } from "@/lib/worker/interval-loop";
 
 const log = logger.child("mesh-heartbeat");
 const INTERVAL_MS = 30_000;
@@ -15,46 +16,40 @@ async function reconcileForward(): Promise<void> {
   }
 }
 
-/** Start the mesh heartbeat scheduler. */
-export function startMeshHeartbeatScheduler(): void {
-  let ticking = false;
+async function heartbeatPass(): Promise<void> {
+  const peers = await db.query.meshPeers.findMany({
+    columns: { id: true, name: true },
+  });
 
-  // A restarted console can come back on a different mesh IP.
-  setTimeout(() => {
-    db.query.meshPeers.findFirst({ columns: { id: true } })
-      .then((peer) => (peer ? reconcileForward() : undefined))
-      .catch(() => {});
-  }, FIRST_FORWARD_CHECK_MS);
+  if (peers.length === 0) return;
 
-  setInterval(async () => {
-    if (ticking) return;
-    ticking = true;
+  await reconcileForward();
 
-    try {
-      const peers = await db.query.meshPeers.findMany({
-        columns: { id: true, name: true },
-      });
+  const results = await Promise.allSettled(
+    peers.map((peer) => sendHeartbeatToPeer(peer.id))
+  );
 
-      if (peers.length === 0) return;
+  const online = results.filter(
+    (r) => r.status === "fulfilled" && r.value === true
+  ).length;
+  const offline = peers.length - online;
 
-      await reconcileForward();
-
-      const results = await Promise.allSettled(
-        peers.map((peer) => sendHeartbeatToPeer(peer.id))
-      );
-
-      const online = results.filter(
-        (r) => r.status === "fulfilled" && r.value === true
-      ).length;
-      const offline = peers.length - online;
-
-      if (offline > 0) {
-        log.debug(`Heartbeat: ${online}/${peers.length} peers online`);
-      }
-    } catch (err) {
-      log.error("Heartbeat scheduler error:", err);
-    } finally {
-      ticking = false;
-    }
-  }, INTERVAL_MS);
+  if (offline > 0) {
+    log.debug(`Heartbeat: ${online}/${peers.length} peers online`);
+  }
 }
+
+export const meshHeartbeatLoop = new IntervalLoop({
+  name: "mesh-heartbeat",
+  intervalMs: INTERVAL_MS,
+  log,
+  // A restarted console can come back on a different mesh IP.
+  prepare: async () => {
+    setTimeout(() => {
+      db.query.meshPeers.findFirst({ columns: { id: true } })
+        .then((peer) => (peer ? reconcileForward() : undefined))
+        .catch(() => {});
+    }, FIRST_FORWARD_CHECK_MS).unref?.();
+  },
+  run: heartbeatPass,
+});

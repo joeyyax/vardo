@@ -29,9 +29,9 @@ export async function register() {
     const { writeTraefikApiConfig } = await import("./lib/docker/traefik-api-access");
     await writeTraefikApiConfig().catch((err) => log.warn("Failed to write the Traefik API router:", err));
 
-    // Defines cloudflare-only@file for domains and the console lock.
-    const { startCloudflareOnlySync } = await import("./lib/docker/cloudflare-only");
-    startCloudflareOnlySync();
+    // Defines cloudflare-only@file for domains and the console lock. The cloudflare-only-sync loop refreshes it.
+    const { syncCloudflareOnly } = await import("./lib/docker/cloudflare-only");
+    await syncCloudflareOnly().catch((err) => log.warn("Failed to write the Cloudflare middleware:", err));
     const { syncConsolePublicRoute } = await import("./lib/docker/console-lock");
     await syncConsolePublicRoute().catch((err) => log.warn("Failed to write the console's public route:", err));
     const { writeReachRoute } = await import("./lib/docker/reach-route");
@@ -158,11 +158,10 @@ export async function register() {
       log.error("Backup work beacon failed to start:", err);
     }
 
-    // The backup scheduler waits on the target.
+    // The backup loops wait on the target.
     let backupTargetReady: Promise<void> | undefined;
     try {
       const { ensureHostBackupTarget, ensureSystemBackupJob } = await import("./lib/backups/auto-backup");
-      const { startBackupScheduler } = await import("./lib/backups/scheduler");
       backupTargetReady = ensureHostBackupTarget()
         .then(async (target) => {
           if (target) {
@@ -171,8 +170,6 @@ export async function register() {
           } else {
             log.info("No backup storage configured (add backup section to vardo.yml or configure in admin settings)");
           }
-          startBackupScheduler();
-          log.info("Backup scheduler started");
           // Enroll apps the backup switch has on and stop the ones it has off.
           const { reconcileInBackground } = await import("./lib/backups/switch");
           reconcileInBackground({});
@@ -195,15 +192,8 @@ export async function register() {
     // Each register function checks its own feature flag.
     const features: [string, () => Promise<void>][] = [
       ["notifications", async () => { const m = await import("./lib/notifications/register"); await m.registerNotificationsPlugin(); }],
-      ["metrics", async () => { const m = await import("./lib/metrics/register"); await m.registerMetricsPlugin(); }],
       ["monitoring", async () => { const m = await import("./lib/monitoring/register"); await m.registerMonitoringPlugin(); }],
-      ["cron", async () => { const m = await import("./lib/cron/register"); await m.registerCronPlugin(); }],
-      ["domain-monitoring", async () => { const m = await import("./lib/domain-monitoring/register"); await m.registerDomainMonitoringPlugin(); }],
-      ["domain-verification", async () => { const m = await import("./lib/domains/register"); await m.registerDomainVerificationPlugin(); }],
-      ["digest", async () => { const m = await import("./lib/digest/register"); await m.registerDigestPlugin(); }],
       ["logging", async () => { const m = await import("./lib/logging/register"); await m.registerLoggingFeature(); }],
-      ["image-updates", async () => { const m = await import("./lib/docker/image-updates/register"); await m.registerImageUpdatesPlugin(); }],
-      ["image-reclaim", async () => { const m = await import("./lib/docker/image-reclaim/register"); await m.registerImageReclaimPlugin(); }],
     ];
 
     for (const [label, register] of features) {
@@ -222,51 +212,10 @@ export async function register() {
     }
 
     tasks.push(
-      // Cleans up stuck queued deployments.
-      import("./lib/deploy/scheduler")
-        .then(({ startDeploySweeper }) => {
-          startDeploySweeper();
-          log.info("Deploy sweeper started");
-        })
-        .catch((err) => log.error("Failed to start deploy sweeper:", err)),
-
-      import("./lib/ssl/cert-export")
-        .then(({ startCertExportScheduler }) => {
-          startCertExportScheduler();
-          log.info("Certificate export scheduler started");
-        })
-        .catch((err) => log.error("Failed to start certificate export scheduler:", err)),
-
-      import("./lib/mesh/scheduler")
-        .then(({ startMeshHeartbeatScheduler }) => {
-          startMeshHeartbeatScheduler();
-          log.info("Mesh heartbeat scheduler started");
-        })
-        .catch((err) => log.error("Failed to start mesh heartbeat scheduler:", err)),
-
-      // Auto-deploy for apps whose host can't reach this instance with a webhook.
-      import("./lib/git-integration/poll-scheduler")
-        .then(({ startGitPollScheduler }) => {
-          startGitPollScheduler();
-          log.info("Git poll scheduler started");
-        })
-        .catch((err) => log.error("Failed to start git poll scheduler:", err)),
-
-      // Integration permissions: shortly after boot, then daily.
-      import("./lib/integrations/check")
-        .then(({ startIntegrationCheckScheduler }) => startIntegrationCheckScheduler())
-        .catch((err) => log.error("Failed to start the integration permission check:", err)),
-
-      // Nothing else removes expired preview environments.
-      import("./lib/config/features")
-        .then(({ isFeatureEnabledAsync }) => isFeatureEnabledAsync("previews"))
-        .then(async (enabled) => {
-          if (!enabled) return;
-          const { startPreviewSweeper } = await import("./lib/docker/preview-sweeper");
-          startPreviewSweeper();
-          log.info("Preview sweeper started");
-        })
-        .catch((err) => log.error("Failed to start preview sweeper:", err)),
+      // Every background loop, from lib/worker/registry.ts. Feature-gated loops check their flag here.
+      import("./lib/worker/start")
+        .then(({ startLoops }) => startLoops({ role: "web", ready: { "backup-target": backupTargetReady } }))
+        .catch((err) => log.error("Failed to start background loops:", err)),
 
       // Picks up a whole-instance restore a restart interrupted.
       import("./lib/restore/database")
@@ -283,21 +232,6 @@ export async function register() {
         .then(({ reconcileComposeDomains }) => reconcileComposeDomains())
         .then(({ synced }) => { if (synced > 0) log.info(`Compose domains listed for ${synced} app(s)`); })
         .catch((err) => log.warn("Compose domain reconcile skipped:", err)),
-
-      // Heartbeat, shutdown marker and one boot announcement.
-      import("./lib/lifecycle/monitor")
-        .then(({ startLifecycleMonitor }) => startLifecycleMonitor())
-        .catch((err) => log.error("Failed to start the lifecycle monitor:", err)),
-
-      // Redeploys of Vardo itself requested by `vardo update` on the host.
-      import("./lib/lifecycle/deploy-request")
-        .then(({ startDeployRequestWatcher }) => startDeployRequestWatcher())
-        .catch((err) => log.error("Failed to start the deploy request watcher:", err)),
-
-      // Auto updates in the maintenance window, and health checks after any update.
-      import("./lib/self-update/runner")
-        .then(({ startSelfUpdateScheduler }) => startSelfUpdateScheduler())
-        .catch((err) => log.error("Failed to start the update scheduler:", err)),
 
       // Stamps app directory owners while top-level app names are still globally unique.
       import("./lib/docker/app-dir-owner")

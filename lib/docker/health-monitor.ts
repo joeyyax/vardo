@@ -34,7 +34,8 @@ import {
   recordRestart,
 } from "./self-heal-store";
 import { logger } from "@/lib/logger";
-import { closeOnShutdown } from "@/lib/shutdown";
+import { IntervalLoop } from "@/lib/worker/interval-loop";
+import { holdsFence } from "@/lib/worker/fence";
 
 export { RESTART_WINDOW_MS };
 
@@ -350,6 +351,9 @@ export async function tickHealthMonitor(): Promise<void> {
       continue;
     }
 
+    // Another process took the loop's lease since this pass began.
+    if (!(await holdsFence())) return;
+
     const pending = nextPendingRecovery<PendingRecovery>(
       pendingRecovery.get(c.id),
       { appId: app.id, appName, organizationId: app.organizationId, containerName: c.name },
@@ -476,6 +480,7 @@ async function tickRecoveries(running: ContainerInfo[], now: number): Promise<vo
         continue;
       }
 
+      if (!(await holdsFence())) return;
       p.startTried = true;
       try {
         await startContainer(id);
@@ -633,6 +638,7 @@ async function tickDesiredState(all: ContainerInfo[], running: ContainerInfo[], 
       continue;
     }
 
+    if (!(await holdsFence())) return;
     const spent = await recordRestart(app.id, c.id, now);
     desiredStateLeft.delete(c.id);
     const exitCode = info.state.exitCode;
@@ -886,39 +892,9 @@ export function forgetConditionStreaks(appIds: Set<string>): void {
 
 // Scheduler (mirrors lib/system-alerts/monitor.ts).
 
-let interval: NodeJS.Timeout | null = null;
-let ticking = false;
-let unregisterShutdown: (() => void) | null = null;
-
-export function startHealthMonitor(): void {
-  if (interval) return;
-
-  log.info(`Monitor started (${POLL_INTERVAL_MS / 1000}s interval)`);
-  interval = setInterval(async () => {
-    if (ticking) {
-      log.warn("Previous tick still running — skipping");
-      return;
-    }
-    ticking = true;
-    try {
-      await tickHealthMonitor();
-    } catch (err) {
-      log.error("Tick error:", err);
-    } finally {
-      ticking = false;
-    }
-  }, POLL_INTERVAL_MS);
-
-  // Registered here, not at module scope, so importing the module wires no shutdown.
-  unregisterShutdown = closeOnShutdown(stopHealthMonitor);
-}
-
-export function stopHealthMonitor(): void {
-  unregisterShutdown?.();
-  unregisterShutdown = null;
-  if (interval) {
-    clearInterval(interval);
-    interval = null;
-    log.info("Monitor stopped");
-  }
-}
+export const containerHealthLoop = new IntervalLoop({
+  name: "container-health",
+  intervalMs: POLL_INTERVAL_MS,
+  log,
+  run: () => tickHealthMonitor(),
+});

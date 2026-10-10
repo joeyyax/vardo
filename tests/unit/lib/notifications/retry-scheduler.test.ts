@@ -44,11 +44,7 @@ vi.mock("@/lib/db", () => ({
 vi.mock("@/lib/notifications/factory", () => ({ createChannel: () => ({ send }) }));
 
 import { enqueueRetry, dropStaleRetries, tickNotificationRetries } from "@/lib/notifications/retry";
-import {
-  startNotificationRetryScheduler,
-  stopNotificationRetryScheduler,
-  STALE_RETRY_MS,
-} from "@/lib/notifications/scheduler";
+import { notificationRetryLoop, STALE_RETRY_MS } from "@/lib/notifications/scheduler";
 
 const base = { orgId: "org-1", channelId: "ch-1", channelName: "Ops", channelType: "webhook", event: { type: "deploy.failed" } };
 const queued = (retryAfter: number, attempt = 1) => JSON.stringify({ ...base, attempt, retryAfter });
@@ -61,8 +57,8 @@ beforeEach(() => {
   send.mockResolvedValue(undefined);
 });
 
-afterEach(() => {
-  stopNotificationRetryScheduler();
+afterEach(async () => {
+  await notificationRetryLoop.stop();
   vi.useRealTimers();
 });
 
@@ -109,12 +105,13 @@ describe("tickNotificationRetries", () => {
   });
 });
 
-describe("startNotificationRetryScheduler", () => {
+describe("notificationRetryLoop", () => {
   it("clears stale retries before the first tick, then retries fresh ones", async () => {
-    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
     list.push(queued(Date.now() - 2 * 60 * 60_000));
 
-    await startNotificationRetryScheduler();
+    notificationRetryLoop.start();
+    await vi.advanceTimersByTimeAsync(1);
     expect(list).toEqual([]);
 
     await enqueueRetry(base as Parameters<typeof enqueueRetry>[0], 0);
@@ -124,9 +121,10 @@ describe("startNotificationRetryScheduler", () => {
   });
 
   it("starts once per process", async () => {
-    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
-    await startNotificationRetryScheduler();
-    await startNotificationRetryScheduler();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
+    notificationRetryLoop.start();
+    notificationRetryLoop.start();
+    await vi.advanceTimersByTimeAsync(1);
 
     expect(vi.getTimerCount()).toBe(1);
   });

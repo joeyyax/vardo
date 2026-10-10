@@ -10,6 +10,7 @@ import { VARDO_SELF_APP_NAME } from "@/lib/api/system-managed";
 import { logger } from "@/lib/logger";
 import { LIFECYCLE_DIR } from "@/lib/paths";
 import { closeOnShutdown } from "@/lib/shutdown";
+import { IntervalLoop } from "@/lib/worker/interval-loop";
 
 const log = logger.child("deploy-request");
 
@@ -101,27 +102,13 @@ async function tick(): Promise<void> {
   await processDeployRequest();
 }
 
-const globalForRequests = globalThis as unknown as { __vardo_deploy_requests?: boolean };
-
-/** Polls for requests from `vardo update`. */
-export function startDeployRequestWatcher(): void {
-  if (globalForRequests.__vardo_deploy_requests) return;
-  globalForRequests.__vardo_deploy_requests = true;
-
-  let running = false;
-  const interval = setInterval(() => {
-    if (running) return;
-    running = true;
-    tick()
-      .catch((err) => log.warn("Deploy request check failed:", err))
-      .finally(() => {
-        running = false;
-      });
-  }, REQUEST_POLL_MS);
-  interval.unref();
-
-  closeOnShutdown(async () => {
-    clearInterval(interval);
-    await rm(join(LIFECYCLE_DIR, READY_FILE), { force: true }).catch(() => {});
-  });
-}
+/** Polls for requests from `vardo update`. Per process: the claim is an atomic rename. */
+export const deployRequestLoop = new IntervalLoop({
+  name: "deploy-request",
+  intervalMs: REQUEST_POLL_MS,
+  log,
+  prepare: async () => {
+    closeOnShutdown(() => rm(join(LIFECYCLE_DIR, READY_FILE), { force: true }).catch(() => {}));
+  },
+  run: tick,
+});

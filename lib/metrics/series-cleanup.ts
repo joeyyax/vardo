@@ -3,6 +3,7 @@
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema/apps";
 import { logger } from "@/lib/logger";
+import { IntervalLoop } from "@/lib/worker/interval-loop";
 import { tsRedis, forgetKey, RETENTION_MS } from "./ts-client";
 
 const log = logger.child("series-cleanup");
@@ -149,20 +150,11 @@ export async function sweepOrphanSeries(): Promise<number> {
 
 const SWEEP_INTERVAL_MS = 6 * 60 * 60_000;
 
-let sweepTimer: NodeJS.Timeout | null = null;
-
-async function runSweep(): Promise<void> {
-  try {
-    await sweepOrphanSeries();
-  } catch (err) {
-    log.error("Orphan series sweep failed:", err);
-  }
-}
-
-/** Sweeps orphaned series now and every six hours. */
-export function startOrphanSeriesSweeper(): void {
-  if (sweepTimer) return;
-  void runSweep();
-  sweepTimer = setInterval(runSweep, SWEEP_INTERVAL_MS);
-  sweepTimer.unref();
-}
+/** Sweeps orphaned series at start and every six hours. */
+export const orphanSeriesLoop = new IntervalLoop({
+  name: "metrics-orphan-sweep",
+  intervalMs: SWEEP_INTERVAL_MS,
+  firstRunMs: 0,
+  log,
+  run: () => sweepOrphanSeries(),
+});

@@ -13,7 +13,7 @@ import { adminOrgIds } from "@/lib/notifications/admin-orgs";
 import { logger } from "@/lib/logger";
 import { isSelfDeployLayout } from "@/lib/paths";
 import { acquireLock, releaseLock } from "@/lib/redis-lock";
-import { closeOnShutdown } from "@/lib/shutdown";
+import { IntervalLoop } from "@/lib/worker/interval-loop";
 import { getBuildSha, getChannelUpdate, type ChannelUpdate } from "@/lib/version";
 import { formatVersion } from "@/lib/lifecycle/self-deploy";
 import { canaryVerdict, sameCommit, type CanaryPeer, type CanaryVerdict } from "./canary";
@@ -381,28 +381,10 @@ export async function tickSelfUpdate(now = new Date()): Promise<void> {
   }
 }
 
-const globalForUpdates = globalThis as unknown as { __vardo_self_update?: boolean };
-
-export function startSelfUpdateScheduler(): void {
-  if (globalForUpdates.__vardo_self_update) return;
-  globalForUpdates.__vardo_self_update = true;
-
-  let running = false;
-  const tick = () => {
-    if (running) return;
-    running = true;
-    tickSelfUpdate()
-      .catch((err) => log.warn("Update tick failed:", err))
-      .finally(() => {
-        running = false;
-      });
-  };
-  const first = setTimeout(tick, 30_000);
-  const interval = setInterval(tick, TICK_MS);
-  first.unref();
-  interval.unref();
-  closeOnShutdown(() => {
-    clearTimeout(first);
-    clearInterval(interval);
-  });
-}
+export const selfUpdateLoop = new IntervalLoop({
+  name: "self-update",
+  intervalMs: TICK_MS,
+  firstRunMs: 30_000,
+  log,
+  run: () => tickSelfUpdate(),
+});

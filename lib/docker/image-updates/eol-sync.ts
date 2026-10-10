@@ -1,6 +1,7 @@
 // Daily refresh of the EOL table from endoflife.date. A failed or invalid fetch keeps the last good table.
 
 import { logger } from "@/lib/logger";
+import { IntervalLoop } from "@/lib/worker/interval-loop";
 import { getSystemSettingRaw, setSystemSetting } from "@/lib/system-settings";
 import { safeFetch } from "@/lib/security/safe-fetch";
 import { HttpError, retry } from "@/lib/net/retry";
@@ -144,15 +145,17 @@ export async function syncEolTable(
   return failed > 0 ? "partial" : "updated";
 }
 
-/** Loads the stored table now, then refreshes it daily. */
-export function startEolSync(): NodeJS.Timeout {
-  const tick = () => syncEolTable().catch((err) => log.error("EOL table sync failed:", err));
-  void settingStore
-    .read()
-    .then((raw) => setActiveEolTable(tableFrom(parseStored(raw))))
-    .catch(() => {})
-    .finally(tick);
-  const interval = setInterval(tick, REFRESH_MS);
-  interval.unref?.();
-  return interval;
-}
+/** Per process: the active table lives in memory. Loads the stored table, then refreshes it daily. */
+export const eolSyncLoop = new IntervalLoop({
+  name: "image-eol-sync",
+  intervalMs: REFRESH_MS,
+  firstRunMs: 0,
+  log,
+  prepare: async () => {
+    await settingStore
+      .read()
+      .then((raw) => setActiveEolTable(tableFrom(parseStored(raw))))
+      .catch(() => {});
+  },
+  run: () => syncEolTable(),
+});

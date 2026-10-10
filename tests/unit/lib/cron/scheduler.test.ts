@@ -1,16 +1,10 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// ---------------------------------------------------------------------------
-// Hoisted mock factories
-// ---------------------------------------------------------------------------
-
-const { isFeatureEnabledMock, cleanupStaleSelfPreviewsMock, tickCronJobsMock } = vi.hoisted(() => {
-  return {
-    isFeatureEnabledMock: vi.fn().mockReturnValue(false),
-    cleanupStaleSelfPreviewsMock: vi.fn().mockResolvedValue(0),
-    tickCronJobsMock: vi.fn().mockResolvedValue(undefined),
-  };
-});
+const { isFeatureEnabledMock, cleanupStaleSelfPreviewsMock, settings } = vi.hoisted(() => ({
+  isFeatureEnabledMock: vi.fn().mockReturnValue(false),
+  cleanupStaleSelfPreviewsMock: vi.fn().mockResolvedValue(0),
+  settings: new Map<string, string>(),
+}));
 
 vi.mock("@/lib/config/features", () => ({
   isFeatureEnabled: isFeatureEnabledMock,
@@ -21,7 +15,13 @@ vi.mock("@/lib/docker/self-preview", () => ({
 }));
 
 vi.mock("@/lib/cron/engine", () => ({
-  tickCronJobs: tickCronJobsMock,
+  tickCronJobs: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("@/lib/system-settings", () => ({
+  getSystemSettingRaw: vi.fn(async (key: string) => settings.get(key) ?? null),
+  setSystemSetting: vi.fn(async (key: string, value: string) => void settings.set(key, value)),
+  invalidateSettingsCache: vi.fn(),
 }));
 
 vi.mock("@/lib/db", () => ({
@@ -34,80 +34,57 @@ vi.mock("@/lib/db", () => ({
   },
 }));
 
-vi.mock("@/lib/db/schema", () => ({
-  organizations: {},
-}));
-
 vi.mock("@/lib/security/scanner", () => ({
   runScheduledScans: vi.fn().mockResolvedValue(undefined),
 }));
 
-// ---------------------------------------------------------------------------
-// Imports after mocks
-// ---------------------------------------------------------------------------
+import { runDailyJobs, DAILY_SCAN_DATE_KEY } from "@/lib/cron/scheduler";
 
-import { startCronScheduler, stopCronScheduler } from "@/lib/cron/scheduler";
+const at = (hour: number) => {
+  const d = new Date(2026, 9, 10);
+  d.setHours(hour, 0, 0, 0);
+  return d;
+};
 
-// ---------------------------------------------------------------------------
-// selfManagement feature gate
-// ---------------------------------------------------------------------------
-
-describe("selfManagement feature gate in daily scheduler", () => {
+describe("daily cron jobs", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-
-    // Set system clock to 1:00 AM so when the hourly interval fires one hour
-    // later the clock reads 2:00 AM and passes the daily-job gate.
-    const oneAM = new Date();
-    oneAM.setHours(1, 0, 0, 0);
-    vi.useFakeTimers();
-    vi.setSystemTime(oneAM);
-  });
-
-  afterEach(() => {
-    stopCronScheduler();
-    vi.useRealTimers();
+    settings.clear();
   });
 
   it("calls cleanupStaleSelfPreviews when selfManagement is enabled", async () => {
     isFeatureEnabledMock.mockReturnValue(true);
-
-    startCronScheduler();
-    // Advance one full hour to trigger the daily interval callback
-    await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
-
+    expect(await runDailyJobs(at(2))).toBe(true);
     expect(cleanupStaleSelfPreviewsMock).toHaveBeenCalledOnce();
   });
 
   it("skips cleanupStaleSelfPreviews when selfManagement is disabled", async () => {
     isFeatureEnabledMock.mockReturnValue(false);
-
-    startCronScheduler();
-    await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
-
+    await runDailyJobs(at(2));
     expect(cleanupStaleSelfPreviewsMock).not.toHaveBeenCalled();
   });
 
-  it("does not call cleanupStaleSelfPreviews outside the 2 AM window", async () => {
+  it("does nothing outside the 2 AM window", async () => {
     isFeatureEnabledMock.mockReturnValue(true);
-
-    // Set time to 3 AM — outside the fire window
-    const threeAM = new Date();
-    threeAM.setHours(3, 0, 0, 0);
-    vi.setSystemTime(threeAM);
-
-    startCronScheduler();
-    await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
-
+    expect(await runDailyJobs(at(3))).toBe(false);
     expect(cleanupStaleSelfPreviewsMock).not.toHaveBeenCalled();
   });
 
   it("skips cleanupStaleSelfPreviews when previews are off", async () => {
     isFeatureEnabledMock.mockImplementation((flag: string) => flag === "selfManagement");
-
-    startCronScheduler();
-    await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
-
+    await runDailyJobs(at(2));
     expect(cleanupStaleSelfPreviewsMock).not.toHaveBeenCalled();
+  });
+
+  it("runs once a day across restarts, from the persisted date", async () => {
+    isFeatureEnabledMock.mockReturnValue(true);
+    expect(await runDailyJobs(at(2))).toBe(true);
+    expect(settings.get(DAILY_SCAN_DATE_KEY)).toBe(at(2).toDateString());
+
+    // A fresh module stands in for a restarted or second process.
+    vi.resetModules();
+    const fresh = await import("@/lib/cron/scheduler");
+    expect(await fresh.runDailyJobs(at(2))).toBe(false);
+    expect(cleanupStaleSelfPreviewsMock).toHaveBeenCalledOnce();
   });
 });

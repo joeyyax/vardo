@@ -14,7 +14,8 @@ import {
   type TraefikBackend,
 } from "./traefik-api";
 import { logger } from "@/lib/logger";
-import { closeOnShutdown } from "@/lib/shutdown";
+import { IntervalLoop } from "@/lib/worker/interval-loop";
+import { holdsFence } from "@/lib/worker/fence";
 
 const log = logger.child("traefik-drift");
 
@@ -225,6 +226,9 @@ export async function tickTraefikDrift(): Promise<void> {
     return;
   }
 
+  // Another process took the loop's lease since this pass began.
+  if (!(await holdsFence())) return;
+
   let ok = true;
   try {
     await restartContainer(traefik.id);
@@ -249,35 +253,9 @@ export async function tickTraefikDrift(): Promise<void> {
   });
 }
 
-let interval: NodeJS.Timeout | null = null;
-let ticking = false;
-let unregisterShutdown: (() => void) | null = null;
-
-export function startTraefikDriftMonitor(): void {
-  if (interval) return;
-
-  log.info(`Monitor started (${POLL_INTERVAL_MS / 1000}s interval)`);
-  interval = setInterval(async () => {
-    if (ticking) return;
-    ticking = true;
-    try {
-      await tickTraefikDrift();
-    } catch (err) {
-      log.error("Tick error:", err);
-    } finally {
-      ticking = false;
-    }
-  }, POLL_INTERVAL_MS);
-
-  unregisterShutdown = closeOnShutdown(stopTraefikDriftMonitor);
-}
-
-export function stopTraefikDriftMonitor(): void {
-  unregisterShutdown?.();
-  unregisterShutdown = null;
-  if (interval) {
-    clearInterval(interval);
-    interval = null;
-    log.info("Monitor stopped");
-  }
-}
+export const traefikDriftLoop = new IntervalLoop({
+  name: "traefik-drift",
+  intervalMs: POLL_INTERVAL_MS,
+  log,
+  run: () => tickTraefikDrift(),
+});

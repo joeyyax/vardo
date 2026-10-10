@@ -15,6 +15,8 @@ import { dockerEnv } from "@/lib/docker/docker-env";
 import { resolveDefaultEnv } from "@/lib/docker/resolve-env";
 import { volumePrefix } from "@/lib/docker/volume-prefix";
 import { logger } from "@/lib/logger";
+import { IntervalLoop } from "@/lib/worker/interval-loop";
+import { holdsFence } from "@/lib/worker/fence";
 
 const log = logger.child("cert-export");
 
@@ -263,6 +265,7 @@ export async function restartStaleCertServices(volume: string): Promise<string[]
   for (const c of running) {
     const info = await inspectContainer(c.Id);
     if (!startedBeforeWrite(info.state.startedAt, at)) continue;
+    if (!(await holdsFence())) break;
     await restartContainer(c.Id);
     restarted.push(c.Labels?.["com.docker.compose.service"] ?? (c.Names[0] ?? c.Id).replace(/^\//, ""));
   }
@@ -390,23 +393,11 @@ export async function syncAllCerts(): Promise<void> {
   }
 }
 
-let timer: NodeJS.Timeout | null = null;
-
 /** Picks up renewals. Traefik renews 30 days out, so ten minutes is plenty. */
-export function startCertExportScheduler(intervalMs = 10 * 60_000): void {
-  if (timer) return;
-  let running = false;
-  const tick = async () => {
-    if (running) return;
-    running = true;
-    try {
-      await syncAllCerts();
-    } catch (err) {
-      log.warn(`sync failed: ${err instanceof Error ? err.message : err}`);
-    } finally {
-      running = false;
-    }
-  };
-  timer = setInterval(tick, intervalMs);
-  void tick();
-}
+export const certExportLoop = new IntervalLoop({
+  name: "cert-export",
+  intervalMs: 10 * 60_000,
+  firstRunMs: 0,
+  log,
+  run: () => syncAllCerts(),
+});

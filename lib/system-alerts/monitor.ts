@@ -14,7 +14,7 @@ import { runAlertPass } from "@/lib/alerts/pass";
 import { emitSystemIncident, resolveSystemIncident } from "@/lib/incidents/system";
 import pLimit from "p-limit";
 import { logger } from "@/lib/logger";
-import { closeOnShutdown } from "@/lib/shutdown";
+import { IntervalLoop } from "@/lib/worker/interval-loop";
 import { probeCertificate } from "./cert-probe";
 import {
   evaluateCertExpiry,
@@ -344,52 +344,14 @@ export async function tickSystemAlerts(): Promise<void> {
   await Promise.allSettled(checks);
 }
 
-let interval: NodeJS.Timeout | null = null;
-let ticking = false;
-let unregisterShutdown: (() => void) | null = null;
-
-export function startSystemAlertMonitor(): void {
-  if (interval) return;
-
-  // Load persisted alert state before the first tick so rate-limit windows survive restarts.
-  loadAlertState()
-    .then(() => {
-      setTimeout(() => {
-        tickSystemAlerts().catch((err) => {
-          log.error("Initial tick error:", err);
-        });
-      }, 10_000);
-    })
-    .catch((err) => {
-      log.error("Failed to load alert state:", err);
-    });
-
-  log.info("Monitor started (60s interval)");
-  interval = setInterval(async () => {
-    if (ticking) {
-      log.warn("Previous tick still running — skipping");
-      return;
-    }
-    ticking = true;
-    try {
-      await tickSystemAlerts();
-    } catch (err) {
-      log.error("Tick error:", err);
-    } finally {
-      ticking = false;
-    }
-  }, 60_000);
-
-  // Registered here, not at module scope, so importing doesn't wire a shutdown.
-  unregisterShutdown = closeOnShutdown(stopSystemAlertMonitor);
-}
-
-export function stopSystemAlertMonitor(): void {
-  unregisterShutdown?.();
-  unregisterShutdown = null;
-  if (interval) {
-    clearInterval(interval);
-    interval = null;
-    log.info("Monitor stopped");
-  }
-}
+// Loads persisted alert state first so rate-limit windows survive restarts.
+export const systemAlertsLoop = new IntervalLoop({
+  name: "system-alerts",
+  intervalMs: 60_000,
+  firstRunMs: 10_000,
+  log,
+  prepare: async () => {
+    await loadAlertState().catch((err) => log.error("Failed to load alert state:", err));
+  },
+  run: () => tickSystemAlerts(),
+});

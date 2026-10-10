@@ -1,35 +1,20 @@
 import { cleanupExpiredPreviews } from "./preview";
 import { logger } from "@/lib/logger";
+import { IntervalLoop } from "@/lib/worker/interval-loop";
 
 const log = logger.child("preview-sweeper");
 
 /** Previews outlive their expiry by at most this long. */
 const SWEEP_INTERVAL_MS = 15 * 60_000;
 
-let interval: NodeJS.Timeout | null = null;
-
-async function sweep(): Promise<void> {
-  try {
+// Sweeps at start too.
+export const previewSweepLoop = new IntervalLoop({
+  name: "preview-sweep",
+  intervalMs: SWEEP_INTERVAL_MS,
+  firstRunMs: 0,
+  log,
+  run: async () => {
     const cleaned = await cleanupExpiredPreviews();
     if (cleaned > 0) log.info(`Destroyed ${cleaned} expired preview(s)`);
-  } catch (err) {
-    log.error("Sweep error:", err);
-  }
-}
-
-export function startPreviewSweeper(): void {
-  if (interval) return;
-
-  log.info("Preview sweeper started (15m interval)");
-  // Sweep on boot too.
-  void sweep();
-  interval = setInterval(sweep, SWEEP_INTERVAL_MS);
-}
-
-export function stopPreviewSweeper(): void {
-  if (interval) {
-    clearInterval(interval);
-    interval = null;
-    log.info("Preview sweeper stopped");
-  }
-}
+  },
+});

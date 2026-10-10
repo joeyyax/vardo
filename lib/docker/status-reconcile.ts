@@ -27,7 +27,7 @@ import {
   type ExitReason,
 } from "./exit-reason";
 import { tickOomWatch, type OomSubject as OomWatchSubject } from "./oom-watch";
-import { closeOnShutdown } from "@/lib/shutdown";
+import { IntervalLoop } from "@/lib/worker/interval-loop";
 
 // Re-exported for existing callers.
 export { parseExitCode };
@@ -506,39 +506,11 @@ export async function tickStatusReconcile(): Promise<void> {
   }
 }
 
-let interval: NodeJS.Timeout | null = null;
-let ticking = false;
-let unregisterShutdown: (() => void) | null = null;
-
-export function startStatusReconciler(): void {
-  if (interval) return;
-
-  log.info(`Reconciler started (${RECONCILE_INTERVAL_MS / 1000}s interval)`);
-  const tick = async () => {
-    if (ticking) return;
-    ticking = true;
-    try {
-      await tickStatusReconcile();
-    } catch (err) {
-      log.error("Tick error:", err);
-    } finally {
-      ticking = false;
-    }
-  };
-
-  // Run once shortly after startup.
-  setTimeout(tick, 5_000);
-  interval = setInterval(tick, RECONCILE_INTERVAL_MS);
-
-  unregisterShutdown = closeOnShutdown(stopStatusReconciler);
-}
-
-export function stopStatusReconciler(): void {
-  unregisterShutdown?.();
-  unregisterShutdown = null;
-  if (interval) {
-    clearInterval(interval);
-    interval = null;
-    log.info("Reconciler stopped");
-  }
-}
+// Runs once shortly after start.
+export const statusReconcileLoop = new IntervalLoop({
+  name: "status-reconcile",
+  intervalMs: RECONCILE_INTERVAL_MS,
+  firstRunMs: 5_000,
+  log,
+  run: () => tickStatusReconcile(),
+});

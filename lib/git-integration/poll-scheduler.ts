@@ -2,9 +2,11 @@
 
 import { and, asc, eq, isNotNull, isNull, lt, ne, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { apps } from "@/lib/db/schema";
+import { apps, systemSettings } from "@/lib/db/schema";
 import { redis } from "@/lib/redis";
 import { logger } from "@/lib/logger";
+import { setSystemSetting } from "@/lib/system-settings";
+import { IntervalLoop } from "@/lib/worker/interval-loop";
 import { deployInFlight, requestDeploy } from "@/lib/docker/deploy-cancel";
 import { RedisCooldownStore, type KeyedCooldown } from "@/lib/net/cooldown";
 import { lsRemoteHead } from "./remote-head";
@@ -174,27 +176,36 @@ export async function runPollPass({ catchUp = false }: { catchUp?: boolean } = {
   }
 }
 
+/** Set by any process, consumed by whichever one holds the poll lease. */
+export const CATCH_UP_KEY = "git_poll_catch_up";
+
+/** Atomically takes a pending catch-up request. True when there was one. */
+export async function takeCatchUpRequest(): Promise<boolean> {
+  const taken = await db.delete(systemSettings).where(eq(systemSettings.key, CATCH_UP_KEY)).returning({ key: systemSettings.key });
+  return taken.length > 0;
+}
+
+export const gitPollLoop = new IntervalLoop({
+  name: "git-poll",
+  intervalMs: TICK_MS,
+  log,
+  prepare: async () => {
+    setTimeout(() => requestCatchUpPoll("startup", 0), START_DELAY_MS).unref?.();
+  },
+  run: async () => runPollPass({ catchUp: await takeCatchUpRequest() }),
+});
+
 let catchUpTimer: ReturnType<typeof setTimeout> | null = null;
 
-/** A catch-up pass soon, coalescing requests that arrive together. */
-export function requestCatchUpPoll(reason: string): void {
+/** A catch-up pass soon, coalescing requests that arrive together. Persisted, so the poll leader runs it. */
+export function requestCatchUpPoll(reason: string, delayMs = CATCH_UP_DEBOUNCE_MS): void {
   if (catchUpTimer) return;
   log.info(`Catch-up poll queued: ${reason}`);
   catchUpTimer = setTimeout(() => {
     catchUpTimer = null;
-    runPollPass({ catchUp: true }).catch((err) => log.error("Catch-up poll failed:", err));
-  }, CATCH_UP_DEBOUNCE_MS);
+    setSystemSetting(CATCH_UP_KEY, reason)
+      .then(() => gitPollLoop.tick())
+      .catch((err) => log.error("Catch-up poll failed:", err));
+  }, delayMs);
   catchUpTimer.unref?.();
-}
-
-export function startGitPollScheduler(): void {
-  const start = setTimeout(() => {
-    runPollPass({ catchUp: true }).catch((err) => log.error("Startup poll failed:", err));
-  }, START_DELAY_MS);
-  start.unref?.();
-
-  const tick = setInterval(() => {
-    runPollPass().catch((err) => log.error("Poll pass failed:", err));
-  }, TICK_MS);
-  tick.unref?.();
 }
