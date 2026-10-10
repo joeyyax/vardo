@@ -23,7 +23,8 @@ async function handleGet(_request: NextRequest, { params }: RouteParams) {
     if (!app) return apiError.notFound("app");
 
     const [rows, inst, zones] = await Promise.all([
-      db.select().from(domains).where(eq(domains.appId, appId)),
+      // Compose rows route through the app's own labels; no challenge applies.
+      db.select().from(domains).where(and(eq(domains.appId, appId), eq(domains.source, "vardo"))),
       loadInstanceHosts(),
       loadVerifiedZones(orgId),
     ]);
@@ -62,7 +63,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     if (!parsed.success) return apiError.validation(parsed.error);
 
     const row = await db.query.domains.findFirst({
-      where: and(eq(domains.id, parsed.data.id), eq(domains.appId, appId)),
+      where: and(eq(domains.id, parsed.data.id), eq(domains.appId, appId), eq(domains.source, "vardo")),
       columns: { id: true },
     });
     if (!row) return apiError.notFound("domain");

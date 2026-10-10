@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { apiError, handleRouteError, isUniqueViolation } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { domains } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, isNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { verifyAppAccess } from "@/lib/api/verify-access";
@@ -13,7 +13,7 @@ import { apps, organizations } from "@/lib/db/schema";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { HOSTNAME_RE } from "@/lib/security/hostname";
 import { proofForNewDomain } from "@/lib/domains/context";
-import { hostHoldByOtherOrg, withClaim, type Claim } from "@/lib/domains/claim";
+import { hostHoldByOtherOrg, withClaim, type Claim, type Exec } from "@/lib/domains/claim";
 import { normalizePathPrefix } from "@/lib/domains/path-prefix";
 import { middlewareProblem, serializeMiddlewares } from "@/lib/domains/middlewares";
 
@@ -66,6 +66,17 @@ const createDomainSchema = z.object({
   stripPathPrefix: z.boolean().optional(),
   middlewares: middlewaresSchema.optional(),
 }).strict();
+
+const COMPOSE_READ_ONLY = "The app's compose file sets this domain. Change its Traefik label there, or manage it in Vardo.";
+
+/** Refuses changes to a domain read from the compose file. */
+async function refuseComposeDomain(id: string, appId: string): Promise<NextResponse | null> {
+  const row = await db.query.domains.findFirst({
+    where: and(eq(domains.id, id), eq(domains.appId, appId)),
+    columns: { source: true },
+  });
+  return row?.source === "compose" ? NextResponse.json({ error: COMPOSE_READ_ONLY }, { status: 409 }) : null;
+}
 
 const deleteDomainSchema = z.object({
   id: z.string().min(1),
@@ -128,24 +139,42 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     const certResolver = parsed.data.certResolver
       ?? getDefaultCertResolver(await getSslConfig());
 
+    // "Manage in Vardo": the managed row replaces the compose row for the same route.
+    const pathPrefix = parsed.data.pathPrefix ?? null;
+    const adopted = await db.query.domains.findFirst({
+      where: and(
+        eq(domains.appId, appId),
+        eq(domains.source, "compose"),
+        eq(domains.domain, domainName),
+        pathPrefix ? eq(domains.pathPrefix, pathPrefix) : isNull(domains.pathPrefix),
+      ),
+      columns: { id: true, composeRouter: true },
+    });
+
     const claim = hold === "claimable" ? { orgId, host: domainName, zone: false } : null;
-    const [created] = await withClaim(claim, (exec) => exec
-      .insert(domains)
-      .values({
-        id: nanoid(),
-        appId,
-        domain: domainName,
-        ...proof,
-        serviceName: parsed.data.serviceName,
-        port: parsed.data.port,
-        certResolver,
-        redirectTo: parsed.data.redirectTo,
-        redirectCode: parsed.data.redirectCode,
-        pathPrefix: parsed.data.pathPrefix ?? null,
-        stripPathPrefix: parsed.data.stripPathPrefix ?? false,
-        middlewares: middlewares.value,
-      })
-      .returning());
+    const insertRow = async (exec: Exec) => {
+      if (adopted) await exec.delete(domains).where(and(eq(domains.id, adopted.id), eq(domains.source, "compose")));
+      return exec
+        .insert(domains)
+        .values({
+          id: nanoid(),
+          appId,
+          domain: domainName,
+          composeRouter: adopted?.composeRouter ?? null,
+          ...proof,
+          serviceName: parsed.data.serviceName,
+          port: parsed.data.port,
+          certResolver,
+          redirectTo: parsed.data.redirectTo,
+          redirectCode: parsed.data.redirectCode,
+          pathPrefix,
+          stripPathPrefix: parsed.data.stripPathPrefix ?? false,
+          middlewares: middlewares.value,
+        })
+        .returning();
+    };
+    const [created] = await withClaim(claim, (exec) =>
+      adopted && exec === db ? db.transaction((tx) => insertRow(tx)) : insertRow(exec));
 
     // Traefik labels route traffic, so domain changes need a redeploy.
     await db.update(apps).set({ needsRedeploy: true, updatedAt: new Date() }).where(eq(apps.id, appId));
@@ -195,6 +224,8 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
     }
 
     const { id, middlewares: requestedMiddlewares, ...fields } = parsed.data;
+    const readOnly = await refuseComposeDomain(id, appId);
+    if (readOnly) return readOnly;
     const updates: typeof fields & {
       domain?: string;
       verificationToken?: string;
@@ -252,7 +283,7 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
     const [updated] = await withClaim(claim, (exec) => exec
       .update(domains)
       .set(updates)
-      .where(and(eq(domains.id, id), eq(domains.appId, appId)))
+      .where(and(eq(domains.id, id), eq(domains.appId, appId), eq(domains.source, "vardo")))
       .returning());
 
     if (!updated) {
@@ -291,12 +322,16 @@ async function handleDelete(request: NextRequest, { params }: RouteParams) {
       return apiError.validation(parsed.error);
     }
 
+    const readOnly = await refuseComposeDomain(parsed.data.id, appId);
+    if (readOnly) return readOnly;
+
     const [deleted] = await db
       .delete(domains)
       .where(
         and(
           eq(domains.id, parsed.data.id),
-          eq(domains.appId, appId)
+          eq(domains.appId, appId),
+          eq(domains.source, "vardo"),
         )
       )
       .returning({ id: domains.id });

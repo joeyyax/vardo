@@ -36,7 +36,7 @@ async function handlePut(request: NextRequest, { params }: RouteParams) {
     await db
       .update(domains)
       .set({ isPrimary: true })
-      .where(and(eq(domains.id, domainId), eq(domains.appId, appId)));
+      .where(and(eq(domains.id, domainId), eq(domains.appId, appId), eq(domains.source, "vardo")));
 
     return NextResponse.json({ success: true });
   } catch (error) {

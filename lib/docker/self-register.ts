@@ -16,6 +16,7 @@ import {
   TRAEFIK_MANUAL_LABEL,
 } from "@/lib/docker/compose";
 import { ensureVardoOrg } from "@/lib/infra/vardo-org";
+import { syncConsoleDomains } from "@/lib/domains/compose-domains";
 import { logger } from "@/lib/logger";
 import { isSelfDeployLayout, resolveVardoDir } from "@/lib/paths";
 import type { ComposeService } from "@/lib/docker/compose-types";
@@ -122,7 +123,7 @@ export async function ensureVardoProject(opts: { force?: boolean } = {}): Promis
     return;
   }
 
-  await db.transaction(async (tx) => {
+  const vardoAppId = await db.transaction(async (tx) => {
     const [project] = await tx
       .insert(projects)
       .values({
@@ -228,5 +229,8 @@ export async function ensureVardoProject(opts: { force?: boolean } = {}): Promis
         log: "[self-register] Started via docker compose — registered as managed app",
       });
     }
+    return parentApp.id;
   });
+
+  await syncConsoleDomains(vardoAppId).catch((err) => log.warn("could not list the console hostname:", err));
 }

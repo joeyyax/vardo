@@ -131,6 +131,9 @@ export type DeployContext = {
   /** The bare compose before Vardo injections (for docker-compose.yml). */
   bareCompose: ComposeFile;
 
+  /** The compose before Vardo removed the app's own Traefik labels. */
+  declaredCompose?: ComposeFile;
+
   /** Per-service overrides from decomposed child apps, keyed by service name. (#745) */
   serviceConfig: Record<string, ServiceConfigOverride>;
 

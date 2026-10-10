@@ -49,6 +49,7 @@ import { pointConsoleForwardAt } from "@/lib/mesh/console-forward";
 import { proposeDurability, isSafeToApply } from "@/lib/backups/durability";
 import { refreshDumpSpec } from "@/lib/backups/dump-spec";
 import { inferServiceKind } from "@/lib/ui/service-kind";
+import { syncDeployComposeDomains } from "@/lib/domains/compose-domains";
 import { CERTS_VOLUME_KEY, watchAppCerts } from "@/lib/ssl/cert-export";
 import {
   declaredMountPaths,
@@ -312,6 +313,15 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
       }
     } catch (err) {
       log(`[deploy] Warning: compose decomposition — ${err instanceof Error ? err.message : err}`);
+    }
+  }
+
+  // Hosts the app's own Traefik labels route. Vardo's own stack lists the console's hostname at boot.
+  if (!ctx.envIsolated && !app.parentAppId && !ctx.org?.isSystemManaged) {
+    try {
+      await syncDeployComposeDomains({ app, compose, declaredCompose: ctx.declaredCompose, envMap: ctx.envMap, log });
+    } catch (err) {
+      log(`[deploy] Warning: compose domains — ${err instanceof Error ? err.message : err}`);
     }
   }
 
