@@ -8,7 +8,7 @@ export function instanceId(): string {
   return (g.__vardo_instance_id ??= `${hostname()}:${process.pid}:${randomBytes(3).toString("hex")}`);
 }
 
-/** Stable across restarts of one container: the hostname, or VARDO_INSTANCE_NAME. */
+/** Stable across restarts of one container: its hostname. */
 export function instanceName(): string {
-  return process.env.VARDO_INSTANCE_NAME || hostname();
+  return hostname();
 }
