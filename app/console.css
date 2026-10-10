@@ -61,6 +61,9 @@
   --color-status-critical-muted: var(--status-critical-muted);
   --color-status-critical-edge: var(--status-critical-edge);
 
+  --color-row-hover: var(--row-hover);
+  --shadow-soft: var(--shadow-soft-value);
+
   --color-env-tier: var(--env-tier);
   --color-env-tier-muted: var(--env-tier-muted);
   --color-env-tier-edge: var(--env-tier-edge);
@@ -82,6 +85,46 @@
 }
 @media (min-width: 640px) {
   :root { --pane-pad: 1.75rem; }
+}
+
+/* List density. Comfortable is the default; a dense scope tightens rows and sections. */
+:root,
+[data-density="comfortable"] {
+  --row-h: 2.75rem;
+  --row-h-child: 2.25rem;
+  --row-gap: 0.625rem;
+  --section-gap: 2.25rem;
+}
+[data-density="dense"] {
+  --row-h: 1.875rem;
+  --row-h-child: 1.875rem;
+  --row-gap: 0.5rem;
+  --section-gap: 1.5rem;
+}
+
+/* Healthy is quiet: a running mark takes the kit's neutral ink, so only problems carry color. */
+[data-healthy="quiet"] svg.text-success {
+  color: color-mix(in oklch, var(--muted-foreground) 50%, transparent);
+}
+
+/* A row the user jumped to from the panel. */
+@keyframes row-flash {
+  0%,
+  35% {
+    background-color: var(--brass-muted);
+    box-shadow: inset 2px 0 0 var(--brass);
+  }
+  100% {
+    background-color: transparent;
+    box-shadow: none;
+  }
+}
+@utility animate-row-flash {
+  animation: row-flash 1.8s var(--ease-out-quart);
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+    background-color: var(--brass-muted);
+  }
 }
 
 /* The kit raises the quiet tiers; this covers the console's own edges. */
