@@ -21,7 +21,7 @@ export const notificationChannels = pgTable(
     organizationId: text("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     type: notificationChannelTypeEnum("type").notNull(),
-    config: jsonb("config").notNull().$type<{ recipients: string[] } | { url: string; secret?: string } | { webhookUrl: string }>(),
+    config: jsonb("config").notNull().$type<Record<string, unknown>>(),
     enabled: boolean("enabled").default(true).notNull(),
     subscribedEvents: text("subscribed_events").array().default([]).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),

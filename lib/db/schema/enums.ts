@@ -73,6 +73,10 @@ export const notificationChannelTypeEnum = pgEnum("notification_channel_type", [
   "email",
   "webhook",
   "slack",
+  "ntfy",
+  "discord",
+  "telegram",
+  "pushover",
 ]);
 
 export const meshPeerTypeEnum = pgEnum("mesh_peer_type", [

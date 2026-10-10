@@ -750,6 +750,13 @@
       "when": 1791654238412,
       "tag": "0106_service_kind_and_preferences",
       "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "7",
+      "when": 1791656465951,
+      "tag": "0107_notification_channel_push_types",
+      "breakpoints": true
     }
   ]
 }
