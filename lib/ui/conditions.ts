@@ -6,6 +6,7 @@ import {
 } from "@/lib/docker/conditions";
 import type { ExitReason } from "@/lib/docker/exit-reason";
 import { exitReasonShort } from "@/lib/ui/exit-reason";
+import { appHref, deployHref } from "@/lib/ui/hrefs";
 
 /** Short form for list rows. */
 export function conditionLabel(c: AppCondition): string {
@@ -156,7 +157,7 @@ export type ProblemSubject = {
   conditions?: AppCondition[] | null;
   exitReason?: ExitReason | null;
   needsRedeploy?: boolean | null;
-  latestDeploy?: { status: string; startedAt: Date | string } | null;
+  latestDeploy?: { id?: string; status: string; startedAt: Date | string } | null;
   /** When the container was last seen running. */
   lastRunningAt?: Date | string | null;
   statusChangedAt?: Date | string | null;
@@ -267,7 +268,10 @@ export function problem(app: ProblemSubject): Problem | null {
       detail: exit || (app.status === "active" ? "The previous version is still running" : "Health check failed"),
       since: toIso(app.latestDeploy.startedAt),
       fix: { label: "Retry deploy", run: "deploy" },
-      look: { label: "Deploy log", href: `/apps/${app.name}/deployments` },
+      look: {
+        label: "Deploy log",
+        href: app.latestDeploy.id ? deployHref(app.name, app.latestDeploy.id) : appHref(app.name, "deployments"),
+      },
     };
   }
   if (app.status === "error") {

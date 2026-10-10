@@ -795,6 +795,7 @@ export function ComposeDetail({
     selectedEnvId: app.environments.find((e) => e.type === "production")?.id,
     serverRunningDeploy,
     onDeployStarted: () => setActiveTabAndUrl("deployments"),
+    initialViewingLogId: initialTab === "deployments" ? initialSubView : undefined,
   });
 
   const [showComposeReview, setShowComposeReview] = useState(false);

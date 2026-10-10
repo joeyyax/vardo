@@ -22,7 +22,7 @@ describe("activityRows", () => {
     expect(rows[0]).toMatchObject({ key: "deploying", tone: "activity" });
     expect(rows[0].items[0]).toMatchObject({
       name: "Alpha",
-      href: "/apps/alpha/deployments",
+      href: "/apps/alpha/deployments/d1",
       detail: "abc1234",
     });
   });

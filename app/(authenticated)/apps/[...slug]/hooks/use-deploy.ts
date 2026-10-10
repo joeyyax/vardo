@@ -44,12 +44,15 @@ export function useDeploy({
   selectedEnvId,
   serverRunningDeploy,
   onDeployStarted,
+  initialViewingLogId,
 }: {
   orgId: string;
   appId: string;
   selectedEnvId: string | undefined;
   serverRunningDeploy: Deployment | null | undefined;
   onDeployStarted?: () => void;
+  /** A deploy to open on load, from /deployments/{id}. */
+  initialViewingLogId?: string;
 }) {
   // Stable refs so callbacks don't re-trigger effects.
   const onDeployStartedRef = useRef(onDeployStarted);
@@ -86,7 +89,7 @@ export function useDeploy({
   const announce = useCallback((message: string) => {
     setDeployAnnouncement(message);
   }, []);
-  const [viewingLogId, setViewingLogId] = useState<string | null>(null);
+  const [viewingLogId, setViewingLogId] = useState<string | null>(initialViewingLogId ?? null);
 
   const [rollbackTarget, setRollbackTarget] = useState<string | null>(null);
   const [rollbackPreview, setRollbackPreview] = useState<RollbackPreview | null>(null);

@@ -1,4 +1,5 @@
 import type { AttentionRow } from "@/lib/ui/attention";
+import { deployHref } from "@/lib/ui/hrefs";
 
 export type ActiveDeployment = { id: string; appId: string; gitSha: string | null; startedAt: Date };
 export type ActiveBackup = { id: string; appId: string; startedAt: Date };
@@ -37,7 +38,7 @@ export function activityRows(apps: ActivitySubject[], activity: FleetActivity): 
           {
             id: d.id,
             name: app.displayName,
-            href: `/apps/${app.name}/deployments`,
+            href: deployHref(app.name, d.id),
             detail: d.gitSha ? d.gitSha.slice(0, 7) : undefined,
             since: d.startedAt.toISOString(),
           },

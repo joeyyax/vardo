@@ -62,6 +62,7 @@ import type { useDeploy } from "./hooks/use-deploy";
 import type { Deployment, SlotStatus } from "./types";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { deployAnchor } from "@/lib/ui/hrefs";
 
 export interface AppDeployPanelProps {
   orgId: string;
@@ -201,6 +202,15 @@ export function AppDeployPanel({
   const [confirmRollbackOpen, setConfirmRollbackOpen] = useState(false);
   const liveCardRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
+
+  // A deploy opened by URL scrolls into view once.
+  const linkedDeploy = useRef(viewingLogId);
+  useEffect(() => {
+    const id = linkedDeploy.current;
+    if (!id) return;
+    linkedDeploy.current = null;
+    document.getElementById(deployAnchor(id))?.scrollIntoView({ block: "start" });
+  }, []);
 
   const prevDeploying = useRef(deploying);
   useEffect(() => {
@@ -366,10 +376,11 @@ export function AppDeployPanel({
     return (
       <Card
         key={deployment.id}
+        id={deployAnchor(deployment.id)}
         ref={variant === "live" ? liveCardRef : undefined}
         tabIndex={variant === "live" ? -1 : undefined}
         variant="surface"
-        className={cn(bgColor, "overflow-hidden")}
+        className={cn(bgColor, "scroll-mt-28 overflow-hidden")}
       >
         <div className="flex items-center justify-between gap-4 p-4 cursor-pointer hover:bg-accent/50 transition-colors"
           onClick={() => toggleLog(deployment.id)}

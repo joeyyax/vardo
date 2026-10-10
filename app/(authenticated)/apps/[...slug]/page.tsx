@@ -1,7 +1,7 @@
 import { redirect, notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { restartCountsByApp, restartReading } from "@/lib/db/app-restarts";
-import { apps, projects, tags, orgEnvVars, environments } from "@/lib/db/schema";
+import { apps, deployments, projects, tags, orgEnvVars, environments } from "@/lib/db/schema";
 import { getCurrentOrg } from "@/lib/auth/session";
 import { eq, and, asc, desc, or, type AnyColumn } from "drizzle-orm";
 import { nanoid } from "nanoid";
@@ -157,6 +157,16 @@ export default async function AppDetailPage({ params }: PageProps) {
 
   if (!app) {
     notFound();
+  }
+
+  // A linked deploy older than the latest ten still opens.
+  if (tab === "deployments" && subSegment && !app.deployments.some((d) => d.id === subSegment)) {
+    const linked = await db.query.deployments.findFirst({
+      where: and(eq(deployments.id, subSegment), eq(deployments.appId, app.id)),
+      columns: appWith.deployments.columns,
+      with: appWith.deployments.with,
+    });
+    if (linked) app.deployments.push(linked);
   }
 
   // Backfills a missing production environment. Safe to remove once every app has been visited.

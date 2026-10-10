@@ -22,6 +22,11 @@ describe("toastActionFor", () => {
     );
   });
 
+  it("opens the deploy itself, by app slug when the event has one", () => {
+    const failed = { ...base, type: "deploy.failed", appName: "web", deploymentId: "d9" } as unknown as BusEvent;
+    expect(toastActionFor(failed, { canLinkToAdmin: false })?.url).toBe("/apps/web/deployments/d9");
+  });
+
   it("holds back instance links from non-admins", () => {
     for (const type of ["system.service-down", "system.restart-loop", "system.cert-expiring"]) {
       expect(toastActionFor(event(type), { canLinkToAdmin: false }), type).toBeUndefined();

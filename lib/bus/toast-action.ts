@@ -1,4 +1,5 @@
 import type { BusEvent } from "./events";
+import { appHref, deployHref } from "@/lib/ui/hrefs";
 
 export type ToastAction = { label: string; url: string };
 
@@ -11,8 +12,12 @@ export function toastActionFor(
     case "deploy.success":
     case "deploy.failed":
     case "deploy.incomplete":
-    case "deploy.rollback":
-      return { label: "View deploys", url: `/apps/${event.appId}/deployments` };
+    case "deploy.rollback": {
+      const app = ("appName" in event && event.appName) || event.appId;
+      return event.deploymentId
+        ? { label: "View deploy", url: deployHref(app, event.deploymentId) }
+        : { label: "View deploys", url: appHref(app, "deployments") };
+    }
     case "app.auto-restarted":
     case "app.oom-killed":
       return { label: "View app", url: `/apps/${event.appId}/stability` };

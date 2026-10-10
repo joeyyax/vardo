@@ -164,6 +164,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
     selectedEnvId,
     serverRunningDeploy,
     onDeployStarted: () => setActiveTab("deployments"),
+    initialViewingLogId: initialTab === "deployments" ? initialSubView : undefined,
   });
 
   const handleDeploy = deploy.handleDeploy;
