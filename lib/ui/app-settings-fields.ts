@@ -37,6 +37,8 @@ export type AppSettingsFields = {
   kind: boolean;
   healthCheckTimeout: boolean;
   autoDeploy: boolean;
+  /** Post deploy status to GitHub. */
+  githubFeedback: boolean;
   autoRollback: boolean;
   gpu: boolean;
   project: boolean;
@@ -74,6 +76,7 @@ export function appSettingsFields(ctx: AppSettingsFieldContext): AppSettingsFiel
     kind: !isComposeParent,
     healthCheckTimeout: true,
     autoDeploy: ownsBuild,
+    githubFeedback: ownsBuild && ctx.source === "git",
     autoRollback: ownsBuild,
     gpu: true,
     project: true,
@@ -104,6 +107,7 @@ export const APP_SETTINGS_FIELD_PAGE: Record<AppSettingsFieldName, AppSettingsPa
   buildOverrides: "build",
   buildProvider: "build",
   autoDeploy: "build",
+  githubFeedback: "build",
   autoRollback: "build",
   restartPolicy: "resources",
   resourceLimits: "resources",

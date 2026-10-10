@@ -62,6 +62,7 @@ export default async function OrgSettingsTabPage({
             orgName={orgData.organization.name}
             orgTimeZone={orgData.organization.timeZone ?? null}
             instanceTimeZone={await getInstanceTimeZone()}
+            githubFeedback={orgData.organization.githubFeedback ?? true}
           />
           <OrgResourceProfiles
             orgId={orgId}

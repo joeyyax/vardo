@@ -27,6 +27,7 @@ const updateOrgSchema = z.object({
   memoryProfile: z.enum(RESOURCE_PROFILES).optional(),
   // MB. Null leaves only the host cap.
   memoryAutoMaxMb: z.number().int().min(64).max(1048576).nullable().optional(),
+  githubFeedback: z.boolean().optional(),
 }).strict().refine(data => Object.keys(data).length > 0, { message: "No valid updates provided" });
 
 type RouteParams = {
@@ -100,6 +101,7 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
     if (parsed.data.timeZone !== undefined) updates.timeZone = parsed.data.timeZone;
     if (parsed.data.memoryProfile !== undefined) updates.memoryProfile = parsed.data.memoryProfile;
     if (parsed.data.memoryAutoMaxMb !== undefined) updates.memoryAutoMaxMb = parsed.data.memoryAutoMaxMb;
+    if (parsed.data.githubFeedback !== undefined) updates.githubFeedback = parsed.data.githubFeedback;
 
     if (Object.keys(updates).length === 0 && parsed.data.baseDomain === undefined) {
       return NextResponse.json({ error: "No valid updates provided" }, { status: 400 });

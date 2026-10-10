@@ -74,6 +74,9 @@ export function AppSettingsPanel({
   const [editImageName, setEditImageName] = useState(app.imageName || "");
   const [restartPolicy, setRestartPolicy] = useState(app.restartPolicy || "unless-stopped");
   const [autoDeploy, setAutoDeploy] = useState(app.autoDeploy ?? false);
+  const [githubFeedback, setGithubFeedback] = useState<"inherit" | "on" | "off">(
+    app.githubFeedback == null ? "inherit" : app.githubFeedback ? "on" : "off",
+  );
   const [gitBranch, setGitBranch] = useState(app.gitBranch || "");
   const [editDeployType, setEditDeployType] = useState(app.deployType);
   const [editComposeFilePath, setEditComposeFilePath] = useState(app.composeFilePath || "docker-compose.yml");
@@ -175,6 +178,10 @@ export function AppSettingsPanel({
       }
       if (fields.anomalyAlerts) body.anomalyAlerts = anomalyAlerts;
       if (fields.autoDeploy) body.autoDeploy = autoDeploy;
+      if (fields.githubFeedback) {
+        const next = githubFeedback === "inherit" ? null : githubFeedback === "on";
+        if (next !== (app.githubFeedback ?? null) || app.githubFeedbackError) body.githubFeedback = next;
+      }
       if (fields.autoRollback) {
         body.autoRollback = autoRollback;
         body.rollbackGracePeriod = rollbackGracePeriod ? parseInt(rollbackGracePeriod, 10) : 60;
@@ -635,6 +642,27 @@ export function AppSettingsPanel({
             </div>
           )}
           {fields.autoDeploy && <AutoDeployTriggers orgId={orgId} appId={app.id} />}
+          {fields.githubFeedback && (
+            <div className="grid gap-2 sm:w-1/2">
+              <Label htmlFor="edit-github-feedback">Post deploy status to GitHub</Label>
+              <Select value={githubFeedback} onValueChange={(v) => setGithubFeedback(v as typeof githubFeedback)}>
+                <SelectTrigger id="edit-github-feedback">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="inherit">Organization default</SelectItem>
+                  <SelectItem value="on">On</SelectItem>
+                  <SelectItem value="off">Off</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Commit statuses, deployments and a preview comment on pull requests, through the GitHub App.
+              </p>
+              {app.githubFeedbackError && (
+                <p className="text-xs text-destructive">{app.githubFeedbackError} Save to retry.</p>
+              )}
+            </div>
+          )}
           {fields.autoRollback && (
             <div className="flex items-center gap-3">
               <Switch

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { toast } from "@/lib/messenger";
 import { Loader2 } from "lucide-react";
@@ -14,9 +15,12 @@ interface OrgGeneralSettingsProps {
   orgName: string;
   orgTimeZone: string | null;
   instanceTimeZone: string;
+  githubFeedback: boolean;
 }
 
-export function OrgGeneralSettings({ orgId, orgName, orgTimeZone, instanceTimeZone }: OrgGeneralSettingsProps) {
+export function OrgGeneralSettings({ orgId, orgName, orgTimeZone, instanceTimeZone, githubFeedback: initialFeedback }: OrgGeneralSettingsProps) {
+  const [githubFeedback, setGithubFeedback] = useState(initialFeedback);
+  const [savingFeedback, setSavingFeedback] = useState(false);
   const [timeZone, setTimeZone] = useState(orgTimeZone);
   const [savingZone, setSavingZone] = useState(false);
   const [name, setName] = useState(orgName);
@@ -76,6 +80,28 @@ export function OrgGeneralSettings({ orgId, orgName, orgTimeZone, instanceTimeZo
     }
   }
 
+  async function saveGithubFeedback(next: boolean) {
+    setGithubFeedback(next);
+    setSavingFeedback(true);
+    try {
+      const res = await fetch(`/api/v1/organizations/${orgId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ githubFeedback: next }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? "Couldn't save");
+      }
+      toast.success(next ? "GitHub deploy status on" : "GitHub deploy status off");
+    } catch (err) {
+      setGithubFeedback(!next);
+      toast.error(err instanceof Error ? err.message : "Couldn't save");
+    } finally {
+      setSavingFeedback(false);
+    }
+  }
+
   return (
     <div className="space-y-4">
       <Card>
@@ -123,6 +149,30 @@ export function OrgGeneralSettings({ orgId, orgName, orgTimeZone, instanceTimeZo
             inheritLabel={`Instance default (${instanceTimeZone.replace(/_/g, " ")})`}
             disabled={savingZone}
           />
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle as="h2">GitHub</CardTitle>
+          <CardDescription>
+            The default for apps deployed from a GitHub App repo. Each app can override it in its build settings.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center gap-3">
+            <Switch
+              id="org-github-feedback"
+              checked={githubFeedback}
+              onCheckedChange={saveGithubFeedback}
+              disabled={savingFeedback}
+            />
+            <div className="grid gap-0.5">
+              <Label htmlFor="org-github-feedback">Post deploy status to GitHub</Label>
+              <p className="text-xs text-muted-foreground">
+                Commit statuses, deployments and a preview comment on pull requests.
+              </p>
+            </div>
+          </div>
         </CardContent>
       </Card>
     </div>

@@ -159,6 +159,8 @@ export type App = {
   securityHeaders?: boolean;
   diskWriteAlertThreshold: number | null;
   anomalyAlerts?: boolean;
+  githubFeedback?: boolean | null;
+  githubFeedbackError?: string | null;
   healthCheckTimeout: number | null;
   autoRollback: boolean | null;
   rollbackGracePeriod: number | null;

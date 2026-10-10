@@ -75,6 +75,8 @@ const updateAppSchema = z.object({
   securityHeaders: z.boolean().optional(),
   diskWriteAlertThreshold: z.number().int().min(0).nullable().optional(), // bytes/hour, null = default 1GB
   anomalyAlerts: z.boolean().optional(),
+  // Null follows the org default.
+  githubFeedback: z.boolean().nullable().optional(),
   healthCheckTimeout: z.number().int().min(10).max(600).nullable().optional(),
   autoRollback: z.boolean().optional(),
   rollbackGracePeriod: z.number().int().min(10).max(600).optional(),
@@ -224,6 +226,8 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
         ...parsed.data,
         ...gitColumns,
         ...(composeChanged ? { needsRedeploy: true } : {}),
+        // Saving the setting retries GitHub after a refused permission.
+        ...(parsed.data.githubFeedback !== undefined ? { githubFeedbackError: null, githubFeedbackBlockedAt: null } : {}),
         updatedAt: new Date(),
       })
       .where(

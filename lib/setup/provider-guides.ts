@@ -7,6 +7,8 @@ export const GITHUB_GUIDE = {
   permissions: [
     { scope: "Repository contents", access: "Read-only" },
     { scope: "Pull requests", access: "Read & write" },
+    { scope: "Deployments", access: "Read & write" },
+    { scope: "Commit statuses", access: "Read & write" },
     { scope: "Webhooks", access: "Enabled" },
   ] as const,
   steps: [

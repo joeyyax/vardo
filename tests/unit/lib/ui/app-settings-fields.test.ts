@@ -164,6 +164,7 @@ describe("APP_SETTINGS_FIELD_PAGE", () => {
       "composeFilePath",
       "deployType",
       "gitSource",
+      "githubFeedback",
       "image",
     ]);
   });
