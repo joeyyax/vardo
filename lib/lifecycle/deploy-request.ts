@@ -6,7 +6,7 @@ import { join } from "path";
 import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
-import { VARDO_SELF_APP_NAME } from "@/lib/api/system-managed";
+import { VARDO_SELF_APP_NAME } from "@/lib/self-app-name";
 import { logger } from "@/lib/logger";
 import { LIFECYCLE_DIR } from "@/lib/paths";
 import { closeOnShutdown } from "@/lib/shutdown";

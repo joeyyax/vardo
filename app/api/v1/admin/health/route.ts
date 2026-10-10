@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { requireAppAdmin } from "@/lib/auth/admin";
 import { getSystemHealth } from "@/lib/config/health";
+import { requestHealthContext } from "@/lib/config/health-request";
 import { getAllFeatureFlags } from "@/lib/config/features";
 
 // GET /api/v1/admin/health
@@ -11,7 +12,7 @@ async function handleGet() {
     await requireAppAdmin();
 
     const [health, featureFlags] = await Promise.all([
-      getSystemHealth(),
+      getSystemHealth(requestHealthContext),
       getAllFeatureFlags(),
     ]);
 

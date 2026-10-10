@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { handleRouteError } from "@/lib/api/error-response";
 import { requireAppAdmin } from "@/lib/auth/admin";
 import { checkServiceByName } from "@/lib/config/health";
+import { requestHealthContext } from "@/lib/config/health-request";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
 // POST /api/v1/admin/health/[service] — re-probe one service on demand
@@ -13,7 +14,7 @@ async function handlePost(
     await requireAppAdmin();
 
     const { service } = await params;
-    const status = await checkServiceByName(decodeURIComponent(service));
+    const status = await checkServiceByName(decodeURIComponent(service), requestHealthContext);
     if (!status) {
       return NextResponse.json({ error: "Unknown service" }, { status: 404 });
     }

@@ -1,6 +1,5 @@
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
-import nextPkg from "next/package.json";
 import { getAuthMethodStates } from "@/lib/config/auth-methods";
 import { CORE_SERVICE_FEATURES } from "@/lib/infra/core-services";
 import { cpuDisplay, formatBytes, formatDuration, sharePercent } from "@/lib/metrics/format";
@@ -297,18 +296,25 @@ async function probeApplies(probe: Probe): Promise<boolean> {
 }
 
 /** Re-probe one service by name. Null when unknown or not applicable. */
-export async function checkServiceByName(name: string): Promise<ServiceStatus | null> {
+/** What a request adds to a health read. Without it, as in the worker, logs links and Next's version are left out. */
+export type HealthRequestContext = {
+  isAdmin?: () => Promise<boolean>;
+  nextVersion?: string;
+};
+
+export async function checkServiceByName(name: string, ctx: HealthRequestContext = {}): Promise<ServiceStatus | null> {
   const probe = SERVICE_PROBES.find((p) => p.name.toLowerCase() === name.toLowerCase());
   if (!probe) return null;
   if (!(await probeApplies(probe))) return null;
 
-  const [status, logsHrefs] = await Promise.all([runProbe(probe), resolveLogsHrefs()]);
+  const [status, logsHrefs] = await Promise.all([runProbe(probe), resolveLogsHrefs(ctx)]);
   return { ...status, logsHref: logsHrefs.get(probe.name) };
 }
 
 /** Logs pages for system-managed core services. Spans every org; gated on app admin. */
-async function resolveLogsHrefs(): Promise<Map<string, string>> {
+async function resolveLogsHrefs(ctx: HealthRequestContext): Promise<Map<string, string>> {
   const hrefs = new Map<string, string>();
+  if (!ctx.isAdmin) return hrefs;
   const slugs = SERVICE_PROBES.map((p) => p.logsApp).filter((s): s is string => !!s);
   if (slugs.length === 0) return hrefs;
 
@@ -320,8 +326,7 @@ async function resolveLogsHrefs(): Promise<Map<string, string>> {
     ]);
     if (!logging || !selfManagement) return hrefs;
 
-    const { isAppAdmin } = await import("@/lib/auth/admin");
-    if (!(await isAppAdmin())) return hrefs;
+    if (!(await ctx.isAdmin())) return hrefs;
 
     // No org filter: core services live in the system org.
     const { apps } = await import("@/lib/db/schema");
@@ -431,7 +436,7 @@ async function getResourceStatuses(): Promise<ResourceStatus[]> {
 
 /** Health of infrastructure services, resource usage and auth config. */
 
-export async function getSystemHealth(): Promise<SystemHealth> {
+export async function getSystemHealth(ctx: HealthRequestContext = {}): Promise<SystemHealth> {
   const [services, resources, logsHrefs] = await Promise.all([
     Promise.all(
       SERVICE_PROBES.map(async (probe) => {
@@ -440,7 +445,7 @@ export async function getSystemHealth(): Promise<SystemHealth> {
       }),
     ),
     getResourceStatuses(),
-    resolveLogsHrefs(),
+    resolveLogsHrefs(ctx),
   ]);
 
   const methods = await getAuthMethodStates();
@@ -453,7 +458,7 @@ export async function getSystemHealth(): Promise<SystemHealth> {
   };
 
   const mem = process.memoryUsage();
-  const nextVersion: string = nextPkg.version ?? "unknown";
+  const nextVersion = ctx.nextVersion ?? "unknown";
 
   const runtime: RuntimeInfo = {
     nodeVersion: process.version,

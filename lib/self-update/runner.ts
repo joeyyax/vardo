@@ -6,7 +6,7 @@ import { nanoid } from "nanoid";
 import pkg from "@/package.json";
 import { db } from "@/lib/db";
 import { apps, backupRuns, backups, deployments, instanceRestores, meshPeers } from "@/lib/db/schema";
-import { VARDO_SELF_APP_NAME } from "@/lib/api/system-managed";
+import { VARDO_SELF_APP_NAME } from "@/lib/self-app-name";
 import type { BusEvent } from "@/lib/bus/events";
 import { emit } from "@/lib/notifications/dispatch";
 import { adminOrgIds } from "@/lib/notifications/admin-orgs";

@@ -1,6 +1,6 @@
 // Instance infrastructure rows: Vardo's stack and core services, shown to every session. Pure; the read lives in ./infrastructure.
 
-import { isVardoStack } from "@/lib/api/system-managed";
+import { isVardoStack } from "@/lib/self-app-name";
 import type { AppCondition, ConditionKind } from "@/lib/docker/conditions";
 import { isCoreServiceApp } from "@/lib/infra/core-services";
 import { probeAppName } from "@/lib/infra/instance-apps";

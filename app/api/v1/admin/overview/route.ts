@@ -7,6 +7,7 @@ import { user, apps, deployments, organizations } from "@/lib/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { loadTemplates } from "@/lib/templates/load";
 import { getSystemHealth } from "@/lib/config/health";
+import { requestHealthContext } from "@/lib/config/health-request";
 
 // GET /api/v1/admin/overview
 async function handleGet() {
@@ -35,7 +36,7 @@ async function handleGet() {
       buildSparklines(30),
     ]);
 
-    const { resources, services, runtime } = await getSystemHealth();
+    const { resources, services, runtime } = await getSystemHealth(requestHealthContext);
 
     return NextResponse.json({
       stats: {

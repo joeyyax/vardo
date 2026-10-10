@@ -18,7 +18,7 @@ import { sanitizeCompose, isAnonymousVolume } from "./compose-validate";
 import { generateComposeForImage } from "./compose-generate";
 import { DEFAULT_NETWORK } from "./shared-networks";
 import { isHostname } from "@/lib/security/hostname";
-import { VARDO_SELF_APP_NAME } from "@/lib/api/system-managed";
+import { VARDO_SELF_APP_NAME } from "@/lib/self-app-name";
 import { isPathPrefix, pathRoutePriority } from "@/lib/domains/path-prefix";
 import { middlewareProblem, partitionMiddlewares } from "@/lib/domains/middlewares";
 import type { QosTier } from "@/lib/resources/defaults";

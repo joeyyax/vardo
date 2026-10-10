@@ -1,7 +1,7 @@
 // Instance infrastructure: Vardo's stack and core services, reported at instance level.
 // Identity is by name; the is_system_managed flag is backfilled onto children and can be wrong.
 
-import { isVardoStack } from "@/lib/api/system-managed";
+import { isVardoStack } from "@/lib/self-app-name";
 import { isCoreServiceApp } from "./core-services";
 
 /** True for Vardo's own containers and the shared core services. */

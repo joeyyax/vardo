@@ -1,6 +1,7 @@
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { NextRequest, NextResponse } from "next/server";
 import { getSystemHealth } from "@/lib/config/health";
+import { requestHealthContext } from "@/lib/config/health-request";
 import { readLoopStatus } from "@/lib/worker/status";
 import { requireAdminAuth } from "@/lib/auth/admin";
 import { apiError, handleRouteError } from "@/lib/api/error-response";
@@ -11,7 +12,7 @@ async function handleGet(request: NextRequest) {
     await requireAdminAuth(request);
 
     const [health, loops] = await Promise.all([
-      getSystemHealth(),
+      getSystemHealth(requestHealthContext),
       readLoopStatus().catch(() => null),
     ]);
     return NextResponse.json({ ...health, loops });

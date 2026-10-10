@@ -1,7 +1,7 @@
 import { chmod, copyFile, readFile, realpath, statfs, writeFile } from "fs/promises";
 import { buildkitCacheMaxBytes } from "@/lib/resources/defaults";
 import { basename, dirname, join } from "path";
-import { VARDO_SELF_APP_NAME } from "@/lib/api/system-managed";
+import { VARDO_SELF_APP_NAME } from "@/lib/self-app-name";
 import { VARDO_HOME_DIR } from "@/lib/paths";
 import { APP_UID, DOCKER_CLEANUP_TIMEOUT } from "./constants";
 import { execFileAsync } from "@/lib/utils/exec";

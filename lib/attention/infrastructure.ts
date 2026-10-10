@@ -5,7 +5,7 @@ import { alias } from "drizzle-orm/pg-core";
 
 import { db } from "@/lib/db";
 import { apps, deployments } from "@/lib/db/schema";
-import { VARDO_SELF_APP_NAME } from "@/lib/api/system-managed";
+import { VARDO_SELF_APP_NAME } from "@/lib/self-app-name";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { CORE_SERVICE_FEATURES, CORE_SERVICE_NAMES, isCoreServiceApp } from "@/lib/infra/core-services";
 import { isInstanceInfraApp } from "@/lib/infra/instance-apps";

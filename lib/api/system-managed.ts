@@ -2,8 +2,9 @@
 
 import { NextResponse } from "next/server";
 
-/** Compose project name for Vardo's own stack. Its children are `vardo-<service>`. */
-export const VARDO_SELF_APP_NAME = "vardo";
+import { isVardoStack, VARDO_SELF_APP_NAME } from "@/lib/self-app-name";
+
+export { isVardoStack, VARDO_SELF_APP_NAME };
 
 export type SystemManagedAction =
   | "deploy"
@@ -37,12 +38,6 @@ const DEFINITION_REFUSALS: Partial<Record<SystemManagedAction, string>> = {
 /** Stopping Vardo's own stack takes down the API you would call to start it again. */
 export const VARDO_STOP_REFUSAL =
   "Stopping Vardo would take down the API you need to start it again. Run `docker compose stop` on the host instead.";
-
-/** True for Vardo's own compose project and the child apps inside it. */
-export function isVardoStack(name: string | null | undefined): boolean {
-  if (!name) return false;
-  return name === VARDO_SELF_APP_NAME || name.startsWith(`${VARDO_SELF_APP_NAME}-`);
-}
 
 /** Why a system-managed app or project refuses `action`, or null when allowed. */
 export function systemManagedRefusal(
