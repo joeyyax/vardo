@@ -1,6 +1,6 @@
 import type { AppCondition } from "@/lib/docker/conditions";
 import type { ExitReason } from "@/lib/docker/exit-reason";
-import { conditionKindLabel } from "@/lib/ui/conditions";
+import { conditionHref, conditionKindLabel } from "@/lib/ui/conditions";
 import { exitReasonShort } from "@/lib/ui/exit-reason";
 
 /** "activity" is routine work in progress, not a problem. */
@@ -132,7 +132,7 @@ export function conditionRows(apps: ConditionSubject[]): AttentionRow[] {
       row.items.push({
         id: app.id,
         name: app.displayName,
-        href: `/apps/${app.name}`,
+        href: conditionHref(app.name, condition.kind),
         detail: condition.detail,
         since: condition.since,
       });
