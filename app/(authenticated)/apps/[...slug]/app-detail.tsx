@@ -809,6 +809,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
             orgId={orgId}
             activeTab={activeTab}
             initialSubView={activeTab === "networking" ? initialSubView : undefined}
+            systemManaged={!!app.isSystemManaged}
           />
           {hasAppSettingsPageFields("networking", settingsFieldContext) && (
             <div className="pt-4">

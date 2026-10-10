@@ -45,6 +45,9 @@ export type Domain = {
   pathPrefix?: string | null;
   stripPathPrefix?: boolean | null;
   middlewares?: string | null;
+  /** `compose` rows come from the app's own Traefik labels and are read-only. */
+  source?: "vardo" | "compose";
+  composeRouter?: string | null;
   /** Latest certificate probe; null until the monitor has looked. */
   certCheck?: { status: string; expiresAt: Date | null; checkedAt: Date } | null;
 };

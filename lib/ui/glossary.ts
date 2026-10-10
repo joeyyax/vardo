@@ -419,6 +419,13 @@ const entries = {
     what: "Encrypted with this server's recovery key. Restoring on another server needs that key.",
   },
 
+  // Domains
+  "compose-domain": {
+    term: "Set by compose file",
+    what: "A Traefik label in the app's compose file routes this domain. Vardo watches it but can't change it here. Manage it in Vardo to edit it.",
+    aliases: ["Compose domain"],
+  },
+
   // Organizations and services
   "trusted-org": {
     term: "Trusted",

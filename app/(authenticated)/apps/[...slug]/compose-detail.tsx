@@ -473,6 +473,7 @@ function ComposeNetworking({
         activeTab={activeTab}
         initialSubView={initialSubView}
         showPorts={false}
+        systemManaged={!!app.isSystemManaged}
       />
 
       {serviceDomains.length > 0 && (
