@@ -10,6 +10,7 @@ import { createDefaultOrgForUser } from "@/lib/organizations/create-default-org"
 import { REGISTRATION_CLOSED_MESSAGE, SETUP_TOKEN_MESSAGE, registrationAllowed, setupTokenAllowsSignup, shouldCreateDefaultOrg } from "@/lib/auth/registration";
 import { isAuthMethodEnabled } from "@/lib/config/auth-methods";
 import { isPasswordAuthAllowed } from "@/lib/config/provider-restrictions";
+import { ACCOUNT_LINKING, secondFactorEverywhere } from "@/lib/auth/second-factor";
 
 // GitHub OAuth credentials from system_settings, cached because Better Auth reads them at init.
 let _cachedGitHubClientId = process.env.GITHUB_CLIENT_ID ?? "";
@@ -98,7 +99,7 @@ function buildAuth() {
   // A disabled method's plugin is left out, so its endpoints don't exist.
   const plugins = [
     ...(isAuthMethodEnabled("passkey") ? [passkey()] : []),
-    ...(isAuthMethodEnabled("totp") ? [twoFactor({ issuer: "Vardo" })] : []),
+    ...(isAuthMethodEnabled("totp") ? [twoFactor({ issuer: "Vardo" }), secondFactorEverywhere()] : []),
     ...(isAuthMethodEnabled("magic-link") ? [magicLinkPlugin()] : []),
   ] as [ReturnType<typeof passkey>, ReturnType<typeof twoFactor>, ReturnType<typeof magicLinkPlugin>];
 
@@ -146,10 +147,7 @@ function buildAuth() {
   socialProviders,
 
   account: {
-    accountLinking: {
-      enabled: true,
-      trustedProviders: ["github"],
-    },
+    accountLinking: ACCOUNT_LINKING,
     // Rows stored before this was on are encrypted at startup (lib/auth/oauth-tokens.ts).
     encryptOAuthTokens: true,
   },
