@@ -5,7 +5,14 @@ import { nanoid } from "nanoid";
 import { logger } from "@/lib/logger";
 import { meshFetch } from "./client";
 import { HUB_IP, toCidr } from "./ip-allocator";
-import { localVardoStatus, parseVardoStatus, vardoStatusColumns } from "@/lib/self-update/peer-status";
+import {
+  hostStatusColumns,
+  localHostStatus,
+  localVardoStatus,
+  parseHostStatus,
+  parseVardoStatus,
+  vardoStatusColumns,
+} from "@/lib/self-update/peer-status";
 
 const log = logger.child("mesh-heartbeat");
 
@@ -43,7 +50,7 @@ type PeerManifestEntry = {
 
 type HeartbeatResponse = {
   ok: boolean;
-  instance: { id: string; name: string; internalIp: string; vardo?: unknown };
+  instance: { id: string; name: string; internalIp: string; vardo?: unknown; host?: unknown };
   peers: PeerManifestEntry[];
   /** Whether the peer accepts webhook relays from us. Absent from older versions. */
   acceptsWebhookRelay?: boolean;
@@ -71,7 +78,11 @@ export async function sendHeartbeatToPeer(peerId: string): Promise<boolean> {
     const res = await meshFetch(peerId, "/api/v1/mesh/heartbeat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ vardo: localVardoStatus(), acceptsWebhookRelay: before?.acceptWebhookRelay ?? false }),
+      body: JSON.stringify({
+        vardo: localVardoStatus(),
+        host: await localHostStatus(),
+        acceptsWebhookRelay: before?.acceptWebhookRelay ?? false,
+      }),
     });
 
     ok = res.ok;
@@ -90,7 +101,13 @@ export async function sendHeartbeatToPeer(peerId: string): Promise<boolean> {
     .update(meshPeers)
     .set({
       status: ok ? "online" : "offline",
-      ...(ok ? { lastSeenAt: new Date(), ...vardoStatusColumns(parseVardoStatus(body?.instance?.vardo)) } : {}),
+      ...(ok
+        ? {
+            lastSeenAt: new Date(),
+            ...vardoStatusColumns(parseVardoStatus(body?.instance?.vardo)),
+            ...hostStatusColumns(parseHostStatus(body?.instance?.host)),
+          }
+        : {}),
       ...(ok && typeof body?.acceptsWebhookRelay === "boolean" ? { peerAcceptsWebhookRelay: body.acceptsWebhookRelay } : {}),
       updatedAt: new Date(),
     })

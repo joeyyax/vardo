@@ -7,7 +7,14 @@ import { requireMeshPeer } from "@/lib/mesh/auth";
 import { getHubAddress } from "@/lib/mesh";
 import { getInstanceId } from "@/lib/constants";
 import { getInstanceConfig } from "@/lib/system-settings";
-import { localVardoStatus, parseVardoStatus, vardoStatusColumns } from "@/lib/self-update/peer-status";
+import {
+  hostStatusColumns,
+  localHostStatus,
+  localVardoStatus,
+  parseHostStatus,
+  parseVardoStatus,
+  vardoStatusColumns,
+} from "@/lib/self-update/peer-status";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { requirePlugin } from "@/lib/api/require-plugin";
@@ -20,7 +27,7 @@ async function handlePost(request: NextRequest) {
     const gate = await requirePlugin("mesh");
     if (gate) return gate;
 
-    const sent = (await request.json().catch(() => null)) as { vardo?: unknown; acceptsWebhookRelay?: unknown } | null;
+    const sent = (await request.json().catch(() => null)) as { vardo?: unknown; host?: unknown; acceptsWebhookRelay?: unknown } | null;
     await db
       .update(meshPeers)
       .set({
@@ -28,6 +35,7 @@ async function handlePost(request: NextRequest) {
         lastSeenAt: new Date(),
         updatedAt: new Date(),
         ...vardoStatusColumns(parseVardoStatus(sent?.vardo)),
+        ...hostStatusColumns(parseHostStatus(sent?.host)),
         ...(typeof sent?.acceptsWebhookRelay === "boolean" ? { peerAcceptsWebhookRelay: sent.acceptsWebhookRelay } : {}),
       })
       .where(eq(meshPeers.id, peer.id));
@@ -50,9 +58,10 @@ async function handlePost(request: NextRequest) {
     });
 
     const instanceId = await getInstanceId();
-    const [config, internalIp] = await Promise.all([
+    const [config, internalIp, host] = await Promise.all([
       getInstanceConfig(),
       getHubAddress(),
+      localHostStatus(),
     ]);
 
     return NextResponse.json({
@@ -62,6 +71,7 @@ async function handlePost(request: NextRequest) {
         name: config.instanceName,
         internalIp,
         vardo: localVardoStatus(),
+        host,
       },
       peers: allPeers,
       acceptsWebhookRelay: peer.acceptWebhookRelay,

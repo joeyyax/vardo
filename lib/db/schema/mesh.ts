@@ -45,6 +45,11 @@ export const meshPeers = pgTable("mesh_peer", {
   vardoSha: text("vardo_sha"),
   vardoShaSince: timestamp("vardo_sha_since"),
   vardoHealthy: boolean("vardo_healthy"),
+  // The peer's own console, worker and watchdog heartbeats, as its last heartbeat reported them.
+  consoleAt: timestamp("console_at"),
+  workerAt: timestamp("worker_at"),
+  workerReady: boolean("worker_ready"),
+  watchdogAt: timestamp("watchdog_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

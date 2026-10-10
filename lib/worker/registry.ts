@@ -83,6 +83,7 @@ export const LOOP_REGISTRY: LoopEntry[] = [
   { name: "domain-verification", roles: BOTH, singleton: true, load: async () => (await import("@/lib/domains/scheduler")).domainVerificationLoop },
   // Repairs the tunnel forward to this console and reports this console's version.
   { name: "mesh-heartbeat", roles: WEB, singleton: true, load: async () => (await import("@/lib/mesh/scheduler")).meshHeartbeatLoop },
+  { name: "peer-watch", roles: BOTH, singleton: true, feature: "mesh", load: async () => (await import("@/lib/mesh/peer-watch")).peerWatchLoop },
 
   // Worker supervision, from web
   { name: "worker-handoff", roles: WEB, singleton: false, perProcess: true, load: async () => (await import("@/lib/worker/handoff")).workerHandoffLoop },

@@ -155,6 +155,37 @@ describe("sendHeartbeatToPeer", () => {
     );
   });
 
+  it("stores the console, worker and watchdog heartbeats the peer reports", async () => {
+    mockMeshFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        ok: true,
+        instance: {
+          id: "hub-inst",
+          host: { consoleAt: "2026-10-10T12:00:00Z", workerAt: "2026-10-10T11:59:50Z", workerReady: true, watchdogAt: null },
+        },
+        peers: [],
+      }),
+    });
+
+    await sendHeartbeatToPeer("peer-id-1");
+
+    expect(mockDbUpdateSet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        consoleAt: new Date("2026-10-10T12:00:00Z"),
+        workerAt: new Date("2026-10-10T11:59:50Z"),
+        workerReady: true,
+        watchdogAt: null,
+      }),
+    );
+  });
+
+  it("leaves an older peer's heartbeat columns alone when it reports none", async () => {
+    mockMeshFetch.mockResolvedValue({ ok: true, json: async () => ({ ok: true, instance: { id: "hub-inst" }, peers: [] }) });
+    await sendHeartbeatToPeer("peer-id-1");
+    expect(callArg<Record<string, unknown>>(mockDbUpdateSet)).not.toHaveProperty("workerAt");
+  });
+
   it("returns false and marks peer offline when meshFetch throws", async () => {
     mockMeshFetch.mockRejectedValue(new Error("ECONNREFUSED"));
 

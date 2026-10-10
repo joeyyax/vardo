@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { canaryVerdict, sameCommit, type CanaryPeer } from "@/lib/self-update/canary";
-import { parseVardoStatus, vardoStatusColumns } from "@/lib/self-update/peer-status";
+import { hostStatusColumns, parseHostStatus, parseVardoStatus, vardoStatusColumns } from "@/lib/self-update/peer-status";
 import type { CanaryPolicy } from "@/lib/self-update/policy";
 
 const NOW = new Date("2026-10-09T12:00:00Z");
@@ -67,6 +67,26 @@ describe("peer status", () => {
     expect(parseVardoStatus({ sha: "nope" })).toBeNull();
     expect(parseVardoStatus(undefined)).toBeNull();
     expect(parseVardoStatus({ sha: "abc1234", since: "yesterday", healthy: "yes" })).toEqual({ sha: "abc1234", since: null, healthy: null });
+  });
+
+  it("reads console, worker and watchdog times and drops junk", () => {
+    expect(parseHostStatus({ consoleAt: "2026-10-10T12:00:00Z", workerAt: "soon", workerReady: "yes", watchdogAt: "2026-10-10T11:58:00Z" })).toEqual({
+      consoleAt: "2026-10-10T12:00:00.000Z",
+      workerAt: null,
+      workerReady: null,
+      watchdogAt: "2026-10-10T11:58:00.000Z",
+    });
+    expect(parseHostStatus(undefined)).toBeNull();
+  });
+
+  it("maps host heartbeats to mesh_peer columns, and none to no columns", () => {
+    expect(hostStatusColumns(null)).toEqual({});
+    expect(hostStatusColumns({ consoleAt: "2026-10-10T12:00:00.000Z", workerAt: null, workerReady: false, watchdogAt: null })).toEqual({
+      consoleAt: new Date("2026-10-10T12:00:00.000Z"),
+      workerAt: null,
+      workerReady: false,
+      watchdogAt: null,
+    });
   });
 
   it("leaves an older peer's columns alone", () => {
