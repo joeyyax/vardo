@@ -1,6 +1,5 @@
 import { redirect } from "next/navigation";
 import { getSession, getCurrentOrg, getUserOrganizations } from "@/lib/auth/session";
-import { OrgSwitcher } from "@/components/layout/org-switcher";
 import { SettingsNav } from "@/components/settings-nav";
 import { isFeatureEnabledAsync, type FeatureFlag } from "@/lib/config/features";
 
@@ -48,12 +47,8 @@ export default async function OrgSettingsLayout({
         <h1 className="type-h1">
           Organization settings
         </h1>
-        {teamsEnabled && (
-          <OrgSwitcher
-            currentOrgId={orgData.organization.id}
-            organizations={organizations}
-            collapsed={false}
-          />
+        {teamsEnabled && organizations.length > 1 && (
+          <span className="text-muted-foreground">{orgData.organization.name}</span>
         )}
       </div>
 

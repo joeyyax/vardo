@@ -28,7 +28,6 @@ import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { Card } from "@/components/ui/card";
 import { can } from "@/lib/auth/permissions";
 import { SYSTEM_ORG_MEMBERS_ONLY_ADMINS } from "@/lib/auth/system-org-messages";
-import { OrgSwitcher } from "@/components/layout/org-switcher";
 import { getInitials } from "@/lib/initials";
 import type { Organization } from "@/lib/types";
 
@@ -206,11 +205,11 @@ export function TeamMembers({ members: initialMembers, orgId, orgName, currentRo
             <div>
               <div className="flex items-center gap-3">
                 <h1 className="type-h1">Team</h1>
-                <OrgSwitcher
-                  currentOrgId={orgId}
-                  organizations={organizations}
-                  collapsed={false}
-                />
+                {organizations.length > 1 && (
+                  <span className="text-muted-foreground">
+                    {organizations.find((o) => o.id === orgId)?.name}
+                  </span>
+                )}
               </div>
               <p className="text-sm text-muted-foreground mt-1">
                 {members.length} {members.length === 1 ? "member" : "members"}
