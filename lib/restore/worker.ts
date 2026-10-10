@@ -164,7 +164,7 @@ async function hostPathExists(path: string): Promise<boolean> {
   try {
     await execFileAsync(
       "docker",
-      ["run", "--rm", "--mount", `type=bind,source=${path},target=/probe,readonly`, "alpine", "true"],
+      ["run", "--rm", "--log-driver", "none", "--mount", `type=bind,source=${path},target=/probe,readonly`, "alpine", "true"],
       { env: dockerEnv(), timeout: 60_000 },
     );
     return true;

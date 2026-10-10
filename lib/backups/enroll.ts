@@ -69,7 +69,7 @@ export async function measureVolumeBytes(vol: SelectableVolume, appName: string)
     }
     const { stdout } = await execFileAsync(
       "docker",
-      ["run", "--rm", "-v", mountArg, "alpine", "du", "-sb", "/data"],
+      ["run", "--rm", "--log-driver", "none", "-v", mountArg, "alpine", "du", "-sb", "/data"],
       { env: dockerEnv(), timeout: MEASURE_TIMEOUT_MS },
     );
     const bytes = parseInt(String(stdout).split("\t")[0], 10);

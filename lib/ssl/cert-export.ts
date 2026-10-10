@@ -218,7 +218,7 @@ export function certsFromTar(entries: { name: string; data: Buffer }[]): CertFil
 
 /** What a volume holds now, so a console restart doesn't rewrite unchanged certs. */
 async function volumeFingerprint(volume: string): Promise<string> {
-  const tar = await runDocker(["run", "--rm", "--network", "none", "-v", `${volume}:/certs:ro`, "alpine", "tar", "-C", "/certs", "-cf", "-", "."]);
+  const tar = await runDocker(["run", "--rm", "--log-driver", "none", "--network", "none", "-v", `${volume}:/certs:ro`, "alpine", "tar", "-C", "/certs", "-cf", "-", "."]);
   return fingerprint(certsFromTar(readTar(tar)));
 }
 
@@ -227,7 +227,7 @@ export async function writeCertsToVolume(volume: string, certs: ExportedCert[]):
   const print = fingerprint(certs);
   if (!written.has(volume)) written.set(volume, await volumeFingerprint(volume).catch(() => ""));
   if (written.get(volume) === print) return false;
-  const base = ["run", "--rm", "--network", "none", "-v", `${volume}:/certs`];
+  const base = ["run", "--rm", "--log-driver", "none", "--network", "none", "-v", `${volume}:/certs`];
   for (const c of certs) {
     const input = Buffer.from(`${Buffer.from(c.fullchain).toString("base64")}\n${Buffer.from(c.privkey).toString("base64")}\n`);
     await runDocker([...base, "-i", "alpine", "sh", "-c", WRITE_SCRIPT, "sh", c.host], input);

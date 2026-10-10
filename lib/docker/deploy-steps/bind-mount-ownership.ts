@@ -48,7 +48,7 @@ async function resolveUidInImage(image: string, name: string): Promise<string | 
     const userPart = name.split(":")[0];
     const { stdout } = await execFileAsync(
       "docker",
-      ["run", "--rm", "--entrypoint", "id", image, "-u", userPart],
+      ["run", "--rm", "--log-driver", "none", "--entrypoint", "id", image, "-u", userPart],
       { env: dockerEnv(), timeout: COMPOSE_QUERY_TIMEOUT },
     );
     const uid = stdout.trim();

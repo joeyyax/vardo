@@ -103,7 +103,7 @@ export async function claimAppDirTopLevel(dir: string): Promise<boolean> {
     if (!(await lstat(dir)).isDirectory()) return false;
     await execFileAsync(
       "docker",
-      ["run", "--rm", "-v", `${dir}:/target`, "alpine", "chown", `${APP_UID}:${APP_UID}`, "/target"],
+      ["run", "--rm", "--log-driver", "none", "-v", `${dir}:/target`, "alpine", "chown", `${APP_UID}:${APP_UID}`, "/target"],
       { env: dockerEnv(), timeout: DOCKER_CLEANUP_TIMEOUT },
     );
     return true;

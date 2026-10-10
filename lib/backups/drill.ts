@@ -226,7 +226,7 @@ async function drillKuma(
       const { stdout } = await execFileAsync(
         "docker",
         [
-          "run", "--rm", "--network", "none", "--user", "0:0", "--entrypoint", "sh",
+          "run", "--rm", "--log-driver", "none", "--network", "none", "--user", "0:0", "--entrypoint", "sh",
           "-v", `${scratchVolume}:/restore`,
           "-v", `${dirname(archivePath)}:/archive:ro`,
           image, "-c", KUMA_DRILL, "sh", basename(archivePath),
@@ -266,7 +266,7 @@ async function drillArchive(
       const { stdout } = await execFileAsync(
         "docker",
         [
-          "run", "--rm", "--network", "none",
+          "run", "--rm", "--log-driver", "none", "--network", "none",
           "-v", `${scratchVolume}:/restore`,
           "-v", `${dirname(archivePath)}:/archive:ro`,
           "alpine", "sh", "-c",

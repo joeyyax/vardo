@@ -365,7 +365,7 @@ async function streamTarBackup(opts: {
 
   const producer = spawnProducer(
     "docker",
-    ["run", "--rm", "--name", opts.containerName, ...opts.mountArgs, "-v", `${workDir}:/backup`, "alpine", "sh", "-c", ...script],
+    ["run", "--rm", "--log-driver", "none", "--name", opts.containerName, ...opts.mountArgs, "-v", `${workDir}:/backup`, "alpine", "sh", "-c", ...script],
     label,
     { env: dockerEnv(), containerName: opts.containerName },
   );
@@ -625,7 +625,7 @@ async function preflightBindSource(
 ): Promise<{ kind: BindSourceKind; empty: boolean }> {
   const { stdout } = await execFileAsync(
     "docker",
-    ["run", "--rm", "-v", `${safeSource}:/data:ro`, "alpine", "sh", "-c", buildBindPreflightScript()],
+    ["run", "--rm", "--log-driver", "none", "-v", `${safeSource}:/data:ro`, "alpine", "sh", "-c", buildBindPreflightScript()],
     { env: dockerEnv(), timeout: 60_000 },
   );
   const out = String(stdout);
@@ -1532,14 +1532,14 @@ export async function restoreFilesWithSnapshot(opts: {
     log("Copying the current data aside before restoring");
     await execFileAsync(
       "docker",
-      ["run", "--rm", "-v", mount, "-v", `${snapshotDir}:/backup`, "alpine", "sh", "-c", opts.snapshotScript],
+      ["run", "--rm", "--log-driver", "none", "-v", mount, "-v", `${snapshotDir}:/backup`, "alpine", "sh", "-c", opts.snapshotScript],
       { env: dockerEnv(), timeout: timeoutMs },
     );
 
     try {
       await execFileAsync(
         "docker",
-        ["run", "--rm", "-v", mount, "-v", `${tmpDir}:/backup`, "alpine", "sh", "-c", opts.restoreScript],
+        ["run", "--rm", "--log-driver", "none", "-v", mount, "-v", `${tmpDir}:/backup`, "alpine", "sh", "-c", opts.restoreScript],
         { env: dockerEnv(), timeout: timeoutMs },
       );
     } catch (err) {
@@ -1548,7 +1548,7 @@ export async function restoreFilesWithSnapshot(opts: {
       try {
         await execFileAsync(
           "docker",
-          ["run", "--rm", "-v", mount, "-v", `${snapshotDir}:/backup`, "alpine", "sh", "-c", opts.restoreScript],
+          ["run", "--rm", "--log-driver", "none", "-v", mount, "-v", `${snapshotDir}:/backup`, "alpine", "sh", "-c", opts.restoreScript],
           { env: dockerEnv(), timeout: timeoutMs },
         );
         log("Previous data restored");

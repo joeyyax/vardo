@@ -91,7 +91,7 @@ export async function ensureWritableDir(dir: string): Promise<void> {
         throw new Error(`Permission denied and path outside apps dir: ${dir}`);
       }
       await execFileAsyncInternal("docker", [
-        "run", "--rm", "-v", `${dir}:/target`, "alpine", "chown", "-R", `${APP_UID}:${APP_UID}`, "/target",
+        "run", "--rm", "--log-driver", "none", "-v", `${dir}:/target`, "alpine", "chown", "-R", `${APP_UID}:${APP_UID}`, "/target",
       ], { env: dockerEnv(), timeout: DOCKER_CHOWN_TIMEOUT });
     } else {
       throw err;

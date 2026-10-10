@@ -53,7 +53,7 @@ export async function hostFreeBytes(hostPath: string): Promise<number | null> {
   try {
     const { stdout } = await execFileAsync(
       "docker",
-      ["run", "--rm", "--network", "none", "--mount", `type=bind,source=${hostPath},target=/probe,readonly`, "alpine", "df", "-Pk", "/probe"],
+      ["run", "--rm", "--log-driver", "none", "--network", "none", "--mount", `type=bind,source=${hostPath},target=/probe,readonly`, "alpine", "df", "-Pk", "/probe"],
       { env: dockerEnv(), timeout: 60_000 },
     );
     const fields = String(stdout).trim().split("\n").at(-1)?.trim().split(/\s+/) ?? [];
