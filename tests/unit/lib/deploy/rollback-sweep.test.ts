@@ -112,7 +112,7 @@ describe("sweepRollbackWatches", () => {
         typeof dbMock.select
       >;
     });
-    vi.mocked(acquireLock).mockResolvedValue(true);
+    vi.mocked(acquireLock).mockResolvedValue("token");
     dbMock.query.deployments.findFirst.mockResolvedValue({ id: DEPLOY_ID });
     dbMock.query.environments.findFirst.mockResolvedValue({ name: "production" });
   });
@@ -234,7 +234,7 @@ describe("sweepRollbackWatches", () => {
   it("attempts a rollback once per deployment across instances", async () => {
     dbMock._queue.push([candidateRow()]);
     crashedWithStandby();
-    vi.mocked(acquireLock).mockResolvedValue(false);
+    vi.mocked(acquireLock).mockResolvedValue(null);
 
     await sweepRollbackWatches();
 

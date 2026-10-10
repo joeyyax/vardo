@@ -365,7 +365,8 @@ async function trackVersion(state: UpdateState, now: Date): Promise<UpdateState>
 }
 
 export async function tickSelfUpdate(now = new Date()): Promise<void> {
-  if (!(await acquireLock(LOCK_KEY, LOCK_MS))) return;
+  const lock = await acquireLock(LOCK_KEY, LOCK_MS);
+  if (!lock) return;
   try {
     const state = await trackVersion(await getUpdateState(), now);
     const run = await getUpdateRun();
@@ -376,7 +377,7 @@ export async function tickSelfUpdate(now = new Date()): Promise<void> {
     const policy = await getUpdatePolicy();
     if (policy.mode === "auto") await autoTick(policy, state, now);
   } finally {
-    await releaseLock(LOCK_KEY).catch(() => {});
+    await releaseLock(LOCK_KEY, lock).catch(() => {});
   }
 }
 

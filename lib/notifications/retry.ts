@@ -48,7 +48,8 @@ export async function enqueueRetry(entry: Omit<RetryEntry, "attempt" | "retryAft
 export async function dropStaleRetries(maxAgeMs: number): Promise<number> {
   const len = await redis.llen(RETRY_KEY);
   if (len === 0) return 0;
-  if (!(await acquireLock(LOCK_KEY, 30_000))) return 0;
+  const lock = await acquireLock(LOCK_KEY, 30_000);
+  if (!lock) return 0;
   try {
     const cutoff = Date.now() - maxAgeMs;
     const kept: string[] = [];
@@ -66,7 +67,7 @@ export async function dropStaleRetries(maxAgeMs: number): Promise<number> {
     if (kept.length > 0) await redis.lpush(RETRY_KEY, ...kept);
     return dropped;
   } finally {
-    await releaseLock(LOCK_KEY);
+    await releaseLock(LOCK_KEY, lock);
   }
 }
 
@@ -75,12 +76,12 @@ export async function tickNotificationRetries(): Promise<void> {
   const len = await redis.llen(RETRY_KEY);
   if (len === 0) return;
 
-  const locked = await acquireLock(LOCK_KEY, 30_000);
-  if (!locked) return;
+  const lock = await acquireLock(LOCK_KEY, 30_000);
+  if (!lock) return;
   try {
     await processRetries(len);
   } finally {
-    await releaseLock(LOCK_KEY);
+    await releaseLock(LOCK_KEY, lock);
   }
 }
 

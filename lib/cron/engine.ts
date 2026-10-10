@@ -194,7 +194,8 @@ async function execute(job: CronRunJob): Promise<ExecResult> {
 /** Run a job, record the run and notify on failure. Null when the job is already running. */
 export async function runCronJob(job: CronRunJob): Promise<CronRunResult | null> {
   const lockKey = `lock:cron:running:${job.id}`;
-  if (!(await acquireLock(lockKey, runLockTtlMs(job)))) return null;
+  const lock = await acquireLock(lockKey, runLockTtlMs(job));
+  if (!lock) return null;
 
   try {
     const runId = nanoid();
@@ -296,7 +297,7 @@ export async function runCronJob(job: CronRunJob): Promise<CronRunResult | null>
       output: result.log.slice(-OUTPUT_TAIL),
     };
   } finally {
-    await releaseLock(lockKey).catch(() => {});
+    await releaseLock(lockKey, lock).catch(() => {});
   }
 }
 

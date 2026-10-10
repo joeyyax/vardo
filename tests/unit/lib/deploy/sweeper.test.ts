@@ -169,7 +169,7 @@ describe("sweepStuckQueuedDeployments", () => {
 
   it("skips a deployment when another instance holds the lock", async () => {
     queueSelectResults([TEST_DEPLOY], [TEST_APP]);
-    vi.mocked(acquireLock).mockResolvedValueOnce(false);
+    vi.mocked(acquireLock).mockResolvedValueOnce(null);
 
     await sweepStuckQueuedDeployments();
 

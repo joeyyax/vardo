@@ -28,7 +28,7 @@ vi.mock("@/lib/redis", () => ({
       locks.add(key);
       return "OK";
     }),
-    del: vi.fn(async (key: string) => (locks.delete(key) ? 1 : 0)),
+    eval: vi.fn(async (_script: string, _n: number, key: string) => (locks.delete(key) ? 1 : 0)),
   },
 }));
 vi.mock("@/lib/db", () => ({

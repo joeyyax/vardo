@@ -471,9 +471,11 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
     }
 
     // Host-global prunes delete layers other in-flight pulls are writing; only the last deploy prunes.
-    if (!(await isDeployQueueDrained())) {
+    const drained = await isDeployQueueDrained();
+    const pruneLock = drained ? await acquireLock(PRUNE_LOCK_KEY, PRUNE_LOCK_TTL_MS) : null;
+    if (!drained) {
       log("[deploy] Deferring image prune — other deploys are still in flight");
-    } else if (!(await acquireLock(PRUNE_LOCK_KEY, PRUNE_LOCK_TTL_MS))) {
+    } else if (!pruneLock) {
       log("[deploy] Deferring image prune — another prune is already running");
     } else {
       try {
@@ -497,7 +499,7 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
           // Best-effort.
         }
       } finally {
-        await releaseLock(PRUNE_LOCK_KEY).catch(() => {});
+        await releaseLock(PRUNE_LOCK_KEY, pruneLock).catch(() => {});
       }
     }
   } catch {
