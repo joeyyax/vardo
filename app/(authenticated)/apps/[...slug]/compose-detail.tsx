@@ -763,14 +763,17 @@ export function ComposeDetail({
     [services],
   );
 
+  const tabPath = useCallback(
+    (tab: string) => (tab === "services" ? `/apps/${app.name}` : `/apps/${app.name}/${tab}`),
+    [app.name],
+  );
+
   const setActiveTabAndUrl = useCallback(
     (tab: string) => {
       setActiveTab(tab);
-      const path =
-        tab === "services" ? `/apps/${app.name}` : `/apps/${app.name}/${tab}`;
-      window.history.replaceState({}, "", path);
+      window.history.replaceState({}, "", tabPath(tab));
     },
-    [app.name],
+    [tabPath],
   );
 
   // Real-time updates from the app's event stream, with a polling fallback
@@ -1060,6 +1063,7 @@ export function ComposeDetail({
         <aside className="lg:w-48 lg:shrink-0">
           <div className="lg:sticky lg:top-24">
             <SectionNav
+              hrefFor={tabPath}
               groups={[
                 {
                   items: [

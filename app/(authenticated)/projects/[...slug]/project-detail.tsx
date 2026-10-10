@@ -26,6 +26,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { SectionNav, type SectionGroup } from "@/components/section-nav";
+import { projectHref } from "@/lib/ui/hrefs";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -739,13 +740,15 @@ export function ProjectDetail({
     [hoveredAppName, topLevelApps, dependentsMap]
   );
 
+  const tabPath = useCallback(
+    (tab: string) => (tab === "apps" ? projectHref(project.name) : `${projectHref(project.name)}/${tab}`),
+    [project.name],
+  );
+
   const handleTabChange = useCallback((tab: string) => {
     setActiveTab(tab);
-    const path = tab === "apps"
-      ? `/projects/${project.name}`
-      : `/projects/${project.name}/${tab}`;
-    window.history.replaceState(null, "", path);
-  }, [project.name]);
+    window.history.replaceState(null, "", tabPath(tab));
+  }, [tabPath]);
 
   // Count total deployments and env vars for badges
   const totalDeployments = topLevelApps.reduce((sum, app) => sum + app.deployments.length, 0);
@@ -1038,6 +1041,8 @@ export function ProjectDetail({
         <aside className="lg:w-48 lg:shrink-0">
           <div className="lg:sticky lg:top-24">
             <SectionNav
+              label="Project sections"
+              hrefFor={tabPath}
               groups={[
                 {
                   items: [

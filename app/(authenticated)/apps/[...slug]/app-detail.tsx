@@ -662,6 +662,7 @@ export function AppDetail({ app, orgId, userRole, allTags = [], allParentApps = 
         <aside className="lg:w-48 lg:shrink-0">
           <div className="lg:sticky lg:top-24">
             <SectionNav
+              hrefFor={(tab) => buildAppPath(app.name, app.environments, selectedEnvId, tab)}
               groups={[
                 {
                   items: [
