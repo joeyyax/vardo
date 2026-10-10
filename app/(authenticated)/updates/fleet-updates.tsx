@@ -26,7 +26,7 @@ import {
   type ServiceUpdate,
 } from "@/components/image-updates/update-row";
 import { toast } from "@/lib/messenger";
-import { requiresMigration } from "@/lib/docker/image-updates/migration-path";
+import { requiresMigration, serviceNeedsMigration } from "@/lib/docker/image-updates/migration-path";
 import { rowKey, type BatchReport } from "@/lib/docker/image-updates/batch-report";
 import { describeRule } from "@/lib/docker/image-updates/ignore";
 import type {
@@ -113,7 +113,7 @@ export function FleetUpdates({ orgId }: { orgId: string }) {
     try {
       await saveTrack(
         orgId,
-        { appId: entry.appId, service: entry.service.service, image: entry.service.image },
+        { appId: entry.appId, service: entry.service.service, defaultMode: entry.service.track.defaultMode },
         mode,
       );
       toast.success(trackMessage(label, mode, entry.service.track.major));
@@ -133,7 +133,7 @@ export function FleetUpdates({ orgId }: { orgId: string }) {
       entry: entry.service,
       tag,
     };
-    if (requiresMigration(entry.service.image, entry.service.currentTag, tag)) {
+    if (serviceNeedsMigration(entry.service, tag)) {
       setMigrationSelects(false);
       setMigration(prompt);
       return;

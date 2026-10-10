@@ -1,12 +1,12 @@
-import { defaultTrackMode, type TrackMode } from "@/lib/docker/image-updates/track-policy";
+import type { TrackMode } from "@/lib/docker/image-updates/track-policy";
 
-/** Saves a track policy. Picking the image's default clears the row instead. */
+/** Saves a track policy. Picking the service's default clears the row instead. */
 export async function saveTrack(
   orgId: string,
-  target: { appId: string; service: string | null; image: string },
+  target: { appId: string; service: string | null; defaultMode: TrackMode },
   mode: TrackMode,
 ): Promise<void> {
-  const reset = mode === defaultTrackMode(target.image);
+  const reset = mode === target.defaultMode;
   const res = await fetch(`/api/v1/organizations/${orgId}/image-updates/tracks`, {
     method: reset ? "DELETE" : "POST",
     headers: { "content-type": "application/json" },

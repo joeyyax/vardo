@@ -58,7 +58,7 @@ beforeEach(() => {
         available: [],
         majorAvailable: null,
         majorTags: [],
-        track: { mode: "major", explicit: false, major: null },
+        track: { mode: "major", explicit: false, defaultMode: "major", reason: null, major: null },
         majorHeld: false,
         reasons: [],
         majorLocked: true,

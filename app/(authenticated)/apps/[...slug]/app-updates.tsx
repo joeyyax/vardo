@@ -25,7 +25,7 @@ import {
 import { saveTrack, trackMessage } from "@/components/image-updates/track-request";
 import type { TrackMode } from "@/lib/docker/image-updates/track-policy";
 import { toast } from "@/lib/messenger";
-import { isMajorJump, requiresMigration, type MigrationPlan } from "@/lib/docker/image-updates/migration-path";
+import { isMajorJump, serviceNeedsMigration, type MigrationPlan } from "@/lib/docker/image-updates/migration-path";
 import { describeRule } from "@/lib/docker/image-updates/ignore";
 import { pendingImageChange } from "@/lib/docker/image-updates/pending";
 import type { MajorGateBlock } from "@/lib/docker/image-updates/major-gate";
@@ -175,7 +175,7 @@ export function AppUpdatesPanel({
     const label = entry.service.service ?? appName;
     setTrackBusy(entry.key);
     try {
-      await saveTrack(orgId, { appId, service: entry.service.service, image: entry.service.image }, mode);
+      await saveTrack(orgId, { appId, service: entry.service.service, defaultMode: entry.service.track.defaultMode }, mode);
       toast.success(trackMessage(label, mode, entry.service.track.major));
       refresh();
     } catch (error) {
@@ -315,7 +315,7 @@ export function AppUpdatesPanel({
       return;
     }
     // The recipe comes before the request, not after a 409.
-    if (requiresMigration(entry.image, entry.currentTag, tag) && !acknowledgeMigration) {
+    if (serviceNeedsMigration(entry, tag) && !acknowledgeMigration) {
       setMigrationPlan(null);
       setMigration({ appId, appName, entry, tag });
       return;

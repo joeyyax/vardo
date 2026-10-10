@@ -16,7 +16,7 @@ import { EntityLink } from "@/components/entity-link";
 import { cardVariants } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { describeMajorNotice } from "@/lib/attention/major-notice-rows";
-import { requiresMigration } from "@/lib/docker/image-updates/migration-path";
+import { serviceNeedsMigration } from "@/lib/docker/image-updates/migration-path";
 import type { TrackMode } from "@/lib/docker/image-updates/track-policy";
 import type { ServiceUpdate } from "./update-row";
 
@@ -32,6 +32,13 @@ export type MajorEntry = {
 /** "Stay on 16", or a generic label when the running tag names no major. */
 export function stayLabel(service: ServiceUpdate): string {
   return service.track.major !== null ? `Stay on ${service.track.major}` : "Stay on this major";
+}
+
+/** Why a service stays on its major without anyone choosing it, e.g. "stores data in /var/lib/mysql". */
+export function defaultNote(service: ServiceUpdate): string | null {
+  const { track } = service;
+  if (track.explicit || track.mode !== "major" || !track.reason) return null;
+  return `Stays on ${track.major ?? "its major"} by default: ${track.reason}.`;
 }
 
 /** The section opens on its own only when a major needs a decision now. */
@@ -119,7 +126,7 @@ function MajorRow({ entry, busyKey, disabled, onTrack, onPlan }: { entry: MajorE
 
   function plan(target: string) {
     // A migration opens its own dialog; anything else arms on the first click.
-    if (!requiresMigration(service.image, service.currentTag, target) && !confirming) {
+    if (!serviceNeedsMigration(service, target) && !confirming) {
       setConfirming(true);
       return;
     }
@@ -190,6 +197,9 @@ function MajorRow({ entry, busyKey, disabled, onTrack, onPlan }: { entry: MajorE
           </span>
         )}
       </div>
+      {defaultNote(service) && (
+        <p className="type-body-sm text-muted-foreground/70">{defaultNote(service)}</p>
+      )}
       {service.reasons.length > 0 && (
         <p className="flex items-start gap-1.5 type-body-sm text-status-warning">
           <TriangleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />

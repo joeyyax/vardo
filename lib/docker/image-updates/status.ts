@@ -6,6 +6,9 @@ import { indexRules, silencedBy, type IgnoreRule } from "./ignore";
 import { readIgnoreRules } from "./read-ignores";
 import { readTrackPolicies } from "./read-tracks";
 import { readMajorGateBlock } from "./major-gate-store";
+import { readStatefulVerdicts, serviceVerdictKey } from "./stateful-probe";
+import { isMajorLocked } from "./stateful-image";
+import type { StatefulVerdict } from "./stateful-detect";
 import { splitCheck, resurfaceReasons, runningMajor, type ResurfaceReason } from "./majors";
 import { indexTracks, resolveTrack, type ResolvedTrack, type TrackMode, type TrackPolicy } from "./track-policy";
 import type { MajorGateBlock } from "./major-gate";
@@ -91,6 +94,14 @@ interface BuildContext {
   /** App that owns the compose. Track policies are keyed by it. */
   ownerId: string | undefined;
   tracks: Map<string, TrackMode>;
+  /** Probed verdicts by service key. Missing ones fall back to names. */
+  verdicts: Map<string, StatefulVerdict>;
+}
+
+/** One lookup target per image an app reports, keyed by its compose owner. */
+function verdictTargets(app: UpdatableApp, ownerId: string | undefined) {
+  if (!ownerId) return [];
+  return appImages(app).map((entry) => ({ ownerId, service: entry.service }));
 }
 
 function buildServices(app: UpdatableApp, ctx: BuildContext): ServiceUpdateStatus[] {
@@ -106,7 +117,8 @@ function buildServices(app: UpdatableApp, ctx: BuildContext): ServiceUpdateStatu
     // Older rows marked a major-only result as an update.
     const status: CheckStatus =
       row?.status === "update" && !split.latestTag ? "current" : (row?.status ?? "unknown");
-    const track = resolveTrack(ctx.tracks, ctx.ownerId, entry.service, entry.image);
+    const verdict = ctx.ownerId ? ctx.verdicts.get(serviceVerdictKey(ctx.ownerId, entry.service)) : undefined;
+    const track = resolveTrack(ctx.tracks, ctx.ownerId, entry.service, entry.image, verdict);
 
     return {
       service: entry.service,
@@ -125,7 +137,7 @@ function buildServices(app: UpdatableApp, ctx: BuildContext): ServiceUpdateStatu
         { image: entry.image, currentTag, majorAvailable: split.majorAvailable },
         ctx.now,
       ),
-      majorLocked: row?.majorLocked ?? false,
+      majorLocked: verdict?.majorLocked ?? (row?.majorLocked || isMajorLocked(entry.image)),
       error: row?.error ?? (row ? null : "Not checked yet"),
       checkedAt: row?.checkedAt.toISOString() ?? null,
       stale: !row || row.checkedAt.getTime() < ctx.cutoff,
@@ -207,17 +219,20 @@ export async function getAppUpdateStatus(
   tracks: TrackPolicy[] = [],
 ): Promise<AppUpdateStatus> {
   const entries = appImages(app);
-  const [cached, blockedMigration] = await Promise.all([
+  const ownerId = app.composeOwnerId ?? app.id;
+  const [cached, blockedMigration, verdicts] = await Promise.all([
     readCachedChecks(entries.map((entry) => refCacheKey(entry.ref))),
     blockFor(app),
+    readStatefulVerdicts(verdictTargets(app, ownerId)),
   ]);
   const now = Date.now();
   const all = buildServices(app, {
     cached,
     cutoff: now - CHECK_TTL_MS,
     now,
-    ownerId: app.composeOwnerId ?? app.id,
+    ownerId,
     tracks: indexTracks(tracks),
+    verdicts,
   });
   const selfManaged = isVardoManagedApp(app);
 
@@ -301,10 +316,11 @@ export async function getFleetUpdateStatus(
   cooldownUntil: number,
 ): Promise<FleetUpdateStatus> {
   const keys = appRows.flatMap((app) => appImages(app).map((entry) => refCacheKey(entry.ref)));
-  const [cached, rules, trackRows] = await Promise.all([
+  const [cached, rules, trackRows, verdicts] = await Promise.all([
     readCachedChecks([...new Set(keys)]),
     readIgnoreRules(orgId),
     readTrackPolicies(orgId),
+    readStatefulVerdicts(appRows.flatMap((app) => verdictTargets(app, app.id))),
   ]);
   const now = Date.now();
   const cutoff = now - CHECK_TTL_MS;
@@ -320,7 +336,7 @@ export async function getFleetUpdateStatus(
   let unknownCount = 0;
 
   for (const app of appRows) {
-    const all = buildServices(app, { cached, cutoff, now, ownerId: app.id, tracks });
+    const all = buildServices(app, { cached, cutoff, now, ownerId: app.id, tracks, verdicts });
 
     // Vardo-managed apps are listed separately, outside totals and ignore rules.
     if (isVardoManagedApp(app)) {

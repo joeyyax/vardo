@@ -18,6 +18,8 @@ async function sweep() {
     const { refreshStaleChecks } = await import("./check");
     const checked = await refreshStaleChecks();
     if (checked > 0) log.info(`Checked ${checked} image${checked === 1 ? "" : "s"}`);
+    const { probeUnknownApps } = await import("./stateful-probe");
+    await probeUnknownApps();
   } catch (err) {
     log.error("Sweep failed:", err);
   }

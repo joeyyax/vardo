@@ -49,7 +49,7 @@ beforeEach(() => {
         available: ["5.3"],
         majorAvailable: "6.1",
         majorTags: ["6.1", "6.0"],
-        track: { mode: "latest", explicit: false, major: 5 },
+        track: { mode: "latest", explicit: false, defaultMode: "latest", reason: null, major: 5 },
         majorHeld: false,
         reasons: [],
         majorLocked: false,

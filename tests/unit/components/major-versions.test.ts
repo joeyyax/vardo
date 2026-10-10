@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { majorEntries, opensByDefault, stayLabel } from "@/components/image-updates/major-versions";
+import { defaultNote, majorEntries, opensByDefault, stayLabel } from "@/components/image-updates/major-versions";
 import { trackMessage } from "@/components/image-updates/track-request";
 import { GLOSSARY, termForText } from "@/lib/ui/glossary";
 import type { ServiceUpdateStatus } from "@/lib/docker/image-updates/status";
@@ -16,7 +16,7 @@ function service(overrides: Partial<ServiceUpdateStatus>): ServiceUpdateStatus {
     available: [],
     majorAvailable: "18",
     majorTags: ["18", "17"],
-    track: { mode: "major", explicit: false, major: 16 },
+    track: { mode: "major", explicit: false, defaultMode: "major", reason: "stores data in /var/lib/postgresql/data", major: 16 },
     majorHeld: true,
     reasons: [],
     majorLocked: true,
@@ -55,7 +55,7 @@ describe("opensByDefault", () => {
 describe("copy", () => {
   it("names the running major", () => {
     expect(stayLabel(service({}))).toBe("Stay on 16");
-    expect(stayLabel(service({ track: { mode: "major", explicit: false, major: null } }))).toBe("Stay on this major");
+    expect(stayLabel(service({ track: { mode: "major", explicit: false, defaultMode: "major", reason: null, major: null } }))).toBe("Stay on this major");
     expect(trackMessage("db", "major", 16)).toBe("db stays on 16. Patch and minor updates keep coming.");
     expect(trackMessage("db", "latest", 16)).toBe("db follows the latest major.");
   });
@@ -65,5 +65,17 @@ describe("copy", () => {
     expect(GLOSSARY["stay-on-major"].term).toBe("Stay on major");
     expect(termForText("New major versions")).toBe("major-version");
     expect(termForText("End of life")).toBe("end-of-life");
+  });
+});
+
+describe("defaultNote", () => {
+  it("explains a default stay and stays quiet once someone chose", () => {
+    expect(defaultNote(service({}))).toBe("Stays on 16 by default: stores data in /var/lib/postgresql/data.");
+    expect(
+      defaultNote(service({ track: { mode: "major", explicit: true, defaultMode: "major", reason: "x", major: 16 } })),
+    ).toBeNull();
+    expect(
+      defaultNote(service({ track: { mode: "latest", explicit: false, defaultMode: "latest", reason: null, major: 16 } })),
+    ).toBeNull();
   });
 });

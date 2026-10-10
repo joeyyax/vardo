@@ -2,7 +2,8 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { readCachedChecks, readIgnoreRules, readMajorGateBlock, readTrackPolicies } = vi.hoisted(() => ({
+const { readCachedChecks, readIgnoreRules, readMajorGateBlock, readTrackPolicies, readStatefulVerdicts } = vi.hoisted(() => ({
+  readStatefulVerdicts: vi.fn(),
   readCachedChecks: vi.fn(),
   readIgnoreRules: vi.fn(),
   readMajorGateBlock: vi.fn(),
@@ -16,6 +17,10 @@ vi.mock("@/lib/docker/image-updates/check", () => ({
 vi.mock("@/lib/docker/image-updates/read-ignores", () => ({ readIgnoreRules }));
 vi.mock("@/lib/docker/image-updates/read-tracks", () => ({ readTrackPolicies }));
 vi.mock("@/lib/docker/image-updates/major-gate-store", () => ({ readMajorGateBlock }));
+vi.mock("@/lib/docker/image-updates/stateful-probe", () => ({
+  readStatefulVerdicts,
+  serviceVerdictKey: (ownerId: string, service: string | null) => `${ownerId}:${service ?? ""}`,
+}));
 
 import {
   getAggregateUpdateStatus,
@@ -75,6 +80,7 @@ beforeEach(() => {
   vi.setSystemTime(NOW);
   readIgnoreRules.mockResolvedValue([]);
   readTrackPolicies.mockResolvedValue([]);
+  readStatefulVerdicts.mockResolvedValue(new Map());
   readMajorGateBlock.mockResolvedValue(null);
   readCachedChecks.mockResolvedValue(
     new Map([
@@ -117,8 +123,8 @@ describe("getAppUpdateStatus", () => {
 
   it("applies the default track by image", async () => {
     const status = await getAppUpdateStatus(app);
-    expect(byService(status.services, "db").track).toEqual({ mode: "major", explicit: false, major: 16 });
-    expect(byService(status.services, "web").track).toEqual({ mode: "latest", explicit: false, major: 5 });
+    expect(byService(status.services, "db").track).toMatchObject({ mode: "major", explicit: false, major: 16, reason: "a known database image" });
+    expect(byService(status.services, "web").track).toMatchObject({ mode: "latest", explicit: false, major: 5, reason: null });
   });
 
   it("follows an explicit policy, keyed by the compose owner", async () => {
@@ -186,5 +192,47 @@ describe("fleet and aggregate", () => {
 
   it("adds no attention row without a reason", () => {
     expect(majorNoticeRows([])).toEqual([]);
+  });
+});
+
+describe("probed verdicts", () => {
+  const renamed = {
+    ...app,
+    composeContent: "services:\n  db:\n    image: acme/db:16\n",
+  };
+  const verdict = {
+    ownsData: true,
+    majorLocked: true,
+    source: "behavior",
+    dataPath: "/var/lib/postgresql/data",
+    stamp: "PG_VERSION",
+    reason: "stores data in /var/lib/postgresql/data",
+  };
+
+  beforeEach(() => {
+    readCachedChecks.mockResolvedValue(
+      new Map([["docker.io/acme/db:16", row("docker.io/acme/db:16", { available: ["17"], majorAvailable: "17" })]]),
+    );
+  });
+
+  it("holds a renamed postgres image and says why", async () => {
+    readStatefulVerdicts.mockResolvedValue(new Map([["app-1:db", verdict]]));
+    const [db] = (await getAppUpdateStatus(renamed)).services;
+    expect(db).toMatchObject({
+      majorHeld: true,
+      majorLocked: true,
+      track: { mode: "major", explicit: false, reason: "stores data in /var/lib/postgresql/data" },
+    });
+  });
+
+  it("follows latest with no verdict and an unfamiliar name", async () => {
+    const [db] = (await getAppUpdateStatus(renamed)).services;
+    expect(db).toMatchObject({ majorHeld: false, majorLocked: false, track: { mode: "latest" } });
+  });
+
+  it("lets an explicit policy win over the verdict", async () => {
+    readStatefulVerdicts.mockResolvedValue(new Map([["app-1:db", verdict]]));
+    const [db] = (await getAppUpdateStatus(renamed, [], [{ appId: "app-1", composeService: "db", mode: "latest" }])).services;
+    expect(db).toMatchObject({ majorHeld: false, track: { mode: "latest", explicit: true, defaultMode: "major" } });
   });
 });

@@ -591,6 +591,8 @@ export interface ImageMeta {
   id: string;
   env: string[];
   labels: Record<string, string>;
+  /** Paths the image declares as VOLUME. */
+  volumes: string[];
 }
 
 /** Env and labels of a local image. Null when the image isn't on this host, which means unknown, not empty. */
@@ -598,12 +600,17 @@ export async function inspectImageMeta(imageRef: string): Promise<ImageMeta | nu
   try {
     const image = await dockerRequest<{
       Id?: string;
-      Config?: { Env?: string[] | null; Labels?: Record<string, string> | null };
+      Config?: {
+        Env?: string[] | null;
+        Labels?: Record<string, string> | null;
+        Volumes?: Record<string, unknown> | null;
+      };
     }>("GET", `/images/${encodeURIComponent(imageRef)}/json`);
     return {
       id: image.Id ?? "",
       env: image.Config?.Env ?? [],
       labels: image.Config?.Labels ?? {},
+      volumes: Object.keys(image.Config?.Volumes ?? {}),
     };
   } catch {
     return null;

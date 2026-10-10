@@ -119,7 +119,11 @@ export async function applyImageUpdate({
   }
 
   // A major bump on a major-locked image needs explicit acknowledgment.
-  if (requiresMigration(target.image, target.currentTag, tag) && !acknowledgeMigration) {
+  // A probed data directory counts even when the image name is unfamiliar.
+  const migrates =
+    requiresMigration(target.image, target.currentTag, tag) ||
+    (target.majorLocked && isMajorJump(target.currentTag, tag));
+  if (migrates && !acknowledgeMigration) {
     return {
       ...identity,
       ok: false,

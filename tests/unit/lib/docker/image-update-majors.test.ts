@@ -91,10 +91,10 @@ describe("track policy", () => {
       { appId: "a", composeService: "db", mode: "latest" },
       { appId: "b", composeService: null, mode: "major" },
     ]);
-    expect(resolveTrack(index, "a", "db", "postgres:16")).toEqual({ mode: "latest", explicit: true });
-    expect(resolveTrack(index, "a", "cache", "redis:7")).toEqual({ mode: "major", explicit: false });
-    expect(resolveTrack(index, "b", null, "ghost:5")).toEqual({ mode: "major", explicit: true });
-    expect(resolveTrack(index, undefined, null, "ghost:5")).toEqual({ mode: "latest", explicit: false });
+    expect(resolveTrack(index, "a", "db", "postgres:16")).toMatchObject({ mode: "latest", explicit: true, defaultMode: "major" });
+    expect(resolveTrack(index, "a", "cache", "redis:7")).toMatchObject({ mode: "major", explicit: false, reason: "a known database image" });
+    expect(resolveTrack(index, "b", null, "ghost:5")).toMatchObject({ mode: "major", explicit: true, defaultMode: "latest" });
+    expect(resolveTrack(index, undefined, null, "ghost:5")).toMatchObject({ mode: "latest", explicit: false, reason: null });
   });
 });
 
