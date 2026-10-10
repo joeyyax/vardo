@@ -1,5 +1,5 @@
-// End-of-life dates for common stateful engines. Static data, no network fetch.
-// Dates cross-checked against https://endoflife.date; each engine names its upstream policy page.
+// End-of-life dates for common stateful engines. The bundled table seeds a daily endoflife.date refresh (eol-sync.ts).
+// Each engine names its upstream policy page.
 
 export interface EolSeries {
   /** Release series as the tag starts: `16`, `8.0`, `10.11`. */
@@ -15,6 +15,8 @@ export interface EolEngine {
   /** Tested against the repository's last path segment. */
   match: RegExp;
   source: string;
+  /** endoflife.date product slug. */
+  product?: string;
   series: EolSeries[];
 }
 
@@ -24,6 +26,7 @@ export const EOL_WARN_DAYS = 90;
 export const EOL_TABLE: EolEngine[] = [
   {
     id: "postgres",
+    product: "postgresql",
     label: "PostgreSQL",
     match: /^(postgres|postgresql|postgis)$/i,
     // https://www.postgresql.org/support/versioning/
@@ -44,6 +47,7 @@ export const EOL_TABLE: EolEngine[] = [
   },
   {
     id: "mysql",
+    product: "mysql",
     label: "MySQL",
     match: /^mysql$/i,
     // https://www.mysql.com/support/eol-notice.html
@@ -57,6 +61,7 @@ export const EOL_TABLE: EolEngine[] = [
   },
   {
     id: "mariadb",
+    product: "mariadb",
     label: "MariaDB",
     match: /^mariadb$/i,
     // https://mariadb.org/about/#maintenance-policy
@@ -73,6 +78,7 @@ export const EOL_TABLE: EolEngine[] = [
   },
   {
     id: "mongo",
+    product: "mongodb",
     label: "MongoDB",
     match: /^(mongo|mongodb)$/i,
     // https://www.mongodb.com/legal/support-policy/lifecycles
@@ -92,6 +98,7 @@ export const EOL_TABLE: EolEngine[] = [
   },
   {
     id: "redis",
+    product: "redis",
     label: "Redis",
     match: /^redis$/i,
     // https://redis.io/about/releases/
@@ -107,6 +114,7 @@ export const EOL_TABLE: EolEngine[] = [
   },
   {
     id: "valkey",
+    product: "valkey",
     label: "Valkey",
     match: /^valkey$/i,
     // https://valkey.io/topics/releases/
@@ -120,6 +128,7 @@ export const EOL_TABLE: EolEngine[] = [
   },
   {
     id: "elasticsearch",
+    product: "elasticsearch",
     label: "Elasticsearch",
     match: /^elasticsearch$/i,
     // https://www.elastic.co/support/eol
@@ -134,6 +143,7 @@ export const EOL_TABLE: EolEngine[] = [
   },
   {
     id: "opensearch",
+    product: "opensearch",
     label: "OpenSearch",
     match: /^opensearch$/i,
     // https://opensearch.org/releases/
@@ -142,6 +152,7 @@ export const EOL_TABLE: EolEngine[] = [
   },
   {
     id: "rabbitmq",
+    product: "rabbitmq",
     label: "RabbitMQ",
     match: /^rabbitmq$/i,
     // https://www.rabbitmq.com/release-information
@@ -155,6 +166,17 @@ export const EOL_TABLE: EolEngine[] = [
     ],
   },
 ];
+
+let active: EolEngine[] = EOL_TABLE;
+
+/** The table in use: the last good refresh, else the bundled one. */
+export function activeEolTable(): EolEngine[] {
+  return active;
+}
+
+export function setActiveEolTable(table: EolEngine[] | null): void {
+  active = table ?? EOL_TABLE;
+}
 
 /** Overrides replace a series by name and add new engines; the base table is untouched. */
 export function mergeEolTables(base: EolEngine[], overrides: EolEngine[]): EolEngine[] {
@@ -193,7 +215,7 @@ export interface EolMatch {
 }
 
 /** The release series a tag runs, by longest prefix. Null for unknown engines and floating tags. */
-export function findEol(image: string, tag: string, table: EolEngine[] = EOL_TABLE): EolMatch | null {
+export function findEol(image: string, tag: string, table: EolEngine[] = activeEolTable()): EolMatch | null {
   const engine = table.find((e) => e.match.test(lastSegment(image)));
   if (!engine) return null;
   const release = releaseOf(tag);
@@ -224,7 +246,7 @@ export function eolNotice(
   image: string,
   tag: string,
   now: number = Date.now(),
-  { table = EOL_TABLE, warnDays = EOL_WARN_DAYS }: { table?: EolEngine[]; warnDays?: number } = {},
+  { table = activeEolTable(), warnDays = EOL_WARN_DAYS }: { table?: EolEngine[]; warnDays?: number } = {},
 ): EolNotice | null {
   const match = findEol(image, tag, table);
   if (!match) return null;

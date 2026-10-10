@@ -11,6 +11,7 @@ const STARTUP_DELAY_MS = 60 * 1000;
 let sweepInterval: NodeJS.Timeout | null = null;
 let pruneInterval: NodeJS.Timeout | null = null;
 let startupTimer: NodeJS.Timeout | null = null;
+let eolInterval: NodeJS.Timeout | null = null;
 
 async function sweep() {
   try {
@@ -29,6 +30,9 @@ export function startImageUpdateChecks(): void {
   // Let the app finish booting before the first registry call.
   startupTimer = setTimeout(sweep, STARTUP_DELAY_MS);
   sweepInterval = setInterval(sweep, SWEEP_INTERVAL_MS);
+  void import("./eol-sync").then(({ startEolSync }) => {
+    eolInterval = startEolSync();
+  });
 
   pruneInterval = setInterval(async () => {
     try {
@@ -53,7 +57,9 @@ export function stopImageUpdateChecks(): void {
   if (startupTimer) clearTimeout(startupTimer);
   if (sweepInterval) clearInterval(sweepInterval);
   if (pruneInterval) clearInterval(pruneInterval);
+  if (eolInterval) clearInterval(eolInterval);
   startupTimer = null;
   sweepInterval = null;
   pruneInterval = null;
+  eolInterval = null;
 }
