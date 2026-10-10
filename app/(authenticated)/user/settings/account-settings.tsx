@@ -1217,7 +1217,7 @@ export function ApiTokens({ orgId, canGrantAdmin = false }: { orgId: string; can
                       {scopeLabel(token)}
                     </Badge>
                     {token.adminAccess && (
-                      <Badge variant="outline" className="shrink-0 text-status-error" title={ADMIN_SCOPE_WARNING}>
+                      <Badge variant="error" className="shrink-0" title={ADMIN_SCOPE_WARNING}>
                         Instance admin
                       </Badge>
                     )}
