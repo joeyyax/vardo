@@ -1,19 +1,26 @@
 // Caps backup runs and restore drills in flight in this process, across overlapping ticks.
 
-let active = 0;
-const waiting: (() => void)[] = [];
+type SlotState = { active: number; waiting: (() => void)[] };
+
+// Must live on globalThis; Next duplicates module state across bundles.
+const globalForSlots = globalThis as unknown as { __vardo_backup_slots?: SlotState };
+const slots: SlotState = (globalForSlots.__vardo_backup_slots ??= { active: 0, waiting: [] });
 
 /** Runs `fn` once fewer than `limit` others hold a slot. FIFO. */
 export async function withBackupSlot<T>(limit: number, fn: () => Promise<T>): Promise<T> {
-  while (active >= Math.max(1, limit)) {
-    await new Promise<void>((resolve) => waiting.push(resolve));
+  while (slots.active >= Math.max(1, limit)) {
+    await new Promise<void>((resolve) => slots.waiting.push(resolve));
   }
-  active++;
+  slots.active++;
   try {
     return await fn();
   } finally {
-    active--;
-    waiting.shift()?.();
+    slots.active--;
+    slots.waiting.shift()?.();
   }
 }
 
+/** Whether any run holds or waits for a slot. */
+export function backupSlotsBusy(): boolean {
+  return slots.active > 0 || slots.waiting.length > 0;
+}

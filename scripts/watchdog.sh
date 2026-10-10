@@ -13,11 +13,13 @@ STATE_DIR="${WATCHDOG_STATE_DIR:-/state}"
 APP_DIR="${WATCHDOG_APP_DIR:-/vardo-app}"
 CONSOLE_ENV="${WATCHDOG_CONSOLE_ENV:-production}"
 REDIS_CONTAINER="${WATCHDOG_REDIS_CONTAINER:-vardo-redis}"
+BACKUP_HOLD="${WATCHDOG_BACKUP_HOLD:-1200}"
 EVENTS_KEEP=200
 
-# Prints "<action> <fails>". kind: app|data; health: Docker's status; deploy: idle|active|unknown.
+# Prints "<action> <fails>". kind: app|data; health: Docker's status; deploy: idle|active|unknown;
+# backups: hold while the console runs backup work inside BACKUP_HOLD, else anything.
 decide() {
-  local kind="$1" health="$2" fails="$3" recent="$4" deploy="$5" limit
+  local kind="$1" health="$2" fails="$3" recent="$4" deploy="$5" backups="${6:-idle}" limit
   if [ "$health" != "unhealthy" ]; then echo "ok 0"; return; fi
   fails=$((fails + 1))
   limit="$APP_FAILS"
@@ -26,6 +28,7 @@ decide() {
   # Unknown deploy state usually means Redis is down: only the data stores act.
   if [ "$deploy" != "idle" ] && [ "$kind" != "data" ]; then echo "unknown $fails"; return; fi
   if [ "$fails" -lt "$limit" ]; then echo "wait $fails"; return; fi
+  if [ "$backups" = "hold" ]; then echo "backups $fails"; return; fi
   if [ "$recent" -ge "$MAX_RESTARTS" ]; then echo "backoff $fails"; return; fi
   echo "restart 0"
 }
@@ -86,13 +89,36 @@ deploy_state() {
   esac
 }
 
+# Whether the console runs backups, restores or drills (any backup:busy:* key): busy, idle or unknown.
+backup_state() {
+  local out
+  out=$(docker exec "$REDIS_CONTAINER" sh -c '[ -z "${REDIS_PASSWORD:-}" ] || export REDISCLI_AUTH="$REDIS_PASSWORD"; redis-cli --raw EVAL "return #redis.call(\"keys\", \"backup:busy:*\")" 0' 2>/dev/null) || { echo unknown; return; }
+  case "$out" in
+    0) echo idle ;;
+    ''|*[!0-9]*) echo unknown ;;
+    *) echo busy ;;
+  esac
+}
+
+# hold while backup work runs, for up to BACKUP_HOLD seconds from the first unhealthy check that saw it.
+backup_hold() {
+  local file="$STATE_DIR/console.backup-hold" since
+  if [ "$(backup_state)" != busy ]; then rm -f "$file"; echo idle; return; fi
+  [ -f "$file" ] || now > "$file"
+  since=$(cat "$file" 2>/dev/null || now)
+  if [ $(($(now) - since)) -lt "$BACKUP_HOLD" ]; then echo hold; else echo expired; fi
+}
+
 # One check of one container.
 check() {
-  local role="$1" kind="$2" name="$3" deploy="$4" fails_file="$STATE_DIR/$1.fails" fails health recent action next limit
+  local role="$1" kind="$2" name="$3" deploy="$4" fails_file="$STATE_DIR/$1.fails" fails health recent action next limit backups=idle
   fails=$(cat "$fails_file" 2>/dev/null || echo 0)
   health=$(health_of "$name")
   recent=$(recent_restarts "$role")
-  set -- $(decide "$kind" "$health" "$fails" "$recent" "$deploy")
+  if [ "$role" = console ]; then
+    if [ "$health" = unhealthy ]; then backups=$(backup_hold); else rm -f "$STATE_DIR/console.backup-hold"; fi
+  fi
+  set -- $(decide "$kind" "$health" "$fails" "$recent" "$deploy" "$backups")
   action="$1" next="$2"
   echo "$next" > "$fails_file"
   case "$action" in
@@ -116,6 +142,7 @@ check() {
       fi
       ;;
     deploy) [ "$health" = "unhealthy" ] && log "skip $name: a deploy is running" ;;
+    backups) log "hold $name: backup work is running (up to ${BACKUP_HOLD}s)" ;;
     unknown) log "skip $name: deploy state unreadable" ;;
     wait) log "unhealthy $name ($next)" ;;
   esac

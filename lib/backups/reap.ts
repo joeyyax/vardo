@@ -19,15 +19,19 @@ export const INTERRUPTED_REASON =
 /** Staging untouched this long has no owner. Restores and drills finish well inside it. */
 export const ORPHAN_STAGING_MS = 24 * 60 * 60 * 1000;
 
-/** Fail every pending or running backup no live process holds a lease on. Returns the IDs failed. */
-export async function reapInterruptedBackups(now = new Date()): Promise<string[]> {
+/**
+ * Fail every pending or running backup no live process holds a lease on. Returns the IDs failed.
+ * `minAgeMs` spares rows younger than that, for a sweep beside a live scheduler: a row exists just before its lease.
+ */
+export async function reapInterruptedBackups(now = new Date(), opts: { minAgeMs?: number } = {}): Promise<string[]> {
   const rows = await db.query.backups.findMany({
     where: inArray(backups.status, ["pending", "running"]),
-    columns: { id: true, log: true },
+    columns: { id: true, log: true, startedAt: true },
   });
 
   const reaped: string[] = [];
   for (const row of rows) {
+    if (opts.minAgeMs && now.getTime() - row.startedAt.getTime() < opts.minAgeMs) continue;
     if (await backupLeaseHeld(row.id)) continue;
 
     const line = `[${now.toISOString()}] ${INTERRUPTED_REASON}`;

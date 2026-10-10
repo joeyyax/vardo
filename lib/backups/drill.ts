@@ -13,6 +13,7 @@ import { basename, dirname } from "path";
 import { logger } from "@/lib/logger";
 import { downloadBackupToTemp, strategyFromStoragePath, type ArchiveStrategy } from "./engine";
 import { resolveDbContainer } from "./resolve-db-container";
+import { trackBackupWork } from "./in-flight";
 import { conninfo, restorePostgresArchive } from "./pg-cluster";
 import { inspectContainer } from "@/lib/docker/client";
 import {
@@ -315,6 +316,10 @@ async function batchDrill(
 
 /** Verify a backup is restorable without touching anything live, and record the verdict on its row. */
 export async function runRestoreDrill(backupId: string): Promise<DrillResult> {
+  return trackBackupWork("drill", `of backup ${backupId}`, () => runRestoreDrillUntracked(backupId));
+}
+
+async function runRestoreDrillUntracked(backupId: string): Promise<DrillResult> {
   const startedAt = Date.now();
   const lines: string[] = [];
   const logFn = (m: string) => {

@@ -25,6 +25,7 @@ import {
 import { createArchiveInspector, type ArchiveStats } from "./archive-stream";
 import { createBackupStorage } from "./storage-factory";
 import { holdBackupLease } from "./run-lease";
+import { trackBackupWork } from "./in-flight";
 import { assertSafeName } from "@/lib/docker/validate";
 import { skipsAsConfig } from "./bind-config";
 import { isUncapturedSource, pausedDumpReason, uncapturedReason } from "./coverage";
@@ -117,6 +118,12 @@ export type BackupResult = {
 export function runSucceeded(results: BackupResult[]): boolean {
   return results.length > 0 && results.every((r) => r.emptySource || r.outcome === "success");
 }
+
+/** `trigger` on a row someone started by hand. Null means the schedule started it. */
+export const MANUAL_TRIGGER = "manual";
+
+/** `trigger` on a row that reruns one a stopped console cut off. */
+export const REQUEUE_TRIGGER = "requeue";
 
 export type RunBackupOptions = {
   /** Restrict the run to these apps. Other apps on the job are left alone. */
@@ -811,6 +818,14 @@ export async function resolveDockerVolume(
 export async function runBackup(
   jobId: string,
   options: RunBackupOptions = {},
+): Promise<BackupResult[]> {
+  const label = `job ${jobId}${options.appIds ? ` (${options.appIds.length} app(s))` : ""}`;
+  return trackBackupWork("backup", label, () => runBackupUntracked(jobId, options));
+}
+
+async function runBackupUntracked(
+  jobId: string,
+  options: RunBackupOptions,
 ): Promise<BackupResult[]> {
   const job = await db.query.backupJobs.findFirst({
     where: eq(backupJobs.id, jobId),
@@ -1927,7 +1942,9 @@ export async function restoreBackup(
   const { markJobDone, recordBackupResults, startRestoreRun } = await import("./runs");
   const runId = row ? await startRestoreRun(row).catch(() => null) : null;
   const startedAt = Date.now();
-  const result = await withBulkWrite(row?.appId, () => restoreBackupUnmarked(backupId, opts));
+  const result = await trackBackupWork("restore", `of backup ${backupId}`, () =>
+    withBulkWrite(row?.appId, () => restoreBackupUnmarked(backupId, opts)),
+  );
   if (row?.organizationId) {
     await recordBackupResults(row.organizationId, [
       {

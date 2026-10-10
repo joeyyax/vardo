@@ -68,6 +68,16 @@ describe("reapInterruptedBackups", () => {
     expect(existsSync(backupWorkDir("dead"))).toBe(false);
   });
 
+  it("spares a row younger than minAgeMs, whose lease may not be taken yet", async () => {
+    const now = new Date("2026-10-08T00:10:00Z");
+    findMany.mockResolvedValue([
+      { id: "fresh", log: null, startedAt: new Date("2026-10-08T00:09:50Z") },
+      { id: "old", log: null, startedAt: new Date("2026-10-08T00:05:00Z") },
+    ]);
+
+    expect(await reapInterruptedBackups(now, { minAgeMs: 60_000 })).toEqual(["old"]);
+  });
+
   it("leaves a run a live process still holds alone, staging included", async () => {
     findMany.mockResolvedValue([{ id: "live", log: null }]);
     held.add("live");

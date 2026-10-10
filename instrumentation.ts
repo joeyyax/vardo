@@ -148,6 +148,14 @@ export async function register() {
       log.error("Interrupted backup cleanup failed:", err);
     }
 
+    // Tells the watchdog and install.sh this console has backup work a restart would cut off.
+    try {
+      const { startBackupWorkBeacon } = await import("./lib/backups/in-flight");
+      startBackupWorkBeacon();
+    } catch (err) {
+      log.error("Backup work beacon failed to start:", err);
+    }
+
     // The backup scheduler waits on the target.
     let backupTargetReady: Promise<void> | undefined;
     try {

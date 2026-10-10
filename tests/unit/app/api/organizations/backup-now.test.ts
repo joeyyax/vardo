@@ -73,7 +73,7 @@ describe("POST /apps/[appId]/backup-now — job reuse", () => {
     const res = await POST(request(), params);
 
     expect(res.status).toBe(202);
-    expect(mockRunBackup).toHaveBeenCalledWith("job-1", { appIds: [APP_ID] });
+    expect(mockRunBackup).toHaveBeenCalledWith("job-1", { appIds: [APP_ID], trigger: "manual" });
     await expect(res.json()).resolves.toMatchObject({ jobId: "job-1", appIds: [APP_ID] });
   });
 
@@ -95,6 +95,6 @@ describe("POST /apps/[appId]/backup-now — job reuse", () => {
     const res = await POST(request(), params);
 
     expect(res.status).toBe(202);
-    expect(mockRunBackup).toHaveBeenCalledWith("job-1", { appIds: [APP_ID] });
+    expect(mockRunBackup).toHaveBeenCalledWith("job-1", { appIds: [APP_ID], trigger: "manual" });
   });
 });

@@ -22,6 +22,7 @@ import { buildTarBackupScript, buildTarRestoreScript } from "./archive";
 import { buildRestoreArgv, defaultDatabase } from "./dump-spec";
 import type { DatabaseKind } from "./durability";
 import { resolveDbContainer } from "./resolve-db-container";
+import { trackBackupWork } from "./in-flight";
 import { createMissingDumpRoles, replacePostgresDatabase } from "./pg-cluster";
 import {
   BACKUPS_DIR,
@@ -431,7 +432,9 @@ export async function importIntoApp(
   opts: Parameters<typeof importIntoAppUnmarked>[0],
 ): ReturnType<typeof importIntoAppUnmarked> {
   const startedAt = Date.now();
-  const result = await withBulkWrite(opts.appId, () => importIntoAppUnmarked(opts));
+  const result = await trackBackupWork("import", `into app ${opts.appId}`, () =>
+    withBulkWrite(opts.appId, () => importIntoAppUnmarked(opts)),
+  );
   await batchImport(opts, result, Date.now() - startedAt).catch(() => {});
   if (result.success) {
     await import("./initial-backup")

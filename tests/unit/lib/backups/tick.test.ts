@@ -265,3 +265,34 @@ describe("tickBackupJobs — jobs due together", () => {
     expect(runs.peak()).toBe(1);
   });
 });
+
+describe("tickBackupJobs — while this console drains for a stop", () => {
+  it("starts nothing, leaving the schedule to the console replacing it", async () => {
+    withExistingBackup(null);
+    const { drainBackupsForStop, endBackupDrain } = await import("@/lib/backups/in-flight");
+    await drainBackupsForStop(() => {}, 0, 1);
+    try {
+      await tickBackupJobs();
+    } finally {
+      endBackupDrain();
+    }
+    expect(runBackupMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("runRequeuedJob", () => {
+  it("reruns the job with the requeue trigger, once while queued", async () => {
+    const { runRequeuedJob } = await import("@/lib/backups/tick");
+    let release!: () => void;
+    runBackupMock.mockImplementationOnce(() => new Promise((r) => (release = () => r([]))));
+
+    const first = runRequeuedJob({ id: "job-1", name: "Nightly" }, { runId: null, trigger: "requeue" });
+    expect(runRequeuedJob({ id: "job-1", name: "Nightly" }, { runId: null, trigger: "requeue" })).toBe(false);
+    await new Promise((r) => setTimeout(r, 0));
+    release();
+    await first;
+
+    expect(runBackupMock).toHaveBeenCalledOnce();
+    expect(runBackupMock).toHaveBeenCalledWith("job-1", { runId: null, trigger: "requeue" });
+  });
+});

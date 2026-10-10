@@ -2549,6 +2549,26 @@ verify_self_deploy() {
   return "$ok"
 }
 
+# Keys the console holds while it runs backups, restores, drills or imports. Prints the count, or nothing when Redis can't say.
+console_backup_work() {
+  docker exec vardo-redis sh -c '[ -z "${REDIS_PASSWORD:-}" ] || export REDISCLI_AUTH="$REDIS_PASSWORD"; redis-cli --raw EVAL "return #redis.call(\"keys\", \"backup:busy:*\")" 0' 2>/dev/null | tr -d '[:space:]' || true
+}
+
+# Holds a console stop while it runs backup work, up to VARDO_BACKUP_DRAIN_MINUTES (20).
+wait_for_backup_work() {
+  local minutes="${VARDO_BACKUP_DRAIN_MINUTES:-$(env_get VARDO_BACKUP_DRAIN_MINUTES)}" interval="${VARDO_BACKUP_DRAIN_POLL:-10}" waited=0 limit
+  case "$minutes" in ''|*[!0-9]*) minutes=20 ;; esac
+  limit=$((minutes * 60))
+  case "$(console_backup_work)" in ''|*[!0-9]*|0) return 0 ;; esac
+  info "The console is running backup work. Waiting up to $minutes minutes for it to finish..."
+  while [ "$waited" -lt "$limit" ]; do
+    sleep "$interval"
+    waited=$((waited + interval))
+    case "$(console_backup_work)" in ''|*[!0-9]*|0) log "Backup work finished"; return 0 ;; esac
+  done
+  warn "Backup work is still running after $minutes minutes. Stopping anyway; the new console reruns interrupted backups."
+}
+
 # Dumps the database to $VARDO_DIR/backups. Prints the file.
 backup_database() {
   local label="$1" compose_file backup_dir="$VARDO_DIR/backups" backup_file
@@ -2911,6 +2931,7 @@ do_update() {
 
   local active_compose="$active_dir/$COMPOSE_FILE"
   local swap_started_at
+  wait_for_backup_work
   swap_started_at=$(date +%s)
   info "Stopping old frontend..."
   docker compose -f "$active_compose" stop frontend 2>/dev/null || true

@@ -40,7 +40,11 @@ case "$1" in
       *) cat "$F/state/$last" 2>/dev/null || exit 1 ;;
     esac ;;
   ps) case "$*" in *vardo-production-green*) echo abc123 ;; esac ;;
-  exec) [ -f "$F/deploy" ] || exit 1; cat "$F/deploy" ;;
+  exec)
+    case "$*" in
+      *backup:busy*) cat "$F/backups" 2>/dev/null || echo 0 ;;
+      *) [ -f "$F/deploy" ] || exit 1; cat "$F/deploy" ;;
+    esac ;;
   restart) echo "$4" >> "$F/restarts" ;;
 esac
 `;
@@ -110,6 +114,13 @@ describe("decide", () => {
     expect(decide("data", "unhealthy", 9, 3, "idle")).toBe("backoff 10");
   });
 
+  it("holds a restart while backup work runs, then restarts once the hold ends", () => {
+    expect(decide("app", "unhealthy", 1, 0, "idle hold")).toBe("wait 2");
+    expect(decide("app", "unhealthy", 2, 0, "idle hold")).toBe("backups 3");
+    expect(decide("app", "unhealthy", 7, 0, "idle hold")).toBe("backups 8");
+    expect(decide("app", "unhealthy", 7, 0, "idle expired")).toBe("restart 0");
+  });
+
   it("honors the thresholds from the environment", () => {
     expect(sh("decide app unhealthy 0 0 idle", { WATCHDOG_APP_FAILS: "1" }).trim()).toBe("restart 0");
     expect(sh("decide app unhealthy 2 1 idle", { WATCHDOG_MAX_RESTARTS: "1" }).trim()).toBe("backoff 3");
@@ -154,6 +165,34 @@ describe("tick", () => {
     ticks(2);
     expect(restarts()).toEqual([]);
     ticks(1);
+    expect(restarts()).toEqual(["vardo-traefik"]);
+  });
+
+  it("holds an unhealthy console while it runs backup work, up to WATCHDOG_BACKUP_HOLD", () => {
+    setState("vardo-production-green-frontend-1", "running unhealthy");
+    writeFileSync(join(dir, "fake/backups"), "1\n");
+    ticks(5);
+    expect(restarts()).toEqual([]);
+
+    // The hold started 30 minutes ago.
+    writeFileSync(join(dir, "state/console.backup-hold"), `${Math.floor(Date.now() / 1000) - 1800}\n`);
+    ticks(1);
+    expect(restarts()).toEqual(["vardo-production-green-frontend-1"]);
+  });
+
+  it("restarts the console once its backup work finishes", () => {
+    setState("vardo-production-green-frontend-1", "running unhealthy");
+    writeFileSync(join(dir, "fake/backups"), "1\n");
+    ticks(4);
+    writeFileSync(join(dir, "fake/backups"), "0\n");
+    ticks(1);
+    expect(restarts()).toEqual(["vardo-production-green-frontend-1"]);
+  });
+
+  it("does not hold Traefik for backup work", () => {
+    setState("vardo-traefik", "running unhealthy");
+    writeFileSync(join(dir, "fake/backups"), "1\n");
+    ticks(3);
     expect(restarts()).toEqual(["vardo-traefik"]);
   });
 

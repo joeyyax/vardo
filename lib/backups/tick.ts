@@ -8,6 +8,7 @@ import { logger } from "@/lib/logger";
 import { needsSetup } from "@/lib/setup";
 import { selectDrillCandidates, type DrillCandidate } from "./drill-schedule";
 import { withBackupSlot } from "./run-limit";
+import { backupsDraining } from "./in-flight";
 import { loadResourceSettings, maxDeployConcurrency } from "@/lib/resources/host";
 
 const log = logger.child("backup");
@@ -28,6 +29,8 @@ export async function tickBackupJobs(): Promise<void> {
 
   // A fresh instance's empty database would land in the bucket beside the backups a restore lists.
   if (await needsSetup()) return;
+  // This console is about to stop; the one replacing it takes the schedule.
+  if (backupsDraining()) return;
 
   const jobs = await db.query.backupJobs.findMany({
     where: eq(backupJobs.enabled, true),
@@ -101,11 +104,29 @@ export async function tickBackupJobs(): Promise<void> {
   await Promise.all(runs);
 }
 
-async function runJob(job: { id: string; name: string }, runId: string | null): Promise<void> {
+/** Runs an interrupted job again under the slot cap, then reports it to its run. False when the job is already queued. */
+export function runRequeuedJob(
+  job: { id: string; name: string },
+  opts: { runId: string | null; trigger: string },
+): Promise<void> | false {
+  if (queued.has(job.id)) return false;
+  queued.add(job.id);
+  return backupConcurrency()
+    .then((limit) => withBackupSlot(limit, () => runJob(job, opts.runId, opts.trigger)))
+    .finally(() => queued.delete(job.id))
+    .then(async () => {
+      if (!opts.runId) return;
+      const { markJobDone } = await import("./runs");
+      await markJobDone(opts.runId, job.id);
+    })
+    .catch((err) => log.error(`Requeued job "${job.name}" didn't report to its run:`, err));
+}
+
+async function runJob(job: { id: string; name: string }, runId: string | null, trigger?: string): Promise<void> {
   try {
     log.info(`Running job "${job.name}" (${job.id})`);
 
-    const results = await runBackup(job.id, { runId });
+    const results = await runBackup(job.id, trigger ? { runId, trigger } : { runId });
 
     const succeeded = results.filter((r) => r.outcome === "success").length;
     const failed = results.filter((r) => r.outcome === "failed").length;
@@ -124,6 +145,7 @@ const DRILLS_PER_TICK = 1;
 
 /** Drill whichever archive's restorability is least known. */
 export async function tickRestoreDrills(now = new Date()): Promise<void> {
+  if (backupsDraining()) return;
   const locked = await acquireLock(`lock:drill:${Math.floor(now.getTime() / 60_000)}`, 61_000);
   if (!locked) return;
 

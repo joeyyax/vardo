@@ -3,6 +3,12 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // #874: the first deploy that finds an app's volumes enrolls it in backups
 // directly.
 
+const backupDrain = vi.hoisted(() => ({
+  drainBackupsForStop: vi.fn().mockResolvedValue([]),
+  endBackupDrain: vi.fn(),
+  backupDrainTimeoutMs: () => 20 * 60_000,
+}));
+
 const { dbMock, writes, emitMock, execCalls, execFails, queueDrained, drainMock, endDrainMock, enrollNewApp, enrollNewVolumes } = vi.hoisted(() => {
   const drainMock = vi.fn().mockResolvedValue([]);
   const endDrainMock = vi.fn();
@@ -88,6 +94,7 @@ vi.mock("@/lib/docker/deploy-cancel", () => ({
   endSelfDrain: endDrainMock,
   SELF_DRAIN_TIMEOUT_MS: 15 * 60_000,
 }));
+vi.mock("@/lib/backups/in-flight", () => backupDrain);
 vi.mock("child_process", () => ({
   execFile: (cmd: string, args: string[], _opts: unknown, cb: (err: unknown, out?: unknown) => void) => {
     const line = [cmd, ...args].join(" ");

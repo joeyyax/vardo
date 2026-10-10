@@ -22,6 +22,7 @@ A container that isn't running is left to Docker's restart policy. A container w
 ## When it holds off
 
 - **During a deploy.** Any `deploy:active:*` lease in Redis means a deploy or rollback is running, and the count starts over.
+- **While the console runs backup work.** A `backup:busy:*` key means a backup, restore, drill or import is running. The console's restart waits up to 20 minutes for it, then goes ahead; the new console reruns interrupted scheduled backups.
 - **When it can't read Redis.** The console and Traefik wait, since a missing Redis is usually why they're unhealthy. Postgres and Redis still restart after their 5-minute window.
 - **After 3 restarts in 30 minutes** of one container. It logs a backoff and tries again once the oldest restart ages out.
 - **While `/opt/vardo/watchdog/pause` exists.** Touch it for maintenance.
@@ -38,7 +39,7 @@ Set these in `/opt/vardo/.env` and redeploy the console.
 | --- | --- |
 | `VARDO_WATCHDOG` | `true`. `false` leaves the container idle. |
 
-The script also reads `WATCHDOG_INTERVAL`, `WATCHDOG_APP_FAILS`, `WATCHDOG_DATA_FAILS`, `WATCHDOG_MAX_RESTARTS` and `WATCHDOG_WINDOW` from its own environment.
+The script also reads `WATCHDOG_INTERVAL`, `WATCHDOG_APP_FAILS`, `WATCHDOG_DATA_FAILS`, `WATCHDOG_MAX_RESTARTS`, `WATCHDOG_WINDOW` and `WATCHDOG_BACKUP_HOLD` (seconds, default 1200) from its own environment.
 
 ## Rollout
 

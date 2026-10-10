@@ -7,7 +7,7 @@ import { and, eq, gt, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
-import { runBackup, STALE_RUN_MS } from "@/lib/backups/engine";
+import { MANUAL_TRIGGER, runBackup, STALE_RUN_MS } from "@/lib/backups/engine";
 import { ensureAutoBackupJob, resolveBackupTarget } from "@/lib/backups/auto-backup";
 import { resolveAppBackupSwitch } from "@/lib/backups/switch";
 import { assessPreMigrationBackup } from "@/lib/backups/pre-migration";
@@ -164,7 +164,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
 
     // Not awaited: a volume backup can take minutes, so the client polls history.
     // Scoped to this app since a shared job also covers its siblings.
-    void runBackup(job.id, { appIds: [app.id] }).catch((err) => {
+    void runBackup(job.id, { appIds: [app.id], trigger: MANUAL_TRIGGER }).catch((err) => {
       log.error(`Manual backup failed for app ${app.name} (job ${job.id}):`, err);
     });
 

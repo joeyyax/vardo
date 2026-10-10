@@ -8,6 +8,12 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // old slot that never stopped is still holding its containers.
 // ---------------------------------------------------------------------------
 
+const backupDrain = vi.hoisted(() => ({
+  drainBackupsForStop: vi.fn().mockResolvedValue([]),
+  endBackupDrain: vi.fn(),
+  backupDrainTimeoutMs: () => 20 * 60_000,
+}));
+
 const { dbMock, writes, emitMock, execCalls, execFails, queueDrained, commitFails, drainMock, endDrainMock } = vi.hoisted(() => {
   const drainMock = vi.fn().mockResolvedValue([]);
   const endDrainMock = vi.fn();
@@ -88,6 +94,7 @@ vi.mock("@/lib/docker/deploy-cancel", () => ({
   endSelfDrain: endDrainMock,
   SELF_DRAIN_TIMEOUT_MS: 15 * 60_000,
 }));
+vi.mock("@/lib/backups/in-flight", () => backupDrain);
 vi.mock("child_process", () => ({
   execFile: (cmd: string, args: string[], _opts: unknown, cb: (err: unknown, out?: unknown) => void) => {
     const line = [cmd, ...args].join(" ");
@@ -360,13 +367,47 @@ describe("postDeploy tail work", () => {
     await postDeploy(ctx);
 
     expect(endDrainMock).toHaveBeenCalledOnce();
+    expect(backupDrain.endBackupDrain).toHaveBeenCalled();
+  });
+
+  it("waits for this process's backup work before a self-deploy stops its own slot", async () => {
+    const order: string[] = [];
+    backupDrain.drainBackupsForStop.mockImplementationOnce(async () => {
+      order.push("backups drained");
+      return [];
+    });
+    const stopOldSlot = vi.fn(async () => {
+      order.push("stop");
+      return { ok: true as const };
+    });
+    const ctx = makeContext({ activeSlot: "green", stopOldSlot, stopOldSlotEndsDeploy: true });
+    ctx.app.name = "vardo";
+
+    await postDeploy(ctx);
+
+    expect(order).toEqual(["backups drained", "stop"]);
+    expect(unfinishedReasons()).toEqual([]);
+  });
+
+  it("names the backup work a self-deploy's stop cut off and still stops", async () => {
+    backupDrain.drainBackupsForStop.mockResolvedValueOnce(["backup job job-1"]);
+    const stopOldSlot = vi.fn().mockResolvedValue({ ok: true });
+    const ctx = makeContext({ activeSlot: "green", stopOldSlot, stopOldSlotEndsDeploy: true });
+    ctx.app.name = "vardo";
+
+    await postDeploy(ctx);
+
+    expect(stopOldSlot).toHaveBeenCalled();
+    expect(unfinishedReasons().join("\n")).toContain("backup job job-1");
   });
 
   it("does not drain for any other app", async () => {
     drainMock.mockClear();
+    backupDrain.drainBackupsForStop.mockClear();
     await postDeploy(makeContext({ activeSlot: "green", stopOldSlot: vi.fn().mockResolvedValue({ ok: true }) }));
 
     expect(drainMock).not.toHaveBeenCalled();
+    expect(backupDrain.drainBackupsForStop).not.toHaveBeenCalled();
   });
 });
 

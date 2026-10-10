@@ -30,6 +30,7 @@ import { observedMajors } from "./major-gate";
 import { clearMajorGateBlock } from "../image-updates/major-gate-store";
 import { isDeployQueueDrained, releaseConcurrencySlot } from "../deploy-concurrency";
 import { drainForSelfStop, endSelfDrain, SELF_DRAIN_TIMEOUT_MS } from "../deploy-cancel";
+import { backupDrainTimeoutMs, drainBackupsForStop, endBackupDrain } from "@/lib/backups/in-flight";
 import { acquireLock, releaseLock } from "@/lib/redis-lock";
 import { addEvent } from "@/lib/stream/producer";
 import { recordActivity } from "@/lib/activity";
@@ -505,15 +506,26 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
   if (ctx.stopOldSlot && ctx.stopOldSlotEndsDeploy) {
     // The usual `finally` release never runs once this process stops.
     await releaseConcurrencySlot(ctx.deploymentId).catch(() => {});
-    const cutOff = await drainForSelfStop(ctx.appId, log).catch(() => [] as string[]);
+    const [cutOff, backupsCutOff] = await Promise.all([
+      drainForSelfStop(ctx.appId, log).catch(() => [] as string[]),
+      drainBackupsForStop(log).catch(() => [] as string[]),
+    ]);
     if (cutOff.length > 0) {
       await unfinishedWork(
         `the stop cut off deploy(s) still running after ${SELF_DRAIN_TIMEOUT_MS / 60_000} minutes: ${cutOff.join(", ")}`,
       );
     }
+    if (backupsCutOff.length > 0) {
+      await unfinishedWork(
+        `the stop cut off backup work still running after ${backupDrainTimeoutMs() / 60_000} minutes, so the new console reruns it: ${backupsCutOff.join(", ")}`,
+      );
+    }
     log(`[deploy] Stopping the slot running this deploy — ${newSlot} is serving`);
-    // A slot that won't stop keeps serving, so it takes deploys again.
-    if (!(await stopOldSlot())) endSelfDrain();
+    // A slot that won't stop keeps serving, so it takes deploys and backups again.
+    if (!(await stopOldSlot())) {
+      endSelfDrain();
+      endBackupDrain();
+    }
   }
 
   return ctx;

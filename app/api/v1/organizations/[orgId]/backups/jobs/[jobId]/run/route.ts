@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { backupJobs } from "@/lib/db/schema";
 import { requirePlugin } from "@/lib/api/require-plugin";
 import { eq, and } from "drizzle-orm";
-import { runBackup, runSucceeded } from "@/lib/backups/engine";
+import { MANUAL_TRIGGER, runBackup, runSucceeded } from "@/lib/backups/engine";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
@@ -34,7 +34,7 @@ async function handlePost(_request: NextRequest, { params }: RouteParams) {
       return apiError.notFound("backup job");
     }
 
-    const results = await runBackup(jobId);
+    const results = await runBackup(jobId, { trigger: MANUAL_TRIGGER });
 
     return NextResponse.json({
       success: runSucceeded(results),

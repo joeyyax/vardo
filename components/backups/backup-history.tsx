@@ -22,6 +22,7 @@ import { Card } from "@/components/ui/card";
 const TRIGGER_LABELS: Record<string, string> = {
   initial: "Initial snapshot",
   import: "After import",
+  requeue: "Rerun after restart",
 };
 
 function backupDuration(startedAt: string, finishedAt: string | null): string {
