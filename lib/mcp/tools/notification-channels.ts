@@ -6,6 +6,7 @@ import { notificationChannels } from "@/lib/db/schema";
 import { presentChannel } from "@/lib/notifications/channel-config";
 import {
   CHANNEL_TYPES,
+  ChannelConfigError,
   channelCreateSchema,
   channelUpdateSchema,
   createChannelRow,
@@ -28,9 +29,21 @@ const configInput = z
     recipients: z.array(z.string()).optional().describe("email: addresses to send to"),
     url: z.string().optional().describe("webhook: the URL Vardo POSTs JSON to"),
     secret: z.string().optional().describe("webhook: HMAC secret for the X-Signature-256 header"),
-    webhookUrl: z.string().optional().describe("slack: the incoming webhook URL"),
+    webhookUrl: z.string().optional().describe("slack: the incoming webhook URL. discord: the https://discord.com/api/webhooks/... URL"),
+    serverUrl: z.string().optional().describe("ntfy: server URL, default https://ntfy.sh"),
+    topic: z.string().optional().describe("ntfy: topic to publish to"),
+    accessToken: z.string().optional().describe("ntfy: access token, instead of username and password"),
+    username: z.string().optional().describe("ntfy: basic auth username"),
+    password: z.string().optional().describe("ntfy: basic auth password"),
+    markdown: z.boolean().optional().describe("ntfy: send Markdown, default true; turn off for servers older than 2.7"),
+    botToken: z.string().optional().describe("telegram: bot token from BotFather"),
+    chatId: z.string().optional().describe("telegram: chat ID or @channelname"),
+    userKey: z.string().optional().describe("pushover: user key"),
+    appToken: z.string().optional().describe("pushover: application API token"),
   })
-  .describe("email takes recipients; webhook takes url and an optional secret; slack takes webhookUrl. Stored URLs and secrets come back masked as ****; send a masked value back to keep the stored one.");
+  .describe(
+    "email takes recipients; webhook takes url and an optional secret; slack and discord take webhookUrl; ntfy takes topic plus optional serverUrl, accessToken or username and password, markdown; telegram takes botToken and chatId; pushover takes userKey and appToken. Stored URLs, tokens and secrets come back masked as ****; send a masked value back to keep the stored one.",
+  );
 
 const eventsInput = z
   .array(z.string())
@@ -42,7 +55,7 @@ const findChannel = (channelId: string) =>
 export function registerNotificationChannelTools(server: McpServer, context: McpAuthContext) {
   server.tool(
     "vardo_list_notification_channels",
-    "List notification channels (email, webhook, Slack) with their type, enabled flag, subscribed events and config. URLs and secrets are masked.",
+    "List notification channels (email, webhook, Slack, ntfy, Discord, Telegram, Pushover) with their type, enabled flag, subscribed events and config. URLs, tokens and secrets are masked.",
     {
       channelId: z.string().optional().describe("Only this channel"),
     },
@@ -96,7 +109,13 @@ export function registerNotificationChannelTools(server: McpServer, context: Mcp
       }
       const parsed = channelUpdateSchema.safeParse(input);
       if (!parsed.success) return failure(parsed.error.issues[0]?.message ?? "Invalid input");
-      const updated = await updateChannelRow(channel.organizationId, channel.id, parsed.data);
+      let updated;
+      try {
+        updated = await updateChannelRow(channel.organizationId, channel.id, parsed.data);
+      } catch (err) {
+        if (err instanceof ChannelConfigError) return failure(err.message);
+        throw err;
+      }
       if (!updated) return accessDenied("Notification channel");
       return text({ channel: presentChannel(updated) });
     },
@@ -120,7 +139,7 @@ export function registerNotificationChannelTools(server: McpServer, context: Mcp
 
   server.tool(
     "vardo_test_notification_channel",
-    "Send a test notification, labeled as a test, through one channel, enabled or not. Reports whether the provider accepted it, with the HTTP status for webhooks and Slack and message IDs for email.",
+    "Send a test notification, labeled as a test, through one channel, enabled or not. Reports whether the provider accepted it, with the HTTP status for every type except email and the provider message ID where it returns one.",
     {
       channelId: z.string().describe("The channel ID"),
     },

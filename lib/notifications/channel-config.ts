@@ -6,7 +6,17 @@ import { maskChannelConfig } from "./mask-config";
 type ChannelConfig = Record<string, unknown>;
 
 /** Config fields that are credentials. */
-export const CHANNEL_SECRET_KEYS = ["url", "secret", "webhookUrl"] as const;
+export const CHANNEL_SECRET_KEYS = [
+  "url",
+  "secret",
+  "webhookUrl",
+  "topic",
+  "accessToken",
+  "password",
+  "botToken",
+  "userKey",
+  "appToken",
+] as const;
 
 function mapSecrets<T>(config: T, fn: (value: string) => string): T {
   const out = { ...(config as ChannelConfig) };

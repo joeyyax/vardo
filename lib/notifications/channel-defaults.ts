@@ -5,6 +5,10 @@ export const CHANNEL_TYPE_DEFAULTS: Record<string, boolean> = {
   email: true,
   slack: false,
   webhook: false,
+  ntfy: false,
+  discord: false,
+  telegram: false,
+  pushover: false,
 };
 
 /** Events that always send, regardless of preferences. */

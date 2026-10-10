@@ -42,7 +42,7 @@ describe("deploy.status", () => {
   it("never resolves a recipient, even when a member opted in", () => {
     const members = [{ userId: "user-1" }];
     const prefs = [{ channelId: "chan-1", userId: "user-1", enabled: true }];
-    for (const channelType of ["email", "slack", "webhook"]) {
+    for (const channelType of ["email", "slack", "webhook", "ntfy", "discord", "telegram", "pushover"]) {
       expect(resolveRecipients("chan-1", channelType, "deploy.status", members, prefs).shouldSend).toBe(false);
     }
   });

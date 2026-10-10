@@ -1,5 +1,17 @@
 const MASK = "****";
-const URL_FIELD: Record<string, string> = { webhook: "url", slack: "webhookUrl" };
+
+/** Fields masked on read, by channel type. */
+const MASKED_FIELDS: Record<string, string[]> = {
+  webhook: ["url"],
+  slack: ["webhookUrl"],
+  discord: ["webhookUrl"],
+  ntfy: ["topic", "accessToken", "password"],
+  telegram: ["botToken"],
+  pushover: ["userKey", "appToken"],
+};
+
+/** Every field that can hold a mask. */
+const MASKABLE_KEYS = ["url", "webhookUrl", "secret", "topic", "accessToken", "password", "botToken", "userKey", "appToken"];
 
 /** Masks sensitive fields in a channel's config before returning it to clients. */
 export function maskChannelConfig<T extends { type: string; config: unknown }>(
@@ -14,8 +26,9 @@ export function maskChannelConfig<T extends { type: string; config: unknown }>(
     masked.secret = s.length > 4 ? `${MASK}${s.slice(-4)}` : MASK;
   }
 
-  const urlField = URL_FIELD[channel.type];
-  if (urlField && typeof masked[urlField] === "string" && masked[urlField]) masked[urlField] = MASK;
+  for (const field of MASKED_FIELDS[channel.type] ?? []) {
+    if (typeof masked[field] === "string" && masked[field]) masked[field] = MASK;
+  }
 
   return { ...channel, config: masked };
 }
@@ -25,13 +38,13 @@ export function isMaskedValue(value: unknown): boolean {
   return typeof value === "string" && value.startsWith(MASK);
 }
 
-/** Keeps the stored URL and secret wherever the incoming config still holds a mask. */
+/** Keeps the stored credentials wherever the incoming config still holds a mask. */
 export function restoreMaskedConfig(
   incoming: Record<string, unknown>,
   stored: Record<string, unknown> | null,
 ): Record<string, unknown> {
   const out = { ...incoming };
-  for (const key of ["url", "webhookUrl", "secret"]) {
+  for (const key of MASKABLE_KEYS) {
     if (!isMaskedValue(out[key])) continue;
     if (typeof stored?.[key] === "string") out[key] = stored[key];
     else delete out[key];

@@ -12,6 +12,8 @@ const h = vi.hoisted(() => ({
   saved: [] as Record<string, unknown>[],
   testSend: vi.fn(async () => ({ ok: true, message: "Sent.", providerStatus: 200 })),
   deleteRow: vi.fn(async () => "c1"),
+  createRow: vi.fn(async (orgId: string, input: Record<string, unknown>) => ({ id: "c2", organizationId: orgId, ...input })),
+  updateRow: vi.fn(async () => ({ id: "c1" })),
 }));
 
 vi.mock("@/lib/db", () => ({
@@ -32,6 +34,8 @@ vi.mock("@/lib/notifications/test-send", () => ({ sendTestNotification: h.testSe
 vi.mock("@/lib/notifications/channels", async (orig) => ({
   ...(await orig<typeof import("@/lib/notifications/channels")>()),
   deleteChannelRow: h.deleteRow,
+  createChannelRow: h.createRow,
+  updateChannelRow: h.updateRow,
 }));
 vi.mock("@/lib/system-settings", () => ({
   getEmailProviderConfig: async () => h.stored,
@@ -112,7 +116,51 @@ describe("notification channel tools", () => {
       config: { url: "https://example.com/hook" },
     });
     expect(result.isError).toBe(true);
-    expect(body(result).error).toMatch(/doesn't match the channel type/);
+    expect(body(result).error).toMatch(/Webhook URL: required/);
+  });
+});
+
+describe("notification channel tools: push types", () => {
+  const create = (args: Record<string, unknown>) => serverFor(plain).get("vardo_create_notification_channel")!({ name: "Phone", ...args });
+
+  it("creates an ntfy channel with the server defaulted and the credentials masked on the way out", async () => {
+    const result = await create({ type: "ntfy", config: { topic: "vardo-test", accessToken: "tk_fake0000" } });
+    expect(result.isError).toBeUndefined();
+    expect(h.createRow).toHaveBeenCalledWith(
+      "org-1",
+      expect.objectContaining({ type: "ntfy", config: { serverUrl: "https://ntfy.sh", topic: "vardo-test", accessToken: "tk_fake0000" } }),
+    );
+    expect(body(result).channel.config).toEqual({ serverUrl: "https://ntfy.sh", topic: "****", accessToken: "****" });
+  });
+
+  it("creates Discord, Telegram and Pushover channels", async () => {
+    const configs = {
+      discord: { webhookUrl: "https://discord.com/api/webhooks/1234567890/fakeToken" },
+      telegram: { botToken: "123456789:AAFakeTokenExampleFakeToken_0123456", chatId: "-1001234567890" },
+      pushover: { userKey: "u".repeat(30), appToken: "a".repeat(30) },
+    };
+    for (const [type, config] of Object.entries(configs)) {
+      expect((await create({ type, config })).isError).toBeUndefined();
+    }
+    expect(h.createRow).toHaveBeenCalledTimes(3);
+  });
+
+  it("rejects a Discord webhook on another host and a bad ntfy server", async () => {
+    const discord = await create({ type: "discord", config: { webhookUrl: "https://example.com/api/webhooks/1/x" } });
+    expect(discord.isError).toBe(true);
+    expect(body(discord).error).toMatch(/must be a Discord webhook URL/);
+    const ntfy = await create({ type: "ntfy", config: { topic: "t", serverUrl: "file:///etc/passwd" } });
+    expect(ntfy.isError).toBe(true);
+    expect(body(ntfy).error).toMatch(/Server URL/);
+    expect(h.createRow).not.toHaveBeenCalled();
+  });
+
+  it("reports an update the channel's type rejects", async () => {
+    const { ChannelConfigError } = await import("@/lib/notifications/channels");
+    h.updateRow.mockRejectedValueOnce(new ChannelConfigError("Topic: use 1-64 letters"));
+    const result = await serverFor(plain).get("vardo_update_notification_channel")!({ channelId: "c1", config: { topic: "bad topic" } });
+    expect(result.isError).toBe(true);
+    expect(body(result).error).toBe("Topic: use 1-64 letters");
   });
 });
 

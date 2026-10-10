@@ -3,49 +3,48 @@ import { and, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { db } from "@/lib/db";
 import { notificationChannels } from "@/lib/db/schema";
-import { isMaskedValue, restoreMaskedConfig } from "./mask-config";
+import { restoreMaskedConfig } from "./mask-config";
 import { openChannelConfig, sealChannelConfig } from "./channel-config";
+import { CHANNEL_TYPES } from "./channel-types";
+import { parseChannelConfig } from "./channel-schemas";
 
 // Creating and updating notification channels, shared by the REST routes and MCP tools.
 
-export const CHANNEL_TYPES = ["email", "webhook", "slack"] as const;
+export { CHANNEL_TYPES };
 
-const CONFIG_KEY: Record<(typeof CHANNEL_TYPES)[number], string> = {
-  email: "recipients",
-  webhook: "url",
-  slack: "webhookUrl",
-};
+/** A config the channel's type rejects. */
+export class ChannelConfigError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ChannelConfigError";
+  }
+}
 
-const urlOrMask = z.string().url().or(z.string().refine(isMaskedValue));
+const configInput = z.record(z.string(), z.unknown());
 
 export const channelCreateSchema = z
   .object({
     name: z.string().min(1).max(100),
     type: z.enum(CHANNEL_TYPES),
-    config: z.union([
-      z.object({ recipients: z.array(z.string().email()).min(1) }),
-      z.object({ url: z.string().url(), secret: z.string().optional() }),
-      z.object({ webhookUrl: z.string().url() }),
-    ]),
+    config: configInput,
     enabled: z.boolean().optional().default(true),
     subscribedEvents: z.array(z.string()).optional().default([]),
   })
   .strict()
-  .refine((d) => CONFIG_KEY[d.type] in d.config, {
-    message: "Config doesn't match the channel type: email takes recipients, webhook takes url, slack takes webhookUrl",
-    path: ["config"],
+  .transform((d, ctx) => {
+    const parsed = parseChannelConfig(d.type, d.config);
+    if (!parsed.ok) {
+      ctx.addIssue({ code: "custom", message: parsed.error, path: ["config"] });
+      return z.NEVER;
+    }
+    return { ...d, config: parsed.config };
   });
 
+/** A config is checked against the stored channel's type when applied. */
 export const channelUpdateSchema = z
   .object({
     name: z.string().min(1).max(100).optional(),
-    config: z
-      .union([
-        z.object({ recipients: z.array(z.string().email()).min(1) }),
-        z.object({ url: urlOrMask, secret: z.string().optional() }),
-        z.object({ webhookUrl: urlOrMask }),
-      ])
-      .optional(),
+    config: configInput.optional(),
     enabled: z.boolean().optional(),
     subscribedEvents: z.array(z.string()).optional(),
   })
@@ -73,15 +72,17 @@ export async function createChannelRow(orgId: string, input: ChannelCreate) {
   return channel;
 }
 
-/** The updated row, or null when the channel isn't in the org. A masked URL or secret keeps the stored one. */
+/** The updated row, or null when the channel isn't in the org. A masked URL or secret keeps the stored one. Throws ChannelConfigError when the type rejects the config. */
 export async function updateChannelRow(orgId: string, channelId: string, input: ChannelUpdate) {
   const updates: Record<string, unknown> = { updatedAt: new Date() };
   if (input.name !== undefined) updates.name = input.name;
   if (input.config !== undefined) {
     const stored = await db.query.notificationChannels.findFirst({ where: channelWhere(orgId, channelId) });
     if (!stored) return null;
-    const config = restoreMaskedConfig(input.config, openChannelConfig(stored));
-    updates.config = sealChannelConfig(config, orgId);
+    const merged = restoreMaskedConfig(input.config, openChannelConfig(stored));
+    const parsed = parseChannelConfig(stored.type, merged);
+    if (!parsed.ok) throw new ChannelConfigError(parsed.error);
+    updates.config = sealChannelConfig(parsed.config, orgId);
   }
   if (input.enabled !== undefined) updates.enabled = input.enabled;
   if (input.subscribedEvents !== undefined) updates.subscribedEvents = input.subscribedEvents;

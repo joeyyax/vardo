@@ -9,7 +9,7 @@ const members = [{ userId: "user-1" }];
 
 describe("resolveRecipients — live-UI-only events", () => {
   it("never sends backup.progress, whatever the channel type", () => {
-    for (const channelType of ["email", "slack", "webhook"]) {
+    for (const channelType of ["email", "slack", "webhook", "ntfy", "discord", "telegram", "pushover"]) {
       expect(
         resolveRecipients("chan-1", channelType, "backup.progress", members, []).shouldSend,
       ).toBe(false);

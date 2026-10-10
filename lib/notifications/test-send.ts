@@ -1,10 +1,12 @@
 import type { NotificationTestEvent } from "@/lib/bus/events";
 import { createChannel } from "./factory";
+import { ProviderError } from "./provider-http";
+import type { ChannelType } from "./channel-types";
 
 export type TestSendResult = {
   ok: boolean;
   message: string;
-  /** HTTP status from a webhook or Slack endpoint. */
+  /** HTTP status from the provider's endpoint. */
   providerStatus?: number;
   providerMessageIds?: string[];
   partialFailure?: string;
@@ -13,7 +15,7 @@ export type TestSendResult = {
 /** Sends a labeled test notification through one channel, enabled or not, and reports what the provider said. */
 export async function sendTestNotification(channel: {
   name: string;
-  type: "email" | "webhook" | "slack";
+  type: ChannelType;
   organizationId: string;
   config: unknown;
 }): Promise<TestSendResult> {
@@ -37,6 +39,11 @@ export async function sendTestNotification(channel: {
       ...receipt,
     };
   } catch (err) {
-    return { ok: false, message: err instanceof Error ? err.message : String(err) };
+    const providerStatus = err instanceof ProviderError ? err.providerStatus : undefined;
+    return {
+      ok: false,
+      message: err instanceof Error ? err.message : String(err),
+      ...(providerStatus !== undefined ? { providerStatus } : {}),
+    };
   }
 }

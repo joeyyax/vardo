@@ -15,6 +15,7 @@ vi.mock("@/lib/notifications/factory", () => ({
   }),
 }));
 
+import { ProviderError } from "@/lib/notifications/provider-http";
 import { sendTestNotification } from "@/lib/notifications/test-send";
 
 const channel = { name: "Ops", type: "webhook" as const, organizationId: "org-1", config: {} };
@@ -63,6 +64,27 @@ describe("sendTestNotification", () => {
     expect(await sendTestNotification({ ...channel, type: "email" })).toEqual({
       ok: false,
       message: "Email not sent to any recipient. a@example.com: rejected",
+    });
+  });
+
+  it("reports the provider's status when it refuses", async () => {
+    h.reply = async () => {
+      throw new ProviderError("ntfy answered 403: forbidden", 403);
+    };
+    expect(await sendTestNotification({ ...channel, type: "ntfy" })).toEqual({
+      ok: false,
+      message: "ntfy answered 403: forbidden",
+      providerStatus: 403,
+    });
+  });
+
+  it("passes a provider message ID through for a push channel", async () => {
+    replyWith({ providerStatus: 200, providerMessageIds: ["abc"] });
+    expect(await sendTestNotification({ ...channel, type: "pushover" })).toEqual({
+      ok: true,
+      message: "Sent.",
+      providerStatus: 200,
+      providerMessageIds: ["abc"],
     });
   });
 });

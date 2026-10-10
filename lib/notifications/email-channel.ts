@@ -1,32 +1,13 @@
 import type { DeliveryReceipt, NotificationChannel } from "./port";
 import type { BusEvent } from "@/lib/bus/events";
+import { mailContext, orgWantsEvent } from "./mail-context";
 import { sendEmail } from "@/lib/email/send";
-import { renderNotificationEmail, type MailContext } from "@/lib/email/notification-email";
+import { renderNotificationEmail } from "@/lib/email/notification-email";
 import { logger } from "@/lib/logger";
 
 const log = logger.child("notifications");
 
 type EmailConfig = { recipients: string[] };
-
-/** Console origin, instance name and time zone for the email header, footer, links and times. */
-async function mailContext(organizationId: string | undefined): Promise<MailContext> {
-  const baseUrl = (process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000").replace(/\/+$/, "");
-  let instanceName = "Vardo";
-  try {
-    const { getInstanceDisplayName } = await import("@/lib/system-settings");
-    instanceName = (await getInstanceDisplayName()) || new URL(baseUrl).hostname;
-  } catch {
-    // Defaults stand.
-  }
-  let timeZone: string | undefined;
-  try {
-    const { getOrgTimeZone } = await import("@/lib/time-zone-settings");
-    timeZone = await getOrgTimeZone(organizationId);
-  } catch {
-    // Prints UTC.
-  }
-  return { baseUrl, instanceName, timeZone };
-}
 
 export class EmailNotificationChannel implements NotificationChannel {
   constructor(
@@ -34,21 +15,9 @@ export class EmailNotificationChannel implements NotificationChannel {
     private organizationId?: string,
   ) {}
 
-  /** The delivery policy's verdict for this org. Settings that can't be read leave the default. */
-  private async wants(event: BusEvent): Promise<boolean> {
-    const { emailsEvent, needsSettings } = await import("./delivery-policy");
-    if (!needsSettings(event) || !this.organizationId) return emailsEvent(event, { categories: {} });
-    try {
-      const { readOrgNotificationSettings } = await import("./preferences");
-      return emailsEvent(event, await readOrgNotificationSettings(this.organizationId));
-    } catch {
-      return emailsEvent(event, { categories: {} });
-    }
-  }
-
   /** Throws when no recipient got the email, so dispatch logs a failure and retries. */
   async send(event: BusEvent): Promise<DeliveryReceipt> {
-    if (!(await this.wants(event))) return {};
+    if (!(await orgWantsEvent(event, this.organizationId))) return {};
     const { loadMailSeries } = await import("@/lib/email/series");
     const [ctx, series] = await Promise.all([mailContext(this.organizationId), loadMailSeries(event).catch(() => ({}))]);
     const email = await renderNotificationEmail(event, { ...ctx, series });

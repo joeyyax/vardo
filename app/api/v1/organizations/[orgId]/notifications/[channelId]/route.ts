@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { presentChannel } from "@/lib/notifications/channel-config";
-import { channelUpdateSchema, deleteChannelRow, findChannel, updateChannelRow } from "@/lib/notifications/channels";
+import { ChannelConfigError, channelUpdateSchema, deleteChannelRow, findChannel, updateChannelRow } from "@/lib/notifications/channels";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
@@ -29,7 +29,9 @@ async function handlePatch(req: NextRequest, { params }: RouteParams) {
     const channel = await updateChannelRow(orgId, channelId, parsed.data);
     if (!channel) return NextResponse.json({ error: "Channel not found" }, { status: 404 });
     return NextResponse.json({ channel: presentChannel(channel) });
-  } catch (error) { return handleRouteError(error, "Error updating channel"); }
+  } catch (error) {
+    if (error instanceof ChannelConfigError) return NextResponse.json({ error: error.message }, { status: 400 });
+    return handleRouteError(error, "Error updating channel"); }
 }
 
 async function handleDelete(_req: NextRequest, { params }: RouteParams) {
