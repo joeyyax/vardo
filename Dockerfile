@@ -31,6 +31,8 @@ FROM base AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
+# Next's SIGTERM handler exits before lib/shutdown.ts closers finish, losing the clean-shutdown marker.
+ENV NEXT_MANUAL_SIG_HANDLE=true
 
 # Pinned so two builds of the same commit produce the same toolchain.
 ARG NIXPACKS_VERSION=1.41.0

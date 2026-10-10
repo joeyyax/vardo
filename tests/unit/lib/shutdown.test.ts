@@ -99,6 +99,31 @@ describe("shutdown registry", () => {
   });
 });
 
+describe("manual signal handling", () => {
+  beforeEach(() => {
+    vi.stubEnv("NEXT_MANUAL_SIG_HANDLE", "true");
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  it("exits once async closers finish", async () => {
+    const exit = vi.spyOn(process, "exit").mockImplementation((() => {}) as never);
+    let finish!: () => void;
+    closeOnShutdown(() => new Promise<void>((resolve) => (finish = resolve)));
+
+    fireSigterm();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(exit).not.toHaveBeenCalled();
+
+    finish();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(exit).toHaveBeenCalledOnce();
+  });
+});
+
 describe("createSSEResponse shutdown handling", () => {
   it("closes the stream on SIGTERM instead of holding the connection", async () => {
     const response = createSSEResponse(fakeRequest(), () => new Promise(() => {}));

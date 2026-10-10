@@ -23,6 +23,7 @@ import {
   parseUpdateMarker,
   seconds,
   updateAnnouncement,
+  updateInFlight,
   type BootClassification,
   type Heartbeat,
   type ShutdownMarker,
@@ -40,8 +41,9 @@ export const UPDATE_MARKER_FILE = join(VARDO_HOME_DIR, "lifecycle", "update.json
 
 const HEARTBEAT_MS = 30_000;
 const MISSING_CHECK_DELAY_MS = 3 * 60_000;
-/** A marker still "started" after this is an update that died, not one in flight. */
-const UPDATE_IN_FLIGHT_MS = 30 * 60_000;
+/** How often, and how long, a console booted mid-update waits for install.sh to report. */
+export const UPDATE_POLL_MS = 5_000;
+export const UPDATE_WAIT_MS = 10 * 60_000;
 
 export function versionLabel(): string {
   const sha = getBuildSha().slice(0, 7);
@@ -169,18 +171,67 @@ function updateEvent(marker: UpdateMarker, state: UpdateMarker["state"], downSec
 const processStartedAt = Date.now() - Math.round(process.uptime() * 1000);
 let bootDownSeconds: number | undefined;
 
+// Update announcements run one at a time, so the boot wait and the heartbeat can't both send one.
+let updateQueue: Promise<unknown> = Promise.resolve();
+
+function serialized<T>(fn: () => Promise<T>): Promise<T> {
+  const run = updateQueue.then(fn, fn);
+  updateQueue = run.catch(() => {});
+  return run;
+}
+
 /** Announces an update marker state not yet announced. Returns the state announced. */
-export async function checkUpdateMarker(): Promise<UpdateMarker["state"] | null> {
-  const marker = await readUpdateMarker();
-  if (!marker) return null;
-  const seen = await readJson<UpdateSeen>(UPDATE_SEEN_KEY);
-  const state = updateAnnouncement(marker, seen, Date.now());
-  if (!state) return null;
-  // The console an update started is the new one; its "updated" message covers the start.
-  if (state === "started" && marker.startedAt < processStartedAt) return null;
-  await writeJson(UPDATE_SEEN_KEY, markSeen(seen, marker, state));
-  await emitToAdmins(updateEvent(marker, state, bootDownSeconds));
-  return state;
+export function checkUpdateMarker(): Promise<UpdateMarker["state"] | null> {
+  return serialized(async () => {
+    const marker = await readUpdateMarker();
+    if (!marker) return null;
+    const seen = await readJson<UpdateSeen>(UPDATE_SEEN_KEY);
+    const state = updateAnnouncement(marker, seen, Date.now());
+    if (!state) return null;
+    // The console an update started is the new one; its "updated" message covers the start.
+    if (state === "started" && marker.startedAt < processStartedAt) return null;
+    await writeJson(UPDATE_SEEN_KEY, markSeen(seen, marker, state));
+    await emitToAdmins(updateEvent(marker, state, bootDownSeconds));
+    log.info(`Announced update ${marker.id}: ${state}`);
+    return state;
+  });
+}
+
+/** Reports an update install.sh never finished, unless its outcome was announced meanwhile. */
+function announceUpdateSilent(marker: UpdateMarker): Promise<void> {
+  return serialized(async () => {
+    const seen = await readJson<UpdateSeen>(UPDATE_SEEN_KEY);
+    if (seen?.id === marker.id && seen.states.some((s) => s !== "started")) return;
+    await writeJson(UPDATE_SEEN_KEY, markSeen(seen, marker, "failed"));
+    const minutes = Math.round(UPDATE_WAIT_MS / 60_000);
+    await emitToAdmins(
+      updateEvent(
+        {
+          ...marker,
+          state: "failed",
+          step: marker.step ?? "the swap",
+          error: `vardo update didn't report a result within ${minutes} minutes of the new console starting. Check the install log.`,
+        },
+        "failed",
+      ),
+    );
+    log.warn(`Update ${marker.id} didn't report a result`);
+  });
+}
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms).unref());
+
+/** Waits for an update this console booted into to finish, then announces it. */
+async function awaitUpdateOutcome(started: UpdateMarker): Promise<void> {
+  const deadline = Date.now() + UPDATE_WAIT_MS;
+  while (Date.now() < deadline) {
+    await sleep(UPDATE_POLL_MS);
+    const marker = await readUpdateMarker();
+    if (marker?.id === started.id && marker.state === "started") continue;
+    await checkUpdateMarker();
+    return;
+  }
+  await announceUpdateSilent(started);
 }
 
 function bootEvent(boot: BootClassification): BusEvent | null {
@@ -241,7 +292,7 @@ async function checkMissingContainers(before: SnapshotContainer[]): Promise<void
 
 async function onShutdown(): Promise<void> {
   const marker = await readUpdateMarker().catch(() => null);
-  const updating = marker?.state === "started" && Date.now() - marker.startedAt < UPDATE_IN_FLIGHT_MS;
+  const updating = updateInFlight(marker, Date.now());
   const reason = updating ? "vardo update" : describeSignal(shutdownSignal());
   const shutdown: ShutdownMarker = { at: Date.now(), reason, version: versionLabel() };
   await writeJson(SHUTDOWN_KEY, shutdown).catch((err) => log.error("Couldn't write the shutdown marker:", err));
@@ -288,17 +339,21 @@ export async function startLifecycleMonitor(): Promise<void> {
 
   closeOnShutdown(() => {
     clearInterval(interval);
-    onShutdown().catch(() => {});
+    return onShutdown().catch(() => {});
   });
 
-  // One message per boot: a finished or failed update replaces the started message.
+  // One message per boot. A boot inside an update says only how the update ended.
   bootDownSeconds = boot.kind === "first-boot" ? undefined : boot.downSeconds;
   const marker = await readUpdateMarker();
-  const updateInFlight = marker?.state === "started" && Date.now() - marker.startedAt < UPDATE_IN_FLIGHT_MS;
-  const announced = await checkUpdateMarker().catch(() => null);
-  if (!announced && !updateInFlight) {
-    const event = bootEvent(boot);
-    if (event) await emitToAdmins(event);
+  if (updateInFlight(marker, Date.now())) {
+    log.info(`Update ${marker.id} in progress; waiting for its result`);
+    void awaitUpdateOutcome(marker).catch((err) => log.error("Update wait failed:", err));
+  } else {
+    const announced = await checkUpdateMarker().catch(() => null);
+    if (!announced) {
+      const event = bootEvent(boot);
+      if (event) await emitToAdmins(event);
+    }
   }
 
   const before = heartbeat?.containers ?? [];

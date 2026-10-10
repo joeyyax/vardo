@@ -128,6 +128,13 @@ export function parseUpdateMarker(text: string): UpdateMarker | null {
   }
 }
 
+/** A marker still "started" after this is an update that died, not one in flight. */
+export const UPDATE_IN_FLIGHT_MS = 30 * 60_000;
+
+export function updateInFlight(marker: UpdateMarker | null, now: number): marker is UpdateMarker {
+  return marker?.state === "started" && now - marker.startedAt < UPDATE_IN_FLIGHT_MS;
+}
+
 /** States of one update run already announced. */
 export type UpdateSeen = { id: string; states: UpdateMarker["state"][] };
 
