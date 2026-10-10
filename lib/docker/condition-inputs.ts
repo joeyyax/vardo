@@ -38,7 +38,7 @@ export async function loadAdvisoryInputs(now: number): Promise<Map<string, Advis
   const byApp = new Map<string, AdvisoryInput>();
   try {
     const appRows = await db
-      .select({ id: apps.id, organizationId: apps.organizationId, persistentVolumes: apps.persistentVolumes })
+      .select({ id: apps.id, organizationId: apps.organizationId, persistentVolumes: apps.persistentVolumes, parked: apps.parked })
       .from(apps);
 
     const jobRows = await db
@@ -91,11 +91,14 @@ export async function loadAdvisoryInputs(now: number): Promise<Map<string, Advis
     for (const app of appRows) {
       byApp.set(app.id, {
         security: scanByApp.get(app.id) ?? null,
-        backup: {
-          hasVolumes: withState.has(app.id) || (app.persistentVolumes?.length ?? 0) > 0,
-          configured: covered.has(app.id),
-          lastRunAt: lastRunByApp.get(app.id) ?? null,
-        },
+        // A parked app is off on purpose; its backups don't go stale.
+        backup: app.parked
+          ? null
+          : {
+              hasVolumes: withState.has(app.id) || (app.persistentVolumes?.length ?? 0) > 0,
+              configured: covered.has(app.id),
+              lastRunAt: lastRunByApp.get(app.id) ?? null,
+            },
         cert: certByApp.get(app.id) ?? null,
       });
     }
