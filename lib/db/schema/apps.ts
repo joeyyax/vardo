@@ -20,6 +20,7 @@ import {
   deployTypeEnum,
   sourceEnum,
   RESOURCE_PROFILES,
+  SERVICE_KINDS,
 } from "./enums";
 import { organizations } from "./organizations";
 import { projects } from "./projects";
@@ -138,6 +139,10 @@ export const apps = pgTable(
       onDelete: "cascade",
     }),
     composeService: text("compose_service"), // service name from compose YAML
+    // Inferred from the image on each deploy.
+    kind: text("kind", { enum: SERVICE_KINDS }),
+    // Set by a user; wins over kind.
+    kindOverride: text("kind_override", { enum: SERVICE_KINDS }),
     containerName: text("container_name"), // {projectName}-{serviceName}-1
     importedContainerId: text("imported_container_id"),
     importedComposeProject: text("imported_compose_project"),

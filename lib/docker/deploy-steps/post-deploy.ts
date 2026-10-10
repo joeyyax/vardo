@@ -47,6 +47,7 @@ import { isSelfApp } from "../self-env";
 import { pointConsoleForwardAt } from "@/lib/mesh/console-forward";
 import { proposeDurability, isSafeToApply } from "@/lib/backups/durability";
 import { refreshDumpSpec } from "@/lib/backups/dump-spec";
+import { inferServiceKind } from "@/lib/ui/service-kind";
 import { CERTS_VOLUME_KEY, watchAppCerts } from "@/lib/ssl/cert-export";
 import {
   declaredMountPaths,
@@ -312,7 +313,15 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
   if (!ctx.envIsolated) {
     await db
       .update(apps)
-      .set({ ...statusChange("active"), needsRedeploy: false })
+      .set({
+        ...statusChange("active"),
+        needsRedeploy: false,
+        kind: inferServiceKind({
+          image: app.imageName,
+          serviceName: app.composeService ?? app.name,
+          hasPort: !!app.containerPort || app.domains.length > 0,
+        }),
+      })
       .where(eq(apps.id, ctx.appId));
 
     // A successful deploy clears the operator stop.

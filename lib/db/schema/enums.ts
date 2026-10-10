@@ -168,3 +168,10 @@ export const activityOutcomeEnum = pgEnum("activity_outcome", [
 /** How Vardo treats an app's limit: as set, as a baseline plus a ceiling, or tuned over time. */
 export const RESOURCE_PROFILES = ["fixed", "burstable", "auto"] as const;
 export type ResourceProfile = (typeof RESOURCE_PROFILES)[number];
+
+/** What a service is for. Decides which dependencies nest under the app using them. */
+export const SERVICE_KINDS = ["database", "cache", "worker", "web", "other"] as const;
+export type ServiceKind = (typeof SERVICE_KINDS)[number];
+
+export const UI_DENSITIES = ["comfortable", "dense"] as const;
+export type UiDensity = (typeof UI_DENSITIES)[number];

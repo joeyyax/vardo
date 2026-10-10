@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { CircleDashed, Cpu, Package, ShieldCheck } from "lucide-react";
 
 import { type AppCondition } from "@/lib/docker/conditions";
+import { TreeConnector } from "@/components/tree-connector";
 import { statusDotColor } from "@/lib/ui/status-colors";
 import {
   compactUptime,
@@ -94,6 +95,7 @@ export function AppRow({
   sharedStatus,
   note,
   indented = false,
+  connector,
   related = false,
   trailing,
   ref,
@@ -108,6 +110,8 @@ export function AppRow({
   sharedStatus?: string | null;
   note?: RowNote;
   indented?: boolean;
+  /** Shape of the elbow on an indented row. */
+  connector?: { last?: boolean; dashed?: boolean };
   related?: boolean;
   /** Controls that must stay clickable, stacked above the row link. */
   trailing?: React.ReactNode;
@@ -146,13 +150,7 @@ export function AppRow({
             className={`absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full ${rail}`}
           />
         )}
-        {/* Elbow marks a compose child. */}
-        {indented && (
-          <span
-            aria-hidden="true"
-            className="absolute left-3.5 top-0 h-1/2 w-2 rounded-bl-[3px] border-b border-l border-border"
-          />
-        )}
+        {indented && <TreeConnector last={connector?.last ?? true} dashed={connector?.dashed} className="left-3.5" />}
 
         <span aria-hidden="true" className={`size-1.5 shrink-0 rounded-full ${statusDotColor(app.status)}`} />
         <span className={ROW_NAME_CELL}>{app.displayName}</span>

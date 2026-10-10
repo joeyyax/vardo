@@ -117,6 +117,10 @@
   --shadow-card-value: 0 1px 2px rgba(28, 22, 14, 0.07), 0 4px 10px rgba(28, 22, 14, 0.06), 0 12px 28px rgba(28, 22, 14, 0.07);
   --shadow-card-hover-value: 0 2px 4px rgba(28, 22, 14, 0.09), 0 8px 18px rgba(28, 22, 14, 0.09), 0 20px 40px rgba(28, 22, 14, 0.11);
   --shadow-stack-value: 0 -20px 44px -16px rgba(28, 22, 14, 0.16);
+  /* A lifted row or a pressed stat: less than a card. */
+  --shadow-soft-value: 0 1px 2px rgba(28, 22, 14, 0.05), 0 2px 8px rgba(28, 22, 14, 0.04);
+  /* Hover ground for a row on a card. */
+  --row-hover: oklch(97% 0.004 85);
 
   /* Kit tones read the ladder stops. */
   --success: var(--status-success);
@@ -251,6 +255,8 @@
     --border: oklch(100% 0.006 85 / 9%);
     --shadow-card-value: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 20px rgba(0, 0, 0, 0.32);
     --shadow-card-hover-value: 0 2px 5px rgba(0, 0, 0, 0.48), 0 16px 34px rgba(0, 0, 0, 0.42);
+    --shadow-soft-value: none;
+    --row-hover: oklch(28% 0.009 75);
 
     --hl-gold: oklch(87% 0.13 70);
     --hl-sky: oklch(87% 0.085 240);

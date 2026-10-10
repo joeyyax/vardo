@@ -20,6 +20,7 @@ export * from "./templates";
 export * from "./external-routes";
 export * from "./security";
 export * from "./user-notifications";
+export * from "./user-preferences";
 export * from "./image-checks";
 export * from "./restore";
 export * from "./relations";
