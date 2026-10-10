@@ -57,6 +57,9 @@ const HEALTH_CHECK_INTERVAL_MS = 2000;
 /** Cold build logs exceed Node's 1MB default, which kills the child. */
 const EXEC_MAX_BUFFER = 10 * 1024 * 1024;
 
+/** Vardo's worker service, which rotates with the console's slot. */
+export const SELF_WORKER_SERVICE = "worker";
+
 /**
  * Whether the old slot's stop must wait until every deploy record is written.
  * True only when Vardo is deploying itself and both slots can serve at once.
@@ -580,6 +583,21 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
     }
   };
 
+  /** Stops the self-app's old worker on its own first: the slot-wide stop below ends this process before a drain could finish. */
+  const drainOldWorker = async (args: string[], project: string, cwd: string): Promise<void> => {
+    if (!isSelfApp(app.name) || !(await oldSlotRuns([SELF_WORKER_SERVICE]))) return;
+    log(`[deploy] Draining the old worker (${activeSlot})...`);
+    try {
+      await execFileAsync(
+        "docker",
+        ["compose", ...args, "-p", project, "stop", SELF_WORKER_SERVICE],
+        { env: dockerEnv(), cwd, timeout: composeStopTimeout(compose.services) },
+      );
+    } catch (err) {
+      log(`[deploy] Warning: the old worker didn't stop cleanly — ${err instanceof Error ? err.message : err}`);
+    }
+  };
+
   let stoppedOldSlot = false;
 
   const stopOldSlot = async (): Promise<SlotStopOutcome> => {
@@ -593,6 +611,7 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
         // Demote before stopping: a self-deploy has no "after". Never move this below the stop.
         demotedOldSlot = true;
         await demoteStandbyRestart(oldComposeFileArgs, oldProjectName, oldSlotDir);
+        await drainOldWorker(oldComposeFileArgs, oldProjectName, oldSlotDir);
         // `stop`, not `down`: the old slot stays as a warm standby for rollback.
         await execFileAsync(
           "docker",
