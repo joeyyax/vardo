@@ -7,10 +7,10 @@ import {
 } from "recharts";
 import { Activity, AlertTriangle, ArrowDown, ArrowUp, Box, Cpu, HardDrive, MemoryStick, Network, Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { cpuDisplay, formatBytes, formatBytesShort, formatCores, formatCoresShort, formatMemLimit, formatTime, type CpuCeiling } from "@/lib/metrics/format";
+import { cpuDisplay, formatBytes, formatBytesRate, formatBytesShort, formatCores, formatCoresShort, formatMemLimit, formatTime, type CpuCeiling } from "@/lib/metrics/format";
 import { CHART_COLORS, chartTickStyle, type TimeRange } from "@/lib/metrics/constants";
 import { dedupeByContainer } from "@/lib/metrics/aggregate";
-import { networkRates } from "@/lib/metrics/rates";
+import { networkRates, currentNetworkRate, recentWindow, totalRateSeries } from "@/lib/metrics/rates";
 import { networkBarPoint } from "@/lib/metrics/network-chart";
 import { countApps, describeScopeCounts } from "@/lib/metrics/scope";
 import {
@@ -89,6 +89,41 @@ function NoValue() {
 
 function Skeleton({ className = "w-12" }: { className?: string }) {
   return <span className={`inline-block h-3.5 rounded bg-muted animate-pulse align-middle ${className}`} />;
+}
+
+type StatCardProps = {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  value: React.ReactNode;
+  detail?: React.ReactNode;
+  /** Omit for a card without a trend strip. */
+  spark?: number[];
+  color?: string;
+};
+
+/** A "now" figure with an optional strip of the last 15 minutes. */
+function StatCard({ icon: Icon, label, value, detail, spark, color }: StatCardProps) {
+  return (
+    <Card variant="surface" className="flex flex-col px-4 py-3 overflow-hidden">
+      <div className="flex items-center gap-2">
+        <Icon className="size-4 text-muted-foreground shrink-0" />
+        <p className="type-label text-muted-foreground">{label}</p>
+        <span className="ml-auto text-[11px] text-muted-foreground">Now</span>
+      </div>
+      <p className="type-numeral text-2xl mt-1">{value}</p>
+      <p className="text-xs text-muted-foreground mt-0.5">{detail}</p>
+      {spark && (
+        <div className="mt-auto pt-3">
+          <div className="h-7">
+            {spark.length > 1 && (
+              <Sparkline data={spark} variant="line" className="h-full w-full opacity-70" style={{ color }} />
+            )}
+          </div>
+          <p className="mt-1 text-[11px] text-muted-foreground">last 15 min</p>
+        </div>
+      )}
+    </Card>
+  );
 }
 
 type SortState = { key: AppSortKey; direction: SortDirection };
@@ -314,11 +349,15 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
     }));
   }, [points]);
 
-  const cpuSparkData = useMemo(() => points.map((p) => p.cpu), [points]);
-  const memSparkData = useMemo(() => points.map((p) => p.memory), [points]);
-  const diskSparkData = useMemo(() => points.map((p) => p.diskTotal), [points]);
-  const netRxSparkData = useMemo(() => points.map((p) => p.networkRx), [points]);
-  const netTxSparkData = useMemo(() => points.map((p) => p.networkTx), [points]);
+  // Cards show now; their strips cover a fixed recent window whatever the picker says.
+  const recent = useMemo(() => recentWindow(points), [points]);
+  const cpuSparkData = useMemo(() => recent.map((p) => p.cpu), [recent]);
+  const memSparkData = useMemo(() => recent.map((p) => p.memory), [recent]);
+  const diskSparkData = useMemo(() => recent.map((p) => p.diskTotal), [recent]);
+  const netSparkData = useMemo(() => totalRateSeries(recent), [recent]);
+  const netRate = useMemo(() => currentNetworkRate(recent), [recent]);
+  // Range switches refetch history; the cards keep their last figures meanwhile.
+  const cardsLoading = loading && !hasSamples;
 
   if (isEmpty) {
     return (
@@ -342,8 +381,77 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
 
   return (
     <div className="@container space-y-10">
-      {/* Period switcher */}
-      <div className="flex items-center justify-between">
+      {/* Summary cards */}
+      <div className="grid grid-cols-2 @2xl:grid-cols-3 @5xl:grid-cols-5 gap-5">
+        <StatCard
+          icon={Cpu}
+          label="CPU"
+          value={cardsLoading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : hasSamples ? cpu.headline : <NoValue />}
+          detail={cpu.detail ?? `summed across containers · ${scopeNote}`}
+          spark={cpuSparkData}
+          color={CHART_COLORS.cpu}
+        />
+        <StatCard
+          icon={MemoryStick}
+          label="Memory"
+          value={cardsLoading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : hasSamples ? formatBytes(totals.memory) : <NoValue />}
+          detail={containerCountKnown
+            ? `across ${totals.containers} running container${totals.containers === 1 ? "" : "s"}`
+            : `running containers · ${scopeNote}`}
+          spark={memSparkData}
+          color={CHART_COLORS.memory}
+        />
+        <StatCard
+          icon={HardDrive}
+          label="Disk"
+          value={cardsLoading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : hasSamples ? formatBytes(diskTotal) : <NoValue />}
+          detail={!cardsLoading && hasSamples
+            ? adminMode
+              ? "images, volumes and build cache · whole host"
+              : `across ${scope.topLevel} app${scope.topLevel !== 1 ? "s" : ""} in ${scopeNote}`
+            : undefined}
+          spark={diskSparkData}
+          color={CHART_COLORS.disk}
+        />
+        <StatCard
+          icon={Network}
+          label="Bandwidth"
+          value={cardsLoading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : netRate ? formatBytesRate(netRate.total) : <NoValue />}
+          detail={!cardsLoading && hasSamples
+            ? netRate
+              ? `↑ ${formatBytesRate(netRate.tx)} · ↓ ${formatBytesRate(netRate.rx)}`
+              : "measuring…"
+            : undefined}
+          spark={netSparkData}
+          color={CHART_COLORS.networkRx}
+        />
+        <StatCard
+          icon={Box}
+          label="Containers"
+          value={cardsLoading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : containerCountKnown ? totals.containers : <NoValue />}
+          detail={`reporting to cAdvisor now · ${scopeNote}`}
+        />
+      </div>
+
+      {streamDown && (
+        <Card
+          variant="error"
+          role="alert"
+          className="flex items-start gap-3 px-4 py-3"
+        >
+          <AlertTriangle className="size-4 shrink-0 mt-0.5 text-status-error" />
+          <div className="space-y-0.5">
+            <p className="type-body font-medium">Metrics stream unavailable</p>
+            <p className="type-body-sm text-muted-foreground">
+              cAdvisor isn&apos;t reachable. Figures shown are the last values received.
+            </p>
+          </div>
+        </Card>
+      )}
+
+      <div className="space-y-4">
+      {/* Range for the charts below */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="inline-flex items-center gap-1 rounded-lg bg-muted p-1">
           {(["5m", "1h", "6h", "24h", "7d"] as const).map((r) => (
             <button
@@ -371,107 +479,6 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
             {streamDown ? "Unavailable" : reconnecting ? "Reconnecting..." : connected ? "Live" : loading ? "Loading..." : "Connecting..."}
           </span>
         </div>
-      </div>
-
-      {streamDown && (
-        <Card
-          variant="error"
-          role="alert"
-          className="flex items-start gap-3 px-4 py-3"
-        >
-          <AlertTriangle className="size-4 shrink-0 mt-0.5 text-status-error" />
-          <div className="space-y-0.5">
-            <p className="type-body font-medium">Metrics stream unavailable</p>
-            <p className="type-body-sm text-muted-foreground">
-              cAdvisor isn&apos;t reachable. Figures below are the last values received.
-            </p>
-          </div>
-        </Card>
-      )}
-
-      {/* Summary cards */}
-      <div className="grid grid-cols-2 @2xl:grid-cols-3 @5xl:grid-cols-5 gap-5">
-        <Card variant="surface" className="relative px-4 py-3 overflow-hidden">
-          {points.length > 1 && (
-            <Sparkline data={cpuSparkData} className="absolute inset-0 w-full h-full pointer-events-none" style={{ color: CHART_COLORS.cpu }} />
-          )}
-          <div className="relative flex items-center gap-2">
-            <Cpu className="size-4 text-muted-foreground shrink-0" />
-            <p className="type-label text-muted-foreground">CPU</p>
-          </div>
-          <p className="relative type-numeral text-2xl mt-1">
-            {loading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : hasSamples ? cpu.headline : <NoValue />}
-          </p>
-          <p className="relative text-xs text-muted-foreground mt-0.5">
-            {cpu.detail ?? `summed across containers · ${scopeNote}`}
-          </p>
-        </Card>
-        <Card variant="surface" className="relative px-4 py-3 overflow-hidden">
-          {points.length > 1 && (
-            <Sparkline data={memSparkData} className="absolute inset-0 w-full h-full pointer-events-none" style={{ color: CHART_COLORS.memory }} />
-          )}
-          <div className="relative flex items-center gap-2">
-            <MemoryStick className="size-4 text-muted-foreground shrink-0" />
-            <p className="type-label text-muted-foreground">Memory</p>
-          </div>
-          <p className="relative type-numeral text-2xl mt-1">
-            {loading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : hasSamples ? formatBytes(totals.memory) : <NoValue />}
-          </p>
-          <p className="relative text-xs text-muted-foreground mt-0.5">
-            {containerCountKnown
-              ? `across ${totals.containers} running container${totals.containers === 1 ? "" : "s"}`
-              : `running containers · ${scopeNote}`}
-          </p>
-        </Card>
-        <Card variant="surface" className="relative px-4 py-3 overflow-hidden">
-          {points.length > 1 && (
-            <Sparkline data={diskSparkData} className="absolute inset-0 w-full h-full pointer-events-none" style={{ color: CHART_COLORS.disk }} />
-          )}
-          <div className="relative flex items-center gap-2">
-            <HardDrive className="size-4 text-muted-foreground shrink-0" />
-            <p className="type-label text-muted-foreground">Disk</p>
-          </div>
-          <p className="relative type-numeral text-2xl mt-1">
-            {loading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : hasSamples ? formatBytes(diskTotal) : <NoValue />}
-          </p>
-          {!loading && hasSamples && (
-            <p className="relative text-xs text-muted-foreground mt-0.5">
-              {adminMode
-                ? "images, volumes and build cache · whole host"
-                : `across ${scope.topLevel} app${scope.topLevel !== 1 ? "s" : ""} in ${scopeNote}`}
-            </p>
-          )}
-        </Card>
-        <Card variant="surface" className="relative px-4 py-3 overflow-hidden">
-          {points.length > 1 && (<>
-            <Sparkline data={netRxSparkData} className="absolute inset-0 w-full h-full pointer-events-none" style={{ color: CHART_COLORS.networkRx }} />
-            <Sparkline data={netTxSparkData} className="absolute inset-0 w-full h-full pointer-events-none" style={{ color: CHART_COLORS.networkTx }} />
-          </>)}
-          <div className="relative flex items-center gap-2">
-            <Network className="size-4 text-muted-foreground shrink-0" />
-            <p className="type-label text-muted-foreground">Bandwidth</p>
-          </div>
-          <p className="relative type-numeral text-2xl mt-1">
-            {loading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : hasSamples ? formatBytes(totals.networkRx + totals.networkTx) : <NoValue />}
-          </p>
-          {!loading && hasSamples && (
-            <p className="relative text-xs text-muted-foreground mt-0.5">
-              ↑ {formatBytes(totals.networkTx)} sent · ↓ {formatBytes(totals.networkRx)} received
-            </p>
-          )}
-        </Card>
-        <Card variant="surface" className="px-4 py-3">
-          <div className="flex items-center gap-2">
-            <Box className="size-4 text-muted-foreground shrink-0" />
-            <p className="type-label text-muted-foreground">Containers</p>
-          </div>
-          <p className="type-numeral text-2xl mt-1">
-            {loading ? <Loader2 className="size-5 animate-spin text-muted-foreground" /> : containerCountKnown ? totals.containers : <NoValue />}
-          </p>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            reporting to cAdvisor now · {scopeNote}
-          </p>
-        </Card>
       </div>
 
       {/* Aggregate charts */}
@@ -555,6 +562,8 @@ export function OrgMetrics({ orgId, apps, projectCount, adminMode }: OrgMetricsP
               </ResponsiveContainer>
             </div>
           </Card>
+      </div>
+
       </div>
 
       {/* Infrastructure overview */}
