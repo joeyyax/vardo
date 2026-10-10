@@ -13,6 +13,10 @@ cd /opt/vardo/apps/vardo/env/<standby> && git reset --hard origin/main \
 
 `docker-compose.yml` marks `postgres`, `redis`, `traefik`, `wireguard`, `buildkit` and `watchdog` with `x-vardo-shared: true`. Those stay in compose project `vardo`, on the volumes and networks they already have, and a deploy leaves them running. When a shared service's definition changes, the deploy recreates the stateless ones and holds `postgres` and `redis`, logging the command to apply it and finishing with a warning. Only `frontend` rotates, into `vardo-production-blue` and `vardo-production-green`.
 
+The engine gives these services no tier limits or CPU weights; `docker-compose.yml` sets their memory. A difference in labels, CPU weights or how a limit is written doesn't count as a definition change (see [shared-services.md](shared-services.md)).
+
+The engine honors `COMPOSE_PROFILES` from `/opt/vardo/.env`: `buildkit` runs only with `buildkit` in it.
+
 Shared services in any app, and the commit-tag pattern for one that runs the app's own build, are covered in [shared-services.md](shared-services.md).
 
 | | Legacy | Self-deploy |
@@ -103,9 +107,10 @@ What it does, in order:
 
 1. **Backup.** `pg_dump` to `/opt/vardo/backups/pre-self-deploy-<time>.sql`. It stops here if the dump fails.
 2. **Console.** If the running console predates deploy requests, it updates it the legacy way first, then waits for it to listen.
-3. **Deploy.** It asks the console to deploy the `vardo` app. The engine finds no active slot under `production/`, so it builds into `vardo-production-blue` and starts it beside `vardo-frontend`, which it doesn't know about and doesn't stop. Shared services report `Running`, not `Recreated`.
+3. **Deploy.** It asks the console to deploy the `vardo` app. The engine finds no active slot under `production/`, so it builds into `vardo-production-blue` and starts it beside `vardo-frontend`, which it doesn't know about and doesn't stop. Shared services report `Running`, not `Recreated`. In the deploy log, `postgres`, `traefik` and `wireguard` read `unchanged (only labels, CPU weights or how limits are written differ)`. `redis` and `watchdog` mount scripts from the repo instead of `env/current`, so `watchdog` is recreated and `redis` is held.
 4. **Checks.** The four checks under [Updating](#updating), plus the new console's health.
 5. **Retire.** Only once the new console is healthy: `docker stop vardo-frontend`, `docker rm vardo-frontend`, and removal of the empty `vardo-production-<slot>_*` copies of volumes only the shared services mount. Docker refuses to remove any volume still in use. Nothing named `vardo_*` is touched.
+6. **Held data stores.** A `postgres` or `redis` the deploy held is recreated on its new definition when its image is unchanged. That restarts it for a few seconds; only the console uses them. With a new image, it prints the command instead. `vardo update` does the same after every redeploy.
 
 Running it again is safe. On an instance that already deploys itself it only retires a `vardo-frontend` that's still running, once the slot console is healthy.
 
@@ -119,27 +124,29 @@ Running it again is safe. On an instance that already deploys itself it only ret
 
 Nothing is renamed, copied or deleted, so rollback is starting the old console again. The shared services run throughout, so the database is never in question. The migration's backup is in `/opt/vardo/backups/`.
 
-While `vardo-frontend` is still running:
+Run these in order, whether `vardo-frontend` is still running or was removed:
 
 ```
 docker rm -f vardo-production-<slot>-frontend-1
+rm -f "$(docker volume inspect -f '{{.Mountpoint}}' vardo_traefik_dynamic)/cutover-vardo-production.yml"
 rm -f /opt/vardo/apps/vardo/production/current
-```
-
-After it was removed:
-
-```
 cd /opt/vardo/apps/vardo/env/current
 docker compose -p vardo up -d --no-deps frontend
-docker rm -f vardo-production-<slot>-frontend-1
-rm -f /opt/vardo/apps/vardo/production/current
 ```
+
+The order matters:
+
+- The slot console takes the address `vardo-frontend` pins on `vardo_mesh`. Starting `vardo-frontend` while it runs fails with "Address already in use".
+- A self-deploy leaves `cutover-vardo-production.yml` in Traefik's dynamic config, pinning the console's domain to the slot container. Left behind, the console answers 502 after rollback.
 
 Without `production/current`, `vardo update` takes the legacy path again.
 
 ## Risk
 
-**Downtime is one console swap, not an outage.** Traefik, Postgres, Redis and WireGuard keep running, so tenant apps are unaffected.
+**Downtime is one console swap, not an outage.** Traefik and WireGuard keep running, so tenant apps are unaffected.
+
+- **Redis restarts once, at step 6.** Its entrypoint script moves from `env/current` to the repo checkout. Only the console uses it, and it reconnects. Postgres keeps running unless its definition really changed.
+- **The watchdog is recreated at migration and on every release.** It carries the release in its environment so it runs the new script. It routes no traffic.
 
 - **The migration runs two consoles against one database for a minute.** Same commit, so the schema matches, and it's the overlap every app deploy has.
 - **A failed deploy leaves a stopped container and an empty volume.** The next deploy's pre-clean removes the container; the retire step or `docker volume rm` covers the volume.

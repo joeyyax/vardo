@@ -6,6 +6,7 @@ import { buildKitContainerName, DEFAULT_BUILDKIT_HOST, isBuildKitReachable } fro
 import { COMPOSE_QUERY_TIMEOUT } from "./constants";
 import { execFileAsync } from "@/lib/utils/exec";
 import { dockerEnv } from "@/lib/docker/docker-env";
+import { VARDO_HOME_DIR } from "@/lib/paths";
 
 /** The buildx builder that points at the BuildKit container. */
 export const BOUNDED_BUILDER = "vardo-bounded";
@@ -116,7 +117,15 @@ export function explainBuildOom(err: unknown, build: BoundedBuild): unknown {
   const limit = build.limitBytes > 0 ? ` (${formatGiB(build.limitBytes)})` : "";
   return new Error(
     `The build ran out of memory${limit} and was stopped before it could affect the host. ` +
-      "Raise VARDO_BUILDKIT_MEM and recreate vardo-buildkit, or reduce the build's memory use.\n" +
+      "Raise BuildKit's limit and recreate vardo-buildkit, or reduce the build's memory use:\n" +
+      `  ${raiseBuildKitCommand(build.limitBytes)}\n` +
       message,
   );
+}
+
+/** Doubles the limit, at least 8 GiB. The redeploy recreates vardo-buildkit with it. */
+export function raiseBuildKitCommand(limitBytes: number): string {
+  const gib = Math.max(8, Math.ceil((limitBytes * 2) / 1024 ** 3));
+  const env = join(VARDO_HOME_DIR, ".env");
+  return `sudo sed -i 's/^VARDO_BUILDKIT_MEM=.*/VARDO_BUILDKIT_MEM=${gib}g/' ${env} && sudo vardo update`;
 }

@@ -4,6 +4,12 @@ A compose service marked `x-vardo-shared: true` doesn't rotate with blue/green. 
 
 A deploy recreates a shared service only when its definition changes. It compares the running container's `com.docker.compose.config-hash` label with `docker compose config --hash`, which hashes the interpolated definition. Data stores are held instead and the deploy logs the command to apply the change. Vardo keeps its per-deploy labels off shared services, so a deploy that changes nothing else leaves them alone.
 
+When the hashes differ, the deploy compares a fingerprint of the definition the container was created from, kept in `shared-definitions.json` in the environment's directory. The fingerprint skips labels and CPU weights, counts limits by value however they're written and counts networks by name. A container whose fingerprint matches is left running and logged as `unchanged (only labels, CPU weights or how limits are written differ)`. A container with no record is judged by its hash alone.
+
+## Profiles
+
+With `COMPOSE_PROFILES` in the app's environment, a deploy skips services whose `profiles` it doesn't list, as compose does. Without it every service deploys.
+
 ## Commit variables
 
 Vardo sets two variables for compose interpolation in every slot. Containers don't see them unless the compose file passes them in.

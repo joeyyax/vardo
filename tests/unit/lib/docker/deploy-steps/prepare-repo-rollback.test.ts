@@ -58,6 +58,7 @@ vi.mock("@/lib/paths", () => ({
   appBaseDir: (name: string) => `/srv/apps/${name}`,
   appEnvDir: (name: string, env?: string) => `/srv/apps/${name}/${env ?? "production"}`,
   PROJECTS_DIR: "/srv/apps",
+  VARDO_HOME_DIR: "/srv",
 }));
 
 vi.mock("@/lib/docker/app-dir-owner", () => ({ assertAppDirOwnership: vi.fn() }));

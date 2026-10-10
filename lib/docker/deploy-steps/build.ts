@@ -364,6 +364,7 @@ export async function build(ctx: DeployContext): Promise<DeployContext> {
     serviceEnv: resolvedServiceEnv,
     orgTrusted: ctx.orgTrusted,
     certMount,
+    infraServices: isSelfApp(app.name) ? nonRotatingServices(compose) : undefined,
   });
 
   await writeFile(bareComposePath, composeToYaml(bareCompose), "utf-8");

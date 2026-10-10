@@ -123,7 +123,13 @@ describe("explainBuildOom", () => {
     const err = explainBuildOom(new Error("cannot allocate memory"), bounded) as Error;
 
     expect(err.message).toMatch(/ran out of memory \(4 GiB\)/);
-    expect(err.message).toContain("VARDO_BUILDKIT_MEM");
+    expect(err.message).toMatch(/sed -i 's\/\^VARDO_BUILDKIT_MEM=\.\*\/VARDO_BUILDKIT_MEM=8g\/' \S+\/\.env && sudo vardo update/);
+  });
+
+  it("doubles a larger limit in the command it gives", () => {
+    const err = explainBuildOom(new Error("exit code: 137"), { ...bounded, limitBytes: 6 * 1024 ** 3 }) as Error;
+
+    expect(err.message).toContain("VARDO_BUILDKIT_MEM=12g");
   });
 
   it("passes other failures through untouched", () => {

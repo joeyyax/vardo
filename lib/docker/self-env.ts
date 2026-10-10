@@ -156,6 +156,12 @@ async function copyPreviousSlotEnv(appDir: string, activeSlot: string | null, ta
   return null;
 }
 
+/** One key from the instance's settings file. Null when it's unset or the file can't be read. */
+export async function globalEnvValue(key: string, globalEnvPath = GLOBAL_ENV_PATH): Promise<string | null> {
+  const content = await readEnvFile(globalEnvPath);
+  return content === null ? null : parseEnvLines(content).get(key)?.value ?? null;
+}
+
 /** File contents, or null when missing or unreadable even as root. */
 async function readEnvFile(path: string): Promise<string | null> {
   try {

@@ -513,8 +513,10 @@ get_version() {
   local src_dir
   src_dir=$(resolve_source_dir)
   if [ -d "$src_dir/.git" ]; then
-    git -C "$src_dir" describe --tags --always 2>/dev/null \
-      || git -C "$src_dir" rev-parse --short HEAD 2>/dev/null \
+    # The slot checkout belongs to the console's user, not root.
+    src_dir=$(cd -P "$src_dir" && pwd)
+    git -c safe.directory="$src_dir" -C "$src_dir" describe --tags --always 2>/dev/null \
+      || git -c safe.directory="$src_dir" -C "$src_dir" rev-parse --short HEAD 2>/dev/null \
       || echo "unknown"
   else
     echo "unknown"
@@ -655,10 +657,10 @@ get_ram_mb() {
   fi
 }
 
-# A quarter of RAM, between 2 and 16 GiB. Bounds every build at once.
+# A quarter of RAM, between 4 and 16 GiB. Bounds every build at once.
 default_buildkit_mem() {
   local gb=$(( $(get_ram_mb) / 1024 / 4 ))
-  (( gb < 2 )) && gb=2
+  (( gb < 4 )) && gb=4
   (( gb > 16 )) && gb=16
   echo "${gb}g"
 }
@@ -1922,9 +1924,11 @@ install_shortcut() {
   # Create a vardo wrapper script in /usr/local/bin
   # Write the shebang + VARDO_DIR (interpolated now so the actual path is baked in),
   # then append the rest of the script with a quoted heredoc so $@ etc. are preserved.
-  local bin="${VARDO_BIN:-/usr/local/bin/vardo}"
-  printf '#!/usr/bin/env bash\nVARDO_DIR="%s"\n' "$VARDO_DIR" > "$bin"
-  cat >> "$bin" <<'WRAPPER'
+  local bin="${VARDO_BIN:-/usr/local/bin/vardo}" tmp
+  # Replaced, never rewritten in place: a running wrapper reads its own file as it goes.
+  tmp=$(mktemp "$bin.XXXXXX")
+  printf '#!/usr/bin/env bash\nVARDO_DIR="%s"\n' "$VARDO_DIR" > "$tmp"
+  cat >> "$tmp" <<'WRAPPER'
 
 # Self-deploy: the engine rotates the console through production/{blue,green}; the rest stays in project vardo.
 SELF_DEPLOY=false
@@ -1998,9 +2002,9 @@ case "${1:-}" in
   # docker start, not compose up: up would create a second console in project vardo.
   start)    if $SELF_DEPLOY; then docker start $(stack -a); else docker compose -f "$COMPOSE_PATH" up -d; fi ;;
   ps)       if $SELF_DEPLOY; then docker ps -a --filter "name=^vardo-"; else docker compose -f "$COMPOSE_PATH" ps; fi ;;
-  update)   shift; bash "$INSTALL_SH" update "$@" ;;
-  migrate-self-deploy) shift; bash "$INSTALL_SH" migrate-self-deploy "$@" ;;
-  doctor)   shift; bash "$INSTALL_SH" doctor "$@" ;;
+  update)   shift; exec bash "$INSTALL_SH" update "$@" ;;
+  migrate-self-deploy) shift; exec bash "$INSTALL_SH" migrate-self-deploy "$@" ;;
+  doctor)   shift; exec bash "$INSTALL_SH" doctor "$@" ;;
   key)
     if [ "${2:-}" = "set" ]; then
       # For a rebuild: load the escrowed secrets before restoring a backup onto this instance.
@@ -2064,7 +2068,7 @@ case "${1:-}" in
     fi
     echo "$TOKEN"
     ;;
-  uninstall) bash "$INSTALL_SH" uninstall "$@" ;;
+  uninstall) exec bash "$INSTALL_SH" uninstall "$@" ;;
   shell)
     shift
     if $SELF_DEPLOY; then docker exec -it "$(console)" "${@:-sh}"; else docker compose -f "$COMPOSE_PATH" exec frontend "${@:-sh}"; fi
@@ -2182,7 +2186,8 @@ case "${1:-}" in
     ;;
 esac
 WRAPPER
-  chmod +x "$bin"
+  chmod 755 "$tmp"
+  mv -f "$tmp" "$bin"
   log "Installed 'vardo' command"
 }
 
@@ -2511,6 +2516,11 @@ follow_self_deploy() {
   return 1
 }
 
+# Redis deploy:system:active, or empty when Redis can't say.
+deploy_slots_active() {
+  docker exec vardo-redis sh -c '[ -z "${REDIS_PASSWORD:-}" ] || export REDISCLI_AUTH="$REDIS_PASSWORD"; redis-cli get deploy:system:active' 2>/dev/null | tr -d '[:space:]' || true
+}
+
 # Checks what has gone wrong after self-deploys before. Returns 1 when something needs a look.
 verify_self_deploy() {
   local id="$1" ok=0 slot frontend consoles active="" waited=0
@@ -2540,7 +2550,14 @@ verify_self_deploy() {
     ok=1
   fi
 
-  active=$(docker exec vardo-redis sh -c '[ -z "${REDIS_PASSWORD:-}" ] || export REDISCLI_AUTH="$REDIS_PASSWORD"; redis-cli get deploy:system:active' 2>/dev/null | tr -d '[:space:]' || true)
+  # The engine releases its slot after the row turns success.
+  waited=0
+  while :; do
+    active=$(deploy_slots_active)
+    [ -z "$active" ] || [ "$active" = 0 ] || [ "$waited" -ge 60 ] && break
+    sleep 3
+    waited=$((waited + 3))
+  done
   if [ -n "$active" ] && [ "$active" != 0 ]; then
     warn "Redis deploy:system:active is $active, not 0. Redeploy stays disabled until it drops."
     ok=1
@@ -2610,6 +2627,31 @@ retire_legacy_frontend() {
   done
 }
 
+# Recreates Postgres or Redis on the definition a self-deploy held back, when the image is unchanged.
+apply_held_data_stores() {
+  local id="$1" dir="$VARDO_DIR/apps/vardo/production/current" held svc args running want
+  held=$(docker exec vardo-postgres psql -U host -d host -tAc \
+    "select post_deploy_error from deployment where id = '$id'" 2>/dev/null || true)
+  args=(-f docker-compose.yml -f docker-compose.override.yml)
+  [ -f "$dir/.vardo.env" ] && { [ -f "$dir/.env" ] && args+=(--env-file .env); args+=(--env-file .vardo.env); }
+  for svc in redis postgres; do
+    [[ "$held" == *"shared service $svc still runs its old definition (a data store"* ]] || continue
+    running=$(docker inspect -f '{{.Config.Image}}' "vardo-$svc" 2>/dev/null || true)
+    want=$(cd "$dir" && docker compose "${args[@]}" -p vardo config --images "$svc" 2>/dev/null || true)
+    if [ -z "$want" ] || [ "$running" != "$want" ]; then
+      warn "vardo-$svc runs $running; the new definition wants ${want:-an unreadable image}. Apply it yourself after a backup:"
+      dimln "  cd $dir && docker compose ${args[*]} -p vardo up -d --no-deps $svc"
+      continue
+    fi
+    info "Recreating vardo-$svc on its new definition..."
+    if (cd "$dir" && docker compose "${args[@]}" -p vardo up -d --no-deps --pull never "$svc" > /dev/null 2>&1); then
+      log "Recreated vardo-$svc"
+    else
+      warn "Couldn't recreate vardo-$svc. It keeps running on its old definition."
+    fi
+  done
+}
+
 # Starts the slot console through the engine and retires the old one. Needs a console taking requests.
 handover_to_engine() {
   request_self_deploy
@@ -2619,18 +2661,22 @@ handover_to_engine() {
     return 1
   fi
   retire_legacy_frontend || return 1
+  apply_held_data_stores "$SELF_DEPLOY_ID"
   cp "$VARDO_DIR/apps/vardo/production/current/install.sh" "$VARDO_DIR/install.sh" 2>/dev/null || true
 }
 
 print_self_deploy_rollback() {
   echo ""
+  local slot="<slot>"
+  is_self_deploy && slot=$(self_deploy_slot)
   echo -e "  ${BOLD}Rollback${RESET}    Nothing was renamed, copied or deleted. The shared services never stopped."
-  dimln "  While vardo-frontend runs: docker rm -f vardo-production-<slot>-frontend-1"
-  dimln "  Once it's removed:         cd $VARDO_DIR/apps/vardo/env/current && docker compose -p vardo up -d --no-deps frontend"
-  dimln "                             docker rm -f vardo-production-<slot>-frontend-1"
-  dimln "                             rm -f $VARDO_DIR/apps/vardo/production/current"
-  dimln "  Database backup:           ${BACKUP_FILE:-none}"
-  dimln "  Details:                   docs/self-deploy-migration.md"
+  dimln "  In this order, whether or not vardo-frontend still runs:"
+  dimln "    docker rm -f vardo-production-$slot-frontend-1"
+  dimln "    rm -f \"\$(docker volume inspect -f '{{.Mountpoint}}' vardo_traefik_dynamic)/cutover-vardo-production.yml\""
+  dimln "    rm -f $VARDO_DIR/apps/vardo/production/current"
+  dimln "    cd $VARDO_DIR/apps/vardo/env/current && docker compose -p vardo up -d --no-deps frontend"
+  dimln "  Database backup: ${BACKUP_FILE:-none}"
+  dimln "  Details:         docs/self-deploy-migration.md"
   echo ""
 }
 
@@ -2668,6 +2714,7 @@ do_self_update() {
 
   step "Verifying"
   verify_self_deploy "$SELF_DEPLOY_ID" || warn "Redeployed, with the warnings above."
+  apply_held_data_stores "$SELF_DEPLOY_ID"
   cp "$VARDO_DIR/apps/vardo/production/current/install.sh" "$VARDO_DIR/install.sh" 2>/dev/null || true
 
   load_env_display

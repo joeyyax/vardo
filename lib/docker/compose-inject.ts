@@ -446,6 +446,8 @@ export function buildVardoOverlay(opts: {
   orgTrusted?: boolean;
   /** Mounts the app's certificate volume read-only at /certs in these services. */
   certMount?: { services: string[]; volume: string };
+  /** Vardo's own infrastructure: no tier limits, cpu_shares or oom_score_adj. */
+  infraServices?: ReadonlySet<string>;
 }): ComposeFile {
   const {
     fullCompose,
@@ -530,7 +532,9 @@ export function buildVardoOverlay(opts: {
       overlayService.security_opt = [`${NO_NEW_PRIVILEGES}:true`];
     }
 
-    if (effCpus || effMemory || effPids !== undefined) {
+    const infra = opts.infraServices?.has(name) ?? false;
+
+    if (!infra && (effCpus || effMemory || effPids !== undefined)) {
       const limits: ResourceLimits = {};
       if (effCpus) limits.cpus = effCpus;
       if (effMemory) limits.memory = effMemory;
@@ -547,7 +551,9 @@ export function buildVardoOverlay(opts: {
     // Memory reservation goes under deploy.resources.reservations: Compose rejects a top-level
     // mem_reservation alongside a reservations block.
     let memReservation: string | undefined;
-    if (tier === "critical") {
+    if (infra) {
+      // Its own compose file sets what it needs.
+    } else if (tier === "critical") {
       overlayService.oom_score_adj = CRITICAL_OOM_WITH_LIMIT;
       overlayService.cpu_shares = 2048;
       // Reserve only an explicit limit; a tier default is a cap.
