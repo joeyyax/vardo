@@ -6,7 +6,8 @@ import { NextRequest } from "next/server";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 
-const { jobsFindMany, backupsFindMany, mockUpdate, pruneBackupsMock } = vi.hoisted(() => ({
+const { jobsFindMany, backupsFindMany, mockUpdate, pruneBackupsMock, storedRows } = vi.hoisted(() => ({
+  storedRows: vi.fn(),
   jobsFindMany: vi.fn(),
   backupsFindMany: vi.fn(),
   mockUpdate: vi.fn(),
@@ -25,6 +26,7 @@ vi.mock("@/lib/db", () => ({
       backups: { findMany: backupsFindMany },
     },
     update: mockUpdate,
+    select: () => ({ from: () => ({ where: () => ({ groupBy: storedRows }) }) }),
   },
 }));
 vi.mock("@/lib/backups/engine", () => ({ pruneBackups: pruneBackupsMock }));
@@ -55,6 +57,7 @@ function listWhere() {
 beforeEach(() => {
   jobsFindMany.mockReset().mockResolvedValue([]);
   backupsFindMany.mockReset();
+  storedRows.mockReset().mockResolvedValue([]);
   pruneBackupsMock.mockReset().mockResolvedValue(0);
   mockUpdate.mockReset().mockReturnValue({
     set: () => ({
@@ -73,6 +76,20 @@ describe("backup history list", () => {
 
     const body = await res.json();
     expect(body.recentHistory.map((b: { id: string }) => b.id)).toEqual(["b-1"]);
+  });
+
+  it("totals the archives still in storage, per job and in all", async () => {
+    backupsFindMany.mockResolvedValue([]);
+    storedRows.mockResolvedValue([
+      { jobId: "job-1", bytes: "300" },
+      { jobId: null, bytes: "50" },
+    ]);
+
+    const res = await list(new NextRequest("http://localhost/api"), {
+      params: Promise.resolve({ orgId: "org-1" }),
+    });
+
+    expect((await res.json()).storedBytes).toEqual({ total: 350, byJob: { "job-1": 300 } });
   });
 
   it("is scoped by the org on the backup row", async () => {

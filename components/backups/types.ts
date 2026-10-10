@@ -53,14 +53,22 @@ export type BackupJob = {
   keepWeekly: number | null;
   keepMonthly: number | null;
   createdAt: string;
+  /** Last time the job captured something. */
+  lastRunAt?: string | null;
   target: { id: string; name: string; type: string };
   backupJobApps: {
     app: App;
   }[];
-  backups: BackupHistoryEntry[];
+  /** Newest first; the org page gets the detail fields too. */
+  backups: JobRun[];
 };
 
+/** One run of a job, as the jobs list returns it. */
+export type JobRun = BackupHistoryEntry & Partial<Omit<RecentBackup, keyof BackupHistoryEntry | "job">>;
+
 export type RecentBackup = {
+  /** The archive's volume, when the run captured one. */
+  volumeName?: string | null;
   id: string;
   status: string;
   sizeBytes: number | null;

@@ -4,25 +4,39 @@ import { useState, useEffect, useCallback } from "react";
 import { Loader2, Plus, Check, Info, Archive } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ShineBorder } from "@/components/ui/shine-border";
 import { EmptyState } from "@/components/ui/empty-state";
 import { AutoBackupBanner } from "./auto-backup-banner";
 import { TargetCard } from "./target-card";
-import { JobCard } from "./job-card";
+import { JobSections } from "./job-sections";
 import { TargetForm } from "./target-form";
 import { JobForm } from "./job-form";
-import { BackupHistory } from "./backup-history";
 import { KeyEscrowCard } from "./key-escrow-card";
 import { OrgBackupDefault, SystemBackupDefault } from "./backup-switch";
 import { NotBackedUp } from "./not-backed-up";
 import { useCan } from "@/components/capabilities-provider";
+import { useAttention, useAttentionTarget } from "@/components/attention-provider";
+import { ATTENTION_PANEL_ID } from "@/components/layout/attention-bar";
+import { DETAIL_PANEL_GUTTER } from "@/components/detail-panel";
+import { Stat, StatFilter, StatGroup } from "@/components/stat-filter";
+import { formatBytes } from "@/lib/metrics/format";
+import { sameTarget } from "@/lib/ui/attention";
+import { cn } from "@/lib/utils";
 import { useNotificationStream } from "@/hooks/use-notification-stream";
 import { applyBackupEvent, type ProgressByJob } from "./progress-state";
 import type { BusEvent } from "@/lib/bus/events";
 import type { App, BackupTarget, BackupJob, RecentBackup } from "./types";
 
+type StoredBytes = { total: number; byJob: Record<string, number> };
+
+/** Attention rows the stats count. Each opens the shared panel on the backups group. */
+const BACKUP_STATS = [
+  { key: "backup-failed", label: "failed", tone: "text-status-error" },
+  { key: "backup-overdue", label: "overdue", tone: "text-status-warning" },
+  { key: "backup-uncovered", label: "not covered", tone: "text-status-warning" },
+] as const;
+
 type BackupPageData = {
-  jobs?: { jobs?: BackupJob[]; recentHistory?: RecentBackup[] };
+  jobs?: { jobs?: BackupJob[]; recentHistory?: RecentBackup[]; storedBytes?: StoredBytes };
   targets?: { targets?: BackupTarget[]; allowLocalBackups?: boolean };
 };
 
@@ -63,11 +77,17 @@ export function BackupPage({
   const [jobFormOpen, setJobFormOpen] = useState(false);
   const [editingTargetId, setEditingTargetId] = useState<string | null>(null);
   const [progress, setProgress] = useState<ProgressByJob>({});
+  const [storedBytes, setStoredBytes] = useState<StoredBytes>({ total: 0, byJob: {} });
+  const [runOpen, setRunOpen] = useState(false);
+  const [pressedStat, setPressedStat] = useState<string | null>(null);
+  const attention = useAttention();
+  const { target: attentionTarget, toggle: toggleAttention } = useAttentionTarget();
 
   const applyData = useCallback((data: BackupPageData) => {
     if (data.jobs) {
       setJobs(data.jobs.jobs || []);
       setHistory(data.jobs.recentHistory || []);
+      if (data.jobs.storedBytes) setStoredBytes(data.jobs.storedBytes);
     }
     if (data.targets) {
       setTargets(data.targets.targets || []);
@@ -135,7 +155,7 @@ export function BackupPage({
   const Heading = !managed && showIntro ? "h3" : "h2";
 
   return (
-    <div className="space-y-10">
+    <div className={cn("grid grid-cols-1 gap-10", (runOpen || attentionTarget) && DETAIL_PANEL_GUTTER)}>
       {/* Auto-backup banner */}
       {scope === "org" && autoTarget ? (
         <AutoBackupBanner
@@ -155,126 +175,134 @@ export function BackupPage({
         </div>
       ) : null}
 
-      {/* Key escrow */}
-      {scope === "org" && <KeyEscrowCard heading={Heading} />}
-
-      {scope === "admin" ? <SystemBackupDefault heading={Heading} /> : <OrgBackupDefault orgId={orgId} heading={Heading} />}
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Storage targets */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
-            <CardTitle as={Heading}>Storage targets</CardTitle>
-            {can("backup.targets.manage") && (
-              <Button size="sm" variant="outline" onClick={() => setTargetFormOpen(true)}>
-                <Plus className="mr-1.5 size-4" aria-hidden="true" />
-                Add target
-              </Button>
-            )}
-          </CardHeader>
-          <CardContent>
-            {!hasVisibleTargets ? (
-              <EmptyState
-                className="p-8"
-                title={managed ? "No targets of your own" : "No storage targets"}
-                body={
-                  managed
-                    ? "Automatic backups run against a target Vardo manages. Add an S3 bucket, Cloudflare R2, Backblaze B2 or SSH server for a second copy."
-                    : "Add an S3 bucket, Cloudflare R2, Backblaze B2 or SSH server to start backing up."
-                }
+      <StatGroup label="Backup numbers" active={!!attentionTarget}>
+        {attention.loaded &&
+          BACKUP_STATS.map(({ key, label, tone }) => {
+            const items = attention.rows.find((r) => r.key === key)?.items ?? [];
+            // Overdue rows list each app of a job; the stat counts jobs.
+            const count = key === "backup-overdue" ? new Set(items.map((i) => i.id.split(":")[0])).size : items.length;
+            if (count === 0) return <Stat key={key} value={0} label={label} />;
+            const t = { group: "backups" };
+            return (
+              <StatFilter
+                key={key}
+                id={`backup-stat-${key}`}
+                trigger={pressedStat === key || !pressedStat ? "backups" : undefined}
+                value={count}
+                label={label}
+                tone={tone}
+                pressed={sameTarget(attentionTarget, t) && pressedStat === key}
+                controls={ATTENTION_PANEL_ID}
+                onPress={() => {
+                  setPressedStat(key);
+                  toggleAttention(t);
+                }}
               />
-            ) : (
-              <div className="space-y-2">
-                {visibleTargets.map((target) => (
-                  <TargetCard
-                    key={target.id}
-                    target={target}
-                    orgId={orgId}
-                    readOnly={!can("backup.targets.manage")}
-                    onRefresh={fetchData}
-                    onEdit={() => setEditingTargetId(target.id)}
-                  />
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+            );
+          })}
+        <Stat value={formatBytes(storedBytes.total)} label="stored" />
+      </StatGroup>
 
-        {/* Backup jobs */}
-        <Card className={`${hasVisibleTargets && visibleJobs.length === 0 ? "relative overflow-hidden" : ""}`}>
-          {hasVisibleTargets && visibleJobs.length === 0 && (
-            <ShineBorder shineColor={["#A07CFE", "#FE8FB5", "#FFBE7B"]} duration={8} borderWidth={2} />
+      <section className="grid grid-cols-1 gap-3">
+        <div className="flex items-center justify-between gap-3">
+          <Heading className="type-h3">Backup jobs</Heading>
+          {can("backup.jobs.manage") && (
+            <Button size="sm" variant="outline" onClick={() => setJobFormOpen(true)} disabled={!hasVisibleTargets}>
+              <Plus className="mr-1.5 size-4" aria-hidden="true" />
+              New job
+            </Button>
           )}
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
-            <CardTitle as={Heading}>Backup jobs</CardTitle>
-            {can("backup.jobs.manage") && (
-              <Button size="sm" variant="outline" onClick={() => setJobFormOpen(true)} disabled={!hasVisibleTargets}>
-                <Plus className="mr-1.5 size-4" aria-hidden="true" />
-                New job
-              </Button>
-            )}
-          </CardHeader>
-          <CardContent>
-            {!hasVisibleTargets ? (
-              <EmptyState
-                className="p-8"
-                title={managed ? "No jobs of your own" : "No backup jobs yet"}
-                body={
-                  managed
-                    ? "The automatic schedule above is managed for you. Add a storage target to run jobs of your own."
-                    : "Jobs can be added after you add a storage target."
-                }
-              />
-            ) : visibleJobs.length === 0 ? (
-              <EmptyState
-                className="p-8"
-                icon={Archive}
-                title="No backup jobs configured"
-                body="Create one to schedule automatic backups."
-                action={
-                  can("backup.jobs.manage") && (
-                    <Button size="sm" variant="outline" onClick={() => setJobFormOpen(true)}>
-                      <Plus className="mr-1.5 size-4" aria-hidden="true" />
-                      New job
-                    </Button>
-                  )
-                }
-              />
-            ) : (
-              <div className="space-y-2">
-                {visibleJobs.map((job) => (
-                  <JobCard
-                    key={job.id}
-                    job={job}
-                    orgId={orgId}
-                    readOnly={scope === "org" && job.target.type === "system"}
-                    showApps={scope !== "admin"}
-                    progress={progress[job.id]}
-                    onRefresh={fetchData}
-                  />
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+        </div>
+        <JobSections
+          jobs={visibleJobs}
+          orphanRuns={history.filter((h) => !h.job)}
+          orgId={orgId}
+          progress={progress}
+          storedBytes={storedBytes.byJob}
+          readOnly={(job) => scope === "org" && job.target.type === "system"}
+          showApps={scope !== "admin"}
+          onRefresh={fetchData}
+          onPanelChange={setRunOpen}
+          empty={
+            <Card variant="surface">
+              {!hasVisibleTargets ? (
+                <EmptyState
+                  className="p-8"
+                  title={managed ? "No jobs of your own" : "No backup jobs yet"}
+                  body={
+                    managed
+                      ? "The automatic schedule above is managed for you. Add a storage target to run jobs of your own."
+                      : "Jobs can be added after you add a storage target."
+                  }
+                />
+              ) : (
+                <EmptyState
+                  className="p-8"
+                  icon={Archive}
+                  title="No backup jobs configured"
+                  body="Create one to schedule automatic backups."
+                  action={
+                    can("backup.jobs.manage") && (
+                      <Button size="sm" variant="outline" onClick={() => setJobFormOpen(true)}>
+                        <Plus className="mr-1.5 size-4" aria-hidden="true" />
+                        New job
+                      </Button>
+                    )
+                  }
+                />
+              )}
+            </Card>
+          }
+        />
+      </section>
 
       {scope === "org" && can("backup.jobs.manage") && (
         <NotBackedUp orgId={orgId} targets={targets} heading={Heading} onChanged={fetchData} />
       )}
 
-      {/* Backup history */}
+      {/* Storage targets */}
       <Card>
-        <CardHeader>
-          <CardTitle as={Heading}>Backup history</CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Recent snapshots across all targets and jobs.
-          </p>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+          <CardTitle as={Heading}>Storage targets</CardTitle>
+          {can("backup.targets.manage") && (
+            <Button size="sm" variant="outline" onClick={() => setTargetFormOpen(true)}>
+              <Plus className="mr-1.5 size-4" aria-hidden="true" />
+              Add target
+            </Button>
+          )}
         </CardHeader>
         <CardContent>
-          <BackupHistory history={history} orgId={orgId} onRefresh={fetchData} />
+          {!hasVisibleTargets ? (
+            <EmptyState
+              className="p-8"
+              title={managed ? "No targets of your own" : "No storage targets"}
+              body={
+                managed
+                  ? "Automatic backups run against a target Vardo manages. Add an S3 bucket, Cloudflare R2, Backblaze B2 or SSH server for a second copy."
+                  : "Add an S3 bucket, Cloudflare R2, Backblaze B2 or SSH server to start backing up."
+              }
+            />
+          ) : (
+            <div className="grid gap-2 md:grid-cols-2">
+              {visibleTargets.map((target) => (
+                <TargetCard
+                  key={target.id}
+                  target={target}
+                  orgId={orgId}
+                  readOnly={!can("backup.targets.manage")}
+                  onRefresh={fetchData}
+                  onEdit={() => setEditingTargetId(target.id)}
+                />
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
+
+      {/* Key escrow */}
+      {scope === "org" && <KeyEscrowCard heading={Heading} />}
+
+      {scope === "admin" ? <SystemBackupDefault heading={Heading} /> : <OrgBackupDefault orgId={orgId} heading={Heading} />}
 
       {/* Info sections */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

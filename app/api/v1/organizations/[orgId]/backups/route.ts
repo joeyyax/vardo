@@ -9,7 +9,7 @@ import {
   backups,
 } from "@/lib/db/schema";
 import { requirePlugin } from "@/lib/api/require-plugin";
-import { eq, and, or, desc, inArray, isNull } from "drizzle-orm";
+import { eq, and, or, desc, inArray, isNull, isNotNull, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
@@ -68,14 +68,25 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
         },
         backups: {
           orderBy: (b, { desc }) => [desc(b.startedAt)],
-          limit: 5,
+          limit: 10,
           columns: {
             id: true,
             status: true,
             sizeBytes: true,
             startedAt: true,
             finishedAt: true,
+            storagePath: true,
+            log: true,
+            verifiedAt: true,
+            verifyOutcome: true,
+            verifyDetail: true,
+            trigger: true,
+            volumeName: true,
+            appId: true,
+            appName: true,
+            jobName: true,
           },
+          with: { app: { columns: { id: true, name: true, displayName: true } } },
         },
       },
       orderBy: [desc(backupJobs.createdAt)],
@@ -98,8 +109,19 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
     });
     const recentHistory = rows.filter((b) => backupOwnerOrgId(b) === orgId);
 
+    // Archives still in storage, per job and in all.
+    const stored = await db
+      .select({ jobId: backups.jobId, bytes: sql<string>`coalesce(sum(${backups.sizeBytes}), 0)` })
+      .from(backups)
+      .where(and(scope, eq(backups.status, "success"), isNotNull(backups.storagePath)))
+      .groupBy(backups.jobId);
+    const storedBytes = {
+      total: stored.reduce((n, r) => n + Number(r.bytes), 0),
+      byJob: Object.fromEntries(stored.filter((r) => r.jobId).map((r) => [r.jobId, Number(r.bytes)])),
+    };
+
     const timeZone = await getOrgTimeZone(orgId);
-    return NextResponse.json({ jobs: jobs.map((j) => ({ ...j, timeZone })), recentHistory });
+    return NextResponse.json({ jobs: jobs.map((j) => ({ ...j, timeZone })), recentHistory, storedBytes });
   } catch (error) {
     return handleRouteError(error, "Error fetching backup jobs");
   }
