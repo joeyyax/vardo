@@ -11,13 +11,15 @@ import { NOTIFICATION_CATEGORIES, NOTIFICATION_CATEGORY_KEYS, type NotificationC
 
 type Settings = {
   categories: Record<NotificationCategory, boolean>;
-  batchWindowMinutes: number;
+  nightlyBackupTime: string;
 };
 
-const WINDOW_OPTIONS = [15, 30, 60, 120, 240];
+/** Every half hour, as HH:MM UTC. */
+const TIME_OPTIONS = Array.from({ length: 48 }, (_, i) => `${String(Math.floor(i / 2)).padStart(2, "0")}:${i % 2 ? "30" : "00"}`);
 
-function windowLabel(minutes: number): string {
-  return minutes < 60 ? `${minutes} minutes` : minutes === 60 ? "1 hour" : `${minutes / 60} hours`;
+function timeLabel(time: string): string {
+  const [h, m] = time.split(":").map(Number);
+  return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"} UTC`;
 }
 
 async function requestSettings(orgId: string): Promise<Settings | null> {
@@ -51,10 +53,10 @@ export function NotificationCategoriesEditor({ orgId }: { orgId: string }) {
   }, [orgId, apply]);
 
   const save = useCallback(
-    async (patch: { categories?: Partial<Record<NotificationCategory, boolean>>; batchWindowMinutes?: number }) => {
+    async (patch: { categories?: Partial<Record<NotificationCategory, boolean>>; nightlyBackupTime?: string }) => {
       setSaving(true);
       setSettings((prev) =>
-        prev ? { categories: { ...prev.categories, ...patch.categories }, batchWindowMinutes: patch.batchWindowMinutes ?? prev.batchWindowMinutes } : prev,
+        prev ? { categories: { ...prev.categories, ...patch.categories }, nightlyBackupTime: patch.nightlyBackupTime ?? prev.nightlyBackupTime } : prev,
       );
       try {
         const res = await fetch(`/api/v1/organizations/${orgId}/notification-settings`, {
@@ -123,22 +125,21 @@ export function NotificationCategoriesEditor({ orgId }: { orgId: string }) {
         </div>
 
         <div className="space-y-2 pl-6 border-l border-border">
-          <Label htmlFor="batch-window">Backup batch window</Label>
-          <Select value={String(settings.batchWindowMinutes)} onValueChange={(v) => save({ batchWindowMinutes: parseInt(v) })}>
-            <SelectTrigger id="batch-window" className="w-full sm:w-48">
+          <Label htmlFor="nightly-time">Nightly backups start at</Label>
+          <Select value={settings.nightlyBackupTime} onValueChange={(v) => save({ nightlyBackupTime: v })}>
+            <SelectTrigger id="nightly-time" className="w-full sm:w-48">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {[...new Set([...WINDOW_OPTIONS, settings.batchWindowMinutes])].sort((a, b) => a - b).map((m) => (
-                <SelectItem key={m} value={String(m)}>
-                  {windowLabel(m)}
+              {[...new Set([...TIME_OPTIONS, settings.nightlyBackupTime])].sort().map((t) => (
+                <SelectItem key={t} value={t}>
+                  {timeLabel(t)}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
           <p className="text-xs text-muted-foreground">
-            Results within this long of the first one go out in one email, sooner once every scheduled job is done. A failure
-            sends within 5 minutes.
+            Automatic backup jobs run together from this time, a few at once. Jobs with a schedule of their own keep it.
           </p>
         </div>
       </CardContent>
