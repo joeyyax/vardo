@@ -11,6 +11,13 @@ COPY package.json pnpm-lock.yaml ./
 RUN --mount=type=cache,target=/pnpm/store \
     pnpm install --frozen-lockfile --store-dir /pnpm/store
 
+# Runtime dependencies only, for the production image
+FROM base AS prod-deps
+WORKDIR /app
+COPY package.json pnpm-lock.yaml ./
+RUN --mount=type=cache,target=/pnpm/store \
+    pnpm install --frozen-lockfile --prod --store-dir /pnpm/store
+
 # Build
 FROM base AS builder
 WORKDIR /app
@@ -24,7 +31,8 @@ ENV NEXT_PUBLIC_BETTER_AUTH_URL=$NEXT_PUBLIC_BETTER_AUTH_URL
 ENV NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL
 ENV NEXT_PUBLIC_GIT_SHA=$GIT_SHA
 
-RUN pnpm build
+# Next's incremental cache survives between builds without landing in the image.
+RUN --mount=type=cache,target=/app/.next/cache pnpm build
 
 # Production
 FROM base AS runner
@@ -63,9 +71,9 @@ RUN apt-get update -qq && \
     mkdir -p /var/lib/vardo/projects && \
     chown nextjs:nodejs /var/lib/vardo/projects
 
-# Copy built app + all dependencies
+# Copy built app + runtime dependencies
 COPY --from=builder --chown=nextjs:nodejs /app/.next ./.next
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules ./node_modules
+COPY --from=prod-deps --chown=nextjs:nodejs /app/node_modules ./node_modules
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/drizzle ./drizzle
 COPY --from=builder --chown=nextjs:nodejs /app/templates ./templates
