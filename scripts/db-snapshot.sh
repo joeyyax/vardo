@@ -2,8 +2,8 @@
 # Save, restore and list local dev database snapshots.
 #
 #   scripts/db-snapshot.sh save local-seed
-#   scripts/db-snapshot.sh pull-prod homelab      # read-only dump from the host
-#   scripts/db-snapshot.sh load homelab
+#   VARDO_PROD_HOST=host VARDO_ORG_MAP="Prod Org=Local Org" scripts/db-snapshot.sh pull-prod prod
+#   scripts/db-snapshot.sh load prod
 #   scripts/db-snapshot.sh list
 #
 # Only app-shaped tables move: project, app, domain. Users, orgs, sessions and
@@ -12,7 +12,6 @@ set -euo pipefail
 
 DIR="${VARDO_SNAPSHOT_DIR:-$HOME/.vardo-snapshots}"
 CONTAINER="${VARDO_PG_CONTAINER:-vardo-postgres}"
-PROD_HOST="${VARDO_PROD_HOST:-10.0.0.19}"
 TABLES=(project app domain)
 mkdir -p "$DIR"
 
@@ -31,19 +30,21 @@ case "${1:-}" in
 
   pull-prod)
     name="${2:?usage: pull-prod <name>}"
-    # Read-only against the host. Org ids are remapped to the local equivalents
-    # so the two prod orgs do not collide on app_org_name_uniq.
-    ssh "$PROD_HOST" "docker exec $CONTAINER pg_dump -U host -d host --data-only --no-owner \
+    host="${VARDO_PROD_HOST:?set VARDO_PROD_HOST to the ssh host}"
+    # Read-only against the host.
+    ssh "$host" "docker exec $CONTAINER pg_dump -U host -d host --data-only --no-owner \
       $(printf -- '-t %s ' "${TABLES[@]}")" > "$DIR/$name.sql"
 
-    homelab=$(local_org Vardo)
-    other=$(local_org Joey)
-    prod_sample=$(ssh "$PROD_HOST" "docker exec $CONTAINER psql -U host -d host -t -A -c \
-      \"select id from organization where name = 'Main'\"")
-    prod_other=$(ssh "$PROD_HOST" "docker exec $CONTAINER psql -U host -d host -t -A -c \
-      \"select id from organization where name = 'Vardo'\"")
-
-    sed -i '' "s/$prod_sample/$homelab/g; s/$prod_other/$other/g" "$DIR/$name.sql"
+    # Prod org ids are remapped to local orgs so they don't collide on app_org_name_uniq.
+    # VARDO_ORG_MAP="Prod Org=Local Org,Other=Local Other"
+    IFS=, read -ra pairs <<< "${VARDO_ORG_MAP:-}"
+    for pair in "${pairs[@]}"; do
+      [ -n "$pair" ] || continue
+      prod_id=$(ssh "$host" "docker exec $CONTAINER psql -U host -d host -t -A -c \
+        \"select id from organization where name = '${pair%%=*}'\"")
+      local_id=$(local_org "${pair#*=}")
+      [ -n "$prod_id" ] && [ -n "$local_id" ] && sed -i '' "s/$prod_id/$local_id/g" "$DIR/$name.sql"
+    done
     echo "pulled $DIR/$name.sql"
     ;;
 
