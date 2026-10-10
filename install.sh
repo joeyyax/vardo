@@ -1937,10 +1937,13 @@ SELF_DEPLOY=false
 # Resolve compose file — self-deploy slot, legacy slot or legacy flat
 if $SELF_DEPLOY; then
   COMPOSE_PATH="$VARDO_DIR/apps/vardo/production/current/docker-compose.yml"
+  SRC_DIR="$VARDO_DIR/apps/vardo/production/current"
 elif [ -L "$VARDO_DIR/apps/vardo/env/current" ]; then
   COMPOSE_PATH="$VARDO_DIR/apps/vardo/env/current/docker-compose.yml"
+  SRC_DIR="$VARDO_DIR/apps/vardo/env/current"
 else
   COMPOSE_PATH="$VARDO_DIR/docker-compose.yml"
+  SRC_DIR="$VARDO_DIR"
 fi
 
 # Resolve install.sh — the serving slot's, falling back to root
@@ -2075,8 +2078,8 @@ case "${1:-}" in
     ;;
   adopt)
     shift
-    if [ -f "$VARDO_DIR/apps/vardo/env/current/scripts/adopt-cli.ts" ]; then
-      tsx "$VARDO_DIR/apps/vardo/env/current/scripts/adopt-cli.ts" "$@"
+    if [ -f "$SRC_DIR/scripts/adopt-cli.ts" ]; then
+      tsx "$SRC_DIR/scripts/adopt-cli.ts" "$@"
     else
       echo "Error: adopt-cli.ts not found. Make sure Vardo is up to date."
       exit 1
@@ -2096,7 +2099,7 @@ case "${1:-}" in
       ENCRYPTION_MASTER_KEY=$(grep '^ENCRYPTION_MASTER_KEY=' "$VARDO_DIR/.env" | cut -d= -f2-)
     fi
     export ENCRYPTION_MASTER_KEY
-    SRC="$VARDO_DIR/apps/vardo/env/current"
+    SRC="$SRC_DIR"
     [ -f "$SRC/scripts/backup-decrypt.ts" ] || SRC="$VARDO_DIR"
     if [ ! -f "$SRC/scripts/backup-decrypt.ts" ]; then
       echo "Error: backup-decrypt.ts not found. Make sure Vardo is up to date." >&2
