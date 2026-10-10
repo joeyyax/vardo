@@ -1,4 +1,4 @@
-// Every route the homelab (10.0.0.19) serves today must render byte-identical.
+// Every route the sample host serves must render byte-identical.
 
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "fs";
@@ -60,7 +60,7 @@ function renderConsole(env: Record<string, string>): Record<string, string> {
   return out;
 }
 
-describe("homelab routes", () => {
+describe("sample host routes", () => {
   it("covers the snapshot", () => {
     expect(fx.routes.length).toBeGreaterThan(30);
   });

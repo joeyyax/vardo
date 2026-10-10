@@ -53,8 +53,8 @@ function push(installationId: number | undefined) {
   const body = JSON.stringify({
     ref: "refs/heads/main",
     after: "abc1234",
-    repository: { full_name: "joeyyax/site" },
-    pusher: { name: "joey" },
+    repository: { full_name: "acme/site" },
+    pusher: { name: "dev" },
     ...(installationId !== undefined ? { installation: { id: installationId } } : {}),
   });
   const signature = "sha256=" + createHmac("sha256", SECRET).update(body).digest("hex");
@@ -72,7 +72,7 @@ const app = (id: string, organizationId: string) => ({
   name: id,
   displayName: id,
   organizationId,
-  gitUrl: "https://github.com/joeyyax/site.git",
+  gitUrl: "https://github.com/acme/site.git",
   gitBranch: "main",
   autoDeploy: true,
   isSystemManaged: false,
@@ -83,7 +83,7 @@ beforeEach(() => {
   requestDeploy.mockResolvedValue({ deploymentId: "d1", success: true });
   links.clear();
   appRows.length = 0;
-  appRows.push(app("sample-site", "org-sample"), app("vardo-site", "org-vardo"));
+  appRows.push(app("ops-site", "org-ops"), app("vardo-site", "org-vardo"));
 });
 
 describe("push webhook scope", () => {

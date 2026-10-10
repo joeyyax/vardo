@@ -73,11 +73,11 @@ describe("hostObservations", () => {
   it("fires memory after the sustained window with the top containers named", () => {
     const buffer = new HostSampleBuffer();
     for (let i = 6; i >= 0; i--) buffer.push(sample(now - i * MIN, 91));
-    const { observations } = hostObservations(buffer, now, { topMemory: [{ name: "wha", bytes: 2 ** 30 }] });
+    const { observations } = hostObservations(buffer, now, { topMemory: [{ name: "shop", bytes: 2 ** 30 }] });
     const memory = observations.find((o) => o.type === "host.memory")!;
     expect(memory.fires).toBe(true);
     expect(memory.item.title).toBe("Memory 91% used");
-    expect(memory.item.facts?.find((f) => f.label === "Top containers")?.value).toContain("wha");
+    expect(memory.item.facts?.find((f) => f.label === "Top containers")?.value).toContain("shop");
   });
 
   it("lets a host OOM kill confirm memory pressure early", () => {

@@ -182,7 +182,7 @@ describe("runDeployment environment env", () => {
 
     const lines = await deploy({ environmentId: "env-pr-7", groupEnvironmentId: "ge-1" });
 
-    expect(lines.join("\n")).toMatch(/Warning: PUBLIC_URL points at production's web\.yax\.me/);
+    expect(lines.join("\n")).toMatch(/Warning: PUBLIC_URL points at production's web\.example\.com/);
   });
 
   it("deploys production from apps.envContent unchanged", async () => {

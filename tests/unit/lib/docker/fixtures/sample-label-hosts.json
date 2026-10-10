@@ -1,0 +1,2398 @@
+{
+ "_note": "Sample host: Traefik rule labels and ownership rows, read 2026-10-08. Hostnames only.",
+ "instanceBase": "example.com",
+ "consoleHosts": [
+  "vardo.example.com"
+ ],
+ "shellEnv": {
+  "VARDO_DOMAIN": "vardo.example.com"
+ },
+ "orgs": {
+  "main": {
+   "trusted": true,
+   "baseDomain": "example.com",
+   "systemManaged": false
+  },
+  "vardo": {
+   "trusted": true,
+   "baseDomain": null,
+   "systemManaged": true
+  }
+ },
+ "domains": [
+  {
+   "app": "agents",
+   "domain": "agents.example.com",
+   "org": "main"
+  },
+  {
+   "app": "sso",
+   "domain": "auth.example.com",
+   "org": "main"
+  },
+  {
+   "app": "browser-api",
+   "domain": "browser.example.com",
+   "org": "main"
+  },
+  {
+   "app": "chat-ui",
+   "domain": "chat.example.com",
+   "org": "main"
+  },
+  {
+   "app": "code-server",
+   "domain": "code.example.com",
+   "org": "main"
+  },
+  {
+   "app": "stack-ui",
+   "domain": "docker.example.com",
+   "org": "main"
+  },
+  {
+   "app": "deploy-api",
+   "domain": "deploy-api.example.com",
+   "org": "main"
+  },
+  {
+   "app": "nzb-client",
+   "domain": "downloads.example.com",
+   "org": "main"
+  },
+  {
+   "app": "whiteboard",
+   "domain": "draw.example.com",
+   "org": "main"
+  },
+  {
+   "app": "transcoder-transcoder",
+   "domain": "transcoder.example.com",
+   "org": "main"
+  },
+  {
+   "app": "git-host",
+   "domain": "git-host.example.com",
+   "org": "main"
+  },
+  {
+   "app": "start-page",
+   "domain": "home.example.com",
+   "org": "main"
+  },
+  {
+   "app": "photos",
+   "domain": "images.example.com",
+   "org": "main"
+  },
+  {
+   "app": "indexer-hub",
+   "domain": "indexers.example.com",
+   "org": "main"
+  },
+  {
+   "app": "media-alt",
+   "domain": "media-alt.example.com",
+   "org": "main"
+  },
+  {
+   "app": "log-viewer",
+   "domain": "logs.example.com",
+   "org": "main"
+  },
+  {
+   "app": "recorder",
+   "domain": "recorder-turbo-fennel.example.com",
+   "org": "main"
+  },
+  {
+   "app": "git-mirror",
+   "domain": "mirror.example.com",
+   "org": "main"
+  },
+  {
+   "app": "movie-library",
+   "domain": "movies.example.com",
+   "org": "main"
+  },
+  {
+   "app": "workflows",
+   "domain": "workflows.example.com",
+   "org": "main"
+  },
+  {
+   "app": "push-notify",
+   "domain": "push-notify.example.com",
+   "org": "main"
+  },
+  {
+   "app": "recorder",
+   "domain": "nvr.example.com",
+   "org": "main"
+  },
+  {
+   "app": "nzb-search",
+   "domain": "nzb-hub.example.com",
+   "org": "main"
+  },
+  {
+   "app": "llm-runtime",
+   "domain": "llm-runtime.example.com",
+   "org": "main"
+  },
+  {
+   "app": "documents",
+   "domain": "documents.example.com",
+   "org": "main"
+  },
+  {
+   "app": "pdf-tools",
+   "domain": "pdf.example.com",
+   "org": "main"
+  },
+  {
+   "app": "media-sync",
+   "domain": "media-sync.localhost",
+   "org": "main"
+  },
+  {
+   "app": "media-requests",
+   "domain": "request.example.com",
+   "org": "main"
+  },
+  {
+   "app": "tools-api",
+   "domain": "tools-api.example.com",
+   "org": "main"
+  },
+  {
+   "app": "speedtest-app",
+   "domain": "speedtest.example.com",
+   "org": "main"
+  },
+  {
+   "app": "subtitle-sync",
+   "domain": "subtitles.example.com",
+   "org": "main"
+  },
+  {
+   "app": "file-sync",
+   "domain": "file-sync.example.com",
+   "org": "main"
+  },
+  {
+   "app": "media-stats",
+   "domain": "media-stats.example.com",
+   "org": "main"
+  },
+  {
+   "app": "dev-tools",
+   "domain": "tools.example.com",
+   "org": "main"
+  },
+  {
+   "app": "torrent-client",
+   "domain": "torrent-client.example.com",
+   "org": "main"
+  },
+  {
+   "app": "tv-library",
+   "domain": "tv.example.com",
+   "org": "main"
+  },
+  {
+   "app": "ui-registry",
+   "domain": "ui.example.com",
+   "org": "main"
+  },
+  {
+   "app": "network-api",
+   "domain": "network-api.example.com",
+   "org": "main"
+  },
+  {
+   "app": "uptime-monitor",
+   "domain": "uptime-monitor-chill-ivory.example.com",
+   "org": "main"
+  },
+  {
+   "app": "wiki-app",
+   "domain": "wiki.example.com",
+   "org": "main"
+  },
+  {
+   "app": "media-invites",
+   "domain": "media-invites.example.com",
+   "org": "main"
+  }
+ ],
+ "envDomains": [
+  {
+   "app": "deploy-api",
+   "domain": "deploy-api.example.com",
+   "org": "main"
+  },
+  {
+   "app": "start-page",
+   "domain": "home.example.com",
+   "org": "main"
+  },
+  {
+   "app": "media-sync",
+   "domain": "media-sync.localhost",
+   "org": "main"
+  },
+  {
+   "app": "tools-api",
+   "domain": "tools-api.example.com",
+   "org": "main"
+  },
+  {
+   "app": "media-stats",
+   "domain": "media-stats.example.com",
+   "org": "main"
+  },
+  {
+   "app": "network-api",
+   "domain": "network-api.example.com",
+   "org": "main"
+  },
+  {
+   "app": "media-invites",
+   "domain": "media-invites.example.com",
+   "org": "main"
+  }
+ ],
+ "topLevelApps": [
+  {
+   "name": "agents",
+   "org": "main"
+  },
+  {
+   "name": "sso",
+   "org": "main"
+  },
+  {
+   "name": "subtitle-sync",
+   "org": "main"
+  },
+  {
+   "name": "browser-api",
+   "org": "main"
+  },
+  {
+   "name": "cadvisor",
+   "org": "vardo"
+  },
+  {
+   "name": "page-watch",
+   "org": "main"
+  },
+  {
+   "name": "tunnel",
+   "org": "main"
+  },
+  {
+   "name": "ddns",
+   "org": "main"
+  },
+  {
+   "name": "code-server",
+   "org": "main"
+  },
+  {
+   "name": "media-cleanup",
+   "org": "main"
+  },
+  {
+   "name": "stack-ui",
+   "org": "main"
+  },
+  {
+   "name": "deploy-api",
+   "org": "main"
+  },
+  {
+   "name": "voice-bot",
+   "org": "main"
+  },
+  {
+   "name": "log-viewer",
+   "org": "main"
+  },
+  {
+   "name": "transcoder",
+   "org": "main"
+  },
+  {
+   "name": "whiteboard",
+   "org": "main"
+  },
+  {
+   "name": "git-host",
+   "org": "main"
+  },
+  {
+   "name": "git-mirror",
+   "org": "main"
+  },
+  {
+   "name": "hermes",
+   "org": "main"
+  },
+  {
+   "name": "start-page",
+   "org": "main"
+  },
+  {
+   "name": "photos",
+   "org": "main"
+  },
+  {
+   "name": "dev-tools",
+   "org": "main"
+  },
+  {
+   "name": "media-alt",
+   "org": "main"
+  },
+  {
+   "name": "notes-api",
+   "org": "main"
+  },
+  {
+   "name": "media-meta",
+   "org": "main"
+  },
+  {
+   "name": "diagrams",
+   "org": "main"
+  },
+  {
+   "name": "llm-proxy",
+   "org": "main"
+  },
+  {
+   "name": "loki",
+   "org": "vardo"
+  },
+  {
+   "name": "recorder",
+   "org": "main"
+  },
+  {
+   "name": "workflows",
+   "org": "main"
+  },
+  {
+   "name": "nas-sync",
+   "org": "main"
+  },
+  {
+   "name": "push-notify",
+   "org": "main"
+  },
+  {
+   "name": "nzb-search",
+   "org": "main"
+  },
+  {
+   "name": "llm-runtime",
+   "org": "main"
+  },
+  {
+   "name": "speedtest-app",
+   "org": "main"
+  },
+  {
+   "name": "chat-ui",
+   "org": "main"
+  },
+  {
+   "name": "wiki-app",
+   "org": "main"
+  },
+  {
+   "name": "documents",
+   "org": "main"
+  },
+  {
+   "name": "media-server",
+   "org": "main"
+  },
+  {
+   "name": "media-sync",
+   "org": "main"
+  },
+  {
+   "name": "promtail",
+   "org": "vardo"
+  },
+  {
+   "name": "indexer-hub",
+   "org": "main"
+  },
+  {
+   "name": "charts",
+   "org": "main"
+  },
+  {
+   "name": "movie-library",
+   "org": "main"
+  },
+  {
+   "name": "stream-relay",
+   "org": "main"
+  },
+  {
+   "name": "nzb-client",
+   "org": "main"
+  },
+  {
+   "name": "file-share",
+   "org": "main"
+  },
+  {
+   "name": "camera-hub",
+   "org": "main"
+  },
+  {
+   "name": "meta-search",
+   "org": "main"
+  },
+  {
+   "name": "media-requests",
+   "org": "main"
+  },
+  {
+   "name": "tools-api",
+   "org": "main"
+  },
+  {
+   "name": "screenshots",
+   "org": "main"
+  },
+  {
+   "name": "tv-library",
+   "org": "main"
+  },
+  {
+   "name": "pdf-tools",
+   "org": "main"
+  },
+  {
+   "name": "file-sync",
+   "org": "main"
+  },
+  {
+   "name": "vpn-node",
+   "org": "main"
+  },
+  {
+   "name": "media-stats",
+   "org": "main"
+  },
+  {
+   "name": "iptv-proxy",
+   "org": "main"
+  },
+  {
+   "name": "torrent-client",
+   "org": "main"
+  },
+  {
+   "name": "ui-registry",
+   "org": "main"
+  },
+  {
+   "name": "network-api",
+   "org": "main"
+  },
+  {
+   "name": "uptime-monitor",
+   "org": "main"
+  },
+  {
+   "name": "vardo",
+   "org": "vardo"
+  },
+  {
+   "name": "media-invites",
+   "org": "main"
+  }
+ ],
+ "apps": [
+  {
+   "app": "agents",
+   "org": "main",
+   "labels": [
+    {
+     "source": "input",
+     "service": "dashboard",
+     "label": "traefik.http.routers.agents.rule",
+     "rule": "Host(`agents.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "dashboard",
+     "label": "traefik.http.routers.agents-Ihrz8ROd.rule",
+     "rule": "Host(`agents.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "dashboard",
+     "label": "traefik.http.routers.agents-Ihrz8ROd-http.rule",
+     "rule": "Host(`agents.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "dashboard",
+     "label": "traefik.http.routers.agents-7NB9N_fV.rule",
+     "rule": "Host(`agents-pr-166.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "dashboard",
+     "label": "traefik.http.routers.agents-7NB9N_fV-http.rule",
+     "rule": "Host(`agents-pr-166.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "dashboard",
+     "label": "traefik.http.routers.agents-MAfCsi7_.rule",
+     "rule": "Host(`agents-dashboard-pr-166.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "dashboard",
+     "label": "traefik.http.routers.agents-MAfCsi7_-http.rule",
+     "rule": "Host(`agents-dashboard-pr-166.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "worker",
+     "label": "traefik.http.routers.agents-LRmm4va_.rule",
+     "rule": "Host(`agents-worker-pr-166.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "worker",
+     "label": "traefik.http.routers.agents-LRmm4va_-http.rule",
+     "rule": "Host(`agents-worker-pr-166.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "postgres",
+     "label": "traefik.http.routers.agents-ssINVjxp.rule",
+     "rule": "Host(`agents-postgres-pr-166.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "postgres",
+     "label": "traefik.http.routers.agents-ssINVjxp-http.rule",
+     "rule": "Host(`agents-postgres-pr-166.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "redis",
+     "label": "traefik.http.routers.agents-I3y9N4nS.rule",
+     "rule": "Host(`agents-redis-pr-166.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "redis",
+     "label": "traefik.http.routers.agents-I3y9N4nS-http.rule",
+     "rule": "Host(`agents-redis-pr-166.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "bot",
+     "label": "traefik.http.routers.agents-JU4c6PlN.rule",
+     "rule": "Host(`agents-bot-pr-166.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "bot",
+     "label": "traefik.http.routers.agents-JU4c6PlN-http.rule",
+     "rule": "Host(`agents-bot-pr-166.example.com`)"
+    }
+   ]
+  },
+  {
+   "app": "sso",
+   "org": "main",
+   "labels": [
+    {
+     "source": "input",
+     "service": "sso-server",
+     "label": "traefik.http.routers.sso.rule",
+     "rule": "Host(`auth.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "sso-server",
+     "label": "traefik.http.routers.sso-OHxy61j9.rule",
+     "rule": "Host(`auth.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "sso-server",
+     "label": "traefik.http.routers.sso-OHxy61j9-http.rule",
+     "rule": "Host(`auth.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "server",
+     "label": "traefik.http.routers.sso-OHxy61j9-http.rule",
+     "rule": "Host(`auth.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "server",
+     "label": "traefik.http.routers.sso-OHxy61j9.rule",
+     "rule": "Host(`auth.example.com`)"
+    }
+   ]
+  },
+  {
+   "app": "subtitle-sync",
+   "org": "main",
+   "labels": [
+    {
+     "source": "input",
+     "service": "subtitle-sync",
+     "label": "traefik.http.routers.subtitle-sync.rule",
+     "rule": "Host(`subtitles.example.com`)"
+    },
+    {
+     "source": "input",
+     "service": "subtitle-sync",
+     "label": "traefik.http.routers.subtitle-sync-http.rule",
+     "rule": "Host(`subtitles.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "subtitle-sync",
+     "label": "traefik.http.routers.subtitle-sync-AXZ0POz9.rule",
+     "rule": "Host(`subtitles.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "subtitle-sync",
+     "label": "traefik.http.routers.subtitle-sync-AXZ0POz9-http.rule",
+     "rule": "Host(`subtitles.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "subtitles",
+     "label": "traefik.http.routers.subtitle-sync-AXZ0POz9-http.rule",
+     "rule": "Host(`subtitles.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "subtitles",
+     "label": "traefik.http.routers.subtitle-sync-AXZ0POz9.rule",
+     "rule": "Host(`subtitles.example.com`)"
+    }
+   ]
+  },
+  {
+   "app": "browser-api",
+   "org": "main",
+   "labels": [
+    {
+     "source": "input",
+     "service": "browser-api",
+     "label": "traefik.http.routers.browser-api-viewer.rule",
+     "rule": "Host(`browser.example.com`) && (PathPrefix(`/sessions`) || PathPrefix(`/view`) || PathPrefix(`/ws`) || PathPrefix(`/novnc`) || Path(`/`))"
+    },
+    {
+     "source": "input",
+     "service": "browser-api",
+     "label": "traefik.http.routers.browser-api.rule",
+     "rule": "Host(`browser.example.com`) && (PathPrefix(`/mcp`) || PathPrefix(`/healthz`))"
+    },
+    {
+     "source": "deployed",
+     "service": "browser-api",
+     "label": "traefik.http.routers.browser-api-ZLL2Umt9.rule",
+     "rule": "Host(`browser.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "browser-api",
+     "label": "traefik.http.routers.browser-api-ZLL2Umt9-http.rule",
+     "rule": "Host(`browser.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "mcp",
+     "label": "traefik.http.routers.browser-api-ZLL2Umt9-http.rule",
+     "rule": "Host(`browser.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "mcp",
+     "label": "traefik.http.routers.browser-api-ZLL2Umt9.rule",
+     "rule": "Host(`browser.example.com`)"
+    }
+   ]
+  },
+  {
+   "app": "page-watch",
+   "org": "main",
+   "labels": [
+    {
+     "source": "deployed",
+     "service": "page-watch",
+     "label": "traefik.http.routers.page-watch.rule",
+     "rule": "Host(`changes.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "page-watch",
+     "label": "traefik.http.routers.page-watch-http.rule",
+     "rule": "Host(`changes.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "page-watch",
+     "label": "traefik.http.routers.page-watch-http.rule",
+     "rule": "Host(`changes.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "page-watch",
+     "label": "traefik.http.routers.page-watch.rule",
+     "rule": "Host(`changes.example.com`)"
+    }
+   ]
+  },
+  {
+   "app": "code-server",
+   "org": "main",
+   "labels": [
+    {
+     "source": "input",
+     "service": "code-server",
+     "label": "traefik.http.routers.code-server.rule",
+     "rule": "Host(`code.example.com`)"
+    },
+    {
+     "source": "input",
+     "service": "code-server",
+     "label": "traefik.http.routers.code-server-http.rule",
+     "rule": "Host(`code.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "code-server",
+     "label": "traefik.http.routers.code-server-nNmrM5LK.rule",
+     "rule": "Host(`code.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "code-server",
+     "label": "traefik.http.routers.code-server-nNmrM5LK-http.rule",
+     "rule": "Host(`code.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "server",
+     "label": "traefik.http.routers.code-server-nNmrM5LK-http.rule",
+     "rule": "Host(`code.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "server",
+     "label": "traefik.http.routers.code-server-nNmrM5LK.rule",
+     "rule": "Host(`code.example.com`)"
+    }
+   ]
+  },
+  {
+   "app": "stack-ui",
+   "org": "main",
+   "labels": [
+    {
+     "source": "input",
+     "service": "stack-ui",
+     "label": "traefik.http.routers.stack-ui.rule",
+     "rule": "Host(`docker.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "stack-ui",
+     "label": "traefik.http.routers.stack-ui-5NDjbyjQ.rule",
+     "rule": "Host(`docker.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "stack-ui",
+     "label": "traefik.http.routers.stack-ui-5NDjbyjQ-http.rule",
+     "rule": "Host(`docker.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "stack-ui",
+     "label": "traefik.http.routers.stack-ui-5NDjbyjQ-http.rule",
+     "rule": "Host(`docker.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "stack-ui",
+     "label": "traefik.http.routers.stack-ui-5NDjbyjQ.rule",
+     "rule": "Host(`docker.example.com`)"
+    }
+   ]
+  },
+  {
+   "app": "deploy-api",
+   "org": "main",
+   "labels": [
+    {
+     "source": "deployed",
+     "service": "deploy-api",
+     "label": "traefik.http.routers.deploy-api-1PkgZbco.rule",
+     "rule": "Host(`deploy-api.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "deploy-api",
+     "label": "traefik.http.routers.deploy-api-1PkgZbco-http.rule",
+     "rule": "Host(`deploy-api.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "mcp",
+     "label": "traefik.http.routers.deploy-api-1PkgZbco-http.rule",
+     "rule": "Host(`deploy-api.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "mcp",
+     "label": "traefik.http.routers.deploy-api-1PkgZbco.rule",
+     "rule": "Host(`deploy-api.example.com`)"
+    }
+   ]
+  },
+  {
+   "app": "log-viewer",
+   "org": "main",
+   "labels": [
+    {
+     "source": "input",
+     "service": "log-viewer",
+     "label": "traefik.http.routers.log-viewer.rule",
+     "rule": "Host(`logs.example.com`)"
+    },
+    {
+     "source": "input",
+     "service": "log-viewer",
+     "label": "traefik.http.routers.log-viewer-http.rule",
+     "rule": "Host(`logs.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "log-viewer",
+     "label": "traefik.http.routers.log-viewer.rule",
+     "rule": "Host(`logs.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "log-viewer",
+     "label": "traefik.http.routers.log-viewer-http.rule",
+     "rule": "Host(`logs.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "log-viewer",
+     "label": "traefik.http.routers.log-viewer-drYRQPST.rule",
+     "rule": "Host(`logs.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "log-viewer",
+     "label": "traefik.http.routers.log-viewer-drYRQPST-http.rule",
+     "rule": "Host(`logs.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "log-viewer",
+     "label": "traefik.http.routers.log-viewer-drYRQPST-http.rule",
+     "rule": "Host(`logs.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "log-viewer",
+     "label": "traefik.http.routers.log-viewer-drYRQPST.rule",
+     "rule": "Host(`logs.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "log-viewer",
+     "label": "traefik.http.routers.log-viewer-http.rule",
+     "rule": "Host(`logs.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "log-viewer",
+     "label": "traefik.http.routers.log-viewer.rule",
+     "rule": "Host(`logs.example.com`)"
+    }
+   ]
+  },
+  {
+   "app": "whiteboard",
+   "org": "main",
+   "labels": [
+    {
+     "source": "input",
+     "service": "whiteboard",
+     "label": "traefik.http.routers.whiteboard.rule",
+     "rule": "Host(`draw.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "whiteboard",
+     "label": "traefik.http.routers.whiteboard-_wMeNIh_.rule",
+     "rule": "Host(`draw.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "whiteboard",
+     "label": "traefik.http.routers.whiteboard-_wMeNIh_-http.rule",
+     "rule": "Host(`draw.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "whiteboard",
+     "label": "traefik.http.routers.whiteboard-_wMeNIh_-http.rule",
+     "rule": "Host(`draw.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "whiteboard",
+     "label": "traefik.http.routers.whiteboard-_wMeNIh_.rule",
+     "rule": "Host(`draw.example.com`)"
+    }
+   ]
+  },
+  {
+   "app": "git-host",
+   "org": "main",
+   "labels": [
+    {
+     "source": "input",
+     "service": "git-host",
+     "label": "traefik.http.routers.git-host.rule",
+     "rule": "Host(`git-host.example.com`) || Host(`git.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "git-host",
+     "label": "traefik.http.routers.git-host-05eC6yr-.rule",
+     "rule": "Host(`git-host.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "git-host",
+     "label": "traefik.http.routers.git-host-05eC6yr--http.rule",
+     "rule": "Host(`git-host.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "git-host",
+     "label": "traefik.http.routers.git-host-05eC6yr--http.rule",
+     "rule": "Host(`git-host.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "git-host",
+     "label": "traefik.http.routers.git-host-05eC6yr-.rule",
+     "rule": "Host(`git-host.example.com`)"
+    }
+   ]
+  },
+  {
+   "app": "git-mirror",
+   "org": "main",
+   "labels": [
+    {
+     "source": "input",
+     "service": "git-mirror",
+     "label": "traefik.http.routers.git-mirror.rule",
+     "rule": "Host(`mirror.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "git-mirror",
+     "label": "traefik.http.routers.git-mirror.rule",
+     "rule": "Host(`mirror.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "git-mirror",
+     "label": "traefik.http.routers.git-mirror-YdJP-VBh.rule",
+     "rule": "Host(`mirror.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "git-mirror",
+     "label": "traefik.http.routers.git-mirror-YdJP-VBh-http.rule",
+     "rule": "Host(`mirror.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "mirror",
+     "label": "traefik.http.routers.git-mirror-YdJP-VBh-http.rule",
+     "rule": "Host(`mirror.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "mirror",
+     "label": "traefik.http.routers.git-mirror-YdJP-VBh.rule",
+     "rule": "Host(`mirror.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "mirror",
+     "label": "traefik.http.routers.git-mirror.rule",
+     "rule": "Host(`mirror.example.com`)"
+    }
+   ]
+  },
+  {
+   "app": "start-page",
+   "org": "main",
+   "labels": [
+    {
+     "source": "deployed",
+     "service": "start-page",
+     "label": "traefik.http.routers.start-page-FXSCqHar.rule",
+     "rule": "Host(`home.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "start-page",
+     "label": "traefik.http.routers.start-page-FXSCqHar-http.rule",
+     "rule": "Host(`home.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "start-page",
+     "label": "traefik.http.routers.start-page-FXSCqHar-http.rule",
+     "rule": "Host(`home.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "start-page",
+     "label": "traefik.http.routers.start-page-FXSCqHar.rule",
+     "rule": "Host(`home.example.com`)"
+    }
+   ]
+  },
+  {
+   "app": "photos",
+   "org": "main",
+   "labels": [
+    {
+     "source": "input",
+     "service": "photos-server",
+     "label": "traefik.http.routers.photos.rule",
+     "rule": "Host(`images.example.com`) || Host(`photos.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "photos-server",
+     "label": "traefik.http.routers.photos-sHHmTG3o.rule",
+     "rule": "Host(`images.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "photos-server",
+     "label": "traefik.http.routers.photos-sHHmTG3o-http.rule",
+     "rule": "Host(`images.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "server",
+     "label": "traefik.http.routers.photos-sHHmTG3o-http.rule",
+     "rule": "Host(`images.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "server",
+     "label": "traefik.http.routers.photos-sHHmTG3o.rule",
+     "rule": "Host(`images.example.com`)"
+    }
+   ]
+  },
+  {
+   "app": "dev-tools",
+   "org": "main",
+   "labels": [
+    {
+     "source": "input",
+     "service": "dev-tools",
+     "label": "traefik.http.routers.dev-tools.rule",
+     "rule": "Host(`tools.example.com`)"
+    },
+    {
+     "source": "input",
+     "service": "dev-tools",
+     "label": "traefik.http.routers.dev-tools-http.rule",
+     "rule": "Host(`tools.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "dev-tools",
+     "label": "traefik.http.routers.dev-tools-ndDq3RFD.rule",
+     "rule": "Host(`tools.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "dev-tools",
+     "label": "traefik.http.routers.dev-tools-ndDq3RFD-http.rule",
+     "rule": "Host(`tools.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "tools",
+     "label": "traefik.http.routers.dev-tools-ndDq3RFD-http.rule",
+     "rule": "Host(`tools.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "tools",
+     "label": "traefik.http.routers.dev-tools-ndDq3RFD.rule",
+     "rule": "Host(`tools.example.com`)"
+    }
+   ]
+  },
+  {
+   "app": "media-alt",
+   "org": "main",
+   "labels": [
+    {
+     "source": "input",
+     "service": "media-alt",
+     "label": "traefik.http.routers.media-alt.rule",
+     "rule": "Host(`media-alt.example.com`)"
+    },
+    {
+     "source": "input",
+     "service": "media-alt",
+     "label": "traefik.http.routers.media-alt-http.rule",
+     "rule": "Host(`media-alt.example.com`)"
+    }
+   ]
+  },
+  {
+   "app": "notes-api",
+   "org": "main",
+   "labels": [
+    {
+     "source": "input",
+     "service": "notes-api",
+     "label": "traefik.http.routers.notes.rule",
+     "rule": "Host(`notes.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "notes-api",
+     "label": "traefik.http.routers.notes.rule",
+     "rule": "Host(`notes.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "server",
+     "label": "traefik.http.routers.notes.rule",
+     "rule": "Host(`notes.example.com`)"
+    }
+   ]
+  },
+  {
+   "app": "llm-proxy",
+   "org": "main",
+   "labels": [
+    {
+     "source": "input",
+     "service": "llm-proxy",
+     "label": "traefik.http.routers.llm-proxy.rule",
+     "rule": "Host(`llm.example.com`)"
+    },
+    {
+     "source": "input",
+     "service": "llm-proxy",
+     "label": "traefik.http.routers.llm-proxy-http.rule",
+     "rule": "Host(`llm.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "llm-proxy",
+     "label": "traefik.http.routers.llm-proxy.rule",
+     "rule": "Host(`llm.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "llm-proxy",
+     "label": "traefik.http.routers.llm-proxy-http.rule",
+     "rule": "Host(`llm.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "swap",
+     "label": "traefik.http.routers.llm-proxy-http.rule",
+     "rule": "Host(`llm.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "swap",
+     "label": "traefik.http.routers.llm-proxy.rule",
+     "rule": "Host(`llm.example.com`)"
+    }
+   ]
+  },
+  {
+   "app": "recorder",
+   "org": "main",
+   "labels": [
+    {
+     "source": "deployed",
+     "service": "vision",
+     "label": "traefik.http.routers.recorder-Yh7io7Vm.rule",
+     "rule": "Host(`recorder-turbo-fennel.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "vision",
+     "label": "traefik.http.routers.recorder-Yh7io7Vm-http.rule",
+     "rule": "Host(`recorder-turbo-fennel.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "vision",
+     "label": "traefik.http.routers.recorder-0hGG0u0d.rule",
+     "rule": "Host(`nvr.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "vision",
+     "label": "traefik.http.routers.recorder-0hGG0u0d-http.rule",
+     "rule": "Host(`nvr.example.com`)"
+    }
+   ]
+  },
+  {
+   "app": "workflows",
+   "org": "main",
+   "labels": [
+    {
+     "source": "input",
+     "service": "workflows",
+     "label": "traefik.http.routers.workflows.rule",
+     "rule": "Host(`workflows.example.com`) || Host(`automation.example.com`)  || Host(`automations.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "workflows",
+     "label": "traefik.http.routers.workflows-67pKGS6g.rule",
+     "rule": "Host(`workflows.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "workflows",
+     "label": "traefik.http.routers.workflows-67pKGS6g-http.rule",
+     "rule": "Host(`workflows.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "workflows",
+     "label": "traefik.http.routers.workflows-67pKGS6g-http.rule",
+     "rule": "Host(`workflows.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "workflows",
+     "label": "traefik.http.routers.workflows-67pKGS6g.rule",
+     "rule": "Host(`workflows.example.com`)"
+    }
+   ]
+  },
+  {
+   "app": "push-notify",
+   "org": "main",
+   "labels": [
+    {
+     "source": "input",
+     "service": "push-notify",
+     "label": "traefik.http.routers.push-notify.rule",
+     "rule": "Host(`push-notify.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "push-notify",
+     "label": "traefik.http.routers.push-notify-1FX152zw.rule",
+     "rule": "Host(`push-notify.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "push-notify",
+     "label": "traefik.http.routers.push-notify-1FX152zw-http.rule",
+     "rule": "Host(`push-notify.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "push-notify",
+     "label": "traefik.http.routers.push-notify-1FX152zw-http.rule",
+     "rule": "Host(`push-notify.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "push-notify",
+     "label": "traefik.http.routers.push-notify-1FX152zw.rule",
+     "rule": "Host(`push-notify.example.com`)"
+    }
+   ]
+  },
+  {
+   "app": "nzb-search",
+   "org": "main",
+   "labels": [
+    {
+     "source": "input",
+     "service": "nzb-search",
+     "label": "traefik.http.routers.nzb-search.rule",
+     "rule": "Host(`nzb-hub.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "nzb-search",
+     "label": "traefik.http.routers.nzb-search.rule",
+     "rule": "Host(`nzb-hub.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "nzb-search",
+     "label": "traefik.http.routers.nzb-search-T1LbdbJv.rule",
+     "rule": "Host(`nzb-hub.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "nzb-search",
+     "label": "traefik.http.routers.nzb-search-T1LbdbJv-http.rule",
+     "rule": "Host(`nzb-hub.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "nzb-search",
+     "label": "traefik.http.routers.nzb-search-T1LbdbJv-http.rule",
+     "rule": "Host(`nzb-hub.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "nzb-search",
+     "label": "traefik.http.routers.nzb-search-T1LbdbJv.rule",
+     "rule": "Host(`nzb-hub.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "nzb-search",
+     "label": "traefik.http.routers.nzb-search.rule",
+     "rule": "Host(`nzb-hub.example.com`)"
+    }
+   ]
+  },
+  {
+   "app": "llm-runtime",
+   "org": "main",
+   "labels": [
+    {
+     "source": "deployed",
+     "service": "llm-runtime",
+     "label": "traefik.http.routers.llm-runtime-TxA-PWeD.rule",
+     "rule": "Host(`llm-runtime.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "llm-runtime",
+     "label": "traefik.http.routers.llm-runtime-TxA-PWeD-http.rule",
+     "rule": "Host(`llm-runtime.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "llm-runtime",
+     "label": "traefik.http.routers.llm-runtime-TxA-PWeD-http.rule",
+     "rule": "Host(`llm-runtime.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "llm-runtime",
+     "label": "traefik.http.routers.llm-runtime-TxA-PWeD.rule",
+     "rule": "Host(`llm-runtime.example.com`)"
+    }
+   ]
+  },
+  {
+   "app": "speedtest-app",
+   "org": "main",
+   "labels": [
+    {
+     "source": "input",
+     "service": "speedtest-app",
+     "label": "traefik.http.routers.speedtest-app.rule",
+     "rule": "Host(`speedtest.example.com`)"
+    },
+    {
+     "source": "input",
+     "service": "speedtest-app",
+     "label": "traefik.http.routers.speedtest-app-http.rule",
+     "rule": "Host(`speedtest.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "speedtest-app",
+     "label": "traefik.http.routers.speedtest-app-tnkxmvRB.rule",
+     "rule": "Host(`speedtest.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "speedtest-app",
+     "label": "traefik.http.routers.speedtest-app-tnkxmvRB-http.rule",
+     "rule": "Host(`speedtest.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "speedtest-app",
+     "label": "traefik.http.routers.speedtest-app-tnkxmvRB-http.rule",
+     "rule": "Host(`speedtest.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "speedtest-app",
+     "label": "traefik.http.routers.speedtest-app-tnkxmvRB.rule",
+     "rule": "Host(`speedtest.example.com`)"
+    }
+   ]
+  },
+  {
+   "app": "chat-ui",
+   "org": "main",
+   "labels": [
+    {
+     "source": "deployed",
+     "service": "chat-ui",
+     "label": "traefik.http.routers.chat-ui-H_9Zdyfv.rule",
+     "rule": "Host(`chat.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "chat-ui",
+     "label": "traefik.http.routers.chat-ui-H_9Zdyfv-http.rule",
+     "rule": "Host(`chat.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "chat-ui",
+     "label": "traefik.http.routers.chat-ui-H_9Zdyfv-http.rule",
+     "rule": "Host(`chat.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "chat-ui",
+     "label": "traefik.http.routers.chat-ui-H_9Zdyfv.rule",
+     "rule": "Host(`chat.example.com`)"
+    }
+   ]
+  },
+  {
+   "app": "wiki-app",
+   "org": "main",
+   "labels": [
+    {
+     "source": "input",
+     "service": "wiki-app",
+     "label": "traefik.http.routers.wiki-app.rule",
+     "rule": "Host(`wiki.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "wiki-app",
+     "label": "traefik.http.routers.wiki-app.rule",
+     "rule": "Host(`wiki.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "wiki-app",
+     "label": "traefik.http.routers.wiki-app-bHDUiXRQ.rule",
+     "rule": "Host(`wiki.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "wiki-app",
+     "label": "traefik.http.routers.wiki-app-bHDUiXRQ-http.rule",
+     "rule": "Host(`wiki.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "wiki-app",
+     "label": "traefik.http.routers.wiki-app-bHDUiXRQ-http.rule",
+     "rule": "Host(`wiki.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "wiki-app",
+     "label": "traefik.http.routers.wiki-app-bHDUiXRQ.rule",
+     "rule": "Host(`wiki.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "wiki-app",
+     "label": "traefik.http.routers.wiki-app.rule",
+     "rule": "Host(`wiki.example.com`)"
+    }
+   ]
+  },
+  {
+   "app": "documents",
+   "org": "main",
+   "labels": [
+    {
+     "source": "deployed",
+     "service": "documents",
+     "label": "traefik.http.routers.documents-2h51w7Qo.rule",
+     "rule": "Host(`documents.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "documents",
+     "label": "traefik.http.routers.documents-2h51w7Qo-http.rule",
+     "rule": "Host(`documents.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "documents",
+     "label": "traefik.http.routers.documents-2h51w7Qo-http.rule",
+     "rule": "Host(`documents.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "documents",
+     "label": "traefik.http.routers.documents-2h51w7Qo.rule",
+     "rule": "Host(`documents.example.com`)"
+    }
+   ]
+  },
+  {
+   "app": "media-sync",
+   "org": "main",
+   "labels": [
+    {
+     "source": "deployed",
+     "service": "media-sync",
+     "label": "traefik.http.routers.media-sync-8wwFaF20.rule",
+     "rule": "Host(`media-sync.localhost`)"
+    },
+    {
+     "source": "deployed",
+     "service": "media-sync",
+     "label": "traefik.http.routers.media-sync-8wwFaF20-http.rule",
+     "rule": "Host(`media-sync.localhost`)"
+    },
+    {
+     "source": "live",
+     "service": "media-sync",
+     "label": "traefik.http.routers.media-sync-8wwFaF20-http.rule",
+     "rule": "Host(`media-sync.localhost`)"
+    },
+    {
+     "source": "live",
+     "service": "media-sync",
+     "label": "traefik.http.routers.media-sync-8wwFaF20.rule",
+     "rule": "Host(`media-sync.localhost`)"
+    }
+   ]
+  },
+  {
+   "app": "indexer-hub",
+   "org": "main",
+   "labels": [
+    {
+     "source": "input",
+     "service": "indexer-hub",
+     "label": "traefik.http.routers.indexer-hub.rule",
+     "rule": "Host(`indexers.example.com`)"
+    },
+    {
+     "source": "input",
+     "service": "indexer-hub",
+     "label": "traefik.http.routers.indexer-hub-http.rule",
+     "rule": "Host(`indexers.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "indexer-hub",
+     "label": "traefik.http.routers.indexer-hub-rbh2Id23.rule",
+     "rule": "Host(`indexers.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "indexer-hub",
+     "label": "traefik.http.routers.indexer-hub-rbh2Id23-http.rule",
+     "rule": "Host(`indexers.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "indexers",
+     "label": "traefik.http.routers.indexer-hub-rbh2Id23-http.rule",
+     "rule": "Host(`indexers.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "indexers",
+     "label": "traefik.http.routers.indexer-hub-rbh2Id23.rule",
+     "rule": "Host(`indexers.example.com`)"
+    }
+   ]
+  },
+  {
+   "app": "movie-library",
+   "org": "main",
+   "labels": [
+    {
+     "source": "input",
+     "service": "movie-library",
+     "label": "traefik.http.routers.movie-library.rule",
+     "rule": "Host(`movies.example.com`)"
+    },
+    {
+     "source": "input",
+     "service": "movie-library",
+     "label": "traefik.http.routers.movie-library-http.rule",
+     "rule": "Host(`movies.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "movie-library",
+     "label": "traefik.http.routers.movie-library.rule",
+     "rule": "Host(`movies.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "movie-library",
+     "label": "traefik.http.routers.movie-library-http.rule",
+     "rule": "Host(`movies.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "movie-library",
+     "label": "traefik.http.routers.movie-library-2Rqzi-V-.rule",
+     "rule": "Host(`movies.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "movie-library",
+     "label": "traefik.http.routers.movie-library-2Rqzi-V--http.rule",
+     "rule": "Host(`movies.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "movies",
+     "label": "traefik.http.routers.movie-library-2Rqzi-V--http.rule",
+     "rule": "Host(`movies.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "movies",
+     "label": "traefik.http.routers.movie-library-2Rqzi-V-.rule",
+     "rule": "Host(`movies.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "movies",
+     "label": "traefik.http.routers.movie-library-http.rule",
+     "rule": "Host(`movies.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "movies",
+     "label": "traefik.http.routers.movie-library.rule",
+     "rule": "Host(`movies.example.com`)"
+    }
+   ]
+  },
+  {
+   "app": "stream-relay",
+   "org": "main",
+   "labels": [
+    {
+     "source": "input",
+     "service": "player",
+     "label": "traefik.http.routers.stream-relay-http.rule",
+     "rule": "Host(`game.example.com`)"
+    },
+    {
+     "source": "input",
+     "service": "player",
+     "label": "traefik.http.routers.stream-relay.rule",
+     "rule": "Host(`game.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "player",
+     "label": "traefik.http.routers.stream-relay-http.rule",
+     "rule": "Host(`game.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "player",
+     "label": "traefik.http.routers.stream-relay.rule",
+     "rule": "Host(`game.example.com`)"
+    }
+   ]
+  },
+  {
+   "app": "nzb-client",
+   "org": "main",
+   "labels": [
+    {
+     "source": "input",
+     "service": "nzb-client",
+     "label": "traefik.http.routers.nzb-client.rule",
+     "rule": "Host(`downloads.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "nzb-client",
+     "label": "traefik.http.routers.nzb-client.rule",
+     "rule": "Host(`downloads.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "nzb-client",
+     "label": "traefik.http.routers.nzb-client-XI2IJV2y.rule",
+     "rule": "Host(`downloads.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "nzb-client",
+     "label": "traefik.http.routers.nzb-client-XI2IJV2y-http.rule",
+     "rule": "Host(`downloads.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "nzb-client",
+     "label": "traefik.http.routers.nzb-client-XI2IJV2y-http.rule",
+     "rule": "Host(`downloads.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "nzb-client",
+     "label": "traefik.http.routers.nzb-client-XI2IJV2y.rule",
+     "rule": "Host(`downloads.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "nzb-client",
+     "label": "traefik.http.routers.nzb-client.rule",
+     "rule": "Host(`downloads.example.com`)"
+    }
+   ]
+  },
+  {
+   "app": "meta-search",
+   "org": "main",
+   "labels": [
+    {
+     "source": "deployed",
+     "service": "meta-search",
+     "label": "traefik.http.routers.meta-search.rule",
+     "rule": "Host(`search.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "meta-search",
+     "label": "traefik.http.routers.meta-search-http.rule",
+     "rule": "Host(`search.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "meta-search",
+     "label": "traefik.http.routers.meta-search-http.rule",
+     "rule": "Host(`search.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "meta-search",
+     "label": "traefik.http.routers.meta-search.rule",
+     "rule": "Host(`search.example.com`)"
+    }
+   ]
+  },
+  {
+   "app": "media-requests",
+   "org": "main",
+   "labels": [
+    {
+     "source": "input",
+     "service": "media-requests",
+     "label": "traefik.http.routers.media-requests.rule",
+     "rule": "Host(`request.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "media-requests",
+     "label": "traefik.http.routers.media-requests.rule",
+     "rule": "Host(`request.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "media-requests",
+     "label": "traefik.http.routers.media-requests-3IhTyPM9.rule",
+     "rule": "Host(`request.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "media-requests",
+     "label": "traefik.http.routers.media-requests-3IhTyPM9-http.rule",
+     "rule": "Host(`request.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "media-requests",
+     "label": "traefik.http.routers.media-requests-3IhTyPM9-http.rule",
+     "rule": "Host(`request.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "media-requests",
+     "label": "traefik.http.routers.media-requests-3IhTyPM9.rule",
+     "rule": "Host(`request.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "media-requests",
+     "label": "traefik.http.routers.media-requests.rule",
+     "rule": "Host(`request.example.com`)"
+    }
+   ]
+  },
+  {
+   "app": "tools-api",
+   "org": "main",
+   "labels": [
+    {
+     "source": "deployed",
+     "service": "tools-api",
+     "label": "traefik.http.routers.tools-api-pXsyE4d-.rule",
+     "rule": "Host(`tools-api.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "tools-api",
+     "label": "traefik.http.routers.tools-api-pXsyE4d--http.rule",
+     "rule": "Host(`tools-api.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "mcp",
+     "label": "traefik.http.routers.tools-api-pXsyE4d--http.rule",
+     "rule": "Host(`tools-api.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "mcp",
+     "label": "traefik.http.routers.tools-api-pXsyE4d-.rule",
+     "rule": "Host(`tools-api.example.com`)"
+    }
+   ]
+  },
+  {
+   "app": "tv-library",
+   "org": "main",
+   "labels": [
+    {
+     "source": "input",
+     "service": "tv-library",
+     "label": "traefik.http.routers.tv-library.rule",
+     "rule": "Host(`tv.example.com`)"
+    },
+    {
+     "source": "input",
+     "service": "tv-library",
+     "label": "traefik.http.routers.tv-library-http.rule",
+     "rule": "Host(`tv.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "tv-library",
+     "label": "traefik.http.routers.tv-library.rule",
+     "rule": "Host(`tv.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "tv-library",
+     "label": "traefik.http.routers.tv-library-http.rule",
+     "rule": "Host(`tv.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "tv-library",
+     "label": "traefik.http.routers.tv-library-bRPM3r9-.rule",
+     "rule": "Host(`tv.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "tv-library",
+     "label": "traefik.http.routers.tv-library-bRPM3r9--http.rule",
+     "rule": "Host(`tv.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "tv",
+     "label": "traefik.http.routers.tv-library-bRPM3r9--http.rule",
+     "rule": "Host(`tv.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "tv",
+     "label": "traefik.http.routers.tv-library-bRPM3r9-.rule",
+     "rule": "Host(`tv.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "tv",
+     "label": "traefik.http.routers.tv-library-http.rule",
+     "rule": "Host(`tv.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "tv",
+     "label": "traefik.http.routers.tv-library.rule",
+     "rule": "Host(`tv.example.com`)"
+    }
+   ]
+  },
+  {
+   "app": "pdf-tools",
+   "org": "main",
+   "labels": [
+    {
+     "source": "input",
+     "service": "pdf-tools",
+     "label": "traefik.http.routers.pdf-tools.rule",
+     "rule": "Host(`pdf.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "pdf-tools",
+     "label": "traefik.http.routers.pdf-tools-ZQTfo9zA.rule",
+     "rule": "Host(`pdf.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "pdf-tools",
+     "label": "traefik.http.routers.pdf-tools-ZQTfo9zA-http.rule",
+     "rule": "Host(`pdf.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "pdf",
+     "label": "traefik.http.routers.pdf-tools-ZQTfo9zA-http.rule",
+     "rule": "Host(`pdf.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "pdf",
+     "label": "traefik.http.routers.pdf-tools-ZQTfo9zA.rule",
+     "rule": "Host(`pdf.example.com`)"
+    }
+   ]
+  },
+  {
+   "app": "file-sync",
+   "org": "main",
+   "labels": [
+    {
+     "source": "input",
+     "service": "file-sync",
+     "label": "traefik.http.routers.file-sync.rule",
+     "rule": "Host(`file-sync.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "file-sync",
+     "label": "traefik.http.routers.file-sync-zibqNK70.rule",
+     "rule": "Host(`file-sync.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "file-sync",
+     "label": "traefik.http.routers.file-sync-zibqNK70-http.rule",
+     "rule": "Host(`file-sync.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "file-sync",
+     "label": "traefik.http.routers.file-sync-zibqNK70-http.rule",
+     "rule": "Host(`file-sync.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "file-sync",
+     "label": "traefik.http.routers.file-sync-zibqNK70.rule",
+     "rule": "Host(`file-sync.example.com`)"
+    }
+   ]
+  },
+  {
+   "app": "media-stats",
+   "org": "main",
+   "labels": [
+    {
+     "source": "input",
+     "service": "media-stats",
+     "label": "traefik.http.routers.media-stats.rule",
+     "rule": "Host(`media-stats.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "media-stats",
+     "label": "traefik.http.routers.media-stats-OsVqv1p3.rule",
+     "rule": "Host(`media-stats.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "media-stats",
+     "label": "traefik.http.routers.media-stats-OsVqv1p3-http.rule",
+     "rule": "Host(`media-stats.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "media-stats",
+     "label": "traefik.http.routers.media-stats-OsVqv1p3-http.rule",
+     "rule": "Host(`media-stats.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "media-stats",
+     "label": "traefik.http.routers.media-stats-OsVqv1p3.rule",
+     "rule": "Host(`media-stats.example.com`)"
+    }
+   ]
+  },
+  {
+   "app": "torrent-client",
+   "org": "main",
+   "labels": [
+    {
+     "source": "input",
+     "service": "vpn-gateway",
+     "label": "traefik.http.routers.torrent-client.rule",
+     "rule": "Host(`torrent-client.example.com`)"
+    },
+    {
+     "source": "input",
+     "service": "vpn-gateway",
+     "label": "traefik.http.routers.torrents.rule",
+     "rule": "Host(`torrents.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "vpn-gateway",
+     "label": "traefik.http.routers.torrent-client-mTpNs-dC.rule",
+     "rule": "Host(`torrent-client.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "vpn-gateway",
+     "label": "traefik.http.routers.torrent-client-mTpNs-dC-http.rule",
+     "rule": "Host(`torrent-client.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "vpn-gateway",
+     "label": "traefik.http.routers.torrent-client-mTpNs-dC-http.rule",
+     "rule": "Host(`torrent-client.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "vpn-gateway",
+     "label": "traefik.http.routers.torrent-client-mTpNs-dC.rule",
+     "rule": "Host(`torrent-client.example.com`)"
+    }
+   ]
+  },
+  {
+   "app": "ui-registry",
+   "org": "main",
+   "labels": [
+    {
+     "source": "deployed",
+     "service": "app",
+     "label": "traefik.http.routers.ui-registry-cMtMOxEc.rule",
+     "rule": "Host(`ui.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "app",
+     "label": "traefik.http.routers.ui-registry-cMtMOxEc-http.rule",
+     "rule": "Host(`ui.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "app",
+     "label": "traefik.http.routers.ui-registry-cMtMOxEc-http.rule",
+     "rule": "Host(`ui.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "app",
+     "label": "traefik.http.routers.ui-registry-cMtMOxEc.rule",
+     "rule": "Host(`ui.example.com`)"
+    }
+   ]
+  },
+  {
+   "app": "network-api",
+   "org": "main",
+   "labels": [
+    {
+     "source": "deployed",
+     "service": "network-api",
+     "label": "traefik.http.routers.network-api--WOxmysl.rule",
+     "rule": "Host(`network-api.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "network-api",
+     "label": "traefik.http.routers.network-api--WOxmysl-http.rule",
+     "rule": "Host(`network-api.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "mcp",
+     "label": "traefik.http.routers.network-api--WOxmysl-http.rule",
+     "rule": "Host(`network-api.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "mcp",
+     "label": "traefik.http.routers.network-api--WOxmysl.rule",
+     "rule": "Host(`network-api.example.com`)"
+    }
+   ]
+  },
+  {
+   "app": "uptime-monitor",
+   "org": "main",
+   "labels": [
+    {
+     "source": "deployed",
+     "service": "uptime-monitor",
+     "label": "traefik.http.routers.uptime-monitor-ndjynYIj.rule",
+     "rule": "Host(`uptime-monitor-chill-ivory.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "uptime-monitor",
+     "label": "traefik.http.routers.uptime-monitor-ndjynYIj-http.rule",
+     "rule": "Host(`uptime-monitor-chill-ivory.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "kuma",
+     "label": "traefik.http.routers.uptime-monitor-ndjynYIj-http.rule",
+     "rule": "Host(`uptime-monitor-chill-ivory.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "kuma",
+     "label": "traefik.http.routers.uptime-monitor-ndjynYIj.rule",
+     "rule": "Host(`uptime-monitor-chill-ivory.example.com`)"
+    }
+   ]
+  },
+  {
+   "app": "vardo",
+   "org": "vardo",
+   "labels": [
+    {
+     "source": "input",
+     "service": "frontend",
+     "label": "traefik.http.routers.vardo.rule",
+     "rule": "Host(`${VARDO_DOMAIN:-localhost}`)"
+    },
+    {
+     "source": "input",
+     "service": "frontend",
+     "label": "traefik.http.routers.vardo-http.rule",
+     "rule": "Host(`${VARDO_DOMAIN:-localhost}`)"
+    },
+    {
+     "source": "input",
+     "service": "frontend",
+     "label": "traefik.http.routers.vardo-fallback.rule",
+     "rule": "PathPrefix(`/`)"
+    },
+    {
+     "source": "input",
+     "service": "frontend",
+     "label": "traefik.http.routers.vardo-fallback-https.rule",
+     "rule": "PathPrefix(`/`)"
+    },
+    {
+     "source": "input",
+     "service": "frontend",
+     "label": "traefik.http.routers.vardo-unknown-host-assets.rule",
+     "rule": "HostRegexp(`.*[a-zA-Z].*`) && PathPrefix(`/_next`)"
+    },
+    {
+     "source": "input",
+     "service": "frontend",
+     "label": "traefik.http.routers.vardo-unknown-host-assets-http.rule",
+     "rule": "HostRegexp(`.*[a-zA-Z].*`) && PathPrefix(`/_next`)"
+    },
+    {
+     "source": "input",
+     "service": "frontend",
+     "label": "traefik.http.routers.vardo-unknown-host.rule",
+     "rule": "HostRegexp(`.*[a-zA-Z].*`)"
+    },
+    {
+     "source": "input",
+     "service": "frontend",
+     "label": "traefik.http.routers.vardo-unknown-host-http.rule",
+     "rule": "HostRegexp(`.*[a-zA-Z].*`)"
+    },
+    {
+     "source": "deployed",
+     "service": "frontend",
+     "label": "traefik.http.routers.vardo.rule",
+     "rule": "Host(`${VARDO_DOMAIN:-localhost}`)"
+    },
+    {
+     "source": "deployed",
+     "service": "frontend",
+     "label": "traefik.http.routers.vardo-http.rule",
+     "rule": "Host(`${VARDO_DOMAIN:-localhost}`)"
+    },
+    {
+     "source": "deployed",
+     "service": "frontend",
+     "label": "traefik.http.routers.vardo-fallback.rule",
+     "rule": "PathPrefix(`/`)"
+    },
+    {
+     "source": "deployed",
+     "service": "frontend",
+     "label": "traefik.http.routers.vardo-fallback-https.rule",
+     "rule": "PathPrefix(`/`)"
+    },
+    {
+     "source": "deployed",
+     "service": "frontend",
+     "label": "traefik.http.routers.vardo-unknown-host-assets.rule",
+     "rule": "HostRegexp(`.*[a-zA-Z].*`) && PathPrefix(`/_next`)"
+    },
+    {
+     "source": "deployed",
+     "service": "frontend",
+     "label": "traefik.http.routers.vardo-unknown-host-assets-http.rule",
+     "rule": "HostRegexp(`.*[a-zA-Z].*`) && PathPrefix(`/_next`)"
+    },
+    {
+     "source": "deployed",
+     "service": "frontend",
+     "label": "traefik.http.routers.vardo-unknown-host.rule",
+     "rule": "HostRegexp(`.*[a-zA-Z].*`)"
+    },
+    {
+     "source": "deployed",
+     "service": "frontend",
+     "label": "traefik.http.routers.vardo-unknown-host-http.rule",
+     "rule": "HostRegexp(`.*[a-zA-Z].*`)"
+    },
+    {
+     "source": "live",
+     "service": "frontend",
+     "label": "traefik.http.routers.vardo-fallback-https.rule",
+     "rule": "PathPrefix(`/`)"
+    },
+    {
+     "source": "live",
+     "service": "frontend",
+     "label": "traefik.http.routers.vardo-fallback.rule",
+     "rule": "PathPrefix(`/`)"
+    },
+    {
+     "source": "live",
+     "service": "frontend",
+     "label": "traefik.http.routers.vardo-http.rule",
+     "rule": "Host(`vardo.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "frontend",
+     "label": "traefik.http.routers.vardo-unknown-host-assets-http.rule",
+     "rule": "HostRegexp(`.*[a-zA-Z].*`) && PathPrefix(`/_next`)"
+    },
+    {
+     "source": "live",
+     "service": "frontend",
+     "label": "traefik.http.routers.vardo-unknown-host-assets.rule",
+     "rule": "HostRegexp(`.*[a-zA-Z].*`) && PathPrefix(`/_next`)"
+    },
+    {
+     "source": "live",
+     "service": "frontend",
+     "label": "traefik.http.routers.vardo-unknown-host-http.rule",
+     "rule": "HostRegexp(`.*[a-zA-Z].*`)"
+    },
+    {
+     "source": "live",
+     "service": "frontend",
+     "label": "traefik.http.routers.vardo-unknown-host.rule",
+     "rule": "HostRegexp(`.*[a-zA-Z].*`)"
+    },
+    {
+     "source": "live",
+     "service": "frontend",
+     "label": "traefik.http.routers.vardo.rule",
+     "rule": "Host(`vardo.example.com`)"
+    }
+   ]
+  },
+  {
+   "app": "media-invites",
+   "org": "main",
+   "labels": [
+    {
+     "source": "deployed",
+     "service": "media-invites",
+     "label": "traefik.http.routers.media-invites-XDrXFDf-.rule",
+     "rule": "Host(`media-invites.example.com`)"
+    },
+    {
+     "source": "deployed",
+     "service": "media-invites",
+     "label": "traefik.http.routers.media-invites-XDrXFDf--http.rule",
+     "rule": "Host(`media-invites.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "media-invites",
+     "label": "traefik.http.routers.media-invites-XDrXFDf--http.rule",
+     "rule": "Host(`media-invites.example.com`)"
+    },
+    {
+     "source": "live",
+     "service": "media-invites",
+     "label": "traefik.http.routers.media-invites-XDrXFDf-.rule",
+     "rule": "Host(`media-invites.example.com`)"
+    }
+   ]
+  }
+ ]
+}

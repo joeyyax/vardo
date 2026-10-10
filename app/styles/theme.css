@@ -43,7 +43,7 @@
   --color-card-foreground: var(--card-foreground);
 
   /* Quiet Canvas — cream ground, ink-navy text, cobalt as a strictly-signal
-     accent, calm warm severity ramp. Ported from site-audit. Tokens are named
+     accent, calm warm severity ramp. Tokens are named
      by role, not literal color — --primary-strong (AA-contrast text variant
      of primary), --danger/--warning/--success (solid ink) each pair with a
      -soft background variant, --tertiary (the workhorse text-emphasis tier),

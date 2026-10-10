@@ -1,4 +1,4 @@
-// Every homelab app deploys unchanged while its org is trusted, and the untrusted refusals stay the expected ones (#886).
+// Every app on the sample host deploys unchanged while its org is trusted, and the untrusted refusals stay the expected ones (#886).
 
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "fs";
@@ -31,7 +31,7 @@ const app = (name: string) => fx.apps.find((a) => a.app === name)!;
 const untrusted = { trusted: false };
 const flagsOn = { trusted: false, allowBindMounts: true, allowDockerSocket: true };
 
-describe("homelab compose (#886)", () => {
+describe("sample host compose (#886)", () => {
   it("covers the snapshot", () => {
     expect(fx.apps.length).toBeGreaterThan(60);
     expect(Object.values(fx.orgs).every((o) => o.trusted)).toBe(true);
@@ -44,24 +44,24 @@ describe("homelab compose (#886)", () => {
   it("would pass apps that stay inside themselves, untrusted", () => {
     const clean = fx.apps.filter((a) => refusals(a, untrusted).length === 0).map((a) => a.app);
     expect(clean).toEqual(
-      expect.arrayContaining(["changedetection", "deploy-api", "excalidraw", "it-tools", "uikit", "network-api", "uptime-kuma"]),
+      expect.arrayContaining(["page-watch", "deploy-api", "whiteboard", "dev-tools", "ui-registry", "network-api", "uptime-monitor"]),
     );
   });
 
   it("passes build contexts inside the app's repo, untrusted", () => {
-    for (const name of ["browser-api", "encoder", "lonvr", "screenshots"]) {
+    for (const name of ["browser-api", "transcoder", "recorder", "screenshots"]) {
       expect(refusals(app(name), flagsOn).filter((e) => e.includes("builds from"))).toEqual([]);
     }
   });
 
   it("would refuse host access, untrusted", () => {
-    expect(refusals(app("plex"), flagsOn)).toContain('Service "plex" uses network_mode "host"');
+    expect(refusals(app("media-server"), flagsOn)).toContain('Service "media-server" uses network_mode "host"');
     expect(refusals(app("cadvisor"), flagsOn)).toContain('Service "cadvisor" mounts host path "/", which contains /etc');
-    expect(refusals(app("transmission"), flagsOn)).toContain('Service "gluetun" sets "devices"');
-    expect(refusals(app("dozzle"), untrusted)).toEqual([
-      'Service "dozzle" mounts the Docker socket, and the Docker socket is off for this project',
+    expect(refusals(app("torrent-client"), flagsOn)).toContain('Service "vpn-gateway" sets "devices"');
+    expect(refusals(app("log-viewer"), untrusted)).toEqual([
+      'Service "log-viewer" mounts the Docker socket, and the Docker socket is off for this project',
     ]);
-    expect(refusals(app("dozzle"), flagsOn)).toEqual([]);
+    expect(refusals(app("log-viewer"), flagsOn)).toEqual([]);
   });
 
   it("would refuse joining Vardo's own networks and volumes, untrusted", () => {
@@ -75,8 +75,8 @@ describe("homelab compose (#886)", () => {
   });
 
   it("would refuse vardo-network on services Vardo doesn't route, untrusted", () => {
-    expect(refusals(app("paperless"), flagsOn)).toContain(
-      'Service "paperless-db" joins vardo-network without being routed by Vardo',
+    expect(refusals(app("documents"), flagsOn)).toContain(
+      'Service "documents-db" joins vardo-network without being routed by Vardo',
     );
   });
 });

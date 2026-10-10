@@ -1,7 +1,7 @@
 // ---------------------------------------------------------------------------
-// Figures are the live homelab host on 2026-08-03, 6.85 days after boot: the
+// Figures are from a live host 6.85 days after boot: the
 // cgroup root reads oom_kill 171, system.slice 170, and exactly one container
-// scope still carries a count of its own — browser-api, which is running with
+// scope still carries a count of its own — a browser service, which is running with
 // State.OOMKilled and RestartCount 0. Every memory.events.local reads 0, so all
 // 170 happened inside container scopes rather than at the slice itself.
 // ---------------------------------------------------------------------------

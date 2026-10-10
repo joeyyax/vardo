@@ -191,8 +191,8 @@ describe("summarizeResults", () => {
 
 describe("describeTarget", () => {
   it("names the bucket and prefix, never credentials", () => {
-    const text = describeTarget({ name: "System default", type: "r2", config: { bucket: "vardo-backups", prefix: "/node-a/", accessKeyId: "AKIA", secretAccessKey: "s" } });
-    expect(text).toBe("System default · R2 vardo-backups/node-a");
+    const text = describeTarget({ name: "System default", type: "r2", config: { bucket: "backups", prefix: "/node-a/", accessKeyId: "AKIA", secretAccessKey: "s" } });
+    expect(text).toBe("System default · R2 backups/node-a");
   });
 
   it("names the type once when the target's name already has it", () => {
@@ -217,9 +217,9 @@ describe("recordBackupResults", () => {
   });
 
   it("names apps by their display name, whatever the producer sent", async () => {
-    dbMock.query.apps.findMany.mockResolvedValue([{ id: "a1", displayName: "Acme.org Data" }]);
-    await recordBackupResults("org1", [item({ appName: "acme-org-data", outcome: "failed", error: "boom" })], { runId: "r1" }, t0);
-    expect(mocks.fire.mock.calls[0][2]).toMatchObject({ title: "Backup of Acme.org Data / data failed", appName: "Acme.org Data" });
+    dbMock.query.apps.findMany.mockResolvedValue([{ id: "a1", displayName: "Acme Data" }]);
+    await recordBackupResults("org1", [item({ appName: "acme-data", outcome: "failed", error: "boom" })], { runId: "r1" }, t0);
+    expect(mocks.fire.mock.calls[0][2]).toMatchObject({ title: "Backup of Acme Data / data failed", appName: "Acme Data" });
   });
 
   it("folds a result outside any run into the org's open run", async () => {

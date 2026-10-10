@@ -31,16 +31,16 @@ import type { ComposeFile, ComposeService } from "@/lib/docker/compose-types";
 
 const OLD = "notes-api-production-green";
 const PIN = "/traefik/dynamic/cutover-notes-api-production.yml";
-const RULE = "Host(`knowledge.example.com`)";
+const RULE = "Host(`notes.example.com`)";
 
 /** The old slot's labels as deployed before #904: the router names no service. */
 const PLAIN: Record<string, string> = {
   "traefik.enable": "true",
   "traefik.docker.network": "vardo-network",
-  "traefik.http.routers.knowledge.entrypoints": "websecure",
-  "traefik.http.routers.knowledge.rule": RULE,
-  "traefik.http.routers.knowledge.tls.certresolver": "le-dns",
-  "traefik.http.services.knowledge.loadbalancer.server.port": "3000",
+  "traefik.http.routers.notes.entrypoints": "websecure",
+  "traefik.http.routers.notes.rule": RULE,
+  "traefik.http.routers.notes.tls.certresolver": "le-dns",
+  "traefik.http.services.notes.loadbalancer.server.port": "3000",
 };
 
 const slotted: Record<string, ComposeService> = {
@@ -84,14 +84,14 @@ describe("hold plan from the old slot's live labels", () => {
     const plan = holdPlan(PLAIN);
     const config = parse(plan!.yaml);
 
-    expect(plan!.routerNames).toEqual(["knowledge-hold"]);
-    expect(config.http.routers["knowledge-hold"]).toMatchObject({
+    expect(plan!.routerNames).toEqual(["notes-hold"]);
+    expect(config.http.routers["notes-hold"]).toMatchObject({
       rule: RULE,
-      service: "knowledge-hold",
+      service: "notes-hold",
       priority: RULE.length + 1,
       tls: { certResolver: "le-dns" },
     });
-    expect(config.http.services["knowledge-hold"].loadBalancer.servers).toEqual([
+    expect(config.http.services["notes-hold"].loadBalancer.servers).toEqual([
       { url: `http://${OLD}-notes-api-1:3000` },
     ]);
   });
@@ -100,9 +100,9 @@ describe("hold plan from the old slot's live labels", () => {
     const plan = holdPlan(suffixed("green"));
     const config = parse(plan!.yaml);
 
-    expect(plan!.routerNames).toEqual(["knowledge-green-hold"]);
-    expect(config.http.routers["knowledge-green-hold"].service).toBe("knowledge-green-hold");
-    expect(config.http.services["knowledge-green-hold"].loadBalancer.servers).toEqual([
+    expect(plan!.routerNames).toEqual(["notes-green-hold"]);
+    expect(config.http.routers["notes-green-hold"].service).toBe("notes-green-hold");
+    expect(config.http.services["notes-green-hold"].loadBalancer.servers).toEqual([
       { url: `http://${OLD}-notes-api-1:3000` },
     ]);
   });
@@ -110,11 +110,11 @@ describe("hold plan from the old slot's live labels", () => {
   it("references the old slot's own middlewares", () => {
     const labels = {
       ...PLAIN,
-      "traefik.http.routers.knowledge.middlewares": "auth",
+      "traefik.http.routers.notes.middlewares": "auth",
       "traefik.http.middlewares.auth.basicauth.users": "u:p",
     };
-    expect(parse(holdPlan(labels)!.yaml).http.routers["knowledge-hold"].middlewares).toEqual(["auth@docker"]);
-    expect(parse(holdPlan(suffixed("green", labels))!.yaml).http.routers["knowledge-green-hold"].middlewares).toEqual([
+    expect(parse(holdPlan(labels)!.yaml).http.routers["notes-hold"].middlewares).toEqual(["auth@docker"]);
+    expect(parse(holdPlan(suffixed("green", labels))!.yaml).http.routers["notes-green-hold"].middlewares).toEqual([
       "auth-green@docker",
     ]);
   });
@@ -127,7 +127,7 @@ describe("hold plan from the old slot's live labels", () => {
       liveLabels: { "notes-api": suffixed("blue") },
     })!;
 
-    expect(cutover.routerNames).toEqual(["knowledge-blue-cutover"]);
+    expect(cutover.routerNames).toEqual(["notes-blue-cutover"]);
     const holdLive = hold.routerNames.map((name) => ({ name: `${name}@file`, status: "enabled" }));
     expect(pinIsLive(holdLive, cutover.routerNames)).toBe(false);
   });
@@ -147,14 +147,14 @@ describe("holdSlot", () => {
     vi.clearAllMocks();
     vi.useRealTimers();
     apiMock.liveContainers.mockResolvedValue([container(OLD, PLAIN)]);
-    apiMock.fetchTraefikRouters.mockResolvedValue([{ name: "knowledge-hold@file", status: "enabled" }]);
+    apiMock.fetchTraefikRouters.mockResolvedValue([{ name: "notes-hold@file", status: "enabled" }]);
   });
 
   it("writes the pin atomically and confirms Traefik serves it", async () => {
     const result = await hold();
 
     expect(result.held).toBe(true);
-    expect(fsMock.writeFile).toHaveBeenCalledWith(`${PIN}.tmp`, expect.stringContaining("knowledge-hold"), "utf-8");
+    expect(fsMock.writeFile).toHaveBeenCalledWith(`${PIN}.tmp`, expect.stringContaining("notes-hold"), "utf-8");
     expect(fsMock.rename).toHaveBeenCalledWith(`${PIN}.tmp`, PIN);
     expect(fsMock.unlink).not.toHaveBeenCalled();
 

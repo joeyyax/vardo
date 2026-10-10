@@ -1,4 +1,4 @@
-// Every homelab service keeps room above its observed CPU and process peaks under the #889 defaults.
+// Every service on the sample host keeps room above its observed CPU and process peaks under the #889 defaults.
 
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "fs";
@@ -56,7 +56,7 @@ const services = fx.apps.flatMap((entry) =>
   Object.keys(entry.base.services).map((svc) => [`${entry.app}/${svc}`, entry, svc] as const),
 );
 
-describe("homelab limits (#889)", () => {
+describe("sample host limits (#889)", () => {
   it("covers the snapshot", () => {
     expect(fx.hostCpus).toBe(32);
     expect(fx.apps.length).toBeGreaterThan(55);
@@ -90,9 +90,9 @@ describe("homelab limits (#889)", () => {
 
   it("lands the heaviest services where the report says", () => {
     const at = (app: string, svc: string) => render(fx.apps.find((a) => a.app === app)!)[svc];
-    expect(at("notes-api", "knowledge-embed").cpus).toBe("31");
-    expect(at("plex", "plex").cpus).toBe("31");
-    expect(at("scrypted", "scrypted").cpus).toBeUndefined();
+    expect(at("notes-api", "notes-embed").cpus).toBe("31");
+    expect(at("media-server", "media-server").cpus).toBe("31");
+    expect(at("camera-hub", "camera-hub").cpus).toBeUndefined();
     expect(at("browser-api", "browser-api").cpus).toBe("4");
     expect(at("vardo", "buildkit").pids).toBe(defaultPidsLimit());
   });

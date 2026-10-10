@@ -317,7 +317,7 @@ describe("resolveCompose — one Traefik backend (agents 502 regression)", () =>
   });
 
   it("honors traefik.enable=false through the strip, the pick and the overlay", async () => {
-    // The opt-out Joey added by hand: bot would otherwise win on file order.
+    // The opt-out added by hand: bot would otherwise win on file order.
     const compose = agentsCompose();
     compose.services.bot.labels = { "traefik.enable": "false" };
     compose.services.redis.labels = { "traefik.enable": "false" };

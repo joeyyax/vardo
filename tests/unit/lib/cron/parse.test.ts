@@ -15,8 +15,8 @@ describe("shouldRunNow", () => {
 
   // Regression: the schedulers tick every 60s at an arbitrary sub-minute offset,
   // so `now` is almost never at second 0. croner's match() is second-precise, so
-  // without minute-granularity matching, jobs silently never fired (homelab
-  // backups + crons stalled for 2 months). A tick anywhere within the scheduled
+  // without minute-granularity matching, jobs silently never fired (backups
+  // and crons stalled for 2 months). A tick anywhere within the scheduled
   // minute must fire the job.
   it("matches anywhere within the scheduled minute, not just at :00", () => {
     for (const sec of [0, 1, 15, 30, 45, 59]) {

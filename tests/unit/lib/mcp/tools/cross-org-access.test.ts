@@ -33,7 +33,7 @@ vi.mock("@/lib/crypto/encrypt", () => ({
   encrypt: (content: string, orgId: string) => `enc(${orgId}):${content}`,
 }));
 
-const HOME = "org-sample";
+const HOME = "org-ops";
 const OTHER = "org-vardo";
 
 const normalToken = { userId: "u1", organizationId: HOME, crossOrg: false };

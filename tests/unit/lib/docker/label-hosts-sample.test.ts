@@ -1,4 +1,4 @@
-// Every Traefik rule running on the homelab today must still deploy (#887).
+// Every Traefik rule on the sample host must still deploy (#887).
 
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "fs";
@@ -51,7 +51,7 @@ function verdicts(entry: Fixture["apps"][number], orgOverride?: Partial<Fixture[
 const tenantApps = fx.apps.filter((a) => !fx.orgs[a.org].systemManaged);
 const systemApps = fx.apps.filter((a) => fx.orgs[a.org].systemManaged);
 
-describe("homelab Traefik labels (#887)", () => {
+describe("sample host Traefik labels (#887)", () => {
   it("covers the snapshot", () => {
     expect(tenantApps.length).toBeGreaterThan(40);
     expect(fx.apps.flatMap((a) => a.labels).length).toBeGreaterThan(250);
@@ -74,7 +74,7 @@ describe("homelab Traefik labels (#887)", () => {
   });
 
   it("depends on trust for the hosts outside domain rows", () => {
-    const llama = fx.apps.find((a) => a.app === "llm-proxy")!;
-    expect(verdicts(llama, { trusted: false }).some((v) => !v.allowed)).toBe(true);
+    const llm = fx.apps.find((a) => a.app === "llm-proxy")!;
+    expect(verdicts(llm, { trusted: false }).some((v) => !v.allowed)).toBe(true);
   });
 });

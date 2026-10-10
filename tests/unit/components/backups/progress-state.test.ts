@@ -38,10 +38,10 @@ describe("applyBackupEvent", () => {
   it("advances a job in place and keeps other jobs running", () => {
     const first = applyBackupEvent({}, progress({ jobId: "job-2", appName: "loki", index: 1 }));
     const second = applyBackupEvent(first, progress());
-    const third = applyBackupEvent(second, progress({ appName: "lonvr", index: 4 }));
+    const third = applyBackupEvent(second, progress({ appName: "recorder", index: 4 }));
 
     expect(Object.keys(third)).toEqual(["job-2", "job-1"]);
-    expect(third["job-1"]).toMatchObject({ appName: "lonvr", index: 4 });
+    expect(third["job-1"]).toMatchObject({ appName: "recorder", index: 4 });
   });
 
   it("clears the job when the run finishes", () => {

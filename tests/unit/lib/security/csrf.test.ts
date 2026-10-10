@@ -24,7 +24,7 @@ describe("csrfRejection", () => {
   it("blocks a cookie POST from a sibling app on the same site", () => {
     expect(
       check({ cookie: COOKIE, origin: "https://evil.example.com", "sec-fetch-site": "same-site" }),
-    ).toMatch(/evil\.yax\.me/);
+    ).toMatch(/evil\.example\.com/);
   });
 
   it("blocks a cross-site cookie POST that sends no Origin", () => {

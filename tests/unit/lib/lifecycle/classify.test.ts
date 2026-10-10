@@ -31,7 +31,7 @@ describe("classifyBoot", () => {
   });
 
   it("sees a host reboot from a new boot time", () => {
-    // The 2026-10-09 node-a reboot: SIGTERM, 149 s down, new btime.
+    // A 2026-10-09 reboot: SIGTERM, 149 s down, new btime.
     const boot = classifyBoot({
       heartbeat: heartbeat(NOW - 160_000),
       shutdown: { at: NOW - 149_000, reason: "Stop signal", version: "x" },
@@ -136,9 +136,9 @@ describe("update markers", () => {
 
 describe("missingContainers", () => {
   const before = [
-    { id: "a", name: "acme-production-green-web-1", app: "acme-2026" },
+    { id: "a", name: "acme-web-production-green-web-1", app: "acme-web" },
     { id: "b", name: "search-data-production-green-meilisearch-1", app: "search-data" },
-    { id: "c", name: "shop-production-blue-web-1", app: "wha" },
+    { id: "c", name: "shop-production-blue-web-1", app: "shop" },
     { id: "d", name: "gone-1" },
   ];
 

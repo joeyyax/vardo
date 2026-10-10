@@ -112,7 +112,7 @@ export function lifecycleLabel(
   return verb;
 }
 
-/** "by Joey", "by Joey via API" or "by Vardo". */
+/** "by Alex", "by Alex via API" or "by Vardo". */
 export function lifecycleDetail(
   actor: { name: string | null; email: string } | null,
   trigger?: string | null,

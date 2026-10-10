@@ -109,7 +109,7 @@ const production: Row[] = [
     name: `glitchtip-${s}`,
     parentAppId: "app-live",
   })),
-  // The four rows from the Homelab org — parent deleted-parent-id is gone.
+  // Four rows whose parent is gone.
   ...services.map((s) => ({
     id: `orphan-${s}`,
     name: `glitchtip-${s}`,

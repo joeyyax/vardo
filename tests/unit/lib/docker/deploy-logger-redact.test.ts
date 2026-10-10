@@ -43,9 +43,9 @@ describe("deploy logger env value redaction", () => {
 
   it("keeps the app name and package scope when an env value equals the app name", () => {
     const l = createDeployLogger("d5");
-    l.addPublicNames(["site-audit"]);
-    l.addSecrets({ SHOTS_R2_PREFIX: "site-audit", NEXT_PUBLIC_NAME: "site-audit-web1" });
-    const line = "/opt/vardo/apps/site-audit/production/blue/docker-compose.yml --filter @site-audit/web...";
+    l.addPublicNames(["notes-app"]);
+    l.addSecrets({ SHOTS_R2_PREFIX: "notes-app", NEXT_PUBLIC_NAME: "notes-app-web1" });
+    const line = "/opt/vardo/apps/notes-app/production/blue/docker-compose.yml --filter @notes-app/web...";
     expect(l.log(line)).toBe(line);
   });
 

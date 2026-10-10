@@ -57,7 +57,7 @@ describe("networkPeers", () => {
 
 describe("prepareProjectNetwork", () => {
   it("creates the network with the project label and returns its name", async () => {
-    const { run, calls } = fakeDocker({ ps: "shop-east\ta2\tshop-east\n" });
+    const { run, calls } = fakeDocker({ ps: "shop-web\ta2\tshop-web\n" });
     const c = ctx();
     expect(await prepareProjectNetwork(c.value, run)).toBe(NET);
     const create = calls.find((a) => a[1] === "create")!;

@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// The live homelab host booted 2026-07-27 14:05:59 and read oom_kill 171 on
+// A live host booted 2026-07-27 14:05:59 and read oom_kill 171 on
 // 2026-08-03 — 6.85 days, a shade under 25 kills a day, or one an hour. That
 // rate is what rules out an event per kill.
 // ---------------------------------------------------------------------------

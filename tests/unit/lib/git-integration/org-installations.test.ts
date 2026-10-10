@@ -41,15 +41,15 @@ beforeEach(() => {
   inserted.length = 0;
   // One user in two orgs, with a different installation linked to each.
   userRows.push(
-    { userId: "u1", installationId: 1, accountLogin: "sample-gh" },
+    { userId: "u1", installationId: 1, accountLogin: "ops-gh" },
     { userId: "u1", installationId: 2, accountLogin: "vardo-gh" },
   );
-  links.push({ organizationId: "org-sample", installationId: 1 }, { organizationId: "org-vardo", installationId: 2 });
+  links.push({ organizationId: "org-ops", installationId: 1 }, { organizationId: "org-vardo", installationId: 2 });
 });
 
 describe("orgInstallations", () => {
   it("returns only the org's own installations", async () => {
-    expect(await orgInstallations("org-sample")).toEqual([{ installationId: 1, accountLogin: "sample-gh" }]);
+    expect(await orgInstallations("org-ops")).toEqual([{ installationId: 1, accountLogin: "ops-gh" }]);
     expect(await orgInstallations("org-vardo")).toEqual([{ installationId: 2, accountLogin: "vardo-gh" }]);
   });
 

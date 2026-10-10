@@ -73,8 +73,8 @@ describe("selectSlotCandidates — the happy path", () => {
   });
 
   it("takes a pre-slot build, which no symlink can name", () => {
-    const result = plan({ images: [image("agents", "bot"), image("green", "reeve")] });
-    expect(takenTags(result).sort()).toEqual(["agents-bot:latest", "green-reeve:latest"]);
+    const result = plan({ images: [image("agents", "bot"), image("green", "vision")] });
+    expect(takenTags(result).sort()).toEqual(["agents-bot:latest", "green-vision:latest"]);
     expect(result.candidates.every((c) => c.generation.kind === "legacy")).toBe(true);
   });
 
@@ -332,7 +332,7 @@ describe("selectSlotCandidates — rollback-target annotation", () => {
       images: [
         image("agents-production-blue", "bot", { size: 9_000 }),
         image("agents", "bot", { size: 10 }),
-        image("green", "reeve", { size: 20 }),
+        image("green", "vision", { size: 20 }),
       ],
     });
 

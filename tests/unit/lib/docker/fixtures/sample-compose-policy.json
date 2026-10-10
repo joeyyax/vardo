@@ -1,0 +1,5041 @@
+{
+ "_note": "Sample host: deployed slots resolved with `docker compose config --no-env-resolution`, read 2026-10-08. Environment, commands, healthchecks and label values removed.",
+ "orgs": {
+  "main": {
+   "trusted": true
+  },
+  "vardo": {
+   "trusted": true
+  }
+ },
+ "apps": [
+  {
+   "app": "sso",
+   "env": "production",
+   "org": "main",
+   "project": "sso-production-blue",
+   "appDir": "/opt/vardo/apps/sso/production",
+   "repoDir": "/opt/vardo/apps/sso/repo",
+   "config": {
+    "networks": {
+     "sso_sso": {
+      "name": "sso-production-blue_sso_sso",
+      "ipam": {}
+     },
+     "vardo-network": {
+      "name": "vardo-network",
+      "ipam": {},
+      "external": true
+     }
+    },
+    "services": {
+     "sso-db": {
+      "cpu_shares": 1024,
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "1073741824"
+        }
+       },
+       "placement": {}
+      },
+      "env_file": [
+       {
+        "path": "/opt/vardo/apps/sso/production/blue/.env"
+       }
+      ],
+      "image": "postgres:16",
+      "networks": {
+       "sso_sso": null
+      },
+      "restart": "unless-stopped",
+      "stop_signal": "SIGINT",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/etc/timezone",
+        "target": "/etc/timezone",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/etc/localtime",
+        "target": "/etc/localtime",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/docker/sso/postgres",
+        "target": "/var/lib/postgresql/data",
+        "bind": {}
+       }
+      ]
+     },
+     "sso-redis": {
+      "cpu_shares": 1024,
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "1073741824"
+        }
+       },
+       "placement": {}
+      },
+      "image": "redis:8.8.0-alpine",
+      "networks": {
+       "sso_sso": null
+      },
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/mnt/docker/sso/redis",
+        "target": "/data",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/etc/timezone",
+        "target": "/etc/timezone",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/etc/localtime",
+        "target": "/etc/localtime",
+        "bind": {}
+       }
+      ]
+     },
+     "sso-server": {
+      "cpu_shares": 1024,
+      "depends_on": {
+       "sso-db": {
+        "condition": "service_healthy",
+        "required": true
+       },
+       "sso-redis": {
+        "condition": "service_healthy",
+        "required": true
+       }
+      },
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "1073741824"
+        }
+       },
+       "placement": {}
+      },
+      "env_file": [
+       {
+        "path": "/opt/vardo/apps/sso/production/blue/.env"
+       }
+      ],
+      "image": "ghcr.io/goauthentik/server:2025.2.4",
+      "labels": {
+       "traefik.enable": "true"
+      },
+      "networks": {
+       "sso_sso": null,
+       "vardo-network": null
+      },
+      "restart": "unless-stopped",
+      "user": "1000",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/mnt/docker/sso/custom-templates",
+        "target": "/templates",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/etc/timezone",
+        "target": "/etc/timezone",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/etc/localtime",
+        "target": "/etc/localtime",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/docker/sso/media",
+        "target": "/media",
+        "bind": {}
+       }
+      ]
+     },
+     "sso-worker": {
+      "cpu_shares": 1024,
+      "depends_on": {
+       "sso-db": {
+        "condition": "service_healthy",
+        "required": true
+       },
+       "sso-redis": {
+        "condition": "service_healthy",
+        "required": true
+       }
+      },
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "1073741824"
+        }
+       },
+       "placement": {}
+      },
+      "env_file": [
+       {
+        "path": "/opt/vardo/apps/sso/production/blue/.env"
+       }
+      ],
+      "image": "ghcr.io/goauthentik/server:2025.2.4",
+      "networks": {
+       "sso_sso": null
+      },
+      "restart": "unless-stopped",
+      "user": "1000",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/etc/localtime",
+        "target": "/etc/localtime",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/docker/sso/media",
+        "target": "/media",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/docker/sso/custom-templates",
+        "target": "/templates",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/docker/sso/certs",
+        "target": "/certs",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/etc/timezone",
+        "target": "/etc/timezone",
+        "bind": {}
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "app": "subtitle-sync",
+   "env": "production",
+   "org": "main",
+   "project": "subtitle-sync-production-green",
+   "appDir": "/opt/vardo/apps/subtitle-sync/production",
+   "repoDir": "/opt/vardo/apps/subtitle-sync/repo",
+   "config": {
+    "networks": {
+     "vardo-network": {
+      "name": "vardo-network",
+      "ipam": {},
+      "external": true
+     }
+    },
+    "services": {
+     "subtitle-sync": {
+      "cpu_shares": 1024,
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "1073741824"
+        }
+       },
+       "placement": {}
+      },
+      "env_file": [
+       {
+        "path": "/opt/vardo/apps/subtitle-sync/production/green/.env"
+       }
+      ],
+      "image": "lscr.io/linuxserver/subtitle-mgr:latest",
+      "labels": {
+       "traefik.enable": "true"
+      },
+      "networks": {
+       "vardo-network": null
+      },
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/mnt/media/Movies",
+        "target": "/movies",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/media/TV",
+        "target": "/tv",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/docker/subtitle-mgr/config",
+        "target": "/config",
+        "bind": {}
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "app": "browser-api",
+   "env": "production",
+   "org": "main",
+   "project": "browser-api-production-blue",
+   "appDir": "/opt/vardo/apps/browser-api/production",
+   "repoDir": "/opt/vardo/apps/browser-api/repo",
+   "config": {
+    "networks": {
+     "vardo-network": {
+      "name": "vardo-network",
+      "ipam": {},
+      "external": true
+     }
+    },
+    "services": {
+     "browser-api": {
+      "build": {
+       "context": "/opt/vardo/apps/browser-api/repo",
+       "dockerfile": "Dockerfile"
+      },
+      "cpu_shares": 1024,
+      "deploy": {
+       "resources": {
+        "limits": {
+         "cpus": 4,
+         "memory": "10737418240"
+        }
+       },
+       "placement": {}
+      },
+      "labels": {
+       "traefik.enable": "true"
+      },
+      "networks": {
+       "vardo-network": null
+      },
+      "restart": "unless-stopped",
+      "shm_size": "268435456",
+      "user": "root",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/home/user/working",
+        "target": "/home/user/working",
+        "bind": {}
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "app": "cadvisor",
+   "env": "production",
+   "org": "vardo",
+   "project": "cadvisor-production-green",
+   "appDir": "/opt/vardo/apps/cadvisor/production",
+   "repoDir": "/opt/vardo/apps/cadvisor/repo",
+   "config": {
+    "networks": {
+     "vardo-network": {
+      "name": "vardo-network",
+      "ipam": {},
+      "external": true
+     }
+    },
+    "services": {
+     "cadvisor": {
+      "cpu_shares": 1024,
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "536870912"
+        },
+        "reservations": {
+         "devices": [
+          {
+           "capabilities": [
+            "gpu"
+           ],
+           "driver": "nvidia",
+           "count": -1
+          }
+         ]
+        }
+       },
+       "placement": {}
+      },
+      "image": "gcr.io/cadvisor/cadvisor:v0.55.1",
+      "networks": {
+       "vardo-network": null
+      },
+      "privileged": true,
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/",
+        "target": "/rootfs",
+        "read_only": true,
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/var/run",
+        "target": "/var/run",
+        "read_only": true,
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/sys",
+        "target": "/sys",
+        "read_only": true,
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/var/lib/docker/",
+        "target": "/var/lib/docker",
+        "read_only": true,
+        "bind": {}
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "app": "page-watch",
+   "env": "production",
+   "org": "main",
+   "project": "page-watch-production-blue",
+   "appDir": "/opt/vardo/apps/page-watch/production",
+   "repoDir": "/opt/vardo/apps/page-watch/repo",
+   "config": {
+    "networks": {
+     "default": {
+      "name": "page-watch-production-blue_default",
+      "ipam": {}
+     },
+     "vardo-network": {
+      "name": "vardo-network",
+      "ipam": {},
+      "external": true
+     }
+    },
+    "services": {
+     "page-watch": {
+      "cpu_shares": 1024,
+      "depends_on": {
+       "sockpuppetbrowser": {
+        "condition": "service_started",
+        "required": true
+       }
+      },
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "1073741824"
+        }
+       },
+       "placement": {}
+      },
+      "image": "ghcr.io/dgtlmoon/page-watch.io:0.55.7",
+      "labels": {
+       "traefik.enable": "true"
+      },
+      "networks": {
+       "default": null,
+       "vardo-network": null
+      },
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "volume",
+        "source": "page-watch-data",
+        "target": "/datastore",
+        "volume": {}
+       }
+      ]
+     },
+     "sockpuppetbrowser": {
+      "cpu_shares": 1024,
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "1073741824"
+        },
+        "reservations": {
+         "devices": [
+          {
+           "capabilities": [
+            "gpu"
+           ],
+           "driver": "nvidia",
+           "count": 1
+          },
+          {
+           "capabilities": [
+            "gpu"
+           ],
+           "driver": "nvidia",
+           "count": 1
+          }
+         ]
+        }
+       },
+       "placement": {}
+      },
+      "image": "dgtlmoon/sockpuppetbrowser:0.0.3",
+      "networks": {
+       "default": null
+      },
+      "restart": "unless-stopped",
+      "shm_size": "2147483648"
+     }
+    },
+    "volumes": {
+     "page-watch-data": {
+      "name": "page-watch-production_page-watch-data",
+      "external": true
+     }
+    }
+   }
+  },
+  {
+   "app": "ddns",
+   "env": "production",
+   "org": "main",
+   "project": "ddns-production-green",
+   "appDir": "/opt/vardo/apps/ddns/production",
+   "repoDir": "/opt/vardo/apps/ddns/repo",
+   "config": {
+    "services": {
+     "ddns": {
+      "cpu_shares": 1024,
+      "hostname": "docker",
+      "image": "timothyjmiller/ddns:latest",
+      "network_mode": "host",
+      "restart": "unless-stopped",
+      "security_opt": [
+       "no-new-privileges:true"
+      ],
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/mnt/docker/ddns/config.json",
+        "target": "/config.json",
+        "bind": {}
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "app": "tunnel",
+   "env": "production",
+   "org": "main",
+   "project": "tunnel-production-green",
+   "appDir": "/opt/vardo/apps/tunnel/production",
+   "repoDir": "/opt/vardo/apps/tunnel/repo",
+   "config": {
+    "networks": {
+     "vardo-network": {
+      "name": "vardo-network",
+      "ipam": {},
+      "external": true
+     }
+    },
+    "services": {
+     "tunnel": {
+      "cpu_shares": 1024,
+      "image": "cloudflare/tunnel:latest",
+      "networks": {
+       "vardo-network": null
+      },
+      "restart": "unless-stopped",
+      "user": "65532:65532"
+     }
+    }
+   }
+  },
+  {
+   "app": "code-server",
+   "env": "production",
+   "org": "main",
+   "project": "code-server-production-blue",
+   "appDir": "/opt/vardo/apps/code-server/production",
+   "repoDir": "/opt/vardo/apps/code-server/repo",
+   "config": {
+    "networks": {
+     "vardo-network": {
+      "name": "vardo-network",
+      "ipam": {},
+      "external": true
+     }
+    },
+    "services": {
+     "code-server": {
+      "cpu_shares": 1024,
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "1073741824"
+        }
+       },
+       "placement": {}
+      },
+      "env_file": [
+       {
+        "path": "/opt/vardo/apps/code-server/production/blue/.env"
+       }
+      ],
+      "image": "codercom/code-server:latest",
+      "labels": {
+       "traefik.enable": "true"
+      },
+      "networks": {
+       "vardo-network": null
+      },
+      "restart": "unless-stopped",
+      "user": "1000",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/mnt/docker",
+        "target": "/home/coder/docker",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/var/run/docker.sock",
+        "target": "/var/run/docker.sock",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/usr/bin/docker",
+        "target": "/usr/bin/docker",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/root/.ssh",
+        "target": "/home/coder/.ssh",
+        "bind": {}
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "app": "media-cleanup",
+   "env": "production",
+   "org": "main",
+   "project": "media-cleanup-production-blue",
+   "appDir": "/opt/vardo/apps/media-cleanup/production",
+   "repoDir": "/opt/vardo/apps/media-cleanup/repo",
+   "config": {
+    "networks": {
+     "vardo-network": {
+      "name": "vardo-network",
+      "ipam": {},
+      "external": true
+     }
+    },
+    "services": {
+     "media-cleanup": {
+      "cpu_shares": 1024,
+      "image": "ghcr.io/manimatter/media-cleanup:latest",
+      "networks": {
+       "vardo-network": null
+      },
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/mnt/docker/media-cleanup/config",
+        "target": "/app/config",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/media/TV",
+        "target": "/tv",
+        "read_only": true,
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/media/Movies",
+        "target": "/movies",
+        "read_only": true,
+        "bind": {}
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "app": "stack-ui",
+   "env": "production",
+   "org": "main",
+   "project": "stack-ui-production-green",
+   "appDir": "/opt/vardo/apps/stack-ui/production",
+   "repoDir": "/opt/vardo/apps/stack-ui/repo",
+   "config": {
+    "networks": {
+     "vardo-network": {
+      "name": "vardo-network",
+      "ipam": {},
+      "external": true
+     }
+    },
+    "services": {
+     "stack-ui": {
+      "cpu_shares": 1024,
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "1073741824"
+        }
+       },
+       "placement": {}
+      },
+      "image": "louislam/stack-ui:latest",
+      "labels": {
+       "traefik.enable": "true"
+      },
+      "networks": {
+       "vardo-network": null
+      },
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/mnt/docker/stack-ui/data",
+        "target": "/app/data",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/var/run/docker.sock",
+        "target": "/var/run/docker.sock",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/docker",
+        "target": "/opt/stacks",
+        "bind": {}
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "app": "deploy-api",
+   "env": "production",
+   "org": "main",
+   "project": "deploy-api-production-green",
+   "appDir": "/opt/vardo/apps/deploy-api/production",
+   "repoDir": "/opt/vardo/apps/deploy-api/repo",
+   "config": {
+    "networks": {
+     "vardo-network": {
+      "name": "vardo-network",
+      "ipam": {},
+      "external": true
+     }
+    },
+    "services": {
+     "deploy-api": {
+      "build": {
+       "context": "/opt/vardo/apps/deploy-api/repo/deploy-api",
+       "dockerfile": "Dockerfile"
+      },
+      "cpu_shares": 1024,
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "1073741824"
+        }
+       },
+       "placement": {}
+      },
+      "labels": {
+       "traefik.enable": "true"
+      },
+      "networks": {
+       "vardo-network": null
+      },
+      "restart": "unless-stopped"
+     }
+    }
+   }
+  },
+  {
+   "app": "voice-bot",
+   "env": "production",
+   "org": "main",
+   "project": "voice-bot-production-blue",
+   "appDir": "/opt/vardo/apps/voice-bot/production",
+   "repoDir": "/opt/vardo/apps/voice-bot/repo",
+   "config": {
+    "networks": {
+     "tts": {
+      "name": "voice-bot-production-blue_tts",
+      "ipam": {}
+     },
+     "vardo-network": {
+      "name": "vardo-network",
+      "ipam": {},
+      "external": true
+     }
+    },
+    "services": {
+     "voice-bot": {
+      "cpu_shares": 1024,
+      "depends_on": {
+       "piper": {
+        "condition": "service_started",
+        "required": true
+       }
+      },
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "1073741824"
+        }
+       },
+       "placement": {}
+      },
+      "image": "alexxit/go2rtc:1.9.14",
+      "networks": {
+       "tts": null,
+       "vardo-network": null
+      },
+      "ports": [
+       {
+        "mode": "ingress",
+        "target": 8099,
+        "published": "8099",
+        "protocol": "tcp"
+       }
+      ],
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/mnt/docker/voice-bot/app",
+        "target": "/app",
+        "read_only": true,
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/docker/voice-bot/audio",
+        "target": "/audio",
+        "bind": {}
+       }
+      ]
+     },
+     "piper": {
+      "cpu_shares": 1024,
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "1073741824"
+        }
+       },
+       "placement": {}
+      },
+      "image": "rhasspy/wyoming-piper:2.5.2",
+      "networks": {
+       "tts": null
+      },
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/mnt/docker/voice-bot/piper",
+        "target": "/data",
+        "bind": {}
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "app": "log-viewer",
+   "env": "production",
+   "org": "main",
+   "project": "log-viewer-production-blue",
+   "appDir": "/opt/vardo/apps/log-viewer/production",
+   "repoDir": "/opt/vardo/apps/log-viewer/repo",
+   "config": {
+    "networks": {
+     "vardo-network": {
+      "name": "vardo-network",
+      "ipam": {},
+      "external": true
+     }
+    },
+    "services": {
+     "log-viewer": {
+      "env_file": [
+       {
+        "path": "/opt/vardo/apps/log-viewer/production/blue/.env"
+       }
+      ],
+      "image": "amir20/log-viewer:latest",
+      "labels": {
+       "traefik.enable": "true"
+      },
+      "networks": {
+       "vardo-network": null
+      },
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/var/run/docker.sock",
+        "target": "/var/run/docker.sock",
+        "bind": {}
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "app": "transcoder",
+   "env": "production",
+   "org": "main",
+   "project": "transcoder-production-blue",
+   "appDir": "/opt/vardo/apps/transcoder/production",
+   "repoDir": "/opt/vardo/apps/transcoder/repo",
+   "config": {
+    "networks": {
+     "vardo-network": {
+      "name": "vardo-network",
+      "ipam": {},
+      "external": true
+     }
+    },
+    "services": {
+     "transcoder": {
+      "build": {
+       "context": "/opt/vardo/apps/transcoder/repo/server",
+       "dockerfile": "Dockerfile"
+      },
+      "cpu_shares": 1024,
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "1073741824"
+        }
+       },
+       "placement": {}
+      },
+      "networks": {
+       "vardo-network": null
+      },
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/mnt/docker/transcoder/data",
+        "target": "/app/data",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/scratch/transcoder",
+        "target": "/scratch",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/media/Movies",
+        "target": "/media/movies",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/media/TV",
+        "target": "/media/tv",
+        "bind": {}
+       }
+      ]
+     },
+     "transcoder-worker": {
+      "build": {
+       "context": "/opt/vardo/apps/transcoder/repo/worker",
+       "dockerfile": "Dockerfile"
+      },
+      "cpu_shares": 1024,
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "6442450944"
+        },
+        "reservations": {
+         "devices": [
+          {
+           "capabilities": [
+            "gpu"
+           ],
+           "driver": "nvidia",
+           "count": 1
+          }
+         ]
+        }
+       },
+       "placement": {}
+      },
+      "networks": {
+       "vardo-network": null
+      },
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/mnt/scratch/transcoder",
+        "target": "/scratch",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/media/Movies",
+        "target": "/media/movies",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/media/TV",
+        "target": "/media/tv",
+        "bind": {}
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "app": "whiteboard",
+   "env": "production",
+   "org": "main",
+   "project": "whiteboard-production-blue",
+   "appDir": "/opt/vardo/apps/whiteboard/production",
+   "repoDir": "/opt/vardo/apps/whiteboard/repo",
+   "config": {
+    "networks": {
+     "vardo-network": {
+      "name": "vardo-network",
+      "ipam": {},
+      "external": true
+     }
+    },
+    "services": {
+     "whiteboard": {
+      "cpu_shares": 256,
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "268435456"
+        }
+       },
+       "placement": {}
+      },
+      "image": "whiteboard/whiteboard:latest",
+      "labels": {
+       "traefik.enable": "true"
+      },
+      "networks": {
+       "vardo-network": null
+      },
+      "oom_score_adj": 750,
+      "restart": "unless-stopped",
+      "stop_signal": "SIGQUIT"
+     }
+    }
+   }
+  },
+  {
+   "app": "git-host",
+   "env": "production",
+   "org": "main",
+   "project": "git-host-production-blue",
+   "appDir": "/opt/vardo/apps/git-host/production",
+   "repoDir": "/opt/vardo/apps/git-host/repo",
+   "config": {
+    "networks": {
+     "git-host_git-host": {
+      "name": "git-host-production_git-host_git-host",
+      "ipam": {},
+      "external": true
+     },
+     "vardo-network": {
+      "name": "vardo-network",
+      "ipam": {},
+      "external": true
+     }
+    },
+    "services": {
+     "git-host": {
+      "cpu_shares": 1024,
+      "depends_on": {
+       "git-host-db": {
+        "condition": "service_started",
+        "required": true
+       }
+      },
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "1073741824"
+        }
+       },
+       "placement": {}
+      },
+      "env_file": [
+       {
+        "path": "/opt/vardo/apps/git-host/production/blue/.env"
+       }
+      ],
+      "image": "git-host/git-host:1.26.2",
+      "labels": {
+       "traefik.enable": "true"
+      },
+      "networks": {
+       "git-host_git-host": null,
+       "vardo-network": null
+      },
+      "ports": [
+       {
+        "mode": "ingress",
+        "target": 22,
+        "published": "2222",
+        "protocol": "tcp"
+       }
+      ],
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/mnt/docker/git-host/data",
+        "target": "/data",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/etc/timezone",
+        "target": "/etc/timezone",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/etc/localtime",
+        "target": "/etc/localtime",
+        "bind": {}
+       }
+      ]
+     },
+     "git-host-db": {
+      "cpu_shares": 1024,
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "1073741824"
+        }
+       },
+       "placement": {}
+      },
+      "env_file": [
+       {
+        "path": "/opt/vardo/apps/git-host/production/blue/.env"
+       }
+      ],
+      "image": "postgres:16",
+      "networks": {
+       "git-host_git-host": null
+      },
+      "restart": "unless-stopped",
+      "stop_signal": "SIGINT",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/etc/localtime",
+        "target": "/etc/localtime",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/docker/git-host/postgres",
+        "target": "/var/lib/postgresql/data",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/etc/timezone",
+        "target": "/etc/timezone",
+        "bind": {}
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "app": "git-mirror",
+   "env": "production",
+   "org": "main",
+   "project": "git-mirror-production-blue",
+   "appDir": "/opt/vardo/apps/git-mirror/production",
+   "repoDir": "/opt/vardo/apps/git-mirror/repo",
+   "config": {
+    "networks": {
+     "vardo-network": {
+      "name": "vardo-network",
+      "ipam": {},
+      "external": true
+     }
+    },
+    "services": {
+     "git-mirror": {
+      "env_file": [
+       {
+        "path": "/opt/vardo/apps/git-mirror/production/blue/.env"
+       }
+      ],
+      "image": "ghcr.io/raylabshq/git-mirror:latest",
+      "labels": {
+       "traefik.enable": "true"
+      },
+      "networks": {
+       "vardo-network": null
+      },
+      "restart": "unless-stopped",
+      "user": "1000:1000",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/etc/localtime",
+        "target": "/etc/localtime",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/docker/git-mirror/data",
+        "target": "/app/data",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/etc/timezone",
+        "target": "/etc/timezone",
+        "bind": {}
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "app": "hermes",
+   "env": "production",
+   "org": "main",
+   "project": "hermes-production-blue",
+   "appDir": "/opt/vardo/apps/hermes/production",
+   "repoDir": "/opt/vardo/apps/hermes/repo",
+   "config": {
+    "networks": {
+     "vardo-network": {
+      "name": "vardo-network",
+      "ipam": {},
+      "external": true
+     }
+    },
+    "services": {
+     "hermes": {
+      "cpu_shares": 256,
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "8589934592"
+        }
+       },
+       "placement": {}
+      },
+      "image": "nousresearch/hermes-agent:v2026.8.31",
+      "labels": {
+       "traefik.enable": "false"
+      },
+      "networks": {
+       "vardo-network": null
+      },
+      "oom_score_adj": 750,
+      "restart": "unless-stopped",
+      "shm_size": "1073741824",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/mnt/docker/hermes",
+        "target": "/opt/data",
+        "bind": {}
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "app": "start-page",
+   "env": "production",
+   "org": "main",
+   "project": "start-page-production-blue",
+   "appDir": "/opt/vardo/apps/start-page/production",
+   "repoDir": "/opt/vardo/apps/start-page/repo",
+   "config": {
+    "networks": {
+     "vardo-network": {
+      "name": "vardo-network",
+      "ipam": {},
+      "external": true
+     }
+    },
+    "services": {
+     "start-page": {
+      "cpu_shares": 1024,
+      "image": "ghcr.io/gethomepage/start-page:latest",
+      "labels": {
+       "traefik.enable": "true"
+      },
+      "networks": {
+       "vardo-network": null
+      },
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/mnt/docker/start-page/config",
+        "target": "/app/config",
+        "bind": {}
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "app": "photos",
+   "env": "production",
+   "org": "main",
+   "project": "photos-production-blue",
+   "appDir": "/opt/vardo/apps/photos/production",
+   "repoDir": "/opt/vardo/apps/photos/repo",
+   "config": {
+    "networks": {
+     "photos_photos": {
+      "name": "photos-production_photos_photos",
+      "ipam": {},
+      "external": true
+     },
+     "vardo-network": {
+      "name": "vardo-network",
+      "ipam": {},
+      "external": true
+     }
+    },
+    "services": {
+     "photos-db": {
+      "cpu_shares": 1024,
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "1073741824"
+        }
+       },
+       "placement": {}
+      },
+      "env_file": [
+       {
+        "path": "/opt/vardo/apps/photos/production/blue/.env"
+       }
+      ],
+      "image": "tensorchord/pgvecto-rs:pg16-v0.2.0",
+      "networks": {
+       "photos_photos": null
+      },
+      "restart": "unless-stopped",
+      "stop_signal": "SIGINT",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/etc/localtime",
+        "target": "/etc/localtime",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/etc/timezone",
+        "target": "/etc/timezone",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/docker/photos/postgres",
+        "target": "/var/lib/postgresql/data",
+        "bind": {}
+       }
+      ]
+     },
+     "photos-ml": {
+      "cpu_shares": 1024,
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "1073741824"
+        }
+       },
+       "placement": {}
+      },
+      "image": "ghcr.io/photos-app/photos-machine-learning:v2.7.5-cuda",
+      "networks": {
+       "photos_photos": null
+      },
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/mnt/docker/photos/model-cache",
+        "target": "/cache",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/etc/localtime",
+        "target": "/etc/localtime",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/etc/timezone",
+        "target": "/etc/timezone",
+        "bind": {}
+       }
+      ]
+     },
+     "photos-redis": {
+      "cpu_shares": 1024,
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "1073741824"
+        }
+       },
+       "placement": {}
+      },
+      "image": "redis:8.8.0-alpine",
+      "networks": {
+       "photos_photos": null
+      },
+      "restart": "unless-stopped"
+     },
+     "photos-server": {
+      "cpu_shares": 1024,
+      "depends_on": {
+       "photos-db": {
+        "condition": "service_healthy",
+        "required": true
+       },
+       "photos-redis": {
+        "condition": "service_healthy",
+        "required": true
+       }
+      },
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "1073741824"
+        }
+       },
+       "placement": {}
+      },
+      "env_file": [
+       {
+        "path": "/opt/vardo/apps/photos/production/blue/.env"
+       }
+      ],
+      "image": "ghcr.io/photos-app/photos-server:v2.7.5",
+      "labels": {
+       "traefik.enable": "true"
+      },
+      "networks": {
+       "photos_photos": null,
+       "vardo-network": null
+      },
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "volume",
+        "target": "/data",
+        "volume": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/docker/photos/external",
+        "target": "/usr/src/app/external",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/docker/photos/upload",
+        "target": "/usr/src/app/upload",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/etc/localtime",
+        "target": "/etc/localtime",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/etc/timezone",
+        "target": "/etc/timezone",
+        "bind": {}
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "app": "dev-tools",
+   "env": "production",
+   "org": "main",
+   "project": "dev-tools-production-green",
+   "appDir": "/opt/vardo/apps/dev-tools/production",
+   "repoDir": "/opt/vardo/apps/dev-tools/repo",
+   "config": {
+    "networks": {
+     "vardo-network": {
+      "name": "vardo-network",
+      "ipam": {},
+      "external": true
+     }
+    },
+    "services": {
+     "dev-tools": {
+      "cpu_shares": 1024,
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "1073741824"
+        }
+       },
+       "placement": {}
+      },
+      "image": "corentinth/dev-tools:latest",
+      "labels": {
+       "traefik.enable": "true"
+      },
+      "networks": {
+       "vardo-network": null
+      },
+      "restart": "unless-stopped"
+     }
+    }
+   }
+  },
+  {
+   "app": "notes-api",
+   "env": "production",
+   "org": "main",
+   "project": "notes-api-production-blue",
+   "appDir": "/opt/vardo/apps/notes-api/production",
+   "repoDir": "/opt/vardo/apps/notes-api/repo",
+   "config": {
+    "networks": {
+     "internal": {
+      "name": "notes-api-production_internal",
+      "ipam": {},
+      "external": true
+     },
+     "vardo-network": {
+      "name": "vardo-network",
+      "ipam": {},
+      "external": true
+     }
+    },
+    "services": {
+     "notes-embed": {
+      "cpu_shares": 1024,
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "2147483648"
+        }
+       },
+       "placement": {}
+      },
+      "image": "ghcr.io/huggingface/text-embeddings-inference:cpu-1.7",
+      "networks": {
+       "internal": null
+      },
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/mnt/docker/notes-api/embed-models",
+        "target": "/data",
+        "bind": {}
+       }
+      ]
+     },
+     "notes-search": {
+      "cpu_shares": 1024,
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "6442450944"
+        }
+       },
+       "placement": {}
+      },
+      "image": "getmeili/meilisearch:v1.16",
+      "networks": {
+       "internal": null
+      },
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/mnt/docker/notes-api/meili-data",
+        "target": "/meili_data",
+        "bind": {}
+       }
+      ]
+     },
+     "notes-api": {
+      "build": {
+       "context": "/opt/vardo/apps/notes-api/repo",
+       "dockerfile": "Dockerfile"
+      },
+      "cpu_shares": 1024,
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "1073741824"
+        }
+       },
+       "placement": {}
+      },
+      "labels": {
+       "traefik.enable": "true"
+      },
+      "networks": {
+       "internal": null,
+       "vardo-network": null
+      },
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/mnt/docker/notes-api/content",
+        "target": "/data/content",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/docker/notes-api/usage",
+        "target": "/data/usage",
+        "bind": {}
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "app": "media-meta",
+   "env": "production",
+   "org": "main",
+   "project": "media-meta-production-blue",
+   "appDir": "/opt/vardo/apps/media-meta/production",
+   "repoDir": "/opt/vardo/apps/media-meta/repo",
+   "config": {
+    "networks": {
+     "vardo-network": {
+      "name": "vardo-network",
+      "ipam": {},
+      "external": true
+     }
+    },
+    "services": {
+     "media-meta": {
+      "cpu_shares": 1024,
+      "image": "kometateam/media-meta:latest",
+      "networks": {
+       "vardo-network": null
+      },
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/mnt/docker/media-meta/config",
+        "target": "/config",
+        "bind": {}
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "app": "diagrams",
+   "env": "production",
+   "org": "main",
+   "project": "diagrams-production-blue",
+   "appDir": "/opt/vardo/apps/diagrams/production",
+   "repoDir": "/opt/vardo/apps/diagrams/repo",
+   "config": {
+    "networks": {
+     "default": {
+      "name": "diagrams-production-blue_default",
+      "ipam": {}
+     },
+     "vardo-network": {
+      "name": "vardo-network",
+      "ipam": {},
+      "external": true
+     }
+    },
+    "services": {
+     "diagrams": {
+      "cpu_shares": 1024,
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "1073741824"
+        }
+       },
+       "placement": {}
+      },
+      "image": "yuzutech/diagrams:0.30.1",
+      "networks": {
+       "default": null,
+       "vardo-network": null
+      },
+      "restart": "unless-stopped"
+     },
+     "diagrams-mermaid": {
+      "cpu_shares": 1024,
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "1073741824"
+        }
+       },
+       "placement": {}
+      },
+      "image": "yuzutech/diagrams-mermaid:0.30.1",
+      "networks": {
+       "default": null
+      },
+      "restart": "unless-stopped"
+     }
+    }
+   }
+  },
+  {
+   "app": "llm-proxy",
+   "env": "production",
+   "org": "main",
+   "project": "llm-proxy-production-blue",
+   "appDir": "/opt/vardo/apps/llm-proxy/production",
+   "repoDir": "/opt/vardo/apps/llm-proxy/repo",
+   "config": {
+    "networks": {
+     "vardo-network": {
+      "name": "vardo-network",
+      "ipam": {},
+      "external": true
+     }
+    },
+    "services": {
+     "llm-proxy": {
+      "cpu_shares": 1024,
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "21474836480"
+        },
+        "reservations": {
+         "devices": [
+          {
+           "capabilities": [
+            "gpu"
+           ],
+           "driver": "nvidia",
+           "count": -1
+          }
+         ]
+        }
+       },
+       "placement": {}
+      },
+      "image": "ghcr.io/mostlygeek/llm-proxy:cuda",
+      "labels": {
+       "traefik.enable": "true"
+      },
+      "networks": {
+       "vardo-network": null
+      },
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/mnt/docker/llm-proxy/config.yaml",
+        "target": "/app/config.yaml",
+        "read_only": true,
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/docker/llm-proxy/qwen3.8.jinja",
+        "target": "/app/qwen3.8.jinja",
+        "read_only": true,
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/docker/llm-proxy",
+        "target": "/config",
+        "read_only": true,
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/docker/llm-runtime/data/models/blobs",
+        "target": "/models",
+        "read_only": true,
+        "bind": {}
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "app": "loki",
+   "env": "production",
+   "org": "vardo",
+   "project": "loki-production-blue",
+   "appDir": "/opt/vardo/apps/loki/production",
+   "repoDir": "/opt/vardo/apps/loki/repo",
+   "config": {
+    "configs": {
+     "loki-config": {
+      "name": "loki-production-blue_loki-config",
+      "content": "<redacted>"
+     }
+    },
+    "networks": {
+     "vardo-network": {
+      "name": "vardo-network",
+      "ipam": {},
+      "external": true
+     }
+    },
+    "services": {
+     "loki": {
+      "cpu_shares": 1024,
+      "configs": [
+       {
+        "source": "loki-config",
+        "target": "/etc/loki/config.yaml"
+       }
+      ],
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "1073741824"
+        }
+       },
+       "placement": {}
+      },
+      "image": "grafana/loki:3.4",
+      "networks": {
+       "vardo-network": null
+      },
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "volume",
+        "source": "loki-data",
+        "target": "/loki",
+        "volume": {}
+       }
+      ]
+     }
+    },
+    "volumes": {
+     "loki-data": {
+      "name": "loki-production_loki-data",
+      "external": true
+     }
+    }
+   }
+  },
+  {
+   "app": "recorder",
+   "env": "production",
+   "org": "main",
+   "project": "recorder-production-green",
+   "appDir": "/opt/vardo/apps/recorder/production",
+   "repoDir": "/opt/vardo/apps/recorder/repo",
+   "config": {
+    "networks": {
+     "internal": {
+      "name": "recorder-production-green_internal",
+      "ipam": {}
+     },
+     "vardo-network": {
+      "name": "vardo-network",
+      "ipam": {},
+      "external": true
+     }
+    },
+    "services": {
+     "go2rtc": {
+      "deploy": {
+       "resources": {
+        "limits": {
+         "cpus": 2,
+         "memory": "1073741824"
+        }
+       },
+       "placement": {}
+      },
+      "image": "alexxit/go2rtc:latest",
+      "networks": {
+       "internal": null
+      },
+      "ports": [
+       {
+        "mode": "ingress",
+        "target": 1984,
+        "published": "1984",
+        "protocol": "tcp"
+       },
+       {
+        "mode": "ingress",
+        "target": 8554,
+        "published": "8554",
+        "protocol": "tcp"
+       },
+       {
+        "mode": "ingress",
+        "target": 8555,
+        "published": "8555",
+        "protocol": "tcp"
+       },
+       {
+        "mode": "ingress",
+        "target": 8555,
+        "published": "8555",
+        "protocol": "udp"
+       }
+      ],
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "volume",
+        "source": "go2rtc_data",
+        "target": "/data",
+        "volume": {}
+       }
+      ]
+     },
+     "postgres": {
+      "deploy": {
+       "resources": {
+        "limits": {
+         "cpus": 2,
+         "memory": "1073741824"
+        }
+       },
+       "placement": {}
+      },
+      "image": "postgres:17",
+      "networks": {
+       "internal": null
+      },
+      "ports": [
+       {
+        "mode": "ingress",
+        "target": 5432,
+        "published": "8763",
+        "protocol": "tcp"
+       }
+      ],
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "volume",
+        "source": "postgres_data",
+        "target": "/var/lib/postgresql/data",
+        "volume": {}
+       }
+      ]
+     },
+     "redis": {
+      "deploy": {
+       "resources": {
+        "limits": {
+         "cpus": 1,
+         "memory": "268435456"
+        }
+       },
+       "placement": {}
+      },
+      "image": "valkey/valkey:7-alpine",
+      "networks": {
+       "internal": null
+      },
+      "ports": [
+       {
+        "mode": "ingress",
+        "target": 6379,
+        "published": "9239",
+        "protocol": "tcp"
+       }
+      ],
+      "restart": "unless-stopped"
+     },
+     "vision": {
+      "build": {
+       "context": "/opt/vardo/apps/recorder/repo",
+       "dockerfile": "Dockerfile",
+       "args": {
+        "GIT_SHA": "",
+        "NEXT_PUBLIC_APP_URL": "",
+        "NEXT_PUBLIC_BETTER_AUTH_URL": "",
+        "VISION_YOLO_SIZE": ""
+       }
+      },
+      "depends_on": {
+       "go2rtc": {
+        "condition": "service_started",
+        "required": true
+       },
+       "postgres": {
+        "condition": "service_healthy",
+        "required": true
+       },
+       "redis": {
+        "condition": "service_healthy",
+        "required": true
+       }
+      },
+      "deploy": {
+       "resources": {
+        "limits": {
+         "cpus": 2,
+         "memory": "2147483648"
+        },
+        "reservations": {
+         "memory": "268435456"
+        }
+       },
+       "placement": {}
+      },
+      "labels": {
+       "traefik.enable": "true"
+      },
+      "networks": {
+       "internal": null,
+       "vardo-network": null
+      },
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/mnt/nvr/recorder",
+        "target": "/var/lib/vision",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/scratch/recorder",
+        "target": "/var/lib/vision-hot",
+        "bind": {}
+       },
+       {
+        "type": "volume",
+        "source": "vision_cache",
+        "target": "/var/cache/vision",
+        "volume": {}
+       }
+      ]
+     },
+     "vision-detector": {
+      "build": {
+       "context": "/opt/vardo/apps/recorder/repo",
+       "dockerfile": "Dockerfile",
+       "args": {
+        "GIT_SHA": "",
+        "NEXT_PUBLIC_APP_URL": "",
+        "NEXT_PUBLIC_BETTER_AUTH_URL": "",
+        "VISION_YOLO_SIZE": ""
+       }
+      },
+      "depends_on": {
+       "go2rtc": {
+        "condition": "service_started",
+        "required": true
+       },
+       "postgres": {
+        "condition": "service_healthy",
+        "required": true
+       },
+       "redis": {
+        "condition": "service_healthy",
+        "required": true
+       },
+       "vision": {
+        "condition": "service_healthy",
+        "required": true
+       }
+      },
+      "deploy": {
+       "resources": {
+        "limits": {
+         "cpus": 4,
+         "memory": "6442450944"
+        },
+        "reservations": {
+         "memory": "1073741824",
+         "devices": [
+          {
+           "capabilities": [
+            "gpu"
+           ],
+           "driver": "nvidia",
+           "count": 1
+          }
+         ]
+        }
+       },
+       "placement": {}
+      },
+      "networks": {
+       "internal": null
+      },
+      "restart": "unless-stopped",
+      "shm_size": "268435456",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/mnt/nvr/recorder",
+        "target": "/var/lib/vision",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/scratch/recorder",
+        "target": "/var/lib/vision-hot",
+        "read_only": true,
+        "bind": {}
+       },
+       {
+        "type": "volume",
+        "source": "vision_cache",
+        "target": "/var/cache/vision",
+        "volume": {}
+       }
+      ]
+     },
+     "vision-worker": {
+      "build": {
+       "context": "/opt/vardo/apps/recorder/repo",
+       "dockerfile": "Dockerfile",
+       "args": {
+        "GIT_SHA": "",
+        "NEXT_PUBLIC_APP_URL": "",
+        "NEXT_PUBLIC_BETTER_AUTH_URL": "",
+        "VISION_YOLO_SIZE": ""
+       }
+      },
+      "depends_on": {
+       "go2rtc": {
+        "condition": "service_started",
+        "required": true
+       },
+       "postgres": {
+        "condition": "service_healthy",
+        "required": true
+       },
+       "redis": {
+        "condition": "service_healthy",
+        "required": true
+       },
+       "vision": {
+        "condition": "service_healthy",
+        "required": true
+       }
+      },
+      "deploy": {
+       "resources": {
+        "limits": {
+         "cpus": 4,
+         "memory": "6442450944"
+        },
+        "reservations": {
+         "memory": "536870912"
+        }
+       },
+       "placement": {}
+      },
+      "networks": {
+       "internal": null
+      },
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/mnt/nvr/recorder",
+        "target": "/var/lib/vision",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/scratch/recorder",
+        "target": "/var/lib/vision-hot",
+        "bind": {}
+       },
+       {
+        "type": "volume",
+        "source": "vision_cache",
+        "target": "/var/cache/vision",
+        "volume": {}
+       }
+      ]
+     }
+    },
+    "volumes": {
+     "go2rtc_data": {
+      "name": "recorder-production_go2rtc_data",
+      "external": true
+     },
+     "postgres_data": {
+      "name": "recorder-production_postgres_data",
+      "external": true
+     },
+     "vision_cache": {
+      "name": "recorder-production_vision_cache",
+      "external": true
+     }
+    }
+   }
+  },
+  {
+   "app": "workflows",
+   "env": "production",
+   "org": "main",
+   "project": "workflows-production-blue",
+   "appDir": "/opt/vardo/apps/workflows/production",
+   "repoDir": "/opt/vardo/apps/workflows/repo",
+   "config": {
+    "networks": {
+     "vardo-network": {
+      "name": "vardo-network",
+      "ipam": {},
+      "external": true
+     }
+    },
+    "services": {
+     "workflows": {
+      "cpu_shares": 1024,
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "1073741824"
+        }
+       },
+       "placement": {}
+      },
+      "image": "n8nio/workflows:2.25.7",
+      "labels": {
+       "traefik.enable": "true"
+      },
+      "networks": {
+       "vardo-network": null
+      },
+      "ports": [
+       {
+        "mode": "ingress",
+        "target": 5678,
+        "published": "5678",
+        "protocol": "tcp"
+       }
+      ],
+      "restart": "unless-stopped",
+      "user": "node",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/mnt/docker/workflows/data",
+        "target": "/home/node/.workflows",
+        "bind": {}
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "app": "nas-sync",
+   "env": "production",
+   "org": "main",
+   "project": "nas-sync-production-green",
+   "appDir": "/opt/vardo/apps/nas-sync/production",
+   "repoDir": "/opt/vardo/apps/nas-sync/repo",
+   "config": {
+    "networks": {
+     "default": {
+      "name": "nas-sync-production-green_default",
+      "ipam": {}
+     }
+    },
+    "services": {
+     "backup-r2": {
+      "image": "rclone/rclone:latest",
+      "networks": {
+       "default": null
+      },
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/mnt/docker/nas-sync/config",
+        "target": "/config",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/shared",
+        "target": "/mnt/shared",
+        "bind": {}
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "app": "push-notify",
+   "env": "production",
+   "org": "main",
+   "project": "push-notify-production-blue",
+   "appDir": "/opt/vardo/apps/push-notify/production",
+   "repoDir": "/opt/vardo/apps/push-notify/repo",
+   "config": {
+    "networks": {
+     "vardo-network": {
+      "name": "vardo-network",
+      "ipam": {},
+      "external": true
+     }
+    },
+    "services": {
+     "push-notify": {
+      "cpu_shares": 1024,
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "268435456"
+        }
+       },
+       "placement": {}
+      },
+      "image": "binwiederhier/push-notify:v2.24.0",
+      "labels": {
+       "traefik.enable": "true"
+      },
+      "networks": {
+       "vardo-network": null
+      },
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/mnt/docker/push-notify/cache",
+        "target": "/var/cache/push-notify",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/docker/push-notify/config",
+        "target": "/etc/push-notify",
+        "bind": {}
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "app": "nzb-search",
+   "env": "production",
+   "org": "main",
+   "project": "nzb-search-production-green",
+   "appDir": "/opt/vardo/apps/nzb-search/production",
+   "repoDir": "/opt/vardo/apps/nzb-search/repo",
+   "config": {
+    "networks": {
+     "vardo-network": {
+      "name": "vardo-network",
+      "ipam": {},
+      "external": true
+     }
+    },
+    "services": {
+     "nzb-search": {
+      "image": "lscr.io/linuxserver/nzb-search:latest",
+      "labels": {
+       "traefik.enable": "true"
+      },
+      "networks": {
+       "vardo-network": null
+      },
+      "ports": [
+       {
+        "mode": "ingress",
+        "target": 5076,
+        "published": "5076",
+        "protocol": "tcp"
+       }
+      ],
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/mnt/docker/nzb-search/config",
+        "target": "/config",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/downloads",
+        "target": "/downloads",
+        "bind": {}
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "app": "llm-runtime",
+   "env": "production",
+   "org": "main",
+   "project": "llm-runtime-production-blue",
+   "appDir": "/opt/vardo/apps/llm-runtime/production",
+   "repoDir": "/opt/vardo/apps/llm-runtime/repo",
+   "config": {
+    "networks": {
+     "vardo-network": {
+      "name": "vardo-network",
+      "ipam": {},
+      "external": true
+     }
+    },
+    "services": {
+     "llm-runtime": {
+      "cpu_shares": 1024,
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "21474836480"
+        },
+        "reservations": {
+         "devices": [
+          {
+           "capabilities": [
+            "gpu"
+           ],
+           "driver": "nvidia",
+           "count": -1
+          }
+         ]
+        }
+       },
+       "placement": {}
+      },
+      "image": "llm-runtime/llm-runtime:latest",
+      "labels": {
+       "traefik.enable": "true"
+      },
+      "networks": {
+       "vardo-network": null
+      },
+      "ports": [
+       {
+        "mode": "ingress",
+        "target": 11434,
+        "published": "11434",
+        "protocol": "tcp"
+       }
+      ],
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/mnt/docker/llm-runtime/data",
+        "target": "/root/.llm-runtime",
+        "bind": {}
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "app": "speedtest-app",
+   "env": "production",
+   "org": "main",
+   "project": "speedtest-app-production-green",
+   "appDir": "/opt/vardo/apps/speedtest-app/production",
+   "repoDir": "/opt/vardo/apps/speedtest-app/repo",
+   "config": {
+    "networks": {
+     "vardo-network": {
+      "name": "vardo-network",
+      "ipam": {},
+      "external": true
+     }
+    },
+    "services": {
+     "speedtest-app": {
+      "cpu_shares": 256,
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "536870912"
+        }
+       },
+       "placement": {}
+      },
+      "env_file": [
+       {
+        "path": "/opt/vardo/apps/speedtest-app/production/green/.env"
+       }
+      ],
+      "image": "speedtest-app/latest",
+      "labels": {
+       "traefik.enable": "true"
+      },
+      "networks": {
+       "vardo-network": null
+      },
+      "oom_score_adj": 750,
+      "restart": "unless-stopped",
+      "stop_signal": "SIGQUIT",
+      "user": "101",
+      "volumes": [
+       {
+        "type": "volume",
+        "target": "/var/log/letsencrypt",
+        "volume": {}
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "app": "chat-ui",
+   "env": "production",
+   "org": "main",
+   "project": "chat-ui-production-green",
+   "appDir": "/opt/vardo/apps/chat-ui/production",
+   "repoDir": "/opt/vardo/apps/chat-ui/repo",
+   "config": {
+    "networks": {
+     "default": {
+      "name": "chat-ui-production-green_default",
+      "ipam": {}
+     },
+     "vardo-network": {
+      "name": "vardo-network",
+      "ipam": {},
+      "external": true
+     }
+    },
+    "services": {
+     "chat-ui": {
+      "cpu_shares": 1024,
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "1073741824"
+        }
+       },
+       "placement": {}
+      },
+      "image": "ghcr.io/open-webui/open-webui:main",
+      "labels": {
+       "traefik.enable": "true"
+      },
+      "networks": {
+       "default": null,
+       "vardo-network": null
+      },
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/mnt/docker/chat-ui/data",
+        "target": "/app/backend/data",
+        "bind": {}
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "app": "wiki-app",
+   "env": "production",
+   "org": "main",
+   "project": "wiki-app-production-green",
+   "appDir": "/opt/vardo/apps/wiki-app/production",
+   "repoDir": "/opt/vardo/apps/wiki-app/repo",
+   "config": {
+    "networks": {
+     "wiki-app_wiki-app": {
+      "name": "wiki-app-production-green_wiki-app_wiki-app",
+      "ipam": {}
+     },
+     "vardo-network": {
+      "name": "vardo-network",
+      "ipam": {},
+      "external": true
+     }
+    },
+    "services": {
+     "wiki-app": {
+      "cpu_shares": 1024,
+      "depends_on": {
+       "wiki-app-db": {
+        "condition": "service_healthy",
+        "required": true
+       },
+       "wiki-app-redis": {
+        "condition": "service_healthy",
+        "required": true
+       }
+      },
+      "env_file": [
+       {
+        "path": "/opt/vardo/apps/wiki-app/production/green/.env"
+       }
+      ],
+      "image": "docker.getoutline.com/outlinewiki/wiki-app:latest",
+      "labels": {
+       "traefik.enable": "true"
+      },
+      "networks": {
+       "wiki-app_wiki-app": null,
+       "vardo-network": null
+      },
+      "restart": "unless-stopped",
+      "user": "nodejs",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/etc/localtime",
+        "target": "/etc/localtime",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/etc/timezone",
+        "target": "/etc/timezone",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/docker/wiki-app/data",
+        "target": "/var/lib/wiki-app/data",
+        "bind": {}
+       }
+      ]
+     },
+     "wiki-app-db": {
+      "cpu_shares": 1024,
+      "env_file": [
+       {
+        "path": "/opt/vardo/apps/wiki-app/production/green/.env"
+       }
+      ],
+      "image": "postgres:16",
+      "networks": {
+       "wiki-app_wiki-app": null
+      },
+      "restart": "unless-stopped",
+      "stop_signal": "SIGINT",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/etc/localtime",
+        "target": "/etc/localtime",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/etc/timezone",
+        "target": "/etc/timezone",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/docker/wiki-app/postgres",
+        "target": "/var/lib/postgresql/data",
+        "bind": {}
+       }
+      ]
+     },
+     "wiki-app-redis": {
+      "cpu_shares": 1024,
+      "image": "redis:alpine",
+      "networks": {
+       "wiki-app_wiki-app": null
+      },
+      "restart": "unless-stopped"
+     }
+    }
+   }
+  },
+  {
+   "app": "documents",
+   "env": "production",
+   "org": "main",
+   "project": "documents-production-green",
+   "appDir": "/opt/vardo/apps/documents/production",
+   "repoDir": "/opt/vardo/apps/documents/repo",
+   "config": {
+    "networks": {
+     "vardo-network": {
+      "name": "vardo-network",
+      "ipam": {},
+      "external": true
+     }
+    },
+    "services": {
+     "documents": {
+      "cpu_shares": 1024,
+      "depends_on": {
+       "documents-db": {
+        "condition": "service_healthy",
+        "required": true
+       },
+       "documents-gotenberg": {
+        "condition": "service_started",
+        "required": true
+       },
+       "documents-redis": {
+        "condition": "service_healthy",
+        "required": true
+       },
+       "documents-tika": {
+        "condition": "service_started",
+        "required": true
+       }
+      },
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "1073741824"
+        },
+        "reservations": {
+         "devices": [
+          {
+           "capabilities": [
+            "gpu"
+           ],
+           "driver": "nvidia",
+           "count": -1
+          }
+         ]
+        }
+       },
+       "placement": {}
+      },
+      "env_file": [
+       {
+        "path": "/opt/vardo/apps/documents/production/green/.env"
+       }
+      ],
+      "image": "ghcr.io/documents-ngx/documents-ngx:2.20.15",
+      "labels": {
+       "traefik.enable": "true"
+      },
+      "networks": {
+       "vardo-network": null
+      },
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/mnt/docker/documents/data",
+        "target": "/usr/src/documents/data",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/docker/documents/media",
+        "target": "/usr/src/documents/media",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/docker/documents/export",
+        "target": "/usr/src/documents/export",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/docker/documents/consume",
+        "target": "/usr/src/documents/consume",
+        "bind": {}
+       }
+      ]
+     },
+     "documents-db": {
+      "cpu_shares": 1024,
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "1073741824"
+        },
+        "reservations": {
+         "devices": [
+          {
+           "capabilities": [
+            "gpu"
+           ],
+           "driver": "nvidia",
+           "count": -1
+          }
+         ]
+        }
+       },
+       "placement": {}
+      },
+      "env_file": [
+       {
+        "path": "/opt/vardo/apps/documents/production/green/.env"
+       }
+      ],
+      "image": "postgres:16",
+      "networks": {
+       "vardo-network": null
+      },
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/mnt/docker/documents/postgres",
+        "target": "/var/lib/postgresql/data",
+        "bind": {}
+       }
+      ]
+     },
+     "documents-gotenberg": {
+      "cpu_shares": 1024,
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "1073741824"
+        },
+        "reservations": {
+         "devices": [
+          {
+           "capabilities": [
+            "gpu"
+           ],
+           "driver": "nvidia",
+           "count": -1
+          }
+         ]
+        }
+       },
+       "placement": {}
+      },
+      "image": "docker.io/gotenberg/gotenberg:8",
+      "networks": {
+       "vardo-network": null
+      },
+      "restart": "unless-stopped"
+     },
+     "documents-redis": {
+      "cpu_shares": 1024,
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "1073741824"
+        },
+        "reservations": {
+         "devices": [
+          {
+           "capabilities": [
+            "gpu"
+           ],
+           "driver": "nvidia",
+           "count": -1
+          }
+         ]
+        }
+       },
+       "placement": {}
+      },
+      "image": "redis:8.8.0-alpine",
+      "networks": {
+       "vardo-network": null
+      },
+      "restart": "unless-stopped"
+     },
+     "documents-tika": {
+      "cpu_shares": 1024,
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "1073741824"
+        },
+        "reservations": {
+         "devices": [
+          {
+           "capabilities": [
+            "gpu"
+           ],
+           "driver": "nvidia",
+           "count": -1
+          }
+         ]
+        }
+       },
+       "placement": {}
+      },
+      "image": "docker.io/apache/tika:latest",
+      "networks": {
+       "vardo-network": null
+      },
+      "restart": "unless-stopped"
+     }
+    }
+   }
+  },
+  {
+   "app": "media-server",
+   "env": "production",
+   "org": "main",
+   "project": "media-server-production-green",
+   "appDir": "/opt/vardo/apps/media-server/production",
+   "repoDir": "/opt/vardo/apps/media-server/repo",
+   "config": {
+    "services": {
+     "media-server": {
+      "cpu_shares": 1024,
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "8589934592"
+        },
+        "reservations": {
+         "devices": [
+          {
+           "capabilities": [
+            "gpu"
+           ],
+           "driver": "nvidia",
+           "device_ids": [
+            "1"
+           ]
+          },
+          {
+           "capabilities": [
+            "gpu"
+           ],
+           "driver": "nvidia",
+           "device_ids": [
+            "1"
+           ]
+          }
+         ]
+        }
+       },
+       "placement": {}
+      },
+      "hostname": "docker",
+      "image": "lscr.io/linuxserver/media-server:latest",
+      "network_mode": "host",
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/mnt/media/Media/config/Media",
+        "target": "/config/Library/Application Support/Media Media Server/Media",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/media/Movies",
+        "target": "/movies",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/media/TV",
+        "target": "/tv",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/docker/media-server/config",
+        "target": "/config",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/cache/media-server/cache",
+        "target": "/config/Library/Application Support/Media Media Server/Cache",
+        "bind": {}
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "app": "media-sync",
+   "env": "production",
+   "org": "main",
+   "project": "media-sync-production-blue",
+   "appDir": "/opt/vardo/apps/media-sync/production",
+   "repoDir": "/opt/vardo/apps/media-sync/repo",
+   "config": {
+    "networks": {
+     "vardo-network": {
+      "name": "vardo-network",
+      "ipam": {},
+      "external": true
+     }
+    },
+    "services": {
+     "media-sync": {
+      "cpu_shares": 1024,
+      "image": "ghcr.io/taxel/media-sync:latest",
+      "labels": {
+       "traefik.enable": "true"
+      },
+      "networks": {
+       "vardo-network": null
+      },
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "volume",
+        "target": "/app/xdg",
+        "volume": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/docker/media-sync/config",
+        "target": "/app/config",
+        "bind": {}
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "app": "promtail",
+   "env": "production",
+   "org": "vardo",
+   "project": "promtail-production-green",
+   "appDir": "/opt/vardo/apps/promtail/production",
+   "repoDir": "/opt/vardo/apps/promtail/repo",
+   "config": {
+    "configs": {
+     "promtail-config": {
+      "name": "promtail-production-green_promtail-config",
+      "content": "<redacted>"
+     }
+    },
+    "networks": {
+     "vardo-network": {
+      "name": "vardo-network",
+      "ipam": {},
+      "external": true
+     }
+    },
+    "services": {
+     "promtail": {
+      "cpu_shares": 1024,
+      "configs": [
+       {
+        "source": "promtail-config",
+        "target": "/etc/promtail/config.yml"
+       }
+      ],
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "268435456"
+        }
+       },
+       "placement": {}
+      },
+      "image": "grafana/promtail:3.4",
+      "networks": {
+       "vardo-network": null
+      },
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/var/run/docker.sock",
+        "target": "/var/run/docker.sock",
+        "read_only": true,
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/var/lib/docker/containers",
+        "target": "/var/lib/docker/containers",
+        "read_only": true,
+        "bind": {}
+       },
+       {
+        "type": "volume",
+        "source": "promtail-positions",
+        "target": "/var/lib/promtail",
+        "volume": {}
+       }
+      ]
+     }
+    },
+    "volumes": {
+     "promtail-positions": {
+      "name": "promtail-production_promtail-positions",
+      "external": true
+     }
+    }
+   }
+  },
+  {
+   "app": "indexer-hub",
+   "env": "production",
+   "org": "main",
+   "project": "indexer-hub-production-green",
+   "appDir": "/opt/vardo/apps/indexer-hub/production",
+   "repoDir": "/opt/vardo/apps/indexer-hub/repo",
+   "config": {
+    "networks": {
+     "vardo-network": {
+      "name": "vardo-network",
+      "ipam": {},
+      "external": true
+     }
+    },
+    "services": {
+     "indexer-hub": {
+      "cpu_shares": 1024,
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "1073741824"
+        }
+       },
+       "placement": {}
+      },
+      "env_file": [
+       {
+        "path": "/opt/vardo/apps/indexer-hub/production/green/.env"
+       }
+      ],
+      "image": "lscr.io/linuxserver/indexer-mgr:latest",
+      "labels": {
+       "traefik.enable": "true"
+      },
+      "networks": {
+       "vardo-network": null
+      },
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/mnt/docker/indexer-mgr/config",
+        "target": "/config",
+        "bind": {}
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "app": "charts",
+   "env": "production",
+   "org": "main",
+   "project": "charts-production-green",
+   "appDir": "/opt/vardo/apps/charts/production",
+   "repoDir": "/opt/vardo/apps/charts/repo",
+   "config": {
+    "networks": {
+     "default": {
+      "name": "charts-production-green_default",
+      "ipam": {}
+     },
+     "vardo-network": {
+      "name": "vardo-network",
+      "ipam": {},
+      "external": true
+     }
+    },
+    "services": {
+     "charts": {
+      "cpu_shares": 256,
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "536870912"
+        }
+       },
+       "placement": {}
+      },
+      "image": "ianw/charts:v1.8.1",
+      "networks": {
+       "default": null,
+       "vardo-network": null
+      },
+      "oom_score_adj": 750,
+      "restart": "unless-stopped"
+     }
+    }
+   }
+  },
+  {
+   "app": "movie-library",
+   "env": "production",
+   "org": "main",
+   "project": "movie-library-production-green",
+   "appDir": "/opt/vardo/apps/movie-library/production",
+   "repoDir": "/opt/vardo/apps/movie-library/repo",
+   "config": {
+    "networks": {
+     "vardo-network": {
+      "name": "vardo-network",
+      "ipam": {},
+      "external": true
+     }
+    },
+    "services": {
+     "movie-library": {
+      "cpu_shares": 1024,
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "1073741824"
+        }
+       },
+       "placement": {}
+      },
+      "image": "lscr.io/linuxserver/movie-mgr:latest",
+      "labels": {
+       "traefik.enable": "true"
+      },
+      "networks": {
+       "vardo-network": null
+      },
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/mnt/docker/movie-mgr/config",
+        "target": "/config",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/media/Movies",
+        "target": "/movies",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/downloads",
+        "target": "/downloads",
+        "bind": {}
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "app": "stream-relay",
+   "env": "production",
+   "org": "main",
+   "project": "stream-relay-production-blue",
+   "appDir": "/opt/vardo/apps/stream-relay/production",
+   "repoDir": "/opt/vardo/apps/stream-relay/repo",
+   "config": {
+    "networks": {
+     "default": {
+      "name": "stream-relay-production-blue_default",
+      "ipam": {}
+     },
+     "vardo-network": {
+      "name": "vardo-network",
+      "ipam": {},
+      "external": true
+     }
+    },
+    "services": {
+     "player": {
+      "cpu_shares": 1024,
+      "depends_on": {
+       "relay": {
+        "condition": "service_started",
+        "required": true
+       }
+      },
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "1073741824"
+        }
+       },
+       "placement": {}
+      },
+      "image": "nginx:alpine",
+      "labels": {
+       "traefik.enable": "true"
+      },
+      "networks": {
+       "default": null,
+       "vardo-network": null
+      },
+      "ports": [
+       {
+        "mode": "ingress",
+        "target": 80,
+        "published": "8888",
+        "protocol": "tcp"
+       }
+      ],
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/mnt/docker/stream-relay/web/index.html",
+        "target": "/usr/share/nginx/html/index.html",
+        "read_only": true,
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/docker/stream-relay/web/nginx.conf",
+        "target": "/etc/nginx/conf.d/default.conf",
+        "read_only": true,
+        "bind": {}
+       }
+      ]
+     },
+     "relay": {
+      "cpu_shares": 1024,
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "1073741824"
+        }
+       },
+       "placement": {}
+      },
+      "image": "bluenviron/mediamtx:latest-ffmpeg",
+      "networks": {
+       "default": null
+      },
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/mnt/docker/stream-relay/mediamtx.yml",
+        "target": "/mediamtx.yml",
+        "read_only": true,
+        "bind": {}
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "app": "nzb-client",
+   "env": "production",
+   "org": "main",
+   "project": "nzb-client-production-green",
+   "appDir": "/opt/vardo/apps/nzb-client/production",
+   "repoDir": "/opt/vardo/apps/nzb-client/repo",
+   "config": {
+    "networks": {
+     "vardo-network": {
+      "name": "vardo-network",
+      "ipam": {},
+      "external": true
+     }
+    },
+    "services": {
+     "nzb-client": {
+      "image": "lscr.io/linuxserver/nzb-client:latest",
+      "labels": {
+       "traefik.enable": "true"
+      },
+      "networks": {
+       "vardo-network": null
+      },
+      "ports": [
+       {
+        "mode": "ingress",
+        "target": 8080,
+        "published": "8081",
+        "protocol": "tcp"
+       }
+      ],
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/mnt/scratch/nzb-client-incomplete-downloads",
+        "target": "/incomplete-downloads",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/docker/nzb-client/config",
+        "target": "/config",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/downloads",
+        "target": "/downloads",
+        "bind": {}
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "app": "file-share",
+   "env": "production",
+   "org": "main",
+   "project": "file-share-production-blue",
+   "appDir": "/opt/vardo/apps/file-share/production",
+   "repoDir": "/opt/vardo/apps/file-share/repo",
+   "config": {
+    "services": {
+     "file-share": {
+      "hostname": "docker",
+      "image": "ghcr.io/servercontainers/file-share:latest",
+      "network_mode": "host",
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "volume",
+        "target": "/shares",
+        "volume": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/docker",
+        "target": "/host-docker",
+        "bind": {}
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "app": "camera-hub",
+   "env": "production",
+   "org": "main",
+   "project": "camera-hub-production-blue",
+   "appDir": "/opt/vardo/apps/camera-hub/production",
+   "repoDir": "/opt/vardo/apps/camera-hub/repo",
+   "config": {
+    "services": {
+     "camera-hub": {
+      "cpu_shares": 2048,
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "8589934592"
+        },
+        "reservations": {
+         "memory": "8589934592",
+         "devices": [
+          {
+           "capabilities": [
+            "gpu"
+           ],
+           "driver": "nvidia",
+           "count": -1
+          }
+         ]
+        }
+       },
+       "placement": {}
+      },
+      "hostname": "docker",
+      "image": "ghcr.io/koush/camera-hub:nvidia",
+      "network_mode": "host",
+      "oom_score_adj": -900,
+      "restart": "unless-stopped",
+      "shm_size": "2147483648",
+      "ulimits": {
+       "nofile": 65536
+      },
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/mnt/scratch/camera-hub",
+        "target": "/mnt/scratch",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/docker/camera-hub/server/volume",
+        "target": "/server/volume",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/etc/OpenCL/vendors/nvidia.icd",
+        "target": "/etc/OpenCL/vendors/nvidia.icd",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/nvr",
+        "target": "/mnt/nvr",
+        "bind": {}
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "app": "meta-search",
+   "env": "production",
+   "org": "main",
+   "project": "meta-search-production-green",
+   "appDir": "/opt/vardo/apps/meta-search/production",
+   "repoDir": "/opt/vardo/apps/meta-search/repo",
+   "config": {
+    "networks": {
+     "default": {
+      "name": "meta-search-production-green_default",
+      "ipam": {}
+     },
+     "vardo-network": {
+      "name": "vardo-network",
+      "ipam": {},
+      "external": true
+     }
+    },
+    "services": {
+     "meta-search": {
+      "cpu_shares": 1024,
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "1073741824"
+        }
+       },
+       "placement": {}
+      },
+      "image": "meta-search/meta-search:2026.9.6-3605a2d58",
+      "labels": {
+       "traefik.enable": "true"
+      },
+      "networks": {
+       "default": null,
+       "vardo-network": null
+      },
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/mnt/docker/meta-search/etc/meta-search",
+        "target": "/etc/meta-search",
+        "bind": {}
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "app": "media-requests",
+   "env": "production",
+   "org": "main",
+   "project": "media-requests-production-blue",
+   "appDir": "/opt/vardo/apps/media-requests/production",
+   "repoDir": "/opt/vardo/apps/media-requests/repo",
+   "config": {
+    "networks": {
+     "vardo-network": {
+      "name": "vardo-network",
+      "ipam": {},
+      "external": true
+     }
+    },
+    "services": {
+     "media-requests": {
+      "cpu_shares": 1024,
+      "image": "ghcr.io/media-requests-team/media-requests:latest",
+      "init": true,
+      "labels": {
+       "traefik.enable": "true"
+      },
+      "networks": {
+       "vardo-network": null
+      },
+      "ports": [
+       {
+        "mode": "ingress",
+        "target": 5055,
+        "published": "5055",
+        "protocol": "tcp"
+       }
+      ],
+      "restart": "unless-stopped",
+      "user": "node:node",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/mnt/docker/media-requests/config",
+        "target": "/app/config",
+        "bind": {}
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "app": "tools-api",
+   "env": "production",
+   "org": "main",
+   "project": "tools-api-production-green",
+   "appDir": "/opt/vardo/apps/tools-api/production",
+   "repoDir": "/opt/vardo/apps/tools-api/repo",
+   "config": {
+    "networks": {
+     "vardo-network": {
+      "name": "vardo-network",
+      "ipam": {},
+      "external": true
+     }
+    },
+    "services": {
+     "tools-api": {
+      "build": {
+       "context": "/opt/vardo/apps/tools-api/repo",
+       "dockerfile": "Dockerfile"
+      },
+      "cpu_shares": 1024,
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "1073741824"
+        }
+       },
+       "placement": {}
+      },
+      "env_file": [
+       {
+        "path": "/opt/vardo/apps/tools-api/production/green/.env"
+       }
+      ],
+      "labels": {
+       "traefik.enable": "true"
+      },
+      "networks": {
+       "vardo-network": null
+      },
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/mnt/docker/tools-api/data",
+        "target": "/data",
+        "bind": {}
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "app": "screenshots",
+   "env": "production",
+   "org": "main",
+   "project": "screenshots-production-blue",
+   "appDir": "/opt/vardo/apps/screenshots/production",
+   "repoDir": "/opt/vardo/apps/screenshots/repo",
+   "config": {
+    "networks": {
+     "default": {
+      "name": "screenshots-production-blue_default",
+      "ipam": {}
+     },
+     "vardo-network": {
+      "name": "vardo-network",
+      "ipam": {},
+      "external": true
+     }
+    },
+    "services": {
+     "screenshots": {
+      "build": {
+       "context": "/opt/vardo/apps/screenshots/repo/screenshots",
+       "dockerfile": "Dockerfile"
+      },
+      "cpu_shares": 1024,
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "1073741824"
+        }
+       },
+       "placement": {}
+      },
+      "networks": {
+       "default": null,
+       "vardo-network": null
+      },
+      "restart": "unless-stopped"
+     }
+    }
+   }
+  },
+  {
+   "app": "tv-library",
+   "env": "production",
+   "org": "main",
+   "project": "tv-library-production-blue",
+   "appDir": "/opt/vardo/apps/tv-library/production",
+   "repoDir": "/opt/vardo/apps/tv-library/repo",
+   "config": {
+    "networks": {
+     "vardo-network": {
+      "name": "vardo-network",
+      "ipam": {},
+      "external": true
+     }
+    },
+    "services": {
+     "tv-library": {
+      "env_file": [
+       {
+        "path": "/opt/vardo/apps/tv-library/production/blue/.env"
+       }
+      ],
+      "image": "lscr.io/linuxserver/tv-mgr:latest",
+      "labels": {
+       "traefik.enable": "true"
+      },
+      "networks": {
+       "vardo-network": null
+      },
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/mnt/downloads",
+        "target": "/downloads",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/docker/tv-mgr/config",
+        "target": "/config",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/media/TV",
+        "target": "/tv",
+        "bind": {}
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "app": "pdf-tools",
+   "env": "production",
+   "org": "main",
+   "project": "pdf-tools-production-green",
+   "appDir": "/opt/vardo/apps/pdf-tools/production",
+   "repoDir": "/opt/vardo/apps/pdf-tools/repo",
+   "config": {
+    "networks": {
+     "vardo-network": {
+      "name": "vardo-network",
+      "ipam": {},
+      "external": true
+     }
+    },
+    "services": {
+     "pdf-tools": {
+      "cpu_shares": 1024,
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "6442450944"
+        }
+       },
+       "placement": {}
+      },
+      "image": "stirlingtools/pdf-tools:latest",
+      "labels": {
+       "traefik.enable": "true"
+      },
+      "networks": {
+       "vardo-network": null
+      },
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/mnt/docker/pdf-tools/stirling-data",
+        "target": "/configs",
+        "bind": {}
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "app": "file-sync",
+   "env": "production",
+   "org": "main",
+   "project": "file-sync-production-green",
+   "appDir": "/opt/vardo/apps/file-sync/production",
+   "repoDir": "/opt/vardo/apps/file-sync/repo",
+   "config": {
+    "networks": {
+     "vardo-network": {
+      "name": "vardo-network",
+      "ipam": {},
+      "external": true
+     }
+    },
+    "services": {
+     "file-sync": {
+      "cpu_shares": 1024,
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "1073741824"
+        }
+       },
+       "placement": {}
+      },
+      "hostname": "node-a-docker",
+      "image": "file-sync/file-sync:latest",
+      "labels": {
+       "traefik.enable": "true"
+      },
+      "networks": {
+       "vardo-network": null
+      },
+      "ports": [
+       {
+        "mode": "ingress",
+        "target": 21027,
+        "published": "21027",
+        "protocol": "udp"
+       },
+       {
+        "mode": "ingress",
+        "target": 22000,
+        "published": "22000",
+        "protocol": "tcp"
+       },
+       {
+        "mode": "ingress",
+        "target": 22000,
+        "published": "22000",
+        "protocol": "udp"
+       }
+      ],
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "volume",
+        "target": "/var/file-sync",
+        "volume": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/docker/file-sync/config",
+        "target": "/var/file-sync/config",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/home/user/working",
+        "target": "/var/file-sync/working",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/scratch/agent",
+        "target": "/var/file-sync/agent",
+        "bind": {}
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "app": "vpn-node",
+   "env": "production",
+   "org": "main",
+   "project": "vpn-node-production-green",
+   "appDir": "/opt/vardo/apps/vpn-node/production",
+   "repoDir": "/opt/vardo/apps/vpn-node/repo",
+   "config": {
+    "services": {
+     "vpn-node": {
+      "cap_add": [
+       "CAP_NET_ADMIN",
+       "CAP_SYS_MODULE"
+      ],
+      "hostname": "host-1",
+      "image": "vpn-node/vpn-node:latest",
+      "network_mode": "host",
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/dev/net/tun",
+        "target": "/dev/net/tun",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/docker/vpn-node/data",
+        "target": "/var/lib/vpn-node",
+        "bind": {}
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "app": "media-stats",
+   "env": "production",
+   "org": "main",
+   "project": "media-stats-production-blue",
+   "appDir": "/opt/vardo/apps/media-stats/production",
+   "repoDir": "/opt/vardo/apps/media-stats/repo",
+   "config": {
+    "networks": {
+     "vardo-network": {
+      "name": "vardo-network",
+      "ipam": {},
+      "external": true
+     }
+    },
+    "services": {
+     "media-stats": {
+      "cpu_shares": 1024,
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "1073741824"
+        }
+       },
+       "placement": {}
+      },
+      "image": "lscr.io/linuxserver/media-stats:latest",
+      "labels": {
+       "traefik.enable": "true"
+      },
+      "networks": {
+       "vardo-network": null
+      },
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/mnt/docker/media-stats/config",
+        "target": "/config",
+        "bind": {}
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "app": "iptv-proxy",
+   "env": "production",
+   "org": "main",
+   "project": "iptv-proxy-production-blue",
+   "appDir": "/opt/vardo/apps/iptv-proxy/production",
+   "repoDir": "/opt/vardo/apps/iptv-proxy/repo",
+   "config": {
+    "networks": {
+     "default": {
+      "name": "iptv-proxy-production-blue_default",
+      "ipam": {}
+     }
+    },
+    "services": {
+     "iptv-proxy": {
+      "cpu_shares": 1024,
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "1073741824"
+        }
+       },
+       "placement": {}
+      },
+      "image": "fyb3roptik/iptv-proxy:latest",
+      "networks": {
+       "default": null
+      },
+      "ports": [
+       {
+        "mode": "ingress",
+        "target": 34400,
+        "published": "34400",
+        "protocol": "tcp"
+       }
+      ],
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/mnt/docker/iptv-proxy/conf",
+        "target": "/home/iptv-proxy/conf",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/docker/iptv-proxy/temp",
+        "target": "/tmp/iptv-proxy",
+        "bind": {}
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "app": "torrent-client",
+   "env": "production",
+   "org": "main",
+   "project": "torrent-client-production-blue",
+   "appDir": "/opt/vardo/apps/torrent-client/production",
+   "repoDir": "/opt/vardo/apps/torrent-client/repo",
+   "config": {
+    "networks": {
+     "vardo-network": {
+      "name": "vardo-network",
+      "ipam": {},
+      "external": true
+     }
+    },
+    "services": {
+     "vpn-gateway": {
+      "cap_add": [
+       "NET_ADMIN"
+      ],
+      "cpu_shares": 1024,
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "1073741824"
+        }
+       },
+       "placement": {}
+      },
+      "devices": [
+       {
+        "source": "/dev/net/tun",
+        "target": "/dev/net/tun",
+        "permissions": "rwm"
+       }
+      ],
+      "image": "qmcgaw/vpn-gateway:v3.41.3",
+      "labels": {
+       "traefik.enable": "true"
+      },
+      "networks": {
+       "vardo-network": null
+      },
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/mnt/docker/torrent-client-data/vpn-gateway",
+        "target": "/vpn-gateway",
+        "bind": {}
+       }
+      ]
+     },
+     "netns-healer": {
+      "cpu_shares": 1024,
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "1073741824"
+        }
+       },
+       "placement": {}
+      },
+      "image": "docker:27-cli",
+      "networks": {
+       "vardo-network": null
+      },
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/var/run/docker.sock",
+        "target": "/var/run/docker.sock",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/docker/torrent-client-data/netns-healer.sh",
+        "target": "/netns-healer.sh",
+        "read_only": true,
+        "bind": {}
+       }
+      ]
+     },
+     "port-sync": {
+      "cpu_shares": 1024,
+      "depends_on": {
+       "vpn-gateway": {
+        "condition": "service_started",
+        "restart": true,
+        "required": true
+       },
+       "qbittorrent": {
+        "condition": "service_started",
+        "required": true
+       }
+      },
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "1073741824"
+        }
+       },
+       "placement": {}
+      },
+      "image": "alpine:3.24",
+      "network_mode": "service:vpn-gateway",
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/mnt/docker/torrent-client-data/vpn-gateway",
+        "target": "/vpn-gateway",
+        "read_only": true,
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/docker/torrent-client-data/port-sync.sh",
+        "target": "/port-sync.sh",
+        "read_only": true,
+        "bind": {}
+       }
+      ]
+     },
+     "qbittorrent": {
+      "cpu_shares": 1024,
+      "depends_on": {
+       "vpn-gateway": {
+        "condition": "service_healthy",
+        "required": true
+       }
+      },
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "1073741824"
+        }
+       },
+       "placement": {}
+      },
+      "image": "lscr.io/linuxserver/qbittorrent:5.0.3",
+      "network_mode": "service:vpn-gateway",
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/mnt/docker/torrent-client-data/config",
+        "target": "/config",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/downloads/completed",
+        "target": "/downloads/complete",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/mnt/scratch/torrent-client-incomplete-downloads",
+        "target": "/downloads/incomplete",
+        "bind": {}
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "app": "ui-registry",
+   "env": "production",
+   "org": "main",
+   "project": "ui-registry-production-green",
+   "appDir": "/opt/vardo/apps/ui-registry/production",
+   "repoDir": "/opt/vardo/apps/ui-registry/repo",
+   "config": {
+    "networks": {
+     "vardo-network": {
+      "name": "vardo-network",
+      "ipam": {},
+      "external": true
+     }
+    },
+    "services": {
+     "app": {
+      "build": {
+       "context": "/opt/vardo/apps/ui-registry/repo",
+       "dockerfile": "Dockerfile"
+      },
+      "cpu_shares": 1024,
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "1073741824"
+        }
+       },
+       "placement": {}
+      },
+      "labels": {
+       "traefik.enable": "true"
+      },
+      "networks": {
+       "vardo-network": null
+      },
+      "restart": "unless-stopped"
+     }
+    }
+   }
+  },
+  {
+   "app": "network-api",
+   "env": "production",
+   "org": "main",
+   "project": "network-api-production-blue",
+   "appDir": "/opt/vardo/apps/network-api/production",
+   "repoDir": "/opt/vardo/apps/network-api/repo",
+   "config": {
+    "networks": {
+     "vardo-network": {
+      "name": "vardo-network",
+      "ipam": {},
+      "external": true
+     }
+    },
+    "services": {
+     "network-api": {
+      "cpu_shares": 1024,
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "1073741824"
+        }
+       },
+       "placement": {}
+      },
+      "image": "ghcr.io/sirkirby/unifi-network-mcp:latest",
+      "labels": {
+       "traefik.enable": "true"
+      },
+      "networks": {
+       "vardo-network": null
+      },
+      "restart": "unless-stopped"
+     }
+    }
+   }
+  },
+  {
+   "app": "uptime-monitor",
+   "env": "production",
+   "org": "main",
+   "project": "uptime-monitor-production-blue",
+   "appDir": "/opt/vardo/apps/uptime-monitor/production",
+   "repoDir": "/opt/vardo/apps/uptime-monitor/repo",
+   "config": {
+    "networks": {
+     "vardo-network": {
+      "name": "vardo-network",
+      "ipam": {},
+      "external": true
+     }
+    },
+    "services": {
+     "uptime-monitor": {
+      "cpu_shares": 1024,
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "1073741824"
+        }
+       },
+       "placement": {}
+      },
+      "env_file": [
+       {
+        "path": "/opt/vardo/apps/uptime-monitor/production/blue/.env"
+       }
+      ],
+      "image": "louislam/uptime-monitor:2",
+      "labels": {
+       "traefik.enable": "true"
+      },
+      "networks": {
+       "vardo-network": null
+      },
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "volume",
+        "source": "data",
+        "target": "/app/data",
+        "volume": {}
+       }
+      ]
+     }
+    },
+    "volumes": {
+     "data": {
+      "name": "uptime-monitor-production_data",
+      "external": true
+     }
+    }
+   }
+  },
+  {
+   "app": "vardo",
+   "env": "env",
+   "org": "vardo",
+   "project": "vardo-env-blue",
+   "appDir": "/opt/vardo/apps/vardo/env",
+   "repoDir": "/opt/vardo/apps/vardo/repo",
+   "config": {
+    "networks": {
+     "internal": {
+      "name": "vardo-env-blue_internal",
+      "ipam": {}
+     },
+     "mesh": {
+      "name": "vardo-env-blue_mesh",
+      "ipam": {
+       "config": [
+        {
+         "subnet": "10.88.0.0/24"
+        }
+       ]
+      }
+     },
+     "vardo-network": {
+      "name": "vardo-network",
+      "ipam": {},
+      "external": true
+     }
+    },
+    "services": {
+     "frontend": {
+      "profiles": [
+       "production"
+      ],
+      "build": {
+       "context": "/opt/vardo/apps/vardo/env/blue",
+       "dockerfile": "Dockerfile",
+       "args": {
+        "GIT_SHA": "",
+        "NEXT_PUBLIC_APP_URL": "",
+        "NEXT_PUBLIC_BETTER_AUTH_URL": "",
+        "NEXT_PUBLIC_PLAUSIBLE_DOMAIN": "",
+        "NEXT_PUBLIC_PLAUSIBLE_SRC": ""
+       }
+      },
+      "cap_add": [
+       "NET_ADMIN"
+      ],
+      "container_name": "vardo-frontend",
+      "depends_on": {
+       "postgres": {
+        "condition": "service_healthy",
+        "required": true
+       },
+       "redis": {
+        "condition": "service_healthy",
+        "required": true
+       },
+       "wireguard": {
+        "condition": "service_healthy",
+        "required": true
+       }
+      },
+      "env_file": [
+       {
+        "path": "/opt/vardo/apps/vardo/env/blue/.env"
+       }
+      ],
+      "group_add": [
+       "991"
+      ],
+      "labels": {
+       "traefik.enable": "true"
+      },
+      "mem_limit": "2147483648",
+      "networks": {
+       "internal": null,
+       "mesh": {
+        "ipv4_address": "10.88.0.3"
+       },
+       "vardo-network": null
+      },
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/var/run/docker.sock",
+        "target": "/var/run/docker.sock",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/opt/vardo",
+        "target": "/opt/vardo",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/dev/null",
+        "target": "/dev/null",
+        "read_only": true,
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/proc",
+        "target": "/host-proc",
+        "read_only": true,
+        "bind": {}
+       },
+       {
+        "type": "volume",
+        "source": "traefik_dynamic",
+        "target": "/etc/traefik/dynamic",
+        "volume": {}
+       }
+      ]
+     },
+     "postgres": {
+      "container_name": "vardo-postgres",
+      "image": "postgres:17",
+      "mem_limit": "1073741824",
+      "networks": {
+       "internal": null
+      },
+      "ports": [
+       {
+        "mode": "ingress",
+        "target": 5432,
+        "published": "7100",
+        "protocol": "tcp"
+       }
+      ],
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "volume",
+        "source": "postgres_data",
+        "target": "/var/lib/postgresql/data",
+        "volume": {}
+       }
+      ]
+     },
+     "redis": {
+      "container_name": "vardo-redis",
+      "image": "redis/redis-stack-server:7.4.0-v3",
+      "mem_limit": "536870912",
+      "networks": {
+       "internal": null
+      },
+      "ports": [
+       {
+        "mode": "ingress",
+        "target": 6379,
+        "published": "7200",
+        "protocol": "tcp"
+       }
+      ],
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "volume",
+        "source": "redis_data",
+        "target": "/data",
+        "volume": {}
+       }
+      ]
+     },
+     "traefik": {
+      "container_name": "vardo-traefik",
+      "image": "traefik:v3",
+      "mem_limit": "268435456",
+      "networks": {
+       "vardo-network": null
+      },
+      "ports": [
+       {
+        "mode": "ingress",
+        "target": 80,
+        "published": "80",
+        "protocol": "tcp"
+       },
+       {
+        "mode": "ingress",
+        "target": 443,
+        "published": "443",
+        "protocol": "tcp"
+       }
+      ],
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/var/run/docker.sock",
+        "target": "/var/run/docker.sock",
+        "read_only": true,
+        "bind": {}
+       },
+       {
+        "type": "volume",
+        "source": "letsencrypt",
+        "target": "/letsencrypt",
+        "volume": {}
+       },
+       {
+        "type": "volume",
+        "source": "traefik_dynamic",
+        "target": "/etc/traefik/dynamic",
+        "volume": {}
+       }
+      ]
+     },
+     "wireguard": {
+      "cap_add": [
+       "NET_ADMIN",
+       "SYS_MODULE"
+      ],
+      "container_name": "vardo-wireguard",
+      "image": "linuxserver/wireguard",
+      "mem_limit": "67108864",
+      "networks": {
+       "internal": null,
+       "mesh": {
+        "ipv4_address": "10.88.0.2"
+       },
+       "vardo-network": null
+      },
+      "ports": [
+       {
+        "mode": "ingress",
+        "target": 51820,
+        "published": "51820",
+        "protocol": "udp"
+       }
+      ],
+      "restart": "unless-stopped",
+      "sysctls": {
+       "net.ipv4.conf.all.src_valid_mark": "1",
+       "net.ipv4.ip_forward": "1"
+      },
+      "volumes": [
+       {
+        "type": "volume",
+        "source": "wireguard_config",
+        "target": "/config",
+        "volume": {}
+       }
+      ]
+     }
+    },
+    "volumes": {
+     "letsencrypt": {
+      "name": "vardo-env-blue_letsencrypt"
+     },
+     "postgres_data": {
+      "name": "vardo-env-blue_postgres_data"
+     },
+     "redis_data": {
+      "name": "vardo-env-blue_redis_data"
+     },
+     "traefik_dynamic": {
+      "name": "vardo-env-blue_traefik_dynamic"
+     },
+     "wireguard_config": {
+      "name": "vardo-env-blue_wireguard_config"
+     }
+    }
+   }
+  },
+  {
+   "app": "vardo",
+   "env": "production",
+   "org": "vardo",
+   "project": "vardo-production-green",
+   "appDir": "/opt/vardo/apps/vardo/production",
+   "repoDir": "/opt/vardo/apps/vardo/repo",
+   "config": {
+    "networks": {
+     "internal": {
+      "name": "vardo_internal",
+      "ipam": {},
+      "external": true
+     },
+     "mesh": {
+      "name": "vardo_mesh",
+      "ipam": {},
+      "external": true
+     },
+     "vardo-network": {
+      "name": "vardo-network",
+      "ipam": {},
+      "external": true
+     }
+    },
+    "services": {
+     "buildkit": {
+      "cpu_shares": 1024,
+      "container_name": "vardo-buildkit",
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "12884901888"
+        }
+       },
+       "placement": {}
+      },
+      "image": "moby/buildkit:latest",
+      "networks": {
+       "internal": null
+      },
+      "privileged": true,
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "volume",
+        "source": "buildkit_data",
+        "target": "/var/lib/buildkit",
+        "volume": {}
+       }
+      ]
+     },
+     "frontend": {
+      "build": {
+       "context": "/opt/vardo/apps/vardo/repo",
+       "dockerfile": "Dockerfile",
+       "args": {
+        "GIT_SHA": "",
+        "NEXT_PUBLIC_APP_URL": "",
+        "NEXT_PUBLIC_BETTER_AUTH_URL": ""
+       }
+      },
+      "cap_add": [
+       "NET_ADMIN"
+      ],
+      "cpu_shares": 1024,
+      "depends_on": {
+       "postgres": {
+        "condition": "service_healthy",
+        "required": true
+       },
+       "redis": {
+        "condition": "service_healthy",
+        "required": true
+       },
+       "wireguard": {
+        "condition": "service_healthy",
+        "required": true
+       }
+      },
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "2147483648"
+        }
+       },
+       "placement": {}
+      },
+      "env_file": [
+       {
+        "path": "/opt/vardo/apps/vardo/production/green/.env"
+       }
+      ],
+      "group_add": [
+       "991"
+      ],
+      "labels": {
+       "traefik.enable": "true"
+      },
+      "networks": {
+       "internal": null,
+       "mesh": null,
+       "vardo-network": null
+      },
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/var/run/docker.sock",
+        "target": "/var/run/docker.sock",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/opt/vardo",
+        "target": "/opt/vardo",
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/dev/null",
+        "target": "/dev/null",
+        "read_only": true,
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/proc",
+        "target": "/host-proc",
+        "read_only": true,
+        "bind": {}
+       },
+       {
+        "type": "bind",
+        "source": "/sys/fs/cgroup",
+        "target": "/host-cgroup",
+        "read_only": true,
+        "bind": {}
+       },
+       {
+        "type": "volume",
+        "source": "traefik_dynamic",
+        "target": "/etc/traefik/dynamic",
+        "volume": {}
+       }
+      ]
+     },
+     "postgres": {
+      "cpu_shares": 1024,
+      "container_name": "vardo-postgres",
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "1073741824"
+        }
+       },
+       "placement": {}
+      },
+      "image": "postgres:17",
+      "networks": {
+       "internal": null
+      },
+      "ports": [
+       {
+        "mode": "ingress",
+        "host_ip": "127.0.0.1",
+        "target": 5432,
+        "published": "7100",
+        "protocol": "tcp"
+       }
+      ],
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "volume",
+        "source": "postgres_data",
+        "target": "/var/lib/postgresql/data",
+        "volume": {}
+       }
+      ]
+     },
+     "redis": {
+      "cpu_shares": 1024,
+      "container_name": "vardo-redis",
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "536870912"
+        }
+       },
+       "placement": {}
+      },
+      "image": "redis/redis-stack-server:7.4.0-v3",
+      "networks": {
+       "internal": null
+      },
+      "ports": [
+       {
+        "mode": "ingress",
+        "host_ip": "127.0.0.1",
+        "target": 6379,
+        "published": "7200",
+        "protocol": "tcp"
+       }
+      ],
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "volume",
+        "source": "redis_data",
+        "target": "/data",
+        "volume": {}
+       }
+      ]
+     },
+     "traefik": {
+      "cpu_shares": 1024,
+      "container_name": "vardo-traefik",
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "268435456"
+        }
+       },
+       "placement": {}
+      },
+      "image": "traefik:v3",
+      "networks": {
+       "vardo-network": null
+      },
+      "ports": [
+       {
+        "mode": "ingress",
+        "target": 80,
+        "published": "80",
+        "protocol": "tcp"
+       },
+       {
+        "mode": "ingress",
+        "target": 443,
+        "published": "443",
+        "protocol": "tcp"
+       }
+      ],
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/var/run/docker.sock",
+        "target": "/var/run/docker.sock",
+        "read_only": true,
+        "bind": {}
+       },
+       {
+        "type": "volume",
+        "source": "letsencrypt",
+        "target": "/letsencrypt",
+        "volume": {}
+       },
+       {
+        "type": "volume",
+        "source": "traefik_dynamic",
+        "target": "/etc/traefik/dynamic",
+        "volume": {}
+       }
+      ]
+     },
+     "wireguard": {
+      "cap_add": [
+       "NET_ADMIN",
+       "SYS_MODULE"
+      ],
+      "cpu_shares": 1024,
+      "container_name": "vardo-wireguard",
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "67108864"
+        }
+       },
+       "placement": {}
+      },
+      "image": "linuxserver/wireguard:1.0.20260223-r0-ls119",
+      "networks": {
+       "internal": null,
+       "mesh": null,
+       "vardo-network": null
+      },
+      "ports": [
+       {
+        "mode": "ingress",
+        "target": 51820,
+        "published": "51820",
+        "protocol": "udp"
+       }
+      ],
+      "restart": "unless-stopped",
+      "sysctls": {
+       "net.ipv4.conf.all.src_valid_mark": "1",
+       "net.ipv4.ip_forward": "1"
+      },
+      "volumes": [
+       {
+        "type": "volume",
+        "source": "wireguard_config",
+        "target": "/config",
+        "volume": {}
+       }
+      ]
+     }
+    },
+    "volumes": {
+     "buildkit_data": {
+      "name": "vardo-production-green_buildkit_data"
+     },
+     "letsencrypt": {
+      "name": "vardo-production-green_letsencrypt"
+     },
+     "postgres_data": {
+      "name": "vardo-production-green_postgres_data"
+     },
+     "redis_data": {
+      "name": "vardo-production-green_redis_data"
+     },
+     "traefik_dynamic": {
+      "name": "vardo_traefik_dynamic",
+      "external": true
+     },
+     "wireguard_config": {
+      "name": "vardo-production-green_wireguard_config"
+     }
+    }
+   }
+  },
+  {
+   "app": "media-invites",
+   "env": "production",
+   "org": "main",
+   "project": "media-invites-production-blue",
+   "appDir": "/opt/vardo/apps/media-invites/production",
+   "repoDir": "/opt/vardo/apps/media-invites/repo",
+   "config": {
+    "networks": {
+     "vardo-network": {
+      "name": "vardo-network",
+      "ipam": {},
+      "external": true
+     }
+    },
+    "services": {
+     "media-invites": {
+      "cpu_shares": 1024,
+      "image": "ghcr.io/wizarrrr/media-invites:latest",
+      "labels": {
+       "traefik.enable": "true"
+      },
+      "networks": {
+       "vardo-network": null
+      },
+      "restart": "unless-stopped",
+      "volumes": [
+       {
+        "type": "bind",
+        "source": "/mnt/docker/media-invites/database",
+        "target": "/data/database",
+        "bind": {}
+       }
+      ]
+     }
+    }
+   }
+  }
+ ]
+}

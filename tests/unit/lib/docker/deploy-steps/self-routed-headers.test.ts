@@ -23,29 +23,29 @@ import { slotComposePair } from "@/lib/docker/traefik-slot-names";
 import { nonRotatingServices } from "@/lib/docker/slot-partition";
 import { VARDO_SELF_APP_NAME } from "@/lib/api/system-managed";
 
-function pouchCompose(): ComposeFile {
+function mailCompose(): ComposeFile {
   const router = (name: string, host: string) => ({
     [`traefik.http.routers.${name}.rule`]: `Host(\`${host}\`)`,
     [`traefik.http.routers.${name}.entrypoints`]: "websecure",
     [`traefik.http.routers.${name}.tls.certresolver`]: "le-dns",
-    [`traefik.http.routers.${name}.service`]: "pouch",
+    [`traefik.http.routers.${name}.service`]: "mail",
   });
   return {
-    name: "pouch",
+    name: "mail",
     services: {
-      pouch: {
-        name: "pouch",
-        image: "pouch:latest",
+      mail: {
+        name: "mail",
+        image: "mail:latest",
         labels: {
           "vardo.traefik": "manual",
           "traefik.enable": "true",
-          ...router("pouch", "pouch.email"),
-          ...router("pouch-alt", "email.example.dev"),
-          ...router("pouch-smtp-cert", "smtp.pouch.email"),
-          "traefik.http.routers.pouch-http.rule": "Host(`pouch.email`)",
-          "traefik.http.routers.pouch-http.entrypoints": "web",
-          "traefik.http.routers.pouch-http.middlewares": "to-https@file",
-          "traefik.http.services.pouch.loadbalancer.server.port": "3000",
+          ...router("mail", "mail.example.net"),
+          ...router("mail-alt", "mail.example.org"),
+          ...router("mail-smtp-cert", "smtp.example.net"),
+          "traefik.http.routers.mail-http.rule": "Host(`mail.example.net`)",
+          "traefik.http.routers.mail-http.entrypoints": "web",
+          "traefik.http.routers.mail-http.middlewares": "to-https@file",
+          "traefik.http.services.mail.loadbalancer.server.port": "3000",
         },
       },
       postgres: { name: "postgres", image: "postgres:17" },
@@ -54,7 +54,7 @@ function pouchCompose(): ComposeFile {
 }
 
 function makeCtx(name: string, overrides: Partial<DeployApp> = {}): DeployContext {
-  const compose = pouchCompose();
+  const compose = mailCompose();
   const app = {
     id: "app-id",
     organizationId: "org-id",
@@ -86,7 +86,7 @@ function makeCtx(name: string, overrides: Partial<DeployApp> = {}): DeployContex
   } as unknown as DeployContext;
 }
 
-/** The labels `docker compose -f bare -f overlay` gives the pouch container. */
+/** The labels `docker compose -f bare -f overlay` gives the mail container. */
 async function slotLabels(ctx: DeployContext, slot = "blue"): Promise<Record<string, string>> {
   const resolved = await resolveCompose(ctx);
   const { full, bare } = slotComposePair(
@@ -96,29 +96,29 @@ async function slotLabels(ctx: DeployContext, slot = "blue"): Promise<Record<str
     nonRotatingServices(resolved.compose),
   );
   const overlay = buildVardoOverlay({ fullCompose: full, networkName: "vardo-network" });
-  return { ...bare.services.pouch.labels, ...overlay.services.pouch?.labels };
+  return { ...bare.services.mail.labels, ...overlay.services.mail?.labels };
 }
 
 describe("self-routed app through resolve, slot naming and overlay", () => {
   it("puts the slot's headers middleware on the websecure routers only", async () => {
-    const labels = await slotLabels(makeCtx("pouch"));
-    for (const router of ["pouch", "pouch-alt", "pouch-smtp-cert"]) {
-      expect(labels[`traefik.http.routers.${router}-blue.middlewares`]).toBe("pouch-vardo-headers-blue");
+    const labels = await slotLabels(makeCtx("mail"));
+    for (const router of ["mail", "mail-alt", "mail-smtp-cert"]) {
+      expect(labels[`traefik.http.routers.${router}-blue.middlewares`]).toBe("mail-vardo-headers-blue");
     }
-    expect(labels["traefik.http.routers.pouch-http-blue.middlewares"]).toBe("to-https@file");
-    expect(labels["traefik.http.middlewares.pouch-vardo-headers-blue.headers.stsSeconds"]).toBe("31536000");
+    expect(labels["traefik.http.routers.mail-http-blue.middlewares"]).toBe("to-https@file");
+    expect(labels["traefik.http.middlewares.mail-vardo-headers-blue.headers.stsSeconds"]).toBe("31536000");
   });
 
   it("names the middleware per slot on green", async () => {
-    const labels = await slotLabels(makeCtx("pouch"), "green");
-    expect(labels["traefik.http.routers.pouch-green.middlewares"]).toBe("pouch-vardo-headers-green");
-    expect(labels["traefik.http.middlewares.pouch-vardo-headers-green.headers.stsSeconds"]).toBe("31536000");
+    const labels = await slotLabels(makeCtx("mail"), "green");
+    expect(labels["traefik.http.routers.mail-green.middlewares"]).toBe("mail-vardo-headers-green");
+    expect(labels["traefik.http.middlewares.mail-vardo-headers-green.headers.stsSeconds"]).toBe("31536000");
   });
 
   it("adds nothing when the app opts out", async () => {
-    const labels = await slotLabels(makeCtx("pouch", { securityHeaders: false }));
+    const labels = await slotLabels(makeCtx("mail", { securityHeaders: false }));
     expect(Object.keys(labels).filter((k) => k.includes("vardo-headers"))).toEqual([]);
-    expect(labels["traefik.http.routers.pouch-blue.middlewares"]).toBeUndefined();
+    expect(labels["traefik.http.routers.mail-blue.middlewares"]).toBeUndefined();
   });
 
   it("adds nothing to the console's own routers", async () => {

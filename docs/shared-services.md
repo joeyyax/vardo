@@ -42,7 +42,7 @@ Without a git repo the tag stays `local` and this falls back to a fixed tag.
 
 Apps in one project reach each other by compose service name. Each deploy attaches every service to the network `vardo-p-<project id>-<environment>`, alongside the app's own network and, for routed services, `vardo-network`. An untrusted organization needs no trust for this.
 
-A Railpack, Nixpacks, Dockerfile or image app's service is named after the app. With a `shop-db` compose app running `postgres` and a `shop-east` Railpack app in the same project:
+A Railpack, Nixpacks, Dockerfile or image app's service is named after the app. With a `shop-db` compose app running `postgres` and a `shop-web` Railpack app in the same project:
 
 ```
 DATABASE_URL=postgres://app:secret@postgres:5432/shop

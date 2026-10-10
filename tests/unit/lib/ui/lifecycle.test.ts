@@ -26,7 +26,7 @@ function row(overrides: Partial<LifecycleRow> = {}): LifecycleRow {
     action: "app.restarted",
     createdAt: at(1),
     metadata: { scope: "app" },
-    user: { name: "Joey", email: "joey@example.com" },
+    user: { name: "Alex", email: "alex@example.com" },
     ...overrides,
   };
 }
@@ -37,7 +37,7 @@ function event(hoursAgo: number, id = `e${hoursAgo}`): LifecycleEvent {
     kind: "restarted",
     at: at(hoursAgo).getTime(),
     label: "Restarted",
-    detail: "by Joey",
+    detail: "by Alex",
     durationMs: null,
     notes: [],
   };
@@ -79,7 +79,7 @@ describe("buildLifecycleEvents", () => {
     expect(e.notes).toEqual([]);
     expect(e.durationMs).toBeNull();
     expect(e.label).toBe("Restarted");
-    expect(e.detail).toBe("by Joey via MCP");
+    expect(e.detail).toBe("by Alex via MCP");
   });
 
   it("renders a row with no metadata at all", () => {
@@ -132,8 +132,8 @@ describe("lifecycleLabel", () => {
 
 describe("lifecycleDetail", () => {
   it("names the person, falling back to their email", () => {
-    expect(lifecycleDetail({ name: "Joey", email: "joey@example.com" })).toBe("by Joey");
-    expect(lifecycleDetail({ name: null, email: "joey@example.com" })).toBe("by joey@example.com");
+    expect(lifecycleDetail({ name: "Alex", email: "alex@example.com" })).toBe("by Alex");
+    expect(lifecycleDetail({ name: null, email: "alex@example.com" })).toBe("by alex@example.com");
   });
 
   it("says Vardo when no one is on the row", () => {
@@ -141,8 +141,8 @@ describe("lifecycleDetail", () => {
   });
 
   it("uppercases the acronyms a trigger uses", () => {
-    expect(lifecycleDetail({ name: "Joey", email: "j@e.com" }, "api")).toBe("by Joey via API");
-    expect(lifecycleDetail({ name: "Joey", email: "j@e.com" }, "mcp")).toBe("by Joey via MCP");
+    expect(lifecycleDetail({ name: "Alex", email: "j@e.com" }, "api")).toBe("by Alex via API");
+    expect(lifecycleDetail({ name: "Alex", email: "j@e.com" }, "mcp")).toBe("by Alex via MCP");
   });
 });
 

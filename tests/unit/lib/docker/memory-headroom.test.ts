@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// Figures are the live homelab host on 2026-08-03: a 24 GiB memory cgroup with
+// Figures are from a live host: a 24 GiB memory cgroup with
 // 16.2 GiB of container working sets, which the kernel reported as 7.4 GiB
 // available. Vardo's own sum lands 0.4 GiB optimistic of that, inside the
 // reserve.

@@ -24,7 +24,7 @@ export function MagicLinkEmail({ url, email }: MagicLinkProps) {
 
 MagicLinkEmail.PreviewProps = {
   url: "https://host.example.com/auth/verify?token=abc123",
-  email: "joey@example.com",
+  email: "alex@example.com",
 } satisfies MagicLinkProps;
 
 export default MagicLinkEmail;

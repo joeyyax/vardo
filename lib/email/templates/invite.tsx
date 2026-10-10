@@ -40,7 +40,7 @@ export function InviteEmail({
 InviteEmail.PreviewProps = {
   email: "newuser@example.com",
   orgName: "Acme Inc",
-  inviterName: "Joey Yax",
+  inviterName: "Alex Kim",
   inviteUrl: "https://host.example.com/invite/abc123",
 } satisfies InviteEmailProps;
 

@@ -77,8 +77,8 @@ describe("injectProjectNetwork", () => {
   });
 
   it("covers a generated single-service compose (image, dockerfile, railpack, nixpacks)", () => {
-    const compose: ComposeFile = { services: { "shop-east": { name: "shop-east", image: "shop:abc" } } };
-    expect(injectProjectNetwork(compose, NET).services["shop-east"].networks).toEqual(["default", NET]);
+    const compose: ComposeFile = { services: { "shop-web": { name: "shop-web", image: "shop:abc" } } };
+    expect(injectProjectNetwork(compose, NET).services["shop-web"].networks).toEqual(["default", NET]);
   });
 
   it("keeps a routed service on its default network once vardo-network is added", () => {
@@ -93,7 +93,7 @@ describe("projectNetworkCollisions", () => {
     { service: "postgres", appId: "a1", appName: "shop-db" },
     { service: "postgres", appId: "a1", appName: "shop-db" },
     { service: "web", appId: "me", appName: "me" },
-    { service: "shop-east", appId: "a2", appName: "shop-east" },
+    { service: "shop-web", appId: "a2", appName: "shop-web" },
   ];
 
   it("reports another app's service with the same name once", () => {
@@ -107,7 +107,7 @@ describe("projectNetworkCollisions", () => {
   });
 
   it("is empty when names differ", () => {
-    expect(projectNetworkCollisions("me", ["shop-west"], peers)).toEqual([]);
+    expect(projectNetworkCollisions("me", ["shop-web-east"], peers)).toEqual([]);
   });
 });
 
@@ -195,7 +195,7 @@ describe("compose policy and the project network", () => {
   });
 
   it("refuses aliases on the project network", () => {
-    expect(composePolicyErrors(resolved({ aliases: ["shop-west"] }), untrusted)).toEqual([
+    expect(composePolicyErrors(resolved({ aliases: ["shop-web-east"] }), untrusted)).toEqual([
       'Service "postgres" sets addresses or aliases on the project network',
     ]);
   });
