@@ -55,6 +55,8 @@ export type ComposeService = {
   volumes?: string[];
   labels?: Record<string, string>;
   networks?: string[];
+  /** Per-network settings from the map form (ipv4_address, aliases, gw_priority), keyed by network. */
+  network_options?: Record<string, Record<string, unknown>>;
   depends_on?: ComposeDependsOn;
   network_mode?: string;
   runtime?: string;

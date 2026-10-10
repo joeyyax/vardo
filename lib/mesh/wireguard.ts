@@ -196,11 +196,26 @@ export async function ensureHubConfig(hubIp: string): Promise<string> {
   const config = buildWgConfig(privateKey, port, hubIp, []);
   await writeWgConfig(config);
 
-  await execFileAsync("docker", [
-    "exec", WG_CONTAINER, "sh", "-c", "wg-quick up wg0",
-  ], { env: dockerEnv() });
+  // The image deletes the default route when it boots without a config, so boot it with one.
+  await execFileAsync("docker", ["restart", WG_CONTAINER], { env: dockerEnv() });
+  await waitForInterface();
 
   return publicKey;
+}
+
+/** Wait for the container's init to bring wg0 up after a restart. */
+export async function waitForInterface(attempts = 30, delayMs = 1000): Promise<void> {
+  for (let i = 0; i < attempts; i++) {
+    try {
+      await execFileAsync("docker", [
+        "exec", WG_CONTAINER, "wg", "show", "wg0", "public-key",
+      ], { env: dockerEnv() });
+      return;
+    } catch {
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
+  }
+  throw new Error(`WireGuard interface wg0 didn't come up in ${WG_CONTAINER}`);
 }
 
 /** The hub's WireGuard address, or HUB_IP when the interface isn't reachable. */

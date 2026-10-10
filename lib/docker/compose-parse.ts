@@ -21,8 +21,12 @@ export function composeToYaml(compose: ComposeFile): string {
 
   const services: Record<string, Record<string, unknown>> = {};
   for (const [key, svc] of Object.entries(compose.services)) {
-    const { name: _name, ...rest } = svc;
-    services[key] = rest;
+    const { name: _name, network_options: options, ...rest } = svc;
+    const out: Record<string, unknown> = rest;
+    if (options && rest.networks?.some((n) => options[n])) {
+      out.networks = Object.fromEntries(rest.networks.map((n) => [n, options[n] ?? null]));
+    }
+    services[key] = out;
   }
   doc.services = services;
 
@@ -161,6 +165,18 @@ function volumeToShort(entry: unknown, tmpfs: string[]): string | null {
   return `${source}:${target}${opts.length ? `:${opts.join(",")}` : ""}`;
 }
 
+const FIXED_ADDRESS_KEYS = ["ipv4_address", "ipv6_address", "mac_address"];
+
+/** Fixed addresses only on shared services; blue and green would collide. */
+function dropFixedAddresses(svc: ComposeService): void {
+  const kept: Record<string, Record<string, unknown>> = {};
+  for (const [net, opts] of Object.entries(svc.network_options ?? {})) {
+    const rest = Object.fromEntries(Object.entries(opts).filter(([k]) => !FIXED_ADDRESS_KEYS.includes(k)));
+    if (Object.keys(rest).length > 0) kept[net] = rest;
+  }
+  svc.network_options = Object.keys(kept).length > 0 ? kept : undefined;
+}
+
 /** Parse a YAML string into a ComposeFile. */
 export function parseCompose(yamlString: string): ComposeFile {
   const parsed = parseComposeYaml(yamlString);
@@ -222,11 +238,16 @@ export function parseCompose(yamlString: string): ComposeFile {
         svc.labels = raw.labels as Record<string, string>;
       }
     }
-    // List or map form; map form keeps names only (aliases etc. are dropped).
     if (Array.isArray(raw.networks)) {
       svc.networks = raw.networks.map(String);
-    } else if (raw.networks && typeof raw.networks === "object") {
-      svc.networks = Object.keys(raw.networks as Record<string, unknown>);
+    } else if (isRecord(raw.networks)) {
+      svc.networks = Object.keys(raw.networks);
+      const options = Object.fromEntries(
+        Object.entries(raw.networks).filter(
+          (e): e is [string, Record<string, unknown>] => isRecord(e[1]) && Object.keys(e[1]).length > 0,
+        ),
+      );
+      if (Object.keys(options).length > 0) svc.network_options = options;
     }
     if (raw.depends_on) {
       if (Array.isArray(raw.depends_on)) {
@@ -332,6 +353,7 @@ export function parseCompose(yamlString: string): ComposeFile {
     if (svc[SHARED_MARKER] && typeof raw.container_name === "string") {
       svc.container_name = raw.container_name;
     }
+    if (!svc[SHARED_MARKER] && svc.network_options) dropFixedAddresses(svc);
 
     services[name] = svc;
   }
