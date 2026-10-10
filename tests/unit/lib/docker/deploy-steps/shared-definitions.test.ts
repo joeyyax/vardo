@@ -25,13 +25,25 @@ const enginePostgres = {
   image: "postgres:17",
   deploy: { resources: { limits: { memory: "1073741824" } }, placement: {} },
   labels: { "vardo.project": "vardo", "vardo.managed": "true" },
-  networks: { internal: null, mesh: null },
+  networks: { internal: null, mesh: { ipv4_address: "192.0.2.2" } },
   restart: "unless-stopped",
   "x-vardo-shared": true,
 };
 
 describe("definitionFingerprint", () => {
-  it("ignores labels, weights, limit spelling and network detail", () => {
+  it("counts networks by name when none has settings", () => {
+    const bare = { ...legacyPostgres, networks: { internal: null, mesh: null } };
+    expect(definitionFingerprint({ ...legacyPostgres, networks: { internal: {}, mesh: null } })).toBe(definitionFingerprint(bare));
+  });
+
+  it("counts a network address or gateway priority", () => {
+    const base = definitionFingerprint(legacyPostgres);
+    expect(definitionFingerprint({ ...legacyPostgres, networks: { internal: null, mesh: null } })).not.toBe(base);
+    expect(definitionFingerprint({ ...legacyPostgres, networks: { internal: null, mesh: { ipv4_address: "192.0.2.3" } } })).not.toBe(base);
+    expect(definitionFingerprint({ ...legacyPostgres, networks: { internal: { gw_priority: 1 }, mesh: { ipv4_address: "192.0.2.2" } } })).not.toBe(base);
+  });
+
+  it("ignores labels, weights and limit spelling", () => {
     expect(definitionFingerprint(enginePostgres)).toBe(definitionFingerprint(legacyPostgres));
     expect(definitionFingerprint({ ...enginePostgres, cpu_shares: 1024, oom_score_adj: 0 })).toBe(
       definitionFingerprint(legacyPostgres),

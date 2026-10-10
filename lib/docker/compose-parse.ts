@@ -21,8 +21,12 @@ export function composeToYaml(compose: ComposeFile): string {
 
   const services: Record<string, Record<string, unknown>> = {};
   for (const [key, svc] of Object.entries(compose.services)) {
-    const { name: _name, ...rest } = svc;
-    services[key] = rest;
+    const { name: _name, network_options: options, ...rest } = svc;
+    const out: Record<string, unknown> = rest;
+    if (options && rest.networks?.some((n) => options[n])) {
+      out.networks = Object.fromEntries(rest.networks.map((n) => [n, options[n] ?? null]));
+    }
+    services[key] = out;
   }
   doc.services = services;
 
@@ -222,11 +226,16 @@ export function parseCompose(yamlString: string): ComposeFile {
         svc.labels = raw.labels as Record<string, string>;
       }
     }
-    // List or map form; map form keeps names only (aliases etc. are dropped).
     if (Array.isArray(raw.networks)) {
       svc.networks = raw.networks.map(String);
-    } else if (raw.networks && typeof raw.networks === "object") {
-      svc.networks = Object.keys(raw.networks as Record<string, unknown>);
+    } else if (isRecord(raw.networks)) {
+      svc.networks = Object.keys(raw.networks);
+      const options = Object.fromEntries(
+        Object.entries(raw.networks).filter(
+          (e): e is [string, Record<string, unknown>] => isRecord(e[1]) && Object.keys(e[1]).length > 0,
+        ),
+      );
+      if (Object.keys(options).length > 0) svc.network_options = options;
     }
     if (raw.depends_on) {
       if (Array.isArray(raw.depends_on)) {

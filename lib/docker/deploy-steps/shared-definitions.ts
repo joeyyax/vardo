@@ -35,7 +35,7 @@ function canonical(value: unknown): Json | undefined {
 
 /**
  * A service from `config --format json`, blind to labels and scheduling weights.
- * Limits count by value however they're written; networks count by name.
+ * Limits count by value however they're written; networks count by name and per-network settings.
  */
 export function definitionFingerprint(service: Record<string, unknown>): string {
   const s: Record<string, unknown> = { ...service };
@@ -58,7 +58,12 @@ export function definitionFingerprint(service: Record<string, unknown>): string 
   delete s.pids_limit;
 
   if (s.networks && typeof s.networks === "object" && !Array.isArray(s.networks)) {
-    s.networks = Object.keys(s.networks).sort();
+    const nets = s.networks as Record<string, unknown>;
+    const names = Object.keys(nets).sort();
+    // Names alone unless a network carries settings.
+    s.networks = names.some((n) => canonical(nets[n]) !== undefined)
+      ? Object.fromEntries(names.map((n) => [n, canonical(nets[n]) ?? true]))
+      : names;
   }
 
   return createHash("sha256").update(JSON.stringify(canonical(s) ?? {})).digest("hex");
