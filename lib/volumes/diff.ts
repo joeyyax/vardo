@@ -82,7 +82,7 @@ async function getImageManifest(
   try {
     const { stdout } = await execFileAsync(
       "docker",
-      ["run", "--rm", "--entrypoint", "sh", imageName, "-c", script],
+      ["run", "--rm", "--log-driver", "none", "--entrypoint", "sh", imageName, "-c", script],
       { env: dockerEnv(), timeout: 60000, maxBuffer: 10 * 1024 * 1024 },
     );
     return parseManifest(stdout, mountPath);
@@ -102,7 +102,7 @@ async function getVolumeManifest(
   try {
     const { stdout } = await execFileAsync(
       "docker",
-      ["run", "--rm", "-v", `${volumeDockerName}:/vol`, "alpine", "sh", "-c", script],
+      ["run", "--rm", "--log-driver", "none", "-v", `${volumeDockerName}:/vol`, "alpine", "sh", "-c", script],
       { env: dockerEnv(), timeout: 60000, maxBuffer: 10 * 1024 * 1024 },
     );
     return parseManifest(stdout, "/vol");
@@ -231,7 +231,7 @@ export async function syncFilesFromImage(
   try {
     const { stdout } = await execFileAsync(
       "docker",
-      ["run", "--rm", "-v", `${volumeDockerName}:/vol`, imageName, "sh", "-c", script],
+      ["run", "--rm", "--log-driver", "none", "-v", `${volumeDockerName}:/vol`, imageName, "sh", "-c", script],
       { env: dockerEnv(), timeout: 60000 },
     );
 

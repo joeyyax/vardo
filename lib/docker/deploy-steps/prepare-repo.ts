@@ -441,7 +441,7 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
             }
             log(`[deploy] Permission denied removing ${repoDir}, retrying as root via docker`);
             await execFileAsync("docker", [
-              "run", "--rm", "-v", `${repoDir}:/target`, "alpine",
+              "run", "--rm", "--log-driver", "none", "-v", `${repoDir}:/target`, "alpine",
               "sh", "-c", `rm -rf /target/* /target/.[!.]* /target/..?* 2>/dev/null; chown ${APP_UID}:${APP_UID} /target`,
             ], { env: dockerEnv(), timeout: DOCKER_CLEANUP_TIMEOUT });
           } else {

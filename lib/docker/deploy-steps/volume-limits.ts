@@ -47,7 +47,7 @@ export async function checkVolumeLimits(ctx: DeployContext): Promise<void> {
       volEntries.map(({ volName }) =>
         execFileAsync(
           "docker",
-          ["run", "--rm", "-v", `${volName}:/data`, "alpine", "du", "-sb", "/data"],
+          ["run", "--rm", "--log-driver", "none", "-v", `${volName}:/data`, "alpine", "du", "-sb", "/data"],
           { env: dockerEnv(), timeout: DOCKER_CLEANUP_TIMEOUT },
         ),
       ),

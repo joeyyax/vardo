@@ -180,7 +180,7 @@ async function copyAsRoot(source: string, target: string): Promise<void> {
   await execFileAsync(
     "docker",
     [
-      "run", "--rm",
+      "run", "--rm", "--log-driver", "none",
       "-v", `${await realDir(source)}:/from:ro`,
       "-v", `${dirname(target)}:/to`,
       "alpine", "sh", "-c",
@@ -195,7 +195,7 @@ async function readAsRoot(path: string): Promise<string> {
   const real = await realpath(path);
   const { stdout } = await execFileAsync(
     "docker",
-    ["run", "--rm", "-v", `${dirname(real)}:/from:ro`, "alpine", "cat", `/from/${basename(real)}`],
+    ["run", "--rm", "--log-driver", "none", "-v", `${dirname(real)}:/from:ro`, "alpine", "cat", `/from/${basename(real)}`],
     { env: dockerEnv(), timeout: DOCKER_CLEANUP_TIMEOUT, encoding: "utf-8" },
   );
   return String(stdout);
