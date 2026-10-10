@@ -163,12 +163,26 @@ describe("composePolicyErrors", () => {
   });
 
   it("refuses a build context of /", () => {
-    const cfg = config({ build: { context: "/", dockerfile: "Dockerfile", additional_contexts: { x: "/etc" } } });
+    const cfg = config({ image: undefined, build: { context: "/", dockerfile: "Dockerfile", additional_contexts: { x: "/etc" } } });
     expect(composePolicyErrors(cfg, withBinds)).toEqual([
       'Service "web" builds from "/", which is outside the app\'s directory',
       'Service "web" adds build context "x" from "/etc", which is outside the app\'s directory',
     ]);
-    expect(composePolicyErrors(config({ build: { context: REPO, dockerfile: "Dockerfile" } }), untrusted)).toEqual([]);
+    expect(composePolicyErrors(config({ image: undefined, build: { context: REPO, dockerfile: "Dockerfile" } }), untrusted)).toEqual([]);
+  });
+
+  it("refuses tagging a build with a shared image name", () => {
+    const build = { context: REPO, dockerfile: "Dockerfile" };
+    expect(composePolicyErrors(config({ image: "alpine", build }), withBinds)).toEqual([
+      'Service "web" tags its build as "alpine"; built images must be named blog-production-…',
+    ]);
+    expect(composePolicyErrors(config({ image: undefined, build: { ...build, tags: ["postgres:16"] } }), untrusted)).toHaveLength(1);
+    expect(composePolicyErrors(config({ image: "blog-productionx", build }), untrusted)).toHaveLength(1);
+    expect(composePolicyErrors(config({ image: "blog-production-web:1", build: { ...build, tags: ["blog-production/web"] } }), untrusted)).toEqual([]);
+  });
+
+  it("leaves a pulled image's name alone", () => {
+    expect(composePolicyErrors(config({ image: "alpine" }), untrusted)).toEqual([]);
   });
 
   describe("Vardo's networks", () => {

@@ -287,10 +287,26 @@ export function composePolicyErrors(config: unknown, policy: ComposePolicy): str
       }
     }
 
-    if (svc.build !== undefined) errors.push(...buildErrors(label, svc.build, appFileProblem));
+    if (svc.build !== undefined) {
+      errors.push(...buildErrors(label, svc.build, appFileProblem));
+      errors.push(...builtImageNameErrors(label, svc, policy.ownPrefix));
+    }
   }
 
   return [...new Set(errors)];
+}
+
+/** A built image may only be tagged under the app's own prefix, so it can't replace a shared image such as `alpine`. */
+function builtImageNameErrors(label: string, svc: Obj, ownPrefix: string): string[] {
+  const prefix = ownPrefix.replace(/_+$/, "");
+  const b = isObj(svc.build) ? svc.build : {};
+  const names = [svc.image, ...(Array.isArray(b.tags) ? b.tags : [])].filter((n) => n !== undefined);
+  const owned = (name: string) =>
+    name.startsWith(prefix) && (name.length === prefix.length || /[-_/.:]/.test(name[prefix.length]));
+  return names
+    .map(String)
+    .filter((name) => !owned(name))
+    .map((name) => `${label} tags its build as "${name}"; built images must be named ${prefix}-…`);
 }
 
 function buildErrors(
