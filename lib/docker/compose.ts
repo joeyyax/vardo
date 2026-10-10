@@ -58,6 +58,7 @@ export {
   injectTraefikLabels,
   domainRouteOptions,
   stripTraefikLabels,
+  injectHeadersIntoOwnRouters,
   slotComposeFiles,
   stripVardoInjections,
   excludeServices,

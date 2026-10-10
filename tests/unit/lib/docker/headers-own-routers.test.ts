@@ -32,3 +32,17 @@ describe("injectHeadersIntoOwnRouters", () => {
     expect(injectHeadersIntoOwnRouters(compose(labels), "pouch").services.web.labels).toEqual(labels);
   });
 });
+
+describe("self-routed services", () => {
+  it("get the middleware too", () => {
+    const out = injectHeadersIntoOwnRouters(
+      compose({
+        "vardo.traefik": "manual",
+        "traefik.http.routers.pouch.rule": "Host(`pouch.email`)",
+        "traefik.http.routers.pouch.tls.certresolver": "le-dns",
+      }),
+      "pouch",
+    ).services.web.labels!;
+    expect(out["traefik.http.routers.pouch.middlewares"]).toBe("pouch-vardo-headers");
+  });
+});

@@ -17,6 +17,7 @@ import { sanitizeCompose, isAnonymousVolume } from "./compose-validate";
 import { generateComposeForImage } from "./compose-generate";
 import { DEFAULT_NETWORK } from "./shared-networks";
 import { isHostname } from "@/lib/security/hostname";
+import { VARDO_SELF_APP_NAME } from "@/lib/api/system-managed";
 import { isPathPrefix, pathRoutePriority } from "@/lib/domains/path-prefix";
 import { middlewareProblem, partitionMiddlewares } from "@/lib/domains/middlewares";
 import type { QosTier } from "@/lib/resources/defaults";
@@ -273,14 +274,16 @@ export function domainRouteOptions(domain: DeployTransformDomain, org: { trusted
  */
 /**
  * Adds the security headers middleware to HTTPS routers an app declares in its own labels.
- * Skips self-routed Traefik blocks; Vardo-generated routers already carry it.
+ * Run before Vardo injects its routers, which carry their own.
  */
 export function injectHeadersIntoOwnRouters(compose: ComposeFile, appName: string): ComposeFile {
+  // The console sets its own headers.
+  if (appName === VARDO_SELF_APP_NAME) return compose;
   const middleware = `${appName}-vardo-headers`;
   const updatedServices: Record<string, ComposeService> = {};
   for (const [svcName, svc] of Object.entries(compose.services)) {
     const labels = svc.labels;
-    if (!labels || isTraefikSelfRouted(svc)) {
+    if (!labels) {
       updatedServices[svcName] = svc;
       continue;
     }
@@ -891,9 +894,11 @@ export function applyDeployTransforms(
   const allServicesCustomNetwork =
     servicesWithCustomNetwork.length === Object.keys(result.services).length;
 
+  if (!allServicesCustomNetwork && opts.domains.length > 0) result = stripTraefikLabels(result);
+  if (opts.securityHeaders ?? true) result = injectHeadersIntoOwnRouters(result, opts.appName);
+
   if (!allServicesCustomNetwork && opts.domains.length > 0) {
     // Vardo owns routing once the app has a domain.
-    result = stripTraefikLabels(result);
 
     for (const domain of opts.domains) {
       const port = domain.port || opts.containerPort || 3000;
@@ -912,10 +917,6 @@ export function applyDeployTransforms(
         securityHeaders: opts.securityHeaders ?? true,
       });
     }
-  }
-
-  if (opts.securityHeaders !== false && (allServicesCustomNetwork || opts.domains.length === 0)) {
-    result = injectHeadersIntoOwnRouters(result, opts.appName);
   }
 
   // Only routed services join vardo-network; an empty set attaches nothing.

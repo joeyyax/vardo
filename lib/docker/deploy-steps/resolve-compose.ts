@@ -10,6 +10,7 @@ import {
   getServicesWithExternalizedVolumes,
   stripVardoInjections,
   stripTraefikLabels,
+  injectHeadersIntoOwnRouters,
   getTraefikRoutedServices,
 } from "../compose";
 import { selectRoutedService } from "../routed-service";
@@ -177,6 +178,10 @@ export async function resolveCompose(ctx: DeployContext): Promise<DeployContext>
   if (!allServicesCustomNetwork && app.domains.length > 0) {
     // Vardo owns routing once the app has a domain; inbound labels would add a second backend.
     compose = stripTraefikLabels(compose);
+  }
+  // Self-routed and domainless apps keep their own routers; Vardo's carry headers already.
+  if (app.securityHeaders ?? true) compose = injectHeadersIntoOwnRouters(compose, app.name);
+  if (!allServicesCustomNetwork && app.domains.length > 0) {
 
     // Inspect images only when compose doesn't say which service serves the port.
     const needsImagePorts = app.domains.some(
