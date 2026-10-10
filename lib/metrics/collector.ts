@@ -1,4 +1,5 @@
 import { logger } from "@/lib/logger";
+import { backoffDelay } from "@/lib/net/backoff";
 import { isMetricsEnabled, initMetricsProvider } from "./config";
 import { fetchAllMetrics } from "./provider";
 import { storeMetrics, storeDiskUsage, storeDiskWrite, storeGpuMetrics, storeProjectDisk, pruneStaleGpuSeries } from "./store";
@@ -50,8 +51,7 @@ const DISABLE_THRESHOLD = 20;
 /** Interval for the next tick. Failures back off exponentially from the normal interval. */
 export function nextInterval(opts: { tickCount: number; consecutiveFailures: number }): number {
   if (opts.consecutiveFailures > 0) {
-    const backoff = NORMAL_INTERVAL_MS * 2 ** (opts.consecutiveFailures - 1);
-    return Math.min(backoff, MAX_BACKOFF_MS);
+    return backoffDelay(opts.consecutiveFailures, { baseMs: NORMAL_INTERVAL_MS, maxMs: MAX_BACKOFF_MS, jitter: "none" });
   }
   return opts.tickCount < WARMUP_TICKS ? FAST_INTERVAL_MS : NORMAL_INTERVAL_MS;
 }

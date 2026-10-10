@@ -10,7 +10,7 @@ vi.mock("@/lib/system-settings", () => ({ getSystemSettingRaw: vi.fn(), setSyste
 vi.mock("@/lib/docker/deploy-cancel", () => ({ deployInFlight: vi.fn(), requestDeploy: vi.fn() }));
 vi.mock("@/lib/git-integration/remote-head", () => ({ lsRemoteHead: vi.fn() }));
 
-const { decidePoll, HostBackoff, getPollIntervalMinutes } = await import("@/lib/git-integration/poll");
+const { decidePoll, hostCooldown, getPollIntervalMinutes } = await import("@/lib/git-integration/poll");
 const { pollApp } = await import("@/lib/git-integration/poll-scheduler");
 const { getSystemSettingRaw } = await import("@/lib/system-settings");
 
@@ -53,18 +53,24 @@ describe("decidePoll", () => {
   });
 });
 
-describe("HostBackoff", () => {
-  it("doubles from the interval up to the cap, and clears on success", () => {
-    const b = new HostBackoff(30 * 60_000);
+describe("hostCooldown", () => {
+  it("doubles from the interval up to the cap, and clears on success", async () => {
+    const b = hostCooldown(undefined, 30 * 60_000, () => 1);
     const now = 1_000_000;
-    expect(b.failed("github.com", 5 * 60_000, now)).toBe(5 * 60_000);
-    expect(b.failed("github.com", 5 * 60_000, now)).toBe(10 * 60_000);
-    expect(b.failed("github.com", 5 * 60_000, now)).toBe(20 * 60_000);
-    expect(b.failed("github.com", 5 * 60_000, now)).toBe(30 * 60_000);
-    expect(b.blocked("github.com", now + 29 * 60_000)).toBe(true);
-    expect(b.blocked("gitlab.com", now)).toBe(false);
-    b.succeeded("github.com");
-    expect(b.blocked("github.com", now)).toBe(false);
+    expect(await b.fail("git.example.com", { baseMs: 5 * 60_000, now })).toBe(5 * 60_000);
+    expect(await b.fail("git.example.com", { baseMs: 5 * 60_000, now })).toBe(10 * 60_000);
+    expect(await b.fail("git.example.com", { baseMs: 5 * 60_000, now })).toBe(20 * 60_000);
+    expect(await b.fail("git.example.com", { baseMs: 5 * 60_000, now })).toBe(30 * 60_000);
+    expect(await b.blocked("git.example.com", now + 29 * 60_000)).toBe(true);
+    expect(await b.blocked("other.example.com", now)).toBe(false);
+    await b.succeed("git.example.com");
+    expect(await b.blocked("git.example.com", now)).toBe(false);
+  });
+
+  it("never waits less than the interval, however the jitter lands", async () => {
+    const b = hostCooldown(undefined, 30 * 60_000, () => 0);
+    await b.fail("git.example.com", { baseMs: 5 * 60_000 });
+    expect(await b.fail("git.example.com", { baseMs: 5 * 60_000 })).toBe(5 * 60_000);
   });
 });
 
@@ -89,7 +95,7 @@ describe("pollApp", () => {
       deployHistory: vi.fn().mockResolvedValue({ lastDeployedSha: OLD, shaHasDeployment: false, queuedOrRunning: false }),
       recordPoll: vi.fn().mockResolvedValue(undefined),
       requestDeploy: vi.fn().mockResolvedValue({ deploymentId: "d", success: true }),
-      backoff: new HostBackoff(),
+      backoff: hostCooldown(undefined, undefined, () => 0),
       ...overrides,
     } as unknown as PollDeps;
   }

@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { apps, deployments } from "@/lib/db/schema";
 import { getSystemSettingRaw, setSystemSetting } from "@/lib/system-settings";
 import { gitUrlHost } from "@/lib/api/git-fields";
+import { KeyedCooldown, type CooldownStore } from "@/lib/net/cooldown";
 
 export const POLL_INTERVAL_KEY = "git_poll_interval_minutes";
 export const DEFAULT_POLL_INTERVAL_MINUTES = 5;
@@ -51,31 +52,9 @@ export function decidePoll(input: PollInput): PollDecision {
   return { action: "deploy" };
 }
 
-/** Per-host backoff after a git host errors: doubles from the interval, capped at an hour. */
-export class HostBackoff {
-  private hosts = new Map<string, { failures: number; until: number }>();
-
-  constructor(private readonly maxMs = 60 * 60_000) {}
-
-  blocked(host: string, now = Date.now()): boolean {
-    const entry = this.hosts.get(host);
-    return !!entry && now < entry.until;
-  }
-
-  failed(host: string, intervalMs: number, now = Date.now()): number {
-    const failures = (this.hosts.get(host)?.failures ?? 0) + 1;
-    const delay = Math.min(intervalMs * 2 ** (failures - 1), this.maxMs);
-    this.hosts.set(host, { failures, until: now + delay });
-    return delay;
-  }
-
-  succeeded(host: string): void {
-    this.hosts.delete(host);
-  }
-
-  reset(): void {
-    this.hosts.clear();
-  }
+/** Per-host backoff after a git host errors: from the interval, doubling with jitter, capped at an hour. */
+export function hostCooldown(store?: CooldownStore, maxMs = 60 * 60_000, random?: () => number): KeyedCooldown {
+  return new KeyedCooldown({ baseMs: 60_000, maxMs, jitter: "full", store, random });
 }
 
 export const hostOf = (gitUrl: string): string => gitUrlHost(gitUrl) ?? "unknown";

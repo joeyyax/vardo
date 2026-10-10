@@ -62,11 +62,36 @@ describe("runUrlRequest", () => {
       .mockRejectedValueOnce(new Error("socket hang up"))
       .mockResolvedValueOnce(respond(200, "done"));
     const sleep = vi.fn(async (_ms: number) => {});
-    const r = await runUrlRequest({ url: URL, retries: 3 }, {}, { fetch, sleep, backoffMs: 100 });
+    const r = await runUrlRequest({ url: URL, retries: 3 }, {}, { fetch, sleep, backoffMs: 100, random: () => 1 });
     expect(r).toMatchObject({ success: true, attempts: 3, httpStatus: 200 });
     expect(sleep.mock.calls.map((c) => c[0])).toEqual([100, 200]);
     expect(r.log).toContain("attempt 1 of 4");
     expect(r.log).toContain("socket hang up");
+  });
+
+  it("jitters each wait within its exponential ceiling", async () => {
+    const fetch = vi.fn(async () => respond(503));
+    const sleep = vi.fn(async (_ms: number) => {});
+    await runUrlRequest({ url: URL, retries: 3 }, {}, { fetch, sleep, backoffMs: 100, random: () => 0.5 });
+    expect(sleep.mock.calls.map((c) => c[0])).toEqual([50, 100, 200]);
+  });
+
+  it("waits out a Retry-After, capped at a minute", async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(null, { status: 429, headers: { "retry-after": "5" } }))
+      .mockResolvedValueOnce(new Response(null, { status: 503, headers: { "retry-after": "3600" } }))
+      .mockResolvedValueOnce(respond(200));
+    const sleep = vi.fn(async (_ms: number) => {});
+    const r = await runUrlRequest({ url: URL, retries: 3 }, {}, { fetch, sleep, backoffMs: 100, random: () => 1 });
+    expect(r.success).toBe(true);
+    expect(sleep.mock.calls.map((c) => c[0])).toEqual([5_000, 60_000]);
+  });
+
+  it("doesn't retry a status that won't change", async () => {
+    const fetch = vi.fn(async () => respond(404));
+    const r = await runUrlRequest({ url: URL, retries: 3 }, {}, { fetch, sleep: noSleep });
+    expect(r).toMatchObject({ success: false, attempts: 1, httpStatus: 404 });
   });
 
   it("gives up after the last retry", async () => {

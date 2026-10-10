@@ -6,13 +6,14 @@ import { apps } from "@/lib/db/schema";
 import { redis } from "@/lib/redis";
 import { logger } from "@/lib/logger";
 import { deployInFlight, requestDeploy } from "@/lib/docker/deploy-cancel";
+import { RedisCooldownStore, type KeyedCooldown } from "@/lib/net/cooldown";
 import { lsRemoteHead } from "./remote-head";
 import {
   decidePoll,
   deployHistory,
   getPollIntervalMinutes,
+  hostCooldown,
   hostOf,
-  HostBackoff,
   recordPoll,
   type PollDecision,
 } from "./poll";
@@ -28,7 +29,7 @@ const CATCH_UP_DEBOUNCE_MS = 30_000;
 const PASS_LOCK_KEY = "git-poll:pass";
 const PASS_LOCK_MS = 10 * 60_000;
 
-const backoff = new HostBackoff();
+const backoff = hostCooldown(new RedisCooldownStore(redis, "git-poll:host:"));
 
 export type PollableApp = {
   id: string;
@@ -49,7 +50,7 @@ export type PollDeps = {
   deployHistory: typeof deployHistory;
   recordPoll: typeof recordPoll;
   requestDeploy: typeof requestDeploy;
-  backoff: HostBackoff;
+  backoff: KeyedCooldown;
 };
 
 const defaultDeps: PollDeps = { lsRemoteHead, deployInFlight, deployHistory, recordPoll, requestDeploy, backoff };
@@ -59,15 +60,15 @@ type PollResult = PollDecision | { action: "error"; reason: string };
 /** Checks one app's branch head and deploys it when it moved. */
 export async function pollApp(app: PollableApp, intervalMs: number, deps: PollDeps = defaultDeps): Promise<PollResult> {
   const host = hostOf(app.gitUrl);
-  if (deps.backoff.blocked(host)) return { action: "skip", reason: `backing off ${host}` };
+  if (await deps.backoff.blocked(host)) return { action: "skip", reason: `backing off ${host}` };
 
   let remoteSha: string;
   try {
     remoteSha = await deps.lsRemoteHead(app, app.gitBranch || "main");
-    deps.backoff.succeeded(host);
+    await deps.backoff.succeed(host);
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
-    const delay = deps.backoff.failed(host, intervalMs);
+    const delay = await deps.backoff.fail(host, { baseMs: intervalMs });
     log.warn(`Couldn't check ${app.name} on ${host}; backing off ${Math.round(delay / 60_000)} min: ${reason}`);
     await deps.recordPoll(app.id, { error: reason }).catch(() => {});
     return { action: "error", reason };

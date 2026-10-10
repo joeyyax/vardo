@@ -11,7 +11,7 @@ import { execFileAsync } from "@/lib/utils/exec";
 import { dockerEnv } from "@/lib/docker/docker-env";
 import { decryptHeaders, type CronHeader } from "./headers";
 import { cronOutboundPolicy, runUrlRequest } from "./http";
-import { DEFAULT_TIMEOUT_MS, MAX_RETRIES } from "./url-options";
+import { DEFAULT_TIMEOUT_MS, MAX_RETRIES, MAX_RETRY_WAIT_MS } from "./url-options";
 import { CRON_JOB_APP } from "./columns";
 
 const log = logger.child("cron");
@@ -161,8 +161,7 @@ export type CronRunResult = {
 export function runLockTtlMs(job: Pick<CronRunJob, "type" | "timeoutMs" | "retries">): number {
   if (job.type !== "url") return COMMAND_TIMEOUT_MS + 30_000;
   const retries = Math.min(job.retries ?? 0, MAX_RETRIES);
-  const backoff = retries > 0 ? 1_000 * (2 ** retries - 1) : 0;
-  return (job.timeoutMs ?? DEFAULT_TIMEOUT_MS) * (retries + 1) + backoff + 30_000;
+  return (job.timeoutMs ?? DEFAULT_TIMEOUT_MS) * (retries + 1) + retries * MAX_RETRY_WAIT_MS + 30_000;
 }
 
 async function execute(job: CronRunJob): Promise<ExecResult> {

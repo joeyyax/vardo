@@ -3,6 +3,7 @@ import { getSystemSettingRaw } from "@/lib/system-settings";
 import { assertOutboundUrlAllowed, BlockedUrlError } from "@/lib/security/ssrf";
 import { getOutboundPolicy } from "@/lib/security/outbound-policy";
 import { safeFetch } from "@/lib/security/safe-fetch";
+import { capDelay, retryAfterMs as readRetryAfter } from "@/lib/net/backoff";
 import type { ImageRef } from "./image-ref";
 
 // Read-only registry access for update checks. Go through `check.ts`: manifest requests count against the pull budget.
@@ -92,13 +93,12 @@ function parseAuthenticate(header: string): Record<string, string> {
   return params;
 }
 
+/** Longest pause a registry can ask for. */
+const MAX_RETRY_AFTER_MS = 6 * 60 * 60_000;
+
 function retryAfterMs(response: Response): number | null {
-  const header = response.headers.get("retry-after");
-  if (!header) return null;
-  const seconds = Number(header);
-  if (Number.isFinite(seconds)) return seconds * 1000;
-  const date = Date.parse(header);
-  return Number.isFinite(date) ? Math.max(0, date - Date.now()) : null;
+  const wait = readRetryAfter(response.headers);
+  return wait === null ? null : capDelay(wait, MAX_RETRY_AFTER_MS);
 }
 
 /** A registry request through the outbound guard, which vets the host and every redirect hop. */

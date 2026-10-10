@@ -116,6 +116,6 @@ describe("tickCronJobs", () => {
 
 describe("runLockTtlMs", () => {
   it("outlasts every attempt timing out plus backoff", () => {
-    expect(runLockTtlMs({ type: "url", timeoutMs: 300_000, retries: 3 })).toBeGreaterThan(4 * 300_000 + 7_000);
+    expect(runLockTtlMs({ type: "url", timeoutMs: 300_000, retries: 3 })).toBeGreaterThan(4 * 300_000 + 3 * 60_000);
   });
 });
