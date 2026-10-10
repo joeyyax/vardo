@@ -236,13 +236,14 @@ export function matchesQuery(node: TreeNode, project: ProjectsProject, query: st
 // --- The side panel's lists -------------------------------------------------
 
 /** Lists the Projects page opens itself. Problems open the shared attention panel. */
-export const PANEL_KEYS = ["deploying", "running", "stopped"] as const;
+export const PANEL_KEYS = ["deploying", "running", "stopped", "attention"] as const;
 export type PanelKey = (typeof PANEL_KEYS)[number];
 
 export const PANEL_TITLE: Record<PanelKey, string> = {
   deploying: "Deploying now",
   running: "Running",
   stopped: "Stopped",
+  attention: "Needs attention",
 };
 
 export function isPanelKey(value: unknown): value is PanelKey {

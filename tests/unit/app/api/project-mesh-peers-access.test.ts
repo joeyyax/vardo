@@ -21,7 +21,8 @@ const {
   projectInstancesFindMany: vi.fn(),
 }));
 
-vi.mock("@/lib/auth/session", () => ({ getCurrentOrg: mockGetCurrentOrg }));
+vi.mock("@/lib/auth/session", () => ({ getCurrentOrg: mockGetCurrentOrg, getSession: vi.fn(async () => null) }));
+vi.mock("@/lib/projects/load-apps", () => ({ loadProjectsApps: vi.fn(async () => []) }));
 vi.mock("@/lib/config/features", () => ({ isFeatureEnabledAsync: mockIsFeatureEnabledAsync }));
 vi.mock("@/lib/auth/admin", () => ({
   canImportContainers: vi.fn(async () => false),

@@ -69,11 +69,14 @@ export function ProjectsView({
   apps,
   projects,
   initialDensity,
+  project,
 }: {
   orgId: string;
   apps: ProjectsApp[];
   projects: ProjectsProject[];
   initialDensity: UiDensity;
+  /** Scopes the view to one project's page: no section header, and its own attention list. */
+  project?: ProjectsProject;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -270,7 +273,7 @@ export function ProjectsView({
         e.preventDefault();
         return searchRef.current?.focus();
       }
-      if (e.key === "a") return toggleAttention("all");
+      if (e.key === "a") return project ? openPanel("attention") : toggleAttention("all");
       if (e.key === "d") return setDensity(dense ? "comfortable" : "dense");
 
       const active = document.activeElement as HTMLElement | null;
@@ -345,11 +348,12 @@ export function ProjectsView({
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [back, closePanel, dense, isProjectOpen, keysOpen, openApp, openApps, openPanel, panel, router, sections, selected, setDensity, toggleApp, toggleAttention, toggleProject]);
+  }, [back, closePanel, dense, isProjectOpen, keysOpen, openApp, openApps, openPanel, panel, project, router, sections, selected, setDensity, toggleApp, toggleAttention, toggleProject]);
 
   // --- Render ---------------------------------------------------------------
 
   const listCtx: ListContext = {
+    flat: !!project,
     dense,
     query,
     selected,
@@ -423,13 +427,16 @@ export function ProjectsView({
     >
       <StatGroup label="Open a list" active={!!(panel || attentionTarget)}>
         {stat("running", counts.running, "apps running", undefined, `of ${counts.apps}`)}
-        {attention.loaded &&
-          attentionStat("all", routine.routineFaults, routine.routineFaults === 1 ? "needs attention" : "need attention", routine.routineFaults ? "text-status-warning" : undefined)}
+        {project
+          ? stat("attention", counts.attention, counts.attention === 1 ? "needs attention" : "need attention", counts.critical ? "text-status-error" : counts.attention ? "text-status-warning" : undefined)
+          : attention.loaded &&
+            attentionStat("all", routine.routineFaults, routine.routineFaults === 1 ? "needs attention" : "need attention", routine.routineFaults ? "text-status-warning" : undefined)}
         {counts.deploying > 0 && stat("deploying", counts.deploying, "deploying now", "text-status-info")}
         {counts.stopped > 0 && stat("stopped", counts.stopped, "stopped")}
-        {backups > 0 && attentionStat({ group: "backups" }, backups, backups === 1 ? "backup needs a look" : "backups need a look", "text-status-warning")}
-        {updateCount > 0 && attentionStat({ group: "image-updates" }, updateCount, updateCount === 1 ? "image update" : "image updates")}
-        {unlimited > 0 && attentionStat({ group: "no-memory-limit" }, unlimited, "without a memory limit")}
+        {/* Org-wide lists; a project page counts its own above. */}
+        {!project && backups > 0 && attentionStat({ group: "backups" }, backups, backups === 1 ? "backup needs a look" : "backups need a look", "text-status-warning")}
+        {!project && updateCount > 0 && attentionStat({ group: "image-updates" }, updateCount, updateCount === 1 ? "image update" : "image updates")}
+        {!project && unlimited > 0 && attentionStat({ group: "no-memory-limit" }, unlimited, "without a memory limit")}
         {usage.length > 0 && (
           <>
             <Stat value={formatCoresShort(cpu)} unit={cpuCount ? `of ${cpuCount} cores` : "cores"} label="CPU in use" />
@@ -512,7 +519,7 @@ export function ProjectsView({
               </div>
             </>
           ) : (
-            <div className="text-[12.5px] text-muted-foreground">Projects</div>
+            <div className="text-[12.5px] text-muted-foreground">{project?.displayName ?? "Projects"}</div>
           )
         }
         title={

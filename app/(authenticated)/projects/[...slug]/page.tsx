@@ -2,7 +2,9 @@ import { redirect, notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { restartCountsByApp } from "@/lib/db/app-restarts";
 import { projects, projectInstances } from "@/lib/db/schema";
-import { getCurrentOrg } from "@/lib/auth/session";
+import { getCurrentOrg, getSession } from "@/lib/auth/session";
+import { getUserPreferences, DEFAULT_PREFERENCES } from "@/lib/user/preferences";
+import { loadProjectsApps } from "@/lib/projects/load-apps";
 import { eq, and, or, desc, type AnyColumn } from "drizzle-orm";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { can } from "@/lib/auth/permissions";
@@ -101,6 +103,7 @@ export default async function ProjectDetailPage({
               gitMessage: true,
               durationMs: true,
               log: true,
+              postDeployError: true,
               startedAt: true,
               finishedAt: true,
             },
@@ -151,7 +154,8 @@ export default async function ProjectDetailPage({
 
   const instanceAdmin = await isAppAdmin();
 
-  const [meshEnabled, loggingEnabled, environmentsEnabled, meshPeers, meshInstances, containerImport] = await Promise.all([
+  const session = await getSession();
+  const [meshEnabled, loggingEnabled, environmentsEnabled, meshPeers, meshInstances, containerImport, listApps, prefs] = await Promise.all([
     isFeatureEnabledAsync("mesh"),
     isFeatureEnabledAsync("logging"),
     isFeatureEnabledAsync("environments"),
@@ -161,6 +165,8 @@ export default async function ProjectDetailPage({
       columns: { id: true, environment: true, gitRef: true, status: true, meshPeerId: true, transferredAt: true },
     }).then((i) => i as ProjectInstanceSummary[]).catch(() => [] as ProjectInstanceSummary[]),
     canImportContainers(),
+    loadProjectsApps(orgId, project.id),
+    session?.user?.id ? getUserPreferences(session.user.id) : Promise.resolve(DEFAULT_PREFERENCES),
   ]);
 
   // Requesting a tab gated by a disabled flag falls back to apps
@@ -190,6 +196,8 @@ export default async function ProjectDetailPage({
       environmentsEnabled={environmentsEnabled}
       meshPeers={meshEnabled ? meshPeers : []}
       projectInstances={meshEnabled ? meshInstances : []}
+      listApps={listApps}
+      density={prefs.density}
     />
   );
 }
