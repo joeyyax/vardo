@@ -237,4 +237,24 @@ describe("describeKeyEscrow", () => {
       describeKeyEscrow({ status: { kind: "ok", fingerprint: RUNNING }, probe: noProbe }),
     ).toMatchObject({ severity: "ok" });
   });
+
+  it("words each state plainly, with env var names only in the technical line", () => {
+    const states = [
+      describeKeyEscrow({ status: { kind: "ok", fingerprint: RUNNING }, probe: { encrypted: 50, undecryptable: 0, samples: [] } }),
+      describeKeyEscrow({ status: { kind: "mismatch", recorded: FOREIGN, running: RUNNING }, probe: noProbe }),
+      describeKeyEscrow({ status: { kind: "ok", fingerprint: RUNNING }, probe: { encrypted: 4, undecryptable: 2, samples: [] } }),
+      describeKeyEscrow({ status: { kind: "unconfigured" }, probe: noProbe }),
+    ];
+    expect(states[0]).toMatchObject({
+      headline: "Your backups can be restored",
+      detail: "Backups and saved secrets are encrypted with this server's key. It opens all 50 encrypted items here.",
+      technical: null,
+    });
+    expect(states[1].headline).toBe("This server has a different key");
+    expect(states[2].detail).toContain("2 of 4 encrypted items won't open");
+    for (const s of states) {
+      expect(s.headline).not.toMatch(/ENCRYPTION_MASTER_KEY|BETTER_AUTH_SECRET/);
+      expect(s.detail).not.toMatch(/ENCRYPTION_MASTER_KEY|BETTER_AUTH_SECRET/);
+    }
+  });
 });

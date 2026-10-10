@@ -163,23 +163,38 @@ export async function reconcileKeyFingerprint(): Promise<KeyEscrowState> {
   return { status, probe };
 }
 
-/** One line per state, for the startup log and the API. */
-export function describeKeyEscrow(state: KeyEscrowState): {
+export type KeyEscrowDescription = {
   severity: "ok" | "warning" | "critical";
+  /** What state the key is in, in plain words. */
   headline: string;
-} {
+  /** The consequence and the fix. */
+  detail: string;
+  /** Env var names and raw fingerprints, for the small print. */
+  technical: string | null;
+};
+
+/** Plain wording per state, for the startup log and the API. */
+export function describeKeyEscrow(state: KeyEscrowState): KeyEscrowDescription {
   const { status, probe } = state;
 
   if (status.kind === "unconfigured") {
-    return { severity: "warning", headline: "ENCRYPTION_MASTER_KEY is not set — env vars cannot be encrypted." };
+    return {
+      severity: "warning",
+      headline: "Backups aren't encrypted",
+      detail:
+        "This server has no encryption key, so new backups and saved secrets are stored unencrypted. Set a key in the server's environment, then restart.",
+      technical: "ENCRYPTION_MASTER_KEY is not set.",
+    };
   }
 
   if (probe.undecryptable > 0) {
     return {
       severity: "critical",
-      headline:
-        `${probe.undecryptable} of ${probe.encrypted} encrypted values cannot be decrypted with the running ` +
-        `ENCRYPTION_MASTER_KEY. Restore the key this data was encrypted with — the values cannot be recovered without it.`,
+      headline: "Some saved secrets can't be read",
+      detail:
+        `${probe.undecryptable} of ${probe.encrypted} encrypted items won't open with this server's key. ` +
+        "Put back the key they were encrypted with, then restart. Without it they can't be recovered.",
+      technical: "Running ENCRYPTION_MASTER_KEY can't decrypt them.",
     };
   }
 
@@ -187,14 +202,32 @@ export function describeKeyEscrow(state: KeyEscrowState): {
     case "mismatch":
       return {
         severity: "critical",
-        headline:
-          `ENCRYPTION_MASTER_KEY does not match the key this database was written with ` +
-          `(recorded ${status.recorded}, running ${status.running}).`,
+        headline: "This server has a different key",
+        detail:
+          "It isn't the key this data was encrypted with, so backups made with the original won't restore. " +
+          "Put the original key back, then restart.",
+        technical: `ENCRYPTION_MASTER_KEY: recorded ${status.recorded}, running ${status.running}.`,
       };
     case "unrecorded":
-      return { severity: "warning", headline: `Encryption key ${status.running} is not yet recorded in this database.` };
+      return {
+        severity: "warning",
+        headline: "This server's key isn't recorded yet",
+        detail: "Vardo can't warn you if the key changes until it records one. It records on the next check.",
+        technical: `Running key ${status.running}.`,
+      };
     case "ok":
-      return { severity: "ok", headline: `Encryption key ${status.fingerprint} matches this database.` };
+      return {
+        severity: "ok",
+        headline: "Your backups can be restored",
+        detail:
+          "Backups and saved secrets are encrypted with this server's key. " +
+          (probe.encrypted === 0
+            ? "Nothing is encrypted here yet."
+            : probe.encrypted === 1
+              ? "It opens the 1 encrypted item here."
+              : `It opens all ${probe.encrypted} encrypted items here.`),
+        technical: null,
+      };
   }
 }
 
@@ -202,7 +235,8 @@ export function describeKeyEscrow(state: KeyEscrowState): {
 export async function checkKeyEscrowAtStartup(): Promise<KeyEscrowState | null> {
   try {
     const state = await reconcileKeyFingerprint();
-    const { severity, headline } = describeKeyEscrow(state);
+    const { severity, headline: title, detail, technical } = describeKeyEscrow(state);
+    const headline = [title + ".", detail, technical].filter(Boolean).join(" ");
     if (severity === "critical") {
       log.error(headline);
       if (state.probe.samples.length > 0) {

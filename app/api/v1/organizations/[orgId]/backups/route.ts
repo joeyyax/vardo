@@ -76,6 +76,7 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
             startedAt: true,
             finishedAt: true,
             storagePath: true,
+            archiveKeyFingerprint: true,
             log: true,
             verifiedAt: true,
             verifyOutcome: true,

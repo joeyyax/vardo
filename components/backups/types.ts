@@ -75,6 +75,8 @@ export type RecentBackup = {
   startedAt: string;
   finishedAt: string | null;
   storagePath: string | null;
+  /** Set when the archive was written encrypted. */
+  archiveKeyFingerprint?: string | null;
   log: string | null;
   /** Restore drill result; all null until a drill has run. */
   verifiedAt: string | null;

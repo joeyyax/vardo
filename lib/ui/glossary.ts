@@ -392,6 +392,16 @@ const entries = {
     aliases: ["Weekly digest", "Health summary"],
   },
 
+  // Encryption
+  "key-fingerprint": {
+    term: "Fingerprint",
+    what: "A short label that identifies a key without revealing it. If two keys have the same fingerprint, they're the same key.",
+  },
+  "backup-encrypted": {
+    term: "Encrypted",
+    what: "Encrypted with this server's recovery key. Restoring on another server needs that key.",
+  },
+
   // Organizations and services
   "trusted-org": {
     term: "Trusted",

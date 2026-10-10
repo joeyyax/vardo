@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { failureReason, restoreTestFor } from "@/components/backups/history-state";
+import { failureReason, isEncryptedRun, restoreTestFor } from "@/components/backups/history-state";
 
 const run = {
   status: "success",
@@ -45,5 +45,13 @@ describe("failureReason", () => {
     expect(failureReason("one\ntwo")).toBe("two");
     expect(failureReason(null)).toBeNull();
     expect(failureReason("  \n")).toBeNull();
+  });
+});
+
+describe("isEncryptedRun", () => {
+  it("is true only for a stored archive written with a key", () => {
+    expect(isEncryptedRun({ storagePath: "a.enc", archiveKeyFingerprint: "k1:abcd" })).toBe(true);
+    expect(isEncryptedRun({ storagePath: "a.tar.gz", archiveKeyFingerprint: null })).toBe(false);
+    expect(isEncryptedRun({ storagePath: null, archiveKeyFingerprint: "k1:abcd" })).toBe(false);
   });
 });

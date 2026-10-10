@@ -16,7 +16,9 @@ import { StatusBadge } from "./status-badge";
 import { getNextRun } from "./next-run";
 import { RetentionSummary } from "./retention-summary";
 import { scheduleLabel } from "./constants";
-import { failureReason } from "./history-state";
+import { failureReason, isEncryptedRun } from "./history-state";
+import { EncryptedMark } from "./encrypted-mark";
+import { TermScope } from "@/components/term";
 import { SystemStorageForm, type SystemStorage } from "./system-storage-form";
 import type { BackupJob } from "./types";
 
@@ -27,6 +29,7 @@ type SystemRun = {
   startedAt: string;
   finishedAt: string | null;
   storagePath: string | null;
+  archiveKeyFingerprint: string | null;
   log: string | null;
 };
 
@@ -219,6 +222,7 @@ export function SystemBackupSection() {
             />
           ) : (
             <Card variant="inset" className="overflow-x-auto">
+              <TermScope>
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-background-deep">
@@ -238,6 +242,7 @@ export function SystemBackupSection() {
                       <tr key={run.id} className="border-b last:border-0">
                         <td className="px-4 py-3">
                           <StatusBadge status={run.status} />
+                          {isEncryptedRun(run) && <EncryptedMark className="mt-1 flex" />}
                           {reason && <p className="mt-1 max-w-xs truncate text-xs text-destructive" title={reason}>{reason}</p>}
                         </td>
                         <td className="hidden px-4 py-3 font-mono text-xs text-muted-foreground sm:table-cell">
@@ -261,6 +266,7 @@ export function SystemBackupSection() {
                   })}
                 </tbody>
               </table>
+              </TermScope>
             </Card>
           )}
         </CardContent>

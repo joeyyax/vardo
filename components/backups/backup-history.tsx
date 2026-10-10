@@ -9,7 +9,9 @@ import { DOWNLOAD_HINT } from "@/lib/backups/archive-name";
 import { RelativeTime } from "@/components/relative-time";
 import { StatusBadge } from "./status-badge";
 import { RestoreTestBadge } from "./restore-test-badge";
-import { failureReason, restoreTestFor } from "./history-state";
+import { failureReason, isEncryptedRun, restoreTestFor } from "./history-state";
+import { EncryptedMark } from "./encrypted-mark";
+import { TermScope } from "@/components/term";
 import { useBackupActions } from "./use-backup-actions";
 import { archiveSize } from "./job-state";
 import { useCan } from "@/components/capabilities-provider";
@@ -57,6 +59,7 @@ export function BackupHistory({
   }
 
   return (
+    <TermScope>
     <Card variant="inset" className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
@@ -82,6 +85,7 @@ export function BackupHistory({
             <tr className={reason ? "" : "border-b last:border-0"}>
               <td className="px-4 py-3">
                 <StatusBadge status={backup.status} />
+                {isEncryptedRun(backup) && <EncryptedMark href="/backups#recovery-key" className="mt-1 flex" />}
               </td>
               <td className="px-4 py-3 font-medium">
                 {backup.app ? (
@@ -179,5 +183,6 @@ export function BackupHistory({
 
       {dialogs}
     </Card>
+    </TermScope>
   );
 }

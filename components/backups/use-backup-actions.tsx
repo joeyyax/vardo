@@ -6,6 +6,7 @@ import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { formatBytes } from "@/lib/metrics/format";
 import { toast } from "@/lib/messenger";
 import { deleteDescription, orphanScope, plural } from "./delete-copy";
+import { isEncryptedRun } from "./history-state";
 import type { RecentBackup } from "./types";
 
 /** Restore and delete for backup runs, with their confirmations. Render `dialogs` once. */
@@ -106,7 +107,7 @@ export function useBackupActions({ orgId, onRefresh }: { orgId: string; onRefres
         title="Restore this backup"
         description={
           pendingRestore
-            ? `This overwrites ${pendingRestore.app?.displayName}'s current volume data with the archive from ${new Date(pendingRestore.startedAt).toLocaleString()}. Containers using a restored volume stop until it finishes. Anything written since is lost, and there is no undo.`
+            ? `This overwrites ${pendingRestore.app?.displayName}'s current volume data with the archive from ${new Date(pendingRestore.startedAt).toLocaleString()}. Containers using a restored volume stop until it finishes. Anything written since is lost, and there is no undo.${isEncryptedRun(pendingRestore) ? " Restoring on a different server needs this server's recovery key." : ""}`
             : ""
         }
         confirmLabel="Restore"

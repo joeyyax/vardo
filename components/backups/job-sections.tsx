@@ -21,7 +21,8 @@ import { appHref } from "@/lib/ui/hrefs";
 import { cn } from "@/lib/utils";
 import { scheduleLabel } from "./constants";
 import { describeSchedule } from "./schedule-summary";
-import { failureReason, restoreTestFor } from "./history-state";
+import { failureReason, isEncryptedRun, restoreTestFor } from "./history-state";
+import { EncryptedMark } from "./encrypted-mark";
 import { jobAnchor } from "./job-anchor";
 import { archiveSize, asRecent, isJobOverdue, jobNeedsLook, latestFinished, runMark } from "./job-state";
 import { getNextRun } from "./next-run";
@@ -311,6 +312,7 @@ function RunDetail({ run, orgId, actions }: { run: RecentBackup; orgId: string; 
   return (
     <div className="grid gap-5">
       {reason && <p className={cn("text-sm [overflow-wrap:anywhere]", run.status === "failed" ? "text-status-error" : "text-status-warning")}>{reason}</p>}
+      {isEncryptedRun(run) && <EncryptedMark />}
       {(canRestore || canDownload || canDelete) && (
         <div className="flex flex-wrap gap-2">
           {canRestore && (
