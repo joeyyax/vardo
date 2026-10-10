@@ -18,6 +18,7 @@ const fake = vi.hoisted(() => {
     environmentEnv: [] as Record<string, unknown>[],
     keyedApps: [] as Record<string, unknown>[],
     deployKeys: [] as Record<string, unknown>[],
+    cronJobs: [] as Record<string, unknown>[],
     writes: [] as { table: string; values: Record<string, unknown> }[],
     inserts: [] as { table: string; values: Record<string, unknown> }[],
   };
@@ -40,6 +41,7 @@ const fake = vi.hoisted(() => {
     envVars: { findMany: async () => state.envVars },
     deployments: { findMany: async () => state.deployments },
     deployKeys: { findFirst: async () => state.deployKeys.shift() ?? null },
+    cronJobs: { findMany: async () => state.cronJobs },
   };
   const update = (t: unknown) => ({
     set: (values: Record<string, unknown>) => {
@@ -102,6 +104,7 @@ describe("acceptTransfer", () => {
     ];
     fake.state.deployments = [{ id: "d-1", envSnapshot: encrypt("A=0", SRC) }];
     fake.state.environmentEnv = [{ environmentId: "env-pr-7", name: "pr-7", envContent: encrypt("A=7", SRC) }];
+    fake.state.cronJobs = [];
   });
 
   it("re-encrypts a preview's own env", async () => {
@@ -130,6 +133,21 @@ describe("acceptTransfer", () => {
     await acceptTransfer("t-1", "user-1");
 
     expect(writesTo("backup")).toEqual([{ organizationId: DEST }]);
+  });
+
+  it("hands the app's cron jobs to the destination org", async () => {
+    const headers = encrypt(JSON.stringify([{ name: "X-Key", value: "k" }]), SRC);
+    fake.state.cronJobs = [
+      { id: "cron-1", organizationId: SRC, headers: null },
+      { id: "cron-2", organizationId: SRC, headers },
+    ];
+
+    await acceptTransfer("t-1", "user-1");
+
+    const jobs = writesTo("cron_job");
+    expect(jobs.map((j) => j.organizationId)).toEqual([DEST, DEST]);
+    expect(jobs[0].headers).toBeNull();
+    expect(JSON.parse(decrypt(jobs[1].headers as string, DEST))).toEqual([{ name: "X-Key", value: "k" }]);
   });
 
   it("re-encrypts deployment env snapshots so rollback still works", async () => {
@@ -184,6 +202,15 @@ describe("repairTransferredSecrets", () => {
     fake.state.envVars = [];
     fake.state.deployments = [];
     fake.state.environmentEnv = [];
+    fake.state.cronJobs = [];
+  });
+
+  it("re-homes cron jobs left in the source org", async () => {
+    fake.state.apps = [{ id: "app-1", organizationId: DEST, envContent: null }];
+    fake.state.cronJobs = [{ id: "cron-1", organizationId: SRC, headers: null }];
+
+    expect(await repairTransferredSecrets()).toBe(1);
+    expect(writesTo("cron_job")[0]).toMatchObject({ organizationId: DEST });
   });
 
   it("rewrites env stranded under the source org's key", async () => {

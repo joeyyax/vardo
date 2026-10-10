@@ -8,10 +8,11 @@ import {
   environmentEnv,
   appTransfers,
   backups,
+  cronJobs,
   projects,
   volumes,
 } from "@/lib/db/schema";
-import { eq, and, isNull, isNotNull, inArray, or } from "drizzle-orm";
+import { eq, and, isNull, isNotNull, inArray, ne, or } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { extractExpressions, validateExpression } from "@/lib/env/resolve";
 import { decrypt, encrypt, isEncrypted } from "@/lib/crypto/encrypt";
@@ -113,6 +114,30 @@ async function reencryptAppSecrets(
       await tx.update(deployments).set({ envSnapshot: next }).where(eq(deployments.id, row.id));
     }
   }
+}
+
+/** Hands these apps' cron jobs to `toOrgId`, re-encrypting headers. Unreadable headers are dropped. */
+async function moveAppCronJobs(tx: Tx, appIds: string[], toOrgId: string): Promise<number> {
+  const jobs = await tx.query.cronJobs.findMany({
+    where: and(inArray(cronJobs.appId, appIds), ne(cronJobs.organizationId, toOrgId)),
+    columns: { id: true, organizationId: true, headers: true },
+  });
+  for (const job of jobs) {
+    let headers = job.headers;
+    if (headers) {
+      try {
+        headers = reencryptForOrg(headers, job.organizationId, toOrgId);
+      } catch {
+        log.warn(`Cron job ${job.id} headers were unreadable; dropped`);
+        headers = null;
+      }
+    }
+    await tx
+      .update(cronJobs)
+      .set({ organizationId: toOrgId, headers, updatedAt: new Date() })
+      .where(eq(cronJobs.id, job.id));
+  }
+  return jobs.length;
 }
 
 /** A deploy key `toOrgId` can use in place of `keyId`, copying it if needed. Null when unreadable. */
@@ -351,6 +376,8 @@ export async function acceptTransfer(
       .set({ organizationId: transfer.destinationOrgId })
       .where(inArray(backups.appId, appIds));
 
+    await moveAppCronJobs(tx, appIds, transfer.destinationOrgId);
+
     const released = await releaseAppsFromOrgJobs(tx, transfer.sourceOrgId, moved);
     if (released.unlinked > 0) {
       log.info(`Transfer ${transferId}: released ${released.unlinked} backup job link(s) in the source org`);
@@ -364,7 +391,7 @@ export async function acceptTransfer(
 
 /**
  * Repair apps transferred before secrets were re-encrypted: rewrite values under the
- * current org's key and copy foreign deploy keys. Idempotent.
+ * current org's key, copy foreign deploy keys and re-home cron jobs. Idempotent.
  */
 export async function repairTransferredSecrets(): Promise<number> {
   const accepted = await db.query.appTransfers.findMany({
@@ -381,7 +408,8 @@ export async function repairTransferredSecrets(): Promise<number> {
       if (row.organizationId === t.sourceOrgId) continue;
       repaired += await db.transaction(async (tx) =>
         (await repairAppSecrets(tx, row.id, t.sourceOrgId, row.organizationId)) +
-        (await moveAppDeployKeys(tx, [row.id], row.organizationId)),
+        (await moveAppDeployKeys(tx, [row.id], row.organizationId)) +
+        (await moveAppCronJobs(tx, [row.id], row.organizationId)),
       );
     }
   }

@@ -47,6 +47,7 @@ vi.mock("@/lib/db", async () => {
     },
     envVars: { findMany: async () => [] },
     deployments: { findMany: async () => [] },
+    cronJobs: { findMany: async () => [] },
     volumes: { findMany: async ({ where }: { where: unknown }) => s.volumes.filter((v) => has(params(where), v.appId)) },
     backupJobApps: {
       findMany: async ({ where }: { where: unknown }) =>
