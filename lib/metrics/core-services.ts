@@ -18,6 +18,7 @@ export type CoreContainer = {
 
 export type CoreServiceKey =
   | "console"
+  | "worker"
   | "database"
   | "cache"
   | "proxy"
@@ -38,6 +39,7 @@ type CoreServiceDef = {
 /** Display order is the key order. */
 export const CORE_SERVICE_DEFS: Record<CoreServiceKey, CoreServiceDef> = {
   console: { label: "Console", names: ["frontend", "console"] },
+  worker: { label: "Worker", names: ["worker"] },
   database: { label: "Database (Postgres)", term: "core-postgres", names: ["postgres"] },
   cache: { label: "Cache (Redis)", term: "core-redis", names: ["redis"] },
   proxy: { label: "Proxy (Traefik)", term: "core-traefik", names: ["traefik"] },

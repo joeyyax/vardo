@@ -11,7 +11,7 @@ import type { ComposeFile } from "@/lib/docker/compose-types";
 // to `docker compose pull` the locally-built image and 404'd.
 
 function services(
-  map: Record<string, { image?: string; build?: unknown; "x-vardo-shared"?: boolean }>,
+  map: Record<string, { image?: string; build?: unknown; pull_policy?: string; "x-vardo-shared"?: boolean }>,
 ): ComposeFile["services"] {
   return map as unknown as ComposeFile["services"];
 }
@@ -66,6 +66,17 @@ describe("classifyComposeServices", () => {
       }),
     );
     expect(pullServices).toEqual(["cache"]);
+  });
+
+  it("skips pull_policy: never, like Vardo's worker reusing the frontend's local image", () => {
+    const { buildServices, pullServices } = classifyComposeServices(
+      services({
+        frontend: { build: { context: "." } },
+        worker: { image: "${COMPOSE_PROJECT_NAME}-frontend", pull_policy: "never" },
+      }),
+    );
+    expect(buildServices).toEqual(["frontend"]);
+    expect(pullServices).toEqual([]);
   });
 
   it("still pulls a registry image even if an unrelated ref was built locally", () => {

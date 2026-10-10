@@ -145,6 +145,65 @@ services:
         ipv4_address: 10.88.0.3
       vardo-network:
 
+  # Background loops (worker/index.ts), from the frontend's image. Rotates with the console's slot.
+  # Env, mounts and networks match frontend; tests/unit/infra/worker-compose.test.ts keeps them in step.
+  worker:
+    image: ${COMPOSE_PROJECT_NAME}-frontend
+    pull_policy: never
+    command: ["worker"]
+    profiles:
+      - production
+    restart: unless-stopped
+    mem_limit: ${VARDO_WORKER_MEM:-1g}
+    # Covers VARDO_WORKER_DRAIN_SECONDS (9 min) plus releasing leases.
+    stop_grace_period: ${VARDO_WORKER_STOP_GRACE:-10m}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      wireguard:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://host:${DB_PASSWORD:?Set DB_PASSWORD in .env}@vardo-postgres:5432/host
+      REDIS_URL: redis://:${REDIS_PASSWORD:-}@vardo-redis:6379
+      NEXT_PUBLIC_BETTER_AUTH_URL: https://${VARDO_DOMAIN:-localhost}
+      NEXT_PUBLIC_APP_URL: https://${VARDO_DOMAIN:-localhost}
+      VARDO_HOME_DIR: ${VARDO_HOME_DIR:-${VARDO_DIR:-/opt/vardo}}
+      CADVISOR_URL: ${CADVISOR_URL:-http://cadvisor:8080}
+      LOKI_URL: ${LOKI_URL:-http://loki:3100}
+      TRAEFIK_URL: ${TRAEFIK_URL:-http://vardo-traefik:8080}
+      WIREGUARD_GATEWAY: 10.88.0.2
+      DOCKER_GID: ${DOCKER_GID:-999}
+      VARDO_WORKER_HEALTH_PORT: 3001
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:3001/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      # Waits for the frontend's migrations before it reports healthy.
+      start_period: 120s
+      start_interval: 2s
+    cap_add:
+      - NET_ADMIN
+    group_add:
+      - ${DOCKER_GID:-999}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${VARDO_HOME_DIR:-${VARDO_DIR:-/opt/vardo}}:${VARDO_HOME_DIR:-${VARDO_DIR:-/opt/vardo}}
+      - ${VARDO_DATA:-/dev/null:/dev/null:ro}
+      - ${VARDO_PROJECTS:-/dev/null:/dev/null:ro}
+      - ${VARDO_MOUNT_1:-/dev/null:/dev/null:ro}
+      - ${VARDO_MOUNT_2:-/dev/null:/dev/null:ro}
+      - /proc:/host-proc:ro
+      - /sys/fs/cgroup:/host-cgroup:ro
+      - traefik_dynamic:/etc/traefik/dynamic:rw
+    networks:
+      internal:
+      mesh:
+      vardo-network:
+
   postgres:
     container_name: vardo-postgres
     x-vardo-shared: true

@@ -12,6 +12,14 @@ describe("parseComposeDuration", () => {
   ])("reads %s", (value, ms) => expect(parseComposeDuration(value)).toBe(ms));
 
   it.each(["", "soon", "10", "10s junk"])("rejects %j", (value) => expect(parseComposeDuration(value)).toBeNull());
+
+  it("reads an interpolated grace period from the env, else its default", () => {
+    const env = (vars: Record<string, string>) => vars as unknown as NodeJS.ProcessEnv;
+    expect(parseComposeDuration("${VARDO_WORKER_STOP_GRACE:-10m}", env({}))).toBe(600_000);
+    expect(parseComposeDuration("${VARDO_WORKER_STOP_GRACE:-10m}", env({ VARDO_WORKER_STOP_GRACE: "" }))).toBe(600_000);
+    expect(parseComposeDuration("${VARDO_WORKER_STOP_GRACE:-10m}", env({ VARDO_WORKER_STOP_GRACE: "3m" }))).toBe(180_000);
+    expect(parseComposeDuration("${VARDO_WORKER_STOP_GRACE}", env({}))).toBeNull();
+  });
 });
 
 describe("composeStopTimeout", () => {

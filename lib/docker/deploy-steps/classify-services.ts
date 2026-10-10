@@ -1,7 +1,7 @@
 import type { ComposeFile } from "../compose-types";
 import { isSharedService } from "../slot-partition";
 
-/** Split services into build vs pull. Locally built images and x-vardo-shared services are never pulled. */
+/** Split services into build vs pull. Locally built images, x-vardo-shared services and `pull_policy: never` are never pulled. */
 export function classifyComposeServices(
   services: ComposeFile["services"],
   builtImageRefs: string[] = [],
@@ -13,7 +13,7 @@ export function classifyComposeServices(
   const pullServices = Object.entries(services)
     .filter(
       ([, svc]) =>
-        svc.image && !svc.build && !builtLocally.has(svc.image) && !isSharedService(svc),
+        svc.image && !svc.build && !builtLocally.has(svc.image) && !isSharedService(svc) && svc.pull_policy !== "never",
     )
     .map(([name]) => name);
   return { buildServices, pullServices };
