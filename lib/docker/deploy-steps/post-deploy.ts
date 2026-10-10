@@ -47,6 +47,8 @@ import { proposeDurability, isSafeToApply } from "@/lib/backups/durability";
 import { refreshDumpSpec } from "@/lib/backups/dump-spec";
 import { CERTS_VOLUME_KEY, watchAppCerts } from "@/lib/ssl/cert-export";
 
+const POST_DEPLOY_SCAN_DELAY_MS = 30_000;
+
 /** Serializes the host-global prune across deploys. */
 const PRUNE_LOCK_KEY = "deploy:prune:lock";
 const PRUNE_LOCK_TTL_MS = 5 * 60_000;
@@ -464,6 +466,14 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
     appId: ctx.appId,
     metadata: { deploymentId: ctx.deploymentId, durationMs },
   }).catch(() => {});
+
+  // Waits for Traefik to route to the new slot.
+  const { organizationId, appId } = ctx;
+  setTimeout(() => {
+    import("@/lib/security/scanner")
+      .then(({ runSecurityScan }) => runSecurityScan({ appId, organizationId, trigger: "deploy" }))
+      .catch(() => {});
+  }, POST_DEPLOY_SCAN_DELAY_MS).unref();
 
   sendDeployNotification({
     app,
