@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import { isCollectorRunning, startCollector } from "@/lib/metrics/collector";
+import { loopsDeferredToWorker } from "@/lib/worker/handoff";
 import { getLatestProjectDiskUsage } from "@/lib/metrics/store";
 import { getSystemInfo } from "@/lib/docker/client";
 import { createSSEResponse } from "@/lib/api/sse";
@@ -45,7 +46,8 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
       cpuCount = (await getSystemInfo()).cpus;
     } catch { /* skip */ }
 
-    if (!isCollectorRunning()) {
+    // With a worker present the collector runs there.
+    if (!isCollectorRunning() && !loopsDeferredToWorker()) {
       startCollector();
     }
 

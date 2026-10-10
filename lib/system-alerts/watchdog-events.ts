@@ -5,6 +5,9 @@ import { VARDO_HOME_DIR } from "@/lib/paths";
 
 export const WATCHDOG_EVENTS_FILE = join(VARDO_HOME_DIR, "watchdog", "events.log");
 
+/** Touched by the watchdog every tick; missing while it's disabled. */
+export const WATCHDOG_ALIVE_FILE = join(VARDO_HOME_DIR, "watchdog", "alive");
+
 /** systemSettings key holding the newest event already surfaced, in epoch seconds. */
 export const WATCHDOG_CURSOR_KEY = "watchdog_events_seen";
 

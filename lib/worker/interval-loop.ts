@@ -89,6 +89,11 @@ export class IntervalLoop<T = unknown> {
     return this.running;
   }
 
+  /** A pass is running. */
+  get busy(): boolean {
+    return this.inFlight !== null || this.overlapping.size > 0;
+  }
+
   start(options: StartOptions = {}): void {
     if (this.running) return;
     this.running = true;

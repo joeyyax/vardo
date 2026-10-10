@@ -5,8 +5,16 @@ import { emit } from "@/lib/notifications/dispatch";
 import { openIncident, resolveIncidents, safely } from "./store";
 import type { IncidentSeverity } from "./types";
 
+/** Problems with Vardo's own processes on this host or a mesh peer. */
+export type HostProblemKind =
+  | "host.worker-down"
+  | "host.watchdog-silent"
+  | "host.peer-silent"
+  | "host.peer-worker-down"
+  | "host.peer-watchdog-silent";
+
 export type SystemProblem = {
-  kind: "system.service-down" | "system.cert-expiring" | "system.loop-failing";
+  kind: "system.service-down" | "system.cert-expiring" | "system.loop-failing" | HostProblemKind;
   about: string;
   title: string;
   severity: IncidentSeverity;

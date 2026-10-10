@@ -215,9 +215,9 @@ export async function register() {
     }
 
     tasks.push(
-      // Every background loop, from lib/worker/registry.ts. Feature-gated loops check their flag here.
-      import("./lib/worker/start")
-        .then(({ startLoops }) => startLoops({ role: "web", ready: { "backup-target": backupTargetReady } }))
+      // Every background loop, from lib/worker/registry.ts. Instance-wide ones go to a present worker (VARDO_LOOPS_IN_WEB).
+      import("./lib/worker/handoff")
+        .then(({ startWebLoops }) => startWebLoops({ "backup-target": backupTargetReady }))
         .catch((err) => log.error("Failed to start background loops:", err)),
 
       // Picks up a whole-instance restore a restart interrupted.

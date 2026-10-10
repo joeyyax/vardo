@@ -1,4 +1,4 @@
-import { bigint, integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { bigint, integer, jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 
 // Background loop coordination. Every time here comes from the database clock.
 
@@ -32,5 +32,22 @@ export const containerHolds = pgTable("container_hold", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
+/** One row per worker process, beating every 10s. Web defers its loops while a ready one is fresh. */
+export const workers = pgTable("worker", {
+  id: text("id").primaryKey(),
+  role: text("role").notNull(),
+  slot: text("slot"),
+  gitSha: text("git_sha"),
+  startedAt: timestamp("started_at", { withTimezone: true }).defaultNow().notNull(),
+  heartbeatAt: timestamp("heartbeat_at", { withTimezone: true }).defaultNow().notNull(),
+  readyAt: timestamp("ready_at", { withTimezone: true }),
+  drainingAt: timestamp("draining_at", { withTimezone: true }),
+  /** Set from outside to ask the worker to stop claiming work. */
+  drainRequestedAt: timestamp("drain_requested_at", { withTimezone: true }),
+  /** Loops with a pass running at the last beat. */
+  inFlight: jsonb("in_flight").$type<string[]>().notNull().default([]),
+});
+
 export type LeaderLeaseRow = typeof leaderLeases.$inferSelect;
+export type WorkerRow = typeof workers.$inferSelect;
 export type JobHeartbeatRow = typeof jobHeartbeats.$inferSelect;

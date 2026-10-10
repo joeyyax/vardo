@@ -8,7 +8,7 @@ import { getDiskSnapshot } from "@/lib/docker/disk-snapshot";
 import { collectBusinessMetrics } from "./collect-business-metrics";
 import { initGpuCollector, getGpuCollector, setGpuSnapshot } from "@/lib/gpu/collector";
 import { setLatestSnapshot } from "./broadcast";
-import { IntervalLoop } from "@/lib/worker/interval-loop";
+import { IntervalLoop, type LoopRole } from "@/lib/worker/interval-loop";
 
 const log = logger.child("collector");
 
@@ -68,7 +68,7 @@ export function isCollectorRunning() {
 }
 
 /** Starts the collector: every 5s for the first 20 ticks, then every 30s. */
-export async function startCollector() {
+export async function startCollector(role: LoopRole = "web") {
   if (state.started) return;
   await initMetricsProvider();
   if (!isMetricsEnabled()) {
@@ -88,7 +88,7 @@ export async function startCollector() {
     log.warn("GPU collector init failed:", (err as Error).message);
   });
 
-  collectorLoop.start({ role: "web" });
+  collectorLoop.start({ role });
 }
 
 /** Per process: it feeds this process's live snapshot. Waits a full interval after each collection. */
@@ -283,12 +283,13 @@ async function collect() {
   }
 }
 
-export function stopCollector() {
-  void collectorLoop.stop();
+export function stopCollector(): Promise<void> {
+  const stopped = collectorLoop.stop();
   state.started = false;
   state.disabled = false;
   state.diskConsecutiveFailures = 0;
   state.projectDiskConsecutiveFailures = 0;
+  return stopped;
 }
 
 /** True when the collector shut itself off after repeated provider failures. */
