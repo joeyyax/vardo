@@ -33,7 +33,7 @@ export interface ImageCheckResult {
   unorderable: string[];
   /** Newer tags to choose from, newest first. */
   available: string[];
-  /** Newest tag that crosses a major, when this image's data dir is major-locked. */
+  /** Newest tag that crosses a major. */
   majorAvailable: string | null;
   /** Whether a major bump means migrating a data directory. */
   majorLocked: boolean;
@@ -105,17 +105,17 @@ export async function checkImage(
   const tags = await fetchTags(ref);
   if (tags.length === 0) return { ...base, error: "Registry returned no tags" };
 
-  const capAtMajor = isMajorLocked(imageRef);
-  const candidate = selectUpdateCandidate(ref.tag, tags, { capAtMajor });
+  // Majors are reported apart from updates for every image.
+  const candidate = selectUpdateCandidate(ref.tag, tags, { capAtMajor: true });
   return {
     ...base,
-    status: candidate.latest || candidate.majorAvailable ? "update" : "current",
+    status: candidate.latest ? "update" : "current",
     latestTag: candidate.latest,
     severity: candidate.latest ? candidate.severity : null,
     unorderable: candidate.unorderable.slice(0, 10),
     available: candidate.available.slice(0, 40),
     majorAvailable: candidate.majorAvailable,
-    majorLocked: capAtMajor,
+    majorLocked: isMajorLocked(imageRef),
   };
 }
 

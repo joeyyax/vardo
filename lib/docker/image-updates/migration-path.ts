@@ -106,6 +106,15 @@ export function requiresMigration(image: string, from: string, to: string | null
   return Boolean(to && isMajorLocked(image) && isMajorJump(from, to));
 }
 
+/** `requiresMigration`, plus a probed major lock for images with unfamiliar names. */
+export function serviceNeedsMigration(
+  service: { image: string; currentTag: string; majorLocked: boolean },
+  to: string | null,
+): boolean {
+  if (!to) return false;
+  return requiresMigration(service.image, service.currentTag, to) || (service.majorLocked && isMajorJump(service.currentTag, to));
+}
+
 /** The migration recipe for an image, or null when it has no major lock. */
 export function migrationPathFor(image: string): MigrationPath | null {
   const repo = image.split("@")[0].replace(/:[^:/]*$/, "");

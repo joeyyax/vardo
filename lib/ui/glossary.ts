@@ -316,6 +316,23 @@ const entries = {
     docs: "image-updates",
     aliases: ["Image updates"],
   },
+  "major-version": {
+    term: "Major version",
+    what: "The first number in a version, like 16 in 16.4. A new one can change how data is stored, so Vardo lists it apart and never applies it for you.",
+    docs: "major-version",
+    aliases: ["New major versions", "New major version"],
+  },
+  "stay-on-major": {
+    term: "Stay on major",
+    what: "Patch and minor updates keep coming, and new majors stay quiet until the running one nears end of life.",
+    docs: "stay-on-major",
+    aliases: ["Stay on this major"],
+  },
+  "end-of-life": {
+    term: "End of life",
+    what: "The date upstream stops shipping security fixes for a version. Plan the move to a newer major before then.",
+    docs: "end-of-life",
+  },
   "severity-critical": {
     term: "Critical",
     what: "Fix this now. Something sensitive is open to anyone, like a secrets file visitors can download.",
@@ -475,6 +492,7 @@ export const PROBLEM_GROUP_TERM: Record<ProblemGroup, GlossaryId> = {
   backups: "backups",
   certs: "certificate",
   security: "security-findings",
+  lifecycle: "end-of-life",
   config: "deploy-needed",
 };
 

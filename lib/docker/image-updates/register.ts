@@ -11,12 +11,15 @@ const STARTUP_DELAY_MS = 60 * 1000;
 let sweepInterval: NodeJS.Timeout | null = null;
 let pruneInterval: NodeJS.Timeout | null = null;
 let startupTimer: NodeJS.Timeout | null = null;
+let eolInterval: NodeJS.Timeout | null = null;
 
 async function sweep() {
   try {
     const { refreshStaleChecks } = await import("./check");
     const checked = await refreshStaleChecks();
     if (checked > 0) log.info(`Checked ${checked} image${checked === 1 ? "" : "s"}`);
+    const { probeUnknownApps } = await import("./stateful-probe");
+    await probeUnknownApps();
   } catch (err) {
     log.error("Sweep failed:", err);
   }
@@ -29,6 +32,9 @@ export function startImageUpdateChecks(): void {
   // Let the app finish booting before the first registry call.
   startupTimer = setTimeout(sweep, STARTUP_DELAY_MS);
   sweepInterval = setInterval(sweep, SWEEP_INTERVAL_MS);
+  void import("./eol-sync").then(({ startEolSync }) => {
+    eolInterval = startEolSync();
+  });
 
   pruneInterval = setInterval(async () => {
     try {
@@ -53,7 +59,9 @@ export function stopImageUpdateChecks(): void {
   if (startupTimer) clearTimeout(startupTimer);
   if (sweepInterval) clearInterval(sweepInterval);
   if (pruneInterval) clearInterval(pruneInterval);
+  if (eolInterval) clearInterval(eolInterval);
   startupTimer = null;
   sweepInterval = null;
   pruneInterval = null;
+  eolInterval = null;
 }

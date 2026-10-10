@@ -351,7 +351,13 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
 
   // Record engine majors as the gate baseline and clear any previous block.
   const imageMajors = await observedMajors(ctx).catch(() => ({}));
-  if (!ctx.envIsolated) await clearMajorGateBlock(ctx.appId);
+  if (!ctx.envIsolated) {
+    await clearMajorGateBlock(ctx.appId);
+    // Learns which services own a data directory, for the default track policy.
+    void import("../image-updates/stateful-probe")
+      .then(({ probeAppStateful }) => probeAppStateful({ ...app, id: ctx.appId }))
+      .catch(() => {});
+  }
 
   const configSnapshot: ConfigSnapshot = {
     cpuLimit: app.cpuLimit,
