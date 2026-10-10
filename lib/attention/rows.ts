@@ -37,6 +37,8 @@ import { getUpdatePolicy, getUpdateRun } from "@/lib/self-update/store";
 import { isRunActive } from "@/lib/self-update/decide";
 import pkg from "@/package.json";
 import { vardoUpdateRow } from "./vardo-update-row";
+import { integrationRows } from "./integration-rows";
+import { ISSUE_TYPE, type StoredIssue } from "@/lib/integrations/sync";
 import { getElevatedApps } from "@/lib/logging/error-rate";
 import { activityRows, getFleetActivity } from "./activity";
 import {
@@ -307,6 +309,24 @@ async function loadOpenAnomalies(orgId: string) {
   });
 }
 
+/** Integrations missing a permission, as recorded for this org. */
+async function loadIntegrationIssues(orgId: string) {
+  const rows = await db
+    .select({ sentAt: notificationSends.sentAt, detail: notificationSends.detail })
+    .from(notificationSends)
+    .where(
+      and(
+        eq(notificationSends.organizationId, orgId),
+        eq(notificationSends.type, ISSUE_TYPE),
+        isNull(notificationSends.clearedAt),
+      ),
+    );
+  return rows.flatMap((r) => {
+    const issue = (r.detail as StoredIssue | null)?.issue;
+    return issue ? [{ issue, since: r.sentAt.toISOString() }] : [];
+  });
+}
+
 type BuildOptions = {
   /** Admin only. */
   isAppAdmin: boolean;
@@ -360,6 +380,7 @@ export async function buildAttentionRows(
     coverage,
     latestDeploys,
     anomalies,
+    integrationIssues,
   ] = await Promise.all([
     getFleetAttention(orgId),
     getCooldownUntil().then((cooldown) => getAggregateUpdateStatus(orgId, appRows, cooldown)),
@@ -374,6 +395,7 @@ export async function buildAttentionRows(
     backupsEnabled ? loadBackupCoverage(orgId, isAppAdmin) : null,
     loadLatestDeploys(appIds, Date.now()),
     loadOpenAnomalies(orgId),
+    loadIntegrationIssues(orgId).catch(() => []),
   ]);
 
   const rows = conditionRows(withParentNames(subjects));
@@ -533,6 +555,8 @@ export async function buildAttentionRows(
   }
 
   rows.push(...activityRows(appRows, activity));
+
+  rows.push(...integrationRows(integrationIssues, { orgId, isAppAdmin }));
 
   if (version) rows.push(version);
 

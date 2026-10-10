@@ -296,6 +296,8 @@ export type FeedbackDeps = {
   resolveInstallation: (repo: string, organizationIds: string[] | null) => Promise<number | null>;
   client: (installationId: number) => Promise<GitHub>;
   markBlocked: (appIds: string[], organizationId: string | null, permission: Permission) => Promise<void>;
+  /** GitHub refused a permission: re-read what the App and installations hold. */
+  permissionDenied?: (permission: Permission) => void;
   now?: () => number;
   intervalMs?: number;
 };
@@ -395,6 +397,9 @@ export function createFeedback(deps: FeedbackDeps) {
         log.warn(`${label}: ${err.message}`);
         for (const id of appIds) blockedAt.set(id, now());
         await deps.markBlocked(appIds, organizationId, err.permission).catch(() => {});
+        try {
+          deps.permissionDenied?.(err.permission);
+        } catch { /* a recheck never fails a deploy */ }
         return false;
       }
       log.warn(`${label} failed: ${err instanceof Error ? err.message : err}`);
@@ -946,6 +951,9 @@ const feedback = createFeedback({
   resolveInstallation: cachedInstallation,
   client: installationClient,
   markBlocked,
+  permissionDenied: () => {
+    void import("@/lib/integrations/check").then((m) => m.requestIntegrationRecheck()).catch(() => {});
+  },
 });
 
 export const trackDeploy = feedback.trackDeploy;

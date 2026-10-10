@@ -17,6 +17,7 @@ export const TOAST_EVENTS: Partial<Record<BusEventType, ToastSeverity>> = {
   "system.service-down": "error",
   "system.restart-loop": "error",
   "system.cert-expiring": "error",
+  "system.integration-permissions": "warning",
 };
 
 /** Toast severity for an event, or undefined when it should not toast. */

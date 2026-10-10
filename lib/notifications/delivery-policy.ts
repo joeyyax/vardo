@@ -18,6 +18,7 @@ export const DELIVERY_DEFAULTS: Partial<Record<BusEventType, DeliveryClass>> = {
   "backup.summary": "batch",
   "security.scan-findings": "batch",
   "app.auto-restarted": "immediate",
+  "system.integration-permissions": "immediate",
 };
 
 export function deliveryClass(type: BusEventType): DeliveryClass {

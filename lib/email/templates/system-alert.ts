@@ -39,6 +39,7 @@ export type SystemAlertEvent = Extract<
       | "system.restart-loop"
       | "system.cert-expiring"
       | "system.update-available"
+      | "system.integration-permissions"
       | "app.auto-restarted";
   }
 >;
@@ -120,6 +121,20 @@ export function systemAlertMail(event: SystemAlertEvent, ctx: MailContext): Noti
         footer,
       };
     }
+    case "system.integration-permissions":
+      return {
+        tone: "warn",
+        status: "Needs approval",
+        heading: event.title,
+        paragraphs: [event.message],
+        facts: [
+          { label: event.scope === "app" ? "App" : "Account", value: event.account },
+          { label: "Permissions", value: event.missing.join(", ") },
+          ...(event.features.length ? [{ label: "Off until then", value: event.features.join(", ") }] : []),
+        ],
+        action: { label: event.fixLabel, href: event.fixUrl },
+        footer,
+      };
     case "app.auto-restarted":
       return {
         tone: event.gaveUp || !event.success ? "fail" : "warn",

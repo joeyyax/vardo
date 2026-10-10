@@ -16,7 +16,10 @@ export type AttentionTone = "error" | "warning" | "neutral" | "activity";
 /** A fix the bar runs against one app, or a page that handles it. */
 export type AttentionFix =
   | { label: string; run: "deploy" | "restart" | "backup"; app: { id: string; name: string } }
-  | { label: string; href: string };
+  | { label: string; href: string; external?: boolean };
+
+/** A request the item's second button sends without leaving the page. */
+export type AttentionPost = { label: string; post: string };
 
 export type AttentionItem = {
   id: string;
@@ -41,6 +44,7 @@ export type AttentionItem = {
   /** The project page. */
   whereHref?: string;
   fix?: AttentionFix;
+  secondary?: AttentionPost;
   /** Broken right now and needs a person. Set through lib/ui/urgency. */
   urgent?: boolean;
 };
@@ -61,7 +65,7 @@ export type AttentionRow = {
 
 export type AttentionAction =
   | { label: string; href: string }
-  | { label: string; post: string; confirm: { title: string; description: string; label: string } };
+  | { label: string; post: string; confirm?: { title: string; description: string; label: string } };
 
 const TONE_RANK: Record<AttentionTone, number> = { error: 0, warning: 1, neutral: 2, activity: 3 };
 
@@ -122,6 +126,7 @@ export type GroupedItem = {
   where?: string;
   whereHref?: string;
   fix?: AttentionFix;
+  secondary?: AttentionPost;
   /** Other problems reported for the same subject. */
   also: string[];
   urgent: boolean;
@@ -182,6 +187,7 @@ export function groupAttention(rows: AttentionRow[]): AttentionGroup[] {
         where: item.where,
         whereHref: item.whereHref,
         fix: item.fix,
+        secondary: item.secondary,
         also: [],
         urgent: isUrgentItem(row, item),
       };
@@ -198,6 +204,7 @@ export function groupAttention(rows: AttentionRow[]): AttentionGroup[] {
         where: lead.where ?? other.where,
         whereHref: lead.whereHref ?? other.whereHref,
         fix: lead.fix ?? other.fix,
+        secondary: lead.secondary ?? other.secondary,
         also,
         urgent: lead.urgent || other.urgent,
       });

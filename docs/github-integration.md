@@ -27,9 +27,19 @@ The GitHub App needs these repository permissions:
 
 | Permission | Access |
 | --- | --- |
+| Metadata | Read-only |
 | Contents | Read-only |
 | Pull requests | Read & write |
 | Deployments | Read & write |
 | Commit statuses | Read & write |
 
 An App created before deploy status existed lacks the last two. Add them on the App's **Permissions & events** page, then approve the change on each installation under **Settings → Integrations → GitHub Apps** of the account that installed it. Until then, GitHub refuses those calls. Vardo turns feedback off for the app, records it once in the app's activity and shows the reason under the setting. Saving the setting retries.
+
+### Permission check
+
+Vardo reads the App's permissions and each linked installation's shortly after it starts, once a day and soon after GitHub refuses a permission. A gap raises one item under **Needs attention**, with a button to the GitHub page that fixes it:
+
+- **The App lacks a permission**: instance admins see it, linked to the App's permissions page.
+- **An installation hasn't accepted it yet**: the organizations linked to that installation see it, linked to the installation's page.
+
+Each problem sends one notification through email and the org's other channels, and again only if it changes. Once GitHub reports the permissions granted, the item clears, blocked apps resume posting and the activity log records the approval. **Check again** on the item or under **Admin → Settings → GitHub App** runs the check right away.

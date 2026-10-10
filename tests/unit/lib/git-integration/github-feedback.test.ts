@@ -401,6 +401,39 @@ describe("deploy feedback", () => {
     expect(calls.filter((c) => c.path.includes("/statuses/"))).toHaveLength(1);
   });
 
+  it("asks for a permission recheck when GitHub refuses a permission", async () => {
+    const permissionDenied = vi.fn();
+    const { feedback } = harness({
+      routes: [["POST", /\/statuses\//, () => { throw new GitHubPermissionError("statuses", "refused"); }]],
+      deps: { permissionDenied },
+    });
+    runDeploy(feedback, { status: "success" });
+    await settle();
+    expect(permissionDenied).toHaveBeenCalledWith("statuses");
+  });
+
+  it("a 403 from GitHub reaches the recheck through the real client", async () => {
+    const fetchImpl = vi.fn(async () => new Response("Resource not accessible by integration", { status: 403 }));
+    const permissionDenied = vi.fn();
+    const { feedback } = harness({
+      deps: { client: async () => githubClient("token", fetchImpl as unknown as typeof fetch), permissionDenied },
+    });
+    runDeploy(feedback, { status: "success" });
+    await settle();
+    expect(permissionDenied).toHaveBeenCalled();
+  });
+
+  it("does not recheck on a rate limit", async () => {
+    const fetchImpl = vi.fn(async () => new Response("API rate limit exceeded", { status: 403, headers: { "x-ratelimit-remaining": "0" } }));
+    const permissionDenied = vi.fn();
+    const { feedback } = harness({
+      deps: { client: async () => githubClient("token", fetchImpl as unknown as typeof fetch), permissionDenied },
+    });
+    runDeploy(feedback, { status: "success" });
+    await settle();
+    expect(permissionDenied).not.toHaveBeenCalled();
+  });
+
   it("never throws into the deploy path", async () => {
     const unhandled = vi.fn();
     process.on("unhandledRejection", unhandled);
