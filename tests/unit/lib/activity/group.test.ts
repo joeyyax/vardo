@@ -19,7 +19,7 @@ function row(overrides: Partial<ActivityRow> = {}): ActivityRow {
     action: "deployment.succeeded",
     metadata: null,
     createdAt: at(0),
-    user: { id: "u1", name: "Joey", email: "joey@example.com", image: null },
+    user: { id: "u1", name: "Alex", email: "alex@example.com", image: null },
     app: { id: "app-1", name: "paperless", displayName: "Paperless" },
     ...overrides,
   };

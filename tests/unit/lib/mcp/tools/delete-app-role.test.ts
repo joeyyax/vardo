@@ -27,7 +27,7 @@ vi.mock("@/lib/api/rate-limit", () => ({
   slidingWindowRateLimit: async () => ({ limited: false }),
 }));
 
-const HOME = "org-sample";
+const HOME = "org-ops";
 
 type Handler = (args: Record<string, unknown>) => Promise<{
   content: { text: string }[];

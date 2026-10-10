@@ -47,12 +47,12 @@ import { getSystemManagedApp, createVardoPreview, destroyVardoPreview } from "@/
 function prEvent(action: string) {
   const body = JSON.stringify({
     action,
-    repository: { full_name: "joeyyax/tools-api" },
+    repository: { full_name: "acme/tools-api" },
     pull_request: {
       number: 25,
-      html_url: "https://github.com/joeyyax/tools-api/pull/25",
-      head: { ref: "feat/x", repo: { full_name: "joeyyax/tools-api", fork: false } },
-      user: { login: "joeyyax" },
+      html_url: "https://github.com/acme/tools-api/pull/25",
+      head: { ref: "feat/x", repo: { full_name: "acme/tools-api", fork: false } },
+      user: { login: "acme-dev" },
     },
   });
   const signature = "sha256=" + createHmac("sha256", "s3cret").update(body).digest("hex");
@@ -88,7 +88,7 @@ describe("GitHub pull_request webhook", () => {
 
     void afterCallbacks[0]();
     expect(createPreviewMock).toHaveBeenCalledWith(
-      expect.objectContaining({ repoFullName: "joeyyax/tools-api", prNumber: 25, branch: "feat/x" }),
+      expect.objectContaining({ repoFullName: "acme/tools-api", prNumber: 25, branch: "feat/x" }),
     );
   });
 
@@ -98,7 +98,7 @@ describe("GitHub pull_request webhook", () => {
     expect(res).not.toBe("timeout");
     expect((res as Response).status).toBe(202);
     void afterCallbacks[0]();
-    expect(destroyPreviewMock).toHaveBeenCalledWith("joeyyax/tools-api", 25);
+    expect(destroyPreviewMock).toHaveBeenCalledWith("acme/tools-api", 25);
   });
 });
 
@@ -119,7 +119,7 @@ describe("GitHub pull_request webhook with previews off", () => {
     await POST(prEvent("closed"), {});
     void afterCallbacks[0]();
 
-    expect(destroyPreviewMock).toHaveBeenCalledWith("joeyyax/tools-api", 25);
+    expect(destroyPreviewMock).toHaveBeenCalledWith("acme/tools-api", 25);
   });
 
   it("never builds a Vardo self-preview", async () => {

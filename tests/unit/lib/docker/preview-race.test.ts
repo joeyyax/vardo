@@ -43,7 +43,7 @@ vi.mock("@/lib/db", () => ({
           {
             id: "svc",
             name: "tools-api",
-            gitUrl: "https://github.com/joeyyax/tools-api.git",
+            gitUrl: "https://github.com/acme/tools-api.git",
             projectId: "proj",
             organizationId: "org-1",
             parentAppId: null,
@@ -79,7 +79,7 @@ import { createGroupEnvironment, destroyGroupEnvironment } from "@/lib/docker/cl
 import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { db } from "@/lib/db";
 
-const REPO = "joeyyax/tools-api";
+const REPO = "acme/tools-api";
 const tick = () => new Promise((r) => setTimeout(r, 20));
 const open = () =>
   createPreview({ repoFullName: REPO, prNumber: 25, prUrl: "https://github.com/x/pull/25", branch: "feat" });

@@ -27,7 +27,7 @@ export type BackupRunPlan = {
   jobs: { jobId: string; jobName: string; appIds?: string[] }[];
   /** `appName` is the display name. `lastBytes` sums each volume's last successful size. */
   apps: { appId: string | null; appName: string; volumes: string[]; lastBytes?: number }[];
-  /** "System default · R2 vardo-backups/node-a", no credentials. */
+  /** "System default · R2 backups/node-a", no credentials. */
   target: string | null;
 };
 

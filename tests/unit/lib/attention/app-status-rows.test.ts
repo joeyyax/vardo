@@ -63,7 +63,7 @@ describe("appStatusRows", () => {
   it("stays quiet on a parked app however broken it reads", () => {
     expect(
       rows([
-        app({ name: "lonvr", status: "missing", statusChangedAt: justNow, parked: true }),
+        app({ name: "recorder", status: "missing", statusChangedAt: justNow, parked: true }),
         app({ name: "encoder", status: "error", statusChangedAt: justNow, parked: true }),
         app({ name: "jellyfin", status: "missing", statusChangedAt: null, parked: true }),
       ]),
@@ -71,7 +71,7 @@ describe("appStatusRows", () => {
   });
 
   it("stays quiet once a transition ages out of the window", () => {
-    expect(rows([app({ name: "lonvr", status: "missing", statusChangedAt: longAgo })])).toEqual([]);
+    expect(rows([app({ name: "recorder", status: "missing", statusChangedAt: longAgo })])).toEqual([]);
   });
 
   it("stays quiet on a stopped app, which is deliberate", () => {
@@ -117,14 +117,14 @@ describe("appStatusRows", () => {
 
   it("collapses a cascade to the parent alone", () => {
     const parent = app({
-      name: "lonvr",
-      displayName: "Lonvr",
+      name: "recorder",
+      displayName: "Recorder",
       status: "missing",
       statusChangedAt: justNow,
     });
     const children = ["postgres", "redis", "worker"].map((service) =>
       app({
-        name: `lonvr-${service}`,
+        name: `recorder-${service}`,
         displayName: service,
         status: "missing",
         statusChangedAt: justNow,
@@ -135,7 +135,7 @@ describe("appStatusRows", () => {
     const [row] = rows([parent, ...children]);
 
     expect(row.items).toHaveLength(1);
-    expect(row.items[0].name).toBe("Lonvr");
+    expect(row.items[0].name).toBe("Recorder");
   });
 
   it("keeps a broken child when its parent is fine", () => {
@@ -202,7 +202,7 @@ describe("appStoppedRows", () => {
   });
 
   it("leaves a standalone app without a service count", () => {
-    const [row] = appStoppedRows([app({ name: "lonvr", displayName: "Lonvr", status: "stopped" })]);
+    const [row] = appStoppedRows([app({ name: "recorder", displayName: "Recorder", status: "stopped" })]);
 
     expect(row.items[0].detail).toBeUndefined();
   });
@@ -229,7 +229,7 @@ describe("appStoppedRows", () => {
   });
 
   it("omits a stamp the app has never had", () => {
-    const [row] = appStoppedRows([app({ name: "lonvr", status: "stopped", statusChangedAt: null })]);
+    const [row] = appStoppedRows([app({ name: "recorder", status: "stopped", statusChangedAt: null })]);
 
     expect(row.items[0].since).toBeUndefined();
   });
@@ -240,10 +240,10 @@ describe("appStoppedRows", () => {
 
   it("says an operator-stopped app is stopped rather than dropping it from the inventory", () => {
     const [row] = appStoppedRows([
-      app({ name: "lonvr", displayName: "Lonvr", status: "stopped", parked: true }),
+      app({ name: "recorder", displayName: "Recorder", status: "stopped", parked: true }),
     ]);
 
-    expect(row.items[0]).toMatchObject({ name: "Lonvr", detail: "stopped" });
+    expect(row.items[0]).toMatchObject({ name: "Recorder", detail: "stopped" });
   });
 
   it("reads stopped alongside the service count on a collapsed stack", () => {
@@ -268,7 +268,7 @@ describe("appStoppedRows", () => {
 // ---------------------------------------------------------------------------
 describe("day one", () => {
   const shelved = [
-    app({ name: "lonvr", displayName: "Reeve NVR", status: "missing", parked: true }),
+    app({ name: "recorder", displayName: "Camera NVR", status: "missing", parked: true }),
     app({ name: "encoder", displayName: "Encoder", status: "missing", parked: true }),
     app({ name: "jellyfin", displayName: "Jellyfin", status: "missing", parked: true }),
   ];
@@ -309,10 +309,10 @@ describe("day one", () => {
     const [row] = rows(board.map((a) => ({ ...a, parked: false })));
 
     expect(row.items.map((i) => i.name).sort()).toEqual([
+      "Camera NVR",
       "Encoder",
       "GlitchTip",
       "Jellyfin",
-      "Reeve NVR",
     ]);
   });
 });

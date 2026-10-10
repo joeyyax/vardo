@@ -49,7 +49,7 @@ vi.mock("@/lib/config/host-config", () => ({
 }));
 vi.mock("@/lib/git-integration/app", () => ({
   getInstallationToken,
-  // The vardo-gh installation covers joeyyax/private-site.
+  // The vardo-gh installation covers acme/private-site.
   getRepoInstallationId: vi.fn(async () => 2),
 }));
 vi.mock("@/lib/git-integration/org-installations", async (original) => ({
@@ -184,7 +184,7 @@ function makeCtx(app: DeployApp): { ctx: DeployContext; stages: StageCall[] } {
 }
 
 const privateApp = (organizationId: string) =>
-  makeApp({ organizationId, source: "git", deployType: "compose", gitUrl: "https://github.com/joeyyax/private-site.git", gitBranch: "main" });
+  makeApp({ organizationId, source: "git", deployType: "compose", gitUrl: "https://github.com/acme/private-site.git", gitBranch: "main" });
 
 function ctxFor(organizationId: string) {
   const { ctx } = makeCtx(privateApp(organizationId));
@@ -198,7 +198,7 @@ describe("prepareRepo clone installation scope", () => {
     cloneEnvs.length = 0;
     linked.clear();
     // One user, two orgs: each org has its own installation linked.
-    linked.set("org-sample", [{ installationId: 1, accountLogin: "sample-gh" }]);
+    linked.set("org-ops", [{ installationId: 1, accountLogin: "ops-gh" }]);
     linked.set("org-vardo", [{ installationId: 2, accountLogin: "vardo-gh" }]);
   });
 
@@ -210,9 +210,9 @@ describe("prepareRepo clone installation scope", () => {
   });
 
   it("refuses another org's installation and says how to link one", async () => {
-    linked.set("org-sample", []);
+    linked.set("org-ops", []);
 
-    const err = await prepareRepo(ctxFor("org-sample")).catch((e) => e);
+    const err = await prepareRepo(ctxFor("org-ops")).catch((e) => e);
 
     expect(getInstallationToken).not.toHaveBeenCalledWith(2);
     expect(cloneEnvs[0].GIT_CONFIG_VALUE_0).toBeUndefined();
@@ -222,11 +222,11 @@ describe("prepareRepo clone installation scope", () => {
 
   it("doesn't fall back to an org's unrelated installation for a repo it doesn't cover", async () => {
     getInstallationToken.mockImplementation(async (id: number) => {
-      if (id === 1) throw new Error("not installed on joeyyax/private-site");
+      if (id === 1) throw new Error("not installed on acme/private-site");
       return `tok-${id}`;
     });
 
-    const err = await prepareRepo(ctxFor("org-sample")).catch((e) => e);
+    const err = await prepareRepo(ctxFor("org-ops")).catch((e) => e);
 
     expect(getInstallationToken).not.toHaveBeenCalledWith(2);
     expect(err.message).toContain("without a GitHub token");

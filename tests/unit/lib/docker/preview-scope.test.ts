@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 process.env.ENCRYPTION_MASTER_KEY = "1".repeat(64);
 
-// A PR on tools-api once cloned and deployed every app in the homelab "AI"
+// A PR on tools-api once cloned and deployed every app in its "AI"
 // project, notes-api included. A preview covers the PR repo's apps,
 // their compose children and their declared dependencies — nothing else.
 
@@ -46,13 +46,13 @@ import { normalizeGitRepo, previewScope } from "@/lib/docker/preview-scope";
 
 const base = { projectId: "proj-ai", organizationId: "org-1", cloneStrategy: "clone", dependsOn: null, parentAppId: null };
 const PROJECT_APPS = [
-  { ...base, id: "svc", name: "tools-api", gitUrl: "git@github.com:joeyyax/tools-api.git", dependsOn: ["redis", "pg"] },
+  { ...base, id: "svc", name: "tools-api", gitUrl: "git@github.com:acme/tools-api.git", dependsOn: ["redis", "pg"] },
   { ...base, id: "svc-worker", name: "tools-api-worker", gitUrl: null, parentAppId: "svc" },
   { ...base, id: "redis", name: "redis", gitUrl: null },
   { ...base, id: "pg", name: "pg", gitUrl: null, cloneStrategy: "skip" },
-  { ...base, id: "ks", name: "notes-api", gitUrl: "https://github.com/joeyyax/notes-api.git" },
+  { ...base, id: "ks", name: "notes-api", gitUrl: "https://github.com/acme/notes-api.git" },
   { ...base, id: "ks-embed", name: "notes-api-embed", gitUrl: null, parentAppId: "ks" },
-  { ...base, id: "llama", name: "llm-proxy", gitUrl: "https://github.com/joeyyax/llm-proxy" },
+  { ...base, id: "llama", name: "llm-proxy", gitUrl: "https://github.com/acme/llm-proxy" },
 ];
 
 beforeEach(() => {
@@ -64,9 +64,9 @@ beforeEach(() => {
 
 const openPr = () =>
   createPreview({
-    repoFullName: "joeyyax/tools-api",
+    repoFullName: "acme/tools-api",
     prNumber: 25,
-    prUrl: "https://github.com/joeyyax/tools-api/pull/25",
+    prUrl: "https://github.com/acme/tools-api/pull/25",
     branch: "feat/x",
   });
 
@@ -122,18 +122,18 @@ describe("previewScope", () => {
 
 describe("normalizeGitRepo", () => {
   it.each([
-    "https://github.com/acme/tools-api.git",
-    "https://github.com/joeyyax/tools-api",
-    "https://github.com/joeyyax/tools-api/",
-    "git@github.com:joeyyax/tools-api.git",
-    "ssh://git@github.com/joeyyax/tools-api.git",
+    "https://github.com/Acme/Tools-API.git",
+    "https://github.com/acme/tools-api",
+    "https://github.com/acme/tools-api/",
+    "git@github.com:acme/tools-api.git",
+    "ssh://git@github.com/acme/tools-api.git",
   ])("normalizes %s", (url) => {
-    expect(normalizeGitRepo(url)).toBe("github.com/joeyyax/tools-api");
+    expect(normalizeGitRepo(url)).toBe("github.com/acme/tools-api");
   });
 
   it("does not match a repo whose name extends the PR repo's", () => {
-    expect(normalizeGitRepo("https://github.com/joeyyax/tools-api-old.git")).not.toBe(
-      "github.com/joeyyax/tools-api",
+    expect(normalizeGitRepo("https://github.com/acme/tools-api-old.git")).not.toBe(
+      "github.com/acme/tools-api",
     );
   });
 });

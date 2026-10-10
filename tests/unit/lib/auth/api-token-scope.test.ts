@@ -39,7 +39,7 @@ import { scopeCeilingViolation, isTokenExpired } from "@/lib/auth/api-token";
 import { GET as exportConfig } from "@/app/api/v1/admin/config/export/route";
 import { NextRequest } from "next/server";
 
-const ADMIN_USER = { id: "u1", name: "Joey", email: "j@x", isAppAdmin: true };
+const ADMIN_USER = { id: "u1", name: "Alex", email: "j@x", isAppAdmin: true };
 
 function token(overrides: Record<string, unknown> = {}) {
   return {

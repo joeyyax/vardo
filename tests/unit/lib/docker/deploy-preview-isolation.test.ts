@@ -16,7 +16,7 @@ const { dbMock, statusWrites, captured, envRows, groupEnvHosts } = vi.hoisted(()
   const prodDomain = {
     id: "dom-prod-1",
     appId: "app-1",
-    domain: "knowledge.example.com",
+    domain: "notes.example.com",
     serviceName: null,
     port: 3500,
     middlewares: null,
@@ -41,7 +41,7 @@ const { dbMock, statusWrites, captured, envRows, groupEnvHosts } = vi.hoisted(()
         findFirst: vi.fn(async () => ({
           id: "app-1",
           name: "notes-api",
-          displayName: "Knowledge",
+          displayName: "Notes",
           organizationId: "org-1",
           projectId: null,
           source: "git",
@@ -159,7 +159,7 @@ describe("runDeployment domains", () => {
 
     await runDeployment("dep-2", { appId: "app-1", organizationId: "org-1", trigger: "manual" });
 
-    expect(captured.domains).toEqual([{ domain: "knowledge.example.com", port: 3500 }]);
+    expect(captured.domains).toEqual([{ domain: "notes.example.com", port: 3500 }]);
   });
 });
 

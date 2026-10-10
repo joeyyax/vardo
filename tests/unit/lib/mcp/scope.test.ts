@@ -68,7 +68,7 @@ vi.mock("drizzle-orm", () => ({
   sql: () => ({ false: true }),
 }));
 
-const HOME = "org-sample";
+const HOME = "org-ops";
 const OTHER = "org-vardo";
 const FOREIGN = "org-someone-else";
 

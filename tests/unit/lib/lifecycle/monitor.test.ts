@@ -130,7 +130,7 @@ describe("update event flow", () => {
 });
 
 describe("booting into an update", () => {
-  // node-a, bc2083d → 559e5b2: the new console booted with the marker "started"; install.sh wrote "updated" 2s later.
+  // bc2083d → 559e5b2: the new console booted with the marker "started"; install.sh wrote "updated" 2s later.
   const id = "20261010004345-434368";
   const started = (startedAt: number) => ({ id, state: "started", startedAt, fromVersion: "bc2083d", toVersion: "559e5b2", fromSlot: "green", toSlot: "blue" });
 

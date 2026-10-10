@@ -25,43 +25,43 @@ function routerNames(labels: Record<string, string>): Set<string> {
 }
 
 /** The shape of #904: notes-api's own router, before and after a cert resolver change. */
-function knowledge(certResolver: string): ComposeFile {
+function notes(certResolver: string): ComposeFile {
   return compose({
-    knowledge: {
+    notes: {
       "traefik.enable": "true",
-      "traefik.http.routers.knowledge.rule": "Host(`knowledge.example.com`)",
-      "traefik.http.routers.knowledge.entrypoints": "websecure",
-      "traefik.http.routers.knowledge.tls.certresolver": certResolver,
-      "traefik.http.services.knowledge.loadbalancer.server.port": "8000",
+      "traefik.http.routers.notes.rule": "Host(`notes.example.com`)",
+      "traefik.http.routers.notes.entrypoints": "websecure",
+      "traefik.http.routers.notes.tls.certresolver": certResolver,
+      "traefik.http.services.notes.loadbalancer.server.port": "8000",
     },
   });
 }
 
 describe("slotTraefikNames", () => {
   it("gives each slot its own router when a label changed between deploys (#904)", () => {
-    const blue = labelsOf(slotTraefikNames(knowledge("cloudflare"), "blue"), "knowledge");
-    const green = labelsOf(slotTraefikNames(knowledge("le-dns"), "green"), "knowledge");
+    const blue = labelsOf(slotTraefikNames(notes("cloudflare"), "blue"), "notes");
+    const green = labelsOf(slotTraefikNames(notes("le-dns"), "green"), "notes");
 
-    expect(blue["traefik.http.routers.knowledge-blue.tls.certresolver"]).toBe("cloudflare");
-    expect(green["traefik.http.routers.knowledge-green.tls.certresolver"]).toBe("le-dns");
+    expect(blue["traefik.http.routers.notes-blue.tls.certresolver"]).toBe("cloudflare");
+    expect(green["traefik.http.routers.notes-green.tls.certresolver"]).toBe("le-dns");
     const shared = [...routerNames(blue)].filter((n) => routerNames(green).has(n));
     expect(shared).toEqual([]);
   });
 
   it("drops the original router name", () => {
-    const labels = labelsOf(slotTraefikNames(knowledge("le-dns"), "green"), "knowledge");
-    expect(Object.keys(labels).some((k) => k.startsWith("traefik.http.routers.knowledge."))).toBe(false);
+    const labels = labelsOf(slotTraefikNames(notes("le-dns"), "green"), "notes");
+    expect(Object.keys(labels).some((k) => k.startsWith("traefik.http.routers.notes."))).toBe(false);
   });
 
   it("points a router that named no service at the container's slot service", () => {
-    const labels = labelsOf(slotTraefikNames(knowledge("le-dns"), "green"), "knowledge");
-    expect(labels["traefik.http.routers.knowledge-green.service"]).toBe("knowledge-green");
+    const labels = labelsOf(slotTraefikNames(notes("le-dns"), "green"), "notes");
+    expect(labels["traefik.http.routers.notes-green.service"]).toBe("notes-green");
   });
 
   it("keeps the original service beside the slot copy", () => {
-    const labels = labelsOf(slotTraefikNames(knowledge("le-dns"), "green"), "knowledge");
-    expect(labels["traefik.http.services.knowledge.loadbalancer.server.port"]).toBe("8000");
-    expect(labels["traefik.http.services.knowledge-green.loadbalancer.server.port"]).toBe("8000");
+    const labels = labelsOf(slotTraefikNames(notes("le-dns"), "green"), "notes");
+    expect(labels["traefik.http.services.notes.loadbalancer.server.port"]).toBe("8000");
+    expect(labels["traefik.http.services.notes-green.loadbalancer.server.port"]).toBe("8000");
   });
 
   it("rewrites service and middleware references the app declares", () => {
@@ -210,20 +210,20 @@ describe("slotTraefikNames", () => {
 
 describe("cutover pin with slot names", () => {
   it("pins the new slot's routers and confirms them by their pin names", () => {
-    const file = knowledge("le-dns");
+    const file = notes("le-dns");
     const live = slotTraefikNames(file, "green");
     const plan = planCutover(file, {
-      newProjectName: "knowledge-production-green",
+      newProjectName: "notes-production-green",
       slotted: file.services,
-      liveLabels: { knowledge: labelsOf(live, "knowledge") },
+      liveLabels: { notes: labelsOf(live, "notes") },
     });
 
-    expect(plan!.routerNames).toEqual(["knowledge-green-cutover"]);
-    expect(plan!.yaml).toContain("http://knowledge-production-green-knowledge-1:8000");
+    expect(plan!.routerNames).toEqual(["notes-green-cutover"]);
+    expect(plan!.yaml).toContain("http://notes-production-green-notes-1:8000");
     expect(
-      pinIsLive([{ name: "knowledge-green-cutover@file", status: "enabled" }], plan!.routerNames),
+      pinIsLive([{ name: "notes-green-cutover@file", status: "enabled" }], plan!.routerNames),
     ).toBe(true);
-    expect(pinIsLive([{ name: "knowledge-cutover@file", status: "enabled" }], plan!.routerNames)).toBe(false);
+    expect(pinIsLive([{ name: "notes-cutover@file", status: "enabled" }], plan!.routerNames)).toBe(false);
   });
 
   it("carries the slot's middleware names into the pin", () => {

@@ -6,7 +6,7 @@ const { sendEmail } = vi.hoisted(() => ({ sendEmail: vi.fn() }));
 vi.mock("@/lib/email/send", () => ({ sendEmail }));
 vi.mock("@/lib/email/series", () => ({ loadMailSeries: async () => ({}) }));
 vi.mock("@/lib/system-settings", () => ({ getInstanceDisplayName: async () => "node-a" }));
-vi.mock("@/lib/db", () => ({ db: { query: { organizations: { findFirst: async () => ({ name: "Joey Yax" }) } } } }));
+vi.mock("@/lib/db", () => ({ db: { query: { organizations: { findFirst: async () => ({ name: "Acme Studio" }) } } } }));
 vi.mock("@/lib/db/schema", () => ({ organizations: { id: "id" } }));
 
 const { EmailNotificationChannel } = await import("@/lib/notifications/email-channel");

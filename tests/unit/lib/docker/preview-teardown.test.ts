@@ -199,7 +199,7 @@ describe("destroyGroupEnvironment on something that isn't a preview", () => {
   });
 
   it("keeps a production hostname stored on the preview environment", async () => {
-    findGroupEnv.mockResolvedValue(groupWith({ name: "pr-25", type: "preview", domain: "knowledge.example.com" }));
+    findGroupEnv.mockResolvedValue(groupWith({ name: "pr-25", type: "preview", domain: "notes.example.com" }));
 
     await destroyGroupEnvironment("ge-1", "org-1");
 

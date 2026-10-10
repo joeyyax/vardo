@@ -17,7 +17,7 @@ const subject = (event: BusEvent) => notificationSubject(event, FIXTURE_CONTEXT)
 
 describe("notification subjects", () => {
   it("leads with the state and ends with the commit", () => {
-    expect(subject(fixture("deploy-success"))).toBe("✓ acme-2026 deployed · a1b2c3d");
+    expect(subject(fixture("deploy-success"))).toBe("✓ acme-web deployed · a1b2c3d");
   });
 
   it("names the failing phase", () => {
@@ -72,10 +72,10 @@ describe("notification emails", () => {
 
   it("puts the deploy facts, phases and links in a success email", async () => {
     const email = (await renderNotificationEmail(fixture("deploy-success"), FIXTURE_CONTEXT))!;
-    expect(email.text).toContain("Commit: a1b2c3d Fix donation form validation on mobile <https://github.com/joeyyax/acme-2026/commit/a1b2c3d4e5f60718293a4b5c6d7e8f9012345678>");
+    expect(email.text).toContain("Commit: a1b2c3d Fix donation form validation on mobile <https://github.com/acme/acme-web/commit/a1b2c3d4e5f60718293a4b5c6d7e8f9012345678>");
     expect(email.text).toContain("Phases\nClone 3% · Build 69% · Pull 5% · Start 7% · Health wait 14% · Cleanup 2%");
     expect(email.text).toContain("Slot: blue → green");
-    expect(email.html).toContain('href="https://acme.org"');
+    expect(email.html).toContain('href="https://acme.example.org"');
     expect(email.text).toContain("Deployment log: https://vardo.example.com/apps/app_9xk2/deployments");
   });
 
@@ -123,7 +123,7 @@ describe("notification emails", () => {
     const email = (await renderNotificationEmail(fixture("backup-run-started"), FIXTURE_CONTEXT))!;
     expect(email.text).toContain("[↻ Starting] Nightly backups starting");
     expect(email.text).toContain("Writing to: R2 backups · backups/apps");
-    expect(email.text).toContain("Acme.org Data: 2 volumes · 685 MiB last run");
+    expect(email.text).toContain("Acme Data: 2 volumes · 685 MiB last run");
     expect(email.text).toContain("Uptime Kuma: 1 volume\n");
     expect(email.text).not.toContain("postgres-data");
     expect(email.html).not.toContain("· Starting");

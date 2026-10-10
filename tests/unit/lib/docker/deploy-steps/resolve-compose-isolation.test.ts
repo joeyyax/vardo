@@ -28,7 +28,7 @@ function makeApp(domains: Partial<Domain>[], overrides: Partial<DeployApp> = {})
     id: "app-id",
     organizationId: "org-id",
     name: "notes-api",
-    displayName: "Knowledge",
+    displayName: "Notes",
     source: "git",
     deployType: "compose",
     containerPort: null,
@@ -66,22 +66,22 @@ function makeCtx(compose: ComposeFile, app: DeployApp, env: { name: string; isol
 /** The repo compose: hand-written routing for the production host. */
 function repoCompose(): ComposeFile {
   return {
-    name: "knowledge",
+    name: "notes",
     services: {
       web: {
         name: "web",
-        image: "knowledge:latest",
+        image: "notes:latest",
         labels: {
           "traefik.enable": "true",
-          "traefik.http.routers.knowledge.rule": "Host(`knowledge.example.com`)",
-          "traefik.http.routers.knowledge.entrypoints": "websecure",
-          "traefik.http.services.knowledge.loadbalancer.server.port": "3500",
+          "traefik.http.routers.notes.rule": "Host(`notes.example.com`)",
+          "traefik.http.routers.notes.entrypoints": "websecure",
+          "traefik.http.services.notes.loadbalancer.server.port": "3500",
         },
       },
       embed: {
         name: "embed",
         image: "embed:latest",
-        container_name: "knowledge-embed",
+        container_name: "notes-embed",
         labels: {
           "vardo.traefik": "manual",
           "traefik.enable": "true",
@@ -129,9 +129,9 @@ describe("resolveCompose — preview environment", () => {
     const ctx = await preview();
     for (const file of [ctx.compose, ctx.bareCompose]) {
       const text = JSON.stringify(file);
-      expect(text).not.toContain("knowledge.example.com");
+      expect(text).not.toContain("notes.example.com");
       expect(text).not.toContain("embed.example.com");
-      expect(text).not.toContain("traefik.http.routers.knowledge.");
+      expect(text).not.toContain("traefik.http.routers.notes.");
     }
   });
 
@@ -173,7 +173,7 @@ describe("resolveCompose — production names", () => {
     const app = makeApp([
       {
         id: "dom-id-abcdef12",
-        domain: "knowledge.example.com",
+        domain: "notes.example.com",
         isPrimary: true,
         port: 3500,
         sslEnabled: true,
@@ -182,7 +182,7 @@ describe("resolveCompose — production names", () => {
         redirectCode: 301,
       },
     ]);
-    const compose: ComposeFile = { services: { web: { name: "web", image: "knowledge:latest" } } };
+    const compose: ComposeFile = { services: { web: { name: "web", image: "notes:latest" } } };
     const ctx = await resolveCompose(makeCtx(compose, app, { name: "production", isolated: false }));
 
     const traefik = Object.fromEntries(
@@ -190,7 +190,7 @@ describe("resolveCompose — production names", () => {
     );
     expect(traefik).toEqual({
       "traefik.enable": "true",
-      "traefik.http.routers.notes-api-dom-id-a.rule": "Host(`knowledge.example.com`)",
+      "traefik.http.routers.notes-api-dom-id-a.rule": "Host(`notes.example.com`)",
       "traefik.http.services.notes-api.loadbalancer.server.port": "3500",
       "traefik.http.routers.notes-api-dom-id-a.service": "notes-api",
       "traefik.http.routers.notes-api-dom-id-a.entrypoints": "websecure",
@@ -201,7 +201,7 @@ describe("resolveCompose — production names", () => {
       "traefik.http.middlewares.notes-api-dom-id-a-headers.headers.customFrameOptionsValue": "SAMEORIGIN",
       "traefik.http.middlewares.notes-api-dom-id-a-headers.headers.referrerPolicy": "strict-origin-when-cross-origin",
       "traefik.http.routers.notes-api-dom-id-a.middlewares": "notes-api-dom-id-a-headers",
-      "traefik.http.routers.notes-api-dom-id-a-http.rule": "Host(`knowledge.example.com`)",
+      "traefik.http.routers.notes-api-dom-id-a-http.rule": "Host(`notes.example.com`)",
       "traefik.http.routers.notes-api-dom-id-a-http.entrypoints": "web",
       "traefik.http.routers.notes-api-dom-id-a-http.service": "notes-api",
       "traefik.http.middlewares.notes-api-dom-id-a-https-redirect.redirectscheme.scheme": "https",
@@ -212,10 +212,10 @@ describe("resolveCompose — production names", () => {
 
   it("leave out security headers when the app opts out", async () => {
     const app = makeApp(
-      [{ id: "dom-id-abcdef12", domain: "knowledge.example.com", isPrimary: true, port: 3500, sslEnabled: true }],
+      [{ id: "dom-id-abcdef12", domain: "notes.example.com", isPrimary: true, port: 3500, sslEnabled: true }],
       { securityHeaders: false },
     );
-    const compose: ComposeFile = { services: { web: { name: "web", image: "knowledge:latest" } } };
+    const compose: ComposeFile = { services: { web: { name: "web", image: "notes:latest" } } };
     const ctx = await resolveCompose(makeCtx(compose, app, { name: "production", isolated: false }));
 
     const keys = Object.keys(ctx.compose.services.web.labels ?? {});
@@ -225,10 +225,10 @@ describe("resolveCompose — production names", () => {
 
   it("keep the https transport name", async () => {
     const app = makeApp(
-      [{ id: "dom-id-abcdef12", domain: "knowledge.example.com", isPrimary: true, port: 3500, sslEnabled: true }],
+      [{ id: "dom-id-abcdef12", domain: "notes.example.com", isPrimary: true, port: 3500, sslEnabled: true }],
       { backendProtocol: "https" },
     );
-    const compose: ComposeFile = { services: { web: { name: "web", image: "knowledge:latest" } } };
+    const compose: ComposeFile = { services: { web: { name: "web", image: "notes:latest" } } };
     const ctx = await resolveCompose(makeCtx(compose, app, { name: "production", isolated: false }));
 
     expect(ctx.compose.services.web.labels?.["traefik.http.services.notes-api.loadbalancer.serversTransport"]).toBe(

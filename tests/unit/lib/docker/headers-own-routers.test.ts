@@ -10,26 +10,26 @@ describe("injectHeadersIntoOwnRouters", () => {
     const out = injectHeadersIntoOwnRouters(
       compose({
         "traefik.enable": "true",
-        "traefik.http.routers.pouch.rule": "Host(`pouch.email`)",
-        "traefik.http.routers.pouch.entrypoints": "websecure",
-        "traefik.http.routers.pouch.middlewares": "ratelimit",
-        "traefik.http.routers.alt.rule": "Host(`email.example.org`)",
+        "traefik.http.routers.mail.rule": "Host(`mail.example.net`)",
+        "traefik.http.routers.mail.entrypoints": "websecure",
+        "traefik.http.routers.mail.middlewares": "ratelimit",
+        "traefik.http.routers.alt.rule": "Host(`mail.example.org`)",
         "traefik.http.routers.alt.tls.certresolver": "le-dns",
       }),
-      "pouch",
+      "mail",
     ).services.web.labels!;
-    expect(out["traefik.http.routers.pouch.middlewares"]).toBe("pouch-vardo-headers,ratelimit");
-    expect(out["traefik.http.routers.alt.middlewares"]).toBe("pouch-vardo-headers");
-    expect(out["traefik.http.middlewares.pouch-vardo-headers.headers.stsSeconds"]).toBe("31536000");
+    expect(out["traefik.http.routers.mail.middlewares"]).toBe("mail-vardo-headers,ratelimit");
+    expect(out["traefik.http.routers.alt.middlewares"]).toBe("mail-vardo-headers");
+    expect(out["traefik.http.middlewares.mail-vardo-headers.headers.stsSeconds"]).toBe("31536000");
   });
 
   it("leaves plain HTTP routers alone", () => {
     const labels = {
-      "traefik.http.routers.http.rule": "Host(`pouch.email`)",
+      "traefik.http.routers.http.rule": "Host(`mail.example.net`)",
       "traefik.http.routers.http.entrypoints": "web",
       "traefik.http.routers.http.middlewares": "to-https",
     };
-    expect(injectHeadersIntoOwnRouters(compose(labels), "pouch").services.web.labels).toEqual(labels);
+    expect(injectHeadersIntoOwnRouters(compose(labels), "mail").services.web.labels).toEqual(labels);
   });
 });
 
@@ -38,11 +38,11 @@ describe("self-routed services", () => {
     const out = injectHeadersIntoOwnRouters(
       compose({
         "vardo.traefik": "manual",
-        "traefik.http.routers.pouch.rule": "Host(`pouch.email`)",
-        "traefik.http.routers.pouch.tls.certresolver": "le-dns",
+        "traefik.http.routers.mail.rule": "Host(`mail.example.net`)",
+        "traefik.http.routers.mail.tls.certresolver": "le-dns",
       }),
-      "pouch",
+      "mail",
     ).services.web.labels!;
-    expect(out["traefik.http.routers.pouch.middlewares"]).toBe("pouch-vardo-headers");
+    expect(out["traefik.http.routers.mail.middlewares"]).toBe("mail-vardo-headers");
   });
 });

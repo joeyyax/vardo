@@ -13,16 +13,16 @@ import { ownsDataDirectory, isMajorLocked } from "@/lib/docker/image-updates/sta
  * weeks: meilisearch held the LMDB lock from the old slot, never went healthy,
  * and took the slot down through depends_on.
  */
-const KNOWLEDGE_SERVER = `services:
+const NOTES_API = `services:
   notes-api:
     build: .
     volumes:
       - /mnt/docker/notes-api/content:/data/content
       - /mnt/docker/notes-api/usage:/data/usage
     depends_on:
-      knowledge-search:
+      notes-search:
         condition: service_healthy
-  knowledge-search:
+  notes-search:
     image: getmeili/meilisearch:v1.16
     volumes:
       - /mnt/docker/notes-api/meili-data:/meili_data
@@ -30,18 +30,18 @@ const KNOWLEDGE_SERVER = `services:
 
 describe("notes-api, the compose that failed", () => {
   it("takes meilisearch out of the rotation", () => {
-    expect([...volumeSharedServices(parseCompose(KNOWLEDGE_SERVER))]).toEqual(["knowledge-search"]);
-    expect([...nonRotatingServices(parseCompose(KNOWLEDGE_SERVER))]).toEqual(["knowledge-search"]);
+    expect([...volumeSharedServices(parseCompose(NOTES_API))]).toEqual(["notes-search"]);
+    expect([...nonRotatingServices(parseCompose(NOTES_API))]).toEqual(["notes-search"]);
   });
 
   it("leaves the app's own build service in it, /data mount and all", () => {
-    const { shared, slotted } = partitionBySlot(parseCompose(KNOWLEDGE_SERVER));
-    expect(Object.keys(shared)).toEqual(["knowledge-search"]);
+    const { shared, slotted } = partitionBySlot(parseCompose(NOTES_API));
+    expect(Object.keys(shared)).toEqual(["notes-search"]);
     expect(Object.keys(slotted)).toEqual(["notes-api"]);
   });
 
   it("drops the depends_on the two compose projects cannot express", () => {
-    const { slotted } = partitionBySlot(parseCompose(KNOWLEDGE_SERVER));
+    const { slotted } = partitionBySlot(parseCompose(NOTES_API));
     expect(slotted["notes-api"].depends_on).toBeUndefined();
   });
 });
@@ -187,7 +187,7 @@ describe("slotOverlapDiagnosis", () => {
   });
 
   it("says nothing about a service already taken out of the rotation", () => {
-    const compose = parseCompose(KNOWLEDGE_SERVER);
+    const compose = parseCompose(NOTES_API);
     const { slotted } = partitionBySlot(compose);
     expect(slotOverlapDiagnosis(compose, slotted, true)).toBeNull();
   });

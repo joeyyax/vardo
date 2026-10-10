@@ -23,7 +23,7 @@ const MOUNTS = parseMounts(
     "192.0.2.20:/var/nfs/shared/Media /mnt/media nfs rw,vers=3 0 0",
     "192.0.2.20:/var/nfs/shared/Downloads /mnt/downloads nfs rw,vers=3 0 0",
     "192.0.2.20:/var/nfs/shared/NVR /mnt/nvr nfs4 rw 0 0",
-    "192.0.2.20:/var/nfs/shared/Clients /mnt/clients nfs rw 0 0",
+    "192.0.2.20:/var/nfs/shared/Projects /mnt/projects nfs rw 0 0",
   ].join("\n"),
 );
 
@@ -99,7 +99,7 @@ describe("classifyVolume — excluded by rule", () => {
     ["NFS media", "/mnt/media/TV", "Network share (nfs)"],
     ["NFS downloads subtree", "/mnt/downloads/completed", "Network share (nfs)"],
     ["NFS4 recordings", "/mnt/nvr", "Network share (nfs4)"],
-    ["NFS client data", "/mnt/clients", "Network share (nfs)"],
+    ["NFS project data", "/mnt/projects", "Network share (nfs)"],
   ])("excludes %s", (_label, source, reason) => {
     expect(classifyVolume(bind("app", source), ctx())).toEqual({ verdict: "exclude", reason });
   });
@@ -117,7 +117,7 @@ describe("classifyVolume — excluded by rule", () => {
   );
 
   it("excludes a whole-tree mount of /mnt/docker", () => {
-    const decision = classifyVolume(bind("samba", "/mnt/docker", "/lh-docker"), ctx());
+    const decision = classifyVolume(bind("samba", "/mnt/docker", "/host-docker"), ctx());
     expect(decision.verdict).toBe("exclude");
     expect(decision.reason).toMatch(/^Whole tree shared with/);
   });

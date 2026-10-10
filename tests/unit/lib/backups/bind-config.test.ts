@@ -1,4 +1,4 @@
-// Bind mounts that carry config checked out from git, from a real night: cronlite's init SQL files
+// Bind mounts that carry config checked out from git, such as a cron service's init SQL files
 // and observability's Alloy, Grafana, Loki and Prometheus config beside their data.
 
 import { execFileSync } from "child_process";
@@ -24,9 +24,9 @@ const repoProbe = probe(
     `${obs}/repo/etc/alloy/config.alloy`,
     `${obs}/repo/etc/dashboards`,
     `${obs}/repo/etc/grafana/provisioning`,
-    `${APPS}/cronlite/repo/migrations/001_initial.sql`,
+    `${APPS}/cron-service/repo/migrations/001_initial.sql`,
   ],
-  [`${obs}/repo/etc/alloy/config.alloy`, `${APPS}/cronlite/repo/migrations/001_initial.sql`, `${APPS}/wiki/production/shared/app.db`],
+  [`${obs}/repo/etc/alloy/config.alloy`, `${APPS}/cron-service/repo/migrations/001_initial.sql`, `${APPS}/wiki/production/shared/app.db`],
 );
 
 describe("repoPathOf", () => {
@@ -50,7 +50,7 @@ describe("configBindReason", () => {
     expect(await reason(`${obs}/production/blue/etc/dashboards`)).toBe("Config from the app's repo");
     expect(await reason(`${obs}/production/green/etc/grafana/provisioning`)).toBe("Config from the app's repo");
     expect(await reason(`${obs}/repo/etc/alloy/config.alloy`)).toBe("Config from the app's repo");
-    expect(await reason(`${APPS}/cronlite/production/blue/migrations/001_initial.sql`)).toBe("Config from the app's repo");
+    expect(await reason(`${APPS}/cron-service/production/blue/migrations/001_initial.sql`)).toBe("Config from the app's repo");
   });
 
   it("keeps a repo directory that holds files git doesn't track", async () => {

@@ -1,6 +1,6 @@
 # Threat model
 
-Static pass for #788 against `main` at `1bec44ab`, plus the fixes on `fix/788-exposure-prep`. Target: a public VPS hosting client sites and Joey's apps.
+Static pass for #788 against `main` at `1bec44ab`, plus the fixes on `fix/788-exposure-prep`. Target: a public VPS hosting client sites and the operator's own apps.
 
 The console holds the Docker socket, so any code execution in it is root on the host. An instance admin who deploys `privileged: true` owns the host by design. The boundaries below are the ones that matter.
 
