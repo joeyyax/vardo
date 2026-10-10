@@ -10,6 +10,7 @@ import { createDefaultOrgForUser } from "@/lib/organizations/create-default-org"
 import { REGISTRATION_CLOSED_MESSAGE, SETUP_TOKEN_MESSAGE, registrationAllowed, setupTokenAllowsSignup, shouldCreateDefaultOrg } from "@/lib/auth/registration";
 import { isAuthMethodEnabled } from "@/lib/config/auth-methods";
 import { isPasswordAuthAllowed } from "@/lib/config/provider-restrictions";
+import { sendVerificationEmail } from "@/lib/auth/email-verification";
 
 // GitHub OAuth credentials from system_settings, cached because Better Auth reads them at init.
 let _cachedGitHubClientId = process.env.GITHUB_CLIENT_ID ?? "";
@@ -127,8 +128,15 @@ function buildAuth() {
 
   plugins,
 
+  emailVerification: {
+    sendVerificationEmail,
+    expiresIn: 60 * 60,
+  },
+
   // Exposes isAppAdmin on the session user.
   user: {
+    // An unverified account switches at once; a verified one switches when the new address is verified.
+    changeEmail: { enabled: true, updateEmailWithoutVerification: true },
     additionalFields: {
       isAppAdmin: {
         type: "boolean",

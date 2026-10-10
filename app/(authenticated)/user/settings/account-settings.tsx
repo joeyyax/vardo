@@ -39,32 +39,92 @@ import {
 } from "@/components/ui/alert-dialog";
 import { RelativeTime } from "@/components/relative-time";
 import { authClient, useSession, passkey as passkeyMethods } from "@/lib/auth/client";
+import { VERIFIED_CALLBACK } from "@/lib/auth/verify-email-paths";
 
 export function AccountInfo() {
-  const { data: sessionData, isPending } = useSession();
+  const { data: sessionData, isPending, refetch } = useSession();
   const sessionName = sessionData?.user?.name ?? "";
+  const sessionEmail = sessionData?.user?.email ?? "";
+  const verified = sessionData?.user?.emailVerified === true;
   const [name, setName] = useState(sessionName);
   const [syncedName, setSyncedName] = useState(sessionName);
+  const [email, setEmail] = useState(sessionEmail);
+  const [syncedEmail, setSyncedEmail] = useState(sessionEmail);
   const [saving, setSaving] = useState(false);
+  const [sending, setSending] = useState(false);
 
   if (sessionName && sessionName !== syncedName) {
     setSyncedName(sessionName);
     setName(sessionName);
   }
+  if (sessionEmail && sessionEmail !== syncedEmail) {
+    setSyncedEmail(sessionEmail);
+    setEmail(sessionEmail);
+  }
 
-  async function handleSaveName(e: React.FormEvent) {
+  // The verification link returns here with a flag.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const failed = params.get("error");
+    if (params.get("emailVerified") !== "1" && !failed) return;
+    if (failed) toast.error("That verification link is invalid or expired");
+    else toast.success("Email verified");
+    params.delete("emailVerified");
+    params.delete("error");
+    const query = params.toString();
+    window.history.replaceState(null, "", window.location.pathname + (query ? `?${query}` : ""));
+    refetch();
+  }, [refetch]);
+
+  async function sendVerification(address: string) {
+    const { error } = await authClient.sendVerificationEmail({ email: address, callbackURL: VERIFIED_CALLBACK });
+    if (error) throw new Error(error.message || "Couldn't send the verification email");
+  }
+
+  async function handleVerify() {
+    setSending(true);
+    try {
+      await sendVerification(sessionEmail);
+      toast.success(`Verification email sent to ${sessionEmail}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't send the verification email");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function handleSave(e: React.FormEvent) {
     e.preventDefault();
+    const nextEmail = email.trim();
+    const nameChanged = name.trim() !== sessionName;
+    const emailChanged = nextEmail !== "" && nextEmail.toLowerCase() !== sessionEmail.toLowerCase();
     if (!name.trim()) return;
     setSaving(true);
     try {
-      const { error } = await authClient.updateUser({ name: name.trim() });
-      if (error) {
-        toast.error(error.message || "Couldn't update name");
-      } else {
-        toast.success("Name updated");
+      if (nameChanged || !emailChanged) {
+        const { error } = await authClient.updateUser({ name: name.trim() });
+        if (error) {
+          toast.error(error.message || "Couldn't update name");
+          return;
+        }
+        if (!emailChanged) toast.success("Name updated");
+      }
+      if (emailChanged) {
+        const { error } = await authClient.changeEmail({ newEmail: nextEmail, callbackURL: VERIFIED_CALLBACK });
+        if (error) {
+          toast.error(error.message || "Couldn't change email");
+          return;
+        }
+        toast.success(
+          verified
+            ? `Verification email sent to ${nextEmail}. Your email changes once you verify it.`
+            : `Email changed. Verification email sent to ${nextEmail}.`,
+        );
+        if (verified) setEmail(sessionEmail);
+        refetch();
       }
     } catch {
-      toast.error("Couldn't update name");
+      toast.error("Couldn't save changes");
     } finally {
       setSaving(false);
     }
@@ -82,10 +142,10 @@ export function AccountInfo() {
     <Card>
       <CardHeader>
         <CardTitle>Account</CardTitle>
-        <CardDescription>Update your display name.</CardDescription>
+        <CardDescription>Update your display name and email.</CardDescription>
       </CardHeader>
       <CardContent>
-        <form onSubmit={handleSaveName} className="space-y-3 max-w-sm">
+        <form onSubmit={handleSave} className="space-y-3 max-w-sm">
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="grid gap-2">
               <Label htmlFor="profile-name">Name</Label>
@@ -97,9 +157,31 @@ export function AccountInfo() {
             </div>
 
             <div className="grid gap-2">
-              <Label>Email</Label>
-              <Input value={sessionData?.user?.email || ""} disabled />
+              <Label htmlFor="profile-email">Email</Label>
+              <Input
+                id="profile-email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
             </div>
+          </div>
+
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            {verified ? (
+              <Badge variant="secondary">
+                <ShieldCheck className="size-3" />
+                Email verified
+              </Badge>
+            ) : (
+              <>
+                <span>Email not verified.</span>
+                <Button type="button" variant="outline" size="sm" onClick={handleVerify} disabled={sending}>
+                  {sending && <Loader2 className="mr-1.5 size-4 animate-spin" />}
+                  Verify
+                </Button>
+              </>
+            )}
           </div>
 
           <Button type="submit" size="sm" disabled={saving}>

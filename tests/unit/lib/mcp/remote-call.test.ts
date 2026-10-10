@@ -147,7 +147,7 @@ describe("POST /api/v1/mesh/mcp-call", () => {
     state.user = null;
     const res = await POST(request(call()));
     expect(res.status).toBe(403);
-    expect((await res.json()).error).toBe("No user with that verified email on prod");
+    expect((await res.json()).error).toBe("No user with that verified email on prod. Verify your email in Account settings → Profile there.");
   });
 
   it("needs a bound org unless the token spans organizations", async () => {

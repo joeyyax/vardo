@@ -8,6 +8,7 @@ import { memberships, user } from "@/lib/db/schema";
 import { recordActivity } from "@/lib/activity";
 import { isCapability, type Capability } from "@/lib/auth/permissions";
 import { getInstanceDisplayName } from "@/lib/system-settings";
+import { VERIFY_EMAIL_HINT } from "@/lib/auth/verify-email-paths";
 import type { McpAuthContext } from "./auth";
 import { collectTools } from "./registry";
 import type { PeerRow } from "./instances";
@@ -54,7 +55,7 @@ export async function remoteContext(peer: CallingPeer, call: RemoteCall): Promis
   }
 
   const mapped = await mapUser(call.user.email);
-  if (!mapped) throw new RemoteCallError(`No user with that verified email on ${here}`, 403);
+  if (!mapped) throw new RemoteCallError(`No user with that verified email on ${here}. ${VERIFY_EMAIL_HINT} there.`, 403);
 
   const organizationId = await landingOrg(peer, mapped.id, call.scope.crossOrg);
   if (!organizationId) {

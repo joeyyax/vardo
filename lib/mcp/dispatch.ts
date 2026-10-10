@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { user } from "@/lib/db/schema";
 import { recordActivity } from "@/lib/activity";
 import { meshSignedPost } from "@/lib/mesh/client";
+import { VERIFY_EMAIL_HINT } from "@/lib/auth/verify-email-paths";
 import type { McpAuthContext } from "./auth";
 import type { ToolDef, ToolExtra } from "./registry";
 import { resolveInstance, type InstanceLabel, type PeerRow } from "./instances";
@@ -83,7 +84,7 @@ async function forwardAccess(context: McpAuthContext): Promise<string | { email:
     columns: { email: true, emailVerified: true, isAppAdmin: true },
   });
   if (!row?.isAppAdmin) return "Acting on linked instances needs an instance admin";
-  if (!row.emailVerified) return "Verify your email before acting on linked instances";
+  if (!row.emailVerified) return `${VERIFY_EMAIL_HINT} before acting on linked instances`;
   return { email: row.email };
 }
 
