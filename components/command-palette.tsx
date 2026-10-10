@@ -27,6 +27,7 @@ import {
   Users,
   Activity,
   Archive,
+  Clock,
   Server,
   Wrench,
   BarChart3,
@@ -58,6 +59,7 @@ type CommandPaletteProps = {
   orgId: string | null;
   teamsEnabled?: boolean;
   activityEnabled?: boolean;
+  cronEnabled?: boolean;
 };
 
 const ACTION_ICON: Record<CommandActionId, typeof RotateCcw> = {
@@ -134,7 +136,7 @@ async function runDeploy(orgId: string, app: SearchableApp) {
   throw new Error("Deploy stream ended without a result");
 }
 
-export function CommandPalette({ orgId, teamsEnabled = true, activityEnabled = true }: CommandPaletteProps) {
+export function CommandPalette({ orgId, teamsEnabled = true, activityEnabled = true, cronEnabled = true }: CommandPaletteProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [apps, setApps] = useState<SearchableApp[]>([]);
@@ -429,6 +431,16 @@ export function CommandPalette({ orgId, teamsEnabled = true, activityEnabled = t
                 <Archive className="size-4" />
                 <span>Backups</span>
               </CommandItem>
+              {cronEnabled && (
+                <CommandItem
+                  value="Cron Scheduled Jobs"
+                  onSelect={() => runCommand(() => router.push("/cron"))}
+                  className="gap-2"
+                >
+                  <Clock className="size-4" />
+                  <span>Cron</span>
+                </CommandItem>
+              )}
               {activityEnabled && (
                 <CommandItem
                   value="Activity Log"

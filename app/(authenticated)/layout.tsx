@@ -54,9 +54,10 @@ export default async function AppLayout({
   const { organization } = orgData;
   const organizations = await getUserOrganizations();
   const instanceAdmin = await isAppAdmin();
-  const [teamsEnabled, activityEnabled] = await Promise.all([
+  const [teamsEnabled, activityEnabled, cronEnabled] = await Promise.all([
     isFeatureEnabledAsync("teams"),
     isFeatureEnabledAsync("activity"),
+    isFeatureEnabledAsync("cron"),
   ]);
 
   return (
@@ -69,6 +70,7 @@ export default async function AppLayout({
               organizations={organizations}
               teamsEnabled={teamsEnabled}
               activityEnabled={activityEnabled}
+              cronEnabled={cronEnabled}
             />
             <AttentionBar orgId={organization.id} />
           </div>
@@ -88,6 +90,7 @@ export default async function AppLayout({
           orgId={organization.id}
           teamsEnabled={teamsEnabled}
           activityEnabled={activityEnabled}
+          cronEnabled={cronEnabled}
         />
         <KeyboardShortcuts />
         <NotificationListener orgId={organization.id} canLinkToAdmin={instanceAdmin} />
