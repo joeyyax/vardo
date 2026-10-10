@@ -1,6 +1,7 @@
 import { defineConfig, globalIgnores } from "eslint/config";
 import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
+import vardoRules from "./scripts/eslint/data-layer-boundary.mjs";
 
 const eslintConfig = defineConfig([
   ...nextVitals,
@@ -15,6 +16,13 @@ const eslintConfig = defineConfig([
           message: "Use `import { toast } from \"@/lib/messenger\"` instead.",
         }],
       }],
+    },
+  },
+  {
+    files: ["**/*.{ts,tsx,js,jsx,mjs}"],
+    plugins: { vardo: vardoRules },
+    rules: {
+      "vardo/data-layer-boundary": "error",
     },
   },
   {

@@ -1,0 +1,6 @@
+import { getDocker } from "../../../lib/docker/client";
+
+export default async function Layout({ children }: { children: React.ReactNode }) {
+  await getDocker();
+  return <>{children}</>;
+}

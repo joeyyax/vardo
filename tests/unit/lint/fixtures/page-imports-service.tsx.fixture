@@ -1,0 +1,9 @@
+import { currentActor } from "@/lib/app-services/session-actor";
+import { listAppOptions } from "@/lib/app-services/apps";
+
+export default async function Page() {
+  const actor = await currentActor();
+  if (!actor) return null;
+  const rows = await listAppOptions(actor);
+  return <div>{rows.length}</div>;
+}
