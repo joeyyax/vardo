@@ -46,6 +46,8 @@ const { dbMock, writes, emitMock, execCalls, execFails, queueDrained, drainMock,
 });
 
 vi.mock("@/lib/backups/enroll", () => ({ enrollNewApp, enrollNewVolumes }));
+// Background work outlives a test; a real logger then writes after teardown.
+vi.mock("@/lib/logger", async () => (await import("@/tests/helpers/mocks")).loggerModule());
 vi.mock("@/lib/db", () => ({ db: dbMock }));
 vi.mock("@/lib/redis", () => ({
   redis: { set: vi.fn().mockResolvedValue("OK"), del: vi.fn().mockResolvedValue(1) },
