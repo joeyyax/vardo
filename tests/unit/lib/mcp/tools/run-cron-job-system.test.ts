@@ -31,7 +31,9 @@ function job(org: boolean, app: boolean) {
   return {
     id: "c1",
     type: "url",
-    app: { id: "a1", organizationId: "o1", isSystemManaged: app, organization: { isSystemManaged: org } },
+    organizationId: "o1",
+    organization: { isSystemManaged: org },
+    app: { id: "a1", organizationId: "o1", isSystemManaged: app },
   };
 }
 
@@ -50,6 +52,20 @@ describe("vardo_run_cron_job", () => {
     const res = await (await handler())({ cronJobId: "c1" });
     expect(res.isError).toBe(true);
     expect(runCronJob).not.toHaveBeenCalled();
+  });
+
+  it("refuses an org-level job in the system org", async () => {
+    cronFindFirst.mockResolvedValue({ ...job(true, false), app: null });
+    const res = await (await handler())({ cronJobId: "c1" });
+    expect(res.isError).toBe(true);
+    expect(runCronJob).not.toHaveBeenCalled();
+  });
+
+  it("runs an org-level job", async () => {
+    cronFindFirst.mockResolvedValue({ ...job(false, false), app: null });
+    const res = await (await handler())({ cronJobId: "c1" });
+    expect(res.isError).toBeUndefined();
+    expect(runCronJob).toHaveBeenCalled();
   });
 
   it("runs a job on an ordinary app", async () => {
