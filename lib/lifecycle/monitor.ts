@@ -15,6 +15,7 @@ import { LIFECYCLE_DIR } from "@/lib/paths";
 import { closeOnShutdown, shutdownSignal } from "@/lib/shutdown";
 import { getBuildSha } from "@/lib/version";
 import { formatDuration } from "@/lib/email/format";
+import { formatVersion } from "./self-deploy";
 import {
   classifyBoot,
   isConsoleHandover,
@@ -50,8 +51,7 @@ export const UPDATE_POLL_MS = 5_000;
 export const UPDATE_WAIT_MS = 10 * 60_000;
 
 export function versionLabel(): string {
-  const sha = getBuildSha().slice(0, 7);
-  return sha ? `${pkg.version} (${sha})` : pkg.version;
+  return formatVersion(pkg.version, getBuildSha()) ?? pkg.version;
 }
 
 async function readJson<T>(key: string): Promise<T | null> {

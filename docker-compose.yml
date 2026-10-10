@@ -19,7 +19,8 @@ services:
       args:
         NEXT_PUBLIC_BETTER_AUTH_URL: https://${VARDO_DOMAIN:-localhost}
         NEXT_PUBLIC_APP_URL: https://${VARDO_DOMAIN:-localhost}
-        GIT_SHA: ${GIT_SHA:-}
+        # The engine sets VARDO_GIT_SHORT_SHA; install.sh exports GIT_SHA.
+        GIT_SHA: ${VARDO_GIT_SHORT_SHA:-${GIT_SHA:-}}
     profiles:
       - production
     restart: unless-stopped

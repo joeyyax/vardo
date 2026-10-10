@@ -63,6 +63,7 @@ export function recordSelfUpdate(ctx: DeployContext | null | undefined, outcome:
   return recordSelfDeploy(
     {
       deploymentId: ctx.deploymentId,
+      appId: ctx.appId,
       appName: ctx.app.name,
       envIsolated: ctx.envIsolated === true,
       envType: ctx.envType,

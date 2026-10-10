@@ -12,6 +12,7 @@ const log = logger.child("lifecycle");
 /** The parts of a deploy the marker describes. */
 export type SelfDeployRun = {
   deploymentId: string;
+  appId?: string;
   appName: string;
   envIsolated: boolean;
   envType: string;
@@ -32,7 +33,16 @@ export function isSelfUpdate(run: Pick<SelfDeployRun, "appName" | "envIsolated" 
   return isSelfApp(run.appName) && !run.envIsolated && run.envType !== "local";
 }
 
-/** `<package version> (<short sha>)`, as versionLabel() prints it. */
+const SHA_RE = /^[0-9a-f]{7,40}$/i;
+
+/** `<package version> (<short sha>)`. A missing or non-commit sha is left out. */
+export function formatVersion(version: string | undefined, gitSha: string | null | undefined): string | undefined {
+  const sha = gitSha && SHA_RE.test(gitSha) ? gitSha.slice(0, 7) : "";
+  if (version && sha) return `${version} (${sha})`;
+  return version || sha || undefined;
+}
+
+/** The version a deploy installs, from its checkout's package.json. */
 export function targetVersion(packageJson: string | null, gitSha: string | null | undefined): string | undefined {
   let version: string | undefined;
   try {
@@ -40,9 +50,17 @@ export function targetVersion(packageJson: string | null, gitSha: string | null 
   } catch {
     version = undefined;
   }
-  const sha = gitSha ? gitSha.slice(0, 7) : "";
-  if (version && sha) return `${version} (${sha})`;
-  return version ?? (sha || undefined);
+  return formatVersion(version, gitSha);
+}
+
+/** The running console's version. A build without its commit takes the last deploy's. */
+export function fromVersionLabel(version: string, buildSha: string, lastDeployedSha: string | null | undefined): string {
+  return formatVersion(version, SHA_RE.test(buildSha) ? buildSha : lastDeployedSha) ?? version;
+}
+
+/** Whether a build carries its commit. */
+export function hasCommitSha(sha: string | null | undefined): boolean {
+  return !!sha && SHA_RE.test(sha);
 }
 
 export type MarkerOutcome =
@@ -84,6 +102,25 @@ export function selfDeployMarker(
   return marker;
 }
 
+/** Commit of the app's last successful deploy before this one. */
+async function lastDeployedSha(run: SelfDeployRun): Promise<string | null> {
+  if (!run.appId) return null;
+  const { db } = await import("@/lib/db");
+  const { deployments } = await import("@/lib/db/schema");
+  const { and, desc, eq, isNotNull, ne } = await import("drizzle-orm");
+  const row = await db.query.deployments.findFirst({
+    where: and(
+      eq(deployments.appId, run.appId),
+      eq(deployments.status, "success"),
+      ne(deployments.id, run.deploymentId),
+      isNotNull(deployments.gitSha),
+    ),
+    orderBy: [desc(deployments.finishedAt)],
+    columns: { gitSha: true },
+  });
+  return row?.gitSha ?? null;
+}
+
 async function readPackageJson(run: SelfDeployRun): Promise<string | null> {
   for (const dir of [run.slotDir, run.repoDir]) {
     if (!dir) continue;
@@ -109,9 +146,13 @@ export async function writeUpdateMarker(marker: UpdateMarker, dir = LIFECYCLE_DI
 export async function recordSelfDeploy(run: SelfDeployRun, outcome: MarkerOutcome): Promise<void> {
   if (!isSelfUpdate(run)) return;
   try {
-    const { checkUpdateMarker, selfHost, versionLabel } = await import("./monitor");
+    const { checkUpdateMarker, selfHost } = await import("./monitor");
+    const { getBuildSha } = await import("@/lib/version");
+    const { default: pkg } = await import("@/package.json");
     const toVersion = targetVersion(await readPackageJson(run), run.gitSha);
-    await writeUpdateMarker(selfDeployMarker(run, outcome, { fromVersion: versionLabel(), toVersion, fromHost: selfHost() }));
+    const buildSha = getBuildSha();
+    const fromVersion = fromVersionLabel(pkg.version, buildSha, hasCommitSha(buildSha) ? null : await lastDeployedSha(run));
+    await writeUpdateMarker(selfDeployMarker(run, outcome, { fromVersion, toVersion, fromHost: selfHost() }));
     await checkUpdateMarker();
   } catch (err) {
     log.warn(`Couldn't record self-deploy ${run.deploymentId} as ${outcome.state}:`, err);
