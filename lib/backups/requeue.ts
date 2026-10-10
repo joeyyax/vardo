@@ -7,6 +7,7 @@ import { logger } from "@/lib/logger";
 import { REQUEUE_TRIGGER } from "./engine";
 import { backupsDraining } from "./in-flight";
 import { INTERRUPTED_REASON } from "./reap";
+import { NOT_REQUEUED_NOTE, REQUEUED_NOTE, SUPERSEDED_REASON } from "./requeue-notes";
 import { runDeadline } from "./run-rules";
 
 const log = logger.child("backup");
@@ -20,8 +21,7 @@ export function requeueWindowMs(env: Record<string, string | undefined> = proces
 // A first snapshot covers one app, not the job.
 const FIRST_SNAPSHOT_TRIGGERS = ["initial", "import"];
 
-export const REQUEUED_NOTE = "Requeued once after the interruption";
-export const NOT_REQUEUED_NOTE = "Not requeued after the interruption";
+export { NOT_REQUEUED_NOTE, REQUEUED_NOTE } from "./requeue-notes";
 
 export type InterruptedRow = { id: string; jobId: string; startedAt: Date };
 
@@ -120,7 +120,7 @@ export async function requeueInterruptedBackups(
         columns: { id: true },
       });
 
-      const skip = !job?.enabled ? "the job is off or gone" : later ? "a later run of the job already started" : null;
+      const skip = !job?.enabled ? "the job is off or gone" : later ? SUPERSEDED_REASON : null;
       const claimed = await claimRows(plan.rowIds, `${stamp} ${skip ? `${NOT_REQUEUED_NOTE}: ${skip}` : REQUEUED_NOTE}`);
       if (claimed.length === 0 || !job) continue;
 
