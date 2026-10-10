@@ -30,6 +30,12 @@ const memory: AppCondition = {
 };
 
 describe("conditionRows", () => {
+  it("links each condition to the tab that explains it", () => {
+    const security: AppCondition = { kind: "security-findings", severity: "critical", since: crashLoop.since, detail: "1 critical" };
+    const rows = conditionRows([app("alpha", [security, memory])]);
+    expect(rows.map((r) => r.items[0].href)).toEqual(["/apps/alpha/security", "/apps/alpha/metrics"]);
+  });
+
   it("groups apps under one row per condition kind", () => {
     const rows = conditionRows([app("alpha", [crashLoop]), app("beta", [crashLoop, memory])]);
 
@@ -42,7 +48,7 @@ describe("conditionRows", () => {
     const [row] = conditionRows([app("alpha", [crashLoop])]);
 
     expect(row.items[0]).toMatchObject({
-      href: "/apps/alpha",
+      href: "/apps/alpha/stability",
       detail: "7 restarts in 10 minutes",
       since: crashLoop.since,
     });

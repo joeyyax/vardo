@@ -50,6 +50,26 @@ export function conditionKindLabel(kind: AppCondition["kind"]): string {
   }
 }
 
+/** The app tab that explains a condition. */
+export function conditionHref(appName: string, kind: AppCondition["kind"]): string {
+  switch (kind) {
+    case "crash-looping":
+    case "self-heal-exhausted":
+    case "unhealthy":
+      return `/apps/${appName}/stability`;
+    case "memory-pressure":
+      return `/apps/${appName}/metrics`;
+    case "security-findings":
+      return `/apps/${appName}/security`;
+    case "backup-missing":
+    case "backup-stale":
+      return `/apps/${appName}/backups`;
+    case "cert-expiring":
+    case "cert-expired":
+      return `/apps/${appName}/networking`;
+  }
+}
+
 export function conditionTone(severity: ConditionSeverity): string {
   return severity === "critical"
     ? "text-status-error"
