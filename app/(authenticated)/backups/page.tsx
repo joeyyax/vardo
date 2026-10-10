@@ -1,32 +1,20 @@
 import { redirect } from "next/navigation";
-import { getCurrentOrg } from "@/lib/auth/session";
-import { db } from "@/lib/db";
-import { apps } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
-import { isAppAdmin } from "@/lib/auth/admin";
-import { getFlagConfig, isFeatureEnabledAsync } from "@/lib/config/features";
+import { currentActor } from "@/lib/app-services/session-actor";
+import { pageData } from "@/lib/app-services/page";
+import { loadBackupsPage } from "@/lib/app-services/backups";
+import { getFlagConfig } from "@/lib/config/features";
 import { PageToolbar } from "@/components/page-toolbar";
 import { FeatureDisabled } from "@/components/feature-disabled";
 import { BackupPage } from "@/components/backups/backup-page";
 
 export default async function BackupsPage() {
-  const orgData = await getCurrentOrg();
+  const actor = await currentActor();
 
-  if (!orgData) {
+  if (!actor) {
     redirect("/onboarding");
   }
 
-  const orgId = orgData.organization.id;
-
-  const backupsEnabled = await isFeatureEnabledAsync("backups");
-
-  const appList = backupsEnabled
-    ? await db.query.apps.findMany({
-        where: eq(apps.organizationId, orgId),
-        columns: { id: true, name: true, displayName: true },
-      })
-    : [];
-
+  const data = await pageData(loadBackupsPage(actor));
   const flag = getFlagConfig("backups");
 
   return (
@@ -35,19 +23,19 @@ export default async function BackupsPage() {
         <h1 className="type-h1">Backups</h1>
       </PageToolbar>
 
-      {backupsEnabled ? (
+      {data.enabled ? (
         <>
           <p className="type-body-sm text-muted-foreground max-w-2xl">
             Manage backup targets, schedules and retention for your organization.
           </p>
 
-          <BackupPage scope="org" orgId={orgId} apps={appList} showIntro={false} />
+          <BackupPage scope="org" orgId={actor.org.id} apps={data.apps} showIntro={false} />
         </>
       ) : (
         <FeatureDisabled
           name={flag.label}
           description={flag.description}
-          canManage={await isAppAdmin()}
+          canManage={actor.instanceAdmin}
         />
       )}
     </div>

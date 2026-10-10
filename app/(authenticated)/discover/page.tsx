@@ -1,10 +1,8 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { getCurrentOrg } from "@/lib/auth/session";
-import { canImportContainers } from "@/lib/auth/admin";
-import { db } from "@/lib/db";
-import { projects } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { currentActor } from "@/lib/app-services/session-actor";
+import { pageData } from "@/lib/app-services/page";
+import { loadDiscoverPage } from "@/lib/app-services/discover";
 import { PageToolbar } from "@/components/page-toolbar";
 import { DiscoverView } from "./discover-view";
 
@@ -16,22 +14,16 @@ export default async function DiscoverPage({
   searchParams: Promise<{ project?: string }>;
 }) {
   const { project: defaultProjectId } = await searchParams;
-  const orgData = await getCurrentOrg();
+  const actor = await currentActor();
 
-  if (!orgData) {
+  if (!actor) {
     redirect("/login");
   }
 
-  if (!(await canImportContainers())) {
+  const data = await pageData(loadDiscoverPage(actor));
+  if (!data) {
     redirect("/projects");
   }
-
-  const orgId = orgData.organization.id;
-
-  const projectList = await db.query.projects.findMany({
-    where: eq(projects.organizationId, orgId),
-    columns: { id: true, name: true, displayName: true },
-  });
 
   return (
     <div className="space-y-6">
@@ -44,7 +36,7 @@ export default async function DiscoverPage({
         and manage future deploys from here.
       </p>
 
-      <DiscoverView orgId={orgId} projects={projectList} defaultProjectId={defaultProjectId} />
+      <DiscoverView orgId={actor.org.id} projects={data.projects} defaultProjectId={defaultProjectId} />
     </div>
   );
 }

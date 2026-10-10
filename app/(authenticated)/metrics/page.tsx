@@ -1,32 +1,20 @@
 import { redirect } from "next/navigation";
-import { db } from "@/lib/db";
-import { apps } from "@/lib/db/schema";
-import { getCurrentOrg } from "@/lib/auth/session";
-import { isAppAdmin } from "@/lib/auth/admin";
-import { getFlagConfig, isFeatureEnabledAsync } from "@/lib/config/features";
-import { eq, asc, desc } from "drizzle-orm";
+import { currentActor } from "@/lib/app-services/session-actor";
+import { pageData } from "@/lib/app-services/page";
+import { loadMetricsPage } from "@/lib/app-services/metrics";
+import { getFlagConfig } from "@/lib/config/features";
 import { PageToolbar } from "@/components/page-toolbar";
 import { FeatureDisabled } from "@/components/feature-disabled";
 import { OrgMetrics } from "./org-metrics";
 
 export default async function MetricsPage() {
-  const orgData = await getCurrentOrg();
+  const actor = await currentActor();
 
-  if (!orgData) {
+  if (!actor) {
     redirect("/login");
   }
 
-  const orgId = orgData.organization.id;
-  const metricsEnabled = await isFeatureEnabledAsync("metrics");
-
-  const appList = metricsEnabled
-    ? await db.query.apps.findMany({
-        where: eq(apps.organizationId, orgId),
-        orderBy: [asc(apps.sortOrder), desc(apps.createdAt)],
-        columns: { id: true, name: true, displayName: true, status: true, parentAppId: true },
-      })
-    : [];
-
+  const data = await pageData(loadMetricsPage(actor));
   const flag = getFlagConfig("metrics");
 
   return (
@@ -35,16 +23,16 @@ export default async function MetricsPage() {
         <h1 className="type-h1">Metrics</h1>
       </PageToolbar>
 
-      {metricsEnabled ? (
+      {data.enabled ? (
         <OrgMetrics
-          orgId={orgId}
-          apps={appList}
+          orgId={actor.org.id}
+          apps={data.apps}
         />
       ) : (
         <FeatureDisabled
           name={flag.label}
           description={flag.description}
-          canManage={await isAppAdmin()}
+          canManage={actor.instanceAdmin}
         />
       )}
     </div>
