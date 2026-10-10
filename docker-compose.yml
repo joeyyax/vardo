@@ -228,7 +228,7 @@ services:
   traefik:
     container_name: vardo-traefik
     x-vardo-shared: true
-    image: traefik:v3
+    image: traefik:v3.7
     restart: unless-stopped
     mem_limit: ${VARDO_TRAEFIK_MEM:-256m}
     command:
