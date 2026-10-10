@@ -4,14 +4,20 @@ import { plural } from "../format";
 import type { MailFact, MailTone, MailVisual, NotificationMailBody } from "./components";
 import { consolePage, footerFor, type MailContext } from "./context";
 import { sparkColumns } from "./visuals";
+import { UTC, zonedParts, zoneAbbreviation } from "@/lib/time-zone";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/** The daily chart's axis: midnight to midnight in the zone. */
+function dayAxis(event: DigestHealthEvent, tz: string): [string, string] {
+  return ["00:00", `24:00 ${zoneAbbreviation(new Date(event.since), tz)}`];
+}
 
 function rate(ok: number, total: number): string {
   return total === 0 ? "none" : `${ok} of ${total} (${Math.round((ok / total) * 100)}%)`;
 }
 
-function deployChart(event: DigestHealthEvent): MailVisual | undefined {
+function deployChart(event: DigestHealthEvent, tz: string): MailVisual | undefined {
   const buckets = event.deploysByBucket;
   if (!buckets?.length || buckets.every((b) => b.succeeded + b.failed === 0)) return undefined;
   const daily = event.cadence === "daily";
@@ -23,9 +29,9 @@ function deployChart(event: DigestHealthEvent): MailVisual | undefined {
         { value: b.succeeded, tone: 1 },
         { value: b.failed, tone: "fail" },
       ],
-      label: daily ? undefined : WEEKDAYS[new Date(b.start).getUTCDay()],
+      label: daily ? undefined : WEEKDAYS[zonedParts(new Date(b.start), tz).weekday],
     })),
-    axis: daily ? ["00:00", "24:00 UTC"] : undefined,
+    axis: daily ? dayAxis(event, tz) : undefined,
     legend: [
       { label: "Succeeded", tone: 1 },
       { label: "Failed", tone: "fail" },
@@ -42,7 +48,8 @@ export function healthDigestMail(event: DigestHealthEvent, ctx: MailContext): No
   const problems = deploys.failed + backups.failed + backups.drillsFailed + cron.failed + alerts.open;
   const tone: MailTone = problems > 0 || backups.staleVolumes > 0 ? "warn" : "success";
   const period = event.cadence === "daily" ? "day" : "week";
-  const axis: [string, string] = event.cadence === "daily" ? ["00:00", "24:00 UTC"] : ["start of week", "end"];
+  const tz = ctx.timeZone ?? UTC;
+  const axis: [string, string] = event.cadence === "daily" ? dayAxis(event, tz) : ["start of week", "end"];
 
   const facts: MailFact[] = [
     { label: "Deploys", value: rate(deploys.succeeded, deploys.total) },
@@ -82,7 +89,7 @@ export function healthDigestMail(event: DigestHealthEvent, ctx: MailContext): No
   if (projects.length) sections.push({ title: "By project", facts: projects });
 
   const visuals = [
-    deployChart(event),
+    deployChart(event, tz),
     ...(event.resources ?? []).slice(0, 3).map((t) => sparkColumns(`${t.label}, peak ${trendValue(t, t.peak)}`, t.values, { axis })),
   ].filter((v) => v !== undefined);
 

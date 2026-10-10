@@ -15,11 +15,11 @@ export type SystemAlertEvent = Extract<
   }
 >;
 
-function dateLabel(iso: string): string {
+function dateLabel(iso: string, timeZone = "UTC"): string {
   const date = new Date(iso);
   return Number.isNaN(date.getTime())
     ? iso
-    : date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+    : date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone });
 }
 
 export function systemAlertMail(event: SystemAlertEvent, ctx: MailContext): NotificationMailBody {
@@ -62,7 +62,7 @@ export function systemAlertMail(event: SystemAlertEvent, ctx: MailContext): Noti
         paragraphs: [event.message],
         facts: [
           { label: domains.length > 1 ? "Domains" : "Domain", value: domains.join(", ") },
-          { label: "Expires", value: dateLabel(event.expiresAt) },
+          { label: "Expires", value: dateLabel(event.expiresAt, ctx.timeZone) },
           { label: "Issuer", value: event.resolver },
         ],
         action: admin,

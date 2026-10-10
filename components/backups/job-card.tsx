@@ -164,9 +164,11 @@ export function JobCard({
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
           <span className="flex items-center gap-1">
             <Clock className="size-3" aria-hidden="true" />
-            {job.nightly ? `Nightly run · ${describeSchedule(job.schedule).toLowerCase()} UTC` : scheduleLabel(job.schedule)}
+            {job.nightly
+              ? `Nightly run · ${describeSchedule(job.schedule).toLowerCase()} ${(job.timeZone ?? "UTC").replace(/_/g, " ")}`
+              : scheduleLabel(job.schedule)}
           </span>
-          <NextRun schedule={job.schedule} />
+          <NextRun schedule={job.schedule} timeZone={job.nightly ? job.timeZone : undefined} />
           <span>Target: {job.target.name}</span>
           <RetentionSummary job={job} />
         </div>

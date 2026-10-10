@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { isValidTimeZone } from "@/lib/time-zone";
 import { db } from "@/lib/db";
 import { organizations } from "@/lib/db/schema";
 import { requireSession } from "@/lib/auth/session";
@@ -21,6 +22,8 @@ const updateOrgSchema = z.object({
     z.null(),
   ]).optional(),
   trusted: z.boolean().optional(),
+  // Null follows the instance.
+  timeZone: z.string().refine(isValidTimeZone, "Unknown time zone").nullable().optional(),
 }).strict().refine(data => Object.keys(data).length > 0, { message: "No valid updates provided" });
 
 type RouteParams = {
@@ -91,6 +94,7 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
       }
     }
     if (parsed.data.trusted !== undefined) updates.trusted = parsed.data.trusted;
+    if (parsed.data.timeZone !== undefined) updates.timeZone = parsed.data.timeZone;
 
     if (Object.keys(updates).length === 0 && parsed.data.baseDomain === undefined) {
       return NextResponse.json({ error: "No valid updates provided" }, { status: 400 });

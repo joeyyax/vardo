@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useSystemSetting } from "./use-system-setting";
+import { TimeZoneSelect } from "@/components/time-zone-select";
 import { DEFAULT_APP_NAME } from "@/lib/app-name";
 import { formatBytes, formatUptime } from "@/lib/metrics/format";
 
@@ -19,11 +20,15 @@ type RuntimeInfo = {
 
 export function GeneralSettings() {
   const [instanceName, setInstanceName] = useState(DEFAULT_APP_NAME);
+  const [timeZone, setTimeZone] = useState<string | null>(null);
+  const [serverZone, setServerZone] = useState("UTC");
   const [runtime, setRuntime] = useState<RuntimeInfo | null>(null);
 
   const onLoad = useCallback(
     (data: Record<string, unknown>) => {
       setInstanceName((data.instanceName as string) || DEFAULT_APP_NAME);
+      setTimeZone((data.timeZone as string | null) ?? null);
+      setServerZone((data.serverTimeZone as string) || "UTC");
     },
     [],
   );
@@ -48,7 +53,7 @@ export function GeneralSettings() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    await save({ instanceName });
+    await save({ instanceName, timeZone });
   }
 
   if (loading) {
@@ -83,6 +88,19 @@ export function GeneralSettings() {
               />
               <p className="text-xs text-muted-foreground">
                 Displayed in the browser tab and system emails.
+              </p>
+            </div>
+
+            <div className="max-w-md space-y-2">
+              <Label htmlFor="sys-time-zone">Time zone</Label>
+              <TimeZoneSelect
+                id="sys-time-zone"
+                value={timeZone}
+                onChange={setTimeZone}
+                inheritLabel={`Server time zone (${serverZone.replace(/_/g, " ")})`}
+              />
+              <p className="text-xs text-muted-foreground">
+                Nightly backups, digests and email times use it. Organizations can set their own.
               </p>
             </div>
 

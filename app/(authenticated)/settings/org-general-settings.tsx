@@ -7,13 +7,18 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { toast } from "@/lib/messenger";
 import { Loader2 } from "lucide-react";
+import { TimeZoneSelect } from "@/components/time-zone-select";
 
 interface OrgGeneralSettingsProps {
   orgId: string;
   orgName: string;
+  orgTimeZone: string | null;
+  instanceTimeZone: string;
 }
 
-export function OrgGeneralSettings({ orgId, orgName }: OrgGeneralSettingsProps) {
+export function OrgGeneralSettings({ orgId, orgName, orgTimeZone, instanceTimeZone }: OrgGeneralSettingsProps) {
+  const [timeZone, setTimeZone] = useState(orgTimeZone);
+  const [savingZone, setSavingZone] = useState(false);
   const [name, setName] = useState(orgName);
   const [savedName, setSavedName] = useState(orgName);
   const [saving, setSaving] = useState(false);
@@ -48,6 +53,29 @@ export function OrgGeneralSettings({ orgId, orgName }: OrgGeneralSettingsProps) 
     }
   }
 
+  async function saveTimeZone(next: string | null) {
+    const previous = timeZone;
+    setTimeZone(next);
+    setSavingZone(true);
+    try {
+      const res = await fetch(`/api/v1/organizations/${orgId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ timeZone: next }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? "Couldn't save");
+      }
+      toast.success("Time zone updated");
+    } catch (err) {
+      setTimeZone(previous);
+      toast.error(err instanceof Error ? err.message : "Couldn't save");
+    } finally {
+      setSavingZone(false);
+    }
+  }
+
   return (
     <div className="space-y-4">
       <Card>
@@ -77,6 +105,24 @@ export function OrgGeneralSettings({ orgId, orgName }: OrgGeneralSettingsProps) 
               Save changes
             </Button>
           </form>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle as="h2">Time zone</CardTitle>
+          <CardDescription>
+            Nightly backups, digests and the times in emails use this zone. Cron jobs pick their own.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          <Label htmlFor="org-time-zone">Time zone</Label>
+          <TimeZoneSelect
+            id="org-time-zone"
+            value={timeZone}
+            onChange={saveTimeZone}
+            inheritLabel={`Instance default (${instanceTimeZone.replace(/_/g, " ")})`}
+            disabled={savingZone}
+          />
         </CardContent>
       </Card>
     </div>

@@ -12,6 +12,8 @@ export type CronJob = {
   name: string;
   type: "command" | "url";
   schedule: string;
+  /** Null runs in the server's zone. */
+  timeZone: string | null;
   command: string;
   method: string;
   headers: CronHeaderRow[];
@@ -56,6 +58,11 @@ export function scheduleLabel(cron: string): string {
   if (preset) return preset.label;
   const described = describeSchedule(cron);
   return described.charAt(0).toUpperCase() + described.slice(1);
+}
+
+/** The schedule with the zone it runs in. */
+export function scheduleWithZone(job: Pick<CronJob, "schedule" | "timeZone">): string {
+  return job.timeZone ? `${scheduleLabel(job.schedule)} (${job.timeZone.replace(/_/g, " ")})` : scheduleLabel(job.schedule);
 }
 
 export function CronStatusIcon({ status }: { status: CronJob["lastStatus"] }) {

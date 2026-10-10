@@ -12,6 +12,8 @@ import { fireAlert, settleAlerts } from "@/lib/notifications/observations";
 import { readOrgNotificationSettings } from "@/lib/notifications/preferences";
 import { skipsAsConfig } from "./bind-config";
 import { isUncapturedSource } from "./coverage";
+import { UTC } from "@/lib/time-zone";
+import { getInstanceTimeZone, resolveTimeZone } from "@/lib/time-zone-settings";
 import { exclusionReason, isBackupSelected } from "./durability";
 import {
   estimateRunMs,
@@ -212,13 +214,19 @@ async function openRun(opts: {
 /** Opens each org's nightly run at its time. Returns the run each nightly job belongs to. */
 export async function startNightlyRuns(now: Date): Promise<Map<string, string>> {
   const jobs = await db
-    .select({ id: backupJobs.id, organizationId: backupJobs.organizationId, time: organizations.nightlyBackupTime })
+    .select({
+      id: backupJobs.id,
+      organizationId: backupJobs.organizationId,
+      time: organizations.nightlyBackupTime,
+      timeZone: organizations.timeZone,
+    })
     .from(backupJobs)
     .innerJoin(organizations, eq(organizations.id, backupJobs.organizationId))
     .where(and(eq(backupJobs.enabled, true), eq(backupJobs.nightly, true)));
+  const instanceTimeZone = jobs.length ? await getInstanceTimeZone() : UTC;
   const byOrg = new Map<string, { key: string; jobIds: string[] }>();
   for (const job of jobs) {
-    const key = nightlyRunKey(job.time, now);
+    const key = nightlyRunKey(job.time, now, resolveTimeZone(job.timeZone, instanceTimeZone));
     if (!key || !job.organizationId) continue;
     const entry = byOrg.get(job.organizationId) ?? { key, jobIds: [] };
     entry.jobIds.push(job.id);

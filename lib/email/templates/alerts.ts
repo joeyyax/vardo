@@ -1,6 +1,7 @@
 import type { AlertFiredEvent, AlertItem, AlertResolvedEvent } from "@/lib/bus/events";
 import { formatBytesIec } from "@/lib/metrics/format";
 import { formatDuration } from "../format";
+import { formatDayTime, UTC } from "@/lib/time-zone";
 import type { MailFact, MailLink, MailVisual, NotificationMailBody } from "./components";
 import { appPage, consolePage, footerFor, type MailContext } from "./context";
 import { hourlyColumns, sparkColumns } from "./visuals";
@@ -17,11 +18,10 @@ const APP_TAB: Record<string, string> = {
   "cron.failure": "cron",
 };
 
-export function timeLabel(iso: string): string {
+export function timeLabel(iso: string, tz: string = UTC): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
-  const day = date.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
-  return `${day}, ${date.toISOString().slice(11, 16)} UTC`;
+  return formatDayTime(date, tz);
 }
 
 function itemLink(item: AlertItem, ctx: MailContext): MailLink {
@@ -50,8 +50,8 @@ function itemVisuals(item: AlertItem, ctx: MailContext): MailVisual[] {
   return visuals.filter((v) => v !== undefined);
 }
 
-function itemFacts(item: AlertItem): MailFact[] {
-  return [...(item.facts ?? []), ...(item.since ? [{ label: "Since", value: timeLabel(item.since) }] : [])];
+function itemFacts(item: AlertItem, tz?: string): MailFact[] {
+  return [...(item.facts ?? []), ...(item.since ? [{ label: "Since", value: timeLabel(item.since, tz) }] : [])];
 }
 
 export function alertFiredMail(event: AlertFiredEvent, ctx: MailContext): NotificationMailBody {
@@ -69,7 +69,7 @@ export function alertFiredMail(event: AlertFiredEvent, ctx: MailContext): Notifi
       preheader: first.detail,
       paragraphs: [first.detail],
       visuals: itemVisuals(first, ctx),
-      facts: itemFacts(first),
+      facts: itemFacts(first, ctx.timeZone),
       action: itemLink(first, ctx),
       footer,
     };
@@ -85,7 +85,7 @@ export function alertFiredMail(event: AlertFiredEvent, ctx: MailContext): Notifi
     visuals: items.slice(0, CHARTED_ALERTS).flatMap((item) => itemVisuals(item, ctx)),
     sections: items.map((item) => ({
       title: `${item.severity === "critical" ? "✗" : "!"} ${item.title}`,
-      facts: [{ label: "", value: item.detail }, ...itemFacts(item)],
+      facts: [{ label: "", value: item.detail }, ...itemFacts(item, ctx.timeZone)],
     })),
     action: itemLink(first, ctx),
     links: links.filter((link, i) => links.findIndex((l) => l.href === link.href) === i && link.href !== itemLink(first, ctx).href),
@@ -111,8 +111,8 @@ export function alertResolvedMail(event: AlertResolvedEvent, ctx: MailContext): 
     sections: items.map((item) => ({
       title: item.title,
       facts: [
-        { label: "Alerted", value: timeLabel(item.firedAt) },
-        { label: "Resolved", value: `${timeLabel(item.resolvedAt)}. ${resolvedLine(item)}.` },
+        { label: "Alerted", value: timeLabel(item.firedAt, ctx.timeZone) },
+        { label: "Resolved", value: `${timeLabel(item.resolvedAt, ctx.timeZone)}. ${resolvedLine(item)}.` },
       ],
     })),
     action: itemLink(first, ctx),

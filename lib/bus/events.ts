@@ -237,6 +237,8 @@ export type CronFailedEvent = {
   projectName?: string;
   durationMs: number;
   schedule?: string;
+  /** Zone the schedule runs in. */
+  scheduleTimeZone?: string;
   /** Shell command, or the URL for a URL job. */
   command?: string;
   jobType?: "command" | "url";

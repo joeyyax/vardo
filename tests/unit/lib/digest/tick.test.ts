@@ -7,6 +7,10 @@ vi.mock("@/lib/logger", async () => (await import("@/tests/helpers/mocks")).logg
 const mocks = vi.hoisted(() => ({ emit: vi.fn(), collect: vi.fn() }));
 vi.mock("@/lib/notifications/dispatch", () => ({ emit: mocks.emit }));
 vi.mock("@/lib/notifications/admin-orgs", () => ({ adminOrgIds: async () => ["org1"] }));
+vi.mock("@/lib/time-zone-settings", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/time-zone-settings")>()),
+  getInstanceTimeZone: async () => "UTC",
+}));
 vi.mock("@/lib/digest/collector", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/digest/collector")>()),
   collectDigestData: mocks.collect,

@@ -6,6 +6,8 @@ export type MailContext = {
   baseUrl: string;
   instanceName: string;
   orgName?: string;
+  /** IANA zone times print in. Unset prints UTC. */
+  timeZone?: string;
   /** History the charts draw from; missing series leave their chart out. */
   series?: MailSeries;
 };

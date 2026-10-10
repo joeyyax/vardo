@@ -1,4 +1,6 @@
-// Digest cadences and the complete UTC windows they cover.
+// Digest cadences and the complete days, in the org's time zone, they cover.
+
+import { addZonedDays, startOfZonedDay, UTC, zonedDateKey, zonedParts, zonedTimeToUtc } from "@/lib/time-zone";
 
 export const DIGEST_CADENCES = ["daily", "weekly"] as const;
 export type DigestCadence = (typeof DIGEST_CADENCES)[number];
@@ -8,7 +10,7 @@ export type DigestSchedule = {
   cadence: DigestCadence;
   /** 0 = Sunday. Weekly only. */
   dayOfWeek: number;
-  /** UTC hour. */
+  /** Hour in the org's time zone. */
   hourOfDay: number;
 };
 
@@ -20,13 +22,11 @@ export type DigestWindow = {
   windowKey: string;
   since: Date;
   until: Date;
+  /** Zone the window's days are cut in. */
+  timeZone: string;
 };
 
 const DAY_MS = 86_400_000;
-
-function startOfUtcDay(date: Date): Date {
-  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
-}
 
 export function isDigestCadence(value: unknown): value is DigestCadence {
   return typeof value === "string" && (DIGEST_CADENCES as readonly string[]).includes(value);
@@ -45,22 +45,33 @@ export function scheduleFor(
   };
 }
 
-/** The window that closed at today's UTC midnight: yesterday, or the seven days before today. Never partial. */
-export function digestWindow(cadence: DigestCadence, now: Date): DigestWindow {
-  const until = startOfUtcDay(now);
-  const since = new Date(until.getTime() - (cadence === "daily" ? 1 : 7) * DAY_MS);
-  return { cadence, windowKey: `${cadence}:${since.toISOString().slice(0, 10)}`, since, until };
+/** The window that closed at today's midnight in `tz`: yesterday, or the seven days before today. Never partial. */
+export function digestWindow(cadence: DigestCadence, now: Date, tz: string = UTC): DigestWindow {
+  const until = startOfZonedDay(now, tz);
+  const since = addZonedDays(until, cadence === "daily" ? -1 : -7, tz);
+  return { cadence, windowKey: `${cadence}:${zonedDateKey(since, tz)}`, since, until, timeZone: tz };
 }
 
-/** Due during the org's hour, and for weekly only on its day. */
-export function isDigestDue(schedule: DigestSchedule, now: Date): boolean {
-  if (!schedule.enabled || now.getUTCHours() !== schedule.hourOfDay) return false;
-  return schedule.cadence === "daily" || now.getUTCDay() === schedule.dayOfWeek;
+/** Due during the org's hour in `tz`, and for weekly only on its day. An hour DST skips runs right after the jump. */
+export function isDigestDue(schedule: DigestSchedule, now: Date, tz: string = UTC): boolean {
+  if (!schedule.enabled) return false;
+  const today = zonedParts(now, tz);
+  if (schedule.cadence === "weekly" && today.weekday !== schedule.dayOfWeek) return false;
+  const start = zonedTimeToUtc({ ...today, hour: schedule.hourOfDay, minute: 0 }, tz).getTime();
+  return now.getTime() >= start && now.getTime() < start + 3_600_000;
 }
 
-/** Equal-width buckets across a window, oldest first. */
-export function bucketStarts(window: Pick<DigestWindow, "since" | "until">, bucketMs: number): number[] {
+/** Buckets across a window, oldest first. Day buckets follow the zone's midnights, so a DST day is 23 or 25 hours. */
+export function bucketStarts(
+  window: Pick<DigestWindow, "since" | "until"> & { timeZone?: string },
+  bucketMs: number,
+): number[] {
   const out: number[] = [];
+  if (bucketMs === DAY_MS) {
+    const tz = window.timeZone ?? UTC;
+    for (let d = window.since; d < window.until; d = addZonedDays(d, 1, tz)) out.push(d.getTime());
+    return out;
+  }
   for (let t = window.since.getTime(); t < window.until.getTime(); t += bucketMs) out.push(t);
   return out;
 }

@@ -115,7 +115,7 @@ export async function tickCronJobs(): Promise<void> {
     if (job.app && job.app.status !== "active") continue;
     if (!job.app && job.type !== "url") continue;
 
-    if (!shouldRunNow(job.schedule, now)) continue;
+    if (!shouldRunNow(job.schedule, now, job.timeZone)) continue;
 
     // Per-minute lock prevents double-firing across instances.
     const minuteTs = Math.floor(now.getTime() / 60_000);
@@ -136,6 +136,8 @@ export type CronRunJob = {
   organizationId: string;
   /** Cron expression, for the failure email. */
   schedule?: string;
+  /** Zone the schedule runs in. Null is the server's. */
+  timeZone?: string | null;
   method?: string;
   /** Encrypted headers as stored. */
   headers?: string | null;
@@ -273,6 +275,7 @@ export async function runCronJob(job: CronRunJob): Promise<CronRunResult | null>
           projectName: appName,
           durationMs: result.durationMs,
           schedule: job.schedule,
+          scheduleTimeZone: job.timeZone ?? undefined,
           command: job.type === "url" ? undefined : job.command.length > 200 ? `${job.command.slice(0, 199)}…` : job.command,
           jobType: job.type === "url" ? "url" : "command",
           exitCode: result.exitCode ?? result.httpStatus,

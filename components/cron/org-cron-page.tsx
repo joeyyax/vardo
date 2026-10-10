@@ -14,7 +14,7 @@ import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { RelativeTime } from "@/components/relative-time";
 import { CronJobSheet, type CronJobBody } from "./cron-job-sheet";
 import { CronRuns } from "./cron-runs";
-import { CronStatusIcon, scheduleLabel, urlOptionsSummary, type CronJob } from "./cron-shared";
+import { CronStatusIcon, scheduleWithZone, urlOptionsSummary, type CronJob } from "./cron-shared";
 
 const DESCRIPTION = "Hit a URL on a schedule, for sites on or off Vardo.";
 
@@ -183,7 +183,7 @@ export function OrgCronPage({ orgId }: { orgId: string }) {
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
               <span className="flex items-center gap-1">
                 <Clock className="size-3" aria-hidden="true" />
-                {scheduleLabel(job.schedule)}
+                {scheduleWithZone(job)}
               </span>
               {job.lastRunAt && (
                 <span>

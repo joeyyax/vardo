@@ -5,6 +5,7 @@ import { formatDuration, plural } from "../format";
 import type { MailFact, MailTone, MailVisual, NotificationMailBody } from "./components";
 import { appPage, consolePage, footerFor, type MailContext } from "./context";
 import { backupColumns } from "./visuals";
+import { formatClockRange, UTC } from "@/lib/time-zone";
 
 /** Charts for at most this many rows, the worst first. */
 const CHARTED_ROWS = 3;
@@ -91,10 +92,6 @@ function appFact(app: BackupSummaryApp, ctx: MailContext): MailFact {
   return { label: app.appName, value: parts.join(" · "), href: app.failed && app.appId ? appPage(ctx, app.appId, "backups") : undefined };
 }
 
-function timeOfDay(iso: string): string {
-  return new Date(iso).toISOString().slice(11, 16);
-}
-
 export function backupSummaryMail(event: BackupSummaryEvent, ctx: MailContext): NotificationMailBody {
   const failed = event.rows.filter((r) => r.outcome === "failed");
   const shrunk = event.rows.filter((r) => r.shrunk);
@@ -141,7 +138,7 @@ export function backupSummaryMail(event: BackupSummaryEvent, ctx: MailContext): 
     label: "Took",
     value: `${formatDuration(event.run.actualMs)}${event.run.estimatedMs ? `, estimated ${formatDuration(event.run.estimatedMs)}` : ""}`,
   });
-  facts.push({ label: "Ran", value: `${timeOfDay(event.windowStart)}–${timeOfDay(event.windowEnd)} UTC` });
+  facts.push({ label: "Ran", value: formatClockRange(new Date(event.windowStart), new Date(event.windowEnd), ctx.timeZone ?? UTC) });
 
   const sections: { title: string; facts: MailFact[] }[] = [];
   const attention: MailFact[] = [

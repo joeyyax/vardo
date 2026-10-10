@@ -8,6 +8,7 @@ import { z } from "zod";
 import { collectDigestData, digestEvent } from "@/lib/digest/collector";
 import { DIGEST_CADENCES, digestWindow, scheduleFor } from "@/lib/digest/window";
 import { adminOrgIds } from "@/lib/notifications/admin-orgs";
+import { getOrgTimeZone } from "@/lib/time-zone-settings";
 import { createChannel } from "@/lib/notifications/factory";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 
@@ -41,7 +42,7 @@ async function handleGet(_req: NextRequest, { params }: RouteParams) {
     const setting = await db.query.digestSettings.findFirst({
       where: eq(digestSettings.organizationId, orgId),
     });
-    return NextResponse.json({ digestSettings: view(setting) });
+    return NextResponse.json({ digestSettings: view(setting), timeZone: await getOrgTimeZone(orgId) });
   } catch (error) {
     return handleRouteError(error, "Error fetching digest settings");
   }
@@ -93,7 +94,7 @@ async function handlePost(_req: NextRequest, { params }: RouteParams) {
     }
 
     const setting = await db.query.digestSettings.findFirst({ where: eq(digestSettings.organizationId, orgId) });
-    const window = digestWindow(scheduleFor(setting).cadence, new Date());
+    const window = digestWindow(scheduleFor(setting).cadence, new Date(), await getOrgTimeZone(orgId));
     const withHost = (await adminOrgIds()).includes(orgId);
     const data = await collectDigestData(orgRecord.id, orgRecord.name, window, { withHost });
     const event = digestEvent(data);

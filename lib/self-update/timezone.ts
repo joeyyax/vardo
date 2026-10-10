@@ -1,29 +1,7 @@
-// The instance's time zone, when one is configured. Windows fall back to their own zone without it.
+// The instance's time zone for update windows without their own: the admin setting, then the server's TZ.
 
-import { getSystemSettingRaw } from "@/lib/system-settings";
-import { isValidTimeZone } from "./window";
-
-const KEYS = ["instance_timezone", "timezone"];
-
-function pick(raw: string | null): string | null {
-  if (!raw) return null;
-  let value: unknown = raw;
-  try {
-    value = JSON.parse(raw);
-  } catch {
-    // A bare zone name.
-  }
-  if (value && typeof value === "object") {
-    const o = value as { timezone?: unknown; timeZone?: unknown };
-    value = o.timezone ?? o.timeZone;
-  }
-  return typeof value === "string" && isValidTimeZone(value) ? value : null;
-}
+import { getInstanceTimeZone } from "@/lib/time-zone-settings";
 
 export async function getInstanceTimezone(): Promise<string | null> {
-  for (const key of KEYS) {
-    const tz = pick(await getSystemSettingRaw(key).catch(() => null));
-    if (tz) return tz;
-  }
-  return pick(await getSystemSettingRaw("instance_config").catch(() => null));
+  return getInstanceTimeZone().catch(() => null);
 }

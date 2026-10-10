@@ -24,6 +24,8 @@ export const cronJobs = pgTable(
     name: text("name").notNull(),
     type: cronJobTypeEnum("type").notNull().default("command"),
     schedule: text("schedule").notNull(), // cron expression
+    // IANA zone the schedule runs in. Null is the server's zone, UTC in the stock image.
+    timeZone: text("time_zone"),
     command: text("command").notNull(), // Shell command or URL, by type
     method: text("method").notNull().default("GET"),
     // Encrypted JSON list of { name, value }.

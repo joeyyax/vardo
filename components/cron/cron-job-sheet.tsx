@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/bottom-sheet";
 import { CRON_METHODS, HEADER_MASK, MAX_RETRIES } from "@/lib/cron/url-options";
 import { SCHEDULE_PRESETS, type CronJob } from "./cron-shared";
+import { TimeZoneSelect } from "@/components/time-zone-select";
 
 type HeaderRow = { key: number; name: string; value: string; saved: boolean };
 
@@ -29,6 +30,8 @@ export type CronJobBody = {
   name: string;
   type: "command" | "url";
   schedule: string;
+  /** Null runs in the server's zone. */
+  timeZone: string | null;
   command: string;
   method?: string;
   headers?: { name: string; value?: string }[];
@@ -57,6 +60,7 @@ function initial(job: CronJob | null, allowCommand: boolean, canCommand: boolean
     type: job?.type ?? (allowCommand && canCommand ? "command" : "url"),
     schedulePreset: job ? (preset ? job.schedule : "custom") : "0 * * * *",
     customSchedule: job && !preset ? job.schedule : "",
+    timeZone: job?.timeZone ?? null,
     command: job?.command ?? "",
     method: job?.method ?? "GET",
     headers: (job?.headers ?? []).map((h, i) => ({ key: i, name: h.name, value: "", saved: true })),
@@ -74,6 +78,7 @@ export function CronJobSheet({ open, onOpenChange, job, allowCommand, canCommand
   const [jobType, setJobType] = useState<"command" | "url">(start.type);
   const [schedulePreset, setSchedulePreset] = useState<string>(start.schedulePreset);
   const [customSchedule, setCustomSchedule] = useState(start.customSchedule);
+  const [timeZone, setTimeZone] = useState<string | null>(start.timeZone);
   const [command, setCommand] = useState(start.command);
   const [method, setMethod] = useState(start.method);
   const [headers, setHeaders] = useState<HeaderRow[]>(start.headers);
@@ -95,7 +100,7 @@ export function CronJobSheet({ open, onOpenChange, job, allowCommand, canCommand
 
   async function handleSave() {
     if (!valid) return;
-    const body: CronJobBody = { name: name.trim(), type: jobType, schedule, command: command.trim() };
+    const body: CronJobBody = { name: name.trim(), type: jobType, schedule, timeZone, command: command.trim() };
     if (jobType === "url") {
       body.method = method;
       body.headers = headers.map((h) => ({
@@ -157,6 +162,11 @@ export function CronJobSheet({ open, onOpenChange, job, allowCommand, canCommand
                   onChange={(e) => setCustomSchedule(e.target.value)}
                 />
               )}
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="cron-time-zone">Time zone</Label>
+              <TimeZoneSelect id="cron-time-zone" value={timeZone} onChange={setTimeZone} inheritLabel="Server time (UTC unless TZ is set)" />
             </div>
 
             {allowCommand && (

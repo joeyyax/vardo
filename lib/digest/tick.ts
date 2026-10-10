@@ -7,6 +7,7 @@ import { adminOrgIds } from "@/lib/notifications/admin-orgs";
 import { logger } from "@/lib/logger";
 import { collectDigestData, digestEvent, hasActivity } from "./collector";
 import { digestWindow, isDigestDue, scheduleFor } from "./window";
+import { getInstanceTimeZone, resolveTimeZone } from "@/lib/time-zone-settings";
 
 const log = logger.child("digest");
 
@@ -29,17 +30,19 @@ async function claimWindow(organizationId: string, windowKey: string, now: Date)
 /** Sends each org's digest once per window, during its hour. Runs every minute. */
 export async function tickDigestJobs(now = new Date()): Promise<void> {
   const [orgs, rows] = await Promise.all([
-    db.query.organizations.findMany({ columns: { id: true, name: true } }),
+    db.query.organizations.findMany({ columns: { id: true, name: true, timeZone: true } }),
     db.query.digestSettings.findMany(),
   ]);
+  const instanceTimeZone = await getInstanceTimeZone();
   const byOrg = new Map(rows.map((r) => [r.organizationId, r]));
   let hostOrgs: Set<string> | null = null;
 
   for (const org of orgs) {
     const row = byOrg.get(org.id);
     const schedule = scheduleFor(row);
-    if (!isDigestDue(schedule, now)) continue;
-    const window = digestWindow(schedule.cadence, now);
+    const tz = resolveTimeZone(org.timeZone, instanceTimeZone);
+    if (!isDigestDue(schedule, now, tz)) continue;
+    const window = digestWindow(schedule.cadence, now, tz);
     if (row?.lastWindowKey === window.windowKey) continue;
 
     try {

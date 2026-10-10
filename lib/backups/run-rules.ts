@@ -2,6 +2,7 @@
 
 import type { BackupSummaryApp, BackupSummaryRow } from "@/lib/bus/events";
 import { backupDrop } from "@/lib/email/templates/visuals";
+import { UTC, zonedDateKey, zonedParts, zonedTimeToUtc } from "@/lib/time-zone";
 
 export type BackupResultKind = "backup" | "drill" | "restore" | "import";
 
@@ -41,7 +42,7 @@ export const MAX_DEADLINE_MS = 6 * 60 * 60_000;
 /** Rows past this are counted, not listed. */
 export const MAX_SUMMARY_ROWS = 60;
 
-/** `HH:MM`, 24-hour UTC. */
+/** `HH:MM`, 24-hour, in the org's time zone. */
 export const NIGHTLY_TIME = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
 export function nightlyCron(time: string): string {
@@ -49,11 +50,14 @@ export function nightlyCron(time: string): string {
   return `${Number(m[2])} ${Number(m[1])} * * *`;
 }
 
-/** The nightly run's key for `now`, when `now` is its minute. Null otherwise. */
-export function nightlyRunKey(time: string, now: Date): string | null {
+/** The nightly run's key for `now`, when `now` is its minute in `tz`. Null otherwise. DST-safe: a skipped time runs after the jump, a repeated one once. */
+export function nightlyRunKey(time: string, now: Date, tz: string = UTC): string | null {
   const m = NIGHTLY_TIME.exec(time);
-  if (!m || now.getUTCHours() !== Number(m[1]) || now.getUTCMinutes() !== Number(m[2])) return null;
-  return `nightly:${now.toISOString().slice(0, 10)}`;
+  if (!m) return null;
+  const today = zonedParts(now, tz);
+  const due = zonedTimeToUtc({ ...today, hour: Number(m[1]), minute: Number(m[2]) }, tz);
+  if (Math.floor(now.getTime() / 60_000) !== Math.floor(due.getTime() / 60_000)) return null;
+  return `nightly:${zonedDateKey(now, tz)}`;
 }
 
 /** Per volume outside its own timing: lease, row writes, container start. */

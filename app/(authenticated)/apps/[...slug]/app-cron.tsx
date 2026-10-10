@@ -20,7 +20,7 @@ import { Card } from "@/components/ui/card";
 import { CronJobSheet, type CronJobBody } from "@/components/cron/cron-job-sheet";
 import {
   CronStatusIcon,
-  scheduleLabel,
+  scheduleWithZone,
   urlOptionsSummary,
   type CronJob,
 } from "@/components/cron/cron-shared";
@@ -249,7 +249,7 @@ export function CronManager({ appId, orgId, userRole }: Props) {
                       <div className="flex items-center gap-3 text-xs text-muted-foreground">
                         <span className="flex items-center gap-1">
                           <Clock className="size-3" />
-                          {scheduleLabel(job.schedule)}
+                          {scheduleWithZone(job)}
                         </span>
                         {job.lastRunAt && (
                           <span>

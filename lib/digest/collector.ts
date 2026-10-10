@@ -8,6 +8,7 @@ import type { DigestHealthEvent, DigestProjectRow } from "@/lib/bus/events";
 import { ALERTS, isAlertType } from "@/lib/notifications/registry";
 import { CERT_EXPIRY_THRESHOLD_DAYS } from "@/lib/system-alerts/cert-expiry";
 import { bucketMsFor, bucketStarts, type DigestWindow } from "./window";
+import { UTC, zonedDateKey, zonedParts } from "@/lib/time-zone";
 
 export type DigestData = Omit<DigestHealthEvent, "type" | "title" | "message">;
 
@@ -17,25 +18,29 @@ const TOP_ALERTS = 5;
 /** Deploys per bucket across the window, oldest first. */
 export function deployBuckets(
   rows: { status: string; startedAt: Date }[],
-  window: Pick<DigestWindow, "since" | "until">,
+  window: Pick<DigestWindow, "since" | "until"> & { timeZone?: string },
   bucketMs: number,
 ): NonNullable<DigestHealthEvent["deploysByBucket"]> {
   const starts = bucketStarts(window, bucketMs);
   const buckets = starts.map((start) => ({ start: new Date(start).toISOString(), succeeded: 0, failed: 0 }));
   for (const row of rows) {
-    const i = Math.floor((row.startedAt.getTime() - window.since.getTime()) / bucketMs);
-    if (i < 0 || i >= buckets.length) continue;
+    const t = row.startedAt.getTime();
+    if (t >= window.until.getTime()) continue;
+    const i = starts.findLastIndex((start) => start <= t);
+    if (i < 0) continue;
     if (row.status === "failed") buckets[i].failed += 1;
     else if (row.status === "success") buckets[i].succeeded += 1;
   }
   return buckets;
 }
 
-export function windowLabel(window: Pick<DigestWindow, "since" | "until">): string {
-  const fmt = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
-  const last = new Date(window.until.getTime() - DAY_MS);
-  const year = last.getUTCFullYear();
-  return last.getTime() <= window.since.getTime() ? `${fmt(window.since)}, ${year}` : `${fmt(window.since)} – ${fmt(last)}, ${year}`;
+export function windowLabel(window: Pick<DigestWindow, "since" | "until"> & { timeZone?: string }): string {
+  const timeZone = window.timeZone ?? UTC;
+  const fmt = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone });
+  // An hour before the end is inside the last day even when DST made it 23 hours.
+  const last = new Date(window.until.getTime() - 3_600_000);
+  const year = zonedParts(last, timeZone).year;
+  return zonedDateKey(last, timeZone) === zonedDateKey(window.since, timeZone) ? `${fmt(window.since)}, ${year}` : `${fmt(window.since)} – ${fmt(last)}, ${year}`;
 }
 
 /** Whether anything happened in the window. An empty window sends nothing. */

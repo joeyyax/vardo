@@ -9,7 +9,7 @@ const log = logger.child("notifications");
 
 type EmailConfig = { recipients: string[] };
 
-/** Console origin, instance name and org name for the email footer and links. */
+/** Console origin, instance name, org name and time zone for the email footer, links and times. */
 async function mailContext(organizationId: string | undefined): Promise<MailContext> {
   const baseUrl = (process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000").replace(/\/+$/, "");
   let instanceName = "Vardo";
@@ -33,7 +33,14 @@ async function mailContext(organizationId: string | undefined): Promise<MailCont
       // Footer leaves the org out.
     }
   }
-  return { baseUrl, instanceName, orgName };
+  let timeZone: string | undefined;
+  try {
+    const { getOrgTimeZone } = await import("@/lib/time-zone-settings");
+    timeZone = await getOrgTimeZone(organizationId);
+  } catch {
+    // Prints UTC.
+  }
+  return { baseUrl, instanceName, orgName, timeZone };
 }
 
 export class EmailNotificationChannel implements NotificationChannel {

@@ -12,14 +12,15 @@ import { NOTIFICATION_CATEGORIES, NOTIFICATION_CATEGORY_KEYS, type NotificationC
 type Settings = {
   categories: Record<NotificationCategory, boolean>;
   nightlyBackupTime: string;
+  timeZone: string;
 };
 
-/** Every half hour, as HH:MM UTC. */
+/** Every half hour, as HH:MM. */
 const TIME_OPTIONS = Array.from({ length: 48 }, (_, i) => `${String(Math.floor(i / 2)).padStart(2, "0")}:${i % 2 ? "30" : "00"}`);
 
 function timeLabel(time: string): string {
   const [h, m] = time.split(":").map(Number);
-  return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"} UTC`;
+  return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`;
 }
 
 async function requestSettings(orgId: string): Promise<Settings | null> {
@@ -56,7 +57,9 @@ export function NotificationCategoriesEditor({ orgId }: { orgId: string }) {
     async (patch: { categories?: Partial<Record<NotificationCategory, boolean>>; nightlyBackupTime?: string }) => {
       setSaving(true);
       setSettings((prev) =>
-        prev ? { categories: { ...prev.categories, ...patch.categories }, nightlyBackupTime: patch.nightlyBackupTime ?? prev.nightlyBackupTime } : prev,
+        prev
+          ? { ...prev, categories: { ...prev.categories, ...patch.categories }, nightlyBackupTime: patch.nightlyBackupTime ?? prev.nightlyBackupTime }
+          : prev,
       );
       try {
         const res = await fetch(`/api/v1/organizations/${orgId}/notification-settings`, {
@@ -139,7 +142,7 @@ export function NotificationCategoriesEditor({ orgId }: { orgId: string }) {
             </SelectContent>
           </Select>
           <p className="text-xs text-muted-foreground">
-            Automatic backup jobs run together from this time, a few at once. Jobs with a schedule of their own keep it.
+            In {settings.timeZone.replace(/_/g, " ")}. Automatic backup jobs run together from this time, a few at once. Jobs with a schedule of their own keep it.
           </p>
         </div>
       </CardContent>

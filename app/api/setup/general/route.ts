@@ -4,6 +4,8 @@ import { z } from "zod";
 import { requireAdminAuth } from "@/lib/auth/admin";
 import { needsSetup } from "@/lib/setup";
 import { getInstanceConfig, setSystemSetting } from "@/lib/system-settings";
+import { isValidTimeZone, serverTimeZone } from "@/lib/time-zone";
+import { getStoredInstanceTimeZone, setInstanceTimeZone } from "@/lib/time-zone-settings";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { apiError } from "@/lib/api/error-response";
@@ -13,6 +15,8 @@ const generalSchema = z.object({
   baseDomain: z.string().optional(),
   serverIp: z.string().optional(),
   domain: z.string().optional(),
+  // Null follows the server's TZ.
+  timeZone: z.string().refine(isValidTimeZone, "Unknown time zone").nullable().optional(),
 }).strict();
 
 async function handleGet(request: NextRequest) {
@@ -29,6 +33,8 @@ async function handleGet(request: NextRequest) {
     serverIp: config.serverIp,
     domain: config.domain,
     envBaseDomain: process.env.VARDO_BASE_DOMAIN || null,
+    timeZone: await getStoredInstanceTimeZone(),
+    serverTimeZone: serverTimeZone(),
   });
 }
 
@@ -54,6 +60,7 @@ async function handlePost(request: NextRequest) {
     serverIp: parsed.data.serverIp ?? existing.serverIp,
     domain: parsed.data.domain ?? existing.domain,
   }));
+  if (parsed.data.timeZone !== undefined) await setInstanceTimeZone(parsed.data.timeZone);
 
   return NextResponse.json({ ok: true });
 }

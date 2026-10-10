@@ -1,13 +1,14 @@
 import type { CronFailedEvent } from "@/lib/bus/events";
 import { describeSchedule } from "@/lib/cron/describe";
 import { formatDuration } from "../format";
+import { formatStamp, UTC } from "@/lib/time-zone";
 import type { MailFact, NotificationMailBody } from "./components";
 import { appPage, consolePage, footerFor, type MailContext } from "./context";
 
-function when(iso: string): string {
+function when(iso: string, tz: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;
-  return `${date.toISOString().slice(0, 16).replace("T", " ")} UTC`;
+  return formatStamp(date, tz);
 }
 
 export function cronFailedMail(event: CronFailedEvent, ctx: MailContext): NotificationMailBody {
@@ -20,9 +21,12 @@ export function cronFailedMail(event: CronFailedEvent, ctx: MailContext): Notifi
   if (event.exitCode !== undefined) facts.push({ label: url ? "HTTP status" : "Exit code", value: String(event.exitCode) });
   if (event.command && !url) facts.push({ label: "Command", value: event.command, mono: true });
   if (event.target) facts.push({ label: url ? "URL" : "Container", value: event.target, mono: true });
-  if (schedule) facts.push({ label: "Schedule", value: schedule === event.schedule ? schedule : `${schedule} (${event.schedule})` });
+  if (schedule) {
+    const zone = event.scheduleTimeZone ? `, ${event.scheduleTimeZone}` : "";
+    facts.push({ label: "Schedule", value: schedule === event.schedule ? `${schedule}${zone}` : `${schedule} (${event.schedule}${zone})` });
+  }
   facts.push({ label: "Ran for", value: formatDuration(event.durationMs) });
-  facts.push({ label: "Last success", value: event.lastSuccessAt ? when(event.lastSuccessAt) : "None on record" });
+  facts.push({ label: "Last success", value: event.lastSuccessAt ? when(event.lastSuccessAt, ctx.timeZone ?? UTC) : "None on record" });
 
   const lines = event.logTail?.length ? event.logTail : event.message.split("\n");
 

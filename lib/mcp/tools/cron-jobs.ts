@@ -23,7 +23,7 @@ const failure = (error: string) => ({
   isError: true as const,
 });
 
-const urlOptions = {
+const jobOptions = {
   method: z.enum(CRON_METHODS).optional().describe("URL jobs: HTTP method (default GET)"),
   headers: z
     .array(z.object({ name: z.string(), value: z.string().optional() }))
@@ -32,6 +32,11 @@ const urlOptions = {
   timeoutMs: z.number().int().min(MIN_TIMEOUT_MS).max(MAX_TIMEOUT_MS).optional().describe("URL jobs: per-attempt timeout in ms (default 30000, max 300000)"),
   retries: z.number().int().min(0).max(MAX_RETRIES).optional().describe("URL jobs: retries on failure with exponential backoff (0-3)"),
   expectedStatus: z.string().nullable().optional().describe('URL jobs: status codes that count as success, e.g. "2xx" or "200,204" (default 2xx)'),
+  timeZone: z
+    .string()
+    .nullable()
+    .optional()
+    .describe('IANA zone the schedule runs in, e.g. "America/Los_Angeles". Null or omitted runs in the server\'s zone (UTC in the stock image).'),
 };
 
 const JOB_SCOPE = {
@@ -80,7 +85,7 @@ export function registerCronJobTools(server: McpServer, context: McpAuthContext)
       type: z.enum(["command", "url"]).default("url").describe("url sends an HTTP request; command runs sh -c in the app's container"),
       command: z.string().describe("The URL for a URL job, or the shell command"),
       enabled: z.boolean().default(true),
-      ...urlOptions,
+      ...jobOptions,
     },
     async ({ organizationId, appId, ...input }) => {
       let orgId: string | null;
@@ -132,7 +137,7 @@ export function registerCronJobTools(server: McpServer, context: McpAuthContext)
       type: z.enum(["command", "url"]).optional(),
       command: z.string().optional().describe("The URL for a URL job, or the shell command"),
       enabled: z.boolean().optional(),
-      ...urlOptions,
+      ...jobOptions,
     },
     async ({ cronJobId, ...input }) => {
       const job = await db.query.cronJobs.findFirst({ where: eq(cronJobs.id, cronJobId), with: JOB_SCOPE });

@@ -13,6 +13,7 @@ import { eq, and, or, desc, inArray, isNull } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
+import { getOrgTimeZone } from "@/lib/time-zone-settings";
 import { backupOwnerOrgId, orgBackupScope } from "@/lib/backups/org-backup";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
@@ -97,7 +98,8 @@ async function handleGet(request: NextRequest, { params }: RouteParams) {
     });
     const recentHistory = rows.filter((b) => backupOwnerOrgId(b) === orgId);
 
-    return NextResponse.json({ jobs, recentHistory });
+    const timeZone = await getOrgTimeZone(orgId);
+    return NextResponse.json({ jobs: jobs.map((j) => ({ ...j, timeZone })), recentHistory });
   } catch (error) {
     return handleRouteError(error, "Error fetching backup jobs");
   }

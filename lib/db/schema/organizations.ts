@@ -20,8 +20,10 @@ export const organizations = pgTable("organization", {
   isSystemManaged: boolean("is_system_managed").default(false).notNull(),
   // Backups for apps that inherit. Null uses the system default.
   backupsEnabled: boolean("backups_enabled"),
-  // HH:MM UTC the nightly backup run starts.
+  // HH:MM in the org's time zone the nightly backup run starts.
   nightlyBackupTime: text("nightly_backup_time").default("02:00").notNull(),
+  // IANA zone for schedules and printed times. Null follows the instance.
+  timeZone: text("time_zone"),
   // DNS TXT challenge for baseDomain.
   baseDomainToken: text("base_domain_token"),
   baseDomainVerifiedAt: timestamp("base_domain_verified_at"),

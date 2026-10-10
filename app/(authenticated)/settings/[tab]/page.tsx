@@ -16,6 +16,7 @@ import { OrgGeneralSettings } from "../org-general-settings";
 import { BackupPage } from "@/components/backups/backup-page";
 import { getEmailProviderConfig } from "@/lib/system-settings";
 import { getInstanceBaseDomain } from "@/lib/domain-monitoring/base-domain";
+import { getInstanceTimeZone } from "@/lib/time-zone-settings";
 
 const VALID_TABS = ["general", "variables", "domains", "backups", "notifications", "team", "invitations"] as const;
 type ValidTab = (typeof VALID_TABS)[number];
@@ -57,6 +58,8 @@ export default async function OrgSettingsTabPage({
         <OrgGeneralSettings
           orgId={orgId}
           orgName={orgData.organization.name}
+          orgTimeZone={orgData.organization.timeZone ?? null}
+          instanceTimeZone={await getInstanceTimeZone()}
         />
       );
 

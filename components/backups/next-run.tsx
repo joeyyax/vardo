@@ -2,18 +2,19 @@
 
 import { Cron } from "croner";
 
-export function getNextRun(schedule: string): Date | null {
+/** Next fire time of a schedule read in `timeZone`. */
+export function getNextRun(schedule: string, timeZone = "UTC"): Date | null {
   if (!schedule || schedule === "manual") return null;
   try {
-    const job = new Cron(schedule);
+    const job = new Cron(schedule, { timezone: timeZone });
     return job.nextRun() ?? null;
   } catch {
     return null;
   }
 }
 
-export function NextRun({ schedule }: { schedule: string }) {
-  const next = getNextRun(schedule);
+export function NextRun({ schedule, timeZone }: { schedule: string; timeZone?: string }) {
+  const next = getNextRun(schedule, timeZone);
   if (!next) return <span className="text-muted-foreground">Manual</span>;
 
   const now = new Date();

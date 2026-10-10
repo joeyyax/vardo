@@ -27,6 +27,8 @@ type DigestSettingsData = {
   dayOfWeek: number;
   hourOfDay: number;
   lastSentAt: string | null;
+  /** The org's zone the schedule runs in. */
+  timeZone?: string;
 };
 
 const DAY_LABELS: Record<number, string> = {
@@ -43,7 +45,7 @@ const HOUR_LABELS: Record<number, string> = Object.fromEntries(
   Array.from({ length: 24 }, (_, i) => {
     const h = i % 12 || 12;
     const ampm = i < 12 ? "AM" : "PM";
-    return [i, `${h}:00 ${ampm} UTC`];
+    return [i, `${h}:00 ${ampm}`];
   }),
 );
 
@@ -52,7 +54,7 @@ async function requestDigestSettings(orgId: string): Promise<DigestSettingsData 
     const res = await fetch(`/api/v1/organizations/${orgId}/digest`);
     if (!res.ok) return null;
     const d = await res.json();
-    return d.digestSettings;
+    return { ...d.digestSettings, timeZone: d.timeZone };
   } catch {
     return null;
   }
@@ -108,7 +110,7 @@ export function DigestSettingsEditor({ orgId }: { orgId: string }) {
           return;
         }
         const d = await res.json();
-        setSettings(d.digestSettings);
+        setSettings((prev) => ({ ...d.digestSettings, timeZone: prev.timeZone }));
       } catch {
         toast.error("Couldn't save digest settings");
         load();
@@ -164,7 +166,7 @@ export function DigestSettingsEditor({ orgId }: { orgId: string }) {
       {settings.enabled && (
         <div className="space-y-3 pl-6 border-l border-border">
           <p className="text-xs text-muted-foreground">
-            Schedule times are in UTC.
+            Schedule times are in {(settings.timeZone ?? "UTC").replace(/_/g, " ")}.
           </p>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div className="space-y-2">
@@ -208,7 +210,7 @@ export function DigestSettingsEditor({ orgId }: { orgId: string }) {
             )}
 
             <div className="space-y-2">
-              <Label htmlFor="digest-hour">Time (UTC)</Label>
+              <Label htmlFor="digest-hour">Time</Label>
               <Select
                 value={String(settings.hourOfDay)}
                 onValueChange={(v) => save({ hourOfDay: parseInt(v) })}

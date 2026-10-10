@@ -8,6 +8,7 @@ import { cronJobRuns, cronJobs } from "@/lib/db/schema";
 import { decryptHeaders, encryptHeaders, HeaderValueMissingError, maskHeaders, mergeHeaders } from "./headers";
 import { isValidSchedule } from "./parse";
 import { urlOptionsShape } from "./url-options";
+import { isValidTimeZone } from "@/lib/time-zone";
 
 export const scheduleSchema = z
   .string()
@@ -21,6 +22,8 @@ const fields = {
   schedule: scheduleSchema,
   command: z.string().trim().min(1, "Command is required").max(4096),
   enabled: z.boolean(),
+  // Null runs in the server's zone.
+  timeZone: z.string().refine(isValidTimeZone, "Unknown time zone").nullable(),
 };
 
 export const cronCreateSchema = z
@@ -28,6 +31,7 @@ export const cronCreateSchema = z
     ...fields,
     type: fields.type.default("command"),
     enabled: fields.enabled.optional().default(true),
+    timeZone: fields.timeZone.optional(),
     ...urlOptionsShape,
   })
   .strict();
@@ -39,6 +43,7 @@ export const cronUpdateSchema = z
     schedule: fields.schedule.optional(),
     command: fields.command.optional(),
     enabled: fields.enabled.optional(),
+    timeZone: fields.timeZone.optional(),
     ...urlOptionsShape,
   })
   .strict();
@@ -117,6 +122,7 @@ export function createValues(input: CronCreateInput, orgId: string, appId: strin
     schedule: input.schedule,
     command: input.command,
     enabled: input.enabled,
+    timeZone: input.timeZone ?? null,
     ...urlColumns(input, orgId),
   };
 }

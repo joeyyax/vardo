@@ -4,14 +4,17 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { backupJobs, notificationSettings, organizations } from "@/lib/db/schema";
 import { nightlyCron } from "@/lib/backups/run-rules";
+import { getInstanceTimeZone, resolveTimeZone } from "@/lib/time-zone-settings";
 import { NOTIFICATION_CATEGORIES, NOTIFICATION_CATEGORY_KEYS, type NotificationCategory } from "./registry";
 
 export const DEFAULT_NIGHTLY_TIME = "02:00";
 
 export type OrgNotificationSettings = {
   categories: Record<NotificationCategory, boolean>;
-  /** HH:MM UTC. */
+  /** HH:MM in `timeZone`. */
   nightlyBackupTime: string;
+  /** The org's effective zone. */
+  timeZone: string;
 };
 
 /** Stored switches over the defaults. Unknown keys are dropped. */
@@ -27,9 +30,16 @@ export async function readOrgNotificationSettings(organizationId: string): Promi
       where: eq(notificationSettings.organizationId, organizationId),
       columns: { categories: true },
     }),
-    db.query.organizations.findFirst({ where: eq(organizations.id, organizationId), columns: { nightlyBackupTime: true } }),
+    db.query.organizations.findFirst({
+      where: eq(organizations.id, organizationId),
+      columns: { nightlyBackupTime: true, timeZone: true },
+    }),
   ]);
-  return { categories: resolveCategories(row?.categories), nightlyBackupTime: org?.nightlyBackupTime ?? DEFAULT_NIGHTLY_TIME };
+  return {
+    categories: resolveCategories(row?.categories),
+    nightlyBackupTime: org?.nightlyBackupTime ?? DEFAULT_NIGHTLY_TIME,
+    timeZone: resolveTimeZone(org?.timeZone, await getInstanceTimeZone()),
+  };
 }
 
 /** Merges a patch. A category back at its default drops out of the stored map. A new time moves every nightly job. */

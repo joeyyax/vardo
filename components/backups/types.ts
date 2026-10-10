@@ -45,6 +45,8 @@ export type BackupJob = {
   schedule: string;
   /** Runs in the org's nightly run. */
   nightly?: boolean;
+  /** Zone a nightly job's time is in. Other schedules run in UTC. */
+  timeZone?: string;
   enabled: boolean;
   keepLast: number | null;
   keepDaily: number | null;
