@@ -26,6 +26,8 @@ import {
 } from "../constants";
 import { db } from "@/lib/db";
 import { apps } from "@/lib/db/schema";
+import { DeployBlockedError } from "../errors";
+import { namespaceTraefikNames } from "../traefik-names";
 import { and, eq } from "drizzle-orm";
 import type { DeployContext } from "../deploy-context";
 import type { ServiceConfigOverride } from "../compose-types";
@@ -36,6 +38,7 @@ import { assertLabelHostsOwned } from "../label-hosts";
 import { injectProjectNetwork } from "../project-network";
 
 const NETWORK_NAME = VARDO_NETWORK;
+
 
 /** Ports each service's image exposes. Best-effort; unpulled images contribute nothing. */
 async function imagePortsByService(
@@ -179,6 +182,25 @@ export async function resolveCompose(ctx: DeployContext): Promise<DeployContext>
     // Vardo owns routing once the app has a domain; inbound labels would add a second backend.
     compose = stripTraefikLabels(compose);
   }
+  // Tenant Traefik names carry the app id, so no two apps can define one object.
+  if (!ctx.org?.isSystemManaged) {
+    const nsOpts = { trusted: ctx.orgTrusted, appEnv: envMap, shellEnv: process.env };
+    const ns = namespaceTraefikNames(compose, app.id, nsOpts);
+    if (ns.foreignRefs.length > 0) {
+      if (!ctx.orgTrusted) {
+        throw new DeployBlockedError(
+          `Couldn't deploy: a Traefik label references a router, service or middleware this app doesn't define: ${ns.foreignRefs.join(", ")}`,
+        );
+      }
+      log(`[deploy] Traefik: references outside this app allowed for a trusted organization: ${ns.foreignRefs.join(", ")}`);
+    }
+    compose = ns.compose;
+    ctx.bareCompose = namespaceTraefikNames(ctx.bareCompose, app.id, nsOpts).compose;
+    if (ns.renamed.size > 0) {
+      log(`[deploy] Traefik: names prefixed with this app's id: ${[...ns.renamed].map(([a, b]) => `${a} → ${b}`).join(", ")}`);
+    }
+  }
+
   // Self-routed and domainless apps keep their own routers; Vardo's carry headers already.
   if (app.securityHeaders ?? true) {
     compose = injectHeadersIntoOwnRouters(compose, app.name);

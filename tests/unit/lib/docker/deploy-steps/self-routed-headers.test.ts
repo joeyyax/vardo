@@ -78,6 +78,8 @@ function makeCtx(name: string, overrides: Partial<DeployApp> = {}): DeployContex
     envName: "production",
     envType: "production",
     envIsolated: false,
+    orgTrusted: true,
+    org: { id: "org-id", name: "org", baseDomain: null, trusted: true, isSystemManaged: name === VARDO_SELF_APP_NAME },
     envMap: {},
     compose,
     bareCompose: compose,
@@ -103,22 +105,22 @@ describe("self-routed app through resolve, slot naming and overlay", () => {
   it("puts the slot's headers middleware on the websecure routers only", async () => {
     const labels = await slotLabels(makeCtx("mail"));
     for (const router of ["mail", "mail-alt", "mail-smtp-cert"]) {
-      expect(labels[`traefik.http.routers.${router}-blue.middlewares`]).toBe("mail-vardo-headers-blue");
+      expect(labels[`traefik.http.routers.app-id-${router}-blue.middlewares`]).toBe("mail-vardo-headers-blue");
     }
-    expect(labels["traefik.http.routers.mail-http-blue.middlewares"]).toBe("to-https@file");
+    expect(labels["traefik.http.routers.app-id-mail-http-blue.middlewares"]).toBe("to-https@file");
     expect(labels["traefik.http.middlewares.mail-vardo-headers-blue.headers.stsSeconds"]).toBe("31536000");
   });
 
   it("names the middleware per slot on green", async () => {
     const labels = await slotLabels(makeCtx("mail"), "green");
-    expect(labels["traefik.http.routers.mail-green.middlewares"]).toBe("mail-vardo-headers-green");
+    expect(labels["traefik.http.routers.app-id-mail-green.middlewares"]).toBe("mail-vardo-headers-green");
     expect(labels["traefik.http.middlewares.mail-vardo-headers-green.headers.stsSeconds"]).toBe("31536000");
   });
 
   it("adds nothing when the app opts out", async () => {
     const labels = await slotLabels(makeCtx("mail", { securityHeaders: false }));
     expect(Object.keys(labels).filter((k) => k.includes("vardo-headers"))).toEqual([]);
-    expect(labels["traefik.http.routers.mail-blue.middlewares"]).toBeUndefined();
+    expect(labels["traefik.http.routers.app-id-mail-blue.middlewares"]).toBeUndefined();
   });
 
   it("adds nothing to the console's own routers", async () => {

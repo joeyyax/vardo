@@ -71,6 +71,8 @@ async function render(deploymentId: string, slot: "blue" | "green") {
     appId: a.id,
     organizationId: a.organizationId,
     app: a,
+    org: { id: a.organizationId, name: "Vardo", baseDomain: null, trusted: true, isSystemManaged: true },
+    orgTrusted: true,
     envName: "production",
     envType: "production",
     envMap: {},
