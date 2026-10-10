@@ -54,6 +54,8 @@ function accessorPatterns(flag: FeatureFlag): RegExp[] {
     new RegExp(`isFeatureEnabled(?:Async)?\\(\\s*${quoted}`),
     new RegExp(`requirePlugin\\(\\s*${quoted}`),
     new RegExp(`gate:\\s*${quoted}`),
+    // A loop registry entry, which gates the loop's start and every pass.
+    new RegExp(`feature:\\s*${quoted}`),
   ];
 }
 
