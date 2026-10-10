@@ -45,6 +45,8 @@ export function withRateLimit(
       limit: config.limit,
       windowMs: config.windowMs,
       identifier,
+      // Brute-force protection doesn't lapse when Redis does.
+      failClosed: opts.tier === "auth",
     });
 
     if (limited) return limited;

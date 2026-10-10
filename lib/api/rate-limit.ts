@@ -31,8 +31,13 @@ else
 end
 `.trim();
 
+/** Retry-After when the limiter can't count, for callers that fail closed. */
+const UNAVAILABLE_RETRY_SECONDS = 30;
+
+type RateLimitResult = { limited: false } | { limited: true; retryAfterSeconds: number; unavailable?: boolean };
+
 /**
- * Sliding window rate limit check. Fails open when Redis is unavailable.
+ * Sliding window rate limit check. Fails open when Redis is unavailable unless `failClosed`.
  * @param identifier - Forgery-resistant actor id (e.g. `${userId}:${orgId}`); x-forwarded-for IPs are spoofable.
  * @param key - Bucket name prefixed onto the Redis key; empty gives a bare `rl:${identifier}` key.
  */
@@ -40,8 +45,9 @@ export async function slidingWindowRateLimit(
   identifier: string,
   key: string,
   limit: number,
-  windowMs: number
-): Promise<{ limited: false } | { limited: true; retryAfterSeconds: number }> {
+  windowMs: number,
+  opts: { failClosed?: boolean } = {},
+): Promise<RateLimitResult> {
   const redisKey = key ? `rl:${key}:${identifier}` : `rl:${identifier}`;
   const now = Date.now();
   const ttlSeconds = Math.ceil(windowMs / 1000);
@@ -59,7 +65,10 @@ export async function slidingWindowRateLimit(
     );
     count = Number(result);
   } catch (err) {
-    // Fail open.
+    if (opts.failClosed) {
+      log.error("Redis error, refusing the request:", err);
+      return { limited: true, retryAfterSeconds: UNAVAILABLE_RETRY_SECONDS, unavailable: true };
+    }
     log.error("Redis error, failing open:", err);
     return { limited: false };
   }
@@ -84,12 +93,12 @@ export async function slidingWindowRateLimit(
 }
 
 /**
- * Rate limiter for route handlers: null when allowed, else a 429. Fails open when Redis is unavailable.
+ * Rate limiter for route handlers: null when allowed, else a 429. Without Redis it fails open, or answers 503 with `failClosed`.
  * @param identifier - Forgery-resistant id for authenticated routes; x-forwarded-for IPs are spoofable.
  */
 export async function rateLimit(
   request: NextRequest,
-  opts: { key?: string; limit: number; windowMs: number; identifier?: string }
+  opts: { key?: string; limit: number; windowMs: number; identifier?: string; failClosed?: boolean }
 ): Promise<NextResponse | null> {
   const rateLimitId =
     opts.identifier ??
@@ -101,8 +110,16 @@ export async function rateLimit(
     rateLimitId,
     opts.key ?? "",
     opts.limit,
-    opts.windowMs
+    opts.windowMs,
+    { failClosed: opts.failClosed },
   );
+
+  if (result.limited && result.unavailable) {
+    return NextResponse.json(
+      { error: "Sign-in is unavailable right now. Try again shortly." },
+      { status: 503, headers: { "Retry-After": String(result.retryAfterSeconds) } },
+    );
+  }
 
   if (result.limited) {
     return NextResponse.json(
