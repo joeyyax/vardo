@@ -19,7 +19,7 @@ const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n
 
 /** Per-tier memory formula: a share of RAM between a floor and a ceiling, in MiB. Disposable is half of standard. */
 export const TIER_MEMORY_FORMULA = {
-  critical: { divisor: 8, minMb: 1024, maxMb: 8192 },
+  critical: { divisor: 8, minMb: 1024, maxMb: 8192, largeHostGiB: 6, largeHostMinMb: 2048 },
   standard: { divisor: 16, minMb: 1024, maxMb: 4096 },
   disposable: { minMb: 512 },
 } as const;
@@ -49,11 +49,13 @@ export function installedGiB(memoryMb: number): number {
 /** Memory cap (MiB) for a tier, from the host's MemTotal in MiB. */
 export function tierMemoryRuleMb(tier: QosTier, memoryMb: number): number {
   const { critical, standard, disposable } = TIER_MEMORY_FORMULA;
-  const ram = installedGiB(memoryMb) * 1024;
+  const gib = installedGiB(memoryMb);
+  const ram = gib * 1024;
   const std = clamp(roundMiB(ram / standard.divisor), standard.minMb, standard.maxMb);
   if (tier === "standard") return std;
   if (tier === "disposable") return Math.max(disposable.minMb, roundMiB(std / 2));
-  return clamp(roundMiB(ram / critical.divisor), critical.minMb, critical.maxMb);
+  const floor = gib >= critical.largeHostGiB ? critical.largeHostMinMb : critical.minMb;
+  return clamp(roundMiB(ram / critical.divisor), floor, critical.maxMb);
 }
 
 /** vardo-redis's container limit in MiB, from the host's MemTotal in MiB. */

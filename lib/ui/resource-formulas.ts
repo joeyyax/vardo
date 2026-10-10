@@ -11,7 +11,7 @@ const { critical, standard, disposable } = TIER_MEMORY_FORMULA;
 
 /** One row per sized default, in the order the summary reads. */
 export const FORMULA_ROWS: readonly FormulaRow[] = [
-  { key: "memoryCritical", label: "Critical", formula: `RAM ÷ ${critical.divisor}, between ${formatMb(critical.minMb)} and ${formatMb(critical.maxMb)}` },
+  { key: "memoryCritical", label: "Critical", formula: `RAM ÷ ${critical.divisor}, between ${formatMb(critical.minMb)} (${formatMb(critical.largeHostMinMb)} from ${critical.largeHostGiB} GB of RAM) and ${formatMb(critical.maxMb)}` },
   { key: "memoryStandard", label: "Standard", formula: `RAM ÷ ${standard.divisor}, between ${formatMb(standard.minMb)} and ${formatMb(standard.maxMb)}` },
   { key: "memoryDisposable", label: "Disposable", formula: `Half of standard, at least ${formatMb(disposable.minMb)}` },
   {
@@ -25,6 +25,7 @@ export const FORMULA_ROWS: readonly FormulaRow[] = [
 export const FORMULA_NOTES = [
   "RAM means installed memory: what the kernel reports plus about 4%, to the nearest GB. Memory values round to the nearest 64 MB.",
   "Standard apps get every core but one, disposable apps half and critical apps no CPU cap.",
+  "Hosts with 25–31 GB get lower memory defaults than the old size bands did, and 7 GB hosts get one deploy at once instead of two. Learned defaults correct apps with history.",
   `After ${LEARN_MIN_DAYS} days, an app with no limit of its own gets its daily 99th-percentile memory plus ${Math.round((LEARN_HEADROOM - 1) * 100)}%, kept between half and twice its tier's default. It applies on the next deploy.`,
 ];
 

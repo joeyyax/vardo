@@ -59,7 +59,7 @@ describe("formulas by host size", () => {
   // Host, cores, then [critical, standard, disposable, deploys, redis] before and after.
   it.each([
     [4, 2, [1024, 1024, 512, 1, 512], [1024, 1024, 512, 1, 512]],
-    [8, 4, [2048, 1024, 512, 2, 512], [1024, 1024, 512, 2, 512]],
+    [8, 4, [2048, 1024, 512, 2, 512], [2048, 1024, 512, 2, 512]],
     [16, 4, [2048, 1024, 512, 2, 512], [2048, 1024, 512, 2, 512]],
     [32, 8, [4096, 2048, 1024, 4, 1024], [4096, 2048, 1024, 4, 1024]],
     [48, 12, [4096, 2048, 1024, 4, 1024], [6144, 3072, 1536, 6, 1536]],
@@ -93,6 +93,7 @@ describe("formulas by host size", () => {
       const h = host(Math.max(1, gib / 2), gib);
       const was = before(h);
       const now = after(h);
+      expect(now.critical).toBeGreaterThanOrEqual(was.critical);
       expect(now.standard).toBeGreaterThanOrEqual(was.standard);
       expect(now.disposable).toBeGreaterThanOrEqual(was.disposable);
       expect(now.redis).toBeGreaterThanOrEqual(was.redis);
@@ -100,10 +101,13 @@ describe("formulas by host size", () => {
     }
   });
 
-  it("holds critical between 1 and 8 GiB at RAM/8", () => {
+  it("holds critical between 1 GiB (2 GiB from 6 GiB of RAM) and 8 GiB at RAM/8", () => {
     expect(tierMemoryRuleMb("critical", mt(4))).toBe(1024);
-    expect(tierMemoryRuleMb("critical", mt(8))).toBe(1024);
-    expect(tierMemoryRuleMb("critical", mt(9))).toBe(1152);
+    expect(tierMemoryRuleMb("critical", mt(5))).toBe(1024);
+    expect(tierMemoryRuleMb("critical", mt(6))).toBe(2048);
+    expect(tierMemoryRuleMb("critical", mt(8))).toBe(2048);
+    expect(tierMemoryRuleMb("critical", mt(16))).toBe(2048);
+    expect(tierMemoryRuleMb("critical", mt(17))).toBe(2176);
     expect(tierMemoryRuleMb("critical", mt(64))).toBe(8192);
     expect(tierMemoryRuleMb("critical", mt(65))).toBe(8192);
   });

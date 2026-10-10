@@ -11,7 +11,7 @@ const rules = describeDefaults(host, 8, {});
 describe("Resources settings", () => {
   it("states each formula in plain language", () => {
     expect(FORMULA_ROWS.map((r) => [r.label, r.formula])).toEqual([
-      ["Critical", "RAM ÷ 8, between 1 GB and 8 GB"],
+      ["Critical", "RAM ÷ 8, between 1 GB (2 GB from 6 GB of RAM) and 8 GB"],
       ["Standard", "RAM ÷ 16, between 1 GB and 4 GB"],
       ["Disposable", "Half of standard, at least 512 MB"],
       ["Deploys at once", "One per 2 cores or per 4 GB of RAM, whichever is fewer, from 1 to 6"],
