@@ -26,6 +26,7 @@ export const EVENT_LABELS: Record<BusEventType, string> = {
   "app.oom-killed": "Killed for memory",
   "alert.fired": "Host or app alert",
   "alert.resolved": "Alert resolved",
+  "notification.test": "Test notification",
   "backup.success": "Backup succeeded",
   "backup.failed": "Backup failed",
   "backup.summary": "Backup run finished",

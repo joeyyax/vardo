@@ -71,7 +71,7 @@ describe("createChannel", () => {
     ["slack", SlackNotificationChannel, { webhookUrl: "https://hooks.slack.com/x" }],
     ["email", EmailNotificationChannel, { recipients: ["ops@example.com"] }],
   ] as const)("redacts before a %s channel sends", async (type, Channel, config) => {
-    const spy = vi.spyOn(Channel.prototype, "send").mockResolvedValue(undefined);
+    const spy = vi.spyOn(Channel.prototype, "send").mockResolvedValue({});
     await createChannel({ type, organizationId: ORG, config }).send(cronEvent as never);
     expect(JSON.stringify(spy.mock.calls[0][0])).not.toContain("tok3n-value-abc");
     spy.mockRestore();

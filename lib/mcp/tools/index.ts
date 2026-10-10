@@ -25,6 +25,8 @@ import { registerRollbackApp } from "./rollback-app";
 import { registerAdoptApp } from "./adopt-app";
 import { registerRunCronJob } from "./run-cron-job";
 import { registerCronJobTools } from "./cron-jobs";
+import { registerNotificationChannelTools } from "./notification-channels";
+import { registerEmailSettingsTools } from "./email-settings";
 
 /** Registers all MCP tools on the server. */
 export function registerAllTools(
@@ -56,4 +58,6 @@ export function registerAllTools(
   registerAdoptApp(server, context);
   registerRunCronJob(server, context);
   registerCronJobTools(server, context);
+  registerNotificationChannelTools(server, context);
+  registerEmailSettingsTools(server, context);
 }

@@ -591,6 +591,15 @@ export type AlertFiredEvent = {
   alerts: AlertItem[];
 };
 
+/** A test send through one channel. Never emitted on the bus, so no channel subscribes to it. */
+export type NotificationTestEvent = {
+  type: "notification.test";
+  title: string;
+  message: string;
+  channelName: string;
+  organizationId: string;
+};
+
 /** Alerts that cleared in one pass. */
 export type AlertResolvedEvent = {
   type: "alert.resolved";
@@ -635,7 +644,8 @@ export type BusEvent =
   | AppAutoRestartedEvent
   | AppOomKilledEvent
   | AlertFiredEvent
-  | AlertResolvedEvent;
+  | AlertResolvedEvent
+  | NotificationTestEvent;
 
 export type BusEventType = BusEvent["type"];
 

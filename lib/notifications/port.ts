@@ -7,6 +7,8 @@ export type DeliveryReceipt = {
   providerMessageIds?: string[];
   /** Some recipients failed; logged on the success row. */
   partialFailure?: string;
+  /** HTTP status from a webhook or Slack endpoint. */
+  providerStatus?: number;
 };
 
 export interface NotificationChannel {

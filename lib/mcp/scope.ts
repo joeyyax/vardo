@@ -30,6 +30,11 @@ export async function canAccessOrg(
   return can({ role: membership?.role, scopes: context.scopes }, cap);
 }
 
+/** True when the token has the admin scope and its user is still an instance admin. */
+export async function canAdminInstance(context: McpAuthContext): Promise<boolean> {
+  return context.adminScope === true && (await isInstanceAdminUser(context.userId));
+}
+
 /** Every organization the token may act on with `cap`, resolved from live memberships. */
 export async function accessibleOrgIds(
   context: McpAuthContext,

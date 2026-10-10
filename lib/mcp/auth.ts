@@ -13,6 +13,8 @@ export type McpAuthContext = {
   crossOrg: boolean;
   /** The token's scope; null or absent allows everything the role does. */
   scopes?: ReadonlySet<Capability> | null;
+  /** The token's opt-in instance-admin scope; canAdminInstance also checks the live admin flag. */
+  adminScope?: boolean;
 };
 
 /** Authenticates a raw MCP Request by Bearer token. Null if invalid or api-tokens is off. */
@@ -49,5 +51,6 @@ export async function authenticateRequest(
     organizationId: token.organizationId,
     crossOrg: token.crossOrg,
     scopes: tokenScopeCapabilities(token.scope, token.capabilities),
+    adminScope: token.adminAccess === true,
   };
 }

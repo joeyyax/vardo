@@ -4,14 +4,12 @@ import { db } from "@/lib/db";
 import { notificationChannels } from "@/lib/db/schema";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { eq, asc } from "drizzle-orm";
-import { nanoid } from "nanoid";
-import { z } from "zod";
-import { presentChannel, sealChannelConfig } from "@/lib/notifications/channel-config";
+import { presentChannel } from "@/lib/notifications/channel-config";
+import { channelCreateSchema, createChannelRow } from "@/lib/notifications/channels";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
 type RouteParams = { params: Promise<{ orgId: string }> };
-const createSchema = z.object({ name: z.string().min(1).max(100), type: z.enum(["email", "webhook", "slack"]), config: z.union([z.object({ recipients: z.array(z.string().email()).min(1) }), z.object({ url: z.string().url(), secret: z.string().optional() }), z.object({ webhookUrl: z.string().url() })]), enabled: z.boolean().optional().default(true), subscribedEvents: z.array(z.string()).optional().default([]) }).strict();
 
 async function handleGet(_req: NextRequest, { params }: RouteParams) {
   try {
@@ -29,9 +27,9 @@ async function handlePost(req: NextRequest, { params }: RouteParams) {
     const { orgId } = await params;
     const org = await verifyOrgAccess(orgId, "org.notifications.manage");
     if (!org) return apiError.forbidden();
-    const parsed = createSchema.safeParse(await req.json());
+    const parsed = channelCreateSchema.safeParse(await req.json());
     if (!parsed.success) return apiError.validation(parsed.error);
-    const [channel] = await db.insert(notificationChannels).values({ id: nanoid(), organizationId: orgId, name: parsed.data.name, type: parsed.data.type, config: sealChannelConfig(parsed.data.config, orgId), enabled: parsed.data.enabled, subscribedEvents: parsed.data.subscribedEvents }).returning();
+    const channel = await createChannelRow(orgId, parsed.data);
     return NextResponse.json({ channel: presentChannel(channel) }, { status: 201 });
   } catch (error) { return handleRouteError(error, "Error creating notification channel"); }
 }

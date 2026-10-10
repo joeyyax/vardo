@@ -4,7 +4,7 @@ import path from "node:path";
 import ts from "typescript";
 import { CAPABILITIES } from "@/lib/auth/permissions";
 
-// Every MCP tool names the capability it needs through the scope helpers.
+// Every MCP tool names the capability it needs through the scope helpers, or checks the instance-admin scope.
 
 const DIR = path.resolve(__dirname, "../../../../lib/mcp/tools");
 const GATES = new Set([
@@ -16,17 +16,22 @@ const GATES = new Set([
   "resolveOrgPreview",
 ]);
 const KNOWN = new Set(Object.keys(CAPABILITIES));
+const ADMIN_GATE = "canAdminInstance";
 
-function capabilitiesIn(node: ts.Node): string[] {
+function gatesIn(node: ts.Node): { caps: string[]; adminGated: boolean } {
   const caps: string[] = [];
+  let adminGated = false;
   const visit = (n: ts.Node) => {
-    if (ts.isCallExpression(n) && ts.isIdentifier(n.expression) && GATES.has(n.expression.text)) {
-      for (const arg of n.arguments) if (ts.isStringLiteral(arg)) caps.push(arg.text);
+    if (ts.isCallExpression(n) && ts.isIdentifier(n.expression)) {
+      if (GATES.has(n.expression.text)) {
+        for (const arg of n.arguments) if (ts.isStringLiteral(arg)) caps.push(arg.text);
+      }
+      if (n.expression.text === ADMIN_GATE) adminGated = true;
     }
     ts.forEachChild(n, visit);
   };
   visit(node);
-  return caps;
+  return { caps, adminGated };
 }
 
 const tools = fs
@@ -35,7 +40,7 @@ const tools = fs
   .flatMap((file) => {
     const src = fs.readFileSync(path.join(DIR, file), "utf8");
     const sf = ts.createSourceFile(file, src, ts.ScriptTarget.Latest, true);
-    const found: { tool: string; caps: string[] }[] = [];
+    const found: { tool: string; caps: string[]; adminGated: boolean }[] = [];
     const visit = (n: ts.Node) => {
       if (
         ts.isCallExpression(n) &&
@@ -44,7 +49,7 @@ const tools = fs
         ts.isStringLiteral(n.arguments[0])
       ) {
         const handler = n.arguments[n.arguments.length - 1];
-        found.push({ tool: n.arguments[0].text, caps: capabilitiesIn(handler) });
+        found.push({ tool: n.arguments[0].text, ...gatesIn(handler) });
       }
       ts.forEachChild(n, visit);
     };
@@ -57,8 +62,8 @@ describe("MCP tool capabilities", () => {
     expect(tools.length).toBeGreaterThan(20);
   });
 
-  it.each(tools)("$tool names a capability", ({ caps }) => {
-    expect(caps.length).toBeGreaterThan(0);
+  it.each(tools)("$tool names a capability or checks the admin scope", ({ caps, adminGated }) => {
+    expect(caps.length > 0 || adminGated).toBe(true);
     for (const cap of caps) expect(KNOWN).toContain(cap);
   });
 });

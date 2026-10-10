@@ -1,5 +1,5 @@
 import { createHmac } from "crypto";
-import type { NotificationChannel } from "./port";
+import type { DeliveryReceipt, NotificationChannel } from "./port";
 import type { BusEvent } from "@/lib/bus/events";
 import { logger } from "@/lib/logger";
 import { safeFetch } from "@/lib/security/safe-fetch";
@@ -12,7 +12,7 @@ const WEBHOOK_TIMEOUT = 10_000;
 export class WebhookNotificationChannel implements NotificationChannel {
   constructor(private config: { url: string; secret?: string }) {}
 
-  async send(event: BusEvent): Promise<void> {
+  async send(event: BusEvent): Promise<DeliveryReceipt> {
     const payload = JSON.stringify({
       ...event,
       timestamp: new Date().toISOString(),
@@ -43,6 +43,7 @@ export class WebhookNotificationChannel implements NotificationChannel {
       if (!response.ok) {
         log.error(`Webhook returned ${response.status}`);
       }
+      return { providerStatus: response.status };
     } finally {
       clearTimeout(timer);
     }
@@ -52,10 +53,12 @@ export class WebhookNotificationChannel implements NotificationChannel {
 export class SlackNotificationChannel implements NotificationChannel {
   constructor(private config: { webhookUrl: string }) {}
 
-  async send(event: BusEvent): Promise<void> {
-    const emoji = event.type.includes("success")
-      ? ":white_check_mark:"
-      : ":x:";
+  async send(event: BusEvent): Promise<DeliveryReceipt> {
+    const emoji = event.type === "notification.test"
+      ? ":wave:"
+      : event.type.includes("success")
+        ? ":white_check_mark:"
+        : ":x:";
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), WEBHOOK_TIMEOUT);
@@ -73,6 +76,7 @@ export class SlackNotificationChannel implements NotificationChannel {
       if (!response.ok) {
         log.error(`Slack returned ${response.status}`);
       }
+      return { providerStatus: response.status };
     } finally {
       clearTimeout(timer);
     }

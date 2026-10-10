@@ -36,7 +36,7 @@ Members see command cron jobs but can't change their command or type. A `[[cron]
 
 ## API tokens
 
-A token acts as the user who made it. It holds the intersection of its scope and the user's live role, so a scope never grants more than the role. Tokens never carry instance-admin power.
+A token acts as the user who made it. It holds the intersection of its scope and the user's live role, so a scope never grants more than the role. A token carries instance-admin power only with the admin scope.
 
 | Scope | Holds |
 | --- | --- |
@@ -46,3 +46,5 @@ A token acts as the user who made it. It holds the intersection of its scope and
 | Custom | The capabilities picked at creation |
 
 A token works in the org it was made in. Turn on "all my organizations" to let it act on every org the user belongs to. A token scoped below full can't create orgs, accept invitations, change notification preferences or touch GitHub installations and repos. A token can only mint tokens within its own scope, reach and lifetime.
+
+The admin scope lets a token call instance-admin routes such as `/api/setup/email` and use the MCP email settings tools. Only an instance admin signed in with a session can grant it, from the token form or the token's switch; a token can't. It works only while its user is still an instance admin. Without it, admin routes answer 403.
