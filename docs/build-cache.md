@@ -47,7 +47,7 @@ So a full cache gives up stale layers before a recent app's layers or any packag
 
 Admin → Settings → Maintenance reports and prunes both caches; BuildKit's is read with `buildctl du`, since `docker system df` can't see inside its volume (#815).
 
-Nixpacks builds land in the Docker daemon's own builder cache. That one is already bounded: `post-deploy.ts` prunes it to `BUILD_CACHE_MAX_BYTES` after each deploy. No separate Nixpacks ceiling is needed.
+Nixpacks builds run on BuildKit too (see [Nixpacks on the bounded builder](#nixpacks-on-the-bounded-builder)), so they share its ceiling. Only the fallback, Nixpacks' own build, lands in the Docker daemon's builder cache, which `post-deploy.ts` prunes to `BUILD_CACHE_MAX_BYTES` after each deploy.
 
 ## Checkout and build tree
 
@@ -81,7 +81,54 @@ Every app env var is a build arg today (`--build-arg` for Dockerfiles, `--env` f
 
 "Rebuild without cache" in the app's menu (`rebuild: "no-cache"` on the deploy API and the MCP tool) skips reuse and passes `--no-cache`. `rebuild: "force"` skips reuse but keeps the layer cache.
 
-Compose builds aren't reused yet; they get the build tree and `--no-cache` on a no-cache rebuild.
+### Compose builds
+
+Each compose service with a `build:` gets its own key (`lib/docker/compose-build-reuse.ts`), from `docker compose config` for the slot:
+
+- the build config version and the app id
+- the git tree id of the service's context at the deployed commit, so a commit that leaves the directory alone keeps the key
+- a SHA-256 of its Dockerfile (or `dockerfile_inline`), wherever it lives
+- its build args, minus `VARDO_GIT_SHA` unless the Dockerfile declares `ARG VARDO_GIT_SHA`
+- the rest of the build spec (target, labels, platforms and the like) and the Docker server version
+- the commit, when the context includes `.git`
+
+A service whose context is remote or outside the repo, or that uses `additional_contexts` or build secrets, gets no key and always builds; the log says why.
+
+Keys go in `vardo-build-keys.yml` in the slot, passed to `compose build` only, which labels each image `vardo.build.key`. On the next deploy a service whose key labels a local image skips its build: Vardo builds `FROM <that image>` on the daemon's own builder with this slot's compose labels. That moves no layers (under a second) and keeps the per-slot labels image reclaim sorts by. Only the remaining services build; when none remain, the build is skipped. A rebuild skips the lookup but still labels the new images.
+
+## Image export
+
+Measured 2026-10-10 on the same Mac against a throwaway `moby/buildkit:v0.34.0` on a remote buildx builder, set up as `vardo-bounded` is. The app is `create-next-app` 15.5.4 built from Nixpacks 1.41's generated Dockerfile (956 MB image); each run changes one source line, which reruns `npm ci` and `next build`. Seconds, mean of 3 to 5 runs.
+
+| Daemon | Export | Export step | Whole build |
+| --- | --- | --- | --- |
+| Docker 29.4, overlay2 | `--load` (gzip) | 9.7 | 24.5 |
+| | `--load`, provenance and SBOM off | 10.0 | 24.6 |
+| | uncompressed | 5.7 | 20.4 |
+| | zstd | 5.2 | 20.0 |
+| Docker 29.9 (dind), containerd image store | `--load` (gzip) | 9.3 | 24.2 |
+| | uncompressed | 4.9 | 20.0 |
+| | zstd | 4.1 | 18.8 |
+
+Most of the gzip cost is compressing the changed layers (6.2s of "exporting layers" vs 1.1s uncompressed). Attestations made no difference: buildx adds none for the docker exporter. On the containerd store uncompressed layers stay on disk as blobs (595 MB of content vs 348 MB gzip and 332 MB zstd); overlay2 unpacks and drops them either way.
+
+So bounded builds pick their export from `docker info` (`lib/docker/build-export.ts`, read once per ten minutes):
+
+- **containerd store** (`DriverStatus` has `driver-type: io.containerd.snapshotter.v1`; new Docker 29 installs default to it): `--output type=docker,compression=zstd`
+- **overlay2 and other graph drivers**: `--output type=docker,compression=uncompressed`
+- **unreadable**, or `VARDO_BUILD_EXPORT=load`: plain `--load`
+
+Both add `--provenance=false --sbom=false`. Compose builds get the same export: when the store is known, Vardo prints compose's bake definition (`compose build --print`) and runs `docker buildx bake --set '*.output=…'` on it. When compose can't print one or a service uses build secrets, plain `compose build` runs as before. Railpack loads images itself and keeps gzip.
+
+Not taken: giving `vardo-buildkit` the containerd worker on the host's containerd socket. Images would land in the store with no export at all, but build steps would run as host containerd tasks outside `vardo-buildkit`'s memory limit, it needs host mounts in `docker-compose.yml`, and it only works on the containerd store.
+
+## Nixpacks on the bounded builder
+
+Nixpacks builds run as Dockerfile builds. Vardo runs `nixpacks build <dir> --out <dir> --cache-key <appId>` with the app's env and overrides, which writes `.nixpacks/Dockerfile` into the build tree without building. It reads the plan's variables with `nixpacks plan` for the build args, then builds that Dockerfile like any other: on `vardo-bounded` under its memory limit and export, with the build tree as context and the `vardo.build.key` label. `.nixpacks/` is removed afterwards.
+
+If generating fails, the log says so and Nixpacks builds the old way, on the daemon.
+
+The cache mounts in 1.41's generated Dockerfile already follow the package manager: `/root/.npm` for npm, the pnpm store for pnpm, the yarn cache for yarn, plus `.next/cache` and `node_modules/.cache`. A pnpm mount on an npm app didn't reproduce, so nothing rewrites them. `--cache-key` scopes them per app, as for Railpack.
 
 ## Change: per-app Railpack cache key
 
@@ -92,6 +139,7 @@ The cost is that a brand new app starts with an empty npm cache mount instead of
 ## Follow-ups
 
 - Find why Railpack's dependency rebuild is slower than Nixpacks' (mise or install layer).
+- Railpack still loads gzip layers; check whether its CLI can export uncompressed or zstd.
 
 ## Build plan and overrides
 
