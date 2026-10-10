@@ -28,6 +28,8 @@ export type AppSettingsFields = {
   restartPolicy: boolean;
   resourceLimits: boolean;
   diskWriteAlert: boolean;
+  /** Alerts on straying from the app's own baseline. */
+  anomalyAlerts: boolean;
   priority: boolean;
   /** Offers the "inherit" tier, which only a child can resolve. */
   priorityInherit: boolean;
@@ -64,6 +66,7 @@ export function appSettingsFields(ctx: AppSettingsFieldContext): AppSettingsFiel
     resourceLimits: true,
     // Alerts match containers by name, which belong to child rows.
     diskWriteAlert: !isComposeParent,
+    anomalyAlerts: true,
     priority: true,
     priorityInherit: isChildService,
     healthCheckTimeout: true,
@@ -103,6 +106,7 @@ export const APP_SETTINGS_FIELD_PAGE: Record<AppSettingsFieldName, AppSettingsPa
   priority: "resources",
   healthCheckTimeout: "resources",
   diskWriteAlert: "resources",
+  anomalyAlerts: "resources",
   gpu: "resources",
 };
 

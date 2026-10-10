@@ -65,6 +65,7 @@ const updateAppSchema = z.object({
   backendProtocol: z.enum(["http", "https"]).nullable().optional(),
   securityHeaders: z.boolean().optional(),
   diskWriteAlertThreshold: z.number().int().min(0).nullable().optional(), // bytes/hour, null = default 1GB
+  anomalyAlerts: z.boolean().optional(),
   healthCheckTimeout: z.number().int().min(10).max(600).nullable().optional(),
   autoRollback: z.boolean().optional(),
   rollbackGracePeriod: z.number().int().min(10).max(600).optional(),

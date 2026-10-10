@@ -31,6 +31,7 @@ type V2StatEntry = {
   };
   has_accelerators?: boolean;
   accelerators?: V2Accelerator[];
+  processes?: { process_count?: number };
 };
 
 type V2SpecEntry = {
@@ -185,6 +186,7 @@ export async function fetchAllContainerMetrics(baseUrl = CADVISOR_URL): Promise<
       diskUsage,
       diskLimit,
       diskWriteBytes,
+      processCount: typeof curr.processes?.process_count === "number" ? curr.processes.process_count : null,
       gpuUtilization: Math.round(gpuUtilization * 100) / 100,
       gpuMemoryUsed,
       gpuMemoryTotal,

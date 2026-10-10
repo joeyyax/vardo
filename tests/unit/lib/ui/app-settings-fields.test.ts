@@ -145,6 +145,7 @@ describe("APP_SETTINGS_FIELD_PAGE", () => {
 
   it("puts how the app runs on Resources", () => {
     expect(shown("resources", plainApp).sort()).toEqual([
+      "anomalyAlerts",
       "diskWriteAlert",
       "gpu",
       "healthCheckTimeout",

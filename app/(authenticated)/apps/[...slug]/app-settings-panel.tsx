@@ -89,6 +89,7 @@ export function AppSettingsPanel({
   const [backendProtocol, setBackendProtocol] = useState<"auto" | "http" | "https">(app.backendProtocol || "auto");
   const [securityHeaders, setSecurityHeaders] = useState(app.securityHeaders ?? true);
   const [diskWriteAlertThreshold, setDiskWriteAlertThreshold] = useState(app.diskWriteAlertThreshold ? (app.diskWriteAlertThreshold / 1_073_741_824).toString() : "");
+  const [anomalyAlerts, setAnomalyAlerts] = useState(app.anomalyAlerts ?? true);
   const [healthCheckTimeout, setHealthCheckTimeout] = useState(app.healthCheckTimeout?.toString() || "60");
   const [autoRollback, setAutoRollback] = useState(app.autoRollback ?? false);
   const [rollbackGracePeriod, setRollbackGracePeriod] = useState(app.rollbackGracePeriod?.toString() || "60");
@@ -152,6 +153,7 @@ export function AppSettingsPanel({
           ? Math.round(parseFloat(diskWriteAlertThreshold) * 1_073_741_824)
           : null;
       }
+      if (fields.anomalyAlerts) body.anomalyAlerts = anomalyAlerts;
       if (fields.autoDeploy) body.autoDeploy = autoDeploy;
       if (fields.autoRollback) {
         body.autoRollback = autoRollback;
@@ -522,6 +524,19 @@ export function AppSettingsPanel({
               Each service gets these limits, unless it sets its own in Services.
             </p>
           )}
+        </div>
+      )}
+
+      {/* Unusual activity alerts */}
+      {fields.anomalyAlerts && (
+        <div className="flex items-center gap-3">
+          <Switch id="edit-anomaly-alerts" checked={anomalyAlerts} onCheckedChange={setAnomalyAlerts} />
+          <div className="grid gap-0.5">
+            <Label htmlFor="edit-anomaly-alerts">Unusual activity alerts</Label>
+            <p className="text-xs text-muted-foreground">
+              Alerts when {isComposeParent ? "a service" : "the app"} uses far more CPU, network or disk than its own normal or starts a process or port it never has. Quiet during deploys, restarts and backups.
+            </p>
+          </div>
         </div>
       )}
 

@@ -7,13 +7,23 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "@/lib/messenger";
+import type { Sensitivity } from "@/lib/anomaly/signals";
 import { NOTIFICATION_CATEGORIES, NOTIFICATION_CATEGORY_KEYS, type NotificationCategory } from "@/lib/notifications/registry";
 
 type Settings = {
   categories: Record<NotificationCategory, boolean>;
   nightlyBackupTime: string;
   timeZone: string;
+  anomalySensitivity: Sensitivity;
 };
+
+type Patch = { categories?: Partial<Record<NotificationCategory, boolean>>; nightlyBackupTime?: string; anomalySensitivity?: Sensitivity };
+
+const SENSITIVITY_OPTIONS: { value: Sensitivity; label: string; hint: string }[] = [
+  { value: "low", label: "Low", hint: "Only large, sustained jumps. Fewest alerts." },
+  { value: "normal", label: "Normal", hint: "About three times an app's usual high for that hour." },
+  { value: "high", label: "High", hint: "Smaller jumps too. More alerts, some of them noise." },
+];
 
 /** Every half hour, as HH:MM. */
 const TIME_OPTIONS = Array.from({ length: 48 }, (_, i) => `${String(Math.floor(i / 2)).padStart(2, "0")}:${i % 2 ? "30" : "00"}`);
@@ -54,11 +64,16 @@ export function NotificationCategoriesEditor({ orgId }: { orgId: string }) {
   }, [orgId, apply]);
 
   const save = useCallback(
-    async (patch: { categories?: Partial<Record<NotificationCategory, boolean>>; nightlyBackupTime?: string }) => {
+    async (patch: Patch) => {
       setSaving(true);
       setSettings((prev) =>
         prev
-          ? { ...prev, categories: { ...prev.categories, ...patch.categories }, nightlyBackupTime: patch.nightlyBackupTime ?? prev.nightlyBackupTime }
+          ? {
+              ...prev,
+              categories: { ...prev.categories, ...patch.categories },
+              nightlyBackupTime: patch.nightlyBackupTime ?? prev.nightlyBackupTime,
+              anomalySensitivity: patch.anomalySensitivity ?? prev.anomalySensitivity,
+            }
           : prev,
       );
       try {
@@ -126,6 +141,27 @@ export function NotificationCategoriesEditor({ orgId }: { orgId: string }) {
             </label>
           ))}
         </div>
+
+        {settings.categories.anomalies && (
+          <div className="space-y-2 pl-6 border-l border-border">
+            <Label htmlFor="anomaly-sensitivity">Unusual activity sensitivity</Label>
+            <Select value={settings.anomalySensitivity} onValueChange={(v) => save({ anomalySensitivity: v as Sensitivity })}>
+              <SelectTrigger id="anomaly-sensitivity" className="w-full sm:w-48">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SENSITIVITY_OPTIONS.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              {SENSITIVITY_OPTIONS.find((o) => o.value === settings.anomalySensitivity)?.hint} Each app learns its own normal over its first three days and stays quiet until then.
+            </p>
+          </div>
+        )}
 
         <div className="space-y-2 pl-6 border-l border-border">
           <Label htmlFor="nightly-time">Nightly backups start at</Label>

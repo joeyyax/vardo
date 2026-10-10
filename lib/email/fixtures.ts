@@ -474,6 +474,36 @@ export const EMAIL_FIXTURES: { name: string; event: BusEvent; series?: MailSerie
     },
   },
   {
+    name: "alert-app-anomaly",
+    event: {
+      type: "alert.fired",
+      title: "Shop is sending far more traffic than usual",
+      message: "Shop is sending far more traffic than usual",
+      alerts: [
+        {
+          type: "app.anomaly",
+          about: "app_shop",
+          appId: "app_shop",
+          appName: "Shop",
+          severity: "critical",
+          title: "Shop is sending far more traffic than usual",
+          detail: "Unexpected outbound traffic can mean a compromised app. Check its logs, recent deploys and running processes.",
+          series: {
+            title: "Outbound traffic, last hour",
+            values: [...ramp(1, 1.4, 0.2).slice(0, 14), ...ramp(40, 52, 0.05).slice(0, 16)],
+            caption: "Typical for this hour: 1.2 MiB/min",
+          },
+          facts: [
+            { label: "Outbound traffic", value: "48.6 MiB/min now, typically 1.2 MiB/min" },
+            { label: "CPU", value: "1.9 cores now, typically 4% of a core" },
+            { label: "Top processes", value: "kworkerd 187% CPU, node 3% CPU, sh 0% CPU" },
+          ],
+          since: "2026-10-09T14:02:00.000Z",
+        },
+      ],
+    },
+  },
+  {
     name: "alert-resolved",
     event: {
       type: "alert.resolved",

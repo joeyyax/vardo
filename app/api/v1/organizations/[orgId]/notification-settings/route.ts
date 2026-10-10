@@ -6,6 +6,7 @@ import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { readOrgNotificationSettings, updateOrgNotificationSettings } from "@/lib/notifications/preferences";
 import { NIGHTLY_TIME } from "@/lib/backups/run-rules";
 import { NOTIFICATION_CATEGORY_KEYS } from "@/lib/notifications/registry";
+import { SENSITIVITIES } from "@/lib/anomaly/signals";
 
 type RouteParams = { params: Promise<{ orgId: string }> };
 
@@ -15,6 +16,7 @@ const patchSchema = z
   .object({
     categories: z.partialRecord(z.enum(categoryKeys), z.boolean()).optional(),
     nightlyBackupTime: z.string().regex(NIGHTLY_TIME, "Use HH:MM, 24-hour").optional(),
+    anomalySensitivity: z.enum(SENSITIVITIES).optional(),
   })
   .strict()
   .refine((data) => Object.keys(data).length > 0, { message: "No fields to update" });

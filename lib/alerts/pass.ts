@@ -1,7 +1,8 @@
-// One alert pass: reads the host, the apps' conditions and recent OOM kills, then notifies each org once.
+// One alert pass: reads the host, the apps' conditions, recent OOM kills and anomalies, then notifies each org once.
 
 import { and, eq, isNotNull, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
+import { ANOMALY_ALERT_TYPES, anomalyObservations } from "@/lib/anomaly/pass";
 import { db } from "@/lib/db";
 import { stackedName } from "@/lib/email/format";
 import { apps } from "@/lib/db/schema";
@@ -72,12 +73,20 @@ export async function runAlertPass(input: { disk: HostSample["disk"] }, now = Da
   }
   for (const record of kills) add(record.organizationId, oomObservation(record));
 
+  let anomalies: Map<string, Observation[]> | null = null;
+  try {
+    anomalies = await anomalyObservations(now);
+  } catch (err) {
+    log.error("Anomaly pass failed:", err);
+  }
+  for (const [orgId, list] of anomalies ?? []) for (const o of list) add(orgId, o);
+
   const hostOrgs = new Set(await adminOrgIds());
   const orgs = await db.query.organizations.findMany({ columns: { id: true } });
   const at = new Date(now);
   for (const { id } of orgs) {
     const isHostOrg = hostOrgs.has(id);
-    const evaluated: AlertType[] = [...(isHostOrg ? host.evaluated : []), ...APP_ALERT_TYPES];
+    const evaluated: AlertType[] = [...(isHostOrg ? host.evaluated : []), ...APP_ALERT_TYPES, ...(anomalies ? ANOMALY_ALERT_TYPES : [])];
     const observations = [...(isHostOrg ? host.observations : []), ...(byOrg.get(id) ?? [])];
     try {
       await notifyObservations(id, evaluated, observations, at);

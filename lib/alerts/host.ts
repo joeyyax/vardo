@@ -119,7 +119,7 @@ const READ: Record<keyof typeof HOST_RULES, (s: HostSample) => number | null | u
 };
 
 /** At most `max` values, averaged down, oldest first. */
-function downsample(values: number[], max = 30): number[] {
+export function downsample(values: number[], max = 30): number[] {
   if (values.length <= max) return values;
   const size = values.length / max;
   return Array.from({ length: max }, (_, i) => {
