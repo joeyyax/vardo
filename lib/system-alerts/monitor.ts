@@ -11,6 +11,7 @@ import { isSelfDeployLayout } from "@/lib/paths";
 import { effectiveChannel } from "@/lib/self-update/policy";
 import { getUpdatePolicy } from "@/lib/self-update/store";
 import { runAlertPass } from "@/lib/alerts/pass";
+import { emitSystemIncident, resolveSystemIncident } from "@/lib/incidents/system";
 import pLimit from "p-limit";
 import { logger } from "@/lib/logger";
 import { closeOnShutdown } from "@/lib/shutdown";
@@ -72,7 +73,9 @@ async function checkServiceAlerts(health: Awaited<ReturnType<typeof getSystemHea
         unhealthyStreak.set(service.name, (unhealthyStreak.get(service.name) ?? 0) + 1);
       } else {
         // Not gated on the in-memory streak, which resets on boot and would strand a pre-restart alert.
-        clearFired("service-degraded", service.name);
+        if (clearFired("service-degraded", service.name)) {
+          await resolveSystemIncident(await getAllOrgIds(), "system.service-down", service.name, `${service.name} is responding again.`);
+        }
         unhealthyStreak.set(service.name, 0);
       }
 
@@ -83,14 +86,18 @@ async function checkServiceAlerts(health: Awaited<ReturnType<typeof getSystemHea
         if (!shouldFire("service-degraded", service.name)) continue;
         markFired("service-degraded", service.name);
 
-        await emitAll({
-          type: "system.service-down",
-          title: `Service degraded: ${service.name}`,
-          message: `${service.name} (${service.description}) is no longer responding.`,
-          service: service.name,
-          description: service.description,
-          latencyMs: service.latencyMs?.toString() ?? "",
-        });
+        await emitSystemIncident(
+          await getAllOrgIds(),
+          {
+            type: "system.service-down",
+            title: `Service degraded: ${service.name}`,
+            message: `${service.name} (${service.description}) is no longer responding.`,
+            service: service.name,
+            description: service.description,
+            latencyMs: service.latencyMs?.toString() ?? "",
+          },
+          { kind: "system.service-down", about: service.name, title: `Service degraded: ${service.name}`, severity: "critical" },
+        );
       }
     }
   } catch (err) {
@@ -199,6 +206,13 @@ async function checkCertAlerts(): Promise<void> {
 
     await recordCertObservations(probed);
 
+    const orgIds = await getAllOrgIds();
+    for (const p of probed) {
+      if (p.verdict.kind === "ok" && clearFired("cert-expiring", p.domain)) {
+        await resolveSystemIncident(orgIds, "system.cert-expiring", p.domain, `The certificate for ${p.domain} was renewed.`);
+      }
+    }
+
     const failing = probed.filter((p) => {
       if (certVerdictAlerts(p.verdict)) return true;
       if (p.verdict.kind === "unknown" || p.verdict.kind === "not-issued") {
@@ -215,16 +229,20 @@ async function checkCertAlerts(): Promise<void> {
       markFired("cert-expiring", domains[0]);
 
       const { title, message } = certAlertMessage(domains, verdict);
-      await emitAll({
-        type: "system.cert-expiring",
-        title,
-        message,
-        domain: domains[0],
-        domains,
-        daysLeft: verdict.daysLeft,
-        expiresAt: verdict.expiresAt,
-        resolver: group[0].resolver,
-      });
+      await emitSystemIncident(
+        orgIds,
+        {
+          type: "system.cert-expiring",
+          title,
+          message,
+          domain: domains[0],
+          domains,
+          daysLeft: verdict.daysLeft,
+          expiresAt: verdict.expiresAt,
+          resolver: group[0].resolver,
+        },
+        { kind: "system.cert-expiring", about: domains[0], title, severity: verdict.kind === "expired" ? "critical" : "warning" },
+      );
     }
   } catch (err) {
     log.error("Cert check error:", err);

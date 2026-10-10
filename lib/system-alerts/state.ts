@@ -99,11 +99,11 @@ export function markFired(type: AlertType, key: string): void {
   persistToDb().catch(() => {});
 }
 
-/** Forgets an alert on recovery so the next occurrence fires again. */
-export function clearFired(type: AlertType, key: string): void {
-  if (state.delete(makeKey(type, key))) {
-    persistToDb().catch(() => {});
-  }
+/** Forgets an alert on recovery so the next occurrence fires again. Returns whether it had fired. */
+export function clearFired(type: AlertType, key: string): boolean {
+  if (!state.delete(makeKey(type, key))) return false;
+  persistToDb().catch(() => {});
+  return true;
 }
 
 export function getAlertState(): Array<{
