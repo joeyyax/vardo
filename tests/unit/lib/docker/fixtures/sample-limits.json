@@ -1,0 +1,3244 @@
+{
+ "_note": "Sample host: current slots, read 2026-10-08: Vardo's base and overlay compose (limit keys only), app rows, peak CPU cores from Vardo's metrics and pids.peak from each running container's cgroup. No environment, commands or label values.",
+ "hostCpus": 32,
+ "apps": [
+  {
+   "app": "sso",
+   "env": "production",
+   "trusted": true,
+   "priority": "standard",
+   "cpuLimit": null,
+   "memoryLimit": null,
+   "gpuEnabled": false,
+   "serviceConfig": {
+    "sso-server": {
+     "cpuLimit": null,
+     "memoryLimit": null,
+     "gpuEnabled": false,
+     "priority": "standard"
+    },
+    "sso-worker": {
+     "cpuLimit": null,
+     "memoryLimit": null,
+     "gpuEnabled": false,
+     "priority": "standard"
+    },
+    "sso-redis": {
+     "cpuLimit": null,
+     "memoryLimit": null,
+     "gpuEnabled": false,
+     "priority": "standard"
+    },
+    "sso-db": {
+     "cpuLimit": null,
+     "memoryLimit": null,
+     "gpuEnabled": false,
+     "priority": "standard"
+    }
+   },
+   "base": {
+    "services": {
+     "sso-worker": {
+      "image": "ghcr.io/goauthentik/server:2025.2.4",
+      "user": "1000"
+     },
+     "sso-server": {
+      "image": "ghcr.io/goauthentik/server:2025.2.4",
+      "user": "1000"
+     },
+     "sso-db": {
+      "image": "postgres:16"
+     },
+     "sso-redis": {
+      "image": "redis:8.8.0-alpine"
+     }
+    }
+   },
+   "deployedOverlay": {
+    "sso-worker": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "1024M"
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    },
+    "sso-server": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "1024M"
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    },
+    "sso-db": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "1024M"
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    },
+    "sso-redis": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "1024M"
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    }
+   },
+   "peaks": {
+    "sso-worker": {
+     "cpuCores": 0.52,
+     "pids": 16
+    },
+    "sso-server": {
+     "cpuCores": 0.91,
+     "pids": 49
+    },
+    "sso-db": {
+     "cpuCores": 0.08,
+     "pids": 18
+    },
+    "sso-redis": {
+     "cpuCores": 0.03,
+     "pids": 29
+    }
+   }
+  },
+  {
+   "app": "subtitle-sync",
+   "env": "production",
+   "trusted": true,
+   "priority": "standard",
+   "cpuLimit": null,
+   "memoryLimit": null,
+   "gpuEnabled": false,
+   "serviceConfig": {},
+   "base": {
+    "services": {
+     "subtitle-sync": {
+      "image": "lscr.io/linuxserver/subtitle-mgr:latest"
+     }
+    }
+   },
+   "deployedOverlay": {
+    "subtitle-sync": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "1024M"
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    }
+   },
+   "peaks": {
+    "subtitle-sync": {
+     "cpuCores": 0.89,
+     "pids": 153
+    }
+   }
+  },
+  {
+   "app": "browser-api",
+   "env": "production",
+   "trusted": true,
+   "priority": "standard",
+   "cpuLimit": null,
+   "memoryLimit": null,
+   "gpuEnabled": false,
+   "serviceConfig": {},
+   "base": {
+    "services": {
+     "browser-api": {
+      "deploy": {
+       "resources": {
+        "limits": {
+         "cpus": "4",
+         "memory": "10g"
+        }
+       }
+      },
+      "user": "root"
+     }
+    }
+   },
+   "deployedOverlay": {
+    "browser-api": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "10g"
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    }
+   },
+   "peaks": {
+    "browser-api": {
+     "cpuCores": 4.08,
+     "pids": 255
+    }
+   }
+  },
+  {
+   "app": "cadvisor",
+   "env": "production",
+   "trusted": true,
+   "priority": "standard",
+   "cpuLimit": null,
+   "memoryLimit": null,
+   "gpuEnabled": true,
+   "serviceConfig": {},
+   "base": {
+    "services": {
+     "cadvisor": {
+      "image": "gcr.io/cadvisor/cadvisor:v0.55.1",
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "512m"
+        }
+       }
+      },
+      "privileged": true
+     }
+    }
+   },
+   "deployedOverlay": {
+    "cadvisor": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "512m"
+       },
+       "reservations": {
+        "devices": [
+         {
+          "driver": "nvidia",
+          "count": "all",
+          "capabilities": [
+           "gpu"
+          ]
+         }
+        ]
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    }
+   },
+   "peaks": {
+    "cadvisor": {
+     "cpuCores": 17.54,
+     "pids": 311
+    }
+   }
+  },
+  {
+   "app": "page-watch",
+   "env": "production",
+   "trusted": true,
+   "priority": "standard",
+   "cpuLimit": null,
+   "memoryLimit": null,
+   "gpuEnabled": false,
+   "serviceConfig": {
+    "sockpuppetbrowser": {
+     "cpuLimit": null,
+     "memoryLimit": null,
+     "gpuEnabled": true,
+     "priority": "standard"
+    },
+    "page-watch": {
+     "cpuLimit": null,
+     "memoryLimit": null,
+     "gpuEnabled": false,
+     "priority": "standard"
+    }
+   },
+   "base": {
+    "services": {
+     "page-watch": {
+      "image": "ghcr.io/dgtlmoon/page-watch.io:0.55.7"
+     },
+     "sockpuppetbrowser": {
+      "image": "dgtlmoon/sockpuppetbrowser:0.0.3",
+      "deploy": {
+       "resources": {
+        "reservations": {
+         "devices": [
+          {
+           "driver": "nvidia",
+           "count": 1,
+           "capabilities": [
+            "gpu"
+           ]
+          }
+         ]
+        }
+       }
+      }
+     }
+    }
+   },
+   "deployedOverlay": {
+    "page-watch": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "1024M"
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    },
+    "sockpuppetbrowser": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "1024M"
+       },
+       "reservations": {
+        "devices": [
+         {
+          "driver": "nvidia",
+          "count": 1,
+          "capabilities": [
+           "gpu"
+          ]
+         }
+        ]
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    }
+   },
+   "peaks": {
+    "page-watch": {
+     "cpuCores": 0.07,
+     "pids": 35
+    },
+    "sockpuppetbrowser": {
+     "cpuCores": 0.09,
+     "pids": 79
+    }
+   }
+  },
+  {
+   "app": "ddns",
+   "env": "production",
+   "trusted": true,
+   "priority": "standard",
+   "cpuLimit": null,
+   "memoryLimit": null,
+   "gpuEnabled": false,
+   "serviceConfig": {},
+   "base": {
+    "services": {
+     "ddns": {
+      "image": "timothyjmiller/ddns:latest",
+      "security_opt": [
+       "no-new-privileges:true"
+      ],
+      "network_mode": "host"
+     }
+    }
+   },
+   "deployedOverlay": {
+    "ddns": {
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    }
+   },
+   "peaks": {
+    "ddns": {
+     "cpuCores": 0.5,
+     "pids": 6
+    }
+   }
+  },
+  {
+   "app": "tunnel",
+   "env": "production",
+   "trusted": true,
+   "priority": "standard",
+   "cpuLimit": null,
+   "memoryLimit": null,
+   "gpuEnabled": false,
+   "serviceConfig": {},
+   "base": {
+    "services": {
+     "tunnel": {
+      "image": "cloudflare/tunnel:latest",
+      "user": "65532:65532"
+     }
+    }
+   },
+   "deployedOverlay": {
+    "tunnel": {
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    }
+   },
+   "peaks": {
+    "tunnel": {
+     "cpuCores": 0.02,
+     "pids": 25
+    }
+   }
+  },
+  {
+   "app": "code-server",
+   "env": "production",
+   "trusted": true,
+   "priority": "standard",
+   "cpuLimit": null,
+   "memoryLimit": null,
+   "gpuEnabled": false,
+   "serviceConfig": {},
+   "base": {
+    "services": {
+     "code-server": {
+      "image": "codercom/code-server:latest",
+      "user": "1000"
+     }
+    }
+   },
+   "deployedOverlay": {
+    "code-server": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "1024M"
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    }
+   },
+   "peaks": {
+    "code-server": {
+     "cpuCores": 0.02,
+     "pids": 23
+    }
+   }
+  },
+  {
+   "app": "media-cleanup",
+   "env": "production",
+   "trusted": true,
+   "priority": "standard",
+   "cpuLimit": null,
+   "memoryLimit": null,
+   "gpuEnabled": false,
+   "serviceConfig": {},
+   "base": {
+    "services": {
+     "media-cleanup": {
+      "image": "ghcr.io/manimatter/media-cleanup:latest"
+     }
+    }
+   },
+   "deployedOverlay": {
+    "media-cleanup": {
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    }
+   },
+   "peaks": {
+    "media-cleanup": {
+     "cpuCores": 0.15,
+     "pids": 17
+    }
+   }
+  },
+  {
+   "app": "stack-ui",
+   "env": "production",
+   "trusted": true,
+   "priority": "standard",
+   "cpuLimit": null,
+   "memoryLimit": null,
+   "gpuEnabled": false,
+   "serviceConfig": {},
+   "base": {
+    "services": {
+     "stack-ui": {
+      "image": "louislam/stack-ui:latest"
+     }
+    }
+   },
+   "deployedOverlay": {
+    "stack-ui": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "1024M"
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    }
+   },
+   "peaks": {
+    "stack-ui": {
+     "cpuCores": 0.05,
+     "pids": 66
+    }
+   }
+  },
+  {
+   "app": "deploy-api",
+   "env": "production",
+   "trusted": true,
+   "priority": "standard",
+   "cpuLimit": null,
+   "memoryLimit": null,
+   "gpuEnabled": false,
+   "serviceConfig": {},
+   "base": {
+    "services": {
+     "deploy-api": {}
+    }
+   },
+   "deployedOverlay": {
+    "deploy-api": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "1024M"
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    }
+   },
+   "peaks": {
+    "deploy-api": {
+     "cpuCores": 0.04,
+     "pids": 27
+    }
+   }
+  },
+  {
+   "app": "voice-bot",
+   "env": "production",
+   "trusted": true,
+   "priority": "standard",
+   "cpuLimit": null,
+   "memoryLimit": null,
+   "gpuEnabled": false,
+   "serviceConfig": {
+    "piper": {
+     "cpuLimit": null,
+     "memoryLimit": null,
+     "gpuEnabled": false,
+     "priority": "standard"
+    },
+    "voice-bot": {
+     "cpuLimit": null,
+     "memoryLimit": null,
+     "gpuEnabled": false,
+     "priority": "standard"
+    }
+   },
+   "base": {
+    "services": {
+     "voice-bot": {
+      "image": "alexxit/go2rtc:1.9.14"
+     },
+     "piper": {
+      "image": "rhasspy/wyoming-piper:2.5.2"
+     }
+    }
+   },
+   "deployedOverlay": {
+    "voice-bot": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "1024M"
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    },
+    "piper": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "1024M"
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    }
+   },
+   "peaks": {
+    "voice-bot": {
+     "cpuCores": 0.02,
+     "pids": 10
+    },
+    "piper": {
+     "cpuCores": 0.04,
+     "pids": 39
+    }
+   }
+  },
+  {
+   "app": "log-viewer",
+   "env": "production",
+   "trusted": true,
+   "priority": "standard",
+   "cpuLimit": null,
+   "memoryLimit": null,
+   "gpuEnabled": false,
+   "serviceConfig": {},
+   "base": {
+    "services": {
+     "log-viewer": {
+      "image": "amir20/log-viewer:latest"
+     }
+    }
+   },
+   "deployedOverlay": {
+    "log-viewer": {}
+   },
+   "peaks": {
+    "log-viewer": {
+     "cpuCores": 0.15,
+     "pids": 28
+    }
+   }
+  },
+  {
+   "app": "transcoder",
+   "env": "production",
+   "trusted": true,
+   "priority": "standard",
+   "cpuLimit": null,
+   "memoryLimit": null,
+   "gpuEnabled": false,
+   "serviceConfig": {
+    "transcoder-worker": {
+     "cpuLimit": null,
+     "memoryLimit": 6144,
+     "gpuEnabled": false,
+     "priority": "standard"
+    },
+    "transcoder": {
+     "cpuLimit": null,
+     "memoryLimit": 1024,
+     "gpuEnabled": false,
+     "priority": "standard"
+    }
+   },
+   "base": {
+    "services": {
+     "transcoder": {
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "1g"
+        }
+       }
+      }
+     },
+     "transcoder-worker": {
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "6g"
+        },
+        "reservations": {
+         "devices": [
+          {
+           "driver": "nvidia",
+           "count": 1,
+           "capabilities": [
+            "gpu"
+           ]
+          }
+         ]
+        }
+       }
+      }
+     }
+    }
+   },
+   "deployedOverlay": {
+    "transcoder": {
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    },
+    "transcoder-worker": {
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    }
+   },
+   "peaks": {
+    "transcoder": {
+     "cpuCores": 7.87,
+     "pids": 0
+    }
+   }
+  },
+  {
+   "app": "whiteboard",
+   "env": "production",
+   "trusted": true,
+   "priority": "disposable",
+   "cpuLimit": null,
+   "memoryLimit": 256,
+   "gpuEnabled": false,
+   "serviceConfig": {},
+   "base": {
+    "services": {
+     "whiteboard": {
+      "image": "whiteboard/whiteboard:latest"
+     }
+    }
+   },
+   "deployedOverlay": {
+    "whiteboard": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "256M"
+       }
+      }
+     },
+     "cpu_shares": 256,
+     "oom_score_adj": 750
+    }
+   },
+   "peaks": {
+    "whiteboard": {
+     "cpuCores": 0.23,
+     "pids": 41
+    }
+   }
+  },
+  {
+   "app": "git-mirror",
+   "env": "production",
+   "trusted": true,
+   "priority": "standard",
+   "cpuLimit": null,
+   "memoryLimit": null,
+   "gpuEnabled": false,
+   "serviceConfig": {},
+   "base": {
+    "services": {
+     "git-mirror": {
+      "image": "ghcr.io/raylabshq/git-mirror:latest",
+      "user": "1000:1000"
+     }
+    }
+   },
+   "deployedOverlay": {
+    "git-mirror": {}
+   },
+   "peaks": {
+    "git-mirror": {
+     "cpuCores": 0.22,
+     "pids": 79
+    }
+   }
+  },
+  {
+   "app": "git-host",
+   "env": "production",
+   "trusted": true,
+   "priority": "standard",
+   "cpuLimit": null,
+   "memoryLimit": null,
+   "gpuEnabled": false,
+   "serviceConfig": {
+    "git-host-db": {
+     "cpuLimit": null,
+     "memoryLimit": null,
+     "gpuEnabled": false,
+     "priority": "standard"
+    },
+    "git-host": {
+     "cpuLimit": null,
+     "memoryLimit": null,
+     "gpuEnabled": false,
+     "priority": "standard"
+    }
+   },
+   "base": {
+    "services": {
+     "git-host": {
+      "image": "git-host/git-host:1.26.2"
+     },
+     "git-host-db": {
+      "image": "postgres:16"
+     }
+    }
+   },
+   "deployedOverlay": {
+    "git-host": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "1024M"
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    },
+    "git-host-db": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "1024M"
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    }
+   },
+   "peaks": {
+    "git-host": {
+     "cpuCores": 0.74,
+     "pids": 63
+    },
+    "git-host-db": {
+     "cpuCores": 0.05,
+     "pids": 14
+    }
+   }
+  },
+  {
+   "app": "hermes",
+   "env": "production",
+   "trusted": true,
+   "priority": "disposable",
+   "cpuLimit": null,
+   "memoryLimit": 8192,
+   "gpuEnabled": false,
+   "serviceConfig": {},
+   "base": {
+    "services": {
+     "hermes": {
+      "image": "nousresearch/hermes-agent:v2026.8.31",
+      "labels": {
+       "traefik.enable": "false"
+      }
+     }
+    }
+   },
+   "deployedOverlay": {
+    "hermes": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "8192M"
+       }
+      }
+     },
+     "cpu_shares": 256,
+     "oom_score_adj": 750
+    }
+   },
+   "peaks": {
+    "hermes": {
+     "cpuCores": 0.27,
+     "pids": 47
+    }
+   }
+  },
+  {
+   "app": "start-page",
+   "env": "production",
+   "trusted": true,
+   "priority": "standard",
+   "cpuLimit": null,
+   "memoryLimit": null,
+   "gpuEnabled": false,
+   "serviceConfig": {},
+   "base": {
+    "services": {
+     "start-page": {
+      "image": "ghcr.io/gethomepage/start-page:latest"
+     }
+    }
+   },
+   "deployedOverlay": {
+    "start-page": {
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    }
+   },
+   "peaks": {
+    "start-page": {
+     "cpuCores": 0.04,
+     "pids": 20
+    }
+   }
+  },
+  {
+   "app": "photos",
+   "env": "production",
+   "trusted": true,
+   "priority": "standard",
+   "cpuLimit": null,
+   "memoryLimit": null,
+   "gpuEnabled": false,
+   "serviceConfig": {
+    "photos-ml": {
+     "cpuLimit": null,
+     "memoryLimit": null,
+     "gpuEnabled": false,
+     "priority": "standard"
+    },
+    "photos-server": {
+     "cpuLimit": null,
+     "memoryLimit": null,
+     "gpuEnabled": false,
+     "priority": "standard"
+    },
+    "photos-db": {
+     "cpuLimit": null,
+     "memoryLimit": null,
+     "gpuEnabled": false,
+     "priority": "standard"
+    },
+    "photos-redis": {
+     "cpuLimit": null,
+     "memoryLimit": null,
+     "gpuEnabled": false,
+     "priority": "standard"
+    }
+   },
+   "base": {
+    "services": {
+     "photos-server": {
+      "image": "ghcr.io/photos-app/photos-server:v2.7.5"
+     },
+     "photos-ml": {
+      "image": "ghcr.io/photos-app/photos-machine-learning:v2.7.5-cuda"
+     },
+     "photos-db": {
+      "image": "tensorchord/pgvecto-rs:pg16-v0.2.0"
+     },
+     "photos-redis": {
+      "image": "redis:8.8.0-alpine"
+     }
+    }
+   },
+   "deployedOverlay": {
+    "photos-server": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "1024M"
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    },
+    "photos-ml": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "1024M"
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    },
+    "photos-db": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "1024M"
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    },
+    "photos-redis": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "1024M"
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    }
+   },
+   "peaks": {
+    "photos-server": {
+     "cpuCores": 0.13,
+     "pids": 88
+    },
+    "photos-ml": {
+     "cpuCores": 0.63,
+     "pids": 76
+    },
+    "photos-db": {
+     "cpuCores": 0.11,
+     "pids": 40
+    },
+    "photos-redis": {
+     "cpuCores": 0.03,
+     "pids": 31
+    }
+   }
+  },
+  {
+   "app": "dev-tools",
+   "env": "production",
+   "trusted": true,
+   "priority": "standard",
+   "cpuLimit": null,
+   "memoryLimit": null,
+   "gpuEnabled": false,
+   "serviceConfig": {},
+   "base": {
+    "services": {
+     "dev-tools": {
+      "image": "corentinth/dev-tools:latest"
+     }
+    }
+   },
+   "deployedOverlay": {
+    "dev-tools": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "1024M"
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    }
+   },
+   "peaks": {
+    "dev-tools": {
+     "cpuCores": 0,
+     "pids": 33
+    }
+   }
+  },
+  {
+   "app": "notes-api",
+   "env": "production",
+   "trusted": true,
+   "priority": "standard",
+   "cpuLimit": null,
+   "memoryLimit": null,
+   "gpuEnabled": false,
+   "serviceConfig": {
+    "notes-embed": {
+     "cpuLimit": null,
+     "memoryLimit": null,
+     "gpuEnabled": false,
+     "priority": "standard"
+    },
+    "notes-search": {
+     "cpuLimit": null,
+     "memoryLimit": 6144,
+     "gpuEnabled": false,
+     "priority": "standard"
+    },
+    "notes-api": {
+     "cpuLimit": null,
+     "memoryLimit": null,
+     "gpuEnabled": false,
+     "priority": "standard"
+    }
+   },
+   "base": {
+    "services": {
+     "notes-api": {},
+     "notes-embed": {
+      "image": "ghcr.io/huggingface/text-embeddings-inference:cpu-1.7",
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "2g"
+        }
+       }
+      },
+      "x-vardo-shared": true
+     },
+     "notes-search": {
+      "image": "getmeili/meilisearch:v1.16",
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "6g"
+        }
+       }
+      },
+      "x-vardo-shared": true
+     }
+    }
+   },
+   "deployedOverlay": {
+    "notes-api": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "1024M"
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    },
+    "notes-embed": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "2g"
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    },
+    "notes-search": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "6144M"
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    }
+   },
+   "peaks": {
+    "notes-api": {
+     "cpuCores": 0.99,
+     "pids": 224
+    },
+    "notes-embed": {
+     "cpuCores": 27.08,
+     "pids": 105
+    },
+    "notes-search": {
+     "cpuCores": 0.2,
+     "pids": 136
+    }
+   }
+  },
+  {
+   "app": "media-meta",
+   "env": "production",
+   "trusted": true,
+   "priority": "standard",
+   "cpuLimit": null,
+   "memoryLimit": null,
+   "gpuEnabled": false,
+   "serviceConfig": {},
+   "base": {
+    "services": {
+     "media-meta": {
+      "image": "kometateam/media-meta:latest"
+     }
+    }
+   },
+   "deployedOverlay": {
+    "media-meta": {
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    }
+   },
+   "peaks": {
+    "media-meta": {
+     "cpuCores": 0.43,
+     "pids": 6
+    }
+   }
+  },
+  {
+   "app": "diagrams",
+   "env": "production",
+   "trusted": true,
+   "priority": "disposable",
+   "cpuLimit": null,
+   "memoryLimit": null,
+   "gpuEnabled": false,
+   "serviceConfig": {
+    "diagrams": {
+     "cpuLimit": null,
+     "memoryLimit": null,
+     "gpuEnabled": false,
+     "priority": "standard"
+    },
+    "diagrams-mermaid": {
+     "cpuLimit": null,
+     "memoryLimit": null,
+     "gpuEnabled": false,
+     "priority": "standard"
+    }
+   },
+   "base": {
+    "services": {
+     "diagrams": {
+      "image": "yuzutech/diagrams:0.30.1"
+     },
+     "diagrams-mermaid": {
+      "image": "yuzutech/diagrams-mermaid:0.30.1"
+     }
+    }
+   },
+   "deployedOverlay": {
+    "diagrams": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "1024M"
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    },
+    "diagrams-mermaid": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "1024M"
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    }
+   },
+   "peaks": {
+    "diagrams": {
+     "cpuCores": 0.04,
+     "pids": 25
+    },
+    "diagrams-mermaid": {
+     "cpuCores": 0.02,
+     "pids": 7
+    }
+   }
+  },
+  {
+   "app": "llm-proxy",
+   "env": "production",
+   "trusted": true,
+   "priority": "standard",
+   "cpuLimit": null,
+   "memoryLimit": 20480,
+   "gpuEnabled": false,
+   "serviceConfig": {},
+   "base": {
+    "services": {
+     "llm-proxy": {
+      "image": "ghcr.io/mostlygeek/llm-proxy:cuda",
+      "deploy": {
+       "resources": {
+        "reservations": {
+         "devices": [
+          {
+           "driver": "nvidia",
+           "count": "all",
+           "capabilities": [
+            "gpu"
+           ]
+          }
+         ]
+        }
+       }
+      }
+     }
+    }
+   },
+   "deployedOverlay": {
+    "llm-proxy": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "20480M"
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    }
+   },
+   "peaks": {
+    "llm-proxy": {
+     "cpuCores": 1,
+     "pids": 27
+    }
+   }
+  },
+  {
+   "app": "loki",
+   "env": "production",
+   "trusted": true,
+   "priority": "standard",
+   "cpuLimit": null,
+   "memoryLimit": null,
+   "gpuEnabled": false,
+   "serviceConfig": {},
+   "base": {
+    "services": {
+     "loki": {
+      "image": "grafana/loki:3.4",
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "${VARDO_LOKI_MEM:-1g}"
+        }
+       }
+      }
+     }
+    }
+   },
+   "deployedOverlay": {
+    "loki": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "${VARDO_LOKI_MEM:-1g}"
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    }
+   },
+   "peaks": {
+    "loki": {
+     "cpuCores": 1.45,
+     "pids": 39
+    }
+   }
+  },
+  {
+   "app": "recorder",
+   "env": "production",
+   "trusted": true,
+   "priority": "standard",
+   "cpuLimit": null,
+   "memoryLimit": null,
+   "gpuEnabled": false,
+   "serviceConfig": {
+    "vision": {
+     "cpuLimit": null,
+     "memoryLimit": null,
+     "gpuEnabled": false,
+     "priority": "standard"
+    },
+    "vision-detector": {
+     "cpuLimit": null,
+     "memoryLimit": null,
+     "gpuEnabled": false,
+     "priority": "standard"
+    },
+    "postgres": {
+     "cpuLimit": 2,
+     "memoryLimit": 1024,
+     "gpuEnabled": false,
+     "priority": "standard"
+    },
+    "redis": {
+     "cpuLimit": 1,
+     "memoryLimit": 256,
+     "gpuEnabled": false,
+     "priority": "standard"
+    },
+    "vision-worker": {
+     "cpuLimit": null,
+     "memoryLimit": null,
+     "gpuEnabled": false,
+     "priority": "standard"
+    },
+    "go2rtc": {
+     "cpuLimit": 2,
+     "memoryLimit": 1024,
+     "gpuEnabled": false,
+     "priority": "standard"
+    }
+   },
+   "base": {
+    "services": {
+     "vision": {
+      "deploy": {
+       "resources": {
+        "limits": {
+         "cpus": "${VISION_CPU_LIMIT:-2}",
+         "memory": "${VISION_MEM_LIMIT:-2G}"
+        },
+        "reservations": {
+         "memory": "256M"
+        }
+       }
+      }
+     },
+     "vision-worker": {
+      "deploy": {
+       "resources": {
+        "limits": {
+         "cpus": "${VISION_WORKER_CPU_LIMIT:-4}",
+         "memory": "${VISION_WORKER_MEM_LIMIT:-4G}"
+        },
+        "reservations": {
+         "memory": "512M"
+        }
+       }
+      }
+     },
+     "vision-detector": {
+      "deploy": {
+       "resources": {
+        "limits": {
+         "cpus": "${VISION_DETECTOR_CPU_LIMIT:-4}",
+         "memory": "${VISION_DETECTOR_MEM_LIMIT:-6G}"
+        },
+        "reservations": {
+         "memory": "1G",
+         "devices": [
+          {
+           "driver": "nvidia",
+           "count": 1,
+           "capabilities": [
+            "gpu"
+           ]
+          }
+         ]
+        }
+       }
+      }
+     },
+     "go2rtc": {
+      "image": "alexxit/go2rtc:latest",
+      "deploy": {
+       "resources": {
+        "limits": {
+         "cpus": "2",
+         "memory": "1G"
+        }
+       }
+      }
+     },
+     "redis": {
+      "image": "valkey/valkey:7-alpine",
+      "deploy": {
+       "resources": {
+        "limits": {
+         "cpus": "1",
+         "memory": "256M"
+        }
+       }
+      }
+     },
+     "postgres": {
+      "image": "postgres:17",
+      "deploy": {
+       "resources": {
+        "limits": {
+         "cpus": "2",
+         "memory": "1G"
+        }
+       }
+      }
+     }
+    }
+   },
+   "deployedOverlay": {
+    "vision": {},
+    "vision-worker": {},
+    "vision-detector": {},
+    "go2rtc": {},
+    "redis": {},
+    "postgres": {}
+   },
+   "peaks": {}
+  },
+  {
+   "app": "workflows",
+   "env": "production",
+   "trusted": true,
+   "priority": "standard",
+   "cpuLimit": null,
+   "memoryLimit": null,
+   "gpuEnabled": false,
+   "serviceConfig": {},
+   "base": {
+    "services": {
+     "workflows": {
+      "image": "n8nio/workflows:2.25.7",
+      "user": "node"
+     }
+    }
+   },
+   "deployedOverlay": {
+    "workflows": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "1024M"
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    }
+   },
+   "peaks": {
+    "workflows": {
+     "cpuCores": 0.3,
+     "pids": 20
+    }
+   }
+  },
+  {
+   "app": "nas-sync",
+   "env": "production",
+   "trusted": true,
+   "priority": "standard",
+   "cpuLimit": null,
+   "memoryLimit": null,
+   "gpuEnabled": false,
+   "serviceConfig": {},
+   "base": {
+    "services": {
+     "backup-r2": {
+      "image": "rclone/rclone:latest"
+     }
+    }
+   },
+   "deployedOverlay": {
+    "backup-r2": {}
+   },
+   "peaks": {
+    "backup-r2": {
+     "cpuCores": 0.31,
+     "pids": 40
+    }
+   }
+  },
+  {
+   "app": "push-notify",
+   "env": "production",
+   "trusted": true,
+   "priority": "standard",
+   "cpuLimit": null,
+   "memoryLimit": 256,
+   "gpuEnabled": false,
+   "serviceConfig": {},
+   "base": {
+    "services": {
+     "push-notify": {
+      "image": "binwiederhier/push-notify:v2.24.0"
+     }
+    }
+   },
+   "deployedOverlay": {
+    "push-notify": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "256M"
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    }
+   },
+   "peaks": {
+    "push-notify": {
+     "cpuCores": 0.05,
+     "pids": 17
+    }
+   }
+  },
+  {
+   "app": "nzb-search",
+   "env": "production",
+   "trusted": true,
+   "priority": "standard",
+   "cpuLimit": null,
+   "memoryLimit": null,
+   "gpuEnabled": false,
+   "serviceConfig": {},
+   "base": {
+    "services": {
+     "nzb-search": {
+      "image": "lscr.io/linuxserver/nzb-search:latest"
+     }
+    }
+   },
+   "deployedOverlay": {
+    "nzb-search": {}
+   },
+   "peaks": {
+    "nzb-search": {
+     "cpuCores": 0.08,
+     "pids": 39
+    }
+   }
+  },
+  {
+   "app": "llm-runtime",
+   "env": "production",
+   "trusted": true,
+   "priority": "standard",
+   "cpuLimit": null,
+   "memoryLimit": 20480,
+   "gpuEnabled": true,
+   "serviceConfig": {},
+   "base": {
+    "services": {
+     "llm-runtime": {
+      "image": "llm-runtime/llm-runtime:latest"
+     }
+    }
+   },
+   "deployedOverlay": {
+    "llm-runtime": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "20480M"
+       },
+       "reservations": {
+        "devices": [
+         {
+          "driver": "nvidia",
+          "count": "all",
+          "capabilities": [
+           "gpu"
+          ]
+         }
+        ]
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    }
+   },
+   "peaks": {
+    "llm-runtime": {
+     "cpuCores": 15.81,
+     "pids": 76
+    }
+   }
+  },
+  {
+   "app": "speedtest-app",
+   "env": "production",
+   "trusted": true,
+   "priority": "disposable",
+   "cpuLimit": null,
+   "memoryLimit": null,
+   "gpuEnabled": false,
+   "serviceConfig": {},
+   "base": {
+    "services": {
+     "speedtest-app": {
+      "image": "speedtest-app/latest",
+      "user": "101"
+     }
+    }
+   },
+   "deployedOverlay": {
+    "speedtest-app": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "512M"
+       }
+      }
+     },
+     "cpu_shares": 256,
+     "oom_score_adj": 750
+    }
+   },
+   "peaks": {
+    "speedtest-app": {
+     "cpuCores": 0.33,
+     "pids": 36
+    }
+   }
+  },
+  {
+   "app": "chat-ui",
+   "env": "production",
+   "trusted": true,
+   "priority": "standard",
+   "cpuLimit": null,
+   "memoryLimit": null,
+   "gpuEnabled": false,
+   "serviceConfig": {
+    "chat-ui": {
+     "cpuLimit": null,
+     "memoryLimit": null,
+     "gpuEnabled": false,
+     "priority": "standard"
+    }
+   },
+   "base": {
+    "services": {
+     "chat-ui": {
+      "image": "ghcr.io/open-webui/open-webui:main"
+     }
+    }
+   },
+   "deployedOverlay": {
+    "chat-ui": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "1024M"
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    }
+   },
+   "peaks": {
+    "chat-ui": {
+     "cpuCores": 3.23,
+     "pids": 117
+    }
+   }
+  },
+  {
+   "app": "wiki-app",
+   "env": "production",
+   "trusted": true,
+   "priority": "standard",
+   "cpuLimit": null,
+   "memoryLimit": null,
+   "gpuEnabled": false,
+   "serviceConfig": {
+    "wiki-app-redis": {
+     "cpuLimit": null,
+     "memoryLimit": null,
+     "gpuEnabled": false,
+     "priority": "standard"
+    },
+    "wiki-app-db": {
+     "cpuLimit": null,
+     "memoryLimit": null,
+     "gpuEnabled": false,
+     "priority": "standard"
+    },
+    "wiki-app": {
+     "cpuLimit": null,
+     "memoryLimit": null,
+     "gpuEnabled": false,
+     "priority": "standard"
+    }
+   },
+   "base": {
+    "services": {
+     "wiki-app": {
+      "image": "docker.getoutline.com/outlinewiki/wiki-app:latest",
+      "user": "nodejs"
+     },
+     "wiki-app-db": {
+      "image": "postgres:16"
+     },
+     "wiki-app-redis": {
+      "image": "redis:alpine"
+     }
+    }
+   },
+   "deployedOverlay": {
+    "wiki-app": {
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    },
+    "wiki-app-db": {
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    },
+    "wiki-app-redis": {
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    }
+   },
+   "peaks": {
+    "wiki-app": {
+     "cpuCores": 0.72,
+     "pids": 34
+    },
+    "wiki-app-db": {
+     "cpuCores": 0.07,
+     "pids": 16
+    },
+    "wiki-app-redis": {
+     "cpuCores": 0.21,
+     "pids": 29
+    }
+   }
+  },
+  {
+   "app": "documents",
+   "env": "production",
+   "trusted": true,
+   "priority": "standard",
+   "cpuLimit": null,
+   "memoryLimit": null,
+   "gpuEnabled": true,
+   "serviceConfig": {
+    "documents-db": {
+     "cpuLimit": null,
+     "memoryLimit": null,
+     "gpuEnabled": true,
+     "priority": "standard"
+    },
+    "documents-gotenberg": {
+     "cpuLimit": null,
+     "memoryLimit": null,
+     "gpuEnabled": true,
+     "priority": "standard"
+    },
+    "documents-tika": {
+     "cpuLimit": null,
+     "memoryLimit": null,
+     "gpuEnabled": true,
+     "priority": "standard"
+    },
+    "documents": {
+     "cpuLimit": null,
+     "memoryLimit": null,
+     "gpuEnabled": true,
+     "priority": "standard"
+    },
+    "documents-redis": {
+     "cpuLimit": null,
+     "memoryLimit": null,
+     "gpuEnabled": true,
+     "priority": "standard"
+    }
+   },
+   "base": {
+    "services": {
+     "documents": {
+      "image": "ghcr.io/documents-ngx/documents-ngx:2.20.15"
+     },
+     "documents-db": {
+      "image": "postgres:16"
+     },
+     "documents-redis": {
+      "image": "redis:8.8.0-alpine"
+     },
+     "documents-gotenberg": {
+      "image": "docker.io/gotenberg/gotenberg:8"
+     },
+     "documents-tika": {
+      "image": "docker.io/apache/tika:latest"
+     }
+    }
+   },
+   "deployedOverlay": {
+    "documents": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "1024M"
+       },
+       "reservations": {
+        "devices": [
+         {
+          "driver": "nvidia",
+          "count": "all",
+          "capabilities": [
+           "gpu"
+          ]
+         }
+        ]
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    },
+    "documents-db": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "1024M"
+       },
+       "reservations": {
+        "devices": [
+         {
+          "driver": "nvidia",
+          "count": "all",
+          "capabilities": [
+           "gpu"
+          ]
+         }
+        ]
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    },
+    "documents-redis": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "1024M"
+       },
+       "reservations": {
+        "devices": [
+         {
+          "driver": "nvidia",
+          "count": "all",
+          "capabilities": [
+           "gpu"
+          ]
+         }
+        ]
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    },
+    "documents-gotenberg": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "1024M"
+       },
+       "reservations": {
+        "devices": [
+         {
+          "driver": "nvidia",
+          "count": "all",
+          "capabilities": [
+           "gpu"
+          ]
+         }
+        ]
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    },
+    "documents-tika": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "1024M"
+       },
+       "reservations": {
+        "devices": [
+         {
+          "driver": "nvidia",
+          "count": "all",
+          "capabilities": [
+           "gpu"
+          ]
+         }
+        ]
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    }
+   },
+   "peaks": {
+    "documents": {
+     "cpuCores": 0.51,
+     "pids": 29
+    },
+    "documents-db": {
+     "cpuCores": 0.73,
+     "pids": 15
+    },
+    "documents-redis": {
+     "cpuCores": 0.33,
+     "pids": 29
+    },
+    "documents-gotenberg": {
+     "cpuCores": 0.21,
+     "pids": 21
+    },
+    "documents-tika": {
+     "cpuCores": 0.26,
+     "pids": 31
+    }
+   }
+  },
+  {
+   "app": "media-server",
+   "env": "production",
+   "trusted": true,
+   "priority": "standard",
+   "cpuLimit": null,
+   "memoryLimit": 8192,
+   "gpuEnabled": true,
+   "serviceConfig": {},
+   "base": {
+    "services": {
+     "media-server": {
+      "image": "lscr.io/linuxserver/media-server:latest",
+      "deploy": {
+       "resources": {
+        "reservations": {
+         "devices": [
+          {
+           "driver": "nvidia",
+           "device_ids": [
+            "1"
+           ],
+           "capabilities": [
+            "gpu"
+           ]
+          }
+         ]
+        }
+       }
+      },
+      "network_mode": "host"
+     }
+    }
+   },
+   "deployedOverlay": {
+    "media-server": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "8192M"
+       },
+       "reservations": {
+        "devices": [
+         {
+          "driver": "nvidia",
+          "device_ids": [
+           "1"
+          ],
+          "capabilities": [
+           "gpu"
+          ]
+         }
+        ]
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    }
+   },
+   "peaks": {
+    "media-server": {
+     "cpuCores": 21.11,
+     "pids": 323
+    }
+   }
+  },
+  {
+   "app": "media-sync",
+   "env": "production",
+   "trusted": true,
+   "priority": "standard",
+   "cpuLimit": null,
+   "memoryLimit": null,
+   "gpuEnabled": false,
+   "serviceConfig": {},
+   "base": {
+    "services": {
+     "media-sync": {
+      "image": "ghcr.io/taxel/media-sync:latest"
+     }
+    }
+   },
+   "deployedOverlay": {
+    "media-sync": {
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    }
+   },
+   "peaks": {
+    "media-sync": {
+     "cpuCores": 5.1,
+     "pids": 6
+    }
+   }
+  },
+  {
+   "app": "promtail",
+   "env": "production",
+   "trusted": true,
+   "priority": "standard",
+   "cpuLimit": null,
+   "memoryLimit": null,
+   "gpuEnabled": false,
+   "serviceConfig": {},
+   "base": {
+    "services": {
+     "promtail": {
+      "image": "grafana/promtail:3.4",
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "256m"
+        }
+       }
+      }
+     }
+    }
+   },
+   "deployedOverlay": {
+    "promtail": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "256m"
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    }
+   },
+   "peaks": {
+    "promtail": {
+     "cpuCores": 2.41,
+     "pids": 38
+    }
+   }
+  },
+  {
+   "app": "indexer-hub",
+   "env": "production",
+   "trusted": true,
+   "priority": "standard",
+   "cpuLimit": null,
+   "memoryLimit": null,
+   "gpuEnabled": false,
+   "serviceConfig": {},
+   "base": {
+    "services": {
+     "indexer-hub": {
+      "image": "lscr.io/linuxserver/indexer-mgr:latest"
+     }
+    }
+   },
+   "deployedOverlay": {
+    "indexer-hub": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "1024M"
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    }
+   },
+   "peaks": {
+    "indexer-hub": {
+     "cpuCores": 0.31,
+     "pids": 37
+    }
+   }
+  },
+  {
+   "app": "charts",
+   "env": "production",
+   "trusted": true,
+   "priority": "disposable",
+   "cpuLimit": null,
+   "memoryLimit": null,
+   "gpuEnabled": false,
+   "serviceConfig": {},
+   "base": {
+    "services": {
+     "charts": {
+      "image": "ianw/charts:v1.8.1"
+     }
+    }
+   },
+   "deployedOverlay": {
+    "charts": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "512M"
+       }
+      }
+     },
+     "cpu_shares": 256,
+     "oom_score_adj": 750
+    }
+   },
+   "peaks": {
+    "charts": {
+     "cpuCores": 0.01,
+     "pids": 7
+    }
+   }
+  },
+  {
+   "app": "movie-library",
+   "env": "production",
+   "trusted": true,
+   "priority": "standard",
+   "cpuLimit": null,
+   "memoryLimit": null,
+   "gpuEnabled": false,
+   "serviceConfig": {},
+   "base": {
+    "services": {
+     "movie-library": {
+      "image": "lscr.io/linuxserver/movie-mgr:latest"
+     }
+    }
+   },
+   "deployedOverlay": {
+    "movie-library": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "1024M"
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    }
+   },
+   "peaks": {
+    "movie-library": {
+     "cpuCores": 0.99,
+     "pids": 38
+    }
+   }
+  },
+  {
+   "app": "stream-relay",
+   "env": "production",
+   "trusted": true,
+   "priority": "standard",
+   "cpuLimit": null,
+   "memoryLimit": null,
+   "gpuEnabled": false,
+   "serviceConfig": {
+    "relay": {
+     "cpuLimit": null,
+     "memoryLimit": null,
+     "gpuEnabled": false,
+     "priority": "standard"
+    },
+    "player": {
+     "cpuLimit": null,
+     "memoryLimit": null,
+     "gpuEnabled": false,
+     "priority": "standard"
+    }
+   },
+   "base": {
+    "services": {
+     "relay": {
+      "image": "bluenviron/mediamtx:latest-ffmpeg"
+     },
+     "player": {
+      "image": "nginx:alpine"
+     }
+    }
+   },
+   "deployedOverlay": {
+    "relay": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "1024M"
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    },
+    "player": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "1024M"
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    }
+   },
+   "peaks": {
+    "relay": {
+     "cpuCores": 0.08,
+     "pids": 0
+    },
+    "player": {
+     "cpuCores": 0,
+     "pids": 0
+    }
+   }
+  },
+  {
+   "app": "nzb-client",
+   "env": "production",
+   "trusted": true,
+   "priority": "standard",
+   "cpuLimit": null,
+   "memoryLimit": null,
+   "gpuEnabled": false,
+   "serviceConfig": {},
+   "base": {
+    "services": {
+     "nzb-client": {
+      "image": "lscr.io/linuxserver/nzb-client:latest"
+     }
+    }
+   },
+   "deployedOverlay": {
+    "nzb-client": {}
+   },
+   "peaks": {
+    "nzb-client": {
+     "cpuCores": 1.63,
+     "pids": 107
+    }
+   }
+  },
+  {
+   "app": "file-share",
+   "env": "production",
+   "trusted": true,
+   "priority": "standard",
+   "cpuLimit": null,
+   "memoryLimit": null,
+   "gpuEnabled": false,
+   "serviceConfig": {},
+   "base": {
+    "services": {
+     "file-share": {
+      "image": "ghcr.io/servercontainers/file-share:latest",
+      "network_mode": "host"
+     }
+    }
+   },
+   "deployedOverlay": {
+    "file-share": {}
+   },
+   "peaks": {
+    "file-share": {
+     "cpuCores": 0.03,
+     "pids": 15
+    }
+   }
+  },
+  {
+   "app": "camera-hub",
+   "env": "production",
+   "trusted": true,
+   "priority": "critical",
+   "cpuLimit": null,
+   "memoryLimit": 8192,
+   "gpuEnabled": true,
+   "serviceConfig": {},
+   "base": {
+    "services": {
+     "camera-hub": {
+      "image": "ghcr.io/koush/camera-hub:nvidia",
+      "network_mode": "host"
+     }
+    }
+   },
+   "deployedOverlay": {
+    "camera-hub": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "8192M"
+       },
+       "reservations": {
+        "devices": [
+         {
+          "driver": "nvidia",
+          "count": "all",
+          "capabilities": [
+           "gpu"
+          ]
+         }
+        ],
+        "memory": "8192M"
+       }
+      }
+     },
+     "cpu_shares": 2048,
+     "oom_score_adj": -900
+    }
+   },
+   "peaks": {
+    "camera-hub": {
+     "cpuCores": 22.53,
+     "pids": 741
+    }
+   }
+  },
+  {
+   "app": "meta-search",
+   "env": "production",
+   "trusted": true,
+   "priority": "standard",
+   "cpuLimit": null,
+   "memoryLimit": null,
+   "gpuEnabled": false,
+   "serviceConfig": {},
+   "base": {
+    "services": {
+     "meta-search": {
+      "image": "meta-search/meta-search:2026.9.6-3605a2d58"
+     }
+    }
+   },
+   "deployedOverlay": {
+    "meta-search": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "1024M"
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    }
+   },
+   "peaks": {
+    "meta-search": {
+     "cpuCores": 0.03,
+     "pids": 26
+    }
+   }
+  },
+  {
+   "app": "media-requests",
+   "env": "production",
+   "trusted": true,
+   "priority": "standard",
+   "cpuLimit": null,
+   "memoryLimit": null,
+   "gpuEnabled": false,
+   "serviceConfig": {},
+   "base": {
+    "services": {
+     "media-requests": {
+      "image": "ghcr.io/media-requests-team/media-requests:latest",
+      "user": "node:node"
+     }
+    }
+   },
+   "deployedOverlay": {
+    "media-requests": {
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    }
+   },
+   "peaks": {
+    "media-requests": {
+     "cpuCores": 0.33,
+     "pids": 55
+    }
+   }
+  },
+  {
+   "app": "tools-api",
+   "env": "production",
+   "trusted": true,
+   "priority": "standard",
+   "cpuLimit": null,
+   "memoryLimit": null,
+   "gpuEnabled": false,
+   "serviceConfig": {},
+   "base": {
+    "services": {
+     "tools-api": {}
+    }
+   },
+   "deployedOverlay": {
+    "tools-api": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "1024M"
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    }
+   },
+   "peaks": {
+    "tools-api": {
+     "cpuCores": 0.12,
+     "pids": 11
+    }
+   }
+  },
+  {
+   "app": "screenshots",
+   "env": "production",
+   "trusted": true,
+   "priority": "standard",
+   "cpuLimit": null,
+   "memoryLimit": null,
+   "gpuEnabled": false,
+   "serviceConfig": {},
+   "base": {
+    "services": {
+     "screenshots": {}
+    }
+   },
+   "deployedOverlay": {
+    "screenshots": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "1024M"
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    }
+   },
+   "peaks": {
+    "screenshots": {
+     "cpuCores": 0.24,
+     "pids": 124
+    }
+   }
+  },
+  {
+   "app": "tv-library",
+   "env": "production",
+   "trusted": true,
+   "priority": "standard",
+   "cpuLimit": null,
+   "memoryLimit": null,
+   "gpuEnabled": false,
+   "serviceConfig": {},
+   "base": {
+    "services": {
+     "tv-library": {
+      "image": "lscr.io/linuxserver/tv-mgr:latest"
+     }
+    }
+   },
+   "deployedOverlay": {
+    "tv-library": {}
+   },
+   "peaks": {
+    "tv-library": {
+     "cpuCores": 0.82,
+     "pids": 74
+    }
+   }
+  },
+  {
+   "app": "pdf-tools",
+   "env": "production",
+   "trusted": true,
+   "priority": "standard",
+   "cpuLimit": null,
+   "memoryLimit": 6144,
+   "gpuEnabled": false,
+   "serviceConfig": {},
+   "base": {
+    "services": {
+     "pdf-tools": {
+      "image": "stirlingtools/pdf-tools:latest"
+     }
+    }
+   },
+   "deployedOverlay": {
+    "pdf-tools": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "6144M"
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    }
+   },
+   "peaks": {
+    "pdf-tools": {
+     "cpuCores": 2.42,
+     "pids": 154
+    }
+   }
+  },
+  {
+   "app": "file-sync",
+   "env": "production",
+   "trusted": true,
+   "priority": "standard",
+   "cpuLimit": null,
+   "memoryLimit": null,
+   "gpuEnabled": false,
+   "serviceConfig": {},
+   "base": {
+    "services": {
+     "file-sync": {
+      "image": "file-sync/file-sync:latest"
+     }
+    }
+   },
+   "deployedOverlay": {
+    "file-sync": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "1024M"
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    }
+   },
+   "peaks": {
+    "file-sync": {
+     "cpuCores": 16.93,
+     "pids": 65
+    }
+   }
+  },
+  {
+   "app": "vpn-node",
+   "env": "production",
+   "trusted": true,
+   "priority": "standard",
+   "cpuLimit": null,
+   "memoryLimit": null,
+   "gpuEnabled": false,
+   "serviceConfig": {},
+   "base": {
+    "services": {
+     "vpn-node": {
+      "image": "vpn-node/vpn-node:latest",
+      "cap_add": [
+       "CAP_NET_ADMIN",
+       "CAP_SYS_MODULE"
+      ],
+      "network_mode": "host"
+     }
+    }
+   },
+   "deployedOverlay": {
+    "vpn-node": {}
+   },
+   "peaks": {
+    "vpn-node": {
+     "cpuCores": 1.1,
+     "pids": 62
+    }
+   }
+  },
+  {
+   "app": "media-stats",
+   "env": "production",
+   "trusted": true,
+   "priority": "standard",
+   "cpuLimit": null,
+   "memoryLimit": null,
+   "gpuEnabled": false,
+   "serviceConfig": {},
+   "base": {
+    "services": {
+     "media-stats": {
+      "image": "lscr.io/linuxserver/media-stats:latest"
+     }
+    }
+   },
+   "deployedOverlay": {
+    "media-stats": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "1024M"
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    }
+   },
+   "peaks": {
+    "media-stats": {
+     "cpuCores": 0.28,
+     "pids": 40
+    }
+   }
+  },
+  {
+   "app": "iptv-proxy",
+   "env": "production",
+   "trusted": true,
+   "priority": "standard",
+   "cpuLimit": null,
+   "memoryLimit": null,
+   "gpuEnabled": false,
+   "serviceConfig": {},
+   "base": {
+    "services": {
+     "iptv-proxy": {
+      "image": "fyb3roptik/iptv-proxy:latest"
+     }
+    }
+   },
+   "deployedOverlay": {
+    "iptv-proxy": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "1024M"
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    }
+   },
+   "peaks": {
+    "iptv-proxy": {
+     "cpuCores": 0.01,
+     "pids": 26
+    }
+   }
+  },
+  {
+   "app": "torrent-client",
+   "env": "production",
+   "trusted": true,
+   "priority": "standard",
+   "cpuLimit": null,
+   "memoryLimit": null,
+   "gpuEnabled": false,
+   "serviceConfig": {
+    "netns-healer": {
+     "cpuLimit": null,
+     "memoryLimit": null,
+     "gpuEnabled": false,
+     "priority": "standard"
+    },
+    "qbittorrent": {
+     "cpuLimit": null,
+     "memoryLimit": null,
+     "gpuEnabled": false,
+     "priority": "standard"
+    },
+    "vpn-gateway": {
+     "cpuLimit": null,
+     "memoryLimit": null,
+     "gpuEnabled": false,
+     "priority": "standard"
+    },
+    "port-sync": {
+     "cpuLimit": null,
+     "memoryLimit": null,
+     "gpuEnabled": false,
+     "priority": "standard"
+    }
+   },
+   "base": {
+    "services": {
+     "vpn-gateway": {
+      "image": "qmcgaw/vpn-gateway:v3.41.3",
+      "cap_add": [
+       "NET_ADMIN"
+      ]
+     },
+     "qbittorrent": {
+      "image": "lscr.io/linuxserver/qbittorrent:5.0.3",
+      "network_mode": "service:vpn-gateway"
+     },
+     "port-sync": {
+      "image": "alpine:3.24",
+      "network_mode": "service:vpn-gateway"
+     },
+     "netns-healer": {
+      "image": "docker:27-cli"
+     }
+    }
+   },
+   "deployedOverlay": {
+    "vpn-gateway": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "1024M"
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    },
+    "qbittorrent": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "1024M"
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    },
+    "port-sync": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "1024M"
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    },
+    "netns-healer": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "1024M"
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    }
+   },
+   "peaks": {
+    "vpn-gateway": {
+     "cpuCores": 0.04,
+     "pids": 49
+    },
+    "qbittorrent": {
+     "cpuCores": 0.84,
+     "pids": 32
+    },
+    "port-sync": {
+     "cpuCores": 0,
+     "pids": 6
+    },
+    "netns-healer": {
+     "cpuCores": 0.03,
+     "pids": 19
+    }
+   }
+  },
+  {
+   "app": "ui-registry",
+   "env": "production",
+   "trusted": true,
+   "priority": "standard",
+   "cpuLimit": null,
+   "memoryLimit": null,
+   "gpuEnabled": false,
+   "serviceConfig": {},
+   "base": {
+    "services": {
+     "app": {}
+    }
+   },
+   "deployedOverlay": {
+    "app": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "1024M"
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    }
+   },
+   "peaks": {
+    "app": {
+     "cpuCores": 0.02,
+     "pids": 18
+    }
+   }
+  },
+  {
+   "app": "network-api",
+   "env": "production",
+   "trusted": true,
+   "priority": "standard",
+   "cpuLimit": null,
+   "memoryLimit": null,
+   "gpuEnabled": false,
+   "serviceConfig": {},
+   "base": {
+    "services": {
+     "network-api": {
+      "image": "ghcr.io/sirkirby/unifi-network-mcp:latest"
+     }
+    }
+   },
+   "deployedOverlay": {
+    "network-api": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "1024M"
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    }
+   },
+   "peaks": {
+    "network-api": {
+     "cpuCores": 0.03,
+     "pids": 6
+    }
+   }
+  },
+  {
+   "app": "uptime-monitor",
+   "env": "production",
+   "trusted": true,
+   "priority": "standard",
+   "cpuLimit": null,
+   "memoryLimit": null,
+   "gpuEnabled": false,
+   "serviceConfig": {},
+   "base": {
+    "services": {
+     "uptime-monitor": {
+      "image": "louislam/uptime-monitor:2"
+     }
+    }
+   },
+   "deployedOverlay": {
+    "uptime-monitor": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "1024M"
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    }
+   },
+   "peaks": {
+    "uptime-monitor": {
+     "cpuCores": 0.09,
+     "pids": 30
+    }
+   }
+  },
+  {
+   "app": "vardo",
+   "env": "production",
+   "trusted": true,
+   "priority": "standard",
+   "cpuLimit": null,
+   "memoryLimit": null,
+   "gpuEnabled": false,
+   "serviceConfig": {
+    "wireguard": {
+     "cpuLimit": null,
+     "memoryLimit": 64,
+     "gpuEnabled": false,
+     "priority": "standard"
+    },
+    "traefik": {
+     "cpuLimit": null,
+     "memoryLimit": null,
+     "gpuEnabled": false,
+     "priority": "standard"
+    },
+    "postgres": {
+     "cpuLimit": null,
+     "memoryLimit": null,
+     "gpuEnabled": false,
+     "priority": "standard"
+    },
+    "redis": {
+     "cpuLimit": null,
+     "memoryLimit": null,
+     "gpuEnabled": false,
+     "priority": "standard"
+    },
+    "buildkit": {
+     "cpuLimit": null,
+     "memoryLimit": null,
+     "gpuEnabled": false,
+     "priority": "standard"
+    },
+    "frontend": {
+     "cpuLimit": null,
+     "memoryLimit": null,
+     "gpuEnabled": false,
+     "priority": "standard"
+    }
+   },
+   "base": {
+    "services": {
+     "frontend": {
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "${VARDO_FRONTEND_MEM:-2g}"
+        }
+       }
+      },
+      "cap_add": [
+       "NET_ADMIN"
+      ],
+      "labels": {
+       "traefik.enable": "true",
+       "vardo.traefik": "manual"
+      }
+     },
+     "postgres": {
+      "image": "postgres:17",
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "${VARDO_POSTGRES_MEM:-1g}"
+        }
+       }
+      },
+      "x-vardo-shared": true
+     },
+     "redis": {
+      "image": "redis/redis-stack-server:7.4.0-v3",
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "${VARDO_REDIS_MEM:-512m}"
+        }
+       }
+      },
+      "x-vardo-shared": true
+     },
+     "buildkit": {
+      "image": "moby/buildkit:latest",
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "${VARDO_BUILDKIT_MEM:-4g}"
+        }
+       }
+      },
+      "privileged": true,
+      "x-vardo-shared": true
+     },
+     "traefik": {
+      "image": "traefik:v3",
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "${VARDO_TRAEFIK_MEM:-256m}"
+        }
+       }
+      },
+      "x-vardo-shared": true
+     },
+     "wireguard": {
+      "image": "linuxserver/wireguard:1.0.20260223-r0-ls119",
+      "deploy": {
+       "resources": {
+        "limits": {
+         "memory": "64m"
+        }
+       }
+      },
+      "cap_add": [
+       "NET_ADMIN",
+       "SYS_MODULE"
+      ],
+      "x-vardo-shared": true
+     }
+    }
+   },
+   "deployedOverlay": {
+    "frontend": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "${VARDO_FRONTEND_MEM:-2g}"
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    },
+    "postgres": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "${VARDO_POSTGRES_MEM:-1g}"
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    },
+    "redis": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "${VARDO_REDIS_MEM:-512m}"
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    },
+    "buildkit": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "${VARDO_BUILDKIT_MEM:-4g}"
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    },
+    "traefik": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "${VARDO_TRAEFIK_MEM:-256m}"
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    },
+    "wireguard": {
+     "deploy": {
+      "resources": {
+       "limits": {
+        "memory": "64M"
+       }
+      }
+     },
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    }
+   },
+   "peaks": {
+    "frontend": {
+     "cpuCores": 1.25,
+     "pids": 80
+    },
+    "postgres": {
+     "cpuCores": 0.32,
+     "pids": 46
+    },
+    "redis": {
+     "cpuCores": 0.56,
+     "pids": 17
+    },
+    "buildkit": {
+     "cpuCores": 6.35,
+     "pids": 1394
+    },
+    "traefik": {
+     "cpuCores": 0.63,
+     "pids": 56
+    },
+    "wireguard": {
+     "cpuCores": 0.61,
+     "pids": 23
+    }
+   }
+  },
+  {
+   "app": "media-invites",
+   "env": "production",
+   "trusted": true,
+   "priority": "standard",
+   "cpuLimit": null,
+   "memoryLimit": null,
+   "gpuEnabled": false,
+   "serviceConfig": {},
+   "base": {
+    "services": {
+     "media-invites": {
+      "image": "ghcr.io/wizarrrr/media-invites:latest"
+     }
+    }
+   },
+   "deployedOverlay": {
+    "media-invites": {
+     "cpu_shares": 1024,
+     "oom_score_adj": 0
+    }
+   },
+   "peaks": {
+    "media-invites": {
+     "cpuCores": 0.02,
+     "pids": 22
+    }
+   }
+  }
+ ]
+}
