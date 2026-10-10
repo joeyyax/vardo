@@ -232,6 +232,21 @@ export const SERVICE_PROBES: Probe[] = [
       if (!running) throw new Error("not running");
     },
   },
+  {
+    name: "Mesh forward",
+    description: "Tunnel traffic to the live console",
+    timeoutMs: 8000,
+    applies: async () => {
+      const { isFeatureEnabledAsync } = await import("@/lib/config/features");
+      const { isRunningInContainer } = await import("@/lib/mesh/env");
+      return isRunningInContainer() && (await isFeatureEnabledAsync("mesh"));
+    },
+    run: async () => {
+      const { checkConsoleForward } = await import("@/lib/mesh/console-forward");
+      const check = await checkConsoleForward();
+      if (check.state === "broken") throw new Error(check.reason);
+    },
+  },
 ];
 
 /** Run one probe, bounding it at its own timeout. */

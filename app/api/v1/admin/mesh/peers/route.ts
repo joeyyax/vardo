@@ -7,6 +7,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { registerPeer } from "@/lib/mesh/peers";
 import { listInvites } from "@/lib/mesh/invite";
+import { tunnelFailure } from "@/lib/mesh/tunnel-status";
 import { getInstanceConfig } from "@/lib/system-settings";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
@@ -45,7 +46,9 @@ async function handleGet() {
       listInvites(apiUrl),
     ]);
 
-    return NextResponse.json({ peers, invites });
+    const withTunnel = peers.map((p) => ({ ...p, tunnelError: tunnelFailure(p.id)?.error ?? null }));
+
+    return NextResponse.json({ peers: withTunnel, invites });
   } catch (error) {
     return handleRouteError(error, "Error listing mesh peers");
   }

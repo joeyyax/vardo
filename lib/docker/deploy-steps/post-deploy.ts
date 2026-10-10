@@ -44,6 +44,7 @@ import {
 } from "../deploy-incomplete";
 import type { DeployContext, SlotStopOutcome } from "../deploy-context";
 import { isSelfApp } from "../self-env";
+import { pointConsoleForwardAt } from "@/lib/mesh/console-forward";
 import { proposeDurability, isSafeToApply } from "@/lib/backups/durability";
 import { refreshDumpSpec } from "@/lib/backups/dump-spec";
 import { CERTS_VOLUME_KEY, watchAppCerts } from "@/lib/ssl/cert-export";
@@ -382,6 +383,7 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
     } catch (err) {
       log(`[deploy] Warning: Failed to create 'current' symlink: ${err instanceof Error ? err.message : err}`);
     }
+    if (isSelfApp(app.name)) await pointConsoleForwardAt(ctx.newProjectName, log);
   }
 
   if (ctx.stopOldSlot && !ctx.stopOldSlotEndsDeploy) {

@@ -1,5 +1,6 @@
 import { HUB_IP } from "./ip-allocator";
 import { WG_CONTAINER, FRONTEND_MESH_IP, CONSOLE_PORT } from "./constants";
+import { defaultForwardIp, forwardHooks } from "./console-forward";
 import { execFile } from "node:child_process";
 import { execFileAsync } from "@/lib/utils/exec";
 import { redactError } from "@/lib/redact";
@@ -52,19 +53,21 @@ export function buildWgConfig(
   privateKey: string,
   listenPort: number,
   address: string,
-  peers: WgPeer[]
+  peers: WgPeer[],
+  forwardIp: string = FRONTEND_MESH_IP
 ): string {
   if (!WG_KEY_RE.test(privateKey)) {
     throw new Error("Invalid WireGuard private key format");
   }
 
+  const { postUp, postDown } = forwardHooks(forwardIp, CONSOLE_PORT);
   const lines = [
     "[Interface]",
     `PrivateKey = ${privateKey}`,
     `ListenPort = ${listenPort}`,
     `Address = ${address}/24`,
-    `PostUp = iptables -t nat -A POSTROUTING -o wg0 -j MASQUERADE; iptables -t nat -A PREROUTING -i wg0 -p tcp --dport ${CONSOLE_PORT} -j DNAT --to-destination ${FRONTEND_MESH_IP}:${CONSOLE_PORT}; iptables -A FORWARD -i wg0 -p tcp --dport ${CONSOLE_PORT} -j ACCEPT`,
-    `PostDown = iptables -t nat -D POSTROUTING -o wg0 -j MASQUERADE; iptables -t nat -D PREROUTING -i wg0 -p tcp --dport ${CONSOLE_PORT} -j DNAT --to-destination ${FRONTEND_MESH_IP}:${CONSOLE_PORT}; iptables -D FORWARD -i wg0 -p tcp --dport ${CONSOLE_PORT} -j ACCEPT`,
+    `PostUp = ${postUp}`,
+    `PostDown = ${postDown}`,
     "",
   ];
 
@@ -151,7 +154,7 @@ export async function rebuildAndSync(overrideAddress?: string): Promise<void> {
   }));
 
   const port = parseInt(process.env.WIREGUARD_PORT || "51820", 10);
-  const config = buildWgConfig(privateKey, port, address, wgPeers);
+  const config = buildWgConfig(privateKey, port, address, wgPeers, defaultForwardIp());
   await writeWgConfig(config);
 
   if (overrideAddress) {
@@ -193,7 +196,7 @@ export async function ensureHubConfig(hubIp: string): Promise<string> {
 
   const { privateKey, publicKey } = await generateKeypair();
   const port = parseInt(process.env.WIREGUARD_PORT || "51820", 10);
-  const config = buildWgConfig(privateKey, port, hubIp, []);
+  const config = buildWgConfig(privateKey, port, hubIp, [], defaultForwardIp());
   await writeWgConfig(config);
 
   // The image deletes the default route when it boots without a config, so boot it with one.

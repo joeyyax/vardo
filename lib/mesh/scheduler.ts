@@ -1,13 +1,30 @@
 import { db } from "@/lib/db";
 import { sendHeartbeatToPeer } from "./heartbeat";
+import { reconcileConsoleForward } from "./console-forward";
 import { logger } from "@/lib/logger";
 
 const log = logger.child("mesh-heartbeat");
 const INTERVAL_MS = 30_000;
+const FIRST_FORWARD_CHECK_MS = 5_000;
+
+async function reconcileForward(): Promise<void> {
+  try {
+    await reconcileConsoleForward();
+  } catch (err) {
+    log.error("Mesh console forward check failed:", err);
+  }
+}
 
 /** Start the mesh heartbeat scheduler. */
 export function startMeshHeartbeatScheduler(): void {
   let ticking = false;
+
+  // A restarted console can come back on a different mesh IP.
+  setTimeout(() => {
+    db.query.meshPeers.findFirst({ columns: { id: true } })
+      .then((peer) => (peer ? reconcileForward() : undefined))
+      .catch(() => {});
+  }, FIRST_FORWARD_CHECK_MS);
 
   setInterval(async () => {
     if (ticking) return;
@@ -19,6 +36,8 @@ export function startMeshHeartbeatScheduler(): void {
       });
 
       if (peers.length === 0) return;
+
+      await reconcileForward();
 
       const results = await Promise.allSettled(
         peers.map((peer) => sendHeartbeatToPeer(peer.id))

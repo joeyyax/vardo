@@ -27,6 +27,8 @@ import { execFileAsync } from "@/lib/utils/exec";
 import { assertSlotWithinApp } from "./slot-guard";
 import { claimAppForOperation } from "./deploy-cancel";
 import { dockerEnv } from "@/lib/docker/docker-env";
+import { isSelfApp } from "./self-env";
+import { pointConsoleForwardAt } from "@/lib/mesh/console-forward";
 
 /** Outlasts every step below, so a crashed rollback frees the app on its own. */
 const ROLLBACK_CLAIM_TTL_MS =
@@ -250,6 +252,8 @@ async function rollbackClaimed(
       error: "Standby containers failed to start — use standard rollback",
     };
   }
+
+  if (isSelfApp(appName)) await pointConsoleForwardAt(standbyProjectName, () => {});
 
   // Take the active slot out of Traefik's pool before stopping it.
   try {

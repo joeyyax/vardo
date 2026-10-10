@@ -54,6 +54,7 @@ type MeshPeer = {
   connectionType: "direct" | "visible";
   acceptMcp: boolean;
   lastSeenAt: string | null;
+  tunnelError?: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -436,6 +437,11 @@ export function InstancesSettings() {
                                 title="Seen through hub — no direct tunnel"
                               >
                                 via hub
+                              </Badge>
+                            )}
+                            {peer.tunnelError && (
+                              <Badge variant="destructive" className="px-1.5 py-0 shrink-0" title={peer.tunnelError}>
+                                tunnel down
                               </Badge>
                             )}
                             {peer.acceptMcp && (
