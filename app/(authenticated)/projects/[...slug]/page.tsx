@@ -7,6 +7,7 @@ import { eq, and, or, desc, type AnyColumn } from "drizzle-orm";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
 import { can } from "@/lib/auth/permissions";
 import { canImportContainers, isAppAdmin } from "@/lib/auth/admin";
+import { maskGitUrl } from "@/lib/api/git-fields";
 import { ProjectDetail } from "./project-detail";
 import type { MeshPeerSummary, ProjectInstanceSummary } from "@/lib/mesh/types";
 
@@ -171,6 +172,7 @@ export default async function ProjectDetailPage({
   );
   const projectApps = project.apps.map((a) => ({
     ...a,
+    gitUrl: maskGitUrl(a.gitUrl) ?? null,
     restartCount: restarts.get(a.id) ?? null,
     childApps: a.childApps?.map((c) => ({ ...c, restartCount: restarts.get(c.id) ?? null })),
   }));

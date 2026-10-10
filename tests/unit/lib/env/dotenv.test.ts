@@ -150,8 +150,21 @@ describe("maskEnvContent", () => {
     const { maskEnvContent } = await import("@/lib/env/mask-env");
     const text = `# keep\nA=1\nB=x=y\n${formatEnvVar("PEM", "-----BEGIN-----\nsecret\n-----END-----")}\nC=3\nplain line`;
     const masked = maskEnvContent(text);
-    expect(masked).toBe("# keep\nA=••••••••\nB=••••••••\nPEM=••••••••\nC=••••••••\nplain line");
+    expect(masked).toBe("# keep\nA=••••••••\nB=••••••••\nPEM=••••••••\nC=••••••••\n••••••••");
     expect(masked).not.toContain("secret");
+  });
+
+  it("hides commented-out values and credentials in comments", async () => {
+    const { maskEnvContent } = await import("@/lib/env/mask-env");
+    const masked = maskEnvContent("# DB_PASSWORD=hunter2\n#OLD = abc\n# see https://u:p4ss@example.com\n# plain note");
+    expect(masked).toBe("# DB_PASSWORD=••••••••\n#OLD=••••••••\n# ••••••••\n# plain note");
+  });
+
+  it("hides the rest of a multi-line value that never closes", async () => {
+    const { maskEnvContent } = await import("@/lib/env/mask-env");
+    const masked = maskEnvContent("KEY='-----BEGIN KEY-----\nMIIEsecretbody\n-----END KEY-----'\nB=2");
+    expect(masked).not.toContain("MIIEsecretbody");
+    expect(masked).toBe("KEY=••••••••\n••••••••\n••••••••\nB=••••••••");
   });
 });
 
@@ -162,6 +175,12 @@ describe("restoreMaskedEnv", () => {
     const stored = `A=1\n${pem}\nB=2`;
     const edited = maskEnvContent(stored).replace("B=••••••••", "B=new") + "\nC=3";
     expect(restoreMaskedEnv(edited, stored)).toBe(`A=1\n${pem}\nB=new\nC=3`);
+  });
+
+  it("restores masked comments and continuation lines", async () => {
+    const { maskEnvContent, restoreMaskedEnv } = await import("@/lib/env/mask-env");
+    const stored = "# DB_PASSWORD=hunter2\nKEY='a\nsecret\nb'\nB=2";
+    expect(restoreMaskedEnv(maskEnvContent(stored), stored)).toBe(stored);
   });
 
   it("drops a masked key with nothing stored", async () => {

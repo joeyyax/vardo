@@ -97,3 +97,39 @@ describe("unmaskComposeEnv", () => {
     expect(unmaskComposeEnv(COMPOSE, null)).toBe(COMPOSE);
   });
 });
+
+describe("beyond environment", () => {
+  const STACK = `services:
+  app:
+    build:
+      context: .
+      args:
+        NPM_TOKEN: npm-secret-token
+    command: ["server", "--password=cmd-secret"]
+    healthcheck:
+      test: ["CMD", "curl", "https://user:hc-secret@localhost/health"]
+configs:
+  settings:
+    content: |
+      SMTP_PASS=config-secret
+`;
+
+  it("masks build args and redacts credentials in other values", () => {
+    const masked = maskComposeEnv(STACK);
+    for (const secret of ["npm-secret-token", "cmd-secret", "hc-secret", "config-secret"]) {
+      expect(masked).not.toContain(secret);
+    }
+    expect(masked).toContain("--password=");
+  });
+
+  it("puts redacted values back when the edit leaves them as shown", () => {
+    const edited = maskComposeEnv(STACK).replace("context: .", "context: ./app");
+    expect(parse(unmaskComposeEnv(edited, STACK))).toEqual(parse(STACK.replace("context: .", "context: ./app")));
+  });
+
+  it("refuses a redacted value that was changed", () => {
+    const edited = maskComposeEnv(STACK).replace('"server"', '"server2"').replace('--password=[redacted]"', '--password=[redacted]x"');
+    expect(() => unmaskComposeEnv(edited, STACK)).toThrow(MaskedComposeError);
+  });
+});
+
