@@ -162,7 +162,7 @@ function buildAuth() {
           if (!(await setupTokenAllowsSignup())) {
             throw new APIError("FORBIDDEN", { message: SETUP_TOKEN_MESSAGE });
           }
-          if (!(await registrationAllowed(user.email))) {
+          if (!(await registrationAllowed(user))) {
             throw new APIError("FORBIDDEN", { message: REGISTRATION_CLOSED_MESSAGE });
           }
         },

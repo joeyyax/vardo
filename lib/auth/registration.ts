@@ -33,12 +33,15 @@ export async function setupTokenAllowsSignup(): Promise<boolean> {
   }
 }
 
-/** Whether a new account may be created for this email. "approval" refuses like "closed". */
-export async function registrationAllowed(email: string): Promise<boolean> {
+/**
+ * Whether a new account may be created for this email. "approval" refuses like "closed".
+ * An invitation only admits a signup that proved the mailbox, such as a magic link.
+ */
+export async function registrationAllowed(user: { email: string; emailVerified?: boolean | null }): Promise<boolean> {
   if (await needsSetup()) return true;
   const { registrationMode } = await getAuthConfig();
   if (registrationMode === "open") return true;
-  return hasPendingInvitation(email);
+  return user.emailVerified === true && hasPendingInvitation(user.email);
 }
 
 /** The first account and open-registration signups get an org of their own; invitees join theirs. */
