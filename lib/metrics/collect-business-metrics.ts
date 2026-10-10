@@ -50,7 +50,7 @@ export async function collectBusinessMetrics() {
     LEFT JOIN (SELECT a.organization_id, COUNT(*) AS cnt FROM "deployment" d JOIN "app" a ON d.app_id = a.id GROUP BY 1) dc ON dc.organization_id = o.id
     LEFT JOIN (SELECT a.organization_id, COUNT(*) AS cnt FROM "domain" dm JOIN "app" a ON dm.app_id = a.id GROUP BY 1) dmc ON dmc.organization_id = o.id
     LEFT JOIN (SELECT a.organization_id, COUNT(*) AS cnt FROM "backup" b JOIN "app" a ON b.app_id = a.id GROUP BY 1) bc ON bc.organization_id = o.id
-    LEFT JOIN (SELECT a.organization_id, COUNT(*) AS cnt FROM "cron_job" cj JOIN "app" a ON cj.app_id = a.id GROUP BY 1) cc ON cc.organization_id = o.id
+    LEFT JOIN (SELECT organization_id, COUNT(*) AS cnt FROM "cron_job" GROUP BY 1) cc ON cc.organization_id = o.id
     LEFT JOIN (SELECT organization_id, COUNT(*) AS cnt FROM "membership" GROUP BY 1) mc ON mc.organization_id = o.id
   `);
   type OrgCountRow = {

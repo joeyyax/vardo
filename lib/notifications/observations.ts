@@ -132,13 +132,31 @@ export async function notifyObservations(
   return { fired, resolved };
 }
 
-/** Sends one alert now, through the throttle, whatever the org's switches. Returns whether it sent. */
-export async function fireAlert(organizationId: string, type: AlertType, item: AlertItem, now: Date): Promise<boolean> {
+/** Claims one alert through the throttle and records it, without sending. Returns whether it's due. */
+export async function claimAlert(organizationId: string, type: AlertType, item: AlertItem, now: Date): Promise<boolean> {
   const claims = await claimNotifications(organizationId, type, [{ about: item.about, severity: item.severity, detail: item }], ALERTS[type].throttle.minHours, now);
   if (claims.length === 0) return false;
   const reopened = claims[0].previous !== null && claims[0].previous.clearedAt === null;
   await openHistory(organizationId, type, reopened ? [] : [item], reopened ? [item] : [], now);
+  return true;
+}
+
+/** Sends one alert now, through the throttle, whatever the org's switches. Returns whether it sent. */
+export async function fireAlert(organizationId: string, type: AlertType, item: AlertItem, now: Date): Promise<boolean> {
+  if (!(await claimAlert(organizationId, type, item, now))) return false;
   emit(organizationId, { type: "alert.fired", title: item.title, message: item.title, alerts: [item] });
+  return true;
+}
+
+/** Clears one subject and sends a resolved notice when the type has one. Returns whether it was open. */
+export async function resolveAlert(organizationId: string, type: AlertType, about: string, now: Date, notify = true): Promise<boolean> {
+  const cleared = await clearNotifications(organizationId, type, [], now, [about]);
+  if (cleared.length === 0) return false;
+  await closeHistory(organizationId, type, [about], now);
+  const row = cleared[0];
+  if (!notify || !ALERTS[type].resolves || !row.detail) return true;
+  const item: ResolvedItem = { ...(row.detail as AlertItem), firedAt: row.sentAt.toISOString(), resolvedAt: now.toISOString() };
+  emit(organizationId, { type: "alert.resolved", title: `Resolved: ${item.title}`, message: item.title, alerts: [item] });
   return true;
 }
 

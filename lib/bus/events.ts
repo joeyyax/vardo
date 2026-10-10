@@ -231,8 +231,9 @@ export type CronFailedEvent = {
   message: string;
   cronJobId: string;
   cronJobName: string;
-  appId: string;
-  projectName: string;
+  /** Absent for an org-level job. */
+  appId?: string;
+  projectName?: string;
   durationMs: number;
   schedule?: string;
   /** Shell command, or the URL for a URL job. */

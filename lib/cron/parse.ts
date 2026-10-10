@@ -16,6 +16,17 @@ export function shouldRunNow(schedule: string, now: Date): boolean {
   }
 }
 
+/** Whether croner accepts the expression. */
+export function isValidSchedule(schedule: string): boolean {
+  if (!schedule.trim()) return false;
+  try {
+    new Cron(schedule.trim());
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Whether two dates fall within the same calendar minute. */
 
 export function isSameMinute(a: Date, b: Date): boolean {
