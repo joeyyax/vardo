@@ -14,6 +14,8 @@ const GATES = new Set([
   "resolveAppOrg",
   "resolveProjectOrg",
   "resolveOrgPreview",
+  "mcpActor",
+  "accessibleActors",
 ]);
 const KNOWN = new Set(Object.keys(CAPABILITIES));
 const ADMIN_GATES = new Set(["canAdminInstance", "canActOnLinkedInstances"]);

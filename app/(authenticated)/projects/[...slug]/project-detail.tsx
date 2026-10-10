@@ -105,7 +105,6 @@ type Deployment = {
 type EnvVar = {
   id: string;
   key: string;
-  value: string;
   isSecret: boolean | null;
   createdAt: Date;
   updatedAt: Date;

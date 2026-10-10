@@ -1,0 +1,6 @@
+import { db } from "@/lib/db";
+
+export default async function Page() {
+  const rows = await db.query.apps.findMany();
+  return <div>{rows.length}</div>;
+}

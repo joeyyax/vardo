@@ -1,10 +1,8 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { db } from "@/lib/db";
-import { apps } from "@/lib/db/schema";
-import { desc } from "drizzle-orm";
+import { listApps } from "@/lib/app-services/apps";
 import type { McpAuthContext } from "../auth";
-import { accessibleOrgIds, orgFilter, orgLabels } from "../scope";
+import { accessibleActors } from "../actors";
 
 export function registerListApps(
   server: McpServer,
@@ -29,42 +27,43 @@ export function registerListApps(
         .describe("Offset for pagination"),
     },
     async ({ limit, offset }) => {
-      const orgIds = await accessibleOrgIds(context, "app.view");
+      const actors = await accessibleActors(context, "app.view");
 
-      const appList = await db.query.apps.findMany({
-        where: orgFilter(apps.organizationId, orgIds),
-        with: {
-          deployments: {
-            columns: { id: true, status: true, startedAt: true },
-            orderBy: (d, { desc }) => [desc(d.startedAt)],
-            limit: 1,
-          },
-          project: {
-            columns: { id: true, name: true, displayName: true },
-          },
-        },
-        columns: {
-          id: true,
-          name: true,
-          displayName: true,
-          status: true,
-          exitReason: true,
-          deployType: true,
-          source: true,
-          organizationId: true,
-          createdAt: true,
-          updatedAt: true,
-        },
-        orderBy: [desc(apps.createdAt)],
-        limit,
-        offset,
-      });
-
-      // Cross-org results are labeled with their org.
-      const labels = context.crossOrg ? await orgLabels(orgIds) : null;
-      const result = appList.map(({ organizationId, ...app }) =>
-        labels ? { ...app, organization: labels.get(organizationId) ?? { id: organizationId } } : app
+      // One org pages in SQL. Several merge each org's first offset + limit by age, then page.
+      const single = actors.length === 1;
+      const perOrg = await Promise.all(
+        actors.map(async (actor) => {
+          const page = await listApps(actor, single ? { limit, offset } : { limit: offset + limit, offset: 0 });
+          const label = { id: actor.org.id, name: actor.org.name, slug: actor.org.slug };
+          return page.apps.map((app) => ({ app, label }));
+        }),
       );
+      const rows = single
+        ? perOrg.flat()
+        : perOrg
+            .flat()
+            .sort((a, b) => b.app.createdAt.getTime() - a.app.createdAt.getTime())
+            .slice(offset, offset + limit);
+
+      const result = rows.map(({ app, label }) => {
+        const summary = {
+          id: app.id,
+          name: app.name,
+          displayName: app.displayName,
+          status: app.status,
+          exitReason: app.exitReason,
+          deployType: app.deployType,
+          source: app.source,
+          createdAt: app.createdAt,
+          updatedAt: app.updatedAt,
+          deployments: app.deployments,
+          project: app.project
+            ? { id: app.project.id, name: app.project.name, displayName: app.project.displayName }
+            : null,
+        };
+        // Cross-org results are labeled with their org.
+        return context.crossOrg ? { ...summary, organization: label } : summary;
+      });
 
       return {
         content: [

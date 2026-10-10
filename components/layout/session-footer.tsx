@@ -1,35 +1,23 @@
 import Link from "next/link";
-import { db } from "@/lib/db";
-import { session as sessionTable } from "@/lib/db/schema";
-import { eq, and, gt } from "drizzle-orm";
-import { getSession, getCurrentOrg } from "@/lib/auth/session";
+import { getSession } from "@/lib/auth/session";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
+import { currentActor } from "@/lib/app-services/session-actor";
+import { activeSessionCount } from "@/lib/app-services/viewer";
 import { RelativeTime } from "@/components/relative-time";
 
 export async function SessionFooter() {
-  const [session, orgData, teamsEnabled] = await Promise.all([
+  const [session, actor, teamsEnabled] = await Promise.all([
     getSession(),
-    getCurrentOrg(),
+    currentActor(),
     isFeatureEnabledAsync("teams"),
   ]);
 
-  if (!session?.user?.id || !orgData) return null;
+  if (!session?.user?.id || !actor) return null;
 
   const { user } = session;
-  const { organization, membership } = orgData;
+  const { org: organization, membership } = actor;
 
-  // Count active sessions for this user (not expired)
-  const activeSessions = await db
-    .select({ id: sessionTable.id })
-    .from(sessionTable)
-    .where(
-      and(
-        eq(sessionTable.userId, user.id),
-        gt(sessionTable.expiresAt, new Date())
-      )
-    );
-
-  const sessionCount = activeSessions.length;
+  const sessionCount = await activeSessionCount(actor);
   const createdAt = session.session?.createdAt
     ? new Date(session.session.createdAt)
     : null;

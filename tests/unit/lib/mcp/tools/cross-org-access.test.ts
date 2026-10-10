@@ -87,6 +87,8 @@ function stageApp(organizationId: string) {
     organizationId,
     isSystemManaged: false,
     envContent: null,
+    deployments: [],
+    domains: [],
   });
 }
 
@@ -99,7 +101,9 @@ beforeEach(() => {
   stagedOrg = "";
   memberOrgs = [];
   membershipFindFirst.mockImplementation(async () =>
-    memberOrgs.includes(stagedOrg) ? { id: "m1", role: "owner" } : undefined
+    memberOrgs.includes(stagedOrg)
+      ? { id: "m1", role: "owner", organization: { id: stagedOrg, isSystemManaged: false } }
+      : undefined
   );
 });
 

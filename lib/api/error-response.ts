@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { logger } from "@/lib/logger";
 import { adminAuthErrorResponse } from "@/lib/auth/admin-error";
+import { ServiceError } from "@/lib/app-services/errors";
 
 const log = logger.child("api");
 
@@ -102,10 +103,11 @@ export const apiError = {
   internal: (extra?: Extra) => json(500, "Something went wrong. Try again.", extra),
 };
 
-/** Error response for API catch blocks: 401 for auth errors, else 500. */
+/** Error response for API catch blocks: 401 for auth errors, a service refusal's own status, else 500. */
 export function handleRouteError(error: unknown, context?: string) {
   const adminRefusal = adminAuthErrorResponse(error);
   if (adminRefusal) return adminRefusal;
+  if (error instanceof ServiceError) return json(error.status, error.message);
   if (error instanceof Error && error.message === "Unauthorized") {
     return apiError.unauthorized();
   }

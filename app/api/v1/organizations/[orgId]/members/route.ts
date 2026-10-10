@@ -6,6 +6,8 @@ import { memberships, user } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
+import { actorForOrg } from "@/lib/app-services/session-actor";
+import { listMembers } from "@/lib/app-services/team";
 import { requirePlugin } from "@/lib/api/require-plugin";
 import { mayBeMember, SYSTEM_ORG_MEMBERS_ONLY_ADMINS } from "@/lib/auth/system-org";
 
@@ -24,27 +26,10 @@ type RouteParams = {
 async function handleGet(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const org = await verifyOrgAccess(orgId, "org.view");
-    if (!org) return apiError.forbidden();
+    const actor = await actorForOrg(orgId);
+    if (!actor) return apiError.forbidden();
 
-    const orgMemberships = await db.query.memberships.findMany({
-      where: eq(memberships.organizationId, orgId),
-      with: {
-        user: {
-          columns: { id: true, name: true, email: true },
-        },
-      },
-    });
-
-    const members = orgMemberships.map((m) => ({
-      id: m.user.id,
-      name: m.user.name,
-      email: m.user.email,
-      role: m.role,
-      joinedAt: m.createdAt.toISOString(),
-    }));
-
-    return NextResponse.json({ members });
+    return NextResponse.json({ members: await listMembers(actor) });
   } catch (error) {
     if (error instanceof Error && error.message === "No organization found") {
       return NextResponse.json({ error: "No organization found" }, { status: 404 });

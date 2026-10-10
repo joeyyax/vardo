@@ -3,12 +3,15 @@ import fs from "node:fs";
 import path from "node:path";
 import ts from "typescript";
 import { CAPABILITIES, can, type Capability } from "@/lib/auth/permissions";
+import { serviceCapabilities } from "@/tests/helpers/service-capabilities";
 
 // Every handler under app/api/v1/organizations names the capability it needs (#788).
 
 const ROOT = path.resolve(__dirname, "../../../../../app/api/v1/organizations");
 const METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE"]);
 const GATES = new Set(["verifyOrgAccess", "verifyAppAccess"]);
+// A route that hands an actor to an app service names what the service authorizes.
+const SERVICES = serviceCapabilities();
 
 // Not org-scoped: list/create orgs and switch the current one.
 const EXEMPT = new Set(["route.ts", "switch/route.ts"]);
@@ -79,6 +82,8 @@ function namedCapabilities(fn: Fn, fns: Map<string, Fn>, seen = new Set<Fn>()): 
         if (cap && ts.isStringLiteral(cap)) caps.push(cap.text);
       } else if (fns.has(name)) {
         caps.push(...namedCapabilities(fns.get(name)!, fns, seen));
+      } else if (SERVICES.has(name)) {
+        caps.push(...SERVICES.get(name)!);
       }
     }
     ts.forEachChild(node, visit);

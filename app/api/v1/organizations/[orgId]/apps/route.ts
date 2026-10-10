@@ -7,7 +7,7 @@ import {
 } from "@/lib/db/app-name";
 import { db } from "@/lib/db";
 import { apps, projects, domains, organizations, environments, volumes } from "@/lib/db/schema";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { createAppSchema } from "@/lib/api/create-app-schema";
 import { getBaseDomain } from "@/lib/domain-monitoring/base-domain";
@@ -16,9 +16,10 @@ import { sharedMarkerTypeErrors } from "@/lib/docker/compose";
 import { recordActivity } from "@/lib/activity";
 import { isReservedSlug } from "@/lib/domain-monitoring/reserved";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
+import { actorForOrg } from "@/lib/app-services/session-actor";
+import { listApps } from "@/lib/app-services/apps";
 import { readableApp } from "@/lib/api/readable-app";
 import { gitUrlColumns } from "@/lib/api/git-credentials";
-import { can } from "@/lib/auth/permissions";
 import { getSslConfig, getDefaultCertResolver } from "@/lib/system-settings";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
@@ -33,43 +34,14 @@ type RouteParams = {
 async function handleGet(request: NextRequest, { params }: RouteParams) {
   try {
     const { orgId } = await params;
-    const org = await verifyOrgAccess(orgId, "org.view");
-    if (!org) return apiError.forbidden();
+    const actor = await actorForOrg(orgId);
+    if (!actor) return apiError.forbidden();
 
     const searchParams = request.nextUrl.searchParams;
     const limit = Math.min(parseInt(searchParams.get("limit") || "50", 10), 100);
     const offset = Math.max(parseInt(searchParams.get("offset") || "0", 10), 0);
 
-    const [appList, totalResult] = await Promise.all([
-      db.query.apps.findMany({
-        where: eq(apps.organizationId, orgId),
-        with: {
-          deployments: {
-            columns: { id: true, status: true, startedAt: true },
-            orderBy: (d, { desc }) => [desc(d.startedAt)],
-            limit: 1,
-          },
-          appTags: {
-            with: { tag: true },
-          },
-          project: true,
-        },
-        orderBy: [desc(apps.createdAt)],
-        limit,
-        offset,
-      }),
-      db.select({ count: sql`count(*)::int` })
-        .from(apps)
-        .where(eq(apps.organizationId, orgId)),
-    ]);
-
-    const reveal = can(org.membership, "env.reveal");
-    return NextResponse.json({
-      apps: appList.map((app) => readableApp(app, reveal)),
-      total: totalResult[0]?.count ?? 0,
-      limit,
-      offset,
-    });
+    return NextResponse.json(await listApps(actor, { limit, offset }));
   } catch (error) {
     return handleRouteError(error, "Error fetching apps");
   }

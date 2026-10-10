@@ -1,12 +1,9 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { db } from "@/lib/db";
-import { invitations } from "@/lib/db/schema";
 import { getSession, isScopedToken } from "@/lib/auth/session";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
-import { eq } from "drizzle-orm";
-import { hashInvitationToken } from "@/lib/invitations/token";
+import { findInvitationByToken } from "@/lib/app-services/invitations";
 import { claimInvitation } from "@/lib/invitations/accept";
 import { SYSTEM_ORG_MEMBERS_ONLY_ADMINS } from "@/lib/auth/system-org";
 
@@ -25,9 +22,7 @@ export async function acceptInvitation(token: string): Promise<{ error?: string 
     return { error: "A scoped API token can't accept invitations" };
   }
 
-  const invitation = await db.query.invitations.findFirst({
-    where: eq(invitations.tokenHash, hashInvitationToken(token)),
-  });
+  const invitation = await findInvitationByToken(token);
 
   if (!invitation) {
     return { error: "Invalid invitation token" };

@@ -1,10 +1,10 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { db } from "@/lib/db";
-import { projects } from "@/lib/db/schema";
-import { nanoid } from "nanoid";
+import { createProject } from "@/lib/app-services/projects";
+import { mcpActor } from "@/lib/app-services/mcp-actor";
 import type { McpAuthContext } from "../auth";
-import { resolveTargetOrg } from "../scope";
+import { serviceErrorResult } from "../actors";
+import { accessDenied } from "../scope";
 
 export function registerCreateProject(
   server: McpServer,
@@ -27,39 +27,22 @@ export function registerCreateProject(
     },
     async ({ name, displayName, description, color, organizationId }) => {
       // Membership-checked; a caller-supplied org id is never taken on trust.
-      const orgId = await resolveTargetOrg(context, organizationId, "project.manage");
-      if (!orgId) {
+      const actor = await mcpActor(context, organizationId || context.organizationId, "project.manage");
+      if (!actor) return accessDenied("Organization");
+
+      try {
+        const project = await createProject(actor, { name, displayName, description, color });
         return {
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify({ error: "Organization not found or access denied" }),
+              text: JSON.stringify({ project }, null, 2),
             },
           ],
-          isError: true,
         };
+      } catch (error) {
+        return serviceErrorResult(error, "Organization");
       }
-
-      const [project] = await db
-        .insert(projects)
-        .values({
-          id: nanoid(),
-          organizationId: orgId,
-          name,
-          displayName,
-          description: description ?? null,
-          color: color ?? "#6366f1",
-        })
-        .returning();
-
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify({ project }, null, 2),
-          },
-        ],
-      };
     }
   );
 }

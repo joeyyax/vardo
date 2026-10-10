@@ -1,11 +1,8 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
-import { db } from "@/lib/db";
-import { invitations, organizations } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
-import { hashInvitationToken } from "@/lib/invitations/token";
 import { getSession } from "@/lib/auth/session";
 import { isFeatureEnabledAsync } from "@/lib/config/features";
+import { invitationPreview, loadInvitePage } from "@/lib/app-services/invitations";
 import { InviteAcceptClient } from "./invite-accept-client";
 import { acceptInvitation } from "./actions";
 
@@ -16,23 +13,13 @@ type Props = {
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { token } = await params;
 
-  const invitation = await db.query.invitations.findFirst({
-    where: eq(invitations.tokenHash, hashInvitationToken(token)),
-    columns: { targetId: true, scope: true },
-  });
+  const preview = await invitationPreview(token);
 
-  if (!invitation) {
+  if (!preview) {
     return { title: "Invalid invitation" };
   }
 
-  let orgName: string | undefined;
-  if (invitation.scope === "org" && invitation.targetId) {
-    const org = await db.query.organizations.findFirst({
-      where: eq(organizations.id, invitation.targetId),
-      columns: { name: true },
-    });
-    orgName = org?.name;
-  }
+  const { orgName } = preview;
 
   const title = orgName
     ? `You've been invited to ${orgName}`
@@ -56,14 +43,7 @@ export default async function InvitePage({ params }: Props) {
 
   const { token } = await params;
 
-  const invitation = await db.query.invitations.findFirst({
-    where: eq(invitations.tokenHash, hashInvitationToken(token)),
-    with: {
-      inviter: {
-        columns: { name: true },
-      },
-    },
-  });
+  const invitation = await loadInvitePage(token);
 
   if (!invitation) {
     return (
@@ -78,7 +58,7 @@ export default async function InvitePage({ params }: Props) {
     );
   }
 
-  if (invitation.status === "expired" || invitation.expiresAt < new Date()) {
+  if (invitation.expired) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4 bg-muted/30">
         <div className="w-full max-w-md text-center space-y-3">
@@ -91,23 +71,11 @@ export default async function InvitePage({ params }: Props) {
     );
   }
 
-  let orgName: string | undefined;
-  if (invitation.scope === "org" && invitation.targetId) {
-    const org = await db.query.organizations.findFirst({
-      where: eq(organizations.id, invitation.targetId),
-      columns: { name: true },
-    });
-    orgName = org?.name;
-  }
-
   const session = await getSession();
 
   // Auto-accept when the signed-in email matches.
   if (session?.user?.id && session.user.email === invitation.email) {
     if (invitation.status === "accepted") {
-      if (invitation.scope === "org" && invitation.targetId) {
-        redirect("/projects");
-      }
       redirect("/projects");
     }
 
@@ -131,8 +99,8 @@ export default async function InvitePage({ params }: Props) {
   return (
     <InviteAcceptClient
       email={invitation.email}
-      orgName={orgName}
-      inviterName={invitation.inviter?.name ?? undefined}
+      orgName={invitation.orgName}
+      inviterName={invitation.inviterName}
       isLoggedIn={!!session?.user?.id}
       loggedInEmail={session?.user?.email ?? undefined}
       acceptAction={acceptInvitation.bind(null, token)}
