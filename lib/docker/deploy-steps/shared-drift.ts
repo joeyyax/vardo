@@ -1,9 +1,17 @@
 // Shared services whose running container no longer matches the compose file.
-// Shared `up` is `--no-recreate`, so drift is detected by comparing the config-hash label to `config --hash`.
+// Shared `up` is `--no-recreate`, so drift is the config-hash label against `config --hash`, then a recorded fingerprint.
+
+import { dirname } from "path";
 
 import type { ComposeService } from "../compose-types";
 import { ownsDataDirectory } from "../image-updates/stateful-image";
 import { sharedContainerNames } from "./shared-images";
+import {
+  fingerprintsFromConfig,
+  loadDefinitions,
+  saveDefinitions,
+  type DefinitionRecords,
+} from "./shared-definitions";
 
 export const CONFIG_HASH_LABEL = "com.docker.compose.config-hash";
 
@@ -16,7 +24,8 @@ export type DockerExec = (
 export type DriftState = "unchanged" | "drifted" | "missing" | "unknown";
 
 export type SharedOutcome =
-  | { service: string; result: "unchanged" | "recreated" }
+  | { service: string; result: "unchanged"; labelsOnly?: boolean }
+  | { service: string; result: "recreated" }
   | { service: string; result: "held" | "unknown"; reason: string };
 
 /** `config --hash` output: one `<service> <hash>` per line. */
@@ -52,49 +61,119 @@ type DriftOpts = {
   cwd: string;
   exec: DockerExec;
   timeout: number;
+  /** Where the definitions shared containers were created from are kept between deploys. */
+  definitionsFile?: string;
+  /** A compose file that may have created the running containers, outside this deploy's files. */
+  legacyComposeFile?: string;
 };
 
+type DriftResult = {
+  states: Map<string, DriftState>;
+  staleRoutes: Set<string>;
+  error?: string;
+  /** Unchanged apart from labels, scheduling weights or how limits are written. */
+  labelsOnly: Set<string>;
+  desired: Map<string, string>;
+  running: Map<string, string>;
+  fingerprints: Map<string, string>;
+  records: DefinitionRecords;
+};
+
+/** `config` for some services, from `args` (compose file and project arguments). */
+async function composeConfig(
+  exec: DockerExec,
+  args: string[],
+  names: string[],
+  format: "hash" | "json",
+  opts: { cwd?: string; timeout: number },
+): Promise<string> {
+  // `--profile *` or compose refuses to hash a profiled service (buildkit).
+  const tail = format === "hash" ? ["--hash", names.join(",")] : ["--format", "json", ...names];
+  return (await exec(["compose", ...args, "--profile", "*", "config", ...tail], opts)).stdout;
+}
+
 /** Compare each shared service's running container against its definition. */
-export async function sharedDrift(
-  opts: DriftOpts,
-): Promise<{ states: Map<string, DriftState>; staleRoutes: Set<string>; error?: string }> {
+export async function sharedDrift(opts: DriftOpts): Promise<DriftResult> {
   const { shared, project, composeFileArgs, cwd, exec, timeout } = opts;
   const names = Object.keys(shared);
   const states = new Map<string, DriftState>();
   const staleRoutes = new Set<string>();
+  const labelsOnly = new Set<string>();
+  const running = new Map<string, string>();
+  let fingerprints = new Map<string, string>();
+  let records: DefinitionRecords = {};
+  const projectArgs = [...composeFileArgs, "-p", project];
 
-  // `--profile *` or compose refuses to hash a profiled service (buildkit).
   let desired: Map<string, string>;
   try {
-    const { stdout } = await exec(
-      ["compose", ...composeFileArgs, "--profile", "*", "-p", project, "config", "--hash", names.join(",")],
-      { cwd, timeout },
-    );
-    desired = parseConfigHashes(stdout);
+    desired = parseConfigHashes(await composeConfig(exec, projectArgs, names, "hash", { cwd, timeout }));
   } catch (err) {
     for (const name of names) states.set(name, "unknown");
-    return { states, staleRoutes, error: err instanceof Error ? err.message : String(err) };
+    return {
+      states, staleRoutes, labelsOnly, desired: new Map(), running, fingerprints, records,
+      error: err instanceof Error ? err.message : String(err),
+    };
   }
 
   for (const [container, name] of sharedContainerNames(shared, project)) {
-    let running: string | undefined;
+    let hash: string | undefined;
     try {
       const { stdout } = await exec(
         ["inspect", "--format", `{{index .Config.Labels "${CONFIG_HASH_LABEL}"}}|{{index .Config.Labels "traefik.enable"}}`, container],
         { timeout },
       );
-      const [hash, routed] = stdout.trim().split("|");
-      running = hash;
+      const [label, routed] = stdout.trim().split("|");
+      hash = label;
       if (routed === "true" && !isRouted(shared[name])) staleRoutes.add(name);
     } catch {
       states.set(name, "missing");
       continue;
     }
     const want = desired.get(name);
-    if (!running || running === "<no value>" || !want) states.set(name, "unknown");
-    else states.set(name, running === want ? "unchanged" : "drifted");
+    if (!hash || hash === "<no value>" || !want) {
+      states.set(name, "unknown");
+      continue;
+    }
+    running.set(name, hash);
+    states.set(name, hash === want ? "unchanged" : "drifted");
   }
-  return { states, staleRoutes };
+
+  if (!opts.definitionsFile) return { states, staleRoutes, labelsOnly, desired, running, fingerprints, records };
+
+  records = await loadDefinitions(opts.definitionsFile);
+  try {
+    fingerprints = fingerprintsFromConfig(await composeConfig(exec, projectArgs, names, "json", { cwd, timeout }));
+  } catch {
+    // Without the definitions only the hash counts.
+  }
+
+  const unknown = names.filter((n) => running.has(n) && records[n]?.hash !== running.get(n));
+  if (opts.legacyComposeFile && unknown.length > 0) {
+    // Compose reads the legacy file's .env from its directory, as it did when it created them.
+    const legacy = { cwd: dirname(opts.legacyComposeFile), timeout };
+    const legacyArgs = ["-f", opts.legacyComposeFile, "-p", project];
+    try {
+      const hashes = parseConfigHashes(await composeConfig(exec, legacyArgs, unknown, "hash", legacy));
+      const prints = fingerprintsFromConfig(await composeConfig(exec, legacyArgs, unknown, "json", legacy));
+      for (const name of unknown) {
+        const print = prints.get(name);
+        if (print && hashes.get(name) === running.get(name)) records[name] = { hash: running.get(name)!, fingerprint: print };
+      }
+    } catch {
+      // No legacy layout to read.
+    }
+  }
+
+  for (const name of names) {
+    if (states.get(name) !== "drifted" || staleRoutes.has(name)) continue;
+    const record = records[name];
+    const print = fingerprints.get(name);
+    if (print && record?.hash === running.get(name) && record.fingerprint === print) {
+      states.set(name, "unchanged");
+      labelsOnly.add(name);
+    }
+  }
+  return { states, staleRoutes, labelsOnly, desired, running, fingerprints, records };
 }
 
 function isRouted(service: ComposeService | undefined): boolean {
@@ -169,7 +248,8 @@ export async function reconcileSharedServices(
   },
 ): Promise<SharedOutcome[]> {
   const { shared, project, composeFileArgs, cwd, exec, timeout, log } = opts;
-  const { states, staleRoutes, error } = await sharedDrift(opts);
+  const drift = await sharedDrift(opts);
+  const { states, staleRoutes, error, labelsOnly, records } = drift;
   if (error) log(`[deploy] Could not read shared service definitions — ${error}`);
 
   const containers = new Map(
@@ -180,7 +260,8 @@ export async function reconcileSharedServices(
   for (const [name, service] of Object.entries(shared)) {
     const state = states.get(name) ?? "unknown";
     if (state === "unchanged") {
-      outcomes.push({ service: name, result: "unchanged" });
+      outcomes.push({ service: name, result: "unchanged", ...(labelsOnly.has(name) ? { labelsOnly: true } : {}) });
+      remember(name, drift.running.get(name));
       continue;
     }
     if (state !== "drifted") {
@@ -231,15 +312,29 @@ export async function reconcileSharedServices(
     );
     if (notReady) throw new SharedRecreateError(name, notReady);
     outcomes.push({ service: name, result: "recreated" });
+    remember(name, drift.desired.get(name));
+  }
+
+  if (opts.definitionsFile) {
+    await saveDefinitions(opts.definitionsFile, records).catch((err) =>
+      log(`[deploy] Could not record shared service definitions — ${err instanceof Error ? err.message : err}`),
+    );
   }
   return outcomes;
+
+  function remember(name: string, hash: string | undefined) {
+    const fingerprint = drift.fingerprints.get(name);
+    if (hash && fingerprint) records[name] = { hash, fingerprint };
+  }
 }
 
 /** The deploy log line for one shared service. */
 export function describeSharedOutcome(outcome: SharedOutcome): string {
   switch (outcome.result) {
     case "unchanged":
-      return `[deploy] Shared service ${outcome.service}: unchanged`;
+      return outcome.labelsOnly
+        ? `[deploy] Shared service ${outcome.service}: unchanged (only labels, CPU weights or how limits are written differ)`
+        : `[deploy] Shared service ${outcome.service}: unchanged`;
     case "recreated":
       return `[deploy] Shared service ${outcome.service}: recreated with its new definition`;
     case "held":

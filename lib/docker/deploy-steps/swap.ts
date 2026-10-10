@@ -28,6 +28,7 @@ import { classifyComposeServices } from "./classify-services";
 import type { ComposeService } from "../compose-types";
 import { sharedPullTargets } from "./shared-images";
 import { describeSharedOutcome, reconcileSharedServices, SharedRecreateError } from "./shared-drift";
+import { SHARED_DEFINITIONS_FILE } from "./shared-definitions";
 import { majorGateAfter, majorGateBefore, type MajorGateState } from "./major-gate";
 import { publishesHostPorts } from "../host-ports";
 import { composeStopTimeout } from "../stop-timeout";
@@ -747,6 +748,9 @@ export async function swap(ctx: DeployContext): Promise<DeployContext> {
         sleep,
         log,
         pendingMoves: ctx.sharedPathMoves,
+        definitionsFile: join(appDir, SHARED_DEFINITIONS_FILE),
+        // The pre-self-deploy layout created Vardo's infra containers from here.
+        legacyComposeFile: isSelfApp(app.name) ? join(appDir, "..", "env", "current", "docker-compose.yml") : undefined,
       });
       for (const outcome of outcomes) {
         log(describeSharedOutcome(outcome));

@@ -23,6 +23,8 @@ case "$args" in
   "ps -q --filter label=com.docker.compose.project=vardo-production-"*) echo "\${FAKE_CONSOLE-abc123}" ;;
   "ps --filter label=com.docker.compose.service=frontend"*) echo "vardo-production-blue-frontend-1 vardo-production-blue" ;;
   "exec abc123 curl"*) [ "\${FAKE_HEALTHY:-1}" = 1 ] || exit 1 ;;
+  "inspect -f {{.Config.Image}} vardo-"*) echo "\${FAKE_IMAGE:-redis:7}" ;;
+  "compose "*"config --images"*) echo "\${FAKE_WANT:-redis:7}" ;;
 esac
 exit 0
 `;
@@ -271,6 +273,28 @@ describe("verify_self_deploy and the deploy slot", () => {
     const r = sh(instance("self-deploy"), `${counting(1000)}verify_self_deploy dep_123 || echo FLAGGED`);
     expect(r.out).toContain("Redis deploy:system:active is 1, not 0");
     expect(r.out).toContain("FLAGGED");
+  });
+});
+
+describe("apply_held_data_stores", () => {
+  const held = "shared service redis still runs its old definition (a data store is never recreated by a deploy) — apply it with: …";
+
+  it("recreates a held data store on the same image", () => {
+    const r = sh(instance("self-deploy"), "apply_held_data_stores dep_123", { FAKE_STATUS: held });
+    expect(r.docker).toMatch(/docker compose -f docker-compose.yml -f docker-compose.override.yml -p vardo up -d --no-deps --pull never redis/);
+    expect(r.docker).not.toMatch(/up -d .*postgres/);
+    expect(r.out).toContain("Recreated vardo-redis");
+  });
+
+  it("leaves an image change to the operator", () => {
+    const r = sh(instance("self-deploy"), "apply_held_data_stores dep_123", { FAKE_STATUS: held, FAKE_WANT: "redis:8" });
+    expect(r.docker).not.toMatch(/ up -d /);
+    expect(r.out).toContain("the new definition wants redis:8");
+  });
+
+  it("does nothing when the deploy held nothing", () => {
+    const r = sh(instance("self-deploy"), "apply_held_data_stores dep_123");
+    expect(r.docker).not.toMatch(/docker compose/);
   });
 });
 

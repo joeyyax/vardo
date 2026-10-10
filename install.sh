@@ -2627,6 +2627,31 @@ retire_legacy_frontend() {
   done
 }
 
+# Recreates Postgres or Redis on the definition a self-deploy held back, when the image is unchanged.
+apply_held_data_stores() {
+  local id="$1" dir="$VARDO_DIR/apps/vardo/production/current" held svc args running want
+  held=$(docker exec vardo-postgres psql -U host -d host -tAc \
+    "select post_deploy_error from deployment where id = '$id'" 2>/dev/null || true)
+  args=(-f docker-compose.yml -f docker-compose.override.yml)
+  [ -f "$dir/.vardo.env" ] && { [ -f "$dir/.env" ] && args+=(--env-file .env); args+=(--env-file .vardo.env); }
+  for svc in redis postgres; do
+    [[ "$held" == *"shared service $svc still runs its old definition (a data store"* ]] || continue
+    running=$(docker inspect -f '{{.Config.Image}}' "vardo-$svc" 2>/dev/null || true)
+    want=$(cd "$dir" && docker compose "${args[@]}" -p vardo config --images "$svc" 2>/dev/null || true)
+    if [ -z "$want" ] || [ "$running" != "$want" ]; then
+      warn "vardo-$svc runs $running; the new definition wants ${want:-an unreadable image}. Apply it yourself after a backup:"
+      dimln "  cd $dir && docker compose ${args[*]} -p vardo up -d --no-deps $svc"
+      continue
+    fi
+    info "Recreating vardo-$svc on its new definition..."
+    if (cd "$dir" && docker compose "${args[@]}" -p vardo up -d --no-deps --pull never "$svc" > /dev/null 2>&1); then
+      log "Recreated vardo-$svc"
+    else
+      warn "Couldn't recreate vardo-$svc. It keeps running on its old definition."
+    fi
+  done
+}
+
 # Starts the slot console through the engine and retires the old one. Needs a console taking requests.
 handover_to_engine() {
   request_self_deploy
@@ -2636,6 +2661,7 @@ handover_to_engine() {
     return 1
   fi
   retire_legacy_frontend || return 1
+  apply_held_data_stores "$SELF_DEPLOY_ID"
   cp "$VARDO_DIR/apps/vardo/production/current/install.sh" "$VARDO_DIR/install.sh" 2>/dev/null || true
 }
 
@@ -2688,6 +2714,7 @@ do_self_update() {
 
   step "Verifying"
   verify_self_deploy "$SELF_DEPLOY_ID" || warn "Redeployed, with the warnings above."
+  apply_held_data_stores "$SELF_DEPLOY_ID"
   cp "$VARDO_DIR/apps/vardo/production/current/install.sh" "$VARDO_DIR/install.sh" 2>/dev/null || true
 
   load_env_display
