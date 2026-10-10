@@ -26,7 +26,7 @@ export const HOST_RULES: Record<"host.memory" | "host.swap" | "host.cpu" | "host
   "host.disk": { warn: 85, critical: 95, clearBelow: 80, sustainMs: 0 },
 };
 
-export const HOST_ALERT_TYPES = Object.keys(HOST_RULES) as (keyof typeof HOST_RULES)[];
+const HOST_ALERT_TYPES = Object.keys(HOST_RULES) as (keyof typeof HOST_RULES)[];
 
 /** `MemTotal`, `MemAvailable`, `SwapTotal`, `SwapFree` in bytes. */
 export function parseMeminfo(text: string): Record<string, number> {
@@ -119,7 +119,7 @@ const READ: Record<keyof typeof HOST_RULES, (s: HostSample) => number | null | u
 };
 
 /** At most `max` values, averaged down, oldest first. */
-export function downsample(values: number[], max = 30): number[] {
+function downsample(values: number[], max = 30): number[] {
   if (values.length <= max) return values;
   const size = values.length / max;
   return Array.from({ length: max }, (_, i) => {

@@ -8,6 +8,23 @@ import { backupColumns } from "./visuals";
 /** Charts for at most this many rows, the worst first. */
 const CHARTED_ROWS = 3;
 
+const KIND_NOUNS: Record<BackupSummaryRow["kind"], [string, string]> = {
+  backup: ["backup", "backups"],
+  restore: ["restore", "restores"],
+  import: ["import", "imports"],
+  drill: ["restore drill", "restore drills"],
+};
+
+/** "1 backup and 1 restore drill failed". */
+function failedHeading(failed: BackupSummaryRow[]): string {
+  const parts = (["backup", "restore", "import", "drill"] as const).flatMap((kind) => {
+    const n = failed.filter((r) => r.kind === kind).length;
+    return n ? [plural(n, KIND_NOUNS[kind][0], KIND_NOUNS[kind][1])] : [];
+  });
+  const list = parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}` : parts[0];
+  return `${list} failed`;
+}
+
 const KIND_TITLES: Record<BackupSummaryRow["kind"], string> = {
   backup: "Backed up",
   restore: "Restores",
@@ -27,7 +44,10 @@ function change(row: BackupSummaryRow): string {
 
 function rowValue(row: BackupSummaryRow): string {
   const runs = row.runs > 1 ? ` · ${row.runs} runs` : "";
-  if (row.outcome === "failed") return `${row.error ?? "Failed"}${runs}`;
+  if (row.outcome === "failed") {
+    const what = row.kind === "backup" ? "" : `${KIND_NOUNS[row.kind][0][0].toUpperCase()}${KIND_NOUNS[row.kind][0].slice(1)} failed: `;
+    return `${what}${row.error ?? "Failed"}${runs}`;
+  }
   if (row.outcome === "skipped") return `Skipped${row.error ? `: ${row.error}` : ""}`;
   switch (row.kind) {
     case "backup":
@@ -42,7 +62,8 @@ function rowValue(row: BackupSummaryRow): string {
 }
 
 function rowFact(row: BackupSummaryRow, ctx: MailContext): MailFact {
-  return { label: rowLabel(row), value: rowValue(row), href: row.appId ? appPage(ctx, row.appId, "backups") : undefined };
+  const href = row.outcome === "failed" && row.appId ? appPage(ctx, row.appId, "backups") : undefined;
+  return { label: rowLabel(row), value: rowValue(row), href };
 }
 
 function timeOfDay(iso: string): string {
@@ -58,7 +79,7 @@ export function backupSummaryMail(event: BackupSummaryEvent, ctx: MailContext): 
 
   const tone: MailTone = failed.length ? "fail" : shrunk.length || stale.length ? "warn" : "success";
   const heading = failed.length
-    ? `${plural(failed.length, failed.every((r) => r.kind === "backup") ? "backup" : "result")} failed`
+    ? failedHeading(failed)
     : backups.length
       ? `${plural(event.succeeded, "backup")} finished`
       : "Restores and drills finished";

@@ -55,8 +55,6 @@ export const ALERTS = {
 
 export type AlertType = keyof typeof ALERTS;
 
-export const ALERT_TYPES = Object.keys(ALERTS) as AlertType[];
-
 export function isAlertType(value: string): value is AlertType {
   return Object.hasOwn(ALERTS, value);
 }

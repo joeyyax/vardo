@@ -33,7 +33,9 @@ function itemLink(item: AlertItem, ctx: MailContext): MailLink {
 function itemVisuals(item: AlertItem, ctx: MailContext): MailVisual[] {
   const visuals: (MailVisual | undefined)[] = [];
   if (item.gauge) visuals.push({ kind: "gauge", ...item.gauge });
-  if (item.series) visuals.push(sparkColumns(item.series.title, item.series.values, { axis: ["1 h ago", "now"], caption: item.series.caption }));
+  if (item.series) {
+    visuals.push(sparkColumns(item.series.title, item.series.values, { axis: ["1 h ago", "now"], caption: item.series.caption, over: item.gauge?.warn }));
+  }
   if (item.type === "host.disk") {
     const docker = ctx.series?.dockerDisk24h;
     visuals.push(
