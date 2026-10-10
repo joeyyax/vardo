@@ -31,6 +31,11 @@ vi.mock("@/lib/api/require-plugin", () => ({ requirePlugin: vi.fn().mockResolved
 vi.mock("@/lib/api/rate-limit", async () => (await import("@/tests/helpers/mocks")).rateLimitModule());
 vi.mock("@/lib/auth/admin", () => ({ isAppAdmin: mockIsAppAdmin, requireAppAdmin: mockRequireAppAdmin }));
 vi.mock("@/lib/config/provider-restrictions", () => ({ isLocalBackupsAllowed: () => true }));
+vi.mock("@/lib/backups/target-guard", () => ({
+  TargetRefusedError: class extends Error {},
+  targetGuardContext: async () => ({}),
+  assertTargetAllowed: async () => {},
+}));
 vi.mock("@/lib/db", () => ({
   db: {
     query: {

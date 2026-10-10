@@ -14,10 +14,13 @@ import {
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { createWriteStream } from "fs";
+import http from "node:http";
+import https from "node:https";
 import { Readable, pipeline } from "stream";
 import { promisify } from "util";
 import { ArchiveMissingError, type BackupStorage, type StoredObject, type UploadStreamOptions } from "./storage-port";
 import { withRetry } from "./storage-retry";
+import { assertEndpointReachable, backupEndpointLookup } from "./target-guard";
 
 const pipelineAsync = promisify(pipeline);
 
@@ -71,9 +74,12 @@ export class S3BackupStorage implements BackupStorage {
   /** Fixed part size, overriding choosePartSize. */
   private partSize: number | undefined;
 
-  constructor(config: S3StorageConfig, opts: { partSize?: number } = {}) {
+  /** `organizationId` is the owning org; null or absent for instance targets. */
+  constructor(config: S3StorageConfig, opts: { partSize?: number; organizationId?: string | null } = {}) {
     this.config = config;
     this.partSize = opts.partSize;
+    const lookup = backupEndpointLookup(opts.organizationId);
+    const agentOptions = { keepAlive: true, maxSockets: 50, lookup } as http.AgentOptions;
     this.client = new S3Client({
       region: config.region,
       endpoint: config.endpoint,
@@ -83,8 +89,28 @@ export class S3BackupStorage implements BackupStorage {
       },
       forcePathStyle: true, // Required for Minio, R2, B2
       // A hung part would otherwise hold the upload forever.
-      requestHandler: { requestTimeout: 120_000, connectionTimeout: 30_000 },
+      requestHandler: {
+        requestTimeout: 120_000,
+        connectionTimeout: 30_000,
+        httpAgent: new http.Agent(agentOptions),
+        httpsAgent: new https.Agent(agentOptions),
+      },
     });
+    const endpoint = config.endpoint;
+    if (endpoint) {
+      let vetted: Promise<void> | null = null;
+      this.client.middlewareStack.add(
+        (next) => async (args) => {
+          vetted ??= assertEndpointReachable(opts.organizationId, endpoint).catch((err) => {
+            vetted = null;
+            throw err;
+          });
+          await vetted;
+          return next(args);
+        },
+        { step: "initialize", name: "vardoEndpointGuard" },
+      );
+    }
   }
 
   private fullKey(key: string): string {

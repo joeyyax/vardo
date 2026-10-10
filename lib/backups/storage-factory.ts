@@ -84,5 +84,5 @@ export function createBackupStorage(target: BackupTargetLike): BackupStorage {
     return withStorageRetry(new LocalBackupStorage(validateLocalConfig(config)));
   }
   // s3, r2 and b2 all use S3-compatible APIs.
-  return withStorageRetry(new S3BackupStorage(validateS3Config(config)));
+  return withStorageRetry(new S3BackupStorage(validateS3Config(config), { organizationId: target.organizationId ?? null }));
 }

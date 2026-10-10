@@ -16,6 +16,9 @@ import {
   type TargetType,
 } from "@/lib/backups/target-config";
 
+import { assertTargetAllowed, targetGuardContext, TargetRefusedError } from "@/lib/backups/target-guard";
+import { isLocalBackupsAllowed } from "@/lib/config/provider-restrictions";
+
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
 type RouteParams = {
@@ -81,6 +84,16 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
       );
       if (!merged.success) {
         return apiError.validation(merged.error);
+      }
+      if ((target.type === "local" || target.type === "ssh") && !isLocalBackupsAllowed()) {
+        return NextResponse.json({ error: "SSH/local backup targets aren't available on this instance" }, { status: 403 });
+      }
+      try {
+        const ctx = await targetGuardContext(target.organizationId, await isAppAdmin());
+        await assertTargetAllowed(target.type, merged.data as Record<string, unknown>, ctx);
+      } catch (err) {
+        if (err instanceof TargetRefusedError) return NextResponse.json({ error: err.message }, { status: 400 });
+        throw err;
       }
       updateData.config = sealTargetConfig(merged.data, target.organizationId);
     }
