@@ -13,7 +13,7 @@ For an app built from a GitHub App repo, Vardo posts:
 
 Links to the console appear only when `NEXT_PUBLIC_APP_URL` is a public address.
 
-Calls to GitHub never hold up or fail a deploy. Comment edits are limited to one every five seconds per PR.
+Calls to GitHub never hold up or fail a deploy. Comment edits are limited to one every five seconds per PR. When GitHub rate-limits an installation, Vardo pauses calls on it until the time GitHub gives, skips in-progress updates and sends the final state once the limit lifts.
 
 With linked instances, only the instance that deploys an app reports on it, and each instance keeps its own comment.
 

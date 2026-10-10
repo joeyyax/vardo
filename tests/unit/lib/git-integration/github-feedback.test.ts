@@ -12,6 +12,8 @@ import {
   githubClient,
   GitHubApiError,
   GitHubPermissionError,
+  GitHubRateLimitError,
+  rateLimitUntil,
   resolveInstallation,
   upsertComment,
   type DeployInfo,
@@ -159,11 +161,31 @@ describe("githubClient", () => {
     await expect(gh.request("POST", "/repos/acme/widget/issues/4/comments", {})).rejects.toMatchObject({ permission: "pull_requests" });
   });
 
-  it("treats a rate-limit 403 as transient", async () => {
-    const gh = githubClient("tok", (async () => response(403, { message: "API rate limit exceeded" }, { "x-ratelimit-remaining": "0" })) as unknown as typeof fetch);
-    const err = await gh.request("GET", "/repos/acme/widget").catch((e) => e);
-    expect(err).toBeInstanceOf(GitHubApiError);
+  it("treats a rate-limit 403 as a backoff until the reset", async () => {
+    const reset = Math.floor(Date.now() / 1000) + 120;
+    const gh = githubClient("tok", (async () => response(403, { message: "API rate limit exceeded" }, { "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(reset) })) as unknown as typeof fetch);
+    const err = (await gh.request("GET", "/repos/acme/widget").catch((e) => e)) as GitHubRateLimitError;
+    expect(err).toBeInstanceOf(GitHubRateLimitError);
     expect(err).not.toBeInstanceOf(GitHubPermissionError);
+    expect(err.until).toBe(reset * 1000);
+  });
+
+  it("honors retry-after on a 429", async () => {
+    const gh = githubClient("tok", (async () => response(429, "slow down", { "retry-after": "30" })) as unknown as typeof fetch);
+    const before = Date.now();
+    const err = (await gh.request("POST", "/repos/acme/widget/statuses/abc", {}).catch((e) => e)) as GitHubRateLimitError;
+    expect(err).toBeInstanceOf(GitHubRateLimitError);
+    expect(err.until).toBeGreaterThanOrEqual(before + 30_000);
+    expect(err.until).toBeLessThan(before + 31_000);
+  });
+});
+
+describe("rateLimitUntil", () => {
+  it("prefers retry-after, then the reset, then a minute", () => {
+    const now = 1_000_000;
+    expect(rateLimitUntil(new Headers({ "retry-after": "5", "x-ratelimit-reset": "9999" }), now)).toBe(now + 5000);
+    expect(rateLimitUntil(new Headers({ "x-ratelimit-reset": "2000" }), now)).toBe(2_000_000);
+    expect(rateLimitUntil(new Headers(), now)).toBe(now + 60_000);
   });
 });
 
@@ -193,6 +215,40 @@ describe("createCoalescer", () => {
     c.push("pr", "live", send);
     await vi.advanceTimersByTimeAsync(6000);
     expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it("drops non-final edits while backed off and holds the final one", async () => {
+    const sent: string[] = [];
+    const send = async (b: string) => { sent.push(b); };
+    const c = createCoalescer(5000, () => Date.now());
+    const until = Date.now() + 30_000;
+    const blockedUntil = () => (Date.now() < until ? until : 0);
+    c.push("pr", "building", send, { blockedUntil });
+    c.push("pr", "deploying", send, { blockedUntil });
+    await vi.advanceTimersByTimeAsync(10_000);
+    c.push("pr", "live", send, { final: true, blockedUntil });
+    await vi.advanceTimersByTimeAsync(19_000);
+    expect(sent).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(sent).toEqual(["live"]);
+  });
+
+  it("retries a final edit that hit a rate limit", async () => {
+    let until = 0;
+    const sent: string[] = [];
+    const send = vi.fn(async (b: string) => {
+      if (sent.length === 0 && until === 0) {
+        until = Date.now() + 20_000;
+        throw new GitHubRateLimitError(until, "limited");
+      }
+      sent.push(b);
+    });
+    const c = createCoalescer(5000, () => Date.now());
+    c.push("pr", "failed", send, { final: true, blockedUntil: () => (Date.now() < until ? until : 0) });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(sent).toEqual([]);
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(sent).toEqual(["failed"]);
   });
 
   it("keeps keys independent", async () => {
@@ -409,5 +465,54 @@ describe("deploy feedback", () => {
     await settle();
     const last = calls.filter((c) => c.method === "PATCH").at(-1)?.body as { body: string };
     expect(last.body).toContain("**Preview: building** at `bbbbbbb`");
+  });
+});
+
+describe("deploy feedback under a rate limit", () => {
+  beforeEach(() => vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] }));
+  afterEach(() => vi.useRealTimers());
+
+  it("skips in-flight calls while backed off and delivers the final state after", async () => {
+    let limited = true;
+    const { feedback, calls } = harness({
+      routes: [
+        ["POST", /\/statuses\/abcdef/, (body) => {
+          if (limited && (body as { state: string }).state === "pending") throw new GitHubRateLimitError(Date.now() + 30_000, "limited");
+          return {};
+        }],
+        ["GET", /commits\/abcdef1234567\/pulls/, () => [{ number: 8, merged_at: "2026-01-01", merge_commit_sha: "abcdef1234567", base: { ref: "main" } }]],
+      ],
+    });
+    runDeploy(feedback, { status: "success", durationMs: 2000 });
+    await settle();
+    // Only the call that met the limit reached GitHub.
+    expect(calls).toHaveLength(1);
+
+    limited = false;
+    await vi.advanceTimersByTimeAsync(30_000);
+    await settle();
+    await vi.advanceTimersByTimeAsync(1_000);
+    await settle();
+
+    expect(calls.filter((c) => c.path.includes("/statuses/abcdef")).map((c) => (c.body as { state: string }).state)).toEqual(["pending", "success"]);
+    expect(calls.some((c) => c.method === "POST" && c.path === "/repos/acme/widget/deployments")).toBe(true);
+    expect(calls.find((c) => c.path === "/repos/acme/widget/deployments/500/statuses")?.body).toMatchObject({ state: "success" });
+    expect(calls.some((c) => c.method === "POST" && c.path === "/repos/acme/widget/issues/8/comments")).toBe(true);
+  });
+
+  it("backs off per installation", async () => {
+    const { feedback, calls } = harness({
+      routes: [["POST", /^\/repos\/acme\/widget\/statuses\//, () => { throw new GitHubRateLimitError(Date.now() + 60_000, "limited"); }]],
+      deps: {
+        loadInfo: async (id: string) => info({ deploymentId: id, repo: id === "dep-2" ? "acme/gadget" : "acme/widget", environment: "other" }),
+        resolveInstallation: async (repo: string) => (repo === "acme/widget" ? 11 : 12),
+      },
+    });
+    feedback.trackDeploy("dep-1", { trigger: "webhook" }).stage("compose", "running");
+    await settle();
+    feedback.trackDeploy("dep-2", { trigger: "webhook" }).stage("compose", "running");
+    feedback.trackDeploy("dep-3", { trigger: "webhook" }).stage("compose", "running");
+    await settle();
+    expect(calls.map((c) => c.path.split("/statuses/")[0])).toEqual(["/repos/acme/widget", "/repos/acme/gadget"]);
   });
 });

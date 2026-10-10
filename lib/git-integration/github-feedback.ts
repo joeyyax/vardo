@@ -8,6 +8,7 @@ import {
   deploymentPayload,
   deploymentStatusPayload,
   mergedMarker,
+  overallState,
   previewMarker,
   publicConsoleUrl,
   renderMergedComment,
@@ -51,9 +52,43 @@ export class GitHubApiError extends Error {
   }
 }
 
+/** GitHub asked us to slow down; no calls on this installation until `until`. */
+export class GitHubRateLimitError extends Error {
+  constructor(readonly until: number, message: string) {
+    super(message);
+    this.name = "GitHubRateLimitError";
+  }
+}
+
+/** Refused locally while the installation is backed off. */
+export class GitHubBackoffError extends Error {
+  constructor(readonly until: number) {
+    super("GitHub installation is backed off");
+    this.name = "GitHubBackoffError";
+  }
+}
+
+const isBackoff = (err: unknown): err is GitHubRateLimitError | GitHubBackoffError =>
+  err instanceof GitHubRateLimitError || err instanceof GitHubBackoffError;
+
+/** Default wait when GitHub limits without saying for how long. */
+export const RATE_LIMIT_DEFAULT_MS = 60_000;
+
+/** When a rate-limited call may retry: `retry-after`, then `x-ratelimit-reset`, then a minute. */
+export function rateLimitUntil(headers: Headers, now = Date.now()): number {
+  const retryAfter = Number(headers.get("retry-after"));
+  if (headers.get("retry-after") !== null && Number.isFinite(retryAfter)) return now + Math.max(0, retryAfter) * 1000;
+  const reset = Number(headers.get("x-ratelimit-reset"));
+  if (headers.get("x-ratelimit-reset") !== null && Number.isFinite(reset) && reset * 1000 > now) return reset * 1000;
+  return now + RATE_LIMIT_DEFAULT_MS;
+}
+
 export type GitHub = {
   request<T = unknown>(method: string, path: string, body?: unknown): Promise<T>;
 };
+
+/** A client bound to one installation. */
+type Conn = GitHub & { installationId: number };
 
 /** The permission a REST path needs. */
 export function permissionFor(path: string): Permission {
@@ -79,8 +114,12 @@ export function githubClient(token: string, fetchImpl: typeof fetch = fetch): Gi
       });
       if (!res.ok) {
         const text = await res.text().catch(() => "");
-        const rateLimited = res.headers.get("x-ratelimit-remaining") === "0" || /rate limit/i.test(text);
-        if (res.status === 403 && !rateLimited) {
+        const rateLimited = (res.status === 403 || res.status === 429)
+          && (res.headers.get("retry-after") !== null || res.headers.get("x-ratelimit-remaining") === "0" || /rate limit/i.test(text));
+        if (rateLimited) {
+          throw new GitHubRateLimitError(rateLimitUntil(res.headers), `GitHub rate limited ${method} ${path.split("?")[0]} (${res.status})`);
+        }
+        if (res.status === 403) {
           const permission = permissionFor(path);
           throw new GitHubPermissionError(permission, `GitHub refused ${PERMISSION_LABEL[permission]} access (403)`);
         }
@@ -133,30 +172,61 @@ export async function upsertComment(
 
 type Slot = {
   pending: string | null;
+  pendingFinal: boolean;
   sent: string | null;
   lastAt: number;
   timer: ReturnType<typeof setTimeout> | null;
   running: boolean;
+  retries: number;
   send: (body: string) => Promise<void>;
+  /** When the target installation is backed off until, or 0. */
+  blockedUntil: () => number;
 };
 
-/** Latest-wins sends per key, at most one per interval. Identical bodies are skipped. */
+export type PushOpts = {
+  /** A terminal state: held through a backoff and retried, never dropped. */
+  final?: boolean;
+  blockedUntil?: () => number;
+};
+
+/** Most retries of one final body through rate limits. */
+const FINAL_RETRIES = 5;
+
+/** Latest-wins sends per key, at most one per interval. Identical bodies are skipped; non-final ones are dropped while backed off. */
 export function createCoalescer(intervalMs = EDIT_INTERVAL_MS, now: () => number = Date.now) {
   const slots = new Map<string, Slot>();
 
   const run = (slot: Slot) => {
     slot.timer = null;
     const body = slot.pending;
+    const final = slot.pendingFinal;
+    if (body === null) return;
+    if (slot.blockedUntil() > now()) {
+      if (!final) slot.pending = null;
+      else schedule(slot);
+      return;
+    }
     slot.pending = null;
-    if (body === null || body === slot.sent) return;
+    slot.pendingFinal = false;
+    if (body === slot.sent) return;
     slot.running = true;
     slot.lastAt = now();
     slot
       .send(body)
       .then(() => {
         slot.sent = body;
+        slot.retries = 0;
       })
-      .catch((err) => log.warn(`GitHub comment update failed: ${err instanceof Error ? err.message : err}`))
+      .catch((err) => {
+        // A final body that hit a limit waits it out, unless something newer replaced it.
+        if (isBackoff(err) && final && slot.pending === null && slot.retries < FINAL_RETRIES) {
+          slot.retries++;
+          slot.pending = body;
+          slot.pendingFinal = true;
+          return;
+        }
+        log.warn(`GitHub comment update failed: ${err instanceof Error ? err.message : err}`);
+      })
       .finally(() => {
         slot.running = false;
         if (slot.pending !== null) schedule(slot);
@@ -165,17 +235,17 @@ export function createCoalescer(intervalMs = EDIT_INTERVAL_MS, now: () => number
 
   const schedule = (slot: Slot) => {
     if (slot.timer || slot.running) return;
-    const wait = Math.max(0, slot.lastAt + intervalMs - now());
+    const wait = Math.max(0, slot.lastAt + intervalMs - now(), slot.blockedUntil() - now());
     if (wait === 0) return run(slot);
     slot.timer = setTimeout(() => run(slot), wait);
     slot.timer.unref?.();
   };
 
   return {
-    push(key: string, body: string, send: (body: string) => Promise<void>) {
+    push(key: string, body: string, send: (body: string) => Promise<void>, opts: PushOpts = {}) {
       let slot = slots.get(key);
       if (!slot) {
-        slot = { pending: null, sent: null, lastAt: 0, timer: null, running: false, send };
+        slot = { pending: null, pendingFinal: false, sent: null, lastAt: 0, timer: null, running: false, retries: 0, send, blockedUntil: () => 0 };
         slots.set(key, slot);
         if (slots.size > 500) {
           for (const [k, s] of slots) {
@@ -185,7 +255,13 @@ export function createCoalescer(intervalMs = EDIT_INTERVAL_MS, now: () => number
         }
       }
       slot.send = send;
+      slot.blockedUntil = opts.blockedUntil ?? (() => 0);
       slot.pending = body;
+      slot.pendingFinal = !!opts.final;
+      if (slot.blockedUntil() > now() && !opts.final) {
+        slot.pending = null;
+        return;
+      }
       schedule(slot);
     },
   };
@@ -249,6 +325,16 @@ export function createFeedback(deps: FeedbackDeps) {
   const merges = new Map<string, MergedState>();
   const blockedAt = new Map<string, number>();
   const isBlocked = (appId: string) => (blockedAt.get(appId) ?? -Infinity) > now() - BLOCK_RETRY_MS;
+  const backoff = new Map<number, number>();
+  const backedOffUntil = (installationId: number) => {
+    const until = backoff.get(installationId) ?? 0;
+    return until > now() ? until : 0;
+  };
+
+  const defer = (until: number, fn: () => Promise<unknown>) => {
+    const t = setTimeout(() => void fn().catch(() => {}), Math.max(0, until - now()));
+    t.unref?.();
+  };
 
   const prune = () => {
     const cutoff = now() - STATE_TTL_MS;
@@ -256,18 +342,55 @@ export function createFeedback(deps: FeedbackDeps) {
     for (const [k, v] of merges) if (v.touchedAt < cutoff) merges.delete(k);
   };
 
-  async function withClient(repo: string, orgIds: string[] | null): Promise<GitHub | null> {
+  /** A client for the repo's installation that refuses calls while GitHub has it backed off. */
+  async function withClient(repo: string, orgIds: string[] | null): Promise<Conn | null> {
     const installationId = await deps.resolveInstallation(repo, orgIds);
     if (!installationId) return null;
-    return deps.client(installationId);
+    const inner = await deps.client(installationId);
+    return {
+      installationId,
+      async request<T>(method: string, path: string, body?: unknown): Promise<T> {
+        const until = backedOffUntil(installationId);
+        if (until) throw new GitHubBackoffError(until);
+        try {
+          return await inner.request<T>(method, path, body);
+        } catch (err) {
+          if (err instanceof GitHubRateLimitError) {
+            backoff.set(installationId, Math.max(backoff.get(installationId) ?? 0, err.until));
+            log.warn(`${err.message}; backing off installation ${installationId} for ${Math.ceil((err.until - now()) / 1000)}s`);
+          }
+          throw err;
+        }
+      },
+    };
   }
 
-  /** Runs one GitHub step; a refused permission blocks the apps involved, anything else is logged. */
-  async function guarded(appIds: string[], organizationId: string | null, label: string, fn: () => Promise<void>): Promise<boolean> {
+  type GuardOpts = {
+    /** A terminal state: retried once the backoff lifts instead of skipped. */
+    final?: boolean;
+    conn?: Conn | null;
+    /** Rethrow backoff errors to a caller that handles them. */
+    propagate?: boolean;
+    attempt?: number;
+  };
+
+  /** Runs one GitHub step; a refused permission blocks the apps involved, a backoff skips or defers it, anything else is logged. */
+  async function guarded(appIds: string[], organizationId: string | null, label: string, fn: () => Promise<void>, opts: GuardOpts = {}): Promise<boolean> {
     try {
       await fn();
       return true;
     } catch (err) {
+      if (isBackoff(err)) {
+        if (opts.propagate) throw err;
+        const attempt = opts.attempt ?? 0;
+        if (opts.final && opts.conn && attempt < FINAL_RETRIES) {
+          const until = backedOffUntil(opts.conn.installationId) || now() + 1000;
+          defer(until, () => guarded(appIds, organizationId, label, fn, { ...opts, attempt: attempt + 1 }));
+        } else {
+          log.info(`${label} skipped: GitHub rate limit`);
+        }
+        return true;
+      }
       if (err instanceof GitHubPermissionError) {
         log.warn(`${label}: ${err.message}`);
         for (const id of appIds) blockedAt.set(id, now());
@@ -294,9 +417,11 @@ export function createFeedback(deps: FeedbackDeps) {
     });
     const appIds = [...state.appIds];
     const orgIds = state.orgIds.size > 0 ? [...state.orgIds] : null;
+    const gh = await withClient(repo, orgIds);
+    if (!gh) return;
+    const overall = overallState([...state.rows.values()]);
+    const final = !!opts.removed || overall === "live" || overall === "failed";
     coalescer.push(`pr:${key}`, body, async (latest) => {
-      const gh = await withClient(repo, orgIds);
-      if (!gh) return;
       await guarded(appIds, orgIds?.[0] ?? null, `PR comment on ${repo}#${number}`, async () => {
         state.commentId = await upsertComment(gh, {
           repo,
@@ -306,8 +431,8 @@ export function createFeedback(deps: FeedbackDeps) {
           commentId: state.commentId,
           create: !opts.removed,
         });
-      });
-    });
+      }, { propagate: true });
+    }, { final, blockedUntil: () => backedOffUntil(gh.installationId) });
   }
 
   function prState(repo: string, number: number): [string, PrState] {
@@ -351,7 +476,7 @@ export function createFeedback(deps: FeedbackDeps) {
         description,
         targetUrl: deployPageUrl(instance.consoleUrl, info.appId, info.deploymentId),
       }));
-    });
+    }, { final: state !== "pending", conn: gh });
   }
 
   type GhDeployment = { id: number; environment?: string; payload?: unknown };
@@ -374,7 +499,7 @@ export function createFeedback(deps: FeedbackDeps) {
     return info.environment === "preview" && !!info.pr && info.pr.repo.toLowerCase() === info.repo.toLowerCase();
   }
 
-  async function mergedRow(info: DeployInfo, sha: string, row: Omit<ProductionRow, "app" | "sha">) {
+  async function mergedRow(info: DeployInfo, sha: string, row: Omit<ProductionRow, "app" | "sha">, attempt = 0): Promise<void> {
     if (!info.repo || info.environment !== "production" || info.trigger === "rollback" || isBlocked(info.appId)) return;
     const key = `${info.repo.toLowerCase()}@${sha}`;
     let state = merges.get(key);
@@ -388,9 +513,16 @@ export function createFeedback(deps: FeedbackDeps) {
     if (!gh) return;
     const merged = state;
     if (merged.pr === undefined) {
-      const ok = await guarded([info.appId], info.organizationId, `Merged PR lookup for ${info.repo}@${sha.slice(0, 7)}`, async () => {
-        merged.pr = await findMergedPull(gh, info.repo!, sha, info.branch);
-      });
+      let ok: boolean;
+      try {
+        ok = await guarded([info.appId], info.organizationId, `Merged PR lookup for ${info.repo}@${sha.slice(0, 7)}`, async () => {
+          merged.pr = await findMergedPull(gh, info.repo!, sha, info.branch);
+        }, { propagate: true });
+      } catch (err) {
+        // The comment is a final state: look again once GitHub allows it.
+        if (isBackoff(err) && attempt < FINAL_RETRIES) defer(backedOffUntil(gh.installationId) || now() + 1000, () => mergedRow(info, sha, row, attempt + 1));
+        return;
+      }
       if (!ok || merged.pr === undefined) return;
     }
     if (!merged.pr) return;
@@ -401,8 +533,8 @@ export function createFeedback(deps: FeedbackDeps) {
     coalescer.push(`merged:${key}`, body, async (latest) => {
       await guarded([info.appId], info.organizationId, `Merged PR comment on ${repo}#${pr}`, async () => {
         merged.commentId = await upsertComment(gh, { repo, issue: pr, marker: mergedMarker(instance.id), body: latest, commentId: merged.commentId });
-      });
-    });
+      }, { propagate: true });
+    }, { final: true, blockedUntil: () => backedOffUntil(gh.installationId) });
   }
 
   function trackDeploy(deploymentId: string, opts: { trigger: string; gitSha?: string | null }): DeployTracker {
@@ -416,7 +548,7 @@ export function createFeedback(deps: FeedbackDeps) {
       let loaded = false;
       let sha: string | null = opts.gitSha ?? null;
       let ghDeploymentId: number | null = null;
-      let ghClient: GitHub | null = null;
+      let ghClient: Conn | null = null;
       let started = false;
 
       const load = async () => {
@@ -431,19 +563,35 @@ export function createFeedback(deps: FeedbackDeps) {
         return info && !isBlocked(info.appId) ? info : null;
       };
 
+      const createDeployment = async (i: DeployInfo, gh: Conn) => {
+        const instance = await deps.instance();
+        const created = await gh.request<{ id?: number }>("POST", `/repos/${i.repo}/deployments`, deploymentPayload({
+          sha: sha!,
+          appName: i.appName,
+          prNumber: i.pr?.number,
+          instanceId: instance.id,
+          deploymentId,
+        }));
+        ghDeploymentId = created?.id ?? null;
+      };
+
       const deploymentStatus = async (i: DeployInfo, state: DeploymentState, description: string, environmentUrl?: string | null) => {
-        if (!ghClient || !ghDeploymentId || isBlocked(i.appId)) return;
+        if (!ghClient || isBlocked(i.appId)) return;
+        const final = state !== "queued" && state !== "in_progress";
+        // A deployment skipped during a backoff is still created for its outcome.
+        if (!ghDeploymentId && state !== "success" && state !== "failure") return;
         const gh = ghClient;
-        const id = ghDeploymentId;
         const instance = await deps.instance();
         await guarded([i.appId], i.organizationId, `Deployment status on ${i.repo}`, async () => {
-          await gh.request("POST", `/repos/${i.repo}/deployments/${id}/statuses`, deploymentStatusPayload({
+          if (!ghDeploymentId && sha) await createDeployment(i, gh);
+          if (!ghDeploymentId) return;
+          await gh.request("POST", `/repos/${i.repo}/deployments/${ghDeploymentId}/statuses`, deploymentStatusPayload({
             state,
             description,
             environmentUrl,
             logUrl: deployPageUrl(instance.consoleUrl, i.appId, deploymentId),
           }));
-        });
+        }, { final, conn: gh });
       };
 
       /** Once the SHA is known: the commit goes pending and the GitHub deployment is created. */
@@ -458,17 +606,7 @@ export function createFeedback(deps: FeedbackDeps) {
         ghClient = await withClient(i.repo!, [i.organizationId]);
         if (!ghClient) return;
         const gh = ghClient;
-        const instance = await deps.instance();
-        await guarded([i.appId], i.organizationId, `Deployment on ${i.repo}`, async () => {
-          const created = await gh.request<{ id?: number }>("POST", `/repos/${i.repo}/deployments`, deploymentPayload({
-            sha: sha!,
-            appName: i.appName,
-            prNumber: i.pr?.number,
-            instanceId: instance.id,
-            deploymentId,
-          }));
-          ghDeploymentId = created?.id ?? null;
-        });
+        await guarded([i.appId], i.organizationId, `Deployment on ${i.repo}`, () => createDeployment(i, gh));
         await deploymentStatus(i, queued ? "queued" : "in_progress", label);
       };
 
@@ -552,7 +690,7 @@ export function createFeedback(deps: FeedbackDeps) {
             const id = await findGhDeployment(gh, info, sha);
             if (!id) return;
             await gh.request("POST", `/repos/${info.repo}/deployments/${id}/statuses`, deploymentStatusPayload({ state: "failure", description: reason, logUrl }));
-          });
+          }, { final: true, conn: gh });
         }
       }
       await mergedRow(info, sha, { state: "rolled_back", error: reason, logUrl });
@@ -585,7 +723,7 @@ export function createFeedback(deps: FeedbackDeps) {
         for (const id of latest.values()) {
           await gh.request("POST", `/repos/${repo}/deployments/${id}/statuses`, deploymentStatusPayload({ state: "inactive", description: "Preview removed" }));
         }
-      });
+      }, { final: true, conn: gh });
     } catch (err) {
       log.warn(`Preview teardown feedback for ${repo}#${number} failed: ${err instanceof Error ? err.message : err}`);
     }
@@ -615,9 +753,7 @@ export async function findMergedPull(gh: GitHub, repo: string, sha: string, bran
   return hit?.number ?? null;
 }
 
-const tokenCache = new Map<number, { token: string; expiresAt: number }>();
 const installationCache = new Map<string, { id: number | null; expiresAt: number }>();
-const TOKEN_TTL_MS = 50 * 60 * 1000;
 const INSTALLATION_TTL_MS = 10 * 60 * 1000;
 
 function withTimeout<T>(p: Promise<T>, ms = REQUEST_TIMEOUT_MS): Promise<T> {
@@ -670,13 +806,10 @@ async function cachedInstallation(repo: string, organizationIds: string[] | null
   return id;
 }
 
-async function cachedClient(installationId: number): Promise<GitHub> {
-  const hit = tokenCache.get(installationId);
-  if (hit && hit.expiresAt > Date.now()) return githubClient(hit.token);
+// getInstallationToken reuses each token until near expiry.
+async function installationClient(installationId: number): Promise<GitHub> {
   const { getInstallationToken } = await import("./app");
-  const token = await withTimeout(getInstallationToken(installationId));
-  tokenCache.set(installationId, { token, expiresAt: Date.now() + TOKEN_TTL_MS });
-  return githubClient(token);
+  return githubClient(await withTimeout(getInstallationToken(installationId)));
 }
 
 let instancePromise: Promise<InstanceInfo> | null = null;
@@ -811,7 +944,7 @@ const feedback = createFeedback({
   readSha,
   instance: loadInstance,
   resolveInstallation: cachedInstallation,
-  client: cachedClient,
+  client: installationClient,
   markBlocked,
 });
 
