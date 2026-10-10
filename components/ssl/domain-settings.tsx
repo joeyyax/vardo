@@ -29,9 +29,11 @@ type DnsCheck = {
   resolved: boolean;
   ips: string[];
   matches: boolean;
+  verified?: boolean;
   proxied?: boolean;
   reachable?: boolean;
-  proxyProvider?: "cloudflare" | null;
+  proxyProvider?: "cloudflare" | "proxy" | null;
+  failed?: boolean;
 };
 
 type InstanceData = {

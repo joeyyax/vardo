@@ -9,50 +9,72 @@ export type Diagnosis<S extends string> = {
   hint?: string;
 };
 
-/** What a DNS lookup of a domain found. */
+/** What a DNS lookup and reach check of a domain found. */
 export type DnsFacts = {
   resolved: boolean;
   ips: string[];
-  /** Points at this server, directly or through a proxy that answers. */
+  /** Reaches this server: the check token came back, or records point here and nothing answered to ask. */
   matches: boolean;
+  /** The token came back signed by this server. */
+  verified?: boolean;
   proxied?: boolean;
+  /** Something answered at the domain. */
   reachable?: boolean;
-  proxyProvider?: "cloudflare" | null;
+  proxyProvider?: "cloudflare" | "proxy" | null;
   serverIp?: string | null;
   /** The lookup itself failed. */
   failed?: boolean;
 };
 
-export type DnsState = "connected" | "proxied" | "not-responding" | "wrong-ip" | "no-records" | "error";
+export type DnsState = "connected" | "proxied" | "other-server" | "not-responding" | "no-records" | "error";
+
+function proxyName(provider: DnsFacts["proxyProvider"]): string {
+  return provider === "cloudflare" ? "Cloudflare" : "a proxy";
+}
 
 export function diagnoseDns(f: DnsFacts): Diagnosis<DnsState> {
   const found = f.ips.join(", ");
   if (f.failed) {
     return { state: "error", label: "Couldn't check DNS", tone: "neutral", hint: "Check again in a moment." };
   }
-  if (f.resolved && f.matches && f.proxied) {
+  if (f.resolved && f.matches && f.proxyProvider) {
     return {
       state: "proxied",
       label: `Connected (via ${f.proxyProvider === "cloudflare" ? "Cloudflare" : "proxy"})`,
       tone: "success",
-      hint: "Cloudflare's proxy covers single-level subdomains. Set nested subdomains to DNS only so a certificate can be issued.",
+      ...(f.proxyProvider === "cloudflare" && {
+        hint: "Cloudflare's proxy covers single-level subdomains. Set nested subdomains to DNS only so a certificate can be issued.",
+      }),
     };
   }
-  if (f.resolved && f.matches) return { state: "connected", label: "Connected", tone: "success" };
-  if (f.resolved && !f.reachable) {
+  if (f.resolved && f.matches) {
     return {
-      state: "not-responding",
-      label: "Not responding",
+      state: "connected",
+      label: "Connected",
+      tone: "success",
+      ...(f.verified === false && {
+        hint: "DNS points at this server, but Vardo couldn't reach the domain to confirm it. Check that ports 80 and 443 are open.",
+      }),
+    };
+  }
+  if (f.resolved && f.reachable) {
+    return {
+      state: "other-server",
+      label: "Reaches another server",
       tone: "error",
-      hint: `${found ? `DNS resolves to ${found}, but ` : ""}the server didn't answer. Check that ports 80 and 443 reach it.`,
+      hint: f.proxyProvider
+        ? `The domain answers through ${proxyName(f.proxyProvider)}, but not from this server. Point the proxy's origin at ${f.serverIp || "this server"}.`
+        : `The domain answers, but not from this server.${found ? ` DNS resolves to ${found}${f.serverIp ? `, not ${f.serverIp}` : ""}.` : ""}`,
     };
   }
   if (f.resolved) {
     return {
-      state: "wrong-ip",
-      label: "Wrong IP",
+      state: "not-responding",
+      label: "Not responding",
       tone: "error",
-      hint: `DNS resolves to ${found}${f.serverIp ? `, not this server (${f.serverIp})` : ", not this server"}.`,
+      hint: f.proxyProvider
+        ? `${f.proxyProvider === "cloudflare" ? "Cloudflare" : "A proxy"} answers, but couldn't reach this server. Check that ports 80 and 443 reach it.`
+        : `${found ? `DNS resolves to ${found}, but ` : ""}nothing answered. Check that ports 80 and 443 reach this server.`,
     };
   }
   return {
@@ -67,9 +89,10 @@ type DnsCheckResponse = {
   status?: string;
   resolves?: boolean;
   configured?: boolean;
+  verified?: boolean;
   proxied?: boolean;
   reachable?: boolean;
-  proxyProvider?: "cloudflare" | null;
+  proxyProvider?: "cloudflare" | "proxy" | null;
   serverIp?: string | null;
   records?: { a?: string[]; cname?: string[] };
 };
@@ -86,6 +109,7 @@ export function dnsFactsFromCheck(data: DnsCheckResponse): DnsFacts {
     resolved: !!data.resolves,
     ips,
     matches: !!data.configured,
+    verified: data.verified,
     proxied: data.proxied,
     reachable: data.reachable,
     proxyProvider: data.proxyProvider,

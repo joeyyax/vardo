@@ -2,10 +2,9 @@ import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { NextRequest, NextResponse } from "next/server";
 import { resolve4, resolveCname } from "dns/promises";
 import { getServerIP } from "@/lib/server-ip";
-import { isCloudflareIp } from "@/lib/cloudflare-ips";
 import { apiError } from "@/lib/api/error-response";
 import { isHostname } from "@/lib/security/hostname";
-import { blockedAddressReason } from "@/lib/security/ssrf";
+import { probeReach, reachVerdict } from "@/lib/domains/reach";
 import { getInstanceBaseDomain } from "@/lib/domain-monitoring/base-domain";
 
 // GET /api/v1/dns-check?domain=example.com&expected=auto-generated.localhost
@@ -86,34 +85,17 @@ async function handleGet(request: NextRequest) {
     const serverIp = await getServerIP();
     const aCorrect = serverIp ? aRecords.some((ip) => ip === serverIp) : false;
 
-    // Check for Cloudflare proxy
-    const allCloudflare = aRecords.length > 0 && aRecords.every(isCloudflareIp);
-
-    let reachable = false;
-    const anyInternal = aRecords.some((ip) => blockedAddressReason(ip) !== null);
-    if (!aCorrect && !cnameCorrect && aRecords.length > 0 && !anyInternal) {
-      try {
-        await fetch(`https://${domain}`, {
-          method: "HEAD",
-          signal: AbortSignal.timeout(5000),
-          redirect: "manual",
-        });
-        reachable = true;
-      } catch {
-        // Domain didn't respond
-      }
-    }
-
-    const configured = cnameCorrect || aCorrect || (allCloudflare && reachable);
+    const reach = await probeReach(domain);
+    const verdict = reachVerdict(reach, aCorrect || cnameCorrect);
+    const status = verdict.configured ? "configured" : verdict.reachable ? "wrong-target" : "not-responding";
 
     return NextResponse.json({
       domain,
-      status: configured ? "configured" : "wrong-target",
+      status,
       resolves: hasRecords,
-      configured,
-      proxied: allCloudflare,
-      reachable: aCorrect || cnameCorrect || reachable,
-      proxyProvider: allCloudflare ? "cloudflare" : null,
+      ...verdict,
+      proxied: reach.proxy !== null,
+      proxyProvider: reach.proxy,
       records: { a: aRecords, cname: cnameRecords },
       serverIp,
     });

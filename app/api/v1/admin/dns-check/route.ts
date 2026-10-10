@@ -5,16 +5,20 @@ import { requireAdminAuth } from "@/lib/auth/admin";
 import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { getInstanceConfig } from "@/lib/system-settings";
 import { getServerIP } from "@/lib/server-ip";
-import { isCloudflareIp } from "@/lib/cloudflare-ips";
+import { isHostname } from "@/lib/security/hostname";
+import { probeReach, reachVerdict, type ProxyProvider } from "@/lib/domains/reach";
 
 type DnsCheck = {
   domain: string;
   resolved: boolean;
   ips: string[];
   matches: boolean;
+  verified: boolean;
   proxied: boolean;
   reachable: boolean;
-  proxyProvider: "cloudflare" | null;
+  proxyProvider: ProxyProvider | null;
+  /** The reach check itself failed. */
+  failed?: boolean;
 };
 
 async function handleGet(request: NextRequest) {
@@ -30,46 +34,29 @@ async function handleGet(request: NextRequest) {
     const unique = [...new Set(domains)];
 
     const checks: DnsCheck[] = await Promise.all(
-      unique.map(async (domain) => {
+      unique.map(async (domain): Promise<DnsCheck> => {
+        let ips: string[];
         try {
-          const ips = await resolve4(domain);
-          const directMatch = serverIp ? ips.includes(serverIp) : false;
-          const allCloudflare = ips.length > 0 && ips.every(isCloudflareIp);
-
-          let reachable = false;
-          if (!directMatch && ips.length > 0) {
-            // Check HTTP reachability when IPs don't directly match
-            try {
-              await fetch(`https://${domain}`, {
-                method: "HEAD",
-                signal: AbortSignal.timeout(5000),
-                redirect: "manual",
-              });
-              reachable = true;
-            } catch {
-              // Domain didn't respond
-            }
-          }
-
+          ips = await resolve4(domain);
+        } catch {
+          return { domain, resolved: false, ips: [], matches: false, verified: false, proxied: false, reachable: false, proxyProvider: null };
+        }
+        const directMatch = serverIp ? ips.includes(serverIp) : false;
+        try {
+          const reach = isHostname(domain) ? await probeReach(domain) : { outcome: "no-response" as const, proxy: null };
+          const verdict = reachVerdict(reach, directMatch);
           return {
             domain,
             resolved: true,
             ips,
-            matches: directMatch || (allCloudflare && reachable),
-            proxied: allCloudflare,
-            reachable: directMatch || reachable,
-            proxyProvider: allCloudflare ? "cloudflare" as const : null,
+            matches: verdict.configured,
+            verified: verdict.verified,
+            proxied: reach.proxy !== null,
+            reachable: verdict.reachable,
+            proxyProvider: reach.proxy,
           };
         } catch {
-          return {
-            domain,
-            resolved: false,
-            ips: [],
-            matches: false,
-            proxied: false,
-            reachable: false,
-            proxyProvider: null,
-          };
+          return { domain, resolved: true, ips, matches: false, verified: false, proxied: false, reachable: false, proxyProvider: null, failed: true };
         }
       }),
     );
