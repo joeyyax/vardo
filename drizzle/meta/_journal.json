@@ -820,6 +820,13 @@
       "when": 1791672884279,
       "tag": "0116_security_header_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 117,
+      "version": "7",
+      "when": 1791676085125,
+      "tag": "0117_worker_presence",
+      "breakpoints": true
     }
   ]
 }
