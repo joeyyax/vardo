@@ -331,6 +331,7 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
       .set({
         ...statusChange("active"),
         needsRedeploy: false,
+        ...(ctx.headersLive !== undefined ? { securityHeadersLive: ctx.headersLive } : {}),
         kind: inferServiceKind({
           image: app.imageName,
           serviceName: app.composeService ?? app.name,

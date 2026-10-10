@@ -36,6 +36,9 @@ export async function register() {
     await syncConsolePublicRoute().catch((err) => log.warn("Failed to write the console's public route:", err));
     const { writeReachRoute } = await import("./lib/docker/reach-route");
     await writeReachRoute().catch((err) => log.warn("Failed to write the domain check route:", err));
+    // Routers reference each app's headers middleware by name; Traefik disables a router whose middleware is missing.
+    const { syncAllHeadersFiles } = await import("./lib/docker/headers-sync");
+    await syncAllHeadersFiles().catch((err) => log.warn("Failed to write security headers files:", err));
     const { regenerateExternalRoutesConfig } = await import("./lib/ssl/generate-external-routes-config");
     await regenerateExternalRoutesConfig().catch((err) => log.warn("Failed to write external routes:", err));
 

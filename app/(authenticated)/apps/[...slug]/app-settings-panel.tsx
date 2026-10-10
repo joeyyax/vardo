@@ -29,6 +29,8 @@ import { AutoDeployTriggers } from "./auto-deploy-triggers";
 import { can } from "@/lib/auth/permissions";
 import { cpuLimitHint } from "@/lib/ui/cpu-limit";
 import { MemoryProfileFields, type MemoryProfileValues } from "./memory-profile-fields";
+import { SecurityHeadersFields } from "./security-headers-fields";
+import { headerConfigProblems, normalizeHeaderConfig, type SecurityHeaderConfig } from "@/lib/security/response-headers";
 import { effectiveKind, isServiceKind, SERVICE_KINDS, SERVICE_KIND_LABEL, type ServiceKind } from "@/lib/ui/service-kind";
 
 /** Said under every field the container only picks up when it is recreated. */
@@ -100,7 +102,8 @@ export function AppSettingsPanel({
     isChildService ? (app.priority ?? "inherit") : (app.priority ?? "standard"),
   );
   const [backendProtocol, setBackendProtocol] = useState<"auto" | "http" | "https">(app.backendProtocol || "auto");
-  const [securityHeaders, setSecurityHeaders] = useState(app.securityHeaders ?? true);
+  const storedHeaders = normalizeHeaderConfig(app.securityHeaders);
+  const [securityHeaders, setSecurityHeaders] = useState<SecurityHeaderConfig>(storedHeaders);
   const [diskWriteAlertThreshold, setDiskWriteAlertThreshold] = useState(app.diskWriteAlertThreshold ? (app.diskWriteAlertThreshold / 1_073_741_824).toString() : "");
   const [kind, setKind] = useState<ServiceKind | "inferred">(app.kindOverride ?? "inferred");
   const inferredKind = effectiveKind({ ...app, kindOverride: null });
@@ -120,6 +123,13 @@ export function AppSettingsPanel({
   const canUseGpu = can(userRole, "app.gpu");
 
   async function handleSave() {
+    if (fields.securityHeaders) {
+      const problem = Object.values(headerConfigProblems(securityHeaders))[0];
+      if (problem) {
+        toast.error(problem);
+        return;
+      }
+    }
     setSaving(true);
     try {
       // Write only the fields this page showed; hidden ones would overwrite other pages.
@@ -170,7 +180,8 @@ export function AppSettingsPanel({
       if (fields.backendProtocol) {
         body.backendProtocol = backendProtocol === "auto" ? null : backendProtocol;
       }
-      if (fields.securityHeaders) body.securityHeaders = securityHeaders;
+      const headersChanged = fields.securityHeaders && JSON.stringify(securityHeaders) !== JSON.stringify(storedHeaders);
+      if (headersChanged) body.securityHeaders = securityHeaders;
       if (fields.diskWriteAlert) {
         body.diskWriteAlertThreshold = diskWriteAlertThreshold
           ? Math.round(parseFloat(diskWriteAlertThreshold) * 1_073_741_824)
@@ -198,7 +209,6 @@ export function AppSettingsPanel({
         rootDirectory: app.rootDirectory || null,
         containerPort: app.containerPort,
         backendProtocol: app.backendProtocol ?? null,
-        securityHeaders: app.securityHeaders ?? true,
         restartPolicy: app.restartPolicy || "unless-stopped",
         cpuLimit: app.cpuLimit,
         memoryLimit: app.memoryLimit,
@@ -220,13 +230,13 @@ export function AppSettingsPanel({
         }
       );
 
+      const data = await res.json();
       if (!res.ok) {
-        const data = await res.json();
         toast.error(data.error || "Couldn't save");
         return;
       }
 
-      if (redeployFieldChanged) {
+      if (redeployFieldChanged || data.securityHeaders?.applied === "redeploy") {
         toast.success("Saved — redeploy to apply changes", {
           action: {
             label: "Redeploy now",
@@ -492,20 +502,11 @@ export function AppSettingsPanel({
 
       {/* Security headers */}
       {fields.securityHeaders && (
-        <div className="flex items-center gap-3">
-          <Switch
-            id="edit-security-headers"
-            checked={securityHeaders}
-            onCheckedChange={setSecurityHeaders}
-          />
-          <div className="grid gap-0.5">
-            <Label htmlFor="edit-security-headers">Security headers</Label>
-            <p className="text-xs text-muted-foreground">
-              Adds HSTS, <span className="font-mono">X-Content-Type-Options: nosniff</span>, <span className="font-mono">X-Frame-Options: SAMEORIGIN</span> and <span className="font-mono">Referrer-Policy: strict-origin-when-cross-origin</span> to HTTPS responses. These replace any the app sends; turn off if it sets its own or needs to be framed.
-            </p>
-            <p className="text-xs text-muted-foreground">{REDEPLOY_NOTE}</p>
-          </div>
-        </div>
+        <SecurityHeadersFields
+          value={securityHeaders}
+          onChange={setSecurityHeaders}
+          live={app.securityHeadersLive ?? false}
+        />
       )}
 
       {/* Restart policy */}

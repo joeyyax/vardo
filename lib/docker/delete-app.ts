@@ -12,6 +12,7 @@ import { logger } from "@/lib/logger";
 import { recordActivity } from "@/lib/activity";
 import { deleteAppSeries } from "@/lib/metrics/series-cleanup";
 import { volumeOwnerProblem } from "@/lib/docker/volume-owner";
+import { removeAppHeadersFile } from "./headers-file";
 
 const log = logger.child("delete-app");
 
@@ -185,6 +186,12 @@ export async function deleteApp(opts: {
   await db
     .delete(apps)
     .where(and(eq(apps.id, appId), eq(apps.organizationId, organizationId)));
+
+  try {
+    await removeAppHeadersFile(appId);
+  } catch (err) {
+    log.warn(`Could not remove the security headers file for ${app.name}:`, err);
+  }
 
   // The app's links are gone, so its "Auto:" jobs are now empty.
   try {

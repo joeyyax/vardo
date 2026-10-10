@@ -1,3 +1,4 @@
+import type { SecurityHeaderConfig } from "@/lib/security/response-headers";
 import type { UiDensity } from "@/lib/db/schema/enums";
 import type { ServiceKind } from "@/lib/db/schema/enums";
 import type { AppCondition } from "@/lib/docker/conditions";
@@ -159,7 +160,9 @@ export type App = {
   kindOverride?: ServiceKind | null;
   gpuEnabled: boolean | null;
   backendProtocol: "http" | "https" | null;
-  securityHeaders?: boolean;
+  securityHeaders?: SecurityHeaderConfig;
+  /** The last deploy references the headers file, so saved settings apply live. */
+  securityHeadersLive?: boolean;
   diskWriteAlertThreshold: number | null;
   anomalyAlerts?: boolean;
   githubFeedback?: boolean | null;

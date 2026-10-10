@@ -162,6 +162,9 @@ export type DeployTransformDomain = {
   middlewares?: string | null;
 };
 
+/** An app's security headers on its HTTPS routers: the file-provider middleware, or label-defined options where there's no Traefik volume. */
+export type HeadersMiddleware = { ref: string } | { options: Record<string, string> };
+
 export type ComposePreviewApp = {
   name: string;
   deployType: string;
@@ -174,7 +177,7 @@ export type ComposePreviewApp = {
   exposedPorts: { internal: number; external?: number; protocol?: string }[] | null;
   domains: DeployTransformDomain[];
   backendProtocol?: "http" | "https" | null;
-  securityHeaders?: boolean;
+  headers?: HeadersMiddleware | null;
 };
 
 export type ValidateOptions = {

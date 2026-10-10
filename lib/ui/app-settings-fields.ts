@@ -129,7 +129,6 @@ export const APP_SETTINGS_REDEPLOY_KEYS: readonly string[] = [
   "rootDirectory",
   "containerPort",
   "backendProtocol",
-  "securityHeaders",
   "restartPolicy",
   "cpuLimit",
   "memoryLimit",

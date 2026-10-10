@@ -1,6 +1,6 @@
 // A self-routed app's own HTTPS routers reach the slot's compose files with the security headers middleware.
 
-import { describe, it, expect, vi } from "vitest";
+import { beforeEach, describe, it, expect, vi } from "vitest";
 import type { ComposeFile } from "@/lib/docker/compose";
 import type { DeployContext, DeployApp } from "@/lib/docker/deploy-context";
 
@@ -16,12 +16,24 @@ vi.mock("@/lib/docker/label-hosts", () => ({
 vi.mock("@/lib/db", () => ({
   db: { query: { apps: { findMany: vi.fn().mockResolvedValue([]) } } },
 }));
+const volume = vi.hoisted(() => ({ present: true }));
+vi.mock("@/lib/docker/headers-file", async () => {
+  const { headersLabelOptions, headersMiddlewareRef } = await import("@/lib/security/response-headers");
+  return {
+    deployHeadersMiddleware: vi.fn(async (id: string, config: Parameters<typeof headersLabelOptions>[0]) => {
+      if (volume.present) return { headers: { ref: headersMiddlewareRef(id) }, live: true };
+      const options = headersLabelOptions(config);
+      return { headers: Object.keys(options).length > 0 ? { options } : null, live: false };
+    }),
+  };
+});
 
 import { resolveCompose } from "@/lib/docker/deploy-steps/resolve-compose";
 import { buildVardoOverlay } from "@/lib/docker/compose-inject";
 import { slotComposePair } from "@/lib/docker/traefik-slot-names";
 import { nonRotatingServices } from "@/lib/docker/slot-partition";
 import { VARDO_SELF_APP_NAME } from "@/lib/api/system-managed";
+import { OFF_HEADERS } from "@/lib/security/response-headers";
 
 function mailCompose(): ComposeFile {
   const router = (name: string, host: string) => ({
@@ -102,23 +114,40 @@ async function slotLabels(ctx: DeployContext, slot = "blue"): Promise<Record<str
 }
 
 describe("self-routed app through resolve, slot naming and overlay", () => {
-  it("puts the slot's headers middleware on the websecure routers only", async () => {
-    const labels = await slotLabels(makeCtx("mail"));
-    for (const router of ["mail", "mail-alt", "mail-smtp-cert"]) {
-      expect(labels[`traefik.http.routers.app-id-${router}-blue.middlewares`]).toBe("mail-vardo-headers-blue");
-    }
-    expect(labels["traefik.http.routers.app-id-mail-http-blue.middlewares"]).toBe("to-https@file");
-    expect(labels["traefik.http.middlewares.mail-vardo-headers-blue.headers.stsSeconds"]).toBe("31536000");
+  beforeEach(() => {
+    volume.present = true;
   });
 
-  it("names the middleware per slot on green", async () => {
-    const labels = await slotLabels(makeCtx("mail"), "green");
+  it("references the same file middleware from both slots, on websecure routers only", async () => {
+    for (const slot of ["blue", "green"]) {
+      const labels = await slotLabels(makeCtx("mail"), slot);
+      for (const router of ["mail", "mail-alt", "mail-smtp-cert"]) {
+        expect(labels[`traefik.http.routers.app-id-${router}-${slot}.middlewares`]).toBe("vardo-headers-app-id@file");
+      }
+      expect(labels[`traefik.http.routers.app-id-mail-http-${slot}.middlewares`]).toBe("to-https@file");
+      expect(Object.keys(labels).filter((k) => k.startsWith("traefik.http.middlewares."))).toEqual([]);
+    }
+  });
+
+  it("keeps the reference with every header off, so turning one on later applies live", async () => {
+    const ctx = makeCtx("mail", { securityHeaders: OFF_HEADERS });
+    const labels = await slotLabels(ctx);
+    expect(labels["traefik.http.routers.app-id-mail-blue.middlewares"]).toBe("vardo-headers-app-id@file");
+    expect(ctx.headersLive).toBe(true);
+  });
+
+  it("falls back to per-slot label headers without a Traefik volume", async () => {
+    volume.present = false;
+    const ctx = makeCtx("mail");
+    const labels = await slotLabels(ctx, "green");
     expect(labels["traefik.http.routers.app-id-mail-green.middlewares"]).toBe("mail-vardo-headers-green");
     expect(labels["traefik.http.middlewares.mail-vardo-headers-green.headers.stsSeconds"]).toBe("31536000");
+    expect(ctx.headersLive).toBe(false);
   });
 
-  it("adds nothing when the app opts out", async () => {
-    const labels = await slotLabels(makeCtx("mail", { securityHeaders: false }));
+  it("adds nothing without a Traefik volume when every header is off", async () => {
+    volume.present = false;
+    const labels = await slotLabels(makeCtx("mail", { securityHeaders: OFF_HEADERS }));
     expect(Object.keys(labels).filter((k) => k.includes("vardo-headers"))).toEqual([]);
     expect(labels["traefik.http.routers.app-id-mail-blue.middlewares"]).toBeUndefined();
   });
