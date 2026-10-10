@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Term } from "@/components/term";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { MEMORY_PROFILE_HINTS, type ResourceProfile } from "@/lib/ui/resource-profiles";
 
@@ -49,16 +50,24 @@ export function MemoryProfileFields({
   return (
     <div className="grid gap-3">
       <div className="grid gap-2 sm:w-1/2">
-        <Label htmlFor="edit-memory-profile">Memory profile</Label>
+        <Label htmlFor="edit-memory-profile">
+          <Term id="memory-profile">Memory profile</Term>
+        </Label>
         <Select value={values.profile} onValueChange={(v) => set({ profile: v as MemoryProfileChoice })}>
           <SelectTrigger id="edit-memory-profile">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="inherit">Organization default</SelectItem>
-            <SelectItem value="fixed">Fixed</SelectItem>
-            <SelectItem value="burstable">Burstable</SelectItem>
-            <SelectItem value="auto">Auto</SelectItem>
+            <SelectItem value="fixed">
+              <Term id="profile-fixed" passive>Fixed</Term>
+            </SelectItem>
+            <SelectItem value="burstable">
+              <Term id="profile-burstable" passive>Burstable</Term>
+            </SelectItem>
+            <SelectItem value="auto">
+              <Term id="profile-auto" passive>Auto</Term>
+            </SelectItem>
           </SelectContent>
         </Select>
         <p className="text-xs text-muted-foreground">

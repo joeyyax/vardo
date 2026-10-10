@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Term } from "@/components/term";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   AlertDialog,
@@ -259,13 +260,21 @@ export function UpdatesCard() {
             <form onSubmit={(e) => void save(e)} className="space-y-4 border-t pt-4">
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="update-mode">Policy</Label>
+                  <Label htmlFor="update-mode">
+                    <Term id="update-policy">Policy</Term>
+                  </Label>
                   <Select value={policy.mode} onValueChange={(v) => setPolicy({ ...policy, mode: v as UpdatePolicy["mode"] })}>
                     <SelectTrigger id="update-mode"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="off">Off</SelectItem>
-                      <SelectItem value="notify">Notify</SelectItem>
-                      <SelectItem value="auto">Auto</SelectItem>
+                      <SelectItem value="off">
+                        <Term id="update-off" passive>Off</Term>
+                      </SelectItem>
+                      <SelectItem value="notify">
+                        <Term id="update-notify" passive>Notify</Term>
+                      </SelectItem>
+                      <SelectItem value="auto">
+                        <Term id="update-auto" passive>Auto</Term>
+                      </SelectItem>
                     </SelectContent>
                   </Select>
                   <p className="text-xs text-muted-foreground">{MODE_HELP[policy.mode]}</p>
@@ -325,7 +334,9 @@ export function UpdatesCard() {
               </fieldset>
 
               <fieldset className="space-y-2">
-                <legend className="text-sm font-medium">Linked instances</legend>
+                <legend className="text-sm font-medium">
+                  <Term id="linked-instances">Linked instances</Term>
+                </legend>
                 <div className="grid gap-4 sm:grid-cols-3">
                   <div className="space-y-1">
                     <Label htmlFor="canary-role" className="text-xs text-muted-foreground">Role</Label>
@@ -336,8 +347,12 @@ export function UpdatesCard() {
                       <SelectTrigger id="canary-role"><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="none">Independent</SelectItem>
-                        <SelectItem value="canary">Canary: updates first</SelectItem>
-                        <SelectItem value="follower">Follows a canary</SelectItem>
+                        <SelectItem value="canary">
+                          <Term id="canary" passive>Canary</Term>: updates first
+                        </SelectItem>
+                        <SelectItem value="follower">
+                          <Term id="follower" passive>Follows a canary</Term>
+                        </SelectItem>
                       </SelectContent>
                     </Select>
                   </div>

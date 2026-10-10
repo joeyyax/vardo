@@ -1,8 +1,11 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { AlertTriangle, ShieldAlert } from "lucide-react";
 
 import { conditionHref, conditionTitle } from "@/lib/ui/conditions";
+import { Term } from "@/components/term";
+import { conditionTerm } from "@/lib/ui/glossary";
 import { TabLink } from "@/components/tab-link";
 import { formatSpan } from "@/lib/ui/relative-time";
 import { worstCondition, type AppCondition, type ConditionSeverity } from "@/lib/docker/conditions";
@@ -58,10 +61,14 @@ export function AppConditionsPanel({
           <li key={c.kind} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
             {appName && onNavigate ? (
               <ConditionLink href={conditionHref(appName, c.kind)} onNavigate={onNavigate} className={`shrink-0 font-medium ${TONE[c.severity].text}`}>
-                {conditionTitle(c)}
+                <Term id={conditionTerm(c)} passive>
+                  {conditionTitle(c)}
+                </Term>
               </ConditionLink>
             ) : (
-              <span className={`shrink-0 font-medium ${TONE[c.severity].text}`}>{conditionTitle(c)}</span>
+              <span className={`shrink-0 font-medium ${TONE[c.severity].text}`}>
+                <Term id={conditionTerm(c)}>{conditionTitle(c)}</Term>
+              </span>
             )}
             <span className="text-muted-foreground">{c.detail}</span>
             <span className="text-xs text-muted-foreground/70">
@@ -84,7 +91,7 @@ function ConditionLink({
   href: string;
   onNavigate: (tab: string) => void;
   className: string;
-  children: string;
+  children: ReactNode;
 }) {
   const tab = href.split("/").pop() ?? "";
   return (

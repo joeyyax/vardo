@@ -7,6 +7,7 @@ import { FixButton, type RunAction } from "@/components/fix-action";
 import { IssueGroup, IssueItem } from "@/components/issue-group";
 import type { AttentionFix, AttentionGroup, GroupedItem } from "@/lib/ui/attention";
 import { PROBLEM_GROUPS, type ProblemGroup } from "@/lib/ui/conditions";
+import { attentionGroupTerm } from "@/lib/ui/glossary";
 
 export type AttentionRunner = {
   busy: ReadonlySet<string>;
@@ -49,7 +50,7 @@ export function AttentionIssueGroup({ group, runner }: { group: AttentionGroup; 
     ) : undefined;
 
   return (
-    <IssueGroup title={group.title} count={group.items.length} why={group.why} bulk={bulk}>
+    <IssueGroup title={group.title} term={attentionGroupTerm(group.key)} count={group.items.length} why={group.why} bulk={bulk}>
       {group.items.map((item) => (
         <IssueItem
           key={item.subject}

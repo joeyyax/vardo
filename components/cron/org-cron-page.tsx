@@ -5,6 +5,7 @@ import { Clock, Loader2, Play, Plus, Trash2 } from "lucide-react";
 import { toast } from "@/lib/messenger";
 import { useCan } from "@/components/capabilities-provider";
 import { Badge } from "@/components/ui/badge";
+import { Term } from "@/components/term";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -187,7 +188,7 @@ export function OrgCronPage({ orgId }: { orgId: string }) {
                 )}
               </p>
               <Badge variant={job.enabled ? "success" : "neutral"} className="text-xs">
-                {job.enabled ? "Active" : "Paused"}
+                {job.enabled ? "Active" : <Term id="cron-paused">Paused</Term>}
               </Badge>
               {appName && job.app && (
                 <EntityLink href={appHref(job.app.name)} className="text-xs text-muted-foreground hover:text-foreground">

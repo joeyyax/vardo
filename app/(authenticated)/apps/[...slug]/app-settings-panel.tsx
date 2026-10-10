@@ -7,6 +7,7 @@ import { toast } from "@/lib/messenger";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Term } from "@/components/term";
 import { Switch } from "@/components/ui/switch";
 import {
   Select,
@@ -522,12 +523,16 @@ export function AppSettingsPanel({
         <div className="grid gap-2">
           <div className={fields.diskWriteAlert ? "grid gap-4 sm:grid-cols-3" : "grid gap-4 sm:grid-cols-2"}>
             <div className="grid gap-2">
-              <Label htmlFor="edit-cpu-limit">CPU limit (cores)</Label>
+              <Label htmlFor="edit-cpu-limit">
+                <Term id="cpu-limit">CPU limit</Term> (cores)
+              </Label>
               <Input id="edit-cpu-limit" type="number" step="0.1" min="0" placeholder="Tier default" value={cpuLimit} onChange={(e) => setCpuLimit(e.target.value)} />
               <p className="text-xs text-muted-foreground">{cpuLimitHint(cpuLimit)}</p>
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="edit-memory-limit">Memory limit (MB)</Label>
+              <Label htmlFor="edit-memory-limit">
+                <Term id="memory-limit">Memory limit</Term> (MB)
+              </Label>
               <Input id="edit-memory-limit" type="number" step="64" min="64" placeholder="Tier default" value={memoryLimit} onChange={(e) => setMemoryLimit(e.target.value)} />
               <p className="text-xs text-muted-foreground">{memoryLimit ? memoryLimit + " MB" : "Blank uses the default for this tier."}</p>
             </div>
@@ -678,7 +683,9 @@ export function AppSettingsPanel({
 
       {fields.kind && (
         <div className="grid gap-2 sm:w-1/2">
-          <Label htmlFor="edit-kind">Kind</Label>
+          <Label htmlFor="edit-kind">
+            <Term id="service-kind">Kind</Term>
+          </Label>
           <Select value={kind} onValueChange={(v) => setKind(isServiceKind(v) ? v : "inferred")}>
             <SelectTrigger id="edit-kind">
               <SelectValue />

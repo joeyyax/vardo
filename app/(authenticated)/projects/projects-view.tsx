@@ -39,11 +39,14 @@ import { appHref } from "@/lib/ui/hrefs";
 import { useAttention, useAttentionTarget } from "@/components/attention-provider";
 import { ATTENTION_PANEL_ID } from "@/components/layout/attention-bar";
 import { sameTarget, type AttentionTarget } from "@/lib/ui/attention";
+import { attentionGroupTerm, type GlossaryId } from "@/lib/ui/glossary";
 
 // Container state can change outside Vardo; the reconciler polls every 60s, so faster gains nothing.
 const REFRESH_MS = 60_000;
 
 const PANEL_ID = "projects-panel";
+
+const STAT_TERM: Record<PanelKey, GlossaryId> = { running: "running", deploying: "deploying", stopped: "stopped" };
 
 function isTyping(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -387,6 +390,7 @@ export function ProjectsView({
       value={value}
       unit={unit}
       label={label}
+      term={STAT_TERM[key]}
       tone={tone}
       pressed={panel === key}
       controls={PANEL_ID}
@@ -408,6 +412,7 @@ export function ProjectsView({
         trigger={key}
         value={value}
         label={label}
+        term={typeof t === "string" ? "needs-attention" : attentionGroupTerm(t.group)}
         tone={tone}
         pressed={sameTarget(attentionTarget, t)}
         controls={ATTENTION_PANEL_ID}

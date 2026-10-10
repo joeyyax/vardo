@@ -22,6 +22,7 @@ import { PageToolbar } from "@/components/page-toolbar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Term } from "@/components/term";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -1057,12 +1058,16 @@ export function NewAppFlow({ orgId, templates, parentApps = [], baseDomain: base
             {/* Resource Limits */}
             <div className="grid gap-4 sm:grid-cols-3">
               <div className="grid gap-2">
-                <Label htmlFor="cpu-limit">CPU limit (cores)</Label>
+                <Label htmlFor="cpu-limit">
+                  <Term id="cpu-limit">CPU limit</Term> (cores)
+                </Label>
                 <Input id="cpu-limit" type="number" step="0.1" min="0" placeholder="Tier default" value={cpuLimit} onChange={(e) => setCpuLimit(e.target.value)} />
                 <p className="text-xs text-muted-foreground">{cpuLimitHint(cpuLimit)}</p>
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="memory-limit">Memory limit (MB)</Label>
+                <Label htmlFor="memory-limit">
+                  <Term id="memory-limit">Memory limit</Term> (MB)
+                </Label>
                 <Input id="memory-limit" type="number" step="64" min="64" placeholder="Tier default" value={memoryLimit} onChange={(e) => setMemoryLimit(e.target.value)} />
               </div>
               <div className="grid gap-2">
