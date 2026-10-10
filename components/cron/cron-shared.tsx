@@ -3,6 +3,7 @@
 import { CheckCircle2, Clock, Loader2, XCircle } from "lucide-react";
 import { describeSchedule } from "@/lib/cron/describe";
 import { quietLinkClass } from "@/components/entity-link";
+import type { StatusMarkState } from "@/lib/ui/status-colors";
 
 export type CronHeaderRow = { name: string; value: string };
 
@@ -64,6 +65,15 @@ export function scheduleLabel(cron: string): string {
 /** The schedule with the zone it runs in. */
 export function scheduleWithZone(job: Pick<CronJob, "schedule" | "timeZone">): string {
   return job.timeZone ? `${scheduleLabel(job.schedule)} (${job.timeZone.replace(/_/g, " ")})` : scheduleLabel(job.schedule);
+}
+
+/** A job's row mark from its last run. A good run stays quiet; paused is stopped. */
+export function cronMark(job: Pick<CronJob, "enabled" | "lastStatus">): StatusMarkState {
+  if (job.lastStatus === "running") return { tone: "info", pending: true, label: "Running" };
+  if (job.lastStatus === "failed") return { tone: "issue", pending: false, label: "Last run failed" };
+  if (!job.enabled) return { tone: "stopped", pending: false, label: "Paused" };
+  if (job.lastStatus === "success") return { tone: "neutral", pending: false, label: "Last run succeeded" };
+  return { tone: "neutral", pending: true, label: "Not run yet" };
 }
 
 export function CronStatusIcon({ status }: { status: CronJob["lastStatus"] }) {
