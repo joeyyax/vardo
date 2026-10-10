@@ -44,12 +44,22 @@ export function appStatusRows(
 
     if (app.statusChangedAt && now - app.statusChangedAt.getTime() > windowMs) continue;
 
+    const crashed = app.status === "error";
+    const deployTarget = parent ?? app;
     items.set(app.id, {
       id: app.id,
       name: parent ? `${parent.displayName} · ${app.displayName}` : app.displayName,
       href: `/apps/${app.name}`,
       detail,
       since: app.statusChangedAt?.toISOString(),
+      ...(crashed
+        ? { title: "Crashed", fix: { label: "Restart", run: "restart", app: { id: app.id, name: app.name } } }
+        : {
+            group: "missing",
+            title: "No container",
+            tone: "warning",
+            fix: { label: "Deploy", run: "deploy", app: { id: deployTarget.id, name: deployTarget.name } },
+          }),
     });
   }
 
@@ -64,7 +74,8 @@ export function appStatusRows(
     {
       key: "app-down",
       label: "App down",
-      tone: "error",
+      tone: [...items.values()].some((i) => !i.tone) ? "error" : "warning",
+      group: "failed",
       items: [...items.values()],
       footer: `Each of these broke in the last ${APP_DOWN_WINDOW_HOURS} hours, or has no record of when. Stop one to mark it down on purpose.`,
     },

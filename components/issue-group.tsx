@@ -55,7 +55,7 @@ export function IssueGroup({
   );
 }
 
-/** One app with a problem: the cause, how long and the fix. Activating it opens the app. */
+/** One app or item with a problem: the cause, how long and the fix. Activating it opens the subject. */
 export function IssueItem({
   itemKey,
   name,
@@ -70,8 +70,8 @@ export function IssueItem({
   itemKey: string;
   name: string;
   /** Project, and parent when nested. */
-  where: string;
-  problem: Problem;
+  where?: string;
+  problem: Pick<Problem, "tone" | "title" | "detail" | "since">;
   /** Off when the group heading already says it. */
   showTitle: boolean;
   selected?: boolean;
@@ -105,7 +105,7 @@ export function IssueItem({
       <div className="grid min-w-0 gap-0.5">
         <div className="flex flex-wrap items-baseline gap-x-2 text-sm">
           <span className="font-semibold">{name}</span>
-          <span className="text-muted-foreground/70">{where}</span>
+          {where && <span className="text-muted-foreground/70">{where}</span>}
         </div>
         <div className="text-[13.5px]">
           {showTitle && (

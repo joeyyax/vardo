@@ -14,7 +14,7 @@ describe("backupCoverageRows", () => {
   it("says so on a fresh install with nothing deployed", () => {
     const rows = backupCoverageRows({ hasTarget: false, uncovered: [], systemJob: null });
     expect(rows.map((r) => r.key)).toEqual(["backup-no-target"]);
-    expect(rows[0].items[0].name).toBe("No backup target configured");
+    expect(rows[0].items[0]).toMatchObject({ name: "Backup storage", fix: { href: "/backups" } });
   });
 
   it("lists apps with data no job captures", () => {
@@ -25,7 +25,7 @@ describe("backupCoverageRows", () => {
     });
     expect(rows).toHaveLength(1);
     expect(rows[0].footer).toBe("2 apps with data no backup job captures.");
-    expect(rows[0].items.map((i) => i.detail)).toEqual(["2 volumes, no backup job", "Some volumes left out"]);
+    expect(rows[0].items.map((i) => i.detail)).toEqual(["2 volumes", "Some volumes left out"]);
     expect(rows[0].items[1]).toMatchObject({ name: "api", href: "/apps/api/backups" });
   });
 

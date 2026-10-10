@@ -241,12 +241,14 @@ function pushIssueRow(
     key: spec.key,
     label: spec.label,
     tone: spec.issues.some((i) => i.tone === "error") ? "error" : "warning",
+    group: "vardo",
     items: spec.issues.map((i) => ({
       id: i.id,
       name: i.name,
       href: spec.href,
       detail: i.detail,
       since: i.since,
+      tone: i.tone,
     })),
     footer: spec.footer,
   });
