@@ -12,18 +12,20 @@ export type VardoStatus = {
 const SHA_RE = /^[0-9a-f]{7,40}$/i;
 
 // Set by the update scheduler each tick, so a heartbeat never waits on the database.
-let localSince: string | null = null;
-let localHealthy: boolean | null = null;
+// On globalThis: the scheduler and the heartbeat route load separate copies of this module.
+const globalForStatus = globalThis as unknown as {
+  __vardo_local_status?: { since: string | null; healthy: boolean | null };
+};
 
 export function setLocalVardoStatus(status: { since: string | null; healthy: boolean | null }): void {
-  localSince = status.since;
-  localHealthy = status.healthy;
+  globalForStatus.__vardo_local_status = { since: status.since, healthy: status.healthy };
 }
 
 export function localVardoStatus(): VardoStatus | null {
   const sha = getBuildSha().trim();
   if (!SHA_RE.test(sha)) return null;
-  return { sha, since: localSince, healthy: localHealthy };
+  const local = globalForStatus.__vardo_local_status;
+  return { sha, since: local?.since ?? null, healthy: local?.healthy ?? null };
 }
 
 /** A peer's report, or null when it sent none or sent nonsense. */
