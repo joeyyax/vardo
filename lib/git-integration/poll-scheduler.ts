@@ -203,8 +203,9 @@ export function requestCatchUpPoll(reason: string, delayMs = CATCH_UP_DEBOUNCE_M
   log.info(`Catch-up poll queued: ${reason}`);
   catchUpTimer = setTimeout(() => {
     catchUpTimer = null;
+    // Where the loop isn't running, its next pass in whichever process leads takes the flag.
     setSystemSetting(CATCH_UP_KEY, reason)
-      .then(() => gitPollLoop.tick())
+      .then(() => (gitPollLoop.started ? gitPollLoop.tick() : undefined))
       .catch((err) => log.error("Catch-up poll failed:", err));
   }, delayMs);
   catchUpTimer.unref?.();

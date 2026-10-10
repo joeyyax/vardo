@@ -89,11 +89,6 @@ export class IntervalLoop<T = unknown> {
     return this.running;
   }
 
-  /** The lease this process holds for the loop, if any. */
-  get heldLease(): Lease | null {
-    return this.lease;
-  }
-
   start(options: StartOptions = {}): void {
     if (this.running) return;
     this.running = true;
