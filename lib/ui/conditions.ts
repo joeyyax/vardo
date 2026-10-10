@@ -200,7 +200,7 @@ export const PROBLEM_GROUPS: Record<ProblemGroup, ProblemGroupMeta> = {
   errors: { title: "Errors up", why: "Logging errors far faster than usual.", bulk: null },
   backups: { title: "Backups", why: "Volumes without a recent good backup.", bulk: "Back up" },
   certs: { title: "Certificates", why: "Renewal runs on its own. These haven't renewed yet.", bulk: null },
-  security: { title: "Security findings", why: "The image scan found issues to review.", bulk: null },
+  security: { title: "Security findings", why: "The public-site scan found issues to review.", bulk: null },
   config: { title: "Deploy needed", why: "Settings changed since the last deploy.", bulk: "Deploy" },
 };
 
