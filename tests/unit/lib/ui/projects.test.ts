@@ -35,6 +35,7 @@ function app(name: string, o: Partial<ProjectsApp> = {}): ProjectsApp {
     statusChangedAt: null,
     restartCount: null,
     domains: [],
+    tags: [],
     deployments: [],
     lastBackupAt: null,
     services: [],

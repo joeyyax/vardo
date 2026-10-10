@@ -48,6 +48,7 @@ export type ProjectsApp = {
   restartCount: number | null;
   /** Primary first. */
   domains: string[];
+  tags: string[];
   /** Newest first. A service has none; its parent deploys it. */
   deployments: ProjectsDeployment[];
   /** Finish time of the newest successful backup. */
@@ -226,7 +227,7 @@ export function buildSections(projects: ProjectsProject[], apps: ProjectsApp[]):
 export function matchesQuery(node: TreeNode, project: ProjectsProject, query: string): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;
-  const own = [node.app.name, node.app.displayName, node.app.imageName, project.displayName, ...node.app.domains]
+  const own = [node.app.name, node.app.displayName, node.app.imageName, project.displayName, ...node.app.domains, ...node.app.tags]
     .filter(Boolean)
     .join(" ")
     .toLowerCase();

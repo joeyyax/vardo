@@ -296,6 +296,8 @@ export function useAppMetrics(orgId: string) {
   const [metrics, setMetrics] = useState<Map<string, AppMetrics>>(new Map());
   const historyRef = useRef<Map<string, MetricsHistory>>(new Map());
   const [historyTick, setHistoryTick] = useState(0);
+  // Host cores, the denominator for container CPU percentages. Null until the stream reports it.
+  const [cpuCount, setCpuCount] = useState<number | null>(null);
 
   // Load the last hour of per-app history.
   useEffect(() => {
@@ -353,6 +355,7 @@ export function useAppMetrics(orgId: string) {
           try {
             const data = JSON.parse(event.data);
             const next = new Map<string, AppMetrics>();
+            if (typeof data.cpuCount === "number" && data.cpuCount > 0) setCpuCount(data.cpuCount);
 
             for (const a of data.apps || []) {
               let cpu = 0;
@@ -406,5 +409,5 @@ export function useAppMetrics(orgId: string) {
   }, [orgId]);
 
   // eslint-disable-next-line react-hooks/refs
-  return { metrics, history: historyRef.current, historyTick };
+  return { metrics, history: historyRef.current, historyTick, cpuCount };
 }
