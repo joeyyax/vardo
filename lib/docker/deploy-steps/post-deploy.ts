@@ -35,7 +35,7 @@ import { addEvent } from "@/lib/stream/producer";
 import { recordActivity } from "@/lib/activity";
 import { BUILD_CACHE_MAX_BYTES } from "../constants";
 import type { ConfigSnapshot } from "@/lib/types/deploy-snapshot";
-import { checkEndpoint, sendDeployNotification } from "../deploy";
+import { checkEndpoint, recordSelfUpdate, sendDeployNotification } from "../deploy";
 import {
   announcePostDeployIncomplete,
   incompleteLogLine,
@@ -497,6 +497,9 @@ export async function postDeploy(ctx: DeployContext): Promise<DeployContext> {
       `[deploy] Auto-rollback is not armed for Vardo itself — use instant rollback (${activeSlot} is a warm standby) if this release misbehaves`,
     );
   }
+
+  // A file write, not a scheduled action: the new console reads it on boot and announces the update.
+  await recordSelfUpdate(ctx, { state: "updated", finishedAt: Date.now() });
 
   // The old slot runs this process, so this stop must stay last.
   if (ctx.stopOldSlot && ctx.stopOldSlotEndsDeploy) {

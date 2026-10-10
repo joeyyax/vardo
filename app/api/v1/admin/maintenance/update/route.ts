@@ -5,15 +5,21 @@ import { requireAppAdmin } from "@/lib/auth/admin";
 import { handleRouteError } from "@/lib/api/error-response";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { logger } from "@/lib/logger";
-import { VARDO_HOME_DIR } from "@/lib/paths";
+import { isSelfDeployLayout, VARDO_HOME_DIR } from "@/lib/paths";
+import { triggerSelfDeploy } from "@/lib/lifecycle/deploy-request";
 
 const log = logger.child("admin:maintenance:update");
 
-// POST /api/v1/admin/maintenance/update — runs install.sh update on the host, detached.
-// install.sh handles the blue/green swap. The API returns immediately.
+// POST /api/v1/admin/maintenance/update — redeploys the `vardo` app, or runs install.sh update on a legacy install.
 async function handlePost(_request: NextRequest) {
   try {
-    await requireAppAdmin();
+    const session = await requireAppAdmin();
+
+    if (isSelfDeployLayout()) {
+      const { deploymentId } = await triggerSelfDeploy({ triggeredBy: session.user.id });
+      log.info(`redeploying Vardo as ${deploymentId}`);
+      return NextResponse.json({ ok: true, deploymentId, message: "Redeploying Vardo." });
+    }
 
     const installScript = join(VARDO_HOME_DIR, "install.sh");
 

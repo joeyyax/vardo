@@ -9,7 +9,7 @@ Members do the day-to-day work: deploy, restart, stop, edit config and env vars,
 | View the org, projects and apps | ✓ | ✓ | ✓ | ✓ |
 | Create and configure projects and apps, domains, tags | ✓ | ✓ | ✓ | |
 | Deploy, restart, stop, recreate, roll back | ✓ | ✓ | ✓ | |
-| Manage URL cron jobs; pause or delete any cron job | ✓ | ✓ | ✓ | |
+| Manage URL cron jobs, app and org-level; pause or delete any cron job | ✓ | ✓ | ✓ | |
 | Create or change command cron jobs | ✓ | ✓ | | |
 | Read env vars, masked | ✓ | ✓ | ✓ | |
 | Write env vars | ✓ | ✓ | ✓ | |

@@ -6,85 +6,30 @@ import {
   Plus,
   Trash2,
   Clock,
-  CheckCircle2,
-  XCircle,
   Play,
 } from "lucide-react";
 import { toast } from "@/lib/messenger";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  BottomSheet,
-  BottomSheetContent,
-  BottomSheetFooter,
-  BottomSheetHeader,
-  BottomSheetTitle,
-  BottomSheetDescription,
-} from "@/components/ui/bottom-sheet";
 import { ConfirmDeleteDialog } from "@/components/ui/confirm-delete-dialog";
 import { can } from "@/lib/auth/permissions";
 import { RelativeTime } from "@/components/relative-time";
 import { Card } from "@/components/ui/card";
-
-type CronJob = {
-  id: string;
-  name: string;
-  type: "command" | "url";
-  schedule: string;
-  command: string;
-  enabled: boolean;
-  lastRunAt: string | null;
-  lastStatus: "success" | "failed" | "running" | null;
-  lastLog: string | null;
-  createdAt: string;
-};
+import { CronJobSheet, type CronJobBody } from "@/components/cron/cron-job-sheet";
+import {
+  CronStatusIcon,
+  scheduleLabel,
+  urlOptionsSummary,
+  type CronJob,
+} from "@/components/cron/cron-shared";
 
 type Props = {
   appId: string;
   orgId: string;
   userRole: string;
 };
-
-const SCHEDULE_PRESETS = [
-  { label: "Every minute", value: "* * * * *" },
-  { label: "Every 5 minutes", value: "*/5 * * * *" },
-  { label: "Every 15 minutes", value: "*/15 * * * *" },
-  { label: "Every hour", value: "0 * * * *" },
-  { label: "Every 6 hours", value: "0 */6 * * *" },
-  { label: "Daily at midnight", value: "0 0 * * *" },
-  { label: "Daily at 3 AM", value: "0 3 * * *" },
-  { label: "Weekly (Sunday midnight)", value: "0 0 * * 0" },
-  { label: "Custom", value: "custom" },
-] as const;
-
-function scheduleLabel(cron: string): string {
-  const preset = SCHEDULE_PRESETS.find((p) => p.value === cron);
-  return preset ? preset.label : cron;
-}
-
-function StatusIcon({ status }: { status: CronJob["lastStatus"] }) {
-  switch (status) {
-    case "success":
-      return <CheckCircle2 className="size-4 text-status-success" />;
-    case "failed":
-      return <XCircle className="size-4 text-status-error" />;
-    case "running":
-      return <Loader2 className="size-4 text-status-info animate-spin" />;
-    default:
-      return <Clock className="size-4 text-muted-foreground" />;
-  }
-}
 
 async function requestJobs(url: string): Promise<CronJob[] | null> {
   try {
@@ -103,19 +48,12 @@ export function CronManager({ appId, orgId, userRole }: Props) {
   const [jobs, setJobs] = useState<CronJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [sheetOpen, setSheetOpen] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [sheetKey, setSheetKey] = useState(0);
+  const [editing, setEditing] = useState<CronJob | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [expandedLog, setExpandedLog] = useState<string | null>(null);
   const [runningId, setRunningId] = useState<string | null>(null);
-
-  // Form state
-  const [editId, setEditId] = useState<string | null>(null);
-  const [name, setName] = useState("");
-  const [jobType, setJobType] = useState<"command" | "url">("command");
-  const [schedulePreset, setSchedulePreset] = useState("0 * * * *");
-  const [customSchedule, setCustomSchedule] = useState("");
-  const [command, setCommand] = useState("");
 
   const baseUrl = `/api/v1/organizations/${orgId}/apps/${appId}/cron`;
 
@@ -138,67 +76,35 @@ export function CronManager({ appId, orgId, userRole }: Props) {
     };
   }, [baseUrl, applyJobs]);
 
-  function openCreate() {
-    setEditId(null);
-    setName("");
-    setJobType(canCommand ? "command" : "url");
-    setSchedulePreset("0 * * * *");
-    setCustomSchedule("");
-    setCommand("");
+  function openSheet(job: CronJob | null) {
+    setEditing(job);
+    setSheetKey((k) => k + 1);
     setSheetOpen(true);
   }
 
-  function openEdit(job: CronJob) {
-    setEditId(job.id);
-    setName(job.name);
-    setJobType(job.type);
-    setCommand(job.command);
-    const preset = SCHEDULE_PRESETS.find((p) => p.value === job.schedule);
-    if (preset && preset.value !== "custom") {
-      setSchedulePreset(job.schedule);
-      setCustomSchedule("");
-    } else {
-      setSchedulePreset("custom");
-      setCustomSchedule(job.schedule);
-    }
-    setSheetOpen(true);
-  }
-
-  async function handleSave() {
-    if (!name.trim() || !command.trim()) return;
-    const schedule =
-      schedulePreset === "custom" ? customSchedule.trim() : schedulePreset;
-    if (!schedule) return;
-
-    setSaving(true);
+  async function handleSave(body: CronJobBody): Promise<boolean> {
     try {
-      const body = editId
-        ? { id: editId, name: name.trim(), type: jobType, schedule, command: command.trim() }
-        : { name: name.trim(), type: jobType, schedule, command: command.trim() };
-
       const res = await fetch(baseUrl, {
-        method: editId ? "PATCH" : "POST",
+        method: editing ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify(editing ? { id: editing.id, ...body } : body),
       });
 
       if (res.ok) {
-        toast.success(editId ? "Cron job updated" : "Cron job created");
-        setSheetOpen(false);
+        toast.success(editing ? "Cron job updated" : "Cron job created");
         fetchJobs();
-      } else {
-        const err = await res.json();
-        toast.error("Couldn't save cron job", {
-          description: err.error || "Check the schedule expression",
-        });
+        return true;
       }
+      const err = await res.json().catch(() => ({}));
+      toast.error("Couldn't save cron job", {
+        description: err.error || "Check the schedule expression",
+      });
     } catch {
       toast.error("Couldn't save cron job", {
         description: "Check your connection and try again",
       });
-    } finally {
-      setSaving(false);
     }
+    return false;
   }
 
   async function handleDelete() {
@@ -294,7 +200,7 @@ export function CronManager({ appId, orgId, userRole }: Props) {
             </p>
           </div>
           {canManage && (
-            <Button size="sm" onClick={openCreate}>
+            <Button size="sm" onClick={() => openSheet(null)}>
               <Plus className="mr-1.5 size-4" />
               Add job
             </Button>
@@ -308,7 +214,7 @@ export function CronManager({ appId, orgId, userRole }: Props) {
             body="Add a cron job to run commands or hit URLs on a recurring schedule."
             action={
               canManage ? (
-                <Button size="sm" onClick={openCreate}>
+                <Button size="sm" onClick={() => openSheet(null)}>
                   <Plus className="mr-1.5 size-4" />
                   Add job
                 </Button>
@@ -317,233 +223,124 @@ export function CronManager({ appId, orgId, userRole }: Props) {
           />
         ) : (
           <div className="space-y-2">
-            {jobs.map((job) => (
-              <Card
-                variant="inset"
-                key={job.id}
-                className="p-4"
-              >
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1 min-w-0 space-y-1.5">
-                    <div className="flex items-center gap-2">
-                      <StatusIcon status={job.lastStatus} />
-                      <p className="text-sm font-medium">{job.name}</p>
-                      {job.enabled ? (
-                        <Badge variant="success" className="text-xs">
-                          Active
-                        </Badge>
-                      ) : (
-                        <Badge variant="neutral" className="text-xs">
-                          Paused
-                        </Badge>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                      <span className="flex items-center gap-1">
-                        <Clock className="size-3" />
-                        {scheduleLabel(job.schedule)}
-                      </span>
-                      {job.lastRunAt && (
-                        <span>
-                          Last run: <RelativeTime date={job.lastRunAt} />
+            {jobs.map((job) => {
+              const options = job.type === "url" ? urlOptionsSummary(job) : "";
+              return (
+                <Card
+                  variant="inset"
+                  key={job.id}
+                  className="p-4"
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex-1 min-w-0 space-y-1.5">
+                      <div className="flex items-center gap-2">
+                        <CronStatusIcon status={job.lastStatus} />
+                        <p className="text-sm font-medium">{job.name}</p>
+                        {job.enabled ? (
+                          <Badge variant="success" className="text-xs">
+                            Active
+                          </Badge>
+                        ) : (
+                          <Badge variant="neutral" className="text-xs">
+                            Paused
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                        <span className="flex items-center gap-1">
+                          <Clock className="size-3" />
+                          {scheduleLabel(job.schedule)}
                         </span>
+                        {job.lastRunAt && (
+                          <span>
+                            Last run: <RelativeTime date={job.lastRunAt} />
+                          </span>
+                        )}
+                        {options && <span>{options}</span>}
+                      </div>
+                      <p className="text-xs font-mono text-muted-foreground truncate">
+                        <Badge variant="outline" className="mr-1.5 font-sans">
+                          {job.type === "url" ? "URL" : "CMD"}
+                        </Badge>
+                        {job.command}
+                      </p>
+                      {job.lastLog && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setExpandedLog(
+                              expandedLog === job.id ? null : job.id
+                            )
+                          }
+                          className="text-xs text-muted-foreground hover:text-foreground"
+                        >
+                          {expandedLog === job.id ? "Hide output" : "Show output"}
+                        </button>
+                      )}
+                      {expandedLog === job.id && job.lastLog && (
+                        <pre className="mt-2 rounded-md bg-zinc-950 p-3 text-xs text-zinc-300 overflow-x-auto max-h-48 overflow-y-auto">
+                          {job.lastLog}
+                        </pre>
                       )}
                     </div>
-                    <p className="text-xs font-mono text-muted-foreground truncate">
-                      <Badge variant="outline" className="mr-1.5 font-sans">
-                        {job.type === "url" ? "URL" : "CMD"}
-                      </Badge>
-                      {job.command}
-                    </p>
-                    {job.lastLog && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setExpandedLog(
-                            expandedLog === job.id ? null : job.id
-                          )
-                        }
-                        className="text-xs text-muted-foreground hover:text-foreground"
-                      >
-                        {expandedLog === job.id ? "Hide output" : "Show output"}
-                      </button>
-                    )}
-                    {expandedLog === job.id && job.lastLog && (
-                      <pre className="mt-2 rounded-md bg-zinc-950 p-3 text-xs text-zinc-300 overflow-x-auto max-h-48 overflow-y-auto">
-                        {job.lastLog}
-                      </pre>
-                    )}
-                  </div>
-                  {canManage && (
-                    <div className="flex items-center gap-2 shrink-0">
-                      {(job.type === "url" || canCommand) && (
+                    {canManage && (
+                      <div className="flex items-center gap-2 shrink-0">
+                        {(job.type === "url" || canCommand) && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => runNow(job)}
+                            disabled={runningId === job.id || job.lastStatus === "running"}
+                          >
+                            {runningId === job.id ? (
+                              <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+                            ) : (
+                              <Play className="mr-1.5 size-3.5" />
+                            )}
+                            Run now
+                          </Button>
+                        )}
                         <Button
                           size="sm"
-                          variant="outline"
-                          onClick={() => runNow(job)}
-                          disabled={runningId === job.id || job.lastStatus === "running"}
+                          variant="ghost"
+                          onClick={() => openSheet(job)}
                         >
-                          {runningId === job.id ? (
-                            <Loader2 className="mr-1.5 size-3.5 animate-spin" />
-                          ) : (
-                            <Play className="mr-1.5 size-3.5" />
-                          )}
-                          Run now
+                          Edit
                         </Button>
-                      )}
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => openEdit(job)}
-                      >
-                        Edit
-                      </Button>
-                      <Switch
-                        checked={job.enabled}
-                        onCheckedChange={(checked) =>
-                          toggleEnabled(job.id, checked)
-                        }
-                      />
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="text-destructive hover:text-destructive"
-                        onClick={() => setDeleteId(job.id)}
-                      >
-                        <Trash2 className="size-3.5" />
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              </Card>
-            ))}
+                        <Switch
+                          checked={job.enabled}
+                          onCheckedChange={(checked) =>
+                            toggleEnabled(job.id, checked)
+                          }
+                        />
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="text-destructive hover:text-destructive"
+                          onClick={() => setDeleteId(job.id)}
+                        >
+                          <Trash2 className="size-3.5" />
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </Card>
+              );
+            })}
           </div>
         )}
       </div>
 
-      {/* Create/Edit Sheet */}
-      <BottomSheet open={sheetOpen} onOpenChange={setSheetOpen}>
-        <BottomSheetContent>
-          <BottomSheetHeader>
-            <BottomSheetTitle>
-              {editId ? "Edit cron job" : "Add cron job"}
-            </BottomSheetTitle>
-            <BottomSheetDescription>
-              Run commands or hit URLs on a recurring schedule.
-            </BottomSheetDescription>
-          </BottomSheetHeader>
-
-          <div className="flex-1 overflow-y-auto px-6 pb-6">
-            <div className="grid gap-4 py-4">
-              <div className="grid gap-2">
-                <Label htmlFor="cron-name">Name</Label>
-                <Input
-                  id="cron-name"
-                  placeholder="Database cleanup"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                />
-              </div>
-
-              <div className="grid gap-2">
-                <Label>Schedule</Label>
-                <Select
-                  value={schedulePreset}
-                  onValueChange={setSchedulePreset}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {SCHEDULE_PRESETS.map((p) => (
-                      <SelectItem key={p.value} value={p.value}>
-                        {p.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {schedulePreset === "custom" && (
-                  <Input
-                    placeholder="*/5 * * * *"
-                    className="font-mono"
-                    value={customSchedule}
-                    onChange={(e) => setCustomSchedule(e.target.value)}
-                  />
-                )}
-              </div>
-
-              <div className="grid gap-2">
-                <Label>Type</Label>
-                <Select
-                  value={jobType}
-                  onValueChange={(v) => setJobType(v as "command" | "url")}
-                  disabled={!canCommand && editId !== null && jobType === "command"}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="command" disabled={!canCommand}>Command (docker exec)</SelectItem>
-                    <SelectItem value="url">URL (HTTP request)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="grid gap-2">
-                <Label htmlFor="cron-command">
-                  {jobType === "url" ? "URL" : "Command"}
-                </Label>
-                <Input
-                  id="cron-command"
-                  placeholder={jobType === "url" ? "https://myapp.example.com/api/cron" : "wp cron event run --due-now"}
-                  className="font-mono"
-                  value={command}
-                  onChange={(e) => setCommand(e.target.value)}
-                  disabled={jobType === "command" && !canCommand}
-                />
-                <p className="text-xs text-muted-foreground">
-                  {jobType === "url"
-                    ? "Sends a GET request to this URL. Supports internal Docker hostnames and public URLs."
-                    : "Runs via docker exec inside your container."}
-                </p>
-                {!canCommand && (
-                  <p className="text-xs text-muted-foreground">Command jobs need an admin.</p>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <BottomSheetFooter>
-            <Button
-              variant="outline"
-              onClick={() => setSheetOpen(false)}
-              disabled={saving}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleSave}
-              disabled={
-                saving ||
-                !name.trim() ||
-                !command.trim() ||
-                (schedulePreset === "custom" && !customSchedule.trim())
-              }
-            >
-              {saving ? (
-                <>
-                  <Loader2 className="mr-2 size-4 animate-spin" />
-                  Saving...
-                </>
-              ) : editId ? (
-                "Update"
-              ) : (
-                "Create"
-              )}
-            </Button>
-          </BottomSheetFooter>
-        </BottomSheetContent>
-      </BottomSheet>
+      <CronJobSheet
+        key={sheetKey}
+        open={sheetOpen}
+        onOpenChange={setSheetOpen}
+        job={editing}
+        allowCommand
+        canCommand={canCommand}
+        description="Run commands or hit URLs on a recurring schedule."
+        onSave={handleSave}
+      />
 
       <ConfirmDeleteDialog
         open={!!deleteId}

@@ -105,7 +105,7 @@ Guard: `lib/security/ssrf.ts` blocks loopback, RFC 1918, CGNAT, link-local and m
 | --- | --- | --- |
 | DNS rebinding between check and connect | branch | `lib/security/pinned-fetch.ts:13` vets addresses inside the socket's `lookup` |
 | Notification webhooks and Slack | fixed | `lib/notifications/webhook-channel.ts:36,64` |
-| URL cron jobs (returns 2000 bytes of body) | fixed | `lib/cron/engine.ts:88` |
+| URL cron jobs, app and org-level (4 KB of body, redacted) | fixed | `lib/cron/http.ts:91`; a trusted org may reach the job's own host on a private address, never a redirect target, `lib/cron/http.ts:42` |
 | Domain monitor, post-deploy health check | branch | followed redirects with plain fetch; now `safeFetch` with the allowlist plus `.<baseDomain>`, `lib/domain-monitoring/monitor.ts:108`, `lib/docker/deploy.ts:719` |
 | Security scanner (headers, file exposure, TLS) | branch | weaker regex list replaced by `ssrf.ts`; requests through `safeFetch` and the guarded lookup, `lib/security/headers.ts:74`, `file-exposure.ts:120`, `tls.ts:29` |
 | `/api/v1/dns-check` `.localhost` branch | branch | any signed-in user could fetch `http://169.254.169.254/x?.localhost`; hostnames only now, `app/api/v1/dns-check/route.ts:26` |
@@ -128,4 +128,4 @@ Narrows:
 Widens or leaves open:
 - `vardo-network` includes the console, Traefik and WireGuard, so a routed app reaches `vardo-frontend:3000` directly. Traefik's `:8080` answers it only `/ping` (#889).
 - `no-new-privileges` only for untrusted orgs (#889). No `cap_drop`, `read_only` or non-root `user`. A cryptominer gets every core but one on the standard tier.
-- Redis has a password on installs from #889 on. Older installs get one from `vardo update` once the active slot's install.sh hands updates off to the new version (#925).
+- Redis has a password on installs from #889 on. Older legacy installs get one from `vardo update` once the active slot's install.sh hands updates off to the new version (#925).

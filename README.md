@@ -22,6 +22,8 @@ curl -fsSL https://vardo.run/install.sh | sudo bash
 
 Requires Ubuntu 22.04+ or Debian 12+, 1 GB RAM and a domain with DNS pointing to your server.
 
+Vardo deploys its own console. Update with `sudo vardo update` or **Redeploy** on the `vardo` app. An install from before this moves over with `sudo vardo migrate-self-deploy`. See [Vardo deploys itself](docs/self-deploy-migration.md).
+
 ### Install-time options
 
 Set these as environment variables or flags. A fresh install writes them to `/opt/vardo/.env`. On update they're added only when missing; an existing value stays unless you pass it with `--set KEY=VALUE`. Token values are never printed.

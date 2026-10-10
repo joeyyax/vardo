@@ -129,9 +129,10 @@ export async function collectDigestData(
     columns: { id: true, name: true, displayName: true, projectId: true },
   });
   const appIds = orgApps.map((a) => a.id);
-  const orgCronJobs = appIds.length
-    ? await db.query.cronJobs.findMany({ where: inArray(cronJobs.appId, appIds), columns: { id: true, name: true, appId: true } })
-    : [];
+  const orgCronJobs = await db.query.cronJobs.findMany({
+    where: eq(cronJobs.organizationId, orgId),
+    columns: { id: true, name: true, appId: true },
+  });
 
   const [deployRows, backupRows, drillRows, cronRuns, fired, resolvedCount, openCount, stale, certs, updates, resources] = await Promise.all([
     appIds.length

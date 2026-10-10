@@ -198,6 +198,12 @@ export type DeployContext = {
   /** Set once the deploy records success; the new slot is live from here. */
   succeeded?: boolean;
 
+  /** When the old slot was stopped ahead of the new one starting. Epoch ms. */
+  oldStoppedAt?: number;
+
+  /** When the new slot passed its health check. Epoch ms. */
+  healthyAt?: number;
+
   // Logging and lifecycle
   log: (line: string) => string;
   /** Registers the secret-looking values of an env to redact from this deploy's log lines. */

@@ -24,7 +24,7 @@ export function toastActionFor(
       return canLinkToAdmin ? { label: "View metrics", url: "/metrics" } : undefined;
     }
     case "cron.failed":
-      return { label: "View cron jobs", url: `/apps/${event.appId}/cron` };
+      return { label: "View cron jobs", url: event.appId ? `/apps/${event.appId}/cron` : "/cron" };
     case "backup.success":
     case "backup.failed":
       return { label: "View backups", url: "/backups" };

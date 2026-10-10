@@ -14,6 +14,7 @@ const APP_TAB: Record<string, string> = {
   "app.restart-loop": "stability",
   "app.unhealthy": "logs",
   "backup.failure": "backups",
+  "cron.failure": "cron",
 };
 
 export function timeLabel(iso: string): string {
@@ -28,6 +29,7 @@ function itemLink(item: AlertItem, ctx: MailContext): MailLink {
     const tab = APP_TAB[item.type];
     return { label: `Open ${item.appName ?? "app"}`, href: appPage(ctx, item.appId, tab) };
   }
+  if (item.type === "cron.failure") return { label: "Open cron jobs", href: consolePage(ctx, "/cron") };
   return { label: "Open metrics", href: consolePage(ctx, "/metrics") };
 }
 

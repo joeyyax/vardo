@@ -3,13 +3,20 @@ import { apiError, handleRouteError } from "@/lib/api/error-response";
 import { db } from "@/lib/db";
 import { cronJobs } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
-import { nanoid } from "nanoid";
 import { z } from "zod";
 import { verifyAppAccess } from "@/lib/api/verify-access";
 import { verifyOrgAccess } from "@/lib/api/verify-access";
 import { refuseSystemExec } from "@/lib/api/system-exec";
 import { can } from "@/lib/auth/permissions";
 import { requirePlugin } from "@/lib/api/require-plugin";
+import {
+  CronInputError,
+  cronCreateSchema,
+  cronUpdateSchema,
+  createValues,
+  serializeCronJob,
+  updateValues,
+} from "@/lib/cron/jobs";
 
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 
@@ -17,22 +24,7 @@ type RouteParams = {
   params: Promise<{ orgId: string; appId: string }>;
 };
 
-const createCronSchema = z.object({
-  name: z.string().min(1, "Name is required"),
-  type: z.enum(["command", "url"]).default("command"),
-  schedule: z.string().min(1, "Schedule is required"),
-  command: z.string().min(1, "Command is required"),
-  enabled: z.boolean().optional().default(true),
-}).strict();
-
-const updateCronSchema = z.object({
-  id: z.string().min(1),
-  name: z.string().min(1).optional(),
-  type: z.enum(["command", "url"]).optional(),
-  schedule: z.string().min(1).optional(),
-  command: z.string().min(1).optional(),
-  enabled: z.boolean().optional(),
-}).strict();
+const updateCronSchema = cronUpdateSchema.extend({ id: z.string().min(1) }).strict();
 
 const deleteCronSchema = z.object({
   id: z.string().min(1),
@@ -56,7 +48,7 @@ async function handleGet(_request: NextRequest, { params }: RouteParams) {
       orderBy: (cronJobs, { asc }) => [asc(cronJobs.name)],
     });
 
-    return NextResponse.json({ cronJobs: jobs });
+    return NextResponse.json({ cronJobs: jobs.map(serializeCronJob) });
   } catch (error) {
     return handleRouteError(error, "Error listing cron jobs");
   }
@@ -81,7 +73,7 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
     if (refused) return refused;
 
     const body = await request.json();
-    const parsed = createCronSchema.safeParse(body);
+    const parsed = cronCreateSchema.safeParse(body);
 
     if (!parsed.success) {
       return apiError.validation(parsed.error);
@@ -93,19 +85,12 @@ async function handlePost(request: NextRequest, { params }: RouteParams) {
 
     const [created] = await db
       .insert(cronJobs)
-      .values({
-        id: nanoid(),
-        appId,
-        name: parsed.data.name,
-        type: parsed.data.type,
-        schedule: parsed.data.schedule,
-        command: parsed.data.command,
-        enabled: parsed.data.enabled,
-      })
+      .values(createValues(parsed.data, orgId, appId))
       .returning();
 
-    return NextResponse.json({ cronJob: created }, { status: 201 });
+    return NextResponse.json({ cronJob: serializeCronJob(created) }, { status: 201 });
   } catch (error) {
+    if (error instanceof CronInputError) return NextResponse.json({ error: error.message }, { status: 400 });
     return handleRouteError(error, "Error creating cron job");
   }
 }
@@ -137,13 +122,14 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
 
     const { id, ...updates } = parsed.data;
 
+    const current = await db.query.cronJobs.findFirst({
+      where: and(eq(cronJobs.id, id), eq(cronJobs.appId, appId)),
+      columns: { type: true, command: true, headers: true },
+    });
+    if (!current) return apiError.notFound("cron job");
+
     // A member may pause, rename or reschedule a command job, not change what it runs.
     if (!can(orgAccess.membership, "app.cron.command") && (updates.type || updates.command !== undefined)) {
-      const current = await db.query.cronJobs.findFirst({
-        where: and(eq(cronJobs.id, id), eq(cronJobs.appId, appId)),
-        columns: { type: true, command: true },
-      });
-      if (!current) return apiError.notFound("cron job");
       const type = updates.type ?? current.type;
       const commandChanged = updates.command !== undefined && updates.command !== current.command;
       const typeChanged = type !== current.type;
@@ -152,7 +138,7 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
 
     const [updated] = await db
       .update(cronJobs)
-      .set({ ...updates, updatedAt: new Date() })
+      .set(updateValues(updates, { ...current, headers: current.headers ?? null }, orgId))
       .where(and(eq(cronJobs.id, id), eq(cronJobs.appId, appId)))
       .returning();
 
@@ -160,8 +146,9 @@ async function handlePatch(request: NextRequest, { params }: RouteParams) {
       return apiError.notFound("cron job");
     }
 
-    return NextResponse.json({ cronJob: updated });
+    return NextResponse.json({ cronJob: serializeCronJob(updated) });
   } catch (error) {
+    if (error instanceof CronInputError) return NextResponse.json({ error: error.message }, { status: 400 });
     return handleRouteError(error, "Error updating cron job");
   }
 }

@@ -28,6 +28,11 @@ export const NOTIFICATION_CATEGORIES = {
     description: "Out-of-memory kills, restart loops, memory limits and failing health checks.",
     default: true,
   },
+  cron: {
+    label: "Cron failures",
+    description: "Once when a cron job starts failing and again when it recovers.",
+    default: true,
+  },
 } as const;
 
 export type NotificationCategory = keyof typeof NOTIFICATION_CATEGORIES;
@@ -57,6 +62,7 @@ export const ALERTS = {
   "app.memory-limit": define({ category: "apps", label: "Memory near limit", throttle: { kind: "until_clear", minHours: 6 }, resolves: true }),
   "backup.failure": define({ category: "backups", label: "Backup failed", throttle: { kind: "until_clear", minHours: 6 }, resolves: false }),
   "app.unhealthy": define({ category: "apps", label: "Health check failing", throttle: { kind: "until_clear", minHours: 1 }, resolves: true }),
+  "cron.failure": define({ category: "cron", label: "Cron job failing", throttle: { kind: "until_clear", minHours: 1 }, resolves: true }),
 };
 
 export type AlertType = keyof typeof ALERTS;

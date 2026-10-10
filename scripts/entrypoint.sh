@@ -21,9 +21,8 @@ fi
 # Only chown the top-level dirs — NOT recursive, to avoid slow startup and
 # breaking apps that need root-owned files internally.
 VARDO_HOME="${VARDO_HOME_DIR:-${VARDO_DIR:-/opt/vardo}}"
-mkdir -p "$VARDO_HOME/apps" "$VARDO_HOME/images"
-chown nextjs:nodejs "$VARDO_HOME" "$VARDO_HOME/apps" "$VARDO_HOME/images"
-
+mkdir -p "$VARDO_HOME/apps" "$VARDO_HOME/images" "$VARDO_HOME/lifecycle"
+chown nextjs:nodejs "$VARDO_HOME" "$VARDO_HOME/apps" "$VARDO_HOME/images" "$VARDO_HOME/lifecycle"
 # Ensure the Traefik dynamic config directory is owned by the app user.
 # Docker named volumes are initialised as root — chown here so writes succeed
 # after privilege drop. Traefik (running as root) can still read/watch the dir.

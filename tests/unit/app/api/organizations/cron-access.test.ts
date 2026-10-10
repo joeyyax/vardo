@@ -53,6 +53,7 @@ beforeEach(() => {
   dbMock.updateReturns([{ id: "c1" }]);
   dbMock.deleteReturns([{ id: "c1" }]);
   mockVerifyAppAccess.mockResolvedValue({ id: APP_ID, isSystemManaged: false });
+  dbMock.query.cronJobs.findFirst.mockResolvedValue({ type: "url", command: "https://x.test", headers: null });
 });
 
 describe.each(Object.entries(calls))("cron %s", (_method, call) => {

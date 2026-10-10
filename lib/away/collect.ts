@@ -257,9 +257,8 @@ export async function collectAway(opts: CollectOptions): Promise<AwayInput> {
       "cron",
       unavailable,
       async () => {
-        if (appIds.length === 0) return;
         const jobs = await db.query.cronJobs.findMany({
-          where: inArray(cronJobs.appId, appIds),
+          where: eq(cronJobs.organizationId, orgId),
           columns: { id: true, name: true, appId: true },
         });
         if (jobs.length === 0) return;
@@ -296,7 +295,7 @@ export async function collectAway(opts: CollectOptions): Promise<AwayInput> {
             subjectName: meta?.name ?? row.cronJobId,
             at: row.startedAt,
             outcome: failed ? "failure" : "success",
-            href: meta ? `/apps/${appSlug.get(meta.appId) ?? ""}/cron` : undefined,
+            href: meta ? (meta.appId ? `/apps/${appSlug.get(meta.appId) ?? ""}/cron` : "/cron") : undefined,
           });
         }
       },

@@ -15,20 +15,21 @@ type TopNavProps = {
   organizations?: Organization[];
   teamsEnabled?: boolean;
   activityEnabled?: boolean;
+  cronEnabled?: boolean;
 };
 
-const navItems = [
+const navItems: { label: string; href: string; requires?: "activity" | "cron" }[] = [
   { label: "Projects", href: "/projects" },
   { label: "Metrics", href: "/metrics" },
   { label: "Backups", href: "/backups" },
-  { label: "Activity", href: "/activity", requires: "activity" as const },
+  { label: "Cron", href: "/cron", requires: "cron" },
+  { label: "Activity", href: "/activity", requires: "activity" },
 ];
 
-export function TopNav({ currentOrgId, organizations, teamsEnabled = true, activityEnabled = true }: TopNavProps) {
+export function TopNav({ currentOrgId, organizations, teamsEnabled = true, activityEnabled = true, cronEnabled = true }: TopNavProps) {
   const pathname = usePathname();
-  const visibleNavItems = navItems.filter(
-    (item) => item.requires !== "activity" || activityEnabled,
-  );
+  const enabled = { activity: activityEnabled, cron: cronEnabled };
+  const visibleNavItems = navItems.filter((item) => !item.requires || enabled[item.requires]);
 
   return (
     <header className="surface-sidebar bg-sidebar border-b shrink-0">

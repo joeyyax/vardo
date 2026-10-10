@@ -76,12 +76,13 @@ export async function claimNotifications(
   return claims;
 }
 
-/** Clears every subject of the type that no longer holds, so it can send again. Returns what cleared. */
+/** Clears every subject of the type that no longer holds, limited to `only` when given, so it can send again. Returns what cleared. */
 export async function clearNotifications(
   organizationId: string,
   type: string,
   holding: string[],
   now: Date,
+  only?: string[],
 ): Promise<Cleared[]> {
   return db
     .update(notificationSends)
@@ -92,6 +93,7 @@ export async function clearNotifications(
         eq(notificationSends.type, type),
         isNull(notificationSends.clearedAt),
         holding.length > 0 ? notInArray(notificationSends.about, holding) : undefined,
+        only ? inArray(notificationSends.about, only) : undefined,
       ),
     )
     .returning({

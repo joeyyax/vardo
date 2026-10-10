@@ -24,6 +24,7 @@ import { registerStopApp } from "./stop-app";
 import { registerRollbackApp } from "./rollback-app";
 import { registerAdoptApp } from "./adopt-app";
 import { registerRunCronJob } from "./run-cron-job";
+import { registerCronJobTools } from "./cron-jobs";
 
 /** Registers all MCP tools on the server. */
 export function registerAllTools(
@@ -54,4 +55,5 @@ export function registerAllTools(
   registerRollbackApp(server, context);
   registerAdoptApp(server, context);
   registerRunCronJob(server, context);
+  registerCronJobTools(server, context);
 }

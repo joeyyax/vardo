@@ -50,8 +50,36 @@ import { dockerEnv } from "@/lib/docker/docker-env";
 import { createStageTimings, formatTimings, STAGE_PHASE, type StageTimings } from "./stage-timings";
 import { crashReason, relevantLogTail } from "./deploy-log-tail";
 import { repoWebUrl } from "@/lib/email/format";
+import { recordSelfDeploy, type MarkerOutcome } from "@/lib/lifecycle/self-deploy";
 
 export type { DeployStage } from "./deploy-logger";
+
+/** Past the deploy stage containers may be running. Nothing here has committed. */
+const CONTAINER_STAGES: ReadonlySet<DeployStage> = new Set(["deploy", "healthcheck", "routing", "cleanup", "done"]);
+
+/** Records a deploy of Vardo itself in the update marker. A no-op for every other app. */
+export function recordSelfUpdate(ctx: DeployContext | null | undefined, outcome: MarkerOutcome): Promise<void> {
+  if (!ctx?.app) return Promise.resolve();
+  return recordSelfDeploy(
+    {
+      deploymentId: ctx.deploymentId,
+      appName: ctx.app.name,
+      envIsolated: ctx.envIsolated === true,
+      envType: ctx.envType,
+      startTime: ctx.startTime,
+      activeSlot: ctx.activeSlot,
+      newSlot: ctx.newSlot,
+      gitSha: ctx.gitSha,
+      gitBranch: ctx.envBranchOverride ?? ctx.app.gitBranch,
+      repoDir: ctx.repoDir,
+      slotDir: ctx.slotDir,
+      oldStoppedAt: ctx.oldStoppedAt,
+      healthyAt: ctx.healthyAt,
+      logLines: ctx.logLines,
+    },
+    outcome,
+  );
+}
 
 export type DeployOpts = {
   appId: string;
@@ -499,6 +527,8 @@ export async function runDeployment(
     ctx.projectNetwork = await prepareProjectNetwork(ctx);
     ctx = await resolveCompose(ctx);
     ctx = await build(ctx);
+    // Built and about to start a second console: the point install.sh calls an update started.
+    await recordSelfUpdate(ctx, { state: "started" });
     ctx = await swap(ctx);
     ctx = await postDeploy(ctx);
 
@@ -523,6 +553,7 @@ export async function runDeployment(
     // Cut over and serving; only post-deploy work failed. Row, status and stream stand.
     if (ctx?.succeeded) {
       await recordPostDeployIncomplete(ctx, message);
+      await recordSelfUpdate(ctx, { state: "updated", finishedAt: Date.now() });
       await streamLogger.flush();
       return {
         deploymentId,
@@ -612,6 +643,14 @@ export async function runDeployment(
           metadata: { deploymentId },
         }).catch(() => {});
 
+        await recordSelfUpdate(ctx, {
+          state: "failed",
+          finishedAt: Date.now(),
+          step: blamed,
+          error: "Cancelled",
+          rolledBack: CONTAINER_STAGES.has(reachedStage()),
+        });
+
         await streamLogger.flush();
         return { deploymentId, success: false, log: logLines.join("\n"), durationMs, status: "cancelled" };
       }
@@ -621,8 +660,6 @@ export async function runDeployment(
     const failedTimings = formatTimings(timer.snapshot());
     if (failedTimings) log(failedTimings);
 
-    // Past the deploy stage containers may be running. Nothing here has committed.
-    const CONTAINER_STAGES: Set<DeployStage> = new Set(["deploy", "healthcheck", "routing", "cleanup", "done"]);
     const slotDir = ctx?.slotDir;
     const newProjectName = ctx?.newProjectName;
     let keptNewSlot = false;
@@ -659,6 +696,18 @@ export async function runDeployment(
         .update(apps)
         .set(statusChange(keptNewSlot ? "active" : "error"))
         .where(eq(apps.id, opts.appId));
+    }
+
+    if (keptNewSlot) {
+      await recordSelfUpdate(ctx, { state: "updated", finishedAt: Date.now() });
+    } else {
+      await recordSelfUpdate(ctx, {
+        state: "failed",
+        finishedAt: Date.now(),
+        step: blamed,
+        error: message,
+        rolledBack: CONTAINER_STAGES.has(reachedStage()),
+      });
     }
 
     addEvent(opts.organizationId, {

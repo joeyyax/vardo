@@ -9,6 +9,7 @@ import { can } from "@/lib/auth/permissions";
 import { requirePlugin } from "@/lib/api/require-plugin";
 import { withRateLimit } from "@/lib/api/with-rate-limit";
 import { runCronJob } from "@/lib/cron/engine";
+import { CRON_JOB_APP } from "@/lib/cron/columns";
 
 type RouteParams = {
   params: Promise<{ orgId: string; appId: string; cronId: string }>;
@@ -31,22 +32,7 @@ async function handlePost(_request: NextRequest, { params }: RouteParams) {
 
     const job = await db.query.cronJobs.findFirst({
       where: and(eq(cronJobs.id, cronId), eq(cronJobs.appId, appId)),
-      with: {
-        app: {
-          columns: {
-            id: true,
-            name: true,
-            status: true,
-            organizationId: true,
-            displayName: true,
-            parentAppId: true,
-            composeService: true,
-            containerName: true,
-            importedContainerId: true,
-          },
-          with: { parentApp: { columns: { name: true } } },
-        },
-      },
+      with: { app: CRON_JOB_APP },
     });
     if (!job) return apiError.notFound("cron job");
 

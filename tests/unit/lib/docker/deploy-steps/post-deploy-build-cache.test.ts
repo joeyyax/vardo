@@ -47,6 +47,7 @@ vi.mock("@/lib/cron/engine", () => ({ syncCronJobs: vi.fn().mockResolvedValue(0)
 vi.mock("@/lib/docker/deploy", () => ({
   checkEndpoint: vi.fn().mockResolvedValue(true),
   sendDeployNotification: vi.fn().mockResolvedValue(undefined),
+  recordSelfUpdate: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock("@/lib/docker/client", () => ({
   listContainers: vi.fn().mockResolvedValue([]),

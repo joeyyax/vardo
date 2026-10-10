@@ -43,7 +43,7 @@ The script also reads `WATCHDOG_INTERVAL`, `WATCHDOG_APP_FAILS`, `WATCHDOG_DATA_
 ## Rollout
 
 - **Self-deployed installs:** the next console deploy starts it as a shared service, next to Traefik and Postgres.
-- **Installs updated with `vardo update`:** the update starts it.
-- **Fresh installs:** `install.sh` starts it with the rest of the stack.
+- **Legacy installs updated with `vardo update`:** the update starts it.
+- **Fresh installs:** `install.sh` starts it with the rest of the stack, and the handover to the deploy engine keeps it as a shared service.
 
 To start it by hand on an install that isn't self-deployed: `docker compose -f /opt/vardo/apps/vardo/env/current/docker-compose.yml up -d --no-deps watchdog`.

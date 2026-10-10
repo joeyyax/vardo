@@ -56,6 +56,7 @@ vi.mock("@/lib/cron/engine", () => ({ syncCronJobs: vi.fn().mockResolvedValue(0)
 vi.mock("@/lib/docker/deploy", () => ({
   checkEndpoint: vi.fn().mockResolvedValue(true),
   sendDeployNotification: vi.fn().mockResolvedValue(undefined),
+  recordSelfUpdate: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock("@/lib/docker/client", () => ({
   listContainers: vi.fn().mockResolvedValue([]),
@@ -105,7 +106,7 @@ import { deployments, apps } from "@/lib/db/schema";
 import { syncComposeServices } from "@/lib/docker/compose-sync";
 import { addEvent } from "@/lib/stream/producer";
 import { recordActivity } from "@/lib/activity";
-import { sendDeployNotification } from "@/lib/docker/deploy";
+import { recordSelfUpdate, sendDeployNotification } from "@/lib/docker/deploy";
 import { removeContainer, inspectContainer } from "@/lib/docker/client";
 
 function makeContext(overrides: Partial<DeployContext> = {}): DeployContext {
@@ -318,6 +319,24 @@ describe("postDeploy tail work", () => {
 
     expect(order).toEqual(["drain", "stop"]);
     expect(unfinishedReasons()).toEqual([]);
+  });
+
+  it("writes the updated marker after the commit and before a self-deploy stops its own slot", async () => {
+    const order: string[] = [];
+    vi.mocked(recordSelfUpdate).mockImplementationOnce(async (_ctx, outcome) => {
+      const committed = writes.some((w) => w.table === deployments && w.values.status === "success");
+      order.push(`${outcome.state}${committed ? " after commit" : ""}`);
+    });
+    const stopOldSlot = vi.fn(async () => {
+      order.push("stop");
+      return { ok: true as const };
+    });
+    const ctx = makeContext({ activeSlot: "green", stopOldSlot, stopOldSlotEndsDeploy: true });
+    ctx.app.name = "vardo";
+
+    await postDeploy(ctx);
+
+    expect(order).toEqual(["updated after commit", "stop"]);
   });
 
   it("names the deploys a self-deploy's stop cut off after the drain timed out", async () => {
