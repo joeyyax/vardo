@@ -19,6 +19,7 @@ import {
   PermissionList,
 } from "@/components/setup/provider-guide";
 import { GITHUB_GUIDE, getWebhookUrl } from "@/lib/setup/provider-guides";
+import { PermissionIssues } from "./permission-issues";
 
 function toDisplay(value: string): string {
   if (value.startsWith(MASK_SENTINEL)) {
@@ -106,6 +107,8 @@ export function GitHubSettings() {
           Connect a GitHub App to import repositories, manage deploy keys and trigger automatic deployments on push. Create the app in your GitHub account and paste the credentials below.
         </p>
       </div>
+
+      {configured && <PermissionIssues />}
 
       <ProviderGuide title="How to create a GitHub App">
         <StepList steps={GITHUB_GUIDE.steps} />

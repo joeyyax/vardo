@@ -20,7 +20,7 @@ import type { AttentionAction } from "@/lib/ui/attention";
 
 const LINK = "ml-1 text-foreground underline underline-offset-2";
 
-/** A row's action: a link, or a POST behind a confirm. */
+/** A row's action: a link, or a POST, behind a confirm when it has one. */
 export function AttentionActionLink({ action }: { action: AttentionAction }) {
   const [busy, setBusy] = useState(false);
 
@@ -50,12 +50,26 @@ export function AttentionActionLink({ action }: { action: AttentionAction }) {
     }
   }
 
+  const label = (
+    <>
+      {busy && <Loader2 className="size-3 animate-spin motion-reduce:animate-none" aria-hidden="true" />}
+      {action.label}
+    </>
+  );
+
+  if (!action.confirm) {
+    return (
+      <button type="button" className={`${LINK} inline-flex items-center gap-1`} disabled={busy} onClick={() => void run()}>
+        {label}
+      </button>
+    );
+  }
+
   return (
     <AlertDialog>
       <AlertDialogTrigger asChild>
         <button type="button" className={`${LINK} inline-flex items-center gap-1`} disabled={busy}>
-          {busy && <Loader2 className="size-3 animate-spin motion-reduce:animate-none" aria-hidden="true" />}
-          {action.label}
+          {label}
         </button>
       </AlertDialogTrigger>
       <AlertDialogContent size="sm">

@@ -5,6 +5,7 @@ export const GITHUB_GUIDE = {
   createAppUrl: "https://github.com/settings/apps/new",
   docsUrl: "https://docs.github.com/en/apps/creating-github-apps",
   permissions: [
+    { scope: "Metadata", access: "Read-only" },
     { scope: "Repository contents", access: "Read-only" },
     { scope: "Pull requests", access: "Read & write" },
     { scope: "Deployments", access: "Read & write" },
@@ -17,6 +18,7 @@ export const GITHUB_GUIDE = {
     "Scroll to \"Private keys\" and click Generate a private key — save the .pem file",
     "Copy the Client ID and generate a Client secret under OAuth credentials",
     "Set the Webhook URL and secret (shown below), then activate webhooks",
+    "When Vardo needs a new permission, add it on the App's Permissions page, then accept it on each installation",
   ] as const,
   fieldHints: {
     appId: "Numeric ID shown at the top of your GitHub App's General page",
