@@ -65,11 +65,16 @@ export function appPermissionsUrl(slug: string, owner: GitHubAccount): string {
     : `https://github.com/settings/apps/${enc(slug)}/permissions`;
 }
 
+/** The installation's settings, listing every permission it holds. */
+export function installationSettingsUrl(installationId: number, account: GitHubAccount): string {
+  return account.type === "Organization"
+    ? `https://github.com/organizations/${enc(account.login)}/settings/installations/${installationId}`
+    : `https://github.com/settings/installations/${installationId}`;
+}
+
 /** The installation page where the account accepts new permissions. */
 export function installationUrl(installationId: number, account: GitHubAccount): string {
-  return account.type === "Organization"
-    ? `https://github.com/organizations/${enc(account.login)}/settings/installations/${installationId}/permissions/update`
-    : `https://github.com/settings/installations/${installationId}/permissions/update`;
+  return `${installationSettingsUrl(installationId, account)}/permissions/update`;
 }
 
 function toIssueFields(missing: RequiredPermission[]): Pick<IntegrationIssue, "missing" | "features" | "purposes"> {
@@ -97,6 +102,7 @@ export function installationIssue(installationId: number, account: GitHubAccount
     provider: "github",
     scope: { kind: "installation", id: String(installationId), account: account.login },
     fixUrl: installationUrl(installationId, account),
+    reviewUrl: installationSettingsUrl(installationId, account),
     ...toIssueFields(missing),
   };
 }

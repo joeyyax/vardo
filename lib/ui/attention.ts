@@ -45,6 +45,8 @@ export type AttentionItem = {
   whereHref?: string;
   fix?: AttentionFix;
   secondary?: AttentionPost;
+  /** A quiet link beside the actions, opened in a new tab. */
+  aside?: { label: string; href: string };
   /** Broken right now and needs a person. Set through lib/ui/urgency. */
   urgent?: boolean;
 };
@@ -127,6 +129,7 @@ export type GroupedItem = {
   whereHref?: string;
   fix?: AttentionFix;
   secondary?: AttentionPost;
+  aside?: { label: string; href: string };
   /** Other problems reported for the same subject. */
   also: string[];
   urgent: boolean;
@@ -188,6 +191,7 @@ export function groupAttention(rows: AttentionRow[]): AttentionGroup[] {
         whereHref: item.whereHref,
         fix: item.fix,
         secondary: item.secondary,
+        aside: item.aside,
         also: [],
         urgent: isUrgentItem(row, item),
       };
@@ -205,6 +209,7 @@ export function groupAttention(rows: AttentionRow[]): AttentionGroup[] {
         whereHref: lead.whereHref ?? other.whereHref,
         fix: lead.fix ?? other.fix,
         secondary: lead.secondary ?? other.secondary,
+        aside: lead.aside ?? other.aside,
         also,
         urgent: lead.urgent || other.urgent,
       });

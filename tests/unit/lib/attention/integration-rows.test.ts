@@ -47,3 +47,31 @@ describe("integrationRows", () => {
     expect(integrationRows([{ issue: app, since }], { orgId: "org-1", isAppAdmin: false })).toEqual([]);
   });
 });
+
+describe("integrationRows review link", () => {
+  it("adds a quiet link to every permission when the issue has a review page", async () => {
+    const { integrationRows } = await import("@/lib/attention/integration-rows");
+    const rows = integrationRows(
+      [
+        {
+          issue: {
+            key: "github:installation:7",
+            provider: "github",
+            scope: { kind: "installation", id: "7", account: "acme" },
+            missing: [{ id: "statuses", label: "Commit statuses", access: "write" }],
+            fixUrl: "https://github.com/settings/installations/7/permissions/update",
+            reviewUrl: "https://github.com/settings/installations/7",
+            features: ["Commit status checks"],
+            purposes: ["show deploy progress on pull requests"],
+          },
+          since: "2026-01-01T00:00:00Z",
+        },
+      ],
+      { orgId: "org1", isAppAdmin: true },
+    );
+    expect(rows[0].items[0].aside).toEqual({
+      label: "Review all App permissions",
+      href: "https://github.com/settings/installations/7",
+    });
+  });
+});

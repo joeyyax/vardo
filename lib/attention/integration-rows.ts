@@ -30,6 +30,7 @@ export function integrationRows(
           href: opts.isAppAdmin ? INTEGRATION_SETTINGS_HREF : undefined,
           fix: { label: copy.actionLabel, href: issue.fixUrl, external: true },
           secondary: { label: "Check again", post: `/api/v1/organizations/${opts.orgId}/integrations/check` },
+          aside: issue.reviewUrl ? { label: "Review all App permissions", href: issue.reviewUrl } : undefined,
           urgent: false,
         };
       }),

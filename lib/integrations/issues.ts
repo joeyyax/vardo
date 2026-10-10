@@ -27,6 +27,8 @@ export type IntegrationIssue = {
   missing: MissingCapability[];
   /** The provider page that fixes it. */
   fixUrl: string;
+  /** Where every permission the integration holds can be reviewed, when that's a different page. */
+  reviewUrl?: string;
   /** Plain names of what stays off until it's fixed. */
   features: string[];
   /** What the missing capabilities let Vardo do, as verb phrases. */

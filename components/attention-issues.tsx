@@ -107,10 +107,20 @@ export function AttentionIssueGroup({ group, runner }: { group: AttentionGroup; 
           showTitle={item.title !== group.title}
           onActivate={() => runner.open(item)}
           actions={
-            item.fix || item.secondary ? (
+            item.fix || item.secondary || item.aside ? (
               <>
                 {item.fix && <ItemFix fix={item.fix} name={item.name} runner={runner} />}
                 {item.secondary && <ItemPost post={item.secondary} />}
+                {item.aside && (
+                  <a
+                    href={item.aside.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                  >
+                    {item.aside.label}
+                  </a>
+                )}
               </>
             ) : undefined
           }

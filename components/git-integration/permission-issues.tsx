@@ -84,6 +84,16 @@ export function PermissionIssues() {
                 </a>
               </Button>
               {recheck}
+              {issue.reviewUrl && (
+                <a
+                  href={issue.reviewUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                >
+                  Review all App permissions
+                </a>
+              )}
             </div>
           </CardContent>
         </Card>
