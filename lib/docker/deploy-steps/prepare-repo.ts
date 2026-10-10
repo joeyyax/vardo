@@ -54,6 +54,8 @@ import { execFileAsync } from "@/lib/utils/exec";
 import { nixpacksBuildArgs, railpackBuildArgs, type BuildOverrides } from "../buildpack-args";
 import { ENGINE_NAME, buildPlanLogLines, captureBuildPlan, describeMarkers, providerMarkers, type ProviderMarker } from "../build-plan";
 import { boundedBuild, buildKitLimit, explainBuildOom } from "../build-memory";
+import { applyComposeProfiles, parseComposeProfiles } from "../compose-profiles";
+import { globalEnvValue, isSelfApp } from "../self-env";
 
 type ParseAndSanitizeOpts = {
   allowBindMounts?: boolean;
@@ -671,7 +673,19 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
     throw new Error("No image, git repo, or compose content configured");
   }
 
-  ctx.compose = compose;
+  const profiles = await activeComposeProfiles(app.name, envMap);
+  const applied = applyComposeProfiles(compose, profiles);
+  if (applied.skipped.length > 0) {
+    log(`[deploy] Skipped ${applied.skipped.join(", ")}: no active profile (COMPOSE_PROFILES=${[...profiles!].join(",")})`);
+  }
+
+  ctx.compose = applied.compose;
   return ctx;
+}
+
+/** COMPOSE_PROFILES for this app: the host .env for Vardo itself, else the app's env. */
+async function activeComposeProfiles(appName: string, envMap: Record<string, string>): Promise<Set<string> | null> {
+  if (!isSelfApp(appName)) return parseComposeProfiles(envMap.COMPOSE_PROFILES);
+  return parseComposeProfiles((await globalEnvValue("COMPOSE_PROFILES")) ?? process.env.COMPOSE_PROFILES ?? "production");
 }
 

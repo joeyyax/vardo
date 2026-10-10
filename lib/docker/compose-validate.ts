@@ -303,7 +303,7 @@ const PARSED_SERVICE_KEYS = new Set([
   "extra_hosts", "healthcheck", "ulimits", "hostname", "user", "stop_signal",
   "entrypoint", "command", "tmpfs", "group_add", "container_name", "configs",
   "secrets", "mem_limit", "cpus", "pids_limit", "read_only", "stdin_open", "tty", "working_dir",
-  "dns", "dns_search", "dns_opt", "sysctls", "pull_policy", "stop_grace_period",
+  "dns", "dns_search", "dns_opt", "sysctls", "pull_policy", "stop_grace_period", "profiles",
   SHARED_MARKER,
 ]);
 
@@ -311,7 +311,7 @@ const PARSED_SERVICE_KEYS = new Set([
 const DROPPED_SERVICE_KEYS = new Set([
   "cpu_count", "cpu_percent", "cpuset",
   "mem_swappiness", "blkio_config", "device_cgroup_rules",
-  "logging", "profiles", "platform", "domainname", "userns_mode", "ipc", "pid",
+  "logging", "platform", "domainname", "userns_mode", "ipc", "pid",
   "uts", "cgroup", "cgroup_parent", "isolation", "storage_opt", "annotations",
   "attach", "links", "external_links", "volumes_from", "label_file",
   "post_start", "pre_stop", "credential_spec", "scale", "develop", "provider",

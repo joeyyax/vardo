@@ -295,6 +295,7 @@ export function parseCompose(yamlString: string): ComposeFile {
     else if (typeof raw.tmpfs === "string") svc.tmpfs = [raw.tmpfs];
     if (longTmpfs.length) svc.tmpfs = [...(svc.tmpfs ?? []), ...longTmpfs];
     if (Array.isArray(raw.group_add)) svc.group_add = raw.group_add.map(String);
+    if (Array.isArray(raw.profiles)) svc.profiles = raw.profiles.map(String);
     foldMemLimit(svc, raw);
     foldCpus(svc, raw);
     foldPidsLimit(svc, raw);

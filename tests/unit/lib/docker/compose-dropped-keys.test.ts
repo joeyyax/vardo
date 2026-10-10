@@ -89,7 +89,7 @@ describe("additive service keys the parser now carries", () => {
 `),
     );
     expect(warnings).toHaveLength(1);
-    for (const key of ["logging", "profiles", "cpuset", "platform", "extends"]) {
+    for (const key of ["logging", "cpuset", "platform", "extends"]) {
       expect(warnings[0]).toContain(`"${key}"`);
     }
   });

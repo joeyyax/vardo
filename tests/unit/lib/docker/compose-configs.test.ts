@@ -102,7 +102,7 @@ secrets:
     );
     expect(warnings).toHaveLength(1);
     expect(warnings[0]).toContain('"logging"');
-    expect(warnings[0]).toContain('"profiles"');
+    expect(warnings[0]).not.toContain('"profiles"');
     expect(warnings[0]).toContain('Service "promtail"');
   });
 

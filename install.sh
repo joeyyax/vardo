@@ -657,10 +657,10 @@ get_ram_mb() {
   fi
 }
 
-# A quarter of RAM, between 2 and 16 GiB. Bounds every build at once.
+# A quarter of RAM, between 4 and 16 GiB. Bounds every build at once.
 default_buildkit_mem() {
   local gb=$(( $(get_ram_mb) / 1024 / 4 ))
-  (( gb < 2 )) && gb=2
+  (( gb < 4 )) && gb=4
   (( gb > 16 )) && gb=16
   echo "${gb}g"
 }

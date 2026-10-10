@@ -56,9 +56,9 @@ export function deployConcurrency(host: HostSize): number {
   return Math.max(1, Math.min(sizeClass(memoryMiB(host.memoryBytes)).deploys, Math.floor(host.cpus / 2)));
 }
 
-/** A quarter of RAM, between 2 and 16 GiB. */
+/** A quarter of RAM, between 4 and 16 GiB. */
 export function buildkitMemGb(memoryMb: number): number {
-  return Math.min(16, Math.max(2, Math.floor(memoryMb / 1024 / 4)));
+  return Math.min(16, Math.max(4, Math.floor(memoryMb / 1024 / 4)));
 }
 
 /** BuildKit's cache ceiling in bytes: a tenth of the disk, between 5 and 50 GiB. install.sh mirrors it. */

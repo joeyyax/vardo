@@ -115,6 +115,8 @@ export type ComposeService = {
   secrets?: ComposeFileRef[];
   /** Opt this service out of blue/green — see lib/docker/slot-partition.ts. */
   "x-vardo-shared"?: boolean;
+  /** Compose profiles; the deploy drops the service when none is active. */
+  profiles?: string[];
 };
 
 export type ComposeFile = {
