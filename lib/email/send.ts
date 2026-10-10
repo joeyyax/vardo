@@ -9,10 +9,13 @@ const log = logger.child("email");
 type SendEmailOpts = {
   to: string;
   subject: string;
-  template: ReactElement;
   from?: string;
   replyTo?: string;
-};
+} & (
+  | { template: ReactElement; html?: never; text?: never }
+  /** Pre-rendered parts. */
+  | { template?: never; html: string; text: string }
+);
 
 /** `messageId` is the provider's id for the send, when it returns one. */
 export type SendResult = { success: boolean; dev?: boolean; error?: string; messageId?: string };
@@ -28,18 +31,19 @@ export function emailDelivery(result: SendResult): EmailDelivery {
   };
 }
 
-export async function sendEmail({ to, subject, template, from, replyTo }: SendEmailOpts): Promise<SendResult> {
+export async function sendEmail(opts: SendEmailOpts): Promise<SendResult> {
+  const { to, subject, from, replyTo } = opts;
   const config = await getEmailProviderConfig();
 
   if (!config) {
     log.info(`Email provider not configured — would send to ${to}: ${subject}`);
-    const html = await render(template);
-    log.info(`Preview:\n${html.slice(0, 500)}...`);
+    const preview = opts.text ?? (await render(opts.template!, { plainText: true }));
+    log.info(`Preview:\n${preview.slice(0, 500)}...`);
     return { success: true, dev: true };
   }
 
-  const html = await render(template);
-  const text = await render(template, { plainText: true });
+  const html = opts.html ?? (await render(opts.template!));
+  const text = opts.text ?? (await render(opts.template!, { plainText: true }));
 
   const fromAddress = from || (config.fromName && config.fromEmail
     ? `${config.fromName} <${config.fromEmail}>`

@@ -340,7 +340,7 @@ export async function performRollback(opts: PerformRollbackOpts): Promise<boolea
       },
     }).catch(() => {});
 
-    await sendRollbackNotification(organizationId, appId, appName, true);
+    await sendRollbackNotification(organizationId, appId, appName, true, undefined, { deploymentId, restoredSlot: previousSlot });
     return true;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -365,10 +365,12 @@ export async function sendRollbackNotification(
   appName: string,
   success: boolean,
   message?: string,
+  detail?: { deploymentId?: string; restoredSlot?: string },
 ): Promise<void> {
   try {
     const { emit } = await import("@/lib/notifications/dispatch");
     emit(organizationId, {
+      ...detail,
       type: "deploy.rollback",
       title: success
         ? `Auto-rollback: ${appName}`

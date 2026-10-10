@@ -1,229 +1,78 @@
-import { createElement } from "react";
+import { eq } from "drizzle-orm";
 import type { DeliveryReceipt, NotificationChannel } from "./port";
 import type { BusEvent } from "@/lib/bus/events";
 import { sendEmail } from "@/lib/email/send";
+import { renderNotificationEmail, type MailContext } from "@/lib/email/notification-email";
 import { logger } from "@/lib/logger";
 
 const log = logger.child("notifications");
-import { DeploySuccessEmail } from "@/lib/email/templates/deploy-success";
-import { DeployFailedEmail } from "@/lib/email/templates/deploy-failed";
-import { BackupSuccessEmail } from "@/lib/email/templates/backup-success";
-import { BackupFailedEmail } from "@/lib/email/templates/backup-failed";
-import { CronFailedEmail } from "@/lib/email/templates/cron-failed";
-import { formatBytesIec } from "@/lib/metrics/format";
-import { DiskWriteAlertEmail } from "@/lib/email/templates/disk-write-alert";
-import { VolumeDriftEmail } from "@/lib/email/templates/volume-drift";
-import { AutoRollbackEmail } from "@/lib/email/templates/auto-rollback";
-import { SystemAlertEmail } from "@/lib/email/templates/system-alert";
-import { WeeklyDigestEmail } from "@/lib/email/templates/weekly-digest";
 
 type EmailConfig = { recipients: string[] };
 
-export class EmailNotificationChannel implements NotificationChannel {
-  constructor(private config: EmailConfig) {}
-
-  async send(event: BusEvent): Promise<DeliveryReceipt> {
-    const providerMessageIds: string[] = [];
-    for (const recipient of this.config.recipients) {
-      try {
-        const template = this.buildTemplate(event);
-        if (template) {
-          const result = await sendEmail({ to: recipient, subject: event.title, template });
-          if (result.messageId) providerMessageIds.push(result.messageId);
-        }
-      } catch (err) {
-        log.error(
-          `Failed to send email to ${recipient}:`,
-          err,
-        );
-      }
-    }
-    return providerMessageIds.length > 0 ? { providerMessageIds } : {};
+/** Console origin, instance name and org name for the email footer and links. */
+async function mailContext(organizationId: string | undefined): Promise<MailContext> {
+  const baseUrl = (process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000").replace(/\/+$/, "");
+  let instanceName = "Vardo";
+  let orgName: string | undefined;
+  try {
+    const { getInstanceDisplayName } = await import("@/lib/system-settings");
+    instanceName = (await getInstanceDisplayName()) || new URL(baseUrl).hostname;
+  } catch {
+    // Defaults stand.
   }
-
-  private buildTemplate(event: BusEvent) {
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-    // /apps, not /projects: only the app route accepts an id. Tabs are path segments.
-    const dashboardUrl = "appId" in event && event.appId
-      ? `${appUrl}/apps/${event.appId}`
-      : appUrl;
-
-    switch (event.type) {
-      case "deploy.status":
-      case "backup.progress":
-        return null;
-
-      case "deploy.success":
-        return DeploySuccessEmail({
-          projectName: event.projectName || "Unknown",
-          deploymentId: event.deploymentId || "",
-          domain: event.domain,
-          duration: event.duration || "unknown",
-          gitSha: event.gitSha,
-          gitMessage: event.gitMessage,
-          triggeredBy: event.triggeredBy,
-          dashboardUrl,
-        });
-
-      case "deploy.failed":
-        return DeployFailedEmail({
-          projectName: event.projectName || "Unknown",
-          deploymentId: event.deploymentId || "",
-          errorMessage: event.errorMessage,
-          gitSha: event.gitSha,
-          gitMessage: event.gitMessage,
-          triggeredBy: event.triggeredBy,
-          dashboardUrl,
-        });
-
-      case "backup.success":
-        return BackupSuccessEmail({
-          appName: event.jobName || "Unknown",
-          volumeNames: [],
-          totalSize: String(event.totalSize) || "unknown",
-          duration: "unknown",
-          dashboardUrl,
-        });
-
-      case "backup.failed":
-        return BackupFailedEmail({
-          appName: event.jobName || "Unknown",
-          errorMessage: event.errors || event.message,
-          dashboardUrl,
-        });
-
-      case "cron.failed":
-        return CronFailedEmail({
-          jobName: event.cronJobName || "Unknown job",
-          appName: event.projectName || "Unknown",
-          command: "",
-          duration: String(event.durationMs),
-          dashboardUrl,
-        });
-
-      case "disk.write-alert":
-        return DiskWriteAlertEmail({
-          appName: event.appName || event.containerName || "Unknown",
-          projectName: event.projectName,
-          composeService: event.composeService,
-          containerName: event.containerName,
-          dataEngine: event.dataEngine,
-          writeAmount: formatBytesIec(event.writtenBytes),
-          threshold: formatBytesIec(event.thresholdBytes),
-          period: event.window,
-          dashboardUrl,
-        });
-
-      case "volume.drift":
-        return VolumeDriftEmail({
-          appName: event.appName || "Unknown",
-          volumeName: "unknown",
-          modifiedCount: 0,
-          addedCount: 0,
-          missingCount: 0,
-          dashboardUrl,
-        });
-
-      case "deploy.rollback":
-        return AutoRollbackEmail({
-          appName: event.projectName || "Unknown",
-          reason: event.rollbackSuccess
-            ? "Automatic rollback succeeded"
-            : "Automatic rollback failed",
-          fromDeploymentId: "",
-          toDeploymentId: "",
-          dashboardUrl,
-        });
-
-      case "app.auto-restarted":
-      case "app.oom-killed":
-      case "system.service-down":
-      case "system.disk-alert":
-      case "system.restart-loop":
-      case "system.cert-expiring":
-      case "system.update-available":
-        return SystemAlertEmail({
-          alertType: event.type,
-          title: event.title,
-          message: event.message,
-          details: flattenToStrings(event),
-          dashboardUrl: appUrl,
-        });
-
-      case "digest.weekly":
-        return WeeklyDigestEmail({
-          orgName: event.orgName || "Your Organization",
-          weekLabel: event.weekLabel || "",
-          deploys: {
-            total: event.deploysTotal,
-            succeeded: event.deploysSucceeded,
-            failed: event.deploysFailed,
-          },
-          backups: {
-            total: event.backupsTotal,
-            succeeded: 0,
-            failed: event.backupsFailed,
-          },
-          cron: {
-            totalFailures: event.cronFailed,
-            affectedJobs: [],
-          },
-          alerts: {
-            diskWriteAlerts: 0,
-            volumeDrifts: 0,
-          },
-          projects: [],
-          dashboardUrl,
-        });
-
-      default:
-        return createElement(
-          "div",
-          {
-            style: {
-              fontFamily: "sans-serif",
-              padding: "20px",
-              maxWidth: "600px",
-            },
-          },
-          createElement(
-            "h2",
-            { style: { margin: "0 0 12px" } },
-            event.title,
-          ),
-          createElement(
-            "p",
-            {
-              style: { color: "#374151", whiteSpace: "pre-wrap" },
-            },
-            event.message,
-          ),
-          createElement("hr", {
-            style: {
-              border: "none",
-              borderTop: "1px solid #e5e7eb",
-              margin: "20px 0",
-            },
-          }),
-          createElement(
-            "a",
-            { href: dashboardUrl, style: { color: "#6366f1" } },
-            "View Dashboard",
-          ),
-        );
+  if (organizationId) {
+    try {
+      const { db } = await import("@/lib/db");
+      const { organizations } = await import("@/lib/db/schema");
+      const org = await db.query.organizations.findFirst({
+        where: eq(organizations.id, organizationId),
+        columns: { name: true },
+      });
+      orgName = org?.name;
+    } catch {
+      // Footer leaves the org out.
     }
   }
+  return { baseUrl, instanceName, orgName };
 }
 
-/** Flattens a BusEvent's extra fields to strings for templates. */
-function flattenToStrings(event: BusEvent): Record<string, string> {
-   
-  const { type: _type, title: _title, message: _message, ...rest } = event;
-  const result: Record<string, string> = {};
-  for (const [key, value] of Object.entries(rest)) {
-    if (value !== undefined && value !== null) {
-      result[key] = String(value);
+export class EmailNotificationChannel implements NotificationChannel {
+  constructor(
+    private config: EmailConfig,
+    private organizationId?: string,
+  ) {}
+
+  /** Throws when no recipient got the email, so dispatch logs a failure and retries. */
+  async send(event: BusEvent): Promise<DeliveryReceipt> {
+    const { loadMailSeries } = await import("@/lib/email/series");
+    const [ctx, series] = await Promise.all([mailContext(this.organizationId), loadMailSeries(event).catch(() => ({}))]);
+    const email = await renderNotificationEmail(event, { ...ctx, series });
+    if (!email || this.config.recipients.length === 0) return {};
+
+    const providerMessageIds: string[] = [];
+    const failures: string[] = [];
+    for (const recipient of this.config.recipients) {
+      try {
+        const result = await sendEmail({ to: recipient, subject: email.subject, html: email.html, text: email.text });
+        if (!result.success) {
+          failures.push(`${recipient}: ${result.error ?? "rejected"}`);
+          continue;
+        }
+        if (result.messageId) providerMessageIds.push(result.messageId);
+      } catch (err) {
+        failures.push(`${recipient}: ${err instanceof Error ? err.message : String(err)}`);
+      }
     }
+
+    if (failures.length === this.config.recipients.length) {
+      throw new Error(`Email not sent to any recipient. ${failures.join("; ")}`);
+    }
+    if (failures.length > 0) {
+      log.warn(`Email reached ${this.config.recipients.length - failures.length} of ${this.config.recipients.length} recipients: ${failures.join("; ")}`);
+    }
+    return {
+      ...(providerMessageIds.length > 0 ? { providerMessageIds } : {}),
+      ...(failures.length > 0 ? { partialFailure: `Not sent to ${failures.length} of ${this.config.recipients.length}: ${failures.join("; ")}` } : {}),
+    };
   }
-  return result;
 }

@@ -255,6 +255,11 @@ export async function register() {
         .then(() => log.info("Vardo self-registration complete"))
         .catch((err) => log.warn("Vardo self-registration skipped:", err)),
 
+      // Heartbeat, shutdown marker and one boot announcement.
+      import("./lib/lifecycle/monitor")
+        .then(({ startLifecycleMonitor }) => startLifecycleMonitor())
+        .catch((err) => log.error("Failed to start the lifecycle monitor:", err)),
+
       // Stamps app directory owners while top-level app names are still globally unique.
       import("./lib/docker/app-dir-owner")
         .then(({ stampAppDirOwnersAtStartup }) => stampAppDirOwnersAtStartup())

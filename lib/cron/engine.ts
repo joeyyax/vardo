@@ -44,6 +44,8 @@ type ExecResult = {
   durationMs: number;
   exitCode?: number;
   httpStatus?: number;
+  /** Container the command ran in, or the URL. */
+  target?: string;
 };
 
 /** Run a command inside an app's container. */
@@ -78,14 +80,18 @@ async function executeInContainer(
       log: log || "(no output)",
       durationMs: Date.now() - startTime,
       exitCode: 0,
+      target: running.name,
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    const { code, stdout, stderr } = err as { code?: unknown; stdout?: unknown; stderr?: unknown };
+    const output = [stdout, stderr].filter((v): v is string => typeof v === "string" && v.trim() !== "").join("\n").trim();
     return {
       success: false,
-      log: message,
+      log: output || message,
       durationMs: Date.now() - startTime,
-      exitCode: typeof (err as { code?: unknown }).code === "number" ? (err as { code: number }).code : undefined,
+      exitCode: typeof code === "number" ? code : undefined,
+      target: running.name,
     };
   }
 }
@@ -110,12 +116,14 @@ async function fetchUrl(
       log,
       durationMs: Date.now() - startTime,
       httpStatus: res.status,
+      target: url,
     };
   } catch (err) {
     return {
       success: false,
       log: err instanceof Error ? err.message : String(err),
       durationMs: Date.now() - startTime,
+      target: url,
     };
   }
 }
@@ -165,6 +173,8 @@ export type CronRunJob = {
   name: string;
   type: "command" | "url";
   command: string;
+  /** Cron expression, for the failure email. */
+  schedule?: string;
   app: CronTargetApp & { organizationId: string; displayName: string | null };
 };
 
@@ -239,6 +249,11 @@ export async function runCronJob(job: CronRunJob): Promise<CronRunResult | null>
 
     if (!result.success) {
       try {
+        const lastSuccess = await db.query.cronJobRuns.findFirst({
+          where: and(eq(cronJobRuns.cronJobId, job.id), eq(cronJobRuns.status, "success")),
+          orderBy: (r, { desc }) => [desc(r.startedAt)],
+          columns: { startedAt: true },
+        }).catch(() => undefined);
         const { emit } = await import("@/lib/notifications/dispatch");
         emit(job.app.organizationId, {
           type: "cron.failed",
@@ -249,6 +264,13 @@ export async function runCronJob(job: CronRunJob): Promise<CronRunResult | null>
           appId: job.app.id,
           projectName: job.app.displayName || job.app.name,
           durationMs: result.durationMs,
+          schedule: job.schedule,
+          command: job.command.length > 200 ? `${job.command.slice(0, 199)}…` : job.command,
+          jobType: job.type === "url" ? "url" : "command",
+          exitCode: result.exitCode ?? result.httpStatus,
+          target: result.target,
+          lastSuccessAt: lastSuccess?.startedAt.toISOString(),
+          logTail: result.log.split("\n").filter((l) => l.trim()).slice(-20),
         });
       } catch (err) {
         log.error(`Failed to send notification for ${job.name}:`, err);

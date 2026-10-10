@@ -1,5 +1,7 @@
 /** Typed event definitions for the event bus, as a discriminated union on `type`. */
 
+import type { StageTimings } from "@/lib/docker/stage-timings";
+
 // Event categories for grouping in the settings UI.
 
 export const EVENT_CATEGORIES = {
@@ -18,12 +20,41 @@ export const EVENT_CATEGORIES = {
     "system.cert-expiring",
     "system.update-available",
   ],
+  lifecycle: [
+    "system.shutdown",
+    "system.started",
+    "system.recovered-unclean",
+    "system.update-started",
+    "system.updated",
+    "system.update-failed",
+    "system.containers-missing",
+  ],
   digest: ["digest.weekly"],
 } as const;
 
 export type EventCategory = keyof typeof EVENT_CATEGORIES;
 
-export type DeploySuccessEvent = {
+export type DeployTrigger = "manual" | "webhook" | "api" | "rollback";
+
+/** Deploy facts the notification emails show. Older emitters leave them out. */
+export type DeployDetails = {
+  /** App slug. `projectName` carries the display name. */
+  appName?: string;
+  project?: string;
+  environment?: string;
+  domains?: string[];
+  trigger?: DeployTrigger;
+  gitAuthor?: string;
+  gitBranch?: string;
+  /** Repository browse URL, e.g. https://github.com/acme/api. */
+  repoUrl?: string;
+  slot?: string;
+  previousSlot?: string;
+  durationMs?: number;
+  stageTimings?: StageTimings;
+};
+
+export type DeploySuccessEvent = DeployDetails & {
   type: "deploy.success";
   title: string;
   message: string;
@@ -37,7 +68,7 @@ export type DeploySuccessEvent = {
   triggeredBy?: string;
 };
 
-export type DeployFailedEvent = {
+export type DeployFailedEvent = DeployDetails & {
   type: "deploy.failed";
   title: string;
   message: string;
@@ -49,10 +80,18 @@ export type DeployFailedEvent = {
   gitMessage?: string;
   triggeredBy?: string;
   errorMessage?: string;
+  /** Deploy stage that failed: clone, build, deploy, healthcheck... */
+  failedStage?: string;
+  /** The container log line that best explains a crash. */
+  crashReason?: string;
+  /** Last relevant deploy log lines, already redacted. */
+  logTail?: string[];
+  /** What serves traffic now. */
+  serving?: "previous" | "new" | "none";
 };
 
 /** The release is live and serving; post-deploy work behind it did not finish. */
-export type DeployIncompleteEvent = {
+export type DeployIncompleteEvent = DeployDetails & {
   type: "deploy.incomplete";
   title: string;
   message: string;
@@ -60,6 +99,7 @@ export type DeployIncompleteEvent = {
   appId: string;
   deploymentId: string;
   reason: string;
+  gitSha?: string;
 };
 
 export type DeployRollbackEvent = {
@@ -69,6 +109,11 @@ export type DeployRollbackEvent = {
   projectName: string;
   appId: string;
   rollbackSuccess: boolean;
+  /** The deploy that crashed. */
+  deploymentId?: string;
+  /** Slot serving after the rollback. */
+  restoredSlot?: string;
+  logTail?: string[];
 };
 
 export type BackupSuccessEvent = {
@@ -79,6 +124,9 @@ export type BackupSuccessEvent = {
   jobName: string;
   totalCount: number;
   totalSize: number;
+  durationMs?: number;
+  sources?: { name: string; sizeBytes: number; backupId?: string }[];
+  skippedCount?: number;
 };
 
 export type BackupFailedEvent = {
@@ -90,6 +138,8 @@ export type BackupFailedEvent = {
   failedCount: number;
   totalCount: number;
   errors: string;
+  durationMs?: number;
+  failures?: { name: string; error: string; backupId?: string }[];
 };
 
 export type CronFailedEvent = {
@@ -101,6 +151,17 @@ export type CronFailedEvent = {
   appId: string;
   projectName: string;
   durationMs: number;
+  schedule?: string;
+  /** Shell command, or the URL for a URL job. */
+  command?: string;
+  jobType?: "command" | "url";
+  /** Exit code, or the HTTP status for a URL job. */
+  exitCode?: number;
+  /** Container the command ran in, or the URL. */
+  target?: string;
+  /** ISO time of the last successful run. */
+  lastSuccessAt?: string;
+  logTail?: string[];
 };
 
 export type VolumeDriftEvent = {
@@ -110,6 +171,7 @@ export type VolumeDriftEvent = {
   appId: string;
   appName: string;
   totalDrift: number;
+  volumes?: { name: string; modified: number; added: number; missing: number }[];
 };
 
 export type DiskWriteAlertEvent = {
@@ -126,6 +188,8 @@ export type DiskWriteAlertEvent = {
   writtenBytes: number;
   thresholdBytes: number;
   window: string;
+  /** Project label the container's metrics are stored under. */
+  metricsProject?: string;
 };
 
 export type OrgInvitationSentEvent = {
@@ -234,6 +298,96 @@ export type DigestWeeklyEvent = {
   backupsFailed: number;
   cronTotal: number;
   cronFailed: number;
+  backupsSucceeded?: number;
+  cronAffectedJobs?: string[];
+  diskWriteAlerts?: number;
+  volumeDrifts?: number;
+  projects?: { name: string; deploys: number; failures: number; backupFailures: number; cronFailures: number }[];
+  /** Last 7 UTC days, oldest first. */
+  deploysByDay?: { day: string; succeeded: number; failed: number }[];
+};
+
+// Vardo's own lifecycle, sent to orgs with an instance admin.
+
+/** The console got SIGTERM. Best effort; the process may exit first. */
+export type SystemShutdownEvent = {
+  type: "system.shutdown";
+  title: string;
+  message: string;
+  reason: string;
+  version: string;
+  uptimeSeconds: number;
+};
+
+/** Back after a clean stop. One per boot. */
+export type SystemStartedEvent = {
+  type: "system.started";
+  title: string;
+  message: string;
+  version: string;
+  /** Shutdown or last heartbeat to boot. */
+  downSeconds?: number;
+  hostRebooted: boolean;
+  /** Why it stopped, from the shutdown marker. */
+  reason?: string;
+};
+
+/** Back with no clean-shutdown marker: power loss, forced stop or a crash. */
+export type SystemRecoveredUncleanEvent = {
+  type: "system.recovered-unclean";
+  title: string;
+  message: string;
+  version: string;
+  downSeconds?: number;
+  hostRebooted: boolean;
+  /** ISO time of the last heartbeat before the stop. */
+  lastHeartbeatAt?: string;
+};
+
+export type SystemUpdateStartedEvent = {
+  type: "system.update-started";
+  title: string;
+  message: string;
+  fromVersion: string;
+  branch?: string;
+  fromSlot?: string;
+  toSlot?: string;
+};
+
+export type SystemUpdatedEvent = {
+  type: "system.updated";
+  title: string;
+  message: string;
+  fromVersion: string;
+  toVersion: string;
+  fromSlot?: string;
+  toSlot?: string;
+  durationSeconds?: number;
+  /** Console downtime during the swap. */
+  downSeconds?: number;
+};
+
+export type SystemUpdateFailedEvent = {
+  type: "system.update-failed";
+  title: string;
+  message: string;
+  fromVersion: string;
+  toVersion?: string;
+  fromSlot?: string;
+  toSlot?: string;
+  step: string;
+  error?: string;
+  durationSeconds?: number;
+  rolledBack?: boolean;
+  logTail?: string[];
+};
+
+/** Containers running before a host restart that didn't come back. */
+export type SystemContainersMissingEvent = {
+  type: "system.containers-missing";
+  title: string;
+  message: string;
+  containers: { name: string; app?: string; state: string }[];
 };
 
 // Operational events: real-time UI updates, not sent to channels.
@@ -325,6 +479,13 @@ export type BusEvent =
   | SecurityScanFindingsEvent
   | SecurityDomainClaimedEvent
   | DigestWeeklyEvent
+  | SystemShutdownEvent
+  | SystemStartedEvent
+  | SystemRecoveredUncleanEvent
+  | SystemUpdateStartedEvent
+  | SystemUpdatedEvent
+  | SystemUpdateFailedEvent
+  | SystemContainersMissingEvent
   | BackupProgressEvent
   | DeployStatusEvent
   | AppStateChangedEvent

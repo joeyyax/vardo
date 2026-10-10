@@ -51,6 +51,17 @@ export async function announcePostDeployIncomplete(
       appId: ctx.appId,
       deploymentId: ctx.deploymentId,
       reason,
+      appName: ctx.app.name,
+      project: ctx.projectName,
+      environment: ctx.envName,
+      domains: ctx.app.domains?.map((d) => d.domain),
+      trigger: ctx.trigger,
+      slot: ctx.isLocalEnv ? undefined : ctx.newSlot,
+      previousSlot: ctx.activeSlot ?? undefined,
+      gitSha: ctx.gitSha,
+      gitAuthor: ctx.gitAuthor,
+      stageTimings: ctx.timer?.snapshot(),
+      durationMs: ctx.startTime ? Date.now() - ctx.startTime : undefined,
     });
   } catch {
     // Notification dispatch is best-effort.

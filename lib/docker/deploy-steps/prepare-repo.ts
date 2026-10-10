@@ -479,11 +479,14 @@ export async function prepareRepo(ctx: DeployContext): Promise<DeployContext> {
 
     try {
       const { stdout: sha } = await execFileAsync("git", ["-C", repoDir, "rev-parse", "HEAD"], { timeout: GIT_METADATA_TIMEOUT });
-      const { stdout: msg } = await execFileAsync("git", ["-C", repoDir, "log", "-1", "--format=%s"], { timeout: GIT_METADATA_TIMEOUT });
+      const { stdout: meta } = await execFileAsync("git", ["-C", repoDir, "log", "-1", "--format=%an%x00%s"], { timeout: GIT_METADATA_TIMEOUT });
       const gitSha = sha.trim();
-      const gitMessage = msg.trim();
+      const [author, ...subject] = meta.trim().split("\0");
+      const gitMessage = subject.join(" ").trim();
       log(`[deploy] Commit: ${gitSha.slice(0, 7)} ${gitMessage}`);
       ctx.gitSha = gitSha;
+      ctx.gitMessage = gitMessage;
+      ctx.gitAuthor = author || undefined;
       await db
         .update(deployments)
         .set({ gitSha, gitMessage })

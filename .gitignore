@@ -74,3 +74,6 @@ screenshots/
 
 # Load harness reports
 load-*.json
+
+# email previews
+/.email-preview/

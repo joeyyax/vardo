@@ -83,7 +83,7 @@ async function dispatchEvent(orgId: string, event: BusEvent): Promise<void> {
 
       try {
         const receipt = await createChannel(row).send(event);
-        await logDelivery(orgId, row, event, "success", undefined, receipt);
+        await logDelivery(orgId, row, event, "success", receipt?.partialFailure, receipt);
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : String(err);
         log.warn(`Channel "${row.name}" failed: ${errorMsg}`);

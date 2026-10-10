@@ -140,6 +140,11 @@ export type DeployContext = {
 
   /** Commit this deploy ships. Unset for an app without a repo. */
   gitSha?: string;
+  gitMessage?: string;
+  gitAuthor?: string;
+
+  /** Project name, for notifications. */
+  projectName?: string;
 
   /** App base directory. */
   appBase: string;

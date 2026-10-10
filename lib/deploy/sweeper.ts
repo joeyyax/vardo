@@ -290,6 +290,8 @@ export async function sweepStuckDeployments(): Promise<void> {
             appId: deploy.appId,
             deploymentId: deploy.id,
             errorMessage: `Deployment timed out after ${TIMEOUT_MINUTES} minutes`,
+            appName: app.name,
+            durationMs,
           });
         }
       } catch {
@@ -406,6 +408,8 @@ export async function sweepStuckQueuedDeployments(): Promise<void> {
             appId: deploy.appId,
             deploymentId: deploy.id,
             errorMessage: message,
+            appName: app.name,
+            failedStage: "queued",
           });
         }
       } catch {

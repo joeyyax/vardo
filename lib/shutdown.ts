@@ -11,6 +11,7 @@ type ShutdownState = {
   closers: Set<Closer>;
   shuttingDown: boolean;
   installed: boolean;
+  signal?: string;
 };
 
 // Must live on globalThis; Next duplicates module state across bundles.
@@ -35,6 +36,11 @@ export function closeOnShutdown(closer: Closer): () => void {
   };
 }
 
+/** The signal that started the shutdown, if one has. */
+export function shutdownSignal(): string | undefined {
+  return state.signal;
+}
+
 /** True once SIGTERM/SIGINT has been received. */
 export function isShuttingDown(): boolean {
   return state.shuttingDown;
@@ -52,6 +58,7 @@ function runCloser(closer: Closer) {
 function shutdown(signal: string) {
   if (state.shuttingDown) return;
   state.shuttingDown = true;
+  state.signal = signal;
 
   log.info(`${signal} received, draining (${DRAIN_MS}ms max)`);
 
