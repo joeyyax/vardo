@@ -19,6 +19,8 @@ case "$args" in
   "info"*) exit 0 ;;
   "ps -a --filter label=com.docker.compose.project=vardo --format"*)
     printf 'vardo-postgres\\tUp 2 days (healthy)\\nvardo-redis\\tUp 2 days (healthy)\\nvardo-traefik\\tUp 2 days\\n' ;;
+  "ps -a --filter label=com.docker.compose.project=vardo-production-"*"service=worker"*)
+    [ -z "\${FAKE_NO_WORKER:-}" ] && printf "vardo-production-blue-worker-1\\tUp 3 hours (\${FAKE_WORKER_HEALTH:-healthy})\\n" ;;
   "ps -a --filter label=com.docker.compose.project=vardo-production-"*)
     [ -z "\${FAKE_NO_CONSOLE:-}" ] && printf "vardo-production-blue-frontend-1\\tUp 3 hours (\${FAKE_CONSOLE_HEALTH:-healthy})\\n" ;;
   "ps -q --filter label=com.docker.compose.project=vardo-production-"*) [ -z "\${FAKE_NO_CONSOLE:-}" ] && echo abc123 ;;
@@ -99,6 +101,12 @@ describe("vardo doctor on a self-deploy instance", { timeout: 30_000 }, () => {
   it("reports an unhealthy console as failed", () => {
     const r = doctor(instance(), { FAKE_CONSOLE_HEALTH: "unhealthy" });
     expect(r.out).toMatch(/✗.*vardo-production-blue-frontend-1 — Up 3 hours \(unhealthy\)/);
+  });
+
+  it("checks the slot's worker, and warns when the slot has none yet", () => {
+    expect(doctor(instance()).out).toContain("vardo-production-blue-worker-1 — healthy");
+    expect(doctor(instance(), { FAKE_WORKER_HEALTH: "unhealthy" }).out).toMatch(/✗.*vardo-production-blue-worker-1 — Up 3 hours \(unhealthy\)/);
+    expect(doctor(instance(), { FAKE_NO_WORKER: "1" }).out).toContain("No worker in vardo-production-blue");
   });
 
   it("warns about a second slot console and a legacy console still running", () => {

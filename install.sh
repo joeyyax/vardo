@@ -674,6 +674,23 @@ ensure_buildkit_mem() {
   log "Set VARDO_BUILDKIT_MEM=$mem"
 }
 
+# vardo-worker's limit: a quarter of RAM in 64 MiB steps, between 768m and 1536m. Mirrors lib/resources/defaults.ts.
+default_worker_mem() {
+  local mb=$(( $(get_ram_mb) / 4 / 64 * 64 ))
+  (( mb < 768 )) && mb=768
+  (( mb > 1536 )) && mb=1536
+  echo "${mb}m"
+}
+
+ensure_worker_mem() {
+  local env_file="$1"
+  grep -q "^VARDO_WORKER_MEM=" "$env_file" 2>/dev/null && return
+  local mem
+  mem=$(default_worker_mem)
+  printf '\n# Memory limit for background work (vardo-worker)\nVARDO_WORKER_MEM=%s\n' "$mem" >> "$env_file"
+  log "Set VARDO_WORKER_MEM=$mem"
+}
+
 # Size in KB of the disk holding Docker's data, falling back to /.
 get_docker_disk_kb() {
   local path=/var/lib/docker
@@ -1764,6 +1781,7 @@ EOF
 
   ensure_buildkit_mem "$env_file"
   ensure_buildkit_cache_max "$env_file"
+  ensure_worker_mem "$env_file"
   ensure_redis_mem "$env_file"
   apply_install_options "$env_file"
 
@@ -1998,10 +2016,20 @@ console() {
   fi
 }
 
-# Every container in project vardo, plus the serving console on self-deploy.
+# The serving slot's worker, stopped ones too with -a. Empty before the first release with one.
+worker() {
+  if $SELF_DEPLOY; then
+    docker ps ${1:-} -q --filter "label=com.docker.compose.service=worker" \
+      --filter "label=com.docker.compose.project=vardo-production-$(basename "$(readlink "$VARDO_DIR/apps/vardo/production/current")")" | head -n 1
+  else
+    docker ps ${1:-} -q --filter "label=com.docker.compose.service=worker" --filter "label=com.docker.compose.project=vardo" | head -n 1
+  fi
+}
+
+# Every container in project vardo, plus the serving console and worker on self-deploy.
 stack() {
   docker ps ${1:-} -q --filter "label=com.docker.compose.project=vardo"
-  if $SELF_DEPLOY; then console "${1:-}"; fi
+  if $SELF_DEPLOY; then console "${1:-}"; worker "${1:-}"; fi
 }
 
 # Runs a command in the console with stdin attached and VARDO_API_KEY passed through.
@@ -2028,6 +2056,10 @@ case "${1:-}" in
     shift
     if $SELF_DEPLOY && { [ $# -eq 0 ] || [ "$1" = frontend ]; }; then
       docker logs -f "$(console)"
+    elif $SELF_DEPLOY && [ "$1" = worker ]; then
+      W=$(worker -a)
+      [ -n "$W" ] || { echo "No worker container. Run 'vardo update' to deploy one." >&2; exit 1; }
+      docker logs -f "$W"
     else
       docker compose -f "$COMPOSE_PATH" logs -f "$@"
     fi
@@ -2037,6 +2069,14 @@ case "${1:-}" in
   # docker start, not compose up: up would create a second console in project vardo.
   start)    if $SELF_DEPLOY; then docker start $(stack -a); else docker compose -f "$COMPOSE_PATH" up -d; fi ;;
   ps)       if $SELF_DEPLOY; then docker ps -a --filter "name=^vardo-"; else docker compose -f "$COMPOSE_PATH" ps; fi ;;
+  worker)
+    if [ "${2:-}" != "status" ]; then echo "Usage: vardo worker status" >&2; exit 2; fi
+    W=$(worker -a)
+    [ -n "$W" ] || { echo "No worker container. Run 'vardo update' to deploy one." >&2; exit 1; }
+    docker inspect --format '{{.Name}}  {{.State.Status}}{{if .State.Health}} ({{.State.Health.Status}}){{end}}  started {{.State.StartedAt}}  restarts {{.RestartCount}}' "$W" | sed 's#^/##'
+    # 503 bodies still describe what's wrong, so print whatever comes back.
+    docker exec "$W" curl -s -m 5 http://localhost:3001/healthz && echo || echo "/healthz didn't answer"
+    ;;
   update)   shift; exec bash "$INSTALL_SH" update "$@" ;;
   migrate-self-deploy) shift; exec bash "$INSTALL_SH" migrate-self-deploy "$@" ;;
   doctor)   shift; exec bash "$INSTALL_SH" doctor "$@" ;;
@@ -2202,7 +2242,8 @@ case "${1:-}" in
     echo "Usage: vardo <command>"
     echo ""
     echo "Commands:"
-    echo "  logs [service]   View logs (follows)"
+    echo "  logs [service]   View logs (follows); logs worker for background work"
+    echo "  worker status    Show the worker's container state and health"
     echo "  restart          Restart all services"
     echo "  stop             Stop all services"
     echo "  start            Start all services"
@@ -2398,6 +2439,7 @@ run_env_migrations() {
   ensure_buildkit_mem "$env_file"
   ensure_buildkit_cache_max "$env_file"
   is_dev || ensure_buildkit_profile "$env_file"
+  ensure_worker_mem "$env_file"
   ensure_redis_mem "$env_file"
   ensure_redis_password "$env_file"
   apply_install_options "$env_file"
@@ -2744,6 +2786,7 @@ do_self_update() {
   apply_install_options "$VARDO_DIR/.env"
   ensure_buildkit_mem "$VARDO_DIR/.env"
   ensure_buildkit_cache_max "$VARDO_DIR/.env"
+  ensure_worker_mem "$VARDO_DIR/.env"
   ensure_buildkit_profile "$VARDO_DIR/.env"
 
   step "Redeploying Vardo"
@@ -2821,6 +2864,46 @@ do_migrate_self_deploy() {
   dimln "  Update with: vardo update, or Redeploy on the vardo app in the dashboard."
   dimln "  $VARDO_DIR/apps/vardo/env is no longer used; remove it after a successful redeploy."
   print_self_deploy_rollback
+}
+
+# Stops a legacy slot's worker, then its frontend. The worker drains for up to its stop_grace_period.
+stop_legacy_console() {
+  local compose="$1"
+  docker compose -f "$compose" stop worker 2>/dev/null || true
+  docker compose -f "$compose" rm -f worker 2>/dev/null || true
+  docker compose -f "$compose" stop frontend 2>/dev/null || true
+  docker compose -f "$compose" rm -f frontend 2>/dev/null || true
+}
+
+# Waits for a legacy slot's frontend, then its worker, which waits on the frontend's migrations.
+# Sets LEGACY_HEALTHY_AT when the frontend answers and LEGACY_UNHEALTHY to whichever didn't.
+wait_legacy_console() {
+  local compose="$1" timeout="$2" interval=3 elapsed=0 attempt=0 tty_out frontend_ok=false
+  LEGACY_HEALTHY_AT=0
+  LEGACY_UNHEALTHY=frontend
+  if has_tty; then tty_out="/dev/tty"; else tty_out="/dev/stderr"; fi
+  while [ "$elapsed" -lt "$timeout" ]; do
+    attempt=$((attempt + 1))
+    printf "\r  ${CYAN}⠹${RESET} Waiting for healthy... (attempt %d/%d, %ds/%ds)" "$attempt" "$((timeout / interval))" "$elapsed" "$timeout" > "$tty_out"
+    if ! $frontend_ok && docker compose -f "$compose" exec -T frontend \
+      curl -sf http://localhost:3000/api/health > /dev/null 2>&1; then
+      log "New frontend is healthy"
+      frontend_ok=true
+      LEGACY_HEALTHY_AT=$(date +%s)
+      LEGACY_UNHEALTHY=worker
+    fi
+    if $frontend_ok && docker compose -f "$compose" exec -T worker \
+      curl -sf http://localhost:3001/healthz > /dev/null 2>&1; then
+      printf "\r                                                              \r" > "$tty_out"
+      log "New worker is healthy"
+      LEGACY_UNHEALTHY=""
+      return 0
+    fi
+    sleep "$interval"
+    elapsed=$((elapsed + interval))
+  done
+  printf "\r" > "$tty_out"
+  return 1
 }
 
 do_update() {
@@ -3005,7 +3088,7 @@ do_update() {
   UPDATE_TO_VERSION="$new_version"
 
   # Build the new frontend image from the inactive slot.
-  # Only the frontend service swaps — infra (postgres, redis, traefik, etc.)
+  # Only the frontend and worker swap — infra (postgres, redis, traefik, etc.)
   # keeps running throughout, except Redis gaining its password. Container names are hardcoded in compose, so we
   # can't run two frontends simultaneously. The swap is: build → stop old →
   # start new → health check. Brief downtime, but with rollback capability.
@@ -3016,60 +3099,35 @@ do_update() {
   run_with_spinner "Building frontend" docker compose -f "$new_compose" build frontend
 
   # Stop the old frontend before starting the new one (container name collision)
-  step "Swapping frontend"
+  step "Swapping frontend and worker"
 
   local active_compose="$active_dir/$COMPOSE_FILE"
   local swap_started_at
   wait_for_backup_work
   swap_started_at=$(date +%s)
-  info "Stopping old frontend..."
-  docker compose -f "$active_compose" stop frontend 2>/dev/null || true
-  docker compose -f "$active_compose" rm -f frontend 2>/dev/null || true
+  info "Stopping old worker and frontend..."
+  stop_legacy_console "$active_compose"
 
   # Starting the frontend recreates Redis when its config changed.
   snapshot_redis
   apply_redis_password "$new_compose"
 
-  info "Starting new frontend..."
+  info "Starting new frontend and worker..."
   run_cmd docker compose -f "$new_compose" up -d frontend || warn "Starting the new frontend failed"
+  run_cmd docker compose -f "$new_compose" up -d --no-deps worker || warn "Starting the new worker failed"
 
-  # Health check the new frontend
   step "Health check"
-
-  local hc_timeout=120
-  local hc_interval=3
-  local hc_elapsed=0
-  local hc_attempts=$((hc_timeout / hc_interval))
-  local hc_attempt=0
-  local hc_tty_out
-  if has_tty; then hc_tty_out="/dev/tty"; else hc_tty_out="/dev/stderr"; fi
-
-  local healthy=false healthy_at=0
-  while [ $hc_elapsed -lt "$hc_timeout" ]; do
-    hc_attempt=$((hc_attempt + 1))
-    printf "\r  ${CYAN}⠹${RESET} Waiting for healthy... (attempt %d/%d, %ds/%ds)" "$hc_attempt" "$hc_attempts" "$hc_elapsed" "$hc_timeout" > "$hc_tty_out"
-    if docker compose -f "$new_compose" exec -T frontend \
-      curl -sf http://localhost:3000/api/health > /dev/null 2>&1; then
-      printf "\r                                                              \r" > "$hc_tty_out"
-      log "New frontend is healthy"
-      healthy=true
-      healthy_at=$(date +%s)
-      break
-    fi
-    sleep "$hc_interval"
-    hc_elapsed=$((hc_elapsed + hc_interval))
-  done
-
-  if ! $healthy; then
-    printf "\r"
+  local hc_timeout=180
+  if ! wait_legacy_console "$new_compose" "$hc_timeout"; then
     warn "Health check failed — rolling back to $active slot"
-    docker compose -f "$new_compose" stop frontend 2>/dev/null || true
-    docker compose -f "$new_compose" rm -f frontend 2>/dev/null || true
-    info "Restarting old frontend..."
+    stop_legacy_console "$new_compose"
+    info "Restarting old frontend and worker..."
     docker compose -f "$active_compose" up -d frontend 2>/dev/null || true
+    docker compose -f "$active_compose" up -d --no-deps worker 2>/dev/null || true
     UPDATE_ROLLED_BACK=true
-    fail "Update aborted: new frontend did not become healthy within ${hc_timeout}s. Rolled back to $active slot."
+    fail "Update aborted: new $LEGACY_UNHEALTHY did not become healthy within ${hc_timeout}s. Rolled back to $active slot."
   fi
+  local healthy_at="$LEGACY_HEALTHY_AT"
 
   # Swap: update current symlink (atomic on Linux)
   step "Finalizing"
@@ -3187,6 +3245,15 @@ doctor_self_deploy_containers() {
     doctor_fail "No console in vardo-production-$slot, which production/current points at"
   else
     doctor_container_status "${console%%	*}" "${console#*	}"
+  fi
+
+  local worker
+  worker=$(docker ps -a --filter "label=com.docker.compose.project=vardo-production-$slot" \
+    --filter "label=com.docker.compose.service=worker" --format '{{.Names}}\t{{.Status}}' 2>/dev/null | head -n 1)
+  if [ -z "$worker" ]; then
+    doctor_warn "No worker in vardo-production-$slot: background work runs in the console until the next update"
+  else
+    doctor_container_status "${worker%%	*}" "${worker#*	}"
   fi
 
   consoles=$(slot_consoles | wc -l | tr -d ' ')

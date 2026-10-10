@@ -81,6 +81,11 @@ export function buildkitMemGb(memoryMb: number): number {
   return Math.min(16, Math.max(4, Math.floor(memoryMb / 1024 / 4)));
 }
 
+/** vardo-worker's limit in MB: a quarter of RAM in 64 MiB steps, between 768 and 1536. install.sh mirrors it. */
+export function workerMemMb(memoryMb: number): number {
+  return Math.min(1536, Math.max(768, Math.floor(memoryMb / 4 / 64) * 64));
+}
+
 /** BuildKit's cache ceiling in bytes: an eighth of the disk, between 5 and 60 GiB. install.sh mirrors it. */
 export function buildkitCacheMaxBytes(diskBytes: number): number {
   const gib = 1024 ** 3;
