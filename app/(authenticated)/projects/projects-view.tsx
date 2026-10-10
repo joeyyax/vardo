@@ -46,7 +46,12 @@ const REFRESH_MS = 60_000;
 
 const PANEL_ID = "projects-panel";
 
-const STAT_TERM: Record<PanelKey, GlossaryId> = { running: "running", deploying: "deploying", stopped: "stopped" };
+const STAT_TERM: Record<PanelKey, GlossaryId> = {
+  running: "running",
+  deploying: "deploying",
+  stopped: "stopped",
+  attention: "needs-attention",
+};
 
 function isTyping(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
