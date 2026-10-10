@@ -122,3 +122,35 @@ describe("BuildKit cache ceiling", () => {
     expect(selfUpdate).toContain('ensure_buildkit_cache_max "$VARDO_DIR/.env"');
   });
 });
+
+describe("ensure_buildkit_profile", () => {
+  const run = (initial: string, exists: boolean) => {
+    const file = join(dir, `env-profile-${Math.random().toString(36).slice(2)}`);
+    writeFileSync(file, initial);
+    sh(`docker() { [ "$1 $2" = "inspect vardo-buildkit" ] && ${exists ? "return 0" : "return 1"}; return 1; }\nensure_buildkit_profile "${file}" >/dev/null`, 8192);
+    return readFileSync(file, "utf8");
+  };
+
+  it("adds buildkit while vardo-buildkit exists", () => {
+    expect(run("A=1\nCOMPOSE_PROFILES=production,gpu\n", true)).toBe("A=1\nCOMPOSE_PROFILES=production,gpu,buildkit\n");
+  });
+
+  it("leaves profiles alone without the container", () => {
+    expect(run("COMPOSE_PROFILES=production\n", false)).toBe("COMPOSE_PROFILES=production\n");
+  });
+
+  it("leaves profiles that already include it, or every profile", () => {
+    expect(run("COMPOSE_PROFILES=production,buildkit\n", true)).toBe("COMPOSE_PROFILES=production,buildkit\n");
+    expect(run("COMPOSE_PROFILES=*\n", true)).toBe("COMPOSE_PROFILES=*\n");
+  });
+
+  it("adds nothing when COMPOSE_PROFILES is unset", () => {
+    expect(run("A=1\n", true)).toBe("A=1\n");
+  });
+
+  it("runs on a self-deploy update", () => {
+    const script = readFileSync(join(__dirname, "../../../install.sh"), "utf8");
+    const selfUpdate = script.slice(script.indexOf("do_self_update() {"), script.indexOf('step "Redeploying Vardo"'));
+    expect(selfUpdate).toContain('ensure_buildkit_profile "$VARDO_DIR/.env"');
+  });
+});

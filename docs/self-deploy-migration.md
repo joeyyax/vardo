@@ -15,7 +15,7 @@ cd /opt/vardo/apps/vardo/env/<standby> && git reset --hard origin/main \
 
 The engine gives these services no tier limits or CPU weights; `docker-compose.yml` sets their memory. A difference in labels, CPU weights or how a limit is written doesn't count as a definition change (see [shared-services.md](shared-services.md)).
 
-The engine honors `COMPOSE_PROFILES` from `/opt/vardo/.env`: `buildkit` runs only with `buildkit` in it.
+The engine honors `COMPOSE_PROFILES` from `/opt/vardo/.env`: `buildkit` runs only with `buildkit` in it. `vardo update` adds `buildkit` when `vardo-buildkit` exists, since a deploy leaves a service outside the profiles on its old definition. A deploy holds a BuildKit recreate while other deploys run and logs the command to apply it.
 
 Shared services in any app, and the commit-tag pattern for one that runs the app's own build, are covered in [shared-services.md](shared-services.md).
 

@@ -1,5 +1,6 @@
 // Shared services whose running container no longer matches the compose file.
 // Shared `up` is `--no-recreate`, so drift is the config-hash label against `config --hash`, then a recorded fingerprint.
+// The hash leaves out inline `configs:`/`secrets:` content, so that is read back from the container.
 
 import { dirname } from "path";
 
@@ -25,7 +26,7 @@ export type DriftState = "unchanged" | "drifted" | "missing" | "unknown";
 
 export type SharedOutcome =
   | { service: string; result: "unchanged"; labelsOnly?: boolean }
-  | { service: string; result: "recreated" }
+  | { service: string; result: "recreated"; contentChanged?: boolean }
   | { service: string; result: "held" | "unknown"; reason: string };
 
 /** `config --hash` output: one `<service> <hash>` per line. */
@@ -36,6 +37,48 @@ export function parseConfigHashes(output: string): Map<string, string> {
     if (match) hashes.set(match[1], match[2]);
   }
   return hashes;
+}
+
+type ParsedConfig = {
+  services?: Record<string, { configs?: unknown[]; secrets?: unknown[] }>;
+  configs?: Record<string, { content?: unknown }>;
+  secrets?: Record<string, { content?: unknown }>;
+};
+
+/** Where compose puts a config or secret when the service gives no absolute target. */
+function fileTarget(kind: "configs" | "secrets", source: string, target: string | undefined): string {
+  const path = target || source;
+  if (path.startsWith("/")) return path;
+  return kind === "secrets" ? `/run/secrets/${path}` : `/${path}`;
+}
+
+/**
+ * Inline `content` each service's configs and secrets put in its container, by target path.
+ * From `config --format json`, so variables are already interpolated. File-backed entries are bind mounts and skipped.
+ */
+export function inlineFiles(output: string): Map<string, Map<string, string>> {
+  const files = new Map<string, Map<string, string>>();
+  let parsed: ParsedConfig;
+  try {
+    parsed = JSON.parse(output) as ParsedConfig;
+  } catch {
+    return files;
+  }
+  for (const [name, service] of Object.entries(parsed.services ?? {})) {
+    const byTarget = new Map<string, string>();
+    for (const kind of ["configs", "secrets"] as const) {
+      for (const ref of service[kind] ?? []) {
+        const source = typeof ref === "string" ? ref : (ref as { source?: string })?.source;
+        if (!source) continue;
+        const content = parsed[kind]?.[source]?.content;
+        if (typeof content !== "string") continue;
+        const target = typeof ref === "string" ? undefined : (ref as { target?: string }).target;
+        byTarget.set(fileTarget(kind, source, target), content);
+      }
+    }
+    if (byTarget.size > 0) files.set(name, byTarget);
+  }
+  return files;
 }
 
 /**
@@ -67,12 +110,27 @@ type DriftOpts = {
   legacyComposeFile?: string;
 };
 
+type ReconcileOpts = DriftOpts & {
+  log: (line: string) => void;
+  upTimeout: number;
+  readyTimeout: (service: ComposeService) => number;
+  intervalMs: number;
+  stableMs: number;
+  sleep: (ms: number) => Promise<void>;
+  /** Services whose bind data has to move out of a slot before a recreate. */
+  pendingMoves?: Record<string, string[]>;
+  /** A reason to leave a drifted service running for now, or null to recreate it. */
+  holdRecreate?: (service: string, container: string) => Promise<string | null>;
+};
+
 type DriftResult = {
   states: Map<string, DriftState>;
   staleRoutes: Set<string>;
   error?: string;
   /** Unchanged apart from labels, scheduling weights or how limits are written. */
   labelsOnly: Set<string>;
+  /** Same hash, but an inline config or secret in the container differs from the compose file's. */
+  contentChanged: Set<string>;
   desired: Map<string, string>;
   running: Map<string, string>;
   fingerprints: Map<string, string>;
@@ -99,10 +157,12 @@ export async function sharedDrift(opts: DriftOpts): Promise<DriftResult> {
   const states = new Map<string, DriftState>();
   const staleRoutes = new Set<string>();
   const labelsOnly = new Set<string>();
+  const contentChanged = new Set<string>();
   const running = new Map<string, string>();
   let fingerprints = new Map<string, string>();
   let records: DefinitionRecords = {};
   const projectArgs = [...composeFileArgs, "-p", project];
+  const containers = new Map([...sharedContainerNames(shared, project)].map(([container, name]) => [name, container]));
 
   let desired: Map<string, string>;
   try {
@@ -110,12 +170,12 @@ export async function sharedDrift(opts: DriftOpts): Promise<DriftResult> {
   } catch (err) {
     for (const name of names) states.set(name, "unknown");
     return {
-      states, staleRoutes, labelsOnly, desired: new Map(), running, fingerprints, records,
+      states, staleRoutes, labelsOnly, contentChanged, desired: new Map(), running, fingerprints, records,
       error: err instanceof Error ? err.message : String(err),
     };
   }
 
-  for (const [container, name] of sharedContainerNames(shared, project)) {
+  for (const [name, container] of containers) {
     let hash: string | undefined;
     try {
       const { stdout } = await exec(
@@ -138,42 +198,72 @@ export async function sharedDrift(opts: DriftOpts): Promise<DriftResult> {
     states.set(name, hash === want ? "unchanged" : "drifted");
   }
 
-  if (!opts.definitionsFile) return { states, staleRoutes, labelsOnly, desired, running, fingerprints, records };
-
-  records = await loadDefinitions(opts.definitionsFile);
-  try {
-    fingerprints = fingerprintsFromConfig(await composeConfig(exec, projectArgs, names, "json", { cwd, timeout }));
-  } catch {
-    // Without the definitions only the hash counts.
-  }
-
-  const unknown = names.filter((n) => running.has(n) && records[n]?.hash !== running.get(n));
-  if (opts.legacyComposeFile && unknown.length > 0) {
-    // Compose reads the legacy file's .env from its directory, as it did when it created them.
-    const legacy = { cwd: dirname(opts.legacyComposeFile), timeout };
-    const legacyArgs = ["-f", opts.legacyComposeFile, "-p", project];
+  const mountsFiles = names.some((n) => (shared[n].configs?.length ?? 0) > 0 || (shared[n].secrets?.length ?? 0) > 0);
+  let configJson: string | null = null;
+  if (opts.definitionsFile || mountsFiles) {
     try {
-      const hashes = parseConfigHashes(await composeConfig(exec, legacyArgs, unknown, "hash", legacy));
-      const prints = fingerprintsFromConfig(await composeConfig(exec, legacyArgs, unknown, "json", legacy));
-      for (const name of unknown) {
-        const print = prints.get(name);
-        if (print && hashes.get(name) === running.get(name)) records[name] = { hash: running.get(name)!, fingerprint: print };
-      }
+      configJson = await composeConfig(exec, projectArgs, names, "json", { cwd, timeout });
     } catch {
-      // No legacy layout to read.
+      // Without the definitions only the hash counts.
     }
   }
 
-  for (const name of names) {
-    if (states.get(name) !== "drifted" || staleRoutes.has(name)) continue;
-    const record = records[name];
-    const print = fingerprints.get(name);
-    if (print && record?.hash === running.get(name) && record.fingerprint === print) {
-      states.set(name, "unchanged");
-      labelsOnly.add(name);
+  if (opts.definitionsFile) {
+    records = await loadDefinitions(opts.definitionsFile);
+    if (configJson !== null) fingerprints = fingerprintsFromConfig(configJson);
+
+    const unknown = names.filter((n) => running.has(n) && records[n]?.hash !== running.get(n));
+    if (opts.legacyComposeFile && unknown.length > 0) {
+      // Compose reads the legacy file's .env from its directory, as it did when it created them.
+      const legacy = { cwd: dirname(opts.legacyComposeFile), timeout };
+      const legacyArgs = ["-f", opts.legacyComposeFile, "-p", project];
+      try {
+        const hashes = parseConfigHashes(await composeConfig(exec, legacyArgs, unknown, "hash", legacy));
+        const prints = fingerprintsFromConfig(await composeConfig(exec, legacyArgs, unknown, "json", legacy));
+        for (const name of unknown) {
+          const print = prints.get(name);
+          if (print && hashes.get(name) === running.get(name)) records[name] = { hash: running.get(name)!, fingerprint: print };
+        }
+      } catch {
+        // No legacy layout to read.
+      }
+    }
+
+    for (const name of names) {
+      if (states.get(name) !== "drifted" || staleRoutes.has(name)) continue;
+      const record = records[name];
+      const print = fingerprints.get(name);
+      if (print && record?.hash === running.get(name) && record.fingerprint === print) {
+        states.set(name, "unchanged");
+        labelsOnly.add(name);
+      }
     }
   }
-  return { states, staleRoutes, labelsOnly, desired, running, fingerprints, records };
+
+  // Compose copies inline content in at create time and leaves it out of the hash.
+  if (configJson !== null) {
+    for (const [name, files] of inlineFiles(configJson)) {
+      const container = containers.get(name);
+      if (states.get(name) !== "unchanged" || !container) continue;
+      for (const [target, content] of files) {
+        let current: string;
+        try {
+          current = (await exec(["exec", container, "cat", target], { timeout })).stdout;
+        } catch {
+          // Stopped, or no cat in the image: nothing to compare.
+          continue;
+        }
+        if (current !== content) {
+          states.set(name, "drifted");
+          labelsOnly.delete(name);
+          contentChanged.add(name);
+          break;
+        }
+      }
+    }
+  }
+
+  return { states, staleRoutes, labelsOnly, contentChanged, desired, running, fingerprints, records };
 }
 
 function isRouted(service: ComposeService | undefined): boolean {
@@ -236,20 +326,11 @@ export class SharedRecreateError extends Error {
  * Held and unreadable services are reported, not touched.
  */
 export async function reconcileSharedServices(
-  opts: DriftOpts & {
-    log: (line: string) => void;
-    upTimeout: number;
-    readyTimeout: (service: ComposeService) => number;
-    intervalMs: number;
-    stableMs: number;
-    sleep: (ms: number) => Promise<void>;
-    /** Services whose bind data has to move out of a slot before a recreate. */
-    pendingMoves?: Record<string, string[]>;
-  },
+  opts: ReconcileOpts,
 ): Promise<SharedOutcome[]> {
   const { shared, project, composeFileArgs, cwd, exec, timeout, log } = opts;
   const drift = await sharedDrift(opts);
-  const { states, staleRoutes, error, labelsOnly, records } = drift;
+  const { states, staleRoutes, error, labelsOnly, contentChanged, records } = drift;
   if (error) log(`[deploy] Could not read shared service definitions — ${error}`);
 
   const containers = new Map(
@@ -291,10 +372,19 @@ export async function reconcileSharedServices(
       continue;
     }
 
+    const holdReason = await opts.holdRecreate?.(name, containers.get(name)!);
+    if (holdReason) {
+      outcomes.push({ service: name, result: "held", reason: holdReason });
+      continue;
+    }
+
+    const changed = contentChanged.has(name);
     log(
       staleRoute
         ? `[deploy] Recreating shared service ${name} — it still carries Traefik routing it no longer has`
-        : `[deploy] Recreating shared service ${name} — its definition changed`,
+        : changed
+          ? `[deploy] Recreating shared service ${name} — a config or secret it mounts changed`
+          : `[deploy] Recreating shared service ${name} — its definition changed`,
     );
     try {
       await exec(
@@ -311,7 +401,7 @@ export async function reconcileSharedServices(
       opts.sleep,
     );
     if (notReady) throw new SharedRecreateError(name, notReady);
-    outcomes.push({ service: name, result: "recreated" });
+    outcomes.push({ service: name, result: "recreated", ...(changed ? { contentChanged: true } : {}) });
     remember(name, drift.desired.get(name));
   }
 
@@ -336,7 +426,9 @@ export function describeSharedOutcome(outcome: SharedOutcome): string {
         ? `[deploy] Shared service ${outcome.service}: unchanged (only labels, CPU weights or how limits are written differ)`
         : `[deploy] Shared service ${outcome.service}: unchanged`;
     case "recreated":
-      return `[deploy] Shared service ${outcome.service}: recreated with its new definition`;
+      return outcome.contentChanged
+        ? `[deploy] Shared service ${outcome.service}: recreated with its new config`
+        : `[deploy] Shared service ${outcome.service}: recreated with its new definition`;
     case "held":
       return `[deploy] Shared service ${outcome.service}: definition changed, held — ${outcome.reason}`;
     case "unknown":
